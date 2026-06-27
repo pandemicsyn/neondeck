@@ -1,4 +1,5 @@
 import { defineAgent, type AgentRouteHandler } from '@flue/runtime';
+import { neondeckCommandActions } from '../commands';
 import { neondeckConfigActions } from '../config-actions';
 import {
   neondeckRuntimeSkillActions,
@@ -21,9 +22,11 @@ export default defineAgent(() => ({
     'For Neondeck configuration changes, use the provided neondeck_config_* actions. Do not directly edit runtime config files in conversation.',
     'For PR watches, use the provided neondeck_watch_pr_* actions. Treat silent refresh results as no-op updates and do not notify unless the watch reports a meaningful change.',
     'For runtime skills, use neondeck_skills_list, neondeck_skill_load, and neondeck_skills_reload to inspect or refresh user-provided procedural guidance.',
+    'When a user sends a slash command such as /repo-status, /review-queue, /briefing, or /watch-pr, call neondeck_command_run and summarize its persisted workflow result.',
     runtimeSkillInstructionsSync(),
   ].join('\n\n'),
   actions: [
+    ...neondeckCommandActions,
     ...neondeckConfigActions,
     ...neondeckWatchActions,
     ...neondeckSchedulerActions,

@@ -49,3 +49,10 @@ Use this format:
 - Decision: Landed Neondeck-managed runtime skill discovery from `skills/` and configured `skillRoots`, folder validation with ignored-entry reporting, metadata and full-load APIs, Flue actions for list/load/reload, duplicate-id detection, and automatic instruction injection for active skills when the display assistant initializes. The reload action rescans disk for APIs/actions, but already-initialized Flue sessions keep their existing automatic instruction context.
 - Reason: Current Flue packaged skills must be imported at build time or discovered from a harness workspace; mutable `NEONDECK_HOME` skills need a runtime-managed loader. Existing session context should stay stable rather than being rewritten under an active conversation.
 - Follow-up: Add session-level skill context refresh if Flue exposes a safe active-session update hook or when Neon command/session management lands.
+
+## 2026-06-27 - Neon Commands And Workflows
+
+- Roadmap item: Phase 6 / Neon commands and workflows
+- Decision: Landed slash command parsing, deterministic command workflow execution for `/repo-status`, `/review-queue`, `/briefing`, and `/watch-pr`, persisted `workflow_summaries`, Flue command actions, HTTP command APIs, and dashboard command buttons in the chat panel. These command workflows are Neondeck backend workflows rather than separate Flue `defineWorkflow` files.
+- Reason: The roadmap calls for one backend command/event surface shared by chat and UI buttons. Deterministic command workflows are the lowest-friction way to make commands usable now while storing durable results for later UI panels.
+- Follow-up: Promote commands that need long-running agent reasoning into first-class Flue workflows when the workflow dashboard and command orchestration mature.

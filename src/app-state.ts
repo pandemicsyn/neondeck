@@ -392,6 +392,27 @@ export async function addWorkflowSummary(
   return record;
 }
 
+export async function listWorkflowSummaries(paths = runtimePaths()) {
+  await ensureRuntimeHome(paths);
+  const database = new DatabaseSync(paths.neondeckDatabase);
+
+  try {
+    return database
+      .prepare(
+        `
+        SELECT *
+        FROM workflow_summaries
+        ORDER BY created_at DESC
+        LIMIT 100;
+      `,
+      )
+      .all()
+      .map(readWorkflowSummaryRow);
+  } finally {
+    database.close();
+  }
+}
+
 function readJob(paths: RuntimePaths, id: string): JobRecord | undefined {
   const database = new DatabaseSync(paths.neondeckDatabase);
 
@@ -401,6 +422,22 @@ function readJob(paths: RuntimePaths, id: string): JobRecord | undefined {
   } finally {
     database.close();
   }
+}
+
+function readWorkflowSummaryRow(row: unknown): WorkflowSummaryRecord {
+  const record = row as Record<string, unknown>;
+  return {
+    id: String(record.id),
+    workflow: String(record.workflow),
+    runId: typeof record.run_id === 'string' ? record.run_id : null,
+    status: String(record.status),
+    summary:
+      typeof record.summary_json === 'string'
+        ? (JSON.parse(record.summary_json) as JsonValue)
+        : null,
+    createdAt: String(record.created_at),
+    updatedAt: String(record.updated_at),
+  };
 }
 
 function readNotificationRow(row: unknown): NotificationRecord {

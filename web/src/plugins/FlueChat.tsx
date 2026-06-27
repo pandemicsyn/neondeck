@@ -1,5 +1,6 @@
 import { useFlueAgent } from '@flue/react';
 import { useState, type FormEvent, type KeyboardEvent } from 'react';
+import { runNeonCommand, type NeonCommandResult } from '../api';
 import { Badge, Button, Kbd, ScrollArea, Textarea } from '../components/ui';
 import type { DisplayPlugin } from '../types';
 
@@ -12,6 +13,10 @@ type FlueChatSession = {
 type FlueChatConfig = {
   agentName: string;
   sessions: FlueChatSession[];
+  quickCommands: Array<{
+    label: string;
+    command: string;
+  }>;
 };
 
 export const FlueChatPlugin = {
@@ -26,6 +31,11 @@ export const FlueChatPlugin = {
         label: 'Primary',
         placeholder: 'Ask the assistant...',
       },
+    ],
+    quickCommands: [
+      { label: 'Repo', command: '/repo-status' },
+      { label: 'Queue', command: '/review-queue' },
+      { label: 'Briefing', command: '/briefing' },
     ],
   },
   Component({ config }) {
@@ -65,6 +75,7 @@ export const FlueChatPlugin = {
         </header>
         <FlueChatSessionView
           agentName={config.agentName}
+          quickCommands={config.quickCommands}
           session={activeSession}
         />
       </div>
@@ -74,12 +85,16 @@ export const FlueChatPlugin = {
 
 function FlueChatSessionView({
   agentName,
+  quickCommands,
   session,
 }: {
   agentName: string;
+  quickCommands: FlueChatConfig['quickCommands'];
   session: FlueChatSession;
 }) {
   const [input, setInput] = useState('');
+  const [commandResult, setCommandResult] = useState<NeonCommandResult>();
+  const [runningCommand, setRunningCommand] = useState<string>();
   const agent = useFlueAgent({
     name: agentName,
     id: session.id,
@@ -92,7 +107,21 @@ function FlueChatSessionView({
     if (!message) return;
 
     setInput('');
+    if (message.startsWith('/')) {
+      setCommandResult(await runCommand(message));
+      return;
+    }
+
     await agent.sendMessage(message);
+  }
+
+  async function runCommand(command: string) {
+    setRunningCommand(command);
+    try {
+      return await runNeonCommand(command);
+    } finally {
+      setRunningCommand(undefined);
+    }
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -117,6 +146,14 @@ function FlueChatSessionView({
               </span>
             </div>
           ) : null}
+          <CommandButtons
+            commands={quickCommands}
+            latest={commandResult}
+            onRun={async (command) =>
+              setCommandResult(await runCommand(command))
+            }
+            runningCommand={runningCommand}
+          />
           {agent.messages.length === 0 ? (
             <div className="flex flex-1 items-center justify-center text-center text-[13px] text-muted">
               <div className="max-w-[42ch]">
@@ -167,5 +204,52 @@ function FlueChatSessionView({
         </Button>
       </form>
     </div>
+  );
+}
+
+function CommandButtons({
+  commands,
+  latest,
+  onRun,
+  runningCommand,
+}: {
+  commands: FlueChatConfig['quickCommands'];
+  latest: NeonCommandResult | undefined;
+  onRun: (command: string) => Promise<void>;
+  runningCommand: string | undefined;
+}) {
+  return (
+    <section className="border border-line bg-panel/70 px-3 py-2">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          {commands.map((command) => (
+            <Button
+              className="h-6 border-line bg-field px-2 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
+              disabled={!!runningCommand}
+              key={command.command}
+              onClick={() => void onRun(command.command)}
+              title={command.command}
+              type="button"
+            >
+              {runningCommand === command.command ? 'Running' : command.label}
+            </Button>
+          ))}
+        </div>
+        <span className="shrink-0 font-mono text-[10px] text-muted">
+          commands
+        </span>
+      </div>
+      {latest ? (
+        <div className="mt-2 border-t border-line pt-2 font-mono text-[10.5px] leading-4">
+          <div className="flex items-center justify-between gap-3">
+            <span className={latest.ok ? 'text-primary' : 'text-accent'}>
+              {latest.input}
+            </span>
+            <Badge>{latest.status}</Badge>
+          </div>
+          <p className="mt-1 text-muted">{latest.message}</p>
+        </div>
+      ) : null}
+    </section>
   );
 }

@@ -44,6 +44,23 @@ export type RepoRegistryResponse = {
   fetchedAt: string;
 };
 
+export type NeonCommandResult = {
+  ok: boolean;
+  command: string;
+  input: string;
+  status: 'completed' | 'failed' | 'needs-config';
+  message: string;
+  data?: unknown;
+  errors?: string[];
+  requires?: string[];
+  workflowSummary?: {
+    id: string;
+    workflow: string;
+    status: string;
+    createdAt: string;
+  };
+};
+
 export type HostMetrics = {
   hostname: string;
   platform: string;
@@ -99,6 +116,23 @@ export async function getRepoRegistry() {
 
 export async function getHostMetrics() {
   return getJson<HostMetrics>('/api/metrics/host');
+}
+
+export async function runNeonCommand(command: string) {
+  const response = await fetch('/api/commands/run', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ command }),
+  });
+  const data = (await response.json()) as NeonCommandResult;
+
+  if (!response.ok && !data.message) {
+    throw new Error(`Request failed with ${response.status}`);
+  }
+
+  return data;
 }
 
 async function getJson<T>(url: string) {

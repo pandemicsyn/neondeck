@@ -64,6 +64,16 @@ npm run dev
 
 Open `http://127.0.0.1:5173/`.
 
+Neon command workflows can be run from the chat panel buttons, typed into chat, or called over HTTP:
+
+```sh
+curl -X POST http://127.0.0.1:5173/api/commands/run \
+  -H 'Content-Type: application/json' \
+  -d '{"command":"/briefing"}'
+```
+
+Supported commands are `/repo-status`, `/review-queue`, `/briefing`, and `/watch-pr <ref>`. Results are stored in `workflow_summaries` and exposed at `/api/workflows/summaries`.
+
 ## Build
 
 ```sh

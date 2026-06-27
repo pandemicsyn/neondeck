@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- feat(commands): add Neon slash command workflows and dashboard buttons
 - feat(setup): add explicit runtime home setup command
 - feat(skills): add runtime skill discovery, loading, and reload actions
 - feat(scheduler): add durable scheduled jobs, notifications, and blueprint automations

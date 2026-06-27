@@ -2,10 +2,15 @@ import { registerProvider } from '@flue/runtime';
 import { flue } from '@flue/runtime/routing';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
+import { runNeonCommand, supportedCommands } from './commands';
 import { fetchGitHubLogin, fetchPullRequestQueue } from './github';
 import { readHostMetrics } from './metrics';
 import { readRepoRegistrySnapshot } from './repos';
-import { listNotifications, markNotificationRead } from './app-state';
+import {
+  listNotifications,
+  listWorkflowSummaries,
+  markNotificationRead,
+} from './app-state';
 import {
   listSchedulerJobs,
   runSchedulerTick,
@@ -138,6 +143,27 @@ app.get('/api/skills/:id', async (c) => {
 
 app.post('/api/skills/reload', async (c) => {
   return c.json(await reloadRuntimeSkills(paths));
+});
+
+app.get('/api/commands', (c) => {
+  return c.json({ items: supportedCommands() });
+});
+
+app.post('/api/commands/run', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { command?: unknown };
+  const result = await runNeonCommand(
+    { command: typeof body.command === 'string' ? body.command : '' },
+    paths,
+  );
+
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.get('/api/workflows/summaries', async (c) => {
+  return c.json({
+    items: await listWorkflowSummaries(paths),
+    fetchedAt: new Date().toISOString(),
+  });
 });
 
 app.get('/api/github/prs', async (c) => {
