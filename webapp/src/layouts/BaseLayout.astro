@@ -499,20 +499,25 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     flex-wrap: wrap;
     justify-content: center;
     gap: 14px;
-    margin-top: 34px;
+    margin-top: 20px;
+  }
+
+  .hero-actions .button {
+    padding-inline: 26px;
   }
 
   .command {
     display: inline-flex;
-    align-items: center;
     align-items: stretch;
-    margin-top: 22px;
+    margin-top: 38px;
     padding: 0;
-    border: 1px solid rgba(105, 230, 255, 0.32);
-    background: rgba(7, 8, 16, 0.78);
+    border: 1px solid rgba(105, 230, 255, 0.28);
+    background: rgba(8, 9, 12, 0.72);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 18px 50px rgba(0, 0, 0, 0.5);
     color: var(--body);
+    backdrop-filter: blur(4px);
     font-family: "IBM Plex Mono", monospace;
-    font-size: 14px;
+    font-size: 15px;
   }
 
   .command span {
@@ -538,6 +543,64 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     letter-spacing: 0.08em;
     padding: 0 16px;
     text-transform: uppercase;
+  }
+
+  .command button:hover {
+    background: rgba(105, 230, 255, 0.12);
+  }
+
+  .hero-primary {
+    border-color: var(--pink);
+    background: var(--pink);
+    box-shadow: 0 0 28px rgba(255, 79, 184, 0.5);
+    color: #0e0f13;
+  }
+
+  .hero-primary:hover {
+    border-color: var(--cyan);
+    background: var(--cyan);
+    color: #0e0f13;
+  }
+
+  .hero-secondary {
+    border-color: rgba(105, 230, 255, 0.5);
+    color: var(--cyan);
+  }
+
+  .hero-secondary:hover {
+    border-color: var(--cyan);
+    background: rgba(105, 230, 255, 0.08);
+    color: var(--ink);
+  }
+
+  :root[data-look="deck"] .hero-primary {
+    border-color: var(--cyan);
+    background: var(--cyan);
+    box-shadow: none;
+  }
+
+  :root[data-look="deck"] .hero-primary:hover {
+    border-color: var(--pink);
+    background: var(--pink);
+  }
+
+  :root[data-theme="light"] .hero-primary {
+    border-color: var(--pink);
+    background: var(--pink);
+    box-shadow: 0 10px 26px rgba(224, 57, 155, 0.32);
+    color: #fcfdff;
+  }
+
+  :root[data-theme="light"] .hero-primary:hover {
+    border-color: var(--cyan);
+    background: var(--cyan);
+    color: #fcfdff;
+  }
+
+  :root[data-theme="light"] .command {
+    border-color: rgba(18, 40, 55, 0.2);
+    background: #0a0c12;
+    box-shadow: 0 18px 50px rgba(20, 40, 60, 0.16);
   }
 
   .section {
