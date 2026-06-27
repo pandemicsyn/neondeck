@@ -2,8 +2,14 @@ import { registerProvider } from '@flue/runtime';
 import { flue } from '@flue/runtime/routing';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
-import { readFile } from 'node:fs/promises';
 import { readHostMetrics } from './metrics';
+import {
+  ConfigValidationError,
+  ensureRuntimeHome,
+  parseDashboardConfig,
+  readRuntimeJson,
+  runtimePaths,
+} from './runtime-home';
 
 const kiloApiKey = process.env.KILOCODE_API_KEY ?? process.env.KILO_API_KEY;
 const kiloOrganizationId =
@@ -21,18 +27,36 @@ registerProvider('kilocode', {
 const app = new Hono();
 
 const staticRoot = './web/dist';
+const paths = runtimePaths();
+
+await ensureRuntimeHome(paths);
 
 app.get('/api/health', (c) =>
   c.json({
     ok: true,
-    service: 'xeneon-edge-dashboard',
+    service: 'neondeck',
+    home: paths.home,
     uptimeSeconds: Math.round(process.uptime()),
   }),
 );
 
 app.get('/api/dashboard/config', async (c) => {
-  const source = await readFile('./config/dashboard.json', 'utf8');
-  return c.json(JSON.parse(source));
+  try {
+    return c.json(await readRuntimeJson(paths.dashboard, parseDashboardConfig));
+  } catch (error) {
+    if (error instanceof ConfigValidationError) {
+      return c.json(
+        {
+          error: 'Invalid dashboard config',
+          message: error.message,
+          path: error.path,
+        },
+        500,
+      );
+    }
+
+    throw error;
+  }
 });
 
 app.get('/api/metrics/host', async (c) => {

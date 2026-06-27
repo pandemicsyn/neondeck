@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { ensureRuntimeHomeSync, runtimePaths } from './runtime-home';
 
 export type Soul = {
   name: string;
@@ -12,7 +13,7 @@ const fallbackSoul: Soul = {
   vibe: 'A calm, concise, technical companion for a developer side display.',
 };
 
-export function loadSoul(path = './SOUL.md'): Soul {
+export function loadSoul(path = defaultSoulPath()): Soul {
   try {
     return parseSoul(readFileSync(path, 'utf8'));
   } catch {
@@ -58,4 +59,10 @@ function readSection(markdown: string, heading: string) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function defaultSoulPath() {
+  const paths = runtimePaths();
+  ensureRuntimeHomeSync(paths);
+  return paths.soul;
 }

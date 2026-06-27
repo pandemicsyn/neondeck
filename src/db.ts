@@ -1,3 +1,7 @@
 import { sqlite } from '@flue/runtime/node';
+import { ensureRuntimeHomeSync, runtimePaths } from './runtime-home';
 
-export default sqlite('./data/flue.db');
+const paths = runtimePaths();
+ensureRuntimeHomeSync(paths);
+
+export default sqlite(paths.flueDatabase);

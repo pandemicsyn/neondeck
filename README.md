@@ -30,7 +30,15 @@ GITHUB_TOKEN=...
 GITHUB_LOGIN=...
 ```
 
-The dashboard layout lives in `config/dashboard.json`. Agent personality is configured in `SOUL.md`.
+On first run, neondeck creates a local runtime home and seeds it from the repo defaults:
+
+```text
+NEONDECK_HOME
+XDG_CONFIG_HOME/neondeck
+~/.config/neondeck
+```
+
+The runtime home contains `config.json`, `repos.json`, `dashboard.json`, `schedules.json`, `SOUL.md`, `skills/`, and separate `data/neondeck.db` and `data/flue.db` databases. The repo-local `config/dashboard.json` and `SOUL.md` files are defaults for new homes; edit the runtime-home copies for local customization.
 
 ## Run
 
