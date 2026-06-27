@@ -85,7 +85,7 @@ const createBlueprintInputSchema = v.object({
 export const scheduleBlueprintCreateAction = defineAction({
   name: 'neondeck_schedule_blueprint_create',
   description:
-    'Create a blueprint-backed schedule for morning briefing, watch PR, release watch, or review queue digest.',
+    'Create a blueprint-backed automation for morning briefing, watch PR, release watch, or review queue digest.',
   input: createBlueprintInputSchema,
   async run({ input }) {
     return createScheduleBlueprint(input);
@@ -157,13 +157,14 @@ export async function createScheduleBlueprint(
       input.intervalSeconds ?? defaultIntervalSeconds(input.blueprint),
   };
 
-  let watchResult: WatchActionResult | undefined;
   if (input.blueprint === 'watch-pr' && input.ref) {
     const addWatch = dependencies.addPrWatch ?? addPrWatch;
-    watchResult = await addWatch(
+    const watchResult = await addWatch(
       {
         ref: input.ref,
         desiredTerminalState: 'checks',
+        intervalSeconds:
+          input.intervalSeconds ?? defaultIntervalSeconds(input.blueprint),
       },
       paths,
     );
@@ -173,6 +174,17 @@ export async function createScheduleBlueprint(
         requires: watchResult.requires,
       });
     }
+
+    return okResult(
+      'schedule_blueprint_create',
+      true,
+      'created',
+      `Created watch-pr automation "${id}".`,
+      {
+        jobs: await listJobs(paths),
+        extra: { watch: watchResult },
+      },
+    );
   }
 
   const scheduleResult = await addSchedule(
@@ -202,7 +214,7 @@ export async function createScheduleBlueprint(
     `Created ${input.blueprint} schedule "${id}".`,
     {
       jobs: await listJobs(paths),
-      extra: { schedule: scheduleResult.data, watch: watchResult },
+      extra: { schedule: scheduleResult.data },
     },
   );
 }
@@ -443,10 +455,20 @@ async function refreshWatchJob(
         : watch?.status === 'merged' || watch?.status === 'green'
           ? 'ready'
           : 'info';
+    const title =
+      watch?.status === 'green'
+        ? 'PR watch green'
+        : watch?.status === 'attention-needed'
+          ? 'PR watch needs attention'
+          : watch?.status === 'merged'
+            ? 'PR watch merged'
+            : watch?.status === 'closed'
+              ? 'PR watch closed'
+              : 'PR watch changed';
 
     return {
       level,
-      title: 'PR watch changed',
+      title,
       message: result.message,
       source: 'watch-pr',
       sourceId: watch?.id,

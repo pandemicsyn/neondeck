@@ -61,6 +61,31 @@ export type NeonCommandResult = {
   };
 };
 
+export type PrWatch = {
+  id: string;
+  repoId: string;
+  repoFullName: string;
+  githubOwner: string;
+  githubName: string;
+  prNumber: number;
+  desiredTerminalState: string;
+  status: string;
+  prState: string | null;
+  title: string | null;
+  url: string | null;
+  mergeCommitSha: string | null;
+  lastCheckedAt: string | null;
+  updatedAt: string;
+};
+
+export type PrWatchResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  watches: PrWatch[];
+};
+
 export type HostMetrics = {
   hostname: string;
   platform: string;
@@ -133,6 +158,10 @@ export async function runNeonCommand(command: string) {
   }
 
   return data;
+}
+
+export async function getPrWatches() {
+  return getJson<PrWatchResponse>('/api/watches');
 }
 
 async function getJson<T>(url: string) {

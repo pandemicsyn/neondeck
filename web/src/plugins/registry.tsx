@@ -1,3 +1,4 @@
+import { ActiveWatchesPlugin } from './ActiveWatches';
 import { ClockStatusPlugin } from './ClockStatus';
 import { FlueChatPlugin } from './FlueChat';
 import { GitHubPrListPlugin } from './GitHubPrList';
@@ -6,6 +7,7 @@ import type { DisplayPlugin } from '../types';
 
 export const plugins = [
   GitHubPrListPlugin,
+  ActiveWatchesPlugin,
   FlueChatPlugin,
   HostMetricsPlugin,
   ClockStatusPlugin,

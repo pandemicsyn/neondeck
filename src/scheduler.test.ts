@@ -184,29 +184,49 @@ describe('scheduler', () => {
     expect(schedules.schedules).toEqual([]);
   });
 
-  it('reports scheduled watch refresh failures instead of staying silent', async () => {
+  it('creates one durable polling job for watch-pr blueprints', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await expect(
+      createScheduleBlueprint(
+        { blueprint: 'watch-pr', ref: 'neondeck#123', intervalSeconds: 120 },
+        paths,
+        {
+          addPrWatch: (input, runtimePaths) =>
+            addPrWatch(input, runtimePaths, async () => prDetail()),
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'created',
+      jobs: [
+        expect.objectContaining({
+          id: 'watch:pandemicsyn/neondeck#123',
+          type: 'watch-pr',
+          intervalSeconds: 120,
+        }),
+      ],
+    });
+
+    await expect(listJobs(paths)).resolves.not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'schedule:watch-pr-neondeck-123' }),
+      ]),
+    );
+    const schedules = JSON.parse(await readFile(paths.schedules, 'utf8')) as {
+      schedules: unknown[];
+    };
+    expect(schedules.schedules).toEqual([]);
+  });
+
+  it('reports watch refresh failures instead of staying silent', async () => {
     const home = await tempHome();
     const paths = runtimePaths(home);
     await writeRepoRegistry(paths.repos);
     await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
-    await writeFile(
-      paths.schedules,
-      `${JSON.stringify({
-        schedules: [
-          {
-            id: 'watch-neondeck-123',
-            type: 'watch-pr',
-            enabled: true,
-            preset: 'watch-pr',
-            config: {
-              id: 'pandemicsyn/neondeck#123',
-              intervalSeconds: 60,
-            },
-          },
-        ],
-      })}\n`,
-    );
-    await syncScheduledJobs(paths);
 
     await expect(runSchedulerTick(paths, new Date())).resolves.toMatchObject({
       ok: true,
@@ -216,29 +236,11 @@ describe('scheduler', () => {
     });
   });
 
-  it('scheduled watch jobs stay silent when refresh has no changes', async () => {
+  it('watch jobs stay silent when refresh has no changes', async () => {
     const home = await tempHome();
     const paths = runtimePaths(home);
     await writeRepoRegistry(paths.repos);
     await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
-    await writeFile(
-      paths.schedules,
-      `${JSON.stringify({
-        schedules: [
-          {
-            id: 'watch-neondeck-123',
-            type: 'watch-pr',
-            enabled: true,
-            preset: 'watch-pr',
-            config: {
-              id: 'pandemicsyn/neondeck#123',
-              intervalSeconds: 60,
-            },
-          },
-        ],
-      })}\n`,
-    );
-    await syncScheduledJobs(paths);
 
     await expect(
       runSchedulerTick(paths, new Date(), {
@@ -249,6 +251,62 @@ describe('scheduler', () => {
       ok: true,
       changed: false,
       outcome: 'silent',
+    });
+  });
+
+  it('notifies when an auto-polled watch turns green', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
+
+    await expect(
+      runSchedulerTick(paths, new Date(), {
+        refreshPrWatch: async () => ({
+          ok: true,
+          action: 'watch_pr_refresh',
+          changed: true,
+          outcome: 'updated',
+          message: 'Updated watch "pandemicsyn/neondeck#123".',
+          watch: {
+            id: 'pandemicsyn/neondeck#123',
+            status: 'green',
+          },
+        }),
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      notifications: [{ title: 'PR watch green', level: 'ready' }],
+    });
+  });
+
+  it('notifies when an auto-polled watch needs attention', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
+
+    await expect(
+      runSchedulerTick(paths, new Date(), {
+        refreshPrWatch: async () => ({
+          ok: true,
+          action: 'watch_pr_refresh',
+          changed: true,
+          outcome: 'updated',
+          message: 'Updated watch "pandemicsyn/neondeck#123".',
+          watch: {
+            id: 'pandemicsyn/neondeck#123',
+            status: 'attention-needed',
+          },
+        }),
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      notifications: [
+        { title: 'PR watch needs attention', level: 'attention' },
+      ],
     });
   });
 });

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- feat(watches): add automatic PR watch polling and an active watches panel
 - feat(commands): add Neon slash command workflows and dashboard buttons
 - feat(setup): add explicit runtime home setup command
 - feat(skills): add runtime skill discovery, loading, and reload actions

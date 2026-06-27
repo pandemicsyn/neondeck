@@ -1,6 +1,7 @@
 import { defineAction, type JsonValue } from '@flue/runtime';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
+import { deleteJob, upsertJob } from './app-state';
 import {
   type GitHubCheckSummary,
   type GitHubPullRequestDetail,
@@ -94,6 +95,7 @@ const desiredTerminalStateSchema = v.optional(
 const watchPrAddInputSchema = v.object({
   ref: nonEmptyStringSchema,
   desiredTerminalState: desiredTerminalStateSchema,
+  intervalSeconds: v.optional(v.pipe(v.number(), v.integer(), v.minValue(60))),
 });
 
 const watchPrRemoveInputSchema = v.object({
@@ -196,7 +198,10 @@ export async function addPrWatch(
     githubName: resolved.reference.githubName,
     prNumber: resolved.reference.prNumber,
     desiredTerminalState: resolved.reference.desiredTerminalState,
-    status: statusFromSnapshot(snapshot),
+    status: statusFromSnapshot(
+      snapshot,
+      resolved.reference.desiredTerminalState,
+    ),
     prState: snapshot.state,
     title: snapshot.title,
     url: snapshot.url,
@@ -209,6 +214,7 @@ export async function addPrWatch(
   };
 
   insertWatch(paths, watch);
+  await upsertWatchPollingJob(watch, paths, parsed.input.intervalSeconds);
 
   return okResult('watch_pr_add', true, 'created', `Watching ${watch.id}.`, {
     watch,
@@ -262,6 +268,7 @@ export async function removePrWatch(
   }
 
   deleteWatch(paths, idResult.id);
+  await deleteJob(watchPollingJobId(idResult.id), paths);
   return okResult(
     'watch_pr_remove',
     true,
@@ -319,7 +326,7 @@ export async function refreshPrWatch(
     reference,
     checkFetcher,
   );
-  const nextStatus = statusFromSnapshot(snapshot);
+  const nextStatus = statusFromSnapshot(snapshot, watch.desiredTerminalState);
   const changed =
     JSON.stringify(watch.lastSnapshot) !== JSON.stringify(snapshot) ||
     watch.status !== nextStatus;
@@ -616,10 +623,15 @@ async function snapshotFromDetail(
   };
 }
 
-function statusFromSnapshot(snapshot: PrWatchSnapshot): PrWatchStatus {
+function statusFromSnapshot(
+  snapshot: PrWatchSnapshot,
+  desiredTerminalState: DesiredTerminalState,
+): PrWatchStatus {
   if (snapshot.checks?.status === 'success') return 'green';
   if (snapshot.checks?.status === 'failure') return 'attention-needed';
-  if (snapshot.state === 'closed' && snapshot.merged) return 'merged';
+  if (snapshot.state === 'closed' && snapshot.merged) {
+    return desiredTerminalState === 'merged' ? 'merged' : 'watching';
+  }
   if (snapshot.state === 'closed') return 'closed';
   if (snapshot.state === 'open') return 'watching';
   return 'unknown';
@@ -706,6 +718,32 @@ function updateWatch(paths: RuntimePaths, watch: PrWatch) {
   } finally {
     database.close();
   }
+}
+
+function upsertWatchPollingJob(
+  watch: PrWatch,
+  paths: RuntimePaths,
+  intervalSeconds = 300,
+) {
+  return upsertJob(
+    {
+      id: watchPollingJobId(watch.id),
+      type: 'watch-pr',
+      blueprint: 'watch-pr',
+      enabled: true,
+      intervalSeconds,
+      config: {
+        id: watch.id,
+        repo: watch.repoFullName,
+        prNumber: watch.prNumber,
+      },
+    },
+    paths,
+  );
+}
+
+function watchPollingJobId(id: string) {
+  return `watch:${id}`;
 }
 
 function readWatches(paths: RuntimePaths): PrWatch[] {

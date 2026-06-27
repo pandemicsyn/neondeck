@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { listJobs } from './app-state';
 import {
   addPrWatch,
   listPrWatches,
@@ -121,6 +122,15 @@ describe('PR watch actions', () => {
       changed: false,
       watches: [{ id: 'pandemicsyn/neondeck#123' }],
     });
+    await expect(listJobs(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'watch:pandemicsyn/neondeck#123',
+          type: 'watch-pr',
+          enabled: true,
+        }),
+      ]),
+    );
 
     await expect(
       refreshPrWatch({ id: 'pandemicsyn/neondeck#123' }, paths, fetcher),
@@ -144,6 +154,11 @@ describe('PR watch actions', () => {
       changed: true,
       outcome: 'removed',
     });
+    await expect(listJobs(paths)).resolves.not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'watch:pandemicsyn/neondeck#123' }),
+      ]),
+    );
   });
 
   it('marks refresh changed when PR state changes', async () => {
@@ -214,6 +229,76 @@ describe('PR watch actions', () => {
         lastSnapshot: {
           checks: { status: 'failure' },
         },
+      },
+    });
+  });
+
+  it('keeps default checks watches active while merge checks are pending', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () =>
+      prDetail({ state: 'open', updatedAt: '2026-06-27T20:00:00Z' }),
+    );
+
+    await expect(
+      refreshPrWatch(
+        { id: 'pandemicsyn/neondeck#123' },
+        paths,
+        async () =>
+          prDetail({
+            state: 'closed',
+            merged: true,
+            mergeCommitSha: 'abc123',
+            updatedAt: '2026-06-27T20:05:00Z',
+          }),
+        async () => checkSummary('pending'),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'updated',
+      watch: {
+        status: 'watching',
+        mergeCommitSha: 'abc123',
+        lastSnapshot: {
+          checks: { status: 'pending' },
+        },
+      },
+    });
+  });
+
+  it('marks explicit merged-target watches ready when the PR merges', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await addPrWatch({ ref: 'neondeck#123 until merged' }, paths, async () =>
+      prDetail({ state: 'open', updatedAt: '2026-06-27T20:00:00Z' }),
+    );
+
+    await expect(
+      refreshPrWatch(
+        { id: 'pandemicsyn/neondeck#123' },
+        paths,
+        async () =>
+          prDetail({
+            state: 'closed',
+            merged: true,
+            mergeCommitSha: 'abc123',
+            updatedAt: '2026-06-27T20:05:00Z',
+          }),
+        async () => checkSummary('pending'),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'updated',
+      watch: {
+        desiredTerminalState: 'merged',
+        status: 'merged',
+        mergeCommitSha: 'abc123',
       },
     });
   });

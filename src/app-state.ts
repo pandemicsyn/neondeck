@@ -292,6 +292,17 @@ export async function disableStaleScheduleJobs(
   }
 }
 
+export async function deleteJob(id: string, paths = runtimePaths()) {
+  await ensureRuntimeHome(paths);
+  const database = new DatabaseSync(paths.neondeckDatabase);
+
+  try {
+    database.prepare('DELETE FROM jobs WHERE id = ?;').run(id);
+  } finally {
+    database.close();
+  }
+}
+
 export async function updateJobRun(
   id: string,
   input: {

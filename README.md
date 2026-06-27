@@ -2,7 +2,7 @@
 
 Local companion-display dashboard and Flue agent server for the Corsair Xeneon Edge.
 
-neondeck is a local-first Node 26 app with a Hono/Flue backend and a Vite/React/Tailwind dashboard optimized for a 2560 x 720 display. It provides a compact GitHub PR queue, persistent Flue chat sessions, and a terminal-style host status line.
+neondeck is a local-first Node 26 app with a Hono/Flue backend and a Vite/React/Tailwind dashboard optimized for a 2560 x 720 display. It provides a compact GitHub PR queue, active PR watches, persistent Flue chat sessions, and a terminal-style host status line.
 
 The repository also includes an Astro marketing/docs site under `webapp/`, deployed to Cloudflare for `neondeck.dev`.
 
@@ -72,7 +72,7 @@ curl -X POST http://127.0.0.1:5173/api/commands/run \
   -d '{"command":"/briefing"}'
 ```
 
-Supported commands are `/repo-status`, `/review-queue`, `/briefing`, and `/watch-pr <ref>`. Results are stored in `workflow_summaries` and exposed at `/api/workflows/summaries`.
+Supported commands are `/repo-status`, `/review-queue`, `/briefing`, and `/watch-pr <ref>`. A `/watch-pr` command creates a persistent PR watch, polls for merge/check changes, and shows it in the active watches panel. Results are stored in `workflow_summaries` and exposed at `/api/workflows/summaries`.
 
 ## Build
 

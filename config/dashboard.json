@@ -24,19 +24,31 @@
         "pluginId": "github-pr-list",
         "column": 1,
         "row": 2,
-        "columnSpan": 4,
+        "columnSpan": 3,
         "rowSpan": 5,
         "config": {
           "limit": 12
         }
       },
       {
+        "id": "watches",
+        "title": "WATCHES",
+        "pluginId": "active-watches",
+        "column": 4,
+        "row": 2,
+        "columnSpan": 2,
+        "rowSpan": 5,
+        "config": {
+          "limit": 8
+        }
+      },
+      {
         "id": "chat",
         "title": "FLUE AGENT · triage.ts",
         "pluginId": "flue-chat",
-        "column": 5,
+        "column": 6,
         "row": 2,
-        "columnSpan": 8,
+        "columnSpan": 7,
         "rowSpan": 5,
         "config": {
           "agentName": "display-assistant",
