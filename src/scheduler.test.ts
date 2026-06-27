@@ -12,8 +12,10 @@ import { runtimePaths } from './runtime-home';
 import { addPrWatch, refreshPrWatch } from './watch-actions';
 
 const tempRoots: string[] = [];
+const originalEnv = { ...process.env };
 
 afterEach(async () => {
+  process.env = { ...originalEnv };
   await Promise.all(
     tempRoots
       .splice(0)
@@ -138,6 +140,22 @@ describe('scheduler', () => {
     expect(schedules.schedules[0]).toMatchObject({
       type: 'release-watch',
       preset: 'release-watch',
+    });
+  });
+
+  it('rejects release-watch blueprints for unknown repos', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await expect(
+      createScheduleBlueprint(
+        { blueprint: 'release-watch', repo: 'missing' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['repo'],
     });
   });
 
@@ -309,6 +327,96 @@ describe('scheduler', () => {
       ],
     });
   });
+
+  it('notifies when release watch default branch checks are green', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await createScheduleBlueprint(
+      { blueprint: 'release-watch', repo: 'neondeck', intervalSeconds: 120 },
+      paths,
+    );
+
+    await expect(
+      runSchedulerTick(paths, new Date(), {
+        fetchCheckSummary: async () => checkSummary('success'),
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      notifications: [{ title: 'Release watch main green', level: 'ready' }],
+    });
+  });
+
+  it('keeps linked release watches silent until the source PR watch merges', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await addPrWatch({ ref: 'neondeck#123 until prod' }, paths, async () =>
+      prDetail(),
+    );
+
+    await expect(
+      runSchedulerTick(paths, new Date(), {
+        fetchCheckSummary: async () => checkSummary('success'),
+        refreshPrWatch: (input, runtimePaths) =>
+          refreshPrWatch(input, runtimePaths, async () => prDetail()),
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      outcome: 'silent',
+    });
+  });
+
+  it('does not notify repeatedly when release watch status is unchanged', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await createScheduleBlueprint(
+      { blueprint: 'release-watch', repo: 'neondeck', intervalSeconds: 120 },
+      paths,
+    );
+    await runSchedulerTick(paths, new Date('2026-06-27T20:00:00Z'), {
+      fetchCheckSummary: async () => checkSummary('success'),
+    });
+
+    await expect(
+      runSchedulerTick(paths, new Date('2026-06-27T20:03:00Z'), {
+        fetchCheckSummary: async () => checkSummary('success'),
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      outcome: 'silent',
+    });
+  });
+
+  it('marks release watch failures urgent', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await createScheduleBlueprint(
+      { blueprint: 'release-watch', repo: 'neondeck', intervalSeconds: 120 },
+      paths,
+    );
+
+    await expect(
+      runSchedulerTick(paths, new Date(), {
+        fetchCheckSummary: async () => checkSummary('failure'),
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      notifications: [
+        { title: 'Release watch needs attention', level: 'urgent' },
+      ],
+    });
+  });
 });
 
 async function tempHome() {
@@ -345,5 +453,16 @@ function prDetail() {
     headSha: 'head123',
     baseRef: 'main',
     updatedAt: '2026-06-27T20:00:00Z',
+  };
+}
+
+function checkSummary(status: 'success' | 'failure' | 'pending' | 'none') {
+  return {
+    status,
+    total: status === 'none' ? 0 : 1,
+    successful: status === 'success' ? 1 : 0,
+    failed: status === 'failure' ? 1 : 0,
+    pending: status === 'pending' ? 1 : 0,
+    checkedAt: '2026-06-27T20:05:30Z',
   };
 }

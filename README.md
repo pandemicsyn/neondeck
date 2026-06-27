@@ -72,7 +72,7 @@ curl -X POST http://127.0.0.1:5173/api/commands/run \
   -d '{"command":"/briefing"}'
 ```
 
-Supported commands are `/repo-status`, `/review-queue`, `/briefing`, `/dev-doctor`, and `/watch-pr <ref>`. A `/watch-pr` command creates a persistent PR watch, polls for merge/check changes, and shows it in the active watches panel. `/dev-doctor` checks local repo health, package scripts, Node version, env keys, dev ports, API health, and runtime databases. Runtime home, repository, scheduler job, and skill state are shown in the runtime overview panel. Results are stored in `workflow_summaries` and exposed at `/api/workflows/summaries`.
+Supported commands are `/repo-status`, `/review-queue`, `/briefing`, `/dev-doctor`, `/watch-pr <ref>`, and `/watch-release <repo>`. A `/watch-pr` command creates a persistent PR watch, polls for merge/check changes, and shows it in the active watches panel. `/watch-pr ... until prod` and `/watch-release` create release watches that track default-branch GitHub checks until green. `/dev-doctor` checks local repo health, package scripts, Node version, env keys, dev ports, API health, and runtime databases. Runtime home, repository, scheduler job, and skill state are shown in the runtime overview panel. Results are stored in `workflow_summaries` and exposed at `/api/workflows/summaries`.
 
 ## Build
 

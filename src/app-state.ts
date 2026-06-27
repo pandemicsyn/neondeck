@@ -303,6 +303,26 @@ export async function deleteJob(id: string, paths = runtimePaths()) {
   }
 }
 
+export async function deleteJobsByConfigField(
+  field: string,
+  value: string,
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const jobs = await listJobs(paths);
+  await Promise.all(
+    jobs
+      .filter(
+        (job) =>
+          job.config &&
+          typeof job.config === 'object' &&
+          !Array.isArray(job.config) &&
+          (job.config as Record<string, unknown>)[field] === value,
+      )
+      .map((job) => deleteJob(job.id, paths)),
+  );
+}
+
 export async function updateJobRun(
   id: string,
   input: {

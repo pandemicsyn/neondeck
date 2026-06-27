@@ -11,6 +11,8 @@ import {
   upsertJob,
 } from './app-state';
 import { addSchedule } from './config-actions';
+import { fetchCheckSummary, type GitHubCheckSummary } from './github';
+import { readRepoRegistrySnapshot, repoFullName } from './repos';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
@@ -64,6 +66,7 @@ type SchedulerDependencies = {
     input: Parameters<typeof refreshPrWatch>[0],
     paths: RuntimePaths,
   ) => Promise<WatchActionResult>;
+  fetchCheckSummary?: typeof fetchCheckSummary;
 };
 
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
@@ -147,12 +150,18 @@ export async function createScheduleBlueprint(
     );
   }
 
-  const id =
-    input.id ?? defaultBlueprintId(input.blueprint, input.ref ?? input.repo);
+  const releaseRepo =
+    input.blueprint === 'release-watch' && input.repo
+      ? await resolveReleaseWatchRepo(input.repo, paths)
+      : undefined;
+  if (releaseRepo && !releaseRepo.ok) return releaseRepo.result;
+
+  const target = input.ref ?? releaseRepo?.repo.id ?? input.repo;
+  const id = input.id ?? defaultBlueprintId(input.blueprint, target);
   const config = {
     ...input.config,
     ...(input.ref ? { ref: input.ref } : {}),
-    ...(input.repo ? { repo: input.repo } : {}),
+    ...(input.repo ? { repo: releaseRepo?.repo.id ?? input.repo } : {}),
     intervalSeconds:
       input.intervalSeconds ?? defaultIntervalSeconds(input.blueprint),
   };
@@ -385,15 +394,48 @@ async function executeJob(
   }
 
   if (job.type === 'release-watch') {
+    return refreshReleaseWatchJob(job, paths, dependencies.fetchCheckSummary);
+  }
+
+  return {
+    outcome: 'silent',
+    message: `No executor is registered for job type "${job.type}".`,
+  };
+}
+
+async function refreshReleaseWatchJob(
+  job: JobRecord,
+  paths: RuntimePaths,
+  fetchChecks: typeof fetchCheckSummary = fetchCheckSummary,
+): Promise<JobExecutionResult> {
+  const registry = await readRepoRegistrySnapshot(paths);
+  const config = readObjectConfig(job.config);
+  const repoRef = typeof config.repo === 'string' ? config.repo : undefined;
+  const sourceWatchId =
+    typeof config.sourceWatchId === 'string' ? config.sourceWatchId : undefined;
+  const repo = repoRef
+    ? registry.repos.find(
+        (item) =>
+          item.id === repoRef ||
+          item.github.name === repoRef ||
+          repoFullName(item).toLowerCase() === repoRef.toLowerCase(),
+      )
+    : undefined;
+
+  if (!repo) {
     return {
-      outcome: 'recorded',
-      message: 'Recorded release watch job.',
+      outcome: 'failed',
+      message: repoRef
+        ? `Release watch repository "${repoRef}" is not configured.`
+        : 'Release watch requires a configured repository.',
       notifications: [
         {
-          level: 'info',
-          title: 'Release watch due',
-          message: 'A release watch job is due for configured deploy status.',
-          source: 'scheduler',
+          level: 'attention',
+          title: 'Release watch failed',
+          message: repoRef
+            ? `Repository "${repoRef}" is not configured.`
+            : 'Release watch requires a repository.',
+          source: 'release-watch',
           sourceId: job.id,
           data: job.config,
         },
@@ -401,10 +443,144 @@ async function executeJob(
     };
   }
 
+  if (sourceWatchId) {
+    const sourceWatch = (await listPrWatchRecords(paths)).find(
+      (watch) => watch.id === sourceWatchId,
+    );
+    if (!sourceWatch) {
+      return {
+        outcome: 'failed',
+        message: `Linked PR watch "${sourceWatchId}" does not exist.`,
+        notifications: [
+          {
+            level: 'attention',
+            title: 'Release watch failed',
+            message: `Linked PR watch "${sourceWatchId}" does not exist.`,
+            source: 'release-watch',
+            sourceId: job.id,
+            data: job.config,
+          },
+        ],
+      };
+    }
+    if (!['merged', 'green'].includes(sourceWatch.status)) {
+      return {
+        outcome: 'silent',
+        message: `Release watch is waiting for PR watch "${sourceWatchId}" to merge.`,
+        result: {
+          repo: repo.id,
+          sourceWatchId,
+          sourceWatchStatus: sourceWatch.status,
+        },
+      };
+    }
+  }
+
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    return {
+      outcome: 'failed',
+      message: 'GITHUB_TOKEN is not configured.',
+      notifications: [
+        {
+          level: 'attention',
+          title: 'Release watch failed',
+          message: 'GITHUB_TOKEN is not configured.',
+          source: 'release-watch',
+          sourceId: job.id,
+          data: { repo: repo.id, requires: ['GITHUB_TOKEN'] },
+        },
+      ],
+    };
+  }
+
+  try {
+    const checks = await fetchChecks({
+      token,
+      owner: repo.github.owner,
+      repo: repo.github.name,
+      ref: repo.defaultBranch,
+    });
+    const snapshot = {
+      repo: repo.id,
+      repoFullName: repoFullName(repo),
+      defaultBranch: repo.defaultBranch,
+      productionTarget: repo.productionTarget ?? null,
+      checks,
+      checkedAt: new Date().toISOString(),
+    };
+    const previous = readReleaseWatchResult(job.lastResult);
+    const statusChanged = previous?.checks.status !== checks.status;
+    const shouldNotify =
+      statusChanged &&
+      (checks.status === 'success' || checks.status === 'failure');
+
+    return {
+      outcome: statusChanged ? 'updated' : 'silent',
+      message: statusChanged
+        ? `Release watch ${repo.id} default branch is ${checks.status}.`
+        : `Release watch ${repo.id} default branch is unchanged.`,
+      result: snapshot,
+      notifications: shouldNotify
+        ? [releaseWatchNotification(job, snapshot)]
+        : undefined,
+    };
+  } catch (error) {
+    return {
+      outcome: 'failed',
+      message: `Could not fetch release watch checks: ${errorMessage(error)}.`,
+      notifications: [
+        {
+          level: 'attention',
+          title: 'Release watch failed',
+          message: `Could not fetch checks for ${repoFullName(repo)}@${repo.defaultBranch}.`,
+          source: 'release-watch',
+          sourceId: job.id,
+          data: { error: errorMessage(error), repo: repo.id },
+        },
+      ],
+    };
+  }
+}
+
+function releaseWatchNotification(
+  job: JobRecord,
+  snapshot: {
+    repo: string;
+    repoFullName: string;
+    defaultBranch: string;
+    productionTarget: string | null;
+    checks: GitHubCheckSummary;
+    checkedAt: string;
+  },
+) {
+  const failed = snapshot.checks.status === 'failure';
   return {
-    outcome: 'silent',
-    message: `No executor is registered for job type "${job.type}".`,
+    level: failed ? ('urgent' as const) : ('ready' as const),
+    title: failed
+      ? 'Release watch needs attention'
+      : 'Release watch main green',
+    message: failed
+      ? `${snapshot.repoFullName}@${snapshot.defaultBranch} checks failed.`
+      : `${snapshot.repoFullName}@${snapshot.defaultBranch} checks are green.`,
+    source: 'release-watch',
+    sourceId: job.id,
+    data: snapshot,
   };
+}
+
+function readReleaseWatchResult(value: JsonValue | null) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const checks = (value as { checks?: unknown }).checks;
+  if (!checks || typeof checks !== 'object' || Array.isArray(checks)) {
+    return undefined;
+  }
+  const status = (checks as { status?: unknown }).status;
+  return typeof status === 'string'
+    ? { checks: { status } as GitHubCheckSummary }
+    : undefined;
 }
 
 async function refreshWatchJob(
@@ -514,6 +690,40 @@ function defaultBlueprintId(blueprint: BlueprintKind, target?: string) {
   return `${blueprint}-${suffix}`;
 }
 
+async function resolveReleaseWatchRepo(repoRef: string, paths: RuntimePaths) {
+  const registry = await readRepoRegistrySnapshot(paths);
+  const matches = registry.repos.filter(
+    (repo) =>
+      repo.id === repoRef ||
+      repo.github.name === repoRef ||
+      repoFullName(repo).toLowerCase() === repoRef.toLowerCase(),
+  );
+
+  if (matches.length === 1) {
+    return { ok: true as const, repo: matches[0] };
+  }
+
+  if (matches.length > 1) {
+    return {
+      ok: false as const,
+      result: failResult(
+        'schedule_blueprint_create',
+        `Repository "${repoRef}" is ambiguous.`,
+        { requires: ['repo'] },
+      ),
+    };
+  }
+
+  return {
+    ok: false as const,
+    result: failResult(
+      'schedule_blueprint_create',
+      `Repository "${repoRef}" is not configured.`,
+      { requires: ['repo'] },
+    ),
+  };
+}
+
 function readObjectConfig(config: unknown) {
   if (!config || typeof config !== 'object' || Array.isArray(config)) return {};
   return config as Record<string, unknown>;
@@ -577,4 +787,8 @@ function failResult(
 
 function asJsonValue(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }

@@ -22,10 +22,16 @@ import {
   ensureRuntimeHome,
   runtimePaths,
 } from './runtime-home';
+import { createScheduleBlueprint } from './scheduler';
 import { listPrWatchRecords, addPrWatch } from './watch-actions';
 
 export type NeonCommandName =
-  'repo-status' | 'review-queue' | 'briefing' | 'watch-pr' | 'dev-doctor';
+  | 'repo-status'
+  | 'review-queue'
+  | 'briefing'
+  | 'watch-pr'
+  | 'dev-doctor'
+  | 'watch-release';
 
 export type ParsedNeonCommand = {
   name: NeonCommandName;
@@ -57,7 +63,7 @@ const commandRunInputSchema = v.object({
 export const commandRunAction = defineAction({
   name: 'neondeck_command_run',
   description:
-    'Run a Neon slash command such as /repo-status, /review-queue, /briefing, or /watch-pr and persist a workflow summary.',
+    'Run a Neon slash command such as /repo-status, /review-queue, /briefing, /watch-pr, /watch-release, or /dev-doctor and persist a workflow summary.',
   input: commandRunInputSchema,
   async run({ input }) {
     return runNeonCommand(input);
@@ -108,6 +114,11 @@ export function supportedCommands() {
       usage: '/dev-doctor',
       description:
         'Inspect local repo, package, env, port, server, and database health.',
+    },
+    {
+      name: 'watch-release',
+      usage: '/watch-release <repo-id|owner/repo>',
+      description: 'Watch a configured repo until its default branch is green.',
     },
   ];
 }
@@ -213,6 +224,10 @@ async function executeCommand(
 
   if (command.name === 'watch-pr') {
     return watchPrCommand(command, paths);
+  }
+
+  if (command.name === 'watch-release') {
+    return watchReleaseCommand(command, paths);
   }
 
   return devDoctorCommand(command, paths);
@@ -389,6 +404,43 @@ async function watchPrCommand(
   });
 }
 
+async function watchReleaseCommand(
+  command: ParsedNeonCommand,
+  paths: RuntimePaths,
+): Promise<NeonCommandResult> {
+  const repo = command.args.join(' ').trim();
+  if (!repo) {
+    return failedCommand(
+      command.name,
+      command.raw,
+      '/watch-release requires a repository id or owner/repo.',
+      {
+        requires: ['repo'],
+      },
+    );
+  }
+
+  const result = await createScheduleBlueprint(
+    {
+      blueprint: 'release-watch',
+      repo,
+    },
+    paths,
+  );
+
+  if (!result.ok) {
+    return failedCommand(command.name, command.raw, result.message, {
+      errors: result.errors,
+      requires: result.requires,
+      data: { result },
+    });
+  }
+
+  return completedCommand(command.name, command.raw, result.message, {
+    result,
+  });
+}
+
 async function devDoctorCommand(
   command: ParsedNeonCommand,
   paths: RuntimePaths,
@@ -507,6 +559,7 @@ function isCommandName(value: string): value is NeonCommandName {
     'briefing',
     'watch-pr',
     'dev-doctor',
+    'watch-release',
   ].includes(value);
 }
 

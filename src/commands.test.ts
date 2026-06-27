@@ -38,6 +38,13 @@ describe('Neon commands', () => {
         args: [],
       },
     });
+    expect(parseNeonCommand('/watch-release neondeck')).toMatchObject({
+      ok: true,
+      command: {
+        name: 'watch-release',
+        args: ['neondeck'],
+      },
+    });
     expect(parseNeonCommand('repo-status')).toMatchObject({
       ok: false,
       requires: ['command'],
@@ -239,6 +246,37 @@ describe('Neon commands', () => {
       workflowSummary: {
         workflow: 'command:watch-pr',
         status: 'failed',
+      },
+    });
+  });
+
+  it('creates a release watch through slash command workflow', async () => {
+    const home = await tempDir('neondeck-home-');
+    const repoPath = await tempGitRepo();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos, repoPath);
+
+    await expect(
+      runNeonCommand({ command: '/watch-release neondeck' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      command: 'watch-release',
+      status: 'completed',
+      data: {
+        result: {
+          ok: true,
+          action: 'schedule_blueprint_create',
+          jobs: expect.arrayContaining([
+            expect.objectContaining({
+              id: 'schedule:release-watch-neondeck',
+              type: 'release-watch',
+            }),
+          ]),
+        },
+      },
+      workflowSummary: {
+        workflow: 'command:watch-release',
+        status: 'completed',
       },
     });
   });

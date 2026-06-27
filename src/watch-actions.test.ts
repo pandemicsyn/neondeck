@@ -302,6 +302,51 @@ describe('PR watch actions', () => {
       },
     });
   });
+
+  it('creates a linked release watch job for until prod PR watches', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await addPrWatch({ ref: 'neondeck#123 until prod' }, paths, async () =>
+      prDetail({ state: 'open', updatedAt: '2026-06-27T20:00:00Z' }),
+    );
+
+    await expect(listJobs(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'release:neondeck',
+          type: 'release-watch',
+          enabled: true,
+          config: expect.objectContaining({
+            repo: 'neondeck',
+            source: 'watch-pr-until-prod',
+            sourceWatchId: 'pandemicsyn/neondeck#123',
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it('removes linked release watch jobs when an until prod PR watch is removed', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await addPrWatch({ ref: 'neondeck#123 until prod' }, paths, async () =>
+      prDetail({ state: 'open', updatedAt: '2026-06-27T20:00:00Z' }),
+    );
+    await removePrWatch(
+      { id: 'pandemicsyn/neondeck#123', confirm: true },
+      paths,
+    );
+
+    await expect(listJobs(paths)).resolves.not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'release:neondeck' }),
+      ]),
+    );
+  });
 });
 
 async function tempHome() {

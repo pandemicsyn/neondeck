@@ -1,7 +1,7 @@
 import { defineAction, type JsonValue } from '@flue/runtime';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
-import { deleteJob, upsertJob } from './app-state';
+import { deleteJob, deleteJobsByConfigField, upsertJob } from './app-state';
 import {
   type GitHubCheckSummary,
   type GitHubPullRequestDetail,
@@ -215,6 +215,9 @@ export async function addPrWatch(
 
   insertWatch(paths, watch);
   await upsertWatchPollingJob(watch, paths, parsed.input.intervalSeconds);
+  if (watch.desiredTerminalState === 'prod') {
+    await upsertReleasePollingJob(watch, paths);
+  }
 
   return okResult('watch_pr_add', true, 'created', `Watching ${watch.id}.`, {
     watch,
@@ -269,6 +272,7 @@ export async function removePrWatch(
 
   deleteWatch(paths, idResult.id);
   await deleteJob(watchPollingJobId(idResult.id), paths);
+  await deleteJobsByConfigField('sourceWatchId', idResult.id, paths);
   return okResult(
     'watch_pr_remove',
     true,
@@ -744,6 +748,28 @@ function upsertWatchPollingJob(
 
 function watchPollingJobId(id: string) {
   return `watch:${id}`;
+}
+
+function upsertReleasePollingJob(watch: PrWatch, paths: RuntimePaths) {
+  return upsertJob(
+    {
+      id: releasePollingJobId(watch.repoId),
+      type: 'release-watch',
+      blueprint: 'release-watch',
+      enabled: true,
+      intervalSeconds: 900,
+      config: {
+        repo: watch.repoId,
+        source: 'watch-pr-until-prod',
+        sourceWatchId: watch.id,
+      },
+    },
+    paths,
+  );
+}
+
+function releasePollingJobId(repoId: string) {
+  return `release:${repoId}`;
 }
 
 function readWatches(paths: RuntimePaths): PrWatch[] {

@@ -493,7 +493,9 @@ Use runtime skill actions for skill inspection. List skills with \`neondeck_skil
 
 Use local dev doctor actions for diagnostics. Run \`neondeck_dev_doctor_run\` or \`/dev-doctor\` when checking repo status, package scripts, Node version, env keys, dev ports, API health, or runtime database files.
 
-Use command actions for slash commands. Run \`/repo-status\`, \`/review-queue\`, \`/briefing\`, \`/watch-pr\`, and \`/dev-doctor\` through \`neondeck_command_run\` so command results are persisted as workflow summaries and UI buttons use the same backend path.
+Use release watch scheduling for main/default-branch green checks. Run \`/watch-release <repo>\` or create a \`release-watch\` scheduler blueprint. Provider-specific production deploy adapters are future work; for now \`until prod\` means watch the configured repo default branch until GitHub checks are green.
+
+Use command actions for slash commands. Run \`/repo-status\`, \`/review-queue\`, \`/briefing\`, \`/watch-pr\`, \`/watch-release\`, and \`/dev-doctor\` through \`neondeck_command_run\` so command results are persisted as workflow summaries and UI buttons use the same backend path.
 
 Ask for confirmation before destructive changes, removing configured repositories, deleting schedules, disabling watches, or replacing user-authored skills. After any accepted change, summarize exactly which file or runtime object changed and what the new value is.
 `;
