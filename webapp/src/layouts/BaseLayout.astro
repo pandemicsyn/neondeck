@@ -34,6 +34,48 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   </head>
   <body>
     <slot />
+    <script is:inline>
+      const root = document.documentElement;
+      const urlLook = new URLSearchParams(window.location.search).get('look');
+      const storedLook = window.localStorage.getItem('neondeck-look');
+      const initialLook = urlLook === 'deck' || urlLook === 'light' || urlLook === 'camo'
+        ? urlLook
+        : storedLook === 'deck' || storedLook === 'light' || storedLook === 'camo'
+          ? storedLook
+          : 'camo';
+
+      function setLook(look) {
+        root.dataset.look = look;
+        root.dataset.theme = look === 'light' ? 'light' : 'dark';
+        window.localStorage.setItem('neondeck-look', look);
+        document.querySelectorAll('[data-look-button]').forEach((button) => {
+          button.setAttribute('aria-pressed', button.dataset.lookButton === look ? 'true' : 'false');
+        });
+      }
+
+      document.querySelectorAll('[data-look-button]').forEach((button) => {
+        button.addEventListener('click', () => setLook(button.dataset.lookButton));
+      });
+
+      document.querySelectorAll('[data-copy-command]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const command = button.dataset.copyCommand;
+          if (!command) return;
+          try {
+            await navigator.clipboard.writeText(command);
+            const original = button.textContent;
+            button.textContent = 'copied';
+            window.setTimeout(() => {
+              button.textContent = original;
+            }, 1400);
+          } catch {
+            button.textContent = 'copy';
+          }
+        });
+      });
+
+      setLook(initialLook);
+    </script>
   </body>
 </html>
 
@@ -54,7 +96,27 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     --teal: #00b7c7;
     --cyan: #69e6ff;
     --violet: #8b4dff;
+    --card: #0e0f13;
     font-family: "IBM Plex Sans", system-ui, sans-serif;
+  }
+
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #e7f3f7;
+    --bg-strong: #dcedf2;
+    --surface: #ffffff;
+    --chrome: #0a0c12;
+    --ink: #13171e;
+    --body: #222b34;
+    --muted: rgba(26, 34, 44, 0.74);
+    --faint: rgba(26, 34, 44, 0.46);
+    --line: rgba(18, 40, 55, 0.14);
+    --line-weak: rgba(18, 40, 55, 0.09);
+    --cyan: #0093a8;
+    --pink: #e0399b;
+    --teal: #0093a8;
+    --violet: #7a37e6;
+    --card: #ffffff;
   }
 
   * {
@@ -68,11 +130,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   body {
     margin: 0;
     min-height: 100vh;
-    background:
-      linear-gradient(130deg, rgba(255, 79, 184, 0.12), transparent 23%),
-      linear-gradient(62deg, transparent 48%, rgba(0, 183, 199, 0.11) 49%, transparent 67%),
-      linear-gradient(110deg, transparent 15%, rgba(139, 77, 255, 0.12) 16%, transparent 29%),
-      var(--bg);
+    background: var(--bg);
     color: var(--body);
     -webkit-font-smoothing: antialiased;
   }
@@ -100,7 +158,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     top: 0;
     z-index: 20;
     border-bottom: 1px solid var(--line);
-    background: rgba(12, 13, 18, 0.86);
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
     backdrop-filter: blur(10px);
   }
 
@@ -134,7 +192,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   .nav-links {
     display: flex;
     align-items: center;
-    gap: 22px;
+    gap: 18px;
     font-family: "IBM Plex Mono", monospace;
     font-size: 13px;
   }
@@ -145,6 +203,30 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   }
 
   .nav-links a:hover {
+    color: var(--cyan);
+  }
+
+  .look-toggle {
+    display: inline-flex;
+    margin-left: 2px;
+  }
+
+  .look-toggle button {
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font: inherit;
+    padding: 6px 10px;
+  }
+
+  .look-toggle button + button {
+    margin-left: -1px;
+  }
+
+  .look-toggle button[aria-pressed="true"] {
+    border-color: var(--cyan);
+    background: color-mix(in srgb, var(--cyan) 14%, transparent);
     color: var(--cyan);
   }
 
@@ -180,19 +262,77 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
 
   .hero {
     position: relative;
-    padding: clamp(72px, 10vw, 124px) 0 clamp(70px, 9vw, 112px);
+    overflow: hidden;
+    padding: clamp(72px, 9vw, 92px) 0 clamp(72px, 10vw, 110px);
     border-bottom: 1px solid var(--line);
   }
 
   .hero::before {
     content: "";
     position: absolute;
-    inset: 0;
+    inset: -12%;
     background:
-      linear-gradient(116deg, transparent 0 16%, rgba(255, 79, 184, 0.18) 16% 20%, transparent 20% 40%, rgba(0, 183, 199, 0.13) 40% 46%, transparent 46% 74%, rgba(139, 77, 255, 0.16) 74% 80%, transparent 80%),
-      linear-gradient(63deg, transparent 0 30%, rgba(215, 247, 255, 0.045) 30% 36%, transparent 36% 64%, rgba(255, 79, 184, 0.08) 64% 68%, transparent 68%);
-    opacity: 0.95;
+      radial-gradient(circle at 18% 34%, rgba(255, 79, 184, 0.55), transparent 30%),
+      radial-gradient(circle at 48% 25%, rgba(0, 183, 199, 0.5), transparent 33%),
+      radial-gradient(circle at 85% 40%, rgba(139, 77, 255, 0.5), transparent 32%),
+      radial-gradient(circle at 40% 86%, rgba(105, 230, 255, 0.36), transparent 30%);
+    filter: blur(60px);
+    opacity: 0.9;
     pointer-events: none;
+  }
+
+  .hero::after {
+    content: "";
+    position: absolute;
+    inset: -18%;
+    background:
+      repeating-linear-gradient(102deg, transparent 0 24px, rgba(10, 12, 16, 0.92) 24px 56px),
+      linear-gradient(180deg, rgba(14, 15, 19, 0.12), rgba(14, 15, 19, 0.58) 70%, var(--bg));
+    mix-blend-mode: multiply;
+    opacity: 0.78;
+    transform: skewX(-9deg);
+    animation: nd-drift 26s ease-in-out infinite alternate;
+    pointer-events: none;
+  }
+
+  :root[data-look="deck"] .hero {
+    background: #0b0c10;
+  }
+
+  :root[data-look="deck"] .hero::before {
+    left: 34%;
+    background: radial-gradient(circle at 72% 36%, rgba(0, 183, 199, 0.45), transparent 44%);
+  }
+
+  :root[data-look="deck"] .hero::after {
+    left: 45%;
+    opacity: 0.74;
+  }
+
+  :root[data-theme="light"] .hero::before {
+    background:
+      radial-gradient(circle at 18% 34%, rgba(255, 79, 184, 0.4), transparent 30%),
+      radial-gradient(circle at 48% 25%, rgba(0, 147, 168, 0.34), transparent 33%),
+      radial-gradient(circle at 85% 40%, rgba(122, 55, 230, 0.32), transparent 32%),
+      radial-gradient(circle at 40% 86%, rgba(0, 147, 168, 0.3), transparent 30%);
+    filter: blur(72px);
+  }
+
+  :root[data-theme="light"] .hero::after {
+    background:
+      repeating-linear-gradient(102deg, transparent 0 24px, rgba(30, 28, 46, 0.14) 24px 56px),
+      linear-gradient(180deg, rgba(231, 243, 247, 0.12), rgba(231, 243, 247, 0.5) 72%, var(--bg));
+    mix-blend-mode: multiply;
+  }
+
+  @keyframes nd-drift {
+    0% {
+      transform: translate3d(0, 0, 0) skewX(-9deg);
+    }
+
+    100% {
+      transform: translate3d(-3%, 1.5%, 0) skewX(-9deg);
+    }
   }
 
   .hero-grid {
@@ -201,6 +341,15 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     grid-template-columns: minmax(0, 0.92fr) minmax(420px, 1.08fr);
     gap: clamp(34px, 5vw, 72px);
     align-items: center;
+  }
+
+  .hero-center {
+    position: relative;
+    z-index: 2;
+    max-width: 1040px;
+    margin: 0 auto;
+    padding-inline: 28px;
+    text-align: center;
   }
 
   .kicker {
@@ -219,21 +368,28 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   }
 
   h1 {
-    max-width: 11ch;
-    margin: 0;
-    font-size: clamp(3.1rem, 8vw, 6rem);
-    line-height: 0.93;
-    letter-spacing: -0.02em;
+    margin: 0 auto;
+    font-size: clamp(2.6rem, 6.4vw, 5.4rem);
+    line-height: 0.98;
+    letter-spacing: -0.01em;
     text-transform: uppercase;
+    text-shadow: 0 0 38px rgba(255, 79, 184, 0.35);
   }
 
   h1 span {
     color: var(--cyan);
   }
 
+  .hero-gradient {
+    background: linear-gradient(92deg, var(--pink), var(--cyan) 55%, var(--violet));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
   .hero-copy {
     max-width: 62ch;
-    margin: 26px 0 0;
+    margin: 26px auto 0;
     color: var(--muted);
     font-size: clamp(1rem, 1.6vw, 1.15rem);
     line-height: 1.7;
@@ -242,6 +398,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   .hero-actions {
     display: flex;
     flex-wrap: wrap;
+    justify-content: center;
     gap: 14px;
     margin-top: 34px;
   }
@@ -249,18 +406,39 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   .command {
     display: inline-flex;
     align-items: center;
-    gap: 12px;
+    align-items: stretch;
     margin-top: 22px;
+    padding: 0;
     border: 1px solid rgba(105, 230, 255, 0.32);
     background: rgba(7, 8, 16, 0.78);
     color: var(--body);
     font-family: "IBM Plex Mono", monospace;
     font-size: 14px;
-    padding: 13px 16px;
   }
 
   .command span {
     color: var(--pink);
+  }
+
+  .command-code {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    white-space: nowrap;
+  }
+
+  .command button {
+    border: 0;
+    border-left: 1px solid rgba(105, 230, 255, 0.28);
+    background: transparent;
+    color: var(--cyan);
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    padding: 0 16px;
+    text-transform: uppercase;
   }
 
   .section {
@@ -305,7 +483,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
 
   .feature {
     min-height: 210px;
-    background: rgba(14, 15, 19, 0.96);
+    background: var(--card);
     padding: 26px 24px;
   }
 
@@ -462,7 +640,8 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   }
 
   @media (max-width: 900px) {
-    .nav-links {
+    .nav-link,
+    .nav-cta {
       display: none;
     }
 
@@ -473,7 +652,20 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     }
 
     h1 {
-      max-width: 12ch;
+      font-size: clamp(2.3rem, 12vw, 4.3rem);
+    }
+
+    .command {
+      font-size: 11px;
+    }
+
+    .command-code {
+      gap: 9px;
+      padding: 13px 14px;
+    }
+
+    .command button {
+      padding: 0 12px;
     }
 
     .section-header {

@@ -24,24 +24,24 @@ const dashboardConfig = `{
     <SiteNav />
     <main>
       <section class="hero">
-        <div class="container hero-grid">
-          <div>
-            <p class="kicker">OPEN · ALWAYS-ON · BUILT ON FLUE</p>
-            <h1>A deck for a <span>durable agent.</span></h1>
-            <p class="hero-copy">
-              GitHub on the left, an always-on chat harness on the right, a live terminal status line across the top. neondeck is a local companion display for developers who want useful agent context beside the main screen.
-            </p>
-            <div class="command"><span>$</span> gh repo clone pandemicsyn/neondeck</div>
-            <div class="hero-actions">
-              <a class="button" href="https://github.com/pandemicsyn/neondeck">Star on GitHub</a>
-              <a class="button secondary" href="/docs/">Read the docs</a>
-            </div>
+        <div class="hero-center">
+          <p class="kicker">OPEN · ALWAYS-ON · BUILT ON FLUE</p>
+          <h1>A sensor-style deck for a<br /><span class="hero-gradient">durable Flue agent.</span></h1>
+          <p class="hero-copy">
+            GitHub on the left, an always-on chat harness on the right, a live terminal status line across the top. Tuned for the ultrawide Corsair Xeneon Edge, configurable for any display.
+          </p>
+          <div class="command">
+            <span class="command-code"><span>$</span> gh repo clone pandemicsyn/neondeck</span>
+            <button type="button" data-copy-command="gh repo clone pandemicsyn/neondeck">copy</button>
           </div>
-          <DeckMockup />
+          <div class="hero-actions">
+            <a class="button" href="https://github.com/pandemicsyn/neondeck">Star on GitHub</a>
+            <a class="button secondary" href="/docs/">Read the docs</a>
+          </div>
         </div>
       </section>
 
-      <section id="deck" class="section">
+      <section id="panel" class="section">
         <div class="container">
           <div class="section-header">
             <h2>The deck, live.</h2>
