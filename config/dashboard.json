@@ -46,9 +46,9 @@
         "id": "chat",
         "title": "FLUE AGENT · triage.ts",
         "pluginId": "flue-chat",
-        "column": 6,
+        "column": 9,
         "row": 2,
-        "columnSpan": 7,
+        "columnSpan": 4,
         "rowSpan": 5,
         "config": {
           "agentName": "display-assistant",
@@ -57,13 +57,22 @@
               "id": "neondeck-main",
               "label": "Primary",
               "placeholder": "Ask about your active work..."
-            },
-            {
-              "id": "neondeck-side",
-              "label": "Scratch",
-              "placeholder": "Start a second thread..."
             }
           ]
+        }
+      },
+      {
+        "id": "runtime",
+        "title": "RUNTIME",
+        "pluginId": "runtime-overview",
+        "column": 6,
+        "row": 2,
+        "columnSpan": 3,
+        "rowSpan": 5,
+        "config": {
+          "repoLimit": 5,
+          "jobLimit": 5,
+          "skillLimit": 5
         }
       }
     ]

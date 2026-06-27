@@ -44,6 +44,90 @@ export type RepoRegistryResponse = {
   fetchedAt: string;
 };
 
+export type RepoHealth = {
+  id: string;
+  repo: string;
+  path: string;
+  branch: string | null;
+  defaultBranch: string;
+  dirty: boolean;
+  changeCount: number;
+  ahead: number | null;
+  behind: number | null;
+  changes: string[];
+  error?: string;
+};
+
+export type RepoHealthResponse = {
+  home: string;
+  path: string;
+  repos: RepoHealth[];
+  attention: RepoHealth[];
+  count: number;
+  fetchedAt: string;
+};
+
+export type RuntimeHealth = {
+  ok: boolean;
+  service: string;
+  home: string;
+  uptimeSeconds: number;
+};
+
+export type SchedulerJob = {
+  id: string;
+  type: string;
+  blueprint: string | null;
+  enabled: boolean;
+  intervalSeconds: number;
+  config: unknown;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  lastOutcome: string | null;
+  lastMessage: string | null;
+  lastResult: unknown;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SchedulerJobsResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  jobs: SchedulerJob[];
+};
+
+export type RuntimeSkill = {
+  id: string;
+  description: string;
+  path: string;
+  directory: string;
+  root: string;
+  source: string;
+  status: 'active' | 'duplicate';
+};
+
+export type RuntimeSkillRoot = {
+  path: string;
+  source: string;
+};
+
+export type RuntimeSkillIssue = {
+  id?: string;
+  path?: string;
+  paths?: string[];
+  reason?: string;
+};
+
+export type RuntimeSkillsResponse = {
+  roots: RuntimeSkillRoot[];
+  skills: RuntimeSkill[];
+  duplicates: RuntimeSkillIssue[];
+  ignored: RuntimeSkillIssue[];
+  loadedAt: string;
+};
+
 export type NeonCommandResult = {
   ok: boolean;
   command: string;
@@ -137,6 +221,22 @@ export async function getGitHubPullRequests() {
 
 export async function getRepoRegistry() {
   return getJson<RepoRegistryResponse>('/api/repos');
+}
+
+export async function getRepoHealth() {
+  return getJson<RepoHealthResponse>('/api/repos/health');
+}
+
+export async function getRuntimeHealth() {
+  return getJson<RuntimeHealth>('/api/health');
+}
+
+export async function getSchedulerJobs() {
+  return getJson<SchedulerJobsResponse>('/api/jobs');
+}
+
+export async function getRuntimeSkills() {
+  return getJson<RuntimeSkillsResponse>('/api/skills');
 }
 
 export async function getHostMetrics() {

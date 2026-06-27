@@ -206,6 +206,12 @@ button:disabled {
     var(--deck-bg);
 }
 
+.panel-runtime {
+  background:
+    linear-gradient(180deg, rgba(139, 77, 255, 0.045), transparent 38%),
+    var(--deck-bg);
+}
+
 .miami-accent {
   background: linear-gradient(
     90deg,

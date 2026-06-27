@@ -5,7 +5,7 @@ import { Hono } from 'hono';
 import { runNeonCommand, supportedCommands } from './commands';
 import { fetchGitHubLogin, fetchPullRequestQueue } from './github';
 import { readHostMetrics } from './metrics';
-import { readRepoRegistrySnapshot } from './repos';
+import { readRepoHealthSnapshot, readRepoRegistrySnapshot } from './repos';
 import {
   listNotifications,
   listWorkflowSummaries,
@@ -88,6 +88,25 @@ app.get('/api/metrics/host', async (c) => {
 app.get('/api/repos', async (c) => {
   try {
     return c.json(await readRepoRegistrySnapshot(paths));
+  } catch (error) {
+    if (error instanceof ConfigValidationError) {
+      return c.json(
+        {
+          error: 'Invalid repo registry',
+          message: error.message,
+          path: error.path,
+        },
+        500,
+      );
+    }
+
+    throw error;
+  }
+});
+
+app.get('/api/repos/health', async (c) => {
+  try {
+    return c.json(await readRepoHealthSnapshot(paths));
   } catch (error) {
     if (error instanceof ConfigValidationError) {
       return c.json(

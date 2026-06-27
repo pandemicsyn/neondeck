@@ -1,6 +1,4 @@
 import { defineAction, type JsonValue } from '@flue/runtime';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import * as v from 'valibot';
 import {
   addWorkflowSummary,
@@ -13,15 +11,17 @@ import {
   fetchGitHubLogin,
   fetchPullRequestQueue,
 } from './github';
-import { readRepoRegistrySnapshot, repoFullName } from './repos';
+import {
+  readGitRepoStatus,
+  readRepoRegistrySnapshot,
+  repoFullName,
+} from './repos';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
   runtimePaths,
 } from './runtime-home';
 import { listPrWatchRecords, addPrWatch } from './watch-actions';
-
-const execFileAsync = promisify(execFile);
 
 export type NeonCommandName =
   'repo-status' | 'review-queue' | 'briefing' | 'watch-pr';
@@ -230,7 +230,7 @@ async function repoStatusCommand(
     );
   }
 
-  const statuses = await Promise.all(repos.map(readGitStatus));
+  const statuses = await Promise.all(repos.map(readGitRepoStatus));
   return completedCommand(
     command.name,
     command.raw,
@@ -415,67 +415,6 @@ async function readReviewQueue(
       errors: [errorMessage(error)],
     };
   }
-}
-
-async function readGitStatus(repo: {
-  id: string;
-  path: string;
-  github: { owner: string; name: string };
-  defaultBranch: string;
-}) {
-  try {
-    const [branch, status, upstream] = await Promise.all([
-      git(repo.path, ['rev-parse', '--abbrev-ref', 'HEAD']),
-      git(repo.path, ['status', '--porcelain=v1', '--untracked-files=all']),
-      git(repo.path, [
-        'rev-list',
-        '--left-right',
-        '--count',
-        '@{upstream}...HEAD',
-      ])
-        .then((output) => {
-          const [behind, ahead] = output.trim().split(/\s+/).map(Number);
-          return { ahead: ahead || 0, behind: behind || 0 };
-        })
-        .catch(() => ({ ahead: null, behind: null })),
-    ]);
-    const changes = status
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
-
-    return {
-      id: repo.id,
-      repo: `${repo.github.owner}/${repo.github.name}`,
-      path: repo.path,
-      branch: branch.trim(),
-      defaultBranch: repo.defaultBranch,
-      dirty: changes.length > 0,
-      changeCount: changes.length,
-      ahead: upstream.ahead,
-      behind: upstream.behind,
-      changes: changes.slice(0, 20),
-    };
-  } catch (error) {
-    return {
-      id: repo.id,
-      repo: `${repo.github.owner}/${repo.github.name}`,
-      path: repo.path,
-      branch: null,
-      defaultBranch: repo.defaultBranch,
-      dirty: false,
-      changeCount: 0,
-      ahead: null,
-      behind: null,
-      changes: [],
-      error: errorMessage(error),
-    };
-  }
-}
-
-async function git(cwd: string, args: string[]) {
-  const { stdout } = await execFileAsync('git', args, { cwd });
-  return stdout;
 }
 
 function completedCommand(
