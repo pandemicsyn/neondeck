@@ -39,6 +39,6 @@ Use this format:
 ## 2026-06-27 - Schedules, Watches, And Blueprint-Style Automations
 
 - Roadmap item: Phase 4 / schedules, watches, and blueprint-style automations
-- Decision: Landed persistent PR watch storage and deterministic `neondeck_watch_pr_*` actions for add/list/remove/refresh with supported PR reference parsing and quiet `silent` refresh results. Deferred in-process scheduling, production/deploy status watching, and full GitHub Actions/check-run state handling.
-- Reason: The first Phase 4 slice establishes durable watch state and deterministic refresh semantics before adding recurring scheduler execution or broader deployment-specific integrations.
-- Follow-up: Add a local scheduler loop, watch refresh cadence, GitHub check-run/deploy enrichment, schedule blueprints, and dashboard/watch notification surfaces.
+- Decision: Landed durable app tables for watches, jobs, notifications, memories, and workflow summaries; deterministic `neondeck_watch_pr_*` actions; GitHub check-run status enrichment for merged PR watches; blueprint-backed schedule creation; a local scheduler loop; active watch/job/notification APIs; and quiet `silent` refresh results for unchanged watches. Production/deploy status watching remains a provider-specific follow-up, and morning briefing jobs currently record durable scheduler/workflow state rather than running the full briefing workflow.
+- Reason: Phase 4 needs the local scheduler and deterministic watch substrate first. Deploy status adapters depend on configured deployment providers, and the full briefing workflow belongs with the workflow/dashboard phases that consume this scheduler state.
+- Follow-up: Add deploy-provider status adapters when repo deploy targets are formalized, and wire morning briefing jobs to a full Flue workflow during the briefing/workflow dashboard phase.

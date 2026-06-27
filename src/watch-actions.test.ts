@@ -10,7 +10,7 @@ import {
   removePrWatch,
 } from './watch-actions';
 import { runtimePaths } from './runtime-home';
-import type { GitHubPullRequestDetail } from './github';
+import type { GitHubCheckSummary, GitHubPullRequestDetail } from './github';
 
 const tempRoots: string[] = [];
 
@@ -156,21 +156,64 @@ describe('PR watch actions', () => {
     );
 
     await expect(
-      refreshPrWatch({ id: 'pandemicsyn/neondeck#123' }, paths, async () =>
-        prDetail({
-          state: 'closed',
-          merged: true,
-          mergeCommitSha: 'abc123',
-          updatedAt: '2026-06-27T20:05:00Z',
-        }),
+      refreshPrWatch(
+        { id: 'pandemicsyn/neondeck#123' },
+        paths,
+        async () =>
+          prDetail({
+            state: 'closed',
+            merged: true,
+            mergeCommitSha: 'abc123',
+            updatedAt: '2026-06-27T20:05:00Z',
+          }),
+        async () => checkSummary('success'),
       ),
     ).resolves.toMatchObject({
       ok: true,
       changed: true,
       outcome: 'updated',
       watch: {
-        status: 'merged',
+        status: 'green',
         mergeCommitSha: 'abc123',
+        lastSnapshot: {
+          checks: { status: 'success' },
+        },
+      },
+    });
+  });
+
+  it('marks merged PR watches attention-needed when checks fail', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () =>
+      prDetail({ state: 'open', updatedAt: '2026-06-27T20:00:00Z' }),
+    );
+
+    await expect(
+      refreshPrWatch(
+        { id: 'pandemicsyn/neondeck#123' },
+        paths,
+        async () =>
+          prDetail({
+            state: 'closed',
+            merged: true,
+            mergeCommitSha: 'abc123',
+            updatedAt: '2026-06-27T20:05:00Z',
+          }),
+        async () => checkSummary('failure'),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'updated',
+      watch: {
+        status: 'attention-needed',
+        mergeCommitSha: 'abc123',
+        lastSnapshot: {
+          checks: { status: 'failure' },
+        },
       },
     });
   });
@@ -213,5 +256,18 @@ function prDetail(
     baseRef: 'main',
     updatedAt: '2026-06-27T20:00:00Z',
     ...overrides,
+  };
+}
+
+function checkSummary(
+  status: GitHubCheckSummary['status'],
+): GitHubCheckSummary {
+  return {
+    status,
+    total: 1,
+    successful: status === 'success' ? 1 : 0,
+    failed: status === 'failure' ? 1 : 0,
+    pending: status === 'pending' ? 1 : 0,
+    checkedAt: '2026-06-27T20:05:30Z',
   };
 }

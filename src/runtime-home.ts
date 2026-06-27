@@ -296,13 +296,61 @@ function initializeAppDatabase(path: string) {
         updated_at TEXT NOT NULL,
         UNIQUE(repo_full_name, pr_number)
       );
+
+      CREATE TABLE IF NOT EXISTS jobs (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        blueprint TEXT,
+        enabled INTEGER NOT NULL,
+        interval_seconds INTEGER NOT NULL,
+        config_json TEXT,
+        next_run_at TEXT,
+        last_run_at TEXT,
+        last_outcome TEXT,
+        last_message TEXT,
+        last_result_json TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS notifications (
+        id TEXT PRIMARY KEY,
+        level TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        source TEXT,
+        source_id TEXT,
+        data_json TEXT,
+        read_at TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS memories (
+        id TEXT PRIMARY KEY,
+        scope TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(scope, key)
+      );
+
+      CREATE TABLE IF NOT EXISTS workflow_summaries (
+        id TEXT PRIMARY KEY,
+        workflow TEXT NOT NULL,
+        run_id TEXT,
+        status TEXT NOT NULL,
+        summary_json TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `);
 
     database
       .prepare(
         `
         INSERT INTO app_metadata (key, value, updated_at)
-        VALUES ('schema_version', '3', datetime('now'))
+        VALUES ('schema_version', '4', datetime('now'))
         ON CONFLICT(key) DO UPDATE SET
           value = excluded.value,
           updated_at = excluded.updated_at;
@@ -403,6 +451,8 @@ Home resolution order is \`NEONDECK_HOME\`, then \`XDG_CONFIG_HOME/neondeck\`, t
 Use typed neondeck config actions for mutations whenever they are available. Do not directly edit config files as the primary path. Read, validate, add, update, remove, and reload through deterministic actions so UI buttons and chat commands share the same backend behavior.
 
 Use typed watch actions for PR watches. Add, list, remove, and refresh PR watches through \`neondeck_watch_pr_*\` actions. Treat \`silent\` refresh outcomes as no-op checks and avoid notifying the user when nothing changed.
+
+Use scheduler actions for recurring work. Create common automations through \`neondeck_schedule_blueprint_create\`, inspect durable jobs with \`neondeck_scheduler_list_jobs\`, and trigger due work with \`neondeck_scheduler_tick\`.
 
 Ask for confirmation before destructive changes, removing configured repositories, deleting schedules, disabling watches, or replacing user-authored skills. After any accepted change, summarize exactly which file or runtime object changed and what the new value is.
 `;

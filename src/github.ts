@@ -35,6 +35,15 @@ export type GitHubPullRequestDetail = {
   updatedAt: string;
 };
 
+export type GitHubCheckSummary = {
+  status: 'success' | 'failure' | 'pending' | 'none';
+  total: number;
+  successful: number;
+  failed: number;
+  pending: number;
+  checkedAt: string;
+};
+
 export async function fetchGitHubLogin(token: string) {
   const response = await githubFetch(token, 'https://api.github.com/user');
   const data = (await response.json()) as { login?: string };
@@ -108,6 +117,48 @@ export async function fetchPullRequestDetail(options: {
   };
 }
 
+export async function fetchCheckSummary(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  ref: string;
+}): Promise<GitHubCheckSummary> {
+  const response = await githubFetch(
+    options.token,
+    `https://api.github.com/repos/${options.owner}/${options.repo}/commits/${options.ref}/check-runs?per_page=100`,
+  );
+  const data = (await response.json()) as GitHubCheckRunsApiResponse;
+  const runs = data.check_runs ?? [];
+  const failed = runs.filter((run) =>
+    [
+      'failure',
+      'cancelled',
+      'timed_out',
+      'action_required',
+      'startup_failure',
+    ].includes(run.conclusion ?? ''),
+  ).length;
+  const pending = runs.filter((run) => run.status !== 'completed').length;
+  const successful = runs.filter((run) => run.conclusion === 'success').length;
+  const status =
+    runs.length === 0
+      ? 'none'
+      : failed > 0
+        ? 'failure'
+        : pending > 0
+          ? 'pending'
+          : 'success';
+
+  return {
+    status,
+    total: runs.length,
+    successful,
+    failed,
+    pending,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
 async function searchPullRequests(token: string, query: string) {
   const params = new URLSearchParams({
     q: query,
@@ -164,6 +215,13 @@ type GitHubPullRequestApiResponse = {
   updated_at: string;
   head: { sha: string };
   base: { ref: string };
+};
+
+type GitHubCheckRunsApiResponse = {
+  check_runs?: Array<{
+    status: string;
+    conclusion: string | null;
+  }>;
 };
 
 function normalizePullRequest(item: GitHubSearchIssue): GitHubPullRequest {

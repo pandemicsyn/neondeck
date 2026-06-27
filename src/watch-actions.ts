@@ -1,7 +1,12 @@
 import { defineAction, type JsonValue } from '@flue/runtime';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
-import { type GitHubPullRequestDetail, fetchPullRequestDetail } from './github';
+import {
+  type GitHubCheckSummary,
+  type GitHubPullRequestDetail,
+  fetchCheckSummary,
+  fetchPullRequestDetail,
+} from './github';
 import {
   type RepoRegistrySnapshot,
   readRepoRegistrySnapshot,
@@ -13,13 +18,13 @@ import {
   runtimePaths,
 } from './runtime-home';
 
-type PrWatchStatus =
+export type PrWatchStatus =
   'watching' | 'merged' | 'closed' | 'green' | 'attention-needed' | 'unknown';
 
-type DesiredTerminalState = 'checks' | 'merged' | 'prod';
+export type DesiredTerminalState = 'checks' | 'merged' | 'prod';
 type WatchOutcome = 'created' | 'updated' | 'removed' | 'silent';
 
-type WatchActionResult = {
+export type WatchActionResult = {
   ok: boolean;
   action: string;
   changed: boolean;
@@ -31,7 +36,7 @@ type WatchActionResult = {
   errors?: string[];
 };
 
-type PrWatch = {
+export type PrWatch = {
   id: string;
   repoId: string;
   repoFullName: string;
@@ -55,6 +60,7 @@ type PrWatchSnapshot = {
   state: string;
   merged: boolean;
   mergeCommitSha: string | null;
+  checks: GitHubCheckSummary | null;
   title: string;
   url: string;
   updatedAt: string;
@@ -75,6 +81,10 @@ type ResolvedPrReference = {
 type WatchFetcher = (
   watch: ResolvedPrReference,
 ) => Promise<GitHubPullRequestDetail>;
+type CheckFetcher = (
+  watch: ResolvedPrReference,
+  ref: string,
+) => Promise<GitHubCheckSummary>;
 
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 const desiredTerminalStateSchema = v.optional(
@@ -146,6 +156,7 @@ export async function addPrWatch(
   input: v.InferInput<typeof watchPrAddInputSchema>,
   paths = runtimePaths(),
   fetcher: WatchFetcher = defaultWatchFetcher,
+  checkFetcher: CheckFetcher = defaultCheckFetcher,
 ): Promise<WatchActionResult> {
   await ensureRuntimeHome(paths);
   const parsed = parseActionInput(watchPrAddInputSchema, input, 'watch_pr_add');
@@ -172,7 +183,11 @@ export async function addPrWatch(
   if (!detail.ok) return detail.result;
 
   const now = new Date().toISOString();
-  const snapshot = snapshotFromDetail(detail.detail);
+  const snapshot = await snapshotFromDetail(
+    detail.detail,
+    resolved.reference,
+    checkFetcher,
+  );
   const watch: PrWatch = {
     id: resolved.reference.id,
     repoId: resolved.reference.repoId,
@@ -207,6 +222,11 @@ export async function listPrWatches(
   return okResult('watch_pr_list', false, undefined, 'Listed PR watches.', {
     watches: readWatches(paths),
   });
+}
+
+export async function listPrWatchRecords(paths = runtimePaths()) {
+  await ensureRuntimeHome(paths);
+  return readWatches(paths);
 }
 
 export async function removePrWatch(
@@ -257,6 +277,7 @@ export async function refreshPrWatch(
   input: v.InferInput<typeof watchPrRefreshInputSchema>,
   paths = runtimePaths(),
   fetcher: WatchFetcher = defaultWatchFetcher,
+  checkFetcher: CheckFetcher = defaultCheckFetcher,
 ): Promise<WatchActionResult> {
   await ensureRuntimeHome(paths);
   const parsed = parseActionInput(
@@ -293,7 +314,11 @@ export async function refreshPrWatch(
   const detail = await fetchWatchDetail('watch_pr_refresh', reference, fetcher);
   if (!detail.ok) return detail.result;
 
-  const snapshot = snapshotFromDetail(detail.detail);
+  const snapshot = await snapshotFromDetail(
+    detail.detail,
+    reference,
+    checkFetcher,
+  );
   const nextStatus = statusFromSnapshot(snapshot);
   const changed =
     JSON.stringify(watch.lastSnapshot) !== JSON.stringify(snapshot) ||
@@ -526,6 +551,23 @@ async function defaultWatchFetcher(reference: ResolvedPrReference) {
   });
 }
 
+async function defaultCheckFetcher(
+  reference: ResolvedPrReference,
+  ref: string,
+) {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    throw new Error('GITHUB_TOKEN is not configured');
+  }
+
+  return fetchCheckSummary({
+    token,
+    owner: reference.githubOwner,
+    repo: reference.githubName,
+    ref,
+  });
+}
+
 async function fetchWatchDetail(
   action: string,
   reference: ResolvedPrReference,
@@ -551,11 +593,21 @@ function watchFetchFailure(action: string, error: unknown) {
   };
 }
 
-function snapshotFromDetail(detail: GitHubPullRequestDetail): PrWatchSnapshot {
+async function snapshotFromDetail(
+  detail: GitHubPullRequestDetail,
+  reference: ResolvedPrReference,
+  checkFetcher: CheckFetcher,
+): Promise<PrWatchSnapshot> {
+  const checkRef = detail.merged ? detail.mergeCommitSha : null;
+  const checks = checkRef
+    ? await checkFetcher(reference, checkRef).catch(() => null)
+    : null;
+
   return {
     state: detail.state,
     merged: detail.merged,
     mergeCommitSha: detail.mergeCommitSha,
+    checks,
     title: detail.title,
     url: detail.url,
     updatedAt: detail.updatedAt,
@@ -565,6 +617,8 @@ function snapshotFromDetail(detail: GitHubPullRequestDetail): PrWatchSnapshot {
 }
 
 function statusFromSnapshot(snapshot: PrWatchSnapshot): PrWatchStatus {
+  if (snapshot.checks?.status === 'success') return 'green';
+  if (snapshot.checks?.status === 'failure') return 'attention-needed';
   if (snapshot.state === 'closed' && snapshot.merged) return 'merged';
   if (snapshot.state === 'closed') return 'closed';
   if (snapshot.state === 'open') return 'watching';

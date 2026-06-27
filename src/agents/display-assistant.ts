@@ -1,5 +1,6 @@
 import { defineAgent, type AgentRouteHandler } from '@flue/runtime';
 import { neondeckConfigActions } from '../config-actions';
+import { neondeckSchedulerActions } from '../scheduler';
 import { soulInstructions } from '../soul';
 import { neondeckWatchActions } from '../watch-actions';
 
@@ -16,5 +17,9 @@ export default defineAgent(() => ({
     'For Neondeck configuration changes, use the provided neondeck_config_* actions. Do not directly edit runtime config files in conversation.',
     'For PR watches, use the provided neondeck_watch_pr_* actions. Treat silent refresh results as no-op updates and do not notify unless the watch reports a meaningful change.',
   ].join('\n\n'),
-  actions: [...neondeckConfigActions, ...neondeckWatchActions],
+  actions: [
+    ...neondeckConfigActions,
+    ...neondeckWatchActions,
+    ...neondeckSchedulerActions,
+  ],
 }));

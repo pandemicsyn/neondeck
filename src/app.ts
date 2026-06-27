@@ -5,6 +5,12 @@ import { Hono } from 'hono';
 import { fetchGitHubLogin, fetchPullRequestQueue } from './github';
 import { readHostMetrics } from './metrics';
 import { readRepoRegistrySnapshot } from './repos';
+import { listNotifications, markNotificationRead } from './app-state';
+import {
+  listSchedulerJobs,
+  runSchedulerTick,
+  startSchedulerLoop,
+} from './scheduler';
 import {
   ConfigValidationError,
   ensureRuntimeHome,
@@ -12,6 +18,7 @@ import {
   readRuntimeJson,
   runtimePaths,
 } from './runtime-home';
+import { listPrWatches } from './watch-actions';
 
 const kiloApiKey = process.env.KILOCODE_API_KEY ?? process.env.KILO_API_KEY;
 const kiloOrganizationId =
@@ -32,6 +39,9 @@ const staticRoot = './web/dist';
 const paths = runtimePaths();
 
 await ensureRuntimeHome(paths);
+if (process.env.NEONDECK_DISABLE_SCHEDULER !== '1') {
+  startSchedulerLoop(paths);
+}
 
 app.get('/api/health', (c) =>
   c.json({
@@ -82,6 +92,30 @@ app.get('/api/repos', async (c) => {
 
     throw error;
   }
+});
+
+app.get('/api/watches', async (c) => {
+  return c.json(await listPrWatches(paths));
+});
+
+app.get('/api/jobs', async (c) => {
+  return c.json(await listSchedulerJobs(paths));
+});
+
+app.post('/api/scheduler/tick', async (c) => {
+  return c.json(await runSchedulerTick(paths));
+});
+
+app.get('/api/notifications', async (c) => {
+  return c.json({
+    items: await listNotifications(paths),
+    fetchedAt: new Date().toISOString(),
+  });
+});
+
+app.post('/api/notifications/:id/read', async (c) => {
+  await markNotificationRead(c.req.param('id'), paths);
+  return c.json({ ok: true });
 });
 
 app.get('/api/github/prs', async (c) => {
