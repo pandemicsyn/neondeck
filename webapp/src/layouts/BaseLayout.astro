@@ -33,6 +33,14 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     <title>{title}</title>
   </head>
   <body>
+    <svg class="svg-defs" width="0" height="0" aria-hidden="true" focusable="false">
+      <defs>
+        <filter id="ndCamoWarp">
+          <feTurbulence type="fractalNoise" baseFrequency="0.011 0.018" numOctaves="3" seed="7" result="n"></feTurbulence>
+          <feDisplacementMap in="SourceGraphic" in2="n" scale="64" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+        </filter>
+      </defs>
+    </svg>
     <slot />
     <script is:inline>
       const root = document.documentElement;
@@ -146,6 +154,11 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
 
   .site-shell {
     overflow: hidden;
+  }
+
+  .svg-defs {
+    position: absolute;
+    pointer-events: none;
   }
 
   .container {
@@ -267,71 +280,157 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     border-bottom: 1px solid var(--line);
   }
 
-  .hero::before {
-    content: "";
+  .hero-bg {
     position: absolute;
-    inset: -12%;
-    background:
-      radial-gradient(circle at 18% 34%, rgba(255, 79, 184, 0.55), transparent 30%),
-      radial-gradient(circle at 48% 25%, rgba(0, 183, 199, 0.5), transparent 33%),
-      radial-gradient(circle at 85% 40%, rgba(139, 77, 255, 0.5), transparent 32%),
-      radial-gradient(circle at 40% 86%, rgba(105, 230, 255, 0.36), transparent 30%);
-    filter: blur(60px);
-    opacity: 0.9;
+    inset: 0;
+    overflow: hidden;
     pointer-events: none;
   }
 
-  .hero::after {
-    content: "";
+  .hero-wash {
     position: absolute;
-    inset: -18%;
-    background:
-      repeating-linear-gradient(102deg, transparent 0 24px, rgba(10, 12, 16, 0.92) 24px 56px),
-      linear-gradient(180deg, rgba(14, 15, 19, 0.12), rgba(14, 15, 19, 0.58) 70%, var(--bg));
+    background: radial-gradient(circle at 50% 50%, var(--wash-color), transparent 62%);
+    filter: blur(70px);
+  }
+
+  .hero-wash.pink {
+    --wash-color: rgba(255, 79, 184, 0.55);
+    top: -25%;
+    left: -12%;
+    width: 60%;
+    height: 130%;
+  }
+
+  .hero-wash.teal {
+    --wash-color: rgba(0, 183, 199, 0.5);
+    top: -30%;
+    left: 28%;
+    width: 55%;
+    height: 140%;
+  }
+
+  .hero-wash.violet {
+    --wash-color: rgba(139, 77, 255, 0.5);
+    top: -10%;
+    right: -12%;
+    width: 55%;
+    height: 130%;
+  }
+
+  .hero-wash.cyan {
+    --wash-color: rgba(105, 230, 255, 0.4);
+    bottom: -40%;
+    left: 18%;
+    width: 60%;
+    height: 120%;
+  }
+
+  .hero-stripes {
+    position: absolute;
+    inset: -12%;
+    background: repeating-linear-gradient(102deg, transparent 0 24px, rgba(10, 12, 16, 0.92) 24px 56px);
+    filter: url("#ndCamoWarp");
     mix-blend-mode: multiply;
     opacity: 0.78;
-    transform: skewX(-9deg);
     animation: nd-drift 26s ease-in-out infinite alternate;
-    pointer-events: none;
+  }
+
+  .hero-vignette {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(14, 15, 19, 0.2), rgba(14, 15, 19, 0.55) 70%, var(--bg));
   }
 
   :root[data-look="deck"] .hero {
     background: #0b0c10;
   }
 
-  :root[data-look="deck"] .hero::before {
-    left: 34%;
-    background: radial-gradient(circle at 72% 36%, rgba(0, 183, 199, 0.45), transparent 44%);
+  :root[data-look="deck"] .hero-bg {
+    left: 58%;
+    opacity: 0.72;
   }
 
-  :root[data-look="deck"] .hero::after {
-    left: 45%;
-    opacity: 0.74;
+  :root[data-look="deck"] .hero-wash {
+    display: none;
   }
 
-  :root[data-theme="light"] .hero::before {
-    background:
-      radial-gradient(circle at 18% 34%, rgba(255, 79, 184, 0.4), transparent 30%),
-      radial-gradient(circle at 48% 25%, rgba(0, 147, 168, 0.34), transparent 33%),
-      radial-gradient(circle at 85% 40%, rgba(122, 55, 230, 0.32), transparent 32%),
-      radial-gradient(circle at 40% 86%, rgba(0, 147, 168, 0.3), transparent 30%);
+  :root[data-look="deck"] .hero-wash.teal {
+    --wash-color: rgba(0, 183, 199, 0.45);
+    display: block;
+    top: -20%;
+    left: auto;
+    right: -10%;
+    width: 90%;
+    height: 140%;
+    background: radial-gradient(circle at 60% 40%, var(--wash-color), transparent 64%);
+  }
+
+  :root[data-look="deck"] .hero-stripes {
+    inset: -14%;
+    background: repeating-linear-gradient(98deg, transparent 0 26px, rgba(6, 8, 11, 0.95) 26px 60px);
+    animation: none;
+    opacity: 0.85;
+  }
+
+  :root[data-look="deck"] .hero-vignette {
+    background: linear-gradient(90deg, #0b0c10 0 28%, rgba(11, 12, 16, 0.62) 62%, rgba(11, 12, 16, 0.1));
+  }
+
+  :root[data-theme="light"] .hero-wash {
     filter: blur(72px);
   }
 
-  :root[data-theme="light"] .hero::after {
-    background:
-      repeating-linear-gradient(102deg, transparent 0 24px, rgba(30, 28, 46, 0.14) 24px 56px),
-      linear-gradient(180deg, rgba(231, 243, 247, 0.12), rgba(231, 243, 247, 0.5) 72%, var(--bg));
-    mix-blend-mode: multiply;
+  :root[data-theme="light"] .hero-wash.pink {
+    --wash-color: rgba(255, 79, 184, 0.4);
+  }
+
+  :root[data-theme="light"] .hero-wash.teal {
+    --wash-color: rgba(0, 183, 199, 0.34);
+  }
+
+  :root[data-theme="light"] .hero-wash.violet {
+    --wash-color: rgba(139, 77, 255, 0.32);
+  }
+
+  :root[data-theme="light"] .hero-wash.cyan {
+    --wash-color: rgba(0, 183, 199, 0.3);
+  }
+
+  :root[data-theme="light"] .hero-stripes {
+    background: repeating-linear-gradient(102deg, transparent 0 24px, rgba(30, 28, 46, 0.14) 24px 56px);
+    opacity: 0.8;
+  }
+
+  :root[data-theme="light"] .hero-vignette {
+    background: linear-gradient(180deg, rgba(231, 243, 247, 0.12), rgba(231, 243, 247, 0.5) 72%, var(--bg));
+  }
+
+  :root[data-look="deck"][data-theme="light"] .hero-bg {
+    left: 0;
+    opacity: 0.74;
+  }
+
+  :root[data-look="deck"][data-theme="light"] .hero-wash {
+    display: block;
+  }
+
+  :root[data-look="deck"][data-theme="light"] .hero-vignette {
+    background: linear-gradient(180deg, rgba(231, 243, 247, 0.12), rgba(231, 243, 247, 0.5) 72%, var(--bg));
   }
 
   @keyframes nd-drift {
     0% {
-      transform: translate3d(0, 0, 0) skewX(-9deg);
+      transform: translate3d(0, 0, 0);
     }
 
     100% {
-      transform: translate3d(-3%, 1.5%, 0) skewX(-9deg);
+      transform: translate3d(-3%, 1.5%, 0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero-stripes {
+      animation: none;
     }
   }
 
