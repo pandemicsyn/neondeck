@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { listWorkflowSummaries } from './app-state';
 import { parseNeonCommand, runNeonCommand } from './commands';
+import { listRepoStatus, runDevDoctor } from './dev-doctor';
 import { runtimePaths } from './runtime-home';
 
 const execFileAsync = promisify(execFile);
@@ -28,6 +29,13 @@ describe('Neon commands', () => {
       command: {
         name: 'repo-status',
         args: ['main repo'],
+      },
+    });
+    expect(parseNeonCommand('/dev-doctor')).toMatchObject({
+      ok: true,
+      command: {
+        name: 'dev-doctor',
+        args: [],
       },
     });
     expect(parseNeonCommand('repo-status')).toMatchObject({
@@ -137,6 +145,83 @@ describe('Neon commands', () => {
       workflowSummary: {
         workflow: 'command:briefing',
       },
+    });
+  });
+
+  it('runs dev-doctor and stores structured local diagnostics', async () => {
+    const home = await tempDir('neondeck-home-');
+    const repoPath = await tempGitRepo();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos, repoPath);
+
+    await expect(
+      runNeonCommand({ command: '/dev-doctor' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      command: 'dev-doctor',
+      status: 'completed',
+      data: {
+        action: 'dev_doctor_run',
+        summary: {
+          repos: 1,
+        },
+        checks: expect.arrayContaining([
+          expect.objectContaining({ id: 'repos' }),
+          expect.objectContaining({ id: 'package-scripts' }),
+          expect.objectContaining({ id: 'node-version' }),
+          expect.objectContaining({ id: 'env' }),
+          expect.objectContaining({ id: 'ports' }),
+          expect.objectContaining({ id: 'server' }),
+          expect.objectContaining({ id: 'databases' }),
+        ]),
+      },
+      workflowSummary: {
+        workflow: 'command:dev-doctor',
+        status: 'completed',
+      },
+    });
+  });
+
+  it('reports missing runtime databases before bootstrap repair', async () => {
+    const home = await tempDir('neondeck-home-');
+    const repoPath = await tempGitRepo();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos, repoPath);
+
+    await expect(runDevDoctor(paths)).resolves.toMatchObject({
+      changed: false,
+      checks: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'databases',
+          status: 'attention',
+          data: {
+            databases: expect.arrayContaining([
+              expect.objectContaining({ id: 'neondeck', exists: false }),
+              expect.objectContaining({ id: 'flue', exists: false }),
+            ]),
+          },
+        }),
+      ]),
+    });
+  });
+
+  it('lists repo status through a direct deterministic action', async () => {
+    const home = await tempDir('neondeck-home-');
+    const repoPath = await tempGitRepo();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos, repoPath);
+
+    await expect(listRepoStatus(paths)).resolves.toMatchObject({
+      ok: true,
+      action: 'repo_status_list',
+      changed: false,
+      repos: [
+        expect.objectContaining({
+          id: 'neondeck',
+          dirty: false,
+          changeCount: 0,
+        }),
+      ],
     });
   });
 

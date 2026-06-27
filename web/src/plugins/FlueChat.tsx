@@ -35,6 +35,7 @@ export const FlueChatPlugin = {
     quickCommands: [
       { label: 'Repo', command: '/repo-status' },
       { label: 'Queue', command: '/review-queue' },
+      { label: 'Doctor', command: '/dev-doctor' },
       { label: 'Briefing', command: '/briefing' },
     ],
   },

@@ -11,6 +11,7 @@ import {
   fetchGitHubLogin,
   fetchPullRequestQueue,
 } from './github';
+import { runDevDoctor } from './dev-doctor';
 import {
   readGitRepoStatus,
   readRepoRegistrySnapshot,
@@ -24,7 +25,7 @@ import {
 import { listPrWatchRecords, addPrWatch } from './watch-actions';
 
 export type NeonCommandName =
-  'repo-status' | 'review-queue' | 'briefing' | 'watch-pr';
+  'repo-status' | 'review-queue' | 'briefing' | 'watch-pr' | 'dev-doctor';
 
 export type ParsedNeonCommand = {
   name: NeonCommandName;
@@ -101,6 +102,12 @@ export function supportedCommands() {
       name: 'watch-pr',
       usage: '/watch-pr <repo#number|owner/repo#number|url>',
       description: 'Create a persistent PR watch.',
+    },
+    {
+      name: 'dev-doctor',
+      usage: '/dev-doctor',
+      description:
+        'Inspect local repo, package, env, port, server, and database health.',
     },
   ];
 }
@@ -204,7 +211,11 @@ async function executeCommand(
     return briefingCommand(command, paths, dependencies);
   }
 
-  return watchPrCommand(command, paths);
+  if (command.name === 'watch-pr') {
+    return watchPrCommand(command, paths);
+  }
+
+  return devDoctorCommand(command, paths);
 }
 
 async function repoStatusCommand(
@@ -378,6 +389,15 @@ async function watchPrCommand(
   });
 }
 
+async function devDoctorCommand(
+  command: ParsedNeonCommand,
+  paths: RuntimePaths,
+): Promise<NeonCommandResult> {
+  const doctor = await runDevDoctor(paths);
+
+  return completedCommand(command.name, command.raw, doctor.message, doctor);
+}
+
 async function readReviewQueue(
   paths: RuntimePaths,
   dependencies: CommandDependencies,
@@ -481,9 +501,13 @@ function splitCommand(input: string) {
 }
 
 function isCommandName(value: string): value is NeonCommandName {
-  return ['repo-status', 'review-queue', 'briefing', 'watch-pr'].includes(
-    value,
-  );
+  return [
+    'repo-status',
+    'review-queue',
+    'briefing',
+    'watch-pr',
+    'dev-doctor',
+  ].includes(value);
 }
 
 function errorMessage(error: unknown) {

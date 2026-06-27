@@ -491,7 +491,9 @@ Use scheduler actions for recurring work. Create common automations through \`ne
 
 Use runtime skill actions for skill inspection. List skills with \`neondeck_skills_list\`, load full skill content with \`neondeck_skill_load\`, and rescan skill roots with \`neondeck_skills_reload\`. If duplicate skill ids are reported, treat those skills as disabled until the duplicate folders are resolved.
 
-Use command actions for slash commands. Run \`/repo-status\`, \`/review-queue\`, \`/briefing\`, and \`/watch-pr\` through \`neondeck_command_run\` so command results are persisted as workflow summaries and UI buttons use the same backend path.
+Use local dev doctor actions for diagnostics. Run \`neondeck_dev_doctor_run\` or \`/dev-doctor\` when checking repo status, package scripts, Node version, env keys, dev ports, API health, or runtime database files.
+
+Use command actions for slash commands. Run \`/repo-status\`, \`/review-queue\`, \`/briefing\`, \`/watch-pr\`, and \`/dev-doctor\` through \`neondeck_command_run\` so command results are persisted as workflow summaries and UI buttons use the same backend path.
 
 Ask for confirmation before destructive changes, removing configured repositories, deleting schedules, disabling watches, or replacing user-authored skills. After any accepted change, summarize exactly which file or runtime object changed and what the new value is.
 `;

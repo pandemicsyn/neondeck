@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- feat(dev): add local dev doctor command and diagnostics action
 - feat(dashboard): add runtime overview panel for home, repos, jobs, and skills
 - feat(watches): add automatic PR watch polling and an active watches panel
 - feat(commands): add Neon slash command workflows and dashboard buttons
