@@ -1,0 +1,47 @@
+# neondeck
+
+Local companion-display dashboard and Flue agent server for the Corsair Xeneon Edge.
+
+neondeck is a local-first Node 26 app with a Hono/Flue backend and a Vite/React/Tailwind dashboard optimized for a 2560 x 720 display. It provides a compact GitHub PR queue, persistent Flue chat sessions, and a terminal-style host status line.
+
+## Requirements
+
+- Node 26.4.0, managed with `fnm`
+- A Kilo API key for the default Flue provider
+- A GitHub token for the PR panel
+
+```sh
+fnm install 26.4.0
+fnm use 26.4.0
+npm install
+```
+
+## Configure
+
+Copy `.env.example` to `.env` and fill in the local secrets:
+
+```sh
+KILOCODE_API_KEY=...
+KILOCODE_ORGANIZATION_ID=...
+FLUE_AGENT_MODEL=kilocode/kilo/auto
+GITHUB_TOKEN=...
+GITHUB_LOGIN=...
+```
+
+The dashboard layout lives in `config/dashboard.json`. Agent personality is configured in `SOUL.md`.
+
+## Run
+
+```sh
+npm run dev
+```
+
+Open `http://127.0.0.1:5173/`.
+
+## Build
+
+```sh
+npm run typecheck
+npm run build
+npm start
+```

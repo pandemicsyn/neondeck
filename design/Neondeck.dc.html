@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;padding:0;background:#0e0f13;}
+  *{box-sizing:border-box;}
+  ::selection{background:#FF4FB8;color:#0e0f13;}
+  @keyframes nd-blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+  @keyframes nd-drift{0%{transform:translate3d(0,0,0)}100%{transform:translate3d(-3%,1.5%,0)}}
+  @keyframes nd-pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  @keyframes nd-scan{0%{transform:translateY(-120%)}100%{transform:translateY(420%)}}
+  :root{--nd-bg:#0e0f13;--nd-bg2:#0b0c10;--nd-head:#ffffff;--nd-body:#D7F7FF;--nd-dim:rgba(215,247,255,.62);--nd-dim2:rgba(215,247,255,.5);--nd-faint:rgba(215,247,255,.4);--nd-border:rgba(255,255,255,.08);--nd-card:#0e0f13;--nd-link:#69E6FF;}
+  [data-theme="light"]{--nd-bg:#E7F3F7;--nd-bg2:#DCEDF2;--nd-head:#13171e;--nd-body:#222b34;--nd-dim:rgba(26,34,44,.74);--nd-dim2:rgba(26,34,44,.56);--nd-faint:rgba(26,34,44,.46);--nd-border:rgba(18,40,55,.14);--nd-card:#ffffff;--nd-link:#0093a8;}
+</style>
+</helmet>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <filter id="ndCamoWarp">
+      <feTurbulence type="fractalNoise" baseFrequency="0.011 0.018" numOctaves="3" seed="7" result="n"></feTurbulence>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="64" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+    </filter>
+  </defs>
+</svg>
+
+<div data-theme="{{ theme }}" style="min-height:100vh;background:var(--nd-bg);color:var(--nd-body);font-family:'IBM Plex Sans',system-ui,sans-serif;overflow-x:hidden;-webkit-font-smoothing:antialiased;">
+
+  <!-- NAV -->
+  <nav style="display:flex;align-items:center;justify-content:space-between;gap:24px;max-width:1200px;margin:0 auto;padding:20px 28px;position:relative;z-index:5;">
+    <div style="display:flex;align-items:center;gap:10px;font-family:'Chakra Petch',sans-serif;font-weight:700;letter-spacing:.04em;font-size:19px;">
+      <span style="display:inline-block;width:14px;height:14px;transform:rotate(45deg);background:linear-gradient(135deg,#FF4FB8,#69E6FF);box-shadow:0 0 14px rgba(255,79,184,.7);"></span>
+      <span>neondeck</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:22px;font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:.02em;">
+      <a href="#panel" style="color:var(--nd-dim);text-decoration:none;" style-hover="color:var(--nd-link)">the_deck</a>
+      <a href="#features" style="color:var(--nd-dim);text-decoration:none;" style-hover="color:var(--nd-link)">features</a>
+      <a href="#config" style="color:var(--nd-dim);text-decoration:none;" style-hover="color:var(--nd-link)">config</a>
+      <a href="https://github.com/pandemicsyn/neondeck" style="color:#0e0f13;text-decoration:none;background:#69E6FF;padding:7px 14px;font-weight:600;box-shadow:0 0 0 1px rgba(105,230,255,.4);" style-hover="background:#FF4FB8;color:#0e0f13">★ GitHub</a>
+    </div>
+  </nav>
+
+  <!-- HERO : CAMO LOOK -->
+  <sc-if value="{{ isCamo }}" hint-placeholder-val="{{ true }}">
+  <header style="position:relative;overflow:hidden;border-bottom:1px solid rgba(255,255,255,.07);">
+    <div style="position:absolute;inset:0;overflow:hidden;">
+      <div style="position:absolute;top:-25%;left:-12%;width:60%;height:130%;background:radial-gradient(circle at 50% 50%,rgba(255,79,184,.55),transparent 62%);filter:blur(70px);"></div>
+      <div style="position:absolute;top:-30%;left:28%;width:55%;height:140%;background:radial-gradient(circle at 50% 50%,rgba(0,183,199,.5),transparent 62%);filter:blur(70px);"></div>
+      <div style="position:absolute;top:-10%;right:-12%;width:55%;height:130%;background:radial-gradient(circle at 50% 50%,rgba(139,77,255,.5),transparent 62%);filter:blur(70px);"></div>
+      <div style="position:absolute;bottom:-40%;left:18%;width:60%;height:120%;background:radial-gradient(circle at 50% 50%,rgba(105,230,255,.4),transparent 62%);filter:blur(70px);"></div>
+      <div style="position:absolute;inset:-12%;background:repeating-linear-gradient(102deg,transparent 0 24px,rgba(10,12,16,.92) 24px 56px);filter:url(#ndCamoWarp);mix-blend-mode:multiply;opacity:.78;animation:nd-drift 26s ease-in-out infinite alternate;"></div>
+      <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(14,15,19,.2),rgba(14,15,19,.55) 70%,#0e0f13);"></div>
+    </div>
+
+    <div style="position:relative;z-index:2;max-width:1040px;margin:0 auto;padding:74px 28px 92px;text-align:center;">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:.34em;color:#69E6FF;text-shadow:0 0 18px rgba(105,230,255,.6);margin-bottom:26px;">OPEN&nbsp;·&nbsp;ALWAYS-ON&nbsp;·&nbsp;BUILT&nbsp;ON&nbsp;FLUE</div>
+      <h1 style="font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(2.6rem,6.4vw,5.4rem);line-height:.98;letter-spacing:-.01em;margin:0;text-transform:uppercase;color:var(--nd-head);text-shadow:0 0 38px rgba(255,79,184,.35);">
+        A sensor-style deck for a<br><span style="background:linear-gradient(92deg,#FF4FB8,#69E6FF 55%,#8B4DFF);-webkit-background-clip:text;background-clip:text;color:transparent;">durable Flue agent.</span>
+      </h1>
+      <p style="max-width:620px;margin:26px auto 0;font-size:clamp(15px,1.7vw,18px);line-height:1.6;color:rgba(215,247,255,.74);">
+        GitHub on the left, an always-on chat harness on the right, a live terminal status line across the bottom — tuned for the ultrawide Corsair Xeneon Edge, fully configurable for any display.
+      </p>
+
+      <div style="display:flex;flex-direction:column;align-items:center;gap:14px;margin-top:38px;">
+        <div style="display:flex;align-items:stretch;background:rgba(8,9,12,.72);border:1px solid rgba(105,230,255,.28);box-shadow:0 0 0 1px rgba(0,0,0,.4),0 18px 50px rgba(0,0,0,.5);backdrop-filter:blur(4px);font-family:'IBM Plex Mono',monospace;">
+          <span style="display:flex;align-items:center;gap:12px;padding:14px 18px;font-size:15px;color:#D7F7FF;"><span style="color:#FF4FB8;">$</span>npm create neondeck@latest</span>
+          <button onClick="{{ onCopy }}" style="border:none;border-left:1px solid rgba(105,230,255,.28);background:transparent;color:#69E6FF;font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.08em;padding:0 16px;cursor:pointer;text-transform:uppercase;" style-hover="background:rgba(105,230,255,.12)">{{ copyLabel }}</button>
+        </div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-top:8px;">
+          <a href="https://github.com/pandemicsyn/neondeck" style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;letter-spacing:.02em;text-decoration:none;color:#0e0f13;background:#FF4FB8;padding:13px 26px;box-shadow:0 0 28px rgba(255,79,184,.5);" style-hover="background:#69E6FF">★ Star on GitHub</a>
+          <a href="https://neondeck.dev" style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;letter-spacing:.02em;text-decoration:none;color:#69E6FF;background:transparent;border:1px solid rgba(105,230,255,.5);padding:13px 26px;" style-hover="border-color:#69E6FF;color:var(--nd-head)">Read the docs →</a>
+        </div>
+      </div>
+    </div>
+  </header>
+  </sc-if>
+
+  <!-- HERO : DECK LOOK -->
+  <sc-if value="{{ isDeck }}">
+  <header style="position:relative;overflow:hidden;border-bottom:1px solid rgba(255,255,255,.07);background:#0b0c10;">
+    <div style="position:absolute;top:0;right:0;width:42%;height:100%;overflow:hidden;opacity:.6;">
+      <div style="position:absolute;top:-20%;right:-10%;width:90%;height:140%;background:radial-gradient(circle at 60% 40%,rgba(0,183,199,.45),transparent 64%);filter:blur(70px);"></div>
+      <div style="position:absolute;inset:-14%;background:repeating-linear-gradient(98deg,transparent 0 26px,rgba(6,8,11,.95) 26px 60px);filter:url(#ndCamoWarp);mix-blend-mode:multiply;opacity:.85;"></div>
+    </div>
+    <div style="position:relative;z-index:2;max-width:1200px;margin:0 auto;padding:78px 28px 90px;">
+      <div style="max-width:660px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.3em;color:#00B7C7;margin-bottom:22px;">// neondeck — companion agent runtime</div>
+        <h1 style="font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:clamp(2.3rem,5.4vw,4.4rem);line-height:1.02;letter-spacing:-.01em;margin:0;color:var(--nd-head);">
+          A sensor-style deck for a <span style="color:#69E6FF;">durable Flue agent.</span>
+        </h1>
+        <p style="max-width:560px;margin:24px 0 0;font-size:clamp(15px,1.6vw,17px);line-height:1.65;color:rgba(215,247,255,.68);">
+          GitHub on the left, an always-on chat harness on the right, a live terminal status line across the bottom — tuned for the ultrawide Corsair Xeneon Edge, fully configurable for any display.
+        </p>
+        <div style="display:flex;align-items:stretch;width:fit-content;margin-top:32px;background:rgba(8,9,12,.8);border:1px solid rgba(0,183,199,.32);font-family:'IBM Plex Mono',monospace;">
+          <span style="display:flex;align-items:center;gap:12px;padding:13px 18px;font-size:15px;color:#D7F7FF;"><span style="color:#00B7C7;">$</span>npm create neondeck@latest</span>
+          <button onClick="{{ onCopy }}" style="border:none;border-left:1px solid rgba(0,183,199,.32);background:transparent;color:#00B7C7;font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.08em;padding:0 16px;cursor:pointer;text-transform:uppercase;" style-hover="background:rgba(0,183,199,.12)">{{ copyLabel }}</button>
+        </div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:18px;">
+          <a href="https://github.com/pandemicsyn/neondeck" style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;text-decoration:none;color:#0e0f13;background:#69E6FF;padding:13px 24px;" style-hover="background:#FF4FB8">★ Star on GitHub</a>
+          <a href="https://neondeck.dev" style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;text-decoration:none;color:#69E6FF;border:1px solid rgba(105,230,255,.45);padding:13px 24px;" style-hover="color:var(--nd-head);border-color:#69E6FF">Read the docs →</a>
+        </div>
+      </div>
+    </div>
+  </header>
+  </sc-if>
+
+  <!-- HERO : LIGHT LOOK -->
+  <sc-if value="{{ isLight }}">
+  <header style="position:relative;overflow:hidden;border-bottom:1px solid var(--nd-border);">
+    <div style="position:absolute;inset:0;overflow:hidden;">
+      <div style="position:absolute;top:-25%;left:-12%;width:60%;height:130%;background:radial-gradient(circle at 50% 50%,rgba(255,79,184,.4),transparent 60%);filter:blur(72px);"></div>
+      <div style="position:absolute;top:-30%;left:28%;width:55%;height:140%;background:radial-gradient(circle at 50% 50%,rgba(0,183,199,.34),transparent 60%);filter:blur(72px);"></div>
+      <div style="position:absolute;top:-10%;right:-12%;width:55%;height:130%;background:radial-gradient(circle at 50% 50%,rgba(139,77,255,.32),transparent 60%);filter:blur(72px);"></div>
+      <div style="position:absolute;bottom:-40%;left:18%;width:60%;height:120%;background:radial-gradient(circle at 50% 50%,rgba(0,183,199,.3),transparent 60%);filter:blur(72px);"></div>
+      <div style="position:absolute;inset:-12%;background:repeating-linear-gradient(102deg,transparent 0 24px,rgba(30,28,46,.14) 24px 56px);filter:url(#ndCamoWarp);mix-blend-mode:multiply;opacity:.8;animation:nd-drift 26s ease-in-out infinite alternate;"></div>
+      <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(231,243,247,.12),rgba(231,243,247,.5) 72%,var(--nd-bg));"></div>
+    </div>
+
+    <div style="position:relative;z-index:2;max-width:1040px;margin:0 auto;padding:74px 28px 92px;text-align:center;">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:.34em;color:#0093a8;margin-bottom:26px;">OPEN&nbsp;·&nbsp;ALWAYS-ON&nbsp;·&nbsp;BUILT&nbsp;ON&nbsp;FLUE</div>
+      <h1 style="font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(2.6rem,6.4vw,5.4rem);line-height:.98;letter-spacing:-.01em;margin:0;text-transform:uppercase;color:#13171e;">
+        A sensor-style deck for a<br><span style="background:linear-gradient(92deg,#E0399B,#0093a8 55%,#7A37E6);-webkit-background-clip:text;background-clip:text;color:transparent;">durable Flue agent.</span>
+      </h1>
+      <p style="max-width:620px;margin:26px auto 0;font-size:clamp(15px,1.7vw,18px);line-height:1.6;color:#2c3742;">
+        GitHub on the left, an always-on chat harness on the right, a live terminal status line across the bottom — tuned for the ultrawide Corsair Xeneon Edge, fully configurable for any display.
+      </p>
+
+      <div style="display:flex;flex-direction:column;align-items:center;gap:14px;margin-top:38px;">
+        <div style="display:flex;align-items:stretch;background:#0a0c12;border:1px solid rgba(18,40,55,.2);box-shadow:0 18px 50px rgba(20,40,60,.16);font-family:'IBM Plex Mono',monospace;">
+          <span style="display:flex;align-items:center;gap:12px;padding:14px 18px;font-size:15px;color:#D7F7FF;"><span style="color:#FF4FB8;">$</span>npm create neondeck@latest</span>
+          <button onClick="{{ onCopy }}" style="border:none;border-left:1px solid rgba(255,255,255,.14);background:transparent;color:#69E6FF;font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.08em;padding:0 16px;cursor:pointer;text-transform:uppercase;" style-hover="background:rgba(105,230,255,.12)">{{ copyLabel }}</button>
+        </div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-top:8px;">
+          <a href="https://github.com/pandemicsyn/neondeck" style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;letter-spacing:.02em;text-decoration:none;color:#FCFDFF;background:#E0399B;padding:13px 26px;box-shadow:0 10px 26px rgba(224,57,155,.32);" style-hover="background:#0093a8">★ Star on GitHub</a>
+          <a href="https://neondeck.dev" style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;letter-spacing:.02em;text-decoration:none;color:#0093a8;background:transparent;border:1px solid rgba(0,147,168,.5);padding:13px 26px;" style-hover="border-color:#0093a8;color:#13171e">Read the docs →</a>
+        </div>
+      </div>
+    </div>
+  </header>
+  </sc-if>
+
+  <!-- PANEL SHOWCASE -->
+  <section id="panel" style="max-width:1240px;margin:0 auto;padding:78px 28px 30px;">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:22px;">
+      <h2 style="font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:clamp(1.4rem,2.6vw,2.1rem);margin:0;color:var(--nd-head);letter-spacing:-.01em;">The deck, live.</h2>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--nd-dim2);">Corsair Xeneon Edge · 2560 × 720 · layout is yours</div>
+    </div>
+
+    <!-- device bezel -->
+    <div style="border:1px solid rgba(255,255,255,.1);background:#05060a;padding:10px;box-shadow:0 0 0 1px rgba(0,0,0,.5),0 26px 80px rgba(0,0,0,.6),0 0 60px rgba(255,79,184,.08);">
+      <div style="overflow-x:auto;">
+        <div style="min-width:1040px;aspect-ratio:2560/720;display:flex;flex-direction:column;background:#0a0b10;position:relative;overflow:hidden;">
+
+          <!-- top status line -->
+          <div style="display:flex;align-items:center;gap:0;height:30px;flex:0 0 auto;background:#070810;border-bottom:1px solid rgba(255,255,255,.07);font-family:'IBM Plex Mono',monospace;font-size:12px;white-space:nowrap;">
+            <span style="display:flex;align-items:center;gap:7px;padding:0 14px;height:100%;background:rgba(255,79,184,.12);color:#FF4FB8;font-weight:600;"><span style="display:inline-block;width:7px;height:7px;transform:rotate(45deg);background:#FF4FB8;box-shadow:0 0 8px #FF4FB8;"></span>neondeck<span style="color:rgba(215,247,255,.4);font-weight:400;">v0.4.1</span></span>
+            <span style="color:rgba(255,255,255,.12);">│</span>
+            <span style="padding:0 12px;color:#69E6FF;">CPU 12%</span><span style="color:rgba(255,255,255,.12);">│</span>
+            <span style="padding:0 12px;color:#69E6FF;">MEM 8.4/32G</span><span style="color:rgba(255,255,255,.12);">│</span>
+            <span style="padding:0 12px;color:#00B7C7;">GPU 41%</span><span style="color:rgba(255,255,255,.12);">│</span>
+            <span style="padding:0 12px;color:#00B7C7;">54°C</span><span style="color:rgba(255,255,255,.12);">│</span>
+            <span style="padding:0 12px;color:#8B4DFF;">NET ↓1.2 ↑0.3</span><span style="color:rgba(255,255,255,.12);">│</span>
+            <span style="display:flex;align-items:center;gap:6px;padding:0 12px;color:#00B7C7;"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#00B7C7;box-shadow:0 0 8px #00B7C7;animation:nd-pulse 2.4s ease-in-out infinite;"></span>flue:online</span>
+            <span style="margin-left:auto;padding:0 14px;color:rgba(215,247,255,.7);">14:32<span style="animation:nd-blink 1.1s step-end infinite;">:</span>07</span>
+          </div>
+
+          <!-- body : github (1/3) + chat (2/3) -->
+          <div style="flex:1;display:flex;min-height:0;">
+
+            <!-- GITHUB PANEL -->
+            <div style="flex:0 0 33%;display:flex;flex-direction:column;border-right:1px solid rgba(255,255,255,.08);min-height:0;background:linear-gradient(180deg,rgba(255,79,184,.04),transparent 40%);">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,.06);font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;">
+                <span style="display:flex;align-items:center;gap:7px;color:#FF4FB8;"><span style="width:6px;height:6px;border-radius:50%;background:#FF4FB8;display:inline-block;"></span>GITHUB · @you</span>
+                <span style="color:rgba(215,247,255,.45);">4 OPEN PRs</span>
+              </div>
+              <div style="flex:1;overflow:hidden;padding:6px 0;">
+                <!-- PR row -->
+                <div style="padding:8px 14px;border-bottom:1px solid rgba(255,255,255,.04);">
+                  <div style="display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:rgba(215,247,255,.45);"><span>flue/harness</span><span>#1284 · 2h</span></div>
+                  <div style="font-size:13px;color:#D7F7FF;margin:3px 0 5px;">fix: retry durable steps on cold start</div>
+                  <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:rgba(215,247,255,.5);">
+                    <span style="color:#00B7C7;">● checks pass</span><span style="color:#8B4DFF;">◆ 2 review</span>
+                  </div>
+                </div>
+                <div style="padding:8px 14px;border-bottom:1px solid rgba(255,255,255,.04);">
+                  <div style="display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:rgba(215,247,255,.45);"><span>neondeck/core</span><span>#312 · 5h</span></div>
+                  <div style="font-size:13px;color:#D7F7FF;margin:3px 0 5px;">feat: configurable statusline sensors</div>
+                  <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:rgba(215,247,255,.5);">
+                    <span style="color:#FF4FB8;">● 1 failing</span><span>△ draft</span>
+                  </div>
+                </div>
+                <div style="padding:8px 14px;border-bottom:1px solid rgba(255,255,255,.04);">
+                  <div style="display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:rgba(215,247,255,.45);"><span>neondeck/panels</span><span>#88 · 1d</span></div>
+                  <div style="font-size:13px;color:#D7F7FF;margin:3px 0 5px;">add github review-requests panel</div>
+                  <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:rgba(215,247,255,.5);">
+                    <span style="color:#00B7C7;">● checks pass</span><span style="color:#69E6FF;">↻ rebase</span>
+                  </div>
+                </div>
+                <div style="padding:8px 14px;">
+                  <div style="display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:rgba(215,247,255,.45);"><span>dotfiles</span><span>#41 · 2d</span></div>
+                  <div style="font-size:13px;color:#D7F7FF;margin:3px 0 5px;">theme: miami tiger-stripe preset</div>
+                  <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:rgba(215,247,255,.5);">
+                    <span style="color:#00B7C7;">● checks pass</span><span style="color:#8B4DFF;">◆ approved</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- FLUE CHAT PANEL -->
+            <div style="flex:1;display:flex;flex-direction:column;min-height:0;background:linear-gradient(180deg,rgba(0,183,199,.04),transparent 36%);">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 16px;border-bottom:1px solid rgba(255,255,255,.06);font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;">
+                <span style="display:flex;align-items:center;gap:7px;color:#00B7C7;"><span style="width:6px;height:6px;border-radius:50%;background:#00B7C7;display:inline-block;box-shadow:0 0 8px #00B7C7;"></span>FLUE AGENT · triage.ts</span>
+                <span style="color:rgba(215,247,255,.4);">durable · ctx 18k</span>
+              </div>
+              <div style="flex:1;overflow:hidden;padding:14px 18px;display:flex;flex-direction:column;gap:11px;min-height:0;">
+                <div style="align-self:flex-end;max-width:62%;background:rgba(105,230,255,.12);border:1px solid rgba(105,230,255,.22);padding:8px 12px;font-size:13px;color:#D7F7FF;">What needs my attention this morning?</div>
+                <!-- tool call chip -->
+                <div style="align-self:flex-start;display:inline-flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#8B4DFF;background:rgba(139,77,255,.1);border:1px solid rgba(139,77,255,.28);padding:5px 10px;">
+                  <span>⚙ workflow</span><span style="color:rgba(215,247,255,.6);">triage_prs › step 2/4 · github.list_prs()</span>
+                </div>
+                <div style="align-self:flex-start;max-width:78%;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-left:2px solid #00B7C7;padding:9px 13px;font-size:13px;line-height:1.55;color:rgba(215,247,255,.9);">
+                  3 of your 4 open PRs are green. <span style="color:#FF4FB8;">neondeck/core #312</span> has 1 failing check — the statusline sensor test timed out. <span style="color:#8B4DFF;">flue/harness #1284</span> has 2 reviewers waiting on you. Want me to re-run the failing job?
+                </div>
+                <div style="align-self:flex-end;max-width:50%;background:rgba(105,230,255,.12);border:1px solid rgba(105,230,255,.22);padding:8px 12px;font-size:13px;color:#D7F7FF;">yes, re-run it</div>
+              </div>
+              <!-- input bar -->
+              <div style="flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid rgba(255,255,255,.07);background:#070810;">
+                <span style="font-family:'IBM Plex Mono',monospace;color:#FF4FB8;font-size:13px;">›</span>
+                <span style="flex:1;font-family:'IBM Plex Mono',monospace;font-size:13px;color:rgba(215,247,255,.4);">Message neondeck…<span style="animation:nd-blink 1.1s step-end infinite;color:#69E6FF;">▋</span></span>
+                <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:rgba(215,247,255,.35);">⏎ send · ⌃K tools</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--nd-dim2);margin-top:14px;text-align:center;">Left third: your GitHub. Right two-thirds: the Flue chat harness. Bottom: a configurable sensor status line. Every span is set in <span style="color:var(--nd-link);">neondeck.config.ts</span>. &nbsp;<a href="Neondeck Deck Spec.dc.html" style="color:var(--nd-link);text-decoration:none;border-bottom:1px solid currentColor;">implementation spec →</a></div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features" style="max-width:1200px;margin:0 auto;padding:64px 28px 24px;">
+    <h2 style="font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:clamp(1.4rem,2.6vw,2.1rem);margin:0 0 30px;color:var(--nd-head);letter-spacing:-.01em;">An always-on agent for the way you ship.</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1px;background:var(--nd-border);border:1px solid var(--nd-border);">
+      <div style="background:var(--nd-card);padding:26px 24px;">
+        <div style="width:11px;height:11px;transform:rotate(45deg);background:#FF4FB8;box-shadow:0 0 12px #FF4FB8;margin-bottom:16px;"></div>
+        <h3 style="font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:17px;margin:0 0 8px;color:var(--nd-head);">Always watching your repos</h3>
+        <p style="margin:0;font-size:14px;line-height:1.6;color:var(--nd-dim);">The GitHub sidebar never sleeps. Open PRs, failing checks and review requests stay in the corner of your eye while you work — no tab to refresh.</p>
+      </div>
+      <div style="background:var(--nd-card);padding:26px 24px;">
+        <div style="width:11px;height:11px;transform:rotate(45deg);background:#00B7C7;box-shadow:0 0 12px #00B7C7;margin-bottom:16px;"></div>
+        <h3 style="font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:17px;margin:0 0 8px;color:var(--nd-head);">Durable Flue harness</h3>
+        <p style="margin:0;font-size:14px;line-height:1.6;color:var(--nd-dim);">The agent runs on Flue's programmable TypeScript runtime. Workflows are durable — they survive restarts and reboots.</p>
+      </div>
+      <div style="background:var(--nd-card);padding:26px 24px;">
+        <div style="width:11px;height:11px;transform:rotate(45deg);background:#69E6FF;box-shadow:0 0 12px #69E6FF;margin-bottom:16px;"></div>
+        <h3 style="font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:17px;margin:0 0 8px;color:var(--nd-head);">A second monitor that thinks</h3>
+        <p style="margin:0;font-size:14px;line-height:1.6;color:var(--nd-dim);">Tuned for the 2560×720 Xeneon Edge, but the grid is fully configurable — pin it to a spare monitor, a laptop sidebar, anything always in view.</p>
+      </div>
+      <div style="background:var(--nd-card);padding:26px 24px;">
+        <div style="width:11px;height:11px;transform:rotate(45deg);background:#8B4DFF;box-shadow:0 0 12px #8B4DFF;margin-bottom:16px;"></div>
+        <h3 style="font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:17px;margin:0 0 8px;color:var(--nd-head);">Local-first &amp; private</h3>
+        <p style="margin:0;font-size:14px;line-height:1.6;color:var(--nd-dim);">Runs on your dev machine. Your tokens, your code, your model — bring your own provider. No account, no cloud, no telemetry.</p>
+      </div>
+      <div style="background:var(--nd-card);padding:26px 24px;">
+        <div style="width:11px;height:11px;transform:rotate(45deg);background:#FF4FB8;box-shadow:0 0 12px #FF4FB8;margin-bottom:16px;"></div>
+        <h3 style="font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:17px;margin:0 0 8px;color:var(--nd-head);">Miami tiger-stripe theming</h3>
+        <p style="margin:0;font-size:14px;line-height:1.6;color:var(--nd-dim);">Ships with the Miami-camo preset. Every color, stripe and glow is a theme token — make it yours.</p>
+      </div>
+      <div style="background:var(--nd-card);padding:26px 24px;">
+        <div style="width:11px;height:11px;transform:rotate(45deg);background:#00B7C7;box-shadow:0 0 12px #00B7C7;margin-bottom:16px;"></div>
+        <h3 style="font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:17px;margin:0 0 8px;color:var(--nd-head);">Hackable in TypeScript</h3>
+        <p style="margin:0;font-size:14px;line-height:1.6;color:var(--nd-dim);">Panels, tools and sensors are plain TS modules. If you can write a function, you can extend the deck.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONFIG -->
+  <section id="config" style="max-width:1200px;margin:0 auto;padding:56px 28px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:40px;align-items:center;">
+      <div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.28em;color:#8B4DFF;margin-bottom:16px;">// ONE FILE</div>
+        <h2 style="font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:clamp(1.5rem,2.8vw,2.3rem);margin:0 0 16px;color:var(--nd-head);letter-spacing:-.01em;">The whole deck is a config file.</h2>
+        <p style="margin:0 0 14px;font-size:15px;line-height:1.65;color:var(--nd-dim);">Declare your display, theme, panel spans and status-line sensors. Point the chat panel at any Flue agent. Reload and it's live.</p>
+        <p style="margin:0;font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--nd-dim2);">~/.config/neondeck/neondeck.config.ts</p>
+      </div>
+      <div style="background:#070810;border:1px solid rgba(255,255,255,.1);box-shadow:0 18px 50px rgba(0,0,0,.5);font-family:'IBM Plex Mono',monospace;font-size:13px;line-height:1.75;overflow-x:auto;">
+        <div style="display:flex;gap:7px;padding:11px 14px;border-bottom:1px solid rgba(255,255,255,.07);">
+          <span style="width:10px;height:10px;border-radius:50%;background:#FF4FB8;"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#00B7C7;"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#69E6FF;"></span>
+        </div>
+        <pre style="margin:0;padding:18px;white-space:pre;color:#D7F7FF;"><span style="color:rgba(215,247,255,.4);">// neondeck.config.ts</span>
+<span style="color:#8B4DFF;">import</span> { defineDeck } <span style="color:#8B4DFF;">from</span> <span style="color:#69E6FF;">"neondeck"</span>;
+
+<span style="color:#8B4DFF;">export default</span> <span style="color:#00B7C7;">defineDeck</span>({
+  display: { width: <span style="color:#FF4FB8;">2560</span>, height: <span style="color:#FF4FB8;">720</span> },
+  theme: <span style="color:#69E6FF;">"miami-tiger"</span>,
+  layout: [
+    { panel: <span style="color:#69E6FF;">"github"</span>, span: <span style="color:#FF4FB8;">4</span>, props: { view: <span style="color:#69E6FF;">"open-prs"</span> } },
+    { panel: <span style="color:#69E6FF;">"flue-chat"</span>, span: <span style="color:#FF4FB8;">8</span>, agent: <span style="color:#69E6FF;">"./agents/triage.ts"</span> },
+  ],
+  statusline: [<span style="color:#69E6FF;">"cpu"</span>, <span style="color:#69E6FF;">"mem"</span>, <span style="color:#69E6FF;">"gpu"</span>, <span style="color:#69E6FF;">"net"</span>, <span style="color:#69E6FF;">"flue.status"</span>, <span style="color:#69E6FF;">"clock"</span>],
+});</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- BUILT ON FLUE -->
+  <section style="border-top:1px solid var(--nd-border);border-bottom:1px solid var(--nd-border);background:var(--nd-bg2);">
+    <div style="max-width:1100px;margin:0 auto;padding:46px 28px;display:flex;align-items:center;gap:28px;flex-wrap:wrap;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:18px;">
+        <span style="display:inline-block;width:18px;height:18px;transform:rotate(45deg);background:linear-gradient(135deg,#00B7C7,#8B4DFF);box-shadow:0 0 16px rgba(0,183,199,.5);"></span>
+        <div>
+          <div style="font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:18px;color:var(--nd-head);">Powered by Flue</div>
+          <div style="font-size:14px;color:var(--nd-dim);max-width:520px;line-height:1.5;margin-top:3px;">The Open Agent Framework. Build durable AI agents and workflows with Flue's programmable TypeScript harness.</div>
+        </div>
+      </div>
+      <a href="https://flueframework.com" style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;text-decoration:none;color:#00B7C7;border:1px solid rgba(0,183,199,.45);padding:11px 20px;white-space:nowrap;" style-hover="color:var(--nd-head);border-color:#00B7C7">flueframework.com →</a>
+    </div>
+  </section>
+
+  <!-- FINAL CTA + FOOTER -->
+  <footer style="max-width:1200px;margin:0 auto;padding:70px 28px 48px;">
+    <div style="text-align:center;margin-bottom:54px;">
+      <h2 style="font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(1.8rem,4vw,3rem);margin:0 0 22px;color:var(--nd-head);text-transform:uppercase;letter-spacing:-.01em;">Pin it to a screen.</h2>
+      <div style="display:inline-flex;align-items:stretch;background:rgba(8,9,12,.8);border:1px solid rgba(105,230,255,.28);font-family:'IBM Plex Mono',monospace;margin-bottom:18px;">
+        <span style="display:flex;align-items:center;gap:12px;padding:13px 18px;font-size:15px;color:#D7F7FF;"><span style="color:#FF4FB8;">$</span>npm create neondeck@latest</span>
+        <button onClick="{{ onCopy }}" style="border:none;border-left:1px solid rgba(105,230,255,.28);background:transparent;color:#69E6FF;font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.08em;padding:0 16px;cursor:pointer;text-transform:uppercase;" style-hover="background:rgba(105,230,255,.12)">{{ copyLabel }}</button>
+      </div>
+      <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap;">
+        <a href="https://github.com/pandemicsyn/neondeck" style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;text-decoration:none;color:#0e0f13;background:#FF4FB8;padding:13px 26px;box-shadow:0 0 26px rgba(255,79,184,.45);" style-hover="background:#69E6FF">★ Star on GitHub</a>
+        <a href="https://neondeck.dev" style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;text-decoration:none;color:var(--nd-link);border:1px solid var(--nd-link);padding:13px 26px;" style-hover="color:var(--nd-head);border-color:var(--nd-link)">Documentation →</a>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:18px;padding-top:26px;border-top:1px solid var(--nd-border);">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:16px;color:var(--nd-head);">
+        <span style="display:inline-block;width:12px;height:12px;transform:rotate(45deg);background:linear-gradient(135deg,#FF4FB8,#69E6FF);"></span>neondeck
+      </div>
+      <div style="display:flex;gap:22px;font-family:'IBM Plex Mono',monospace;font-size:13px;">
+        <a href="https://github.com/pandemicsyn/neondeck" style="color:var(--nd-dim);text-decoration:none;" style-hover="color:var(--nd-link)">GitHub</a>
+        <a href="https://neondeck.dev" style="color:var(--nd-dim);text-decoration:none;" style-hover="color:var(--nd-link)">Docs</a>
+        <a href="https://flueframework.com" style="color:var(--nd-dim);text-decoration:none;" style-hover="color:var(--nd-link)">Flue</a>
+        <a href="#" style="color:var(--nd-dim);text-decoration:none;" style-hover="color:var(--nd-link)">MIT License</a>
+      </div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--nd-faint);">MIT · always-on, on your desk</div>
+    </div>
+  </footer>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;look&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;camo&quot;,&quot;deck&quot;,&quot;light&quot;],&quot;default&quot;:&quot;camo&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Look&quot;,&quot;label&quot;:&quot;Overall look&quot;}}">
+class Component extends DCLogic {
+  state = { copied: false };
+  renderVals() {
+    const look = this.props.look ?? 'camo';
+    return {
+      isCamo: look === 'camo',
+      isDeck: look === 'deck',
+      isLight: look === 'light',
+      theme: look === 'light' ? 'light' : 'dark',
+      copyLabel: this.state.copied ? 'copied ✓' : 'copy',
+      onCopy: () => {
+        try { navigator.clipboard.writeText('npm create neondeck@latest'); } catch (e) {}
+        this.setState({ copied: true });
+        clearTimeout(this._t);
+        this._t = setTimeout(() => this.setState({ copied: false }), 1500);
+      },
+    };
+  }
+}
+</script>
+</body>
+</html>

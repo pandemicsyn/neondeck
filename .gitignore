@@ -1,0 +1,10 @@
+node_modules/
+dist/
+web/dist/
+.flue-vite/
+data/*.db
+data/*.db-*
+.env
+.env.*
+!.env.example
+.DS_Store

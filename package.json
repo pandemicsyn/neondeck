@@ -1,0 +1,56 @@
+{
+  "name": "neondeck",
+  "version": "1.0.0",
+  "description": "Local companion-display dashboard and Flue agent server for neondeck.",
+  "homepage": "https://neondeck.dev",
+  "scripts": {
+    "build": "npm run build:web && flue build --target node",
+    "build:server": "flue build --target node",
+    "build:web": "vite build --config web/vite.config.ts",
+    "dev": "concurrently -n server,web -c blue,green \"flue dev --target node\" \"vite --config web/vite.config.ts --host 127.0.0.1\"",
+    "run:display": "flue run display-assistant --target node --server /api/flue --input '{\"message\":\"Say hello in one sentence.\"}'",
+    "start": "node dist/server.mjs",
+    "typecheck": "tsc --noEmit && tsc -p web/tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "flue",
+    "dashboard",
+    "agent",
+    "xeneon-edge"
+  ],
+  "author": "Florian Hines",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pandemicsyn/neondeck.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pandemicsyn/neondeck/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=26"
+  },
+  "dependencies": {
+    "@flue/react": "^1.0.0-beta.7",
+    "@flue/runtime": "^1.0.0-beta.7",
+    "@flue/sdk": "^1.0.0-beta.7",
+    "@hono/node-server": "^2.0.6",
+    "hono": "^4.12.27",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "systeminformation": "^5.31.11"
+  },
+  "devDependencies": {
+    "@flue/cli": "^1.0.0-beta.7",
+    "@tailwindcss/vite": "^4.3.1",
+    "@types/node": "^26.0.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "concurrently": "^10.0.3",
+    "tailwindcss": "^4.3.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}

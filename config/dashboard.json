@@ -1,0 +1,59 @@
+{
+  "display": {
+    "width": 2560,
+    "height": 720
+  },
+  "theme": "dark",
+  "layout": {
+    "columns": 12,
+    "rows": 6,
+    "regions": [
+      {
+        "id": "statusline",
+        "title": "Status line",
+        "pluginId": "host-metrics",
+        "column": 1,
+        "row": 1,
+        "columnSpan": 12,
+        "rowSpan": 1,
+        "config": {}
+      },
+      {
+        "id": "github",
+        "title": "GITHUB · @you",
+        "pluginId": "github-pr-list",
+        "column": 1,
+        "row": 2,
+        "columnSpan": 4,
+        "rowSpan": 5,
+        "config": {
+          "limit": 12
+        }
+      },
+      {
+        "id": "chat",
+        "title": "FLUE AGENT · triage.ts",
+        "pluginId": "flue-chat",
+        "column": 5,
+        "row": 2,
+        "columnSpan": 8,
+        "rowSpan": 5,
+        "config": {
+          "agentName": "display-assistant",
+          "sessions": [
+            {
+              "id": "neondeck-main",
+              "label": "Primary",
+              "placeholder": "Ask about your active work..."
+            },
+            {
+              "id": "neondeck-side",
+              "label": "Scratch",
+              "placeholder": "Start a second thread..."
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
