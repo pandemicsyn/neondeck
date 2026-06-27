@@ -2,6 +2,8 @@
 
 neondeck is a local-first developer cockpit for a companion display. Its agent, Neon, should act as a second brain for active engineering work: repo-aware, watchful, concise, and able to turn deterministic signals into useful next actions.
 
+The near-term priority is to build Neondeck's local operating system before deeper dashboard customization: app home, config, SQLite state, repo registry, runtime skills, schedules, watches, and typed Flue actions. The UI should be an efficient surface over that runtime, not the place where core agent behavior lives.
+
 ## Product Direction
 
 Neon should not be only a chat panel. The dashboard should show live facts, while the agent explains, prioritizes, and acts on those facts.
@@ -14,6 +16,19 @@ Core principles:
 - Use Flue actions for reusable deterministic capabilities.
 - Use skills for behavior, conventions, and domain guidance.
 - Treat chat commands and UI buttons as two frontends over the same backend workflows.
+- Keep session context stable: SOUL, selected skills, repo config, and memory summaries should be loaded deliberately rather than silently changing mid-turn.
+- Use deterministic watchers first and agent summarization only when a watcher detects a meaningful state change.
+- Keep one backend command/event surface so the web dashboard, future TUI, and possible companion surfaces reuse the same runtime.
+
+## Roadmap Ordering
+
+1. Neondeck home and runtime state.
+2. Flue actions for self-configuration.
+3. Repo registry and GitHub foundation.
+4. Schedules, watches, and blueprint-style automations.
+5. Runtime skills and skill reload.
+6. Dashboard panels driven by runtime state.
+7. Later TUI/OpenTUI surface over the same backend API.
 
 ## Required Capabilities
 
@@ -178,6 +193,10 @@ PR watch state machine:
 
 Watch state must persist in SQLite and survive restart.
 
+Watchers should be deterministic first. A watcher should fetch structured state, compare it with a persisted watermark or previous snapshot, and do nothing when there is no meaningful change. Agent reasoning should run only for explanation, prioritization, or summarization after a delta is detected.
+
+Neondeck should support a quiet no-op convention for watches. This can be an empty result, explicit `silent` outcome, or `[SILENT]`-style sentinel, but the goal is the same: no notification spam when nothing changed.
+
 ### Morning Briefing
 
 Neon should support scheduled briefings.
@@ -197,6 +216,7 @@ Scheduling model:
 - neondeck owns local schedule configuration and state.
 - Flue owns the workflow that performs the briefing.
 - Node.js scheduling can use an app scheduler; Cloudflare deployment can later map to Worker cron/scheduling primitives.
+- User-facing schedules should prefer typed blueprints over raw cron strings. Raw schedules can exist underneath, but common flows should be created through presets such as morning briefing, watch PR, release watch, and review queue digest.
 
 ### Local Dev Doctor
 
@@ -268,6 +288,13 @@ Distinction:
 - Actions do deterministic work.
 - Workflows compose repeatable operations.
 
+Skill loading should follow progressive disclosure:
+
+- list metadata first
+- load full `SKILL.md` only when needed
+- load references, scripts, and assets explicitly
+- support reload without requiring a full app restart
+
 ### Command Surface
 
 Chat should support slash commands with predictable behavior.
@@ -323,6 +350,8 @@ Display extension points:
 - briefing panel
 - memory/current-task panel
 
+Runtime extension points should be shared by all UI surfaces. The web dashboard should call the same backend APIs/events that a future TUI or OpenTUI client would use.
+
 ## V1 Scope
 
 V1 should prove Neon is useful without overbuilding the platform.
@@ -342,10 +371,11 @@ Must-haves:
 11. Config hot reload.
 12. One Neon agent session with command handling.
 13. UI panels for PRs, active watches, briefing, and chat.
+14. Backend event/API shape suitable for reuse by a future TUI.
 
 ## Suggested Implementation Phases
 
-### Phase 1: neondeck Home, Config, and Runtime Skills
+### Phase 1: neondeck Home and Runtime State
 
 - Add neondeck home resolver:
   - `NEONDECK_HOME`
@@ -363,11 +393,9 @@ Must-haves:
   - `data/flue.db`
 - Update Flue runtime persistence to use `data/flue.db`.
 - Add app SQLite path and initialization for `data/neondeck.db`.
-- Load runtime skills from neondeck home so Neon can understand neondeck itself.
-- Support additional user-provided skills under `skills/` and make them available to the Flue agent.
-- Validate skill folders enough to ignore obviously broken entries without crashing startup.
 - Add schema validation for all config files.
 - Add config hot reload for files under neondeck home.
+- Add config root/status API so the dashboard can show which runtime home is active.
 
 ### Phase 2: Config Management Actions
 
@@ -387,6 +415,7 @@ Must-haves:
 - Add repo path resolver and Git remote inference.
 - Add guarded confirmation flows for destructive config changes.
 - Teach the runtime neondeck skill to prefer these actions over direct file edits.
+- Emit config-change events so UI surfaces update without reload.
 
 ### Phase 3: Repo and GitHub Foundation
 
@@ -395,24 +424,44 @@ Must-haves:
 - Add server-side GitHub API client using `GITHUB_TOKEN`.
 - Add deterministic PR listing endpoint.
 - Add GitHub PR queue UI states: loading, empty, error, normal.
+- Add a GitHub/gh runtime skill that explains when to use GitHub API actions versus local `gh`/git workflows.
 
-### Phase 4: Persistent App State
+### Phase 4: Schedules, Watches, and App State
 
 - Add app SQLite tables for watches, jobs, notifications, memories, and workflow summaries.
 - Keep Flue runtime persistence separate unless the Flue adapter requires otherwise.
 - Add migrations or startup schema initialization.
 - Add APIs for active watches and notifications.
+- Add local scheduler loop for configured jobs.
+- Add blueprint-style job creation for:
+  - morning briefing
+  - watch PR
+  - release watch
+  - review queue digest
+- Persist watcher watermarks/snapshots.
+- Add quiet no-op handling for unchanged watches.
 
-### Phase 5: Neon Commands
+### Phase 5: Runtime Skills
+
+- Load runtime skills from neondeck home so Neon can understand neondeck itself.
+- Support additional user-provided skills under `skills/` and configured external skill dirs.
+- Validate skill folders enough to ignore obviously broken entries without crashing startup.
+- Add skill metadata listing.
+- Add explicit full skill loading.
+- Add skill reload action.
+- Detect duplicate skill ids across built-in, user, and external roots.
+
+### Phase 6: Neon Commands and Workflows
 
 - Add slash command parsing for Neon chat.
 - Implement `/repo-status`.
 - Implement `/review-queue`.
 - Implement `/briefing`.
+- Implement `/watch-pr`.
 - Store command results as workflow summaries.
 - Expose command workflows through UI buttons.
 
-### Phase 6: PR Watch
+### Phase 7: PR Watch
 
 - Implement `/watch-pr`.
 - Persist watch config and state.
@@ -422,14 +471,18 @@ Must-haves:
 - Notify on success/failure.
 - Add active watches panel.
 
-### Phase 7: Scheduling and Hot Reload
+### Phase 8: Dashboard Over Runtime State
 
-- Add local scheduler for configured jobs.
-- Add config hot reload for repos, dashboard layout, jobs, and skills.
-- Add morning briefing schedule config.
-- Reconcile scheduler state on config changes and process restart.
+- Show active neondeck home/status.
+- Show repos and repo health.
+- Show PR work queue.
+- Show active watches.
+- Show scheduled jobs and last run state.
+- Show loaded skills.
+- Show one Neon chat session.
+- Keep the panel layout optimized for Xeneon Edge, but driven by backend state.
 
-### Phase 8: Local Dev Doctor
+### Phase 9: Local Dev Doctor
 
 - Add local repo status actions.
 - Add package script detection.
@@ -437,12 +490,18 @@ Must-haves:
 - Add dev server and port checks.
 - Add `/dev-doctor` workflow.
 
-### Phase 9: Release Watch
+### Phase 10: Release Watch
 
 - Add deploy target metadata to repo registry.
 - Support watch until main green.
 - Add provider-specific deploy adapters later.
 - Add `/watch-release` and “watch until prod” support.
+
+### Phase 11: Future TUI/OpenTUI Surface
+
+- Reuse the same backend command/event APIs as the web dashboard.
+- Avoid a second agent runtime.
+- Keep terminal rendering focused on dense status, command input, and streaming agent output.
 
 ## Open Questions
 
@@ -454,3 +513,4 @@ Must-haves:
 - What deployment providers should release watch support first?
 - How much local shell access should Neon have by default?
 - What notification delivery exists beyond the deck UI?
+- Should active sessions observe config/skill changes immediately, or only after explicit context reload/new session?

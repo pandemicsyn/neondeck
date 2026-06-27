@@ -9,7 +9,9 @@ export function App() {
   const [error, setError] = useState<string>();
 
   useEffect(() => {
-    getDashboardConfig().then(setConfig).catch((cause: Error) => setError(cause.message));
+    getDashboardConfig()
+      .then(setConfig)
+      .catch((cause: Error) => setError(cause.message));
   }, []);
 
   useEffect(() => {
@@ -23,7 +25,12 @@ export function App() {
   }
 
   if (!config) {
-    return <BootState title="Starting dashboard" detail="Loading local layout config." />;
+    return (
+      <BootState
+        title="Starting dashboard"
+        detail="Loading local layout config."
+      />
+    );
   }
 
   return (
@@ -69,7 +76,10 @@ function DashboardPanel({ region }: { region: DashboardRegion }) {
   if (!plugin) {
     return (
       <PanelFrame title={region.title} style={gridPosition} variant={region.id}>
-        <EmptyState title="Plugin unavailable" detail={`No plugin registered for ${region.pluginId}.`} />
+        <EmptyState
+          title="Plugin unavailable"
+          detail={`No plugin registered for ${region.pluginId}.`}
+        />
       </PanelFrame>
     );
   }
@@ -97,14 +107,20 @@ function PanelFrame({
 }) {
   if (variant === 'statusline') {
     return (
-      <Card className="panel panel-status min-h-0 overflow-hidden border-x-0 border-t-0" style={style}>
+      <Card
+        className="panel panel-status min-h-0 overflow-hidden border-x-0 border-t-0"
+        style={style}
+      >
         {children}
       </Card>
     );
   }
 
   return (
-    <Card className={`panel panel-${variant} min-h-0 overflow-hidden border-y-0 border-l-0`} style={style}>
+    <Card
+      className={`panel panel-${variant} min-h-0 overflow-hidden border-y-0 border-l-0`}
+      style={style}
+    >
       <div aria-label={title} className="h-full min-h-0">
         {children}
       </div>
@@ -112,7 +128,13 @@ function PanelFrame({
   );
 }
 
-export function EmptyState({ title, detail }: { title: string; detail: string }) {
+export function EmptyState({
+  title,
+  detail,
+}: {
+  title: string;
+  detail: string;
+}) {
   return (
     <div className="flex h-full min-h-0 flex-col items-center justify-center gap-2 px-4 text-center">
       <div className="miami-accent h-1 w-12" />
@@ -135,5 +157,7 @@ function BootState({ title, detail }: { title: string; detail: string }) {
 
 function resolveTheme(theme: DashboardTheme) {
   if (theme !== 'system') return theme;
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  return window.matchMedia('(prefers-color-scheme: dark)').matches
+    ? 'dark'
+    : 'light';
 }

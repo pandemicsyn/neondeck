@@ -4,7 +4,10 @@ import SiteNav from '../../components/SiteNav.astro';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 ---
 
-<BaseLayout title="neondeck docs" description="Documentation for installing, configuring, and deploying neondeck.">
+<BaseLayout
+  title="neondeck docs"
+  description="Documentation for installing, configuring, and deploying neondeck."
+>
   <div class="site-shell">
     <SiteNav />
     <main class="container docs-layout">
@@ -17,16 +20,32 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       <article class="docs-prose">
         <h1>Docs</h1>
         <p>
-          neondeck is a local dashboard and agent console for a companion display. The local app serves a React dashboard and Flue backend; this Astro site documents the project and deploys separately to Cloudflare at neondeck.dev.
+          neondeck is a local dashboard and agent console for a companion
+          display. The local app serves a React dashboard and Flue backend; this
+          Astro site documents the project and deploys separately to Cloudflare
+          at neondeck.dev.
         </p>
 
         <h2>Project pieces</h2>
         <ul>
-          <li><code>src/</code>: Hono, Flue, SQLite persistence, sensors, and local APIs.</li>
-          <li><code>web/</code>: Vite React dashboard for the companion display.</li>
-          <li><code>webapp/</code>: Astro marketing and docs site for neondeck.dev.</li>
-          <li><code>config/dashboard.json</code>: local dashboard layout preset.</li>
-          <li><code>SOUL.md</code>: agent name, emoji, and personality prompt material.</li>
+          <li>
+            <code>src/</code>: Hono, Flue, SQLite persistence, sensors, and
+            local APIs.
+          </li>
+          <li>
+            <code>web/</code>: Vite React dashboard for the companion display.
+          </li>
+          <li>
+            <code>webapp/</code>: Astro marketing and docs site for
+            neondeck.dev.
+          </li>
+          <li>
+            <code>config/dashboard.json</code>: local dashboard layout preset.
+          </li>
+          <li>
+            <code>SOUL.md</code>: agent name, emoji, and personality prompt
+            material.
+          </li>
         </ul>
 
         <h2>Commands</h2>

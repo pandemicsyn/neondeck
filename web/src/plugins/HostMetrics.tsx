@@ -26,7 +26,10 @@ export const HostMetricsPlugin = {
           if (!cancelled) setState({ status: 'ready', metrics });
         } catch (cause) {
           if (!cancelled) {
-            setState({ status: 'error', message: cause instanceof Error ? cause.message : String(cause) });
+            setState({
+              status: 'error',
+              message: cause instanceof Error ? cause.message : String(cause),
+            });
           }
         }
       }
@@ -63,8 +66,17 @@ export const HostMetricsPlugin = {
     const metrics = state.metrics;
     const memoryPercent = Math.round(metrics.memory.usedRatio * 100);
     const cpuPercent =
-      metrics.cpu.loadPercent ?? Math.min(100, Math.round((metrics.loadAverage[0] / Math.max(1, metrics.cpuCount)) * 100));
-    const temperatureC = metrics.gpu.temperatureC ?? metrics.temperature.cpuC ?? metrics.temperature.maxC;
+      metrics.cpu.loadPercent ??
+      Math.min(
+        100,
+        Math.round(
+          (metrics.loadAverage[0] / Math.max(1, metrics.cpuCount)) * 100,
+        ),
+      );
+    const temperatureC =
+      metrics.gpu.temperatureC ??
+      metrics.temperature.cpuC ??
+      metrics.temperature.maxC;
 
     return (
       <div className="powerline h-full">
@@ -74,7 +86,11 @@ export const HostMetricsPlugin = {
           <span className="text-[11px] font-normal text-muted">v0.4.1</span>
         </div>
         <StatusDivider />
-        <StatusSegment label="CPU" tone="cyan" value={`${Math.round(cpuPercent)}%`} />
+        <StatusSegment
+          label="CPU"
+          tone="cyan"
+          value={`${Math.round(cpuPercent)}%`}
+        />
         <StatusDivider />
         <StatusSegment
           label="MEM"
@@ -82,11 +98,23 @@ export const HostMetricsPlugin = {
           value={`${formatGiB(metrics.memory.used)}/${formatGiB(metrics.memory.total)}`}
         />
         <StatusDivider />
-        <StatusSegment label="GPU" tone="teal" value={formatPercent(metrics.gpu.utilizationPercent)} />
+        <StatusSegment
+          label="GPU"
+          tone="teal"
+          value={formatPercent(metrics.gpu.utilizationPercent)}
+        />
         <StatusDivider />
-        <StatusSegment label="" tone="teal" value={formatTemperature(temperatureC)} />
+        <StatusSegment
+          label=""
+          tone="teal"
+          value={formatTemperature(temperatureC)}
+        />
         <StatusDivider />
-        <StatusSegment label="NET" tone="violet" value={`↓${formatNetwork(metrics.network.downBytesPerSecond)} ↑${formatNetwork(metrics.network.upBytesPerSecond)}`} />
+        <StatusSegment
+          label="NET"
+          tone="violet"
+          value={`↓${formatNetwork(metrics.network.downBytesPerSecond)} ↑${formatNetwork(metrics.network.upBytesPerSecond)}`}
+        />
         <StatusDivider />
         <span className="flex items-center gap-1.5 px-3 text-primary">
           <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_var(--primary)] [animation:nd-pulse_2.4s_ease-in-out_infinite]" />
@@ -117,7 +145,9 @@ function StatusSegment({
 }) {
   return (
     <div className="status-segment">
-      {label ? <span className={`status-label status-${tone}`}>{label}</span> : null}
+      {label ? (
+        <span className={`status-label status-${tone}`}>{label}</span>
+      ) : null}
       <span className="status-value">{value}</span>
     </div>
   );
@@ -148,7 +178,12 @@ function formatNetwork(value: number | null) {
 
 function clockParts(value: Date) {
   const [hourMinute = '', seconds = ''] = value
-    .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+    .toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    })
     .split(/:(?=\d{2}$)/);
 
   return { hourMinute, seconds };

@@ -11,7 +11,12 @@ type GitHubPrListConfig = {
 type State =
   | { status: 'loading' }
   | { status: 'error'; message: string }
-  | { status: 'ready'; login?: string; items: GitHubPullRequest[]; fetchedAt?: string };
+  | {
+      status: 'ready';
+      login?: string;
+      items: GitHubPullRequest[];
+      fetchedAt?: string;
+    };
 
 export const GitHubPrListPlugin = {
   id: 'github-pr-list',
@@ -30,11 +35,19 @@ export const GitHubPrListPlugin = {
         try {
           const data = await getGitHubPullRequests();
           if (!cancelled) {
-            setState({ status: 'ready', login: data.login, items: data.items, fetchedAt: data.fetchedAt });
+            setState({
+              status: 'ready',
+              login: data.login,
+              items: data.items,
+              fetchedAt: data.fetchedAt,
+            });
           }
         } catch (cause) {
           if (!cancelled) {
-            setState({ status: 'error', message: cause instanceof Error ? cause.message : String(cause) });
+            setState({
+              status: 'error',
+              message: cause instanceof Error ? cause.message : String(cause),
+            });
           }
         }
       }
@@ -47,9 +60,14 @@ export const GitHubPrListPlugin = {
       };
     }, []);
 
-    const login = state.status === 'ready' && state.login ? `@${state.login}` : '@you';
-    const items = state.status === 'ready' ? state.items.slice(0, config.limit) : [];
-    const countLabel = state.status === 'ready' ? `${items.length} OPEN PR${items.length === 1 ? '' : 's'}` : 'OPEN PRs';
+    const login =
+      state.status === 'ready' && state.login ? `@${state.login}` : '@you';
+    const items =
+      state.status === 'ready' ? state.items.slice(0, config.limit) : [];
+    const countLabel =
+      state.status === 'ready'
+        ? `${items.length} OPEN PR${items.length === 1 ? '' : 's'}`
+        : 'OPEN PRs';
 
     return (
       <div className="terminal-list flex h-full min-h-0 flex-col">
@@ -68,25 +86,42 @@ export const GitHubPrListPlugin = {
           />
         ) : null}
         {state.status === 'ready' && items.length === 0 ? (
-          <EmptyState title="Inbox zero" detail="Authored, assigned, and review-requested PRs are clear." />
+          <EmptyState
+            title="Inbox zero"
+            detail="Authored, assigned, and review-requested PRs are clear."
+          />
         ) : null}
         {state.status === 'ready' && items.length > 0 ? (
           <ScrollArea className="flex-1">
             <ul>
               {items.map((item) => (
-                <li key={item.url} className="pr-row px-3.5 py-2 last:border-b-0">
-                  <a className="group block" href={item.url} rel="noreferrer" target="_blank">
+                <li
+                  key={item.url}
+                  className="pr-row px-3.5 py-2 last:border-b-0"
+                >
+                  <a
+                    className="group block"
+                    href={item.url}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
                     <div className="mb-1 flex items-center justify-between gap-3 font-mono text-[10.5px] text-muted">
                       <span className="truncate">{item.repo}</span>
-                      <span className="shrink-0">#{item.number} · {relativeTime(item.updatedAt)}</span>
+                      <span className="shrink-0">
+                        #{item.number} · {relativeTime(item.updatedAt)}
+                      </span>
                     </div>
                     <p className="line-clamp-2 text-[13px] font-medium leading-[1.35] text-ink group-hover:text-primary-strong">
                       {item.title}
                     </p>
                     <div className="mt-1.5 flex items-center gap-2.5 font-mono text-[10px] text-primary">
                       <span>● checks pass</span>
-                      <span className="text-violet">◆ {item.comments || 1} review</span>
-                      {item.labels.includes('draft') ? <span className="text-muted">△ draft</span> : null}
+                      <span className="text-violet">
+                        ◆ {item.comments || 1} review
+                      </span>
+                      {item.labels.includes('draft') ? (
+                        <span className="text-muted">△ draft</span>
+                      ) : null}
                     </div>
                     {item.labels.length > 0 ? (
                       <div className="mt-1.5 flex flex-wrap gap-1">

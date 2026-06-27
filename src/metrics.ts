@@ -67,13 +67,15 @@ export async function readHostMetrics() {
 }
 
 async function sampleHostMetrics(): Promise<HostMetrics> {
-  const [load, memory, graphics, temperature, networkStats] = await Promise.all([
-    nullable(() => si.currentLoad()),
-    nullable(() => si.mem()),
-    nullable(() => si.graphics()),
-    nullable(() => si.cpuTemperature()),
-    nullable(() => si.networkStats()),
-  ]);
+  const [load, memory, graphics, temperature, networkStats] = await Promise.all(
+    [
+      nullable(() => si.currentLoad()),
+      nullable(() => si.mem()),
+      nullable(() => si.graphics()),
+      nullable(() => si.cpuTemperature()),
+      nullable(() => si.networkStats()),
+    ],
+  );
 
   const totalMemory = memory?.total ?? os.totalmem();
   const freeMemory = memory?.available ?? memory?.free ?? os.freemem();
@@ -128,21 +130,32 @@ async function nullable<T>(read: () => Promise<T>) {
   }
 }
 
-function selectGpu(controllers: Awaited<ReturnType<typeof si.graphics>>['controllers']) {
-  return controllers.find((controller) => controller.utilizationGpu != null || controller.temperatureGpu != null)
-    ?? controllers.find((controller) => controller.external)
-    ?? controllers[0]
-    ?? null;
+function selectGpu(
+  controllers: Awaited<ReturnType<typeof si.graphics>>['controllers'],
+) {
+  return (
+    controllers.find(
+      (controller) =>
+        controller.utilizationGpu != null || controller.temperatureGpu != null,
+    ) ??
+    controllers.find((controller) => controller.external) ??
+    controllers[0] ??
+    null
+  );
 }
 
-function summarizeNetwork(stats: Awaited<ReturnType<typeof si.networkStats>>): HostMetrics['network'] {
+function summarizeNetwork(
+  stats: Awaited<ReturnType<typeof si.networkStats>>,
+): HostMetrics['network'] {
   const active = stats.filter((item) => {
     const hasRate = positiveRate(item.rx_sec) || positiveRate(item.tx_sec);
     return item.operstate === 'up' || hasRate;
   });
 
   const candidates = active.length > 0 ? active : stats;
-  const validRates = candidates.filter((item) => validRate(item.rx_sec) || validRate(item.tx_sec));
+  const validRates = candidates.filter(
+    (item) => validRate(item.rx_sec) || validRate(item.tx_sec),
+  );
 
   if (validRates.length === 0) {
     return {

@@ -4,6 +4,7 @@ web/dist/
 .flue-vite/
 .astro/
 design/
+research-repos/
 data/*.db
 data/*.db-*
 .env

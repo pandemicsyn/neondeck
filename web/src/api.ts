@@ -79,7 +79,8 @@ async function getJson<T>(url: string) {
   const data = (await response.json()) as T;
 
   if (!response.ok) {
-    const message = readErrorMessage(data) ?? `Request failed with ${response.status}`;
+    const message =
+      readErrorMessage(data) ?? `Request failed with ${response.status}`;
     throw new Error(message);
   }
 

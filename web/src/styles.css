@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme {
   --color-bg: var(--bg);
@@ -14,13 +14,16 @@
   --color-primary-ink: var(--primary-ink);
   --color-accent: var(--accent);
   --color-violet: var(--violet);
-  --font-display: "Chakra Petch", sans-serif;
-  --font-sans: "IBM Plex Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --font-display: 'Chakra Petch', sans-serif;
+  --font-sans:
+    'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    sans-serif;
+  --font-mono:
+    'IBM Plex Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
 }
 
 :root,
-:root[data-theme="light"] {
+:root[data-theme='light'] {
   color-scheme: light;
   --bg: #edf5f8;
   --canvas: #edf5f8;
@@ -54,7 +57,7 @@
   --deck-assistant-border: rgba(20, 45, 60, 0.14);
 }
 
-:root[data-theme="dark"] {
+:root[data-theme='dark'] {
   color-scheme: dark;
   --bg: #0c0d12;
   --canvas: #0a0b10;
@@ -152,12 +155,28 @@ button:disabled {
 .dashboard-grid {
   min-height: 0;
   background:
-    linear-gradient(118deg, transparent 0 19%, rgba(215, 247, 255, 0.035) 19% 26%, transparent 26% 43%, rgba(255, 79, 184, 0.045) 43% 46%, transparent 46% 68%, rgba(139, 77, 255, 0.055) 68% 72%, transparent 72%),
-    linear-gradient(64deg, transparent 0 33%, rgba(0, 183, 199, 0.045) 33% 37%, transparent 37% 61%, rgba(215, 247, 255, 0.032) 61% 68%, transparent 68%),
+    linear-gradient(
+      118deg,
+      transparent 0 19%,
+      rgba(215, 247, 255, 0.035) 19% 26%,
+      transparent 26% 43%,
+      rgba(255, 79, 184, 0.045) 43% 46%,
+      transparent 46% 68%,
+      rgba(139, 77, 255, 0.055) 68% 72%,
+      transparent 72%
+    ),
+    linear-gradient(
+      64deg,
+      transparent 0 33%,
+      rgba(0, 183, 199, 0.045) 33% 37%,
+      transparent 37% 61%,
+      rgba(215, 247, 255, 0.032) 61% 68%,
+      transparent 68%
+    ),
     var(--deck-bg);
 }
 
-:root[data-theme="light"] .dashboard-grid {
+:root[data-theme='light'] .dashboard-grid {
   background: var(--deck-bg);
 }
 
@@ -188,7 +207,12 @@ button:disabled {
 }
 
 .miami-accent {
-  background: linear-gradient(90deg, var(--primary), var(--accent), var(--violet));
+  background: linear-gradient(
+    90deg,
+    var(--primary),
+    var(--accent),
+    var(--violet)
+  );
 }
 
 .powerline {

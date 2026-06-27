@@ -33,11 +33,27 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     <title>{title}</title>
   </head>
   <body>
-    <svg class="svg-defs" width="0" height="0" aria-hidden="true" focusable="false">
+    <svg
+      class="svg-defs"
+      width="0"
+      height="0"
+      aria-hidden="true"
+      focusable="false"
+    >
       <defs>
         <filter id="ndCamoWarp">
-          <feTurbulence type="fractalNoise" baseFrequency="0.011 0.018" numOctaves="3" seed="7" result="n"></feTurbulence>
-          <feDisplacementMap in="SourceGraphic" in2="n" scale="64" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency="0.011 0.018"
+            numOctaves="3"
+            seed="7"
+            result="n"></feTurbulence>
+          <feDisplacementMap
+            in="SourceGraphic"
+            in2="n"
+            scale="64"
+            xChannelSelector="R"
+            yChannelSelector="G"></feDisplacementMap>
         </filter>
       </defs>
     </svg>
@@ -46,23 +62,31 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
       const root = document.documentElement;
       const urlLook = new URLSearchParams(window.location.search).get('look');
       const storedLook = window.localStorage.getItem('neondeck-look');
-      const initialLook = urlLook === 'deck' || urlLook === 'light' || urlLook === 'camo'
-        ? urlLook
-        : storedLook === 'deck' || storedLook === 'light' || storedLook === 'camo'
-          ? storedLook
-          : 'camo';
+      const initialLook =
+        urlLook === 'deck' || urlLook === 'light' || urlLook === 'camo'
+          ? urlLook
+          : storedLook === 'deck' ||
+              storedLook === 'light' ||
+              storedLook === 'camo'
+            ? storedLook
+            : 'camo';
 
       function setLook(look) {
         root.dataset.look = look;
         root.dataset.theme = look === 'light' ? 'light' : 'dark';
         window.localStorage.setItem('neondeck-look', look);
         document.querySelectorAll('[data-look-button]').forEach((button) => {
-          button.setAttribute('aria-pressed', button.dataset.lookButton === look ? 'true' : 'false');
+          button.setAttribute(
+            'aria-pressed',
+            button.dataset.lookButton === look ? 'true' : 'false',
+          );
         });
       }
 
       document.querySelectorAll('[data-look-button]').forEach((button) => {
-        button.addEventListener('click', () => setLook(button.dataset.lookButton));
+        button.addEventListener('click', () =>
+          setLook(button.dataset.lookButton),
+        );
       });
 
       document.querySelectorAll('[data-copy-command]').forEach((button) => {
@@ -105,10 +129,10 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     --cyan: #69e6ff;
     --violet: #8b4dff;
     --card: #0e0f13;
-    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
   }
 
-  :root[data-theme="light"] {
+  :root[data-theme='light'] {
     color-scheme: light;
     --bg: #e7f3f7;
     --bg-strong: #dcedf2;
@@ -187,7 +211,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     display: inline-flex;
     align-items: center;
     gap: 10px;
-    font-family: "Chakra Petch", sans-serif;
+    font-family: 'Chakra Petch', sans-serif;
     font-size: 19px;
     font-weight: 700;
     letter-spacing: 0.04em;
@@ -206,7 +230,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     display: flex;
     align-items: center;
     gap: 18px;
-    font-family: "IBM Plex Mono", monospace;
+    font-family: 'IBM Plex Mono', monospace;
     font-size: 13px;
   }
 
@@ -237,7 +261,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     margin-left: -1px;
   }
 
-  .look-toggle button[aria-pressed="true"] {
+  .look-toggle button[aria-pressed='true'] {
     border-color: var(--cyan);
     background: color-mix(in srgb, var(--cyan) 14%, transparent);
     color: var(--cyan);
@@ -250,7 +274,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     border: 1px solid var(--cyan);
     background: var(--cyan);
     color: var(--bg);
-    font-family: "IBM Plex Mono", monospace;
+    font-family: 'IBM Plex Mono', monospace;
     font-size: 14px;
     font-weight: 600;
     padding: 13px 22px;
@@ -289,7 +313,11 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
 
   .hero-wash {
     position: absolute;
-    background: radial-gradient(circle at 50% 50%, var(--wash-color), transparent 62%);
+    background: radial-gradient(
+      circle at 50% 50%,
+      var(--wash-color),
+      transparent 62%
+    );
     filter: blur(70px);
   }
 
@@ -328,8 +356,12 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   .hero-stripes {
     position: absolute;
     inset: -12%;
-    background: repeating-linear-gradient(102deg, transparent 0 24px, rgba(10, 12, 16, 0.92) 24px 56px);
-    filter: url("#ndCamoWarp");
+    background: repeating-linear-gradient(
+      102deg,
+      transparent 0 24px,
+      rgba(10, 12, 16, 0.92) 24px 56px
+    );
+    filter: url('#ndCamoWarp');
     mix-blend-mode: multiply;
     opacity: 0.78;
     animation: nd-drift 26s ease-in-out infinite alternate;
@@ -338,23 +370,28 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   .hero-vignette {
     position: absolute;
     inset: 0;
-    background: linear-gradient(180deg, rgba(14, 15, 19, 0.2), rgba(14, 15, 19, 0.55) 70%, var(--bg));
+    background: linear-gradient(
+      180deg,
+      rgba(14, 15, 19, 0.2),
+      rgba(14, 15, 19, 0.55) 70%,
+      var(--bg)
+    );
   }
 
-  :root[data-look="deck"] .hero {
+  :root[data-look='deck'] .hero {
     background: #0b0c10;
   }
 
-  :root[data-look="deck"] .hero-bg {
+  :root[data-look='deck'] .hero-bg {
     left: 58%;
     opacity: 0.72;
   }
 
-  :root[data-look="deck"] .hero-wash {
+  :root[data-look='deck'] .hero-wash {
     display: none;
   }
 
-  :root[data-look="deck"] .hero-wash.teal {
+  :root[data-look='deck'] .hero-wash.teal {
     --wash-color: rgba(0, 183, 199, 0.45);
     display: block;
     top: -20%;
@@ -362,60 +399,87 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     right: -10%;
     width: 90%;
     height: 140%;
-    background: radial-gradient(circle at 60% 40%, var(--wash-color), transparent 64%);
+    background: radial-gradient(
+      circle at 60% 40%,
+      var(--wash-color),
+      transparent 64%
+    );
   }
 
-  :root[data-look="deck"] .hero-stripes {
+  :root[data-look='deck'] .hero-stripes {
     inset: -14%;
-    background: repeating-linear-gradient(98deg, transparent 0 26px, rgba(6, 8, 11, 0.95) 26px 60px);
+    background: repeating-linear-gradient(
+      98deg,
+      transparent 0 26px,
+      rgba(6, 8, 11, 0.95) 26px 60px
+    );
     animation: none;
     opacity: 0.85;
   }
 
-  :root[data-look="deck"] .hero-vignette {
-    background: linear-gradient(90deg, #0b0c10 0 28%, rgba(11, 12, 16, 0.62) 62%, rgba(11, 12, 16, 0.1));
+  :root[data-look='deck'] .hero-vignette {
+    background: linear-gradient(
+      90deg,
+      #0b0c10 0 28%,
+      rgba(11, 12, 16, 0.62) 62%,
+      rgba(11, 12, 16, 0.1)
+    );
   }
 
-  :root[data-theme="light"] .hero-wash {
+  :root[data-theme='light'] .hero-wash {
     filter: blur(72px);
   }
 
-  :root[data-theme="light"] .hero-wash.pink {
+  :root[data-theme='light'] .hero-wash.pink {
     --wash-color: rgba(255, 79, 184, 0.4);
   }
 
-  :root[data-theme="light"] .hero-wash.teal {
+  :root[data-theme='light'] .hero-wash.teal {
     --wash-color: rgba(0, 183, 199, 0.34);
   }
 
-  :root[data-theme="light"] .hero-wash.violet {
+  :root[data-theme='light'] .hero-wash.violet {
     --wash-color: rgba(139, 77, 255, 0.32);
   }
 
-  :root[data-theme="light"] .hero-wash.cyan {
+  :root[data-theme='light'] .hero-wash.cyan {
     --wash-color: rgba(0, 183, 199, 0.3);
   }
 
-  :root[data-theme="light"] .hero-stripes {
-    background: repeating-linear-gradient(102deg, transparent 0 24px, rgba(30, 28, 46, 0.14) 24px 56px);
+  :root[data-theme='light'] .hero-stripes {
+    background: repeating-linear-gradient(
+      102deg,
+      transparent 0 24px,
+      rgba(30, 28, 46, 0.14) 24px 56px
+    );
     opacity: 0.8;
   }
 
-  :root[data-theme="light"] .hero-vignette {
-    background: linear-gradient(180deg, rgba(231, 243, 247, 0.12), rgba(231, 243, 247, 0.5) 72%, var(--bg));
+  :root[data-theme='light'] .hero-vignette {
+    background: linear-gradient(
+      180deg,
+      rgba(231, 243, 247, 0.12),
+      rgba(231, 243, 247, 0.5) 72%,
+      var(--bg)
+    );
   }
 
-  :root[data-look="deck"][data-theme="light"] .hero-bg {
+  :root[data-look='deck'][data-theme='light'] .hero-bg {
     left: 0;
     opacity: 0.74;
   }
 
-  :root[data-look="deck"][data-theme="light"] .hero-wash {
+  :root[data-look='deck'][data-theme='light'] .hero-wash {
     display: block;
   }
 
-  :root[data-look="deck"][data-theme="light"] .hero-vignette {
-    background: linear-gradient(180deg, rgba(231, 243, 247, 0.12), rgba(231, 243, 247, 0.5) 72%, var(--bg));
+  :root[data-look='deck'][data-theme='light'] .hero-vignette {
+    background: linear-gradient(
+      180deg,
+      rgba(231, 243, 247, 0.12),
+      rgba(231, 243, 247, 0.5) 72%,
+      var(--bg)
+    );
   }
 
   @keyframes nd-drift {
@@ -454,7 +518,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   .kicker {
     margin: 0 0 22px;
     color: var(--cyan);
-    font-family: "IBM Plex Mono", monospace;
+    font-family: 'IBM Plex Mono', monospace;
     font-size: 12px;
     letter-spacing: 0.24em;
   }
@@ -462,7 +526,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   h1,
   h2,
   h3 {
-    font-family: "Chakra Petch", sans-serif;
+    font-family: 'Chakra Petch', sans-serif;
     color: var(--ink);
   }
 
@@ -480,7 +544,12 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   }
 
   .hero-gradient {
-    background: linear-gradient(92deg, var(--pink), var(--cyan) 55%, var(--violet));
+    background: linear-gradient(
+      92deg,
+      var(--pink),
+      var(--cyan) 55%,
+      var(--violet)
+    );
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
@@ -513,10 +582,12 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     padding: 0;
     border: 1px solid rgba(105, 230, 255, 0.28);
     background: rgba(8, 9, 12, 0.72);
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 18px 50px rgba(0, 0, 0, 0.5);
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.4),
+      0 18px 50px rgba(0, 0, 0, 0.5);
     color: var(--body);
     backdrop-filter: blur(4px);
-    font-family: "IBM Plex Mono", monospace;
+    font-family: 'IBM Plex Mono', monospace;
     font-size: 15px;
   }
 
@@ -573,31 +644,31 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     color: var(--ink);
   }
 
-  :root[data-look="deck"] .hero-primary {
+  :root[data-look='deck'] .hero-primary {
     border-color: var(--cyan);
     background: var(--cyan);
     box-shadow: none;
   }
 
-  :root[data-look="deck"] .hero-primary:hover {
+  :root[data-look='deck'] .hero-primary:hover {
     border-color: var(--pink);
     background: var(--pink);
   }
 
-  :root[data-theme="light"] .hero-primary {
+  :root[data-theme='light'] .hero-primary {
     border-color: var(--pink);
     background: var(--pink);
     box-shadow: 0 10px 26px rgba(224, 57, 155, 0.32);
     color: #fcfdff;
   }
 
-  :root[data-theme="light"] .hero-primary:hover {
+  :root[data-theme='light'] .hero-primary:hover {
     border-color: var(--cyan);
     background: var(--cyan);
     color: #fcfdff;
   }
 
-  :root[data-theme="light"] .command {
+  :root[data-theme='light'] .command {
     border-color: rgba(18, 40, 55, 0.2);
     background: #0a0c12;
     box-shadow: 0 18px 50px rgba(20, 40, 60, 0.16);
@@ -697,7 +768,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     overflow: auto;
     border: 1px solid var(--line);
     background: var(--chrome);
-    font-family: "IBM Plex Mono", monospace;
+    font-family: 'IBM Plex Mono', monospace;
     font-size: 13px;
     line-height: 1.75;
   }
@@ -732,7 +803,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   }
 
   code {
-    font-family: "IBM Plex Mono", monospace;
+    font-family: 'IBM Plex Mono', monospace;
   }
 
   .docs-layout {
@@ -748,7 +819,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     align-self: start;
     display: grid;
     gap: 10px;
-    font-family: "IBM Plex Mono", monospace;
+    font-family: 'IBM Plex Mono', monospace;
     font-size: 13px;
   }
 
@@ -789,7 +860,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     border-top: 1px solid var(--line);
     padding: 34px 0;
     color: var(--faint);
-    font-family: "IBM Plex Mono", monospace;
+    font-family: 'IBM Plex Mono', monospace;
     font-size: 12px;
   }
 

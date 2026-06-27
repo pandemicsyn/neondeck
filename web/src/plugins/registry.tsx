@@ -11,7 +11,6 @@ export const plugins = [
   ClockStatusPlugin,
 ] satisfies DisplayPlugin<any>[];
 
-export const pluginRegistry = Object.fromEntries(plugins.map((plugin) => [plugin.id, plugin])) as Record<
-  string,
-  DisplayPlugin<any>
->;
+export const pluginRegistry = Object.fromEntries(
+  plugins.map((plugin) => [plugin.id, plugin]),
+) as Record<string, DisplayPlugin<any>>;

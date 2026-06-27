@@ -12,10 +12,18 @@
     "build:dashboard": "npm run build:web && flue build --target node",
     "build:server": "flue build --target node",
     "build:web": "vite build --config web/vite.config.ts",
+    "check": "npm run lint && npm run typecheck && npm run test",
     "dev": "concurrently -n server,web -c blue,green \"flue dev --target node\" \"vite --config web/vite.config.ts --host 127.0.0.1\"",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "oxlint src web/src web/vite.config.ts vitest.config.ts --react-plugin --jsx-a11y-plugin --vitest-plugin --import-plugin --no-error-on-unmatched-pattern",
+    "lint:fix": "npm run lint -- --fix",
     "run:display": "flue run display-assistant --target node --server /api/flue --input '{\"message\":\"Say hello in one sentence.\"}'",
     "start": "node dist/server.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit && tsc -p web/tsconfig.json --noEmit && npm run webapp:check",
+    "verify": "npm run check && npm run format:check && npm run build",
     "webapp:build": "npm --workspace webapp run build",
     "webapp:check": "npm --workspace webapp run check",
     "webapp:deploy": "npm --workspace webapp run deploy",
@@ -60,8 +68,13 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
     "concurrently": "^10.0.3",
+    "jsdom": "^29.1.1",
+    "oxlint": "^1.71.0",
+    "prettier": "^3.9.0",
+    "prettier-plugin-astro": "^0.14.1",
     "tailwindcss": "^4.3.1",
     "typescript": "^6.0.3",
-    "vite": "^8.1.0"
+    "vite": "^8.1.0",
+    "vitest": "^4.1.9"
   }
 }

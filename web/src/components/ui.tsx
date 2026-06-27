@@ -1,20 +1,38 @@
-import type { ButtonHTMLAttributes, HTMLAttributes, TextareaHTMLAttributes } from 'react';
+import type {
+  ButtonHTMLAttributes,
+  HTMLAttributes,
+  TextareaHTMLAttributes,
+} from 'react';
 import { cn } from '../lib/cn';
 
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('border border-line bg-panel text-ink', className)} {...props} />;
-}
-
-export function Badge({ className, ...props }: HTMLAttributes<HTMLSpanElement>) {
   return (
-    <span
-      className={cn('inline-flex items-center border border-line bg-soft px-1.5 py-0.5 font-mono text-[10px] leading-none text-muted', className)}
+    <div
+      className={cn('border border-line bg-panel text-ink', className)}
       {...props}
     />
   );
 }
 
-export function Button({ className, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
+export function Badge({
+  className,
+  ...props
+}: HTMLAttributes<HTMLSpanElement>) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center border border-line bg-soft px-1.5 py-0.5 font-mono text-[10px] leading-none text-muted',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export function Button({
+  className,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       className={cn(
@@ -26,7 +44,10 @@ export function Button({ className, ...props }: ButtonHTMLAttributes<HTMLButtonE
   );
 }
 
-export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export function Textarea({
+  className,
+  ...props
+}: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
       className={cn(
@@ -38,14 +59,25 @@ export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
   );
 }
 
-export function ScrollArea({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+export function ScrollArea({
+  className,
+  ...props
+}: HTMLAttributes<HTMLDivElement>) {
   return <div className={cn('min-h-0 overflow-auto', className)} {...props} />;
 }
 
-export function Separator({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+export function Separator({
+  className,
+  ...props
+}: HTMLAttributes<HTMLDivElement>) {
   return <div className={cn('h-px bg-line', className)} {...props} />;
 }
 
 export function Kbd({ className, ...props }: HTMLAttributes<HTMLElement>) {
-  return <kbd className={cn('font-mono text-[10px] text-muted', className)} {...props} />;
+  return (
+    <kbd
+      className={cn('font-mono text-[10px] text-muted', className)}
+      {...props}
+    />
+  );
 }

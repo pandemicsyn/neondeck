@@ -29,9 +29,15 @@ export const FlueChatPlugin = {
     ],
   },
   Component({ config }) {
-    const sessions = config.sessions.length > 0 ? config.sessions : FlueChatPlugin.defaultConfig.sessions;
-    const [activeSessionId, setActiveSessionId] = useState(() => sessions[0].id);
-    const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0];
+    const sessions =
+      config.sessions.length > 0
+        ? config.sessions
+        : FlueChatPlugin.defaultConfig.sessions;
+    const [activeSessionId, setActiveSessionId] = useState(
+      () => sessions[0].id,
+    );
+    const activeSession =
+      sessions.find((session) => session.id === activeSessionId) ?? sessions[0];
 
     return (
       <div className="flex h-full min-h-0 flex-col">
@@ -57,13 +63,22 @@ export const FlueChatPlugin = {
             <span className="text-muted">durable · ctx 18k</span>
           </div>
         </header>
-        <FlueChatSessionView agentName={config.agentName} session={activeSession} />
+        <FlueChatSessionView
+          agentName={config.agentName}
+          session={activeSession}
+        />
       </div>
     );
   },
 } satisfies DisplayPlugin<FlueChatConfig>;
 
-function FlueChatSessionView({ agentName, session }: { agentName: string; session: FlueChatSession }) {
+function FlueChatSessionView({
+  agentName,
+  session,
+}: {
+  agentName: string;
+  session: FlueChatSession;
+}) {
   const [input, setInput] = useState('');
   const agent = useFlueAgent({
     name: agentName,
@@ -97,7 +112,9 @@ function FlueChatSessionView({ agentName, session }: { agentName: string; sessio
           {agent.messages.length > 0 ? (
             <div className="chat-workflow px-2.5 py-1 font-mono text-[10.5px]">
               <span>workflow</span>
-              <span className="text-muted">session · {agent.messages.length} messages</span>
+              <span className="text-muted">
+                session · {agent.messages.length} messages
+              </span>
             </div>
           ) : null}
           {agent.messages.length === 0 ? (
@@ -105,16 +122,25 @@ function FlueChatSessionView({ agentName, session }: { agentName: string; sessio
               <div className="max-w-[42ch]">
                 <div className="miami-accent mx-auto mb-2 h-1.5 w-12" />
                 <p className="font-medium text-ink">Session ready</p>
-                <p className="mt-1 leading-5">Messages persist through the local Flue SQLite store.</p>
+                <p className="mt-1 leading-5">
+                  Messages persist through the local Flue SQLite store.
+                </p>
               </div>
             </div>
           ) : (
             agent.messages.map((message) => (
-              <article className={`chat-message chat-message-${message.role} space-y-1.5`} key={message.id}>
-                <p className="font-mono text-[10px] font-semibold text-muted">{message.role}</p>
+              <article
+                className={`chat-message chat-message-${message.role} space-y-1.5`}
+                key={message.id}
+              >
+                <p className="font-mono text-[10px] font-semibold text-muted">
+                  {message.role}
+                </p>
                 <div className="space-y-2 text-[13px] leading-[1.55] text-ink">
                   {message.parts.map((part, index) =>
-                    part.type === 'text' ? <p key={`${message.id}-${index}`}>{part.text}</p> : null,
+                    part.type === 'text' ? (
+                      <p key={`${message.id}-${index}`}>{part.text}</p>
+                    ) : null,
                   )}
                 </div>
               </article>
@@ -122,7 +148,10 @@ function FlueChatSessionView({ agentName, session }: { agentName: string; sessio
           )}
         </div>
       </ScrollArea>
-      <form className="flex h-11 items-center gap-2.5 border-t border-line bg-field px-4" onSubmit={submit}>
+      <form
+        className="flex h-11 items-center gap-2.5 border-t border-line bg-field px-4"
+        onSubmit={submit}
+      >
         <span className="font-mono text-[13px] text-accent">›</span>
         <Textarea
           className="dashboard-input h-7 flex-1 overflow-hidden px-0 py-1 font-mono text-[13px] leading-5"

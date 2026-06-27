@@ -52,7 +52,9 @@ app.get('/api/github/prs', async (c) => {
     `is:pr is:open archived:false review-requested:${login}`,
   ];
 
-  const results = await Promise.all(queries.map((query) => searchPullRequests(token, query)));
+  const results = await Promise.all(
+    queries.map((query) => searchPullRequests(token, query)),
+  );
   const items = new Map<string, GitHubPullRequest>();
 
   for (const result of results.flat()) {
@@ -104,7 +106,10 @@ async function searchPullRequests(token: string, query: string) {
     order: 'desc',
     per_page: '20',
   });
-  const response = await githubFetch(token, `https://api.github.com/search/issues?${params}`);
+  const response = await githubFetch(
+    token,
+    `https://api.github.com/search/issues?${params}`,
+  );
   const data = (await response.json()) as { items?: GitHubSearchIssue[] };
   return (data.items ?? []).map(normalizePullRequest);
 }
@@ -149,7 +154,9 @@ function normalizePullRequest(item: GitHubSearchIssue): GitHubPullRequest {
     url: item.html_url,
     state: item.state,
     author: item.user?.login ?? 'unknown',
-    labels: (item.labels ?? []).map((label) => label.name).filter((name): name is string => !!name),
+    labels: (item.labels ?? [])
+      .map((label) => label.name)
+      .filter((name): name is string => !!name),
     comments: item.comments,
     updatedAt: item.updated_at,
     createdAt: item.created_at,

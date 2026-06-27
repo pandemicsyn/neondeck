@@ -26,12 +26,16 @@ export type DashboardRegion = {
   config: Record<string, unknown>;
 };
 
-export type DisplayPluginProps<TConfig extends Record<string, unknown> = Record<string, unknown>> = {
+export type DisplayPluginProps<
+  TConfig extends Record<string, unknown> = Record<string, unknown>,
+> = {
   region: DashboardRegion;
   config: TConfig;
 };
 
-export type DisplayPlugin<TConfig extends Record<string, unknown> = Record<string, unknown>> = {
+export type DisplayPlugin<
+  TConfig extends Record<string, unknown> = Record<string, unknown>,
+> = {
   id: string;
   title: string;
   kind: 'data' | 'agent' | 'status';

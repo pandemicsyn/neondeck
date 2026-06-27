@@ -1,7 +1,9 @@
 <div class="deck-frame" aria-label="neondeck dashboard preview">
   <div class="deck-screen">
     <div class="statusline">
-      <span class="brand-segment"><span class="brand-dot"></span>neondeck <em>v0.4.1</em></span>
+      <span class="brand-segment"
+        ><span class="brand-dot"></span>neondeck <em>v0.4.1</em></span
+      >
       <span class="divider">│</span>
       <span>CPU 12%</span>
       <span class="divider">│</span>
@@ -27,7 +29,9 @@
         <div class="pr-row">
           <p><span>neondeck/core</span><span>#312 · 5h</span></p>
           <strong>feat: configurable statusline sensors</strong>
-          <small><span class="pink">● 1 failing</span><span>△ draft</span></small>
+          <small
+            ><span class="pink">● 1 failing</span><span>△ draft</span></small
+          >
         </div>
         <div class="pr-row">
           <p><span>neondeck/panels</span><span>#88 · 1d</span></p>
@@ -36,16 +40,25 @@
         </div>
       </section>
       <section class="chat-panel">
-        <header><span>● FLUE AGENT · triage.ts</span><span>durable · ctx 18k</span></header>
+        <header>
+          <span>● FLUE AGENT · triage.ts</span><span>durable · ctx 18k</span>
+        </header>
         <div class="chat-scroll">
           <div class="bubble user">What needs my attention this morning?</div>
-          <div class="tool-chip">workflow <span>triage_prs › step 2/4 · github.list_prs()</span></div>
+          <div class="tool-chip">
+            workflow <span>triage_prs › step 2/4 · github.list_prs()</span>
+          </div>
           <div class="bubble agent">
-            3 of your 4 open PRs are green. <span>neondeck/core #312</span> has 1 failing check. <b>flue/harness #1284</b> has 2 reviewers waiting on you.
+            3 of your 4 open PRs are green. <span>neondeck/core #312</span> has 1
+            failing check. <b>flue/harness #1284</b> has 2 reviewers waiting on you.
           </div>
           <div class="bubble user small">yes, re-run it</div>
         </div>
-        <div class="composer"><span>›</span><em>Message neondeck...</em><small>Enter send · Ctrl K tools</small></div>
+        <div class="composer">
+          <span>›</span><em>Message neondeck...</em><small
+            >Enter send · Ctrl K tools</small
+          >
+        </div>
       </section>
     </div>
   </div>
@@ -65,7 +78,7 @@
     min-width: 0;
     overflow: hidden;
     background: #0a0b10;
-    font-family: "IBM Plex Mono", monospace;
+    font-family: 'IBM Plex Mono', monospace;
   }
 
   .statusline {
@@ -149,14 +162,22 @@
   .chat-panel {
     min-width: 0;
     border-right: 1px solid rgba(255, 255, 255, 0.08);
-    background: linear-gradient(180deg, rgba(255, 79, 184, 0.04), transparent 40%);
+    background: linear-gradient(
+      180deg,
+      rgba(255, 79, 184, 0.04),
+      transparent 40%
+    );
   }
 
   .chat-panel {
     display: flex;
     flex-direction: column;
     border-right: 0;
-    background: linear-gradient(180deg, rgba(0, 183, 199, 0.04), transparent 36%);
+    background: linear-gradient(
+      180deg,
+      rgba(0, 183, 199, 0.04),
+      transparent 36%
+    );
   }
 
   .github-panel header,
@@ -199,7 +220,7 @@
     display: block;
     margin: 3px 0 5px;
     color: var(--body);
-    font-family: "IBM Plex Sans", sans-serif;
+    font-family: 'IBM Plex Sans', sans-serif;
     font-size: clamp(8px, 1vw, 13px);
     font-weight: 500;
   }
@@ -225,7 +246,7 @@
     border: 1px solid rgba(255, 255, 255, 0.08);
     background: rgba(255, 255, 255, 0.04);
     color: rgba(215, 247, 255, 0.9);
-    font-family: "IBM Plex Sans", sans-serif;
+    font-family: 'IBM Plex Sans', sans-serif;
     font-size: clamp(8px, 1vw, 13px);
     line-height: 1.55;
     padding: 9px 13px;

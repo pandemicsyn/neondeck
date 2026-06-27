@@ -34,17 +34,32 @@ const dashboardConfig = `{
         </div>
         <div class="hero-center">
           <p class="kicker">OPEN · ALWAYS-ON · BUILT ON FLUE</p>
-          <h1>A sensor-style deck for a<br /><span class="hero-gradient">durable Flue agent.</span></h1>
+          <h1>
+            A sensor-style deck for a<br /><span class="hero-gradient"
+              >durable Flue agent.</span
+            >
+          </h1>
           <p class="hero-copy">
-            GitHub on the left, an always-on chat harness on the right, a live terminal status line across the bottom. Tuned for the ultrawide Corsair Xeneon Edge, fully configurable for any display.
+            GitHub on the left, an always-on chat harness on the right, a live
+            terminal status line across the bottom. Tuned for the ultrawide
+            Corsair Xeneon Edge, fully configurable for any display.
           </p>
           <div class="command">
-            <span class="command-code"><span>$</span> npm create neondeck@latest</span>
-            <button type="button" data-copy-command="npm create neondeck@latest">copy</button>
+            <span class="command-code"
+              ><span>$</span> npm create neondeck@latest</span
+            >
+            <button type="button" data-copy-command="npm create neondeck@latest"
+              >copy</button
+            >
           </div>
           <div class="hero-actions">
-            <a class="button hero-primary" href="https://github.com/pandemicsyn/neondeck">★ Star on GitHub</a>
-            <a class="button secondary hero-secondary" href="/docs/">Read the docs →</a>
+            <a
+              class="button hero-primary"
+              href="https://github.com/pandemicsyn/neondeck">★ Star on GitHub</a
+            >
+            <a class="button secondary hero-secondary" href="/docs/"
+              >Read the docs →</a
+            >
           </div>
         </div>
       </section>
@@ -53,7 +68,11 @@ const dashboardConfig = `{
         <div class="container">
           <div class="section-header">
             <h2>The deck, live.</h2>
-            <p>Corsair Xeneon Edge, 2560 x 720, 32:9. The default layout is a 12-column surface with a PR queue, Flue sessions, and sensor data designed to stay visible all day.</p>
+            <p>
+              Corsair Xeneon Edge, 2560 x 720, 32:9. The default layout is a
+              12-column surface with a PR queue, Flue sessions, and sensor data
+              designed to stay visible all day.
+            </p>
           </div>
           <DeckMockup />
         </div>
@@ -63,38 +82,60 @@ const dashboardConfig = `{
         <div class="container">
           <div class="section-header">
             <h2>Built for work in progress.</h2>
-            <p>neondeck keeps deterministic signals and agent conversations in one stable view without turning the companion display into another browser tab.</p>
+            <p>
+              neondeck keeps deterministic signals and agent conversations in
+              one stable view without turning the companion display into another
+              browser tab.
+            </p>
           </div>
           <div class="feature-grid">
             <article class="feature">
               <div class="spark pink"></div>
               <h3>GitHub work queue</h3>
-              <p>See authored, assigned, and review-requested pull requests without exposing your GitHub token to the browser.</p>
+              <p>
+                See authored, assigned, and review-requested pull requests
+                without exposing your GitHub token to the browser.
+              </p>
             </article>
             <article class="feature">
               <div class="spark teal"></div>
               <h3>Durable Flue chat</h3>
-              <p>Persistent Flue sessions survive local restarts through SQLite-backed runtime state.</p>
+              <p>
+                Persistent Flue sessions survive local restarts through
+                SQLite-backed runtime state.
+              </p>
             </article>
             <article class="feature">
               <div class="spark"></div>
               <h3>Sensor statusline</h3>
-              <p>CPU, memory, network, and best-effort GPU or temperature readings are normalized behind one local API.</p>
+              <p>
+                CPU, memory, network, and best-effort GPU or temperature
+                readings are normalized behind one local API.
+              </p>
             </article>
             <article class="feature">
               <div class="spark violet"></div>
               <h3>Config-first layout</h3>
-              <p>Panels are typed plugins selected by local JSON config. Change spans, sessions, and panel settings without rebuilding the app.</p>
+              <p>
+                Panels are typed plugins selected by local JSON config. Change
+                spans, sessions, and panel settings without rebuilding the app.
+              </p>
             </article>
             <article class="feature">
               <div class="spark pink"></div>
               <h3>Local-first runtime</h3>
-              <p>Runs on your machine with your provider keys, your GitHub token, and your SOUL.md agent personality file.</p>
+              <p>
+                Runs on your machine with your provider keys, your GitHub token,
+                and your SOUL.md agent personality file.
+              </p>
             </article>
             <article class="feature">
               <div class="spark teal"></div>
               <h3>Themeable surface</h3>
-              <p>The Miami tiger-stripe palette ships as the first preset, with light and dark tokens from the start.</p>
+              <p>
+                The Miami tiger-stripe palette ships as the first preset, with
+                light and dark tokens from the start.
+              </p>
             </article>
           </div>
         </div>
@@ -106,14 +147,21 @@ const dashboardConfig = `{
             <p class="kicker">CONFIG · NOT A BUILDER</p>
             <h2>The layout is a file.</h2>
             <p class="hero-copy">
-              Start with the Xeneon Edge preset, then change regions and plugin config in `config/dashboard.json`. The goal is reliable structure first, a drag editor later.
+              Start with the Xeneon Edge preset, then change regions and plugin
+              config in `config/dashboard.json`. The goal is reliable structure
+              first, a drag editor later.
             </p>
             <div class="hero-actions">
-              <a class="button secondary" href="/docs/getting-started/">Get started</a>
+              <a class="button secondary" href="/docs/getting-started/"
+                >Get started</a
+              >
             </div>
           </div>
           <div class="code-window" aria-label="dashboard configuration example">
-            <div class="code-header"><span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span></div>
+            <div class="code-header">
+              <span class="code-dot"></span><span class="code-dot"></span><span
+                class="code-dot"></span>
+            </div>
             <pre><code>{dashboardConfig}</code></pre>
           </div>
         </div>

@@ -1,0 +1,14 @@
+node_modules
+dist
+web/dist
+webapp/dist
+webapp/.astro
+data
+design
+research-repos
+.flue-vite
+package-lock.json
+
+.env
+.env.*
+!.env.example

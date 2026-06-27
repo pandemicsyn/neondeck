@@ -21,7 +21,11 @@ export const ClockStatusPlugin = {
             {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </p>
           <p className="text-xs text-muted">
-            {now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+            {now.toLocaleDateString([], {
+              weekday: 'short',
+              month: 'short',
+              day: 'numeric',
+            })}
           </p>
         </div>
         <div className="text-right">
