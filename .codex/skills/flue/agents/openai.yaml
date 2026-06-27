@@ -1,0 +1,4 @@
+interface:
+  display_name: "Flue"
+  short_description: "Build and reason about Flue agents"
+  default_prompt: "Use $flue to design a Flue agent, workflow, action, or schedule."
