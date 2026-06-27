@@ -53,13 +53,13 @@ Use this format:
 ## 2026-06-27 - Neon Commands And Workflows
 
 - Roadmap item: Phase 6 / Neon commands and workflows
-- Decision: Landed slash command parsing, deterministic command workflow execution for `/repo-status`, `/review-queue`, `/briefing`, and `/watch-pr`, persisted `workflow_summaries`, Flue command actions, HTTP command APIs, and dashboard command buttons in the chat panel. These command workflows are Neondeck backend workflows rather than separate Flue `defineWorkflow` files.
-- Reason: The roadmap calls for one backend command/event surface shared by chat and UI buttons. Deterministic command workflows are the lowest-friction way to make commands usable now while storing durable results for later UI panels.
-- Follow-up: Promote commands that need long-running agent reasoning into first-class Flue workflows when the workflow dashboard and command orchestration mature.
+- Decision: Landed slash command parsing, deterministic command workflow execution for `/repo-status`, `/review-queue`, `/briefing`, and `/watch-pr`, persisted `workflow_summaries`, Flue command actions, HTTP command APIs, dashboard command buttons in the chat panel, and thin Flue `defineWorkflow` wrappers for command-run, briefing, watch-pr, watch-release, dev-doctor, and scheduler-tick. The dashboard command API still executes the app-owned command path synchronously for immediate UI results.
+- Reason: The roadmap calls for one backend command/event surface shared by chat and UI buttons. Deterministic command workflows keep that shared app surface usable now, while the Flue workflow wrappers provide Flue run identity/history for bounded operations without splitting command semantics.
+- Follow-up: Wire dashboard workflow observation with `@flue/react`/SDK when the workflow dashboard matures, and promote commands that need long-running agent reasoning into richer first-class Flue workflows.
 
 ## 2026-06-27 - Release Watch
 
 - Roadmap item: Phase 10 / release watch
-- Decision: Landed `/watch-release`, release-watch scheduler execution, and `until prod` PR watch linkage as default-branch GitHub check polling. Provider-specific production/deploy adapters remain deferred.
-- Reason: The roadmap explicitly marks provider-specific deploy adapters as later work. Default-branch green checks give a deterministic release watch now while keeping deployment-provider integration separate.
+- Decision: Landed `/watch-release`, release-watch scheduler execution, and `until prod` PR watch linkage. Direct release watches poll configured default-branch GitHub checks, while linked `until prod` PR release watches poll the source PR merge SHA. Provider-specific production/deploy adapters remain deferred.
+- Reason: The roadmap explicitly marks provider-specific deploy adapters as later work. GitHub checks give a deterministic release watch now while keeping deployment-provider integration separate.
 - Follow-up: Add provider adapters for configured `productionTarget` values when deploy providers are selected.

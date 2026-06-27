@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- fix(flue): expose command, watch, scheduler, GitHub, and doctor operations through Flue actions/workflows
 - feat(release): add release watch command and default-branch check polling
 - feat(dev): add local dev doctor command and diagnostics action
 - feat(dashboard): add runtime overview panel for home, repos, jobs, and skills

@@ -4,6 +4,7 @@ import {
   addWorkflowSummary,
   listJobs,
   listNotifications,
+  listWorkflowSummaries,
   type WorkflowSummaryRecord,
 } from './app-state';
 import {
@@ -84,7 +85,26 @@ export const commandsListAction = defineAction({
   },
 });
 
-export const neondeckCommandActions = [commandRunAction, commandsListAction];
+export const workflowSummariesListAction = defineAction({
+  name: 'neondeck_workflow_summaries_list',
+  description:
+    'List recently persisted Neondeck workflow and command summaries for follow-up questions.',
+  input: v.object({}),
+  async run() {
+    return {
+      ok: true,
+      action: 'workflow_summaries_list',
+      changed: false,
+      summaries: await listWorkflowSummaries(),
+    };
+  },
+});
+
+export const neondeckCommandActions = [
+  commandRunAction,
+  commandsListAction,
+  workflowSummariesListAction,
+];
 
 export function supportedCommands() {
   return [

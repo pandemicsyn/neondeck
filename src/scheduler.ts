@@ -413,6 +413,8 @@ async function refreshReleaseWatchJob(
   const repoRef = typeof config.repo === 'string' ? config.repo : undefined;
   const sourceWatchId =
     typeof config.sourceWatchId === 'string' ? config.sourceWatchId : undefined;
+  let sourceWatch:
+    Awaited<ReturnType<typeof listPrWatchRecords>>[number] | undefined;
   const repo = repoRef
     ? registry.repos.find(
         (item) =>
@@ -444,7 +446,7 @@ async function refreshReleaseWatchJob(
   }
 
   if (sourceWatchId) {
-    const sourceWatch = (await listPrWatchRecords(paths)).find(
+    sourceWatch = (await listPrWatchRecords(paths)).find(
       (watch) => watch.id === sourceWatchId,
     );
     if (!sourceWatch) {
@@ -474,6 +476,22 @@ async function refreshReleaseWatchJob(
         },
       };
     }
+    if (!sourceWatch.mergeCommitSha) {
+      return {
+        outcome: 'failed',
+        message: `Linked PR watch "${sourceWatchId}" has no merge commit SHA.`,
+        notifications: [
+          {
+            level: 'attention',
+            title: 'Release watch failed',
+            message: `Linked PR watch "${sourceWatchId}" has no merge commit SHA.`,
+            source: 'release-watch',
+            sourceId: job.id,
+            data: job.config,
+          },
+        ],
+      };
+    }
   }
 
   const token = process.env.GITHUB_TOKEN;
@@ -495,16 +513,20 @@ async function refreshReleaseWatchJob(
   }
 
   try {
+    const ref = sourceWatch?.mergeCommitSha ?? repo.defaultBranch;
     const checks = await fetchChecks({
       token,
       owner: repo.github.owner,
       repo: repo.github.name,
-      ref: repo.defaultBranch,
+      ref,
     });
     const snapshot = {
       repo: repo.id,
       repoFullName: repoFullName(repo),
       defaultBranch: repo.defaultBranch,
+      ref,
+      sourceWatchId: sourceWatch?.id ?? null,
+      sourceMergeCommitSha: sourceWatch?.mergeCommitSha ?? null,
       productionTarget: repo.productionTarget ?? null,
       checks,
       checkedAt: new Date().toISOString(),
@@ -518,8 +540,8 @@ async function refreshReleaseWatchJob(
     return {
       outcome: statusChanged ? 'updated' : 'silent',
       message: statusChanged
-        ? `Release watch ${repo.id} default branch is ${checks.status}.`
-        : `Release watch ${repo.id} default branch is unchanged.`,
+        ? `Release watch ${repo.id} ${ref} is ${checks.status}.`
+        : `Release watch ${repo.id} ${ref} is unchanged.`,
       result: snapshot,
       notifications: shouldNotify
         ? [releaseWatchNotification(job, snapshot)]
@@ -533,7 +555,7 @@ async function refreshReleaseWatchJob(
         {
           level: 'attention',
           title: 'Release watch failed',
-          message: `Could not fetch checks for ${repoFullName(repo)}@${repo.defaultBranch}.`,
+          message: `Could not fetch checks for ${repoFullName(repo)}@${sourceWatch?.mergeCommitSha ?? repo.defaultBranch}.`,
           source: 'release-watch',
           sourceId: job.id,
           data: { error: errorMessage(error), repo: repo.id },
@@ -549,20 +571,26 @@ function releaseWatchNotification(
     repo: string;
     repoFullName: string;
     defaultBranch: string;
+    ref: string;
+    sourceWatchId: string | null;
+    sourceMergeCommitSha: string | null;
     productionTarget: string | null;
     checks: GitHubCheckSummary;
     checkedAt: string;
   },
 ) {
   const failed = snapshot.checks.status === 'failure';
+  const titleTarget = snapshot.sourceMergeCommitSha
+    ? 'merge commit'
+    : snapshot.defaultBranch;
   return {
     level: failed ? ('urgent' as const) : ('ready' as const),
     title: failed
       ? 'Release watch needs attention'
-      : 'Release watch main green',
+      : `Release watch ${titleTarget} green`,
     message: failed
-      ? `${snapshot.repoFullName}@${snapshot.defaultBranch} checks failed.`
-      : `${snapshot.repoFullName}@${snapshot.defaultBranch} checks are green.`,
+      ? `${snapshot.repoFullName}@${snapshot.ref} checks failed.`
+      : `${snapshot.repoFullName}@${snapshot.ref} checks are green.`,
     source: 'release-watch',
     sourceId: job.id,
     data: snapshot,

@@ -14,6 +14,19 @@ import { addPrWatch, refreshPrWatch } from './watch-actions';
 const tempRoots: string[] = [];
 const originalEnv = { ...process.env };
 
+type SchedulerPrDetail = {
+  number: number;
+  title: string;
+  repo: string;
+  url: string;
+  state: string;
+  merged: boolean;
+  mergeCommitSha: string | null;
+  headSha: string;
+  baseRef: string;
+  updatedAt: string;
+};
+
 afterEach(async () => {
   process.env = { ...originalEnv };
   await Promise.all(
@@ -371,6 +384,52 @@ describe('scheduler', () => {
     });
   });
 
+  it('checks the source PR merge SHA for linked release watches', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const refs: string[] = [];
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await addPrWatch({ ref: 'neondeck#123 until prod' }, paths, async () =>
+      prDetail(),
+    );
+    await refreshPrWatch(
+      { id: 'pandemicsyn/neondeck#123' },
+      paths,
+      async () =>
+        prDetail({
+          state: 'closed',
+          merged: true,
+          mergeCommitSha: 'abc123',
+          updatedAt: '2026-06-27T20:05:00Z',
+        }),
+      async () => checkSummary('success'),
+    );
+
+    await expect(
+      runSchedulerTick(paths, new Date(), {
+        fetchCheckSummary: async (input) => {
+          refs.push(input.ref);
+          return checkSummary('success');
+        },
+        refreshPrWatch: async () => ({
+          ok: true,
+          action: 'watch_pr_refresh',
+          changed: false,
+          outcome: 'silent',
+          message: 'No change for watch "pandemicsyn/neondeck#123".',
+        }),
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      notifications: [
+        { title: 'Release watch merge commit green', level: 'ready' },
+      ],
+    });
+    expect(refs).toEqual(['abc123']);
+  });
+
   it('does not notify repeatedly when release watch status is unchanged', async () => {
     process.env.GITHUB_TOKEN = 'token';
     const home = await tempHome();
@@ -441,7 +500,7 @@ async function writeRepoRegistry(path: string) {
   );
 }
 
-function prDetail() {
+function prDetail(overrides: Partial<SchedulerPrDetail> = {}) {
   return {
     number: 123,
     title: 'Test PR',
@@ -453,6 +512,7 @@ function prDetail() {
     headSha: 'head123',
     baseRef: 'main',
     updatedAt: '2026-06-27T20:00:00Z',
+    ...overrides,
   };
 }
 
