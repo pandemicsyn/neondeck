@@ -131,6 +131,30 @@ describe('config actions', () => {
     });
   });
 
+  it('returns structured failures for empty repo action fields', async () => {
+    const home = await tempDir('neondeck-home-');
+    const repoPath = await tempGitRepo();
+    const paths = runtimePaths(home);
+
+    await expect(
+      addRepo({ path: repoPath, id: '' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'config_add_repo',
+      message: 'Invalid action input.',
+    });
+
+    await expect(
+      updateRepo({ id: '', defaultBranch: 'main' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'config_update_repo',
+      message: 'Invalid action input.',
+    });
+  });
+
   it('adds, updates, and removes schedules through validated config operations', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
@@ -192,6 +216,38 @@ describe('config actions', () => {
       { action: 'config_update_schedule', target: 'morning' },
       { action: 'config_remove_schedule', target: 'morning' },
     ]);
+  });
+
+  it('returns structured failures for empty schedule action fields', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    await expect(
+      addSchedule({ id: '', type: '' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'config_add_schedule',
+      message: 'Invalid action input.',
+    });
+
+    await expect(
+      updateSchedule({ id: '', cron: '' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'config_update_schedule',
+      message: 'Invalid action input.',
+    });
+
+    await expect(
+      removeSchedule({ id: '', confirm: true }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'config_remove_schedule',
+      message: 'Invalid action input.',
+    });
   });
 
   it('reads and validates config through explicit action boundaries', async () => {

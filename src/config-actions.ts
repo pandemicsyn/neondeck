@@ -51,53 +51,54 @@ const configTargetSchema = v.optional(
 
 const stringRecordSchema = v.record(v.string(), v.string());
 const unknownRecordSchema = v.record(v.string(), v.unknown());
+const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 
 const addRepoInputSchema = v.object({
-  path: v.string(),
-  id: v.optional(v.string()),
-  githubOwner: v.optional(v.string()),
-  githubName: v.optional(v.string()),
-  defaultBranch: v.optional(v.string()),
-  productionTarget: v.optional(v.string()),
+  path: nonEmptyStringSchema,
+  id: v.optional(nonEmptyStringSchema),
+  githubOwner: v.optional(nonEmptyStringSchema),
+  githubName: v.optional(nonEmptyStringSchema),
+  defaultBranch: v.optional(nonEmptyStringSchema),
+  productionTarget: v.optional(nonEmptyStringSchema),
   packageScripts: v.optional(stringRecordSchema),
   metadata: v.optional(unknownRecordSchema),
   watchRules: v.optional(v.array(v.unknown())),
 });
 
 const updateRepoInputSchema = v.object({
-  id: v.string(),
-  path: v.optional(v.string()),
-  githubOwner: v.optional(v.string()),
-  githubName: v.optional(v.string()),
-  defaultBranch: v.optional(v.string()),
-  productionTarget: v.optional(v.string()),
+  id: nonEmptyStringSchema,
+  path: v.optional(nonEmptyStringSchema),
+  githubOwner: v.optional(nonEmptyStringSchema),
+  githubName: v.optional(nonEmptyStringSchema),
+  defaultBranch: v.optional(nonEmptyStringSchema),
+  productionTarget: v.optional(nonEmptyStringSchema),
   packageScripts: v.optional(stringRecordSchema),
   metadata: v.optional(unknownRecordSchema),
   watchRules: v.optional(v.array(v.unknown())),
 });
 
 const removeRepoInputSchema = v.object({
-  id: v.string(),
+  id: nonEmptyStringSchema,
   confirm: v.optional(v.boolean()),
 });
 
 const scheduleInputSchema = v.object({
-  id: v.string(),
-  type: v.string(),
+  id: nonEmptyStringSchema,
+  type: nonEmptyStringSchema,
   enabled: v.optional(v.boolean()),
-  timezone: v.optional(v.string()),
-  cron: v.optional(v.string()),
-  preset: v.optional(v.string()),
+  timezone: v.optional(nonEmptyStringSchema),
+  cron: v.optional(nonEmptyStringSchema),
+  preset: v.optional(nonEmptyStringSchema),
   config: v.optional(unknownRecordSchema),
 });
 
 const updateScheduleInputSchema = v.object({
-  id: v.string(),
-  type: v.optional(v.string()),
+  id: nonEmptyStringSchema,
+  type: v.optional(nonEmptyStringSchema),
   enabled: v.optional(v.boolean()),
-  timezone: v.optional(v.string()),
-  cron: v.optional(v.string()),
-  preset: v.optional(v.string()),
+  timezone: v.optional(nonEmptyStringSchema),
+  cron: v.optional(nonEmptyStringSchema),
+  preset: v.optional(nonEmptyStringSchema),
   config: v.optional(unknownRecordSchema),
 });
 
@@ -189,7 +190,7 @@ export const removeScheduleAction = defineAction({
   description:
     'Remove an existing Neondeck schedule entry from schedules.json.',
   input: v.object({
-    id: v.string(),
+    id: nonEmptyStringSchema,
     confirm: v.optional(v.boolean()),
   }),
   async run({ input }) {
@@ -263,10 +264,20 @@ export async function reloadConfig(
 }
 
 export async function addRepo(
-  input: v.InferOutput<typeof addRepoInputSchema>,
+  rawInput: v.InferInput<typeof addRepoInputSchema>,
   paths = runtimePaths(),
 ): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
+  const parsed = parseActionInput(
+    addRepoInputSchema,
+    rawInput,
+    'config_add_repo',
+    paths,
+    [paths.repos],
+  );
+  if (!parsed.ok) return parsed.result;
+
+  const input = parsed.input;
   const registry = await readRuntimeJson(paths.repos, parseRepoRegistry);
   const repoPath = resolveUserPath(input.path);
   const discovery = await discoverGitRepo(repoPath).catch((error) =>
@@ -347,10 +358,20 @@ export async function addRepo(
 }
 
 export async function updateRepo(
-  input: v.InferOutput<typeof updateRepoInputSchema>,
+  rawInput: v.InferInput<typeof updateRepoInputSchema>,
   paths = runtimePaths(),
 ): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
+  const parsed = parseActionInput(
+    updateRepoInputSchema,
+    rawInput,
+    'config_update_repo',
+    paths,
+    [paths.repos],
+  );
+  if (!parsed.ok) return parsed.result;
+
+  const input = parsed.input;
   const registry = await readRuntimeJson(paths.repos, parseRepoRegistry);
   const index = registry.repos.findIndex((repo) => repo.id === input.id);
 
@@ -413,10 +434,20 @@ export async function updateRepo(
 }
 
 export async function removeRepo(
-  input: { id: string; confirm?: boolean },
+  rawInput: v.InferInput<typeof removeRepoInputSchema>,
   paths = runtimePaths(),
 ): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
+  const parsed = parseActionInput(
+    removeRepoInputSchema,
+    rawInput,
+    'config_remove_repo',
+    paths,
+    [paths.repos],
+  );
+  if (!parsed.ok) return parsed.result;
+
+  const input = parsed.input;
   if (input.confirm !== true) {
     return failResult('config_remove_repo', paths, [paths.repos], {
       message: `Removing repository "${input.id}" requires confirmation.`,
@@ -452,10 +483,20 @@ export async function removeRepo(
 }
 
 export async function addSchedule(
-  input: v.InferOutput<typeof scheduleInputSchema>,
+  rawInput: v.InferInput<typeof scheduleInputSchema>,
   paths = runtimePaths(),
 ): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
+  const parsed = parseActionInput(
+    scheduleInputSchema,
+    rawInput,
+    'config_add_schedule',
+    paths,
+    [paths.schedules],
+  );
+  if (!parsed.ok) return parsed.result;
+
+  const input = parsed.input;
   const config = await readRuntimeJson(paths.schedules, parseScheduleConfig);
 
   if (config.schedules.some((schedule) => schedule.id === input.id)) {
@@ -494,10 +535,20 @@ export async function addSchedule(
 }
 
 export async function updateSchedule(
-  input: v.InferOutput<typeof updateScheduleInputSchema>,
+  rawInput: v.InferInput<typeof updateScheduleInputSchema>,
   paths = runtimePaths(),
 ): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
+  const parsed = parseActionInput(
+    updateScheduleInputSchema,
+    rawInput,
+    'config_update_schedule',
+    paths,
+    [paths.schedules],
+  );
+  if (!parsed.ok) return parsed.result;
+
+  const input = parsed.input;
   const config = await readRuntimeJson(paths.schedules, parseScheduleConfig);
   const index = config.schedules.findIndex(
     (schedule) => schedule.id === input.id,
@@ -537,10 +588,23 @@ export async function updateSchedule(
 }
 
 export async function removeSchedule(
-  input: { id: string; confirm?: boolean },
+  rawInput: { id: string; confirm?: boolean },
   paths = runtimePaths(),
 ): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
+  const parsed = parseActionInput(
+    v.object({
+      id: nonEmptyStringSchema,
+      confirm: v.optional(v.boolean()),
+    }),
+    rawInput,
+    'config_remove_schedule',
+    paths,
+    [paths.schedules],
+  );
+  if (!parsed.ok) return parsed.result;
+
+  const input = parsed.input;
   if (input.confirm !== true) {
     return failResult('config_remove_schedule', paths, [paths.schedules], {
       message: `Removing schedule "${input.id}" requires confirmation.`,
@@ -780,6 +844,28 @@ function failResult(
     files,
     ...(details.errors ? { errors: details.errors } : {}),
     ...(details.requires ? { requires: details.requires } : {}),
+  };
+}
+
+function parseActionInput<T>(
+  schema: v.GenericSchema<unknown, T>,
+  input: unknown,
+  action: string,
+  paths: RuntimePaths,
+  files: string[],
+) {
+  const result = v.safeParse(schema, input);
+
+  if (result.success) {
+    return { ok: true as const, input: result.output };
+  }
+
+  return {
+    ok: false as const,
+    result: failResult(action, paths, files, {
+      message: 'Invalid action input.',
+      errors: [v.summarize(result.issues)],
+    }),
   };
 }
 
