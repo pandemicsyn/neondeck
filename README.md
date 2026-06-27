@@ -4,6 +4,8 @@ Local companion-display dashboard and Flue agent server for the Corsair Xeneon E
 
 neondeck is a local-first Node 26 app with a Hono/Flue backend and a Vite/React/Tailwind dashboard optimized for a 2560 x 720 display. It provides a compact GitHub PR queue, persistent Flue chat sessions, and a terminal-style host status line.
 
+The repository also includes an Astro marketing/docs site under `webapp/`, deployed to Cloudflare for `neondeck.dev`.
+
 ## Requirements
 
 - Node 26.4.0, managed with `fnm`
@@ -45,3 +47,14 @@ npm run typecheck
 npm run build
 npm start
 ```
+
+## Marketing/docs site
+
+```sh
+npm run webapp:dev
+npm run webapp:build
+npm run webapp:preview
+npm run webapp:deploy
+```
+
+The Cloudflare deployment config is `webapp/wrangler.jsonc`.

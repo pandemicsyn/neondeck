@@ -1,0 +1,20 @@
+{
+  "name": "@neondeck/webapp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "astro build",
+    "check": "astro sync",
+    "deploy": "npm run build && wrangler deploy",
+    "dev": "astro dev --host 127.0.0.1 --port 4321",
+    "preview": "astro preview --host 127.0.0.1 --port 4321"
+  },
+  "dependencies": {
+    "astro": "^7.0.3"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "wrangler": "^4.105.0"
+  }
+}

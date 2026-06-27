@@ -3,14 +3,24 @@
   "version": "1.0.0",
   "description": "Local companion-display dashboard and Flue agent server for neondeck.",
   "homepage": "https://neondeck.dev",
+  "private": true,
+  "workspaces": [
+    "webapp"
+  ],
   "scripts": {
-    "build": "npm run build:web && flue build --target node",
+    "build": "npm run build:dashboard && npm run webapp:build",
+    "build:dashboard": "npm run build:web && flue build --target node",
     "build:server": "flue build --target node",
     "build:web": "vite build --config web/vite.config.ts",
     "dev": "concurrently -n server,web -c blue,green \"flue dev --target node\" \"vite --config web/vite.config.ts --host 127.0.0.1\"",
     "run:display": "flue run display-assistant --target node --server /api/flue --input '{\"message\":\"Say hello in one sentence.\"}'",
     "start": "node dist/server.mjs",
-    "typecheck": "tsc --noEmit && tsc -p web/tsconfig.json --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p web/tsconfig.json --noEmit && npm run webapp:check",
+    "webapp:build": "npm --workspace webapp run build",
+    "webapp:check": "npm --workspace webapp run check",
+    "webapp:deploy": "npm --workspace webapp run deploy",
+    "webapp:dev": "npm --workspace webapp run dev",
+    "webapp:preview": "npm --workspace webapp run preview"
   },
   "keywords": [
     "flue",

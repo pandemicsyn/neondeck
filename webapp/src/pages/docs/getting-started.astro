@@ -1,0 +1,51 @@
+---
+import SiteFooter from '../../components/SiteFooter.astro';
+import SiteNav from '../../components/SiteNav.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="Getting started · neondeck" description="Install and run neondeck locally with Node 26, Flue, Kilo, GitHub, and the Astro webapp.">
+  <div class="site-shell">
+    <SiteNav />
+    <main class="container docs-layout">
+      <aside class="docs-sidebar">
+        <a href="/docs/">Overview</a>
+        <a href="/docs/getting-started/">Getting started</a>
+        <a href="/#deck">Deck preview</a>
+        <a href="/#features">Features</a>
+      </aside>
+      <article class="docs-prose">
+        <h1>Getting started</h1>
+        <p>
+          Use Node 26.4.0 with fnm. The default Flue model is Kilo through the custom provider registration in the local backend.
+        </p>
+
+        <h2>Install</h2>
+        <pre><code>fnm install 26.4.0
+fnm use 26.4.0
+npm install</code></pre>
+
+        <h2>Configure secrets</h2>
+        <p>Copy <code>.env.example</code> to <code>.env</code> and fill in the local values.</p>
+        <pre><code>KILOCODE_API_KEY=...
+KILOCODE_ORGANIZATION_ID=...
+FLUE_AGENT_MODEL=kilocode/kilo/auto
+GITHUB_TOKEN=...
+GITHUB_LOGIN=...</code></pre>
+
+        <h2>Run the local dashboard</h2>
+        <pre><code>npm run dev</code></pre>
+        <p>Open <code>http://127.0.0.1:5173/</code> on the companion display.</p>
+
+        <h2>Run the webapp</h2>
+        <pre><code>npm run webapp:dev</code></pre>
+        <p>The Astro marketing/docs site runs separately from the local dashboard and deploys to Cloudflare.</p>
+
+        <h2>Deploy neondeck.dev</h2>
+        <pre><code>npm run webapp:deploy</code></pre>
+        <p>The Worker is configured in <code>webapp/wrangler.jsonc</code> with custom domains for <code>neondeck.dev</code> and <code>www.neondeck.dev</code>.</p>
+      </article>
+    </main>
+    <SiteFooter />
+  </div>
+</BaseLayout>

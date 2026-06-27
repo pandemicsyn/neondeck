@@ -1,0 +1,116 @@
+---
+import DeckMockup from '../components/DeckMockup.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import SiteNav from '../components/SiteNav.astro';
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+const dashboardConfig = `{
+  "display": { "width": 2560, "height": 720 },
+  "theme": "dark",
+  "layout": {
+    "columns": 12,
+    "rows": 6,
+    "regions": [
+      { "id": "statusline", "pluginId": "host-metrics", "columnSpan": 12 },
+      { "id": "github", "pluginId": "github-pr-list", "columnSpan": 4 },
+      { "id": "chat", "pluginId": "flue-chat", "columnSpan": 8 }
+    ]
+  }
+}`;
+---
+
+<BaseLayout title="neondeck · companion display for durable agents">
+  <div class="site-shell">
+    <SiteNav />
+    <main>
+      <section class="hero">
+        <div class="container hero-grid">
+          <div>
+            <p class="kicker">OPEN · ALWAYS-ON · BUILT ON FLUE</p>
+            <h1>A deck for a <span>durable agent.</span></h1>
+            <p class="hero-copy">
+              GitHub on the left, an always-on chat harness on the right, a live terminal status line across the top. neondeck is a local companion display for developers who want useful agent context beside the main screen.
+            </p>
+            <div class="command"><span>$</span> gh repo clone pandemicsyn/neondeck</div>
+            <div class="hero-actions">
+              <a class="button" href="https://github.com/pandemicsyn/neondeck">Star on GitHub</a>
+              <a class="button secondary" href="/docs/">Read the docs</a>
+            </div>
+          </div>
+          <DeckMockup />
+        </div>
+      </section>
+
+      <section id="deck" class="section">
+        <div class="container">
+          <div class="section-header">
+            <h2>The deck, live.</h2>
+            <p>Corsair Xeneon Edge, 2560 x 720, 32:9. The default layout is a 12-column surface with a PR queue, Flue sessions, and sensor data designed to stay visible all day.</p>
+          </div>
+          <DeckMockup />
+        </div>
+      </section>
+
+      <section id="features" class="section-tight">
+        <div class="container">
+          <div class="section-header">
+            <h2>Built for work in progress.</h2>
+            <p>neondeck keeps deterministic signals and agent conversations in one stable view without turning the companion display into another browser tab.</p>
+          </div>
+          <div class="feature-grid">
+            <article class="feature">
+              <div class="spark pink"></div>
+              <h3>GitHub work queue</h3>
+              <p>See authored, assigned, and review-requested pull requests without exposing your GitHub token to the browser.</p>
+            </article>
+            <article class="feature">
+              <div class="spark teal"></div>
+              <h3>Durable Flue chat</h3>
+              <p>Persistent Flue sessions survive local restarts through SQLite-backed runtime state.</p>
+            </article>
+            <article class="feature">
+              <div class="spark"></div>
+              <h3>Sensor statusline</h3>
+              <p>CPU, memory, network, and best-effort GPU or temperature readings are normalized behind one local API.</p>
+            </article>
+            <article class="feature">
+              <div class="spark violet"></div>
+              <h3>Config-first layout</h3>
+              <p>Panels are typed plugins selected by local JSON config. Change spans, sessions, and panel settings without rebuilding the app.</p>
+            </article>
+            <article class="feature">
+              <div class="spark pink"></div>
+              <h3>Local-first runtime</h3>
+              <p>Runs on your machine with your provider keys, your GitHub token, and your SOUL.md agent personality file.</p>
+            </article>
+            <article class="feature">
+              <div class="spark teal"></div>
+              <h3>Themeable surface</h3>
+              <p>The Miami tiger-stripe palette ships as the first preset, with light and dark tokens from the start.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="config" class="section">
+        <div class="container config-grid">
+          <div>
+            <p class="kicker">CONFIG · NOT A BUILDER</p>
+            <h2>The layout is a file.</h2>
+            <p class="hero-copy">
+              Start with the Xeneon Edge preset, then change regions and plugin config in `config/dashboard.json`. The goal is reliable structure first, a drag editor later.
+            </p>
+            <div class="hero-actions">
+              <a class="button secondary" href="/docs/getting-started/">Get started</a>
+            </div>
+          </div>
+          <div class="code-window" aria-label="dashboard configuration example">
+            <div class="code-header"><span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span></div>
+            <pre><code>{dashboardConfig}</code></pre>
+          </div>
+        </div>
+      </section>
+    </main>
+    <SiteFooter />
+  </div>
+</BaseLayout>

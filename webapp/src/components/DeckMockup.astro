@@ -1,0 +1,295 @@
+<div class="deck-frame" aria-label="neondeck dashboard preview">
+  <div class="deck-screen">
+    <div class="statusline">
+      <span class="brand-segment"><span class="brand-dot"></span>neondeck <em>v0.4.1</em></span>
+      <span class="divider">│</span>
+      <span>CPU 12%</span>
+      <span class="divider">│</span>
+      <span>MEM 8.4/32G</span>
+      <span class="divider">│</span>
+      <span class="teal">GPU 41%</span>
+      <span class="divider">│</span>
+      <span class="teal">54°C</span>
+      <span class="divider">│</span>
+      <span class="violet">NET ↓1.2 ↑0.3</span>
+      <span class="divider">│</span>
+      <span class="online"><span></span>flue:online</span>
+      <span class="clock">14:32:07</span>
+    </div>
+    <div class="deck-body">
+      <section class="github-panel">
+        <header><span>● GITHUB · @you</span><span>4 OPEN PRs</span></header>
+        <div class="pr-row">
+          <p><span>flue/harness</span><span>#1284 · 2h</span></p>
+          <strong>fix: retry durable steps on cold start</strong>
+          <small><span>● checks pass</span><span>◆ 2 review</span></small>
+        </div>
+        <div class="pr-row">
+          <p><span>neondeck/core</span><span>#312 · 5h</span></p>
+          <strong>feat: configurable statusline sensors</strong>
+          <small><span class="pink">● 1 failing</span><span>△ draft</span></small>
+        </div>
+        <div class="pr-row">
+          <p><span>neondeck/panels</span><span>#88 · 1d</span></p>
+          <strong>add github review-requests panel</strong>
+          <small><span>● checks pass</span><span>↻ rebase</span></small>
+        </div>
+      </section>
+      <section class="chat-panel">
+        <header><span>● FLUE AGENT · triage.ts</span><span>durable · ctx 18k</span></header>
+        <div class="chat-scroll">
+          <div class="bubble user">What needs my attention this morning?</div>
+          <div class="tool-chip">workflow <span>triage_prs › step 2/4 · github.list_prs()</span></div>
+          <div class="bubble agent">
+            3 of your 4 open PRs are green. <span>neondeck/core #312</span> has 1 failing check. <b>flue/harness #1284</b> has 2 reviewers waiting on you.
+          </div>
+          <div class="bubble user small">yes, re-run it</div>
+        </div>
+        <div class="composer"><span>›</span><em>Message neondeck...</em><small>Enter send · Ctrl K tools</small></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<style>
+  .deck-frame {
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: #05060a;
+    padding: 10px;
+  }
+
+  .deck-screen {
+    aspect-ratio: 2560 / 720;
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    background:
+      linear-gradient(116deg, transparent 0 18%, rgba(215, 247, 255, 0.035) 18% 25%, transparent 25% 42%, rgba(255, 79, 184, 0.055) 42% 46%, transparent 46% 68%, rgba(139, 77, 255, 0.055) 68% 72%, transparent 72%),
+      #0a0b10;
+    font-family: "IBM Plex Mono", monospace;
+  }
+
+  .statusline {
+    display: flex;
+    align-items: center;
+    height: 30px;
+    gap: 10px;
+    overflow: hidden;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    background: #070810;
+    color: var(--cyan);
+    font-size: clamp(6px, 0.9vw, 12px);
+    white-space: nowrap;
+  }
+
+  .brand-segment {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    align-self: stretch;
+    padding: 0 14px;
+    background: rgba(255, 79, 184, 0.12);
+    color: var(--pink);
+    font-weight: 600;
+  }
+
+  .brand-segment em {
+    color: rgba(215, 247, 255, 0.42);
+    font-style: normal;
+    font-weight: 400;
+  }
+
+  .brand-dot {
+    width: 7px;
+    height: 7px;
+    transform: rotate(45deg);
+    background: var(--pink);
+    box-shadow: 0 0 8px var(--pink);
+  }
+
+  .divider {
+    color: rgba(255, 255, 255, 0.12);
+  }
+
+  .teal {
+    color: var(--teal);
+  }
+
+  .violet {
+    color: var(--violet);
+  }
+
+  .online {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--teal);
+  }
+
+  .online span {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--teal);
+    box-shadow: 0 0 8px var(--teal);
+  }
+
+  .clock {
+    margin-left: auto;
+    padding-right: 14px;
+    color: rgba(215, 247, 255, 0.7);
+  }
+
+  .deck-body {
+    display: grid;
+    grid-template-columns: 4fr 8fr;
+    height: calc(100% - 30px);
+  }
+
+  .github-panel,
+  .chat-panel {
+    min-width: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, rgba(255, 79, 184, 0.04), transparent 40%);
+  }
+
+  .chat-panel {
+    display: flex;
+    flex-direction: column;
+    border-right: 0;
+    background: linear-gradient(180deg, rgba(0, 183, 199, 0.04), transparent 36%);
+  }
+
+  .github-panel header,
+  .chat-panel header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    color: var(--pink);
+    font-size: clamp(6px, 0.8vw, 11px);
+    letter-spacing: 0.14em;
+  }
+
+  .chat-panel header {
+    color: var(--teal);
+  }
+
+  .github-panel header span:last-child,
+  .chat-panel header span:last-child {
+    color: rgba(215, 247, 255, 0.44);
+  }
+
+  .pr-row {
+    padding: 8px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }
+
+  .pr-row p,
+  .pr-row small {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0;
+    color: rgba(215, 247, 255, 0.48);
+    font-size: clamp(6px, 0.78vw, 10.5px);
+  }
+
+  .pr-row strong {
+    display: block;
+    margin: 3px 0 5px;
+    color: var(--body);
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: clamp(8px, 1vw, 13px);
+    font-weight: 500;
+  }
+
+  .pr-row small span:first-child {
+    color: var(--teal);
+  }
+
+  .pr-row .pink {
+    color: var(--pink) !important;
+  }
+
+  .chat-scroll {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 11px;
+    padding: 14px 18px;
+  }
+
+  .bubble {
+    max-width: 76%;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(215, 247, 255, 0.9);
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: clamp(8px, 1vw, 13px);
+    line-height: 1.55;
+    padding: 9px 13px;
+  }
+
+  .bubble.user {
+    align-self: flex-end;
+    border-color: rgba(105, 230, 255, 0.22);
+    background: rgba(105, 230, 255, 0.12);
+  }
+
+  .bubble.small {
+    max-width: 40%;
+  }
+
+  .bubble.agent {
+    border-left: 2px solid var(--teal);
+  }
+
+  .bubble span {
+    color: var(--pink);
+  }
+
+  .bubble b {
+    color: var(--violet);
+    font-weight: 500;
+  }
+
+  .tool-chip {
+    align-self: flex-start;
+    border: 1px solid rgba(139, 77, 255, 0.28);
+    background: rgba(139, 77, 255, 0.1);
+    color: var(--violet);
+    font-size: clamp(6px, 0.8vw, 10.5px);
+    padding: 5px 10px;
+  }
+
+  .tool-chip span {
+    color: rgba(215, 247, 255, 0.58);
+  }
+
+  .composer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    background: #070810;
+    font-size: clamp(6px, 0.85vw, 13px);
+  }
+
+  .composer span {
+    color: var(--pink);
+  }
+
+  .composer em {
+    flex: 1;
+    color: rgba(215, 247, 255, 0.42);
+    font-style: normal;
+  }
+
+  .composer small {
+    color: rgba(215, 247, 255, 0.35);
+  }
+</style>
