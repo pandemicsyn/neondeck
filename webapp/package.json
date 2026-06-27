@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "astro-dev": "astro dev --host 127.0.0.1 --port 4321",
     "build": "astro build",
     "check": "astro sync",
     "deploy": "npm run build && wrangler deploy",
-    "dev": "astro dev --host 127.0.0.1 --port 4321",
+    "dev": "npm run build && npm run preview",
     "preview": "astro preview --host 127.0.0.1 --port 4321"
   },
   "dependencies": {

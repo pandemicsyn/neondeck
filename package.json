@@ -20,6 +20,7 @@
     "webapp:check": "npm --workspace webapp run check",
     "webapp:deploy": "npm --workspace webapp run deploy",
     "webapp:dev": "npm --workspace webapp run dev",
+    "webapp:astro-dev": "npm --workspace webapp run astro-dev",
     "webapp:preview": "npm --workspace webapp run preview"
   },
   "keywords": [

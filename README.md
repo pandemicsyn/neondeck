@@ -52,6 +52,7 @@ npm start
 
 ```sh
 npm run webapp:dev
+npm run webapp:astro-dev
 npm run webapp:build
 npm run webapp:preview
 npm run webapp:deploy
