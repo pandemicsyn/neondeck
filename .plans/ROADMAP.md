@@ -34,6 +34,88 @@ The registry should include:
 
 This registry is the base context for GitHub panels, local dev checks, PR workflows, release watches, and repo-specific skills.
 
+### Self-Configuration
+
+Neon should be able to configure neondeck through chat, but configuration changes must go through deterministic actions with schema validation.
+
+Example request:
+
+```text
+add a new repo at ~/src/flue
+```
+
+Expected behavior:
+
+1. Resolve and expand the path.
+2. Verify the path exists.
+3. Verify it is a git repository.
+4. Read Git remotes and infer GitHub owner/name when possible.
+5. Infer default branch when possible.
+6. Ask for clarification only when required information is ambiguous.
+7. Update neondeck config through a config action.
+8. Validate config.
+9. Hot reload the app.
+10. Report exactly what changed.
+
+The agent should not freestyle-edit config files. It should use actions such as config read, validate, add repo, update repo, remove repo, add schedule, remove schedule, and reload.
+
+### Config Home
+
+neondeck should use a local application home for user config, runtime skills, and data.
+
+Resolution order:
+
+```text
+NEONDECK_HOME
+XDG_CONFIG_HOME/neondeck
+~/.config/neondeck
+```
+
+Initial layout:
+
+```text
+~/.config/neondeck/
+  config.json
+  repos.json
+  dashboard.json
+  schedules.json
+  skills/
+    neondeck/
+      SKILL.md
+  SOUL.md
+  data/
+    neondeck.db
+    flue.db
+```
+
+For v1, keep mutable data under the same home for simplicity. Later, strict XDG support can split data into `XDG_DATA_HOME`.
+
+Keep app and Flue persistence separate:
+
+- `data/neondeck.db`: watches, jobs, notifications, memories, config history, and app state.
+- `data/flue.db`: Flue runtime persistence.
+
+### Runtime neondeck Skill
+
+neondeck should ship a Flue-agent-facing skill that Neon sees at runtime. This is separate from the repo’s Codex/Kilo development skills.
+
+Runtime skill location:
+
+```text
+~/.config/neondeck/skills/neondeck/SKILL.md
+```
+
+The runtime skill should explain:
+
+- where neondeck config lives
+- what config files exist
+- how repo registry, dashboard layout, schedules, watches, and skills work
+- which config actions to call for mutations
+- when to ask for confirmation
+- how to summarize config changes
+
+This skill should guide the agent toward deterministic actions, not direct file edits.
+
 ### Work Queue Triage
 
 Neon should answer what needs attention now.
@@ -245,36 +327,79 @@ V1 should prove Neon is useful without overbuilding the platform.
 
 Must-haves:
 
-1. Repo registry config.
-2. GitHub token integration.
-3. GitHub PR queue panel.
-4. `/briefing` workflow.
-5. `/watch-pr` workflow and persistent watch state.
-6. Local SQLite persistence for watches, app state, and Flue runtime state.
-7. GitHub/gh skill plus deterministic GitHub actions.
-8. Config hot reload.
-9. One Neon agent session with command handling.
-10. UI panels for PRs, active watches, briefing, and chat.
+1. neondeck home resolution and bootstrapping under `NEONDECK_HOME` / `~/.config/neondeck`.
+2. Runtime skill loading from neondeck home.
+3. Flue actions for validated config management.
+4. Repo registry config.
+5. GitHub token integration.
+6. GitHub PR queue panel.
+7. `/briefing` workflow.
+8. `/watch-pr` workflow and persistent watch state.
+9. Local SQLite persistence for watches, app state, and Flue runtime state.
+10. GitHub/gh skill plus deterministic GitHub actions.
+11. Config hot reload.
+12. One Neon agent session with command handling.
+13. UI panels for PRs, active watches, briefing, and chat.
 
 ## Suggested Implementation Phases
 
-### Phase 1: Repo and GitHub Foundation
+### Phase 1: neondeck Home, Config, and Runtime Skills
 
-- Add `config/repos.json`.
-- Add schema validation for repo registry.
+- Add neondeck home resolver:
+  - `NEONDECK_HOME`
+  - `XDG_CONFIG_HOME/neondeck`
+  - `~/.config/neondeck`
+- Bootstrap default config directory and files on first run.
+- Add default file layout:
+  - `config.json`
+  - `repos.json`
+  - `dashboard.json`
+  - `schedules.json`
+  - `SOUL.md`
+  - `skills/neondeck/SKILL.md`
+  - `data/neondeck.db`
+  - `data/flue.db`
+- Update Flue runtime persistence to use `data/flue.db`.
+- Add app SQLite path and initialization for `data/neondeck.db`.
+- Load runtime skills from neondeck home so Neon can understand neondeck itself.
+- Add schema validation for all config files.
+- Add config hot reload for files under neondeck home.
+
+### Phase 2: Config Management Actions
+
+- Add Flue actions for config operations:
+  - read config
+  - validate config
+  - add repo
+  - update repo
+  - remove repo
+  - add schedule
+  - update schedule
+  - remove schedule
+  - reload config
+- Ensure actions write config atomically.
+- Ensure actions preserve formatting where practical.
+- Add config change history in `neondeck.db`.
+- Add repo path resolver and Git remote inference.
+- Add guarded confirmation flows for destructive config changes.
+- Teach the runtime neondeck skill to prefer these actions over direct file edits.
+
+### Phase 3: Repo and GitHub Foundation
+
+- Add repo registry loading from neondeck home.
 - Add repo resolver by id, owner/name, local path, and URL.
 - Add server-side GitHub API client using `GITHUB_TOKEN`.
 - Add deterministic PR listing endpoint.
 - Add GitHub PR queue UI states: loading, empty, error, normal.
 
-### Phase 2: Persistent App State
+### Phase 4: Persistent App State
 
 - Add app SQLite tables for watches, jobs, notifications, memories, and workflow summaries.
 - Keep Flue runtime persistence separate unless the Flue adapter requires otherwise.
 - Add migrations or startup schema initialization.
 - Add APIs for active watches and notifications.
 
-### Phase 3: Neon Commands
+### Phase 5: Neon Commands
 
 - Add slash command parsing for Neon chat.
 - Implement `/repo-status`.
@@ -283,7 +408,7 @@ Must-haves:
 - Store command results as workflow summaries.
 - Expose command workflows through UI buttons.
 
-### Phase 4: PR Watch
+### Phase 6: PR Watch
 
 - Implement `/watch-pr`.
 - Persist watch config and state.
@@ -293,14 +418,14 @@ Must-haves:
 - Notify on success/failure.
 - Add active watches panel.
 
-### Phase 5: Scheduling and Hot Reload
+### Phase 7: Scheduling and Hot Reload
 
 - Add local scheduler for configured jobs.
 - Add config hot reload for repos, dashboard layout, jobs, and skills.
 - Add morning briefing schedule config.
 - Reconcile scheduler state on config changes and process restart.
 
-### Phase 6: Local Dev Doctor
+### Phase 8: Local Dev Doctor
 
 - Add local repo status actions.
 - Add package script detection.
@@ -308,7 +433,7 @@ Must-haves:
 - Add dev server and port checks.
 - Add `/dev-doctor` workflow.
 
-### Phase 7: Release Watch
+### Phase 9: Release Watch
 
 - Add deploy target metadata to repo registry.
 - Support watch until main green.
@@ -317,8 +442,10 @@ Must-haves:
 
 ## Open Questions
 
-- Which config files should own repo registry, schedule config, and skills config?
+- Should strict XDG data separation be added early, or should v1 keep config and data under one `NEONDECK_HOME`?
 - Should app state and Flue runtime state share one SQLite database or remain separate?
+- Which config mutations require explicit user confirmation?
+- Should runtime skills be copied into neondeck home on first run, symlinked in development, or loaded from both bundled and user paths?
 - Should `/watch-pr` be an agent command, a workflow, or a command that creates a persistent watcher and invokes workflows per tick?
 - What deployment providers should release watch support first?
 - How much local shell access should Neon have by default?
