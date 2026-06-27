@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
-import { z } from 'zod';
+import * as v from 'valibot';
 
 export type RuntimeHomeEnv = Partial<
   Pick<NodeJS.ProcessEnv, 'NEONDECK_HOME' | 'XDG_CONFIG_HOME' | 'HOME'>
@@ -24,61 +24,77 @@ export type RuntimePaths = {
   flueDatabase: string;
 };
 
-const unknownRecordSchema = z.record(z.string(), z.unknown());
+const unknownRecordSchema = v.record(v.string(), v.unknown());
+const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
+const positiveIntegerSchema = v.pipe(v.number(), v.integer(), v.minValue(1));
 
-export const appConfigSchema = z
-  .object({
-    version: z.number().int().positive(),
-  })
-  .catchall(z.unknown());
+export const appConfigSchema = v.looseObject({
+  version: positiveIntegerSchema,
+});
 
-export const repoRegistrySchema = z
-  .object({
-    repos: z.array(unknownRecordSchema),
-  })
-  .catchall(z.unknown());
+export const repoConfigSchema = v.looseObject({
+  id: nonEmptyStringSchema,
+  github: v.object({
+    owner: nonEmptyStringSchema,
+    name: nonEmptyStringSchema,
+  }),
+  path: nonEmptyStringSchema,
+  defaultBranch: nonEmptyStringSchema,
+  productionTarget: v.optional(nonEmptyStringSchema),
+  packageScripts: v.optional(v.record(v.string(), v.string())),
+  metadata: v.optional(unknownRecordSchema),
+  watchRules: v.optional(v.array(v.unknown())),
+});
 
-export const scheduleConfigSchema = z
-  .object({
-    schedules: z.array(unknownRecordSchema),
-  })
-  .catchall(z.unknown());
+export const repoRegistrySchema = v.looseObject({
+  repos: v.array(repoConfigSchema),
+});
 
-const gridNumberSchema = z.number().int().positive();
+export const scheduleEntrySchema = v.looseObject({
+  id: nonEmptyStringSchema,
+  type: nonEmptyStringSchema,
+  enabled: v.optional(v.boolean()),
+  timezone: v.optional(nonEmptyStringSchema),
+  cron: v.optional(nonEmptyStringSchema),
+  preset: v.optional(nonEmptyStringSchema),
+  config: v.optional(unknownRecordSchema),
+});
 
-export const dashboardRegionSchema = z
-  .object({
-    id: z.string().min(1),
-    title: z.string().min(1),
-    pluginId: z.string().min(1),
-    column: gridNumberSchema,
-    row: gridNumberSchema,
-    columnSpan: gridNumberSchema,
-    rowSpan: gridNumberSchema,
-    config: unknownRecordSchema,
-  })
-  .catchall(z.unknown());
+export const scheduleConfigSchema = v.looseObject({
+  schedules: v.array(scheduleEntrySchema),
+});
 
-export const dashboardConfigSchema = z
-  .object({
-    display: z.object({
-      width: z.number().int().positive(),
-      height: z.number().int().positive(),
-    }),
-    theme: z.enum(['light', 'dark', 'system']),
-    layout: z.object({
-      columns: gridNumberSchema,
-      rows: gridNumberSchema,
-      regions: z.array(dashboardRegionSchema),
-    }),
-  })
-  .catchall(z.unknown());
+export const dashboardRegionSchema = v.looseObject({
+  id: nonEmptyStringSchema,
+  title: nonEmptyStringSchema,
+  pluginId: nonEmptyStringSchema,
+  column: positiveIntegerSchema,
+  row: positiveIntegerSchema,
+  columnSpan: positiveIntegerSchema,
+  rowSpan: positiveIntegerSchema,
+  config: unknownRecordSchema,
+});
 
-export type AppConfig = z.infer<typeof appConfigSchema>;
-export type RepoRegistry = z.infer<typeof repoRegistrySchema>;
-export type ScheduleConfig = z.infer<typeof scheduleConfigSchema>;
-export type DashboardConfig = z.infer<typeof dashboardConfigSchema>;
-export type DashboardRegion = z.infer<typeof dashboardRegionSchema>;
+export const dashboardConfigSchema = v.looseObject({
+  display: v.object({
+    width: positiveIntegerSchema,
+    height: positiveIntegerSchema,
+  }),
+  theme: v.picklist(['light', 'dark', 'system']),
+  layout: v.object({
+    columns: positiveIntegerSchema,
+    rows: positiveIntegerSchema,
+    regions: v.array(dashboardRegionSchema),
+  }),
+});
+
+export type AppConfig = v.InferOutput<typeof appConfigSchema>;
+export type RepoConfig = v.InferOutput<typeof repoConfigSchema>;
+export type RepoRegistry = v.InferOutput<typeof repoRegistrySchema>;
+export type ScheduleEntry = v.InferOutput<typeof scheduleEntrySchema>;
+export type ScheduleConfig = v.InferOutput<typeof scheduleConfigSchema>;
+export type DashboardConfig = v.InferOutput<typeof dashboardConfigSchema>;
+export type DashboardRegion = v.InferOutput<typeof dashboardRegionSchema>;
 
 export class ConfigValidationError extends Error {
   constructor(
@@ -309,14 +325,18 @@ export function parseDashboardConfig(
   return parseSchema(dashboardConfigSchema, value, path);
 }
 
-function parseSchema<T>(schema: z.ZodType<T>, value: unknown, path: string): T {
-  const result = schema.safeParse(value);
+function parseSchema<T>(
+  schema: v.GenericSchema<unknown, T>,
+  value: unknown,
+  path: string,
+): T {
+  const result = v.safeParse(schema, value);
 
   if (result.success) {
-    return result.data;
+    return result.output;
   }
 
-  throw new ConfigValidationError(path, z.prettifyError(result.error));
+  throw new ConfigValidationError(path, v.summarize(result.issues));
 }
 
 function runtimeSkillMarkdown(paths: RuntimePaths) {

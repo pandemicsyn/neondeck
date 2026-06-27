@@ -1,4 +1,5 @@
 import { defineAgent, type AgentRouteHandler } from '@flue/runtime';
+import { neondeckConfigActions } from '../config-actions';
 import { soulInstructions } from '../soul';
 
 export const description =
@@ -11,5 +12,7 @@ export default defineAgent(() => ({
   instructions: [
     soulInstructions(),
     'You are the local neondeck companion-display assistant. Keep answers brief, operational, and easy to scan on a small dashboard. When asked about work, prefer concrete next actions.',
+    'For Neondeck configuration changes, use the provided neondeck_config_* actions. Do not directly edit runtime config files in conversation.',
   ].join('\n\n'),
+  actions: neondeckConfigActions,
 }));

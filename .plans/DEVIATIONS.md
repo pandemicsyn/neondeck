@@ -18,6 +18,13 @@ Use this format:
 ## 2026-06-27 - Neondeck Home And Runtime State
 
 - Roadmap item: Phase 1 / Neondeck home and runtime state
-- Decision: Landed runtime-home resolution, initial config/data/skill layout, config-file validation, and separate app/Flue SQLite files, but deferred typed config mutation actions, hot reload after config mutation, and a fuller runtime config/status API.
-- Reason: Typed config actions and hot reload are Phase 2 self-configuration work, and the current Phase 1 slice only needs enough API surface for dashboard config reads and runtime bootstrap.
-- Follow-up: Implement Phase 2 config actions for read, validate, add/update/remove repo and schedule, reload, and expose a richer runtime status/config API once those actions exist.
+- Decision: Landed runtime-home resolution, initial config/data/skill layout, config-file validation, and separate app/Flue SQLite files, but deferred typed config mutation actions and a fuller runtime config/status API.
+- Reason: Typed config actions are Phase 2 self-configuration work, and the Phase 1 slice only needed enough API surface for dashboard config reads and runtime bootstrap.
+- Follow-up: Phase 2 added the initial config actions. A richer runtime status/config API remains for a later dashboard/API pass.
+
+## 2026-06-27 - Flue Actions For Self-Configuration
+
+- Roadmap item: Phase 2 / Flue actions for self-configuration
+- Decision: Landed deterministic Valibot-backed Flue actions for config read, validate, reload, repo add/update/remove, and schedule add/update/remove. The reload action validates and returns the active disk-backed config snapshot rather than restarting the process or pushing live UI notifications.
+- Reason: Current runtime config reads are disk-backed, so no in-process cache needs invalidation yet. Restart semantics and live notification fanout should wait until the dashboard has a richer runtime state/event API.
+- Follow-up: Add explicit runtime status/config HTTP endpoints and event fanout when dashboard panels move to runtime state in Phase 6.

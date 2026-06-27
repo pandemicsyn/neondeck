@@ -57,7 +57,19 @@ describe('runtime home', () => {
     const paths = runtimePaths(root);
 
     await ensureRuntimeHome(paths);
-    await writeFile(paths.repos, '{ "repos": [{ "id": "mine" }] }\n');
+    await writeFile(
+      paths.repos,
+      JSON.stringify({
+        repos: [
+          {
+            id: 'mine',
+            github: { owner: 'pandemicsyn', name: 'mine' },
+            path: '/tmp/mine',
+            defaultBranch: 'main',
+          },
+        ],
+      }),
+    );
     await ensureRuntimeHome(paths);
 
     await expect(
@@ -68,7 +80,14 @@ describe('runtime home', () => {
     await expect(
       readRuntimeJson(paths.repos, parseRepoRegistry),
     ).resolves.toEqual({
-      repos: [{ id: 'mine' }],
+      repos: [
+        {
+          id: 'mine',
+          github: { owner: 'pandemicsyn', name: 'mine' },
+          path: '/tmp/mine',
+          defaultBranch: 'main',
+        },
+      ],
     });
     await expect(
       readRuntimeJson(paths.schedules, parseScheduleConfig),
