@@ -99,6 +99,8 @@ Keep app and Flue persistence separate:
 
 neondeck should ship a Flue-agent-facing skill that Neon sees at runtime. This is separate from the repo’s Codex/Kilo development skills.
 
+The runtime skill directory should also be user-extensible. Users should be able to place additional Agent Skills-compatible skill folders under `~/.config/neondeck/skills/`, and neondeck should make those skills available to the Flue agent.
+
 Runtime skill location:
 
 ```text
@@ -114,7 +116,7 @@ The runtime skill should explain:
 - when to ask for confirmation
 - how to summarize config changes
 
-This skill should guide the agent toward deterministic actions, not direct file edits.
+This skill should guide the agent toward deterministic actions, not direct file edits. Additional user skills should extend Neon’s domain knowledge without requiring code changes.
 
 ### Work Queue Triage
 
@@ -362,6 +364,8 @@ Must-haves:
 - Update Flue runtime persistence to use `data/flue.db`.
 - Add app SQLite path and initialization for `data/neondeck.db`.
 - Load runtime skills from neondeck home so Neon can understand neondeck itself.
+- Support additional user-provided skills under `skills/` and make them available to the Flue agent.
+- Validate skill folders enough to ignore obviously broken entries without crashing startup.
 - Add schema validation for all config files.
 - Add config hot reload for files under neondeck home.
 
