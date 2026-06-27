@@ -11,6 +11,7 @@ import {
 } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import * as v from 'valibot';
 import {
@@ -77,6 +78,7 @@ const updateRepoInputSchema = v.object({
 
 const removeRepoInputSchema = v.object({
   id: v.string(),
+  confirm: v.optional(v.boolean()),
 });
 
 const scheduleInputSchema = v.object({
@@ -188,6 +190,7 @@ export const removeScheduleAction = defineAction({
     'Remove an existing Neondeck schedule entry from schedules.json.',
   input: v.object({
     id: v.string(),
+    confirm: v.optional(v.boolean()),
   }),
   async run({ input }) {
     return removeSchedule(input);
@@ -266,12 +269,20 @@ export async function addRepo(
   await ensureRuntimeHome(paths);
   const registry = await readRuntimeJson(paths.repos, parseRepoRegistry);
   const repoPath = resolveUserPath(input.path);
-  const discovery = await discoverGitRepo(repoPath);
+  const discovery = await discoverGitRepo(repoPath).catch((error) =>
+    repoDiscoveryFailure(error),
+  );
+  if (!discovery.ok) {
+    return failResult('config_add_repo', paths, [paths.repos], {
+      message: discovery.message,
+      errors: discovery.errors,
+    });
+  }
   const github = {
-    owner: input.githubOwner ?? discovery.github?.owner,
-    name: input.githubName ?? discovery.github?.name,
+    owner: input.githubOwner ?? discovery.repo.github?.owner,
+    name: input.githubName ?? discovery.repo.github?.name,
   };
-  const defaultBranch = input.defaultBranch ?? discovery.defaultBranch;
+  const defaultBranch = input.defaultBranch ?? discovery.repo.defaultBranch;
 
   if (!github.owner || !github.name) {
     return failResult('config_add_repo', paths, [paths.repos], {
@@ -321,6 +332,13 @@ export async function addRepo(
   );
 
   await writeJson(paths.repos, next);
+  recordConfigChange(paths, {
+    action: 'config_add_repo',
+    file: paths.repos,
+    target: id,
+    before: registry,
+    after: next,
+  });
 
   return okResult('config_add_repo', true, paths, [paths.repos], {
     message: `Added repository "${id}".`,
@@ -345,7 +363,15 @@ export async function updateRepo(
   const current = registry.repos[index];
   const repoPath = input.path ? resolveUserPath(input.path) : current.path;
   if (input.path) {
-    await discoverGitRepo(repoPath);
+    const discovery = await discoverGitRepo(repoPath).catch((error) =>
+      repoDiscoveryFailure(error),
+    );
+    if (!discovery.ok) {
+      return failResult('config_update_repo', paths, [paths.repos], {
+        message: discovery.message,
+        errors: discovery.errors,
+      });
+    }
   }
 
   const nextRepo: RepoConfig = {
@@ -372,6 +398,13 @@ export async function updateRepo(
   );
 
   await writeJson(paths.repos, next);
+  recordConfigChange(paths, {
+    action: 'config_update_repo',
+    file: paths.repos,
+    target: input.id,
+    before: registry,
+    after: next,
+  });
 
   return okResult('config_update_repo', true, paths, [paths.repos], {
     message: `Updated repository "${input.id}".`,
@@ -380,10 +413,17 @@ export async function updateRepo(
 }
 
 export async function removeRepo(
-  input: { id: string },
+  input: { id: string; confirm?: boolean },
   paths = runtimePaths(),
 ): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
+  if (input.confirm !== true) {
+    return failResult('config_remove_repo', paths, [paths.repos], {
+      message: `Removing repository "${input.id}" requires confirmation.`,
+      requires: ['confirm'],
+    });
+  }
+
   const registry = await readRuntimeJson(paths.repos, parseRepoRegistry);
   const nextRepos = registry.repos.filter((repo) => repo.id !== input.id);
 
@@ -398,6 +438,13 @@ export async function removeRepo(
     paths.repos,
   );
   await writeJson(paths.repos, next);
+  recordConfigChange(paths, {
+    action: 'config_remove_repo',
+    file: paths.repos,
+    target: input.id,
+    before: registry,
+    after: next,
+  });
 
   return okResult('config_remove_repo', true, paths, [paths.repos], {
     message: `Removed repository "${input.id}".`,
@@ -432,6 +479,13 @@ export async function addSchedule(
   );
 
   await writeJson(paths.schedules, next);
+  recordConfigChange(paths, {
+    action: 'config_add_schedule',
+    file: paths.schedules,
+    target: input.id,
+    before: config,
+    after: next,
+  });
 
   return okResult('config_add_schedule', true, paths, [paths.schedules], {
     message: `Added schedule "${input.id}".`,
@@ -468,6 +522,13 @@ export async function updateSchedule(
   const next = parseScheduleConfig({ ...config, schedules }, paths.schedules);
 
   await writeJson(paths.schedules, next);
+  recordConfigChange(paths, {
+    action: 'config_update_schedule',
+    file: paths.schedules,
+    target: input.id,
+    before: config,
+    after: next,
+  });
 
   return okResult('config_update_schedule', true, paths, [paths.schedules], {
     message: `Updated schedule "${input.id}".`,
@@ -476,10 +537,17 @@ export async function updateSchedule(
 }
 
 export async function removeSchedule(
-  input: { id: string },
+  input: { id: string; confirm?: boolean },
   paths = runtimePaths(),
 ): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
+  if (input.confirm !== true) {
+    return failResult('config_remove_schedule', paths, [paths.schedules], {
+      message: `Removing schedule "${input.id}" requires confirmation.`,
+      requires: ['confirm'],
+    });
+  }
+
   const config = await readRuntimeJson(paths.schedules, parseScheduleConfig);
   const schedules = config.schedules.filter(
     (schedule) => schedule.id !== input.id,
@@ -493,6 +561,13 @@ export async function removeSchedule(
 
   const next = parseScheduleConfig({ ...config, schedules }, paths.schedules);
   await writeJson(paths.schedules, next);
+  recordConfigChange(paths, {
+    action: 'config_remove_schedule',
+    file: paths.schedules,
+    target: input.id,
+    before: config,
+    after: next,
+  });
 
   return okResult('config_remove_schedule', true, paths, [paths.schedules], {
     message: `Removed schedule "${input.id}".`,
@@ -547,7 +622,15 @@ async function discoverGitRepo(path: string) {
   const github = inferGitHubRepo(remotes);
   const defaultBranch = await inferDefaultBranch(path);
 
-  return { github, defaultBranch };
+  return { ok: true as const, repo: { github, defaultBranch } };
+}
+
+function repoDiscoveryFailure(error: unknown) {
+  return {
+    ok: false as const,
+    message: 'Repository path could not be added because it failed validation.',
+    errors: [errorMessage(error)],
+  };
 }
 
 async function inferDefaultBranch(path: string) {
@@ -617,6 +700,45 @@ async function writeJson(path: string, value: unknown) {
   const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;
   await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
   await rename(tempPath, path);
+}
+
+function recordConfigChange(
+  paths: RuntimePaths,
+  change: {
+    action: string;
+    file: string;
+    target?: string;
+    before: unknown;
+    after: unknown;
+  },
+) {
+  const database = new DatabaseSync(paths.neondeckDatabase);
+
+  try {
+    database
+      .prepare(
+        `
+        INSERT INTO config_history (
+          action,
+          file,
+          target,
+          before_json,
+          after_json,
+          changed_at
+        )
+        VALUES (?, ?, ?, ?, ?, datetime('now'));
+      `,
+      )
+      .run(
+        change.action,
+        change.file,
+        change.target ?? null,
+        JSON.stringify(change.before),
+        JSON.stringify(change.after),
+      );
+  } finally {
+    database.close();
+  }
 }
 
 function resolveUserPath(path: string) {

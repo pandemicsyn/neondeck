@@ -265,14 +265,26 @@ function initializeAppDatabase(path: string) {
         value TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS config_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        action TEXT NOT NULL,
+        file TEXT NOT NULL,
+        target TEXT,
+        before_json TEXT,
+        after_json TEXT,
+        changed_at TEXT NOT NULL
+      );
     `);
 
     database
       .prepare(
         `
         INSERT INTO app_metadata (key, value, updated_at)
-        VALUES ('schema_version', '1', datetime('now'))
-        ON CONFLICT(key) DO NOTHING;
+        VALUES ('schema_version', '2', datetime('now'))
+        ON CONFLICT(key) DO UPDATE SET
+          value = excluded.value,
+          updated_at = excluded.updated_at;
       `,
       )
       .run();

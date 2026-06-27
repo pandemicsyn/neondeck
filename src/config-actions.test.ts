@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -79,6 +80,14 @@ describe('config actions', () => {
     expect(repos[0].defaultBranch).toBe('trunk');
 
     await expect(removeRepo({ id: 'neondeck' }, paths)).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      requires: ['confirm'],
+    });
+
+    await expect(
+      removeRepo({ id: 'neondeck', confirm: true }, paths),
+    ).resolves.toMatchObject({
       ok: true,
       changed: true,
       message: 'Removed repository "neondeck".',
@@ -88,6 +97,11 @@ describe('config actions', () => {
       paths.repos,
     ).repos;
     expect(repos).toEqual([]);
+    expect(readHistory(paths.neondeckDatabase)).toMatchObject([
+      { action: 'config_add_repo', target: 'neondeck' },
+      { action: 'config_update_repo', target: 'neondeck' },
+      { action: 'config_remove_repo', target: 'neondeck' },
+    ]);
   });
 
   it('asks for required GitHub metadata when a git repo has no GitHub remote', async () => {
@@ -99,6 +113,21 @@ describe('config actions', () => {
       ok: false,
       changed: false,
       requires: ['githubOwner', 'githubName'],
+    });
+  });
+
+  it('returns structured failures for invalid repo paths', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    await expect(
+      addRepo({ path: join(home, 'missing') }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'config_add_repo',
+      message:
+        'Repository path could not be added because it failed validation.',
     });
   });
 
@@ -140,6 +169,14 @@ describe('config actions', () => {
     await expect(
       removeSchedule({ id: 'morning' }, paths),
     ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      requires: ['confirm'],
+    });
+
+    await expect(
+      removeSchedule({ id: 'morning', confirm: true }, paths),
+    ).resolves.toMatchObject({
       ok: true,
       changed: true,
       message: 'Removed schedule "morning".',
@@ -150,6 +187,11 @@ describe('config actions', () => {
       paths.schedules,
     ).schedules;
     expect(schedules).toEqual([]);
+    expect(readHistory(paths.neondeckDatabase)).toMatchObject([
+      { action: 'config_add_schedule', target: 'morning' },
+      { action: 'config_update_schedule', target: 'morning' },
+      { action: 'config_remove_schedule', target: 'morning' },
+    ]);
   });
 
   it('reads and validates config through explicit action boundaries', async () => {
@@ -197,4 +239,22 @@ async function tempGitRepo(options: { remote?: boolean } = {}) {
   }
 
   return path;
+}
+
+function readHistory(path: string) {
+  const database = new DatabaseSync(path);
+
+  try {
+    return database
+      .prepare(
+        `
+        SELECT action, target
+        FROM config_history
+        ORDER BY id ASC;
+      `,
+      )
+      .all() as Array<{ action: string; target: string | null }>;
+  } finally {
+    database.close();
+  }
 }
