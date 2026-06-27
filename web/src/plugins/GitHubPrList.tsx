@@ -14,6 +14,7 @@ type State =
   | {
       status: 'ready';
       login?: string;
+      repos?: string[];
       items: GitHubPullRequest[];
       fetchedAt?: string;
     };
@@ -38,6 +39,7 @@ export const GitHubPrListPlugin = {
             setState({
               status: 'ready',
               login: data.login,
+              repos: data.repos,
               items: data.items,
               fetchedAt: data.fetchedAt,
             });
@@ -66,7 +68,7 @@ export const GitHubPrListPlugin = {
       state.status === 'ready' ? state.items.slice(0, config.limit) : [];
     const countLabel =
       state.status === 'ready'
-        ? `${items.length} OPEN PR${items.length === 1 ? '' : 's'}`
+        ? `${items.length} PR${items.length === 1 ? '' : 's'} · ${state.repos?.length ?? 0} REPOS`
         : 'OPEN PRs';
 
     return (

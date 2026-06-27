@@ -16,9 +16,32 @@ export type GitHubPullRequest = {
 
 export type GitHubPullRequestResponse = {
   login?: string;
+  repos?: string[];
   items: GitHubPullRequest[];
   fetchedAt?: string;
   error?: string;
+};
+
+export type RepoConfig = {
+  id: string;
+  github: {
+    owner: string;
+    name: string;
+  };
+  path: string;
+  defaultBranch: string;
+  productionTarget?: string;
+  packageScripts?: Record<string, string>;
+  metadata?: Record<string, unknown>;
+  watchRules?: unknown[];
+};
+
+export type RepoRegistryResponse = {
+  home: string;
+  path: string;
+  repos: RepoConfig[];
+  count: number;
+  fetchedAt: string;
 };
 
 export type HostMetrics = {
@@ -68,6 +91,10 @@ export async function getDashboardConfig() {
 
 export async function getGitHubPullRequests() {
   return getJson<GitHubPullRequestResponse>('/api/github/prs');
+}
+
+export async function getRepoRegistry() {
+  return getJson<RepoRegistryResponse>('/api/repos');
 }
 
 export async function getHostMetrics() {
