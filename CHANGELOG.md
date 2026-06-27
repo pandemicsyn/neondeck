@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- feat(watches): add persistent PR watch actions with quiet refresh semantics
 - feat(repos): add repo registry API and registry-aware GitHub PR queries
 - fix(config): reject empty self-configuration action inputs
 - fix(config): audit self-configuration mutations and require confirmation for destructive actions

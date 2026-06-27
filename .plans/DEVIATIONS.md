@@ -35,3 +35,10 @@ Use this format:
 - Decision: Landed a validated repo registry snapshot API and made the GitHub PR queue include configured repositories from `repos.json`. Deferred CI/check status enrichment, GitHub workflow actions, and full work-queue triage.
 - Reason: The first Phase 3 slice establishes the shared registry-backed data source for dashboard panels, future workflows, and watchers without pulling in the broader triage/checks surface.
 - Follow-up: Add structured GitHub actions for PR/check details, enrich PR results with CI status, and build the work-queue triage workflow.
+
+## 2026-06-27 - Schedules, Watches, And Blueprint-Style Automations
+
+- Roadmap item: Phase 4 / schedules, watches, and blueprint-style automations
+- Decision: Landed persistent PR watch storage and deterministic `neondeck_watch_pr_*` actions for add/list/remove/refresh with supported PR reference parsing and quiet `silent` refresh results. Deferred in-process scheduling, production/deploy status watching, and full GitHub Actions/check-run state handling.
+- Reason: The first Phase 4 slice establishes durable watch state and deterministic refresh semantics before adding recurring scheduler execution or broader deployment-specific integrations.
+- Follow-up: Add a local scheduler loop, watch refresh cadence, GitHub check-run/deploy enrichment, schedule blueprints, and dashboard/watch notification surfaces.

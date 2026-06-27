@@ -22,6 +22,19 @@ export type GitHubPullRequestQueue = {
   fetchedAt: string;
 };
 
+export type GitHubPullRequestDetail = {
+  number: number;
+  title: string;
+  repo: string;
+  url: string;
+  state: string;
+  merged: boolean;
+  mergeCommitSha: string | null;
+  headSha: string;
+  baseRef: string;
+  updatedAt: string;
+};
+
 export async function fetchGitHubLogin(token: string) {
   const response = await githubFetch(token, 'https://api.github.com/user');
   const data = (await response.json()) as { login?: string };
@@ -69,6 +82,32 @@ export function buildPullRequestQueries(login: string, repos: RepoConfig[]) {
   return Array.from(new Set(queries));
 }
 
+export async function fetchPullRequestDetail(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+}): Promise<GitHubPullRequestDetail> {
+  const response = await githubFetch(
+    options.token,
+    `https://api.github.com/repos/${options.owner}/${options.repo}/pulls/${options.number}`,
+  );
+  const data = (await response.json()) as GitHubPullRequestApiResponse;
+
+  return {
+    number: data.number,
+    title: data.title,
+    repo: `${options.owner}/${options.repo}`,
+    url: data.html_url,
+    state: data.state,
+    merged: data.merged,
+    mergeCommitSha: data.merge_commit_sha,
+    headSha: data.head.sha,
+    baseRef: data.base.ref,
+    updatedAt: data.updated_at,
+  };
+}
+
 async function searchPullRequests(token: string, query: string) {
   const params = new URLSearchParams({
     q: query,
@@ -113,6 +152,18 @@ type GitHubSearchIssue = {
   comments: number;
   updated_at: string;
   created_at: string;
+};
+
+type GitHubPullRequestApiResponse = {
+  number: number;
+  title: string;
+  html_url: string;
+  state: string;
+  merged: boolean;
+  merge_commit_sha: string | null;
+  updated_at: string;
+  head: { sha: string };
+  base: { ref: string };
 };
 
 function normalizePullRequest(item: GitHubSearchIssue): GitHubPullRequest {

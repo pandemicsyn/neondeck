@@ -275,13 +275,34 @@ function initializeAppDatabase(path: string) {
         after_json TEXT,
         changed_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS pr_watches (
+        id TEXT PRIMARY KEY,
+        repo_id TEXT NOT NULL,
+        repo_full_name TEXT NOT NULL,
+        github_owner TEXT NOT NULL,
+        github_name TEXT NOT NULL,
+        pr_number INTEGER NOT NULL,
+        desired_terminal_state TEXT NOT NULL,
+        status TEXT NOT NULL,
+        pr_state TEXT,
+        title TEXT,
+        url TEXT,
+        merge_commit_sha TEXT,
+        last_snapshot_json TEXT,
+        last_outcome TEXT,
+        last_checked_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(repo_full_name, pr_number)
+      );
     `);
 
     database
       .prepare(
         `
         INSERT INTO app_metadata (key, value, updated_at)
-        VALUES ('schema_version', '2', datetime('now'))
+        VALUES ('schema_version', '3', datetime('now'))
         ON CONFLICT(key) DO UPDATE SET
           value = excluded.value,
           updated_at = excluded.updated_at;
@@ -380,6 +401,8 @@ Home resolution order is \`NEONDECK_HOME\`, then \`XDG_CONFIG_HOME/neondeck\`, t
 ## Mutation Rules
 
 Use typed neondeck config actions for mutations whenever they are available. Do not directly edit config files as the primary path. Read, validate, add, update, remove, and reload through deterministic actions so UI buttons and chat commands share the same backend behavior.
+
+Use typed watch actions for PR watches. Add, list, remove, and refresh PR watches through \`neondeck_watch_pr_*\` actions. Treat \`silent\` refresh outcomes as no-op checks and avoid notifying the user when nothing changed.
 
 Ask for confirmation before destructive changes, removing configured repositories, deleting schedules, disabling watches, or replacing user-authored skills. After any accepted change, summarize exactly which file or runtime object changed and what the new value is.
 `;
