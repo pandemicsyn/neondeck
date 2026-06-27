@@ -18,6 +18,11 @@ import {
   readRuntimeJson,
   runtimePaths,
 } from './runtime-home';
+import {
+  listRuntimeSkills,
+  loadRuntimeSkill,
+  reloadRuntimeSkills,
+} from './runtime-skills';
 import { listPrWatches } from './watch-actions';
 
 const kiloApiKey = process.env.KILOCODE_API_KEY ?? process.env.KILO_API_KEY;
@@ -116,6 +121,23 @@ app.get('/api/notifications', async (c) => {
 app.post('/api/notifications/:id/read', async (c) => {
   await markNotificationRead(c.req.param('id'), paths);
   return c.json({ ok: true });
+});
+
+app.get('/api/skills', async (c) => {
+  return c.json(await listRuntimeSkills(paths));
+});
+
+app.get('/api/skills/:id', async (c) => {
+  const result = await loadRuntimeSkill({ id: c.req.param('id') }, paths);
+  if (!result.ok) {
+    return c.json(result, 404);
+  }
+
+  return c.json(result);
+});
+
+app.post('/api/skills/reload', async (c) => {
+  return c.json(await reloadRuntimeSkills(paths));
 });
 
 app.get('/api/github/prs', async (c) => {

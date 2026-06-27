@@ -40,6 +40,15 @@ XDG_CONFIG_HOME/neondeck
 
 The runtime home contains `config.json`, `repos.json`, `dashboard.json`, `schedules.json`, `SOUL.md`, `skills/`, and separate `data/neondeck.db` and `data/flue.db` databases. The repo-local `config/dashboard.json` and `SOUL.md` files are defaults for new homes; edit the runtime-home copies for local customization.
 
+Runtime skills live under `skills/<skill-id>/SKILL.md`. Neondeck seeds `skills/neondeck/SKILL.md`, loads valid user skills from the same root, and can read additional skill roots from `config.json`:
+
+```json
+{
+  "version": 1,
+  "skillRoots": ["/absolute/path/to/skills"]
+}
+```
+
 ## Run
 
 ```sh

@@ -30,6 +30,7 @@ const positiveIntegerSchema = v.pipe(v.number(), v.integer(), v.minValue(1));
 
 export const appConfigSchema = v.looseObject({
   version: positiveIntegerSchema,
+  skillRoots: v.optional(v.array(nonEmptyStringSchema)),
 });
 
 export const repoConfigSchema = v.looseObject({
@@ -149,7 +150,7 @@ export async function ensureRuntimeHome(paths = runtimePaths()) {
   await writeJsonIfMissing(paths.schedules, { schedules: [] });
   await copyIfMissing(defaultDashboardPath, paths.dashboard);
   await copyIfMissing(defaultSoulPath, paths.soul);
-  await writeFileIfMissing(paths.neondeckSkill, runtimeSkillMarkdown(paths));
+  await writeRuntimeSkillIfMissingOrOutdated(paths);
   initializeAppDatabase(paths.neondeckDatabase);
   initializeFlueDatabase(paths.flueDatabase);
 }
@@ -164,7 +165,7 @@ export function ensureRuntimeHomeSync(paths = runtimePaths()) {
   writeJsonIfMissingSync(paths.schedules, { schedules: [] });
   copyIfMissingSync(defaultDashboardPath, paths.dashboard);
   copyIfMissingSync(defaultSoulPath, paths.soul);
-  writeFileIfMissingSync(paths.neondeckSkill, runtimeSkillMarkdown(paths));
+  writeRuntimeSkillIfMissingOrOutdatedSync(paths);
   initializeAppDatabase(paths.neondeckDatabase);
   initializeFlueDatabase(paths.flueDatabase);
 }
@@ -228,6 +229,22 @@ async function writeFileIfMissing(path: string, value: string) {
   await writeFile(path, value, 'utf8');
 }
 
+async function writeRuntimeSkillIfMissingOrOutdated(paths: RuntimePaths) {
+  if (!existsSync(paths.neondeckSkill)) {
+    await writeFileIfMissing(paths.neondeckSkill, runtimeSkillMarkdown(paths));
+    return;
+  }
+
+  const source = await readFile(paths.neondeckSkill, 'utf8');
+  if (!source.startsWith('---\n')) {
+    await writeFile(
+      paths.neondeckSkill,
+      `${runtimeSkillFrontmatter()}\n${source}`,
+      'utf8',
+    );
+  }
+}
+
 function writeFileIfMissingSync(path: string, value: string) {
   if (existsSync(path)) {
     return;
@@ -235,6 +252,21 @@ function writeFileIfMissingSync(path: string, value: string) {
 
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, value, 'utf8');
+}
+
+function writeRuntimeSkillIfMissingOrOutdatedSync(paths: RuntimePaths) {
+  if (!existsSync(paths.neondeckSkill)) {
+    writeFileIfMissingSync(paths.neondeckSkill, runtimeSkillMarkdown(paths));
+    return;
+  }
+
+  const source = readFileSync(paths.neondeckSkill, 'utf8');
+  if (!source.startsWith('---\n')) {
+    writeFileSync(
+      paths.neondeckSkill,
+      `${runtimeSkillFrontmatter()}\n${source}`,
+    );
+  }
 }
 
 async function copyIfMissing(source: string, target: string) {
@@ -421,7 +453,8 @@ function parseSchema<T>(
 }
 
 function runtimeSkillMarkdown(paths: RuntimePaths) {
-  return `# neondeck Runtime Skill
+  return `${runtimeSkillFrontmatter()}
+# neondeck Runtime Skill
 
 Neon runs inside neondeck, a local-first developer cockpit for a companion display.
 
@@ -446,6 +479,8 @@ Home resolution order is \`NEONDECK_HOME\`, then \`XDG_CONFIG_HOME/neondeck\`, t
 - \`data/neondeck.db\`: neondeck app state.
 - \`data/flue.db\`: Flue runtime state.
 
+\`config.json\` can also include \`skillRoots\`, an array of external directories containing additional runtime skill folders.
+
 ## Mutation Rules
 
 Use typed neondeck config actions for mutations whenever they are available. Do not directly edit config files as the primary path. Read, validate, add, update, remove, and reload through deterministic actions so UI buttons and chat commands share the same backend behavior.
@@ -454,6 +489,15 @@ Use typed watch actions for PR watches. Add, list, remove, and refresh PR watche
 
 Use scheduler actions for recurring work. Create common automations through \`neondeck_schedule_blueprint_create\`, inspect durable jobs with \`neondeck_scheduler_list_jobs\`, and trigger due work with \`neondeck_scheduler_tick\`.
 
+Use runtime skill actions for skill inspection. List skills with \`neondeck_skills_list\`, load full skill content with \`neondeck_skill_load\`, and rescan skill roots with \`neondeck_skills_reload\`. If duplicate skill ids are reported, treat those skills as disabled until the duplicate folders are resolved.
+
 Ask for confirmation before destructive changes, removing configured repositories, deleting schedules, disabling watches, or replacing user-authored skills. After any accepted change, summarize exactly which file or runtime object changed and what the new value is.
 `;
+}
+
+function runtimeSkillFrontmatter() {
+  return `---
+name: neondeck
+description: Understand Neondeck runtime config, schedules, watches, skills, and deterministic action rules.
+---`;
 }

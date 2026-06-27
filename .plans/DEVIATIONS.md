@@ -42,3 +42,10 @@ Use this format:
 - Decision: Landed durable app tables for watches, jobs, notifications, memories, and workflow summaries; deterministic `neondeck_watch_pr_*` actions; GitHub check-run status enrichment for merged PR watches; blueprint-backed schedule creation; a local scheduler loop; active watch/job/notification APIs; and quiet `silent` refresh results for unchanged watches. Production/deploy status watching remains a provider-specific follow-up, and morning briefing jobs currently record durable scheduler/workflow state rather than running the full briefing workflow.
 - Reason: Phase 4 needs the local scheduler and deterministic watch substrate first. Deploy status adapters depend on configured deployment providers, and the full briefing workflow belongs with the workflow/dashboard phases that consume this scheduler state.
 - Follow-up: Add deploy-provider status adapters when repo deploy targets are formalized, and wire morning briefing jobs to a full Flue workflow during the briefing/workflow dashboard phase.
+
+## 2026-06-27 - Runtime Skills
+
+- Roadmap item: Phase 5 / runtime skills
+- Decision: Landed Neondeck-managed runtime skill discovery from `skills/` and configured `skillRoots`, folder validation with ignored-entry reporting, metadata and full-load APIs, Flue actions for list/load/reload, duplicate-id detection, and automatic instruction injection for active skills when the display assistant initializes. The reload action rescans disk for APIs/actions, but already-initialized Flue sessions keep their existing automatic instruction context.
+- Reason: Current Flue packaged skills must be imported at build time or discovered from a harness workspace; mutable `NEONDECK_HOME` skills need a runtime-managed loader. Existing session context should stay stable rather than being rewritten under an active conversation.
+- Follow-up: Add session-level skill context refresh if Flue exposes a safe active-session update hook or when Neon command/session management lands.
