@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Roadmap Review'
+  short_description: 'Static review of roadmap implementation diffs'
+  default_prompt: 'Use $roadmap-review to statically review local roadmap implementation changes.'

@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Roadmap Implementation'
+  short_description: 'Implement one roadmap item with deviations log'
+  default_prompt: 'Use $roadmap-implementation to implement a specific item from .plans/ROADMAP.md.'
