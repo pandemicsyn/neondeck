@@ -98,11 +98,11 @@ export type DashboardConfig = v.InferOutput<typeof dashboardConfigSchema>;
 export type DashboardRegion = v.InferOutput<typeof dashboardRegionSchema>;
 
 export class ConfigValidationError extends Error {
-  constructor(
-    readonly path: string,
-    message: string,
-  ) {
+  readonly path: string;
+
+  constructor(path: string, message: string) {
     super(`${path}: ${message}`);
+    this.path = path;
     this.name = 'ConfigValidationError';
   }
 }

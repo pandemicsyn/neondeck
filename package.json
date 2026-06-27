@@ -19,6 +19,7 @@
     "lint": "oxlint src web/src web/vite.config.ts vitest.config.ts --react-plugin --jsx-a11y-plugin --vitest-plugin --import-plugin --no-error-on-unmatched-pattern",
     "lint:fix": "npm run lint -- --fix",
     "run:display": "flue run display-assistant --target node --server /api/flue --input '{\"message\":\"Say hello in one sentence.\"}'",
+    "setup": "node src/setup.ts",
     "start": "node dist/server.mjs",
     "test": "vitest run",
     "test:watch": "vitest",

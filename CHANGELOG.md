@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- feat(setup): add explicit runtime home setup command
 - feat(skills): add runtime skill discovery, loading, and reload actions
 - feat(scheduler): add durable scheduled jobs, notifications, and blueprint automations
 - feat(watches): add persistent PR watch actions with quiet refresh semantics
