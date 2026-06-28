@@ -8,6 +8,7 @@ import { listWorkflowSummaries } from './app-state';
 import { parseNeonCommand, runNeonCommand } from './commands';
 import { listRepoStatus, runDevDoctor } from './dev-doctor';
 import { runtimePaths } from './runtime-home';
+import { addPrWatch } from './watch-actions';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
@@ -43,6 +44,29 @@ describe('Neon commands', () => {
       command: {
         name: 'watch-release',
         args: ['neondeck'],
+      },
+    });
+    expect(parseNeonCommand('/explain-ci neondeck#10')).toMatchObject({
+      ok: true,
+      command: {
+        name: 'explain-ci',
+        args: ['neondeck#10'],
+      },
+    });
+    expect(parseNeonCommand('/draft-pr-description')).toMatchObject({
+      ok: true,
+      command: {
+        name: 'draft-pr-description',
+        args: [],
+      },
+    });
+    expect(
+      parseNeonCommand('/memory set session current-task "ship it"'),
+    ).toMatchObject({
+      ok: true,
+      command: {
+        name: 'memory',
+        args: ['set', 'session', 'current-task', 'ship it'],
       },
     });
     expect(parseNeonCommand('repo-status')).toMatchObject({
@@ -91,7 +115,33 @@ describe('Neon commands', () => {
     process.env.GITHUB_TOKEN = 'token';
     process.env.GITHUB_LOGIN = 'pandemicsyn';
     const home = await tempDir('neondeck-home-');
+    const repoPath = await tempGitRepo();
     const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos, repoPath);
+    await addPrWatch(
+      { ref: 'neondeck#10' },
+      paths,
+      async () => ({
+        number: 10,
+        title: 'Add thing',
+        repo: 'pandemicsyn/neondeck',
+        url: 'https://github.com/pandemicsyn/neondeck/pull/10',
+        state: 'open',
+        merged: false,
+        mergeCommitSha: null,
+        headSha: 'abc123',
+        baseRef: 'main',
+        updatedAt: '2026-06-27T20:00:00Z',
+      }),
+      async () => ({
+        status: 'failure',
+        total: 2,
+        successful: 1,
+        failed: 1,
+        pending: 0,
+        checkedAt: '2026-06-27T20:00:30Z',
+      }),
+    );
 
     await expect(
       runNeonCommand({ command: '/review-queue' }, paths, {
@@ -111,9 +161,24 @@ describe('Neon commands', () => {
               comments: 0,
               updatedAt: '2026-06-27T20:00:00Z',
               createdAt: '2026-06-27T19:00:00Z',
+              relations: ['review-requested', 'configured-repo'],
+              ageDays: 0,
+              stale: false,
+              headSha: 'abc123',
+              baseRef: 'main',
+              checks: {
+                status: 'failure',
+                total: 2,
+                successful: 1,
+                failed: 1,
+                pending: 0,
+                checkedAt: '2026-06-27T20:00:30Z',
+              },
             },
           ],
           fetchedAt: '2026-06-27T20:01:00Z',
+          truncated: false,
+          issues: [],
         }),
       }),
     ).resolves.toMatchObject({
@@ -121,14 +186,236 @@ describe('Neon commands', () => {
       command: 'review-queue',
       data: {
         count: 1,
+        triage: {
+          summary: {
+            requestedReviews: 1,
+            failedChecks: 1,
+            activeWatches: 1,
+          },
+          requestedReviews: [
+            {
+              repo: 'pandemicsyn/neondeck',
+              number: 10,
+              checks: 'failure',
+            },
+          ],
+          failedChecks: [
+            {
+              repo: 'pandemicsyn/neondeck',
+              number: 10,
+            },
+          ],
+          activeWatches: [
+            {
+              id: 'pandemicsyn/neondeck#10',
+              status: 'watching',
+            },
+          ],
+        },
         topActions: [
           {
-            title: 'Review pandemicsyn/neondeck#10',
+            title: 'Fix failing checks: pandemicsyn/neondeck#10',
+            priority: 'urgent',
           },
         ],
       },
       workflowSummary: {
         workflow: 'command:review-queue',
+      },
+    });
+  });
+
+  it('explains CI for a selected PR from deterministic GitHub queue data', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    process.env.GITHUB_LOGIN = 'pandemicsyn';
+    const home = await tempDir('neondeck-home-');
+    const repoPath = await tempGitRepo();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos, repoPath);
+
+    await expect(
+      runNeonCommand({ command: '/explain-ci neondeck#10' }, paths, {
+        fetchPullRequestQueue: async () => ({
+          login: 'pandemicsyn',
+          repos: ['pandemicsyn/neondeck'],
+          items: [testPr({ checks: 'failure' })],
+          fetchedAt: '2026-06-27T20:01:00Z',
+          truncated: false,
+          issues: [],
+        }),
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      command: 'explain-ci',
+      message: 'pandemicsyn/neondeck#10 CI is failure.',
+      data: {
+        checks: {
+          status: 'failure',
+          failed: 1,
+        },
+        explanation: {
+          status: 'failure',
+          nextActions: expect.arrayContaining([
+            'Open the failing GitHub checks and inspect the first failed job log.',
+          ]),
+        },
+      },
+      workflowSummary: {
+        workflow: 'command:explain-ci',
+      },
+    });
+  });
+
+  it('summarizes a selected PR from deterministic GitHub queue data', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    process.env.GITHUB_LOGIN = 'pandemicsyn';
+    const home = await tempDir('neondeck-home-');
+    const repoPath = await tempGitRepo();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos, repoPath);
+
+    await expect(
+      runNeonCommand({ command: '/summarize-pr neondeck#10' }, paths, {
+        fetchPullRequestQueue: async () => ({
+          login: 'pandemicsyn',
+          repos: ['pandemicsyn/neondeck'],
+          items: [testPr({ checks: 'success' })],
+          fetchedAt: '2026-06-27T20:01:00Z',
+          truncated: false,
+          issues: [],
+        }),
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      command: 'summarize-pr',
+      data: {
+        summary: {
+          headline: 'pandemicsyn/neondeck#10: Add thing',
+          checks: 'success',
+          relations: ['review-requested', 'configured-repo'],
+        },
+      },
+      workflowSummary: {
+        workflow: 'command:summarize-pr',
+      },
+    });
+  });
+
+  it('drafts a PR description from local repo status', async () => {
+    const home = await tempDir('neondeck-home-');
+    const repoPath = await tempGitRepo();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos, repoPath, {
+      packageScripts: { check: 'npm run lint && npm run test' },
+    });
+    await writeFile(join(repoPath, 'feature.txt'), 'changed\n');
+
+    await expect(
+      runNeonCommand({ command: '/draft-pr-description neondeck' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      command: 'draft-pr-description',
+      data: {
+        draft: {
+          title: 'neondeck: <short change summary>',
+          body: expect.stringContaining('npm run check'),
+        },
+        health: {
+          dirty: true,
+          changeCount: 1,
+        },
+      },
+      workflowSummary: {
+        workflow: 'command:draft-pr-description',
+      },
+    });
+  });
+
+  it('prepares PR readiness checks from deterministic repo status', async () => {
+    const home = await tempDir('neondeck-home-');
+    const repoPath = await tempGitRepo();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos, repoPath);
+    await writeFile(join(repoPath, 'README.md'), '# changed\n');
+
+    await expect(
+      runNeonCommand({ command: '/prepare-pr neondeck' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      command: 'prepare-pr',
+      data: {
+        ready: false,
+        checks: expect.arrayContaining([
+          expect.objectContaining({
+            id: 'working-tree',
+            status: 'attention',
+          }),
+          expect.objectContaining({ id: 'branch' }),
+          expect.objectContaining({ id: 'upstream' }),
+          expect.objectContaining({ id: 'validation' }),
+        ]),
+      },
+      workflowSummary: {
+        workflow: 'command:prepare-pr',
+      },
+    });
+  });
+
+  it('reviews local repo status and reports deterministic findings', async () => {
+    const home = await tempDir('neondeck-home-');
+    const repoPath = await tempGitRepo();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos, repoPath);
+    await writeFile(join(repoPath, 'README.md'), '# changed\n');
+
+    await expect(
+      runNeonCommand({ command: '/review-local neondeck' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      command: 'review-local',
+      data: {
+        findings: expect.arrayContaining([
+          expect.objectContaining({
+            title: 'Working on default branch',
+          }),
+          expect.objectContaining({
+            title: 'Uncommitted changes present',
+          }),
+        ]),
+        diff: {
+          ok: true,
+          fileCount: 1,
+          additions: 1,
+          deletions: 1,
+        },
+      },
+      workflowSummary: {
+        workflow: 'command:review-local',
+      },
+    });
+  });
+
+  it('does not invent review findings for a clean topic branch', async () => {
+    const home = await tempDir('neondeck-home-');
+    const repoPath = await tempGitRepo();
+    await execFileAsync('git', ['checkout', '-b', 'feature/test'], {
+      cwd: repoPath,
+    });
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos, repoPath);
+
+    await expect(
+      runNeonCommand({ command: '/review-local neondeck' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      command: 'review-local',
+      message: 'No deterministic local review findings for neondeck.',
+      data: {
+        findings: [],
+        diff: {
+          ok: true,
+          fileCount: 0,
+        },
       },
     });
   });
@@ -151,6 +438,49 @@ describe('Neon commands', () => {
       },
       workflowSummary: {
         workflow: 'command:briefing',
+      },
+    });
+  });
+
+  it('lists and updates structured memory through the memory command', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    await expect(
+      runNeonCommand(
+        { command: '/memory set session current-task "finish roadmap item 3"' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      command: 'memory',
+      data: {
+        action: 'memory_upsert',
+        memory: {
+          scope: 'session',
+          key: 'current-task',
+          value: 'finish roadmap item 3',
+        },
+      },
+      workflowSummary: {
+        workflow: 'command:memory',
+      },
+    });
+
+    await expect(
+      runNeonCommand({ command: '/memory session' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      command: 'memory',
+      message: 'Listed 1 durable memory entry.',
+      data: {
+        memories: [
+          {
+            scope: 'session',
+            key: 'current-task',
+            value: 'finish roadmap item 3',
+          },
+        ],
       },
     });
   });
@@ -307,7 +637,11 @@ async function tempGitRepo() {
   return path;
 }
 
-async function writeRepoRegistry(path: string, repoPath: string) {
+async function writeRepoRegistry(
+  path: string,
+  repoPath: string,
+  options: { packageScripts?: Record<string, string> } = {},
+) {
   await writeFile(
     path,
     `${JSON.stringify({
@@ -317,8 +651,40 @@ async function writeRepoRegistry(path: string, repoPath: string) {
           github: { owner: 'pandemicsyn', name: 'neondeck' },
           path: repoPath,
           defaultBranch: 'main',
+          ...(options.packageScripts
+            ? { packageScripts: options.packageScripts }
+            : {}),
         },
       ],
     })}\n`,
   );
+}
+
+function testPr(options: { checks: 'success' | 'failure' | 'pending' }) {
+  return {
+    id: 1,
+    title: 'Add thing',
+    repo: 'pandemicsyn/neondeck',
+    number: 10,
+    url: 'https://github.com/pandemicsyn/neondeck/pull/10',
+    state: 'open',
+    author: 'pandemicsyn',
+    labels: ['feature'],
+    comments: 2,
+    updatedAt: '2026-06-27T20:00:00Z',
+    createdAt: '2026-06-27T19:00:00Z',
+    relations: ['review-requested' as const, 'configured-repo' as const],
+    ageDays: 0,
+    stale: false,
+    headSha: 'abc123',
+    baseRef: 'main',
+    checks: {
+      status: options.checks,
+      total: 2,
+      successful: options.checks === 'success' ? 2 : 1,
+      failed: options.checks === 'failure' ? 1 : 0,
+      pending: options.checks === 'pending' ? 1 : 0,
+      checkedAt: '2026-06-27T20:00:30Z',
+    },
+  };
 }

@@ -69,6 +69,31 @@ Agent and subagent models are configurable in runtime-home `config.json`. Enviro
 
 The Neondeck chat agent can update those model settings through the typed `neondeck_config_update_agent_models` action when asked. Model strings must reference providers already registered by the app or Flue runtime; changing provider credentials or registering arbitrary new providers is not yet a runtime-config action.
 
+Host execution is also configured in runtime-home `config.json`, but Neondeck does not expose an unrestricted shell executor. The policy is an approval gate for current and future execution actions. `local` is the default backend; `exe.dev` is accepted as a planned sandbox backend so config can be shaped before that executor lands.
+
+```json
+{
+  "version": 1,
+  "execution": {
+    "defaultBackend": "local",
+    "enabledBackends": ["local"],
+    "approvalMode": "manual",
+    "unattended": "deny",
+    "preapprovedCommands": [
+      {
+        "id": "test",
+        "command": "npm test",
+        "match": "exact",
+        "backends": ["local"],
+        "description": "Run the repo test suite."
+      }
+    ]
+  }
+}
+```
+
+Preapproved commands must be single commands without shell operators such as `&&`, `|`, redirection, subshells, or newlines. Commands outside the preapproval list require interactive approval in future executor actions and are denied in unattended contexts. Hardline destructive commands cannot be preapproved. Neon can inspect or update this policy through `neondeck_execution_policy_lookup`, `neondeck_execution_policy_check`, and `neondeck_config_update_execution_policy`; policy updates are audited in `config_history`.
+
 ## Run
 
 ```sh

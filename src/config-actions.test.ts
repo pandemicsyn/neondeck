@@ -10,10 +10,13 @@ import {
   addRepo,
   addSchedule,
   readConfig,
+  readProviderConfig,
   removeRepo,
   removeSchedule,
   updateRepo,
   updateAgentModels,
+  updateExecutionPolicy,
+  updateProviderConfig,
   updateSchedule,
   validateConfig,
 } from './config-actions';
@@ -311,6 +314,24 @@ describe('config actions', () => {
     });
 
     await expect(
+      updateAgentModels({ displayAssistant: 'openai/gpt-5' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'config_update_agent_models',
+      message: 'Invalid action input.',
+    });
+
+    await expect(
+      updateAgentModels({ displayAssistant: 'kilo-auto' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'config_update_agent_models',
+      message: 'Invalid action input.',
+    });
+
+    await expect(
       updateAgentModels({ displayAssistant: 'kilocode/kilo/auto' }, paths),
     ).resolves.toMatchObject({
       ok: true,
@@ -327,6 +348,215 @@ describe('config actions', () => {
     expect(readHistory(paths.neondeckDatabase)).toMatchObject([
       { action: 'config_update_agent_models', target: 'models' },
     ]);
+  });
+
+  it('reads and updates allowlisted provider config through env refs only', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    await expect(
+      readProviderConfig(paths, { KILO_API_KEY: 'legacy' }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      action: 'config_read_providers',
+      data: {
+        providers: {
+          kilocode: {
+            enabled: true,
+            apiKeyEnv: 'KILO_API_KEY',
+            organizationIdEnv: null,
+          },
+        },
+      },
+    });
+
+    await expect(
+      updateProviderConfig(
+        {
+          provider: 'kilocode',
+          enabled: true,
+          apiKeyEnv: 'NEONDECK_KILO_KEY',
+          organizationIdEnv: 'NEONDECK_KILO_ORG',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'config_update_provider',
+      message:
+        'Updated provider configuration. Restart the server for provider registration changes to take effect.',
+      data: {
+        appliesAfter: 'server-restart',
+      },
+    });
+
+    let config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.providers).toEqual({
+      kilocode: {
+        enabled: true,
+        apiKeyEnv: 'NEONDECK_KILO_KEY',
+        organizationIdEnv: 'NEONDECK_KILO_ORG',
+      },
+    });
+
+    await expect(
+      updateProviderConfig(
+        {
+          provider: 'kilocode',
+          enabled: false,
+          organizationIdEnv: null,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        providers: {
+          kilocode: {
+            enabled: false,
+            apiKeyEnv: 'NEONDECK_KILO_KEY',
+            organizationIdEnv: null,
+          },
+        },
+      },
+    });
+
+    config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.providers).toEqual({
+      kilocode: {
+        enabled: false,
+        apiKeyEnv: 'NEONDECK_KILO_KEY',
+      },
+    });
+    expect(readHistory(paths.neondeckDatabase)).toMatchObject([
+      { action: 'config_update_provider', target: 'providers.kilocode' },
+      { action: 'config_update_provider', target: 'providers.kilocode' },
+    ]);
+  });
+
+  it('rejects unsafe provider config shapes and raw secret-looking values', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    await expect(
+      updateProviderConfig({ provider: 'kilocode' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'config_update_provider',
+      requires: ['enabled', 'apiKeyEnv', 'organizationIdEnv'],
+    });
+
+    await expect(
+      updateProviderConfig(
+        { provider: 'kilocode', apiKeyEnv: 'sk-live-secret' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'config_update_provider',
+      message: 'Invalid action input.',
+    });
+
+    await expect(
+      updateProviderConfig(
+        { provider: 'kilocode', apiKeyEnv: 'lowercase_secret' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'config_update_provider',
+      message: 'Invalid action input.',
+    });
+
+    expect(readHistory(paths.neondeckDatabase)).toEqual([]);
+  });
+
+  it('updates execution approval policy through audited config', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    await expect(
+      updateExecutionPolicy(
+        {
+          defaultBackend: 'exe.dev',
+          enabledBackends: ['local', 'exe.dev'],
+          unattended: 'allow-preapproved',
+          preapprovedCommands: [
+            {
+              id: 'test',
+              command: 'npm test',
+              match: 'exact',
+              backends: ['exe.dev'],
+            },
+          ],
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'config_update_execution_policy',
+      data: {
+        execution: {
+          defaultBackend: 'exe.dev',
+          enabledBackends: ['local', 'exe.dev'],
+        },
+        policy: {
+          defaultBackend: 'exe.dev',
+          enabledBackends: ['local', 'exe.dev'],
+        },
+      },
+    });
+
+    const config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.execution).toMatchObject({
+      defaultBackend: 'exe.dev',
+      enabledBackends: ['local', 'exe.dev'],
+      unattended: 'allow-preapproved',
+      preapprovedCommands: [
+        {
+          id: 'test',
+          command: 'npm test',
+          match: 'exact',
+          backends: ['exe.dev'],
+        },
+      ],
+    });
+    expect(readHistory(paths.neondeckDatabase)).toMatchObject([
+      { action: 'config_update_execution_policy', target: 'execution' },
+    ]);
+
+    await expect(
+      updateExecutionPolicy(
+        {
+          preapprovedCommands: [
+            {
+              command: 'npm test && rm -rf /tmp/nope',
+            },
+          ],
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'config_update_execution_policy',
+      message: 'Invalid action input.',
+    });
   });
 
   it('returns structured failures for empty schedule action fields', async () => {

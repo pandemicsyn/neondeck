@@ -26,6 +26,10 @@ export type RuntimePaths = {
 const unknownRecordSchema = v.record(v.string(), v.unknown());
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 const positiveIntegerSchema = v.pipe(v.number(), v.integer(), v.minValue(1));
+const envVarNameSchema = v.pipe(
+  v.string(),
+  v.regex(/^[A-Z_][A-Z0-9_]*$/, 'Expected an environment variable name.'),
+);
 
 export const agentModelConfigSchema = v.looseObject({
   default: v.optional(nonEmptyStringSchema),
@@ -40,10 +44,50 @@ export const agentModelConfigSchema = v.looseObject({
   ),
 });
 
+export const providerConfigSchema = v.strictObject({
+  kilocode: v.optional(
+    v.strictObject({
+      enabled: v.optional(v.boolean()),
+      apiKeyEnv: v.optional(envVarNameSchema),
+      organizationIdEnv: v.optional(envVarNameSchema),
+    }),
+  ),
+});
+
+const executionBackendSchema = v.picklist(['local', 'exe.dev']);
+const executionApprovalModeSchema = v.picklist(['manual', 'off']);
+const executionUnattendedModeSchema = v.picklist(['deny', 'allow-preapproved']);
+const executionCommandMatchSchema = v.picklist(['exact', 'prefix', 'glob']);
+const shellOperatorFreeCommandSchema = v.pipe(
+  nonEmptyStringSchema,
+  v.check(
+    (value) => !hasShellOperator(value),
+    'Preapproved commands must be a single command without shell operators.',
+  ),
+);
+
+export const executionPreapprovedCommandSchema = v.looseObject({
+  id: v.optional(nonEmptyStringSchema),
+  command: shellOperatorFreeCommandSchema,
+  match: v.optional(executionCommandMatchSchema),
+  backends: v.optional(v.array(executionBackendSchema)),
+  description: v.optional(nonEmptyStringSchema),
+});
+
+export const executionConfigSchema = v.looseObject({
+  defaultBackend: v.optional(executionBackendSchema),
+  enabledBackends: v.optional(v.array(executionBackendSchema)),
+  approvalMode: v.optional(executionApprovalModeSchema),
+  unattended: v.optional(executionUnattendedModeSchema),
+  preapprovedCommands: v.optional(v.array(executionPreapprovedCommandSchema)),
+});
+
 export const appConfigSchema = v.looseObject({
   version: positiveIntegerSchema,
   skillRoots: v.optional(v.array(nonEmptyStringSchema)),
   models: v.optional(agentModelConfigSchema),
+  providers: v.optional(providerConfigSchema),
+  execution: v.optional(executionConfigSchema),
 });
 
 export const repoConfigSchema = v.looseObject({
@@ -104,6 +148,12 @@ export const dashboardConfigSchema = v.looseObject({
 
 export type AppConfig = v.InferOutput<typeof appConfigSchema>;
 export type AgentModelConfig = v.InferOutput<typeof agentModelConfigSchema>;
+export type ProviderConfig = v.InferOutput<typeof providerConfigSchema>;
+export type ExecutionConfig = v.InferOutput<typeof executionConfigSchema>;
+export type ExecutionBackend = v.InferOutput<typeof executionBackendSchema>;
+export type ExecutionPreapprovedCommand = v.InferOutput<
+  typeof executionPreapprovedCommandSchema
+>;
 export type RepoConfig = v.InferOutput<typeof repoConfigSchema>;
 export type RepoRegistry = v.InferOutput<typeof repoRegistrySchema>;
 export type ScheduleEntry = v.InferOutput<typeof scheduleEntrySchema>;
@@ -221,6 +271,10 @@ function expandHome(path: string, env: RuntimeHomeEnv) {
   }
 
   return resolve(path);
+}
+
+function hasShellOperator(value: string) {
+  return /(?:\n|&&|\|\||[;&|<>`]|\$\()/.test(value);
 }
 
 async function writeJsonIfMissing(path: string, value: unknown) {
@@ -347,6 +401,14 @@ function initializeAppDatabase(path: string) {
         UNIQUE(scope, key)
       );
 
+      CREATE TABLE IF NOT EXISTS memory_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        action TEXT NOT NULL,
+        scope TEXT NOT NULL,
+        key TEXT NOT NULL,
+        changed_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS workflow_summaries (
         id TEXT PRIMARY KEY,
         workflow TEXT NOT NULL,
@@ -356,13 +418,124 @@ function initializeAppDatabase(path: string) {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS workflow_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT,
+        workflow TEXT,
+        event_type TEXT NOT NULL,
+        event_index INTEGER,
+        level TEXT,
+        message TEXT NOT NULL,
+        name TEXT,
+        operation_kind TEXT,
+        operation_id TEXT,
+        duration_ms INTEGER,
+        is_error INTEGER NOT NULL DEFAULT 0,
+        summary_json TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_workflow_events_run
+        ON workflow_events(run_id, event_index);
+
+      CREATE INDEX IF NOT EXISTS idx_workflow_events_created
+        ON workflow_events(created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS workflow_run_observations (
+        run_id TEXT PRIMARY KEY,
+        workflow TEXT NOT NULL,
+        status TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        last_event_at TEXT NOT NULL,
+        last_message TEXT NOT NULL,
+        event_count INTEGER NOT NULL DEFAULT 0,
+        duration_ms INTEGER,
+        is_error INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS neon_sessions (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        agent_name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        reason TEXT,
+        created_at TEXT NOT NULL,
+        activated_at TEXT NOT NULL,
+        ended_at TEXT,
+        updated_at TEXT NOT NULL
+      );
     `);
+
+    ensureColumn(database, 'notifications', 'resolved_at', 'TEXT');
+    ensureColumn(database, 'notifications', 'updated_at', 'TEXT');
+    ensureColumn(
+      database,
+      'notifications',
+      'occurrence_count',
+      'INTEGER NOT NULL DEFAULT 1',
+    );
+    database
+      .prepare(
+        `
+        UPDATE notifications
+        SET updated_at = created_at
+        WHERE updated_at IS NULL;
+      `,
+      )
+      .run();
+    database.exec(`
+      CREATE INDEX IF NOT EXISTS idx_notifications_source_unresolved
+        ON notifications(source, source_id, resolved_at);
+
+      CREATE INDEX IF NOT EXISTS idx_notifications_attention
+        ON notifications(resolved_at, read_at, level, created_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_memory_events_changed
+        ON memory_events(changed_at DESC);
+    `);
+    reconcileExistingNotificationDuplicates(database);
+    reconcileActiveNeonSessions(database);
+
+    database
+      .prepare(
+        `
+        INSERT INTO neon_sessions (
+          id,
+          label,
+          agent_name,
+          status,
+          reason,
+          created_at,
+          activated_at,
+          updated_at
+        )
+        SELECT
+          'neondeck-main',
+          'Primary',
+          'display-assistant',
+          'active',
+          'initial-session',
+          datetime('now'),
+          datetime('now'),
+          datetime('now')
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM neon_sessions
+          WHERE agent_name = 'display-assistant'
+            AND status = 'active'
+        );
+      `,
+      )
+      .run();
 
     database
       .prepare(
         `
         INSERT INTO app_metadata (key, value, updated_at)
-        VALUES ('schema_version', '4', datetime('now'))
+        VALUES ('schema_version', '5', datetime('now'))
         ON CONFLICT(key) DO UPDATE SET
           value = excluded.value,
           updated_at = excluded.updated_at;
@@ -372,6 +545,109 @@ function initializeAppDatabase(path: string) {
   } finally {
     database.close();
   }
+}
+
+function ensureColumn(
+  database: DatabaseSync,
+  table: string,
+  column: string,
+  definition: string,
+) {
+  const columns = database
+    .prepare(`PRAGMA table_info(${table});`)
+    .all() as Array<{ name?: unknown }>;
+  if (columns.some((item) => item.name === column)) {
+    return;
+  }
+
+  database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`);
+}
+
+function reconcileExistingNotificationDuplicates(database: DatabaseSync) {
+  const now = new Date().toISOString();
+  const groups = database
+    .prepare(
+      `
+      SELECT source, source_id, COUNT(*) AS count
+      FROM notifications
+      WHERE source IS NOT NULL
+        AND source_id IS NOT NULL
+        AND resolved_at IS NULL
+      GROUP BY source, source_id
+      HAVING COUNT(*) > 1;
+    `,
+    )
+    .all() as Array<{
+    source: string;
+    source_id: string;
+    count: number;
+  }>;
+
+  for (const group of groups) {
+    const rows = database
+      .prepare(
+        `
+        SELECT id
+        FROM notifications
+        WHERE source = ?
+          AND source_id = ?
+          AND resolved_at IS NULL
+        ORDER BY updated_at DESC, created_at DESC;
+      `,
+      )
+      .all(group.source, group.source_id) as Array<{ id: string }>;
+    const [active, ...duplicates] = rows;
+    if (!active || duplicates.length === 0) continue;
+
+    database
+      .prepare(
+        `
+        UPDATE notifications
+        SET occurrence_count = MAX(occurrence_count, ?), updated_at = ?
+        WHERE id = ?;
+      `,
+      )
+      .run(Number(group.count), now, active.id);
+
+    const placeholders = duplicates.map(() => '?').join(', ');
+    database
+      .prepare(
+        `
+        UPDATE notifications
+        SET resolved_at = ?, read_at = COALESCE(read_at, ?), updated_at = ?
+        WHERE id IN (${placeholders});
+      `,
+      )
+      .run(now, now, now, ...duplicates.map((row) => row.id));
+  }
+}
+
+function reconcileActiveNeonSessions(database: DatabaseSync) {
+  const now = new Date().toISOString();
+  const active = database
+    .prepare(
+      `
+      SELECT id
+      FROM neon_sessions
+      WHERE agent_name = 'display-assistant'
+        AND status = 'active'
+      ORDER BY activated_at DESC, created_at DESC;
+    `,
+    )
+    .all() as Array<{ id: string }>;
+  const [, ...duplicates] = active;
+  if (duplicates.length === 0) return;
+
+  const placeholders = duplicates.map(() => '?').join(', ');
+  database
+    .prepare(
+      `
+      UPDATE neon_sessions
+      SET status = 'archived', ended_at = ?, updated_at = ?
+      WHERE id IN (${placeholders});
+    `,
+    )
+    .run(now, now, ...duplicates.map((session) => session.id));
 }
 
 function initializeFlueDatabase(path: string) {

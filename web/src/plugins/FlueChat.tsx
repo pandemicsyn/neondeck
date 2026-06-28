@@ -1,6 +1,11 @@
 import { useFlueAgent, useFlueClient } from '@flue/react';
-import { useState, type FormEvent, type KeyboardEvent } from 'react';
-import type { NeonCommandResult } from '../api';
+import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react';
+import {
+  getNeonSession,
+  startNeonSession,
+  type NeonCommandResult,
+  type NeonSessionState,
+} from '../api';
 import { Badge, Button, Kbd, ScrollArea, Textarea } from '../components/ui';
 import type { DisplayPlugin } from '../types';
 
@@ -35,20 +40,66 @@ export const FlueChatPlugin = {
     quickCommands: [
       { label: 'Repo', command: '/repo-status' },
       { label: 'Queue', command: '/review-queue' },
+      { label: 'CI', command: '/explain-ci' },
+      { label: 'PR', command: '/summarize-pr' },
+      { label: 'Draft', command: '/draft-pr-description' },
+      { label: 'Prep', command: '/prepare-pr' },
+      { label: 'Review', command: '/review-local' },
+      { label: 'Memory', command: '/memory' },
       { label: 'Doctor', command: '/dev-doctor' },
       { label: 'Briefing', command: '/briefing' },
     ],
   },
   Component({ config }) {
-    const sessions =
-      config.sessions.length > 0
+    const fallbackSession =
+      (config.sessions.length > 0
         ? config.sessions
-        : FlueChatPlugin.defaultConfig.sessions;
-    const [activeSessionId, setActiveSessionId] = useState(
-      () => sessions[0].id,
-    );
-    const activeSession =
-      sessions.find((session) => session.id === activeSessionId) ?? sessions[0];
+        : FlueChatPlugin.defaultConfig.sessions)[0] ??
+      FlueChatPlugin.defaultConfig.sessions[0];
+    const [sessionState, setSessionState] = useState<NeonSessionState>();
+    const [sessionError, setSessionError] = useState<string>();
+    const [startingSession, setStartingSession] = useState(false);
+    const activeSession = sessionState
+      ? {
+          id: sessionState.activeSession.id,
+          label: sessionState.activeSession.label,
+          placeholder: fallbackSession.placeholder,
+        }
+      : fallbackSession;
+
+    async function refreshSession() {
+      try {
+        setSessionState(await getNeonSession());
+        setSessionError(undefined);
+      } catch (cause) {
+        setSessionError(cause instanceof Error ? cause.message : String(cause));
+      }
+    }
+
+    async function startFreshSession() {
+      setStartingSession(true);
+      try {
+        const result = await startNeonSession({
+          label: 'Fresh',
+          reason: 'dashboard-new-session',
+        });
+        if (!result.state) {
+          throw new Error(result.message);
+        }
+        setSessionState(result.state);
+        setSessionError(undefined);
+      } catch (cause) {
+        setSessionError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        setStartingSession(false);
+      }
+    }
+
+    useEffect(() => {
+      void refreshSession();
+      const timer = window.setInterval(refreshSession, 30_000);
+      return () => window.clearInterval(timer);
+    }, []);
 
     return (
       <div className="flex h-full min-h-0 flex-col">
@@ -58,26 +109,31 @@ export const FlueChatPlugin = {
             FLUE AGENT · triage.ts
           </span>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1 tracking-normal">
-              {sessions.map((session) => (
-                <Button
-                  aria-pressed={session.id === activeSession.id}
-                  className="h-5 border-transparent bg-transparent px-2 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary aria-pressed:border-violet aria-pressed:bg-soft aria-pressed:text-primary"
-                  key={session.id}
-                  onClick={() => setActiveSessionId(session.id)}
-                  type="button"
-                >
-                  {session.label}
-                </Button>
-              ))}
-            </div>
-            <span className="text-muted">durable · ctx 18k</span>
+            <Button
+              className="h-5 border-transparent bg-transparent px-2 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
+              disabled={startingSession}
+              onClick={() => void startFreshSession()}
+              type="button"
+            >
+              {startingSession ? 'Starting' : 'New'}
+            </Button>
+            <span
+              className={sessionState?.stale ? 'text-accent' : 'text-muted'}
+            >
+              {sessionState?.stale ? 'stale ctx' : 'durable ctx'}
+            </span>
           </div>
         </header>
+        {sessionError ? (
+          <div className="border-b border-accent/60 bg-soft px-4 py-1.5 text-[11px] text-accent">
+            {sessionError}
+          </div>
+        ) : null}
         <FlueChatSessionView
           agentName={config.agentName}
           quickCommands={config.quickCommands}
           session={activeSession}
+          sessionState={sessionState}
         />
       </div>
     );
@@ -88,10 +144,12 @@ function FlueChatSessionView({
   agentName,
   quickCommands,
   session,
+  sessionState,
 }: {
   agentName: string;
   quickCommands: FlueChatConfig['quickCommands'];
   session: FlueChatSession;
+  sessionState: NeonSessionState | undefined;
 }) {
   const [input, setInput] = useState('');
   const [commandResult, setCommandResult] = useState<NeonCommandResult>();
@@ -147,6 +205,20 @@ function FlueChatSessionView({
             <span className="text-primary">{session.id}</span>
             <Badge>{agent.status}</Badge>
           </div>
+          {sessionState?.stale ? (
+            <div className="border border-accent/60 bg-soft px-2.5 py-2 text-[10.5px] leading-4 text-muted">
+              <div className="flex items-center justify-between gap-2 font-mono">
+                <span className="text-accent">CONTEXT STALE</span>
+                <Badge className="border-accent text-accent">
+                  {sessionState.staleReasons.length}
+                </Badge>
+              </div>
+              <p className="mt-1 line-clamp-2">
+                {sessionState.staleReasons[0]?.message ??
+                  'Start a new session to reload runtime context.'}
+              </p>
+            </div>
+          ) : null}
           {agent.messages.length > 0 ? (
             <div className="chat-workflow px-2.5 py-1 font-mono text-[10.5px]">
               <span>workflow</span>

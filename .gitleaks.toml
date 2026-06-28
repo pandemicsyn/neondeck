@@ -1,0 +1,5 @@
+title = "neondeck gitleaks config"
+minVersion = "8.30.0"
+
+[extend]
+useDefault = true

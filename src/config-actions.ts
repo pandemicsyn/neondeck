@@ -17,6 +17,7 @@ import * as v from 'valibot';
 import {
   type AgentModelConfig,
   type AppConfig,
+  type ProviderConfig,
   type RepoConfig,
   type RuntimePaths,
   type ScheduleEntry,
@@ -29,6 +30,17 @@ import {
   runtimePaths,
   validateRuntimeFiles,
 } from './runtime-home';
+import {
+  isRegisteredProvider,
+  resolveKilocodeProviderStatus,
+} from './providers';
+import {
+  asExecutionPolicyData,
+  executionPolicyFromConfig,
+  executionPolicyUpdateSchema,
+  hasExecutionPolicyUpdate,
+  mergeExecutionConfig,
+} from './execution-policy';
 
 const execFileAsync = promisify(execFile);
 
@@ -54,6 +66,14 @@ const configTargetSchema = v.optional(
 const stringRecordSchema = v.record(v.string(), v.string());
 const unknownRecordSchema = v.record(v.string(), v.unknown());
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
+const providerQualifiedModelSchema = v.pipe(
+  nonEmptyStringSchema,
+  v.check((value) => {
+    const slash = value.indexOf('/');
+    if (slash <= 0 || slash === value.length - 1) return false;
+    return isRegisteredProvider(value.slice(0, slash));
+  }, 'Expected a provider-qualified model string using a registered provider.'),
+);
 
 const addRepoInputSchema = v.object({
   path: nonEmptyStringSchema,
@@ -104,15 +124,25 @@ const updateScheduleInputSchema = v.object({
   config: v.optional(unknownRecordSchema),
 });
 const subagentModelInputSchema = v.object({
-  default: v.optional(nonEmptyStringSchema),
-  repoResearcher: v.optional(nonEmptyStringSchema),
-  ciInvestigator: v.optional(nonEmptyStringSchema),
-  releaseReviewer: v.optional(nonEmptyStringSchema),
+  default: v.optional(providerQualifiedModelSchema),
+  repoResearcher: v.optional(providerQualifiedModelSchema),
+  ciInvestigator: v.optional(providerQualifiedModelSchema),
+  releaseReviewer: v.optional(providerQualifiedModelSchema),
 });
 const updateAgentModelsInputSchema = v.object({
-  default: v.optional(nonEmptyStringSchema),
-  displayAssistant: v.optional(nonEmptyStringSchema),
+  default: v.optional(providerQualifiedModelSchema),
+  displayAssistant: v.optional(providerQualifiedModelSchema),
   subagents: v.optional(subagentModelInputSchema),
+});
+const envVarNameSchema = v.pipe(
+  v.string(),
+  v.regex(/^[A-Z_][A-Z0-9_]*$/, 'Expected an environment variable name.'),
+);
+const updateProviderInputSchema = v.object({
+  provider: v.literal('kilocode'),
+  enabled: v.optional(v.boolean()),
+  apiKeyEnv: v.optional(v.nullable(envVarNameSchema)),
+  organizationIdEnv: v.optional(v.nullable(envVarNameSchema)),
 });
 const configActionOutputSchema = v.looseObject({
   ok: v.boolean(),
@@ -171,6 +201,39 @@ export const updateAgentModelsAction = defineAction({
   },
 });
 
+export const readProvidersAction = defineAction({
+  name: 'neondeck_config_read_providers',
+  description:
+    'Read validated allowlisted provider configuration without exposing secret values.',
+  input: v.object({}),
+  output: configActionOutputSchema,
+  async run() {
+    return readProviderConfig();
+  },
+});
+
+export const updateProviderAction = defineAction({
+  name: 'neondeck_config_update_provider',
+  description:
+    'Update allowlisted provider configuration in config.json using secret environment variable references only. Does not accept raw secrets or arbitrary base URLs.',
+  input: updateProviderInputSchema,
+  output: configActionOutputSchema,
+  async run({ input }) {
+    return updateProviderConfig(input);
+  },
+});
+
+export const updateExecutionPolicyAction = defineAction({
+  name: 'neondeck_config_update_execution_policy',
+  description:
+    'Update Neondeck host execution approval policy in config.json, including preapproved local or exe.dev commands. Does not execute commands.',
+  input: executionPolicyUpdateSchema,
+  output: configActionOutputSchema,
+  async run({ input }) {
+    return updateExecutionPolicy(input);
+  },
+});
+
 export const addRepoAction = defineAction({
   name: 'neondeck_config_add_repo',
   description:
@@ -195,7 +258,8 @@ export const updateRepoAction = defineAction({
 
 export const removeRepoAction = defineAction({
   name: 'neondeck_config_remove_repo',
-  description: 'Remove an existing Neondeck repository entry from repos.json.',
+  description:
+    'Remove an existing Neondeck repository entry from repos.json after explicit confirmation.',
   input: removeRepoInputSchema,
   output: configActionOutputSchema,
   async run({ input }) {
@@ -228,7 +292,7 @@ export const updateScheduleAction = defineAction({
 export const removeScheduleAction = defineAction({
   name: 'neondeck_config_remove_schedule',
   description:
-    'Remove an existing Neondeck schedule entry from schedules.json.',
+    'Remove an existing Neondeck schedule entry from schedules.json after explicit confirmation.',
   input: v.object({
     id: nonEmptyStringSchema,
     confirm: v.optional(v.boolean()),
@@ -244,6 +308,9 @@ export const neondeckConfigActions = [
   configValidateAction,
   configReloadAction,
   updateAgentModelsAction,
+  readProvidersAction,
+  updateProviderAction,
+  updateExecutionPolicyAction,
   addRepoAction,
   updateRepoAction,
   removeRepoAction,
@@ -364,6 +431,156 @@ export async function updateAgentModels(
         appliesAfter: 'new-session-or-server-restart',
         providerRegistration:
           'Model strings must reference providers already registered by Neondeck or Flue runtime configuration.',
+      },
+    },
+  );
+}
+
+export async function readProviderConfig(
+  paths = runtimePaths(),
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<ConfigActionResult> {
+  await ensureRuntimeHome(paths);
+  const config = await readRuntimeJson(paths.config, parseAppConfig);
+
+  return okResult('config_read_providers', false, paths, [paths.config], {
+    message: 'Read allowlisted provider configuration.',
+    data: {
+      providers: effectiveProviderConfig(config.providers, env),
+      policy:
+        'Provider config is limited to allowlisted provider ids and environment variable secret references.',
+    },
+  });
+}
+
+export async function updateProviderConfig(
+  rawInput: v.InferInput<typeof updateProviderInputSchema>,
+  paths = runtimePaths(),
+): Promise<ConfigActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsed = parseActionInput(
+    updateProviderInputSchema,
+    rawInput,
+    'config_update_provider',
+    paths,
+    [paths.config],
+  );
+  if (!parsed.ok) return parsed.result;
+
+  const input = parsed.input;
+  if (
+    input.enabled === undefined &&
+    input.apiKeyEnv === undefined &&
+    input.organizationIdEnv === undefined
+  ) {
+    return failResult('config_update_provider', paths, [paths.config], {
+      message: 'At least one provider setting is required.',
+      requires: ['enabled', 'apiKeyEnv', 'organizationIdEnv'],
+    });
+  }
+
+  const config = await readRuntimeJson(paths.config, parseAppConfig);
+  const nextProviders = mergeProviderConfig(config.providers, input);
+  const next = parseAppConfig(
+    {
+      ...config,
+      providers: nextProviders,
+    },
+    paths.config,
+  );
+  const changed =
+    JSON.stringify(config.providers ?? {}) !==
+    JSON.stringify(next.providers ?? {});
+
+  if (changed) {
+    await writeJson(paths.config, next);
+    recordConfigChange(paths, {
+      action: 'config_update_provider',
+      file: paths.config,
+      target: `providers.${input.provider}`,
+      before: config,
+      after: next,
+    });
+  }
+
+  return okResult('config_update_provider', changed, paths, [paths.config], {
+    message: changed
+      ? 'Updated provider configuration. Restart the server for provider registration changes to take effect.'
+      : 'Provider configuration already matched the requested values.',
+    data: {
+      providers: effectiveProviderConfig(next.providers),
+      appliesAfter: 'server-restart',
+      policy:
+        'Only allowlisted provider ids and environment variable secret references are configurable.',
+    },
+  });
+}
+
+export async function updateExecutionPolicy(
+  rawInput: v.InferInput<typeof executionPolicyUpdateSchema>,
+  paths = runtimePaths(),
+): Promise<ConfigActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsed = parseActionInput(
+    executionPolicyUpdateSchema,
+    rawInput,
+    'config_update_execution_policy',
+    paths,
+    [paths.config],
+  );
+  if (!parsed.ok) return parsed.result;
+
+  const input = parsed.input;
+  if (!hasExecutionPolicyUpdate(input)) {
+    return failResult('config_update_execution_policy', paths, [paths.config], {
+      message: 'At least one execution policy setting is required.',
+      requires: [
+        'defaultBackend',
+        'enabledBackends',
+        'approvalMode',
+        'unattended',
+        'preapprovedCommands',
+      ],
+    });
+  }
+
+  const config = await readRuntimeJson(paths.config, parseAppConfig);
+  const nextExecution = mergeExecutionConfig(config.execution, input);
+  const next = parseAppConfig(
+    {
+      ...config,
+      execution: nextExecution,
+    },
+    paths.config,
+  );
+  const changed =
+    JSON.stringify(config.execution ?? {}) !==
+    JSON.stringify(next.execution ?? {});
+
+  if (changed) {
+    await writeJson(paths.config, next);
+    recordConfigChange(paths, {
+      action: 'config_update_execution_policy',
+      file: paths.config,
+      target: 'execution',
+      before: config,
+      after: next,
+    });
+  }
+
+  const policy = executionPolicyFromConfig({ execution: next.execution });
+  return okResult(
+    'config_update_execution_policy',
+    changed,
+    paths,
+    [paths.config],
+    {
+      message: changed
+        ? 'Updated execution approval policy. Future host execution actions will use the new policy immediately when they read config.'
+        : 'Execution approval policy already matched the requested values.',
+      data: {
+        execution: next.execution,
+        policy: asExecutionPolicyData(policy),
       },
     },
   );
@@ -776,6 +993,53 @@ function mergeAgentModelConfig(
   };
 }
 
+function mergeProviderConfig(
+  current: AppConfig['providers'] | undefined,
+  input: v.InferOutput<typeof updateProviderInputSchema>,
+): ProviderConfig {
+  const existing = current?.kilocode ?? {};
+  const kilocode = {
+    ...existing,
+    ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+    ...(input.apiKeyEnv !== undefined
+      ? input.apiKeyEnv === null
+        ? {}
+        : { apiKeyEnv: input.apiKeyEnv }
+      : {}),
+    ...(input.organizationIdEnv !== undefined
+      ? input.organizationIdEnv === null
+        ? {}
+        : { organizationIdEnv: input.organizationIdEnv }
+      : {}),
+  };
+
+  if (input.apiKeyEnv === null) {
+    delete kilocode.apiKeyEnv;
+  }
+  if (input.organizationIdEnv === null) {
+    delete kilocode.organizationIdEnv;
+  }
+
+  return {
+    kilocode,
+  };
+}
+
+function effectiveProviderConfig(
+  current: AppConfig['providers'] | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const kilocode = resolveKilocodeProviderStatus({ providers: current }, env);
+
+  return {
+    kilocode: {
+      enabled: kilocode.enabled,
+      apiKeyEnv: kilocode.apiKeyEnv,
+      organizationIdEnv: kilocode.organizationIdEnv,
+    },
+  };
+}
+
 async function readTarget(target: ConfigTarget, paths: RuntimePaths) {
   if (target === 'config') {
     return { config: await readRuntimeJson(paths.config, parseAppConfig) };
@@ -915,6 +1179,7 @@ function recordConfigChange(
   },
 ) {
   const database = new DatabaseSync(paths.neondeckDatabase);
+  const now = new Date().toISOString();
 
   try {
     database
@@ -928,7 +1193,7 @@ function recordConfigChange(
           after_json,
           changed_at
         )
-        VALUES (?, ?, ?, ?, ?, datetime('now'));
+        VALUES (?, ?, ?, ?, ?, ?);
       `,
       )
       .run(
@@ -937,6 +1202,7 @@ function recordConfigChange(
         change.target ?? null,
         JSON.stringify(change.before),
         JSON.stringify(change.after),
+        now,
       );
   } finally {
     database.close();

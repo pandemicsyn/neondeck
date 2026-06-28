@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+set -eu
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  cat >&2 <<'EOF'
+gitleaks is required for this repository's pre-commit secret scan.
+
+Install it with:
+  brew install gitleaks
+
+Then retry the commit.
+EOF
+  exit 1
+fi
+
+exec gitleaks git --staged --redact --no-banner

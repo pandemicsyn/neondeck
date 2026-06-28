@@ -1,5 +1,6 @@
 import { repoFullName } from './repos';
 import type { RepoConfig } from './runtime-home';
+import * as v from 'valibot';
 
 export type GitHubPullRequest = {
   id: number;
@@ -13,6 +14,21 @@ export type GitHubPullRequest = {
   comments: number;
   updatedAt: string;
   createdAt: string;
+  relations: PullRequestQueueRelation[];
+  ageDays: number;
+  stale: boolean;
+  headSha: string | null;
+  baseRef: string | null;
+  checks: GitHubCheckSummary | null;
+  checkError?: string;
+};
+
+export type GitHubQueueIssue = {
+  type: 'search-truncated' | 'search-error' | 'enrichment-error';
+  message: string;
+  query?: string;
+  repo?: string;
+  number?: number;
 };
 
 export type GitHubPullRequestQueue = {
@@ -20,7 +36,12 @@ export type GitHubPullRequestQueue = {
   repos: string[];
   items: GitHubPullRequest[];
   fetchedAt: string;
+  truncated: boolean;
+  issues: GitHubQueueIssue[];
 };
+
+export type PullRequestQueueRelation =
+  'authored' | 'assigned' | 'review-requested' | 'configured-repo';
 
 export type GitHubPullRequestDetail = {
   number: number;
@@ -41,12 +62,23 @@ export type GitHubCheckSummary = {
   successful: number;
   failed: number;
   pending: number;
+  statusContexts?: number;
   checkedAt: string;
 };
 
+const searchPerPage = 50;
+const maxSearchPages = 2;
+const maxSearchItemsPerQuery = searchPerPage * maxSearchPages;
+const enrichmentConcurrency = 4;
+
 export async function fetchGitHubLogin(token: string) {
   const response = await githubFetch(token, 'https://api.github.com/user');
-  const data = (await response.json()) as { login?: string };
+  const data = v.parse(
+    v.object({
+      login: v.string(),
+    }),
+    await response.json(),
+  );
   if (!data.login) {
     throw new Error('GitHub API did not return a login');
   }
@@ -58,37 +90,134 @@ export async function fetchPullRequestQueue(options: {
   login: string;
   repos: RepoConfig[];
 }): Promise<GitHubPullRequestQueue> {
-  const queries = buildPullRequestQueries(options.login, options.repos);
+  const queries = buildPullRequestQuerySpecs(options.login, options.repos);
   const results = await Promise.all(
-    queries.map((query) => searchPullRequests(options.token, query)),
+    queries.map(async (query) => {
+      try {
+        return {
+          relation: query.relation,
+          result: await searchPullRequests(options.token, query.query),
+        };
+      } catch (error) {
+        return {
+          relation: query.relation,
+          result: {
+            items: [],
+            truncated: false,
+            issues: [
+              {
+                type: 'search-error' as const,
+                query: query.query,
+                message: errorMessage(error),
+              },
+            ],
+          },
+        };
+      }
+    }),
   );
   const items = new Map<string, GitHubPullRequest>();
+  const issues: GitHubQueueIssue[] = [];
 
-  for (const result of results.flat()) {
-    items.set(result.url, result);
+  for (const result of results) {
+    issues.push(...result.result.issues);
+    for (const item of result.result.items) {
+      const existing = items.get(item.url);
+      if (existing) {
+        existing.relations = Array.from(
+          new Set([...existing.relations, result.relation]),
+        );
+      } else {
+        items.set(item.url, {
+          ...item,
+          relations: [result.relation],
+        });
+      }
+    }
   }
+
+  const enriched = await mapWithConcurrency(
+    Array.from(items.values()),
+    enrichmentConcurrency,
+    (item) => enrichPullRequest(options.token, item),
+  );
+  const sortedItems = enriched.sort(
+    (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
+  );
+  issues.push(
+    ...sortedItems
+      .filter((item) => item.checkError)
+      .map((item) => ({
+        type: 'enrichment-error' as const,
+        repo: item.repo,
+        number: item.number,
+        message: item.checkError ?? 'PR enrichment failed.',
+      })),
+  );
 
   return {
     login: options.login,
     repos: options.repos.map(repoFullName),
-    items: Array.from(items.values()).sort(
-      (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
-    ),
+    items: sortedItems,
     fetchedAt: new Date().toISOString(),
+    truncated: results.some((result) => result.result.truncated),
+    issues,
   };
 }
 
 export function buildPullRequestQueries(login: string, repos: RepoConfig[]) {
-  const queries = [
-    `is:pr is:open archived:false author:${login}`,
-    `is:pr is:open archived:false assignee:${login}`,
-    `is:pr is:open archived:false review-requested:${login}`,
+  return buildPullRequestQuerySpecs(login, repos).map((spec) => spec.query);
+}
+
+function buildPullRequestQuerySpecs(login: string, repos: RepoConfig[]) {
+  const staleCutoff = staleCutoffDate();
+  const queries: Array<{
+    query: string;
+    relation: PullRequestQueueRelation;
+  }> = [
+    {
+      query: `is:pr is:open archived:false author:${login}`,
+      relation: 'authored',
+    },
+    {
+      query: `is:pr is:open archived:false author:${login} updated:<${staleCutoff}`,
+      relation: 'authored',
+    },
+    {
+      query: `is:pr is:open archived:false assignee:${login}`,
+      relation: 'assigned',
+    },
+    {
+      query: `is:pr is:open archived:false assignee:${login} updated:<${staleCutoff}`,
+      relation: 'assigned',
+    },
+    {
+      query: `is:pr is:open archived:false review-requested:${login}`,
+      relation: 'review-requested',
+    },
+    {
+      query: `is:pr is:open archived:false review-requested:${login} updated:<${staleCutoff}`,
+      relation: 'review-requested',
+    },
     ...repos.map(
-      (repo) => `is:pr is:open archived:false repo:${repoFullName(repo)}`,
+      (repo) =>
+        ({
+          query: `is:pr is:open archived:false repo:${repoFullName(repo)}`,
+          relation: 'configured-repo',
+        }) satisfies { query: string; relation: PullRequestQueueRelation },
+    ),
+    ...repos.map(
+      (repo) =>
+        ({
+          query: `is:pr is:open archived:false repo:${repoFullName(repo)} updated:<${staleCutoff}`,
+          relation: 'configured-repo',
+        }) satisfies { query: string; relation: PullRequestQueueRelation },
     ),
   ];
 
-  return Array.from(new Set(queries));
+  return Array.from(
+    new Map(queries.map((query) => [query.query, query])).values(),
+  );
 }
 
 export async function fetchPullRequestDetail(options: {
@@ -101,7 +230,10 @@ export async function fetchPullRequestDetail(options: {
     options.token,
     `https://api.github.com/repos/${options.owner}/${options.repo}/pulls/${options.number}`,
   );
-  const data = (await response.json()) as GitHubPullRequestApiResponse;
+  const data = v.parse(
+    githubPullRequestApiResponseSchema,
+    await response.json(),
+  );
 
   return {
     number: data.number,
@@ -123,11 +255,24 @@ export async function fetchCheckSummary(options: {
   repo: string;
   ref: string;
 }): Promise<GitHubCheckSummary> {
-  const response = await githubFetch(
-    options.token,
-    `https://api.github.com/repos/${options.owner}/${options.repo}/commits/${options.ref}/check-runs?per_page=100`,
+  const [checkRunsResponse, statusResponse] = await Promise.all([
+    githubFetch(
+      options.token,
+      `https://api.github.com/repos/${options.owner}/${options.repo}/commits/${options.ref}/check-runs?per_page=100`,
+    ),
+    githubFetch(
+      options.token,
+      `https://api.github.com/repos/${options.owner}/${options.repo}/commits/${options.ref}/status`,
+    ),
+  ]);
+  const data = v.parse(
+    githubCheckRunsApiResponseSchema,
+    await checkRunsResponse.json(),
   );
-  const data = (await response.json()) as GitHubCheckRunsApiResponse;
+  const statusData = v.parse(
+    githubCommitStatusApiResponseSchema,
+    await statusResponse.json(),
+  );
   const runs = data.check_runs ?? [];
   const failed = runs.filter((run) =>
     [
@@ -140,38 +285,121 @@ export async function fetchCheckSummary(options: {
   ).length;
   const pending = runs.filter((run) => run.status !== 'completed').length;
   const successful = runs.filter((run) => run.conclusion === 'success').length;
+  const statusContexts = statusData.statuses ?? [];
+  const failedStatuses = statusContexts.filter(
+    (status) => status.state === 'failure' || status.state === 'error',
+  ).length;
+  const pendingStatuses = statusContexts.filter(
+    (status) => status.state === 'pending',
+  ).length;
+  const successfulStatuses = statusContexts.filter(
+    (status) => status.state === 'success',
+  ).length;
+  const total = runs.length + statusContexts.length;
+  const totalFailed = failed + failedStatuses;
+  const totalPending = pending + pendingStatuses;
+  const totalSuccessful = successful + successfulStatuses;
   const status =
-    runs.length === 0
+    total === 0
       ? 'none'
-      : failed > 0
+      : totalFailed > 0
         ? 'failure'
-        : pending > 0
+        : totalPending > 0
           ? 'pending'
           : 'success';
 
   return {
     status,
-    total: runs.length,
-    successful,
-    failed,
-    pending,
+    total,
+    successful: totalSuccessful,
+    failed: totalFailed,
+    pending: totalPending,
+    statusContexts: statusContexts.length,
     checkedAt: new Date().toISOString(),
   };
 }
 
 async function searchPullRequests(token: string, query: string) {
-  const params = new URLSearchParams({
-    q: query,
-    sort: 'updated',
-    order: 'desc',
-    per_page: '20',
-  });
-  const response = await githubFetch(
-    token,
-    `https://api.github.com/search/issues?${params}`,
-  );
-  const data = (await response.json()) as { items?: GitHubSearchIssue[] };
-  return (data.items ?? []).map(normalizePullRequest);
+  const items: GitHubPullRequest[] = [];
+  let totalCount = 0;
+  for (let page = 1; page <= maxSearchPages; page += 1) {
+    const params = new URLSearchParams({
+      q: query,
+      sort: 'updated',
+      order: 'desc',
+      per_page: String(searchPerPage),
+      page: String(page),
+    });
+    const response = await githubFetch(
+      token,
+      `https://api.github.com/search/issues?${params}`,
+    );
+    const data = v.parse(
+      githubSearchIssuesApiResponseSchema,
+      await response.json(),
+    );
+    totalCount = data.total_count;
+    items.push(...data.items.map(normalizePullRequest));
+    if (items.length >= data.total_count || data.items.length < searchPerPage) {
+      break;
+    }
+  }
+  const truncated = totalCount > maxSearchItemsPerQuery;
+  return {
+    items,
+    truncated,
+    issues: truncated
+      ? [
+          {
+            type: 'search-truncated' as const,
+            query,
+            message: `GitHub search returned more than ${maxSearchItemsPerQuery} PRs for this query; showing the newest ${items.length}.`,
+          },
+        ]
+      : [],
+  };
+}
+
+async function enrichPullRequest(token: string, item: GitHubPullRequest) {
+  const [owner, repo] = item.repo.split('/');
+  if (!owner || !repo) {
+    return {
+      ...item,
+      ageDays: ageDays(item.updatedAt),
+      stale: isStale(item.updatedAt),
+    };
+  }
+
+  try {
+    const detail = await fetchPullRequestDetail({
+      token,
+      owner,
+      repo,
+      number: item.number,
+    });
+    const checks = await fetchCheckSummary({
+      token,
+      owner,
+      repo,
+      ref: detail.headSha,
+    });
+
+    return {
+      ...item,
+      headSha: detail.headSha,
+      baseRef: detail.baseRef,
+      checks,
+      ageDays: ageDays(item.updatedAt),
+      stale: isStale(item.updatedAt),
+    };
+  } catch (error) {
+    return {
+      ...item,
+      ageDays: ageDays(item.updatedAt),
+      stale: isStale(item.updatedAt),
+      checkError: errorMessage(error),
+    };
+  }
 }
 
 async function githubFetch(token: string, url: string) {
@@ -191,38 +419,59 @@ async function githubFetch(token: string, url: string) {
   return response;
 }
 
-type GitHubSearchIssue = {
-  id: number;
-  title: string;
-  repository_url: string;
-  number: number;
-  html_url: string;
-  state: string;
-  user?: { login?: string };
-  labels?: Array<{ name?: string }>;
-  comments: number;
-  updated_at: string;
-  created_at: string;
-};
+const githubSearchIssueSchema = v.object({
+  id: v.number(),
+  title: v.string(),
+  repository_url: v.string(),
+  number: v.number(),
+  html_url: v.string(),
+  state: v.string(),
+  user: v.optional(v.object({ login: v.optional(v.string()) })),
+  labels: v.optional(v.array(v.object({ name: v.optional(v.string()) }))),
+  comments: v.number(),
+  updated_at: v.string(),
+  created_at: v.string(),
+});
 
-type GitHubPullRequestApiResponse = {
-  number: number;
-  title: string;
-  html_url: string;
-  state: string;
-  merged: boolean;
-  merge_commit_sha: string | null;
-  updated_at: string;
-  head: { sha: string };
-  base: { ref: string };
-};
+const githubSearchIssuesApiResponseSchema = v.object({
+  total_count: v.number(),
+  items: v.array(githubSearchIssueSchema),
+});
 
-type GitHubCheckRunsApiResponse = {
-  check_runs?: Array<{
-    status: string;
-    conclusion: string | null;
-  }>;
-};
+const githubPullRequestApiResponseSchema = v.object({
+  number: v.number(),
+  title: v.string(),
+  html_url: v.string(),
+  state: v.string(),
+  merged: v.boolean(),
+  merge_commit_sha: v.nullable(v.string()),
+  updated_at: v.string(),
+  head: v.object({ sha: v.string() }),
+  base: v.object({ ref: v.string() }),
+});
+
+const githubCheckRunsApiResponseSchema = v.object({
+  check_runs: v.optional(
+    v.array(
+      v.object({
+        status: v.string(),
+        conclusion: v.nullable(v.string()),
+      }),
+    ),
+  ),
+});
+
+const githubCommitStatusApiResponseSchema = v.object({
+  statuses: v.optional(
+    v.array(
+      v.object({
+        state: v.picklist(['error', 'failure', 'pending', 'success']),
+      }),
+    ),
+  ),
+});
+
+type GitHubSearchIssue = v.InferOutput<typeof githubSearchIssueSchema>;
 
 function normalizePullRequest(item: GitHubSearchIssue): GitHubPullRequest {
   return {
@@ -239,5 +488,48 @@ function normalizePullRequest(item: GitHubSearchIssue): GitHubPullRequest {
     comments: item.comments,
     updatedAt: item.updated_at,
     createdAt: item.created_at,
+    relations: [],
+    ageDays: ageDays(item.updated_at),
+    stale: isStale(item.updated_at),
+    headSha: null,
+    baseRef: null,
+    checks: null,
   };
+}
+
+function ageDays(value: string) {
+  return Math.max(0, Math.floor((Date.now() - Date.parse(value)) / 86_400_000));
+}
+
+function isStale(value: string) {
+  return ageDays(value) >= 7;
+}
+
+function staleCutoffDate() {
+  return new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>,
+) {
+  const results: R[] = [];
+  let nextIndex = 0;
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await mapper(items[currentIndex]);
+      }
+    }),
+  );
+
+  return results;
 }

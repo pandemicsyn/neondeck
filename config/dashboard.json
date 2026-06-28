@@ -25,7 +25,7 @@
         "column": 1,
         "row": 2,
         "columnSpan": 3,
-        "rowSpan": 5,
+        "rowSpan": 3,
         "config": {
           "limit": 12
         }
@@ -34,12 +34,36 @@
         "id": "watches",
         "title": "WATCHES",
         "pluginId": "active-watches",
+        "column": 1,
+        "row": 5,
+        "columnSpan": 3,
+        "rowSpan": 2,
+        "config": {
+          "limit": 8
+        }
+      },
+      {
+        "id": "briefing",
+        "title": "BRIEFING",
+        "pluginId": "briefing-panel",
         "column": 4,
         "row": 2,
         "columnSpan": 2,
-        "rowSpan": 5,
+        "rowSpan": 3,
         "config": {
-          "limit": 8
+          "actionLimit": 4
+        }
+      },
+      {
+        "id": "memory",
+        "title": "MEMORY",
+        "pluginId": "memory-panel",
+        "column": 4,
+        "row": 5,
+        "columnSpan": 2,
+        "rowSpan": 2,
+        "config": {
+          "limit": 5
         }
       },
       {
@@ -58,6 +82,44 @@
               "label": "Primary",
               "placeholder": "Ask about your active work..."
             }
+          ],
+          "quickCommands": [
+            {
+              "label": "Repo",
+              "command": "/repo-status"
+            },
+            {
+              "label": "Queue",
+              "command": "/review-queue"
+            },
+            {
+              "label": "CI",
+              "command": "/explain-ci"
+            },
+            {
+              "label": "PR",
+              "command": "/summarize-pr"
+            },
+            {
+              "label": "Draft",
+              "command": "/draft-pr-description"
+            },
+            {
+              "label": "Prep",
+              "command": "/prepare-pr"
+            },
+            {
+              "label": "Review",
+              "command": "/review-local"
+            },
+            {
+              "label": "Memory",
+              "command": "/memory"
+            },
+            {
+              "label": "Doctor",
+              "command": "/dev-doctor"
+            }
           ]
         }
       },
@@ -68,11 +130,25 @@
         "column": 6,
         "row": 2,
         "columnSpan": 3,
-        "rowSpan": 5,
+        "rowSpan": 3,
         "config": {
           "repoLimit": 5,
           "jobLimit": 5,
-          "skillLimit": 5
+          "skillLimit": 5,
+          "memoryLimit": 5,
+          "workflowEventLimit": 6
+        }
+      },
+      {
+        "id": "subagents",
+        "title": "SUBAGENTS",
+        "pluginId": "subagent-summary",
+        "column": 6,
+        "row": 5,
+        "columnSpan": 3,
+        "rowSpan": 2,
+        "config": {
+          "eventLimit": 4
         }
       }
     ]

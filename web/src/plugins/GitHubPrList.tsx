@@ -117,10 +117,15 @@ export const GitHubPrListPlugin = {
                       {item.title}
                     </p>
                     <div className="mt-1.5 flex items-center gap-2.5 font-mono text-[10px] text-primary">
-                      <span>● checks pass</span>
-                      <span className="text-violet">
-                        ◆ {item.comments || 1} review
+                      <span className={checkClass(item)}>
+                        ● {checkLabel(item)}
                       </span>
+                      <span className="text-violet">
+                        ◆ {relationLabel(item)}
+                      </span>
+                      {item.stale ? (
+                        <span className="text-accent">◇ stale</span>
+                      ) : null}
                       {item.labels.includes('draft') ? (
                         <span className="text-muted">△ draft</span>
                       ) : null}
@@ -161,4 +166,27 @@ function relativeTime(value: string) {
   const hours = Math.max(1, Math.round(delta / 3_600_000));
   if (hours < 24) return `${hours}h`;
   return `${Math.round(hours / 24)}d`;
+}
+
+function checkLabel(item: GitHubPullRequest) {
+  if (item.checkError) return 'checks unknown';
+  if (!item.checks) return 'checks unknown';
+  if (item.checks.status === 'success') return 'checks pass';
+  if (item.checks.status === 'failure') return `${item.checks.failed} failed`;
+  if (item.checks.status === 'pending') return `${item.checks.pending} pending`;
+  return 'no checks';
+}
+
+function checkClass(item: GitHubPullRequest) {
+  if (item.checks?.status === 'failure') return 'text-accent';
+  if (item.checks?.status === 'pending') return 'text-violet';
+  if (item.checks?.status === 'success') return 'text-primary';
+  return 'text-muted';
+}
+
+function relationLabel(item: GitHubPullRequest) {
+  if (item.relations.includes('review-requested')) return 'review requested';
+  if (item.relations.includes('assigned')) return 'assigned';
+  if (item.relations.includes('authored')) return 'authored';
+  return `${item.comments || 0} comments`;
 }

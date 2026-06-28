@@ -18,7 +18,10 @@ export type NotificationRecord = {
   sourceId: string | null;
   data: JsonValue | null;
   readAt: string | null;
+  resolvedAt: string | null;
+  occurrenceCount: number;
   createdAt: string;
+  updatedAt: string;
 };
 
 export type JobRecord = {
@@ -47,7 +50,10 @@ export type WorkflowSummaryRecord = {
   updatedAt: string;
 };
 
-export async function listNotifications(paths = runtimePaths()) {
+export async function listNotifications(
+  paths = runtimePaths(),
+  options: { includeResolved?: boolean } = {},
+) {
   await ensureRuntimeHome(paths);
   const database = new DatabaseSync(paths.neondeckDatabase);
 
@@ -57,7 +63,8 @@ export async function listNotifications(paths = runtimePaths()) {
         `
         SELECT *
         FROM notifications
-        ORDER BY created_at DESC
+        ${options.includeResolved ? '' : 'WHERE resolved_at IS NULL'}
+        ORDER BY updated_at DESC, created_at DESC
         LIMIT 100;
       `,
       )
@@ -81,20 +88,76 @@ export async function addNotification(
 ) {
   await ensureRuntimeHome(paths);
   const now = new Date().toISOString();
+  const source = input.source ?? null;
+  const sourceId = input.sourceId ?? null;
   const notification: NotificationRecord = {
     id: randomUUID(),
     level: input.level,
     title: input.title,
     message: input.message,
-    source: input.source ?? null,
-    sourceId: input.sourceId ?? null,
+    source,
+    sourceId,
     data: input.data === undefined ? null : asJsonValue(input.data),
     readAt: null,
+    resolvedAt: null,
+    occurrenceCount: 1,
     createdAt: now,
+    updatedAt: now,
   };
   const database = new DatabaseSync(paths.neondeckDatabase);
 
   try {
+    const existing =
+      source && sourceId
+        ? database
+            .prepare(
+              `
+              SELECT *
+              FROM notifications
+              WHERE source = ?
+                AND source_id = ?
+                AND resolved_at IS NULL
+              ORDER BY created_at DESC
+              LIMIT 1;
+            `,
+            )
+            .get(source, sourceId)
+        : undefined;
+
+    if (existing) {
+      const existingRecord = readNotificationRow(existing);
+      database
+        .prepare(
+          `
+          UPDATE notifications
+          SET
+            level = ?,
+            title = ?,
+            message = ?,
+            data_json = ?,
+            read_at = NULL,
+            occurrence_count = occurrence_count + 1,
+            updated_at = ?
+          WHERE id = ?;
+        `,
+        )
+        .run(
+          notification.level,
+          notification.title,
+          notification.message,
+          notification.data === null ? null : JSON.stringify(notification.data),
+          now,
+          existingRecord.id,
+        );
+
+      return {
+        ...notification,
+        id: existingRecord.id,
+        createdAt: existingRecord.createdAt,
+        occurrenceCount: existingRecord.occurrenceCount + 1,
+      };
+    }
+
     database
       .prepare(
         `
@@ -107,9 +170,12 @@ export async function addNotification(
           source_id,
           data_json,
           read_at,
-          created_at
+          resolved_at,
+          occurrence_count,
+          created_at,
+          updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `,
       )
       .run(
@@ -121,7 +187,10 @@ export async function addNotification(
         notification.sourceId,
         notification.data === null ? null : JSON.stringify(notification.data),
         notification.readAt,
+        notification.resolvedAt,
+        notification.occurrenceCount,
         notification.createdAt,
+        notification.updatedAt,
       );
   } finally {
     database.close();
@@ -140,11 +209,31 @@ export async function markNotificationRead(id: string, paths = runtimePaths()) {
       .prepare(
         `
         UPDATE notifications
-        SET read_at = ?
+        SET read_at = ?, updated_at = ?
         WHERE id = ?;
       `,
       )
-      .run(now, id);
+      .run(now, now, id);
+  } finally {
+    database.close();
+  }
+}
+
+export async function resolveNotification(id: string, paths = runtimePaths()) {
+  await ensureRuntimeHome(paths);
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(paths.neondeckDatabase);
+
+  try {
+    database
+      .prepare(
+        `
+        UPDATE notifications
+        SET resolved_at = ?, read_at = COALESCE(read_at, ?), updated_at = ?
+        WHERE id = ?;
+      `,
+      )
+      .run(now, now, now, id);
   } finally {
     database.close();
   }
@@ -509,7 +598,14 @@ function readNotificationRow(row: unknown): NotificationRecord {
         ? (JSON.parse(record.data_json) as JsonValue)
         : null,
     readAt: typeof record.read_at === 'string' ? record.read_at : null,
+    resolvedAt:
+      typeof record.resolved_at === 'string' ? record.resolved_at : null,
+    occurrenceCount: Number(record.occurrence_count ?? 1),
     createdAt: String(record.created_at),
+    updatedAt:
+      typeof record.updated_at === 'string'
+        ? record.updated_at
+        : String(record.created_at),
   };
 }
 

@@ -702,6 +702,7 @@ async function refreshWatchJob(
         title: 'PR watch refresh failed',
         message: result.message,
         source: 'watch-pr',
+        sourceId: failedWatchSourceId(result, target),
         data: result,
       })),
     };
@@ -746,6 +747,21 @@ async function refreshWatchJob(
     result: { results },
     notifications,
   };
+}
+
+function failedWatchSourceId(
+  result: unknown,
+  target: { id?: string; ref?: string } | undefined,
+) {
+  if (result && typeof result === 'object' && !Array.isArray(result)) {
+    const watch = (result as { watch?: unknown }).watch;
+    if (watch && typeof watch === 'object' && !Array.isArray(watch)) {
+      const id = (watch as { id?: unknown }).id;
+      if (typeof id === 'string') return id;
+    }
+  }
+
+  return target?.id ?? target?.ref ?? 'all-watches';
 }
 
 function readIntervalSeconds(config: unknown, type: BlueprintKind | string) {

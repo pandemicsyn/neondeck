@@ -20,22 +20,28 @@ afterEach(async () => {
 });
 
 describe('runtime skills', () => {
-  it('lists the app-owned built-in Neondeck Flue skill', async () => {
+  it('lists the app-owned built-in Flue skills', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
 
     await ensureRuntimeHome(paths);
 
-    await expect(listRuntimeSkills(paths)).resolves.toMatchObject({
-      skills: [
-        {
+    const inventory = await listRuntimeSkills(paths);
+    expect(inventory.skills).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
           id: 'neondeck',
           source: 'built-in',
           status: 'active',
-        },
-      ],
-      duplicates: [],
-    });
+        }),
+        expect.objectContaining({
+          id: 'github-gh',
+          source: 'built-in',
+          status: 'active',
+        }),
+      ]),
+    );
+    expect(inventory.duplicates).toEqual([]);
 
     expect(runtimeSkillReferencesSync(paths)).toEqual([]);
   });

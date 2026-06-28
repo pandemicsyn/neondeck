@@ -9,15 +9,24 @@ import {
 } from './app-state';
 import {
   type GitHubPullRequestQueue,
+  type GitHubPullRequest,
+  type GitHubQueueIssue,
   fetchGitHubLogin,
   fetchPullRequestQueue,
 } from './github';
 import { runDevDoctor } from './dev-doctor';
 import {
+  readGitDiffSummary,
   readGitRepoStatus,
   readRepoRegistrySnapshot,
   repoFullName,
 } from './repos';
+import {
+  deleteMemory,
+  listMemories,
+  upsertMemory,
+  type MemoryScope,
+} from './memory-actions';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
@@ -29,7 +38,13 @@ import { listPrWatchRecords, addPrWatch } from './watch-actions';
 export type NeonCommandName =
   | 'repo-status'
   | 'review-queue'
+  | 'explain-ci'
+  | 'summarize-pr'
+  | 'draft-pr-description'
+  | 'prepare-pr'
+  | 'review-local'
   | 'briefing'
+  | 'memory'
   | 'watch-pr'
   | 'dev-doctor'
   | 'watch-release';
@@ -57,6 +72,15 @@ type CommandDependencies = {
   fetchGitHubLogin?: typeof fetchGitHubLogin;
 };
 
+type ReviewQueueAction = {
+  title: string;
+  reason: string;
+  priority: 'urgent' | 'high' | 'medium' | 'low';
+  url?: string | null;
+  repo?: string;
+  number?: number;
+};
+
 const commandRunInputSchema = v.object({
   command: v.pipe(v.string(), v.minLength(1)),
 });
@@ -76,7 +100,7 @@ const commandActionOutputSchema = v.looseObject({
 export const commandRunAction = defineAction({
   name: 'neondeck_command_run',
   description:
-    'Run a Neon slash command such as /repo-status, /review-queue, /briefing, /watch-pr, /watch-release, or /dev-doctor and persist a workflow summary.',
+    'Run a Neon slash command such as /repo-status, /review-queue, /explain-ci, /summarize-pr, /draft-pr-description, /prepare-pr, /review-local, /briefing, /memory, /watch-pr, /watch-release, or /dev-doctor and persist a workflow summary.',
   input: commandRunInputSchema,
   output: commandRunOutputSchema,
   async run({ input, log, emitData }) {
@@ -154,10 +178,46 @@ export function supportedCommands() {
       description: 'Fetch and summarize the configured GitHub PR queue.',
     },
     {
+      name: 'explain-ci',
+      usage: '/explain-ci [repo#number|owner/repo#number]',
+      description:
+        'Explain deterministic CI/check status for a PR before agent reasoning.',
+    },
+    {
+      name: 'summarize-pr',
+      usage: '/summarize-pr [repo#number|owner/repo#number]',
+      description: 'Summarize PR facts from the GitHub queue.',
+    },
+    {
+      name: 'draft-pr-description',
+      usage: '/draft-pr-description [repo-id|owner/repo]',
+      description:
+        'Draft a PR description scaffold from local repo status and configured metadata.',
+    },
+    {
+      name: 'prepare-pr',
+      usage: '/prepare-pr [repo-id|owner/repo]',
+      description:
+        'Prepare a local repo for PR creation with deterministic readiness checks.',
+    },
+    {
+      name: 'review-local',
+      usage: '/review-local [repo-id|owner/repo]',
+      description:
+        'Review local working tree status and call out deterministic risks.',
+    },
+    {
       name: 'briefing',
       usage: '/briefing',
       description:
         'Summarize repos, watches, scheduled jobs, notifications, and PR queue readiness.',
+    },
+    {
+      name: 'memory',
+      usage:
+        '/memory [scope] | /memory set <scope> <key> <json-or-text> | /memory delete <scope> <key> --confirm',
+      description:
+        'List or mutate durable structured memory through typed memory actions.',
     },
     {
       name: 'watch-pr',
@@ -249,7 +309,7 @@ export async function runNeonCommand(
     {
       workflow: `command:${parsed.command.name}`,
       status: result.status,
-      summary: result,
+      summary: compactCommandSummary(result),
     },
     paths,
   );
@@ -273,8 +333,32 @@ async function executeCommand(
     return reviewQueueCommand(command, paths, dependencies);
   }
 
+  if (command.name === 'explain-ci') {
+    return explainCiCommand(command, paths, dependencies);
+  }
+
+  if (command.name === 'summarize-pr') {
+    return summarizePrCommand(command, paths, dependencies);
+  }
+
+  if (command.name === 'draft-pr-description') {
+    return draftPrDescriptionCommand(command, paths);
+  }
+
+  if (command.name === 'prepare-pr') {
+    return preparePrCommand(command, paths);
+  }
+
+  if (command.name === 'review-local') {
+    return reviewLocalCommand(command, paths);
+  }
+
   if (command.name === 'briefing') {
     return briefingCommand(command, paths, dependencies);
+  }
+
+  if (command.name === 'memory') {
+    return memoryCommand(command, paths);
   }
 
   if (command.name === 'watch-pr') {
@@ -340,22 +424,220 @@ async function reviewQueueCommand(
       errors: queue.errors,
     });
   }
+  const watches = await listPrWatchRecords(paths);
+  const triage = triageReviewQueue(queue.queue, watches);
 
   return completedCommand(
     command.name,
     command.raw,
-    `Fetched ${queue.queue.items.length} pull requests for review triage.`,
+    reviewQueueMessage(triage),
     {
       fetchedAt: queue.queue.fetchedAt,
       login: queue.queue.login,
       repos: queue.queue.repos,
       count: queue.queue.items.length,
+      truncated: queue.queue.truncated,
+      issues: queue.queue.issues,
       items: queue.queue.items,
-      topActions: queue.queue.items.slice(0, 3).map((item) => ({
-        title: `Review ${item.repo}#${item.number}`,
-        url: item.url,
-        updatedAt: item.updatedAt,
-      })),
+      triage,
+      topActions: triage.topActions,
+    },
+  );
+}
+
+async function explainCiCommand(
+  command: ParsedNeonCommand,
+  paths: RuntimePaths,
+  dependencies: CommandDependencies,
+): Promise<NeonCommandResult> {
+  const queue = await readReviewQueue(paths, dependencies);
+  if (!queue.ok) {
+    return needsConfigCommand(command.name, command.raw, queue.message, {
+      requires: queue.requires,
+      errors: queue.errors,
+    });
+  }
+
+  const selected = selectPullRequest(queue.queue, command.args, {
+    prefer: (item) =>
+      item.checks?.status === 'failure' ||
+      item.checkError !== undefined ||
+      item.checks?.status === 'pending',
+  });
+  if (!selected.ok) {
+    return failedCommand(command.name, command.raw, selected.message, {
+      requires: selected.requires,
+      data: {
+        available: summarizePullRequests(queue.queue.items).slice(0, 10),
+      },
+    });
+  }
+
+  const pr = selected.item;
+  const explanation = ciExplanation(pr);
+  return completedCommand(command.name, command.raw, explanation.message, {
+    pr: summarizePullRequests([pr])[0],
+    checks: pr.checks,
+    checkError: pr.checkError,
+    explanation,
+    assistantBrief:
+      'Use these deterministic CI/check facts first. Separate observed facts from likely next debugging steps.',
+  });
+}
+
+async function summarizePrCommand(
+  command: ParsedNeonCommand,
+  paths: RuntimePaths,
+  dependencies: CommandDependencies,
+): Promise<NeonCommandResult> {
+  const queue = await readReviewQueue(paths, dependencies);
+  if (!queue.ok) {
+    return needsConfigCommand(command.name, command.raw, queue.message, {
+      requires: queue.requires,
+      errors: queue.errors,
+    });
+  }
+
+  const selected = selectPullRequest(queue.queue, command.args);
+  if (!selected.ok) {
+    return failedCommand(command.name, command.raw, selected.message, {
+      requires: selected.requires,
+      data: {
+        available: summarizePullRequests(queue.queue.items).slice(0, 10),
+      },
+    });
+  }
+
+  const pr = selected.item;
+  const summary = {
+    headline: `${pr.repo}#${pr.number}: ${pr.title}`,
+    state: pr.state,
+    author: pr.author,
+    relations: pr.relations,
+    labels: pr.labels,
+    comments: pr.comments,
+    ageDays: pr.ageDays,
+    stale: pr.stale,
+    baseRef: pr.baseRef,
+    headSha: pr.headSha,
+    checks: pr.checks?.status ?? 'unknown',
+    url: pr.url,
+  };
+
+  return completedCommand(
+    command.name,
+    command.raw,
+    `Summarized ${pr.repo}#${pr.number}.`,
+    {
+      pr: summarizePullRequests([pr])[0],
+      summary,
+      assistantBrief:
+        'Summarize the PR from these deterministic facts. Do not invent diff contents that were not fetched.',
+    },
+  );
+}
+
+async function draftPrDescriptionCommand(
+  command: ParsedNeonCommand,
+  paths: RuntimePaths,
+): Promise<NeonCommandResult> {
+  const resolved = await resolveCommandRepo(command, paths);
+  if (!resolved.ok) {
+    return failedCommand(command.name, command.raw, resolved.message, {
+      requires: resolved.requires,
+      data: resolved.data,
+    });
+  }
+
+  const health = await readGitRepoStatus(resolved.repo);
+  const draft = {
+    title: `${resolved.repo.id}: <short change summary>`,
+    body: [
+      '## Summary',
+      '- <what changed>',
+      '',
+      '## Validation',
+      ...validationChecklist(resolved.repo).map((item) => `- [ ] ${item}`),
+      '',
+      '## Risk',
+      `- Working tree: ${health.dirty ? `${health.changeCount} uncommitted change${health.changeCount === 1 ? '' : 's'}` : 'clean'}`,
+      `- Branch: ${health.branch ?? 'unknown'} -> ${resolved.repo.defaultBranch}`,
+    ].join('\n'),
+  };
+
+  return completedCommand(
+    command.name,
+    command.raw,
+    `Prepared a PR description scaffold for ${resolved.repo.id}.`,
+    {
+      repo: resolved.repo,
+      health,
+      draft,
+      assistantBrief:
+        'Use this scaffold as a draft only. Ask for diff details or run local review before making specific claims about changed behavior.',
+    },
+  );
+}
+
+async function preparePrCommand(
+  command: ParsedNeonCommand,
+  paths: RuntimePaths,
+): Promise<NeonCommandResult> {
+  const resolved = await resolveCommandRepo(command, paths);
+  if (!resolved.ok) {
+    return failedCommand(command.name, command.raw, resolved.message, {
+      requires: resolved.requires,
+      data: resolved.data,
+    });
+  }
+
+  const health = await readGitRepoStatus(resolved.repo);
+  const checks = preparePrChecks(resolved.repo, health);
+
+  return completedCommand(
+    command.name,
+    command.raw,
+    `Prepared PR readiness checklist for ${resolved.repo.id}.`,
+    {
+      repo: resolved.repo,
+      health,
+      checks,
+      ready: checks.every((item) => item.status === 'ok'),
+      assistantBrief:
+        'Use these deterministic readiness checks before recommending PR creation. Do not run host commands unless a future approved action exists.',
+    },
+  );
+}
+
+async function reviewLocalCommand(
+  command: ParsedNeonCommand,
+  paths: RuntimePaths,
+): Promise<NeonCommandResult> {
+  const resolved = await resolveCommandRepo(command, paths);
+  if (!resolved.ok) {
+    return failedCommand(command.name, command.raw, resolved.message, {
+      requires: resolved.requires,
+      data: resolved.data,
+    });
+  }
+
+  const health = await readGitRepoStatus(resolved.repo);
+  const diff = await readGitDiffSummary(resolved.repo);
+  const findings = localReviewFindings(resolved.repo, health, diff);
+
+  return completedCommand(
+    command.name,
+    command.raw,
+    findings.length > 0
+      ? `Found ${findings.length} local review finding${findings.length === 1 ? '' : 's'} for ${resolved.repo.id}.`
+      : `No deterministic local review findings for ${resolved.repo.id}.`,
+    {
+      repo: resolved.repo,
+      health,
+      diff,
+      findings,
+      assistantBrief:
+        'Lead with these deterministic local findings and diff metadata. This is still not a semantic code review because file contents were not read by this command.',
     },
   );
 }
@@ -380,12 +662,7 @@ async function briefingCommand(
     ['watching', 'merged', 'attention-needed'].includes(watch.status),
   );
   const topActions = [
-    ...(queue.ok
-      ? queue.queue.items.slice(0, 3).map((item) => ({
-          title: `Review ${item.repo}#${item.number}`,
-          url: item.url,
-        }))
-      : []),
+    ...(queue.ok ? triageReviewQueue(queue.queue, watches).topActions : []),
     ...activeWatches.slice(0, 3).map((watch) => ({
       title: `Check watch ${watch.id}`,
       status: watch.status,
@@ -406,6 +683,8 @@ async function briefingCommand(
       ? {
           count: queue.queue.items.length,
           fetchedAt: queue.queue.fetchedAt,
+          truncated: queue.queue.truncated,
+          issues: queue.queue.issues.length,
         }
       : {
           count: null,
@@ -427,6 +706,643 @@ async function briefingCommand(
     },
     topActions,
   });
+}
+
+async function memoryCommand(
+  command: ParsedNeonCommand,
+  paths: RuntimePaths,
+): Promise<NeonCommandResult> {
+  const [operation, ...rest] = command.args;
+
+  if (!operation || isMemoryScope(operation)) {
+    const result = await listMemories(
+      {
+        scope: isMemoryScope(operation) ? operation : undefined,
+      },
+      paths,
+    );
+    return completedCommand(
+      command.name,
+      command.raw,
+      result.memories.length === 0
+        ? 'No durable memory entries matched.'
+        : `Listed ${result.memories.length} durable memory entr${result.memories.length === 1 ? 'y' : 'ies'}.`,
+      result,
+    );
+  }
+
+  if (operation === 'set' || operation === 'upsert') {
+    const [scope, key, ...valueParts] = rest;
+    if (!isMemoryScope(scope) || !key || valueParts.length === 0) {
+      return failedCommand(
+        command.name,
+        command.raw,
+        '/memory set requires scope, key, and a JSON-safe value.',
+        {
+          requires: ['scope', 'key', 'value'],
+        },
+      );
+    }
+
+    const result = await upsertMemory(
+      {
+        scope,
+        key,
+        value: parseMemoryValue(valueParts.join(' ')),
+      },
+      paths,
+    );
+    if (!result.ok) {
+      return failedCommand(command.name, command.raw, result.message, {
+        requires: readStringArrayProperty(result, 'requires'),
+        errors: readStringArrayProperty(result, 'errors'),
+        data: result,
+      });
+    }
+
+    return completedCommand(command.name, command.raw, result.message, result);
+  }
+
+  if (operation === 'delete' || operation === 'remove') {
+    const [scope, key, ...flags] = rest;
+    if (!isMemoryScope(scope) || !key) {
+      return failedCommand(
+        command.name,
+        command.raw,
+        '/memory delete requires scope and key.',
+        {
+          requires: ['scope', 'key'],
+        },
+      );
+    }
+
+    const result = await deleteMemory(
+      {
+        scope,
+        key,
+        confirm:
+          flags.includes('--confirm') ||
+          flags.includes('confirm=true') ||
+          flags.includes('confirm'),
+      },
+      paths,
+    );
+    if (!result.ok) {
+      return failedCommand(command.name, command.raw, result.message, {
+        requires: readStringArrayProperty(result, 'requires'),
+        data: result,
+      });
+    }
+
+    return completedCommand(command.name, command.raw, result.message, result);
+  }
+
+  return failedCommand(
+    command.name,
+    command.raw,
+    `Unknown /memory operation "${operation}".`,
+    {
+      requires: ['memoryOperation'],
+      data: {
+        usage:
+          '/memory [scope] | /memory set <scope> <key> <json-or-text> | /memory delete <scope> <key> --confirm',
+      },
+    },
+  );
+}
+
+function triageReviewQueue(
+  queue: GitHubPullRequestQueue,
+  watches: Awaited<ReturnType<typeof listPrWatchRecords>>,
+) {
+  const authored = queue.items.filter((item) =>
+    item.relations.includes('authored'),
+  );
+  const assigned = queue.items.filter((item) =>
+    item.relations.includes('assigned'),
+  );
+  const requestedReviews = queue.items.filter((item) =>
+    item.relations.includes('review-requested'),
+  );
+  const failedChecks = queue.items.filter(
+    (item) => item.checks?.status === 'failure',
+  );
+  const checkErrors = queue.items.filter((item) => item.checkError);
+  const stalePrs = queue.items.filter((item) => item.stale);
+  const activeWatches = watches.filter((watch) =>
+    ['watching', 'merged', 'attention-needed'].includes(watch.status),
+  );
+  const watchedPrs = queue.items.filter((item) =>
+    activeWatches.some(
+      (watch) =>
+        watch.repoFullName === item.repo && watch.prNumber === item.number,
+    ),
+  );
+
+  return {
+    summary: {
+      authored: authored.length,
+      assigned: assigned.length,
+      requestedReviews: requestedReviews.length,
+      failedChecks: failedChecks.length,
+      checkErrors: checkErrors.length,
+      stale: stalePrs.length,
+      activeWatches: activeWatches.length,
+      watchedPrs: watchedPrs.length,
+      truncated: queue.truncated,
+      issues: queue.issues.length,
+    },
+    authored: summarizePullRequests(authored),
+    assigned: summarizePullRequests(assigned),
+    requestedReviews: summarizePullRequests(requestedReviews),
+    failedChecks: summarizePullRequests(failedChecks),
+    checkErrors: summarizePullRequests(checkErrors),
+    stalePrs: summarizePullRequests(stalePrs),
+    issues: summarizeQueueIssues(queue.issues),
+    activeWatches: activeWatches.map((watch) => ({
+      id: watch.id,
+      repo: watch.repoFullName,
+      number: watch.prNumber,
+      status: watch.status,
+      desiredTerminalState: watch.desiredTerminalState,
+      url: watch.url,
+      updatedAt: watch.updatedAt,
+    })),
+    topActions: rankReviewQueueActions(
+      queue.items,
+      activeWatches,
+      failedChecks,
+      checkErrors,
+      requestedReviews,
+      assigned,
+      stalePrs,
+      authored,
+    ).slice(0, 3),
+  };
+}
+
+function summarizePullRequests(items: GitHubPullRequest[]) {
+  return items.map((item) => ({
+    repo: item.repo,
+    number: item.number,
+    title: item.title,
+    url: item.url,
+    author: item.author,
+    relations: item.relations,
+    checks: item.checks?.status ?? 'unknown',
+    checkError: item.checkError,
+    stale: item.stale,
+    ageDays: item.ageDays,
+    updatedAt: item.updatedAt,
+  }));
+}
+
+function summarizeQueueIssues(issues: GitHubQueueIssue[]) {
+  return issues.map((issue) => ({
+    type: issue.type,
+    message: issue.message,
+    query: issue.query,
+    repo: issue.repo,
+    number: issue.number,
+  }));
+}
+
+function rankReviewQueueActions(
+  items: GitHubPullRequest[],
+  watches: Awaited<ReturnType<typeof listPrWatchRecords>>,
+  failedChecks: GitHubPullRequest[],
+  checkErrors: GitHubPullRequest[],
+  requestedReviews: GitHubPullRequest[],
+  assigned: GitHubPullRequest[],
+  stalePrs: GitHubPullRequest[],
+  authored: GitHubPullRequest[],
+): ReviewQueueAction[] {
+  const actions: ReviewQueueAction[] = [];
+  for (const item of failedChecks) {
+    actions.push(prAction(item, 'Fix failing checks', 'urgent'));
+  }
+
+  for (const item of checkErrors) {
+    actions.push(prAction(item, 'Investigate unknown CI status', 'urgent'));
+  }
+
+  for (const watch of watches.filter(
+    (item) => item.status === 'attention-needed',
+  )) {
+    actions.push({
+      title: `Resolve watch ${watch.id}`,
+      reason: `Watch is ${watch.status}.`,
+      priority: 'urgent',
+      url: watch.url,
+      repo: watch.repoFullName,
+      number: watch.prNumber,
+    });
+  }
+
+  for (const item of requestedReviews) {
+    actions.push(prAction(item, 'Review requested PR', 'high'));
+  }
+
+  for (const item of assigned) {
+    actions.push(prAction(item, 'Move assigned PR forward', 'high'));
+  }
+
+  for (const item of stalePrs) {
+    actions.push(prAction(item, 'Refresh stale PR', 'medium'));
+  }
+
+  for (const item of authored) {
+    actions.push(prAction(item, 'Advance authored PR', 'medium'));
+  }
+
+  for (const item of items) {
+    actions.push(prAction(item, 'Inspect open PR', 'low'));
+  }
+
+  return dedupeActions(actions);
+}
+
+function prAction(
+  item: GitHubPullRequest,
+  reason: string,
+  priority: ReviewQueueAction['priority'],
+): ReviewQueueAction {
+  return {
+    title: `${reason}: ${item.repo}#${item.number}`,
+    reason:
+      item.checks?.status === 'failure'
+        ? `${item.checks.failed} checks failed.`
+        : item.checkError
+          ? `GitHub enrichment failed: ${item.checkError}`
+          : reason,
+    priority,
+    url: item.url,
+    repo: item.repo,
+    number: item.number,
+  };
+}
+
+function dedupeActions(actions: ReviewQueueAction[]) {
+  const seen = new Set<string>();
+  return actions.filter((action) => {
+    const key =
+      action.repo && action.number
+        ? `${action.repo}#${action.number}`
+        : `${action.title}:${action.reason}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function reviewQueueMessage(triage: ReturnType<typeof triageReviewQueue>) {
+  const { summary } = triage;
+  const partial = summary.truncated || summary.issues > 0;
+  return `Triaged ${summary.authored + summary.assigned + summary.requestedReviews} user-related PR signal${summary.authored + summary.assigned + summary.requestedReviews === 1 ? '' : 's'}: ${summary.requestedReviews} review request${summary.requestedReviews === 1 ? '' : 's'}, ${summary.failedChecks} failing check set${summary.failedChecks === 1 ? '' : 's'}, ${summary.checkErrors} unknown check state${summary.checkErrors === 1 ? '' : 's'}, ${summary.stale} stale PR${summary.stale === 1 ? '' : 's'}.${partial ? ' Results are partial; inspect queue issues.' : ''}`;
+}
+
+function selectPullRequest(
+  queue: GitHubPullRequestQueue,
+  args: string[],
+  options: { prefer?: (item: GitHubPullRequest) => boolean } = {},
+):
+  | { ok: true; item: GitHubPullRequest }
+  | { ok: false; message: string; requires?: string[] } {
+  const ref = args.join(' ').trim();
+  if (ref) {
+    const parsed = parsePullRequestRef(ref);
+    if (!parsed) {
+      return {
+        ok: false,
+        message:
+          'Expected a PR reference like repo#123, owner/repo#123, or a GitHub pull request URL.',
+        requires: ['pr'],
+      };
+    }
+
+    const match = queue.items.find(
+      (item) =>
+        item.number === parsed.number &&
+        (item.repo.toLowerCase() === parsed.repo.toLowerCase() ||
+          item.repo.split('/').at(1)?.toLowerCase() ===
+            parsed.repo.toLowerCase()),
+    );
+    if (!match) {
+      return {
+        ok: false,
+        message: `PR ${parsed.repo}#${parsed.number} was not found in the current review queue.`,
+        requires: ['queuedPr'],
+      };
+    }
+
+    return { ok: true, item: match };
+  }
+
+  const preferred = options.prefer
+    ? queue.items.find(options.prefer)
+    : undefined;
+  const item = preferred ?? queue.items[0];
+  if (!item) {
+    return {
+      ok: false,
+      message: 'No pull requests are available in the current review queue.',
+      requires: ['pr'],
+    };
+  }
+
+  return { ok: true, item };
+}
+
+function parsePullRequestRef(ref: string) {
+  const url = ref.match(/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)/i);
+  if (url) {
+    return {
+      repo: `${url[1]}/${url[2].replace(/\.git$/, '')}`,
+      number: Number(url[3]),
+    };
+  }
+
+  const hash = ref.match(/^([A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)?)#(\d+)$/);
+  if (!hash) return undefined;
+
+  return {
+    repo: hash[1],
+    number: Number(hash[2]),
+  };
+}
+
+function ciExplanation(pr: GitHubPullRequest) {
+  if (pr.checkError) {
+    return {
+      status: 'unknown',
+      message: `GitHub check status for ${pr.repo}#${pr.number} could not be enriched.`,
+      facts: [`Enrichment error: ${pr.checkError}`],
+      nextActions: [
+        'Open the PR checks page in GitHub.',
+        'Retry after confirming the token can read checks.',
+      ],
+    };
+  }
+
+  if (!pr.checks) {
+    return {
+      status: 'unknown',
+      message: `${pr.repo}#${pr.number} has no check summary in the queue.`,
+      facts: ['No check runs or commit statuses were available.'],
+      nextActions: [
+        'Confirm the PR head SHA and configured repository access.',
+      ],
+    };
+  }
+
+  const facts = [
+    `${pr.checks.total} total check signal${pr.checks.total === 1 ? '' : 's'}.`,
+    `${pr.checks.failed} failed, ${pr.checks.pending} pending, ${pr.checks.successful} successful.`,
+    `${pr.checks.statusContexts ?? 0} legacy status context${pr.checks.statusContexts === 1 ? '' : 's'}.`,
+  ];
+  const nextActions =
+    pr.checks.status === 'failure'
+      ? [
+          'Open the failing GitHub checks and inspect the first failed job log.',
+          'Run the matching local validation command if the repo exposes one.',
+          'After fixing, rerun failed checks or push an update.',
+        ]
+      : pr.checks.status === 'pending'
+        ? [
+            'Wait for pending checks or inspect queued jobs for capacity issues.',
+          ]
+        : pr.checks.status === 'success'
+          ? ['No CI action is needed unless review feedback remains.']
+          : ['Confirm whether this repo is expected to publish checks.'];
+
+  return {
+    status: pr.checks.status,
+    message: `${pr.repo}#${pr.number} CI is ${pr.checks.status}.`,
+    facts,
+    nextActions,
+  };
+}
+
+async function resolveCommandRepo(
+  command: ParsedNeonCommand,
+  paths: RuntimePaths,
+): Promise<
+  | {
+      ok: true;
+      repo: Awaited<
+        ReturnType<typeof readRepoRegistrySnapshot>
+      >['repos'][number];
+    }
+  | {
+      ok: false;
+      message: string;
+      requires?: string[];
+      data?: unknown;
+    }
+> {
+  const registry = await readRepoRegistrySnapshot(paths);
+  const target = command.args.join(' ').trim();
+  if (registry.repos.length === 0) {
+    return {
+      ok: false,
+      message: 'No repositories are configured.',
+      requires: ['repo'],
+    };
+  }
+
+  if (!target) {
+    if (registry.repos.length === 1) {
+      return { ok: true, repo: registry.repos[0] };
+    }
+
+    return {
+      ok: false,
+      message: 'A repository id or owner/repo is required.',
+      requires: ['repo'],
+      data: { repos: registry.repos.map((repo) => repo.id) },
+    };
+  }
+
+  const repo = registry.repos.find(
+    (item) =>
+      item.id === target ||
+      item.github.name === target ||
+      repoFullName(item).toLowerCase() === target.toLowerCase(),
+  );
+  if (!repo) {
+    return {
+      ok: false,
+      message: `Repository "${target}" is not configured.`,
+      requires: ['repo'],
+      data: { repos: registry.repos.map((item) => item.id) },
+    };
+  }
+
+  return { ok: true, repo };
+}
+
+function validationChecklist(
+  repo: Awaited<ReturnType<typeof readRepoRegistrySnapshot>>['repos'][number],
+) {
+  const scripts = repo.packageScripts ?? {};
+  const preferred = ['format:check', 'lint', 'typecheck', 'test', 'check'];
+  const available = preferred.filter((script) => scripts[script]);
+  if (available.length > 0) {
+    return available.map((script) => `npm run ${script}`);
+  }
+
+  return ['Run the project validation command for this repo.'];
+}
+
+function preparePrChecks(
+  repo: Awaited<ReturnType<typeof readRepoRegistrySnapshot>>['repos'][number],
+  health: Awaited<ReturnType<typeof readGitRepoStatus>>,
+) {
+  return [
+    {
+      id: 'working-tree',
+      status: health.error || health.dirty ? 'attention' : 'ok',
+      message: health.error
+        ? `Git status failed: ${health.error}`
+        : health.dirty
+          ? `${health.changeCount} local change${health.changeCount === 1 ? '' : 's'} need review before PR creation.`
+          : 'Working tree is clean.',
+    },
+    {
+      id: 'branch',
+      status:
+        health.branch && health.branch !== repo.defaultBranch
+          ? 'ok'
+          : 'attention',
+      message: health.branch
+        ? health.branch === repo.defaultBranch
+          ? `Current branch is the default branch (${repo.defaultBranch}).`
+          : `Current branch is ${health.branch}.`
+        : 'Current branch is unknown.',
+    },
+    {
+      id: 'upstream',
+      status:
+        health.ahead === null && health.behind === null ? 'attention' : 'ok',
+      message:
+        health.ahead === null && health.behind === null
+          ? 'No upstream tracking branch was detected.'
+          : `Ahead ${health.ahead ?? 0}, behind ${health.behind ?? 0}.`,
+    },
+    {
+      id: 'validation',
+      status: 'attention',
+      message: `Run validation before opening PR: ${validationChecklist(repo).join(', ')}.`,
+    },
+  ];
+}
+
+function localReviewFindings(
+  repo: Awaited<ReturnType<typeof readRepoRegistrySnapshot>>['repos'][number],
+  health: Awaited<ReturnType<typeof readGitRepoStatus>>,
+  diff: Awaited<ReturnType<typeof readGitDiffSummary>>,
+) {
+  const findings: Array<{
+    severity: 'high' | 'medium' | 'low';
+    title: string;
+    message: string;
+  }> = [];
+
+  if (health.error) {
+    findings.push({
+      severity: 'high',
+      title: 'Git status unavailable',
+      message: health.error,
+    });
+    return findings;
+  }
+
+  if (health.branch === repo.defaultBranch) {
+    findings.push({
+      severity: 'medium',
+      title: 'Working on default branch',
+      message: `Current branch is ${repo.defaultBranch}; create a topic branch before PR prep.`,
+    });
+  }
+
+  if (health.behind && health.behind > 0) {
+    findings.push({
+      severity: 'medium',
+      title: 'Branch is behind upstream',
+      message: `Branch is ${health.behind} commit${health.behind === 1 ? '' : 's'} behind upstream.`,
+    });
+  }
+
+  if (health.dirty) {
+    findings.push({
+      severity: 'low',
+      title: 'Uncommitted changes present',
+      message: `${health.changeCount} local change${health.changeCount === 1 ? '' : 's'} detected: ${health.changes.slice(0, 5).join(', ')}`,
+    });
+  }
+
+  if (!diff.ok) {
+    findings.push({
+      severity: 'medium',
+      title: 'Diff summary unavailable',
+      message: diff.error ?? 'Could not read git diff metadata.',
+    });
+  }
+
+  if (diff.fileCount > 15) {
+    findings.push({
+      severity: 'medium',
+      title: 'Large local diff',
+      message: `${diff.fileCount} files changed with ${diff.additions} additions and ${diff.deletions} deletions.`,
+    });
+  }
+
+  if (diff.binaryFiles > 0) {
+    findings.push({
+      severity: 'low',
+      title: 'Binary files changed',
+      message: `${diff.binaryFiles} changed file${diff.binaryFiles === 1 ? ' is' : 's are'} binary or uncounted by git numstat.`,
+    });
+  }
+
+  return findings;
+}
+
+function compactCommandSummary(result: NeonCommandResult) {
+  if (
+    result.command === 'review-queue' &&
+    result.data &&
+    typeof result.data === 'object'
+  ) {
+    const data = result.data as {
+      fetchedAt?: unknown;
+      login?: unknown;
+      repos?: unknown;
+      count?: unknown;
+      truncated?: unknown;
+      issues?: unknown;
+      triage?: unknown;
+      topActions?: unknown;
+    };
+
+    return {
+      ok: result.ok,
+      command: result.command,
+      input: result.input,
+      status: result.status,
+      message: result.message,
+      fetchedAt: data.fetchedAt,
+      login: data.login,
+      repos: data.repos,
+      count: data.count,
+      truncated: data.truncated,
+      issues: data.issues,
+      triage: data.triage,
+      topActions: data.topActions,
+    };
+  }
+
+  return result;
 }
 
 async function watchPrCommand(
@@ -611,11 +1527,44 @@ function isCommandName(value: string): value is NeonCommandName {
   return [
     'repo-status',
     'review-queue',
+    'explain-ci',
+    'summarize-pr',
+    'draft-pr-description',
+    'prepare-pr',
+    'review-local',
     'briefing',
+    'memory',
     'watch-pr',
     'dev-doctor',
     'watch-release',
   ].includes(value);
+}
+
+function isMemoryScope(value: string | undefined): value is MemoryScope {
+  return (
+    value === 'user' ||
+    value === 'project' ||
+    value === 'session' ||
+    value === 'watch'
+  );
+}
+
+function parseMemoryValue(raw: string): JsonValue {
+  try {
+    return JSON.parse(raw) as JsonValue;
+  } catch {
+    return raw;
+  }
+}
+
+function readStringArrayProperty(
+  value: unknown,
+  key: string,
+): string[] | undefined {
+  if (!value || typeof value !== 'object' || !(key in value)) return undefined;
+  const property = (value as Record<string, unknown>)[key];
+  if (!Array.isArray(property)) return undefined;
+  return property.filter((item): item is string => typeof item === 'string');
 }
 
 function errorMessage(error: unknown) {

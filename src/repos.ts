@@ -42,6 +42,24 @@ export type RepoHealthSnapshot = {
   fetchedAt: string;
 };
 
+export type RepoDiffSummary = {
+  ok: boolean;
+  repo: string;
+  path: string;
+  baseRef: string;
+  files: Array<{
+    path: string;
+    status: string;
+    additions: number;
+    deletions: number;
+  }>;
+  fileCount: number;
+  additions: number;
+  deletions: number;
+  binaryFiles: number;
+  error?: string;
+};
+
 export async function readRepoRegistrySnapshot(
   paths: RuntimePaths = runtimePaths(),
 ): Promise<RepoRegistrySnapshot> {
@@ -124,6 +142,75 @@ export async function readGitRepoStatus(repo: {
       ahead: null,
       behind: null,
       changes: [],
+      error: errorMessage(error),
+    };
+  }
+}
+
+export async function readGitDiffSummary(repo: {
+  path: string;
+  github: { owner: string; name: string };
+  defaultBranch: string;
+}): Promise<RepoDiffSummary> {
+  try {
+    const [nameStatus, numstat] = await Promise.all([
+      git(repo.path, ['diff', '--name-status', 'HEAD']),
+      git(repo.path, ['diff', '--numstat', 'HEAD']),
+    ]);
+    const statuses = new Map(
+      nameStatus
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          const [status, ...paths] = line.split(/\s+/);
+          return [paths.at(-1) ?? 'unknown', status ?? 'M'] as const;
+        }),
+    );
+    const files = numstat
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [additions, deletions, ...paths] = line.split(/\s+/);
+        const path = paths.join(' ') || 'unknown';
+        const binary = additions === '-' || deletions === '-';
+        return {
+          path,
+          status: statuses.get(path) ?? 'M',
+          additions: binary ? 0 : Number(additions ?? 0),
+          deletions: binary ? 0 : Number(deletions ?? 0),
+          binary,
+        };
+      });
+
+    return {
+      ok: true,
+      repo: repoFullName(repo),
+      path: repo.path,
+      baseRef: repo.defaultBranch,
+      files: files.map((file) => ({
+        path: file.path,
+        status: file.status,
+        additions: file.additions,
+        deletions: file.deletions,
+      })),
+      fileCount: files.length,
+      additions: files.reduce((sum, file) => sum + file.additions, 0),
+      deletions: files.reduce((sum, file) => sum + file.deletions, 0),
+      binaryFiles: files.filter((file) => file.binary).length,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      repo: repoFullName(repo),
+      path: repo.path,
+      baseRef: repo.defaultBranch,
+      files: [],
+      fileCount: 0,
+      additions: 0,
+      deletions: 0,
+      binaryFiles: 0,
       error: errorMessage(error),
     };
   }

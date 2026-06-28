@@ -100,8 +100,12 @@ const sensitiveSkillResourceNames = new Set([
   'id_ecdsa',
   'id_ed25519',
 ]);
-const applicationSkillPath = fileURLToPath(
-  new URL('./skills/neondeck/SKILL.md', import.meta.url),
+const applicationSkillPaths = [
+  fileURLToPath(new URL('./skills/neondeck/SKILL.md', import.meta.url)),
+  fileURLToPath(new URL('./skills/github-gh/SKILL.md', import.meta.url)),
+];
+const reservedBuiltInSkillIds = new Set(
+  applicationSkillPaths.map((path) => basename(dirname(path))),
 );
 
 export const skillsListAction = defineAction({
@@ -306,11 +310,12 @@ async function discoverRuntimeSkills(
 ): Promise<RuntimeSkillInventory> {
   const candidates: RuntimeSkillCandidate[] = [];
   const ignored: IgnoredRuntimeSkill[] = [...initialIgnored];
-  const builtIn = readApplicationSkillCandidate();
-  if (builtIn.ok) {
-    candidates.push(builtIn.skill);
-  } else {
-    ignored.push(builtIn.ignored);
+  for (const builtIn of readApplicationSkillCandidates()) {
+    if (builtIn.ok) {
+      candidates.push(builtIn.skill);
+    } else {
+      ignored.push(builtIn.ignored);
+    }
   }
 
   for (const root of roots) {
@@ -338,11 +343,12 @@ function discoverRuntimeSkillsSync(
   const candidates: RuntimeSkillCandidate[] = [];
   const ignored: IgnoredRuntimeSkill[] = [...initialIgnored];
 
-  const builtIn = readApplicationSkillCandidate();
-  if (builtIn.ok) {
-    candidates.push(builtIn.skill);
-  } else {
-    ignored.push(builtIn.ignored);
+  for (const builtIn of readApplicationSkillCandidates()) {
+    if (builtIn.ok) {
+      candidates.push(builtIn.skill);
+    } else {
+      ignored.push(builtIn.ignored);
+    }
   }
 
   for (const root of roots) {
@@ -362,12 +368,14 @@ function discoverRuntimeSkillsSync(
   return buildInventory(roots, candidates, ignored);
 }
 
-function readApplicationSkillCandidate() {
-  return parseSkillFile(
-    readFileSync(applicationSkillPath, 'utf8'),
-    applicationSkillPath,
-    { path: dirname(dirname(applicationSkillPath)), source: 'built-in' },
-    'built-in',
+function readApplicationSkillCandidates() {
+  return applicationSkillPaths.map((path) =>
+    parseSkillFile(
+      readFileSync(path, 'utf8'),
+      path,
+      { path: dirname(dirname(path)), source: 'built-in' },
+      'built-in',
+    ),
   );
 }
 
@@ -518,7 +526,10 @@ function parseSkillFile(
     };
   }
 
-  if (skillSource !== 'built-in' && nameResult.output === 'neondeck') {
+  if (
+    skillSource !== 'built-in' &&
+    reservedBuiltInSkillIds.has(nameResult.output)
+  ) {
     return {
       ok: false,
       ignored: ignoredSkill(

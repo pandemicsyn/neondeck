@@ -1,17 +1,33 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import {
   getRepoHealth,
   getRepoRegistry,
-  getRuntimeHealth,
+  getRuntimeStatus,
+  getSafetyPolicy,
   getRuntimeSkills,
   getSchedulerJobs,
+  getMemories,
+  getNotifications,
+  getWorkflowObservability,
+  markNotificationRead,
+  resolveNotification,
+  updateAgentModels,
+  updateKilocodeProvider,
+  type MemoryRecord,
+  type NotificationRecord,
+  type NotificationResponse,
   type RepoHealth,
   type RepoHealthResponse,
   type RepoConfig,
-  type RuntimeHealth,
+  type RuntimeStatus,
+  type RuntimeStatusCheck,
   type RuntimeSkill,
   type RuntimeSkillsResponse,
+  type SafetyPolicy,
+  type SafetyPolicyEntry,
   type SchedulerJob,
+  type WorkflowEventRecord,
+  type WorkflowObservability,
 } from '../api';
 import { EmptyState } from '../App';
 import { Badge, ScrollArea } from '../components/ui';
@@ -21,14 +37,22 @@ type RuntimeOverviewConfig = {
   repoLimit: number;
   jobLimit: number;
   skillLimit: number;
+  memoryLimit: number;
+  notificationLimit: number;
+  workflowEventLimit: number;
 };
 
 type RuntimeSnapshot = {
-  health: RuntimeHealth;
+  status: RuntimeStatus;
   repos: RepoConfig[];
   repoHealth: RepoHealthResponse;
   jobs: SchedulerJob[];
   skills: RuntimeSkillsResponse;
+  memories: MemoryRecord[];
+  notifications: NotificationResponse;
+  safety: SafetyPolicy;
+  workflows: WorkflowObservability;
+  secondaryErrors: string[];
   fetchedAt: string;
 };
 
@@ -45,33 +69,88 @@ export const RuntimeOverviewPlugin = {
     repoLimit: 5,
     jobLimit: 5,
     skillLimit: 5,
+    memoryLimit: 5,
+    notificationLimit: 5,
+    workflowEventLimit: 6,
   },
   Component({ config }) {
     const [state, setState] = useState<State>({ status: 'loading' });
+    const [refreshKey, setRefreshKey] = useState(0);
 
     useEffect(() => {
       let cancelled = false;
 
       async function load() {
         try {
-          const [health, registry, repoHealth, jobs, skills] =
-            await Promise.all([
-              getRuntimeHealth(),
-              getRepoRegistry(),
-              getRepoHealth(),
-              getSchedulerJobs(),
-              getRuntimeSkills(),
-            ]);
+          const status = await getRuntimeStatus();
+          const [
+            registry,
+            repoHealth,
+            jobs,
+            skills,
+            memories,
+            notifications,
+            safety,
+            workflows,
+          ] = await Promise.allSettled([
+            getRepoRegistry(),
+            getRepoHealth(),
+            getSchedulerJobs(),
+            getRuntimeSkills(),
+            getMemories(),
+            getNotifications(),
+            getSafetyPolicy(),
+            getWorkflowObservability(),
+          ]);
 
           if (!cancelled) {
+            const errors = [
+              settledError(registry),
+              settledError(repoHealth),
+              settledError(jobs),
+              settledError(skills),
+              settledError(memories),
+              settledError(notifications),
+              settledError(safety),
+              settledError(workflows),
+            ].filter((error): error is string => !!error);
             setState({
               status: 'ready',
               snapshot: {
-                health,
-                repos: registry.repos,
-                repoHealth,
-                jobs: jobs.jobs,
-                skills,
+                status,
+                repos: settledValue(registry)?.repos ?? [],
+                repoHealth: settledValue(repoHealth) ?? {
+                  home: status.home,
+                  path: status.paths.repos,
+                  repos: [],
+                  attention: [],
+                  count: 0,
+                  fetchedAt: status.fetchedAt,
+                },
+                jobs: settledValue(jobs)?.jobs ?? [],
+                skills: settledValue(skills) ?? {
+                  roots: [],
+                  skills: [],
+                  ignored: [],
+                  duplicates: [],
+                  loadedAt: status.fetchedAt,
+                },
+                memories: settledValue(memories)?.memories ?? [],
+                notifications: settledValue(notifications) ?? {
+                  items: [],
+                  policy: {
+                    info: 'Passive updates.',
+                    ready: 'Completed work.',
+                    attention: 'Actionable failures.',
+                    urgent: 'Production-facing failures.',
+                    reconcile: 'Repeated source events are reconciled.',
+                  },
+                  fetchedAt: status.fetchedAt,
+                },
+                safety:
+                  settledValue(safety) ?? emptySafetyPolicy(status.fetchedAt),
+                workflows: settledValue(workflows) ?? emptyWorkflows(),
+                secondaryErrors: errors,
                 fetchedAt: new Date().toISOString(),
               },
             });
@@ -92,7 +171,7 @@ export const RuntimeOverviewPlugin = {
         cancelled = true;
         window.clearInterval(timer);
       };
-    }, []);
+    }, [refreshKey]);
 
     if (state.status === 'loading') {
       return (
@@ -104,15 +183,23 @@ export const RuntimeOverviewPlugin = {
       return <EmptyState title="Runtime unavailable" detail={state.message} />;
     }
 
-    return <RuntimeView config={config} snapshot={state.snapshot} />;
+    return (
+      <RuntimeView
+        config={config}
+        onRefresh={() => setRefreshKey((value) => value + 1)}
+        snapshot={state.snapshot}
+      />
+    );
   },
 } satisfies DisplayPlugin<RuntimeOverviewConfig>;
 
 function RuntimeView({
   config,
+  onRefresh,
   snapshot,
 }: {
   config: RuntimeOverviewConfig;
+  onRefresh: () => void;
   snapshot: RuntimeSnapshot;
 }) {
   const activeSkills = snapshot.skills.skills.filter(
@@ -122,7 +209,7 @@ function RuntimeView({
   const healthByRepoId = new Map(
     snapshot.repoHealth.repos.map((repo) => [repo.id, repo]),
   );
-  const runtimeStatus = snapshot.health.ok ? 'online' : 'degraded';
+  const readiness = snapshot.status.status;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -130,22 +217,51 @@ function RuntimeView({
         <span className="text-violet">RUNTIME</span>
         <Badge
           className={
-            snapshot.health.ok
+            snapshot.status.ok
               ? 'border-primary text-primary'
               : 'border-accent text-accent'
           }
         >
-          {snapshot.health.service}:{runtimeStatus}
+          {snapshot.status.service}:{readiness}
         </Badge>
       </header>
       <ScrollArea className="flex-1">
         <div className="space-y-3 p-3">
           <RuntimeHome
             activeSkills={activeSkills.length}
-            enabledJobs={enabledJobs.length}
-            health={snapshot.health}
+            status={snapshot.status}
             repoCount={snapshot.repos.length}
           />
+          <RuntimeSection count={2} title="CONFIG" tone="violet">
+            <RuntimeConfigControls
+              onRefresh={onRefresh}
+              status={snapshot.status}
+            />
+          </RuntimeSection>
+          {snapshot.secondaryErrors.length > 0 ? (
+            <RuntimeSection
+              count={snapshot.secondaryErrors.length}
+              title="PARTIAL DATA"
+              tone="accent"
+            >
+              <div className="space-y-1.5">
+                {snapshot.secondaryErrors.map((error) => (
+                  <MiniEmpty key={error} label={error} />
+                ))}
+              </div>
+            </RuntimeSection>
+          ) : null}
+          <RuntimeSection
+            count={snapshot.status.checks.filter((check) => !check.ok).length}
+            title="READINESS"
+            tone="accent"
+          >
+            <div className="space-y-1.5">
+              {snapshot.status.checks.map((check) => (
+                <ReadinessRow check={check} key={check.id} />
+              ))}
+            </div>
+          </RuntimeSection>
           <RuntimeSection
             count={snapshot.repos.length}
             title="REPOS"
@@ -161,6 +277,146 @@ function RuntimeView({
               ) : null}
             </div>
           </RuntimeSection>
+          <RuntimeSection
+            count={snapshot.status.lastFlueErrors.length}
+            title="FLUE ERRORS"
+            tone="accent"
+          >
+            <div className="space-y-1.5">
+              {snapshot.status.lastFlueErrors.map((error) => (
+                <FlueErrorRow
+                  error={error}
+                  key={`${error.source}:${error.id}`}
+                />
+              ))}
+              {snapshot.status.lastFlueErrors.length === 0 ? (
+                <MiniEmpty label="No recent Flue failures." />
+              ) : null}
+            </div>
+          </RuntimeSection>
+          <RuntimeSection
+            count={snapshot.notifications.items.length}
+            title="NOTIFICATIONS"
+            tone="accent"
+          >
+            <div className="space-y-1.5">
+              {snapshot.notifications.items
+                .slice(0, config.notificationLimit)
+                .map((notification) => (
+                  <NotificationRow
+                    key={notification.id}
+                    notification={notification}
+                    onRefresh={onRefresh}
+                  />
+                ))}
+              {snapshot.notifications.items.length === 0 ? (
+                <MiniEmpty label="No active notifications." />
+              ) : null}
+              <MiniEmpty label={snapshot.notifications.policy.reconcile} />
+            </div>
+          </RuntimeSection>
+          <RuntimeSection
+            count={snapshot.safety.summary.requiresConfirmation}
+            title="SAFETY"
+            tone="violet"
+          >
+            <div className="space-y-1.5">
+              <MiniEmpty label={snapshot.safety.confirmationPolicy} />
+              <MiniEmpty label={snapshot.safety.hostExecutionPolicy} />
+              <MiniEmpty
+                label={`Execution defaults to ${snapshot.safety.executionPolicy.defaultBackend}; ${snapshot.safety.executionPolicy.enabledBackends.join(', ')} enabled; ${snapshot.safety.executionPolicy.preapprovedCommandCount} preapproved commands.`}
+              />
+              {snapshot.safety.entries
+                .sort((a, b) => safetyRank(a) - safetyRank(b))
+                .slice(0, 8)
+                .map((entry) => (
+                  <SafetyPolicyRow entry={entry} key={entry.id} />
+                ))}
+            </div>
+          </RuntimeSection>
+          <RuntimeSection
+            count={snapshot.workflows.activeRuns.length}
+            title="ACTIVE RUNS"
+            tone="primary"
+          >
+            <div className="space-y-1.5">
+              {snapshot.workflows.activeRuns.map((run) => (
+                <ActiveRunRow key={run.runId} run={run} />
+              ))}
+              {snapshot.workflows.activeRuns.length === 0 ? (
+                <MiniEmpty label="No active workflow runs observed." />
+              ) : null}
+            </div>
+          </RuntimeSection>
+          <RuntimeSection
+            count={snapshot.workflows.recentFailures.length}
+            title="FAILED RUNS"
+            tone="accent"
+          >
+            <div className="space-y-1.5">
+              {snapshot.workflows.recentFailures
+                .slice(0, config.workflowEventLimit)
+                .map((event) => (
+                  <WorkflowEventRow
+                    event={event}
+                    key={`failure:${event.id}`}
+                    rawLabel
+                  />
+                ))}
+              {snapshot.workflows.recentFailures.length === 0 ? (
+                <MiniEmpty label="No recent failed workflow runs." />
+              ) : null}
+            </div>
+          </RuntimeSection>
+          <RuntimeSection
+            count={snapshot.workflows.recentData.length}
+            title="PROGRESS DATA"
+            tone="violet"
+          >
+            <div className="space-y-1.5">
+              {snapshot.workflows.recentData
+                .slice(0, config.workflowEventLimit)
+                .map((event) => (
+                  <WorkflowEventRow event={event} key={`data:${event.id}`} />
+                ))}
+              {snapshot.workflows.recentData.length === 0 ? (
+                <MiniEmpty label="No emitted workflow data yet." />
+              ) : null}
+            </div>
+          </RuntimeSection>
+          <RuntimeSection
+            count={
+              snapshot.workflows.recentLogs.length +
+              snapshot.workflows.recentTools.length +
+              snapshot.workflows.recentOperations.length
+            }
+            title="ACTION LOGS"
+            tone="primary"
+          >
+            <div className="space-y-1.5">
+              {[
+                ...snapshot.workflows.recentLogs,
+                ...snapshot.workflows.recentTools,
+                ...snapshot.workflows.recentOperations,
+              ]
+                .sort(
+                  (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
+                )
+                .slice(0, config.workflowEventLimit)
+                .map((event) => (
+                  <WorkflowEventRow
+                    event={event}
+                    key={`activity:${event.id}`}
+                  />
+                ))}
+              {snapshot.workflows.recentLogs.length +
+                snapshot.workflows.recentTools.length +
+                snapshot.workflows.recentOperations.length ===
+              0 ? (
+                <MiniEmpty label="No action, tool, or operation logs yet." />
+              ) : null}
+            </div>
+          </RuntimeSection>
           <RuntimeSection count={enabledJobs.length} title="JOBS" tone="accent">
             <div className="space-y-1.5">
               {snapshot.jobs.slice(0, config.jobLimit).map((job) => (
@@ -168,6 +424,20 @@ function RuntimeView({
               ))}
               {snapshot.jobs.length === 0 ? (
                 <MiniEmpty label="No scheduler jobs recorded." />
+              ) : null}
+            </div>
+          </RuntimeSection>
+          <RuntimeSection
+            count={snapshot.memories.length}
+            title="MEMORY"
+            tone="primary"
+          >
+            <div className="space-y-1.5">
+              {snapshot.memories.slice(0, config.memoryLimit).map((memory) => (
+                <MemoryRow key={memory.id} memory={memory} />
+              ))}
+              {snapshot.memories.length === 0 ? (
+                <MiniEmpty label="No durable memory recorded." />
               ) : null}
             </div>
           </RuntimeSection>
@@ -199,15 +469,14 @@ function RuntimeView({
 
 function RuntimeHome({
   activeSkills,
-  enabledJobs,
-  health,
+  status,
   repoCount,
 }: {
   activeSkills: number;
-  enabledJobs: number;
-  health: RuntimeHealth;
+  status: RuntimeStatus;
   repoCount: number;
 }) {
+  const model = status.models.displayAssistant;
   return (
     <section className="border border-line bg-soft p-2.5">
       <div className="flex items-start justify-between gap-2">
@@ -216,17 +485,313 @@ function RuntimeHome({
             NEONDECK_HOME
           </p>
           <p className="mt-1 truncate font-mono text-[11px] text-ink">
-            {shortPath(health.home)}
+            {shortPath(status.home)}
           </p>
         </div>
-        <Badge>{formatUptime(health.uptimeSeconds)}</Badge>
+        <Badge>{formatUptime(status.uptimeSeconds)}</Badge>
       </div>
-      <div className="mt-2 grid grid-cols-3 gap-1.5 font-mono text-[10px] text-muted">
+      <div className="mt-2 grid grid-cols-4 gap-1.5 font-mono text-[10px] text-muted">
         <Metric label="repos" value={repoCount} />
-        <Metric label="jobs" value={enabledJobs} />
+        <Metric label="sched" value={status.counts.activeSchedules} />
+        <Metric label="watches" value={status.counts.activeWatches} />
         <Metric label="skills" value={activeSkills} />
       </div>
+      <div className="mt-2 grid grid-cols-2 gap-1.5 font-mono text-[10px] text-muted">
+        <StatusPill
+          ok={status.providers.credentials.kilo}
+          label="kilo"
+          value={status.providers.credentials.kilo ? 'key' : 'missing'}
+        />
+        <StatusPill
+          ok={status.providers.credentials.github}
+          label="github"
+          value={status.providers.credentials.github ? 'token' : 'missing'}
+        />
+      </div>
+      <div className="mt-2 min-w-0 border border-line bg-field px-2 py-1.5">
+        <p className="font-mono text-[10px] tracking-[0.12em] text-muted">
+          MODEL · {status.models.displayAssistantProvider}
+        </p>
+        <p className="mt-1 truncate font-mono text-[10.5px] text-ink">
+          {model}
+        </p>
+      </div>
+      <div className="mt-2 min-w-0 border border-line bg-field px-2 py-1.5">
+        <p className="font-mono text-[10px] tracking-[0.12em] text-muted">
+          PROVIDER · KILOCODE
+        </p>
+        <p className="mt-1 truncate font-mono text-[10.5px] text-ink">
+          {status.providers.configs.kilocode.enabled ? 'enabled' : 'disabled'} ·{' '}
+          {status.providers.configs.kilocode.apiKeyEnv}
+        </p>
+      </div>
+      <div className="mt-2 min-w-0 border border-line bg-field px-2 py-1.5">
+        <p className="font-mono text-[10px] tracking-[0.12em] text-muted">
+          SESSION · {status.session.stale ? 'STALE' : 'CURRENT'}
+        </p>
+        <p className="mt-1 truncate font-mono text-[10.5px] text-ink">
+          {status.session.id}
+        </p>
+      </div>
+      <div className="mt-2 min-w-0 border border-line bg-field px-2 py-1.5">
+        <p className="font-mono text-[10px] tracking-[0.12em] text-muted">
+          EXEC · {status.execution.defaultBackend}
+        </p>
+        <p className="mt-1 truncate font-mono text-[10.5px] text-ink">
+          {status.execution.enabledBackends.join(', ')} ·{' '}
+          {status.execution.preapprovedCommandCount} preapproved
+        </p>
+      </div>
     </section>
+  );
+}
+
+function RuntimeConfigControls({
+  onRefresh,
+  status,
+}: {
+  onRefresh: () => void;
+  status: RuntimeStatus;
+}) {
+  const [displayAssistant, setDisplayAssistant] = useState(
+    status.models.displayAssistant,
+  );
+  const [repoResearcher, setRepoResearcher] = useState(
+    status.models.subagents.repoResearcher ?? '',
+  );
+  const [ciInvestigator, setCiInvestigator] = useState(
+    status.models.subagents.ciInvestigator ?? '',
+  );
+  const [releaseReviewer, setReleaseReviewer] = useState(
+    status.models.subagents.releaseReviewer ?? '',
+  );
+  const [providerEnabled, setProviderEnabled] = useState(
+    status.providers.configs.kilocode.enabled,
+  );
+  const [apiKeyEnv, setApiKeyEnv] = useState(
+    status.providers.configs.kilocode.apiKeyEnv,
+  );
+  const [organizationIdEnv, setOrganizationIdEnv] = useState(
+    status.providers.configs.kilocode.organizationIdEnv ?? '',
+  );
+  const [modelMessage, setModelMessage] = useState<string | null>(null);
+  const [providerMessage, setProviderMessage] = useState<string | null>(null);
+  const [savingModels, setSavingModels] = useState(false);
+  const [savingProvider, setSavingProvider] = useState(false);
+
+  useEffect(() => {
+    setDisplayAssistant(status.models.displayAssistant);
+    setRepoResearcher(status.models.subagents.repoResearcher ?? '');
+    setCiInvestigator(status.models.subagents.ciInvestigator ?? '');
+    setReleaseReviewer(status.models.subagents.releaseReviewer ?? '');
+    setProviderEnabled(status.providers.configs.kilocode.enabled);
+    setApiKeyEnv(status.providers.configs.kilocode.apiKeyEnv);
+    setOrganizationIdEnv(
+      status.providers.configs.kilocode.organizationIdEnv ?? '',
+    );
+  }, [status]);
+
+  async function saveModels(event: FormEvent) {
+    event.preventDefault();
+    setSavingModels(true);
+    setModelMessage(null);
+
+    try {
+      const input = modelUpdateInput(status, {
+        displayAssistant,
+        repoResearcher,
+        ciInvestigator,
+        releaseReviewer,
+      });
+
+      if (Object.keys(input).length === 0) {
+        setModelMessage('No model changes to save.');
+        return;
+      }
+
+      const result = await updateAgentModels(input);
+      setModelMessage(result.message);
+      onRefresh();
+    } catch (cause) {
+      setModelMessage(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSavingModels(false);
+    }
+  }
+
+  async function saveProvider(event: FormEvent) {
+    event.preventDefault();
+    setSavingProvider(true);
+    setProviderMessage(null);
+
+    try {
+      const result = await updateKilocodeProvider({
+        enabled: providerEnabled,
+        apiKeyEnv: apiKeyEnv.trim() || null,
+        organizationIdEnv: organizationIdEnv.trim() || null,
+      });
+      setProviderMessage(result.message);
+      onRefresh();
+    } catch (cause) {
+      setProviderMessage(
+        cause instanceof Error ? cause.message : String(cause),
+      );
+    } finally {
+      setSavingProvider(false);
+    }
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <form
+        className="space-y-2 border border-line bg-soft px-2.5 py-2"
+        onSubmit={saveModels}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <p className="font-mono text-[10px] tracking-[0.12em] text-violet">
+            MODELS
+          </p>
+          <button
+            className="border border-violet px-2 py-1 font-mono text-[10px] text-violet disabled:opacity-50"
+            disabled={savingModels}
+            type="submit"
+          >
+            {savingModels ? 'saving' : 'save'}
+          </button>
+        </div>
+        <ConfigInput
+          label="display"
+          onChange={setDisplayAssistant}
+          value={displayAssistant}
+        />
+        <ConfigInput
+          label="repo"
+          onChange={setRepoResearcher}
+          value={repoResearcher}
+        />
+        <ConfigInput
+          label="ci"
+          onChange={setCiInvestigator}
+          value={ciInvestigator}
+        />
+        <ConfigInput
+          label="release"
+          onChange={setReleaseReviewer}
+          value={releaseReviewer}
+        />
+        {modelMessage ? <ConfigMessage message={modelMessage} /> : null}
+      </form>
+      <form
+        className="space-y-2 border border-line bg-soft px-2.5 py-2"
+        onSubmit={saveProvider}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.12em] text-violet">
+            <input
+              checked={providerEnabled}
+              className="size-3 accent-current"
+              onChange={(event) => setProviderEnabled(event.target.checked)}
+              type="checkbox"
+            />
+            KILOCODE PROVIDER
+          </label>
+          <button
+            className="border border-violet px-2 py-1 font-mono text-[10px] text-violet disabled:opacity-50"
+            disabled={savingProvider}
+            type="submit"
+          >
+            {savingProvider ? 'saving' : 'save'}
+          </button>
+        </div>
+        <ConfigInput
+          label="key env"
+          onChange={setApiKeyEnv}
+          value={apiKeyEnv}
+        />
+        <ConfigInput
+          label="org env"
+          onChange={setOrganizationIdEnv}
+          placeholder="optional"
+          value={organizationIdEnv}
+        />
+        <p className="line-clamp-2 text-[10.5px] leading-4 text-muted">
+          Environment variable references only. Provider registration changes
+          apply after server restart.
+        </p>
+        {providerMessage ? <ConfigMessage message={providerMessage} /> : null}
+      </form>
+    </div>
+  );
+}
+
+function modelUpdateInput(
+  status: RuntimeStatus,
+  values: {
+    displayAssistant: string;
+    repoResearcher: string;
+    ciInvestigator: string;
+    releaseReviewer: string;
+  },
+) {
+  const displayAssistant = values.displayAssistant.trim();
+  const repoResearcher = values.repoResearcher.trim();
+  const ciInvestigator = values.ciInvestigator.trim();
+  const releaseReviewer = values.releaseReviewer.trim();
+  const subagents: Record<string, string> = {};
+  const input: {
+    displayAssistant?: string;
+    subagents?: Record<string, string>;
+  } = {};
+
+  if (displayAssistant !== status.models.displayAssistant) {
+    input.displayAssistant = displayAssistant;
+  }
+
+  if (repoResearcher !== status.models.subagents.repoResearcher) {
+    subagents.repoResearcher = repoResearcher;
+  }
+  if (ciInvestigator !== status.models.subagents.ciInvestigator) {
+    subagents.ciInvestigator = ciInvestigator;
+  }
+  if (releaseReviewer !== status.models.subagents.releaseReviewer) {
+    subagents.releaseReviewer = releaseReviewer;
+  }
+  if (Object.keys(subagents).length > 0) {
+    input.subagents = subagents;
+  }
+
+  return input;
+}
+
+function ConfigInput({
+  label,
+  onChange,
+  placeholder,
+  value,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  value: string;
+}) {
+  return (
+    <label className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-2 font-mono text-[10px] text-muted">
+      <span className="truncate">{label}</span>
+      <input
+        className="min-w-0 border border-line bg-field px-2 py-1 text-[10.5px] text-ink outline-none focus:border-violet"
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        value={value}
+      />
+    </label>
+  );
+}
+
+function ConfigMessage({ message }: { message: string }) {
+  return (
+    <p className="line-clamp-2 border border-line bg-field px-2 py-1 text-[10.5px] leading-4 text-muted">
+      {message}
+    </p>
   );
 }
 
@@ -256,6 +821,245 @@ function RuntimeSection({
       </div>
       {children}
     </section>
+  );
+}
+
+function ReadinessRow({ check }: { check: RuntimeStatusCheck }) {
+  return (
+    <article className="border border-line bg-soft px-2.5 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-ink">
+            {check.label}
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
+            {check.message}
+          </p>
+        </div>
+        <Badge className={checkClass(check)}>
+          {check.ok ? 'ok' : check.level}
+        </Badge>
+      </div>
+    </article>
+  );
+}
+
+function FlueErrorRow({
+  error,
+}: {
+  error: RuntimeStatus['lastFlueErrors'][number];
+}) {
+  return (
+    <article className="border border-accent/60 bg-soft px-2.5 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-ink">
+            {error.title}
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
+            {error.message}
+          </p>
+        </div>
+        <Badge className="border-accent text-accent">
+          {relativeTime(error.createdAt)}
+        </Badge>
+      </div>
+    </article>
+  );
+}
+
+function NotificationRow({
+  notification,
+  onRefresh,
+}: {
+  notification: NotificationRecord;
+  onRefresh: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(action: 'read' | 'resolve') {
+    setBusy(true);
+    setError(null);
+    try {
+      if (action === 'read') {
+        await markNotificationRead(notification.id);
+      } else {
+        await resolveNotification(notification.id);
+      }
+      onRefresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <article className="border border-line bg-soft px-2.5 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-ink">
+            {notification.title}
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
+            {notification.message}
+          </p>
+        </div>
+        <Badge className={notificationClass(notification)}>
+          {notification.level}
+        </Badge>
+      </div>
+      <div className="mt-1.5 flex items-center gap-2 font-mono text-[10px] text-muted">
+        <span className="min-w-0 flex-1 truncate">
+          {notification.source ?? 'local'} ·{' '}
+          {relativeTime(notification.updatedAt)}
+          {notification.occurrenceCount > 1
+            ? ` · x${notification.occurrenceCount}`
+            : ''}
+        </span>
+        {!notification.readAt ? (
+          <button
+            className="shrink-0 border border-line px-1.5 py-0.5 text-muted disabled:opacity-50"
+            disabled={busy}
+            onClick={() => void run('read')}
+            type="button"
+          >
+            read
+          </button>
+        ) : null}
+        <button
+          className="shrink-0 border border-line px-1.5 py-0.5 text-muted disabled:opacity-50"
+          disabled={busy}
+          onClick={() => void run('resolve')}
+          type="button"
+        >
+          resolve
+        </button>
+      </div>
+      {error ? (
+        <p className="mt-1.5 line-clamp-2 text-[10.5px] leading-4 text-accent">
+          {error}
+        </p>
+      ) : null}
+    </article>
+  );
+}
+
+function SafetyPolicyRow({ entry }: { entry: SafetyPolicyEntry }) {
+  return (
+    <article className="border border-line bg-soft px-2.5 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-ink">
+            {entry.title}
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
+            {entry.primitive} · {entry.notes}
+          </p>
+        </div>
+        <Badge
+          className={
+            entry.class === 'host-execution' ||
+            entry.class === 'destructive-mutation'
+              ? 'border-accent text-accent'
+              : ''
+          }
+        >
+          {entry.requiresConfirmation ? 'confirm' : entry.class}
+        </Badge>
+      </div>
+      <div className="mt-1.5 flex justify-between gap-2 font-mono text-[10px] text-muted">
+        <span className="truncate">{entry.id}</span>
+        <span className="shrink-0">{entry.auditTarget}</span>
+      </div>
+    </article>
+  );
+}
+
+function ActiveRunRow({
+  run,
+}: {
+  run: WorkflowObservability['activeRuns'][number];
+}) {
+  return (
+    <article className="border border-primary/60 bg-soft px-2.5 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <a
+            className="truncate font-mono text-[11px] text-ink hover:text-primary"
+            href={run.runUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            {run.workflow}
+          </a>
+          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
+            {run.lastMessage}
+          </p>
+        </div>
+        <Badge className="border-primary text-primary">
+          {run.eventCount} events
+        </Badge>
+      </div>
+      <div className="mt-1.5 flex justify-between gap-2 font-mono text-[10px] text-muted">
+        <span className="truncate">{run.runId}</span>
+        <span className="shrink-0">{relativeTime(run.lastEventAt)}</span>
+      </div>
+    </article>
+  );
+}
+
+function WorkflowEventRow({
+  event,
+  rawLabel = false,
+}: {
+  event: WorkflowEventRecord;
+  rawLabel?: boolean;
+}) {
+  const content = (
+    <>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-ink">
+            {event.name ?? event.workflow ?? event.eventType}
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
+            {event.message}
+          </p>
+        </div>
+        <Badge className={event.isError ? 'border-accent text-accent' : ''}>
+          {event.level ?? event.eventType}
+        </Badge>
+      </div>
+      <div className="mt-1.5 flex justify-between gap-2 font-mono text-[10px] text-muted">
+        <span className="truncate">
+          {rawLabel && event.runUrl
+            ? 'raw run inspection'
+            : (event.runId ?? event.operationId ?? 'local')}
+        </span>
+        <span className="shrink-0">{relativeTime(event.createdAt)}</span>
+      </div>
+    </>
+  );
+
+  if (event.runUrl) {
+    return (
+      <a
+        className="block border border-line bg-soft px-2.5 py-2 hover:border-primary/70"
+        href={event.runUrl}
+        rel="noreferrer"
+        target="_blank"
+      >
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <article className="border border-line bg-soft px-2.5 py-2">
+      {content}
+    </article>
   );
 }
 
@@ -345,6 +1149,33 @@ function SkillRow({ skill }: { skill: RuntimeSkill }) {
   );
 }
 
+function MemoryRow({ memory }: { memory: MemoryRecord }) {
+  return (
+    <article className="border border-line bg-soft px-2.5 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-ink">
+            {memory.scope}:{memory.key}
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
+            {memoryPreview(memory.value)}
+          </p>
+        </div>
+        <Badge>{relativeTime(memory.updatedAt)}</Badge>
+      </div>
+    </article>
+  );
+}
+
+function memoryPreview(value: unknown) {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (value === null || value === undefined) return 'empty';
+  return JSON.stringify(value);
+}
+
 function SkillIssues({ skills }: { skills: RuntimeSkillsResponse }) {
   const issueCount = skills.duplicates.length + skills.ignored.length;
   if (issueCount === 0) return null;
@@ -360,6 +1191,23 @@ function Metric({ label, value }: { label: string; value: number }) {
   return (
     <div className="border border-line bg-field px-2 py-1">
       <span className="text-primary">{value}</span>
+      <span className="ml-1">{label}</span>
+    </div>
+  );
+}
+
+function StatusPill({
+  label,
+  ok,
+  value,
+}: {
+  label: string;
+  ok: boolean;
+  value: string;
+}) {
+  return (
+    <div className="border border-line bg-field px-2 py-1">
+      <span className={ok ? 'text-primary' : 'text-accent'}>{value}</span>
       <span className="ml-1">{label}</span>
     </div>
   );
@@ -399,6 +1247,26 @@ function repoHealthStatus(health: RepoHealth | undefined) {
   return { label: 'clean', className: 'border-primary text-primary' };
 }
 
+function checkClass(check: RuntimeStatusCheck) {
+  if (check.ok) return 'border-primary text-primary';
+  if (check.level === 'attention') return 'border-accent text-accent';
+  return 'border-violet text-violet';
+}
+
+function notificationClass(notification: NotificationRecord) {
+  if (notification.level === 'urgent') return 'border-accent text-accent';
+  if (notification.level === 'attention') return 'border-accent text-accent';
+  if (notification.level === 'ready') return 'border-primary text-primary';
+  return '';
+}
+
+function safetyRank(entry: SafetyPolicyEntry) {
+  if (entry.class === 'host-execution') return 0;
+  if (entry.requiresConfirmation) return 1;
+  if (entry.class === 'safe-mutation') return 2;
+  return 3;
+}
+
 function shortPath(path: string) {
   const parts = path.split('/').filter(Boolean);
   if (parts.length <= 3) return path;
@@ -426,4 +1294,61 @@ function relativeTime(value: string) {
   const hours = Math.round(minutes / 60);
   if (hours < 48) return `${hours}h ago`;
   return `${Math.round(hours / 24)}d ago`;
+}
+
+function settledValue<T>(result: PromiseSettledResult<T>) {
+  return result.status === 'fulfilled' ? result.value : undefined;
+}
+
+function settledError(result: PromiseSettledResult<unknown>) {
+  if (result.status === 'fulfilled') return undefined;
+  return result.reason instanceof Error
+    ? result.reason.message
+    : String(result.reason);
+}
+
+function emptySafetyPolicy(fetchedAt: string): SafetyPolicy {
+  return {
+    ok: false,
+    action: 'safety_policy_read',
+    version: 0,
+    summary: {
+      readOnly: 0,
+      safeMutation: 0,
+      destructiveMutation: 0,
+      hostExecution: 0,
+      requiresConfirmation: 0,
+      unattendedAllowed: 0,
+      audited: 0,
+    },
+    confirmationPolicy: 'Safety policy could not be loaded.',
+    hostExecutionPolicy: 'Host execution is unavailable.',
+    executionPolicy: {
+      defaultBackend: 'local',
+      enabledBackends: [],
+      supportedBackends: ['local', 'exe.dev'],
+      approvalMode: 'manual',
+      unattended: 'deny',
+      preapprovedCommandCount: 0,
+      defaultLocalAccess: false,
+      exeDevPlanned: true,
+    },
+    entries: [],
+    fetchedAt,
+  };
+}
+
+function emptyWorkflows(): WorkflowObservability {
+  return {
+    ok: true,
+    action: 'workflow_observability_read',
+    activeRuns: [],
+    recentFailures: [],
+    recentData: [],
+    recentLogs: [],
+    recentTools: [],
+    recentOperations: [],
+    recentEvents: [],
+    fetchedAt: new Date().toISOString(),
+  };
 }

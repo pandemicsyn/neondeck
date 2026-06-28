@@ -3,14 +3,27 @@ import { flue } from '@flue/runtime/routing';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono, type MiddlewareHandler } from 'hono';
 import { supportedCommands } from './commands';
+import {
+  readProviderConfig,
+  updateExecutionPolicy,
+  updateAgentModels,
+  updateProviderConfig,
+} from './config-actions';
+import { checkExecutionPolicy, readExecutionPolicy } from './execution-policy';
 import { fetchGitHubLogin, fetchPullRequestQueue } from './github';
+import { deleteMemory, listMemories, upsertMemory } from './memory-actions';
 import { readHostMetrics } from './metrics';
 import { readRepoHealthSnapshot, readRepoRegistrySnapshot } from './repos';
+import {
+  readKilocodeProviderCredentials,
+  readProviderConfigSync,
+} from './providers';
 import {
   addNotification,
   listNotifications,
   listWorkflowSummaries,
   markNotificationRead,
+  resolveNotification,
   setWorkflowSummaryRunId,
 } from './app-state';
 import {
@@ -18,40 +31,53 @@ import {
   runSchedulerTick,
   startSchedulerLoop,
 } from './scheduler';
+import { readNeonSessionState, startNeonSession } from './session-actions';
 import {
   ConfigValidationError,
   ensureRuntimeHome,
+  ensureRuntimeHomeSync,
   parseDashboardConfig,
   readRuntimeJson,
   runtimePaths,
 } from './runtime-home';
+import { readRuntimeStatus } from './runtime-status';
+import { readSafetyPolicy } from './safety';
 import {
   listRuntimeSkills,
   loadRuntimeSkill,
   reloadRuntimeSkills,
 } from './runtime-skills';
 import { listPrWatches } from './watch-actions';
+import {
+  readWorkflowObservability,
+  recordFlueObservation,
+} from './workflow-observability';
 
-const kiloApiKey = process.env.KILOCODE_API_KEY ?? process.env.KILO_API_KEY;
-const kiloOrganizationId =
-  process.env.KILOCODE_ORGANIZATION_ID ?? process.env.KILO_ORGANIZATION_ID;
+const paths = runtimePaths();
+ensureRuntimeHomeSync(paths);
+const providerConfig = readProviderConfigSync(paths);
+const { apiKey: kiloApiKey, organizationId: kiloOrganizationId } =
+  readKilocodeProviderCredentials(process.env, providerConfig);
+const kiloProviderEnabled =
+  providerConfig.providers?.kilocode?.enabled !== false;
 
-registerProvider('kilocode', {
-  api: 'openai-completions',
-  baseUrl: 'https://api.kilo.ai/api/gateway',
-  apiKey: kiloApiKey,
-  headers: kiloOrganizationId
-    ? { 'X-KiloCode-OrganizationId': kiloOrganizationId }
-    : undefined,
-});
+if (kiloProviderEnabled) {
+  registerProvider('kilocode', {
+    api: 'openai-completions',
+    baseUrl: 'https://api.kilo.ai/api/gateway',
+    apiKey: kiloApiKey,
+    headers: kiloOrganizationId
+      ? { 'X-KiloCode-OrganizationId': kiloOrganizationId }
+      : undefined,
+  });
+}
 
 const app = new Hono();
 
 const staticRoot = './web/dist';
-const paths = runtimePaths();
 const localHosts = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
 
-const requireLocalFlueAccess: MiddlewareHandler = async (c, next) => {
+const requireLocalApiAccess: MiddlewareHandler = async (c, next) => {
   const host = hostName(c.req.header('host'));
   if (host && localHosts.has(host)) {
     if (!isSafeMethod(c.req.method) && !isAllowedBrowserOrigin(c.req.raw)) {
@@ -67,6 +93,10 @@ const requireLocalFlueAccess: MiddlewareHandler = async (c, next) => {
 
 await ensureRuntimeHome(paths);
 observe((event) => {
+  void recordFlueObservation(event, paths).catch((error) => {
+    console.error('[neondeck] failed to record Flue observation', error);
+  });
+
   if (event.type === 'run_end') {
     const summaryId = commandRunSummaryId(event);
     if (summaryId) {
@@ -88,7 +118,7 @@ observe((event) => {
           data: {
             runId: event.runId,
             workflow: workflowLabel(event),
-            error: errorMessage(event.error),
+            error: 'See guarded Flue run inspection for error details.',
           },
         },
         paths,
@@ -115,7 +145,7 @@ observe((event) => {
         data: {
           operationKind: event.operationKind,
           durationMs: event.durationMs,
-          error: errorMessage(event.error),
+          error: 'See workflow observability for error details.',
         },
       },
       paths,
@@ -129,6 +159,8 @@ if (process.env.NEONDECK_DISABLE_SCHEDULER !== '1') {
   startSchedulerLoop(paths);
 }
 
+app.use('/api/*', requireLocalApiAccess);
+
 app.get('/api/health', (c) =>
   c.json({
     ok: true,
@@ -137,6 +169,60 @@ app.get('/api/health', (c) =>
     uptimeSeconds: Math.round(process.uptime()),
   }),
 );
+
+app.get('/api/runtime/status', async (c) => {
+  return c.json(await readRuntimeStatus(paths));
+});
+
+app.get('/api/safety/policy', (c) => {
+  return c.json(readSafetyPolicy(paths));
+});
+
+app.get('/api/execution/policy', async (c) => {
+  return c.json(await readExecutionPolicy(paths));
+});
+
+app.post('/api/execution/policy', async (c) => {
+  return c.json(await updateExecutionPolicy(await c.req.json(), paths));
+});
+
+app.post('/api/execution/check', async (c) => {
+  return c.json(await checkExecutionPolicy(await c.req.json(), paths));
+});
+
+app.get('/api/session', async (c) => {
+  return c.json(await readNeonSessionState(paths));
+});
+
+app.post('/api/session/new', async (c) => {
+  const input = (await c.req.json().catch(() => ({}))) as Record<
+    string,
+    unknown
+  >;
+  const result = await startNeonSession(input, paths);
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.get('/api/providers', async (c) => {
+  return c.json(await readProviderConfig(paths));
+});
+
+app.post('/api/models', async (c) => {
+  return c.json(await updateAgentModels(await c.req.json(), paths));
+});
+
+app.post('/api/providers/kilocode', async (c) => {
+  const input = (await c.req.json()) as Record<string, unknown>;
+  return c.json(
+    await updateProviderConfig(
+      {
+        ...input,
+        provider: 'kilocode',
+      },
+      paths,
+    ),
+  );
+});
 
 app.get('/api/dashboard/config', async (c) => {
   try {
@@ -212,8 +298,10 @@ app.post('/api/scheduler/tick', async (c) => {
 });
 
 app.get('/api/notifications', async (c) => {
+  const includeResolved = c.req.query('includeResolved') === '1';
   return c.json({
-    items: await listNotifications(paths),
+    items: await listNotifications(paths, { includeResolved }),
+    policy: notificationPolicy(),
     fetchedAt: new Date().toISOString(),
   });
 });
@@ -221,6 +309,64 @@ app.get('/api/notifications', async (c) => {
 app.post('/api/notifications/:id/read', async (c) => {
   await markNotificationRead(c.req.param('id'), paths);
   return c.json({ ok: true });
+});
+
+app.post('/api/notifications/:id/resolve', async (c) => {
+  await resolveNotification(c.req.param('id'), paths);
+  return c.json({ ok: true });
+});
+
+app.get('/api/memories', async (c) => {
+  const rawScope = c.req.query('scope');
+  const scope = memoryScope(rawScope);
+  const key = c.req.query('key');
+  if (rawScope && !scope) {
+    return c.json(
+      {
+        ok: false,
+        action: 'memory_list',
+        changed: false,
+        message: `Invalid memory scope "${rawScope}".`,
+      },
+      400,
+    );
+  }
+
+  return c.json(
+    await listMemories(
+      {
+        scope,
+        key: key || undefined,
+      },
+      paths,
+    ),
+  );
+});
+
+app.post('/api/memories', async (c) => {
+  return c.json(await upsertMemory(await c.req.json(), paths));
+});
+
+app.delete('/api/memories', async (c) => {
+  const scope = memoryScope(c.req.query('scope'));
+  const key = c.req.query('key');
+  if (!scope || !key) {
+    return c.json(
+      {
+        ok: false,
+        action: 'memory_delete',
+        changed: false,
+        message: 'Memory delete requires scope and key query parameters.',
+      },
+      400,
+    );
+  }
+
+  const result = await deleteMemory(
+    { scope, key, confirm: c.req.query('confirm') === 'true' },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
 });
 
 app.get('/api/skills', async (c) => {
@@ -251,6 +397,10 @@ app.get('/api/workflows/summaries', async (c) => {
   });
 });
 
+app.get('/api/workflows/observability', async (c) => {
+  return c.json(await readWorkflowObservability(paths));
+});
+
 app.get('/api/github/prs', async (c) => {
   const token = process.env.GITHUB_TOKEN;
   if (!token) {
@@ -269,7 +419,6 @@ app.get('/api/github/prs', async (c) => {
   );
 });
 
-app.use('/api/flue/*', requireLocalFlueAccess);
 app.route('/api/flue', flue());
 
 app.use('/assets/*', serveStatic({ root: staticRoot }));
@@ -296,17 +445,6 @@ function workflowLabel(event: FlueObservation) {
   }
 
   return `Workflow run ${event.runId ?? 'unknown'}`;
-}
-
-function errorMessage(error: unknown) {
-  if (!error) return 'Unknown error';
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'object' && 'message' in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === 'string') return message;
-  }
-
-  return String(error);
 }
 
 function hostName(host: string | undefined) {
@@ -345,4 +483,30 @@ function isLocalUrl(value: string) {
   } catch {
     return false;
   }
+}
+
+function memoryScope(value: string | undefined) {
+  if (
+    value === 'user' ||
+    value === 'project' ||
+    value === 'session' ||
+    value === 'watch'
+  ) {
+    return value;
+  }
+
+  return undefined;
+}
+
+function notificationPolicy() {
+  return {
+    info: 'Passive updates such as queued scheduled work.',
+    ready: 'Completed work or green checks that can be glanced at and cleared.',
+    attention:
+      'Actionable failures, missing configuration, blocked watches, or failed Flue work.',
+    urgent:
+      'Release or production-facing failures that should interrupt passive viewing.',
+    reconcile:
+      'Unresolved notifications with the same source and source id are updated in place and counted.',
+  };
 }

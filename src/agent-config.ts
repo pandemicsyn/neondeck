@@ -1,4 +1,5 @@
 import {
+  type AppConfig,
   ensureRuntimeHomeSync,
   parseAppConfig,
   readRuntimeJsonSync,
@@ -23,55 +24,50 @@ export function readAgentModelSelectionSync(
 
   try {
     const config = readRuntimeJsonSync(paths.config, parseAppConfig);
-    const displayAssistant = firstModel(
-      config.models?.displayAssistant,
-      config.models?.default,
-      process.env.FLUE_AGENT_MODEL,
-      defaultAgentModel,
-    );
-    const subagentDefault = firstModel(
-      config.models?.subagents?.default,
-      process.env.FLUE_SUBAGENT_MODEL,
-      config.models?.default,
-      displayAssistant,
-    );
-
-    return {
-      displayAssistant,
-      subagents: {
-        repoResearcher: firstModel(
-          config.models?.subagents?.repoResearcher,
-          subagentDefault,
-        ),
-        ciInvestigator: firstModel(
-          config.models?.subagents?.ciInvestigator,
-          subagentDefault,
-        ),
-        releaseReviewer: firstModel(
-          config.models?.subagents?.releaseReviewer,
-          subagentDefault,
-        ),
-      },
-    };
+    return resolveAgentModelSelection(config);
   } catch (error) {
     console.warn('[neondeck] failed to read agent model config', error);
-    const fallback = firstModel(
-      process.env.FLUE_AGENT_MODEL,
-      defaultAgentModel,
-    );
-    const subagent = firstModel(process.env.FLUE_SUBAGENT_MODEL, fallback);
-    return {
-      displayAssistant: fallback,
-      subagents: {
-        repoResearcher: subagent,
-        ciInvestigator: subagent,
-        releaseReviewer: subagent,
-      },
-    };
+    return resolveAgentModelSelection();
   }
 }
 
-function firstModel(...values: Array<string | undefined>) {
+export function resolveAgentModelSelection(
+  config?: Pick<AppConfig, 'models'>,
+  env: NodeJS.ProcessEnv = process.env,
+): AgentModelSelection {
+  const displayAssistant = firstModel(
+    config?.models?.displayAssistant,
+    config?.models?.default,
+    env.FLUE_AGENT_MODEL,
+    defaultAgentModel,
+  );
+  const subagentDefault = firstModel(
+    config?.models?.subagents?.default,
+    env.FLUE_SUBAGENT_MODEL,
+    config?.models?.default,
+    displayAssistant,
+  );
+
+  return {
+    displayAssistant,
+    subagents: {
+      repoResearcher: firstModel(
+        config?.models?.subagents?.repoResearcher,
+        subagentDefault,
+      ),
+      ciInvestigator: firstModel(
+        config?.models?.subagents?.ciInvestigator,
+        subagentDefault,
+      ),
+      releaseReviewer: firstModel(
+        config?.models?.subagents?.releaseReviewer,
+        subagentDefault,
+      ),
+    },
+  };
+}
+
+export function firstModel(...values: Array<string | undefined>) {
   return (
     values.find((value) => value && value.trim().length > 0)?.trim() ??
     defaultAgentModel

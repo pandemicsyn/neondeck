@@ -120,6 +120,45 @@ GITHUB_LOGIN=...</code></pre>
           reference providers already registered by the app or Flue runtime.
         </p>
 
+        <h2>Execution approvals</h2>
+        <p>
+          Neondeck keeps host execution action-mediated. The default execution
+          backend is <code>local</code>; <code>exe.dev</code> is a planned sandbox
+          backend that the config schema already accepts for the next executor iteration.
+        </p>
+        <pre><code>&#123;
+  "version": 1,
+  "execution": &#123;
+    "defaultBackend": "local",
+    "enabledBackends": ["local"],
+    "approvalMode": "manual",
+    "unattended": "deny",
+    "preapprovedCommands": [
+      &#123;
+        "id": "test",
+        "command": "npm test",
+        "match": "exact",
+        "backends": ["local"],
+        "description": "Run the repo test suite."
+      &#125;
+    ]
+  &#125;
+&#125;</code></pre>
+        <p>
+          Preapproved commands must be single commands without shell operators,
+          redirection, subshells, or newlines. Commands that do not match the
+          preapproval list require interactive approval in future executor
+          actions and are denied in unattended contexts. Hardline destructive
+          commands cannot be preapproved.
+        </p>
+        <p>
+          Use <code>neondeck_execution_policy_lookup</code> to inspect the active
+          policy, <code>neondeck_execution_policy_check</code> to classify a proposed
+          command without running it, and
+          <code>neondeck_config_update_execution_policy</code> to update config. Policy
+          updates are audited in <code>config_history</code>.
+        </p>
+
         <h2 id="verify">Verify locally</h2>
         <pre><code>npm run check
 npm run verify</code></pre>

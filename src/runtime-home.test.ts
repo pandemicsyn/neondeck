@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { readAgentModelSelectionSync } from './agent-config';
@@ -177,6 +178,174 @@ describe('runtime home', () => {
     });
   });
 
+  it('accepts allowlisted provider config from runtime config', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
+    tempRoots.push(root);
+    const paths = runtimePaths(root);
+
+    await ensureRuntimeHome(paths);
+    await writeFile(
+      paths.config,
+      JSON.stringify(
+        {
+          version: 1,
+          providers: {
+            kilocode: {
+              enabled: true,
+              apiKeyEnv: 'NEONDECK_KILO_KEY',
+              organizationIdEnv: 'NEONDECK_KILO_ORG',
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await expect(
+      readRuntimeJson(paths.config, parseAppConfig),
+    ).resolves.toMatchObject({
+      providers: {
+        kilocode: {
+          enabled: true,
+          apiKeyEnv: 'NEONDECK_KILO_KEY',
+          organizationIdEnv: 'NEONDECK_KILO_ORG',
+        },
+      },
+    });
+
+    await writeFile(
+      paths.config,
+      JSON.stringify(
+        {
+          version: 1,
+          providers: {
+            kilocode: {
+              apiKeyEnv: 'sk-live-secret',
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await expect(readRuntimeJson(paths.config, parseAppConfig)).rejects.toThrow(
+      ConfigValidationError,
+    );
+
+    await writeFile(
+      paths.config,
+      JSON.stringify(
+        {
+          version: 1,
+          providers: {
+            kilocode: {
+              apiKeyEnv: 'NEONDECK_KILO_KEY',
+              apiKey: 'raw-secret',
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await expect(readRuntimeJson(paths.config, parseAppConfig)).rejects.toThrow(
+      ConfigValidationError,
+    );
+
+    await writeFile(
+      paths.config,
+      JSON.stringify(
+        {
+          version: 1,
+          providers: {
+            openai: {
+              apiKeyEnv: 'OPENAI_API_KEY',
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await expect(readRuntimeJson(paths.config, parseAppConfig)).rejects.toThrow(
+      ConfigValidationError,
+    );
+  });
+
+  it('accepts bounded execution approval config and rejects shell-operator preapprovals', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
+    tempRoots.push(root);
+    const paths = runtimePaths(root);
+
+    await ensureRuntimeHome(paths);
+    await writeFile(
+      paths.config,
+      JSON.stringify(
+        {
+          version: 1,
+          execution: {
+            defaultBackend: 'exe.dev',
+            enabledBackends: ['local', 'exe.dev'],
+            approvalMode: 'manual',
+            unattended: 'allow-preapproved',
+            preapprovedCommands: [
+              {
+                id: 'tests',
+                command: 'npm test',
+                match: 'exact',
+                backends: ['exe.dev'],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await expect(
+      readRuntimeJson(paths.config, parseAppConfig),
+    ).resolves.toMatchObject({
+      execution: {
+        defaultBackend: 'exe.dev',
+        enabledBackends: ['local', 'exe.dev'],
+        preapprovedCommands: [
+          {
+            id: 'tests',
+            command: 'npm test',
+            backends: ['exe.dev'],
+          },
+        ],
+      },
+    });
+
+    await writeFile(
+      paths.config,
+      JSON.stringify(
+        {
+          version: 1,
+          execution: {
+            preapprovedCommands: [
+              {
+                command: 'npm test && rm -rf /tmp/nope',
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await expect(readRuntimeJson(paths.config, parseAppConfig)).rejects.toThrow(
+      ConfigValidationError,
+    );
+  });
+
   it('does not validate unrelated mutable config during bootstrap', async () => {
     const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
     tempRoots.push(root);
@@ -191,6 +360,80 @@ describe('runtime home', () => {
     await expect(
       readRuntimeJson(paths.dashboard, parseDashboardConfig),
     ).rejects.toThrow(ConfigValidationError);
+  });
+
+  it('reconciles existing duplicate unresolved notifications during bootstrap', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
+    tempRoots.push(root);
+    const paths = runtimePaths(root);
+
+    await ensureRuntimeHome(paths);
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      const insert = database.prepare(
+        `
+        INSERT INTO notifications (
+          id,
+          level,
+          title,
+          message,
+          source,
+          source_id,
+          created_at,
+          updated_at
+        )
+        VALUES (?, 'attention', ?, ?, 'watch-pr', 'repo#1', ?, ?);
+      `,
+      );
+      insert.run(
+        'old',
+        'Old',
+        'Old failure.',
+        '2026-01-01T00:00:00.000Z',
+        '2026-01-01T00:00:00.000Z',
+      );
+      insert.run(
+        'new',
+        'New',
+        'New failure.',
+        '2026-01-02T00:00:00.000Z',
+        '2026-01-02T00:00:00.000Z',
+      );
+    } finally {
+      database.close();
+    }
+
+    await ensureRuntimeHome(paths);
+
+    const result = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      expect(
+        result
+          .prepare(
+            `
+            SELECT id, resolved_at, occurrence_count
+            FROM notifications
+            WHERE source = 'watch-pr'
+              AND source_id = 'repo#1'
+            ORDER BY resolved_at IS NULL DESC, id DESC;
+          `,
+          )
+          .all(),
+      ).toEqual([
+        {
+          id: 'new',
+          resolved_at: null,
+          occurrence_count: 2,
+        },
+        {
+          id: 'old',
+          resolved_at: expect.any(String),
+          occurrence_count: 1,
+        },
+      ]);
+    } finally {
+      result.close();
+    }
   });
 
   it('enforces the dashboard frontend config contract', () => {

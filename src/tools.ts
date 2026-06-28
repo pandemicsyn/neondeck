@@ -3,9 +3,14 @@ import * as v from 'valibot';
 import { listWorkflowSummaries } from './app-state';
 import { supportedCommands } from './commands';
 import { listRepoStatus } from './dev-doctor';
+import { executionPolicyLookupTool } from './execution-policy';
 import { getGitHubCheckSummary, listGitHubPrQueue } from './github-actions';
+import { listMemories } from './memory-actions';
+import { readRuntimeStatus, runtimeStatusSchema } from './runtime-status';
+import { safetyPolicyLookupTool } from './safety';
 import { listRuntimeSkills, loadRuntimeSkill } from './runtime-skills';
 import { listSchedulerJobs } from './scheduler';
+import { readNeonSessionState } from './session-actions';
 import { listPrWatches } from './watch-actions';
 
 const emptyInputSchema = v.object({});
@@ -16,6 +21,10 @@ const checkSummaryInputSchema = v.object({
 });
 const skillLoadInputSchema = v.object({
   id: nonEmptyStringSchema,
+});
+const memoryLookupInputSchema = v.object({
+  scope: v.optional(v.picklist(['user', 'project', 'session', 'watch'])),
+  key: v.optional(nonEmptyStringSchema),
 });
 const toolOutputSchema = v.looseObject({
   ok: v.boolean(),
@@ -49,6 +58,28 @@ export const workflowSummariesLookupTool = defineTool({
       ok: true,
       summaries: await listWorkflowSummaries(),
     };
+  },
+});
+
+export const runtimeStatusLookupTool = defineTool({
+  name: 'neondeck_runtime_status_lookup',
+  description:
+    'Read whether Neon is ready, including credentials, models, repos, schedules, watches, skills, databases, and recent Flue failures.',
+  input: emptyInputSchema,
+  output: runtimeStatusSchema,
+  async run() {
+    return readRuntimeStatus();
+  },
+});
+
+export const sessionStatusLookupTool = defineTool({
+  name: 'neondeck_session_status_lookup',
+  description:
+    'Read the active Neon session id and stale context reasons without mutating session state.',
+  input: emptyInputSchema,
+  output: toolOutputSchema,
+  async run() {
+    return readNeonSessionState();
   },
 });
 
@@ -131,9 +162,28 @@ export const runtimeSkillLoadTool = defineTool({
   },
 });
 
+export const memoryLookupTool = defineTool({
+  name: 'neondeck_memory_lookup',
+  description:
+    'List durable Neondeck structured memories by optional scope and key without changing active session context.',
+  input: memoryLookupInputSchema,
+  output: v.looseObject({
+    ok: v.boolean(),
+    memories: v.array(v.unknown()),
+  }),
+  async run({ input }) {
+    return listMemories(input);
+  },
+});
+
+export const safetyPolicyTool = safetyPolicyLookupTool;
+export const executionPolicyTool = executionPolicyLookupTool;
+
 export const neondeckFactTools = [
   commandsLookupTool,
   workflowSummariesLookupTool,
+  runtimeStatusLookupTool,
+  sessionStatusLookupTool,
   repoStatusLookupTool,
   githubPrQueueLookupTool,
   githubCheckSummaryLookupTool,
@@ -141,4 +191,7 @@ export const neondeckFactTools = [
   prWatchesLookupTool,
   runtimeSkillsLookupTool,
   runtimeSkillLoadTool,
+  memoryLookupTool,
+  safetyPolicyTool,
+  executionPolicyTool,
 ];
