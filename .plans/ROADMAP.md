@@ -755,14 +755,14 @@ Must-haves:
 
 - Status: partially complete.
 
-- [ ] Add a first-run setup/readiness panel that links each failed readiness check to the relevant action or documentation.
+- [x] Add a first-run setup/readiness panel that links each failed readiness check to the relevant action or documentation.
 - [x] Add command-specific empty, loading, partial, and failure states for review queue, watches, memory, workflow runs, and runtime status.
 - [ ] Add a dedicated workflow observability drilldown or panel once the runtime overview becomes crowded.
 - [x] Add visible session controls for starting a new Neon session and identifying stale config/skill/memory context.
 - [x] Add a notification inbox/resolution flow with dedupe by source and source id.
 - [x] Add PR assistant command workflows for `/explain-ci`, `/summarize-pr`, `/draft-pr-description`, `/prepare-pr`, and `/review-local`.
 - [x] Add docs pages for first-run setup, provider/model config, runtime skills, commands, watches, memory, workflow observability, execution policy, and troubleshooting.
-- [ ] Add smoke tests that verify a fresh runtime home can boot, report readiness, load skills, update model config, create memory, and run a no-op workflow.
+- [x] Add smoke tests that verify a fresh runtime home can boot, report readiness, load skills, update model config, create memory, and run a no-op workflow.
 
 ### Phase 16: Future TUI/OpenTUI Surface
 

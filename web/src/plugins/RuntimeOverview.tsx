@@ -61,6 +61,14 @@ type RuntimeSnapshot = {
   fetchedAt: string;
 };
 
+type SetupStep = {
+  action: string;
+  docsHref: string;
+  docsLabel: string;
+  surface: string;
+  detail: string;
+};
+
 type State =
   | { status: 'loading' }
   | { status: 'error'; message: string }
@@ -233,6 +241,7 @@ function RuntimeView({
     snapshot.repoHealth.repos.map((repo) => [repo.id, repo]),
   );
   const readiness = snapshot.status.status;
+  const failedSetupChecks = snapshot.status.checks.filter((check) => !check.ok);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -260,6 +269,13 @@ function RuntimeView({
               onRefresh={onRefresh}
               status={snapshot.status}
             />
+          </RuntimeSection>
+          <RuntimeSection
+            count={failedSetupChecks.length}
+            title="FIRST RUN"
+            tone={failedSetupChecks.length > 0 ? 'accent' : 'primary'}
+          >
+            <FirstRunSetup checks={failedSetupChecks} />
           </RuntimeSection>
           {snapshot.secondaryErrors.length > 0 ? (
             <RuntimeSection
@@ -865,6 +881,59 @@ function RuntimeSection({
   );
 }
 
+function FirstRunSetup({ checks }: { checks: RuntimeStatusCheck[] }) {
+  if (checks.length === 0) {
+    return <MiniEmpty label="Setup checks are green." />;
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {checks.map((check) => (
+        <SetupStepRow check={check} key={check.id} step={setupStep(check)} />
+      ))}
+    </div>
+  );
+}
+
+function SetupStepRow({
+  check,
+  step,
+}: {
+  check: RuntimeStatusCheck;
+  step: SetupStep;
+}) {
+  return (
+    <article className="border border-accent/60 bg-soft px-2.5 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-ink">
+            {check.label}
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
+            {step.detail}
+          </p>
+        </div>
+        <Badge className={checkClass(check)}>{check.level}</Badge>
+      </div>
+      <div className="mt-1.5 flex items-center gap-2 font-mono text-[10px] text-muted">
+        <span className="min-w-0 flex-1 truncate">{step.action}</span>
+        <span className="shrink-0 text-violet">{step.surface}</span>
+        <a
+          className="shrink-0 border border-line px-1.5 py-0.5 text-muted hover:border-primary hover:text-primary"
+          href={step.docsHref}
+          rel="noreferrer"
+          target="_blank"
+        >
+          {step.docsLabel}
+        </a>
+      </div>
+      <p className="mt-1.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
+        {check.message}
+      </p>
+    </article>
+  );
+}
+
 function ReadinessRow({ check }: { check: RuntimeStatusCheck }) {
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
@@ -1401,6 +1470,118 @@ function executionApprovalClass(approval: ExecutionApproval) {
     return 'border-accent text-accent';
   }
   return '';
+}
+
+function setupStep(check: RuntimeStatusCheck): SetupStep {
+  const docsBase = 'https://neondeck.dev/docs/getting-started/';
+  const steps: Record<string, SetupStep> = {
+    config: {
+      action: 'neondeck_config_validate',
+      docsHref: `${docsBase}#runtime-home`,
+      docsLabel: 'runtime',
+      surface: 'action',
+      detail: 'Validate config.json or rerun setup for the runtime home.',
+    },
+    'repos-config': {
+      action: 'neondeck_config_validate',
+      docsHref: `${docsBase}#repositories`,
+      docsLabel: 'repos',
+      surface: 'action',
+      detail: 'Repair repos.json before repo status, queues, or watches run.',
+    },
+    'schedules-config': {
+      action: 'neondeck_config_validate',
+      docsHref: `${docsBase}#commands`,
+      docsLabel: 'commands',
+      surface: 'action',
+      detail: 'Repair schedules.json before scheduler jobs can load.',
+    },
+    skills: {
+      action: 'neondeck_skills_reload',
+      docsHref: `${docsBase}#runtime-skills`,
+      docsLabel: 'skills',
+      surface: 'action',
+      detail: 'Fix ignored or invalid runtime skills, then reload skills.',
+    },
+    'session-context': {
+      action: 'neondeck_session_start',
+      docsHref: `${docsBase}#agent-models`,
+      docsLabel: 'models',
+      surface: 'action',
+      detail:
+        'Start a new session so changed config, models, skills, or memory apply.',
+    },
+    'kilo-key': {
+      action: 'neondeck_config_update_provider',
+      docsHref: `${docsBase}#secrets`,
+      docsLabel: 'secrets',
+      surface: 'config',
+      detail: 'Set the Kilo API key environment reference or disable Kilo.',
+    },
+    'github-token': {
+      action: 'GITHUB_TOKEN',
+      docsHref: `${docsBase}#secrets`,
+      docsLabel: 'secrets',
+      surface: 'env',
+      detail: 'Set GitHub credentials before queues, checks, and watches run.',
+    },
+    'model-providers': {
+      action: 'neondeck_config_update_agent_models',
+      docsHref: `${docsBase}#agent-models`,
+      docsLabel: 'models',
+      surface: 'action',
+      detail: 'Point model strings at registered, enabled providers.',
+    },
+    'execution-policy': {
+      action: 'neondeck_config_update_execution_policy',
+      docsHref: `${docsBase}#execution-approvals`,
+      docsLabel: 'execution',
+      surface: 'action',
+      detail:
+        'Enable at least one execution backend and keep approval policy explicit.',
+    },
+    repos: {
+      action: 'neondeck_config_add_repo',
+      docsHref: `${docsBase}#repositories`,
+      docsLabel: 'repos',
+      surface: 'action',
+      detail:
+        'Add a local checkout so queues, watches, and repo status have context.',
+    },
+    'flue-errors': {
+      action: 'neondeck_workflow_summaries_lookup',
+      docsHref: `${docsBase}#commands`,
+      docsLabel: 'commands',
+      surface: 'tool',
+      detail:
+        'Inspect recent workflow failures before trusting automation output.',
+    },
+    'app-db': {
+      action: 'npm run setup',
+      docsHref: `${docsBase}#runtime-home`,
+      docsLabel: 'runtime',
+      surface: 'shell',
+      detail: 'Initialize or repair the Neondeck app database.',
+    },
+    'flue-db': {
+      action: 'npm run setup',
+      docsHref: `${docsBase}#runtime-home`,
+      docsLabel: 'runtime',
+      surface: 'shell',
+      detail: 'Initialize or repair the Flue runtime database.',
+    },
+  };
+
+  return (
+    steps[check.id] ?? {
+      action: 'neondeck_runtime_status_lookup',
+      docsHref: `${docsBase}#runtime-home`,
+      docsLabel: 'docs',
+      surface: 'tool',
+      detail:
+        'Inspect the readiness message and update the related runtime config.',
+    }
+  );
 }
 
 function safetyRank(entry: SafetyPolicyEntry) {

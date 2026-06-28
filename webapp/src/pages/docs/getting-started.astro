@@ -15,6 +15,11 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <a href="/docs/">Overview</a>
         <a href="/docs/getting-started/">Getting started</a>
         <a href="#runtime-home">Runtime home</a>
+        <a href="#secrets">Secrets</a>
+        <a href="#repositories">Repositories</a>
+        <a href="#runtime-skills">Runtime skills</a>
+        <a href="#agent-models">Agent models</a>
+        <a href="#execution-approvals">Execution</a>
         <a href="#commands">Commands</a>
         <a href="#verify">Verify</a>
       </aside>
@@ -42,7 +47,7 @@ npm install</code></pre>
         </p>
         <pre><code>NEONDECK_HOME=.neondeck-test npm run setup</code></pre>
 
-        <h2>Configure secrets</h2>
+        <h2 id="secrets">Configure secrets</h2>
         <p>
           Copy <code>.env.example</code> to <code>.env</code> and fill in the local
           values.
@@ -77,7 +82,7 @@ GITHUB_LOGIN=...</code></pre>
 /watch-pr neondeck#123 until prod
 /watch-release neondeck</code></pre>
 
-        <h2>Configure repositories</h2>
+        <h2 id="repositories">Configure repositories</h2>
         <p>
           Repositories live in runtime-home <code>repos.json</code>. Neon should
           mutate config through typed actions rather than direct file edits. The
@@ -85,7 +90,7 @@ GITHUB_LOGIN=...</code></pre>
           repo status, and dev doctor diagnostics.
         </p>
 
-        <h2>Runtime skills</h2>
+        <h2 id="runtime-skills">Runtime skills</h2>
         <p>
           The built-in Neondeck runtime skill is an application-owned Flue
           skill. User runtime skills load from <code>skills/</code> inside the runtime
@@ -95,7 +100,7 @@ GITHUB_LOGIN=...</code></pre>
           and do not place secrets in skill resources.
         </p>
 
-        <h2>Agent models</h2>
+        <h2 id="agent-models">Agent models</h2>
         <p>
           Configure the display assistant and subagent model choices in
           runtime-home
@@ -120,7 +125,7 @@ GITHUB_LOGIN=...</code></pre>
           reference providers already registered by the app or Flue runtime.
         </p>
 
-        <h2>Execution approvals</h2>
+        <h2 id="execution-approvals">Execution approvals</h2>
         <p>
           Neondeck keeps host execution action-mediated. The default execution
           backend is <code>local</code>; <code>exe.dev</code> runs through the Flue
