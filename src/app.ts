@@ -6,9 +6,11 @@ import { supportedCommands } from './commands';
 import {
   readProviderConfig,
   reloadConfig,
+  updateDashboardLayout,
   updateExecutionPolicy,
   updateAgentModels,
   updateProviderConfig,
+  applyDashboardPreset,
 } from './config-actions';
 import {
   formatConfigServerSentEvent,
@@ -327,6 +329,16 @@ app.get('/api/dashboard/config', async (c) => {
 
     throw error;
   }
+});
+
+app.post('/api/dashboard/config', async (c) => {
+  const result = await updateDashboardLayout(await safeJsonBody(c), paths);
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/dashboard/preset', async (c) => {
+  const result = await applyDashboardPreset(await safeJsonBody(c), paths);
+  return c.json(result, result.ok ? 200 : 400);
 });
 
 app.get('/api/metrics/host', async (c) => {

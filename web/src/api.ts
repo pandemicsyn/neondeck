@@ -572,6 +572,17 @@ export async function getDashboardConfig() {
   return getJson<DashboardConfig>('/api/dashboard/config');
 }
 
+export async function updateDashboardConfig(input: DashboardConfig) {
+  return postJson<ConfigActionResult>('/api/dashboard/config', input);
+}
+
+export async function applyDashboardPreset(input: {
+  preset: 'classic' | 'cockpit';
+  statuslinePosition?: 'top' | 'bottom';
+}) {
+  return postJson<ConfigActionResult>('/api/dashboard/preset', input);
+}
+
 export async function getGitHubPullRequests() {
   return getJson<GitHubPullRequestResponse>('/api/github/prs');
 }

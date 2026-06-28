@@ -336,6 +336,24 @@ const entries: SafetyPolicyEntry[] = [
     'Updates allowed execution backends and preapproved single-command patterns. It does not execute commands.',
   ),
   action(
+    'neondeck_config_update_dashboard_layout',
+    'Update dashboard layout',
+    {
+      ...safeMutation,
+      auditTarget: 'config_history',
+    },
+    'Replaces dashboard.json with a validated statusline plus tabbed-region layout.',
+  ),
+  action(
+    'neondeck_config_apply_dashboard_preset',
+    'Apply dashboard layout preset',
+    {
+      ...safeMutation,
+      auditTarget: 'config_history',
+    },
+    'Applies a known dashboard layout preset such as classic or cockpit.',
+  ),
+  action(
     'neondeck_config_add_schedule',
     'Add schedule config',
     {
@@ -523,6 +541,24 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'config_events',
     },
     'Validates runtime config files and emits a local config reload event without writing config.',
+  ),
+  route(
+    '/api/dashboard/config',
+    'Dashboard config API',
+    {
+      ...safeMutation,
+      auditTarget: 'config_history',
+    },
+    'GET reads dashboard layout; POST replaces it with a validated statusline plus tabbed-region layout.',
+  ),
+  route(
+    '/api/dashboard/preset',
+    'Dashboard preset API',
+    {
+      ...safeMutation,
+      auditTarget: 'config_history',
+    },
+    'Applies a known dashboard layout preset and emits config-change events.',
   ),
   route(
     '/api/safety/policy',

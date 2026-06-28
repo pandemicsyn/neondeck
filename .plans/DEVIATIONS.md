@@ -154,3 +154,10 @@ Use this format:
 - Decision: Added an app-owned `/api/events/config` server-sent event stream for audited config writes and explicit `config_reload` events, plus dashboard listeners that refresh affected UI surfaces without a browser reload.
 - Reason: Config writes already flow through `config_history`, but manual config file edits followed by reload do not create history rows. Emitting reload events keeps the dashboard current for both typed action mutations and explicit reload workflows.
 - Follow-up: None.
+
+## 2026-06-28 - Dashboard Layout Schema And Actions
+
+- Roadmap item: Phase 2 / config management actions and Phase 6 / dashboard panels driven by runtime state
+- Decision: Replaced one-plugin-per-region dashboard config with a statusline plus tabbed region stacks, added `dashboard.schema.json`, and added `neondeck_config_apply_dashboard_preset` plus `neondeck_config_update_dashboard_layout` so Neon can configure layouts through typed actions.
+- Reason: The Xeneon layout needs to preserve the original left-work/right-Neon geometry while exposing secondary panels without crowding the screen. The app has not shipped yet, so dropping the older dashboard config shape is simpler than maintaining compatibility.
+- Follow-up: None.

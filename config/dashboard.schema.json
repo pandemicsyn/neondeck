@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://neondeck.dev/schemas/dashboard.schema.json",
+  "title": "Neondeck dashboard config",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["display", "theme", "layout"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "display": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "theme": {
+      "enum": ["light", "dark", "system"]
+    },
+    "statusline": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["position", "pluginId"],
+      "properties": {
+        "position": {
+          "enum": ["top", "bottom"]
+        },
+        "pluginId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "config": {
+          "type": "object"
+        }
+      }
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["columns", "rows", "regions"],
+      "properties": {
+        "columns": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "regions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/region"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "region": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "title",
+        "column",
+        "row",
+        "columnSpan",
+        "rowSpan",
+        "tabs"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "row": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "columnSpan": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rowSpan": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "defaultTab": {
+          "type": "string",
+          "description": "Must match one tab id in this region. Enforced by Neondeck runtime validation.",
+          "minLength": 1
+        },
+        "tabs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/tab"
+          }
+        }
+      }
+    },
+    "tab": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "title", "pluginId"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pluginId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "config": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

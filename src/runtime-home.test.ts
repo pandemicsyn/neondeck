@@ -98,6 +98,7 @@ describe('runtime home', () => {
     });
 
     expect(existsSync(paths.dashboard)).toBe(true);
+    expect(existsSync(paths.dashboardSchema)).toBe(true);
     expect(existsSync(paths.soul)).toBe(true);
     expect(existsSync(paths.data)).toBe(true);
     expect(existsSync(paths.neondeckDatabase)).toBe(true);
@@ -108,7 +109,8 @@ describe('runtime home', () => {
       readRuntimeJson(paths.dashboard, parseDashboardConfig),
     ).resolves.toMatchObject({
       display: { width: 2560, height: 720 },
-      layout: { columns: 12, rows: 6 },
+      statusline: { position: 'top', pluginId: 'host-metrics' },
+      layout: { columns: 12, rows: 5 },
     });
 
     await expect(
@@ -480,6 +482,34 @@ describe('runtime home', () => {
   });
 
   it('enforces the dashboard frontend config contract', () => {
+    const dashboardConfig = () => ({
+      display: { width: 2560, height: 720 },
+      theme: 'dark',
+      layout: {
+        columns: 12,
+        rows: 5,
+        regions: [
+          {
+            id: 'neon',
+            title: 'Neon',
+            column: 1,
+            row: 1,
+            columnSpan: 12,
+            rowSpan: 5,
+            defaultTab: 'chat',
+            tabs: [
+              {
+                id: 'chat',
+                title: 'Chat',
+                pluginId: 'flue-chat',
+                config: {},
+              },
+            ],
+          },
+        ],
+      },
+    });
+
     expect(() =>
       parseDashboardConfig(
         {
@@ -503,12 +533,18 @@ describe('runtime home', () => {
               {
                 id: 'chat',
                 title: 'Chat',
-                pluginId: 'flue-chat',
                 column: -1,
                 row: 1.5,
                 columnSpan: 8,
                 rowSpan: 5,
-                config: {},
+                tabs: [
+                  {
+                    id: 'chat',
+                    title: 'Chat',
+                    pluginId: 'flue-chat',
+                    config: {},
+                  },
+                ],
               },
             ],
           },
@@ -516,5 +552,70 @@ describe('runtime home', () => {
         'dashboard.json',
       ),
     ).toThrow(ConfigValidationError);
+
+    expect(() =>
+      parseDashboardConfig(
+        {
+          display: { width: 2560, height: 720 },
+          theme: 'dark',
+          layout: {
+            columns: 12,
+            rows: 5,
+            regions: [
+              {
+                id: 'neon',
+                title: 'Neon',
+                column: 1,
+                row: 1,
+                columnSpan: 12,
+                rowSpan: 5,
+                tabs: [],
+              },
+            ],
+          },
+        },
+        'dashboard.json',
+      ),
+    ).toThrow(ConfigValidationError);
+
+    expect(() => {
+      const config = dashboardConfig();
+      config.layout.regions[0].column = 10;
+      config.layout.regions[0].columnSpan = 4;
+      parseDashboardConfig(config, 'dashboard.json');
+    }).toThrow(ConfigValidationError);
+
+    expect(() => {
+      const config = dashboardConfig();
+      config.layout.regions[0].row = 4;
+      config.layout.regions[0].rowSpan = 3;
+      parseDashboardConfig(config, 'dashboard.json');
+    }).toThrow(ConfigValidationError);
+
+    expect(() => {
+      const config = dashboardConfig();
+      config.layout.regions.push({
+        ...config.layout.regions[0],
+        title: 'Neon Duplicate',
+      });
+      parseDashboardConfig(config, 'dashboard.json');
+    }).toThrow(ConfigValidationError);
+
+    expect(() => {
+      const config = dashboardConfig();
+      config.layout.regions[0].tabs.push({
+        id: 'chat',
+        title: 'Chat Duplicate',
+        pluginId: 'flue-chat',
+        config: {},
+      });
+      parseDashboardConfig(config, 'dashboard.json');
+    }).toThrow(ConfigValidationError);
+
+    expect(() => {
+      const config = dashboardConfig();
+      config.layout.regions[0].defaultTab = 'missing';
+      parseDashboardConfig(config, 'dashboard.json');
+    }).toThrow(ConfigValidationError);
   });
 });

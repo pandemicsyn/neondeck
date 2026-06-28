@@ -1,168 +1,154 @@
 {
+  "$schema": "./dashboard.schema.json",
   "display": {
     "width": 2560,
     "height": 720
   },
   "theme": "dark",
+  "statusline": {
+    "position": "top",
+    "pluginId": "host-metrics",
+    "config": {}
+  },
   "layout": {
     "columns": 12,
-    "rows": 6,
+    "rows": 5,
     "regions": [
       {
-        "id": "statusline",
-        "title": "Status line",
-        "pluginId": "host-metrics",
+        "id": "work",
+        "title": "WORK",
         "column": 1,
         "row": 1,
-        "columnSpan": 12,
-        "rowSpan": 1,
-        "config": {}
-      },
-      {
-        "id": "github",
-        "title": "GITHUB · @you",
-        "pluginId": "github-pr-list",
-        "column": 1,
-        "row": 2,
-        "columnSpan": 3,
-        "rowSpan": 3,
-        "config": {
-          "limit": 12
-        }
-      },
-      {
-        "id": "watches",
-        "title": "WATCHES",
-        "pluginId": "active-watches",
-        "column": 1,
-        "row": 5,
-        "columnSpan": 3,
-        "rowSpan": 2,
-        "config": {
-          "limit": 8
-        }
-      },
-      {
-        "id": "briefing",
-        "title": "BRIEFING",
-        "pluginId": "briefing-panel",
-        "column": 4,
-        "row": 2,
-        "columnSpan": 2,
-        "rowSpan": 3,
-        "config": {
-          "actionLimit": 4
-        }
-      },
-      {
-        "id": "memory",
-        "title": "MEMORY",
-        "pluginId": "memory-panel",
-        "column": 4,
-        "row": 5,
-        "columnSpan": 2,
-        "rowSpan": 2,
-        "config": {
-          "limit": 5
-        }
-      },
-      {
-        "id": "chat",
-        "title": "FLUE AGENT · triage.ts",
-        "pluginId": "flue-chat",
-        "column": 9,
-        "row": 2,
         "columnSpan": 4,
         "rowSpan": 5,
-        "config": {
-          "agentName": "display-assistant",
-          "sessions": [
-            {
-              "id": "neondeck-main",
-              "label": "Primary",
-              "placeholder": "Ask about your active work..."
+        "defaultTab": "github",
+        "tabs": [
+          {
+            "id": "github",
+            "title": "GITHUB",
+            "pluginId": "github-pr-list",
+            "config": {
+              "limit": 12
             }
-          ],
-          "quickCommands": [
-            {
-              "label": "Repo",
-              "command": "/repo-status"
-            },
-            {
-              "label": "Queue",
-              "command": "/review-queue"
-            },
-            {
-              "label": "CI",
-              "command": "/explain-ci"
-            },
-            {
-              "label": "PR",
-              "command": "/summarize-pr"
-            },
-            {
-              "label": "Draft",
-              "command": "/draft-pr-description"
-            },
-            {
-              "label": "Prep",
-              "command": "/prepare-pr"
-            },
-            {
-              "label": "Review",
-              "command": "/review-local"
-            },
-            {
-              "label": "Memory",
-              "command": "/memory"
-            },
-            {
-              "label": "Doctor",
-              "command": "/dev-doctor"
+          },
+          {
+            "id": "watches",
+            "title": "WATCHES",
+            "pluginId": "active-watches",
+            "config": {
+              "limit": 8
             }
-          ]
-        }
+          }
+        ]
       },
       {
-        "id": "runtime",
-        "title": "RUNTIME",
-        "pluginId": "runtime-overview",
-        "column": 6,
-        "row": 2,
-        "columnSpan": 3,
-        "rowSpan": 2,
-        "config": {
-          "repoLimit": 5,
-          "jobLimit": 5,
-          "skillLimit": 5,
-          "memoryLimit": 5,
-          "workflowEventLimit": 6
-        }
-      },
-      {
-        "id": "workflows",
-        "title": "WORKFLOWS",
-        "pluginId": "workflow-observability",
-        "column": 6,
-        "row": 4,
-        "columnSpan": 3,
-        "rowSpan": 2,
-        "config": {
-          "eventLimit": 16,
-          "refreshSeconds": 20
-        }
-      },
-      {
-        "id": "subagents",
-        "title": "SUBAGENTS",
-        "pluginId": "subagent-summary",
-        "column": 6,
-        "row": 6,
-        "columnSpan": 3,
-        "rowSpan": 1,
-        "config": {
-          "eventLimit": 4
-        }
+        "id": "neon",
+        "title": "NEON",
+        "column": 5,
+        "row": 1,
+        "columnSpan": 8,
+        "rowSpan": 5,
+        "defaultTab": "chat",
+        "tabs": [
+          {
+            "id": "chat",
+            "title": "CHAT",
+            "pluginId": "flue-chat",
+            "config": {
+              "agentName": "display-assistant",
+              "sessions": [
+                {
+                  "id": "neondeck-main",
+                  "label": "Primary",
+                  "placeholder": "Ask about your active work..."
+                }
+              ],
+              "quickCommands": [
+                {
+                  "label": "Repo",
+                  "command": "/repo-status"
+                },
+                {
+                  "label": "Queue",
+                  "command": "/review-queue"
+                },
+                {
+                  "label": "CI",
+                  "command": "/explain-ci"
+                },
+                {
+                  "label": "PR",
+                  "command": "/summarize-pr"
+                },
+                {
+                  "label": "Draft",
+                  "command": "/draft-pr-description"
+                },
+                {
+                  "label": "Prep",
+                  "command": "/prepare-pr"
+                },
+                {
+                  "label": "Review",
+                  "command": "/review-local"
+                },
+                {
+                  "label": "Memory",
+                  "command": "/memory"
+                },
+                {
+                  "label": "Doctor",
+                  "command": "/dev-doctor"
+                }
+              ]
+            }
+          },
+          {
+            "id": "briefing",
+            "title": "BRIEFING",
+            "pluginId": "briefing-panel",
+            "config": {
+              "actionLimit": 4
+            }
+          },
+          {
+            "id": "memory",
+            "title": "MEMORY",
+            "pluginId": "memory-panel",
+            "config": {
+              "limit": 5
+            }
+          },
+          {
+            "id": "runtime",
+            "title": "RUNTIME",
+            "pluginId": "runtime-overview",
+            "config": {
+              "repoLimit": 5,
+              "jobLimit": 5,
+              "skillLimit": 5,
+              "memoryLimit": 5,
+              "workflowEventLimit": 6
+            }
+          },
+          {
+            "id": "workflows",
+            "title": "WORKFLOWS",
+            "pluginId": "workflow-observability",
+            "config": {
+              "eventLimit": 16,
+              "refreshSeconds": 20
+            }
+          },
+          {
+            "id": "subagents",
+            "title": "SUBAGENTS",
+            "pluginId": "subagent-summary",
+            "config": {
+              "eventLimit": 4
+            }
+          }
+        ]
       }
     ]
   }

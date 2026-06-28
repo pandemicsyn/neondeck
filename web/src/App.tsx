@@ -6,7 +6,13 @@ import {
   dispatchConfigChangeEvent,
 } from './lib/config-events';
 import { pluginRegistry } from './plugins/registry';
-import type { DashboardConfig, DashboardRegion, DashboardTheme } from './types';
+import type {
+  DashboardConfig,
+  DashboardRegion,
+  DashboardStatusline,
+  DashboardTab,
+  DashboardTheme,
+} from './types';
 
 export function App() {
   const [config, setConfig] = useState<DashboardConfig>();
@@ -65,13 +71,13 @@ function DashboardShell({ config }: { config: DashboardConfig }) {
   const gridStyle = useMemo(
     () => ({
       gridTemplateColumns: `repeat(${config.layout.columns}, minmax(0, 1fr))`,
-      gridTemplateRows:
-        config.layout.rows === 6
-          ? '30px repeat(5, minmax(0, 1fr))'
-          : `repeat(${config.layout.rows}, minmax(0, 1fr))`,
+      gridTemplateRows: config.statusline
+        ? statuslineRows(config)
+        : `repeat(${config.layout.rows}, minmax(0, 1fr))`,
     }),
     [config],
   );
+  const rowOffset = config.statusline?.position === 'top' ? 1 : 0;
 
   return (
     <section className="deck-shell h-screen w-screen overflow-hidden bg-bg p-0">
@@ -79,39 +85,160 @@ function DashboardShell({ config }: { config: DashboardConfig }) {
         className="dashboard-grid grid h-full w-full gap-0 border-0 bg-canvas p-0"
         style={gridStyle}
       >
+        {config.statusline ? (
+          <StatuslinePanel
+            columns={config.layout.columns}
+            rows={config.layout.rows}
+            statusline={config.statusline}
+          />
+        ) : null}
         {config.layout.regions.map((region) => (
-          <DashboardPanel key={region.id} region={region} />
+          <DashboardPanel
+            key={region.id}
+            region={region}
+            rowOffset={rowOffset}
+          />
         ))}
       </div>
     </section>
   );
 }
 
-function DashboardPanel({ region }: { region: DashboardRegion }) {
-  const plugin = pluginRegistry[region.pluginId];
+function StatuslinePanel({
+  columns,
+  rows,
+  statusline,
+}: {
+  columns: number;
+  rows: number;
+  statusline: DashboardStatusline;
+}) {
+  const plugin = pluginRegistry[statusline.pluginId];
   const gridPosition = {
-    gridColumn: `${region.column} / span ${region.columnSpan}`,
-    gridRow: `${region.row} / span ${region.rowSpan}`,
+    gridColumn: `1 / span ${columns}`,
+    gridRow: statusline.position === 'top' ? '1 / span 1' : `${rows + 1}`,
   };
 
   if (!plugin) {
     return (
-      <PanelFrame title={region.title} style={gridPosition} variant={region.id}>
+      <PanelFrame title="Statusline" style={gridPosition} variant="statusline">
         <EmptyState
           title="Plugin unavailable"
-          detail={`No plugin registered for ${region.pluginId}.`}
+          detail={`No plugin registered for ${statusline.pluginId}.`}
         />
       </PanelFrame>
     );
   }
 
-  const mergedConfig = { ...plugin.defaultConfig, ...region.config };
+  const mergedConfig = { ...plugin.defaultConfig, ...statusline.config };
+  const PluginComponent = plugin.Component;
+
+  return (
+    <PanelFrame title="Statusline" style={gridPosition} variant="statusline">
+      <PluginComponent
+        config={mergedConfig}
+        region={statuslineRegion(statusline)}
+      />
+    </PanelFrame>
+  );
+}
+
+function DashboardPanel({
+  region,
+  rowOffset,
+}: {
+  region: DashboardRegion;
+  rowOffset: number;
+}) {
+  const initialTabId = region.defaultTab ?? region.tabs[0]?.id ?? '';
+  const [activeTabId, setActiveTabId] = useState(initialTabId);
+  const activeTab =
+    region.tabs.find((tab) => tab.id === activeTabId) ?? region.tabs[0];
+  const gridPosition = {
+    gridColumn: `${region.column} / span ${region.columnSpan}`,
+    gridRow: `${region.row + rowOffset} / span ${region.rowSpan}`,
+  };
+
+  useEffect(() => {
+    if (region.tabs.some((tab) => tab.id === activeTabId)) return;
+    setActiveTabId(initialTabId);
+  }, [activeTabId, initialTabId, region.tabs]);
+
+  if (!activeTab) {
+    return (
+      <PanelFrame title={region.title} style={gridPosition} variant={region.id}>
+        <EmptyState title="Region unavailable" detail="No tabs configured." />
+      </PanelFrame>
+    );
+  }
+
+  const plugin = pluginRegistry[activeTab.pluginId];
+  if (!plugin) {
+    return (
+      <PanelFrame title={region.title} style={gridPosition} variant={region.id}>
+        <RegionTabs
+          activeTabId={activeTab.id}
+          onChange={setActiveTabId}
+          tabs={region.tabs}
+        />
+        <EmptyState
+          title="Plugin unavailable"
+          detail={`No plugin registered for ${activeTab.pluginId}.`}
+        />
+      </PanelFrame>
+    );
+  }
+
+  const mergedConfig = { ...plugin.defaultConfig, ...activeTab.config };
   const PluginComponent = plugin.Component;
 
   return (
     <PanelFrame title={region.title} style={gridPosition} variant={region.id}>
-      <PluginComponent region={region} config={mergedConfig} />
+      <div className="flex h-full min-h-0 flex-col">
+        <RegionTabs
+          activeTabId={activeTab.id}
+          onChange={setActiveTabId}
+          tabs={region.tabs}
+        />
+        <div className="min-h-0 flex-1">
+          <PluginComponent
+            config={mergedConfig}
+            region={tabRegion(region, activeTab)}
+          />
+        </div>
+      </div>
     </PanelFrame>
+  );
+}
+
+function RegionTabs({
+  activeTabId,
+  onChange,
+  tabs,
+}: {
+  activeTabId: string;
+  onChange: (id: string) => void;
+  tabs: DashboardTab[];
+}) {
+  if (tabs.length <= 1) return null;
+
+  return (
+    <div className="flex h-7 shrink-0 items-center gap-1 overflow-hidden border-b border-line bg-field px-2 font-mono text-[10px] tracking-[0.08em]">
+      {tabs.map((tab) => (
+        <button
+          className={
+            tab.id === activeTabId
+              ? 'shrink-0 border border-primary px-2 py-0.5 text-primary'
+              : 'shrink-0 border border-transparent px-2 py-0.5 text-muted hover:border-line hover:text-ink'
+          }
+          key={tab.id}
+          onClick={() => onChange(tab.id)}
+          type="button"
+        >
+          {tab.title}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -181,4 +308,43 @@ function resolveTheme(theme: DashboardTheme) {
   return window.matchMedia('(prefers-color-scheme: dark)').matches
     ? 'dark'
     : 'light';
+}
+
+function statuslineRows(config: DashboardConfig) {
+  const layoutRows = `repeat(${config.layout.rows}, minmax(0, 1fr))`;
+  return config.statusline?.position === 'bottom'
+    ? `${layoutRows} 30px`
+    : `30px ${layoutRows}`;
+}
+
+function statuslineRegion(statusline: DashboardStatusline): DashboardRegion {
+  return {
+    id: 'statusline',
+    title: 'Statusline',
+    column: 1,
+    row: 1,
+    columnSpan: 1,
+    rowSpan: 1,
+    tabs: [
+      {
+        id: 'statusline',
+        title: 'Statusline',
+        pluginId: statusline.pluginId,
+        config: statusline.config ?? {},
+      },
+    ],
+  };
+}
+
+function tabRegion(
+  region: DashboardRegion,
+  tab: DashboardTab,
+): DashboardRegion {
+  return {
+    ...region,
+    id: `${region.id}:${tab.id}`,
+    title: tab.title,
+    defaultTab: tab.id,
+    tabs: [tab],
+  };
 }

@@ -3,11 +3,13 @@ import type { ComponentType } from 'react';
 export type DashboardTheme = 'light' | 'dark' | 'system';
 
 export type DashboardConfig = {
+  $schema?: string;
   display: {
     width: number;
     height: number;
   };
   theme: DashboardTheme;
+  statusline?: DashboardStatusline;
   layout: {
     columns: number;
     rows: number;
@@ -15,15 +17,28 @@ export type DashboardConfig = {
   };
 };
 
+export type DashboardStatusline = {
+  position: 'top' | 'bottom';
+  pluginId: string;
+  config?: Record<string, unknown>;
+};
+
 export type DashboardRegion = {
   id: string;
   title: string;
-  pluginId: string;
   column: number;
   row: number;
   columnSpan: number;
   rowSpan: number;
-  config: Record<string, unknown>;
+  defaultTab?: string;
+  tabs: DashboardTab[];
+};
+
+export type DashboardTab = {
+  id: string;
+  title: string;
+  pluginId: string;
+  config?: Record<string, unknown>;
 };
 
 export type DisplayPluginProps<

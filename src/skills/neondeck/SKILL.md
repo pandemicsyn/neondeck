@@ -16,6 +16,7 @@ Configuration and mutable runtime state live in the configured Neondeck runtime 
 - `config.json`: top-level app settings.
 - `repos.json`: configured local repositories and GitHub metadata.
 - `dashboard.json`: dashboard layout and plugin configuration.
+- `dashboard.schema.json`: JSON Schema for editor validation of `dashboard.json`.
 - `schedules.json`: local schedule and briefing configuration.
 - `SOUL.md`: stable assistant personality loaded at session start.
 - `skills/`: user-provided Agent Skills-compatible folders. New or changed runtime skills require a new session or server restart before they affect agent behavior.
@@ -43,6 +44,8 @@ Use session actions for context lifecycle. Read active session state with `neond
 Use `neondeck_config_update_agent_models` for display assistant and subagent model changes. Model strings may include provider prefixes such as `kilocode/kilo/auto`, but the provider must already be registered by Neondeck or the Flue runtime. Tell the user active sessions may need a new session or server restart before model changes apply.
 
 Use provider config actions for provider setup. Read provider config with `neondeck_config_read_providers` and update allowlisted provider settings with `neondeck_config_update_provider`. The only current provider config target is `kilocode`; settings are limited to `enabled`, `apiKeyEnv`, and `organizationIdEnv`. Never accept or store raw provider secrets, arbitrary provider ids, or arbitrary base URLs. Tell the user a server restart is required before provider registration changes apply.
+
+Use dashboard layout actions for display configuration. Read current layout with `neondeck_config_read` using target `dashboard`. Apply common layouts with `neondeck_config_apply_dashboard_preset`: `classic` keeps GitHub/work on the left third and Neon chat on the right two-thirds; `cockpit` keeps that geometry but adds Watches, Briefing, Memory, Runtime, Workflows, and Subagents as tabs. Use `neondeck_config_update_dashboard_layout` only when a user asks for a custom layout and provide a full validated `dashboard.json` object. Dashboard config has an optional `statusline` with `position` `top` or `bottom`; main `layout.regions` are tab stacks with `tabs[]`. Do not edit `dashboard.json` directly in conversation.
 
 Use typed watch actions for PR watches. Add, list, remove, and refresh PR watches through `neondeck_watch_pr_*` actions. Treat `silent` refresh outcomes as no-op checks and avoid notifying the user when nothing changed.
 

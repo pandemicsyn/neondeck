@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   addRepo,
   addSchedule,
+  applyDashboardPreset,
   readConfig,
   readProviderConfig,
   reloadConfig,
@@ -17,6 +18,7 @@ import {
   updateRepo,
   updateAgentModels,
   updateExecutionPolicy,
+  updateDashboardLayout,
   updateProviderConfig,
   updateSchedule,
   validateConfig,
@@ -24,6 +26,7 @@ import {
 import { subscribeConfigEvents, type ConfigChangeEvent } from './config-events';
 import {
   parseAppConfig,
+  parseDashboardConfig,
   parseRepoRegistry,
   parseScheduleConfig,
   runtimePaths,
@@ -328,6 +331,94 @@ describe('config actions', () => {
       },
     ]);
     expect(events[0]?.id).toBe('1');
+  });
+
+  it('updates dashboard layout through presets and validated layout input', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    await expect(
+      applyDashboardPreset({ preset: 'classic' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'config_apply_dashboard_preset',
+      message: 'Applied dashboard preset "classic".',
+    });
+
+    let dashboard = parseDashboardConfig(
+      JSON.parse(await readFile(paths.dashboard, 'utf8')),
+      paths.dashboard,
+    );
+    expect(dashboard.statusline).toMatchObject({
+      position: 'top',
+      pluginId: 'host-metrics',
+    });
+    expect(dashboard.layout.regions).toHaveLength(2);
+    expect(dashboard.layout.regions[0].tabs).toHaveLength(1);
+    expect(dashboard.layout.regions[1]).toMatchObject({
+      id: 'neon',
+      defaultTab: 'chat',
+    });
+
+    const next = parseDashboardConfig(
+      {
+        ...dashboard,
+        statusline: {
+          position: 'bottom',
+          pluginId: 'host-metrics',
+          config: {},
+        },
+      },
+      paths.dashboard,
+    );
+    await expect(updateDashboardLayout(next, paths)).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'config_update_dashboard_layout',
+      message: 'Updated dashboard layout.',
+    });
+
+    dashboard = parseDashboardConfig(
+      JSON.parse(await readFile(paths.dashboard, 'utf8')),
+      paths.dashboard,
+    );
+    expect(dashboard.statusline?.position).toBe('bottom');
+    expect(readHistory(paths.neondeckDatabase)).toMatchObject([
+      { action: 'config_apply_dashboard_preset', target: 'classic' },
+      { action: 'config_update_dashboard_layout', target: 'layout' },
+    ]);
+  });
+
+  it('can apply a dashboard preset over an invalid existing dashboard file', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    await writeFile(paths.dashboard, '{ "theme": "dark" }\n');
+
+    await expect(
+      applyDashboardPreset(
+        { preset: 'cockpit', statuslinePosition: 'bottom' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'config_apply_dashboard_preset',
+    });
+
+    const dashboard = parseDashboardConfig(
+      JSON.parse(await readFile(paths.dashboard, 'utf8')),
+      paths.dashboard,
+    );
+    expect(dashboard.statusline?.position).toBe('bottom');
+    expect(dashboard.layout.regions[1].tabs.map((tab) => tab.id)).toEqual([
+      'chat',
+      'briefing',
+      'memory',
+      'runtime',
+      'workflows',
+      'subagents',
+    ]);
   });
 
   it('returns structured failures and no-ops for agent model updates', async () => {

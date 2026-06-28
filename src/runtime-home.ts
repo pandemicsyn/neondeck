@@ -15,6 +15,7 @@ export type RuntimePaths = {
   config: string;
   repos: string;
   dashboard: string;
+  dashboardSchema: string;
   schedules: string;
   soul: string;
   skills: string;
@@ -137,23 +138,38 @@ export const scheduleConfigSchema = v.looseObject({
   schedules: v.array(scheduleEntrySchema),
 });
 
-export const dashboardRegionSchema = v.looseObject({
+export const dashboardTabSchema = v.looseObject({
   id: nonEmptyStringSchema,
   title: nonEmptyStringSchema,
   pluginId: nonEmptyStringSchema,
+  config: v.optional(unknownRecordSchema),
+});
+
+export const dashboardRegionSchema = v.looseObject({
+  id: nonEmptyStringSchema,
+  title: nonEmptyStringSchema,
   column: positiveIntegerSchema,
   row: positiveIntegerSchema,
   columnSpan: positiveIntegerSchema,
   rowSpan: positiveIntegerSchema,
-  config: unknownRecordSchema,
+  defaultTab: v.optional(nonEmptyStringSchema),
+  tabs: v.pipe(v.array(dashboardTabSchema), v.minLength(1)),
 });
 
 export const dashboardConfigSchema = v.looseObject({
+  $schema: v.optional(v.string()),
   display: v.object({
     width: positiveIntegerSchema,
     height: positiveIntegerSchema,
   }),
   theme: v.picklist(['light', 'dark', 'system']),
+  statusline: v.optional(
+    v.looseObject({
+      position: v.picklist(['top', 'bottom']),
+      pluginId: nonEmptyStringSchema,
+      config: v.optional(unknownRecordSchema),
+    }),
+  ),
   layout: v.object({
     columns: positiveIntegerSchema,
     rows: positiveIntegerSchema,
@@ -175,6 +191,7 @@ export type ScheduleEntry = v.InferOutput<typeof scheduleEntrySchema>;
 export type ScheduleConfig = v.InferOutput<typeof scheduleConfigSchema>;
 export type DashboardConfig = v.InferOutput<typeof dashboardConfigSchema>;
 export type DashboardRegion = v.InferOutput<typeof dashboardRegionSchema>;
+export type DashboardTab = v.InferOutput<typeof dashboardTabSchema>;
 
 export class ConfigValidationError extends Error {
   readonly path: string;
@@ -188,6 +205,9 @@ export class ConfigValidationError extends Error {
 
 const defaultDashboardPath = fileURLToPath(
   new URL('../config/dashboard.json', import.meta.url),
+);
+const defaultDashboardSchemaPath = fileURLToPath(
+  new URL('../config/dashboard.schema.json', import.meta.url),
 );
 const defaultSoulPath = fileURLToPath(new URL('../SOUL.md', import.meta.url));
 
@@ -209,6 +229,7 @@ export function runtimePaths(home = resolveRuntimeHome()): RuntimePaths {
     config: join(home, 'config.json'),
     repos: join(home, 'repos.json'),
     dashboard: join(home, 'dashboard.json'),
+    dashboardSchema: join(home, 'dashboard.schema.json'),
     schedules: join(home, 'schedules.json'),
     soul: join(home, 'SOUL.md'),
     skills: join(home, 'skills'),
@@ -227,6 +248,7 @@ export async function ensureRuntimeHome(paths = runtimePaths()) {
   await writeJsonIfMissing(paths.repos, { repos: [] });
   await writeJsonIfMissing(paths.schedules, { schedules: [] });
   await copyIfMissing(defaultDashboardPath, paths.dashboard);
+  await copyIfMissing(defaultDashboardSchemaPath, paths.dashboardSchema);
   await copyIfMissing(defaultSoulPath, paths.soul);
   initializeAppDatabase(paths.neondeckDatabase);
   initializeFlueDatabase(paths.flueDatabase);
@@ -241,6 +263,7 @@ export function ensureRuntimeHomeSync(paths = runtimePaths()) {
   writeJsonIfMissingSync(paths.repos, { repos: [] });
   writeJsonIfMissingSync(paths.schedules, { schedules: [] });
   copyIfMissingSync(defaultDashboardPath, paths.dashboard);
+  copyIfMissingSync(defaultDashboardSchemaPath, paths.dashboardSchema);
   copyIfMissingSync(defaultSoulPath, paths.soul);
   initializeAppDatabase(paths.neondeckDatabase);
   initializeFlueDatabase(paths.flueDatabase);
@@ -736,7 +759,57 @@ export function parseDashboardConfig(
   value: unknown,
   path: string,
 ): DashboardConfig {
-  return parseSchema(dashboardConfigSchema, value, path);
+  const config = parseSchema(dashboardConfigSchema, value, path);
+  validateDashboardConfig(config, path);
+  return config;
+}
+
+function validateDashboardConfig(config: DashboardConfig, path: string) {
+  const regionIds = new Set<string>();
+
+  for (const region of config.layout.regions) {
+    if (regionIds.has(region.id)) {
+      throw new ConfigValidationError(
+        path,
+        `Duplicate dashboard region id "${region.id}".`,
+      );
+    }
+    regionIds.add(region.id);
+
+    const columnEnd = region.column + region.columnSpan - 1;
+    if (columnEnd > config.layout.columns) {
+      throw new ConfigValidationError(
+        path,
+        `Dashboard region "${region.id}" exceeds layout column count ${config.layout.columns}.`,
+      );
+    }
+
+    const rowEnd = region.row + region.rowSpan - 1;
+    if (rowEnd > config.layout.rows) {
+      throw new ConfigValidationError(
+        path,
+        `Dashboard region "${region.id}" exceeds layout row count ${config.layout.rows}.`,
+      );
+    }
+
+    const tabIds = new Set<string>();
+    for (const tab of region.tabs) {
+      if (tabIds.has(tab.id)) {
+        throw new ConfigValidationError(
+          path,
+          `Duplicate dashboard tab id "${tab.id}" in region "${region.id}".`,
+        );
+      }
+      tabIds.add(tab.id);
+    }
+
+    if (region.defaultTab && !tabIds.has(region.defaultTab)) {
+      throw new ConfigValidationError(
+        path,
+        `Dashboard region "${region.id}" defaultTab "${region.defaultTab}" does not match a tab id.`,
+      );
+    }
+  }
 }
 
 function parseSchema<T>(

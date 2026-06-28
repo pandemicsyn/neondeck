@@ -526,7 +526,7 @@ Must-haves:
 10. [x] Deterministic GitHub actions.
 11. [x] GitHub/gh runtime skill.
 12. [x] Disk-backed config reads and explicit config reload actions.
-13. [ ] Live config-change event fanout to every UI surface.
+13. [x] Live config-change event fanout to every UI surface.
 14. [x] One Neon agent session with command handling.
 15. [x] UI panels for PRs, active watches, runtime state, and chat.
 16. [x] Dedicated briefing panel.
@@ -538,7 +538,7 @@ Must-haves:
 22. [x] Named subagent roles with configurable model choices.
 23. [x] Dedicated subagent run summary dashboard beyond current Flue observations.
 24. [x] Config-backed execution approval policy for `local` and planned `exe.dev` backends.
-25. [ ] Approved host execution actions for `local` and `exe.dev`.
+25. [x] Approved host execution actions for `local` and `exe.dev`.
 
 ## Suggested Implementation Phases
 

@@ -81,8 +81,10 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
             neondeck.dev.
           </li>
           <li>
-            <code>config/dashboard.json</code>: default dashboard layout seed
-            copied into new runtime homes.
+            <code>config/dashboard.json</code> and <code
+              >config/dashboard.schema.json</code
+            >: default dashboard layout seed and JSON Schema copied into new
+            runtime homes.
           </li>
           <li>
             <code>SOUL.md</code>: default agent personality material copied into
@@ -120,8 +122,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <p>
           Neon gets deterministic capabilities through schema-backed Flue
           actions for config, repo status, GitHub PR/check facts, runtime
-          skills, schedules, watches, commands, and local dev doctor checks.
-          Bounded operations are also available as discovered Flue workflows:
+          skills, dashboard layout presets, schedules, watches, commands, and
+          local dev doctor checks. Bounded operations are also available as
+          discovered Flue workflows:
         </p>
         <pre><code>briefing
 command-run

@@ -122,6 +122,8 @@ Supported commands are `/repo-status`, `/review-queue`, `/briefing`, `/dev-docto
 
 Dashboard panels subscribe to `/api/events/config` for local config action and reload events, so model/provider/repo/schedule/dashboard changes refresh affected surfaces without a browser reload.
 
+Dashboard layout is configured by `dashboard.json` and validated by `dashboard.schema.json`. The statusline is a single top or bottom strip; main regions are tab stacks. Neon can apply known layouts through `neondeck_config_apply_dashboard_preset` (`classic` or `cockpit`) or replace the full validated layout through `neondeck_config_update_dashboard_layout`.
+
 ## Build
 
 ```sh
