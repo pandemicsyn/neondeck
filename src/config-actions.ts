@@ -1260,7 +1260,8 @@ function dashboardPresetConfig(
     return parseDashboardConfig(
       {
         $schema: './dashboard.schema.json',
-        display: { width: 2560, height: 720 },
+        display: { preset: 'xeneon-edge', width: 2560, height: 720 },
+        appearance: { density: 'comfortable' },
         theme: 'dark',
         statusline: {
           position: statuslinePosition,
@@ -1268,6 +1269,7 @@ function dashboardPresetConfig(
           config: {},
         },
         layout: {
+          mode: 'auto',
           columns: 12,
           rows: 5,
           regions: [
@@ -1308,7 +1310,8 @@ function dashboardPresetConfig(
   return parseDashboardConfig(
     {
       $schema: './dashboard.schema.json',
-      display: { width: 2560, height: 720 },
+      display: { preset: 'xeneon-edge', width: 2560, height: 720 },
+      appearance: { density: 'comfortable' },
       theme: 'dark',
       statusline: {
         position: statuslinePosition,
@@ -1316,6 +1319,7 @@ function dashboardPresetConfig(
         config: {},
       },
       layout: {
+        mode: 'auto',
         columns: 12,
         rows: 5,
         regions: [

@@ -28,6 +28,16 @@ export type RuntimePaths = {
 const unknownRecordSchema = v.record(v.string(), v.unknown());
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 const positiveIntegerSchema = v.pipe(v.number(), v.integer(), v.minValue(1));
+const dashboardDensitySchema = v.picklist([
+  'compact',
+  'comfortable',
+  'large',
+]);
+const dashboardTextScaleSchema = v.pipe(
+  v.number(),
+  v.minValue(0.9),
+  v.maxValue(1.4),
+);
 const envVarNameSchema = v.pipe(
   v.string(),
   v.regex(/^[A-Z_][A-Z0-9_]*$/, 'Expected an environment variable name.'),
@@ -160,10 +170,17 @@ export const dashboardRegionSchema = v.looseObject({
 export const dashboardConfigSchema = v.looseObject({
   $schema: v.optional(v.string()),
   display: v.object({
+    preset: v.optional(nonEmptyStringSchema),
     width: positiveIntegerSchema,
     height: positiveIntegerSchema,
   }),
   theme: v.picklist(['light', 'dark', 'system']),
+  appearance: v.optional(
+    v.looseObject({
+      density: v.optional(dashboardDensitySchema),
+      textScale: v.optional(dashboardTextScaleSchema),
+    }),
+  ),
   statusline: v.optional(
     v.looseObject({
       position: v.picklist(['top', 'bottom']),
@@ -172,6 +189,7 @@ export const dashboardConfigSchema = v.looseObject({
     }),
   ),
   layout: v.object({
+    mode: v.optional(v.picklist(['auto', 'xeneon', 'stacked'])),
     columns: positiveIntegerSchema,
     rows: positiveIntegerSchema,
     regions: v.array(dashboardRegionSchema),

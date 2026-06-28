@@ -1,8 +1,12 @@
 {
   "$schema": "./dashboard.schema.json",
   "display": {
+    "preset": "xeneon-edge",
     "width": 2560,
     "height": 720
+  },
+  "appearance": {
+    "density": "comfortable"
   },
   "theme": "dark",
   "statusline": {
@@ -11,6 +15,7 @@
     "config": {}
   },
   "layout": {
+    "mode": "auto",
     "columns": 12,
     "rows": 5,
     "regions": [
