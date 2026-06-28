@@ -43,7 +43,7 @@
         "textScale": {
           "type": "number",
           "minimum": 0.9,
-          "maximum": 1.4,
+          "maximum": 1.75,
           "description": "Fine-grained text scaling multiplier for companion-display readability."
         }
       }

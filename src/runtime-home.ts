@@ -36,7 +36,7 @@ const dashboardDensitySchema = v.picklist([
 const dashboardTextScaleSchema = v.pipe(
   v.number(),
   v.minValue(0.9),
-  v.maxValue(1.4),
+  v.maxValue(1.75),
 );
 const envVarNameSchema = v.pipe(
   v.string(),
