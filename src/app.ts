@@ -33,6 +33,16 @@ import {
   readProviderConfigSync,
 } from './providers';
 import {
+  listRepoEditEvents,
+  patchRepoFiles,
+  readRepoCheckoutStatus,
+  readRepoDiff,
+  readRepoFile,
+  replaceRepoFile,
+  searchRepoFiles,
+  writeRepoFile,
+} from './repo-edit';
+import {
   addNotification,
   listNotifications,
   listWorkflowSummaries,
@@ -385,6 +395,102 @@ app.get('/api/repos/health', async (c) => {
   }
 });
 
+app.get('/api/repos/:repoId/status', async (c) => {
+  const result = await readRepoCheckoutStatus(
+    { repoId: c.req.param('repoId') },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/repos/:repoId/files/read', async (c) => {
+  const result = await readRepoFile(
+    { ...(await safeJsonObject(c)), repoId: c.req.param('repoId') },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/repos/:repoId/files/search', async (c) => {
+  const result = await searchRepoFiles(
+    { ...(await safeJsonObject(c)), repoId: c.req.param('repoId') },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/repos/:repoId/files/write/preview', async (c) => {
+  const result = await writeRepoFile(
+    {
+      ...(await safeJsonObject(c)),
+      repoId: c.req.param('repoId'),
+      dryRun: true,
+    },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/repos/:repoId/files/write', async (c) => {
+  const result = await writeRepoFile(
+    { ...(await safeJsonObject(c)), repoId: c.req.param('repoId') },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/repos/:repoId/files/replace/preview', async (c) => {
+  const result = await replaceRepoFile(
+    {
+      ...(await safeJsonObject(c)),
+      repoId: c.req.param('repoId'),
+      dryRun: true,
+    },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/repos/:repoId/files/replace', async (c) => {
+  const result = await replaceRepoFile(
+    { ...(await safeJsonObject(c)), repoId: c.req.param('repoId') },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/repos/:repoId/files/patch/preview', async (c) => {
+  const result = await patchRepoFiles(
+    {
+      ...(await safeJsonObject(c)),
+      repoId: c.req.param('repoId'),
+      dryRun: true,
+    },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/repos/:repoId/files/patch', async (c) => {
+  const result = await patchRepoFiles(
+    { ...(await safeJsonObject(c)), repoId: c.req.param('repoId') },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/repos/:repoId/diff', async (c) => {
+  const result = await readRepoDiff(
+    { ...(await safeJsonObject(c)), repoId: c.req.param('repoId') },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.get('/api/repo-edits', async (c) => {
+  return c.json(await listRepoEditEvents(paths));
+});
+
 app.get('/api/watches', async (c) => {
   return c.json(await listPrWatches(paths));
 });
@@ -578,6 +684,13 @@ function isSafeMethod(method: string) {
 
 async function safeJsonBody(c: Context): Promise<unknown> {
   return c.req.json().catch(() => ({}));
+}
+
+async function safeJsonObject(c: Context): Promise<Record<string, unknown>> {
+  const body = await safeJsonBody(c);
+  return body && typeof body === 'object' && !Array.isArray(body)
+    ? (body as Record<string, unknown>)
+    : {};
 }
 
 function isAllowedBrowserOrigin(request: Request) {

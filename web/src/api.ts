@@ -242,6 +242,34 @@ export type ExecutionApprovalsResponse = {
   fetchedAt: string;
 };
 
+export type RepoEditEvent = {
+  id: string;
+  repoId: string;
+  sessionId: string | null;
+  workflowRunId: string | null;
+  actorType: string;
+  actorId: string | null;
+  action: string;
+  status: 'preview' | 'applied' | 'failed' | 'blocked';
+  reason: string | null;
+  paths: string[];
+  inputHash: string | null;
+  diffSummary: unknown;
+  diffPatch: string | null;
+  error: unknown;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RepoEditEventsResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  events: RepoEditEvent[];
+  fetchedAt: string;
+};
+
 export type ConfigActionResult = {
   ok: boolean;
   action: string;
@@ -722,6 +750,10 @@ export async function upsertMemory(input: {
 
 export async function getNotifications() {
   return getJson<NotificationResponse>('/api/notifications');
+}
+
+export async function getRepoEditEvents() {
+  return getJson<RepoEditEventsResponse>('/api/repo-edits');
 }
 
 export async function markNotificationRead(id: string) {

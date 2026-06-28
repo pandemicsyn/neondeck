@@ -13,6 +13,7 @@ import {
   neondeckRuntimeSkillActions,
   runtimeSkillReferencesSync,
 } from '../runtime-skills';
+import { neondeckRepoEditActions } from '../repo-edit';
 import { neondeckSchedulerActions } from '../scheduler';
 import { neondeckSessionActions } from '../session-actions';
 import { soulInstructions } from '../soul';
@@ -53,6 +54,7 @@ export default defineAgent(() => {
       'For PR assistant requests, run /explain-ci, /summarize-pr, /draft-pr-description, /prepare-pr, or /review-local through neondeck_command_run. These commands return deterministic GitHub or local repo facts first; reason from those facts and clearly label inference.',
       'For runtime skills, use neondeck_runtime_skills_lookup and neondeck_runtime_skill_load to inspect user-provided procedural guidance, and neondeck_skills_reload when a rescan is explicitly requested.',
       'For local repository status, use neondeck_repo_status_lookup when you need deterministic git facts without a persisted command summary.',
+      'For host repository file reads and edits, use neondeck_repo_file_read, neondeck_repo_file_search, neondeck_repo_file_replace, neondeck_repo_file_patch, neondeck_repo_file_write, neondeck_repo_diff, and neondeck_repo_checkout_status. These actions operate only inside declared Neondeck repo workspaces and never prompt for approval inside that boundary; blocked paths return typed policy errors. Prefer replace for small edits and V4A patches for multi-file edits.',
       'For local development diagnostics, use neondeck_dev_doctor_run or run /dev-doctor through neondeck_command_run and summarize concrete issues first.',
       'For durable user preferences, project/repo conventions, session notes, and watch notes, use neondeck_memory_* actions. Memory writes are durable immediately but active session context changes only on a new session.',
       'For follow-up questions about prior command runs, use neondeck_workflow_summaries_lookup instead of relying only on chat transcript.',
@@ -73,6 +75,7 @@ export default defineAgent(() => {
       ...neondeckRuntimeSkillActions,
       ...neondeckDevDoctorActions,
       ...neondeckMemoryActions,
+      ...neondeckRepoEditActions,
     ],
   };
 });

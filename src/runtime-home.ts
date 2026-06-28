@@ -569,6 +569,37 @@ function initializeAppDatabase(path: string) {
         executed_at TEXT,
         updated_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS repo_edit_events (
+        id TEXT PRIMARY KEY,
+        repo_id TEXT NOT NULL,
+        session_id TEXT,
+        workflow_run_id TEXT,
+        actor_type TEXT NOT NULL,
+        actor_id TEXT,
+        action TEXT NOT NULL,
+        status TEXT NOT NULL,
+        reason TEXT,
+        paths_json TEXT NOT NULL,
+        input_hash TEXT,
+        diff_summary_json TEXT,
+        diff_patch TEXT,
+        error_json TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS repo_file_reads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT,
+        repo_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        mtime_ms REAL NOT NULL,
+        size INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        partial INTEGER NOT NULL DEFAULT 0,
+        read_at TEXT NOT NULL
+      );
     `);
 
     ensureColumn(database, 'notifications', 'resolved_at', 'TEXT');
@@ -603,6 +634,15 @@ function initializeAppDatabase(path: string) {
 
       CREATE INDEX IF NOT EXISTS idx_execution_approvals_updated
         ON execution_approvals(updated_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_repo_edit_events_updated
+        ON repo_edit_events(updated_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_repo_edit_events_repo
+        ON repo_edit_events(repo_id, updated_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_repo_file_reads_lookup
+        ON repo_file_reads(session_id, repo_id, path, read_at DESC);
     `);
     reconcileExistingNotificationDuplicates(database);
     reconcileActiveNeonSessions(database);

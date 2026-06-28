@@ -161,3 +161,10 @@ Use this format:
 - Decision: Replaced one-plugin-per-region dashboard config with a statusline plus tabbed region stacks, added `dashboard.schema.json`, and added `neondeck_config_apply_dashboard_preset` plus `neondeck_config_update_dashboard_layout` so Neon can configure layouts through typed actions.
 - Reason: The Xeneon layout needs to preserve the original left-work/right-Neon geometry while exposing secondary panels without crowding the screen. The app has not shipped yet, so dropping the older dashboard config shape is simpler than maintaining compatibility.
 - Follow-up: None.
+
+## 2026-06-28 - Repo Editing Core
+
+- Roadmap item: Repo Editing Plan / Phases 1-7
+- Decision: Landed the core repo-editing substrate, Valibot-backed Flue actions, local HTTP APIs, SQLite audit/read-stamp tables, runtime skill guidance, CLI `repo diff` and `edit-events` commands, Runtime Overview repo edit event visibility, path/workspace policy, stale-read protection, fuzzy replacement, V4A patch parsing, staged multi-file patch writes, and Git diff/status helpers. Deferred a dedicated diff-preview/edit-events dashboard panel, cleanup jobs for old read stamps/audit rows, and richer generated-file detection knobs.
+- Reason: The frequent-agent-use path needs deterministic actions and hard file safety first. Runtime Overview now exposes the audit trail, while a dedicated diff preview panel and cleanup policy should be designed with the broader runtime observability UI instead of rushed into the core edit layer.
+- Follow-up: Add a first-class dashboard repo edit diff preview panel, retention cleanup for `repo_file_reads` and capped edit events, and configurable generated-file/sensitive-file markers.
