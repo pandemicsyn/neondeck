@@ -15,6 +15,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import * as v from 'valibot';
 import {
+  type AgentModelConfig,
+  type AppConfig,
   type RepoConfig,
   type RuntimePaths,
   type ScheduleEntry,
@@ -101,6 +103,25 @@ const updateScheduleInputSchema = v.object({
   preset: v.optional(nonEmptyStringSchema),
   config: v.optional(unknownRecordSchema),
 });
+const subagentModelInputSchema = v.object({
+  default: v.optional(nonEmptyStringSchema),
+  repoResearcher: v.optional(nonEmptyStringSchema),
+  ciInvestigator: v.optional(nonEmptyStringSchema),
+  releaseReviewer: v.optional(nonEmptyStringSchema),
+});
+const updateAgentModelsInputSchema = v.object({
+  default: v.optional(nonEmptyStringSchema),
+  displayAssistant: v.optional(nonEmptyStringSchema),
+  subagents: v.optional(subagentModelInputSchema),
+});
+const configActionOutputSchema = v.looseObject({
+  ok: v.boolean(),
+  action: v.string(),
+  changed: v.boolean(),
+  message: v.string(),
+  home: v.string(),
+  files: v.array(v.string()),
+});
 
 export const configReadAction = defineAction({
   name: 'neondeck_config_read',
@@ -109,6 +130,7 @@ export const configReadAction = defineAction({
   input: v.object({
     target: configTargetSchema,
   }),
+  output: configActionOutputSchema,
   async run({ input }) {
     return readConfig(input);
   },
@@ -121,6 +143,7 @@ export const configValidateAction = defineAction({
   input: v.object({
     target: configTargetSchema,
   }),
+  output: configActionOutputSchema,
   async run({ input }) {
     return validateConfig(input);
   },
@@ -131,8 +154,20 @@ export const configReloadAction = defineAction({
   description:
     'Reload Neondeck runtime config by validating files and returning the active config snapshot.',
   input: v.object({}),
+  output: configActionOutputSchema,
   async run() {
     return reloadConfig();
+  },
+});
+
+export const updateAgentModelsAction = defineAction({
+  name: 'neondeck_config_update_agent_models',
+  description:
+    'Update display-assistant and subagent model names in runtime config.json. Provider registration is not changed by this action.',
+  input: updateAgentModelsInputSchema,
+  output: configActionOutputSchema,
+  async run({ input }) {
+    return updateAgentModels(input);
   },
 });
 
@@ -141,6 +176,7 @@ export const addRepoAction = defineAction({
   description:
     'Add a local git repository to Neondeck repos.json after path, git, GitHub, and schema validation.',
   input: addRepoInputSchema,
+  output: configActionOutputSchema,
   async run({ input }) {
     return addRepo(input);
   },
@@ -151,6 +187,7 @@ export const updateRepoAction = defineAction({
   description:
     'Update an existing Neondeck repository entry in repos.json with schema validation.',
   input: updateRepoInputSchema,
+  output: configActionOutputSchema,
   async run({ input }) {
     return updateRepo(input);
   },
@@ -160,6 +197,7 @@ export const removeRepoAction = defineAction({
   name: 'neondeck_config_remove_repo',
   description: 'Remove an existing Neondeck repository entry from repos.json.',
   input: removeRepoInputSchema,
+  output: configActionOutputSchema,
   async run({ input }) {
     return removeRepo(input);
   },
@@ -170,6 +208,7 @@ export const addScheduleAction = defineAction({
   description:
     'Add a Neondeck schedule entry to schedules.json with schema validation.',
   input: scheduleInputSchema,
+  output: configActionOutputSchema,
   async run({ input }) {
     return addSchedule(input);
   },
@@ -180,6 +219,7 @@ export const updateScheduleAction = defineAction({
   description:
     'Update an existing Neondeck schedule entry in schedules.json with schema validation.',
   input: updateScheduleInputSchema,
+  output: configActionOutputSchema,
   async run({ input }) {
     return updateSchedule(input);
   },
@@ -193,6 +233,7 @@ export const removeScheduleAction = defineAction({
     id: nonEmptyStringSchema,
     confirm: v.optional(v.boolean()),
   }),
+  output: configActionOutputSchema,
   async run({ input }) {
     return removeSchedule(input);
   },
@@ -202,6 +243,7 @@ export const neondeckConfigActions = [
   configReadAction,
   configValidateAction,
   configReloadAction,
+  updateAgentModelsAction,
   addRepoAction,
   updateRepoAction,
   removeRepoAction,
@@ -261,6 +303,70 @@ export async function reloadConfig(
       'Runtime config reloaded. Neondeck reads config from disk, so no process restart was required.',
     data: await readTarget('all', paths),
   });
+}
+
+export async function updateAgentModels(
+  rawInput: v.InferInput<typeof updateAgentModelsInputSchema>,
+  paths = runtimePaths(),
+): Promise<ConfigActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsed = parseActionInput(
+    updateAgentModelsInputSchema,
+    rawInput,
+    'config_update_agent_models',
+    paths,
+    [paths.config],
+  );
+  if (!parsed.ok) return parsed.result;
+
+  const input = parsed.input;
+  if (!hasAgentModelUpdate(input)) {
+    return failResult('config_update_agent_models', paths, [paths.config], {
+      message: 'At least one model value is required.',
+      requires: ['model'],
+    });
+  }
+
+  const config = await readRuntimeJson(paths.config, parseAppConfig);
+  const nextModels = mergeAgentModelConfig(config.models, input);
+  const next = parseAppConfig(
+    {
+      ...config,
+      models: nextModels,
+    },
+    paths.config,
+  );
+  const changed =
+    JSON.stringify(config.models ?? {}) !== JSON.stringify(next.models ?? {});
+
+  if (changed) {
+    await writeJson(paths.config, next);
+    recordConfigChange(paths, {
+      action: 'config_update_agent_models',
+      file: paths.config,
+      target: 'models',
+      before: config,
+      after: next,
+    });
+  }
+
+  return okResult(
+    'config_update_agent_models',
+    changed,
+    paths,
+    [paths.config],
+    {
+      message: changed
+        ? 'Updated agent model configuration. Start a new session or restart the server for active agents to pick up the change.'
+        : 'Agent model configuration already matched the requested values.',
+      data: {
+        models: next.models,
+        appliesAfter: 'new-session-or-server-restart',
+        providerRegistration:
+          'Model strings must reference providers already registered by Neondeck or Flue runtime configuration.',
+      },
+    },
+  );
 }
 
 export async function addRepo(
@@ -636,6 +742,38 @@ export async function removeSchedule(
   return okResult('config_remove_schedule', true, paths, [paths.schedules], {
     message: `Removed schedule "${input.id}".`,
   });
+}
+
+function hasAgentModelUpdate(
+  input: v.InferOutput<typeof updateAgentModelsInputSchema>,
+) {
+  return Boolean(
+    input.default ||
+    input.displayAssistant ||
+    input.subagents?.default ||
+    input.subagents?.repoResearcher ||
+    input.subagents?.ciInvestigator ||
+    input.subagents?.releaseReviewer,
+  );
+}
+
+function mergeAgentModelConfig(
+  current: AppConfig['models'] | undefined,
+  input: v.InferOutput<typeof updateAgentModelsInputSchema>,
+): AgentModelConfig {
+  const subagents = {
+    ...current?.subagents,
+    ...input.subagents,
+  };
+
+  return {
+    ...current,
+    ...(input.default !== undefined ? { default: input.default } : {}),
+    ...(input.displayAssistant !== undefined
+      ? { displayAssistant: input.displayAssistant }
+      : {}),
+    ...(Object.keys(subagents).length > 0 ? { subagents } : {}),
+  };
 }
 
 async function readTarget(target: ConfigTarget, paths: RuntimePaths) {

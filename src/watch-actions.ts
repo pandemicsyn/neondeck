@@ -108,12 +108,19 @@ const watchPrRefreshInputSchema = v.object({
   id: v.optional(nonEmptyStringSchema),
   ref: v.optional(nonEmptyStringSchema),
 });
+const watchActionOutputSchema = v.looseObject({
+  ok: v.boolean(),
+  action: v.string(),
+  changed: v.boolean(),
+  message: v.string(),
+});
 
 export const watchPrAddAction = defineAction({
   name: 'neondeck_watch_pr_add',
   description:
     'Create a persistent PR watch from a GitHub PR URL, owner/repo#number, repo#number, or #number reference.',
   input: watchPrAddInputSchema,
+  output: watchActionOutputSchema,
   async run({ input }) {
     return addPrWatch(input);
   },
@@ -123,6 +130,7 @@ export const watchPrListAction = defineAction({
   name: 'neondeck_watch_pr_list',
   description: 'List persistent Neondeck PR watches.',
   input: v.object({}),
+  output: watchActionOutputSchema,
   async run() {
     return listPrWatches();
   },
@@ -132,6 +140,7 @@ export const watchPrRemoveAction = defineAction({
   name: 'neondeck_watch_pr_remove',
   description: 'Remove a persistent PR watch after explicit confirmation.',
   input: watchPrRemoveInputSchema,
+  output: watchActionOutputSchema,
   async run({ input }) {
     return removePrWatch(input);
   },
@@ -142,6 +151,7 @@ export const watchPrRefreshAction = defineAction({
   description:
     'Refresh one persistent PR watch and return silent when no meaningful state changed.',
   input: watchPrRefreshInputSchema,
+  output: watchActionOutputSchema,
   async run({ input }) {
     return refreshPrWatch(input);
   },
@@ -149,7 +159,6 @@ export const watchPrRefreshAction = defineAction({
 
 export const neondeckWatchActions = [
   watchPrAddAction,
-  watchPrListAction,
   watchPrRemoveAction,
   watchPrRefreshAction,
 ];

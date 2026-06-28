@@ -59,14 +59,43 @@ const healthResponseSchema = v.object({
 const rootDir = dirname(
   fileURLToPath(new URL('../package.json', import.meta.url)),
 );
+const devDoctorOutputSchema = v.looseObject({
+  ok: v.boolean(),
+  action: v.string(),
+  changed: v.boolean(),
+});
 
 export const devDoctorRunAction = defineAction({
   name: 'neondeck_dev_doctor_run',
   description:
     'Run deterministic local development health checks for configured repos, scripts, env, ports, runtime databases, and Node version.',
   input: v.object({}),
-  async run() {
-    return runDevDoctor();
+  output: devDoctorOutputSchema,
+  async run({ log, emitData }) {
+    log.info('Dev doctor requested');
+    emitData(
+      'neondeck.dev_doctor',
+      { status: 'running', message: 'Running deterministic local checks.' },
+      { id: 'latest' },
+    );
+
+    const result = await runDevDoctor();
+    const payload = {
+      status: result.status,
+      message: result.message,
+      attention: result.summary.attention,
+      repos: result.summary.repos,
+      envMissing: result.summary.envMissing,
+    };
+    emitData('neondeck.dev_doctor', payload, { id: 'latest' });
+
+    if (result.status === 'attention') {
+      log.warn('Dev doctor found issues', payload);
+    } else {
+      log.info('Dev doctor completed', payload);
+    }
+
+    return result;
   },
 });
 
@@ -75,15 +104,13 @@ export const repoStatusListAction = defineAction({
   description:
     'List deterministic local git status for configured repositories without creating a workflow summary.',
   input: v.object({}),
+  output: devDoctorOutputSchema,
   async run() {
     return listRepoStatus();
   },
 });
 
-export const neondeckDevDoctorActions = [
-  devDoctorRunAction,
-  repoStatusListAction,
-];
+export const neondeckDevDoctorActions = [devDoctorRunAction];
 
 export async function runDevDoctor(
   paths: RuntimePaths = runtimePaths(),

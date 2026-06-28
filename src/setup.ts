@@ -35,7 +35,7 @@ const trackedPaths = [
   paths.dashboard,
   paths.schedules,
   paths.soul,
-  paths.neondeckSkill,
+  paths.skills,
   paths.neondeckDatabase,
   paths.flueDatabase,
 ];
@@ -52,8 +52,8 @@ try {
       status: existedBefore.has(path) ? 'existing' : 'created',
     })),
     skills: {
-      root: paths.skills,
-      neondeck: paths.neondeckSkill,
+      runtimeRoot: paths.skills,
+      builtIn: 'src/skills/neondeck/SKILL.md',
     },
     next: {
       dev: 'npm run dev',
@@ -130,7 +130,7 @@ then ~/.config/neondeck.`);
 function printSummary(result: {
   home: string;
   files: Array<{ path: string; status: string }>;
-  skills: { root: string; neondeck: string };
+  skills: { runtimeRoot: string; builtIn: string };
   next: Record<string, string>;
 }) {
   console.log(`Neondeck runtime home is ready: ${result.home}`);
@@ -140,8 +140,8 @@ function printSummary(result: {
     console.log(`- ${file.status.padEnd(8)} ${file.path}`);
   }
   console.log('');
-  console.log(`Runtime skills root: ${result.skills.root}`);
-  console.log(`Built-in skill: ${result.skills.neondeck}`);
+  console.log(`Runtime skills root: ${result.skills.runtimeRoot}`);
+  console.log(`Built-in Flue skill: ${result.skills.builtIn}`);
   console.log('');
   console.log('Next commands:');
   console.log(`- ${result.next.dev}`);

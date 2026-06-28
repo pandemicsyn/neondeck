@@ -14,7 +14,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       <aside class="docs-sidebar">
         <a href="/docs/">Overview</a>
         <a href="/docs/getting-started/">Getting started</a>
-        <a href="/#config">Configuration</a>
+        <a href="#runtime-home">Runtime home</a>
+        <a href="#commands">Commands</a>
+        <a href="#flue">Flue surface</a>
         <a href="https://github.com/pandemicsyn/neondeck">GitHub</a>
       </aside>
       <article class="docs-prose">
@@ -24,6 +26,42 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           display. The local app serves a React dashboard and Flue backend; this
           Astro site documents the project and deploys separately to Cloudflare
           at neondeck.dev.
+        </p>
+
+        <h2>Current runtime</h2>
+        <p>
+          The local app is a Node 26 Hono server with Flue agents, Flue
+          workflows, deterministic actions, local SQLite state, and a Vite/React
+          dashboard. It is optimized for the Corsair Xeneon Edge, but the
+          dashboard layout is driven by runtime JSON config rather than the
+          display hardware.
+        </p>
+
+        <h2 id="runtime-home">Runtime home</h2>
+        <p>
+          neondeck resolves mutable local state in this order:
+          <code>NEONDECK_HOME</code>, then
+          <code>XDG_CONFIG_HOME/neondeck</code>, then
+          <code>~/.config/neondeck</code>. First run, or
+          <code>npm run setup</code>, creates the runtime home.
+        </p>
+        <pre><code>~/.config/neondeck/
+  config.json
+  repos.json
+  dashboard.json
+  schedules.json
+  SOUL.md
+  skills/
+    custom-skill/
+      SKILL.md
+  data/
+    neondeck.db
+    flue.db</code></pre>
+        <p>
+          <code>data/neondeck.db</code> stores Neondeck app state such as watches,
+          jobs, notifications, memories, workflow summaries, and config history. <code
+            >data/flue.db</code
+          > stores Flue runtime state.
         </p>
 
         <h2>Project pieces</h2>
@@ -40,20 +78,63 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
             neondeck.dev.
           </li>
           <li>
-            <code>config/dashboard.json</code>: local dashboard layout preset.
+            <code>config/dashboard.json</code>: default dashboard layout seed
+            copied into new runtime homes.
           </li>
           <li>
-            <code>SOUL.md</code>: agent name, emoji, and personality prompt
-            material.
+            <code>SOUL.md</code>: default agent personality material copied into
+            new runtime homes.
           </li>
         </ul>
 
-        <h2>Commands</h2>
-        <pre><code>npm run dev
-npm run typecheck
-npm run build
-npm run webapp:dev
-npm run webapp:deploy</code></pre>
+        <h2 id="commands">Neon commands</h2>
+        <p>
+          Slash commands can be typed into the chat panel, run from dashboard
+          buttons, or invoked through the <code>command-run</code> Flue workflow.
+          Results are persisted in
+          <code>workflow_summaries</code> and exposed at
+          <code>/api/workflows/summaries</code>.
+        </p>
+        <pre><code>/repo-status [repo-id]
+/review-queue
+/briefing
+/dev-doctor
+/watch-pr &lt;repo#number|owner/repo#number|url&gt;
+/watch-release &lt;repo-id|owner/repo&gt;</code></pre>
+
+        <h2>Watches and scheduler</h2>
+        <p>
+          PR watches persist in SQLite and survive restart. A
+          <code>/watch-pr</code> watch polls GitHub for merge state, merge commit
+          checks, and quiet no-op refreshes. A direct
+          <code>/watch-release</code> watch tracks the configured default branch checks.
+          A linked <code>/watch-pr ... until prod</code> release watch waits for the
+          source PR to merge, then tracks the source PR merge SHA until checks are
+          green. Provider-specific deploy adapters are still a future integration.
+        </p>
+
+        <h2 id="flue">Flue actions and workflows</h2>
+        <p>
+          Neon gets deterministic capabilities through schema-backed Flue
+          actions for config, repo status, GitHub PR/check facts, runtime
+          skills, schedules, watches, commands, and local dev doctor checks.
+          Bounded operations are also available as discovered Flue workflows:
+        </p>
+        <pre><code>briefing
+command-run
+dev-doctor
+scheduler-tick
+watch-pr
+watch-release</code></pre>
+
+        <h2>Developer commands</h2>
+        <pre><code>fnm use 26.4.0
+npm run setup
+npm run dev
+npm run check
+npm run verify
+npm run webapp:astro-dev
+npm run webapp:build</code></pre>
       </article>
     </main>
     <SiteFooter />

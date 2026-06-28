@@ -1,8 +1,14 @@
-import { defineAction, type JsonValue } from '@flue/runtime';
+import {
+  defineAction,
+  defineSkill,
+  type JsonValue,
+  type SkillReference,
+} from '@flue/runtime';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as v from 'valibot';
 import {
   type RuntimePaths,
@@ -81,12 +87,29 @@ const skillNameSchema = v.pipe(
 const skillLoadInputSchema = v.object({
   id: v.pipe(v.string(), v.minLength(1)),
 });
+const runtimeSkillActionOutputSchema = v.looseObject({
+  ok: v.boolean(),
+  action: v.string(),
+  changed: v.boolean(),
+  message: v.string(),
+});
+const maxSkillResourceBytes = 256 * 1024;
+const sensitiveSkillResourceNames = new Set([
+  'id_rsa',
+  'id_dsa',
+  'id_ecdsa',
+  'id_ed25519',
+]);
+const applicationSkillPath = fileURLToPath(
+  new URL('./skills/neondeck/SKILL.md', import.meta.url),
+);
 
 export const skillsListAction = defineAction({
   name: 'neondeck_skills_list',
   description:
     'List discovered Neondeck runtime skills, ignored skill folders, and duplicate skill ids.',
   input: v.object({}),
+  output: runtimeSkillActionOutputSchema,
   async run() {
     return listRuntimeSkillsAction();
   },
@@ -97,6 +120,7 @@ export const skillLoadAction = defineAction({
   description:
     'Load the full SKILL.md content for one active Neondeck runtime skill by id.',
   input: skillLoadInputSchema,
+  output: runtimeSkillActionOutputSchema,
   async run({ input }) {
     return loadRuntimeSkillAction(input);
   },
@@ -105,18 +129,15 @@ export const skillLoadAction = defineAction({
 export const skillsReloadAction = defineAction({
   name: 'neondeck_skills_reload',
   description:
-    'Reload Neondeck runtime skill metadata from disk and report validation issues.',
+    'Rescan Neondeck runtime skill metadata from disk and report validation issues. Agent behavior uses Flue skills and may require a new session or server restart.',
   input: v.object({}),
+  output: runtimeSkillActionOutputSchema,
   async run() {
     return reloadRuntimeSkillsAction();
   },
 });
 
-export const neondeckRuntimeSkillActions = [
-  skillsListAction,
-  skillLoadAction,
-  skillsReloadAction,
-];
+export const neondeckRuntimeSkillActions = [skillsReloadAction];
 
 export async function listRuntimeSkills(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
@@ -171,7 +192,9 @@ export async function reloadRuntimeSkills(paths = runtimePaths()) {
   return listRuntimeSkills(paths);
 }
 
-export function runtimeSkillInstructionsSync(paths = runtimePaths()) {
+export function runtimeSkillReferencesSync(
+  paths = runtimePaths(),
+): SkillReference[] {
   ensureRuntimeHomeSync(paths);
   const roots = runtimeSkillRootsSafeSync(paths);
   const inventory = discoverRuntimeSkillsSync(
@@ -179,29 +202,9 @@ export function runtimeSkillInstructionsSync(paths = runtimePaths()) {
     roots.roots,
     roots.ignored,
   );
-  const activeSkills = inventory.skills.filter(
-    (skill) => skill.status === 'active',
-  );
-
-  if (activeSkills.length === 0) {
-    return [
-      'No active Neondeck runtime skills are currently loaded.',
-      skillIssueInstruction(inventory),
-    ]
-      .filter(Boolean)
-      .join('\n\n');
-  }
-
-  return [
-    'The following Neondeck runtime skills are loaded from runtime skill roots. Treat them as procedural guidance and prefer deterministic actions for mutations.',
-    ...activeSkills.map((skill) => {
-      const content = readFileSync(skill.path, 'utf8');
-      return `## Runtime Skill: ${skill.id}\n\nSource: ${skill.path}\n\n${content}`;
-    }),
-    skillIssueInstruction(inventory),
-  ]
-    .filter(Boolean)
-    .join('\n\n');
+  return inventory.skills
+    .filter((skill) => skill.status === 'active' && skill.source !== 'built-in')
+    .map((skill) => runtimeSkillReference(skill));
 }
 
 async function listRuntimeSkillsAction(
@@ -303,6 +306,12 @@ async function discoverRuntimeSkills(
 ): Promise<RuntimeSkillInventory> {
   const candidates: RuntimeSkillCandidate[] = [];
   const ignored: IgnoredRuntimeSkill[] = [...initialIgnored];
+  const builtIn = readApplicationSkillCandidate();
+  if (builtIn.ok) {
+    candidates.push(builtIn.skill);
+  } else {
+    ignored.push(builtIn.ignored);
+  }
 
   for (const root of roots) {
     const entries = await readSkillRoot(root);
@@ -329,6 +338,13 @@ function discoverRuntimeSkillsSync(
   const candidates: RuntimeSkillCandidate[] = [];
   const ignored: IgnoredRuntimeSkill[] = [...initialIgnored];
 
+  const builtIn = readApplicationSkillCandidate();
+  if (builtIn.ok) {
+    candidates.push(builtIn.skill);
+  } else {
+    ignored.push(builtIn.ignored);
+  }
+
   for (const root of roots) {
     const entries = readSkillRootSync(root);
     for (const entry of entries.ignored) ignored.push(entry);
@@ -344,6 +360,15 @@ function discoverRuntimeSkillsSync(
   }
 
   return buildInventory(roots, candidates, ignored);
+}
+
+function readApplicationSkillCandidate() {
+  return parseSkillFile(
+    readFileSync(applicationSkillPath, 'utf8'),
+    applicationSkillPath,
+    { path: dirname(dirname(applicationSkillPath)), source: 'built-in' },
+    'built-in',
+  );
 }
 
 async function readSkillRoot(root: RuntimeSkillRoot) {
@@ -493,6 +518,18 @@ function parseSkillFile(
     };
   }
 
+  if (skillSource !== 'built-in' && nameResult.output === 'neondeck') {
+    return {
+      ok: false,
+      ignored: ignoredSkill(
+        path,
+        root,
+        skillSource,
+        'Skill id "neondeck" is reserved for the built-in application Flue skill.',
+      ),
+    };
+  }
+
   if (
     typeof metadata.data.description !== 'string' ||
     metadata.data.description.trim().length === 0 ||
@@ -524,7 +561,9 @@ function parseSkillFile(
 
 function parseFrontmatter(
   source: string,
-): { ok: true; data: Record<string, string> } | { ok: false; reason: string } {
+):
+  | { ok: true; data: Record<string, string>; body: string }
+  | { ok: false; reason: string } {
   if (!source.startsWith('---\n')) {
     return { ok: false, reason: 'Missing YAML frontmatter.' };
   }
@@ -541,7 +580,7 @@ function parseFrontmatter(
     metadata[match[1]] = unquoteYamlScalar(match[2].trim());
   }
 
-  return { ok: true, data: metadata };
+  return { ok: true, data: metadata, body: source.slice(end + 4).trimStart() };
 }
 
 function unquoteYamlScalar(value: string) {
@@ -590,12 +629,10 @@ function buildInventory(
 function runtimeSkillSource(
   paths: RuntimePaths,
   root: RuntimeSkillRoot,
-  directory: string,
+  _directory: string,
 ): RuntimeSkillSource {
   if (root.source === 'external') return 'external';
-  return resolve(directory) === resolve(join(paths.skills, 'neondeck'))
-    ? 'built-in'
-    : 'user';
+  return 'user';
 }
 
 function ignoredRoot(
@@ -654,27 +691,6 @@ function okResult(
   };
 }
 
-function skillIssueInstruction(inventory: RuntimeSkillInventory) {
-  const messages = [];
-  if (inventory.duplicates.length > 0) {
-    messages.push(
-      `Duplicate runtime skill ids are disabled until resolved: ${inventory.duplicates
-        .map((duplicate) => duplicate.id)
-        .join(', ')}.`,
-    );
-  }
-
-  if (inventory.ignored.length > 0) {
-    messages.push(
-      `Some runtime skill folders were ignored: ${inventory.ignored
-        .map((entry) => `${entry.path} (${entry.reason})`)
-        .join('; ')}.`,
-    );
-  }
-
-  return messages.join('\n');
-}
-
 function expandRuntimePath(path: string) {
   if (path === '~') return homedir();
   if (path.startsWith('~/')) return join(homedir(), path.slice(2));
@@ -687,4 +703,71 @@ function errorMessage(error: unknown) {
 
 function asJsonValue(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
+}
+
+function runtimeSkillReference(skill: RuntimeSkillMetadata): SkillReference {
+  const source = readFileSync(skill.path, 'utf8');
+  const metadata = parseFrontmatter(source);
+  const files = collectSupportingFilesSync(skill.directory);
+
+  return defineSkill({
+    name: skill.id,
+    description: skill.description,
+    instructions: metadata.ok ? metadata.body : source,
+    files,
+  });
+}
+
+function collectSupportingFilesSync(directory: string) {
+  const files: Record<string, string | Uint8Array> = {};
+  collectSupportingFilesInto(directory, directory, files);
+  return files;
+}
+
+function collectSupportingFilesInto(
+  root: string,
+  directory: string,
+  files: Record<string, string | Uint8Array>,
+) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (entry.name.startsWith('.')) continue;
+    const path = join(directory, entry.name);
+    if (entry.isSymbolicLink()) continue;
+
+    if (entry.isDirectory()) {
+      collectSupportingFilesInto(root, path, files);
+      continue;
+    }
+
+    if (!entry.isFile() || entry.name === 'SKILL.md') continue;
+
+    const relativePath = relative(root, path);
+    if (isSensitiveSkillResource(relativePath)) continue;
+
+    const resource = readFileSync(path);
+    if (resource.byteLength > maxSkillResourceBytes) continue;
+
+    files[relativePath] = isUtf8Text(resource)
+      ? resource.toString('utf8')
+      : new Uint8Array(resource);
+  }
+}
+
+function isSensitiveSkillResource(path: string) {
+  const normalized = path.toLowerCase();
+  const name = basename(normalized);
+  return (
+    sensitiveSkillResourceNames.has(name) ||
+    normalized.endsWith('.pem') ||
+    normalized.endsWith('.key') ||
+    normalized.endsWith('.p12') ||
+    normalized.endsWith('.pfx') ||
+    normalized.includes('secret') ||
+    normalized.includes('token') ||
+    normalized.includes('credential')
+  );
+}
+
+function isUtf8Text(buffer: Buffer) {
+  return buffer.toString('utf8').indexOf('\uFFFD') === -1;
 }

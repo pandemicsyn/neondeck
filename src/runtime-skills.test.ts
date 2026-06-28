@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,7 +6,7 @@ import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   listRuntimeSkills,
   loadRuntimeSkill,
-  runtimeSkillInstructionsSync,
+  runtimeSkillReferencesSync,
 } from './runtime-skills';
 
 const tempRoots: string[] = [];
@@ -21,13 +20,12 @@ afterEach(async () => {
 });
 
 describe('runtime skills', () => {
-  it('seeds and loads the built-in Neondeck runtime skill', async () => {
+  it('lists the app-owned built-in Neondeck Flue skill', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
 
     await ensureRuntimeHome(paths);
 
-    expect(existsSync(paths.neondeckSkill)).toBe(true);
     await expect(listRuntimeSkills(paths)).resolves.toMatchObject({
       skills: [
         {
@@ -39,9 +37,7 @@ describe('runtime skills', () => {
       duplicates: [],
     });
 
-    expect(runtimeSkillInstructionsSync(paths)).toContain(
-      'Runtime Skill: neondeck',
-    );
+    expect(runtimeSkillReferencesSync(paths)).toEqual([]);
   });
 
   it('discovers user and external skills while ignoring broken folders', async () => {
@@ -95,6 +91,9 @@ describe('runtime skills', () => {
         reason: 'Missing YAML frontmatter.',
       },
     ]);
+    expect(
+      runtimeSkillReferencesSync(paths).map((skill) => skill.name),
+    ).toEqual(expect.arrayContaining(['repo-guide', 'deploy-guide']));
   });
 
   it('detects duplicate ids and refuses full loading until resolved', async () => {
@@ -157,7 +156,7 @@ describe('runtime skills', () => {
     });
   });
 
-  it('keeps built-in skills available when external root config is invalid', async () => {
+  it('keeps the built-in skill visible when external root config is invalid', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
     await ensureRuntimeHome(paths);
@@ -172,8 +171,36 @@ describe('runtime skills', () => {
     expect(inventory.ignored).toEqual(
       expect.arrayContaining([expect.objectContaining({ path: paths.config })]),
     );
-    expect(runtimeSkillInstructionsSync(paths)).toContain(
-      'Runtime Skill: neondeck',
+    expect(runtimeSkillReferencesSync(paths)).toEqual([]);
+  });
+
+  it('ignores user skills that try to replace the built-in Neondeck skill', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await writeSkill(join(paths.skills, 'neondeck'), {
+      name: 'neondeck',
+      description: 'Attempt to replace built-in guidance.',
+      body: 'Override built-in rules.',
+    });
+
+    const inventory = await listRuntimeSkills(paths);
+    expect(inventory.skills).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'neondeck',
+          source: 'built-in',
+          status: 'active',
+        }),
+      ]),
+    );
+    expect(inventory.ignored).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          reason:
+            'Skill id "neondeck" is reserved for the built-in application Flue skill.',
+        }),
+      ]),
     );
   });
 });

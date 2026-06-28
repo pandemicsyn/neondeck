@@ -18,7 +18,6 @@ export type RuntimePaths = {
   schedules: string;
   soul: string;
   skills: string;
-  neondeckSkill: string;
   data: string;
   neondeckDatabase: string;
   flueDatabase: string;
@@ -28,9 +27,23 @@ const unknownRecordSchema = v.record(v.string(), v.unknown());
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 const positiveIntegerSchema = v.pipe(v.number(), v.integer(), v.minValue(1));
 
+export const agentModelConfigSchema = v.looseObject({
+  default: v.optional(nonEmptyStringSchema),
+  displayAssistant: v.optional(nonEmptyStringSchema),
+  subagents: v.optional(
+    v.looseObject({
+      default: v.optional(nonEmptyStringSchema),
+      repoResearcher: v.optional(nonEmptyStringSchema),
+      ciInvestigator: v.optional(nonEmptyStringSchema),
+      releaseReviewer: v.optional(nonEmptyStringSchema),
+    }),
+  ),
+});
+
 export const appConfigSchema = v.looseObject({
   version: positiveIntegerSchema,
   skillRoots: v.optional(v.array(nonEmptyStringSchema)),
+  models: v.optional(agentModelConfigSchema),
 });
 
 export const repoConfigSchema = v.looseObject({
@@ -90,6 +103,7 @@ export const dashboardConfigSchema = v.looseObject({
 });
 
 export type AppConfig = v.InferOutput<typeof appConfigSchema>;
+export type AgentModelConfig = v.InferOutput<typeof agentModelConfigSchema>;
 export type RepoConfig = v.InferOutput<typeof repoConfigSchema>;
 export type RepoRegistry = v.InferOutput<typeof repoRegistrySchema>;
 export type ScheduleEntry = v.InferOutput<typeof scheduleEntrySchema>;
@@ -133,7 +147,6 @@ export function runtimePaths(home = resolveRuntimeHome()): RuntimePaths {
     schedules: join(home, 'schedules.json'),
     soul: join(home, 'SOUL.md'),
     skills: join(home, 'skills'),
-    neondeckSkill: join(home, 'skills', 'neondeck', 'SKILL.md'),
     data: join(home, 'data'),
     neondeckDatabase: join(home, 'data', 'neondeck.db'),
     flueDatabase: join(home, 'data', 'flue.db'),
@@ -143,14 +156,13 @@ export function runtimePaths(home = resolveRuntimeHome()): RuntimePaths {
 export async function ensureRuntimeHome(paths = runtimePaths()) {
   await mkdir(paths.home, { recursive: true });
   await mkdir(paths.data, { recursive: true });
-  await mkdir(dirname(paths.neondeckSkill), { recursive: true });
+  await mkdir(paths.skills, { recursive: true });
 
   await writeJsonIfMissing(paths.config, { version: 1 });
   await writeJsonIfMissing(paths.repos, { repos: [] });
   await writeJsonIfMissing(paths.schedules, { schedules: [] });
   await copyIfMissing(defaultDashboardPath, paths.dashboard);
   await copyIfMissing(defaultSoulPath, paths.soul);
-  await writeRuntimeSkillIfMissingOrOutdated(paths);
   initializeAppDatabase(paths.neondeckDatabase);
   initializeFlueDatabase(paths.flueDatabase);
 }
@@ -158,14 +170,13 @@ export async function ensureRuntimeHome(paths = runtimePaths()) {
 export function ensureRuntimeHomeSync(paths = runtimePaths()) {
   mkdirSync(paths.home, { recursive: true });
   mkdirSync(paths.data, { recursive: true });
-  mkdirSync(dirname(paths.neondeckSkill), { recursive: true });
+  mkdirSync(paths.skills, { recursive: true });
 
   writeJsonIfMissingSync(paths.config, { version: 1 });
   writeJsonIfMissingSync(paths.repos, { repos: [] });
   writeJsonIfMissingSync(paths.schedules, { schedules: [] });
   copyIfMissingSync(defaultDashboardPath, paths.dashboard);
   copyIfMissingSync(defaultSoulPath, paths.soul);
-  writeRuntimeSkillIfMissingOrOutdatedSync(paths);
   initializeAppDatabase(paths.neondeckDatabase);
   initializeFlueDatabase(paths.flueDatabase);
 }
@@ -229,22 +240,6 @@ async function writeFileIfMissing(path: string, value: string) {
   await writeFile(path, value, 'utf8');
 }
 
-async function writeRuntimeSkillIfMissingOrOutdated(paths: RuntimePaths) {
-  if (!existsSync(paths.neondeckSkill)) {
-    await writeFileIfMissing(paths.neondeckSkill, runtimeSkillMarkdown(paths));
-    return;
-  }
-
-  const source = await readFile(paths.neondeckSkill, 'utf8');
-  if (!source.startsWith('---\n')) {
-    await writeFile(
-      paths.neondeckSkill,
-      `${runtimeSkillFrontmatter()}\n${source}`,
-      'utf8',
-    );
-  }
-}
-
 function writeFileIfMissingSync(path: string, value: string) {
   if (existsSync(path)) {
     return;
@@ -252,21 +247,6 @@ function writeFileIfMissingSync(path: string, value: string) {
 
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, value, 'utf8');
-}
-
-function writeRuntimeSkillIfMissingOrOutdatedSync(paths: RuntimePaths) {
-  if (!existsSync(paths.neondeckSkill)) {
-    writeFileIfMissingSync(paths.neondeckSkill, runtimeSkillMarkdown(paths));
-    return;
-  }
-
-  const source = readFileSync(paths.neondeckSkill, 'utf8');
-  if (!source.startsWith('---\n')) {
-    writeFileSync(
-      paths.neondeckSkill,
-      `${runtimeSkillFrontmatter()}\n${source}`,
-    );
-  }
 }
 
 async function copyIfMissing(source: string, target: string) {
@@ -450,62 +430,4 @@ function parseSchema<T>(
   }
 
   throw new ConfigValidationError(path, v.summarize(result.issues));
-}
-
-function runtimeSkillMarkdown(paths: RuntimePaths) {
-  return `${runtimeSkillFrontmatter()}
-# neondeck Runtime Skill
-
-Neon runs inside neondeck, a local-first developer cockpit for a companion display.
-
-## Runtime Home
-
-Configuration and mutable runtime state live in:
-
-\`\`\`text
-${paths.home}
-\`\`\`
-
-Home resolution order is \`NEONDECK_HOME\`, then \`XDG_CONFIG_HOME/neondeck\`, then \`~/.config/neondeck\`.
-
-## Files
-
-- \`config.json\`: top-level app settings.
-- \`repos.json\`: configured local repositories and GitHub metadata.
-- \`dashboard.json\`: dashboard layout and plugin configuration.
-- \`schedules.json\`: local schedule and briefing configuration.
-- \`SOUL.md\`: stable assistant personality loaded at session start.
-- \`skills/\`: runtime skill folders. Users can add additional Agent Skills-compatible folders here.
-- \`data/neondeck.db\`: neondeck app state.
-- \`data/flue.db\`: Flue runtime state.
-
-\`config.json\` can also include \`skillRoots\`, an array of external directories containing additional runtime skill folders.
-
-## Mutation Rules
-
-Use typed neondeck config actions for mutations whenever they are available. Do not directly edit config files as the primary path. Read, validate, add, update, remove, and reload through deterministic actions so UI buttons and chat commands share the same backend behavior.
-
-Use typed watch actions for PR watches. Add, list, remove, and refresh PR watches through \`neondeck_watch_pr_*\` actions. Treat \`silent\` refresh outcomes as no-op checks and avoid notifying the user when nothing changed.
-
-Use scheduler actions for recurring work. Create common automations through \`neondeck_schedule_blueprint_create\`, inspect durable jobs with \`neondeck_scheduler_list_jobs\`, and trigger due work with \`neondeck_scheduler_tick\`.
-
-Use runtime skill actions for skill inspection. List skills with \`neondeck_skills_list\`, load full skill content with \`neondeck_skill_load\`, and rescan skill roots with \`neondeck_skills_reload\`. If duplicate skill ids are reported, treat those skills as disabled until the duplicate folders are resolved.
-
-Use local dev doctor actions for diagnostics. Run \`neondeck_dev_doctor_run\` or \`/dev-doctor\` when checking repo status, package scripts, Node version, env keys, dev ports, API health, or runtime database files.
-
-Use release watch scheduling for GitHub check status. Run \`/watch-release <repo>\` or create a \`release-watch\` scheduler blueprint. Provider-specific production deploy adapters are future work; direct release watches track the configured default branch, and linked \`until prod\` PR release watches track the source PR merge SHA until checks are green.
-
-Use Flue workflows for bounded command runs when durable Flue run identity matters. The app provides \`command-run\`, \`briefing\`, \`watch-pr\`, \`watch-release\`, \`dev-doctor\`, and \`scheduler-tick\` workflows over the same deterministic backend operations used by chat commands and UI buttons.
-
-Use command actions for slash commands. Run \`/repo-status\`, \`/review-queue\`, \`/briefing\`, \`/watch-pr\`, \`/watch-release\`, and \`/dev-doctor\` through \`neondeck_command_run\` so command results are persisted as workflow summaries and UI buttons use the same backend path.
-
-Ask for confirmation before destructive changes, removing configured repositories, deleting schedules, disabling watches, or replacing user-authored skills. After any accepted change, summarize exactly which file or runtime object changed and what the new value is.
-`;
-}
-
-function runtimeSkillFrontmatter() {
-  return `---
-name: neondeck
-description: Understand Neondeck runtime config, schedules, watches, skills, and deterministic action rules.
----`;
 }

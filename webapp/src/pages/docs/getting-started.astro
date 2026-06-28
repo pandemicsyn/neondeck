@@ -14,8 +14,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       <aside class="docs-sidebar">
         <a href="/docs/">Overview</a>
         <a href="/docs/getting-started/">Getting started</a>
-        <a href="/#deck">Deck preview</a>
-        <a href="/#features">Features</a>
+        <a href="#runtime-home">Runtime home</a>
+        <a href="#commands">Commands</a>
+        <a href="#verify">Verify</a>
       </aside>
       <article class="docs-prose">
         <h1>Getting started</h1>
@@ -28,6 +29,18 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <pre><code>fnm install 26.4.0
 fnm use 26.4.0
 npm install</code></pre>
+
+        <h2 id="runtime-home">Initialize runtime home</h2>
+        <p>
+          The app creates a runtime home on first start. You can also prepare it
+          explicitly before launching the dashboard.
+        </p>
+        <pre><code>npm run setup</code></pre>
+        <p>
+          By default this writes to <code>~/.config/neondeck</code>. Set
+          <code>NEONDECK_HOME</code> when you want an isolated test home.
+        </p>
+        <pre><code>NEONDECK_HOME=.neondeck-test npm run setup</code></pre>
 
         <h2>Configure secrets</h2>
         <p>
@@ -46,8 +59,77 @@ GITHUB_LOGIN=...</code></pre>
           Open <code>http://127.0.0.1:5173/</code> on the companion display.
         </p>
 
+        <h2 id="commands">Run Neon commands</h2>
+        <p>
+          Commands can be typed into the chat panel or invoked through the
+          <code>command-run</code> Flue workflow. Command results are stored as workflow
+          summaries for dashboard panels and follow-up agent context.
+        </p>
+        <pre><code>curl -X POST 'http://127.0.0.1:5173/api/flue/workflows/command-run?wait=result' \
+  -H 'content-type: application/json' \
+  -d '&#123;"input":&#123;"command":"/briefing"&#125;&#125;'</code></pre>
+        <p>Current commands:</p>
+        <pre><code>/repo-status [repo-id]
+/review-queue
+/briefing
+/dev-doctor
+/watch-pr neondeck#123
+/watch-pr neondeck#123 until prod
+/watch-release neondeck</code></pre>
+
+        <h2>Configure repositories</h2>
+        <p>
+          Repositories live in runtime-home <code>repos.json</code>. Neon should
+          mutate config through typed actions rather than direct file edits. The
+          repo registry powers GitHub PR queues, watches, release checks, local
+          repo status, and dev doctor diagnostics.
+        </p>
+
+        <h2>Runtime skills</h2>
+        <p>
+          The built-in Neondeck runtime skill is an application-owned Flue
+          skill. User runtime skills load from <code>skills/</code> inside the runtime
+          home, plus configured external skill roots, and are registered as Flue skills
+          when the agent initializes. Start a new session or restart the server after
+          changing runtime skills. Treat runtime skill directories as trusted input
+          and do not place secrets in skill resources.
+        </p>
+
+        <h2>Agent models</h2>
+        <p>
+          Configure the display assistant and subagent model choices in
+          runtime-home
+          <code>config.json</code>. Environment variables remain fallback
+          values, but runtime config is the preferred local control point.
+        </p>
+        <pre><code>&#123;
+  "version": 1,
+  "models": &#123;
+    "displayAssistant": "kilocode/kilo/auto",
+    "subagents": &#123;
+      "default": "kilocode/kilo/auto",
+      "repoResearcher": "kilocode/kilo/auto",
+      "ciInvestigator": "kilocode/kilo/auto",
+      "releaseReviewer": "kilocode/kilo/auto"
+    &#125;
+  &#125;
+&#125;</code></pre>
+        <p>
+          The chat agent can update these fields through the typed
+          <code>neondeck_config_update_agent_models</code> action. Model strings must
+          reference providers already registered by the app or Flue runtime.
+        </p>
+
+        <h2 id="verify">Verify locally</h2>
+        <pre><code>npm run check
+npm run verify</code></pre>
+        <p>
+          <code>npm run verify</code> runs lint, typecheck, tests, formatting, the
+          dashboard build, the Flue Node build, and the Astro webapp build.
+        </p>
+
         <h2>Run the webapp</h2>
-        <pre><code>npm run webapp:dev</code></pre>
+        <pre><code>npm run webapp:astro-dev</code></pre>
         <p>
           The Astro marketing/docs site runs separately from the local dashboard
           and deploys to Cloudflare.

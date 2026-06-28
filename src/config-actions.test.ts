@@ -13,10 +13,12 @@ import {
   removeRepo,
   removeSchedule,
   updateRepo,
+  updateAgentModels,
   updateSchedule,
   validateConfig,
 } from './config-actions';
 import {
+  parseAppConfig,
   parseRepoRegistry,
   parseScheduleConfig,
   runtimePaths,
@@ -215,6 +217,115 @@ describe('config actions', () => {
       { action: 'config_add_schedule', target: 'morning' },
       { action: 'config_update_schedule', target: 'morning' },
       { action: 'config_remove_schedule', target: 'morning' },
+    ]);
+  });
+
+  it('updates agent and subagent model config through a typed action', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    await expect(
+      updateAgentModels(
+        {
+          displayAssistant: 'kilocode/kilo/main',
+          subagents: {
+            default: 'kilocode/kilo/subagent',
+            ciInvestigator: 'kilocode/kilo/ci',
+          },
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'config_update_agent_models',
+      message:
+        'Updated agent model configuration. Start a new session or restart the server for active agents to pick up the change.',
+      data: {
+        appliesAfter: 'new-session-or-server-restart',
+      },
+    });
+
+    let config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.models).toEqual({
+      displayAssistant: 'kilocode/kilo/main',
+      subagents: {
+        default: 'kilocode/kilo/subagent',
+        ciInvestigator: 'kilocode/kilo/ci',
+      },
+    });
+
+    await expect(
+      updateAgentModels(
+        {
+          subagents: {
+            repoResearcher: 'kilocode/kilo/repo',
+          },
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+    });
+
+    config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.models).toEqual({
+      displayAssistant: 'kilocode/kilo/main',
+      subagents: {
+        default: 'kilocode/kilo/subagent',
+        repoResearcher: 'kilocode/kilo/repo',
+        ciInvestigator: 'kilocode/kilo/ci',
+      },
+    });
+    expect(readHistory(paths.neondeckDatabase)).toMatchObject([
+      { action: 'config_update_agent_models', target: 'models' },
+      { action: 'config_update_agent_models', target: 'models' },
+    ]);
+  });
+
+  it('returns structured failures and no-ops for agent model updates', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    await expect(updateAgentModels({}, paths)).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'config_update_agent_models',
+      requires: ['model'],
+    });
+
+    await expect(
+      updateAgentModels({ displayAssistant: '' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'config_update_agent_models',
+      message: 'Invalid action input.',
+    });
+
+    await expect(
+      updateAgentModels({ displayAssistant: 'kilocode/kilo/auto' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+    });
+    await expect(
+      updateAgentModels({ displayAssistant: 'kilocode/kilo/auto' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      message:
+        'Agent model configuration already matched the requested values.',
+    });
+    expect(readHistory(paths.neondeckDatabase)).toMatchObject([
+      { action: 'config_update_agent_models', target: 'models' },
     ]);
   });
 

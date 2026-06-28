@@ -60,14 +60,51 @@ type CommandDependencies = {
 const commandRunInputSchema = v.object({
   command: v.pipe(v.string(), v.minLength(1)),
 });
+const commandRunOutputSchema = v.looseObject({
+  ok: v.boolean(),
+  command: v.string(),
+  input: v.string(),
+  status: v.picklist(['completed', 'failed', 'needs-config']),
+  message: v.string(),
+});
+const commandActionOutputSchema = v.looseObject({
+  ok: v.boolean(),
+  action: v.string(),
+  changed: v.boolean(),
+});
 
 export const commandRunAction = defineAction({
   name: 'neondeck_command_run',
   description:
     'Run a Neon slash command such as /repo-status, /review-queue, /briefing, /watch-pr, /watch-release, or /dev-doctor and persist a workflow summary.',
   input: commandRunInputSchema,
-  async run({ input }) {
-    return runNeonCommand(input);
+  output: commandRunOutputSchema,
+  async run({ input, log, emitData }) {
+    const commandId = input.command.trim() || 'unknown';
+    log.info('Neon command requested', { command: input.command });
+    emitData(
+      'neondeck.command',
+      { status: 'running', command: input.command },
+      { id: commandId },
+    );
+
+    const result = await runNeonCommand(input);
+    const payload = {
+      status: result.status,
+      ok: result.ok,
+      command: result.command,
+      message: result.message,
+      workflowSummaryId: result.workflowSummary?.id ?? null,
+    };
+    emitData('neondeck.command', payload, { id: commandId });
+
+    if (result.ok) {
+      log.info('Neon command completed', payload);
+    } else {
+      log.warn('Neon command failed', payload);
+    }
+
+    return result;
   },
 });
 
@@ -75,6 +112,7 @@ export const commandsListAction = defineAction({
   name: 'neondeck_commands_list',
   description: 'List supported Neon slash commands.',
   input: v.object({}),
+  output: commandActionOutputSchema,
   async run() {
     return {
       ok: true,
@@ -90,6 +128,7 @@ export const workflowSummariesListAction = defineAction({
   description:
     'List recently persisted Neondeck workflow and command summaries for follow-up questions.',
   input: v.object({}),
+  output: commandActionOutputSchema,
   async run() {
     return {
       ok: true,
@@ -100,11 +139,7 @@ export const workflowSummariesListAction = defineAction({
   },
 });
 
-export const neondeckCommandActions = [
-  commandRunAction,
-  commandsListAction,
-  workflowSummariesListAction,
-];
+export const neondeckCommandActions = [commandRunAction];
 
 export function supportedCommands() {
   return [

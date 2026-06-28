@@ -1,6 +1,6 @@
-import { useFlueAgent } from '@flue/react';
+import { useFlueAgent, useFlueClient } from '@flue/react';
 import { useState, type FormEvent, type KeyboardEvent } from 'react';
-import { runNeonCommand, type NeonCommandResult } from '../api';
+import type { NeonCommandResult } from '../api';
 import { Badge, Button, Kbd, ScrollArea, Textarea } from '../components/ui';
 import type { DisplayPlugin } from '../types';
 
@@ -96,6 +96,7 @@ function FlueChatSessionView({
   const [input, setInput] = useState('');
   const [commandResult, setCommandResult] = useState<NeonCommandResult>();
   const [runningCommand, setRunningCommand] = useState<string>();
+  const flue = useFlueClient();
   const agent = useFlueAgent({
     name: agentName,
     id: session.id,
@@ -119,7 +120,14 @@ function FlueChatSessionView({
   async function runCommand(command: string) {
     setRunningCommand(command);
     try {
-      return await runNeonCommand(command);
+      const run = await flue.workflows.invoke('command-run', {
+        input: { command },
+        wait: 'result',
+      });
+      return {
+        ...(run.result as NeonCommandResult),
+        flueRunId: run.runId,
+      };
     } finally {
       setRunningCommand(undefined);
     }

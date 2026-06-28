@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
+import { readAgentModelSelectionSync } from './agent-config';
 import {
   ConfigValidationError,
   ensureRuntimeHome,
@@ -100,7 +101,7 @@ describe('runtime home', () => {
     expect(existsSync(paths.data)).toBe(true);
     expect(existsSync(paths.neondeckDatabase)).toBe(true);
     expect(existsSync(paths.flueDatabase)).toBe(true);
-    expect(existsSync(paths.neondeckSkill)).toBe(true);
+    expect(existsSync(paths.skills)).toBe(true);
 
     await expect(
       readRuntimeJson(paths.dashboard, parseDashboardConfig),
@@ -109,10 +110,9 @@ describe('runtime home', () => {
       layout: { columns: 12, rows: 6 },
     });
 
-    const skill = await readFile(paths.neondeckSkill, 'utf8');
-    expect(skill).toContain('Use typed neondeck config actions');
-    expect(skill).toContain('data/neondeck.db');
-    expect(skill).toContain('data/flue.db');
+    await expect(
+      readFile(join(paths.skills, 'neondeck', 'SKILL.md'), 'utf8'),
+    ).rejects.toThrow('no such file or directory');
   });
 
   it('rejects malformed runtime config with a controlled validation error', async () => {
@@ -126,6 +126,55 @@ describe('runtime home', () => {
     await expect(
       readRuntimeJson(paths.dashboard, parseDashboardConfig),
     ).rejects.toThrow(ConfigValidationError);
+  });
+
+  it('accepts agent and subagent model config from runtime config', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
+    tempRoots.push(root);
+    const paths = runtimePaths(root);
+
+    await ensureRuntimeHome(paths);
+    await writeFile(
+      paths.config,
+      JSON.stringify(
+        {
+          version: 1,
+          models: {
+            default: 'kilocode/kilo/auto',
+            displayAssistant: 'kilocode/kilo/main',
+            subagents: {
+              default: 'kilocode/kilo/subagent',
+              repoResearcher: 'kilocode/kilo/repo',
+              ciInvestigator: 'kilocode/kilo/ci',
+              releaseReviewer: 'kilocode/kilo/release',
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await expect(
+      readRuntimeJson(paths.config, parseAppConfig),
+    ).resolves.toMatchObject({
+      models: {
+        displayAssistant: 'kilocode/kilo/main',
+        subagents: {
+          repoResearcher: 'kilocode/kilo/repo',
+          ciInvestigator: 'kilocode/kilo/ci',
+          releaseReviewer: 'kilocode/kilo/release',
+        },
+      },
+    });
+    expect(readAgentModelSelectionSync(paths)).toEqual({
+      displayAssistant: 'kilocode/kilo/main',
+      subagents: {
+        repoResearcher: 'kilocode/kilo/repo',
+        ciInvestigator: 'kilocode/kilo/ci',
+        releaseReviewer: 'kilocode/kilo/release',
+      },
+    });
   });
 
   it('does not validate unrelated mutable config during bootstrap', async () => {

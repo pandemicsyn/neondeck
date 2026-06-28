@@ -134,6 +134,7 @@ export type NeonCommandResult = {
   input: string;
   status: 'completed' | 'failed' | 'needs-config';
   message: string;
+  flueRunId?: string;
   data?: unknown;
   errors?: string[];
   requires?: string[];
@@ -241,23 +242,6 @@ export async function getRuntimeSkills() {
 
 export async function getHostMetrics() {
   return getJson<HostMetrics>('/api/metrics/host');
-}
-
-export async function runNeonCommand(command: string) {
-  const response = await fetch('/api/commands/run', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ command }),
-  });
-  const data = (await response.json()) as NeonCommandResult;
-
-  if (!response.ok && !data.message) {
-    throw new Error(`Request failed with ${response.status}`);
-  }
-
-  return data;
 }
 
 export async function getPrWatches() {

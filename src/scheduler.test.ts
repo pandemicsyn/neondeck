@@ -116,7 +116,11 @@ describe('scheduler', () => {
     );
     await syncScheduledJobs(paths);
 
-    await expect(runSchedulerTick(paths, new Date())).resolves.toMatchObject({
+    await expect(
+      runSchedulerTick(paths, new Date(), {
+        invokeWorkflow: async () => ({ runId: 'run_review_queue' }),
+      }),
+    ).resolves.toMatchObject({
       ok: true,
       changed: true,
       outcome: 'updated',

@@ -47,14 +47,27 @@ npm run setup
 npm run setup -- --home ./data/dev-home
 ```
 
-Runtime skills live under `skills/<skill-id>/SKILL.md`. Neondeck seeds `skills/neondeck/SKILL.md`, loads valid user skills from the same root, and can read additional skill roots from `config.json`:
+The built-in Neondeck guidance is an application-owned Flue skill at `src/skills/neondeck/SKILL.md`. User runtime skills live under `skills/<skill-id>/SKILL.md`; valid user skills from that root, plus external skill roots from `config.json`, are registered as Flue skills when the agent initializes. Start a new session or restart the server after changing runtime skills. Treat runtime skill directories as trusted input; do not put secrets in skill resources.
+
+Agent and subagent models are configurable in runtime-home `config.json`. Environment variables remain a fallback, but checked-in defaults should live in config:
 
 ```json
 {
   "version": 1,
-  "skillRoots": ["/absolute/path/to/skills"]
+  "skillRoots": ["/absolute/path/to/skills"],
+  "models": {
+    "displayAssistant": "kilocode/kilo/auto",
+    "subagents": {
+      "default": "kilocode/kilo/auto",
+      "repoResearcher": "kilocode/kilo/auto",
+      "ciInvestigator": "kilocode/kilo/auto",
+      "releaseReviewer": "kilocode/kilo/auto"
+    }
+  }
 }
 ```
+
+The Neondeck chat agent can update those model settings through the typed `neondeck_config_update_agent_models` action when asked. Model strings must reference providers already registered by the app or Flue runtime; changing provider credentials or registering arbitrary new providers is not yet a runtime-config action.
 
 ## Run
 
@@ -64,15 +77,15 @@ npm run dev
 
 Open `http://127.0.0.1:5173/`.
 
-Neon command workflows can be run from the chat panel buttons, typed into chat, or called over HTTP:
+Neon command workflows can be run from the chat panel buttons, typed into chat, or invoked through Flue:
 
 ```sh
-curl -X POST http://127.0.0.1:5173/api/commands/run \
+curl -X POST 'http://127.0.0.1:5173/api/flue/workflows/command-run?wait=result' \
   -H 'Content-Type: application/json' \
-  -d '{"command":"/briefing"}'
+  -d '{"input":{"command":"/briefing"}}'
 ```
 
-Supported commands are `/repo-status`, `/review-queue`, `/briefing`, `/dev-doctor`, `/watch-pr <ref>`, and `/watch-release <repo>`. A `/watch-pr` command creates a persistent PR watch, polls for merge/check changes, and shows it in the active watches panel. `/watch-pr ... until prod` and `/watch-release` create release watches that track default-branch GitHub checks until green. `/dev-doctor` checks local repo health, package scripts, Node version, env keys, dev ports, API health, and runtime databases. Runtime home, repository, scheduler job, and skill state are shown in the runtime overview panel. Results are stored in `workflow_summaries` and exposed at `/api/workflows/summaries`.
+Supported commands are `/repo-status`, `/review-queue`, `/briefing`, `/dev-doctor`, `/watch-pr <ref>`, and `/watch-release <repo>`. A `/watch-pr` command creates a persistent PR watch, polls for merge/check changes, and shows it in the active watches panel. `/watch-release` tracks default-branch GitHub checks until green; `/watch-pr ... until prod` waits for the source PR to merge, then tracks the source PR merge SHA until checks are green. `/dev-doctor` checks local repo health, package scripts, Node version, env keys, dev ports, API health, and runtime databases. Runtime home, repository, scheduler job, and skill state are shown in the runtime overview panel. Results are stored in `workflow_summaries` and exposed at `/api/workflows/summaries`.
 
 ## Build
 

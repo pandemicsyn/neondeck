@@ -30,12 +30,19 @@ const checkSummaryInputSchema = v.object({
   repo: nonEmptyStringSchema,
   ref: v.optional(nonEmptyStringSchema),
 });
+const githubActionOutputSchema = v.looseObject({
+  ok: v.boolean(),
+  action: v.string(),
+  changed: v.boolean(),
+  message: v.string(),
+});
 
 export const githubPrQueueListAction = defineAction({
   name: 'neondeck_github_pr_queue_list',
   description:
     'Fetch the structured GitHub PR queue for the configured repositories.',
   input: v.object({}),
+  output: githubActionOutputSchema,
   async run() {
     return listGitHubPrQueue();
   },
@@ -46,15 +53,13 @@ export const githubCheckSummaryGetAction = defineAction({
   description:
     'Fetch GitHub check-run summary for a configured repository ref or its default branch.',
   input: checkSummaryInputSchema,
+  output: githubActionOutputSchema,
   async run({ input }) {
     return getGitHubCheckSummary(input);
   },
 });
 
-export const neondeckGitHubActions = [
-  githubPrQueueListAction,
-  githubCheckSummaryGetAction,
-];
+export const neondeckGitHubActions = [];
 
 export async function listGitHubPrQueue(
   paths: RuntimePaths = runtimePaths(),

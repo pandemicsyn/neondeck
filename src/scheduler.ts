@@ -2,7 +2,6 @@ import { defineAction, type JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 import {
   addNotification,
-  addWorkflowSummary,
   disableStaleScheduleJobs,
   listJobs,
   type JobRecord,
@@ -67,7 +66,13 @@ type SchedulerDependencies = {
     paths: RuntimePaths,
   ) => Promise<WatchActionResult>;
   fetchCheckSummary?: typeof fetchCheckSummary;
+  invokeWorkflow?: (
+    workflow: ScheduledWorkflowName,
+    input: JsonValue,
+  ) => Promise<{ runId: string }>;
 };
+
+type ScheduledWorkflowName = 'briefing' | 'command-run';
 
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 const blueprintSchema = v.picklist([
@@ -84,12 +89,19 @@ const createBlueprintInputSchema = v.object({
   intervalSeconds: v.optional(v.pipe(v.number(), v.integer(), v.minValue(60))),
   config: v.optional(v.record(v.string(), v.unknown())),
 });
+const schedulerActionOutputSchema = v.looseObject({
+  ok: v.boolean(),
+  action: v.string(),
+  changed: v.boolean(),
+  message: v.string(),
+});
 
 export const scheduleBlueprintCreateAction = defineAction({
   name: 'neondeck_schedule_blueprint_create',
   description:
     'Create a blueprint-backed automation for morning briefing, watch PR, release watch, or review queue digest.',
   input: createBlueprintInputSchema,
+  output: schedulerActionOutputSchema,
   async run({ input }) {
     return createScheduleBlueprint(input);
   },
@@ -100,8 +112,33 @@ export const schedulerTickAction = defineAction({
   description:
     'Synchronize configured schedules into durable jobs and run jobs that are due.',
   input: v.object({}),
-  async run() {
-    return runSchedulerTick();
+  output: schedulerActionOutputSchema,
+  async run({ log, emitData }) {
+    log.info('Scheduler tick requested');
+    emitData(
+      'neondeck.scheduler_tick',
+      { status: 'running', message: 'Checking due jobs.' },
+      { id: 'latest' },
+    );
+
+    const result = await runSchedulerTick();
+    const payload = {
+      ok: result.ok,
+      outcome: result.outcome ?? null,
+      changed: result.changed,
+      message: result.message,
+      jobs: result.jobs?.length ?? 0,
+      notifications: result.notifications?.length ?? 0,
+    };
+    emitData('neondeck.scheduler_tick', payload, { id: 'latest' });
+
+    if (result.ok) {
+      log.info('Scheduler tick completed', payload);
+    } else {
+      log.warn('Scheduler tick failed', payload);
+    }
+
+    return result;
   },
 });
 
@@ -109,6 +146,7 @@ export const schedulerListJobsAction = defineAction({
   name: 'neondeck_scheduler_list_jobs',
   description: 'List durable Neondeck scheduler jobs and last run state.',
   input: v.object({}),
+  output: schedulerActionOutputSchema,
   async run() {
     return listSchedulerJobs();
   },
@@ -117,7 +155,6 @@ export const schedulerListJobsAction = defineAction({
 export const neondeckSchedulerActions = [
   scheduleBlueprintCreateAction,
   schedulerTickAction,
-  schedulerListJobsAction,
 ];
 
 export async function createScheduleBlueprint(
@@ -351,43 +388,46 @@ async function executeJob(
   }
 
   if (job.type === 'morning-briefing') {
-    await addWorkflowSummary(
-      {
-        workflow: 'morning-briefing',
-        status: 'queued',
-        summary: {
-          activeWatches: (await listPrWatchRecords(paths)).length,
-          note: 'Briefing workflow placeholder recorded by scheduler.',
-        },
-      },
-      paths,
-    );
+    const invokeWorkflow =
+      dependencies.invokeWorkflow ?? invokeScheduledWorkflow;
+    const { runId } = await invokeWorkflow('briefing', {});
+
     return {
       outcome: 'recorded',
-      message: 'Recorded morning briefing job.',
+      message: `Admitted morning briefing workflow ${runId}.`,
+      result: { runId },
       notifications: [
         {
           level: 'info',
           title: 'Morning briefing queued',
-          message: 'A morning briefing job was recorded for Neon.',
+          message: 'A morning briefing workflow was queued for Neon.',
           source: 'scheduler',
           sourceId: job.id,
+          data: { runId },
         },
       ],
     };
   }
 
   if (job.type === 'review-queue-digest') {
+    const invokeWorkflow =
+      dependencies.invokeWorkflow ?? invokeScheduledWorkflow;
+    const { runId } = await invokeWorkflow('command-run', {
+      command: '/review-queue',
+    });
+
     return {
       outcome: 'recorded',
-      message: 'Recorded review queue digest job.',
+      message: `Admitted review queue digest workflow ${runId}.`,
+      result: { runId },
       notifications: [
         {
           level: 'info',
           title: 'Review queue digest due',
-          message: 'A review queue digest job is due.',
+          message: 'A review queue digest workflow was queued.',
           source: 'scheduler',
           sourceId: job.id,
+          data: { runId },
         },
       ],
     };
@@ -401,6 +441,23 @@ async function executeJob(
     outcome: 'silent',
     message: `No executor is registered for job type "${job.type}".`,
   };
+}
+
+async function invokeScheduledWorkflow(
+  workflow: ScheduledWorkflowName,
+  input: JsonValue,
+) {
+  const { invoke } = await import('@flue/runtime');
+
+  if (workflow === 'briefing') {
+    const module = await import('./workflows/briefing');
+    return invoke(module.default, { input: input as Record<string, never> });
+  }
+
+  const module = await import('./workflows/command-run');
+  return invoke(module.default, {
+    input: input as { command: string },
+  });
 }
 
 async function refreshReleaseWatchJob(

@@ -423,6 +423,30 @@ export async function addWorkflowSummary(
   return record;
 }
 
+export async function setWorkflowSummaryRunId(
+  id: string,
+  runId: string,
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(paths.neondeckDatabase);
+
+  try {
+    database
+      .prepare(
+        `
+        UPDATE workflow_summaries
+        SET run_id = ?, updated_at = ?
+        WHERE id = ?;
+      `,
+      )
+      .run(runId, now, id);
+  } finally {
+    database.close();
+  }
+}
+
 export async function listWorkflowSummaries(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
   const database = new DatabaseSync(paths.neondeckDatabase);
