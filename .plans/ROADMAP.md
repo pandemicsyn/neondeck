@@ -753,7 +753,7 @@ Must-haves:
 
 ### Phase 15: Usability Hardening
 
-- Status: partially complete.
+- Status: complete for the current usability gate.
 
 - [x] Add a first-run setup/readiness panel that links each failed readiness check to the relevant action or documentation.
 - [x] Add command-specific empty, loading, partial, and failure states for review queue, watches, memory, workflow runs, and runtime status.
