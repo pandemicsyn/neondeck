@@ -467,7 +467,8 @@ button:disabled {
 }
 
 .chat-message {
-  max-width: 78%;
+  max-width: min(82%, 74ch);
+  overflow-wrap: anywhere;
 }
 
 .chat-message-user {
@@ -495,6 +496,132 @@ button:disabled {
 .chat-part-event:first-child {
   border-top: 0;
   padding-top: 0;
+}
+
+.chat-markdown {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.chat-markdown > :first-child {
+  margin-top: 0;
+}
+
+.chat-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-markdown p,
+.chat-markdown ul,
+.chat-markdown ol,
+.chat-markdown blockquote,
+.chat-markdown pre,
+.chat-markdown table {
+  margin: 0 0 0.55rem;
+}
+
+.chat-markdown h1,
+.chat-markdown h2,
+.chat-markdown h3,
+.chat-markdown h4,
+.chat-markdown h5,
+.chat-markdown h6 {
+  margin: 0.75rem 0 0.35rem;
+  color: var(--primary-strong);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.chat-markdown ul,
+.chat-markdown ol {
+  padding-left: 1.25rem;
+}
+
+.chat-markdown li + li {
+  margin-top: 0.25rem;
+}
+
+.chat-markdown li > p {
+  margin: 0.25rem 0;
+}
+
+.chat-markdown strong {
+  color: var(--primary-strong);
+  font-weight: 600;
+}
+
+.chat-markdown em {
+  color: var(--deck-text);
+}
+
+.chat-markdown a {
+  color: var(--primary-strong);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--primary) 45%, transparent);
+  text-underline-offset: 2px;
+}
+
+.chat-markdown :not(pre) > code {
+  border: 1px solid var(--deck-line2);
+  background: var(--field);
+  color: var(--primary-strong);
+  padding: 0.05rem 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+.chat-markdown pre {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--deck-line2);
+  background: var(--field);
+  padding: 0.65rem 0.75rem;
+  scrollbar-width: thin;
+}
+
+.chat-markdown pre code {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.chat-markdown blockquote {
+  border-left: 1px solid var(--deck-div);
+  color: var(--muted);
+  padding-left: 0.75rem;
+}
+
+.chat-markdown hr {
+  height: 1px;
+  border: 0;
+  background: var(--deck-line);
+  margin: 0.7rem 0;
+}
+
+.chat-markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.chat-markdown th,
+.chat-markdown td {
+  border: 1px solid var(--deck-line2);
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+}
+
+.chat-markdown th {
+  background: var(--soft);
+  color: var(--primary-strong);
+  font-weight: 600;
 }
 
 .chat-workflow {

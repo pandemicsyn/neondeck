@@ -12,6 +12,7 @@ import {
   type NeonCommandResult,
   type NeonSessionState,
 } from '../api';
+import { MarkdownMessage } from '../components/MarkdownMessage';
 import { Badge, Button, Kbd, ScrollArea, Textarea } from '../components/ui';
 import { useConfigEvents } from '../lib/config-events';
 import { queryErrorMessage, queryKeys } from '../lib/query';
@@ -313,7 +314,7 @@ function renderMessagePart(part: unknown, key: string): ReactNode {
   const type = readString(record?.type) ?? 'part';
   if (type === 'text') {
     const text = readString(record?.text);
-    return text ? <p key={key}>{text}</p> : null;
+    return text ? <MarkdownMessage key={key}>{text}</MarkdownMessage> : null;
   }
 
   return (
