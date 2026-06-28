@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { getDashboardConfig, openConfigEventStream } from './api';
 import { Card } from './components/ui';
 import {
@@ -10,6 +11,7 @@ import { queryErrorMessage, queryKeys } from './lib/query';
 import { pluginRegistry } from './plugins/registry';
 import type {
   DashboardConfig,
+  DashboardDensity,
   DashboardRegion,
   DashboardStatusline,
   DashboardTab,
@@ -73,21 +75,27 @@ export function App() {
 }
 
 function DashboardShell({ config }: { config: DashboardConfig }) {
+  const appearance = resolveAppearance(config);
   const gridStyle = useMemo(
     () => ({
       gridTemplateColumns: `repeat(${config.layout.columns}, minmax(0, 1fr))`,
       gridTemplateRows: config.statusline
         ? statuslineRows(config)
         : `repeat(${config.layout.rows}, minmax(0, 1fr))`,
+      '--deck-text-scale': appearance.textScale.toString(),
     }),
-    [config],
-  );
+    [appearance.textScale, config],
+  ) as CSSProperties;
   const rowOffset = config.statusline?.position === 'top' ? 1 : 0;
+  const layoutMode = config.layout.mode ?? 'auto';
+  const displayPreset = resolveDisplayPreset(config);
 
   return (
     <section className="deck-shell h-screen w-screen overflow-hidden bg-bg p-0">
       <div
-        className="dashboard-grid grid h-full w-full gap-0 border-0 bg-canvas p-0"
+        className={`dashboard-grid deck-density-${appearance.density} grid h-full w-full gap-0 border-0 bg-canvas p-0`}
+        data-display-preset={displayPreset}
+        data-layout-mode={layoutMode}
         style={gridStyle}
       >
         {config.statusline ? (
@@ -315,11 +323,36 @@ function resolveTheme(theme: DashboardTheme) {
     : 'light';
 }
 
+function resolveAppearance(config: DashboardConfig): {
+  density: DashboardDensity;
+  textScale: number;
+} {
+  const density = config.appearance?.density ?? 'comfortable';
+  const densityScale: Record<DashboardDensity, number> = {
+    compact: 1,
+    comfortable: 1.12,
+    large: 1.24,
+  };
+  return {
+    density,
+    textScale: config.appearance?.textScale ?? densityScale[density],
+  };
+}
+
+function resolveDisplayPreset(config: DashboardConfig) {
+  if (config.display.preset) return config.display.preset;
+  if (config.display.width === 2560 && config.display.height === 720) {
+    return 'xeneon-edge';
+  }
+  return 'custom';
+}
+
 function statuslineRows(config: DashboardConfig) {
   const layoutRows = `repeat(${config.layout.rows}, minmax(0, 1fr))`;
+  const statuslineHeight = 'var(--deck-statusline-height)';
   return config.statusline?.position === 'bottom'
-    ? `${layoutRows} 30px`
-    : `30px ${layoutRows}`;
+    ? `${layoutRows} ${statuslineHeight}`
+    : `${statuslineHeight} ${layoutRows}`;
 }
 
 function statuslineRegion(statusline: DashboardStatusline): DashboardRegion {
