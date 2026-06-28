@@ -21,7 +21,9 @@ import {
 } from './runtime-home';
 import {
   addPrWatch,
+  listRefWatchRecords,
   listPrWatchRecords,
+  refreshRefWatch,
   refreshPrWatch,
   type WatchActionResult,
 } from './watch-actions';
@@ -63,6 +65,10 @@ type SchedulerDependencies = {
   ) => Promise<WatchActionResult>;
   refreshPrWatch?: (
     input: Parameters<typeof refreshPrWatch>[0],
+    paths: RuntimePaths,
+  ) => Promise<WatchActionResult>;
+  refreshRefWatch?: (
+    input: Parameters<typeof refreshRefWatch>[0],
     paths: RuntimePaths,
   ) => Promise<WatchActionResult>;
   fetchCheckSummary?: typeof fetchCheckSummary;
@@ -392,6 +398,10 @@ async function executeJob(
 ): Promise<JobExecutionResult> {
   if (job.type === 'watch-pr') {
     return refreshWatchJob(job, paths, dependencies.refreshPrWatch);
+  }
+
+  if (job.type === 'watch-ref') {
+    return refreshRefWatchJob(job, paths, dependencies.refreshRefWatch);
   }
 
   if (job.type === 'morning-briefing') {
@@ -751,6 +761,85 @@ async function refreshWatchJob(
       changed.length > 0
         ? `Updated ${changed.length} PR watch${changed.length === 1 ? '' : 'es'}.`
         : 'PR watch refresh had no changes.',
+    result: { results },
+    notifications,
+  };
+}
+
+async function refreshRefWatchJob(
+  job: JobRecord,
+  paths: RuntimePaths,
+  refreshWatch: SchedulerDependencies['refreshRefWatch'] = refreshRefWatch,
+): Promise<JobExecutionResult> {
+  const config = readObjectConfig(job.config);
+  const target =
+    typeof config.id === 'string'
+      ? { id: config.id }
+      : typeof config.repo === 'string' && typeof config.ref === 'string'
+        ? { repo: config.repo, ref: config.ref }
+        : typeof config.target === 'string'
+          ? { target: config.target }
+          : undefined;
+
+  const results = [];
+  if (target) {
+    results.push(await refreshWatch(target, paths));
+  } else {
+    const watches = await listRefWatchRecords(paths);
+    for (const watch of watches) {
+      results.push(await refreshWatch({ id: watch.id }, paths));
+    }
+  }
+
+  const failures = results.filter((result) => !result.ok);
+  if (failures.length > 0) {
+    return {
+      outcome: 'failed',
+      message: `Failed to refresh ${failures.length} ref watch${failures.length === 1 ? '' : 'es'}.`,
+      result: { results },
+      notifications: failures.map((result) => ({
+        level: 'attention',
+        title: 'Ref watch refresh failed',
+        message: result.message,
+        source: 'watch-ref',
+        sourceId: failedWatchSourceId(result, target),
+        data: result,
+      })),
+    };
+  }
+
+  const changed = results.filter((result) => result.changed);
+  const notifications = changed.map((result) => {
+    const watch = result.watch as { id?: string; status?: string } | undefined;
+    const level: NotificationLevel =
+      watch?.status === 'attention-needed'
+        ? 'attention'
+        : watch?.status === 'green'
+          ? 'ready'
+          : 'info';
+    const title =
+      watch?.status === 'green'
+        ? 'Ref watch green'
+        : watch?.status === 'attention-needed'
+          ? 'Ref watch needs attention'
+          : 'Ref watch changed';
+
+    return {
+      level,
+      title,
+      message: result.message,
+      source: 'watch-ref',
+      sourceId: watch?.id,
+      data: result.watch,
+    };
+  });
+
+  return {
+    outcome: changed.length > 0 ? 'updated' : 'silent',
+    message:
+      changed.length > 0
+        ? `Updated ${changed.length} ref watch${changed.length === 1 ? '' : 'es'}.`
+        : 'Ref watch refresh had no changes.',
     result: { results },
     notifications,
   };
