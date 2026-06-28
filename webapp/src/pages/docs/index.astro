@@ -1,4 +1,5 @@
 ---
+import DocsNav from '../../components/DocsNav.astro';
 import SiteFooter from '../../components/SiteFooter.astro';
 import SiteNav from '../../components/SiteNav.astro';
 import BaseLayout from '../../layouts/BaseLayout.astro';
@@ -11,15 +12,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   <div class="site-shell">
     <SiteNav />
     <main class="container docs-layout">
-      <aside class="docs-sidebar">
-        <a href="/docs/">Overview</a>
-        <a href="/docs/getting-started/">Getting started</a>
-        <a href="#runtime-home">Runtime home</a>
-        <a href="#commands">Commands</a>
-        <a href="#flue">Flue surface</a>
-        <a href="#observability">Observability</a>
-        <a href="https://github.com/pandemicsyn/neondeck">GitHub</a>
-      </aside>
+      <DocsNav />
       <article class="docs-prose">
         <h1>Docs</h1>
         <p>
@@ -28,6 +21,31 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           Astro site documents the project and deploys separately to Cloudflare
           at neondeck.dev.
         </p>
+
+        <h2>Start here</h2>
+        <ul>
+          <li>
+            <a href="/docs/getting-started/">Getting started</a>: install,
+            initialize a runtime home, configure secrets, and launch the local
+            dashboard.
+          </li>
+          <li>
+            <a href="/docs/configuration/">Configuration</a>: runtime-home
+            files, models, providers, repos, schedules, SOUL, and skills.
+          </li>
+          <li>
+            <a href="/docs/cli/">CLI</a>: command reference for setup, repo
+            registry, watches, schedules, and future TUI entrypoints.
+          </li>
+          <li>
+            <a href="/docs/agent-runtime/">Agent runtime</a>: Flue agents,
+            actions, workflows, skills, memory, watches, and observability.
+          </li>
+          <li>
+            <a href="/docs/contributing/">Contributing</a>: local dev loop,
+            roadmap workflow, checks, reviews, and PR expectations.
+          </li>
+        </ul>
 
         <h2>Current runtime</h2>
         <p>

@@ -1,0 +1,72 @@
+---
+import DocsNav from '../../components/DocsNav.astro';
+import SiteFooter from '../../components/SiteFooter.astro';
+import SiteNav from '../../components/SiteNav.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Dashboard · neondeck"
+  description="The neondeck local dashboard layout, plugin system, themes, and companion-display design target."
+>
+  <div class="site-shell">
+    <SiteNav />
+    <main class="container docs-layout">
+      <DocsNav />
+      <article class="docs-prose">
+        <h1>Dashboard</h1>
+        <p>
+          The local dashboard is a Vite/React/Tailwind app served beside the
+          Hono/Flue backend. It is tuned for the Corsair Xeneon Edge, but layout
+          is JSON-driven and can adapt to other displays.
+        </p>
+
+        <h2>Display target</h2>
+        <p>
+          The first-class target is <code>2560 x 720</code> at a 32:9 aspect ratio.
+          The UI favors dense, stable panels over marketing-style cards because it
+          is meant to stay visible during real work.
+        </p>
+
+        <h2>Plugins</h2>
+        <p>
+          Display panels are typed in-repo plugins selected by runtime
+          <code>dashboard.json</code>. The current plugin set covers GitHub PRs,
+          Flue chat, runtime overview, commands, watches, memory, workflow
+          observability, and terminal-style status surfaces.
+        </p>
+
+        <h2>Layout config</h2>
+        <pre><code>&#123;
+  "display": &#123; "width": 2560, "height": 720 &#125;,
+  "theme": "dark",
+  "layout": &#123;
+    "columns": 12,
+    "rows": 6,
+    "regions": []
+  &#125;
+&#125;</code></pre>
+        <p>
+          The dashboard subscribes to config events so supported layout and
+          runtime changes refresh without a browser reload.
+        </p>
+
+        <h2>Theme</h2>
+        <p>
+          The dark theme uses the Miami tiger-stripe palette: hot pink, Aztec
+          teal, cyan, violet, charcoal, and pale blue text. Light mode exists
+          from the start so future dashboards can switch without changing the
+          plugin contract.
+        </p>
+
+        <h2>Future TUI</h2>
+        <p>
+          The web dashboard is the first UI. A future OpenTUI client should use
+          the same backend APIs, event streams, config model, and agent runtime
+          rather than forking behavior.
+        </p>
+      </article>
+    </main>
+    <SiteFooter />
+  </div>
+</BaseLayout>

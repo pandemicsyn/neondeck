@@ -1,0 +1,88 @@
+---
+import DocsNav from '../../components/DocsNav.astro';
+import SiteFooter from '../../components/SiteFooter.astro';
+import SiteNav from '../../components/SiteNav.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Agent runtime · neondeck"
+  description="How neondeck uses Flue agents, actions, workflows, skills, memory, watches, schedules, and observability."
+>
+  <div class="site-shell">
+    <SiteNav />
+    <main class="container docs-layout">
+      <DocsNav />
+      <article class="docs-prose">
+        <h1>Agent runtime</h1>
+        <p>
+          Neon is a durable Flue assistant backed by local app state. The design
+          keeps deterministic facts and mutations in actions while using the
+          model for synthesis, triage, and next-step reasoning.
+        </p>
+
+        <h2>Flue agent</h2>
+        <p>
+          The display assistant owns addressable chat sessions. A new session
+          deliberately reloads current SOUL, skills, model config, memory
+          summaries, and repo context. Existing sessions are not silently
+          rewritten when those inputs change.
+        </p>
+
+        <h2>Actions</h2>
+        <p>
+          Actions are schema-backed deterministic capabilities. Neon uses them
+          for config updates, repo facts, GitHub PR/check facts, runtime skill
+          lookup, memory, dashboard presets, schedules, watches, and guarded
+          execution. Config changes should go through typed actions, not
+          freestyle file editing.
+        </p>
+
+        <h2>Workflows</h2>
+        <p>
+          Bounded jobs run as Flue workflows so each run has an identity,
+          events, output, and inspection path.
+        </p>
+        <pre><code>briefing
+command-run
+dev-doctor
+scheduler-tick
+watch-pr
+watch-release</code></pre>
+
+        <h2>Skills</h2>
+        <p>
+          Skills provide procedural knowledge and conventions. The built-in
+          neondeck skill is app-owned. User runtime skills are trusted local
+          extensions loaded from runtime-home <code>skills/</code> and configured
+          external skill roots.
+        </p>
+
+        <h2>Memory</h2>
+        <p>
+          Structured memory supports user, project, session, and watch scopes.
+          Memory changes should enter active prompt context through a new
+          session or another explicit reload path, not by mutating a live prompt
+          invisibly.
+        </p>
+
+        <h2>Schedules and watches</h2>
+        <p>
+          The local scheduler admits real Flue workflow runs for bounded
+          scheduled work. PR and release watches are deterministic pollers that
+          invoke agent reasoning only when there is meaningful state to
+          summarize or act on.
+        </p>
+
+        <h2>Observability</h2>
+        <p>
+          neondeck records Flue observations, failed runs, workflow summaries,
+          emitted progress data, action/tool activity, and notifications. Raw
+          run inspection can expose prompts and tool data, so dashboard
+          summaries stay compact and guarded.
+        </p>
+      </article>
+    </main>
+    <SiteFooter />
+  </div>
+</BaseLayout>

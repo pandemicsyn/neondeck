@@ -1,0 +1,90 @@
+---
+import DocsNav from '../../components/DocsNav.astro';
+import SiteFooter from '../../components/SiteFooter.astro';
+import SiteNav from '../../components/SiteNav.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="CLI · neondeck"
+  description="neondeck CLI commands for onboarding, status, repository management, watches, schedules, and future TUI entrypoints."
+>
+  <div class="site-shell">
+    <SiteNav />
+    <main class="container docs-layout">
+      <DocsNav />
+      <article class="docs-prose">
+        <h1>CLI</h1>
+        <p>
+          The CLI is the setup and command-and-control surface for neondeck. It
+          also reserves the future OpenTUI launch path so the terminal client
+          can reuse the same backend runtime.
+        </p>
+
+        <h2>Global options</h2>
+        <pre><code>npm run cli -- --home ~/.config/neondeck status
+npm run cli -- --json status</code></pre>
+        <p>
+          Use <code>--home</code> to isolate a runtime home for testing. Use
+          <code>--json</code> for machine-readable output where supported.
+        </p>
+
+        <h2>Initialize</h2>
+        <pre><code>npm run init
+npm run cli -- init --home .neondeck-test</code></pre>
+        <p>
+          The init wizard creates runtime files, writes runtime-home secrets,
+          tunes <code>SOUL.md</code>, configures models and provider references,
+          adds repositories, applies a dashboard preset, and can create initial
+          schedules and command preapprovals.
+        </p>
+
+        <h2>Status</h2>
+        <pre><code>npm run cli -- status</code></pre>
+        <p>
+          Status reports runtime readiness, active home paths, model/provider
+          config, credential presence, repo counts, skills, watches, and setup
+          items that need attention.
+        </p>
+
+        <h2>Repositories</h2>
+        <pre><code>npm run cli -- repo add ~/dev/neondeck \
+  --github-owner pandemicsyn \
+  --github-name neondeck
+
+npm run cli -- repo list</code></pre>
+        <p>
+          Repositories should be local git checkouts when you want local status,
+          dev doctor diagnostics, and command execution against the repo.
+        </p>
+
+        <h2>Watches</h2>
+        <pre><code>npm run cli -- watch-pr pandemicsyn/neondeck#521
+npm run cli -- watch-pr pandemicsyn/neondeck#521 --until prod
+npm run cli -- watch-pr https://github.com/pandemicsyn/neondeck/pull/521</code></pre>
+        <p>
+          PR watches persist in SQLite and poll GitHub for merge/check changes.
+          <code>--until prod</code> links the source PR to a release watch after merge.
+        </p>
+
+        <h2>Schedules</h2>
+        <pre><code>npm run cli -- schedule
+npm run cli -- schedule --morning-briefing
+npm run cli -- schedule --review-queue-digest</code></pre>
+        <p>
+          Natural-language scheduling is reserved for later. Today, the CLI
+          creates known schedule blueprints and lists configured jobs.
+        </p>
+
+        <h2>TUI</h2>
+        <pre><code>npm run cli -- tui</code></pre>
+        <p>
+          The command is reserved for the future OpenTUI client. The TUI should
+          reuse backend APIs and event streams rather than growing a second
+          agent runtime.
+        </p>
+      </article>
+    </main>
+    <SiteFooter />
+  </div>
+</BaseLayout>

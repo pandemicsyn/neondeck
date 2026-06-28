@@ -1,0 +1,79 @@
+---
+import DocsNav from '../../components/DocsNav.astro';
+import SiteFooter from '../../components/SiteFooter.astro';
+import SiteNav from '../../components/SiteNav.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Security · neondeck"
+  description="Local trust boundaries, provider secrets, GitHub token handling, runtime skills, Flue inspection, and execution approvals in neondeck."
+>
+  <div class="site-shell">
+    <SiteNav />
+    <main class="container docs-layout">
+      <DocsNav />
+      <article class="docs-prose">
+        <h1>Security</h1>
+        <p>
+          neondeck is local-first, but it still handles provider keys, GitHub
+          tokens, local git checkouts, model-visible tools, and optional host
+          execution. Treat the runtime home as sensitive local state.
+        </p>
+
+        <h2>Secrets</h2>
+        <p>
+          Secrets live in runtime-home <code>.env</code> or process environment variables.
+          Normal config stores environment variable names only. Do not put secrets
+          in <code>config.json</code>, runtime skills, SOUL, or dashboard
+          config.
+        </p>
+
+        <h2>Provider credentials</h2>
+        <p>
+          Hosted model providers use API credentials or platform bindings. A
+          ChatGPT or Codex subscription login is not a documented Flue provider
+          credential path. Provider config is allowlisted and currently targets
+          Kilo.
+        </p>
+
+        <h2>GitHub token</h2>
+        <p>
+          GitHub API calls run server-side. The browser receives sanitized PR,
+          check, watch, and summary data; it does not receive the token.
+        </p>
+
+        <h2>Runtime skills</h2>
+        <p>
+          Runtime skills are trusted local extensions. They are guidance, not a
+          place to store credentials. Adding arbitrary external skill roots
+          gives the agent new procedural knowledge and should be treated like
+          editing local agent configuration.
+        </p>
+
+        <h2>Execution approvals</h2>
+        <p>
+          Host execution is action-mediated. Commands outside preapprovals
+          require interactive approval and are denied in unattended contexts.
+          Approval resolution is dashboard/API/user-owned, not model-callable.
+          Hardline destructive commands cannot be preapproved.
+        </p>
+
+        <h2>Flue run inspection</h2>
+        <p>
+          Raw Flue runs may include prompts, inputs, outputs, and tool data.
+          Keep inspection local and guarded. UI summaries should stay compact
+          and avoid leaking secrets.
+        </p>
+
+        <h2>Local API access</h2>
+        <p>
+          The local server protects mutating API access behind local-origin
+          checks. Do not expose the local app directly to an untrusted network
+          without adding an explicit auth layer.
+        </p>
+      </article>
+    </main>
+    <SiteFooter />
+  </div>
+</BaseLayout>

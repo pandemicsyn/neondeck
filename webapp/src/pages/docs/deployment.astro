@@ -1,0 +1,67 @@
+---
+import DocsNav from '../../components/DocsNav.astro';
+import SiteFooter from '../../components/SiteFooter.astro';
+import SiteNav from '../../components/SiteNav.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Deployment · neondeck"
+  description="How the neondeck Astro marketing and docs site deploys to Cloudflare, and how local app packaging differs."
+>
+  <div class="site-shell">
+    <SiteNav />
+    <main class="container docs-layout">
+      <DocsNav />
+      <article class="docs-prose">
+        <h1>Deployment</h1>
+        <p>
+          The marketing/docs site and the local dashboard app are different
+          deploy surfaces. The Astro site deploys to Cloudflare for
+          <code>neondeck.dev</code>. The local app runs on the user's machine.
+        </p>
+
+        <h2>Astro site</h2>
+        <p>
+          The site lives in <code>webapp/</code> and builds to static assets.
+        </p>
+        <pre><code>npm run webapp:build
+npm run webapp:preview</code></pre>
+
+        <h2>Cloudflare deploy</h2>
+        <pre><code>npm run webapp:deploy</code></pre>
+        <p>
+          Wrangler config lives at <code>webapp/wrangler.jsonc</code>. It
+          deploys the built <code>webapp/dist</code> assets to the
+          <code>neondeck-site</code> Worker with custom domains for
+          <code>neondeck.dev</code> and <code>www.neondeck.dev</code>.
+        </p>
+
+        <h2>Validation</h2>
+        <pre><code>cd webapp
+npx wrangler deploy --dry-run</code></pre>
+        <p>
+          Use a dry run before important deploys to validate the Worker config
+          and asset bundle without publishing.
+        </p>
+
+        <h2>Local app packaging</h2>
+        <p>
+          The local app builds the React dashboard and Flue Node server. It uses
+          runtime-home config and secrets on the user's machine, not Cloudflare
+          Worker secrets.
+        </p>
+        <pre><code>npm run build:dashboard
+npm run package:app
+npm run release:app</code></pre>
+
+        <h2>Domain</h2>
+        <p>
+          The public docs domain is <code>neondeck.dev</code>. The local
+          dashboard normally runs at <code>http://127.0.0.1:5173/</code> during development.
+        </p>
+      </article>
+    </main>
+    <SiteFooter />
+  </div>
+</BaseLayout>

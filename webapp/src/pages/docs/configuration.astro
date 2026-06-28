@@ -1,0 +1,123 @@
+---
+import DocsNav from '../../components/DocsNav.astro';
+import SiteFooter from '../../components/SiteFooter.astro';
+import SiteNav from '../../components/SiteNav.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Configuration · neondeck"
+  description="Runtime home, config files, secrets, models, providers, repositories, schedules, SOUL, and skills in neondeck."
+>
+  <div class="site-shell">
+    <SiteNav />
+    <main class="container docs-layout">
+      <DocsNav />
+      <article class="docs-prose">
+        <h1>Configuration</h1>
+        <p>
+          neondeck keeps mutable local state outside the repository. The app
+          resolves runtime home from <code>NEONDECK_HOME</code>, then
+          <code>XDG_CONFIG_HOME/neondeck</code>, then
+          <code>~/.config/neondeck</code>.
+        </p>
+
+        <h2>Runtime home</h2>
+        <pre><code>~/.config/neondeck/
+  .env
+  config.json
+  repos.json
+  dashboard.json
+  dashboard.schema.json
+  schedules.json
+  SOUL.md
+  skills/
+    custom-skill/
+      SKILL.md
+  data/
+    neondeck.db
+    flue.db</code></pre>
+        <p>
+          <code>data/neondeck.db</code> stores app state: watches, scheduler jobs,
+          notifications, memories, workflow summaries, config history, and execution
+          approvals. <code>data/flue.db</code> stores Flue runtime state.
+        </p>
+
+        <h2>Secrets</h2>
+        <p>
+          Packaged and local app secrets live in runtime-home <code>.env</code>.
+          Repo-root <code>.env</code> is supported as a checkout-only fallback when
+          runtime-home <code>.env</code> does not define a value. Process environment
+          variables still take precedence.
+        </p>
+        <pre><code>KILOCODE_API_KEY=...
+KILOCODE_ORGANIZATION_ID=...
+FLUE_AGENT_MODEL=kilocode/kilo/auto
+GITHUB_TOKEN=...
+GITHUB_LOGIN=...</code></pre>
+
+        <h2>Models and providers</h2>
+        <p>
+          Agent model choices live in <code>config.json</code>. Model strings
+          must be provider-qualified and use providers already registered by the
+          app or Flue runtime.
+        </p>
+        <pre><code>&#123;
+  "version": 1,
+  "models": &#123;
+    "displayAssistant": "kilocode/kilo/auto",
+    "subagents": &#123;
+      "default": "kilocode/kilo/auto",
+      "repoResearcher": "kilocode/kilo/auto",
+      "ciInvestigator": "kilocode/kilo/auto",
+      "releaseReviewer": "kilocode/kilo/auto"
+    &#125;
+  &#125;,
+  "providers": &#123;
+    "kilocode": &#123;
+      "enabled": true,
+      "apiKeyEnv": "KILOCODE_API_KEY",
+      "organizationIdEnv": "KILOCODE_ORGANIZATION_ID"
+    &#125;
+  &#125;
+&#125;</code></pre>
+        <p>
+          Provider config stores environment variable names, not raw secrets or
+          arbitrary endpoints. Provider registration changes require a server
+          restart.
+        </p>
+
+        <h2>Repositories</h2>
+        <p>
+          <code>repos.json</code> maps repo ids to local git checkouts and GitHub
+          repository metadata. A local checkout is required for local git status and
+          repo diagnostics. GitHub API features use <code>GITHUB_TOKEN</code>
+          and do not expose the token to the browser.
+        </p>
+
+        <h2>Dashboard</h2>
+        <p>
+          <code>dashboard.json</code> selects theme, layout regions, plugin ids, and
+          plugin config. The checked-in dashboard config and schema are copied into
+          new runtime homes as defaults.
+        </p>
+
+        <h2>Schedules and watches</h2>
+        <p>
+          <code>schedules.json</code> contains schedule blueprints. Active scheduler
+          jobs and PR/release watches are persisted in SQLite so they survive restart.
+        </p>
+
+        <h2>SOUL and skills</h2>
+        <p>
+          <code>SOUL.md</code> defines the agent name, emoji, and vibe. User runtime
+          skills live under <code>skills/</code>, plus any external skill roots
+          listed in <code>config.json</code>. Start a new session or restart the
+          server after changing SOUL, model choices, memory, or skills so prompt
+          context reloads deliberately.
+        </p>
+      </article>
+    </main>
+    <SiteFooter />
+  </div>
+</BaseLayout>

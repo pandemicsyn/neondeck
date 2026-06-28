@@ -1,4 +1,5 @@
 ---
+import DocsNav from '../../components/DocsNav.astro';
 import SiteFooter from '../../components/SiteFooter.astro';
 import SiteNav from '../../components/SiteNav.astro';
 import BaseLayout from '../../layouts/BaseLayout.astro';
@@ -11,19 +12,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   <div class="site-shell">
     <SiteNav />
     <main class="container docs-layout">
-      <aside class="docs-sidebar">
-        <a href="/docs/">Overview</a>
-        <a href="/docs/getting-started/">Getting started</a>
-        <a href="#runtime-home">Runtime home</a>
-        <a href="#secrets">Secrets</a>
-        <a href="#providers">Providers</a>
-        <a href="#repositories">Repositories</a>
-        <a href="#runtime-skills">Runtime skills</a>
-        <a href="#agent-models">Agent models</a>
-        <a href="#execution-approvals">Execution</a>
-        <a href="#commands">Commands</a>
-        <a href="#verify">Verify</a>
-      </aside>
+      <DocsNav />
       <article class="docs-prose">
         <h1>Getting started</h1>
         <p>
@@ -93,7 +82,9 @@ GITHUB_LOGIN=...</code></pre>
           Neondeck currently allowlists Kilo provider configuration in runtime
           <code>config.json</code>. Provider settings store environment variable
           names, not raw secrets or arbitrary base URLs. Provider registration
-          changes require a server restart.
+          changes require a server restart. See
+          <a href="/docs/configuration/">configuration</a> for the full runtime file
+          model.
         </p>
 
         <h2>Run the local dashboard</h2>
@@ -125,7 +116,8 @@ GITHUB_LOGIN=...</code></pre>
           Repositories live in runtime-home <code>repos.json</code>. Neon should
           mutate config through typed actions rather than direct file edits. The
           repo registry powers GitHub PR queues, watches, release checks, local
-          repo status, and dev doctor diagnostics.
+          repo status, and dev doctor diagnostics. See the
+          <a href="/docs/cli/">CLI reference</a> for repo and watch commands.
         </p>
 
         <h2 id="runtime-skills">Runtime skills</h2>
@@ -135,7 +127,9 @@ GITHUB_LOGIN=...</code></pre>
           home, plus configured external skill roots, and are registered as Flue skills
           when the agent initializes. Start a new session or restart the server after
           changing runtime skills. Treat runtime skill directories as trusted input
-          and do not place secrets in skill resources.
+          and do not place secrets in skill resources. See
+          <a href="/docs/agent-runtime/">agent runtime</a> for how skills fit with
+          actions and workflows.
         </p>
 
         <h2 id="agent-models">Agent models</h2>
@@ -240,7 +234,7 @@ npm run verify</code></pre>
         <p>
           The Worker is configured in <code>webapp/wrangler.jsonc</code> with custom
           domains for <code>neondeck.dev</code> and <code>www.neondeck.dev</code
-          >.
+          >. See <a href="/docs/deployment/">deployment</a> for the deploy surface.
         </p>
       </article>
     </main>

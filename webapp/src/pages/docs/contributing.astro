@@ -1,0 +1,90 @@
+---
+import DocsNav from '../../components/DocsNav.astro';
+import SiteFooter from '../../components/SiteFooter.astro';
+import SiteNav from '../../components/SiteNav.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Contributing · neondeck"
+  description="How to contribute to neondeck: local setup, roadmap workflow, tests, linting, formatting, reviews, and pull requests."
+>
+  <div class="site-shell">
+    <SiteNav />
+    <main class="container docs-layout">
+      <DocsNav />
+      <article class="docs-prose">
+        <h1>Contributing</h1>
+        <p>
+          neondeck is still early. The roadmap is the source of truth for
+          direction, and changes should keep the local-first Flue runtime,
+          companion-display dashboard, and future TUI on one shared backend
+          surface.
+        </p>
+
+        <h2>Local setup</h2>
+        <pre><code>fnm install 26.4.0
+fnm use 26.4.0
+npm install
+npm run setup
+npm run dev</code></pre>
+        <p>
+          Use <code>NEONDECK_HOME</code> or CLI <code>--home</code> when you want
+          an isolated runtime for testing.
+        </p>
+
+        <h2>Project direction</h2>
+        <p>
+          Read <code>AGENTS.md</code>, <code>.plans/ROADMAP.md</code>,
+          <code>.plans/HERMES_RESEARCH.md</code>, and <code>SOUL.md</code> before
+          larger work. The roadmap defines implementation order and expected behavior.
+        </p>
+
+        <h2>Deviation log</h2>
+        <p>
+          Keep <code>.plans/DEVIATIONS.md</code> current when implementation intentionally
+          differs from the roadmap, when work is deferred, or when a phase is partially
+          complete. The deviations log is used for progress tracking and reviews.
+        </p>
+
+        <h2>Fast checks</h2>
+        <pre><code>npm run check</code></pre>
+        <p>
+          The fast loop runs Oxlint, TypeScript checks, Astro sync, and Vitest.
+          Keep it fast enough to run often.
+        </p>
+
+        <h2>Individual checks</h2>
+        <pre><code>npm run lint
+npm run typecheck
+npm run test
+npm run format:check
+npm run webapp:build</code></pre>
+
+        <h2>Full verification</h2>
+        <pre><code>npm run verify</code></pre>
+        <p>
+          Full verification adds formatting and production builds. Run it before
+          broad or release-oriented changes.
+        </p>
+
+        <h2>Code style</h2>
+        <p>
+          Keep TypeScript clean, readable, composable, and typed at API and IO
+          boundaries with Valibot. React should stay modern and componentized.
+          Prefer existing project patterns over new abstractions unless the
+          abstraction removes real complexity.
+        </p>
+
+        <h2>Reviews</h2>
+        <p>
+          Reviews should prioritize correctness, security, performance,
+          maintainability, missing validation, and unreasonable deviations from
+          the roadmap. Static review skills are available in-repo for roadmap
+          implementation review.
+        </p>
+      </article>
+    </main>
+    <SiteFooter />
+  </div>
+</BaseLayout>
