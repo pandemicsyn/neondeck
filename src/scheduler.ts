@@ -94,6 +94,12 @@ const schedulerActionOutputSchema = v.looseObject({
   action: v.string(),
   changed: v.boolean(),
   message: v.string(),
+  outcome: v.optional(v.string()),
+  jobs: v.optional(v.array(v.unknown())),
+  notifications: v.optional(v.array(v.unknown())),
+  extra: v.optional(v.unknown()),
+  errors: v.optional(v.array(v.string())),
+  requires: v.optional(v.array(v.string())),
 });
 
 export const scheduleBlueprintCreateAction = defineAction({
@@ -155,6 +161,7 @@ export const schedulerListJobsAction = defineAction({
 export const neondeckSchedulerActions = [
   scheduleBlueprintCreateAction,
   schedulerTickAction,
+  schedulerListJobsAction,
 ];
 
 export async function createScheduleBlueprint(

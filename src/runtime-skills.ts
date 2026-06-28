@@ -92,6 +92,13 @@ const runtimeSkillActionOutputSchema = v.looseObject({
   action: v.string(),
   changed: v.boolean(),
   message: v.string(),
+  roots: v.optional(v.array(v.unknown())),
+  skills: v.optional(v.array(v.unknown())),
+  skill: v.optional(v.unknown()),
+  duplicates: v.optional(v.array(v.unknown())),
+  ignored: v.optional(v.array(v.unknown())),
+  errors: v.optional(v.array(v.string())),
+  requires: v.optional(v.array(v.string())),
 });
 const maxSkillResourceBytes = 256 * 1024;
 const sensitiveSkillResourceNames = new Set([
@@ -141,7 +148,11 @@ export const skillsReloadAction = defineAction({
   },
 });
 
-export const neondeckRuntimeSkillActions = [skillsReloadAction];
+export const neondeckRuntimeSkillActions = [
+  skillsListAction,
+  skillLoadAction,
+  skillsReloadAction,
+];
 
 export async function listRuntimeSkills(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);

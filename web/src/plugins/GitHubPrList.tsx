@@ -1,24 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getGitHubPullRequests, type GitHubPullRequest } from '../api';
 import { EmptyState } from '../App';
 import { Badge, ScrollArea } from '../components/ui';
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
+import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 
 type GitHubPrListConfig = {
   limit: number;
 };
-
-type State =
-  | { status: 'loading' }
-  | { status: 'error'; message: string }
-  | {
-      status: 'ready';
-      login?: string;
-      repos?: string[];
-      items: GitHubPullRequest[];
-      fetchedAt?: string;
-    };
 
 export const GitHubPrListPlugin = {
   id: 'github-pr-list',
@@ -28,59 +18,27 @@ export const GitHubPrListPlugin = {
     limit: 12,
   },
   Component({ config }) {
-    const [state, setState] = useState<State>({ status: 'loading' });
-    const [refreshKey, setRefreshKey] = useState(0);
+    const queryClient = useQueryClient();
+    const { data, error, isLoading } = useQuery({
+      queryKey: queryKeys.githubPrs,
+      queryFn: getGitHubPullRequests,
+      refetchInterval: 60_000,
+    });
 
     useConfigEvents((event) => {
       if (
         event.action === 'config_reload' ||
         configEventTouchesFile(event, 'repos.json')
       ) {
-        setRefreshKey((value) => value + 1);
+        void queryClient.invalidateQueries({ queryKey: queryKeys.githubPrs });
       }
     });
 
-    useEffect(() => {
-      let cancelled = false;
-
-      async function load() {
-        try {
-          const data = await getGitHubPullRequests();
-          if (!cancelled) {
-            setState({
-              status: 'ready',
-              login: data.login,
-              repos: data.repos,
-              items: data.items,
-              fetchedAt: data.fetchedAt,
-            });
-          }
-        } catch (cause) {
-          if (!cancelled) {
-            setState({
-              status: 'error',
-              message: cause instanceof Error ? cause.message : String(cause),
-            });
-          }
-        }
-      }
-
-      load();
-      const timer = window.setInterval(load, 60_000);
-      return () => {
-        cancelled = true;
-        window.clearInterval(timer);
-      };
-    }, [refreshKey]);
-
-    const login =
-      state.status === 'ready' && state.login ? `@${state.login}` : '@you';
-    const items =
-      state.status === 'ready' ? state.items.slice(0, config.limit) : [];
-    const countLabel =
-      state.status === 'ready'
-        ? `${items.length} PR${items.length === 1 ? '' : 's'} · ${state.repos?.length ?? 0} REPOS`
-        : 'OPEN PRs';
+    const login = data?.login ? `@${data.login}` : '@you';
+    const items = data ? data.items.slice(0, config.limit) : [];
+    const countLabel = data
+      ? `${items.length} PR${items.length === 1 ? '' : 's'} · ${data.repos?.length ?? 0} REPOS`
+      : 'OPEN PRs';
 
     return (
       <div className="terminal-list flex h-full min-h-0 flex-col">
@@ -91,20 +49,20 @@ export const GitHubPrListPlugin = {
           </span>
           <span className="text-muted">{countLabel}</span>
         </header>
-        {state.status === 'loading' ? <PrSkeleton /> : null}
-        {state.status === 'error' ? (
+        {isLoading ? <PrSkeleton /> : null}
+        {error ? (
           <EmptyState
             title="GitHub unavailable"
-            detail={`${state.message}. Set GITHUB_TOKEN in .env to show authored, assigned, and review-requested PRs.`}
+            detail={`${queryErrorMessage(error)}. Set GITHUB_TOKEN in .env to show authored, assigned, and review-requested PRs.`}
           />
         ) : null}
-        {state.status === 'ready' && items.length === 0 ? (
+        {data && items.length === 0 ? (
           <EmptyState
             title="Inbox zero"
             detail="Authored, assigned, and review-requested PRs are clear."
           />
         ) : null}
-        {state.status === 'ready' && items.length > 0 ? (
+        {data && items.length > 0 ? (
           <ScrollArea className="flex-1">
             <ul>
               {items.map((item) => (

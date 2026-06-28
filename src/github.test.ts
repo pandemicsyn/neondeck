@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildPullRequestQueries,
+  clearGitHubPullRequestQueueCache,
   fetchCheckSummary,
   fetchPullRequestQueue,
 } from './github';
@@ -10,6 +11,7 @@ const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  clearGitHubPullRequestQueueCache();
   vi.restoreAllMocks();
 });
 
@@ -201,6 +203,78 @@ describe('github foundation', () => {
       statusContexts: 2,
     });
   });
+
+  it('encodes slash-bearing refs in check summary paths', async () => {
+    const fetchedUrls: string[] = [];
+    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      fetchedUrls.push(url);
+      if (url.includes('/check-runs')) {
+        return jsonResponse({ check_runs: [] });
+      }
+      if (url.endsWith('/status')) {
+        return jsonResponse({ statuses: [] });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    await fetchCheckSummary({
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      ref: 'release/2026-06',
+    });
+
+    expect(fetchedUrls).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('/commits/release%2F2026-06/check-runs'),
+        expect.stringContaining('/commits/release%2F2026-06/status'),
+      ]),
+    );
+  });
+
+  it('paginates check runs before summarizing status', async () => {
+    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.includes('/check-runs') && !url.includes('page=2')) {
+        return jsonResponse(
+          {
+            check_runs: Array.from({ length: 100 }, () => ({
+              status: 'completed',
+              conclusion: 'success',
+            })),
+          },
+          200,
+          {
+            Link: '<https://api.github.com/repos/pandemicsyn/neondeck/commits/abc123/check-runs?per_page=100&page=2>; rel="next"',
+          },
+        );
+      }
+      if (url.includes('/check-runs') && url.includes('page=2')) {
+        return jsonResponse({
+          check_runs: [{ status: 'completed', conclusion: 'failure' }],
+        });
+      }
+      if (url.endsWith('/status')) {
+        return jsonResponse({ statuses: [] });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    await expect(
+      fetchCheckSummary({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        ref: 'abc123',
+      }),
+    ).resolves.toMatchObject({
+      status: 'failure',
+      total: 101,
+      successful: 100,
+      failed: 1,
+    });
+  });
 });
 
 function searchIssue(number: number) {
@@ -219,9 +293,13 @@ function searchIssue(number: number) {
   };
 }
 
-function jsonResponse(body: unknown, status = 200) {
+function jsonResponse(
+  body: unknown,
+  status = 200,
+  headers: Record<string, string> = {},
+) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
   });
 }

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import {
   getRuntimeStatus,
   getWorkflowObservability,
@@ -9,20 +10,12 @@ import {
 import { EmptyState } from '../App';
 import { Badge, ScrollArea } from '../components/ui';
 import { useConfigEvents } from '../lib/config-events';
+import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 
 type SubagentSummaryConfig = {
   eventLimit: number;
 };
-
-type State =
-  | { status: 'loading' }
-  | { status: 'error'; message: string }
-  | {
-      status: 'ready';
-      runtime: RuntimeStatus;
-      workflows: WorkflowObservability;
-    };
 
 const subagentLabels: Record<string, string> = {
   repoResearcher: 'repo_researcher',
@@ -38,56 +31,53 @@ export const SubagentSummaryPlugin = {
     eventLimit: 5,
   },
   Component({ config }) {
-    const [state, setState] = useState<State>({ status: 'loading' });
-    const [refreshKey, setRefreshKey] = useState(0);
+    const queryClient = useQueryClient();
+    const [runtime, workflows] = useQueries({
+      queries: [
+        {
+          queryKey: queryKeys.runtimeStatus,
+          queryFn: getRuntimeStatus,
+          refetchInterval: 30_000,
+        },
+        {
+          queryKey: queryKeys.workflowObservability,
+          queryFn: getWorkflowObservability,
+          refetchInterval: 30_000,
+        },
+      ],
+    });
 
-    useConfigEvents(() => setRefreshKey((value) => value + 1));
+    useConfigEvents(() => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.runtimeStatus });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.workflowObservability,
+      });
+    });
 
-    useEffect(() => {
-      let cancelled = false;
-
-      async function load() {
-        try {
-          const [runtime, workflows] = await Promise.all([
-            getRuntimeStatus(),
-            getWorkflowObservability(),
-          ]);
-          if (!cancelled) setState({ status: 'ready', runtime, workflows });
-        } catch (cause) {
-          if (!cancelled) {
-            setState({
-              status: 'error',
-              message: cause instanceof Error ? cause.message : String(cause),
-            });
-          }
-        }
-      }
-
-      void load();
-      const timer = window.setInterval(load, 30_000);
-      return () => {
-        cancelled = true;
-        window.clearInterval(timer);
-      };
-    }, [refreshKey]);
-
-    if (state.status === 'loading') {
+    if (runtime.isLoading || workflows.isLoading) {
       return (
         <EmptyState title="Subagents loading" detail="Reading role state." />
       );
     }
 
-    if (state.status === 'error') {
+    if (runtime.error || workflows.error) {
       return (
-        <EmptyState title="Subagents unavailable" detail={state.message} />
+        <EmptyState
+          title="Subagents unavailable"
+          detail={queryErrorMessage(runtime.error ?? workflows.error)}
+        />
       );
+    }
+
+    if (!runtime.data || !workflows.data) {
+      return <EmptyState title="Subagents unavailable" detail="No data." />;
     }
 
     return (
       <SubagentView
         eventLimit={config.eventLimit}
-        runtime={state.runtime}
-        workflows={state.workflows}
+        runtime={runtime.data}
+        workflows={workflows.data}
       />
     );
   },

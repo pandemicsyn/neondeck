@@ -1,21 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
-import {
-  getWorkflowSummaries,
-  type WorkflowSummary,
-  type WorkflowSummaryResponse,
-} from '../api';
+import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import { getWorkflowSummaries, type WorkflowSummary } from '../api';
 import { EmptyState } from '../App';
 import { Badge, ScrollArea } from '../components/ui';
+import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 
 type BriefingPanelConfig = {
   actionLimit: number;
 };
-
-type State =
-  | { status: 'loading' }
-  | { status: 'error'; message: string }
-  | { status: 'ready'; response: WorkflowSummaryResponse };
 
 export const BriefingPanelPlugin = {
   id: 'briefing-panel',
@@ -25,44 +18,28 @@ export const BriefingPanelPlugin = {
     actionLimit: 5,
   },
   Component({ config }) {
-    const [state, setState] = useState<State>({ status: 'loading' });
+    const { data, error, isLoading } = useQuery({
+      queryKey: queryKeys.workflowSummaries,
+      queryFn: getWorkflowSummaries,
+      refetchInterval: 30_000,
+    });
 
-    useEffect(() => {
-      let cancelled = false;
-
-      async function load() {
-        try {
-          const response = await getWorkflowSummaries();
-          if (!cancelled) setState({ status: 'ready', response });
-        } catch (cause) {
-          if (!cancelled) {
-            setState({
-              status: 'error',
-              message: cause instanceof Error ? cause.message : String(cause),
-            });
-          }
-        }
-      }
-
-      void load();
-      const timer = window.setInterval(load, 30_000);
-      return () => {
-        cancelled = true;
-        window.clearInterval(timer);
-      };
-    }, []);
-
-    if (state.status === 'loading') {
+    if (isLoading) {
       return (
         <EmptyState title="Briefing loading" detail="Reading summaries." />
       );
     }
 
-    if (state.status === 'error') {
-      return <EmptyState title="Briefing unavailable" detail={state.message} />;
+    if (error) {
+      return (
+        <EmptyState
+          title="Briefing unavailable"
+          detail={queryErrorMessage(error)}
+        />
+      );
     }
 
-    const latest = state.response.items.find(
+    const latest = data?.items.find(
       (item) => item.workflow === 'command:briefing',
     );
     if (!latest) {

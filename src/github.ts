@@ -43,6 +43,12 @@ export type GitHubPullRequestQueue = {
 export type PullRequestQueueRelation =
   'authored' | 'assigned' | 'review-requested' | 'configured-repo';
 
+type PullRequestSearchResult = {
+  items: GitHubPullRequest[];
+  truncated: boolean;
+  issues: GitHubQueueIssue[];
+};
+
 export type GitHubPullRequestDetail = {
   number: number;
   title: string;
@@ -69,7 +75,13 @@ export type GitHubCheckSummary = {
 const searchPerPage = 50;
 const maxSearchPages = 2;
 const maxSearchItemsPerQuery = searchPerPage * maxSearchPages;
-const enrichmentConcurrency = 4;
+const enrichmentConcurrency = 2;
+const pullRequestQueueCacheTtlMs = 45_000;
+
+const pullRequestQueueCache = new Map<
+  string,
+  { expiresAt: number; value: GitHubPullRequestQueue }
+>();
 
 export async function fetchGitHubLogin(token: string) {
   const response = await githubFetch(token, 'https://api.github.com/user');
@@ -90,32 +102,40 @@ export async function fetchPullRequestQueue(options: {
   login: string;
   repos: RepoConfig[];
 }): Promise<GitHubPullRequestQueue> {
+  const cacheKey = pullRequestQueueCacheKey(options.login, options.repos);
+  const cached = pullRequestQueueCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
   const queries = buildPullRequestQuerySpecs(options.login, options.repos);
-  const results = await Promise.all(
-    queries.map(async (query) => {
-      try {
-        return {
-          relation: query.relation,
-          result: await searchPullRequests(options.token, query.query),
-        };
-      } catch (error) {
-        return {
-          relation: query.relation,
-          result: {
-            items: [],
-            truncated: false,
-            issues: [
-              {
-                type: 'search-error' as const,
-                query: query.query,
-                message: errorMessage(error),
-              },
-            ],
-          },
-        };
-      }
-    }),
-  );
+  const results: Array<{
+    relation: PullRequestQueueRelation;
+    result: Awaited<ReturnType<typeof searchPullRequests>>;
+  }> = [];
+  for (const query of queries) {
+    try {
+      results.push({
+        relation: query.relation,
+        result: await searchPullRequests(options.token, query.query),
+      });
+    } catch (error) {
+      results.push({
+        relation: query.relation,
+        result: {
+          items: [],
+          truncated: false,
+          issues: [
+            {
+              type: 'search-error' as const,
+              query: query.query,
+              message: errorMessage(error),
+            },
+          ],
+        },
+      });
+    }
+  }
   const items = new Map<string, GitHubPullRequest>();
   const issues: GitHubQueueIssue[] = [];
 
@@ -155,7 +175,7 @@ export async function fetchPullRequestQueue(options: {
       })),
   );
 
-  return {
+  const queue = {
     login: options.login,
     repos: options.repos.map(repoFullName),
     items: sortedItems,
@@ -163,6 +183,16 @@ export async function fetchPullRequestQueue(options: {
     truncated: results.some((result) => result.result.truncated),
     issues,
   };
+  pullRequestQueueCache.set(cacheKey, {
+    expiresAt: Date.now() + pullRequestQueueCacheTtlMs,
+    value: queue,
+  });
+
+  return queue;
+}
+
+export function clearGitHubPullRequestQueueCache() {
+  pullRequestQueueCache.clear();
 }
 
 export function buildPullRequestQueries(login: string, repos: RepoConfig[]) {
@@ -228,7 +258,7 @@ export async function fetchPullRequestDetail(options: {
 }): Promise<GitHubPullRequestDetail> {
   const response = await githubFetch(
     options.token,
-    `https://api.github.com/repos/${options.owner}/${options.repo}/pulls/${options.number}`,
+    `https://api.github.com/repos/${encodePathSegment(options.owner)}/${encodePathSegment(options.repo)}/pulls/${options.number}`,
   );
   const data = v.parse(
     githubPullRequestApiResponseSchema,
@@ -255,25 +285,23 @@ export async function fetchCheckSummary(options: {
   repo: string;
   ref: string;
 }): Promise<GitHubCheckSummary> {
-  const [checkRunsResponse, statusResponse] = await Promise.all([
-    githubFetch(
+  const owner = encodePathSegment(options.owner);
+  const repo = encodePathSegment(options.repo);
+  const ref = encodePathSegment(options.ref);
+  const [runs, statusResponse] = await Promise.all([
+    fetchCheckRuns(
       options.token,
-      `https://api.github.com/repos/${options.owner}/${options.repo}/commits/${options.ref}/check-runs?per_page=100`,
+      `https://api.github.com/repos/${owner}/${repo}/commits/${ref}/check-runs?per_page=100`,
     ),
     githubFetch(
       options.token,
-      `https://api.github.com/repos/${options.owner}/${options.repo}/commits/${options.ref}/status`,
+      `https://api.github.com/repos/${owner}/${repo}/commits/${ref}/status`,
     ),
   ]);
-  const data = v.parse(
-    githubCheckRunsApiResponseSchema,
-    await checkRunsResponse.json(),
-  );
   const statusData = v.parse(
     githubCommitStatusApiResponseSchema,
     await statusResponse.json(),
   );
-  const runs = data.check_runs ?? [];
   const failed = runs.filter((run) =>
     [
       'failure',
@@ -319,7 +347,27 @@ export async function fetchCheckSummary(options: {
   };
 }
 
-async function searchPullRequests(token: string, query: string) {
+async function fetchCheckRuns(token: string, initialUrl: string) {
+  const runs: GitHubCheckRun[] = [];
+  let nextUrl: string | undefined = initialUrl;
+
+  while (nextUrl) {
+    const response = await githubFetch(token, nextUrl);
+    const data = v.parse(
+      githubCheckRunsApiResponseSchema,
+      await response.json(),
+    );
+    runs.push(...(data.check_runs ?? []));
+    nextUrl = nextLink(response.headers.get('link'));
+  }
+
+  return runs;
+}
+
+async function searchPullRequests(
+  token: string,
+  query: string,
+): Promise<PullRequestSearchResult> {
   const items: GitHubPullRequest[] = [];
   let totalCount = 0;
   for (let page = 1; page <= maxSearchPages; page += 1) {
@@ -413,7 +461,7 @@ async function githubFetch(token: string, url: string) {
   });
 
   if (!response.ok) {
-    throw new Error(`GitHub request failed with ${response.status}`);
+    throw new Error(githubErrorMessage(response));
   }
 
   return response;
@@ -461,6 +509,10 @@ const githubCheckRunsApiResponseSchema = v.object({
   ),
 });
 
+type GitHubCheckRun = NonNullable<
+  v.InferOutput<typeof githubCheckRunsApiResponseSchema>['check_runs']
+>[number];
+
 const githubCommitStatusApiResponseSchema = v.object({
   statuses: v.optional(
     v.array(
@@ -505,8 +557,54 @@ function isStale(value: string) {
   return ageDays(value) >= 7;
 }
 
+function pullRequestQueueCacheKey(login: string, repos: RepoConfig[]) {
+  return JSON.stringify({
+    login,
+    repos: repos
+      .map((repo) => repoFullName(repo).toLowerCase())
+      .sort((a, b) => a.localeCompare(b)),
+  });
+}
+
+function encodePathSegment(value: string) {
+  return encodeURIComponent(value);
+}
+
+function nextLink(linkHeader: string | null) {
+  if (!linkHeader) return undefined;
+
+  for (const link of linkHeader.split(',')) {
+    const match = link.match(/^\s*<([^>]+)>;\s*rel="([^"]+)"/);
+    if (match?.[2] === 'next') {
+      return match[1];
+    }
+  }
+
+  return undefined;
+}
+
 function staleCutoffDate() {
   return new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+}
+
+function githubErrorMessage(response: Response) {
+  const rateLimitRemaining = response.headers.get('x-ratelimit-remaining');
+  const rateLimitReset = response.headers.get('x-ratelimit-reset');
+  const retryAfter = response.headers.get('retry-after');
+
+  if (
+    response.status === 429 ||
+    (response.status === 403 && rateLimitRemaining === '0')
+  ) {
+    const retryAt = retryAfter
+      ? ` Retry after ${retryAfter}s.`
+      : rateLimitReset
+        ? ` Rate limit resets at ${new Date(Number(rateLimitReset) * 1000).toISOString()}.`
+        : '';
+    return `GitHub request was rate limited with ${response.status}.${retryAt}`;
+  }
+
+  return `GitHub request failed with ${response.status}`;
 }
 
 function errorMessage(error: unknown) {

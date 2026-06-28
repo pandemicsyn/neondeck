@@ -92,4 +92,32 @@ describe('app API safety routes', () => {
       requires: ['confirm'],
     });
   });
+
+  it('returns structured GitHub PR queue errors', async () => {
+    const token = process.env.GITHUB_TOKEN;
+    delete process.env.GITHUB_TOKEN;
+    try {
+      const response = await app.request('http://localhost/api/github/prs', {
+        headers: { host: 'localhost' },
+      });
+      const body = (await response.json()) as {
+        error?: string;
+        items?: unknown[];
+        issues?: Array<{ message: string }>;
+      };
+
+      expect(response.status).toBe(503);
+      expect(body).toMatchObject({
+        error: 'GITHUB_TOKEN is not configured.',
+        items: [],
+      });
+      expect(body.issues?.[0]?.message).toBe('GITHUB_TOKEN is not configured.');
+    } finally {
+      if (token === undefined) {
+        delete process.env.GITHUB_TOKEN;
+      } else {
+        process.env.GITHUB_TOKEN = token;
+      }
+    }
+  });
 });

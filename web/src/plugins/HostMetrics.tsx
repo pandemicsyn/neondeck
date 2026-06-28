@@ -1,12 +1,9 @@
+import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { getHostMetrics, type HostMetrics } from '../api';
+import { getHostMetrics } from '../api';
 import { EmptyState } from '../App';
+import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
-
-type State =
-  | { status: 'loading' }
-  | { status: 'error'; message: string }
-  | { status: 'ready'; metrics: HostMetrics };
 
 export const HostMetricsPlugin = {
   id: 'host-metrics',
@@ -14,40 +11,23 @@ export const HostMetricsPlugin = {
   kind: 'status',
   defaultConfig: {},
   Component() {
-    const [state, setState] = useState<State>({ status: 'loading' });
     const [now, setNow] = useState(() => new Date());
-
-    useEffect(() => {
-      let cancelled = false;
-
-      async function load() {
-        try {
-          const metrics = await getHostMetrics();
-          if (!cancelled) setState({ status: 'ready', metrics });
-        } catch (cause) {
-          if (!cancelled) {
-            setState({
-              status: 'error',
-              message: cause instanceof Error ? cause.message : String(cause),
-            });
-          }
-        }
-      }
-
-      load();
-      const timer = window.setInterval(load, 1_000);
-      return () => {
-        cancelled = true;
-        window.clearInterval(timer);
-      };
-    }, []);
+    const {
+      data: metrics,
+      error,
+      isLoading,
+    } = useQuery({
+      queryKey: queryKeys.hostMetrics,
+      queryFn: getHostMetrics,
+      refetchInterval: 1_000,
+    });
 
     useEffect(() => {
       const timer = window.setInterval(() => setNow(new Date()), 1_000);
       return () => window.clearInterval(timer);
     }, []);
 
-    if (state.status === 'loading') {
+    if (isLoading) {
       return (
         <div className="powerline h-full">
           {Array.from({ length: 6 }).map((_, index) => (
@@ -59,11 +39,19 @@ export const HostMetricsPlugin = {
       );
     }
 
-    if (state.status === 'error') {
-      return <EmptyState title="Metrics unavailable" detail={state.message} />;
+    if (error) {
+      return (
+        <EmptyState
+          title="Metrics unavailable"
+          detail={queryErrorMessage(error)}
+        />
+      );
     }
 
-    const metrics = state.metrics;
+    if (!metrics) {
+      return <EmptyState title="Metrics unavailable" detail="No data." />;
+    }
+
     const memoryPercent = Math.round(metrics.memory.usedRatio * 100);
     const cpuPercent =
       metrics.cpu.loadPercent ??

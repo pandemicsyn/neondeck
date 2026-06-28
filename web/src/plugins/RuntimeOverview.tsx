@@ -1,3 +1,9 @@
+import {
+  useQueries,
+  useQueryClient,
+  type QueryClient,
+  type UseQueryResult,
+} from '@tanstack/react-query';
 import { useEffect, useState, type FormEvent } from 'react';
 import {
   getRepoHealth,
@@ -23,6 +29,7 @@ import {
   type RepoHealth,
   type RepoHealthResponse,
   type RepoConfig,
+  type RepoRegistryResponse,
   type RuntimeStatus,
   type RuntimeStatusCheck,
   type RuntimeSkill,
@@ -30,12 +37,15 @@ import {
   type SafetyPolicy,
   type SafetyPolicyEntry,
   type SchedulerJob,
+  type SchedulerJobsResponse,
+  type MemoryResponse,
   type WorkflowEventRecord,
   type WorkflowObservability,
 } from '../api';
 import { EmptyState } from '../App';
 import { Badge, ScrollArea } from '../components/ui';
 import { useConfigEvents } from '../lib/config-events';
+import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 
 type RuntimeOverviewConfig = {
@@ -70,11 +80,6 @@ type SetupStep = {
   detail: string;
 };
 
-type State =
-  | { status: 'loading' }
-  | { status: 'error'; message: string }
-  | { status: 'ready'; snapshot: RuntimeSnapshot };
-
 export const RuntimeOverviewPlugin = {
   id: 'runtime-overview',
   title: 'Runtime overview',
@@ -88,136 +93,216 @@ export const RuntimeOverviewPlugin = {
     workflowEventLimit: 6,
   },
   Component({ config }) {
-    const [state, setState] = useState<State>({ status: 'loading' });
-    const [refreshKey, setRefreshKey] = useState(0);
+    const queryClient = useQueryClient();
+    const [
+      statusQuery,
+      registryQuery,
+      repoHealthQuery,
+      jobsQuery,
+      skillsQuery,
+      memoriesQuery,
+      notificationsQuery,
+      executionApprovalsQuery,
+      safetyQuery,
+      workflowsQuery,
+    ] = useQueries({
+      queries: [
+        {
+          queryKey: queryKeys.runtimeStatus,
+          queryFn: getRuntimeStatus,
+          refetchInterval: 30_000,
+        },
+        {
+          queryKey: queryKeys.repoRegistry,
+          queryFn: getRepoRegistry,
+          refetchInterval: 30_000,
+        },
+        {
+          queryKey: queryKeys.repoHealth,
+          queryFn: getRepoHealth,
+          refetchInterval: 30_000,
+        },
+        {
+          queryKey: queryKeys.schedulerJobs,
+          queryFn: getSchedulerJobs,
+          refetchInterval: 30_000,
+        },
+        {
+          queryKey: queryKeys.runtimeSkills,
+          queryFn: getRuntimeSkills,
+          refetchInterval: 30_000,
+        },
+        {
+          queryKey: queryKeys.memories,
+          queryFn: () => getMemories(),
+          refetchInterval: 30_000,
+        },
+        {
+          queryKey: queryKeys.notifications,
+          queryFn: getNotifications,
+          refetchInterval: 30_000,
+        },
+        {
+          queryKey: queryKeys.executionApprovals,
+          queryFn: () => getExecutionApprovals({ includeResolved: true }),
+          refetchInterval: 30_000,
+        },
+        {
+          queryKey: queryKeys.safetyPolicy,
+          queryFn: getSafetyPolicy,
+          refetchInterval: 30_000,
+        },
+        {
+          queryKey: queryKeys.workflowObservability,
+          queryFn: getWorkflowObservability,
+          refetchInterval: 30_000,
+        },
+      ],
+    });
 
-    useConfigEvents(() => setRefreshKey((value) => value + 1));
+    useConfigEvents(() => {
+      void invalidateRuntimeQueries(queryClient);
+    });
 
-    useEffect(() => {
-      let cancelled = false;
-
-      async function load() {
-        try {
-          const status = await getRuntimeStatus();
-          const [
-            registry,
-            repoHealth,
-            jobs,
-            skills,
-            memories,
-            notifications,
-            executionApprovals,
-            safety,
-            workflows,
-          ] = await Promise.allSettled([
-            getRepoRegistry(),
-            getRepoHealth(),
-            getSchedulerJobs(),
-            getRuntimeSkills(),
-            getMemories(),
-            getNotifications(),
-            getExecutionApprovals({ includeResolved: true }),
-            getSafetyPolicy(),
-            getWorkflowObservability(),
-          ]);
-
-          if (!cancelled) {
-            const errors = [
-              settledError(registry),
-              settledError(repoHealth),
-              settledError(jobs),
-              settledError(skills),
-              settledError(memories),
-              settledError(notifications),
-              settledError(executionApprovals),
-              settledError(safety),
-              settledError(workflows),
-            ].filter((error): error is string => !!error);
-            setState({
-              status: 'ready',
-              snapshot: {
-                status,
-                repos: settledValue(registry)?.repos ?? [],
-                repoHealth: settledValue(repoHealth) ?? {
-                  home: status.home,
-                  path: status.paths.repos,
-                  repos: [],
-                  attention: [],
-                  count: 0,
-                  fetchedAt: status.fetchedAt,
-                },
-                jobs: settledValue(jobs)?.jobs ?? [],
-                skills: settledValue(skills) ?? {
-                  roots: [],
-                  skills: [],
-                  ignored: [],
-                  duplicates: [],
-                  loadedAt: status.fetchedAt,
-                },
-                memories: settledValue(memories)?.memories ?? [],
-                notifications: settledValue(notifications) ?? {
-                  items: [],
-                  policy: {
-                    info: 'Passive updates.',
-                    ready: 'Completed work.',
-                    attention: 'Actionable failures.',
-                    urgent: 'Production-facing failures.',
-                    reconcile: 'Repeated source events are reconciled.',
-                  },
-                  fetchedAt: status.fetchedAt,
-                },
-                executionApprovals: settledValue(executionApprovals) ?? {
-                  ok: false,
-                  action: 'execution_approvals_list',
-                  changed: false,
-                  approvals: [],
-                  fetchedAt: status.fetchedAt,
-                },
-                safety:
-                  settledValue(safety) ?? emptySafetyPolicy(status.fetchedAt),
-                workflows: settledValue(workflows) ?? emptyWorkflows(),
-                secondaryErrors: errors,
-                fetchedAt: new Date().toISOString(),
-              },
-            });
-          }
-        } catch (cause) {
-          if (!cancelled) {
-            setState({
-              status: 'error',
-              message: cause instanceof Error ? cause.message : String(cause),
-            });
-          }
-        }
-      }
-
-      void load();
-      const timer = window.setInterval(load, 30_000);
-      return () => {
-        cancelled = true;
-        window.clearInterval(timer);
-      };
-    }, [refreshKey]);
-
-    if (state.status === 'loading') {
+    if (statusQuery.isLoading) {
       return (
         <EmptyState title="Runtime loading" detail="Reading backend state." />
       );
     }
 
-    if (state.status === 'error') {
-      return <EmptyState title="Runtime unavailable" detail={state.message} />;
+    if (statusQuery.error) {
+      return (
+        <EmptyState
+          title="Runtime unavailable"
+          detail={queryErrorMessage(statusQuery.error)}
+        />
+      );
+    }
+
+    const status = statusQuery.data;
+    if (!status) {
+      return <EmptyState title="Runtime unavailable" detail="No data." />;
+    }
+
+    const snapshot = runtimeSnapshotFromQueries(status, {
+      registry: registryQuery,
+      repoHealth: repoHealthQuery,
+      jobs: jobsQuery,
+      skills: skillsQuery,
+      memories: memoriesQuery,
+      notifications: notificationsQuery,
+      executionApprovals: executionApprovalsQuery,
+      safety: safetyQuery,
+      workflows: workflowsQuery,
+    });
+
+    if (!snapshot) {
+      return <EmptyState title="Runtime unavailable" detail="No data." />;
     }
 
     return (
       <RuntimeView
         config={config}
-        onRefresh={() => setRefreshKey((value) => value + 1)}
-        snapshot={state.snapshot}
+        onRefresh={() => void invalidateRuntimeQueries(queryClient)}
+        snapshot={snapshot}
       />
     );
   },
 } satisfies DisplayPlugin<RuntimeOverviewConfig>;
+
+type RuntimeSnapshotQueries = {
+  registry: UseQueryResult<RepoRegistryResponse>;
+  repoHealth: UseQueryResult<RepoHealthResponse>;
+  jobs: UseQueryResult<SchedulerJobsResponse>;
+  skills: UseQueryResult<RuntimeSkillsResponse>;
+  memories: UseQueryResult<MemoryResponse>;
+  notifications: UseQueryResult<NotificationResponse>;
+  executionApprovals: UseQueryResult<ExecutionApprovalsResponse>;
+  safety: UseQueryResult<SafetyPolicy>;
+  workflows: UseQueryResult<WorkflowObservability>;
+};
+
+function runtimeSnapshotFromQueries(
+  status: RuntimeStatus,
+  queries: RuntimeSnapshotQueries,
+): RuntimeSnapshot {
+  const errors = [
+    queryResultError(queries.registry),
+    queryResultError(queries.repoHealth),
+    queryResultError(queries.jobs),
+    queryResultError(queries.skills),
+    queryResultError(queries.memories),
+    queryResultError(queries.notifications),
+    queryResultError(queries.executionApprovals),
+    queryResultError(queries.safety),
+    queryResultError(queries.workflows),
+  ].filter((error): error is string => !!error);
+
+  return {
+    status,
+    repos: queries.registry.data?.repos ?? [],
+    repoHealth: queries.repoHealth.data ?? {
+      home: status.home,
+      path: status.paths.repos,
+      repos: [],
+      attention: [],
+      count: 0,
+      fetchedAt: status.fetchedAt,
+    },
+    jobs: queries.jobs.data?.jobs ?? [],
+    skills: queries.skills.data ?? {
+      roots: [],
+      skills: [],
+      ignored: [],
+      duplicates: [],
+      loadedAt: status.fetchedAt,
+    },
+    memories: queries.memories.data?.memories ?? [],
+    notifications: queries.notifications.data ?? {
+      items: [],
+      policy: {
+        info: 'Passive updates.',
+        ready: 'Completed work.',
+        attention: 'Actionable failures.',
+        urgent: 'Production-facing failures.',
+        reconcile: 'Repeated source events are reconciled.',
+      },
+      fetchedAt: status.fetchedAt,
+    },
+    executionApprovals: queries.executionApprovals.data ?? {
+      ok: false,
+      action: 'execution_approvals_list',
+      changed: false,
+      approvals: [],
+      fetchedAt: status.fetchedAt,
+    },
+    safety: queries.safety.data ?? emptySafetyPolicy(status.fetchedAt),
+    workflows: queries.workflows.data ?? emptyWorkflows(),
+    secondaryErrors: errors,
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+function queryResultError(result: { error: unknown }) {
+  return result.error ? queryErrorMessage(result.error) : undefined;
+}
+
+async function invalidateRuntimeQueries(queryClient: QueryClient) {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.runtimeStatus }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.repoRegistry }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.repoHealth }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.schedulerJobs }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.runtimeSkills }),
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.workflowObservability,
+    }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.memories }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.notifications }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.executionApprovals }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.safetyPolicy }),
+  ]);
+}
 
 function RuntimeView({
   config,
@@ -1621,17 +1706,6 @@ function relativeTime(value: string) {
   const hours = Math.round(minutes / 60);
   if (hours < 48) return `${hours}h ago`;
   return `${Math.round(hours / 24)}d ago`;
-}
-
-function settledValue<T>(result: PromiseSettledResult<T>) {
-  return result.status === 'fulfilled' ? result.value : undefined;
-}
-
-function settledError(result: PromiseSettledResult<unknown>) {
-  if (result.status === 'fulfilled') return undefined;
-  return result.reason instanceof Error
-    ? result.reason.message
-    : String(result.reason);
 }
 
 function emptySafetyPolicy(fetchedAt: string): SafetyPolicy {

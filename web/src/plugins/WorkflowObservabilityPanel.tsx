@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
 import {
   getWorkflowObservability,
   type WorkflowEventRecord,
   type WorkflowObservability,
 } from '../api';
 import { Badge, ScrollArea } from '../components/ui';
+import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 
 type WorkflowObservabilityConfig = {
@@ -26,11 +28,6 @@ type WorkflowDrilldownItem = {
   isError: boolean;
 };
 
-type State =
-  | { status: 'loading' }
-  | { status: 'error'; message: string }
-  | { status: 'ready'; workflows: WorkflowObservability };
-
 const filters: Array<{
   id: WorkflowFilter;
   label: string;
@@ -51,38 +48,18 @@ export const WorkflowObservabilityPanelPlugin = {
     refreshSeconds: 20,
   },
   Component({ config }) {
-    const [state, setState] = useState<State>({ status: 'loading' });
     const [filter, setFilter] = useState<WorkflowFilter>('all');
+    const {
+      data: workflows,
+      error,
+      isLoading,
+    } = useQuery({
+      queryKey: queryKeys.workflowObservability,
+      queryFn: getWorkflowObservability,
+      refetchInterval: Math.max(5, config.refreshSeconds) * 1000,
+    });
 
-    useEffect(() => {
-      let cancelled = false;
-
-      async function load() {
-        try {
-          const workflows = await getWorkflowObservability();
-          if (!cancelled) setState({ status: 'ready', workflows });
-        } catch (cause) {
-          if (!cancelled) {
-            setState({
-              status: 'error',
-              message: cause instanceof Error ? cause.message : String(cause),
-            });
-          }
-        }
-      }
-
-      void load();
-      const timer = window.setInterval(
-        load,
-        Math.max(5, config.refreshSeconds) * 1000,
-      );
-      return () => {
-        cancelled = true;
-        window.clearInterval(timer);
-      };
-    }, [config.refreshSeconds]);
-
-    if (state.status === 'loading') {
+    if (isLoading) {
       return (
         <PanelEmptyState
           title="Workflows loading"
@@ -91,9 +68,18 @@ export const WorkflowObservabilityPanelPlugin = {
       );
     }
 
-    if (state.status === 'error') {
+    if (error) {
       return (
-        <PanelEmptyState title="Workflows unavailable" detail={state.message} />
+        <PanelEmptyState
+          title="Workflows unavailable"
+          detail={queryErrorMessage(error)}
+        />
+      );
+    }
+
+    if (!workflows) {
+      return (
+        <PanelEmptyState title="Workflows unavailable" detail="No data." />
       );
     }
 
@@ -102,7 +88,7 @@ export const WorkflowObservabilityPanelPlugin = {
         eventLimit={config.eventLimit}
         filter={filter}
         onFilterChange={setFilter}
-        workflows={state.workflows}
+        workflows={workflows}
       />
     );
   },

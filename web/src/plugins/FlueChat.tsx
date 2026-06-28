@@ -1,5 +1,6 @@
 import { useFlueAgent, useFlueClient } from '@flue/react';
-import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState, type FormEvent, type KeyboardEvent } from 'react';
 import {
   getNeonSession,
   startNeonSession,
@@ -8,6 +9,7 @@ import {
 } from '../api';
 import { Badge, Button, Kbd, ScrollArea, Textarea } from '../components/ui';
 import { useConfigEvents } from '../lib/config-events';
+import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 
 type FlueChatSession = {
@@ -57,29 +59,18 @@ export const FlueChatPlugin = {
         ? config.sessions
         : FlueChatPlugin.defaultConfig.sessions)[0] ??
       FlueChatPlugin.defaultConfig.sessions[0];
-    const [sessionState, setSessionState] = useState<NeonSessionState>();
-    const [sessionError, setSessionError] = useState<string>();
-    const [startingSession, setStartingSession] = useState(false);
-    const activeSession = sessionState
-      ? {
-          id: sessionState.activeSession.id,
-          label: sessionState.activeSession.label,
-          placeholder: fallbackSession.placeholder,
-        }
-      : fallbackSession;
-
-    async function refreshSession() {
-      try {
-        setSessionState(await getNeonSession());
-        setSessionError(undefined);
-      } catch (cause) {
-        setSessionError(cause instanceof Error ? cause.message : String(cause));
-      }
-    }
-
-    async function startFreshSession() {
-      setStartingSession(true);
-      try {
+    const queryClient = useQueryClient();
+    const {
+      data: sessionState,
+      error: sessionError,
+      refetch: refreshSession,
+    } = useQuery({
+      queryKey: queryKeys.neonSession,
+      queryFn: getNeonSession,
+      refetchInterval: 30_000,
+    });
+    const startSessionMutation = useMutation({
+      async mutationFn() {
         const result = await startNeonSession({
           label: 'Fresh',
           reason: 'dashboard-new-session',
@@ -87,22 +78,25 @@ export const FlueChatPlugin = {
         if (!result.state) {
           throw new Error(result.message);
         }
-        setSessionState(result.state);
-        setSessionError(undefined);
-      } catch (cause) {
-        setSessionError(cause instanceof Error ? cause.message : String(cause));
-      } finally {
-        setStartingSession(false);
-      }
+        return result.state;
+      },
+      onSuccess(state) {
+        queryClient.setQueryData(queryKeys.neonSession, state);
+      },
+    });
+    const activeSession = sessionState
+      ? {
+          id: sessionState.activeSession.id,
+          label: sessionState.activeSession.label,
+          placeholder: fallbackSession.placeholder,
+        }
+      : undefined;
+
+    function startFreshSession() {
+      startSessionMutation.mutate();
     }
 
     useConfigEvents(() => void refreshSession());
-
-    useEffect(() => {
-      void refreshSession();
-      const timer = window.setInterval(refreshSession, 30_000);
-      return () => window.clearInterval(timer);
-    }, []);
 
     return (
       <div className="flex h-full min-h-0 flex-col">
@@ -114,11 +108,11 @@ export const FlueChatPlugin = {
           <div className="flex items-center gap-3">
             <Button
               className="h-5 border-transparent bg-transparent px-2 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
-              disabled={startingSession}
+              disabled={startSessionMutation.isPending}
               onClick={() => void startFreshSession()}
               type="button"
             >
-              {startingSession ? 'Starting' : 'New'}
+              {startSessionMutation.isPending ? 'Starting' : 'New'}
             </Button>
             <span
               className={sessionState?.stale ? 'text-accent' : 'text-muted'}
@@ -127,9 +121,9 @@ export const FlueChatPlugin = {
             </span>
           </div>
         </header>
-        {sessionError ? (
+        {sessionError || startSessionMutation.error ? (
           <div className="border-b border-accent/60 bg-soft px-4 py-1.5 text-[11px] text-accent">
-            {sessionError}
+            {queryErrorMessage(sessionError ?? startSessionMutation.error)}
           </div>
         ) : null}
         <FlueChatSessionView
@@ -151,7 +145,7 @@ function FlueChatSessionView({
 }: {
   agentName: string;
   quickCommands: FlueChatConfig['quickCommands'];
-  session: FlueChatSession;
+  session: FlueChatSession | undefined;
   sessionState: NeonSessionState | undefined;
 }) {
   const [input, setInput] = useState('');
@@ -160,7 +154,7 @@ function FlueChatSessionView({
   const flue = useFlueClient();
   const agent = useFlueAgent({
     name: agentName,
-    id: session.id,
+    id: session?.id,
     history: 'all',
   });
 
@@ -174,6 +168,7 @@ function FlueChatSessionView({
       setCommandResult(await runCommand(message));
       return;
     }
+    if (!session) return;
 
     await agent.sendMessage(message);
   }
@@ -205,7 +200,9 @@ function FlueChatSessionView({
       <ScrollArea className="chat-log flex-1">
         <div className="flex min-h-full flex-col gap-3 px-[18px] py-3.5">
           <div className="flex items-center justify-between font-mono text-[10.5px] text-muted">
-            <span className="text-primary">{session.id}</span>
+            <span className="text-primary">
+              {session?.id ?? 'loading session'}
+            </span>
             <Badge>{agent.status}</Badge>
           </div>
           {sessionState?.stale ? (
@@ -242,9 +239,13 @@ function FlueChatSessionView({
             <div className="flex flex-1 items-center justify-center text-center text-[13px] text-muted">
               <div className="max-w-[42ch]">
                 <div className="miami-accent mx-auto mb-2 h-1.5 w-12" />
-                <p className="font-medium text-ink">Session ready</p>
+                <p className="font-medium text-ink">
+                  {session ? 'Session ready' : 'Resolving session'}
+                </p>
                 <p className="mt-1 leading-5">
-                  Messages persist through the local Flue SQLite store.
+                  {session
+                    ? 'Messages persist through the local Flue SQLite store.'
+                    : 'Chat will attach when the active durable session is available.'}
                 </p>
               </div>
             </div>
@@ -278,12 +279,17 @@ function FlueChatSessionView({
           className="dashboard-input h-7 flex-1 overflow-hidden px-0 py-1 font-mono text-[13px] leading-5"
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={session.placeholder}
+          placeholder={session?.placeholder ?? 'Resolving active session...'}
           rows={1}
+          disabled={!session}
           value={input}
         />
         <Kbd>Enter send · Ctrl K tools</Kbd>
-        <Button className="sr-only" disabled={!input.trim()} type="submit">
+        <Button
+          className="sr-only"
+          disabled={!session || !input.trim()}
+          type="submit"
+        >
           Send
         </Button>
       </form>

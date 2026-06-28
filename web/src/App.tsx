@@ -1,3 +1,4 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { getDashboardConfig, openConfigEventStream } from './api';
 import { Card } from './components/ui';
@@ -5,6 +6,7 @@ import {
   configEventTouchesFile,
   dispatchConfigChangeEvent,
 } from './lib/config-events';
+import { queryErrorMessage, queryKeys } from './lib/query';
 import { pluginRegistry } from './plugins/registry';
 import type {
   DashboardConfig,
@@ -15,31 +17,29 @@ import type {
 } from './types';
 
 export function App() {
-  const [config, setConfig] = useState<DashboardConfig>();
-  const [error, setError] = useState<string>();
+  const queryClient = useQueryClient();
+  const {
+    data: config,
+    error,
+    isLoading,
+  } = useQuery({
+    queryKey: queryKeys.dashboardConfig,
+    queryFn: getDashboardConfig,
+  });
 
   useEffect(() => {
-    void loadDashboardConfig();
-
-    async function loadDashboardConfig() {
-      try {
-        setConfig(await getDashboardConfig());
-        setError(undefined);
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      }
-    }
-
     return openConfigEventStream((event) => {
       dispatchConfigChangeEvent(event);
       if (
         event.action === 'config_reload' ||
         configEventTouchesFile(event, 'dashboard.json')
       ) {
-        void loadDashboardConfig();
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.dashboardConfig,
+        });
       }
     });
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     if (!config) return;
@@ -48,10 +48,15 @@ export function App() {
   }, [config]);
 
   if (error) {
-    return <BootState title="Dashboard config failed" detail={error} />;
+    return (
+      <BootState
+        title="Dashboard config failed"
+        detail={queryErrorMessage(error)}
+      />
+    );
   }
 
-  if (!config) {
+  if (isLoading || !config) {
     return (
       <BootState
         title="Starting dashboard"

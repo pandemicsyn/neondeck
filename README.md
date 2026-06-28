@@ -18,6 +18,26 @@ fnm use 26.4.0
 npm install
 ```
 
+## First Run
+
+Run the guided CLI setup:
+
+```sh
+npm run init
+```
+
+The wizard prepares the runtime home, writes local `.env` secrets, tunes `SOUL.md`, configures the Kilo model/provider, adds local git checkouts, applies a dashboard preset, and optionally creates schedules and command preapprovals.
+
+The same CLI is the foundation for future command-and-control surfaces, including an OpenTUI client:
+
+```sh
+npm run cli -- status
+npm run cli -- repo add ~/dev/neondeck
+npm run cli -- watch-pr pandemicsyn/neondeck#123 --until prod
+npm run cli -- schedule --morning-briefing
+npm run cli -- tui
+```
+
 ## Configure
 
 Copy `.env.example` to `.env` and fill in the local secrets:
@@ -46,6 +66,8 @@ You can initialize or validate the runtime home explicitly without starting the 
 npm run setup
 npm run setup -- --home ./data/dev-home
 ```
+
+For new installs, prefer `npm run init`; `npm run setup` is the lower-level non-interactive runtime-home initializer.
 
 The built-in Neondeck guidance is an application-owned Flue skill at `src/skills/neondeck/SKILL.md`. User runtime skills live under `skills/<skill-id>/SKILL.md`; valid user skills from that root, plus external skill roots from `config.json`, are registered as Flue skills when the agent initializes. Start a new session or restart the server after changing runtime skills. Treat runtime skill directories as trusted input; do not put secrets in skill resources.
 

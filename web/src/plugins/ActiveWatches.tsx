@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getPrWatches, type PrWatch } from '../api';
 import { Badge, Button, ScrollArea } from '../components/ui';
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
+import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 
 type ActiveWatchesConfig = {
@@ -16,10 +17,12 @@ export const ActiveWatchesPlugin = {
     limit: 8,
   },
   Component({ config }) {
-    const [watches, setWatches] = useState<PrWatch[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string>();
-    const [refreshKey, setRefreshKey] = useState(0);
+    const queryClient = useQueryClient();
+    const { data, error, isLoading } = useQuery({
+      queryKey: queryKeys.prWatches,
+      queryFn: getPrWatches,
+      refetchInterval: 30_000,
+    });
 
     useConfigEvents((event) => {
       if (
@@ -27,37 +30,11 @@ export const ActiveWatchesPlugin = {
         configEventTouchesFile(event, 'repos.json') ||
         configEventTouchesFile(event, 'schedules.json')
       ) {
-        setRefreshKey((value) => value + 1);
+        void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
       }
     });
 
-    useEffect(() => {
-      let cancelled = false;
-
-      async function load() {
-        try {
-          const response = await getPrWatches();
-          if (!cancelled) {
-            setWatches(response.watches ?? []);
-            setError(undefined);
-          }
-        } catch (cause) {
-          if (!cancelled) {
-            setError(cause instanceof Error ? cause.message : String(cause));
-          }
-        } finally {
-          if (!cancelled) setLoading(false);
-        }
-      }
-
-      void load();
-      const timer = window.setInterval(load, 30_000);
-      return () => {
-        cancelled = true;
-        window.clearInterval(timer);
-      };
-    }, [refreshKey]);
-
+    const watches = data?.watches ?? [];
     const visible = watches.slice(0, config.limit);
 
     return (
@@ -68,13 +45,16 @@ export const ActiveWatchesPlugin = {
         </header>
         <ScrollArea className="flex-1">
           <div className="space-y-2 p-3">
-            {loading ? (
+            {isLoading ? (
               <WatchState
                 title="Loading watches"
                 detail="Reading runtime state."
               />
             ) : error ? (
-              <WatchState title="Watch API failed" detail={error} />
+              <WatchState
+                title="Watch API failed"
+                detail={queryErrorMessage(error)}
+              />
             ) : visible.length === 0 ? (
               <WatchState
                 title="No active watches"

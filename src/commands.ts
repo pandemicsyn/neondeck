@@ -84,17 +84,40 @@ type ReviewQueueAction = {
 const commandRunInputSchema = v.object({
   command: v.pipe(v.string(), v.minLength(1)),
 });
+const workflowSummaryRecordSchema = v.looseObject({
+  id: v.string(),
+  workflow: v.string(),
+  runId: v.nullable(v.string()),
+  status: v.string(),
+  summary: v.nullable(v.unknown()),
+  createdAt: v.string(),
+  updatedAt: v.string(),
+});
+const supportedCommandSchema = v.object({
+  name: v.string(),
+  usage: v.string(),
+  description: v.string(),
+});
 const commandRunOutputSchema = v.looseObject({
   ok: v.boolean(),
   command: v.string(),
   input: v.string(),
   status: v.picklist(['completed', 'failed', 'needs-config']),
   message: v.string(),
+  data: v.optional(v.unknown()),
+  errors: v.optional(v.array(v.string())),
+  requires: v.optional(v.array(v.string())),
+  workflowSummary: v.optional(workflowSummaryRecordSchema),
 });
 const commandActionOutputSchema = v.looseObject({
   ok: v.boolean(),
   action: v.string(),
   changed: v.boolean(),
+  message: v.optional(v.string()),
+  commands: v.optional(v.array(supportedCommandSchema)),
+  summaries: v.optional(v.array(workflowSummaryRecordSchema)),
+  errors: v.optional(v.array(v.string())),
+  requires: v.optional(v.array(v.string())),
 });
 
 export const commandRunAction = defineAction({
@@ -163,7 +186,11 @@ export const workflowSummariesListAction = defineAction({
   },
 });
 
-export const neondeckCommandActions = [commandRunAction];
+export const neondeckCommandActions = [
+  commandRunAction,
+  commandsListAction,
+  workflowSummariesListAction,
+];
 
 export function supportedCommands() {
   return [

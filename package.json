@@ -4,6 +4,9 @@
   "description": "Local companion-display dashboard and Flue agent server for neondeck.",
   "homepage": "https://neondeck.dev",
   "private": true,
+  "bin": {
+    "neondeck": "src/cli.ts"
+  },
   "workspaces": [
     "webapp"
   ],
@@ -20,6 +23,8 @@
     "lint:fix": "npm run lint -- --fix",
     "prepare": "git config core.hooksPath .githooks || true",
     "hooks:install": "git config core.hooksPath .githooks",
+    "cli": "tsx src/cli.ts",
+    "init": "tsx src/cli.ts init",
     "run:display": "flue run display-assistant --target node --server /api/flue --input '{\"message\":\"Say hello in one sentence.\"}'",
     "secrets:check": "gitleaks git --redact --no-banner --log-opts=--all",
     "secrets:check:staged": "gitleaks git --staged --redact --no-banner",
@@ -59,10 +64,13 @@
     "node": ">=26"
   },
   "dependencies": {
+    "@clack/prompts": "^1.6.0",
     "@flue/react": "^1.0.0-beta.7",
     "@flue/runtime": "^1.0.0-beta.7",
     "@flue/sdk": "^1.0.0-beta.7",
     "@hono/node-server": "^2.0.6",
+    "@tanstack/react-query": "^5.101.2",
+    "commander": "^15.0.0",
     "hono": "^4.12.27",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -84,6 +92,7 @@
     "prettier": "^3.9.0",
     "prettier-plugin-astro": "^0.14.1",
     "tailwindcss": "^4.3.1",
+    "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "vite": "^8.1.0",
     "vitest": "^4.1.9"

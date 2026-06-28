@@ -137,6 +137,9 @@ const updateAgentModelsInputSchema = v.object({
   displayAssistant: v.optional(providerQualifiedModelSchema),
   subagents: v.optional(subagentModelInputSchema),
 });
+const updateSkillRootsInputSchema = v.object({
+  skillRoots: v.array(nonEmptyStringSchema),
+});
 const envVarNameSchema = v.pipe(
   v.string(),
   v.regex(/^[A-Z_][A-Z0-9_]*$/, 'Expected an environment variable name.'),
@@ -205,6 +208,17 @@ export const updateAgentModelsAction = defineAction({
   output: configActionOutputSchema,
   async run({ input }) {
     return updateAgentModels(input);
+  },
+});
+
+export const updateSkillRootsAction = defineAction({
+  name: 'neondeck_config_update_skill_roots',
+  description:
+    'Update external runtime skill roots in config.json with schema validation and config history.',
+  input: updateSkillRootsInputSchema,
+  output: configActionOutputSchema,
+  async run({ input }) {
+    return updateSkillRoots(input);
   },
 });
 
@@ -337,6 +351,7 @@ export const neondeckConfigActions = [
   configValidateAction,
   configReloadAction,
   updateAgentModelsAction,
+  updateSkillRootsAction,
   readProvidersAction,
   updateProviderAction,
   updateExecutionPolicyAction,
@@ -475,6 +490,55 @@ export async function updateAgentModels(
       },
     },
   );
+}
+
+export async function updateSkillRoots(
+  rawInput: v.InferInput<typeof updateSkillRootsInputSchema>,
+  paths = runtimePaths(),
+): Promise<ConfigActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsed = parseActionInput(
+    updateSkillRootsInputSchema,
+    rawInput,
+    'config_update_skill_roots',
+    paths,
+    [paths.config],
+  );
+  if (!parsed.ok) return parsed.result;
+
+  const config = await readRuntimeJson(paths.config, parseAppConfig);
+  const nextSkillRoots = Array.from(new Set(parsed.input.skillRoots));
+  const next = parseAppConfig(
+    {
+      ...config,
+      skillRoots: nextSkillRoots,
+    },
+    paths.config,
+  );
+  const changed =
+    JSON.stringify(config.skillRoots ?? []) !==
+    JSON.stringify(next.skillRoots ?? []);
+
+  if (changed) {
+    await writeJson(paths.config, next);
+    recordConfigChange(paths, {
+      action: 'config_update_skill_roots',
+      file: paths.config,
+      target: 'skillRoots',
+      before: config,
+      after: next,
+    });
+  }
+
+  return okResult('config_update_skill_roots', changed, paths, [paths.config], {
+    message: changed
+      ? 'Updated runtime skill roots. Start a new session for active agents to load changed skills.'
+      : 'Runtime skill roots already matched the requested values.',
+    data: {
+      skillRoots: next.skillRoots ?? [],
+      appliesAfter: 'new-session',
+    },
+  });
 }
 
 export async function readProviderConfig(

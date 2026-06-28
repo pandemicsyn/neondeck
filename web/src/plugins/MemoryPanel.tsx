@@ -1,23 +1,19 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import {
   getMemories,
   upsertMemory,
   type MemoryRecord,
-  type MemoryResponse,
   type MemoryScope,
 } from '../api';
 import { EmptyState } from '../App';
 import { Badge, Button, ScrollArea } from '../components/ui';
+import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 
 type MemoryPanelConfig = {
   limit: number;
 };
-
-type State =
-  | { status: 'loading' }
-  | { status: 'error'; message: string }
-  | { status: 'ready'; response: MemoryResponse };
 
 export const MemoryPanelPlugin = {
   id: 'memory-panel',
@@ -27,62 +23,37 @@ export const MemoryPanelPlugin = {
     limit: 8,
   },
   Component({ config }) {
-    const [state, setState] = useState<State>({ status: 'loading' });
-    const [refreshKey, setRefreshKey] = useState(0);
+    const { data, error, isLoading } = useQuery({
+      queryKey: queryKeys.memories,
+      queryFn: () => getMemories(),
+      refetchInterval: 30_000,
+    });
 
-    useEffect(() => {
-      let cancelled = false;
-
-      async function load() {
-        try {
-          const response = await getMemories();
-          if (!cancelled) setState({ status: 'ready', response });
-        } catch (cause) {
-          if (!cancelled) {
-            setState({
-              status: 'error',
-              message: cause instanceof Error ? cause.message : String(cause),
-            });
-          }
-        }
-      }
-
-      void load();
-      const timer = window.setInterval(load, 30_000);
-      return () => {
-        cancelled = true;
-        window.clearInterval(timer);
-      };
-    }, [refreshKey]);
-
-    if (state.status === 'loading') {
+    if (isLoading) {
       return (
         <EmptyState title="Memory loading" detail="Reading durable notes." />
       );
     }
 
-    if (state.status === 'error') {
-      return <EmptyState title="Memory unavailable" detail={state.message} />;
+    if (error) {
+      return (
+        <EmptyState
+          title="Memory unavailable"
+          detail={queryErrorMessage(error)}
+        />
+      );
     }
 
-    return (
-      <MemoryView
-        limit={config.limit}
-        memories={state.response.memories}
-        onRefresh={() => setRefreshKey((value) => value + 1)}
-      />
-    );
+    return <MemoryView limit={config.limit} memories={data?.memories ?? []} />;
   },
 } satisfies DisplayPlugin<MemoryPanelConfig>;
 
 function MemoryView({
   limit,
   memories,
-  onRefresh,
 }: {
   limit: number;
   memories: MemoryRecord[];
-  onRefresh: () => void;
 }) {
   const currentTask = useMemo(
     () =>
@@ -100,7 +71,7 @@ function MemoryView({
       </header>
       <ScrollArea className="flex-1">
         <div className="space-y-2.5 p-3">
-          <CurrentTaskForm currentTask={currentTask} onRefresh={onRefresh} />
+          <CurrentTaskForm currentTask={currentTask} />
           <section>
             <div className="mb-1.5 flex items-center justify-between font-mono text-[10px] tracking-[0.12em]">
               <span className="text-primary">DURABLE NOTES</span>
@@ -123,14 +94,26 @@ function MemoryView({
 
 function CurrentTaskForm({
   currentTask,
-  onRefresh,
 }: {
   currentTask: MemoryRecord | undefined;
-  onRefresh: () => void;
 }) {
+  const queryClient = useQueryClient();
   const [value, setValue] = useState(memoryPreview(currentTask?.value ?? ''));
   const [message, setMessage] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const mutation = useMutation({
+    mutationFn: upsertMemory,
+    onSuccess(result) {
+      setMessage(result.message);
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.memories }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.runtimeStatus }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.neonSession }),
+      ]);
+    },
+    onError(cause) {
+      setMessage(queryErrorMessage(cause));
+    },
+  });
 
   useEffect(() => {
     setValue(memoryPreview(currentTask?.value ?? ''));
@@ -138,21 +121,12 @@ function CurrentTaskForm({
 
   async function save(event: FormEvent) {
     event.preventDefault();
-    setSaving(true);
     setMessage(null);
-    try {
-      const result = await upsertMemory({
-        scope: 'session',
-        key: 'current-task',
-        value: value.trim(),
-      });
-      setMessage(result.message);
-      onRefresh();
-    } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setSaving(false);
-    }
+    mutation.mutate({
+      scope: 'session',
+      key: 'current-task',
+      value: value.trim(),
+    });
   }
 
   return (
@@ -163,10 +137,10 @@ function CurrentTaskForm({
         </p>
         <Button
           className="h-6 border-violet bg-field px-2 py-0 font-mono text-[10px] text-violet"
-          disabled={saving}
+          disabled={mutation.isPending}
           type="submit"
         >
-          {saving ? 'saving' : 'save'}
+          {mutation.isPending ? 'saving' : 'save'}
         </Button>
       </div>
       <textarea

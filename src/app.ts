@@ -23,7 +23,7 @@ import {
   runApprovedExecution,
 } from './execution-actions';
 import { checkExecutionPolicy, readExecutionPolicy } from './execution-policy';
-import { fetchGitHubLogin, fetchPullRequestQueue } from './github';
+import { listGitHubPrQueue } from './github-actions';
 import { deleteMemory, listMemories, upsertMemory } from './memory-actions';
 import { readHostMetrics } from './metrics';
 import { readRepoHealthSnapshot, readRepoRegistrySnapshot } from './repos';
@@ -500,20 +500,25 @@ app.get('/api/workflows/observability', async (c) => {
 });
 
 app.get('/api/github/prs', async (c) => {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) {
-    return c.json({ error: 'GITHUB_TOKEN is not configured', items: [] }, 503);
+  const result = await listGitHubPrQueue(paths);
+  const queue =
+    result.ok && result.data && typeof result.data === 'object'
+      ? (result.data as { queue?: unknown }).queue
+      : undefined;
+  if (queue && typeof queue === 'object') {
+    return c.json(queue);
   }
 
-  const login = process.env.GITHUB_LOGIN ?? (await fetchGitHubLogin(token));
-  const registry = await readRepoRegistrySnapshot(paths);
-
   return c.json(
-    await fetchPullRequestQueue({
-      token,
-      login,
-      repos: registry.repos,
-    }),
+    {
+      error: result.message,
+      items: [],
+      issues: (result.errors ?? [result.message]).map((message) => ({
+        type: 'search-error',
+        message,
+      })),
+    },
+    result.requires?.includes('GITHUB_TOKEN') ? 503 : 502,
   );
 });
 

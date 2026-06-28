@@ -35,10 +35,29 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 fnm use 26.4.0
 npm install</code></pre>
 
+        <h2>Run the CLI wizard</h2>
+        <p>
+          Start with the guided terminal setup. It prepares runtime state,
+          writes local secrets, configures the agent model, adds repositories,
+          applies a dashboard preset, and can create initial schedules.
+        </p>
+        <pre><code>npm run init</code></pre>
+        <p>
+          The same CLI is the base for direct command-and-control workflows and
+          the future OpenTUI client.
+        </p>
+        <pre><code>npm run cli -- status
+npm run cli -- repo add ~/dev/neondeck
+npm run cli -- watch-pr pandemicsyn/neondeck#123 --until prod
+npm run cli -- schedule --morning-briefing
+npm run cli -- tui</code></pre>
+
         <h2 id="runtime-home">Initialize runtime home</h2>
         <p>
           The app creates a runtime home on first start. You can also prepare it
-          explicitly before launching the dashboard.
+          explicitly before launching the dashboard. For new installs, prefer
+          <code>npm run init</code>; <code>npm run setup</code> is the lower-level
+          non-interactive initializer.
         </p>
         <pre><code>npm run setup</code></pre>
         <p>

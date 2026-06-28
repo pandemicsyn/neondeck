@@ -21,6 +21,7 @@ import {
   updateDashboardLayout,
   updateProviderConfig,
   updateSchedule,
+  updateSkillRoots,
   validateConfig,
 } from './config-actions';
 import { subscribeConfigEvents, type ConfigChangeEvent } from './config-events';
@@ -163,6 +164,30 @@ describe('config actions', () => {
       action: 'config_update_repo',
       message: 'Invalid action input.',
     });
+  });
+
+  it('updates skill roots through validated config history', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    const skillRoot = join(home, 'skills-extra');
+
+    await expect(
+      updateSkillRoots({ skillRoots: [skillRoot, skillRoot] }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      message:
+        'Updated runtime skill roots. Start a new session for active agents to load changed skills.',
+    });
+
+    const config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.skillRoots).toEqual([skillRoot]);
+    expect(readHistory(paths.neondeckDatabase)).toMatchObject([
+      { action: 'config_update_skill_roots', target: 'skillRoots' },
+    ]);
   });
 
   it('adds, updates, and removes schedules through validated config operations', async () => {
