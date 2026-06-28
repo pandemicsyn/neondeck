@@ -22,7 +22,7 @@ export const GitHubPrListPlugin = {
     const { data, error, isLoading } = useQuery({
       queryKey: queryKeys.githubPrs,
       queryFn: getGitHubPullRequests,
-      refetchInterval: 60_000,
+      refetchInterval: 5 * 60_000,
     });
 
     useConfigEvents((event) => {
@@ -95,7 +95,7 @@ export const GitHubPrListPlugin = {
                       {item.stale ? (
                         <span className="text-accent">◇ stale</span>
                       ) : null}
-                      {item.labels.includes('draft') ? (
+                      {item.draft || item.labels.includes('draft') ? (
                         <span className="text-muted">△ draft</span>
                       ) : null}
                     </div>

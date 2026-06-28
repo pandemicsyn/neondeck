@@ -9,6 +9,7 @@ export type GitHubPullRequest = {
   number: number;
   url: string;
   state: string;
+  draft?: boolean;
   author: string;
   labels: string[];
   comments: number;
@@ -59,6 +60,7 @@ export type GitHubPullRequestDetail = {
   repo: string;
   url: string;
   state: string;
+  draft?: boolean;
   merged: boolean;
   mergeCommitSha: string | null;
   headSha: string;
@@ -176,9 +178,9 @@ export async function fetchPullRequestQueue(options: {
     }
   }
 
-  const sortedQueueItems = Array.from(items.values()).sort(
-    (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
-  );
+  const sortedQueueItems = Array.from(items.values())
+    .filter((item) => item.state === 'open')
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
   const queueItemsToEnrich = sortedQueueItems.slice(0, maxItems);
   if (sortedQueueItems.length > queueItemsToEnrich.length) {
     issues.push({
@@ -192,9 +194,9 @@ export async function fetchPullRequestQueue(options: {
     enrichmentConcurrency,
     (item) => enrichPullRequest(options.token, item),
   );
-  const sortedItems = enriched.sort(
-    (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
-  );
+  const sortedItems = enriched
+    .filter((item) => item.state === 'open')
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
   issues.push(
     ...sortedItems
       .filter((item) => item.checkError)
@@ -237,46 +239,19 @@ function buildPullRequestQuerySpecs(login: string, repos: RepoConfig[]) {
   const queries: Array<{
     query: string;
     relation: PullRequestQueueRelation;
-  }> = [
-    {
-      query: `is:pr is:open archived:false author:${login}`,
-      relation: 'authored',
-    },
-    {
-      query: `is:pr is:open archived:false author:${login} updated:<${staleCutoff}`,
-      relation: 'authored',
-    },
-    {
-      query: `is:pr is:open archived:false assignee:${login}`,
-      relation: 'assigned',
-    },
-    {
-      query: `is:pr is:open archived:false assignee:${login} updated:<${staleCutoff}`,
-      relation: 'assigned',
-    },
-    {
-      query: `is:pr is:open archived:false review-requested:${login}`,
-      relation: 'review-requested',
-    },
-    {
-      query: `is:pr is:open archived:false review-requested:${login} updated:<${staleCutoff}`,
-      relation: 'review-requested',
-    },
-    ...repos.map(
-      (repo) =>
-        ({
-          query: `is:pr is:open archived:false repo:${repoFullName(repo)}`,
-          relation: 'configured-repo',
-        }) satisfies { query: string; relation: PullRequestQueueRelation },
-    ),
-    ...repos.map(
-      (repo) =>
-        ({
-          query: `is:pr is:open archived:false repo:${repoFullName(repo)} updated:<${staleCutoff}`,
-          relation: 'configured-repo',
-        }) satisfies { query: string; relation: PullRequestQueueRelation },
-    ),
-  ];
+  }> = repos.flatMap((repo) => {
+    const fullName = repoFullName(repo);
+    return [
+      {
+        query: `is:pr is:open archived:false author:${login} repo:${fullName}`,
+        relation: 'authored' as const,
+      },
+      {
+        query: `is:pr is:open archived:false author:${login} repo:${fullName} updated:<${staleCutoff}`,
+        relation: 'authored' as const,
+      },
+    ];
+  });
 
   return Array.from(
     new Map(queries.map((query) => [query.query, query])).values(),
@@ -304,6 +279,7 @@ export async function fetchPullRequestDetail(options: {
     repo: `${options.owner}/${options.repo}`,
     url: data.html_url,
     state: data.state,
+    draft: data.draft ?? false,
     merged: data.merged,
     mergeCommitSha: data.merge_commit_sha,
     headSha: data.head.sha,
@@ -467,6 +443,8 @@ async function enrichPullRequest(token: string, item: GitHubPullRequest) {
 
     return {
       ...item,
+      state: detail.state,
+      draft: detail.draft,
       headSha: detail.headSha,
       baseRef: detail.baseRef,
       checks,
@@ -519,6 +497,7 @@ const githubSearchIssueSchema = v.object({
   number: v.number(),
   html_url: v.string(),
   state: v.string(),
+  draft: v.optional(v.boolean()),
   user: v.optional(v.object({ login: v.optional(v.string()) })),
   labels: v.optional(v.array(v.object({ name: v.optional(v.string()) }))),
   comments: v.number(),
@@ -536,6 +515,7 @@ const githubPullRequestApiResponseSchema = v.object({
   title: v.string(),
   html_url: v.string(),
   state: v.string(),
+  draft: v.optional(v.boolean()),
   merged: v.boolean(),
   merge_commit_sha: v.nullable(v.string()),
   updated_at: v.string(),
@@ -578,6 +558,7 @@ function normalizePullRequest(item: GitHubSearchIssue): GitHubPullRequest {
     number: item.number,
     url: item.html_url,
     state: item.state,
+    draft: item.draft ?? false,
     author: item.user?.login ?? 'unknown',
     labels: (item.labels ?? [])
       .map((label) => label.name)

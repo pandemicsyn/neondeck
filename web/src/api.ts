@@ -7,6 +7,7 @@ export type GitHubPullRequest = {
   number: number;
   url: string;
   state: string;
+  draft?: boolean;
   author: string;
   labels: string[];
   comments: number;

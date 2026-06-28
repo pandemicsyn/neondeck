@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 describe('github foundation', () => {
-  it('builds user and configured repo PR queries', () => {
+  it('builds authored PR queries scoped to configured repos', () => {
     const repos: RepoConfig[] = [
       {
         id: 'neondeck',
@@ -34,32 +34,111 @@ describe('github foundation', () => {
 
     const queries = buildPullRequestQueries('pandemicsyn', repos);
 
+    expect(queries.every((query) => query.includes('is:open'))).toBe(true);
+    expect(queries.some((query) => query.includes('draft:false'))).toBe(false);
     expect(queries).toEqual(
       expect.arrayContaining([
-        'is:pr is:open archived:false author:pandemicsyn',
-        'is:pr is:open archived:false assignee:pandemicsyn',
-        'is:pr is:open archived:false review-requested:pandemicsyn',
-        'is:pr is:open archived:false repo:pandemicsyn/neondeck',
-        'is:pr is:open archived:false repo:pandemicsyn/flue',
+        'is:pr is:open archived:false author:pandemicsyn repo:pandemicsyn/neondeck',
+        'is:pr is:open archived:false author:pandemicsyn repo:pandemicsyn/flue',
       ]),
+    );
+    expect(queries.every((query) => query.includes('author:pandemicsyn'))).toBe(
+      true,
+    );
+    expect(queries.every((query) => query.includes('repo:'))).toBe(true);
+    expect(queries.some((query) => query.includes('assignee:'))).toBe(false);
+    expect(queries.some((query) => query.includes('review-requested:'))).toBe(
+      false,
     );
     expect(
       queries.some((query) =>
         query.startsWith(
-          'is:pr is:open archived:false author:pandemicsyn updated:<',
+          'is:pr is:open archived:false author:pandemicsyn repo:pandemicsyn/neondeck updated:<',
         ),
       ),
     ).toBe(true);
     expect(
       queries.some((query) =>
         query.startsWith(
-          'is:pr is:open archived:false repo:pandemicsyn/neondeck updated:<',
+          'is:pr is:open archived:false author:pandemicsyn repo:pandemicsyn/flue updated:<',
         ),
       ),
     ).toBe(true);
   });
 
-  it('deduplicates duplicate configured repo queries', () => {
+  it('keeps open draft PRs and drops PRs closed during enrichment', async () => {
+    const repos: RepoConfig[] = [
+      {
+        id: 'neondeck',
+        github: { owner: 'pandemicsyn', name: 'neondeck' },
+        path: '/src/neondeck',
+        defaultBranch: 'main',
+      },
+    ];
+    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.includes('/search/issues')) {
+        const parsed = new URL(url);
+        const query = parsed.searchParams.get('q') ?? '';
+        if (
+          query.includes('author:pandemicsyn') &&
+          query.includes('repo:pandemicsyn/neondeck')
+        ) {
+          return jsonResponse({
+            total_count: 2,
+            items: [
+              searchIssue(1, { draft: true }),
+              searchIssue(2, { updatedAt: '2026-06-27T19:00:00Z' }),
+            ],
+          });
+        }
+        return jsonResponse({ total_count: 0, items: [] });
+      }
+
+      const pullMatch = url.match(/\/pulls\/(?<number>\d+)/);
+      if (pullMatch?.groups?.number) {
+        const number = Number(pullMatch.groups.number);
+        return jsonResponse({
+          number,
+          title: `PR ${number}`,
+          html_url: `https://github.com/pandemicsyn/neondeck/pull/${number}`,
+          state: number === 2 ? 'closed' : 'open',
+          draft: number === 1,
+          merged: false,
+          merge_commit_sha: null,
+          updated_at: '2026-06-27T20:00:00Z',
+          head: { sha: `sha-${number}` },
+          base: { ref: 'main' },
+        });
+      }
+
+      if (url.includes('/check-runs')) {
+        return jsonResponse({ check_runs: [] });
+      }
+
+      if (url.endsWith('/status')) {
+        return jsonResponse({ statuses: [] });
+      }
+
+      return jsonResponse({}, 404);
+    });
+
+    const queue = await fetchPullRequestQueue({
+      token: 'token',
+      login: 'pandemicsyn',
+      repos,
+      maxItems: 10,
+    });
+
+    expect(queue.items).toHaveLength(1);
+    expect(queue.items[0]).toMatchObject({
+      number: 1,
+      state: 'open',
+      draft: true,
+    });
+  });
+
+  it('deduplicates authored PR searches for duplicate configured repos', () => {
     const repos: RepoConfig[] = [
       {
         id: 'neondeck',
@@ -76,18 +155,13 @@ describe('github foundation', () => {
     ];
 
     expect(
-      buildPullRequestQueries('pandemicsyn', repos).filter(
-        (query) =>
-          query === 'is:pr is:open archived:false repo:pandemicsyn/neondeck',
-      ),
-    ).toHaveLength(1);
-    expect(
       buildPullRequestQueries('pandemicsyn', repos).filter((query) =>
-        query.startsWith(
-          'is:pr is:open archived:false repo:pandemicsyn/neondeck updated:<',
-        ),
+        query.includes('repo:pandemicsyn/neondeck'),
       ),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
+    expect(
+      new Set(buildPullRequestQueries('pandemicsyn', repos)).size,
+    ).toEqual(buildPullRequestQueries('pandemicsyn', repos).length);
   });
 
   it('paginates PR searches and merges queue relations', async () => {
@@ -107,7 +181,10 @@ describe('github foundation', () => {
         const parsed = new URL(url);
         const query = parsed.searchParams.get('q') ?? '';
         const page = parsed.searchParams.get('page') ?? '1';
-        if (query.includes('author:pandemicsyn')) {
+        if (
+          query.includes('author:pandemicsyn') &&
+          query.includes('repo:pandemicsyn/neondeck')
+        ) {
           return jsonResponse({
             total_count: 51,
             items:
@@ -117,9 +194,6 @@ describe('github foundation', () => {
                   )
                 : [searchIssue(51)],
           });
-        }
-        if (query.includes('repo:pandemicsyn/neondeck')) {
-          return jsonResponse({ total_count: 1, items: [searchIssue(1)] });
         }
         return jsonResponse({ total_count: 0, items: [] });
       }
@@ -163,7 +237,6 @@ describe('github foundation', () => {
     expect(queue.issues).toEqual([]);
     expect(queue.items.find((item) => item.number === 1)?.relations).toEqual([
       'authored',
-      'configured-repo',
     ]);
     expect(
       fetchedUrls.some(
@@ -352,7 +425,12 @@ describe('github foundation', () => {
 
 function searchIssue(
   number: number,
-  options: { updatedAt?: string; createdAt?: string } = {},
+  options: {
+    updatedAt?: string;
+    createdAt?: string;
+    state?: string;
+    draft?: boolean;
+  } = {},
 ) {
   return {
     id: number,
@@ -360,7 +438,8 @@ function searchIssue(
     repository_url: 'https://api.github.com/repos/pandemicsyn/neondeck',
     number,
     html_url: `https://github.com/pandemicsyn/neondeck/pull/${number}`,
-    state: 'open',
+    state: options.state ?? 'open',
+    draft: options.draft ?? false,
     user: { login: 'pandemicsyn' },
     labels: [],
     comments: 0,
