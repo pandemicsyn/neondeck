@@ -443,9 +443,13 @@ function inspectAppDatabase(paths: RuntimePaths): AppDatabaseSnapshot {
     const activeWatches = count(
       database,
       `
-        SELECT COUNT(*) AS count
-        FROM pr_watches
-        WHERE status IN ('watching', 'merged', 'attention-needed');
+        SELECT
+          (SELECT COUNT(*)
+           FROM pr_watches
+           WHERE status IN ('watching', 'merged', 'attention-needed')) +
+          (SELECT COUNT(*)
+           FROM ref_watches
+           WHERE status IN ('watching', 'attention-needed')) AS count;
       `,
     );
     const recentFailedWorkflowSummaries = count(

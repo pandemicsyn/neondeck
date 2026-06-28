@@ -4,9 +4,13 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { listJobs } from './app-state';
 import {
+  addRefWatch,
   addPrWatch,
+  listRefWatches,
   listPrWatches,
+  parseWatchRefReference,
   parseWatchPrReference,
+  refreshRefWatch,
   refreshPrWatch,
   removePrWatch,
 } from './watch-actions';
@@ -346,6 +350,135 @@ describe('PR watch actions', () => {
         expect.objectContaining({ id: 'release:neondeck' }),
       ]),
     );
+  });
+});
+
+describe('ref watch actions', () => {
+  it('parses supported ref watch reference forms', () => {
+    const registry = {
+      repos: [
+        {
+          id: 'neondeck',
+          github: { owner: 'pandemicsyn', name: 'neondeck' },
+          path: '/src/neondeck',
+          defaultBranch: 'main',
+        },
+      ],
+    };
+
+    expect(
+      parseWatchRefReference(
+        { target: 'pandemicsyn/neondeck@feature/raycast' },
+        registry,
+      ),
+    ).toMatchObject({
+      ok: true,
+      reference: {
+        id: 'pandemicsyn/neondeck@feature/raycast',
+        ref: 'feature/raycast',
+      },
+    });
+    expect(
+      parseWatchRefReference({ target: 'neondeck@abc123' }, registry),
+    ).toMatchObject({
+      ok: true,
+      reference: {
+        repoId: 'neondeck',
+        id: 'pandemicsyn/neondeck@abc123',
+      },
+    });
+    expect(
+      parseWatchRefReference(
+        {
+          target:
+            'https://github.com/pandemicsyn/neondeck/tree/feature%2Fraycast',
+        },
+        registry,
+      ),
+    ).toMatchObject({
+      ok: true,
+      reference: {
+        id: 'pandemicsyn/neondeck@feature/raycast',
+        ref: 'feature/raycast',
+      },
+    });
+  });
+
+  it('adds, lists, and silently refreshes ref watches', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await expect(
+      addRefWatch(
+        { repo: 'neondeck', ref: 'feature/raycast' },
+        paths,
+        async () => checkSummary('pending'),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'created',
+      watch: {
+        id: 'pandemicsyn/neondeck@feature/raycast',
+        status: 'watching',
+        ref: 'feature/raycast',
+      },
+    });
+
+    await expect(listRefWatches(paths)).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      watches: [{ id: 'pandemicsyn/neondeck@feature/raycast' }],
+    });
+    await expect(listJobs(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'watch-ref:pandemicsyn/neondeck@feature/raycast',
+          type: 'watch-ref',
+          enabled: true,
+        }),
+      ]),
+    );
+
+    await expect(
+      refreshRefWatch(
+        { id: 'pandemicsyn/neondeck@feature/raycast' },
+        paths,
+        async () => checkSummary('pending'),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      outcome: 'silent',
+    });
+  });
+
+  it('marks ref refresh changed when checks change', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await addRefWatch({ target: 'neondeck@feature/raycast' }, paths, async () =>
+      checkSummary('pending'),
+    );
+
+    await expect(
+      refreshRefWatch({ target: 'neondeck@feature/raycast' }, paths, async () =>
+        checkSummary('success'),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'updated',
+      watch: {
+        id: 'pandemicsyn/neondeck@feature/raycast',
+        status: 'green',
+        lastSnapshot: {
+          checks: { status: 'success' },
+        },
+      },
+    });
   });
 });
 

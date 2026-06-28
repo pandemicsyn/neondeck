@@ -21,11 +21,32 @@
         "height": {
           "type": "integer",
           "minimum": 1
+        },
+        "preset": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Target display profile used for defaults and previews. Rendering remains responsive to the actual viewport."
         }
       }
     },
     "theme": {
       "enum": ["light", "dark", "system"]
+    },
+    "appearance": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "density": {
+          "enum": ["compact", "comfortable", "large"],
+          "description": "Controls dashboard spacing density."
+        },
+        "textScale": {
+          "type": "number",
+          "minimum": 0.9,
+          "maximum": 1.4,
+          "description": "Fine-grained text scaling multiplier for companion-display readability."
+        }
+      }
     },
     "statusline": {
       "type": "object",
@@ -49,6 +70,10 @@
       "additionalProperties": false,
       "required": ["columns", "rows", "regions"],
       "properties": {
+        "mode": {
+          "enum": ["auto", "xeneon", "stacked"],
+          "description": "Responsive layout behavior. Auto adapts to the viewport, xeneon prefers the configured grid, stacked forces vertical panels."
+        },
         "columns": {
           "type": "integer",
           "minimum": 1

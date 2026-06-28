@@ -484,9 +484,11 @@ describe('runtime home', () => {
 
   it('enforces the dashboard frontend config contract', () => {
     const dashboardConfig = () => ({
-      display: { width: 2560, height: 720 },
+      display: { preset: 'xeneon-edge', width: 2560, height: 720 },
+      appearance: { density: 'comfortable', textScale: 1.12 },
       theme: 'dark',
       layout: {
+        mode: 'auto',
         columns: 12,
         rows: 5,
         regions: [
@@ -516,6 +518,30 @@ describe('runtime home', () => {
         {
           display: { width: 2560, height: 720 },
           theme: 'neon',
+          layout: { columns: 12, rows: 6, regions: [] },
+        },
+        'dashboard.json',
+      ),
+    ).toThrow(ConfigValidationError);
+
+    expect(() =>
+      parseDashboardConfig(
+        {
+          display: { width: 2560, height: 720 },
+          appearance: { density: 'tiny' },
+          theme: 'dark',
+          layout: { columns: 12, rows: 6, regions: [] },
+        },
+        'dashboard.json',
+      ),
+    ).toThrow(ConfigValidationError);
+
+    expect(() =>
+      parseDashboardConfig(
+        {
+          display: { width: 2560, height: 720 },
+          appearance: { density: 'comfortable', textScale: 2 },
+          theme: 'dark',
           layout: { columns: 12, rows: 6, regions: [] },
         },
         'dashboard.json',

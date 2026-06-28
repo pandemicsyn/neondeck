@@ -1,16 +1,24 @@
 import type { ComponentType } from 'react';
 
 export type DashboardTheme = 'light' | 'dark' | 'system';
+export type DashboardDensity = 'compact' | 'comfortable' | 'large';
+export type DashboardLayoutMode = 'auto' | 'xeneon' | 'stacked';
 
 export type DashboardConfig = {
   $schema?: string;
   display: {
+    preset?: string;
     width: number;
     height: number;
   };
   theme: DashboardTheme;
+  appearance?: {
+    density?: DashboardDensity;
+    textScale?: number;
+  };
   statusline?: DashboardStatusline;
   layout: {
+    mode?: DashboardLayoutMode;
     columns: number;
     rows: number;
     regions: DashboardRegion[];
