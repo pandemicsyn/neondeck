@@ -38,6 +38,201 @@ type GlobalOptions = {
 type EnvMap = Map<string, string>;
 
 const defaultModel = 'kilocode/kilo/auto';
+type PreapprovalGroupId =
+  'filesystem' | 'git-read' | 'npm' | 'pnpm' | 'bun' | 'python' | 'go';
+
+type PreapprovalCommand = {
+  id: string;
+  command: string;
+  match: 'exact' | 'prefix' | 'glob';
+  description: string;
+};
+
+const preapprovalGroups: Array<{
+  id: PreapprovalGroupId;
+  label: string;
+  hint: string;
+  commands: PreapprovalCommand[];
+}> = [
+  {
+    id: 'filesystem',
+    label: 'Filesystem inspection',
+    hint: 'pwd, ls, find, cat, sed, rg, wc.',
+    commands: [
+      commandPreapproval('pwd', 'pwd', 'exact', 'Print the current directory.'),
+      commandPreapproval(
+        'ls',
+        'ls',
+        'prefix',
+        'List local files and directories.',
+      ),
+      commandPreapproval(
+        'find',
+        'find',
+        'prefix',
+        'Find local files and directories.',
+      ),
+      commandPreapproval('cat', 'cat', 'prefix', 'Read local text files.'),
+      commandPreapproval('sed', 'sed', 'prefix', 'Read local text ranges.'),
+      commandPreapproval('rg', 'rg', 'prefix', 'Search local text files.'),
+      commandPreapproval(
+        'wc',
+        'wc',
+        'prefix',
+        'Count local text file lines or bytes.',
+      ),
+    ],
+  },
+  {
+    id: 'git-read',
+    label: 'Git inspection',
+    hint: 'status, diff, show, log, branch, rev-parse.',
+    commands: [
+      commandPreapproval(
+        'git-status',
+        'git status',
+        'prefix',
+        'Inspect git working tree status.',
+      ),
+      commandPreapproval(
+        'git-diff',
+        'git diff',
+        'prefix',
+        'Inspect unstaged or staged git diffs.',
+      ),
+      commandPreapproval(
+        'git-show',
+        'git show',
+        'prefix',
+        'Inspect git objects and commits.',
+      ),
+      commandPreapproval(
+        'git-log',
+        'git log',
+        'prefix',
+        'Inspect git commit history.',
+      ),
+      commandPreapproval(
+        'git-branch',
+        'git branch',
+        'prefix',
+        'Inspect git branches.',
+      ),
+      commandPreapproval(
+        'git-rev-parse',
+        'git rev-parse',
+        'prefix',
+        'Inspect git revision and repository metadata.',
+      ),
+    ],
+  },
+  {
+    id: 'npm',
+    label: 'npm',
+    hint: 'npm run, test, install, exec, view, list.',
+    commands: [
+      commandPreapproval('npm-run', 'npm run', 'prefix', 'Run npm scripts.'),
+      commandPreapproval('npm-test', 'npm test', 'prefix', 'Run npm tests.'),
+      commandPreapproval(
+        'npm-install',
+        'npm install',
+        'prefix',
+        'Install npm dependencies.',
+      ),
+      commandPreapproval('npm-exec', 'npm exec', 'prefix', 'Run npm binaries.'),
+      commandPreapproval(
+        'npm-view',
+        'npm view',
+        'prefix',
+        'Read npm package metadata.',
+      ),
+      commandPreapproval(
+        'npm-list',
+        'npm list',
+        'prefix',
+        'List installed npm dependencies.',
+      ),
+    ],
+  },
+  {
+    id: 'pnpm',
+    label: 'pnpm',
+    hint: 'pnpm run, test, install, exec, view, list.',
+    commands: [
+      commandPreapproval('pnpm-run', 'pnpm run', 'prefix', 'Run pnpm scripts.'),
+      commandPreapproval('pnpm-test', 'pnpm test', 'prefix', 'Run pnpm tests.'),
+      commandPreapproval(
+        'pnpm-install',
+        'pnpm install',
+        'prefix',
+        'Install pnpm dependencies.',
+      ),
+      commandPreapproval(
+        'pnpm-exec',
+        'pnpm exec',
+        'prefix',
+        'Run pnpm binaries.',
+      ),
+      commandPreapproval(
+        'pnpm-view',
+        'pnpm view',
+        'prefix',
+        'Read pnpm package metadata.',
+      ),
+      commandPreapproval(
+        'pnpm-list',
+        'pnpm list',
+        'prefix',
+        'List installed pnpm dependencies.',
+      ),
+    ],
+  },
+  {
+    id: 'bun',
+    label: 'Bun',
+    hint: 'bun run, test, install, x.',
+    commands: [
+      commandPreapproval('bun-run', 'bun run', 'prefix', 'Run Bun scripts.'),
+      commandPreapproval('bun-test', 'bun test', 'prefix', 'Run Bun tests.'),
+      commandPreapproval(
+        'bun-install',
+        'bun install',
+        'prefix',
+        'Install Bun dependencies.',
+      ),
+      commandPreapproval('bun-x', 'bun x', 'prefix', 'Run Bun binaries.'),
+    ],
+  },
+  {
+    id: 'python',
+    label: 'Python and uv',
+    hint: 'python, python3, pip, uv.',
+    commands: [
+      commandPreapproval('python', 'python', 'prefix', 'Run Python commands.'),
+      commandPreapproval(
+        'python3',
+        'python3',
+        'prefix',
+        'Run Python 3 commands.',
+      ),
+      commandPreapproval('pip', 'pip', 'prefix', 'Run pip commands.'),
+      commandPreapproval('pip3', 'pip3', 'prefix', 'Run pip3 commands.'),
+      commandPreapproval('uv', 'uv', 'prefix', 'Run uv commands.'),
+    ],
+  },
+  {
+    id: 'go',
+    label: 'Go',
+    hint: 'go test, run, build, list, mod.',
+    commands: [
+      commandPreapproval('go-test', 'go test', 'prefix', 'Run Go tests.'),
+      commandPreapproval('go-run', 'go run', 'prefix', 'Run Go programs.'),
+      commandPreapproval('go-build', 'go build', 'prefix', 'Build Go code.'),
+      commandPreapproval('go-list', 'go list', 'prefix', 'List Go packages.'),
+      commandPreapproval('go-mod', 'go mod', 'prefix', 'Manage Go modules.'),
+    ],
+  },
+];
 
 const program = new Command()
   .name('neondeck')
@@ -554,16 +749,21 @@ async function configureDashboard(paths: RuntimePaths) {
 
 async function configureExecution(paths: RuntimePaths) {
   const { updateExecutionPolicy } = await configActionsModule();
-  const preapprove = await promptMultiselect<string>({
+  const preapprove = await promptMultiselect<PreapprovalGroupId>({
     message: 'Preapprove safe local commands?',
-    options: [
-      { value: 'npm run check', label: 'npm run check' },
-      { value: 'npm test', label: 'npm test' },
-      { value: 'npm run lint', label: 'npm run lint' },
-      { value: 'npm run typecheck', label: 'npm run typecheck' },
-    ],
+    options: preapprovalGroups.map((group) => ({
+      value: group.id,
+      label: group.label,
+      hint: group.hint,
+    })),
+    initialValues: preapprovalGroups.map((group) => group.id),
   });
   if (preapprove.length === 0) return;
+
+  const selectedGroups = preapprovalGroups.filter((group) =>
+    preapprove.includes(group.id),
+  );
+  const preapprovedCommands = selectedGroups.flatMap((group) => group.commands);
 
   await updateExecutionPolicy(
     {
@@ -571,12 +771,9 @@ async function configureExecution(paths: RuntimePaths) {
       enabledBackends: ['local'],
       approvalMode: 'manual',
       unattended: 'deny',
-      preapprovedCommands: preapprove.map((command) => ({
-        id: command.replaceAll(/\W+/g, '-').replace(/^-|-$/g, ''),
-        command,
-        match: 'exact',
+      preapprovedCommands: preapprovedCommands.map((command) => ({
+        ...command,
         backends: ['local'],
-        description: `Allow ${command} from Neon.`,
       })),
     },
     paths,
@@ -613,24 +810,64 @@ async function configureSchedules(paths: RuntimePaths) {
 }
 
 async function configureSkillRoots(paths: RuntimePaths) {
-  const shouldAdd = await promptConfirm({
-    message: 'Add an external runtime skill root?',
-    initialValue: false,
-  });
-  if (!shouldAdd) return;
-
-  const root = await promptText({
-    message: 'Skill root path',
-    placeholder: '/Users/alice/.agents/skills',
-    validate: requiredText,
-  });
   const { readConfig, updateSkillRoots } = await configActionsModule();
   const config = await readConfig({ target: 'config' }, paths);
   const current = readConfigData(config).skillRoots ?? [];
-  const next = Array.from(new Set([...current, expandHome(root)]));
+  const detectedRoots = detectExternalSkillRoots();
+  const selectableDetectedRoots = detectedRoots.filter(
+    (root) => !current.includes(root),
+  );
+  const selectedDetectedRoots =
+    selectableDetectedRoots.length > 0
+      ? await promptMultiselect<string>({
+          message: 'Add detected external runtime skill roots?',
+          options: selectableDetectedRoots.map((root) => ({
+            value: root,
+            label: root,
+          })),
+          initialValues: selectableDetectedRoots,
+        })
+      : [];
+
+  const shouldAddManual = await promptConfirm({
+    message: 'Add another external runtime skill root?',
+    initialValue: false,
+  });
+  const manualRoot = shouldAddManual
+    ? await promptText({
+        message: 'Skill root path',
+        placeholder: '/Users/alice/.agents/skills',
+        validate: requiredText,
+      })
+    : undefined;
+
+  const next = Array.from(
+    new Set([
+      ...current,
+      ...selectedDetectedRoots,
+      ...(manualRoot ? [expandHome(manualRoot)] : []),
+    ]),
+  );
+  if (next.length === current.length) return;
+
   const result = await updateSkillRoots({ skillRoots: next }, paths);
   if (result.ok) log.success(result.message);
   else log.warn(result.message);
+}
+
+function detectExternalSkillRoots() {
+  return [join(homedir(), '.agents', 'skills')].filter((root) =>
+    existsSync(root),
+  );
+}
+
+function commandPreapproval(
+  id: string,
+  command: string,
+  match: PreapprovalCommand['match'],
+  description: string,
+): PreapprovalCommand {
+  return { id, command, match, description };
 }
 
 async function addRepoWithFeedback(repoPath: string, paths: RuntimePaths) {
