@@ -37,7 +37,7 @@ type GlobalOptions = {
 
 type EnvMap = Map<string, string>;
 
-const defaultModel = 'kilocode/kilo/auto';
+const defaultModel = 'kilocode/kilo-auto/balanced';
 
 const program = new Command()
   .name('neondeck')
@@ -432,7 +432,7 @@ async function configureProviderAndModels(paths: RuntimePaths) {
     validate(value) {
       return value?.includes('/')
         ? undefined
-        : 'Use a provider-qualified model, for example kilocode/kilo/auto.';
+        : 'Use a provider-qualified model, for example kilocode/kilo-auto/balanced.';
     },
   });
 

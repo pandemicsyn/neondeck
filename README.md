@@ -51,7 +51,7 @@ $NEONDECK_HOME/.env
 ```sh
 KILOCODE_API_KEY=...
 KILOCODE_ORGANIZATION_ID=...
-FLUE_AGENT_MODEL=kilocode/kilo/auto
+FLUE_AGENT_MODEL=kilocode/kilo-auto/balanced
 GITHUB_TOKEN=...
 GITHUB_LOGIN=...
 ```
@@ -84,12 +84,12 @@ Agent and subagent models are configurable in runtime-home `config.json`. Enviro
   "version": 1,
   "skillRoots": ["/absolute/path/to/skills"],
   "models": {
-    "displayAssistant": "kilocode/kilo/auto",
+    "displayAssistant": "kilocode/kilo-auto/balanced",
     "subagents": {
-      "default": "kilocode/kilo/auto",
-      "repoResearcher": "kilocode/kilo/auto",
-      "ciInvestigator": "kilocode/kilo/auto",
-      "releaseReviewer": "kilocode/kilo/auto"
+      "default": "kilocode/kilo-auto/balanced",
+      "repoResearcher": "kilocode/kilo-auto/balanced",
+      "ciInvestigator": "kilocode/kilo-auto/balanced",
+      "releaseReviewer": "kilocode/kilo-auto/balanced"
     }
   }
 }

@@ -32,7 +32,11 @@ export type GitHubPullRequest = {
 };
 
 export type GitHubQueueIssue = {
-  type: 'search-truncated' | 'search-error' | 'enrichment-error';
+  type:
+    | 'search-truncated'
+    | 'search-error'
+    | 'enrichment-error'
+    | 'queue-truncated';
   message: string;
   query?: string;
   repo?: string;

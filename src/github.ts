@@ -24,7 +24,11 @@ export type GitHubPullRequest = {
 };
 
 export type GitHubQueueIssue = {
-  type: 'search-truncated' | 'search-error' | 'enrichment-error';
+  type:
+    | 'search-truncated'
+    | 'search-error'
+    | 'enrichment-error'
+    | 'queue-truncated';
   message: string;
   query?: string;
   repo?: string;
@@ -75,8 +79,11 @@ export type GitHubCheckSummary = {
 const searchPerPage = 50;
 const maxSearchPages = 2;
 const maxSearchItemsPerQuery = searchPerPage * maxSearchPages;
+const defaultMaxQueueItemsToEnrich = 24;
+const searchConcurrency = 3;
 const enrichmentConcurrency = 2;
 const pullRequestQueueCacheTtlMs = 45_000;
+const githubRequestTimeoutMs = 15_000;
 
 const pullRequestQueueCache = new Map<
   string,
@@ -101,45 +108,58 @@ export async function fetchPullRequestQueue(options: {
   token: string;
   login: string;
   repos: RepoConfig[];
+  maxItems?: number;
 }): Promise<GitHubPullRequestQueue> {
-  const cacheKey = pullRequestQueueCacheKey(options.login, options.repos);
+  const maxItems = options.maxItems ?? defaultMaxQueueItemsToEnrich;
+  const cacheKey = pullRequestQueueCacheKey(
+    options.login,
+    options.repos,
+    maxItems,
+  );
   const cached = pullRequestQueueCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.value;
   }
 
   const queries = buildPullRequestQuerySpecs(options.login, options.repos);
-  const results: Array<{
+  const results = await mapWithConcurrency(
+    queries,
+    searchConcurrency,
+    async (query) => {
+      try {
+        return {
+          relation: query.relation,
+          result: await searchPullRequests(options.token, query.query),
+        };
+      } catch (error) {
+        return {
+          relation: query.relation,
+          result: {
+            items: [],
+            truncated: false,
+            issues: [
+              {
+                type: 'search-error' as const,
+                query: query.query,
+                message: errorMessage(error),
+              },
+            ],
+          },
+        };
+      }
+    },
+  );
+  const flattenedResults: Array<{
     relation: PullRequestQueueRelation;
-    result: Awaited<ReturnType<typeof searchPullRequests>>;
-  }> = [];
-  for (const query of queries) {
-    try {
-      results.push({
-        relation: query.relation,
-        result: await searchPullRequests(options.token, query.query),
-      });
-    } catch (error) {
-      results.push({
-        relation: query.relation,
-        result: {
-          items: [],
-          truncated: false,
-          issues: [
-            {
-              type: 'search-error' as const,
-              query: query.query,
-              message: errorMessage(error),
-            },
-          ],
-        },
-      });
-    }
-  }
+    result: PullRequestSearchResult;
+  }> = results.map((result) => ({
+    relation: result.relation,
+    result: result.result,
+  }));
   const items = new Map<string, GitHubPullRequest>();
   const issues: GitHubQueueIssue[] = [];
 
-  for (const result of results) {
+  for (const result of flattenedResults) {
     issues.push(...result.result.issues);
     for (const item of result.result.items) {
       const existing = items.get(item.url);
@@ -156,8 +176,19 @@ export async function fetchPullRequestQueue(options: {
     }
   }
 
+  const sortedQueueItems = Array.from(items.values()).sort(
+    (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
+  );
+  const queueItemsToEnrich = sortedQueueItems.slice(0, maxItems);
+  if (sortedQueueItems.length > queueItemsToEnrich.length) {
+    issues.push({
+      type: 'queue-truncated',
+      message: `GitHub queue found ${sortedQueueItems.length} PRs; enriched the newest ${queueItemsToEnrich.length}.`,
+    });
+  }
+
   const enriched = await mapWithConcurrency(
-    Array.from(items.values()),
+    queueItemsToEnrich,
     enrichmentConcurrency,
     (item) => enrichPullRequest(options.token, item),
   );
@@ -180,7 +211,9 @@ export async function fetchPullRequestQueue(options: {
     repos: options.repos.map(repoFullName),
     items: sortedItems,
     fetchedAt: new Date().toISOString(),
-    truncated: results.some((result) => result.result.truncated),
+    truncated:
+      flattenedResults.some((result) => result.result.truncated) ||
+      sortedQueueItems.length > queueItemsToEnrich.length,
     issues,
   };
   pullRequestQueueCache.set(cacheKey, {
@@ -451,14 +484,26 @@ async function enrichPullRequest(token: string, item: GitHubPullRequest) {
 }
 
 async function githubFetch(token: string, url: string) {
-  const response = await fetch(url, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${token}`,
-      'User-Agent': 'neondeck',
-      'X-GitHub-Api-Version': '2022-11-28',
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${token}`,
+        'User-Agent': 'neondeck',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+      signal: AbortSignal.timeout(githubRequestTimeoutMs),
+    });
+  } catch (error) {
+    if (isRequestTimeout(error)) {
+      throw new Error(
+        `GitHub request timed out after ${Math.round(githubRequestTimeoutMs / 1000)}s`,
+      );
+    }
+
+    throw error;
+  }
 
   if (!response.ok) {
     throw new Error(githubErrorMessage(response));
@@ -557,9 +602,14 @@ function isStale(value: string) {
   return ageDays(value) >= 7;
 }
 
-function pullRequestQueueCacheKey(login: string, repos: RepoConfig[]) {
+function pullRequestQueueCacheKey(
+  login: string,
+  repos: RepoConfig[],
+  maxItems: number,
+) {
   return JSON.stringify({
     login,
+    maxItems,
     repos: repos
       .map((repo) => repoFullName(repo).toLowerCase())
       .sort((a, b) => a.localeCompare(b)),
@@ -609,6 +659,13 @@ function githubErrorMessage(response: Response) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isRequestTimeout(error: unknown) {
+  return (
+    error instanceof Error &&
+    (error.name === 'TimeoutError' || error.name === 'AbortError')
+  );
 }
 
 async function mapWithConcurrency<T, R>(

@@ -144,7 +144,7 @@ describe('runtime status', () => {
       JSON.stringify({
         version: 1,
         models: {
-          displayAssistant: 'kilocode/kilo/auto',
+          displayAssistant: 'kilocode/kilo-auto/balanced',
         },
         providers: {
           kilocode: {
@@ -201,7 +201,7 @@ describe('runtime status', () => {
       JSON.stringify({
         version: 1,
         models: {
-          displayAssistant: 'kilocode/kilo/auto',
+          displayAssistant: 'kilocode/kilo-auto/balanced',
         },
         providers: {
           kilocode: {
@@ -258,7 +258,7 @@ describe('runtime status', () => {
       JSON.stringify({
         version: 1,
         models: {
-          displayAssistant: 'kilocode/kilo/auto',
+          displayAssistant: 'kilocode/kilo-auto/balanced',
           subagents: {
             ciInvestigator: 'kilocode/kilo/ci',
           },
@@ -308,7 +308,7 @@ describe('runtime status', () => {
       kilo: true,
       github: true,
     });
-    expect(status.models.displayAssistant).toBe('kilocode/kilo/auto');
+    expect(status.models.displayAssistant).toBe('kilocode/kilo-auto/balanced');
     expect(status.models.displayAssistantProvider).toBe('kilocode');
     expect(status.models.subagents.ciInvestigator).toBe('kilocode/kilo/ci');
     expect(status.counts.repos).toBe(1);

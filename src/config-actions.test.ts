@@ -485,13 +485,19 @@ describe('config actions', () => {
     });
 
     await expect(
-      updateAgentModels({ displayAssistant: 'kilocode/kilo/auto' }, paths),
+      updateAgentModels(
+        { displayAssistant: 'kilocode/kilo-auto/balanced' },
+        paths,
+      ),
     ).resolves.toMatchObject({
       ok: true,
       changed: true,
     });
     await expect(
-      updateAgentModels({ displayAssistant: 'kilocode/kilo/auto' }, paths),
+      updateAgentModels(
+        { displayAssistant: 'kilocode/kilo-auto/balanced' },
+        paths,
+      ),
     ).resolves.toMatchObject({
       ok: true,
       changed: false,

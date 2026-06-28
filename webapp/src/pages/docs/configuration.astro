@@ -52,7 +52,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         </p>
         <pre><code>KILOCODE_API_KEY=...
 KILOCODE_ORGANIZATION_ID=...
-FLUE_AGENT_MODEL=kilocode/kilo/auto
+FLUE_AGENT_MODEL=kilocode/kilo-auto/balanced
 GITHUB_TOKEN=...
 GITHUB_LOGIN=...</code></pre>
 
@@ -65,12 +65,12 @@ GITHUB_LOGIN=...</code></pre>
         <pre><code>&#123;
   "version": 1,
   "models": &#123;
-    "displayAssistant": "kilocode/kilo/auto",
+    "displayAssistant": "kilocode/kilo-auto/balanced",
     "subagents": &#123;
-      "default": "kilocode/kilo/auto",
-      "repoResearcher": "kilocode/kilo/auto",
-      "ciInvestigator": "kilocode/kilo/auto",
-      "releaseReviewer": "kilocode/kilo/auto"
+      "default": "kilocode/kilo-auto/balanced",
+      "repoResearcher": "kilocode/kilo-auto/balanced",
+      "ciInvestigator": "kilocode/kilo-auto/balanced",
+      "releaseReviewer": "kilocode/kilo-auto/balanced"
     &#125;
   &#125;,
   "providers": &#123;
