@@ -99,6 +99,7 @@ describe('runtime home', () => {
 
     expect(existsSync(paths.dashboard)).toBe(true);
     expect(existsSync(paths.dashboardSchema)).toBe(true);
+    expect(existsSync(paths.env)).toBe(true);
     expect(existsSync(paths.soul)).toBe(true);
     expect(existsSync(paths.data)).toBe(true);
     expect(existsSync(paths.neondeckDatabase)).toBe(true);

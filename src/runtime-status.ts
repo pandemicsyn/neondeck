@@ -43,6 +43,7 @@ export const runtimeStatusSchema = v.looseObject({
   service: v.literal('neondeck'),
   home: v.string(),
   paths: v.object({
+    env: v.string(),
     config: v.string(),
     repos: v.string(),
     schedules: v.string(),
@@ -296,6 +297,7 @@ export async function readRuntimeStatus(
     service: 'neondeck',
     home: paths.home,
     paths: {
+      env: paths.env,
       config: paths.config,
       repos: paths.repos,
       schedules: paths.schedules,

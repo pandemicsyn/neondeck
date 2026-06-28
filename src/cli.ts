@@ -14,10 +14,16 @@ import {
   text,
 } from '@clack/prompts';
 import { Command } from 'commander';
-import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import {
+  loadNeondeckEnv,
+  quoteEnvValue,
+  readDotEnvFile,
+  type EnvLoadResult,
+} from './env';
 import type { RuntimePaths } from './runtime-home';
 
 type RuntimeStatus = Awaited<
@@ -32,7 +38,6 @@ type GlobalOptions = {
 type EnvMap = Map<string, string>;
 
 const defaultModel = 'kilocode/kilo/auto';
-const envPath = resolve('.env');
 
 const program = new Command()
   .name('neondeck')
@@ -53,11 +58,11 @@ program
   .command('status')
   .description('Read runtime readiness and configured paths.')
   .action(async () => {
-    loadDotEnvFile(envPath);
     const { ensureRuntimeHome } = await runtimeHomeModule();
     const { readRuntimeStatus } = await runtimeStatusModule();
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
     await ensureRuntimeHome(paths);
+    loadEnvForPaths(paths);
     const status = await readRuntimeStatus(paths);
     if (program.opts<GlobalOptions>().json) {
       console.log(JSON.stringify(status, null, 2));
@@ -82,6 +87,7 @@ repo
   .action(async (repoPath: string, options: RepoAddOptions) => {
     const { addRepo } = await configActionsModule();
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
     const result = await addRepo(
       {
         path: repoPath,
@@ -106,6 +112,7 @@ repo
   .action(async () => {
     const { readRepoRegistrySnapshot } = await reposModule();
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
     const snapshot = await readRepoRegistrySnapshot(paths);
     if (program.opts<GlobalOptions>().json) {
       console.log(JSON.stringify(snapshot, null, 2));
@@ -135,6 +142,8 @@ program
   .option('--interval <seconds>', 'poll interval in seconds')
   .action(async (ref: string, options: WatchPrOptions) => {
     const { addPrWatch } = await watchActionsModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
     const desiredTerminalState = parseWatchTarget(options.until);
     const intervalSeconds = options.interval
       ? Number(options.interval)
@@ -145,7 +154,7 @@ program
         desiredTerminalState,
         ...(intervalSeconds ? { intervalSeconds } : {}),
       },
-      await pathsFromOptions(program.opts<GlobalOptions>()),
+      paths,
     );
     printActionResult(result);
   });
@@ -160,6 +169,7 @@ program
     const { createScheduleBlueprint, listSchedulerJobs } =
       await schedulerModule();
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
     const intervalSeconds = options.interval
       ? Number(options.interval)
       : undefined;
@@ -219,7 +229,6 @@ program
     console.log('Run `npm run dev` for the current local web dashboard.');
   });
 
-loadDotEnvFile(envPath);
 await program.parseAsync(process.argv);
 
 type RepoAddOptions = {
@@ -243,7 +252,6 @@ type ScheduleOptions = {
 
 async function runInit(options: { home?: string }) {
   intro('neondeck init');
-  loadDotEnvFile(envPath);
   const { ensureRuntimeHome, runtimePaths, validateRuntimeFiles } =
     await runtimeHomeModule();
   const { readRuntimeStatus } = await runtimeStatusModule();
@@ -266,10 +274,11 @@ async function runInit(options: { home?: string }) {
   spin.start('Preparing runtime home');
   await ensureRuntimeHome(paths);
   await validateRuntimeFiles(paths);
+  const envLoad = loadEnvForPaths(paths);
   spin.stop('Runtime home is ready');
 
-  await configureSecrets();
-  loadDotEnvFile(envPath, true);
+  await configureSecrets(paths, envLoad);
+  loadEnvForPaths(paths, { includeDevFallback: false, overwrite: true });
   await configureSoul(paths);
   await configureProviderAndModels(paths);
   await configureRepos(paths);
@@ -297,16 +306,24 @@ async function runInit(options: { home?: string }) {
   outro('The deck is live.');
 }
 
-async function configureSecrets() {
+async function configureSecrets(paths: RuntimePaths, envLoad: EnvLoadResult) {
   const { fetchGitHubLogin } = await githubModule();
-  const env = await readDotEnvFile(envPath);
+  const env = await readDotEnvFile(paths.env);
   const shouldEdit = await promptConfirm({
-    message: existsSync(envPath)
-      ? 'Review local .env secrets?'
-      : 'Create local .env secrets?',
+    message:
+      env.size > 0
+        ? 'Review runtime-home .env secrets?'
+        : 'Create runtime-home .env secrets?',
     initialValue: true,
   });
   if (!shouldEdit) return;
+
+  const devFallback = envLoad.files.find((file) => file.id === 'dev');
+  if (env.size === 0 && devFallback?.loaded) {
+    log.info(
+      `Using ${devFallback.path} as a dev fallback until runtime .env is written.`,
+    );
+  }
 
   const kiloKey = await promptPassword({
     message: env.get('KILOCODE_API_KEY')
@@ -341,8 +358,8 @@ async function configureSecrets() {
   else env.delete('GITHUB_LOGIN');
 
   if (!env.get('FLUE_AGENT_MODEL')) env.set('FLUE_AGENT_MODEL', defaultModel);
-  await writeDotEnvFile(envPath, env);
-  log.success(`Wrote ${envPath}`);
+  await writeDotEnvFile(paths.env, env);
+  log.success(`Wrote ${paths.env}`);
 
   const token = env.get('GITHUB_TOKEN');
   if (token && !env.get('GITHUB_LOGIN')) {
@@ -351,7 +368,7 @@ async function configureSecrets() {
     try {
       const login = await fetchGitHubLogin(token);
       env.set('GITHUB_LOGIN', login);
-      await writeDotEnvFile(envPath, env);
+      await writeDotEnvFile(paths.env, env);
       spin.stop(`GitHub login detected: ${login}`);
     } catch (error) {
       spin.stop('GitHub login could not be detected');
@@ -633,6 +650,13 @@ async function pathsFromOptions(options: GlobalOptions) {
   return runtimePaths(options.home ? expandHome(options.home) : undefined);
 }
 
+function loadEnvForPaths(
+  paths: RuntimePaths,
+  options: { includeDevFallback?: boolean; overwrite?: boolean } = {},
+) {
+  return loadNeondeckEnv(paths, options);
+}
+
 function parseWatchTarget(value: string | undefined) {
   if (value === 'checks' || value === 'merged' || value === 'prod')
     return value;
@@ -663,6 +687,7 @@ function printActionResult(result: {
 function printStatus(status: RuntimeStatus) {
   console.log(`neondeck:${status.status}`);
   console.log(`home      ${status.home}`);
+  console.log(`env       ${status.paths.env}`);
   console.log(`model     ${status.models.displayAssistant}`);
   console.log(
     `github    ${status.providers.credentials.github ? 'configured' : 'missing'}`,
@@ -694,34 +719,6 @@ async function findGitRepos(parent: string) {
   return repos;
 }
 
-async function readDotEnvFile(path: string): Promise<EnvMap> {
-  const env: EnvMap = new Map();
-  if (!existsSync(path)) return env;
-  const source = await readFile(path, 'utf8');
-  for (const line of source.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-    if (!match) continue;
-    env.set(match[1], unquoteEnvValue(match[2]));
-  }
-  return env;
-}
-
-function loadDotEnvFile(path: string, overwrite = false) {
-  if (!existsSync(path)) return;
-  const source = readFileSync(path, 'utf8');
-  for (const line of source.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-    if (!match) continue;
-    if (overwrite || !process.env[match[1]]) {
-      process.env[match[1]] = unquoteEnvValue(match[2]);
-    }
-  }
-}
-
 async function writeDotEnvFile(path: string, env: EnvMap) {
   await mkdir(dirname(path), { recursive: true });
   const orderedKeys = [
@@ -741,21 +738,6 @@ async function writeDotEnvFile(path: string, env: EnvMap) {
       lines.push(`${key}=${quoteEnvValue(value)}`);
   }
   await writeFile(path, `${lines.join('\n')}\n`, 'utf8');
-}
-
-function unquoteEnvValue(value: string) {
-  const trimmed = value.trim();
-  if (
-    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-    (trimmed.startsWith("'") && trimmed.endsWith("'"))
-  ) {
-    return trimmed.slice(1, -1);
-  }
-  return trimmed;
-}
-
-function quoteEnvValue(value: string) {
-  return JSON.stringify(value);
 }
 
 function expandHome(path: string) {

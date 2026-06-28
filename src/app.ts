@@ -23,6 +23,7 @@ import {
   runApprovedExecution,
 } from './execution-actions';
 import { checkExecutionPolicy, readExecutionPolicy } from './execution-policy';
+import { loadNeondeckEnv } from './env';
 import { listGitHubPrQueue } from './github-actions';
 import { deleteMemory, listMemories, upsertMemory } from './memory-actions';
 import { readHostMetrics } from './metrics';
@@ -68,6 +69,7 @@ import {
 
 const paths = runtimePaths();
 ensureRuntimeHomeSync(paths);
+loadNeondeckEnv(paths);
 const providerConfig = readProviderConfigSync(paths);
 const { apiKey: kiloApiKey, organizationId: kiloOrganizationId } =
   readKilocodeProviderCredentials(process.env, providerConfig);

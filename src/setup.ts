@@ -30,6 +30,7 @@ const {
 } = await import(new URL('./runtime-home.ts', import.meta.url).href);
 const paths = runtimePaths(options.home ? expandHome(options.home) : undefined);
 const trackedPaths = [
+  paths.env,
   paths.config,
   paths.repos,
   paths.dashboard,

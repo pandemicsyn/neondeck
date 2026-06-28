@@ -26,7 +26,7 @@ Run the guided CLI setup:
 npm run init
 ```
 
-The wizard prepares the runtime home, writes local `.env` secrets, tunes `SOUL.md`, configures the Kilo model/provider, adds local git checkouts, applies a dashboard preset, and optionally creates schedules and command preapprovals.
+The wizard prepares the runtime home, writes local secrets to `$NEONDECK_HOME/.env`, tunes `SOUL.md`, configures the Kilo model/provider, adds local git checkouts, applies a dashboard preset, and optionally creates schedules and command preapprovals.
 
 The same CLI is the foundation for future command-and-control surfaces, including an OpenTUI client:
 
@@ -40,7 +40,13 @@ npm run cli -- tui
 
 ## Configure
 
-Copy `.env.example` to `.env` and fill in the local secrets:
+For packaged/local app use, secrets live in the runtime home:
+
+```text
+$NEONDECK_HOME/.env
+```
+
+`npm run init` creates and manages that file. For checkout-based development, you may also copy `.env.example` to repo-root `.env`; Neondeck treats repo `.env` as a dev-only fallback when the runtime-home file does not define a value.
 
 ```sh
 KILOCODE_API_KEY=...
@@ -58,7 +64,7 @@ XDG_CONFIG_HOME/neondeck
 ~/.config/neondeck
 ```
 
-The runtime home contains `config.json`, `repos.json`, `dashboard.json`, `schedules.json`, `SOUL.md`, `skills/`, and separate `data/neondeck.db` and `data/flue.db` databases. The repo-local `config/dashboard.json` and `SOUL.md` files are defaults for new homes; edit the runtime-home copies for local customization.
+The runtime home contains `.env`, `config.json`, `repos.json`, `dashboard.json`, `schedules.json`, `SOUL.md`, `skills/`, and separate `data/neondeck.db` and `data/flue.db` databases. The repo-local `config/dashboard.json` and `SOUL.md` files are defaults for new homes; edit the runtime-home copies for local customization.
 
 You can initialize or validate the runtime home explicitly without starting the server:
 

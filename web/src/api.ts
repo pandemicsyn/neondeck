@@ -125,6 +125,7 @@ export type RuntimeStatus = {
   service: string;
   home: string;
   paths: {
+    env: string;
     config: string;
     repos: string;
     schedules: string;

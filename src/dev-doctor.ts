@@ -5,6 +5,7 @@ import net from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as v from 'valibot';
+import { readEnvFiles } from './env';
 import {
   readGitRepoStatus,
   readRepoHealthSnapshot,
@@ -119,7 +120,7 @@ export async function runDevDoctor(
   await ensureRuntimeHome(paths);
   const [repos, localEnv, rootPackage, ports] = await Promise.all([
     readRepoHealthSnapshot(paths),
-    readLocalEnv(),
+    readEnvFiles(paths),
     readPackageSnapshot(rootDir),
     checkPorts([
       { id: 'dashboard', host: '127.0.0.1', port: 5173 },
@@ -385,31 +386,6 @@ async function readPackageSnapshot(path: string): Promise<PackageSnapshot> {
   } catch (error) {
     return { path: packagePath, scripts: {}, error: errorMessage(error) };
   }
-}
-
-async function readLocalEnv() {
-  const env = new Map<string, string>();
-  const envPath = join(rootDir, '.env');
-  try {
-    const source = await readFile(envPath, 'utf8');
-    for (const line of source.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const separator = trimmed.indexOf('=');
-      if (separator === -1) continue;
-      env.set(
-        trimmed.slice(0, separator).trim(),
-        trimmed
-          .slice(separator + 1)
-          .trim()
-          .replace(/^['"]|['"]$/g, ''),
-      );
-    }
-  } catch {
-    // A missing .env is reported through absent key checks.
-  }
-
-  return env;
 }
 
 function hasEnvKey(key: string, localEnv: Map<string, string>) {

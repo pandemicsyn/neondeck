@@ -12,6 +12,7 @@ export type RuntimeHomeEnv = Partial<
 
 export type RuntimePaths = {
   home: string;
+  env: string;
   config: string;
   repos: string;
   dashboard: string;
@@ -226,6 +227,7 @@ export function resolveRuntimeHome(env: RuntimeHomeEnv = process.env) {
 export function runtimePaths(home = resolveRuntimeHome()): RuntimePaths {
   return {
     home,
+    env: join(home, '.env'),
     config: join(home, 'config.json'),
     repos: join(home, 'repos.json'),
     dashboard: join(home, 'dashboard.json'),
@@ -244,6 +246,7 @@ export async function ensureRuntimeHome(paths = runtimePaths()) {
   await mkdir(paths.data, { recursive: true });
   await mkdir(paths.skills, { recursive: true });
 
+  await writeFileIfMissing(paths.env, '');
   await writeJsonIfMissing(paths.config, { version: 1 });
   await writeJsonIfMissing(paths.repos, { repos: [] });
   await writeJsonIfMissing(paths.schedules, { schedules: [] });
@@ -259,6 +262,7 @@ export function ensureRuntimeHomeSync(paths = runtimePaths()) {
   mkdirSync(paths.data, { recursive: true });
   mkdirSync(paths.skills, { recursive: true });
 
+  writeFileIfMissingSync(paths.env, '');
   writeJsonIfMissingSync(paths.config, { version: 1 });
   writeJsonIfMissingSync(paths.repos, { repos: [] });
   writeJsonIfMissingSync(paths.schedules, { schedules: [] });

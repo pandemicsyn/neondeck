@@ -38,8 +38,9 @@ npm install</code></pre>
         <h2>Run the CLI wizard</h2>
         <p>
           Start with the guided terminal setup. It prepares runtime state,
-          writes local secrets, configures the agent model, adds repositories,
-          applies a dashboard preset, and can create initial schedules.
+          writes local secrets to the runtime home, configures the agent model,
+          adds repositories, applies a dashboard preset, and can create initial
+          schedules.
         </p>
         <pre><code>npm run init</code></pre>
         <p>
@@ -68,8 +69,10 @@ npm run cli -- tui</code></pre>
 
         <h2 id="secrets">Configure secrets</h2>
         <p>
-          Copy <code>.env.example</code> to <code>.env</code> and fill in the local
-          values.
+          Packaged and local app secrets live in runtime-home <code>.env</code>,
+          for example <code>~/.config/neondeck/.env</code>. For checkout-based
+          development, repo-root <code>.env</code> is also supported as a dev-only
+          fallback.
         </p>
         <pre><code>KILOCODE_API_KEY=...
 KILOCODE_ORGANIZATION_ID=...
