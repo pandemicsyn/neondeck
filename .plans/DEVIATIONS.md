@@ -140,3 +140,10 @@ Use this format:
 - Decision: Added model-callable `neondeck_execution_request_approval` and `neondeck_execution_run`, dashboard/API-owned approval resolution, plus the `execution_approvals` audit table, API routes, Runtime Overview approval controls, tests, and docs. Local execution is an app-owned single-command `execFile` executor. `exe.dev` execution uses the Flue `sandbox/exedev` blueprint adapter and Flue `SessionEnv.exec`, but only for an existing VM referenced by environment variable.
 - Reason: The immediate usability need is approved local bash/git and a Flue-aligned exe.dev adapter without giving the model an unrestricted host shell. Existing-VM exe.dev support proves the adapter path while avoiding premature lifecycle choices around per-execution, per-session, per-repo, or user-selected VM reuse.
 - Follow-up: Add application-owned exe.dev create/clone/delete orchestration and credential scoping for lifecycle modes, then revisit whether Flue `local()` should back any broader local sandbox mode beyond the current single-command approved executor.
+
+## 2026-06-28 - Dedicated Workflow Observability Panel
+
+- Roadmap item: Phase 15 / workflow observability drilldown
+- Decision: Added a first-class `workflow-observability` dashboard plugin, seeded it into the default middle runtime column, and kept raw Flue run inspection behind explicit per-row `inspect` links. The panel filters active runs, failed runs, progress data, and action/tool/operation activity over the existing sanitized workflow observability API.
+- Reason: Runtime Overview already surfaced workflow facts inline and was becoming crowded. A dedicated panel makes Flue workflow state easier to inspect while preserving compact/redacted summaries as the default surface.
+- Follow-up: None.

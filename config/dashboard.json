@@ -130,7 +130,7 @@
         "column": 6,
         "row": 2,
         "columnSpan": 3,
-        "rowSpan": 3,
+        "rowSpan": 2,
         "config": {
           "repoLimit": 5,
           "jobLimit": 5,
@@ -140,13 +140,26 @@
         }
       },
       {
+        "id": "workflows",
+        "title": "WORKFLOWS",
+        "pluginId": "workflow-observability",
+        "column": 6,
+        "row": 4,
+        "columnSpan": 3,
+        "rowSpan": 2,
+        "config": {
+          "eventLimit": 16,
+          "refreshSeconds": 20
+        }
+      },
+      {
         "id": "subagents",
         "title": "SUBAGENTS",
         "pluginId": "subagent-summary",
         "column": 6,
-        "row": 5,
+        "row": 6,
         "columnSpan": 3,
-        "rowSpan": 2,
+        "rowSpan": 1,
         "config": {
           "eventLimit": 4
         }

@@ -7,6 +7,7 @@ import { HostMetricsPlugin } from './HostMetrics';
 import { MemoryPanelPlugin } from './MemoryPanel';
 import { RuntimeOverviewPlugin } from './RuntimeOverview';
 import { SubagentSummaryPlugin } from './SubagentSummary';
+import { WorkflowObservabilityPanelPlugin } from './WorkflowObservabilityPanel';
 import type { DisplayPlugin } from '../types';
 
 export const plugins = [
@@ -16,6 +17,7 @@ export const plugins = [
   BriefingPanelPlugin,
   MemoryPanelPlugin,
   SubagentSummaryPlugin,
+  WorkflowObservabilityPanelPlugin,
   FlueChatPlugin,
   HostMetricsPlugin,
   ClockStatusPlugin,

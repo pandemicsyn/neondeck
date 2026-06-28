@@ -17,6 +17,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <a href="#runtime-home">Runtime home</a>
         <a href="#commands">Commands</a>
         <a href="#flue">Flue surface</a>
+        <a href="#observability">Observability</a>
         <a href="https://github.com/pandemicsyn/neondeck">GitHub</a>
       </aside>
       <article class="docs-prose">
@@ -126,6 +127,15 @@ dev-doctor
 scheduler-tick
 watch-pr
 watch-release</code></pre>
+
+        <h2 id="observability">Workflow observability</h2>
+        <p>
+          The dashboard includes a dedicated workflow observability panel for
+          active Flue runs, failed runs, emitted progress data, and recent
+          action/tool/operation activity. Rows show compact, redacted summaries
+          by default. When a row has a guarded Flue run inspection URL, the
+          panel exposes it through an explicit <code>inspect</code> link.
+        </p>
 
         <h2>Developer commands</h2>
         <pre><code>fnm use 26.4.0
