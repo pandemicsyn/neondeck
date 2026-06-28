@@ -1,0 +1,120 @@
+name: App release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Release tag to create or update, for example v1.0.0.
+        required: true
+        type: string
+      prerelease:
+        description: Mark the GitHub release as a prerelease.
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: app-release-${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish app package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release metadata
+        id: release
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag_name }}"
+          else
+            tag="${{ github.ref_name }}"
+          fi
+          version="${tag#v}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Check out release tag
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          if git rev-parse --verify --quiet "refs/tags/${{ steps.release.outputs.tag }}" >/dev/null; then
+            git checkout --detach "refs/tags/${{ steps.release.outputs.tag }}"
+          fi
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint app
+        run: npm run lint
+
+      - name: Typecheck app
+        run: npm run typecheck:app
+
+      - name: Test app
+        run: npm run test
+
+      - name: Build app package
+        run: npm run release:app
+        env:
+          NEONDECK_RELEASE_VERSION: ${{ steps.release.outputs.version }}
+
+      - name: Upload app package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: neondeck-${{ steps.release.outputs.version }}
+          path: |
+            .release/neondeck-${{ steps.release.outputs.version }}.tar.gz
+            .release/neondeck-${{ steps.release.outputs.version }}.tar.gz.sha256
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+
+          if ! git rev-parse --verify --quiet "refs/tags/${RELEASE_TAG}" >/dev/null; then
+            git tag "${RELEASE_TAG}"
+            git push origin "${RELEASE_TAG}"
+          fi
+
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" .release/*.tar.gz .release/*.sha256 --clobber
+          else
+            args=(
+              release create "${RELEASE_TAG}"
+              .release/*.tar.gz
+              .release/*.sha256
+              --title "${RELEASE_TAG}"
+              --generate-notes
+            )
+
+            if [ "${PRERELEASE}" = "true" ]; then
+              args+=(--prerelease)
+            fi
+
+            gh "${args[@]}"
+          fi

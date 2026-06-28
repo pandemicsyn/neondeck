@@ -2,6 +2,7 @@ node_modules/
 dist/
 web/dist/
 .flue-vite/
+.release/
 .astro/
 design/
 research-repos/
