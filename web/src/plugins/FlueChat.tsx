@@ -7,6 +7,7 @@ import {
   type NeonCommandResult,
   type NeonSessionState,
 } from '../api';
+import { MarkdownMessage } from '../components/MarkdownMessage';
 import { Badge, Button, Kbd, ScrollArea, Textarea } from '../components/ui';
 import { useConfigEvents } from '../lib/config-events';
 import { queryErrorMessage, queryKeys } from '../lib/query';
@@ -261,7 +262,9 @@ function FlueChatSessionView({
                 <div className="space-y-2 text-[13px] leading-[1.55] text-ink">
                   {message.parts.map((part, index) =>
                     part.type === 'text' ? (
-                      <p key={`${message.id}-${index}`}>{part.text}</p>
+                      <MarkdownMessage key={`${message.id}-${index}`}>
+                        {part.text}
+                      </MarkdownMessage>
                     ) : null,
                   )}
                 </div>
