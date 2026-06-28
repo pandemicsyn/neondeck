@@ -58,6 +58,13 @@ const executionBackendSchema = v.picklist(['local', 'exe.dev']);
 const executionApprovalModeSchema = v.picklist(['manual', 'off']);
 const executionUnattendedModeSchema = v.picklist(['deny', 'allow-preapproved']);
 const executionCommandMatchSchema = v.picklist(['exact', 'prefix', 'glob']);
+const executionSandboxLifecycleSchema = v.picklist([
+  'existing-vm',
+  'fresh-per-execution',
+  'reuse-session',
+  'reuse-repo',
+  'user-selected',
+]);
 const shellOperatorFreeCommandSchema = v.pipe(
   nonEmptyStringSchema,
   v.check(
@@ -80,6 +87,14 @@ export const executionConfigSchema = v.looseObject({
   approvalMode: v.optional(executionApprovalModeSchema),
   unattended: v.optional(executionUnattendedModeSchema),
   preapprovedCommands: v.optional(v.array(executionPreapprovedCommandSchema)),
+  exeDev: v.optional(
+    v.strictObject({
+      apiTokenEnv: v.optional(envVarNameSchema),
+      lifecycle: v.optional(executionSandboxLifecycleSchema),
+      sshKeyEnv: v.optional(envVarNameSchema),
+      vmHostEnv: v.optional(envVarNameSchema),
+    }),
+  ),
 });
 
 export const appConfigSchema = v.looseObject({
@@ -467,6 +482,30 @@ function initializeAppDatabase(path: string) {
         ended_at TEXT,
         updated_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS execution_approvals (
+        id TEXT PRIMARY KEY,
+        command TEXT NOT NULL,
+        backend TEXT NOT NULL,
+        cwd TEXT,
+        context TEXT NOT NULL,
+        risk TEXT NOT NULL,
+        policy_decision TEXT NOT NULL,
+        status TEXT NOT NULL,
+        approval_decision TEXT,
+        approver_surface TEXT,
+        session_id TEXT,
+        request_context_json TEXT,
+        result_json TEXT,
+        exit_code INTEGER,
+        stdout_preview TEXT,
+        stderr_preview TEXT,
+        error TEXT,
+        created_at TEXT NOT NULL,
+        resolved_at TEXT,
+        executed_at TEXT,
+        updated_at TEXT NOT NULL
+      );
     `);
 
     ensureColumn(database, 'notifications', 'resolved_at', 'TEXT');
@@ -495,6 +534,12 @@ function initializeAppDatabase(path: string) {
 
       CREATE INDEX IF NOT EXISTS idx_memory_events_changed
         ON memory_events(changed_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_execution_approvals_status
+        ON execution_approvals(status, updated_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_execution_approvals_updated
+        ON execution_approvals(updated_at DESC);
     `);
     reconcileExistingNotificationDuplicates(database);
     reconcileActiveNeonSessions(database);

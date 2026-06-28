@@ -8,11 +8,15 @@ import {
   getSchedulerJobs,
   getMemories,
   getNotifications,
+  getExecutionApprovals,
   getWorkflowObservability,
   markNotificationRead,
   resolveNotification,
+  resolveExecutionApproval,
   updateAgentModels,
   updateKilocodeProvider,
+  type ExecutionApproval,
+  type ExecutionApprovalsResponse,
   type MemoryRecord,
   type NotificationRecord,
   type NotificationResponse,
@@ -50,6 +54,7 @@ type RuntimeSnapshot = {
   skills: RuntimeSkillsResponse;
   memories: MemoryRecord[];
   notifications: NotificationResponse;
+  executionApprovals: ExecutionApprovalsResponse;
   safety: SafetyPolicy;
   workflows: WorkflowObservability;
   secondaryErrors: string[];
@@ -90,6 +95,7 @@ export const RuntimeOverviewPlugin = {
             skills,
             memories,
             notifications,
+            executionApprovals,
             safety,
             workflows,
           ] = await Promise.allSettled([
@@ -99,6 +105,7 @@ export const RuntimeOverviewPlugin = {
             getRuntimeSkills(),
             getMemories(),
             getNotifications(),
+            getExecutionApprovals({ includeResolved: true }),
             getSafetyPolicy(),
             getWorkflowObservability(),
           ]);
@@ -111,6 +118,7 @@ export const RuntimeOverviewPlugin = {
               settledError(skills),
               settledError(memories),
               settledError(notifications),
+              settledError(executionApprovals),
               settledError(safety),
               settledError(workflows),
             ].filter((error): error is string => !!error);
@@ -145,6 +153,13 @@ export const RuntimeOverviewPlugin = {
                     urgent: 'Production-facing failures.',
                     reconcile: 'Repeated source events are reconciled.',
                   },
+                  fetchedAt: status.fetchedAt,
+                },
+                executionApprovals: settledValue(executionApprovals) ?? {
+                  ok: false,
+                  action: 'execution_approvals_list',
+                  changed: false,
+                  approvals: [],
                   fetchedAt: status.fetchedAt,
                 },
                 safety:
@@ -206,6 +221,14 @@ function RuntimeView({
     (skill) => skill.status === 'active',
   );
   const enabledJobs = snapshot.jobs.filter((job) => job.enabled);
+  const pendingExecutionApprovals =
+    snapshot.executionApprovals.approvals.filter(
+      (approval) => approval.status === 'pending',
+    );
+  const recentExecutionApprovals = snapshot.executionApprovals.approvals.slice(
+    0,
+    5,
+  );
   const healthByRepoId = new Map(
     snapshot.repoHealth.repos.map((repo) => [repo.id, repo]),
   );
@@ -332,6 +355,24 @@ function RuntimeView({
                 .map((entry) => (
                   <SafetyPolicyRow entry={entry} key={entry.id} />
                 ))}
+            </div>
+          </RuntimeSection>
+          <RuntimeSection
+            count={pendingExecutionApprovals.length}
+            title="EXECUTION APPROVALS"
+            tone="accent"
+          >
+            <div className="space-y-1.5">
+              {recentExecutionApprovals.map((approval) => (
+                <ExecutionApprovalRow
+                  approval={approval}
+                  key={approval.id}
+                  onRefresh={onRefresh}
+                />
+              ))}
+              {recentExecutionApprovals.length === 0 ? (
+                <MiniEmpty label="No execution approvals recorded." />
+              ) : null}
             </div>
           </RuntimeSection>
           <RuntimeSection
@@ -977,6 +1018,99 @@ function SafetyPolicyRow({ entry }: { entry: SafetyPolicyEntry }) {
   );
 }
 
+function ExecutionApprovalRow({
+  approval,
+  onRefresh,
+}: {
+  approval: ExecutionApproval;
+  onRefresh: () => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function resolve(
+    decision: 'allow-once' | 'allow-session' | 'allow-always' | 'deny',
+  ) {
+    setBusy(decision);
+    setError(null);
+    try {
+      await resolveExecutionApproval(approval.id, decision);
+      onRefresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <article className="border border-line bg-soft px-2.5 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-ink">
+            {approval.command}
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
+            {approval.backend} · {approval.risk}
+            {approval.cwd ? ` · ${shortPath(approval.cwd)}` : ''}
+            {approval.error ? ` · ${approval.error}` : ''}
+          </p>
+        </div>
+        <Badge className={executionApprovalClass(approval)}>
+          {approval.status}
+        </Badge>
+      </div>
+      <div className="mt-1.5 flex items-center gap-1.5 font-mono text-[10px] text-muted">
+        <span className="min-w-0 flex-1 truncate">
+          {relativeTime(approval.updatedAt)}
+          {approval.exitCode !== null ? ` · exit ${approval.exitCode}` : ''}
+        </span>
+        {approval.status === 'pending' ? (
+          <>
+            <button
+              className="shrink-0 border border-line px-1.5 py-0.5 text-muted disabled:opacity-50"
+              disabled={!!busy}
+              onClick={() => void resolve('allow-once')}
+              type="button"
+            >
+              once
+            </button>
+            <button
+              className="shrink-0 border border-line px-1.5 py-0.5 text-muted disabled:opacity-50"
+              disabled={!!busy}
+              onClick={() => void resolve('allow-session')}
+              type="button"
+            >
+              session
+            </button>
+            <button
+              className="shrink-0 border border-line px-1.5 py-0.5 text-muted disabled:opacity-50"
+              disabled={!!busy}
+              onClick={() => void resolve('allow-always')}
+              type="button"
+            >
+              preapprove
+            </button>
+            <button
+              className="shrink-0 border border-accent px-1.5 py-0.5 text-accent disabled:opacity-50"
+              disabled={!!busy}
+              onClick={() => void resolve('deny')}
+              type="button"
+            >
+              deny
+            </button>
+          </>
+        ) : null}
+      </div>
+      {error ? (
+        <p className="mt-1.5 line-clamp-2 text-[10.5px] leading-4 text-accent">
+          {error}
+        </p>
+      ) : null}
+    </article>
+  );
+}
+
 function ActiveRunRow({
   run,
 }: {
@@ -1257,6 +1391,15 @@ function notificationClass(notification: NotificationRecord) {
   if (notification.level === 'urgent') return 'border-accent text-accent';
   if (notification.level === 'attention') return 'border-accent text-accent';
   if (notification.level === 'ready') return 'border-primary text-primary';
+  return '';
+}
+
+function executionApprovalClass(approval: ExecutionApproval) {
+  if (approval.status === 'pending') return 'border-accent text-accent';
+  if (approval.status === 'executed') return 'border-primary text-primary';
+  if (approval.status === 'failed' || approval.status === 'blocked') {
+    return 'border-accent text-accent';
+  }
   return '';
 }
 

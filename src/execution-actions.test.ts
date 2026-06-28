@@ -1,0 +1,208 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  listExecutionApprovals,
+  neondeckExecutionActions,
+  requestExecutionApproval,
+  resolveExecutionApproval,
+  runApprovedExecution,
+} from './execution-actions';
+import { checkExecutionPolicy } from './execution-policy';
+import { ensureRuntimeHome, runtimePaths } from './runtime-home';
+
+const tempRoots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    tempRoots
+      .splice(0)
+      .map((path) => rm(path, { recursive: true, force: true })),
+  );
+});
+
+describe('execution actions', () => {
+  it('does not expose approval resolution as a model-callable action', () => {
+    expect(neondeckExecutionActions.map((action) => action.name)).toEqual([
+      'neondeck_execution_request_approval',
+      'neondeck_execution_run',
+    ]);
+  });
+
+  it('runs a preapproved local command and records an execution audit', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+
+    const result = await runApprovedExecution(
+      { command: 'pwd', cwd: paths.home },
+      paths,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: 'execution_run',
+      approval: {
+        backend: 'local',
+        command: 'pwd',
+        status: 'executed',
+        approvalDecision: 'preapproved',
+        exitCode: 0,
+      },
+    });
+    expect(readApproval(result).stdoutPreview).toContain(paths.home);
+
+    const approvals = await listExecutionApprovals(paths, {
+      includeResolved: true,
+    });
+    expect(approvals.approvals).toEqual([
+      expect.objectContaining({ command: 'pwd', status: 'executed' }),
+    ]);
+  });
+
+  it('requires approval for non-preapproved interactive commands and reuses session approvals', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+
+    const request = await requestExecutionApproval(
+      {
+        command: 'node --version',
+        cwd: paths.home,
+        sessionId: 'session-1',
+      },
+      paths,
+    );
+    expect(request).toMatchObject({
+      ok: true,
+      approval: { status: 'pending', command: 'node --version' },
+    });
+
+    const approvalId = readApprovalId(request);
+    expect(approvalId).toBeTruthy();
+    await expect(
+      resolveExecutionApproval(
+        { id: approvalId, decision: 'allow-session' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      approval: { status: 'approved', approvalDecision: 'allow-session' },
+    });
+
+    await expect(
+      runApprovedExecution(
+        {
+          command: 'node --version',
+          cwd: paths.home,
+          sessionId: 'session-1',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      approval: {
+        status: 'executed',
+        approvalDecision: 'allow-session',
+        approverSurface: expect.stringContaining('session:'),
+      },
+    });
+  });
+
+  it('can promote an approval into a preapproved command', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const request = await requestExecutionApproval(
+      { command: 'node --version', cwd: paths.home },
+      paths,
+    );
+    const approvalId = readApprovalId(request);
+
+    await expect(
+      resolveExecutionApproval(
+        { id: approvalId, decision: 'allow-always' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      approval: { status: 'approved', approvalDecision: 'allow-always' },
+    });
+
+    await expect(
+      checkExecutionPolicy({ command: 'node --version' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      decision: 'allow',
+      matchedPreapproval: { command: 'node --version' },
+    });
+  });
+
+  it('blocks hardline commands and writes a blocked audit record', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+
+    await expect(
+      runApprovedExecution({ command: 'rm -rf /' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      approval: {
+        status: 'blocked',
+        risk: 'hardline',
+      },
+    });
+  });
+
+  it('requires an exe.dev VM host env var for approved exe.dev execution', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    await writeFile(
+      paths.config,
+      JSON.stringify(
+        {
+          version: 1,
+          execution: {
+            defaultBackend: 'exe.dev',
+            enabledBackends: ['local', 'exe.dev'],
+            exeDev: {
+              lifecycle: 'existing-vm',
+              vmHostEnv: 'NEONDECK_TEST_EXE_VM_HOST',
+              sshKeyEnv: 'NEONDECK_TEST_EXE_SSH_KEY',
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await expect(
+      runApprovedExecution({ command: 'pwd', backend: 'exe.dev' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['NEONDECK_TEST_EXE_VM_HOST'],
+      approval: {
+        backend: 'exe.dev',
+        status: 'failed',
+      },
+    });
+  });
+});
+
+async function tempDir() {
+  const path = await mkdtemp(join(tmpdir(), 'neondeck-exec-actions-'));
+  tempRoots.push(path);
+  return path;
+}
+
+function readApprovalId(result: unknown) {
+  const approval = readApproval(result);
+  expect(typeof approval?.id).toBe('string');
+  return approval.id as string;
+}
+
+function readApproval(result: unknown) {
+  const approval = (
+    result as { approval?: { id?: unknown; stdoutPreview?: string | null } }
+  ).approval;
+  if (!approval) throw new Error('Expected execution approval in result.');
+  return approval;
+}

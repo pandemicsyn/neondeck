@@ -188,6 +188,44 @@ export type RuntimeStatus = {
   fetchedAt: string;
 };
 
+export type ExecutionApproval = {
+  id: string;
+  command: string;
+  backend: 'local' | 'exe.dev';
+  cwd: string | null;
+  context: 'interactive' | 'unattended';
+  risk: 'read-only' | 'safe-mutation' | 'destructive-mutation' | 'hardline';
+  policyDecision: 'allow' | 'ask' | 'deny';
+  status: 'pending' | 'approved' | 'denied' | 'executed' | 'failed' | 'blocked';
+  approvalDecision:
+    | 'preapproved'
+    | 'allow-once'
+    | 'allow-session'
+    | 'allow-always'
+    | 'deny'
+    | null;
+  approverSurface: string | null;
+  sessionId: string | null;
+  requestContext: unknown;
+  result: unknown;
+  exitCode: number | null;
+  stdoutPreview: string | null;
+  stderrPreview: string | null;
+  error: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  executedAt: string | null;
+  updatedAt: string;
+};
+
+export type ExecutionApprovalsResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  approvals: ExecutionApproval[];
+  fetchedAt: string;
+};
+
 export type ConfigActionResult = {
   ok: boolean;
   action: string;
@@ -580,6 +618,31 @@ export async function getWorkflowObservability() {
   return getJson<WorkflowObservability>('/api/workflows/observability');
 }
 
+export async function getExecutionApprovals(
+  input: { includeResolved?: boolean } = {},
+) {
+  const query = input.includeResolved ? '?includeResolved=1' : '';
+  return getJson<ExecutionApprovalsResponse>(
+    `/api/execution/approvals${query}`,
+  );
+}
+
+export async function resolveExecutionApproval(
+  id: string,
+  decision: 'allow-once' | 'allow-session' | 'allow-always' | 'deny',
+) {
+  return postJson<{
+    ok: boolean;
+    action: string;
+    changed: boolean;
+    message: string;
+    approval?: ExecutionApproval;
+  }>(`/api/execution/approvals/${id}/resolve`, {
+    decision,
+    approverSurface: 'dashboard',
+  });
+}
+
 export async function getWorkflowSummaries() {
   return getJson<WorkflowSummaryResponse>('/api/workflows/summaries');
 }
@@ -666,7 +729,13 @@ async function postJson<T>(url: string, body: unknown) {
 }
 
 function readErrorMessage(data: unknown) {
-  if (!data || typeof data !== 'object' || !('error' in data)) return undefined;
+  if (!data || typeof data !== 'object') return undefined;
+
+  if ('message' in data && typeof data.message === 'string') {
+    return data.message;
+  }
+
+  if (!('error' in data)) return undefined;
 
   const error = data.error;
   if (typeof error === 'string') return error;

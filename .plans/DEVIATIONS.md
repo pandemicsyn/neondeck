@@ -133,3 +133,10 @@ Use this format:
 - Decision: Added an app-owned `github-gh` Flue skill, exposed `/memory` through the existing typed memory actions, added a dedicated briefing panel over persisted command summaries, added a memory/current-task dashboard panel, and added a subagent summary panel that shows configured subagent roles plus recent delegated activity visible through sanitized Flue observations.
 - Reason: These affordances make existing runtime state usable without introducing a second command surface or new state store. The subagent panel can be useful now from configured roles and observed Flue activity while preserving the current Flue-owned subagent execution model.
 - Follow-up: If Neondeck needs stronger subagent audit guarantees, add an app-owned subagent delegation summary table or explicit workflow wrappers around delegated tasks instead of inferring activity from observations.
+
+## 2026-06-28 - Approved Host Execution And exe.dev Sandbox
+
+- Roadmap item: Phase 14 / approved host execution and exe.dev sandbox
+- Decision: Added model-callable `neondeck_execution_request_approval` and `neondeck_execution_run`, dashboard/API-owned approval resolution, plus the `execution_approvals` audit table, API routes, Runtime Overview approval controls, tests, and docs. Local execution is an app-owned single-command `execFile` executor. `exe.dev` execution uses the Flue `sandbox/exedev` blueprint adapter and Flue `SessionEnv.exec`, but only for an existing VM referenced by environment variable.
+- Reason: The immediate usability need is approved local bash/git and a Flue-aligned exe.dev adapter without giving the model an unrestricted host shell. Existing-VM exe.dev support proves the adapter path while avoiding premature lifecycle choices around per-execution, per-session, per-repo, or user-selected VM reuse.
+- Follow-up: Add application-owned exe.dev create/clone/delete orchestration and credential scoping for lifecycle modes, then revisit whether Flue `local()` should back any broader local sandbox mode beyond the current single-command approved executor.

@@ -123,8 +123,8 @@ GITHUB_LOGIN=...</code></pre>
         <h2>Execution approvals</h2>
         <p>
           Neondeck keeps host execution action-mediated. The default execution
-          backend is <code>local</code>; <code>exe.dev</code> is a planned sandbox
-          backend that the config schema already accepts for the next executor iteration.
+          backend is <code>local</code>; <code>exe.dev</code> runs through the Flue
+          sandbox adapter against an existing VM.
         </p>
         <pre><code>&#123;
   "version": 1,
@@ -133,6 +133,12 @@ GITHUB_LOGIN=...</code></pre>
     "enabledBackends": ["local"],
     "approvalMode": "manual",
     "unattended": "deny",
+    "exeDev": &#123;
+      "lifecycle": "existing-vm",
+      "vmHostEnv": "EXE_VM_HOST",
+      "sshKeyEnv": "EXE_SSH_KEY",
+      "apiTokenEnv": "EXE_API_TOKEN"
+    &#125;,
     "preapprovedCommands": [
       &#123;
         "id": "test",
@@ -147,16 +153,28 @@ GITHUB_LOGIN=...</code></pre>
         <p>
           Preapproved commands must be single commands without shell operators,
           redirection, subshells, or newlines. Commands that do not match the
-          preapproval list require interactive approval in future executor
-          actions and are denied in unattended contexts. Hardline destructive
-          commands cannot be preapproved.
+          preapproval list require interactive approval and are denied in
+          unattended contexts. Hardline destructive commands cannot be
+          preapproved.
         </p>
         <p>
           Use <code>neondeck_execution_policy_lookup</code> to inspect the active
           policy, <code>neondeck_execution_policy_check</code> to classify a proposed
           command without running it, and
-          <code>neondeck_config_update_execution_policy</code> to update config. Policy
-          updates are audited in <code>config_history</code>.
+          <code>neondeck_config_update_execution_policy</code> to update config. Use
+          <code>neondeck_execution_request_approval</code> and
+          <code>neondeck_execution_run</code> for the model-callable approval/run
+          path. Approval resolution is dashboard/API/user-owned, not model-callable.
+          Policy updates are audited in <code>config_history</code>; executions
+          are audited in
+          <code>execution_approvals</code>.
+        </p>
+        <p>
+          Trusted-local execution runs on your machine and is best for local git
+          or developer commands you already trust. <code>exe.dev</code> is the isolated
+          sandbox option; enable it explicitly by adding <code>"exe.dev"</code> to
+          <code>enabledBackends</code> after <code>EXE_VM_HOST</code> points at an
+          existing VM and SSH auth is configured.
         </p>
 
         <h2 id="verify">Verify locally</h2>

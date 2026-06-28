@@ -64,7 +64,7 @@ export async function listNotifications(
         SELECT *
         FROM notifications
         ${options.includeResolved ? '' : 'WHERE resolved_at IS NULL'}
-        ORDER BY updated_at DESC, created_at DESC
+        ORDER BY updated_at DESC, occurrence_count DESC, created_at DESC
         LIMIT 100;
       `,
       )

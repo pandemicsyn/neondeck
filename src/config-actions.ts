@@ -540,6 +540,7 @@ export async function updateExecutionPolicy(
         'approvalMode',
         'unattended',
         'preapprovedCommands',
+        'exeDev',
       ],
     });
   }
@@ -576,7 +577,7 @@ export async function updateExecutionPolicy(
     [paths.config],
     {
       message: changed
-        ? 'Updated execution approval policy. Future host execution actions will use the new policy immediately when they read config.'
+        ? 'Updated execution approval policy. Approved execution actions will use the new policy immediately when they read config.'
         : 'Execution approval policy already matched the requested values.',
       data: {
         execution: next.execution,

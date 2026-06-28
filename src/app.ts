@@ -1,7 +1,7 @@
 import { observe, registerProvider, type FlueObservation } from '@flue/runtime';
 import { flue } from '@flue/runtime/routing';
 import { serveStatic } from '@hono/node-server/serve-static';
-import { Hono, type MiddlewareHandler } from 'hono';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { supportedCommands } from './commands';
 import {
   readProviderConfig,
@@ -9,6 +9,12 @@ import {
   updateAgentModels,
   updateProviderConfig,
 } from './config-actions';
+import {
+  listExecutionApprovals,
+  requestExecutionApproval,
+  resolveExecutionApproval,
+  runApprovedExecution,
+} from './execution-actions';
 import { checkExecutionPolicy, readExecutionPolicy } from './execution-policy';
 import { fetchGitHubLogin, fetchPullRequestQueue } from './github';
 import { deleteMemory, listMemories, upsertMemory } from './memory-actions';
@@ -183,11 +189,44 @@ app.get('/api/execution/policy', async (c) => {
 });
 
 app.post('/api/execution/policy', async (c) => {
-  return c.json(await updateExecutionPolicy(await c.req.json(), paths));
+  const input = (await safeJsonBody(c)) as Parameters<
+    typeof updateExecutionPolicy
+  >[0];
+  return c.json(await updateExecutionPolicy(input, paths));
 });
 
 app.post('/api/execution/check', async (c) => {
-  return c.json(await checkExecutionPolicy(await c.req.json(), paths));
+  const input = (await safeJsonBody(c)) as Parameters<
+    typeof checkExecutionPolicy
+  >[0];
+  return c.json(await checkExecutionPolicy(input, paths));
+});
+
+app.get('/api/execution/approvals', async (c) => {
+  const includeResolved = c.req.query('includeResolved') === '1';
+  return c.json(await listExecutionApprovals(paths, { includeResolved }));
+});
+
+app.post('/api/execution/approvals', async (c) => {
+  const result = await requestExecutionApproval(await safeJsonBody(c), paths);
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/execution/approvals/:id/resolve', async (c) => {
+  const input = (await c.req.json().catch(() => ({}))) as Record<
+    string,
+    unknown
+  >;
+  const result = await resolveExecutionApproval(
+    { ...input, id: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/execution/run', async (c) => {
+  const result = await runApprovedExecution(await safeJsonBody(c), paths);
+  return c.json(result, result.ok ? 200 : 400);
 });
 
 app.get('/api/session', async (c) => {
@@ -459,6 +498,10 @@ function hostName(host: string | undefined) {
 
 function isSafeMethod(method: string) {
   return method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+}
+
+async function safeJsonBody(c: Context): Promise<unknown> {
+  return c.req.json().catch(() => ({}));
 }
 
 function isAllowedBrowserOrigin(request: Request) {

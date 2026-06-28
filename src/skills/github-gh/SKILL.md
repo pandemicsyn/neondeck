@@ -1,6 +1,6 @@
 ---
 name: github-gh
-description: Choose between deterministic GitHub API actions, local git facts, and future approved gh CLI workflows in Neondeck.
+description: Choose between deterministic GitHub API actions, local git facts, and approved gh CLI workflows in Neondeck.
 ---
 
 # GitHub and gh Runtime Guidance
@@ -18,16 +18,16 @@ Use Neondeck's typed actions and tools before reasoning:
 
 ## When gh Is Appropriate
 
-The `gh` CLI is a host command. Do not claim it ran unless a future approved execution action actually runs it.
+The `gh` CLI is a host command. Do not claim it ran unless `neondeck_execution_run` actually runs it.
 
 Recommend `gh` only when:
 
 - the GitHub API action cannot expose the needed fact yet
 - the user is working in a configured local checkout
-- the command would be useful for the user or a future approved execution action
+- the command would be useful for the user or an approved execution action
 - the command passes `neondeck_execution_policy_check` if Neon is being asked to run it
 
-Good future candidates for approved `gh` use include:
+Good candidates for approved `gh` use include:
 
 - `gh pr view`
 - `gh pr checks`
@@ -35,7 +35,7 @@ Good future candidates for approved `gh` use include:
 - `gh run watch`
 - `gh pr diff`
 
-Avoid using `gh` for mutations such as creating PRs, merging, closing issues, rerunning workflows, or editing labels until the approval and audit path for destructive or host-execution actions exists.
+Avoid using `gh` for mutations such as creating PRs, merging, closing issues, rerunning workflows, or editing labels unless the user explicitly asks and the command is approved through the execution approval path.
 
 ## Answering Pattern
 

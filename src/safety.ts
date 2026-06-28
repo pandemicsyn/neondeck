@@ -87,6 +87,13 @@ const destructiveMutation = {
   audited: true,
 } satisfies Partial<SafetyPolicyEntry>;
 
+const hostExecution = {
+  class: 'host-execution',
+  unattended: false,
+  requiresConfirmation: true,
+  audited: true,
+} satisfies Partial<SafetyPolicyEntry>;
+
 const entries: SafetyPolicyEntry[] = [
   tool(
     'neondeck_safety_policy_lookup',
@@ -171,6 +178,24 @@ const entries: SafetyPolicyEntry[] = [
     'Check host execution policy',
     readOnly,
     'Classifies a proposed local or exe.dev command against execution approval policy without running it.',
+  ),
+  action(
+    'neondeck_execution_request_approval',
+    'Request host execution approval',
+    {
+      ...safeMutation,
+      auditTarget: 'execution_approvals',
+    },
+    'Creates a pending approval record for a non-preapproved local or exe.dev command without running it.',
+  ),
+  action(
+    'neondeck_execution_run',
+    'Run approved host command',
+    {
+      ...hostExecution,
+      auditTarget: 'execution_approvals',
+    },
+    'Runs one approved local command or one approved exe.dev sandbox command, records bounded redacted output, and never bypasses hardline denies.',
   ),
   action(
     'neondeck_config_read',
@@ -506,6 +531,33 @@ const entries: SafetyPolicyEntry[] = [
     'Classifies a proposed host command without running it.',
   ),
   route(
+    '/api/execution/approvals',
+    'Execution approvals API',
+    {
+      ...safeMutation,
+      auditTarget: 'execution_approvals',
+    },
+    'GET lists execution approval records; POST creates a pending approval request without running a command.',
+  ),
+  route(
+    '/api/execution/approvals/:id/resolve',
+    'Execution approval resolution API',
+    {
+      ...safeMutation,
+      auditTarget: 'execution_approvals/config_history',
+    },
+    'Approves or denies a pending execution request. allow-always also updates preapproved command config.',
+  ),
+  route(
+    '/api/execution/run',
+    'Approved execution API',
+    {
+      ...hostExecution,
+      auditTarget: 'execution_approvals',
+    },
+    'Runs one approved local or exe.dev command and records bounded redacted output.',
+  ),
+  route(
     '/api/models',
     'Model config API',
     {
@@ -532,18 +584,6 @@ const entries: SafetyPolicyEntry[] = [
     },
     'POST writes structured memory; DELETE requires confirm=true before deleting memory.',
   ),
-  {
-    id: 'future_host_shell_or_code_action',
-    primitive: 'action',
-    title: 'Run host shell or edit local code',
-    class: 'host-execution',
-    unattended: false,
-    requiresConfirmation: true,
-    audited: true,
-    auditTarget: 'future approval log',
-    notes:
-      'Not implemented. The approval policy and preapproval checker are available now; actual local or exe.dev execution actions must call them and write approval/audit records first.',
-  },
 ];
 
 export const safetyPolicyLookupTool = defineTool({
@@ -568,7 +608,7 @@ export function readSafetyPolicy(
     summary: summarizeEntries(entries),
     confirmationPolicy:
       'Destructive mutations require explicit user confirmation and action input confirm=true. Safe mutations should be user-directed and audited when they change durable state.',
-    hostExecutionPolicy: `Host execution is action-mediated. Backends enabled by config: ${execution.enabledBackends.join(', ')}. Preapproved single commands may run without an interactive approval in future executor actions; all other interactive commands require approval and unattended commands default to deny. Hardline commands cannot be preapproved.`,
+    hostExecutionPolicy: `Host execution is action-mediated. Backends enabled by config: ${execution.enabledBackends.join(', ')}. Preapproved single commands may run without an interactive approval through neondeck_execution_run; all other interactive commands require approval and unattended commands default to deny. Hardline commands cannot be preapproved.`,
     executionPolicy: {
       defaultBackend: execution.defaultBackend,
       enabledBackends: execution.enabledBackends,

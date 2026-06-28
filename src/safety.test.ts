@@ -29,7 +29,7 @@ describe('safety policy', () => {
       version: 3,
     });
     expect(policy.summary.destructiveMutation).toBeGreaterThanOrEqual(4);
-    expect(policy.summary.hostExecution).toBe(1);
+    expect(policy.summary.hostExecution).toBeGreaterThanOrEqual(2);
     expect(policy.entries).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -97,10 +97,22 @@ describe('safety policy', () => {
           auditTarget: 'config_history',
         }),
         expect.objectContaining({
-          id: 'future_host_shell_or_code_action',
+          id: 'neondeck_execution_run',
+          primitive: 'action',
           class: 'host-execution',
           unattended: false,
           requiresConfirmation: true,
+          audited: true,
+          auditTarget: 'execution_approvals',
+        }),
+        expect.objectContaining({
+          id: '/api/execution/run',
+          primitive: 'route',
+          class: 'host-execution',
+          unattended: false,
+          requiresConfirmation: true,
+          audited: true,
+          auditTarget: 'execution_approvals',
         }),
       ]),
     );

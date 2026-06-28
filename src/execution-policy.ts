@@ -263,7 +263,7 @@ export async function checkExecutionPolicy(
     });
   }
 
-  if (context === 'unattended' || policy.unattended === 'deny') {
+  if (context === 'unattended') {
     return checkResult(command, backend, context, 'deny', risk, {
       reason:
         'Command is not preapproved. Unattended host execution defaults to deny.',
@@ -304,8 +304,8 @@ export function executionPolicyFromConfig(
       hardlineBypassable: false,
     },
     notes: [
-      'This policy is an approval gate for future host execution actions. It does not run commands by itself.',
-      'The local backend is the default execution target. exe.dev is accepted as a future backend identifier so config can be shaped before the executor lands.',
+      'This policy is an approval gate for neondeck_execution_run. It does not run commands by itself.',
+      'The local backend is the default execution target. exe.dev uses the Flue sandbox adapter against an existing VM when EXE_VM_HOST or execution.exeDev.vmHostEnv is configured.',
       'Preapproved commands must be single commands without shell operators. Hardline blocks cannot be preapproved.',
       'Any command not matched by the preapproval list requires interactive approval or is denied in unattended contexts.',
     ],
@@ -341,6 +341,7 @@ export function mergeExecutionConfig(
     ...(input.preapprovedCommands !== undefined
       ? { preapprovedCommands: input.preapprovedCommands }
       : {}),
+    ...(input.exeDev !== undefined ? { exeDev: input.exeDev } : {}),
   };
 }
 
@@ -352,7 +353,8 @@ export function hasExecutionPolicyUpdate(
     input.enabledBackends !== undefined ||
     input.approvalMode !== undefined ||
     input.unattended !== undefined ||
-    input.preapprovedCommands !== undefined
+    input.preapprovedCommands !== undefined ||
+    input.exeDev !== undefined
   );
 }
 

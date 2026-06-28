@@ -69,7 +69,7 @@ Agent and subagent models are configurable in runtime-home `config.json`. Enviro
 
 The Neondeck chat agent can update those model settings through the typed `neondeck_config_update_agent_models` action when asked. Model strings must reference providers already registered by the app or Flue runtime; changing provider credentials or registering arbitrary new providers is not yet a runtime-config action.
 
-Host execution is also configured in runtime-home `config.json`, but Neondeck does not expose an unrestricted shell executor. The policy is an approval gate for current and future execution actions. `local` is the default backend; `exe.dev` is accepted as a planned sandbox backend so config can be shaped before that executor lands.
+Host execution is also configured in runtime-home `config.json`, but Neondeck does not expose an unrestricted shell executor. `neondeck_execution_run` gates all local and `exe.dev` commands through policy, approvals, and the `execution_approvals` audit log. `local` is the default backend; `exe.dev` uses the Flue sandbox adapter against an existing VM.
 
 ```json
 {
@@ -79,6 +79,12 @@ Host execution is also configured in runtime-home `config.json`, but Neondeck do
     "enabledBackends": ["local"],
     "approvalMode": "manual",
     "unattended": "deny",
+    "exeDev": {
+      "lifecycle": "existing-vm",
+      "vmHostEnv": "EXE_VM_HOST",
+      "sshKeyEnv": "EXE_SSH_KEY",
+      "apiTokenEnv": "EXE_API_TOKEN"
+    },
     "preapprovedCommands": [
       {
         "id": "test",
@@ -92,7 +98,9 @@ Host execution is also configured in runtime-home `config.json`, but Neondeck do
 }
 ```
 
-Preapproved commands must be single commands without shell operators such as `&&`, `|`, redirection, subshells, or newlines. Commands outside the preapproval list require interactive approval in future executor actions and are denied in unattended contexts. Hardline destructive commands cannot be preapproved. Neon can inspect or update this policy through `neondeck_execution_policy_lookup`, `neondeck_execution_policy_check`, and `neondeck_config_update_execution_policy`; policy updates are audited in `config_history`.
+Preapproved commands must be single commands without shell operators such as `&&`, `|`, redirection, subshells, or newlines. Commands outside the preapproval list require interactive approval and are denied in unattended contexts. Hardline destructive commands cannot be preapproved. Neon can inspect policy through `neondeck_execution_policy_lookup` and `neondeck_execution_policy_check`, update policy through `neondeck_config_update_execution_policy`, request approvals through `neondeck_execution_request_approval`, and run approved commands through `neondeck_execution_run`. Approval resolution is dashboard/API/user-owned, not model-callable. Policy updates are audited in `config_history`; executions are audited in `execution_approvals`.
+
+Trusted-local execution runs on your machine and is best for local git/dev commands you already trust. `exe.dev` is the isolated sandbox option; enable it explicitly by adding `"exe.dev"` to `enabledBackends` after `EXE_VM_HOST` points at an existing VM and SSH auth is configured.
 
 ## Run
 

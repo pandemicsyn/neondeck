@@ -276,6 +276,49 @@ describe('runtime home', () => {
     );
   });
 
+  it('accepts exe.dev execution adapter env references from runtime config', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
+    tempRoots.push(root);
+    const paths = runtimePaths(root);
+
+    await ensureRuntimeHome(paths);
+    await writeFile(
+      paths.config,
+      JSON.stringify(
+        {
+          version: 1,
+          execution: {
+            defaultBackend: 'exe.dev',
+            enabledBackends: ['local', 'exe.dev'],
+            exeDev: {
+              lifecycle: 'existing-vm',
+              vmHostEnv: 'EXE_VM_HOST',
+              sshKeyEnv: 'EXE_SSH_KEY',
+              apiTokenEnv: 'EXE_API_TOKEN',
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await expect(
+      readRuntimeJson(paths.config, parseAppConfig),
+    ).resolves.toMatchObject({
+      execution: {
+        defaultBackend: 'exe.dev',
+        enabledBackends: ['local', 'exe.dev'],
+        exeDev: {
+          lifecycle: 'existing-vm',
+          vmHostEnv: 'EXE_VM_HOST',
+          sshKeyEnv: 'EXE_SSH_KEY',
+          apiTokenEnv: 'EXE_API_TOKEN',
+        },
+      },
+    });
+  });
+
   it('accepts bounded execution approval config and rejects shell-operator preapprovals', async () => {
     const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
     tempRoots.push(root);

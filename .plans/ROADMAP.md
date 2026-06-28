@@ -49,8 +49,8 @@ The usability gate requires:
 - [x] workflow observability that shows active runs, failed runs, progress events, and safe summaries before linking to raw Flue run inspection
 - [x] structured memory that is durable, scoped, and session-stable
 - [x] notification policy that dedupes repeated watcher output and distinguishes passive updates from actionable failures
-- [x] basic approval semantics for destructive config changes and future host execution actions
-- [ ] actual approved host execution actions for `local` and `exe.dev`
+- [x] basic approval semantics for destructive config changes and host execution actions
+- [x] actual approved host execution actions for `local` and existing-VM `exe.dev`
 - [x] documentation that explains setup, provider/model config, runtime skills, commands, watches, memory, workflow observability, execution policy, and troubleshooting
 
 ## Required Capabilities
@@ -727,28 +727,29 @@ Must-haves:
 - [x] Add readiness/dev-doctor checks for provider credentials.
 - [x] Add dashboard controls for model choices and provider environment variable references.
 - [x] Treat provider registration changes as restart-required until Flue offers a safe dynamic provider mechanism.
-- [x] Add approval policy for destructive mutations and future host execution actions.
+- [x] Add approval policy for destructive mutations and host execution actions.
 - [x] Keep local shell access action-mediated by default.
 - [x] Add config-backed preapproved command policy for `local` and planned `exe.dev` execution.
-- [ ] Only add actual shell/sandbox execution actions after trust boundaries and audit records are explicit.
+- [x] Only add actual shell/sandbox execution actions after trust boundaries and audit records are explicit.
 
 ### Phase 14: Approved Host Execution And exe.dev Sandbox
 
-- Status: planned.
+- Status: partially complete. Approved local execution and existing-VM `exe.dev` execution now share the approval/audit path; app-owned exe.dev lifecycle orchestration remains planned.
 
-- [ ] Verify the current Flue `local()` API and exe.dev connector API against installed package docs before implementing executors.
-- [ ] Add runtime config for execution credentials and sandbox lifecycle using secret environment variable references only.
-- [ ] Keep `local` as the default trusted-host backend and `exe.dev` as the remote sandbox backend.
-- [ ] Add an approval request/response table in `neondeck.db` with command, backend, session, context, decision, approver surface, timestamps, and redacted result metadata.
-- [ ] Add a typed `neondeck_execution_request_approval` action that creates a pending approval without running the command.
-- [ ] Add dashboard/API approval resolution endpoints for allow once, allow session, allow always/preapprove, and deny.
-- [ ] Add a local executor action that calls `neondeck_execution_policy_check`, requires approval when the decision is `ask`, refuses `deny`, and records execution audit metadata.
-- [ ] Add an exe.dev sandbox executor action through the Flue sandbox connector, with application-owned sandbox creation, reuse/cleanup policy, and credential scoping.
-- [ ] Ensure both executors share the same hardline deny list, preapproval matching, unattended policy, and audit path.
-- [ ] Add bounded output capture and redaction before exposing execution results to the agent, dashboard, workflow summaries, or notifications.
-- [ ] Add dashboard controls for pending approvals, recent approvals, and execution failures.
-- [ ] Add tests for local allowed commands, local approval-required commands, hardline denies, unattended denies, exe.dev policy routing, and approval persistence.
-- [ ] Document trusted-local versus isolated-sandbox tradeoffs and require users to opt in before enabling `exe.dev`.
+- [x] Verify the current Flue `local()` API and exe.dev connector API against installed package docs before implementing executors.
+- [x] Add runtime config for execution credentials and sandbox lifecycle using secret environment variable references only.
+- [x] Keep `local` as the default trusted-host backend and `exe.dev` as the remote sandbox backend.
+- [x] Add an approval request/response table in `neondeck.db` with command, backend, session, context, decision, approver surface, timestamps, and redacted result metadata.
+- [x] Add a typed `neondeck_execution_request_approval` action that creates a pending approval without running the command.
+- [x] Add dashboard/API approval resolution endpoints for allow once, allow session, allow always/preapprove, and deny.
+- [x] Add a local executor action that calls `neondeck_execution_policy_check`, requires approval when the decision is `ask`, refuses `deny`, and records execution audit metadata.
+- [x] Add an exe.dev sandbox executor action through the Flue sandbox connector for an existing VM configured by `EXE_VM_HOST` or `execution.exeDev.vmHostEnv`.
+- [ ] Add application-owned exe.dev sandbox creation, reuse/cleanup policy, and credential scoping for `fresh-per-execution`, `reuse-session`, `reuse-repo`, and `user-selected` lifecycle modes.
+- [x] Ensure both executors share the same hardline deny list, preapproval matching, unattended policy, and audit path.
+- [x] Add bounded output capture and redaction before exposing execution results to the agent, dashboard, workflow summaries, or notifications.
+- [x] Add dashboard controls for pending approvals, recent approvals, and execution failures.
+- [x] Add tests for local allowed commands, local approval-required commands, hardline denies, unattended denies, exe.dev policy routing, and approval persistence.
+- [x] Document trusted-local versus isolated-sandbox tradeoffs and require users to opt in before enabling `exe.dev`.
 
 ### Phase 15: Usability Hardening
 
@@ -782,9 +783,9 @@ Must-haves:
 - Which provider config types are safe enough for runtime self-configuration?
 - What named subagent roles should ship in v1 versus remain app-internal?
 - Which local shell commands should ship as default preapprovals beyond the current read-only git/status set?
-- What exe.dev sandbox lifecycle should Neondeck use by default: fresh per execution, reusable per session, reusable per repo, or user-selected?
+- Which app-owned exe.dev sandbox lifecycle should Neondeck add next after existing-VM support: fresh per execution, reusable per session, reusable per repo, or user-selected?
 - Which environment variables may be passed into exe.dev sandboxes, and how should they be scoped/redacted?
 - What notification delivery exists beyond the deck UI?
 - Should active sessions observe config/skill changes immediately, or only after explicit context reload/new session?
-- What approval resolution surfaces should ship first: dashboard only, chat-mediated approval, or both?
+- Should chat-mediated approval ever be added, and if so what non-model capability token prevents Neon from approving its own execution requests?
 - Which first-run setup flows should be available through the dashboard versus chat-only actions?

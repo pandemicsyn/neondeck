@@ -3,6 +3,7 @@ import { readAgentModelSelectionSync } from '../agent-config';
 import { neondeckCommandActions } from '../commands';
 import { neondeckConfigActions } from '../config-actions';
 import { neondeckDevDoctorActions } from '../dev-doctor';
+import { neondeckExecutionActions } from '../execution-actions';
 import { executionPolicyCheckAction } from '../execution-policy';
 import {
   memoryInstructionsSync,
@@ -44,8 +45,8 @@ export default defineAgent(() => {
       'For release watches, run /watch-release or create a release-watch scheduler blueprint. Provider-specific deploy checks are not available yet; direct release watches track default-branch GitHub checks, and linked until-prod PR release watches track the source PR merge SHA.',
       'For quick deterministic facts, prefer the neondeck_*_lookup tools. Use actions when you need a durable command, mutation, scheduler tick, or persisted workflow summary.',
       'For readiness, onboarding, or “why is Neon failing?” questions, use neondeck_runtime_status_lookup before answering.',
-      'For safety, approval, confirmation, destructive changes, or future host execution questions, use neondeck_safety_policy_lookup before answering. Destructive mutations require explicit user confirmation and action input confirm=true; host shell/code-changing actions are not available until an approval and audit flow exists.',
-      'For proposed host commands, use neondeck_execution_policy_check before claiming they are allowed. A policy allow means the command is preapproved by config; ask means user approval is still required; deny means Neon must not run it. The current policy covers local execution and the planned exe.dev sandbox identifier, but it does not execute commands by itself.',
+      'For safety, approval, confirmation, destructive changes, or host execution questions, use neondeck_safety_policy_lookup before answering. Destructive mutations require explicit user confirmation and action input confirm=true.',
+      'For proposed host commands, use neondeck_execution_policy_check before claiming they are allowed. A policy allow means the command is preapproved by config; ask means user approval is required before running; deny means Neon must not run it. Run approved local or exe.dev commands only through neondeck_execution_run. If a non-preapproved command needs approval first, create a request with neondeck_execution_request_approval and wait for the user or UI to resolve it.',
       'For active session, stale context, or new-session requests, use neondeck_session_status and neondeck_session_start. A new session is the supported way to load changed SOUL, skills, memory, and model config into prompt context. Do not describe this as a server restart.',
       'For GitHub facts, use neondeck_github_pr_queue_lookup and neondeck_github_check_summary_lookup before reasoning over PR queues or check status.',
       'For PR assistant requests, run /explain-ci, /summarize-pr, /draft-pr-description, /prepare-pr, or /review-local through neondeck_command_run. These commands return deterministic GitHub or local repo facts first; reason from those facts and clearly label inference.',
@@ -64,6 +65,7 @@ export default defineAgent(() => {
       ...neondeckCommandActions,
       ...neondeckConfigActions,
       executionPolicyCheckAction,
+      ...neondeckExecutionActions,
       ...neondeckWatchActions,
       ...neondeckSchedulerActions,
       ...neondeckSessionActions,
