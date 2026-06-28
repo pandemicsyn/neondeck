@@ -486,6 +486,17 @@ button:disabled {
     calc(13px * var(--deck-density-space));
 }
 
+.chat-part-event {
+  max-width: 100%;
+  border-top: 1px solid var(--deck-line3);
+  padding-top: 6px;
+}
+
+.chat-part-event:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
 .chat-workflow {
   display: inline-flex;
   align-items: center;
