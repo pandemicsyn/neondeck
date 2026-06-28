@@ -16,6 +16,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <a href="/docs/getting-started/">Getting started</a>
         <a href="#runtime-home">Runtime home</a>
         <a href="#secrets">Secrets</a>
+        <a href="#providers">Providers</a>
         <a href="#repositories">Repositories</a>
         <a href="#runtime-skills">Runtime skills</a>
         <a href="#agent-models">Agent models</a>
@@ -79,6 +80,21 @@ KILOCODE_ORGANIZATION_ID=...
 FLUE_AGENT_MODEL=kilocode/kilo/auto
 GITHUB_TOKEN=...
 GITHUB_LOGIN=...</code></pre>
+
+        <h2 id="providers">Provider credentials</h2>
+        <p>
+          Flue model strings use provider-qualified names such as
+          <code>kilocode/kilo/auto</code> or another provider registered by the app
+          or Flue runtime. Hosted providers use their normal API credentials or a
+          platform binding. A ChatGPT or Codex subscription login is not a documented
+          Flue provider credential path.
+        </p>
+        <p>
+          Neondeck currently allowlists Kilo provider configuration in runtime
+          <code>config.json</code>. Provider settings store environment variable
+          names, not raw secrets or arbitrary base URLs. Provider registration
+          changes require a server restart.
+        </p>
 
         <h2>Run the local dashboard</h2>
         <pre><code>npm run dev</code></pre>
