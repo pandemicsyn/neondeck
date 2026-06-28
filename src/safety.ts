@@ -156,6 +156,12 @@ const entries: SafetyPolicyEntry[] = [
     'Reads persistent PR watch state.',
   ),
   tool(
+    'neondeck_ref_watches_lookup',
+    'Read ref watches',
+    readOnly,
+    'Reads persistent branch and commit ref watch state.',
+  ),
+  tool(
     'neondeck_runtime_skills_lookup',
     'List runtime skills',
     readOnly,
@@ -406,6 +412,24 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'pr_watches/notifications',
     },
     'Refreshes a watch and records meaningful state changes; silent no-op refreshes should not notify.',
+  ),
+  action(
+    'neondeck_watch_ref_add',
+    'Add ref watch',
+    {
+      ...safeMutation,
+      auditTarget: 'ref_watches/jobs',
+    },
+    'Creates durable branch or commit ref watch and job records after GitHub check lookup.',
+  ),
+  action(
+    'neondeck_watch_ref_refresh',
+    'Refresh ref watch',
+    {
+      ...safeMutation,
+      auditTarget: 'ref_watches/notifications',
+    },
+    'Refreshes a branch or commit ref watch and records meaningful state changes; silent no-op refreshes should not notify.',
   ),
   action(
     'neondeck_skills_reload',

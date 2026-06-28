@@ -61,7 +61,7 @@ import {
   loadRuntimeSkill,
   reloadRuntimeSkills,
 } from './runtime-skills';
-import { listPrWatches } from './watch-actions';
+import { addRefWatch, listPrWatches, listRefWatches } from './watch-actions';
 import {
   readWorkflowObservability,
   recordFlueObservation,
@@ -387,6 +387,16 @@ app.get('/api/repos/health', async (c) => {
 
 app.get('/api/watches', async (c) => {
   return c.json(await listPrWatches(paths));
+});
+
+app.get('/api/watches/ref', async (c) => {
+  return c.json(await listRefWatches(paths));
+});
+
+app.post('/api/watches/ref', async (c) => {
+  const input = (await safeJsonBody(c)) as Parameters<typeof addRefWatch>[0];
+  const result = await addRefWatch(input, paths);
+  return c.json(result, result.ok ? 200 : 400);
 });
 
 app.get('/api/jobs', async (c) => {

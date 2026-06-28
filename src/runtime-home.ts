@@ -423,6 +423,24 @@ function initializeAppDatabase(path: string) {
         UNIQUE(repo_full_name, pr_number)
       );
 
+      CREATE TABLE IF NOT EXISTS ref_watches (
+        id TEXT PRIMARY KEY,
+        repo_id TEXT NOT NULL,
+        repo_full_name TEXT NOT NULL,
+        github_owner TEXT NOT NULL,
+        github_name TEXT NOT NULL,
+        ref TEXT NOT NULL,
+        status TEXT NOT NULL,
+        title TEXT,
+        url TEXT,
+        last_snapshot_json TEXT,
+        last_outcome TEXT,
+        last_checked_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(repo_full_name, ref)
+      );
+
       CREATE TABLE IF NOT EXISTS jobs (
         id TEXT PRIMARY KEY,
         type TEXT NOT NULL,

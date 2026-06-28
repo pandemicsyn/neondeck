@@ -11,7 +11,7 @@ import { safetyPolicyLookupTool } from './safety';
 import { listRuntimeSkills, loadRuntimeSkill } from './runtime-skills';
 import { listSchedulerJobs } from './scheduler';
 import { readNeonSessionState } from './session-actions';
-import { listPrWatches } from './watch-actions';
+import { listPrWatches, listRefWatches } from './watch-actions';
 
 const emptyInputSchema = v.object({});
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
@@ -136,6 +136,16 @@ export const prWatchesLookupTool = defineTool({
   },
 });
 
+export const refWatchesLookupTool = defineTool({
+  name: 'neondeck_ref_watches_lookup',
+  description: 'List persistent Neondeck branch and commit ref watches.',
+  input: emptyInputSchema,
+  output: toolOutputSchema,
+  async run() {
+    return listRefWatches();
+  },
+});
+
 export const runtimeSkillsLookupTool = defineTool({
   name: 'neondeck_runtime_skills_lookup',
   description:
@@ -189,6 +199,7 @@ export const neondeckFactTools = [
   githubCheckSummaryLookupTool,
   schedulerJobsLookupTool,
   prWatchesLookupTool,
+  refWatchesLookupTool,
   runtimeSkillsLookupTool,
   runtimeSkillLoadTool,
   memoryLookupTool,

@@ -21,6 +21,8 @@ import {
 
 export type PrWatchStatus =
   'watching' | 'merged' | 'closed' | 'green' | 'attention-needed' | 'unknown';
+export type RefWatchStatus =
+  'watching' | 'green' | 'attention-needed' | 'unknown';
 
 export type DesiredTerminalState = 'checks' | 'merged' | 'prod';
 type WatchOutcome = 'created' | 'updated' | 'removed' | 'silent';
@@ -69,6 +71,30 @@ type PrWatchSnapshot = {
   baseRef: string;
 };
 
+export type RefWatch = {
+  id: string;
+  repoId: string;
+  repoFullName: string;
+  githubOwner: string;
+  githubName: string;
+  ref: string;
+  status: RefWatchStatus;
+  title: string | null;
+  url: string | null;
+  lastSnapshot: RefWatchSnapshot | null;
+  lastOutcome: WatchOutcome | null;
+  lastCheckedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type RefWatchSnapshot = {
+  ref: string;
+  checks: GitHubCheckSummary;
+  url: string;
+  checkedAt: string;
+};
+
 type ResolvedPrReference = {
   id: string;
   repoId: string;
@@ -79,11 +105,20 @@ type ResolvedPrReference = {
   desiredTerminalState: DesiredTerminalState;
 };
 
+type ResolvedRefReference = {
+  id: string;
+  repoId: string;
+  repoFullName: string;
+  githubOwner: string;
+  githubName: string;
+  ref: string;
+};
+
 type WatchFetcher = (
   watch: ResolvedPrReference,
 ) => Promise<GitHubPullRequestDetail>;
 type CheckFetcher = (
-  watch: ResolvedPrReference,
+  watch: ResolvedPrReference | ResolvedRefReference,
   ref: string,
 ) => Promise<GitHubCheckSummary>;
 
@@ -107,6 +142,18 @@ const watchPrRemoveInputSchema = v.object({
 const watchPrRefreshInputSchema = v.object({
   id: v.optional(nonEmptyStringSchema),
   ref: v.optional(nonEmptyStringSchema),
+});
+const watchRefAddInputSchema = v.object({
+  repo: v.optional(nonEmptyStringSchema),
+  ref: v.optional(nonEmptyStringSchema),
+  target: v.optional(nonEmptyStringSchema),
+  intervalSeconds: v.optional(v.pipe(v.number(), v.integer(), v.minValue(60))),
+});
+const watchRefRefreshInputSchema = v.object({
+  id: v.optional(nonEmptyStringSchema),
+  repo: v.optional(nonEmptyStringSchema),
+  ref: v.optional(nonEmptyStringSchema),
+  target: v.optional(nonEmptyStringSchema),
 });
 const watchActionOutputSchema = v.looseObject({
   ok: v.boolean(),
@@ -157,10 +204,45 @@ export const watchPrRefreshAction = defineAction({
   },
 });
 
+export const watchRefAddAction = defineAction({
+  name: 'neondeck_watch_ref_add',
+  description:
+    'Create a persistent branch or commit ref watch from repo/ref fields, owner/repo@ref, repo@ref, or a GitHub tree/commit URL.',
+  input: watchRefAddInputSchema,
+  output: watchActionOutputSchema,
+  async run({ input }) {
+    return addRefWatch(input);
+  },
+});
+
+export const watchRefListAction = defineAction({
+  name: 'neondeck_watch_ref_list',
+  description: 'List persistent Neondeck branch and commit ref watches.',
+  input: v.object({}),
+  output: watchActionOutputSchema,
+  async run() {
+    return listRefWatches();
+  },
+});
+
+export const watchRefRefreshAction = defineAction({
+  name: 'neondeck_watch_ref_refresh',
+  description:
+    'Refresh one persistent branch or commit ref watch and return silent when no meaningful state changed.',
+  input: watchRefRefreshInputSchema,
+  output: watchActionOutputSchema,
+  async run({ input }) {
+    return refreshRefWatch(input);
+  },
+});
+
 export const neondeckWatchActions = [
   watchPrAddAction,
   watchPrRemoveAction,
   watchPrRefreshAction,
+  watchRefAddAction,
+  watchRefListAction,
+  watchRefRefreshAction,
 ];
 
 export async function addPrWatch(
@@ -245,6 +327,149 @@ export async function listPrWatches(
 export async function listPrWatchRecords(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
   return readWatches(paths);
+}
+
+export async function addRefWatch(
+  input: v.InferInput<typeof watchRefAddInputSchema>,
+  paths = runtimePaths(),
+  checkFetcher: CheckFetcher = defaultCheckFetcher,
+): Promise<WatchActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsed = parseActionInput(
+    watchRefAddInputSchema,
+    input,
+    'watch_ref_add',
+  );
+  if (!parsed.ok) return parsed.result;
+
+  const registry = await readRepoRegistrySnapshot(paths);
+  const resolved = resolveRefReference(parsed.input, registry);
+  if (!resolved.ok) return resolved.result;
+
+  const existing = readRefWatch(paths, resolved.reference.id);
+  if (existing) {
+    return failResult(
+      'watch_ref_add',
+      `Ref watch "${existing.id}" already exists.`,
+    );
+  }
+
+  const snapshot = await snapshotFromRef(
+    resolved.reference,
+    checkFetcher,
+    'watch_ref_add',
+  );
+  if (!snapshot.ok) return snapshot.result;
+
+  const now = new Date().toISOString();
+  const watch: RefWatch = {
+    id: resolved.reference.id,
+    repoId: resolved.reference.repoId,
+    repoFullName: resolved.reference.repoFullName,
+    githubOwner: resolved.reference.githubOwner,
+    githubName: resolved.reference.githubName,
+    ref: resolved.reference.ref,
+    status: refStatusFromChecks(snapshot.snapshot.checks),
+    title: `${resolved.reference.repoFullName}@${resolved.reference.ref}`,
+    url: snapshot.snapshot.url,
+    lastSnapshot: snapshot.snapshot,
+    lastOutcome: 'created',
+    lastCheckedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  insertRefWatch(paths, watch);
+  await upsertRefWatchPollingJob(watch, paths, parsed.input.intervalSeconds);
+
+  return okResult('watch_ref_add', true, 'created', `Watching ${watch.id}.`, {
+    watch,
+  });
+}
+
+export async function listRefWatches(
+  paths = runtimePaths(),
+): Promise<WatchActionResult> {
+  await ensureRuntimeHome(paths);
+  return okResult('watch_ref_list', false, undefined, 'Listed ref watches.', {
+    watches: readRefWatches(paths),
+  });
+}
+
+export async function listRefWatchRecords(paths = runtimePaths()) {
+  await ensureRuntimeHome(paths);
+  return readRefWatches(paths);
+}
+
+export async function refreshRefWatch(
+  input: v.InferInput<typeof watchRefRefreshInputSchema>,
+  paths = runtimePaths(),
+  checkFetcher: CheckFetcher = defaultCheckFetcher,
+): Promise<WatchActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsed = parseActionInput(
+    watchRefRefreshInputSchema,
+    input,
+    'watch_ref_refresh',
+  );
+  if (!parsed.ok) return parsed.result;
+
+  const idResult = await resolveRefWatchId(
+    parsed.input,
+    paths,
+    'watch_ref_refresh',
+  );
+  if (!idResult.ok) return idResult.result;
+
+  const watch = readRefWatch(paths, idResult.id);
+  if (!watch) {
+    return failResult(
+      'watch_ref_refresh',
+      `Ref watch "${idResult.id}" does not exist.`,
+    );
+  }
+
+  const reference: ResolvedRefReference = {
+    id: watch.id,
+    repoId: watch.repoId,
+    repoFullName: watch.repoFullName,
+    githubOwner: watch.githubOwner,
+    githubName: watch.githubName,
+    ref: watch.ref,
+  };
+  const snapshot = await snapshotFromRef(
+    reference,
+    checkFetcher,
+    'watch_ref_refresh',
+  );
+  if (!snapshot.ok) return snapshot.result;
+
+  const nextStatus = refStatusFromChecks(snapshot.snapshot.checks);
+  const changed =
+    meaningfulRefSnapshot(watch.lastSnapshot) !==
+      meaningfulRefSnapshot(snapshot.snapshot) || watch.status !== nextStatus;
+  const now = new Date().toISOString();
+  const nextWatch: RefWatch = {
+    ...watch,
+    status: nextStatus,
+    url: snapshot.snapshot.url,
+    lastSnapshot: snapshot.snapshot,
+    lastOutcome: changed ? 'updated' : 'silent',
+    lastCheckedAt: now,
+    updatedAt: now,
+  };
+
+  updateRefWatch(paths, nextWatch);
+
+  return okResult(
+    'watch_ref_refresh',
+    changed,
+    changed ? 'updated' : 'silent',
+    changed
+      ? `Updated ref watch "${watch.id}".`
+      : `No change for ref watch "${watch.id}".`,
+    { watch: nextWatch },
+  );
 }
 
 export async function removePrWatch(
@@ -378,6 +603,13 @@ export function parseWatchPrReference(
   return resolvePrReference(input, registry, desiredTerminalState);
 }
 
+export function parseWatchRefReference(
+  input: { repo?: string; ref?: string; target?: string },
+  registry: Pick<RepoRegistrySnapshot, 'repos'>,
+) {
+  return resolveRefReference(input, registry);
+}
+
 function resolvePrReference(
   input: string,
   registry: Pick<RepoRegistrySnapshot, 'repos'>,
@@ -461,6 +693,117 @@ function resolvePrReference(
       },
     ),
   };
+}
+
+function resolveRefReference(
+  input: { repo?: string; ref?: string; target?: string },
+  registry: Pick<RepoRegistrySnapshot, 'repos'>,
+):
+  | { ok: true; reference: ResolvedRefReference }
+  | { ok: false; result: WatchActionResult } {
+  const normalized = normalizeRefInput(input);
+  if (!normalized.ok) return normalized;
+
+  const fullNameMatch = normalized.repo.match(/^([^/\s@]+)\/([^/\s@]+)$/);
+  if (fullNameMatch) {
+    return okRefReference({
+      repoId: `${fullNameMatch[1]}/${fullNameMatch[2]}`,
+      githubOwner: fullNameMatch[1],
+      githubName: fullNameMatch[2],
+      ref: normalized.ref,
+    });
+  }
+
+  const repo = findConfiguredRepo(registry.repos, normalized.repo);
+  if (!repo.ok) {
+    return {
+      ok: false,
+      result: {
+        ...repo.result,
+        action: 'watch_ref_parse',
+      },
+    };
+  }
+
+  return okRefReference({
+    repoId: repo.repo.id,
+    githubOwner: repo.repo.github.owner,
+    githubName: repo.repo.github.name,
+    ref: normalized.ref,
+  });
+}
+
+function normalizeRefInput(input: {
+  repo?: string;
+  ref?: string;
+  target?: string;
+}):
+  | { ok: true; repo: string; ref: string }
+  | { ok: false; result: WatchActionResult } {
+  if (input.repo && input.ref) {
+    const repo = input.repo.trim();
+    const ref = input.ref.trim();
+    if (repo && ref) {
+      return { ok: true, repo, ref };
+    }
+  }
+
+  const target = input.target?.trim();
+  if (!target) {
+    return {
+      ok: false,
+      result: failResult(
+        'watch_ref_parse',
+        'A repo/ref pair or target such as "repo@branch" is required.',
+        { requires: ['repo', 'ref'] },
+      ),
+    };
+  }
+
+  const urlMatch = target.match(
+    /^https:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/(?:tree|commit|commits)\/(.+)$/i,
+  );
+  if (urlMatch) {
+    return {
+      ok: true,
+      repo: `${urlMatch[1]}/${urlMatch[2]}`,
+      ref: decodeURIComponent(urlMatch[3].replace(/\/$/, '')),
+    };
+  }
+
+  const atIndex = target.indexOf('@');
+  if (atIndex > 0 && atIndex < target.length - 1) {
+    return {
+      ok: true,
+      repo: target.slice(0, atIndex).trim(),
+      ref: target.slice(atIndex + 1).trim(),
+    };
+  }
+
+  return {
+    ok: false,
+    result: failResult(
+      'watch_ref_parse',
+      `Could not parse ref watch target "${target}".`,
+      { requires: ['target'] },
+    ),
+  };
+}
+
+function okRefReference(
+  input: Omit<ResolvedRefReference, 'id' | 'repoFullName'>,
+): {
+  ok: true;
+  reference: ResolvedRefReference;
+} {
+  const repoFullNameValue = `${input.githubOwner}/${input.githubName}`;
+  const reference = {
+    ...input,
+    repoFullName: repoFullNameValue,
+    id: `${repoFullNameValue}@${input.ref}`,
+  };
+
+  return { ok: true, reference };
 }
 
 function readDesiredTerminalState(input: string) {
@@ -557,6 +900,29 @@ async function resolveWatchId(
   return { ok: true, id: resolved.reference.id };
 }
 
+async function resolveRefWatchId(
+  input: { id?: string; repo?: string; ref?: string; target?: string },
+  paths: RuntimePaths,
+  action: string,
+): Promise<
+  { ok: true; id: string } | { ok: false; result: WatchActionResult }
+> {
+  if (input.id) return { ok: true, id: input.id };
+  const registry = await readRepoRegistrySnapshot(paths);
+  const resolved = resolveRefReference(input, registry);
+  if (!resolved.ok) {
+    return {
+      ok: false,
+      result: {
+        ...resolved.result,
+        action,
+      },
+    };
+  }
+
+  return { ok: true, id: resolved.reference.id };
+}
+
 async function defaultWatchFetcher(reference: ResolvedPrReference) {
   const token = process.env.GITHUB_TOKEN;
   if (!token) {
@@ -572,7 +938,7 @@ async function defaultWatchFetcher(reference: ResolvedPrReference) {
 }
 
 async function defaultCheckFetcher(
-  reference: ResolvedPrReference,
+  reference: ResolvedPrReference | ResolvedRefReference,
   ref: string,
 ) {
   const token = process.env.GITHUB_TOKEN;
@@ -613,6 +979,19 @@ function watchFetchFailure(action: string, error: unknown) {
   };
 }
 
+function refFetchFailure(action: string, error: unknown) {
+  return {
+    ok: false as const,
+    result: failResult(action, 'Could not fetch GitHub ref checks.', {
+      errors: [errorMessage(error)],
+      requires:
+        error instanceof Error && error.message.includes('GITHUB_TOKEN')
+          ? ['GITHUB_TOKEN']
+          : undefined,
+    }),
+  };
+}
+
 async function snapshotFromDetail(
   detail: GitHubPullRequestDetail,
   reference: ResolvedPrReference,
@@ -636,6 +1015,30 @@ async function snapshotFromDetail(
   };
 }
 
+async function snapshotFromRef(
+  reference: ResolvedRefReference,
+  checkFetcher: CheckFetcher,
+  action: string,
+): Promise<
+  | { ok: true; snapshot: RefWatchSnapshot }
+  | { ok: false; result: WatchActionResult }
+> {
+  try {
+    const checks = await checkFetcher(reference, reference.ref);
+    return {
+      ok: true,
+      snapshot: {
+        ref: reference.ref,
+        checks,
+        url: refUrl(reference),
+        checkedAt: new Date().toISOString(),
+      },
+    };
+  } catch (error) {
+    return refFetchFailure(action, error);
+  }
+}
+
 function statusFromSnapshot(
   snapshot: PrWatchSnapshot,
   desiredTerminalState: DesiredTerminalState,
@@ -648,6 +1051,30 @@ function statusFromSnapshot(
   if (snapshot.state === 'closed') return 'closed';
   if (snapshot.state === 'open') return 'watching';
   return 'unknown';
+}
+
+function refStatusFromChecks(checks: GitHubCheckSummary): RefWatchStatus {
+  if (checks.status === 'success') return 'green';
+  if (checks.status === 'failure') return 'attention-needed';
+  if (checks.status === 'pending' || checks.status === 'none') {
+    return 'watching';
+  }
+  return 'unknown';
+}
+
+function meaningfulRefSnapshot(snapshot: RefWatchSnapshot | null) {
+  if (!snapshot) return '';
+  return JSON.stringify({
+    ref: snapshot.ref,
+    url: snapshot.url,
+    checks: snapshot.checks,
+  });
+}
+
+function refUrl(reference: ResolvedRefReference) {
+  const path = /^[a-f0-9]{40}$/i.test(reference.ref) ? 'commit' : 'tree';
+  const encodedRef = reference.ref.split('/').map(encodeURIComponent).join('/');
+  return `https://github.com/${reference.repoFullName}/${path}/${encodedRef}`;
 }
 
 function insertWatch(paths: RuntimePaths, watch: PrWatch) {
@@ -733,6 +1160,80 @@ function updateWatch(paths: RuntimePaths, watch: PrWatch) {
   }
 }
 
+function insertRefWatch(paths: RuntimePaths, watch: RefWatch) {
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        INSERT INTO ref_watches (
+          id,
+          repo_id,
+          repo_full_name,
+          github_owner,
+          github_name,
+          ref,
+          status,
+          title,
+          url,
+          last_snapshot_json,
+          last_outcome,
+          last_checked_at,
+          created_at,
+          updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      `,
+      )
+      .run(...refWatchParams(watch));
+  } finally {
+    database.close();
+  }
+}
+
+function updateRefWatch(paths: RuntimePaths, watch: RefWatch) {
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        UPDATE ref_watches
+        SET
+          repo_id = ?,
+          repo_full_name = ?,
+          github_owner = ?,
+          github_name = ?,
+          ref = ?,
+          status = ?,
+          title = ?,
+          url = ?,
+          last_snapshot_json = ?,
+          last_outcome = ?,
+          last_checked_at = ?,
+          updated_at = ?
+        WHERE id = ?;
+      `,
+      )
+      .run(
+        watch.repoId,
+        watch.repoFullName,
+        watch.githubOwner,
+        watch.githubName,
+        watch.ref,
+        watch.status,
+        watch.title,
+        watch.url,
+        watch.lastSnapshot ? JSON.stringify(watch.lastSnapshot) : null,
+        watch.lastOutcome,
+        watch.lastCheckedAt,
+        watch.updatedAt,
+        watch.id,
+      );
+  } finally {
+    database.close();
+  }
+}
+
 function upsertWatchPollingJob(
   watch: PrWatch,
   paths: RuntimePaths,
@@ -755,8 +1256,34 @@ function upsertWatchPollingJob(
   );
 }
 
+function upsertRefWatchPollingJob(
+  watch: RefWatch,
+  paths: RuntimePaths,
+  intervalSeconds = 300,
+) {
+  return upsertJob(
+    {
+      id: refWatchPollingJobId(watch.id),
+      type: 'watch-ref',
+      blueprint: 'watch-ref',
+      enabled: true,
+      intervalSeconds,
+      config: {
+        id: watch.id,
+        repo: watch.repoFullName,
+        ref: watch.ref,
+      },
+    },
+    paths,
+  );
+}
+
 function watchPollingJobId(id: string) {
   return `watch:${id}`;
+}
+
+function refWatchPollingJobId(id: string) {
+  return `watch-ref:${id}`;
 }
 
 function upsertReleasePollingJob(watch: PrWatch, paths: RuntimePaths) {
@@ -818,6 +1345,43 @@ function readWatch(paths: RuntimePaths, id: string) {
   }
 }
 
+function readRefWatches(paths: RuntimePaths): RefWatch[] {
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    return database
+      .prepare(
+        `
+        SELECT *
+        FROM ref_watches
+        ORDER BY updated_at DESC, created_at DESC;
+      `,
+      )
+      .all()
+      .map(readRefWatchRow);
+  } finally {
+    database.close();
+  }
+}
+
+function readRefWatch(paths: RuntimePaths, id: string) {
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    const row = database
+      .prepare(
+        `
+        SELECT *
+        FROM ref_watches
+        WHERE id = ?;
+      `,
+      )
+      .get(id);
+
+    return row ? readRefWatchRow(row) : undefined;
+  } finally {
+    database.close();
+  }
+}
+
 function deleteWatch(paths: RuntimePaths, id: string) {
   const database = new DatabaseSync(paths.neondeckDatabase);
   try {
@@ -825,6 +1389,25 @@ function deleteWatch(paths: RuntimePaths, id: string) {
   } finally {
     database.close();
   }
+}
+
+function refWatchParams(watch: RefWatch) {
+  return [
+    watch.id,
+    watch.repoId,
+    watch.repoFullName,
+    watch.githubOwner,
+    watch.githubName,
+    watch.ref,
+    watch.status,
+    watch.title,
+    watch.url,
+    watch.lastSnapshot ? JSON.stringify(watch.lastSnapshot) : null,
+    watch.lastOutcome,
+    watch.lastCheckedAt,
+    watch.createdAt,
+    watch.updatedAt,
+  ];
 }
 
 function watchParams(watch: PrWatch) {
@@ -847,6 +1430,37 @@ function watchParams(watch: PrWatch) {
     watch.createdAt,
     watch.updatedAt,
   ];
+}
+
+function readRefWatchRow(row: unknown): RefWatch {
+  const record = row as Record<string, unknown>;
+  const snapshot =
+    typeof record.last_snapshot_json === 'string'
+      ? (JSON.parse(record.last_snapshot_json) as RefWatchSnapshot)
+      : null;
+
+  return {
+    id: String(record.id),
+    repoId: String(record.repo_id),
+    repoFullName: String(record.repo_full_name),
+    githubOwner: String(record.github_owner),
+    githubName: String(record.github_name),
+    ref: String(record.ref),
+    status: String(record.status) as RefWatchStatus,
+    title: typeof record.title === 'string' ? String(record.title) : null,
+    url: typeof record.url === 'string' ? String(record.url) : null,
+    lastSnapshot: snapshot,
+    lastOutcome:
+      typeof record.last_outcome === 'string'
+        ? (String(record.last_outcome) as WatchOutcome)
+        : null,
+    lastCheckedAt:
+      typeof record.last_checked_at === 'string'
+        ? String(record.last_checked_at)
+        : null,
+    createdAt: String(record.created_at),
+    updatedAt: String(record.updated_at),
+  };
 }
 
 function readWatchRow(row: unknown): PrWatch {
@@ -910,7 +1524,10 @@ function okResult(
   changed: boolean,
   outcome: WatchOutcome | undefined,
   message: string,
-  data: { watch?: PrWatch; watches?: PrWatch[] } = {},
+  data: {
+    watch?: PrWatch | RefWatch;
+    watches?: Array<PrWatch | RefWatch>;
+  } = {},
 ): WatchActionResult {
   return {
     ok: true,
