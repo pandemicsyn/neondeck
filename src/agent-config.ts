@@ -7,7 +7,7 @@ import {
   type RuntimePaths,
 } from './runtime-home';
 
-export const defaultAgentModel = 'kilocode/kilo/auto';
+export const defaultAgentModel = 'kilocode/kilo-auto/balanced';
 
 export type NeondeckSubagentKey =
   'repoResearcher' | 'ciInvestigator' | 'releaseReviewer';

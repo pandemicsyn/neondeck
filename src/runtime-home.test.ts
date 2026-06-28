@@ -144,7 +144,7 @@ describe('runtime home', () => {
         {
           version: 1,
           models: {
-            default: 'kilocode/kilo/auto',
+            default: 'kilocode/kilo-auto/balanced',
             displayAssistant: 'kilocode/kilo/main',
             subagents: {
               default: 'kilocode/kilo/subagent',

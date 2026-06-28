@@ -155,6 +155,7 @@ describe('github foundation', () => {
       token: 'token',
       login: 'pandemicsyn',
       repos,
+      maxItems: 100,
     });
 
     expect(queue.items).toHaveLength(51);
@@ -233,6 +234,78 @@ describe('github foundation', () => {
     );
   });
 
+  it('bounds expensive PR enrichment to the newest queue items by default', async () => {
+    const repos: RepoConfig[] = [
+      {
+        id: 'neondeck',
+        github: { owner: 'pandemicsyn', name: 'neondeck' },
+        path: '/src/neondeck',
+        defaultBranch: 'main',
+      },
+    ];
+    const enrichedPulls: number[] = [];
+    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.includes('/search/issues')) {
+        return jsonResponse({
+          total_count: 30,
+          items: Array.from({ length: 30 }, (_, index) =>
+            searchIssue(index + 1, {
+              updatedAt: `2026-06-${String(30 - index).padStart(2, '0')}T20:00:00Z`,
+            }),
+          ),
+        });
+      }
+
+      const pullMatch = url.match(/\/pulls\/(?<number>\d+)/);
+      if (pullMatch?.groups?.number) {
+        const number = Number(pullMatch.groups.number);
+        enrichedPulls.push(number);
+        return jsonResponse({
+          number,
+          title: `PR ${number}`,
+          html_url: `https://github.com/pandemicsyn/neondeck/pull/${number}`,
+          state: 'open',
+          merged: false,
+          merge_commit_sha: null,
+          updated_at: `2026-06-${String(31 - number).padStart(2, '0')}T20:00:00Z`,
+          head: { sha: `sha-${number}` },
+          base: { ref: 'main' },
+        });
+      }
+
+      if (url.includes('/check-runs')) {
+        return jsonResponse({ check_runs: [] });
+      }
+
+      if (url.endsWith('/status')) {
+        return jsonResponse({ statuses: [] });
+      }
+
+      return jsonResponse({}, 404);
+    });
+
+    const queue = await fetchPullRequestQueue({
+      token: 'token',
+      login: 'pandemicsyn',
+      repos,
+    });
+
+    expect(queue.items).toHaveLength(24);
+    expect(queue.truncated).toBe(true);
+    expect(queue.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'queue-truncated',
+          message: expect.stringContaining('enriched the newest 24'),
+        }),
+      ]),
+    );
+    expect(enrichedPulls.toSorted((a, b) => a - b)).toEqual(
+      Array.from({ length: 24 }, (_, i) => i + 1),
+    );
+  });
+
   it('paginates check runs before summarizing status', async () => {
     globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
       const url = String(input);
@@ -277,7 +350,10 @@ describe('github foundation', () => {
   });
 });
 
-function searchIssue(number: number) {
+function searchIssue(
+  number: number,
+  options: { updatedAt?: string; createdAt?: string } = {},
+) {
   return {
     id: number,
     title: `PR ${number}`,
@@ -288,8 +364,8 @@ function searchIssue(number: number) {
     user: { login: 'pandemicsyn' },
     labels: [],
     comments: 0,
-    updated_at: '2026-06-27T20:00:00Z',
-    created_at: '2026-06-27T19:00:00Z',
+    updated_at: options.updatedAt ?? '2026-06-27T20:00:00Z',
+    created_at: options.createdAt ?? '2026-06-27T19:00:00Z',
   };
 }
 
