@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getPrWatches, type PrWatch } from '../api';
 import { Badge, Button, ScrollArea } from '../components/ui';
+import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
 import type { DisplayPlugin } from '../types';
 
 type ActiveWatchesConfig = {
@@ -18,6 +19,17 @@ export const ActiveWatchesPlugin = {
     const [watches, setWatches] = useState<PrWatch[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string>();
+    const [refreshKey, setRefreshKey] = useState(0);
+
+    useConfigEvents((event) => {
+      if (
+        event.action === 'config_reload' ||
+        configEventTouchesFile(event, 'repos.json') ||
+        configEventTouchesFile(event, 'schedules.json')
+      ) {
+        setRefreshKey((value) => value + 1);
+      }
+    });
 
     useEffect(() => {
       let cancelled = false;
@@ -44,7 +56,7 @@ export const ActiveWatchesPlugin = {
         cancelled = true;
         window.clearInterval(timer);
       };
-    }, []);
+    }, [refreshKey]);
 
     const visible = watches.slice(0, config.limit);
 

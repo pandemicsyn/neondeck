@@ -41,6 +41,7 @@ import {
   hasExecutionPolicyUpdate,
   mergeExecutionConfig,
 } from './execution-policy';
+import { configEventFromChange, publishConfigEvent } from './config-events';
 
 const execFileAsync = promisify(execFile);
 
@@ -364,6 +365,16 @@ export async function reloadConfig(
 ): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
   await validateRuntimeFiles(paths);
+  const changedAt = new Date().toISOString();
+  publishConfigEvent(
+    configEventFromChange(paths, {
+      action: 'config_reload',
+      changed: false,
+      files: targetFiles('all', paths),
+      target: 'all',
+      changedAt,
+    }),
+  );
 
   return okResult('config_reload', false, paths, targetFiles('all', paths), {
     message:
@@ -1183,7 +1194,7 @@ function recordConfigChange(
   const now = new Date().toISOString();
 
   try {
-    database
+    const result = database
       .prepare(
         `
         INSERT INTO config_history (
@@ -1205,6 +1216,16 @@ function recordConfigChange(
         JSON.stringify(change.after),
         now,
       );
+    publishConfigEvent(
+      configEventFromChange(paths, {
+        id: result.lastInsertRowid,
+        action: change.action,
+        changed: true,
+        files: [change.file],
+        target: change.target,
+        changedAt: now,
+      }),
+    );
   } finally {
     database.close();
   }

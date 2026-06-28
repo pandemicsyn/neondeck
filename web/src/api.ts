@@ -101,6 +101,16 @@ export type RuntimeHealth = {
   uptimeSeconds: number;
 };
 
+export type ConfigChangeEvent = {
+  id: string;
+  action: string;
+  changed: boolean;
+  home: string;
+  files: string[];
+  target: string | null;
+  changedAt: string;
+};
+
 export type RuntimeStatusCheck = {
   id: string;
   label: string;
@@ -580,6 +590,21 @@ export async function getRuntimeHealth() {
 
 export async function getRuntimeStatus() {
   return getJson<RuntimeStatus>('/api/runtime/status');
+}
+
+export function openConfigEventStream(
+  onEvent: (event: ConfigChangeEvent) => void,
+  onError?: () => void,
+) {
+  if (typeof EventSource === 'undefined') return () => {};
+
+  const source = new EventSource('/api/events/config');
+  source.addEventListener('config-change', (event) => {
+    onEvent(JSON.parse(event.data) as ConfigChangeEvent);
+  });
+  if (onError) source.addEventListener('error', onError);
+
+  return () => source.close();
 }
 
 export async function getSafetyPolicy() {

@@ -544,7 +544,7 @@ Must-haves:
 
 ### Phase 1: neondeck Home and Runtime State
 
-- Status: complete except live config-change event fanout.
+- Status: complete for current runtime-state needs.
 
 - [x] Add neondeck home resolver:
   - `NEONDECK_HOME`
@@ -564,12 +564,12 @@ Must-haves:
 - [x] Add app SQLite path and initialization for `data/neondeck.db`.
 - [x] Add schema validation for all config files.
 - [x] Add disk-backed config reads and explicit reload actions for files under neondeck home.
-- [ ] Add live config-change event fanout for UI surfaces.
+- [x] Add live config-change event fanout for UI surfaces.
 - [x] Add config root/status API so the dashboard can show which runtime home is active.
 
 ### Phase 2: Config Management Actions
 
-- Status: complete except live config-change event fanout.
+- Status: complete for current config-management needs.
 
 - [x] Add Flue actions for config operations:
   - read config
@@ -588,7 +588,7 @@ Must-haves:
 - [x] Add repo path resolver and Git remote inference.
 - [x] Add guarded confirmation flows for destructive config changes.
 - [x] Teach the runtime neondeck skill to prefer these actions over direct file edits.
-- [ ] Emit config-change events so UI surfaces update without reload.
+- [x] Emit config-change events so UI surfaces update without reload.
 - [x] Keep subagent model updates scoped to known role keys rather than arbitrary dynamic agent definitions.
 
 ### Phase 3: Repo and GitHub Foundation

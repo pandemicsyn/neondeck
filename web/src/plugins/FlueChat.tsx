@@ -7,6 +7,7 @@ import {
   type NeonSessionState,
 } from '../api';
 import { Badge, Button, Kbd, ScrollArea, Textarea } from '../components/ui';
+import { useConfigEvents } from '../lib/config-events';
 import type { DisplayPlugin } from '../types';
 
 type FlueChatSession = {
@@ -94,6 +95,8 @@ export const FlueChatPlugin = {
         setStartingSession(false);
       }
     }
+
+    useConfigEvents(() => void refreshSession());
 
     useEffect(() => {
       void refreshSession();

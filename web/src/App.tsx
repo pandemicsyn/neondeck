@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getDashboardConfig } from './api';
+import { getDashboardConfig, openConfigEventStream } from './api';
 import { Card } from './components/ui';
+import {
+  configEventTouchesFile,
+  dispatchConfigChangeEvent,
+} from './lib/config-events';
 import { pluginRegistry } from './plugins/registry';
 import type { DashboardConfig, DashboardRegion, DashboardTheme } from './types';
 
@@ -9,9 +13,26 @@ export function App() {
   const [error, setError] = useState<string>();
 
   useEffect(() => {
-    getDashboardConfig()
-      .then(setConfig)
-      .catch((cause: Error) => setError(cause.message));
+    void loadDashboardConfig();
+
+    async function loadDashboardConfig() {
+      try {
+        setConfig(await getDashboardConfig());
+        setError(undefined);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
+    }
+
+    return openConfigEventStream((event) => {
+      dispatchConfigChangeEvent(event);
+      if (
+        event.action === 'config_reload' ||
+        configEventTouchesFile(event, 'dashboard.json')
+      ) {
+        void loadDashboardConfig();
+      }
+    });
   }, []);
 
   useEffect(() => {

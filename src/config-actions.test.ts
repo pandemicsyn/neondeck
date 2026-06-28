@@ -11,6 +11,7 @@ import {
   addSchedule,
   readConfig,
   readProviderConfig,
+  reloadConfig,
   removeRepo,
   removeSchedule,
   updateRepo,
@@ -20,6 +21,7 @@ import {
   updateSchedule,
   validateConfig,
 } from './config-actions';
+import { subscribeConfigEvents, type ConfigChangeEvent } from './config-events';
 import {
   parseAppConfig,
   parseRepoRegistry,
@@ -291,6 +293,41 @@ describe('config actions', () => {
       { action: 'config_update_agent_models', target: 'models' },
       { action: 'config_update_agent_models', target: 'models' },
     ]);
+  });
+
+  it('emits config events for writes and explicit reloads', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    const events: ConfigChangeEvent[] = [];
+    const unsubscribe = subscribeConfigEvents((event) => {
+      if (event.home === paths.home) events.push(event);
+    });
+
+    try {
+      await updateAgentModels(
+        { displayAssistant: 'kilocode/kilo/evented' },
+        paths,
+      );
+      await reloadConfig(paths);
+    } finally {
+      unsubscribe();
+    }
+
+    expect(events).toMatchObject([
+      {
+        action: 'config_update_agent_models',
+        changed: true,
+        files: [paths.config],
+        target: 'models',
+      },
+      {
+        action: 'config_reload',
+        changed: false,
+        files: [paths.config, paths.repos, paths.dashboard, paths.schedules],
+        target: 'all',
+      },
+    ]);
+    expect(events[0]?.id).toBe('1');
   });
 
   it('returns structured failures and no-ops for agent model updates', async () => {

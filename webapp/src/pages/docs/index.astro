@@ -35,7 +35,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           workflows, deterministic actions, local SQLite state, and a Vite/React
           dashboard. It is optimized for the Corsair Xeneon Edge, but the
           dashboard layout is driven by runtime JSON config rather than the
-          display hardware.
+          display hardware. Local dashboard surfaces subscribe to
+          <code>/api/events/config</code> so config actions and explicit config reloads
+          refresh affected panels without a browser reload.
         </p>
 
         <h2 id="runtime-home">Runtime home</h2>

@@ -510,6 +510,21 @@ const entries: SafetyPolicyEntry[] = [
     'Reads readiness facts for the dashboard and local API clients.',
   ),
   route(
+    '/api/events/config',
+    'Config event stream API',
+    readOnly,
+    'Streams local config change and reload notifications to dashboard surfaces.',
+  ),
+  route(
+    '/api/config/reload',
+    'Config reload API',
+    {
+      ...safeMutation,
+      auditTarget: 'config_events',
+    },
+    'Validates runtime config files and emits a local config reload event without writing config.',
+  ),
+  route(
     '/api/safety/policy',
     'Safety policy API',
     readOnly,

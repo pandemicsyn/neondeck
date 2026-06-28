@@ -147,3 +147,10 @@ Use this format:
 - Decision: Added a first-class `workflow-observability` dashboard plugin, seeded it into the default middle runtime column, and kept raw Flue run inspection behind explicit per-row `inspect` links. The panel filters active runs, failed runs, progress data, and action/tool/operation activity over the existing sanitized workflow observability API.
 - Reason: Runtime Overview already surfaced workflow facts inline and was becoming crowded. A dedicated panel makes Flue workflow state easier to inspect while preserving compact/redacted summaries as the default surface.
 - Follow-up: None.
+
+## 2026-06-28 - Config Event Fanout
+
+- Roadmap item: Phase 1 and Phase 2 / live config-change event fanout
+- Decision: Added an app-owned `/api/events/config` server-sent event stream for audited config writes and explicit `config_reload` events, plus dashboard listeners that refresh affected UI surfaces without a browser reload.
+- Reason: Config writes already flow through `config_history`, but manual config file edits followed by reload do not create history rows. Emitting reload events keeps the dashboard current for both typed action mutations and explicit reload workflows.
+- Follow-up: None.

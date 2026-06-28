@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { getGitHubPullRequests, type GitHubPullRequest } from '../api';
 import { EmptyState } from '../App';
 import { Badge, ScrollArea } from '../components/ui';
+import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
 import type { DisplayPlugin } from '../types';
 
 type GitHubPrListConfig = {
@@ -28,6 +29,16 @@ export const GitHubPrListPlugin = {
   },
   Component({ config }) {
     const [state, setState] = useState<State>({ status: 'loading' });
+    const [refreshKey, setRefreshKey] = useState(0);
+
+    useConfigEvents((event) => {
+      if (
+        event.action === 'config_reload' ||
+        configEventTouchesFile(event, 'repos.json')
+      ) {
+        setRefreshKey((value) => value + 1);
+      }
+    });
 
     useEffect(() => {
       let cancelled = false;
@@ -60,7 +71,7 @@ export const GitHubPrListPlugin = {
         cancelled = true;
         window.clearInterval(timer);
       };
-    }, []);
+    }, [refreshKey]);
 
     const login =
       state.status === 'ready' && state.login ? `@${state.login}` : '@you';

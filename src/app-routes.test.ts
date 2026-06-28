@@ -41,6 +41,21 @@ describe('app API safety routes', () => {
     );
   });
 
+  it('serves config events as a local server-sent event stream', async () => {
+    const response = await app.request('http://localhost/api/events/config', {
+      headers: { host: 'localhost' },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('text/event-stream');
+
+    const reader = response.body?.getReader();
+    expect(reader).toBeDefined();
+    const chunk = await reader!.read();
+    expect(new TextDecoder().decode(chunk.value)).toContain(': connected');
+    await reader!.cancel();
+  });
+
   it('rejects cross-origin app API mutations', async () => {
     const response = await app.request('http://localhost/api/models', {
       method: 'POST',

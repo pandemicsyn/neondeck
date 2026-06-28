@@ -8,6 +8,7 @@ import {
 } from '../api';
 import { EmptyState } from '../App';
 import { Badge, ScrollArea } from '../components/ui';
+import { useConfigEvents } from '../lib/config-events';
 import type { DisplayPlugin } from '../types';
 
 type SubagentSummaryConfig = {
@@ -38,6 +39,9 @@ export const SubagentSummaryPlugin = {
   },
   Component({ config }) {
     const [state, setState] = useState<State>({ status: 'loading' });
+    const [refreshKey, setRefreshKey] = useState(0);
+
+    useConfigEvents(() => setRefreshKey((value) => value + 1));
 
     useEffect(() => {
       let cancelled = false;
@@ -65,7 +69,7 @@ export const SubagentSummaryPlugin = {
         cancelled = true;
         window.clearInterval(timer);
       };
-    }, []);
+    }, [refreshKey]);
 
     if (state.status === 'loading') {
       return (

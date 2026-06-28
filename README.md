@@ -120,6 +120,8 @@ curl -X POST 'http://127.0.0.1:5173/api/flue/workflows/command-run?wait=result' 
 
 Supported commands are `/repo-status`, `/review-queue`, `/briefing`, `/dev-doctor`, `/watch-pr <ref>`, and `/watch-release <repo>`. A `/watch-pr` command creates a persistent PR watch, polls for merge/check changes, and shows it in the active watches panel. `/watch-release` tracks default-branch GitHub checks until green; `/watch-pr ... until prod` waits for the source PR to merge, then tracks the source PR merge SHA until checks are green. `/dev-doctor` checks local repo health, package scripts, Node version, env keys, dev ports, API health, and runtime databases. Runtime home, repository, scheduler job, and skill state are shown in the runtime overview panel. Results are stored in `workflow_summaries` and exposed at `/api/workflows/summaries`.
 
+Dashboard panels subscribe to `/api/events/config` for local config action and reload events, so model/provider/repo/schedule/dashboard changes refresh affected surfaces without a browser reload.
+
 ## Build
 
 ```sh

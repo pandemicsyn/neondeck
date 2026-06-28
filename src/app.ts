@@ -5,10 +5,15 @@ import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { supportedCommands } from './commands';
 import {
   readProviderConfig,
+  reloadConfig,
   updateExecutionPolicy,
   updateAgentModels,
   updateProviderConfig,
 } from './config-actions';
+import {
+  formatConfigServerSentEvent,
+  subscribeConfigEvents,
+} from './config-events';
 import {
   listExecutionApprovals,
   requestExecutionApproval,
@@ -180,6 +185,44 @@ app.get('/api/runtime/status', async (c) => {
   return c.json(await readRuntimeStatus(paths));
 });
 
+app.get('/api/events/config', () => {
+  const encoder = new TextEncoder();
+  let cleanup = () => {};
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      function send(value: string) {
+        controller.enqueue(encoder.encode(value));
+      }
+
+      send(': connected\n\n');
+      const unsubscribe = subscribeConfigEvents((event) => {
+        send(formatConfigServerSentEvent(event));
+      });
+      const heartbeat = setInterval(() => {
+        send(`: heartbeat ${Date.now()}\n\n`);
+      }, 25_000);
+
+      cleanup = () => {
+        clearInterval(heartbeat);
+        unsubscribe();
+      };
+    },
+    cancel() {
+      cleanup();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+      'content-type': 'text/event-stream; charset=utf-8',
+      'x-accel-buffering': 'no',
+    },
+  });
+});
+
 app.get('/api/safety/policy', (c) => {
   return c.json(readSafetyPolicy(paths));
 });
@@ -244,6 +287,10 @@ app.post('/api/session/new', async (c) => {
 
 app.get('/api/providers', async (c) => {
   return c.json(await readProviderConfig(paths));
+});
+
+app.post('/api/config/reload', async (c) => {
+  return c.json(await reloadConfig(paths));
 });
 
 app.post('/api/models', async (c) => {
