@@ -45,6 +45,56 @@ describe('execution policy', () => {
       risk: 'read-only',
       matchedPreapproval: { id: 'git-status-short' },
     });
+
+    await expect(
+      checkExecutionPolicy(
+        {
+          command:
+            'gh pr checks pandemicsyn/neondeck#2 --repo pandemicsyn/neondeck',
+          context: 'unattended',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      decision: 'allow',
+      risk: 'read-only',
+      matchedPreapproval: { id: 'gh-pr-checks' },
+    });
+
+    await expect(
+      checkExecutionPolicy(
+        { command: 'gh run view 123 --log', context: 'unattended' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      decision: 'allow',
+      risk: 'read-only',
+      matchedPreapproval: { id: 'gh-run-view' },
+    });
+
+    await expect(
+      checkExecutionPolicy(
+        { command: 'gh run watch 123', context: 'unattended' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      decision: 'deny',
+      requires: ['preapprovedCommands'],
+    });
+
+    await expect(
+      checkExecutionPolicy(
+        { command: 'gh pr checksout 123', context: 'unattended' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      decision: 'deny',
+      requires: ['preapprovedCommands'],
+    });
   });
 
   it('denies hardline commands even when approval mode is off', async () => {

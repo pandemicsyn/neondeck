@@ -2,7 +2,7 @@ import { sqlite } from '@flue/runtime/node';
 import type { PersistenceAdapter } from '@flue/runtime/adapter';
 import { ensureRuntimeHomeSync, runtimePaths } from './runtime-home';
 
-const flueLongPollGraceMs = 35_000;
+const flueLongPollGraceMs = 5_000;
 const paths = runtimePaths();
 ensureRuntimeHomeSync(paths);
 

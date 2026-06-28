@@ -129,6 +129,30 @@ const defaultPreapprovals: NormalizedPreapprovedCommand[] = [
     'glob',
     'Bounded one-line git log.',
   ),
+  preapproval(
+    'gh-pr-view',
+    'gh pr view',
+    'prefix',
+    'Read GitHub pull request metadata.',
+  ),
+  preapproval(
+    'gh-pr-checks',
+    'gh pr checks',
+    'prefix',
+    'Read GitHub pull request check status.',
+  ),
+  preapproval(
+    'gh-run-view',
+    'gh run view',
+    'prefix',
+    'Read GitHub Actions run metadata and logs.',
+  ),
+  preapproval(
+    'gh-pr-diff',
+    'gh pr diff',
+    'prefix',
+    'Read GitHub pull request diff.',
+  ),
 ];
 
 const hardlinePatterns: Array<[RegExp, string]> = [
@@ -167,6 +191,7 @@ const safeMutationPatterns = [
 ];
 const readOnlyPatterns = [
   /^(pwd|ls\b|git\s+(status|diff|log|show|branch|rev-parse)\b)/i,
+  /^gh\s+(pr\s+(view|checks|diff)|run\s+view)\b/i,
 ];
 
 export const executionPolicyLookupTool = defineTool({
@@ -443,7 +468,11 @@ function preapprovalMatches(
   item: NormalizedPreapprovedCommand,
 ) {
   if (item.match === 'exact') return command === item.command;
-  if (item.match === 'prefix') return command.startsWith(item.command);
+  if (item.match === 'prefix') {
+    return (
+      command === item.command || command.startsWith(`${item.command} `)
+    );
+  }
   return globToRegExp(item.command).test(command);
 }
 

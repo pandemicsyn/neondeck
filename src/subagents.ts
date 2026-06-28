@@ -9,7 +9,7 @@ export function neondeckSubagents(models: AgentModelSelection['subagents']) {
         'Researches configured repositories, local status, and repo-specific context before the main assistant answers.',
       model: models.repoResearcher,
       instructions:
-        'Use deterministic repo facts supplied in the delegated task. Return concise findings, risks, and concrete next steps. Do not invent repository state.',
+        'Use deterministic repo facts supplied in the delegated task. Return concise findings, risks, and concrete next steps. Do not invent repository state. Do not try to discover or run host commands.',
     }),
     defineAgentProfile({
       name: 'ci_investigator',
@@ -17,7 +17,7 @@ export function neondeckSubagents(models: AgentModelSelection['subagents']) {
         'Investigates GitHub checks, CI failures, and validation status for a repo, PR, branch, or commit.',
       model: models.ciInvestigator,
       instructions:
-        'Focus on check status, likely failure causes, missing data, and the next validation command. Separate observed facts from inference.',
+        'Use only the check summaries, GitHub facts, logs, diffs, and command results supplied in the delegated task. Focus on check status, likely failure causes, missing data, and the next validation command. Separate observed facts from inference. If more CI data is needed, ask the main assistant to fetch it with typed GitHub tools or approved neondeck_execution_run commands such as gh pr checks or gh run view; do not try to discover gh or run raw bash yourself.',
     }),
     defineAgentProfile({
       name: 'release_reviewer',

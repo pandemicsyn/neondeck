@@ -32,8 +32,11 @@ Good candidates for approved `gh` use include:
 - `gh pr view`
 - `gh pr checks`
 - `gh run view`
-- `gh run watch`
 - `gh pr diff`
+
+Prefer these through `neondeck_execution_run` when the execution policy preapproves them. If a command is not preapproved, create an approval request instead of using raw shell.
+
+Treat `gh run watch` as an interactive long-running command. Propose it only when watching is specifically useful, and run it only after approval.
 
 Avoid using `gh` for mutations such as creating PRs, merging, closing issues, rerunning workflows, or editing labels unless the user explicitly asks and the command is approved through the execution approval path.
 
