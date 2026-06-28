@@ -15,6 +15,7 @@ import {
   getMemories,
   getNotifications,
   getExecutionApprovals,
+  getRepoEditEvents,
   getWorkflowObservability,
   markNotificationRead,
   resolveNotification,
@@ -28,6 +29,8 @@ import {
   type NotificationResponse,
   type RepoHealth,
   type RepoHealthResponse,
+  type RepoEditEvent,
+  type RepoEditEventsResponse,
   type RepoConfig,
   type RepoRegistryResponse,
   type RuntimeStatus,
@@ -55,6 +58,7 @@ type RuntimeOverviewConfig = {
   memoryLimit: number;
   notificationLimit: number;
   workflowEventLimit: number;
+  repoEditLimit: number;
 };
 
 type RuntimeSnapshot = {
@@ -68,6 +72,7 @@ type RuntimeSnapshot = {
   executionApprovals: ExecutionApprovalsResponse;
   safety: SafetyPolicy;
   workflows: WorkflowObservability;
+  repoEditEvents: RepoEditEventsResponse;
   secondaryErrors: string[];
   fetchedAt: string;
 };
@@ -91,6 +96,7 @@ export const RuntimeOverviewPlugin = {
     memoryLimit: 5,
     notificationLimit: 5,
     workflowEventLimit: 6,
+    repoEditLimit: 5,
   },
   Component({ config }) {
     const queryClient = useQueryClient();
@@ -105,6 +111,7 @@ export const RuntimeOverviewPlugin = {
       executionApprovalsQuery,
       safetyQuery,
       workflowsQuery,
+      repoEditEventsQuery,
     ] = useQueries({
       queries: [
         {
@@ -157,6 +164,11 @@ export const RuntimeOverviewPlugin = {
           queryFn: getWorkflowObservability,
           refetchInterval: 30_000,
         },
+        {
+          queryKey: queryKeys.repoEditEvents,
+          queryFn: getRepoEditEvents,
+          refetchInterval: 30_000,
+        },
       ],
     });
 
@@ -194,6 +206,7 @@ export const RuntimeOverviewPlugin = {
       executionApprovals: executionApprovalsQuery,
       safety: safetyQuery,
       workflows: workflowsQuery,
+      repoEditEvents: repoEditEventsQuery,
     });
 
     if (!snapshot) {
@@ -220,6 +233,7 @@ type RuntimeSnapshotQueries = {
   executionApprovals: UseQueryResult<ExecutionApprovalsResponse>;
   safety: UseQueryResult<SafetyPolicy>;
   workflows: UseQueryResult<WorkflowObservability>;
+  repoEditEvents: UseQueryResult<RepoEditEventsResponse>;
 };
 
 function runtimeSnapshotFromQueries(
@@ -236,6 +250,7 @@ function runtimeSnapshotFromQueries(
     queryResultError(queries.executionApprovals),
     queryResultError(queries.safety),
     queryResultError(queries.workflows),
+    queryResultError(queries.repoEditEvents),
   ].filter((error): error is string => !!error);
 
   return {
@@ -278,6 +293,14 @@ function runtimeSnapshotFromQueries(
     },
     safety: queries.safety.data ?? emptySafetyPolicy(status.fetchedAt),
     workflows: queries.workflows.data ?? emptyWorkflows(),
+    repoEditEvents: queries.repoEditEvents.data ?? {
+      ok: false,
+      action: 'repo_edit_events_list',
+      changed: false,
+      message: 'Repo edit events unavailable.',
+      events: [],
+      fetchedAt: status.fetchedAt,
+    },
     secondaryErrors: errors,
     fetchedAt: new Date().toISOString(),
   };
@@ -301,6 +324,7 @@ async function invalidateRuntimeQueries(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: queryKeys.notifications }),
     queryClient.invalidateQueries({ queryKey: queryKeys.executionApprovals }),
     queryClient.invalidateQueries({ queryKey: queryKeys.safetyPolicy }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.repoEditEvents }),
   ]);
 }
 
@@ -476,6 +500,22 @@ function RuntimeView({
               ))}
               {recentExecutionApprovals.length === 0 ? (
                 <MiniEmpty label="No execution approvals recorded." />
+              ) : null}
+            </div>
+          </RuntimeSection>
+          <RuntimeSection
+            count={snapshot.repoEditEvents.events.length}
+            title="REPO EDITS"
+            tone="violet"
+          >
+            <div className="space-y-1.5">
+              {snapshot.repoEditEvents.events
+                .slice(0, config.repoEditLimit)
+                .map((event) => (
+                  <RepoEditEventRow event={event} key={event.id} />
+                ))}
+              {snapshot.repoEditEvents.events.length === 0 ? (
+                <MiniEmpty label="No repo edits recorded." />
               ) : null}
             </div>
           </RuntimeSection>
@@ -1268,6 +1308,32 @@ function ExecutionApprovalRow({
   );
 }
 
+function RepoEditEventRow({ event }: { event: RepoEditEvent }) {
+  const paths = event.paths.length > 0 ? event.paths.join(', ') : 'no paths';
+  return (
+    <article className="border border-line bg-soft px-2.5 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-ink">
+            {event.repoId} · {event.action}
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
+            {paths}
+            {event.reason ? ` · ${event.reason}` : ''}
+          </p>
+        </div>
+        <Badge className={repoEditEventClass(event)}>{event.status}</Badge>
+      </div>
+      <div className="mt-1.5 flex justify-between gap-2 font-mono text-[10px] text-muted">
+        <span className="truncate">
+          {event.sessionId ? `session ${event.sessionId}` : event.actorType}
+        </span>
+        <span className="shrink-0">{relativeTime(event.updatedAt)}</span>
+      </div>
+    </article>
+  );
+}
+
 function ActiveRunRow({
   run,
 }: {
@@ -1557,6 +1623,15 @@ function executionApprovalClass(approval: ExecutionApproval) {
   if (approval.status === 'failed' || approval.status === 'blocked') {
     return 'border-accent text-accent';
   }
+  return '';
+}
+
+function repoEditEventClass(event: RepoEditEvent) {
+  if (event.status === 'applied') return 'border-primary text-primary';
+  if (event.status === 'failed' || event.status === 'blocked') {
+    return 'border-accent text-accent';
+  }
+  if (event.status === 'preview') return 'border-violet text-violet';
   return '';
 }
 

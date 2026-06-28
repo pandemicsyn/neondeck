@@ -18,6 +18,7 @@ export const queryKeys = {
   neonSession: ['neon-session'] as const,
   prWatches: ['pr-watches'] as const,
   repoHealth: ['repo-health'] as const,
+  repoEditEvents: ['repo-edit-events'] as const,
   repoRegistry: ['repo-registry'] as const,
   runtimeStatus: ['runtime-status'] as const,
   runtimeSkills: ['runtime-skills'] as const,

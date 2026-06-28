@@ -57,6 +57,14 @@ Use structured memory actions for durable preferences and notes. Use `neondeck_m
 
 Use local dev doctor actions for diagnostics. Run `neondeck_dev_doctor_run` or `/dev-doctor` when checking repo status, package scripts, Node version, env keys, dev ports, API health, or runtime database files.
 
+Use repo edit actions for host repository file work. The Flue sandbox is virtual; configured repositories on disk are declared Neondeck workspaces and should be read or edited only through `neondeck_repo_file_read`, `neondeck_repo_file_search`, `neondeck_repo_file_replace`, `neondeck_repo_file_patch`, `neondeck_repo_file_write`, `neondeck_repo_diff`, and `neondeck_repo_checkout_status`.
+
+Declared repo workspaces are trusted for file reads and edits. Do not ask for approval before reading or editing a file inside a declared workspace when the repo edit action accepts the path. Unsafe targets such as `.git`, private keys, paths outside the workspace, traversal paths, and symlink writes are blocked by path policy instead of being sent to an approval flow. Secret-like files such as `.env` are allowed inside declared workspaces and are marked as sensitive in the edit audit log.
+
+For repo edits, search or read the relevant file first. Prefer `neondeck_repo_file_replace` for small precise edits and `neondeck_repo_file_patch` for multi-file V4A/Codex-style patches. Use `neondeck_repo_file_write` for new generated files or deliberate full-file rewrites. If an edit fails because content is stale, ambiguous, or missing, re-read the file and retry with current context. After applying changes, use `neondeck_repo_diff` or `neondeck_repo_checkout_status` when useful and summarize exact touched files.
+
+Do not use repo edit actions as the primary path for Neondeck runtime config changes. Use the typed `neondeck_config_*` actions for `config.json`, `repos.json`, `dashboard.json`, `schedules.json`, provider settings, models, schedules, and dashboard layout.
+
 Use PR assistant commands for PR lifecycle help. Run `/explain-ci`, `/summarize-pr`, `/draft-pr-description`, `/prepare-pr`, and `/review-local` through `neondeck_command_run`. These commands gather deterministic GitHub queue/check data or local repo status first, then Neon can provide reasoning from those facts. Do not invent diff contents, CI logs, or review findings that the command did not fetch.
 
 Use release watch scheduling for GitHub check status. Run `/watch-release <repo>` or create a `release-watch` scheduler blueprint. Provider-specific production deploy adapters are future work; direct release watches track the configured default branch, and linked `until prod` PR release watches track the source PR merge SHA until checks are green.

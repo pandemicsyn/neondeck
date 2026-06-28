@@ -326,6 +326,37 @@ repo
     }
   });
 
+repo
+  .command('diff <id>')
+  .description('Show a git diff summary for one configured repository.')
+  .option('--base <ref>', 'base ref for git diff', 'HEAD')
+  .option('--patch', 'include bounded patch text')
+  .action(async (id: string, options: { base?: string; patch?: boolean }) => {
+    const { readRepoDiff } = await repoEditModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
+    const result = await readRepoDiff(
+      {
+        repoId: id,
+        base: options.base,
+        includePatch: options.patch,
+      },
+      paths,
+    );
+    printRepoDiffResult(result);
+  });
+
+program
+  .command('edit-events')
+  .description('List recent repo edit audit events.')
+  .action(async () => {
+    const { listRepoEditEvents } = await repoEditModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
+    const result = await listRepoEditEvents(paths);
+    printRepoEditEventsResult(result);
+  });
+
 program
   .command('watch-pr <ref>')
   .description('Create a persistent PR watch.')
@@ -921,6 +952,126 @@ function printActionResult(result: {
   if (!result.ok) process.exitCode = 1;
 }
 
+function printRepoDiffResult(result: {
+  ok: boolean;
+  message: string;
+  files?: unknown[];
+  diffSummary?: {
+    files: number;
+    additions: number;
+    deletions: number;
+    binaryFiles: number;
+  };
+  errors?: string[];
+}) {
+  if (program.opts<GlobalOptions>().json || !result.ok) {
+    printActionResult(result);
+    return;
+  }
+
+  console.log(`✓ ${result.message}`);
+  const summary = result.diffSummary;
+  if (summary) {
+    console.log(
+      `${summary.files} files, +${summary.additions} -${summary.deletions}, ${summary.binaryFiles} binary`,
+    );
+  }
+
+  const files = (result.files ?? []).flatMap((file) =>
+    repoDiffFileFromUnknown(file),
+  );
+  if (files.length === 0) {
+    console.log('No changes.');
+    return;
+  }
+
+  for (const file of files) {
+    const markers = [
+      file.binary ? 'binary' : undefined,
+      file.generatedLike ? 'generated' : undefined,
+      file.truncated ? 'truncated' : undefined,
+    ].filter(Boolean);
+    const markerText = markers.length ? ` (${markers.join(', ')})` : '';
+    console.log(
+      `${file.status.padEnd(10)} +${String(file.additions).padEnd(4)} -${String(file.deletions).padEnd(4)} ${file.path}${markerText}`,
+    );
+    if (file.patch) console.log(file.patch.trimEnd());
+  }
+}
+
+function repoDiffFileFromUnknown(value: unknown) {
+  if (!value || typeof value !== 'object') return [];
+  const item = value as Record<string, unknown>;
+  if (typeof item.path !== 'string' || typeof item.status !== 'string') {
+    return [];
+  }
+  return [
+    {
+      path: item.path,
+      status: item.status,
+      additions: typeof item.additions === 'number' ? item.additions : 0,
+      deletions: typeof item.deletions === 'number' ? item.deletions : 0,
+      binary: item.binary === true,
+      generatedLike: item.generatedLike === true,
+      patch: typeof item.patch === 'string' ? item.patch : undefined,
+      truncated: item.truncated === true,
+    },
+  ];
+}
+
+function printRepoEditEventsResult(result: {
+  ok: boolean;
+  message: string;
+  events?: Array<{
+    id: string;
+    repoId: string;
+    action: string;
+    status: string;
+    paths: string[];
+    reason: string | null;
+    diffSummary: unknown;
+    updatedAt: string;
+  }>;
+  errors?: string[];
+}) {
+  if (program.opts<GlobalOptions>().json || !result.ok) {
+    printActionResult(result);
+    return;
+  }
+
+  console.log(`✓ ${result.message}`);
+  const events = result.events ?? [];
+  if (events.length === 0) {
+    console.log('No repo edit events recorded.');
+    return;
+  }
+
+  for (const event of events) {
+    const summary = diffSummaryText(event.diffSummary);
+    const paths = event.paths.length ? event.paths.join(', ') : '(no paths)';
+    const reason = event.reason ? ` · ${event.reason}` : '';
+    console.log(
+      `${event.updatedAt} ${event.status.padEnd(7)} ${event.action.padEnd(8)} ${event.repoId} ${summary}`,
+    );
+    console.log(`  ${paths}${reason}`);
+  }
+}
+
+function diffSummaryText(value: unknown) {
+  if (!value || typeof value !== 'object') return '';
+  const summary = value as {
+    files?: unknown;
+    additions?: unknown;
+    deletions?: unknown;
+  };
+  const files = typeof summary.files === 'number' ? summary.files : 0;
+  const additions =
+    typeof summary.additions === 'number' ? summary.additions : 0;
+  const deletions =
+    typeof summary.deletions === 'number' ? summary.deletions : 0;
+  return files > 0 ? `${files} files +${additions} -${deletions}` : '';
+}
+
 function printStatus(status: RuntimeStatus) {
   console.log(`neondeck:${status.status}`);
   console.log(`home      ${status.home}`);
@@ -1059,6 +1210,12 @@ async function reposModule() {
   return import(new URL('./repos.ts', import.meta.url).href) as Promise<
     typeof import('./repos')
   >;
+}
+
+async function repoEditModule() {
+  return import(
+    new URL('./repo-edit/index.ts', import.meta.url).href
+  ) as Promise<typeof import('./repo-edit')>;
 }
 
 async function runtimeHomeModule() {
