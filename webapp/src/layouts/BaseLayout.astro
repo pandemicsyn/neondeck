@@ -129,6 +129,8 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     --cyan: #69e6ff;
     --violet: #8b4dff;
     --card: #0e0f13;
+    --code-bg: #070810;
+    --code-ink: #d7f7ff;
     font-family: 'IBM Plex Sans', system-ui, sans-serif;
   }
 
@@ -149,6 +151,8 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     --teal: #0093a8;
     --violet: #7a37e6;
     --card: #ffffff;
+    --code-bg: #f7fcff;
+    --code-ink: #13171e;
   }
 
   * {
@@ -767,7 +771,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   .code-window {
     overflow: auto;
     border: 1px solid var(--line);
-    background: var(--chrome);
+    background: var(--code-bg);
     font-family: 'IBM Plex Mono', monospace;
     font-size: 13px;
     line-height: 1.75;
@@ -798,7 +802,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   pre {
     margin: 0;
     padding: 18px;
-    color: var(--body);
+    color: var(--code-ink);
     white-space: pre;
   }
 
@@ -852,7 +856,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   .docs-prose pre {
     margin: 18px 0;
     border: 1px solid var(--line);
-    background: var(--chrome);
+    background: var(--code-bg);
     overflow: auto;
   }
 
