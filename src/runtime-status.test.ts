@@ -35,6 +35,8 @@ describe('runtime status', () => {
     expect(status.home).toBe(home);
     expect(status.providers.credentials).toEqual({
       kilo: false,
+      openai: false,
+      anthropic: false,
       github: false,
     });
     expect(status.providers.configs.kilocode).toMatchObject({
@@ -90,7 +92,7 @@ describe('runtime status', () => {
     expect(status.counts.repos).toBe(0);
   });
 
-  it('reports unsupported configured model providers', async () => {
+  it('allows built-in OpenAI models and reports missing credentials', async () => {
     const home = await tempDir();
     const paths = runtimePaths(home);
     await ensureRuntimeHome(paths);
@@ -122,14 +124,18 @@ describe('runtime status', () => {
       GITHUB_TOKEN: 'github',
     });
 
-    expect(status.status).toBe('attention');
+    expect(status.status).toBe('needs-config');
     expect(status.models.displayAssistantProvider).toBe('openai');
     expect(status.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: 'model-providers',
+          ok: true,
+        }),
+        expect.objectContaining({
+          id: 'openai-key',
           ok: false,
-          level: 'attention',
+          level: 'needs-config',
         }),
       ]),
     );
@@ -306,6 +312,8 @@ describe('runtime status', () => {
     expect(status.status).toBe('attention');
     expect(status.providers.credentials).toEqual({
       kilo: true,
+      openai: false,
+      anthropic: false,
       github: true,
     });
     expect(status.models.displayAssistant).toBe('kilocode/kilo-auto/balanced');

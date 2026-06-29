@@ -642,13 +642,13 @@ const entries: SafetyPolicyEntry[] = [
     'Updates display-assistant and subagent model settings.',
   ),
   route(
-    '/api/providers/kilocode',
-    'Kilo provider config API',
+    '/api/providers/:provider',
+    'Provider config API',
     {
       ...safeMutation,
       auditTarget: 'config_history',
     },
-    'Updates allowlisted Kilo provider environment variable references.',
+    'Updates allowlisted provider environment variable references.',
   ),
   route(
     '/api/memories',

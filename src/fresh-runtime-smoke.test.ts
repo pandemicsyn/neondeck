@@ -135,6 +135,8 @@ describe('fresh runtime smoke test', () => {
     });
     expect(configuredStatus.providers.credentials).toEqual({
       kilo: true,
+      openai: false,
+      anthropic: false,
       github: true,
     });
   });

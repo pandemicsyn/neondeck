@@ -5,7 +5,9 @@ import { resolveAgentModelSelection } from './agent-config';
 import {
   isRegisteredProvider,
   registeredProviderIds,
+  resolveAnthropicProviderStatus,
   resolveKilocodeProviderStatus,
+  resolveOpenAiProviderStatus,
 } from './providers';
 import {
   type RuntimePaths,
@@ -57,6 +59,8 @@ export const runtimeStatusSchema = v.looseObject({
     registered: v.array(v.string()),
     credentials: v.object({
       kilo: v.boolean(),
+      openai: v.boolean(),
+      anthropic: v.boolean(),
       github: v.boolean(),
     }),
     configs: v.object({
@@ -67,12 +71,24 @@ export const runtimeStatusSchema = v.looseObject({
         apiKeyPresent: v.boolean(),
         organizationIdPresent: v.boolean(),
       }),
+      openai: v.object({
+        enabled: v.boolean(),
+        apiKeyEnv: v.string(),
+        apiKeyPresent: v.boolean(),
+      }),
+      anthropic: v.object({
+        enabled: v.boolean(),
+        apiKeyEnv: v.string(),
+        apiKeyPresent: v.boolean(),
+      }),
     }),
   }),
   models: v.object({
     displayAssistant: v.string(),
     displayAssistantProvider: v.string(),
+    displayAssistantThinkingLevel: v.string(),
     subagents: v.record(v.string(), v.string()),
+    subagentThinkingLevels: v.record(v.string(), v.string()),
   }),
   execution: v.object({
     defaultBackend: v.string(),
@@ -166,11 +182,22 @@ export async function readRuntimeStatus(
     config.ok ? { providers: config.value.providers } : undefined,
     env,
   );
+  const openaiProvider = resolveOpenAiProviderStatus(
+    config.ok ? { providers: config.value.providers } : undefined,
+    env,
+  );
+  const anthropicProvider = resolveAnthropicProviderStatus(
+    config.ok ? { providers: config.value.providers } : undefined,
+    env,
+  );
   const executionPolicy = executionPolicyFromConfig({
     execution: config.ok ? config.value.execution : undefined,
   });
   const modelProviders = requiredModelProviders(models);
   const kiloKey = kilocodeProvider.enabled && kilocodeProvider.apiKeyPresent;
+  const openaiKey = openaiProvider.enabled && openaiProvider.apiKeyPresent;
+  const anthropicKey =
+    anthropicProvider.enabled && anthropicProvider.apiKeyPresent;
   const githubToken = Boolean(env.GITHUB_TOKEN);
   const activeSchedules = schedules.ok
     ? schedules.value.schedules.filter((schedule) => schedule.enabled ?? true)
@@ -182,7 +209,12 @@ export async function readRuntimeStatus(
     (provider) => !isRegisteredProvider(provider),
   );
   const disabledProviderIssues = modelProviders.filter(
-    (provider) => provider === 'kilocode' && !kilocodeProvider.enabled,
+    (provider) =>
+      providerEnabled(provider, {
+        kilocode: kilocodeProvider.enabled,
+        openai: openaiProvider.enabled,
+        anthropic: anthropicProvider.enabled,
+      }) === false,
   );
   const checks = [
     configCheck('config', 'Runtime config', paths.config, config),
@@ -215,6 +247,28 @@ export async function readRuntimeStatus(
         : kilocodeProvider.enabled
           ? `${kilocodeProvider.apiKeyEnv} is not configured.`
           : 'Kilo provider is disabled in config.json.',
+    ),
+    check(
+      'openai-key',
+      'OpenAI key',
+      !modelProviders.includes('openai') || openaiKey,
+      'needs-config',
+      openaiKey
+        ? 'OpenAI provider credentials are present.'
+        : openaiProvider.enabled
+          ? `${openaiProvider.apiKeyEnv} is not configured.`
+          : 'OpenAI provider is disabled in config.json.',
+    ),
+    check(
+      'anthropic-key',
+      'Anthropic key',
+      !modelProviders.includes('anthropic') || anthropicKey,
+      'needs-config',
+      anthropicKey
+        ? 'Anthropic provider credentials are present.'
+        : anthropicProvider.enabled
+          ? `${anthropicProvider.apiKeyEnv} is not configured.`
+          : 'Anthropic provider is disabled in config.json.',
     ),
     check(
       'github-token',
@@ -311,6 +365,8 @@ export async function readRuntimeStatus(
       registered: [...registeredProviderIds],
       credentials: {
         kilo: kiloKey,
+        openai: openaiKey,
+        anthropic: anthropicKey,
         github: githubToken,
       },
       configs: {
@@ -321,12 +377,24 @@ export async function readRuntimeStatus(
           apiKeyPresent: kilocodeProvider.apiKeyPresent,
           organizationIdPresent: kilocodeProvider.organizationIdPresent,
         },
+        openai: {
+          enabled: openaiProvider.enabled,
+          apiKeyEnv: openaiProvider.apiKeyEnv,
+          apiKeyPresent: openaiProvider.apiKeyPresent,
+        },
+        anthropic: {
+          enabled: anthropicProvider.enabled,
+          apiKeyEnv: anthropicProvider.apiKeyEnv,
+          apiKeyPresent: anthropicProvider.apiKeyPresent,
+        },
       },
     },
     models: {
       displayAssistant: models.displayAssistant,
       displayAssistantProvider: providerFromModel(models.displayAssistant),
+      displayAssistantThinkingLevel: models.displayAssistantThinkingLevel,
       subagents: models.subagents,
+      subagentThinkingLevels: models.subagentThinkingLevels,
     },
     execution: {
       defaultBackend: executionPolicy.defaultBackend,
@@ -620,6 +688,10 @@ function requiredModelProviders(models: {
 
 function providerFromModel(model: string) {
   return model.includes('/') ? model.split('/')[0] : 'default';
+}
+
+function providerEnabled(provider: string, statuses: Record<string, boolean>) {
+  return statuses[provider];
 }
 
 function errorMessage(error: unknown) {

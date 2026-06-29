@@ -29,6 +29,7 @@ import { deleteMemory, listMemories, upsertMemory } from './memory-actions';
 import { readHostMetrics } from './metrics';
 import { readRepoHealthSnapshot, readRepoRegistrySnapshot } from './repos';
 import {
+  isRegisteredProvider,
   readKilocodeProviderCredentials,
   readProviderConfigSync,
 } from './providers';
@@ -318,6 +319,32 @@ app.post('/api/providers/kilocode', async (c) => {
       {
         ...input,
         provider: 'kilocode',
+      },
+      paths,
+    ),
+  );
+});
+
+app.post('/api/providers/:provider', async (c) => {
+  const input = (await safeJsonObject(c)) as Record<string, unknown>;
+  const provider = c.req.param('provider');
+  if (!isRegisteredProvider(provider)) {
+    return c.json(
+      {
+        ok: false,
+        changed: false,
+        action: 'config_update_provider',
+        message: `Unsupported provider "${provider}".`,
+      },
+      400,
+    );
+  }
+
+  return c.json(
+    await updateProviderConfig(
+      {
+        ...input,
+        provider,
       },
       paths,
     ),

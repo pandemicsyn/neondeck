@@ -33,6 +33,7 @@ export default defineAgent(() => {
 
   return {
     model: models.displayAssistant,
+    thinkingLevel: models.displayAssistantThinkingLevel,
     cwd: '/workspace',
     instructions: [
       soulInstructions(),
@@ -63,7 +64,10 @@ export default defineAgent(() => {
     ].join('\n\n'),
     skills: [neondeck, githubGh, ...runtimeSkillReferencesSync()],
     tools: neondeckFactTools,
-    subagents: neondeckSubagents(models.subagents),
+    subagents: neondeckSubagents(
+      models.subagents,
+      models.subagentThinkingLevels,
+    ),
     actions: [
       ...neondeckCommandActions,
       ...neondeckConfigActions,

@@ -173,10 +173,16 @@ describe('runtime home', () => {
     });
     expect(readAgentModelSelectionSync(paths)).toEqual({
       displayAssistant: 'kilocode/kilo/main',
+      displayAssistantThinkingLevel: 'medium',
       subagents: {
         repoResearcher: 'kilocode/kilo/repo',
         ciInvestigator: 'kilocode/kilo/ci',
         releaseReviewer: 'kilocode/kilo/release',
+      },
+      subagentThinkingLevels: {
+        repoResearcher: 'medium',
+        ciInvestigator: 'medium',
+        releaseReviewer: 'medium',
       },
     });
   });
@@ -274,9 +280,15 @@ describe('runtime home', () => {
       ),
     );
 
-    await expect(readRuntimeJson(paths.config, parseAppConfig)).rejects.toThrow(
-      ConfigValidationError,
-    );
+    await expect(
+      readRuntimeJson(paths.config, parseAppConfig),
+    ).resolves.toMatchObject({
+      providers: {
+        openai: {
+          apiKeyEnv: 'OPENAI_API_KEY',
+        },
+      },
+    });
   });
 
   it('accepts exe.dev execution adapter env references from runtime config', async () => {

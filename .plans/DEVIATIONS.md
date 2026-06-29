@@ -168,3 +168,10 @@ Use this format:
 - Decision: Landed the core repo-editing substrate, Valibot-backed Flue actions, local HTTP APIs, SQLite audit/read-stamp tables, runtime skill guidance, CLI `repo diff` and `edit-events` commands, Runtime Overview repo edit event visibility, path/workspace policy, stale-read protection, fuzzy replacement, V4A patch parsing, staged multi-file patch writes, and Git diff/status helpers. Deferred a dedicated diff-preview/edit-events dashboard panel, cleanup jobs for old read stamps/audit rows, and richer generated-file detection knobs.
 - Reason: The frequent-agent-use path needs deterministic actions and hard file safety first. Runtime Overview now exposes the audit trail, while a dedicated diff preview panel and cleanup policy should be designed with the broader runtime observability UI instead of rushed into the core edit layer.
 - Follow-up: Add a first-class dashboard repo edit diff preview panel, retention cleanup for `repo_file_reads` and capped edit events, and configurable generated-file/sensitive-file markers.
+
+## 2026-06-29 - Provider Expansion And Thinking Levels
+
+- Roadmap item: Phase 13 / provider configuration and safety
+- Decision: Expanded allowlisted model providers from KiloCode-only to KiloCode, OpenAI, and Anthropic. OpenAI and Anthropic use Flue built-in providers and runtime `.env` credentials; KiloCode remains the custom registered provider. Added runtime config support for Flue `thinkingLevel` on the display assistant and subagent roles, surfaced thinking controls in Runtime Overview, and added KiloCode model discovery/search during first-run onboarding with manual fallback.
+- Reason: Users should be able to choose common Flue built-in providers without arbitrary endpoint editing, and reasoning effort is a first-class Flue model setting. KiloCode model search improves onboarding while keeping provider registration deterministic and allowlisted.
+- Follow-up: Consider a richer server-side model catalog API for dashboard model search if model browsing becomes useful outside first-run setup.
