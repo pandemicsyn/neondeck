@@ -558,6 +558,12 @@ const entries: SafetyPolicyEntry[] = [
     'Streams local config change and reload notifications to dashboard surfaces.',
   ),
   route(
+    '/api/events/notifications',
+    'Notification event stream API',
+    readOnly,
+    'Streams notification inbox changes to dashboard surfaces without browser notification APIs.',
+  ),
+  route(
     '/api/config/reload',
     'Config reload API',
     {

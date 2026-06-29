@@ -8,7 +8,17 @@ export default defineConfig({
 export const vite = defineViteConfig({
   server: {
     watch: {
-      ignored: ['**/data/**', '**/web/dist/**'],
+      ignored: [
+        '**/.git/**',
+        '**/.playwright-mcp/**',
+        '**/.astro/**',
+        '**/data/**',
+        '**/design/**',
+        '**/dist/**',
+        '**/research-repos/**',
+        '**/web/**',
+        '**/webapp/**',
+      ],
     },
   },
 });

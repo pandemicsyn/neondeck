@@ -14,8 +14,13 @@ import {
 } from './config-actions';
 import {
   formatConfigServerSentEvent,
+  replayConfigEventsAfter,
   subscribeConfigEvents,
 } from './config-events';
+import {
+  formatNotificationServerSentEvent,
+  subscribeNotificationEvents,
+} from './notification-events';
 import {
   listExecutionApprovals,
   requestExecutionApproval,
@@ -102,6 +107,8 @@ const app = new Hono();
 
 const staticRoot = './web/dist';
 const localHosts = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
+const configEventHeartbeatMs = 10_000;
+const configEventStreamMaxAgeMs = 20_000;
 
 const requireLocalApiAccess: MiddlewareHandler = async (c, next) => {
   const host = hostName(c.req.header('host'));
@@ -200,7 +207,59 @@ app.get('/api/runtime/status', async (c) => {
   return c.json(await readRuntimeStatus(paths));
 });
 
-app.get('/api/events/config', () => {
+app.get('/api/events/config', (c) => {
+  const lastEventId = c.req.header('last-event-id');
+  const encoder = new TextEncoder();
+  let cleanup = () => {};
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      let active = true;
+      function send(value: string) {
+        if (!active) return;
+        controller.enqueue(encoder.encode(value));
+      }
+
+      send('retry: 3000\n: connected\n\n');
+      const unsubscribe = subscribeConfigEvents((event) => {
+        send(formatConfigServerSentEvent(event));
+      });
+      for (const event of replayConfigEventsAfter(lastEventId)) {
+        send(formatConfigServerSentEvent(event));
+      }
+      const heartbeat = setInterval(() => {
+        send(`: heartbeat ${Date.now()}\n\n`);
+      }, configEventHeartbeatMs);
+      const maxAge = setTimeout(() => {
+        send(': reconnecting\n\n');
+        cleanup();
+        controller.close();
+      }, configEventStreamMaxAgeMs);
+
+      cleanup = () => {
+        if (!active) return;
+        active = false;
+        clearInterval(heartbeat);
+        clearTimeout(maxAge);
+        unsubscribe();
+      };
+    },
+    cancel() {
+      cleanup();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+      'content-type': 'text/event-stream; charset=utf-8',
+      'x-accel-buffering': 'no',
+    },
+  });
+});
+
+app.get('/api/events/notifications', () => {
   const encoder = new TextEncoder();
   let cleanup = () => {};
 
@@ -211,8 +270,8 @@ app.get('/api/events/config', () => {
       }
 
       send(': connected\n\n');
-      const unsubscribe = subscribeConfigEvents((event) => {
-        send(formatConfigServerSentEvent(event));
+      const unsubscribe = subscribeNotificationEvents((event) => {
+        send(formatNotificationServerSentEvent(event));
       });
       const heartbeat = setInterval(() => {
         send(`: heartbeat ${Date.now()}\n\n`);

@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { publishConfigEvent, type ConfigChangeEvent } from './config-events';
 
 const originalEnv = { ...process.env };
 let home: string;
@@ -45,6 +46,72 @@ describe('app API safety routes', () => {
     const response = await app.request('http://localhost/api/events/config', {
       headers: { host: 'localhost' },
     });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('text/event-stream');
+
+    const reader = response.body?.getReader();
+    expect(reader).toBeDefined();
+    const chunk = await reader!.read();
+    expect(new TextDecoder().decode(chunk.value)).toContain(': connected');
+    await reader!.cancel();
+  });
+
+  it('replays config events missed during a server-sent event reconnect', async () => {
+    const previousEvent: ConfigChangeEvent = {
+      id: `test-replay-before-${Date.now()}`,
+      action: 'config_reload',
+      changed: false,
+      home,
+      files: [],
+      target: 'all',
+      changedAt: new Date().toISOString(),
+    };
+    const missedEvent: ConfigChangeEvent = {
+      id: `test-replay-after-${Date.now()}`,
+      action: 'config_update_dashboard_layout',
+      changed: true,
+      home,
+      files: ['dashboard.json'],
+      target: 'dashboard',
+      changedAt: new Date().toISOString(),
+    };
+    publishConfigEvent(previousEvent);
+    publishConfigEvent(missedEvent);
+
+    const response = await app.request('http://localhost/api/events/config', {
+      headers: {
+        host: 'localhost',
+        'last-event-id': previousEvent.id,
+      },
+    });
+
+    const reader = response.body?.getReader();
+    expect(reader).toBeDefined();
+
+    const decoder = new TextDecoder();
+    let output = '';
+    for (
+      let readCount = 0;
+      readCount < 4 && !output.includes(missedEvent.id);
+      readCount += 1
+    ) {
+      const chunk = await reader!.read();
+      if (chunk.value) output += decoder.decode(chunk.value);
+    }
+
+    expect(output).toContain(`id: ${missedEvent.id}`);
+    expect(output).toContain('event: config-change');
+    await reader!.cancel();
+  });
+
+  it('serves notification events as a local server-sent event stream', async () => {
+    const response = await app.request(
+      'http://localhost/api/events/notifications',
+      {
+        headers: { host: 'localhost' },
+      },
+    );
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('text/event-stream');

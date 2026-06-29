@@ -20,22 +20,28 @@ Use Neondeck's typed actions and tools before reasoning:
 
 The `gh` CLI is a host command. Do not claim it ran unless `neondeck_execution_run` actually runs it.
 
-Recommend `gh` only when:
+The default execution policy preapproves single-command `gh` invocations so agents can use GitHub API and CLI capabilities for their tasks. Shell operators are still not supported by the local executor.
+
+Use `gh` when:
 
 - the GitHub API action cannot expose the needed fact yet
 - the user is working in a configured local checkout
-- the command would be useful for the user or an approved execution action
+- the command would be useful for the user or task
 - the command passes `neondeck_execution_policy_check` if Neon is being asked to run it
 
-Good candidates for approved `gh` use include:
+Good candidates for `gh` use include:
 
 - `gh pr view`
 - `gh pr checks`
 - `gh run view`
-- `gh run watch`
+- `gh api`
 - `gh pr diff`
+- `gh issue`
+- `gh pr`
 
-Avoid using `gh` for mutations such as creating PRs, merging, closing issues, rerunning workflows, or editing labels unless the user explicitly asks and the command is approved through the execution approval path.
+Run `gh` through `neondeck_execution_run` when the execution policy preapproves it. If a command is not preapproved, create an approval request instead of using raw shell.
+
+For mutations such as creating PRs, merging, closing issues, rerunning workflows, or editing labels, be explicit about the intended change before running the command.
 
 ## Answering Pattern
 

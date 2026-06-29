@@ -8,6 +8,10 @@ import {
   markNotificationRead,
   resolveNotification,
 } from './app-state';
+import {
+  subscribeNotificationEvents,
+  type NotificationEvent,
+} from './notification-events';
 import { runtimePaths } from './runtime-home';
 
 const tempRoots: string[] = [];
@@ -132,6 +136,87 @@ describe('app state notifications', () => {
       {
         title: 'One off',
       },
+    ]);
+  });
+
+  it('publishes notification events for inbox changes', async () => {
+    const paths = runtimePaths(await tempDir());
+    const events: NotificationEvent[] = [];
+    const unsubscribe = subscribeNotificationEvents((event) => {
+      events.push(event);
+    });
+
+    try {
+      const notification = await addNotification(
+        {
+          level: 'attention',
+          title: 'Needs attention',
+          message: 'A watcher failed.',
+          source: 'watch-pr',
+          sourceId: 'repo#2',
+        },
+        paths,
+      );
+      await markNotificationRead(notification.id, paths);
+      await markNotificationRead(notification.id, paths);
+      await resolveNotification(notification.id, paths);
+      await resolveNotification(notification.id, paths);
+    } finally {
+      unsubscribe();
+    }
+
+    expect(events).toMatchObject([
+      {
+        action: 'created',
+        notification: { title: 'Needs attention', readAt: null },
+      },
+      {
+        action: 'read',
+        notification: { title: 'Needs attention', readAt: expect.any(String) },
+      },
+      {
+        action: 'resolved',
+        notification: {
+          title: 'Needs attention',
+          resolvedAt: expect.any(String),
+        },
+      },
+    ]);
+  });
+
+  it('does not let broken notification listeners break persistence', async () => {
+    const paths = runtimePaths(await tempDir());
+    const events: NotificationEvent[] = [];
+    const broken = subscribeNotificationEvents(() => {
+      throw new Error('closed stream');
+    });
+    const working = subscribeNotificationEvents((event) => {
+      events.push(event);
+    });
+
+    try {
+      await expect(
+        addNotification(
+          {
+            level: 'attention',
+            title: 'Still persists',
+            message: 'A watcher failed.',
+            source: 'watch-pr',
+            sourceId: 'repo#3',
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({ title: 'Still persists' });
+    } finally {
+      broken();
+      working();
+    }
+
+    await expect(listNotifications(paths)).resolves.toMatchObject([
+      { title: 'Still persists' },
+    ]);
+    expect(events).toMatchObject([
+      { action: 'created', notification: { title: 'Still persists' } },
     ]);
   });
 });
