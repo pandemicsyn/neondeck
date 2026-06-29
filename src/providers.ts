@@ -1,3 +1,4 @@
+import type { ProviderRegistration } from '@flue/runtime';
 import {
   ensureRuntimeHomeSync,
   parseAppConfig,
@@ -33,12 +34,18 @@ export type ApiKeyProviderStatus = {
   apiKeyPresent: boolean;
 };
 
+export type ProviderRuntimeRegistration = {
+  id: RegisteredProviderId;
+  registration: ProviderRegistration;
+};
+
 const defaultKilocodeApiKeyEnv = 'KILOCODE_API_KEY';
 const fallbackKilocodeApiKeyEnv = 'KILO_API_KEY';
 const defaultKilocodeOrganizationIdEnv = 'KILOCODE_ORGANIZATION_ID';
 const fallbackKilocodeOrganizationIdEnv = 'KILO_ORGANIZATION_ID';
 const defaultOpenAiApiKeyEnv = 'OPENAI_API_KEY';
 const defaultAnthropicApiKeyEnv = 'ANTHROPIC_API_KEY';
+const kilocodeGatewayBaseUrl = 'https://api.kilo.ai/api/gateway';
 
 export function readKilocodeProviderCredentials(
   env: NodeJS.ProcessEnv = process.env,
@@ -63,6 +70,43 @@ export function readKilocodeProviderCredentials(
 export function readProviderConfigSync(paths: RuntimePaths = runtimePaths()) {
   ensureRuntimeHomeSync(paths);
   return readRuntimeJsonSync(paths.config, parseAppConfig);
+}
+
+export function providerRuntimeRegistrations(
+  env: NodeJS.ProcessEnv = process.env,
+  config?: Pick<AppConfig, 'providers'>,
+): ProviderRuntimeRegistration[] {
+  const registrations: ProviderRuntimeRegistration[] = [];
+  const kilocode = resolveKilocodeProviderStatus(config, env);
+  if (kilocode.enabled) {
+    const organizationId = kilocode.organizationIdEnv
+      ? env[kilocode.organizationIdEnv]
+      : undefined;
+    registrations.push({
+      id: 'kilocode',
+      registration: {
+        api: 'openai-completions',
+        baseUrl: kilocodeGatewayBaseUrl,
+        apiKey: env[kilocode.apiKeyEnv] ?? '',
+        headers: organizationId
+          ? { 'X-KiloCode-OrganizationId': organizationId }
+          : undefined,
+      },
+    });
+  }
+
+  registrations.push(
+    apiKeyProviderRuntimeRegistration(
+      resolveOpenAiProviderStatus(config, env),
+      env,
+    ),
+    apiKeyProviderRuntimeRegistration(
+      resolveAnthropicProviderStatus(config, env),
+      env,
+    ),
+  );
+
+  return registrations;
 }
 
 export function resolveKilocodeProviderStatus(
@@ -140,5 +184,17 @@ function resolveApiKeyProviderStatus(
     enabled: config?.enabled ?? true,
     apiKeyEnv,
     apiKeyPresent: Boolean(env[apiKeyEnv]),
+  };
+}
+
+function apiKeyProviderRuntimeRegistration(
+  status: ApiKeyProviderStatus,
+  env: NodeJS.ProcessEnv,
+): ProviderRuntimeRegistration {
+  return {
+    id: status.id,
+    registration: {
+      apiKey: status.enabled ? (env[status.apiKeyEnv] ?? '') : '',
+    },
   };
 }

@@ -35,8 +35,8 @@ import { readHostMetrics } from './metrics';
 import { readRepoHealthSnapshot, readRepoRegistrySnapshot } from './repos';
 import {
   isRegisteredProvider,
-  readKilocodeProviderCredentials,
   readProviderConfigSync,
+  providerRuntimeRegistrations,
 } from './providers';
 import {
   listRepoEditEvents,
@@ -87,20 +87,11 @@ const paths = runtimePaths();
 ensureRuntimeHomeSync(paths);
 loadNeondeckEnv(paths);
 const providerConfig = readProviderConfigSync(paths);
-const { apiKey: kiloApiKey, organizationId: kiloOrganizationId } =
-  readKilocodeProviderCredentials(process.env, providerConfig);
-const kiloProviderEnabled =
-  providerConfig.providers?.kilocode?.enabled !== false;
-
-if (kiloProviderEnabled) {
-  registerProvider('kilocode', {
-    api: 'openai-completions',
-    baseUrl: 'https://api.kilo.ai/api/gateway',
-    apiKey: kiloApiKey,
-    headers: kiloOrganizationId
-      ? { 'X-KiloCode-OrganizationId': kiloOrganizationId }
-      : undefined,
-  });
+for (const provider of providerRuntimeRegistrations(
+  process.env,
+  providerConfig,
+)) {
+  registerProvider(provider.id, provider.registration);
 }
 
 const app = new Hono();
