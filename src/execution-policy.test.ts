@@ -59,7 +59,7 @@ describe('execution policy', () => {
       ok: true,
       decision: 'allow',
       risk: 'read-only',
-      matchedPreapproval: { id: 'gh-pr-checks' },
+      matchedPreapproval: { id: 'gh' },
     });
 
     await expect(
@@ -71,7 +71,7 @@ describe('execution policy', () => {
       ok: true,
       decision: 'allow',
       risk: 'read-only',
-      matchedPreapproval: { id: 'gh-run-view' },
+      matchedPreapproval: { id: 'gh' },
     });
 
     await expect(
@@ -80,14 +80,28 @@ describe('execution policy', () => {
         paths,
       ),
     ).resolves.toMatchObject({
-      ok: false,
-      decision: 'deny',
-      requires: ['preapprovedCommands'],
+      ok: true,
+      decision: 'allow',
+      matchedPreapproval: { id: 'gh' },
     });
 
     await expect(
       checkExecutionPolicy(
-        { command: 'gh pr checksout 123', context: 'unattended' },
+        {
+          command: 'gh api repos/pandemicsyn/neondeck/actions/runs',
+          context: 'unattended',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      decision: 'allow',
+      matchedPreapproval: { id: 'gh' },
+    });
+
+    await expect(
+      checkExecutionPolicy(
+        { command: 'ghx pr checks 123', context: 'unattended' },
         paths,
       ),
     ).resolves.toMatchObject({
