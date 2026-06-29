@@ -444,6 +444,13 @@ export type NotificationResponse = {
   fetchedAt: string;
 };
 
+export type NotificationChangeEvent = {
+  id: string;
+  action: 'created' | 'read' | 'reconciled' | 'resolved';
+  notification: NotificationRecord;
+  changedAt: string;
+};
+
 export type SafetyClass =
   'read-only' | 'safe-mutation' | 'destructive-mutation' | 'host-execution';
 
@@ -646,6 +653,21 @@ export function openConfigEventStream(
   const source = new EventSource('/api/events/config');
   source.addEventListener('config-change', (event) => {
     onEvent(JSON.parse(event.data) as ConfigChangeEvent);
+  });
+  if (onError) source.addEventListener('error', onError);
+
+  return () => source.close();
+}
+
+export function openNotificationEventStream(
+  onEvent: (event: NotificationChangeEvent) => void,
+  onError?: () => void,
+) {
+  if (typeof EventSource === 'undefined') return () => {};
+
+  const source = new EventSource('/api/events/notifications');
+  source.addEventListener('notification-change', (event) => {
+    onEvent(JSON.parse(event.data) as NotificationChangeEvent);
   });
   if (onError) source.addEventListener('error', onError);
 
