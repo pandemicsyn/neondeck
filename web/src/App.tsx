@@ -7,6 +7,8 @@ import {
   configEventTouchesFile,
   dispatchConfigChangeEvent,
 } from './lib/config-events';
+import type { DeckArrangement } from './lib/deck-profile';
+import { useDeckProfile } from './lib/deck-profile';
 import { queryErrorMessage, queryKeys } from './lib/query';
 import { pluginRegistry } from './plugins/registry';
 import type {
@@ -76,30 +78,44 @@ export function App() {
 
 function DashboardShell({ config }: { config: DashboardConfig }) {
   const appearance = resolveAppearance(config);
-  const gridStyle = useMemo(
-    () => ({
-      gridTemplateColumns: `repeat(${config.layout.columns}, minmax(0, 1fr))`,
-      gridTemplateRows: config.statusline
-        ? statuslineRows(config)
-        : `repeat(${config.layout.rows}, minmax(0, 1fr))`,
-      '--deck-text-scale': appearance.textScale.toString(),
-    }),
-    [appearance.textScale, config],
-  ) as CSSProperties;
-  const rowOffset = config.statusline?.position === 'top' ? 1 : 0;
   const layoutMode = config.layout.mode ?? 'auto';
+  const { ref: shellRef, profile, arrangement } = useDeckProfile(layoutMode);
+  const gridStyle = useMemo(() => {
+    const style: CSSProperties = {
+      '--deck-text-scale': appearance.textScale.toString(),
+    } as CSSProperties;
+    if (arrangement === 'grid') {
+      style.gridTemplateColumns = `repeat(${config.layout.columns}, minmax(0, 1fr))`;
+      style.gridTemplateRows = config.statusline
+        ? statuslineRows(config)
+        : `repeat(${config.layout.rows}, minmax(0, 1fr))`;
+    }
+    return style;
+  }, [appearance.textScale, config, arrangement]);
+  const rowOffset = config.statusline?.position === 'top' ? 1 : 0;
   const displayPreset = resolveDisplayPreset(config);
 
   return (
-    <section className="deck-shell h-screen w-screen overflow-hidden bg-bg p-0">
+    <section
+      ref={shellRef}
+      className="deck-shell h-screen w-screen overflow-hidden bg-bg p-0"
+    >
       <div
         className={`dashboard-grid deck-density-${appearance.density} grid h-full w-full gap-0 border-0 bg-canvas p-0`}
         data-display-preset={displayPreset}
-        data-layout-mode={layoutMode}
+        data-deck-profile={profile}
+        data-deck-arrangement={arrangement}
         style={gridStyle}
       >
-        {config.statusline ? (
+        {/*
+         * In the column arrangement, DOM order is what drives visual order
+         * (we don't use CSS `order` for the statusline), so render it before
+         * or after the regions based on its configured edge. That also keeps
+         * keyboard tab order aligned with the visual reading order.
+         */}
+        {config.statusline && config.statusline.position !== 'bottom' ? (
           <StatuslinePanel
+            arrangement={arrangement}
             columns={config.layout.columns}
             rows={config.layout.rows}
             statusline={config.statusline}
@@ -108,33 +124,73 @@ function DashboardShell({ config }: { config: DashboardConfig }) {
         {config.layout.regions.map((region) => (
           <DashboardPanel
             key={region.id}
+            arrangement={arrangement}
             region={region}
             rowOffset={rowOffset}
           />
         ))}
+        {config.statusline && config.statusline.position === 'bottom' ? (
+          <StatuslinePanel
+            arrangement={arrangement}
+            columns={config.layout.columns}
+            rows={config.layout.rows}
+            statusline={config.statusline}
+          />
+        ) : null}
       </div>
     </section>
   );
 }
 
+type RegionRole = 'agent' | 'data' | 'status';
+
+function regionPrimaryRole(region: DashboardRegion): RegionRole {
+  const tabId = region.defaultTab ?? region.tabs[0]?.id;
+  const tab = region.tabs.find((entry) => entry.id === tabId) ?? region.tabs[0];
+  const plugin = tab ? pluginRegistry[tab.pluginId] : undefined;
+  return plugin?.kind ?? 'data';
+}
+
+// In the vertical column arrangement, role drives stacking order for the
+// regions: the data rail sits as a compact band above the agent surface
+// (chat), which grows to fill the remaining height. The statusline pins to
+// its edge via DOM order (see DashboardShell), not via CSS `order`, so that
+// keyboard tab order matches the visual reading order.
+function columnOrder(role: RegionRole) {
+  if (role === 'data') return 10;
+  return 20;
+}
+
 function StatuslinePanel({
+  arrangement,
   columns,
   rows,
   statusline,
 }: {
+  arrangement: DeckArrangement;
   columns: number;
   rows: number;
   statusline: DashboardStatusline;
 }) {
   const plugin = pluginRegistry[statusline.pluginId];
-  const gridPosition = {
-    gridColumn: `1 / span ${columns}`,
-    gridRow: statusline.position === 'top' ? '1 / span 1' : `${rows + 1}`,
-  };
+  const style: CSSProperties =
+    arrangement === 'grid'
+      ? {
+          gridColumn: `1 / span ${columns}`,
+          gridRow: statusline.position === 'top' ? '1 / span 1' : `${rows + 1}`,
+        }
+      : // Column arrangement uses DOM order, not CSS `order`, to position the
+        // statusline (see DashboardShell), so no inline style is needed here.
+        {};
 
   if (!plugin) {
     return (
-      <PanelFrame title="Statusline" style={gridPosition} variant="statusline">
+      <PanelFrame
+        regionRole="status"
+        style={style}
+        title="Statusline"
+        variant="statusline"
+      >
         <EmptyState
           title="Plugin unavailable"
           detail={`No plugin registered for ${statusline.pluginId}.`}
@@ -147,7 +203,12 @@ function StatuslinePanel({
   const PluginComponent = plugin.Component;
 
   return (
-    <PanelFrame title="Statusline" style={gridPosition} variant="statusline">
+    <PanelFrame
+      regionRole="status"
+      style={style}
+      title="Statusline"
+      variant="statusline"
+    >
       <PluginComponent
         config={mergedConfig}
         region={statuslineRegion(statusline)}
@@ -157,9 +218,11 @@ function StatuslinePanel({
 }
 
 function DashboardPanel({
+  arrangement,
   region,
   rowOffset,
 }: {
+  arrangement: DeckArrangement;
   region: DashboardRegion;
   rowOffset: number;
 }) {
@@ -167,19 +230,35 @@ function DashboardPanel({
   const [activeTabId, setActiveTabId] = useState(initialTabId);
   const activeTab =
     region.tabs.find((tab) => tab.id === activeTabId) ?? region.tabs[0];
-  const gridPosition = {
-    gridColumn: `${region.column} / span ${region.columnSpan}`,
-    gridRow: `${region.row + rowOffset} / span ${region.rowSpan}`,
-  };
+  const role = regionPrimaryRole(region);
+  const style: CSSProperties =
+    arrangement === 'grid'
+      ? {
+          gridColumn: `${region.column} / span ${region.columnSpan}`,
+          gridRow: `${region.row + rowOffset} / span ${region.rowSpan}`,
+        }
+      : { order: columnOrder(role) };
 
   useEffect(() => {
     if (region.tabs.some((tab) => tab.id === activeTabId)) return;
     setActiveTabId(initialTabId);
   }, [activeTabId, initialTabId, region.tabs]);
 
+  // In column mode an error frame must stay visible, not be capped under the
+  // data band's max-height. Promote the failing region to the agent role so it
+  // uses the floor + grow behavior and the misconfiguration is unmissable.
+  const errorRole: RegionRole = 'agent';
+  const errorStyle: CSSProperties =
+    arrangement === 'grid' ? style : { order: columnOrder(errorRole) };
+
   if (!activeTab) {
     return (
-      <PanelFrame title={region.title} style={gridPosition} variant={region.id}>
+      <PanelFrame
+        regionRole={errorRole}
+        style={errorStyle}
+        title={region.title}
+        variant={region.id}
+      >
         <EmptyState title="Region unavailable" detail="No tabs configured." />
       </PanelFrame>
     );
@@ -188,7 +267,12 @@ function DashboardPanel({
   const plugin = pluginRegistry[activeTab.pluginId];
   if (!plugin) {
     return (
-      <PanelFrame title={region.title} style={gridPosition} variant={region.id}>
+      <PanelFrame
+        regionRole={errorRole}
+        style={errorStyle}
+        title={region.title}
+        variant={region.id}
+      >
         <RegionTabs
           activeTabId={activeTab.id}
           onChange={setActiveTabId}
@@ -206,7 +290,12 @@ function DashboardPanel({
   const PluginComponent = plugin.Component;
 
   return (
-    <PanelFrame title={region.title} style={gridPosition} variant={region.id}>
+    <PanelFrame
+      regionRole={role}
+      style={style}
+      title={region.title}
+      variant={region.id}
+    >
       <div className="flex h-full min-h-0 flex-col">
         <RegionTabs
           activeTabId={activeTab.id}
@@ -257,11 +346,13 @@ function RegionTabs({
 
 function PanelFrame({
   children,
+  regionRole,
   style,
   title,
   variant,
 }: {
   children: React.ReactNode;
+  regionRole: RegionRole;
   style: React.CSSProperties;
   title: string;
   variant: string;
@@ -270,6 +361,7 @@ function PanelFrame({
     return (
       <Card
         className="panel panel-status min-h-0 overflow-hidden border-x-0 border-t-0"
+        data-region-role={regionRole}
         style={style}
       >
         {children}
@@ -280,6 +372,7 @@ function PanelFrame({
   return (
     <Card
       className={`panel panel-${variant} min-h-0 overflow-hidden border-y-0 border-l-0`}
+      data-region-role={regionRole}
       style={style}
     >
       <div aria-label={title} className="h-full min-h-0">

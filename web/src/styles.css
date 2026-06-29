@@ -657,44 +657,58 @@ button:disabled {
   color: var(--deck-faint);
 }
 
-.dashboard-grid[data-layout-mode='stacked'] {
-  display: flex !important;
-  min-height: 100vh;
+/*
+ * Vertical column arrangement (portrait / compact profiles, or mode 'stacked').
+ * The deck stays height-contained: panels never push the page into a scroll,
+ * they scroll internally. The agent surface (chat) grows to fill; the data rail
+ * sits as a compact band on top; the status line pins to its edge.
+ *
+ * Paired with web/src/lib/deck-profile.ts: aspect/width thresholds (the
+ * `portrait` and `compact` profile boundaries) live there; the vh-based caps
+ * and the agent floor live here. Both sides key on `[data-deck-arrangement]`,
+ * `[data-deck-profile]`, and `[data-region-role]` emitted from App.tsx.
+ */
+.dashboard-grid[data-deck-arrangement='column'] {
+  display: flex;
+  height: 100%;
   flex-direction: column;
 }
 
-.dashboard-grid[data-layout-mode='stacked'] .panel {
-  min-height: 18rem;
+.dashboard-grid[data-deck-arrangement='column'] .panel {
+  min-height: 0;
+  /* Stacked panels are separated by a single bottom hairline, not side rules. */
+  border-width: 0 0 1px 0;
 }
 
-.dashboard-grid[data-layout-mode='stacked'] .panel-status {
-  min-height: var(--deck-statusline-height);
+.dashboard-grid[data-deck-arrangement='column'] .panel:last-child {
+  border-bottom-width: 0;
 }
 
-@media (max-width: 900px), (max-height: 620px), (max-aspect-ratio: 2.5 / 1) {
-  body {
-    overflow: auto;
-  }
+.dashboard-grid[data-deck-arrangement='column'] .panel[data-region-role='agent'] {
+  /*
+   * Floor + grow without overflowing the shell. flex-basis 40vh keeps the
+   * agent dominant when there is room; shrink: 1 lets it cede height
+   * proportionally only when stacked siblings would otherwise overflow
+   * `overflow: hidden` (otherwise the chat input would clip). min-height: 0
+   * means no hard floor competes with that shrink.
+   */
+  flex: 1 1 40vh;
+  min-height: 0;
+}
 
-  .deck-page,
-  .deck-shell {
-    min-height: 100vh;
-    height: auto;
-  }
+.dashboard-grid[data-deck-arrangement='column'] .panel[data-region-role='data'] {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 42vh;
+}
 
-  .dashboard-grid:not([data-layout-mode='xeneon']) {
-    display: flex !important;
-    min-height: 100vh;
-    flex-direction: column;
-  }
+.dashboard-grid[data-deck-arrangement='column'][data-deck-profile='compact']
+  .panel[data-region-role='data'] {
+  max-height: 38vh;
+}
 
-  .dashboard-grid:not([data-layout-mode='xeneon']) .panel {
-    min-height: 18rem;
-  }
-
-  .dashboard-grid:not([data-layout-mode='xeneon']) .panel-status {
-    min-height: var(--deck-statusline-height);
-  }
+.dashboard-grid[data-deck-arrangement='column'] .panel[data-region-role='status'] {
+  flex: 0 0 auto;
 }
 
 @media (prefers-reduced-motion: reduce) {
