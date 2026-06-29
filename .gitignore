@@ -4,6 +4,7 @@ node_modules/
 dist/
 web/dist/
 .flue-vite/
+.playwright-mcp/
 .release/
 .astro/
 design/

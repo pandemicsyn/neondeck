@@ -13,11 +13,31 @@ export type ConfigChangeEvent = {
 type ConfigChangeListener = (event: ConfigChangeEvent) => void;
 
 const listeners = new Set<ConfigChangeListener>();
+const recentConfigEventLimit = 100;
+const recentConfigEvents: ConfigChangeEvent[] = [];
 
 export function publishConfigEvent(event: ConfigChangeEvent) {
+  recentConfigEvents.push(event);
+  if (recentConfigEvents.length > recentConfigEventLimit) {
+    recentConfigEvents.shift();
+  }
+
   for (const listener of listeners) {
     listener(event);
   }
+}
+
+export function replayConfigEventsAfter(
+  lastEventId: string | null | undefined,
+) {
+  if (!lastEventId) return [];
+
+  const eventIndex = recentConfigEvents.findIndex(
+    (event) => event.id === lastEventId,
+  );
+  if (eventIndex === -1) return recentConfigEvents.slice();
+
+  return recentConfigEvents.slice(eventIndex + 1);
 }
 
 export function subscribeConfigEvents(listener: ConfigChangeListener) {

@@ -157,6 +157,8 @@ function FlueChatSessionView({
   const [input, setInput] = useState('');
   const [commandResult, setCommandResult] = useState<NeonCommandResult>();
   const [runningCommand, setRunningCommand] = useState<string>();
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [submitError, setSubmitError] = useState<string>();
   const flue = useFlueClient();
   const agent = useFlueAgent({
     name: agentName,
@@ -167,16 +169,33 @@ function FlueChatSessionView({
   async function submit(event: FormEvent) {
     event.preventDefault();
     const message = input.trim();
-    if (!message) return;
+    if (!message || sendingMessage || runningCommand) return;
 
-    setInput('');
+    setSubmitError(undefined);
+
     if (message.startsWith('/')) {
-      setCommandResult(await runCommand(message));
+      try {
+        setCommandResult(await runCommand(message));
+        setInput('');
+      } catch (error) {
+        setSubmitError(errorMessage(error));
+      }
       return;
     }
-    if (!session) return;
+    if (!session) {
+      setSubmitError('Active session is still resolving.');
+      return;
+    }
 
-    await agent.sendMessage(message);
+    setSendingMessage(true);
+    try {
+      await agent.sendMessage(message);
+      setInput('');
+    } catch (error) {
+      setSubmitError(errorMessage(error));
+    } finally {
+      setSendingMessage(false);
+    }
   }
 
   async function runCommand(command: string) {
@@ -282,31 +301,48 @@ function FlueChatSessionView({
           )}
         </div>
       </ScrollArea>
-      <form
-        className="flex h-11 items-center gap-2.5 border-t border-line bg-field px-4"
-        onSubmit={submit}
-      >
-        <span className="font-mono text-[13px] text-accent">›</span>
-        <Textarea
-          className="dashboard-input h-7 flex-1 overflow-hidden px-0 py-1 font-mono text-[13px] leading-5"
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={session?.placeholder ?? 'Resolving active session...'}
-          rows={1}
-          disabled={!session}
-          value={input}
-        />
-        <Kbd>Enter send · Ctrl K tools</Kbd>
-        <Button
-          className="sr-only"
-          disabled={!session || !input.trim()}
-          type="submit"
-        >
-          Send
-        </Button>
-      </form>
+      <div className="border-t border-line bg-field">
+        {submitError ? (
+          <div className="border-b border-accent/50 px-4 py-1 font-mono text-[10.5px] leading-4 text-accent">
+            {submitError}
+          </div>
+        ) : null}
+        <form className="flex h-11 items-center gap-2.5 px-4" onSubmit={submit}>
+          <span className="font-mono text-[13px] text-accent">›</span>
+          <Textarea
+            className="dashboard-input h-7 flex-1 overflow-hidden px-0 py-1 font-mono text-[13px] leading-5"
+            onChange={(event) => {
+              setInput(event.target.value);
+              if (submitError) setSubmitError(undefined);
+            }}
+            onKeyDown={handleKeyDown}
+            placeholder={session?.placeholder ?? 'Resolving active session...'}
+            rows={1}
+            disabled={!session || sendingMessage || !!runningCommand}
+            value={input}
+          />
+          <Kbd>
+            {sendingMessage || runningCommand
+              ? 'Sending'
+              : 'Enter send · Ctrl K tools'}
+          </Kbd>
+          <Button
+            className="sr-only"
+            disabled={
+              !session || !input.trim() || sendingMessage || !!runningCommand
+            }
+            type="submit"
+          >
+            Send
+          </Button>
+        </form>
+      </div>
     </div>
   );
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function renderMessagePart(part: unknown, key: string): ReactNode {
