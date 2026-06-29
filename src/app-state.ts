@@ -6,6 +6,8 @@ import {
   ensureRuntimeHome,
   runtimePaths,
 } from './runtime-home';
+import { deliverNativeNotification } from './native-notifications';
+import { publishNotificationEvent } from './notification-events';
 
 export type NotificationLevel = 'info' | 'ready' | 'attention' | 'urgent';
 
@@ -48,6 +50,13 @@ export type WorkflowSummaryRecord = {
   summary: JsonValue | null;
   createdAt: string;
   updatedAt: string;
+};
+
+const notificationLevelRank: Record<NotificationLevel, number> = {
+  info: 0,
+  ready: 1,
+  attention: 2,
+  urgent: 3,
 };
 
 export async function listNotifications(
@@ -150,12 +159,26 @@ export async function addNotification(
           existingRecord.id,
         );
 
-      return {
+      const reconciled = {
         ...notification,
         id: existingRecord.id,
         createdAt: existingRecord.createdAt,
         occurrenceCount: existingRecord.occurrenceCount + 1,
       };
+      publishNotificationEvent({
+        id: reconciled.id,
+        action: 'reconciled',
+        notification: reconciled,
+        changedAt: now,
+      });
+      if (
+        notificationLevelRank[reconciled.level] >
+        notificationLevelRank[existingRecord.level]
+      ) {
+        deliverNativeNotification(reconciled);
+      }
+
+      return reconciled;
     }
 
     database
@@ -196,6 +219,14 @@ export async function addNotification(
     database.close();
   }
 
+  publishNotificationEvent({
+    id: notification.id,
+    action: 'created',
+    notification,
+    changedAt: now,
+  });
+  deliverNativeNotification(notification);
+
   return notification;
 }
 
@@ -205,15 +236,28 @@ export async function markNotificationRead(id: string, paths = runtimePaths()) {
   const database = new DatabaseSync(paths.neondeckDatabase);
 
   try {
-    database
+    const result = database
       .prepare(
         `
         UPDATE notifications
         SET read_at = ?, updated_at = ?
-        WHERE id = ?;
+        WHERE id = ?
+          AND read_at IS NULL;
       `,
       )
       .run(now, now, id);
+    if (result.changes === 0) return;
+    const row = database
+      .prepare('SELECT * FROM notifications WHERE id = ?;')
+      .get(id);
+    if (row) {
+      publishNotificationEvent({
+        id,
+        action: 'read',
+        notification: readNotificationRow(row),
+        changedAt: now,
+      });
+    }
   } finally {
     database.close();
   }
@@ -225,15 +269,28 @@ export async function resolveNotification(id: string, paths = runtimePaths()) {
   const database = new DatabaseSync(paths.neondeckDatabase);
 
   try {
-    database
+    const result = database
       .prepare(
         `
         UPDATE notifications
         SET resolved_at = ?, read_at = COALESCE(read_at, ?), updated_at = ?
-        WHERE id = ?;
+        WHERE id = ?
+          AND resolved_at IS NULL;
       `,
       )
       .run(now, now, now, id);
+    if (result.changes === 0) return;
+    const row = database
+      .prepare('SELECT * FROM notifications WHERE id = ?;')
+      .get(id);
+    if (row) {
+      publishNotificationEvent({
+        id,
+        action: 'resolved',
+        notification: readNotificationRow(row),
+        changedAt: now,
+      });
+    }
   } finally {
     database.close();
   }

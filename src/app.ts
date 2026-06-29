@@ -18,6 +18,10 @@ import {
   subscribeConfigEvents,
 } from './config-events';
 import {
+  formatNotificationServerSentEvent,
+  subscribeNotificationEvents,
+} from './notification-events';
+import {
   listExecutionApprovals,
   requestExecutionApproval,
   resolveExecutionApproval,
@@ -236,6 +240,44 @@ app.get('/api/events/config', (c) => {
         active = false;
         clearInterval(heartbeat);
         clearTimeout(maxAge);
+        unsubscribe();
+      };
+    },
+    cancel() {
+      cleanup();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+      'content-type': 'text/event-stream; charset=utf-8',
+      'x-accel-buffering': 'no',
+    },
+  });
+});
+
+app.get('/api/events/notifications', () => {
+  const encoder = new TextEncoder();
+  let cleanup = () => {};
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      function send(value: string) {
+        controller.enqueue(encoder.encode(value));
+      }
+
+      send(': connected\n\n');
+      const unsubscribe = subscribeNotificationEvents((event) => {
+        send(formatNotificationServerSentEvent(event));
+      });
+      const heartbeat = setInterval(() => {
+        send(`: heartbeat ${Date.now()}\n\n`);
+      }, 25_000);
+
+      cleanup = () => {
+        clearInterval(heartbeat);
         unsubscribe();
       };
     },
