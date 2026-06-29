@@ -29,10 +29,14 @@ import {
 } from './memory-actions';
 import {
   type RuntimePaths,
+  type ThinkingLevel,
   ensureRuntimeHome,
   runtimePaths,
 } from './runtime-home';
+import { isThinkingLevel, readAgentModelSelectionSync } from './agent-config';
+import { updateAgentModels } from './config-actions';
 import { createScheduleBlueprint } from './scheduler';
+import { startNeonSession } from './session-actions';
 import { listPrWatchRecords, addPrWatch } from './watch-actions';
 
 export type NeonCommandName =
@@ -44,6 +48,7 @@ export type NeonCommandName =
   | 'prepare-pr'
   | 'review-local'
   | 'briefing'
+  | 'reasoning'
   | 'memory'
   | 'watch-pr'
   | 'dev-doctor'
@@ -123,7 +128,7 @@ const commandActionOutputSchema = v.looseObject({
 export const commandRunAction = defineAction({
   name: 'neondeck_command_run',
   description:
-    'Run a Neon slash command such as /repo-status, /review-queue, /explain-ci, /summarize-pr, /draft-pr-description, /prepare-pr, /review-local, /briefing, /memory, /watch-pr, /watch-release, or /dev-doctor and persist a workflow summary.',
+    'Run a Neon slash command such as /repo-status, /review-queue, /explain-ci, /summarize-pr, /draft-pr-description, /prepare-pr, /review-local, /briefing, /reasoning, /memory, /watch-pr, /watch-release, or /dev-doctor and persist a workflow summary.',
   input: commandRunInputSchema,
   output: commandRunOutputSchema,
   async run({ input, log, emitData }) {
@@ -238,6 +243,12 @@ export function supportedCommands() {
       usage: '/briefing',
       description:
         'Summarize repos, watches, scheduled jobs, notifications, and PR queue readiness.',
+    },
+    {
+      name: 'reasoning',
+      usage: '/reasoning [off|minimal|low|medium|high|xhigh]',
+      description:
+        'Show or change the active Neon session reasoning level for the selected display model.',
     },
     {
       name: 'memory',
@@ -382,6 +393,10 @@ async function executeCommand(
 
   if (command.name === 'briefing') {
     return briefingCommand(command, paths, dependencies);
+  }
+
+  if (command.name === 'reasoning') {
+    return reasoningCommand(command, paths);
   }
 
   if (command.name === 'memory') {
@@ -733,6 +748,102 @@ async function briefingCommand(
     },
     topActions,
   });
+}
+
+async function reasoningCommand(
+  command: ParsedNeonCommand,
+  paths: RuntimePaths,
+): Promise<NeonCommandResult> {
+  const models = readAgentModelSelectionSync(paths);
+  const supportedLevels = supportedReasoningLevelsForModel(
+    models.displayAssistant,
+  );
+  const requestedLevel = command.args[0]?.toLowerCase();
+
+  if (!requestedLevel) {
+    return completedCommand(
+      command.name,
+      command.raw,
+      `Current reasoning is ${models.displayAssistantThinkingLevel} for ${models.displayAssistant}.`,
+      {
+        model: models.displayAssistant,
+        thinkingLevel: models.displayAssistantThinkingLevel,
+        supportedLevels,
+        usage: '/reasoning [off|minimal|low|medium|high|xhigh]',
+      },
+    );
+  }
+
+  if (!isThinkingLevel(requestedLevel)) {
+    return failedCommand(
+      command.name,
+      command.raw,
+      `Unknown reasoning level "${requestedLevel}".`,
+      {
+        requires: ['reasoningLevel'],
+        data: {
+          model: models.displayAssistant,
+          currentLevel: models.displayAssistantThinkingLevel,
+          supportedLevels,
+        },
+      },
+    );
+  }
+
+  if (!supportedLevels.includes(requestedLevel)) {
+    return failedCommand(
+      command.name,
+      command.raw,
+      `${models.displayAssistant} supports ${formatList(supportedLevels)} reasoning, not "${requestedLevel}".`,
+      {
+        requires: ['reasoningLevel'],
+        data: {
+          model: models.displayAssistant,
+          currentLevel: models.displayAssistantThinkingLevel,
+          requestedLevel,
+          supportedLevels,
+        },
+      },
+    );
+  }
+
+  const update = await updateAgentModels(
+    { displayAssistantThinkingLevel: requestedLevel },
+    paths,
+  );
+  if (!update.ok) {
+    return failedCommand(command.name, command.raw, update.message, {
+      errors: update.errors,
+      requires: update.requires,
+    });
+  }
+
+  const session = update.changed
+    ? await startNeonSession(
+        {
+          label: `Reasoning ${requestedLevel}`,
+          reason: `reasoning-level:${requestedLevel}`,
+        },
+        paths,
+      )
+    : undefined;
+  const nextModels = readAgentModelSelectionSync(paths);
+
+  return completedCommand(
+    command.name,
+    command.raw,
+    update.changed
+      ? `Set reasoning to ${requestedLevel} for ${models.displayAssistant} and started a fresh Neon session.`
+      : `Reasoning is already ${requestedLevel} for ${models.displayAssistant}.`,
+    {
+      model: models.displayAssistant,
+      previousLevel: models.displayAssistantThinkingLevel,
+      thinkingLevel: nextModels.displayAssistantThinkingLevel,
+      supportedLevels,
+      sessionStarted: Boolean(session?.ok),
+      session: session?.state ?? null,
+    },
+  );
 }
 
 async function memoryCommand(
@@ -1560,11 +1671,88 @@ function isCommandName(value: string): value is NeonCommandName {
     'prepare-pr',
     'review-local',
     'briefing',
+    'reasoning',
     'memory',
     'watch-pr',
     'dev-doctor',
     'watch-release',
   ].includes(value);
+}
+
+const allThinkingLevels: ThinkingLevel[] = [
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+];
+
+function supportedReasoningLevelsForModel(model: string): ThinkingLevel[] {
+  const specifier = parseModelSpecifier(model);
+  if (!specifier) return ['off'];
+
+  if (specifier.provider === 'openai') {
+    return isOpenAiReasoningModel(specifier.model)
+      ? allThinkingLevels
+      : ['off'];
+  }
+
+  if (specifier.provider === 'anthropic') {
+    return isAnthropicReasoningModel(specifier.model)
+      ? allThinkingLevels
+      : ['off'];
+  }
+
+  if (specifier.provider === 'kilocode') {
+    return isKilocodeReasoningModel(specifier.model)
+      ? allThinkingLevels
+      : ['off'];
+  }
+
+  return ['off'];
+}
+
+function parseModelSpecifier(model: string) {
+  const slash = model.indexOf('/');
+  if (slash <= 0 || slash === model.length - 1) return null;
+  return {
+    provider: model.slice(0, slash),
+    model: model.slice(slash + 1),
+  };
+}
+
+function isOpenAiReasoningModel(model: string) {
+  return /^(gpt-5|o[1-9])(?:[.-]|$)/i.test(model);
+}
+
+function isAnthropicReasoningModel(model: string) {
+  return /^claude-(?:.*-4|3-7)(?:[.-]|$)/i.test(model);
+}
+
+function isKilocodeReasoningModel(model: string) {
+  const nested = parseModelSpecifier(model);
+  if (nested?.provider === 'openai') {
+    return isOpenAiReasoningModel(nested.model);
+  }
+  if (nested?.provider === 'anthropic') {
+    return isAnthropicReasoningModel(nested.model);
+  }
+
+  return (
+    /^kilo-auto(?:\/|$)/i.test(model) ||
+    isOpenAiReasoningModel(model) ||
+    isAnthropicReasoningModel(model) ||
+    /(?:^|\/)(deepseek-r1|qwen.*thinking|.*reasoning.*)(?:[/:.-]|$)/i.test(
+      model,
+    )
+  );
+}
+
+function formatList(values: string[]) {
+  if (values.length === 0) return 'no';
+  if (values.length === 1) return values[0] ?? '';
+  return `${values.slice(0, -1).join(', ')} or ${values.at(-1)}`;
 }
 
 function isMemoryScope(value: string | undefined): value is MemoryScope {

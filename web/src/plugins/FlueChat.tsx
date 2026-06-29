@@ -45,6 +45,11 @@ const defaultCommandCatalog: FlueChatCommand[] = [
     description: 'summarize active runtime context',
   },
   {
+    label: 'Reasoning',
+    command: '/reasoning',
+    description: 'show or change the session reasoning level',
+  },
+  {
     label: 'Repo',
     command: '/repo-status',
     description: 'inspect the current repo state',
@@ -218,6 +223,7 @@ function FlueChatSessionView({
   const [dismissedCommandInput, setDismissedCommandInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [submitError, setSubmitError] = useState<string>();
+  const queryClient = useQueryClient();
   const flue = useFlueClient();
   const agent = useFlueAgent({
     name: agentName,
@@ -254,7 +260,13 @@ function FlueChatSessionView({
 
     if (message.startsWith('/')) {
       try {
-        setCommandResult(await runCommand(message));
+        const result = await runCommand(message);
+        setCommandResult(result);
+        if (result.ok && result.command === 'reasoning') {
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.neonSession,
+          });
+        }
         setInput('');
       } catch (error) {
         setSubmitError(errorMessage(error));

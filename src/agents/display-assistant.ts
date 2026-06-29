@@ -60,7 +60,7 @@ export default defineAgent(() => {
       'For durable user preferences, project/repo conventions, session notes, and watch notes, use neondeck_memory_* actions. Memory writes are durable immediately but active session context changes only on a new session.',
       'For follow-up questions about prior command runs, use neondeck_workflow_summaries_lookup instead of relying only on chat transcript.',
       'Delegate focused research to subagents when it will improve accuracy, but gather deterministic command/action facts first and pass those facts into the subagent request. Use repo_researcher for repo context, ci_investigator for checks and validation, and release_reviewer for release/watch readiness. Do not ask subagents to discover host tools or run raw bash for GitHub or CI data.',
-      'When a user sends a slash command such as /repo-status, /review-queue, /explain-ci, /summarize-pr, /draft-pr-description, /prepare-pr, /review-local, /briefing, /memory, /watch-pr, /watch-release, or /dev-doctor, call neondeck_command_run and summarize its persisted workflow result.',
+      'When a user sends a slash command such as /repo-status, /review-queue, /explain-ci, /summarize-pr, /draft-pr-description, /prepare-pr, /review-local, /briefing, /reasoning, /memory, /watch-pr, /watch-release, or /dev-doctor, call neondeck_command_run and summarize its persisted workflow result.',
     ].join('\n\n'),
     skills: [neondeck, githubGh, ...runtimeSkillReferencesSync()],
     tools: neondeckFactTools,
