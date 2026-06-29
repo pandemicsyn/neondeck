@@ -467,7 +467,7 @@ describe('config actions', () => {
     });
 
     await expect(
-      updateAgentModels({ displayAssistant: 'openai/gpt-5' }, paths),
+      updateAgentModels({ displayAssistant: 'ollama/llama3.1' }, paths),
     ).resolves.toMatchObject({
       ok: false,
       changed: false,
@@ -596,9 +596,65 @@ describe('config actions', () => {
         apiKeyEnv: 'NEONDECK_KILO_KEY',
       },
     });
+
+    await expect(
+      updateProviderConfig(
+        {
+          provider: 'openai',
+          enabled: true,
+          apiKeyEnv: 'NEONDECK_OPENAI_KEY',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        providers: {
+          kilocode: {
+            enabled: false,
+            apiKeyEnv: 'NEONDECK_KILO_KEY',
+          },
+          openai: {
+            enabled: true,
+            apiKeyEnv: 'NEONDECK_OPENAI_KEY',
+          },
+        },
+      },
+    });
+
+    await expect(
+      updateProviderConfig(
+        {
+          provider: 'anthropic',
+          organizationIdEnv: 'ANTHROPIC_ORG',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      message: 'anthropic provider does not support organizationIdEnv.',
+    });
+
+    config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.providers).toEqual({
+      kilocode: {
+        enabled: false,
+        apiKeyEnv: 'NEONDECK_KILO_KEY',
+      },
+      openai: {
+        enabled: true,
+        apiKeyEnv: 'NEONDECK_OPENAI_KEY',
+      },
+    });
     expect(readHistory(paths.neondeckDatabase)).toMatchObject([
       { action: 'config_update_provider', target: 'providers.kilocode' },
       { action: 'config_update_provider', target: 'providers.kilocode' },
+      { action: 'config_update_provider', target: 'providers.openai' },
     ]);
   });
 

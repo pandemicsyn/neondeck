@@ -1,3 +1,4 @@
+import type { ProviderRegistration } from '@flue/runtime';
 import {
   ensureRuntimeHomeSync,
   parseAppConfig,
@@ -7,7 +8,11 @@ import {
   type RuntimePaths,
 } from './runtime-home';
 
-export const registeredProviderIds = ['kilocode'] as const;
+export const registeredProviderIds = [
+  'kilocode',
+  'openai',
+  'anthropic',
+] as const;
 
 export type RegisteredProviderId = (typeof registeredProviderIds)[number];
 
@@ -21,10 +26,26 @@ export type KilocodeProviderStatus = {
   organizationIdPresent: boolean;
 };
 
+export type ApiKeyProviderStatus = {
+  id: 'openai' | 'anthropic';
+  allowed: true;
+  enabled: boolean;
+  apiKeyEnv: string;
+  apiKeyPresent: boolean;
+};
+
+export type ProviderRuntimeRegistration = {
+  id: RegisteredProviderId;
+  registration: ProviderRegistration;
+};
+
 const defaultKilocodeApiKeyEnv = 'KILOCODE_API_KEY';
 const fallbackKilocodeApiKeyEnv = 'KILO_API_KEY';
 const defaultKilocodeOrganizationIdEnv = 'KILOCODE_ORGANIZATION_ID';
 const fallbackKilocodeOrganizationIdEnv = 'KILO_ORGANIZATION_ID';
+const defaultOpenAiApiKeyEnv = 'OPENAI_API_KEY';
+const defaultAnthropicApiKeyEnv = 'ANTHROPIC_API_KEY';
+const kilocodeGatewayBaseUrl = 'https://api.kilo.ai/api/gateway';
 
 export function readKilocodeProviderCredentials(
   env: NodeJS.ProcessEnv = process.env,
@@ -49,6 +70,43 @@ export function readKilocodeProviderCredentials(
 export function readProviderConfigSync(paths: RuntimePaths = runtimePaths()) {
   ensureRuntimeHomeSync(paths);
   return readRuntimeJsonSync(paths.config, parseAppConfig);
+}
+
+export function providerRuntimeRegistrations(
+  env: NodeJS.ProcessEnv = process.env,
+  config?: Pick<AppConfig, 'providers'>,
+): ProviderRuntimeRegistration[] {
+  const registrations: ProviderRuntimeRegistration[] = [];
+  const kilocode = resolveKilocodeProviderStatus(config, env);
+  if (kilocode.enabled) {
+    const organizationId = kilocode.organizationIdEnv
+      ? env[kilocode.organizationIdEnv]
+      : undefined;
+    registrations.push({
+      id: 'kilocode',
+      registration: {
+        api: 'openai-completions',
+        baseUrl: kilocodeGatewayBaseUrl,
+        apiKey: env[kilocode.apiKeyEnv] ?? '',
+        headers: organizationId
+          ? { 'X-KiloCode-OrganizationId': organizationId }
+          : undefined,
+      },
+    });
+  }
+
+  registrations.push(
+    apiKeyProviderRuntimeRegistration(
+      resolveOpenAiProviderStatus(config, env),
+      env,
+    ),
+    apiKeyProviderRuntimeRegistration(
+      resolveAnthropicProviderStatus(config, env),
+      env,
+    ),
+  );
+
+  return registrations;
 }
 
 export function resolveKilocodeProviderStatus(
@@ -82,8 +140,61 @@ export function resolveKilocodeProviderStatus(
   };
 }
 
+export function resolveOpenAiProviderStatus(
+  config?: Pick<AppConfig, 'providers'>,
+  env: NodeJS.ProcessEnv = process.env,
+): ApiKeyProviderStatus {
+  return resolveApiKeyProviderStatus(
+    'openai',
+    config?.providers?.openai,
+    defaultOpenAiApiKeyEnv,
+    env,
+  );
+}
+
+export function resolveAnthropicProviderStatus(
+  config?: Pick<AppConfig, 'providers'>,
+  env: NodeJS.ProcessEnv = process.env,
+): ApiKeyProviderStatus {
+  return resolveApiKeyProviderStatus(
+    'anthropic',
+    config?.providers?.anthropic,
+    defaultAnthropicApiKeyEnv,
+    env,
+  );
+}
+
 export function isRegisteredProvider(
   provider: string,
 ): provider is RegisteredProviderId {
   return registeredProviderIds.includes(provider as RegisteredProviderId);
+}
+
+function resolveApiKeyProviderStatus(
+  id: ApiKeyProviderStatus['id'],
+  config: { enabled?: boolean; apiKeyEnv?: string } | undefined,
+  defaultApiKeyEnv: string,
+  env: NodeJS.ProcessEnv,
+): ApiKeyProviderStatus {
+  const apiKeyEnv = config?.apiKeyEnv ?? defaultApiKeyEnv;
+
+  return {
+    id,
+    allowed: true,
+    enabled: config?.enabled ?? true,
+    apiKeyEnv,
+    apiKeyPresent: Boolean(env[apiKeyEnv]),
+  };
+}
+
+function apiKeyProviderRuntimeRegistration(
+  status: ApiKeyProviderStatus,
+  env: NodeJS.ProcessEnv,
+): ProviderRuntimeRegistration {
+  return {
+    id: status.id,
+    registration: {
+      apiKey: status.enabled ? (env[status.apiKeyEnv] ?? '') : '',
+    },
+  };
 }

@@ -4,7 +4,7 @@ import {
   type QueryClient,
   type UseQueryResult,
 } from '@tanstack/react-query';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   getRepoHealth,
   getRepoRegistry,
@@ -22,7 +22,7 @@ import {
   resolveNotification,
   resolveExecutionApproval,
   updateAgentModels,
-  updateKilocodeProvider,
+  updateProvider,
   type ExecutionApproval,
   type ExecutionApprovalsResponse,
   type MemoryRecord,
@@ -676,6 +676,11 @@ function RuntimeHome({
   repoCount: number;
 }) {
   const model = status.models.displayAssistant;
+  const provider = providerStatusSummary(
+    status,
+    status.models.displayAssistantProvider,
+  );
+  const modelProviders = activeModelProviderIds(status);
   return (
     <section className="border border-line bg-soft p-2.5">
       <div className="flex items-start justify-between gap-2">
@@ -696,11 +701,18 @@ function RuntimeHome({
         <Metric label="skills" value={activeSkills} />
       </div>
       <div className="mt-2 grid grid-cols-2 gap-1.5 font-mono text-[10px] text-muted">
-        <StatusPill
-          ok={status.providers.credentials.kilo}
-          label="kilo"
-          value={status.providers.credentials.kilo ? 'key' : 'missing'}
-        />
+        {modelProviders.map((providerId) => (
+          <StatusPill
+            key={providerId}
+            ok={providerCredentialConfigured(status, providerId)}
+            label={providerId}
+            value={
+              providerCredentialConfigured(status, providerId)
+                ? 'key'
+                : 'missing'
+            }
+          />
+        ))}
         <StatusPill
           ok={status.providers.credentials.github}
           label="github"
@@ -712,16 +724,15 @@ function RuntimeHome({
           MODEL · {status.models.displayAssistantProvider}
         </p>
         <p className="mt-1 truncate font-mono text-[10.5px] text-ink">
-          {model}
+          {model} · {status.models.displayAssistantThinkingLevel}
         </p>
       </div>
       <div className="mt-2 min-w-0 border border-line bg-field px-2 py-1.5">
         <p className="font-mono text-[10px] tracking-[0.12em] text-muted">
-          PROVIDER · KILOCODE
+          PROVIDER · {provider.label}
         </p>
         <p className="mt-1 truncate font-mono text-[10.5px] text-ink">
-          {status.providers.configs.kilocode.enabled ? 'enabled' : 'disabled'} ·{' '}
-          {status.providers.configs.kilocode.apiKeyEnv}
+          {provider.enabled ? 'enabled' : 'disabled'} · {provider.apiKeyEnv}
         </p>
       </div>
       <div className="mt-2 min-w-0 border border-line bg-field px-2 py-1.5">
@@ -755,23 +766,40 @@ function RuntimeConfigControls({
   const [displayAssistant, setDisplayAssistant] = useState(
     status.models.displayAssistant,
   );
+  const [displayThinking, setDisplayThinking] = useState(
+    status.models.displayAssistantThinkingLevel,
+  );
   const [repoResearcher, setRepoResearcher] = useState(
     status.models.subagents.repoResearcher ?? '',
+  );
+  const [repoThinking, setRepoThinking] = useState(
+    status.models.subagentThinkingLevels.repoResearcher ?? 'medium',
   );
   const [ciInvestigator, setCiInvestigator] = useState(
     status.models.subagents.ciInvestigator ?? '',
   );
+  const [ciThinking, setCiThinking] = useState(
+    status.models.subagentThinkingLevels.ciInvestigator ?? 'medium',
+  );
   const [releaseReviewer, setReleaseReviewer] = useState(
     status.models.subagents.releaseReviewer ?? '',
   );
+  const [releaseThinking, setReleaseThinking] = useState(
+    status.models.subagentThinkingLevels.releaseReviewer ?? 'medium',
+  );
+  const [providerId, setProviderId] = useState<ModelProviderId>(
+    modelProviderId(status.models.displayAssistantProvider),
+  );
+  const previousDisplayProvider = useRef<ModelProviderId>(
+    modelProviderId(status.models.displayAssistantProvider),
+  );
+  const selectedProvider = providerStatusSummary(status, providerId);
   const [providerEnabled, setProviderEnabled] = useState(
-    status.providers.configs.kilocode.enabled,
+    selectedProvider.enabled,
   );
-  const [apiKeyEnv, setApiKeyEnv] = useState(
-    status.providers.configs.kilocode.apiKeyEnv,
-  );
+  const [apiKeyEnv, setApiKeyEnv] = useState(selectedProvider.apiKeyEnv);
   const [organizationIdEnv, setOrganizationIdEnv] = useState(
-    status.providers.configs.kilocode.organizationIdEnv ?? '',
+    selectedProvider.organizationIdEnv ?? '',
   );
   const [modelMessage, setModelMessage] = useState<string | null>(null);
   const [providerMessage, setProviderMessage] = useState<string | null>(null);
@@ -780,15 +808,34 @@ function RuntimeConfigControls({
 
   useEffect(() => {
     setDisplayAssistant(status.models.displayAssistant);
+    setDisplayThinking(status.models.displayAssistantThinkingLevel);
     setRepoResearcher(status.models.subagents.repoResearcher ?? '');
-    setCiInvestigator(status.models.subagents.ciInvestigator ?? '');
-    setReleaseReviewer(status.models.subagents.releaseReviewer ?? '');
-    setProviderEnabled(status.providers.configs.kilocode.enabled);
-    setApiKeyEnv(status.providers.configs.kilocode.apiKeyEnv);
-    setOrganizationIdEnv(
-      status.providers.configs.kilocode.organizationIdEnv ?? '',
+    setRepoThinking(
+      status.models.subagentThinkingLevels.repoResearcher ?? 'medium',
     );
+    setCiInvestigator(status.models.subagents.ciInvestigator ?? '');
+    setCiThinking(
+      status.models.subagentThinkingLevels.ciInvestigator ?? 'medium',
+    );
+    setReleaseReviewer(status.models.subagents.releaseReviewer ?? '');
+    setReleaseThinking(
+      status.models.subagentThinkingLevels.releaseReviewer ?? 'medium',
+    );
+    const nextDisplayProvider = modelProviderId(
+      status.models.displayAssistantProvider,
+    );
+    if (previousDisplayProvider.current !== nextDisplayProvider) {
+      previousDisplayProvider.current = nextDisplayProvider;
+      setProviderId(nextDisplayProvider);
+    }
   }, [status]);
+
+  useEffect(() => {
+    const provider = providerStatusSummary(status, providerId);
+    setProviderEnabled(provider.enabled);
+    setApiKeyEnv(provider.apiKeyEnv);
+    setOrganizationIdEnv(provider.organizationIdEnv ?? '');
+  }, [providerId, status]);
 
   async function saveModels(event: FormEvent) {
     event.preventDefault();
@@ -798,9 +845,13 @@ function RuntimeConfigControls({
     try {
       const input = modelUpdateInput(status, {
         displayAssistant,
+        displayThinking,
         repoResearcher,
+        repoThinking,
         ciInvestigator,
+        ciThinking,
         releaseReviewer,
+        releaseThinking,
       });
 
       if (Object.keys(input).length === 0) {
@@ -824,10 +875,12 @@ function RuntimeConfigControls({
     setProviderMessage(null);
 
     try {
-      const result = await updateKilocodeProvider({
+      const result = await updateProvider(providerId, {
         enabled: providerEnabled,
         apiKeyEnv: apiKeyEnv.trim() || null,
-        organizationIdEnv: organizationIdEnv.trim() || null,
+        ...(providerId === 'kilocode'
+          ? { organizationIdEnv: organizationIdEnv.trim() || null }
+          : {}),
       });
       setProviderMessage(result.message);
       onRefresh();
@@ -863,20 +916,44 @@ function RuntimeConfigControls({
           onChange={setDisplayAssistant}
           value={displayAssistant}
         />
+        <ConfigSelect
+          label="display think"
+          onChange={setDisplayThinking}
+          options={thinkingLevelOptions}
+          value={displayThinking}
+        />
         <ConfigInput
           label="repo"
           onChange={setRepoResearcher}
           value={repoResearcher}
+        />
+        <ConfigSelect
+          label="repo think"
+          onChange={setRepoThinking}
+          options={thinkingLevelOptions}
+          value={repoThinking}
         />
         <ConfigInput
           label="ci"
           onChange={setCiInvestigator}
           value={ciInvestigator}
         />
+        <ConfigSelect
+          label="ci think"
+          onChange={setCiThinking}
+          options={thinkingLevelOptions}
+          value={ciThinking}
+        />
         <ConfigInput
           label="release"
           onChange={setReleaseReviewer}
           value={releaseReviewer}
+        />
+        <ConfigSelect
+          label="release think"
+          onChange={setReleaseThinking}
+          options={thinkingLevelOptions}
+          value={releaseThinking}
         />
         {modelMessage ? <ConfigMessage message={modelMessage} /> : null}
       </form>
@@ -892,8 +969,20 @@ function RuntimeConfigControls({
               onChange={(event) => setProviderEnabled(event.target.checked)}
               type="checkbox"
             />
-            KILOCODE PROVIDER
+            PROVIDER TARGET
           </label>
+          <select
+            aria-label="Provider to configure"
+            className="border border-line bg-field px-2 py-1 font-mono text-[10px] text-ink outline-none focus:border-violet"
+            onChange={(event) =>
+              setProviderId(modelProviderId(event.target.value))
+            }
+            value={providerId}
+          >
+            <option value="kilocode">KiloCode</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+          </select>
           <button
             className="border border-violet px-2 py-1 font-mono text-[10px] text-violet disabled:opacity-50"
             disabled={savingProvider}
@@ -907,12 +996,14 @@ function RuntimeConfigControls({
           onChange={setApiKeyEnv}
           value={apiKeyEnv}
         />
-        <ConfigInput
-          label="org env"
-          onChange={setOrganizationIdEnv}
-          placeholder="optional"
-          value={organizationIdEnv}
-        />
+        {providerId === 'kilocode' ? (
+          <ConfigInput
+            label="org env"
+            onChange={setOrganizationIdEnv}
+            placeholder="optional"
+            value={organizationIdEnv}
+          />
+        ) : null}
         <p className="line-clamp-2 text-[10.5px] leading-4 text-muted">
           Environment variable references only. Provider registration changes
           apply after server restart.
@@ -927,33 +1018,56 @@ function modelUpdateInput(
   status: RuntimeStatus,
   values: {
     displayAssistant: string;
+    displayThinking: string;
     repoResearcher: string;
+    repoThinking: string;
     ciInvestigator: string;
+    ciThinking: string;
     releaseReviewer: string;
+    releaseThinking: string;
   },
 ) {
   const displayAssistant = values.displayAssistant.trim();
+  const displayThinking = values.displayThinking.trim();
   const repoResearcher = values.repoResearcher.trim();
+  const repoThinking = values.repoThinking.trim();
   const ciInvestigator = values.ciInvestigator.trim();
+  const ciThinking = values.ciThinking.trim();
   const releaseReviewer = values.releaseReviewer.trim();
+  const releaseThinking = values.releaseThinking.trim();
   const subagents: Record<string, string> = {};
   const input: {
     displayAssistant?: string;
+    displayAssistantThinkingLevel?: string;
     subagents?: Record<string, string>;
   } = {};
 
   if (displayAssistant !== status.models.displayAssistant) {
     input.displayAssistant = displayAssistant;
   }
+  if (displayThinking !== status.models.displayAssistantThinkingLevel) {
+    input.displayAssistantThinkingLevel = displayThinking;
+  }
 
   if (repoResearcher !== status.models.subagents.repoResearcher) {
     subagents.repoResearcher = repoResearcher;
   }
+  if (repoThinking !== status.models.subagentThinkingLevels.repoResearcher) {
+    subagents.repoResearcherThinkingLevel = repoThinking;
+  }
   if (ciInvestigator !== status.models.subagents.ciInvestigator) {
     subagents.ciInvestigator = ciInvestigator;
   }
+  if (ciThinking !== status.models.subagentThinkingLevels.ciInvestigator) {
+    subagents.ciInvestigatorThinkingLevel = ciThinking;
+  }
   if (releaseReviewer !== status.models.subagents.releaseReviewer) {
     subagents.releaseReviewer = releaseReviewer;
+  }
+  if (
+    releaseThinking !== status.models.subagentThinkingLevels.releaseReviewer
+  ) {
+    subagents.releaseReviewerThinkingLevel = releaseThinking;
   }
   if (Object.keys(subagents).length > 0) {
     input.subagents = subagents;
@@ -984,6 +1098,100 @@ function ConfigInput({
       />
     </label>
   );
+}
+
+function ConfigSelect({
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  options: string[];
+  value: string;
+}) {
+  return (
+    <label className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-2 font-mono text-[10px] text-muted">
+      <span className="truncate">{label}</span>
+      <select
+        className="min-w-0 border border-line bg-field px-2 py-1 text-[10.5px] text-ink outline-none focus:border-violet"
+        onChange={(event) => onChange(event.target.value)}
+        value={value}
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+type ModelProviderId = 'kilocode' | 'openai' | 'anthropic';
+
+const thinkingLevelOptions = [
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+];
+
+function modelProviderId(value: string): ModelProviderId {
+  if (value === 'openai' || value === 'anthropic') return value;
+  return 'kilocode';
+}
+
+function activeModelProviderIds(status: RuntimeStatus): ModelProviderId[] {
+  return Array.from(
+    new Set(
+      [
+        status.models.displayAssistant,
+        ...Object.values(status.models.subagents),
+      ]
+        .map((model) => model.split('/')[0] ?? 'kilocode')
+        .map(modelProviderId),
+    ),
+  );
+}
+
+function providerCredentialConfigured(
+  status: RuntimeStatus,
+  provider: ModelProviderId,
+) {
+  if (provider === 'kilocode') return status.providers.credentials.kilo;
+  return status.providers.credentials[provider];
+}
+
+function providerStatusSummary(status: RuntimeStatus, provider: string) {
+  const id = modelProviderId(provider);
+  if (id === 'openai') {
+    return {
+      label: 'OPENAI',
+      enabled: status.providers.configs.openai.enabled,
+      apiKeyEnv: status.providers.configs.openai.apiKeyEnv,
+      organizationIdEnv: null,
+    };
+  }
+
+  if (id === 'anthropic') {
+    return {
+      label: 'ANTHROPIC',
+      enabled: status.providers.configs.anthropic.enabled,
+      apiKeyEnv: status.providers.configs.anthropic.apiKeyEnv,
+      organizationIdEnv: null,
+    };
+  }
+
+  return {
+    label: 'KILOCODE',
+    enabled: status.providers.configs.kilocode.enabled,
+    apiKeyEnv: status.providers.configs.kilocode.apiKeyEnv,
+    organizationIdEnv: status.providers.configs.kilocode.organizationIdEnv,
+  };
 }
 
 function ConfigMessage({ message }: { message: string }) {
@@ -1694,6 +1902,21 @@ function setupStep(check: RuntimeStatusCheck): SetupStep {
       docsLabel: 'secrets',
       surface: 'config',
       detail: 'Set the Kilo API key environment reference or disable Kilo.',
+    },
+    'openai-key': {
+      action: 'neondeck_config_update_provider',
+      docsHref: `${docsBase}#secrets`,
+      docsLabel: 'secrets',
+      surface: 'config',
+      detail: 'Set the OpenAI API key environment reference or disable OpenAI.',
+    },
+    'anthropic-key': {
+      action: 'neondeck_config_update_provider',
+      docsHref: `${docsBase}#secrets`,
+      docsLabel: 'secrets',
+      surface: 'config',
+      detail:
+        'Set the Anthropic API key environment reference or disable Anthropic.',
     },
     'github-token': {
       action: 'GITHUB_TOKEN',

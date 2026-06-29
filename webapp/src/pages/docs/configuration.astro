@@ -52,25 +52,31 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         </p>
         <pre><code>KILOCODE_API_KEY=...
 KILOCODE_ORGANIZATION_ID=...
-FLUE_AGENT_MODEL=kilocode/kilo-auto/balanced
+OPENAI_API_KEY=...
+ANTHROPIC_API_KEY=...
 GITHUB_TOKEN=...
 GITHUB_LOGIN=...</code></pre>
 
         <h2>Models and providers</h2>
         <p>
           Agent model choices live in <code>config.json</code>. Model strings
-          must be provider-qualified and use providers already registered by the
-          app or Flue runtime.
+          must be provider-qualified and use allowlisted providers:
+          <code>kilocode</code>, <code>openai</code>, or <code>anthropic</code>.
         </p>
         <pre><code>&#123;
   "version": 1,
   "models": &#123;
     "displayAssistant": "kilocode/kilo-auto/balanced",
+    "displayAssistantThinkingLevel": "medium",
     "subagents": &#123;
       "default": "kilocode/kilo-auto/balanced",
+      "defaultThinkingLevel": "medium",
       "repoResearcher": "kilocode/kilo-auto/balanced",
+      "repoResearcherThinkingLevel": "medium",
       "ciInvestigator": "kilocode/kilo-auto/balanced",
-      "releaseReviewer": "kilocode/kilo-auto/balanced"
+      "ciInvestigatorThinkingLevel": "medium",
+      "releaseReviewer": "kilocode/kilo-auto/balanced",
+      "releaseReviewerThinkingLevel": "medium"
     &#125;
   &#125;,
   "providers": &#123;
@@ -78,13 +84,23 @@ GITHUB_LOGIN=...</code></pre>
       "enabled": true,
       "apiKeyEnv": "KILOCODE_API_KEY",
       "organizationIdEnv": "KILOCODE_ORGANIZATION_ID"
+    &#125;,
+    "openai": &#123;
+      "enabled": true,
+      "apiKeyEnv": "OPENAI_API_KEY"
+    &#125;,
+    "anthropic": &#123;
+      "enabled": true,
+      "apiKeyEnv": "ANTHROPIC_API_KEY"
     &#125;
   &#125;
 &#125;</code></pre>
         <p>
           Provider config stores environment variable names, not raw secrets or
-          arbitrary endpoints. Provider registration changes require a server
-          restart.
+          arbitrary endpoints. <code>thinkingLevel</code> values use Flue's
+          <code>off</code>, <code>minimal</code>, <code>low</code>,
+          <code>medium</code>, <code>high</code>, or <code>xhigh</code> levels. Provider
+          registration changes require a server restart.
         </p>
 
         <h2>Repositories</h2>

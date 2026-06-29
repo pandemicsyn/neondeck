@@ -144,6 +144,8 @@ export type RuntimeStatus = {
     registered: string[];
     credentials: {
       kilo: boolean;
+      openai: boolean;
+      anthropic: boolean;
       github: boolean;
     };
     configs: {
@@ -154,12 +156,24 @@ export type RuntimeStatus = {
         apiKeyPresent: boolean;
         organizationIdPresent: boolean;
       };
+      openai: {
+        enabled: boolean;
+        apiKeyEnv: string;
+        apiKeyPresent: boolean;
+      };
+      anthropic: {
+        enabled: boolean;
+        apiKeyEnv: string;
+        apiKeyPresent: boolean;
+      };
     };
   };
   models: {
     displayAssistant: string;
     displayAssistantProvider: string;
+    displayAssistantThinkingLevel: string;
     subagents: Record<string, string>;
+    subagentThinkingLevels: Record<string, string>;
   };
   execution: {
     defaultBackend: string;
@@ -284,14 +298,19 @@ export type ConfigActionResult = {
 
 export type AgentModelUpdate = {
   displayAssistant?: string;
+  displayAssistantThinkingLevel?: string;
   subagents?: {
+    defaultThinkingLevel?: string;
     repoResearcher?: string;
+    repoResearcherThinkingLevel?: string;
     ciInvestigator?: string;
+    ciInvestigatorThinkingLevel?: string;
     releaseReviewer?: string;
+    releaseReviewerThinkingLevel?: string;
   };
 };
 
-export type KilocodeProviderUpdate = {
+export type ProviderUpdate = {
   enabled?: boolean;
   apiKeyEnv?: string | null;
   organizationIdEnv?: string | null;
@@ -702,8 +721,8 @@ export async function updateAgentModels(input: AgentModelUpdate) {
   return postJson<ConfigActionResult>('/api/models', input);
 }
 
-export async function updateKilocodeProvider(input: KilocodeProviderUpdate) {
-  return postJson<ConfigActionResult>('/api/providers/kilocode', input);
+export async function updateProvider(provider: string, input: ProviderUpdate) {
+  return postJson<ConfigActionResult>(`/api/providers/${provider}`, input);
 }
 
 export async function getWorkflowObservability() {

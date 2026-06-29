@@ -7,10 +7,7 @@ type MarkdownMessageProps = {
   className?: string;
 };
 
-export function MarkdownMessage({
-  children,
-  className,
-}: MarkdownMessageProps) {
+export function MarkdownMessage({ children, className }: MarkdownMessageProps) {
   return (
     <div className={cn('chat-markdown', className)}>
       <ReactMarkdown

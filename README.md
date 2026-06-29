@@ -9,7 +9,7 @@ The repository also includes an Astro marketing/docs site under `webapp/`, deplo
 ## Requirements
 
 - Node 26.4.0, managed with `fnm`
-- A Kilo API key for the default Flue provider
+- A KiloCode, OpenAI, or Anthropic API key for the configured Flue model provider
 - A GitHub token for the PR panel
 
 ```sh
@@ -26,7 +26,7 @@ Run the guided CLI setup:
 npm run init
 ```
 
-The wizard prepares the runtime home, writes local secrets to `$NEONDECK_HOME/.env`, tunes `SOUL.md`, configures the Kilo model/provider, adds local git checkouts, applies a dashboard preset, and optionally creates schedules and command preapprovals.
+The wizard prepares the runtime home, writes local secrets to `$NEONDECK_HOME/.env`, tunes `SOUL.md`, configures the selected model provider, adds local git checkouts, applies a dashboard preset, and optionally creates schedules and command preapprovals. When KiloCode is selected, init can discover and search available KiloCode models before writing the default model config.
 
 The same CLI is the foundation for future command-and-control surfaces, including an OpenTUI client:
 
@@ -51,7 +51,8 @@ $NEONDECK_HOME/.env
 ```sh
 KILOCODE_API_KEY=...
 KILOCODE_ORGANIZATION_ID=...
-FLUE_AGENT_MODEL=kilocode/kilo-auto/balanced
+OPENAI_API_KEY=...
+ANTHROPIC_API_KEY=...
 GITHUB_TOKEN=...
 GITHUB_LOGIN=...
 ```
@@ -85,17 +86,37 @@ Agent and subagent models are configurable in runtime-home `config.json`. Enviro
   "skillRoots": ["/absolute/path/to/skills"],
   "models": {
     "displayAssistant": "kilocode/kilo-auto/balanced",
+    "displayAssistantThinkingLevel": "medium",
     "subagents": {
       "default": "kilocode/kilo-auto/balanced",
+      "defaultThinkingLevel": "medium",
       "repoResearcher": "kilocode/kilo-auto/balanced",
+      "repoResearcherThinkingLevel": "medium",
       "ciInvestigator": "kilocode/kilo-auto/balanced",
-      "releaseReviewer": "kilocode/kilo-auto/balanced"
+      "ciInvestigatorThinkingLevel": "medium",
+      "releaseReviewer": "kilocode/kilo-auto/balanced",
+      "releaseReviewerThinkingLevel": "medium"
+    }
+  },
+  "providers": {
+    "kilocode": {
+      "enabled": true,
+      "apiKeyEnv": "KILOCODE_API_KEY",
+      "organizationIdEnv": "KILOCODE_ORGANIZATION_ID"
+    },
+    "openai": {
+      "enabled": true,
+      "apiKeyEnv": "OPENAI_API_KEY"
+    },
+    "anthropic": {
+      "enabled": true,
+      "apiKeyEnv": "ANTHROPIC_API_KEY"
     }
   }
 }
 ```
 
-The Neondeck chat agent can update those model settings through the typed `neondeck_config_update_agent_models` action when asked. Model strings must reference providers already registered by the app or Flue runtime; changing provider credentials or registering arbitrary new providers is not yet a runtime-config action.
+The Neondeck chat agent can update those model and thinking settings through the typed `neondeck_config_update_agent_models` action when asked. Model strings must use allowlisted provider-qualified names such as `kilocode/...`, `openai/...`, or `anthropic/...`. Provider config stores environment variable names only; raw secrets stay in `.env`.
 
 Host execution is also configured in runtime-home `config.json`, but Neondeck does not expose an unrestricted shell executor. `neondeck_execution_run` gates all local and `exe.dev` commands through policy, approvals, and the `execution_approvals` audit log. `local` is the default backend; `exe.dev` uses the Flue sandbox adapter against an existing VM.
 
@@ -146,7 +167,7 @@ curl -X POST 'http://127.0.0.1:5173/api/flue/workflows/command-run?wait=result' 
   -d '{"input":{"command":"/briefing"}}'
 ```
 
-Supported commands are `/repo-status`, `/review-queue`, `/briefing`, `/dev-doctor`, `/watch-pr <ref>`, and `/watch-release <repo>`. A `/watch-pr` command creates a persistent PR watch, polls for merge/check changes, and shows it in the active watches panel. `/watch-release` tracks default-branch GitHub checks until green; `/watch-pr ... until prod` waits for the source PR to merge, then tracks the source PR merge SHA until checks are green. `/dev-doctor` checks local repo health, package scripts, Node version, env keys, dev ports, API health, and runtime databases. Runtime home, repository, scheduler job, and skill state are shown in the runtime overview panel. Results are stored in `workflow_summaries` and exposed at `/api/workflows/summaries`.
+Supported commands include `/repo-status`, `/review-queue`, `/briefing`, `/reasoning [level]`, `/dev-doctor`, `/watch-pr <ref>`, and `/watch-release <repo>`. A `/reasoning` command shows the current display-assistant reasoning level; `/reasoning high` changes it to a level supported by the selected model and starts a fresh Neon session. A `/watch-pr` command creates a persistent PR watch, polls for merge/check changes, and shows it in the active watches panel. `/watch-release` tracks default-branch GitHub checks until green; `/watch-pr ... until prod` waits for the source PR to merge, then tracks the source PR merge SHA until checks are green. `/dev-doctor` checks local repo health, package scripts, Node version, env keys, dev ports, API health, and runtime databases. Runtime home, repository, scheduler job, and skill state are shown in the runtime overview panel. Results are stored in `workflow_summaries` and exposed at `/api/workflows/summaries`.
 
 Dashboard panels subscribe to `/api/events/config` for local config action and reload events, so model/provider/repo/schedule/dashboard changes refresh affected surfaces without a browser reload.
 

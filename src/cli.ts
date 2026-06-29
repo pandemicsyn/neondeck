@@ -38,6 +38,7 @@ type GlobalOptions = {
 type EnvMap = Map<string, string>;
 
 const defaultModel = 'kilocode/kilo-auto/balanced';
+type SetupModelProvider = 'kilocode' | 'openai' | 'anthropic';
 type PreapprovalGroupId =
   'filesystem' | 'git-read' | 'npm' | 'pnpm' | 'bun' | 'python' | 'go';
 
@@ -521,6 +522,8 @@ async function runInit(options: { home?: string }) {
       `model     ${status.models.displayAssistant}`,
       `github    ${status.providers.credentials.github ? 'configured' : 'missing'}`,
       `kilo      ${status.providers.credentials.kilo ? 'configured' : 'missing'}`,
+      `openai    ${status.providers.credentials.openai ? 'configured' : 'missing'}`,
+      `anthropic ${status.providers.credentials.anthropic ? 'configured' : 'missing'}`,
       `repos     ${status.counts.repos}`,
       '',
       'Next:',
@@ -551,22 +554,6 @@ async function configureSecrets(paths: RuntimePaths, envLoad: EnvLoadResult) {
     );
   }
 
-  const kiloKey = await promptPassword({
-    message: env.get('KILOCODE_API_KEY')
-      ? 'Kilo API key (blank keeps existing)'
-      : 'Kilo API key',
-    required: !env.get('KILOCODE_API_KEY'),
-  });
-  if (kiloKey) env.set('KILOCODE_API_KEY', kiloKey);
-
-  const orgId = await promptText({
-    message: 'Kilo organization id',
-    placeholder: env.get('KILOCODE_ORGANIZATION_ID') ?? 'optional',
-    initialValue: env.get('KILOCODE_ORGANIZATION_ID') ?? '',
-  });
-  if (orgId.trim()) env.set('KILOCODE_ORGANIZATION_ID', orgId.trim());
-  else env.delete('KILOCODE_ORGANIZATION_ID');
-
   const githubToken = await promptPassword({
     message: env.get('GITHUB_TOKEN')
       ? 'GitHub token (blank keeps existing)'
@@ -583,7 +570,6 @@ async function configureSecrets(paths: RuntimePaths, envLoad: EnvLoadResult) {
   if (githubLogin.trim()) env.set('GITHUB_LOGIN', githubLogin.trim());
   else env.delete('GITHUB_LOGIN');
 
-  if (!env.get('FLUE_AGENT_MODEL')) env.set('FLUE_AGENT_MODEL', defaultModel);
   await writeDotEnvFile(paths.env, env);
   log.success(`Wrote ${paths.env}`);
 
@@ -651,33 +637,45 @@ async function configureSoul(paths: RuntimePaths) {
 async function configureProviderAndModels(paths: RuntimePaths) {
   const { updateAgentModels, updateProviderConfig } =
     await configActionsModule();
-  const model = await promptText({
-    message: 'Display assistant model',
-    placeholder: defaultModel,
-    initialValue: process.env.FLUE_AGENT_MODEL ?? defaultModel,
-    validate(value) {
-      return value?.includes('/')
-        ? undefined
-        : 'Use a provider-qualified model, for example kilocode/kilo-auto/balanced.';
-    },
+  const env = await readDotEnvFile(paths.env);
+  const provider = await promptSelect<SetupModelProvider>({
+    message: 'Model provider',
+    initialValue: providerFromModel(
+      env.get('FLUE_AGENT_MODEL') ?? defaultModel,
+    ),
+    options: [
+      {
+        value: 'kilocode',
+        label: 'KiloCode',
+        hint: 'Custom Flue provider and searchable model catalog.',
+      },
+      {
+        value: 'openai',
+        label: 'OpenAI',
+        hint: 'Built-in Flue provider using OPENAI_API_KEY.',
+      },
+      {
+        value: 'anthropic',
+        label: 'Anthropic',
+        hint: 'Built-in Flue provider using ANTHROPIC_API_KEY.',
+      },
+    ],
   });
 
-  await updateProviderConfig(
-    {
-      provider: 'kilocode',
-      enabled: true,
-      apiKeyEnv: 'KILOCODE_API_KEY',
-      organizationIdEnv: process.env.KILOCODE_ORGANIZATION_ID
-        ? 'KILOCODE_ORGANIZATION_ID'
-        : null,
-    },
-    paths,
-  );
+  await configureProviderSecret(provider, env, paths);
+  loadEnvForPaths(paths, { includeDevFallback: false, overwrite: true });
+
+  const model = await chooseModel(provider, env);
+  const thinkingLevel = await promptThinkingLevel();
+
+  await updateProviderConfig(providerConfigInput(provider, env), paths);
   await updateAgentModels(
     {
       displayAssistant: model,
+      displayAssistantThinkingLevel: thinkingLevel,
       subagents: {
         default: model,
+        defaultThinkingLevel: thinkingLevel,
         repoResearcher: model,
         ciInvestigator: model,
         releaseReviewer: model,
@@ -685,6 +683,189 @@ async function configureProviderAndModels(paths: RuntimePaths) {
     },
     paths,
   );
+}
+
+async function configureProviderSecret(
+  provider: SetupModelProvider,
+  env: EnvMap,
+  paths: RuntimePaths,
+) {
+  if (provider === 'kilocode') {
+    const kiloKey = await promptPassword({
+      message: env.get('KILOCODE_API_KEY')
+        ? 'Kilo API key (blank keeps existing)'
+        : 'Kilo API key',
+      required: !env.get('KILOCODE_API_KEY'),
+    });
+    if (kiloKey) env.set('KILOCODE_API_KEY', kiloKey);
+
+    const orgId = await promptText({
+      message: 'Kilo organization id',
+      placeholder: env.get('KILOCODE_ORGANIZATION_ID') ?? 'optional',
+      initialValue: env.get('KILOCODE_ORGANIZATION_ID') ?? '',
+    });
+    if (orgId.trim()) env.set('KILOCODE_ORGANIZATION_ID', orgId.trim());
+    else env.delete('KILOCODE_ORGANIZATION_ID');
+  } else {
+    const key = provider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY';
+    const label = provider === 'openai' ? 'OpenAI' : 'Anthropic';
+    const value = await promptPassword({
+      message: env.get(key)
+        ? `${label} API key (blank keeps existing)`
+        : `${label} API key`,
+      required: !env.get(key),
+    });
+    if (value) env.set(key, value);
+  }
+
+  await writeDotEnvFile(paths.env, env);
+  log.success(`Wrote ${paths.env}`);
+}
+
+async function chooseModel(provider: SetupModelProvider, env: EnvMap) {
+  if (provider !== 'kilocode') {
+    return promptModelText(provider, defaultProviderModel(provider));
+  }
+
+  const { discoverModels } = await modelDiscoveryModule();
+  const spin = spinner();
+  spin.start('Discovering KiloCode models');
+  const result = await discoverModels({
+    provider,
+    apiKey: env.get('KILOCODE_API_KEY'),
+    organizationId: env.get('KILOCODE_ORGANIZATION_ID'),
+  });
+  spin.stop(
+    result.ok
+      ? `Discovered ${result.models.length} KiloCode models`
+      : 'KiloCode discovery unavailable',
+  );
+  if (!result.ok && result.error) log.warn(result.error);
+
+  const mode = await promptSelect<'search' | 'default' | 'manual'>({
+    message: 'KiloCode model',
+    initialValue: 'default',
+    options: [
+      {
+        value: 'default',
+        label: defaultModel,
+        hint: 'Use the recommended default.',
+      },
+      {
+        value: 'search',
+        label: 'Search models',
+        hint: 'Filter discovered KiloCode models.',
+      },
+      { value: 'manual', label: 'Manual entry' },
+    ],
+  });
+
+  if (mode === 'default') return defaultModel;
+  if (mode === 'manual') return promptModelText(provider, defaultModel);
+
+  const query = await promptText({
+    message: 'Search KiloCode models',
+    placeholder: 'sonnet, gpt, kimi, free',
+  });
+  const matches = result.models
+    .filter((model) => {
+      const text = `${model.id} ${model.name}`.toLowerCase();
+      return text.includes(query.trim().toLowerCase());
+    })
+    .slice(0, 12);
+
+  if (matches.length === 0) {
+    log.warn('No discovered models matched that search.');
+    return promptModelText(provider, defaultModel);
+  }
+
+  return promptSelect<string>({
+    message: 'Select model',
+    options: matches.map((model) => ({
+      value: model.id,
+      label: model.id,
+      hint: [
+        model.name,
+        model.contextLength ? `${model.contextLength} ctx` : null,
+        model.reasoning ? 'reasoning' : null,
+        model.isFree ? 'free' : null,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    })),
+  });
+}
+
+async function promptModelText(
+  provider: SetupModelProvider,
+  initialValue: string,
+) {
+  return promptText({
+    message: 'Display assistant model',
+    placeholder: initialValue,
+    initialValue,
+    validate(value) {
+      if (!value?.includes('/')) {
+        return `Use a provider-qualified model, for example ${initialValue}.`;
+      }
+
+      if (value.split('/')[0] !== provider) {
+        return `Use a ${provider}/... model for the selected provider.`;
+      }
+
+      return undefined;
+    },
+  });
+}
+
+async function promptThinkingLevel() {
+  return promptSelect<'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'>({
+    message: 'Thinking level',
+    initialValue: 'medium',
+    options: [
+      { value: 'medium', label: 'medium', hint: 'Balanced default.' },
+      { value: 'high', label: 'high', hint: 'More careful reasoning.' },
+      { value: 'low', label: 'low', hint: 'Lower cost or latency.' },
+      {
+        value: 'minimal',
+        label: 'minimal',
+        hint: 'Smallest reasoning effort.',
+      },
+      { value: 'off', label: 'off', hint: 'Do not request extra reasoning.' },
+      { value: 'xhigh', label: 'xhigh', hint: 'Highest exposed effort tier.' },
+    ],
+  });
+}
+
+function providerConfigInput(provider: SetupModelProvider, env: EnvMap) {
+  if (provider === 'kilocode') {
+    return {
+      provider,
+      enabled: true,
+      apiKeyEnv: 'KILOCODE_API_KEY',
+      organizationIdEnv: env.get('KILOCODE_ORGANIZATION_ID')
+        ? 'KILOCODE_ORGANIZATION_ID'
+        : null,
+    };
+  }
+
+  return {
+    provider,
+    enabled: true,
+    apiKeyEnv: provider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY',
+  };
+}
+
+function defaultProviderModel(provider: SetupModelProvider) {
+  if (provider === 'openai') return 'openai/gpt-5.5';
+  if (provider === 'anthropic') return 'anthropic/claude-sonnet-4-6';
+  return defaultModel;
+}
+
+function providerFromModel(model: string): SetupModelProvider {
+  const provider = model.includes('/') ? model.split('/')[0] : 'kilocode';
+  if (provider === 'openai' || provider === 'anthropic') return provider;
+  return 'kilocode';
 }
 
 async function configureRepos(paths: RuntimePaths) {
@@ -1083,6 +1264,12 @@ function printStatus(status: RuntimeStatus) {
   console.log(
     `kilo      ${status.providers.credentials.kilo ? 'configured' : 'missing'}`,
   );
+  console.log(
+    `openai    ${status.providers.credentials.openai ? 'configured' : 'missing'}`,
+  );
+  console.log(
+    `anthropic ${status.providers.credentials.anthropic ? 'configured' : 'missing'}`,
+  );
   console.log(`repos     ${status.counts.repos}`);
   console.log(`skills    ${status.counts.activeSkills}`);
   console.log(`watches   ${status.counts.activeWatches}`);
@@ -1112,6 +1299,8 @@ async function writeDotEnvFile(path: string, env: EnvMap) {
   const orderedKeys = [
     'KILOCODE_API_KEY',
     'KILOCODE_ORGANIZATION_ID',
+    'OPENAI_API_KEY',
+    'ANTHROPIC_API_KEY',
     'FLUE_AGENT_MODEL',
     'GITHUB_TOKEN',
     'GITHUB_LOGIN',
@@ -1204,6 +1393,12 @@ async function githubModule() {
   return import(new URL('./github.ts', import.meta.url).href) as Promise<
     typeof import('./github')
   >;
+}
+
+async function modelDiscoveryModule() {
+  return import(
+    new URL('./model-discovery.ts', import.meta.url).href
+  ) as Promise<typeof import('./model-discovery')>;
 }
 
 async function reposModule() {

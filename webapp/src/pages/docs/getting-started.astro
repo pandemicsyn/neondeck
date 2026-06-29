@@ -16,8 +16,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       <article class="docs-prose">
         <h1>Getting started</h1>
         <p>
-          Use Node 26.4.0 with fnm. The default Flue model is Kilo through the
-          custom provider registration in the local backend.
+          Use Node 26.4.0 with fnm. The setup wizard can configure KiloCode,
+          OpenAI, or Anthropic as the Flue model provider.
         </p>
 
         <h2>Install</h2>
@@ -30,7 +30,8 @@ npm install</code></pre>
           Start with the guided terminal setup. It prepares runtime state,
           writes local secrets to the runtime home, configures the agent model,
           adds repositories, applies a dashboard preset, and can create initial
-          schedules.
+          schedules. When KiloCode is selected, init can discover and search
+          available KiloCode models before writing model config.
         </p>
         <pre><code>npm run init</code></pre>
         <p>
@@ -66,20 +67,22 @@ npm run cli -- tui</code></pre>
         </p>
         <pre><code>KILOCODE_API_KEY=...
 KILOCODE_ORGANIZATION_ID=...
-FLUE_AGENT_MODEL=kilocode/kilo-auto/balanced
+OPENAI_API_KEY=...
+ANTHROPIC_API_KEY=...
 GITHUB_TOKEN=...
 GITHUB_LOGIN=...</code></pre>
 
         <h2 id="providers">Provider credentials</h2>
         <p>
           Flue model strings use provider-qualified names such as
-          <code>kilocode/kilo-auto/balanced</code> or another provider registered
-          by the app or Flue runtime. Hosted providers use their normal API credentials
-          or a platform binding. A ChatGPT or Codex subscription login is not a documented
-          Flue provider credential path.
+          <code>kilocode/kilo-auto/balanced</code>, <code>openai/gpt-5.5</code>,
+          or <code>anthropic/claude-sonnet-4-6</code>. Hosted providers use
+          their normal API credentials or a platform binding. A ChatGPT or Codex
+          subscription login is not a documented Flue provider credential path.
         </p>
         <p>
-          Neondeck currently allowlists Kilo provider configuration in runtime
+          Neondeck allowlists KiloCode, OpenAI, and Anthropic provider
+          configuration in runtime
           <code>config.json</code>. Provider settings store environment variable
           names, not raw secrets or arbitrary base URLs. Provider registration
           changes require a server restart. See
@@ -106,6 +109,7 @@ GITHUB_LOGIN=...</code></pre>
         <pre><code>/repo-status [repo-id]
 /review-queue
 /briefing
+/reasoning [off|minimal|low|medium|high|xhigh]
 /dev-doctor
 /watch-pr neondeck#123
 /watch-pr neondeck#123 until prod
@@ -143,18 +147,25 @@ GITHUB_LOGIN=...</code></pre>
   "version": 1,
   "models": &#123;
     "displayAssistant": "kilocode/kilo-auto/balanced",
+    "displayAssistantThinkingLevel": "medium",
     "subagents": &#123;
       "default": "kilocode/kilo-auto/balanced",
+      "defaultThinkingLevel": "medium",
       "repoResearcher": "kilocode/kilo-auto/balanced",
+      "repoResearcherThinkingLevel": "medium",
       "ciInvestigator": "kilocode/kilo-auto/balanced",
-      "releaseReviewer": "kilocode/kilo-auto/balanced"
+      "ciInvestigatorThinkingLevel": "medium",
+      "releaseReviewer": "kilocode/kilo-auto/balanced",
+      "releaseReviewerThinkingLevel": "medium"
     &#125;
   &#125;
 &#125;</code></pre>
         <p>
           The chat agent can update these fields through the typed
           <code>neondeck_config_update_agent_models</code> action. Model strings must
-          reference providers already registered by the app or Flue runtime.
+          reference allowlisted providers. Thinking levels use Flue's
+          <code>thinkingLevel</code> values such as <code>low</code>,
+          <code>medium</code>, and <code>high</code>.
         </p>
 
         <h2 id="execution-approvals">Execution approvals</h2>

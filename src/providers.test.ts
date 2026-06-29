@@ -1,0 +1,78 @@
+import { describe, expect, it } from 'vitest';
+import { providerRuntimeRegistrations } from './providers';
+
+describe('provider runtime registrations', () => {
+  it('uses configured OpenAI and Anthropic environment references for Flue', () => {
+    const registrations = providerRuntimeRegistrations(
+      {
+        OPENAI_API_KEY: 'default-openai-key',
+        NEONDECK_OPENAI_KEY: 'configured-openai-key',
+        ANTHROPIC_API_KEY: 'default-anthropic-key',
+        NEONDECK_ANTHROPIC_KEY: 'configured-anthropic-key',
+      } as NodeJS.ProcessEnv,
+      {
+        providers: {
+          openai: {
+            enabled: true,
+            apiKeyEnv: 'NEONDECK_OPENAI_KEY',
+          },
+          anthropic: {
+            enabled: true,
+            apiKeyEnv: 'NEONDECK_ANTHROPIC_KEY',
+          },
+        },
+      },
+    );
+
+    expect(registrations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'openai',
+          registration: expect.objectContaining({
+            apiKey: 'configured-openai-key',
+          }),
+        }),
+        expect.objectContaining({
+          id: 'anthropic',
+          registration: expect.objectContaining({
+            apiKey: 'configured-anthropic-key',
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it('does not fall back to default built-in provider env vars when disabled', () => {
+    const registrations = providerRuntimeRegistrations(
+      {
+        OPENAI_API_KEY: 'default-openai-key',
+        ANTHROPIC_API_KEY: 'default-anthropic-key',
+      } as NodeJS.ProcessEnv,
+      {
+        providers: {
+          openai: {
+            enabled: false,
+            apiKeyEnv: 'OPENAI_API_KEY',
+          },
+          anthropic: {
+            enabled: false,
+            apiKeyEnv: 'ANTHROPIC_API_KEY',
+          },
+        },
+      },
+    );
+
+    expect(registrations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'openai',
+          registration: expect.objectContaining({ apiKey: '' }),
+        }),
+        expect.objectContaining({
+          id: 'anthropic',
+          registration: expect.objectContaining({ apiKey: '' }),
+        }),
+      ]),
+    );
+  });
+});

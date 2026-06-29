@@ -28,11 +28,7 @@ export type RuntimePaths = {
 const unknownRecordSchema = v.record(v.string(), v.unknown());
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 const positiveIntegerSchema = v.pipe(v.number(), v.integer(), v.minValue(1));
-const dashboardDensitySchema = v.picklist([
-  'compact',
-  'comfortable',
-  'large',
-]);
+const dashboardDensitySchema = v.picklist(['compact', 'comfortable', 'large']);
 const dashboardTextScaleSchema = v.pipe(
   v.number(),
   v.minValue(0.9),
@@ -42,16 +38,30 @@ const envVarNameSchema = v.pipe(
   v.string(),
   v.regex(/^[A-Z_][A-Z0-9_]*$/, 'Expected an environment variable name.'),
 );
+export const thinkingLevelSchema = v.picklist([
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+]);
 
 export const agentModelConfigSchema = v.looseObject({
   default: v.optional(nonEmptyStringSchema),
+  defaultThinkingLevel: v.optional(thinkingLevelSchema),
   displayAssistant: v.optional(nonEmptyStringSchema),
+  displayAssistantThinkingLevel: v.optional(thinkingLevelSchema),
   subagents: v.optional(
     v.looseObject({
       default: v.optional(nonEmptyStringSchema),
+      defaultThinkingLevel: v.optional(thinkingLevelSchema),
       repoResearcher: v.optional(nonEmptyStringSchema),
+      repoResearcherThinkingLevel: v.optional(thinkingLevelSchema),
       ciInvestigator: v.optional(nonEmptyStringSchema),
+      ciInvestigatorThinkingLevel: v.optional(thinkingLevelSchema),
       releaseReviewer: v.optional(nonEmptyStringSchema),
+      releaseReviewerThinkingLevel: v.optional(thinkingLevelSchema),
     }),
   ),
 });
@@ -62,6 +72,18 @@ export const providerConfigSchema = v.strictObject({
       enabled: v.optional(v.boolean()),
       apiKeyEnv: v.optional(envVarNameSchema),
       organizationIdEnv: v.optional(envVarNameSchema),
+    }),
+  ),
+  openai: v.optional(
+    v.strictObject({
+      enabled: v.optional(v.boolean()),
+      apiKeyEnv: v.optional(envVarNameSchema),
+    }),
+  ),
+  anthropic: v.optional(
+    v.strictObject({
+      enabled: v.optional(v.boolean()),
+      apiKeyEnv: v.optional(envVarNameSchema),
     }),
   ),
 });
@@ -199,6 +221,7 @@ export const dashboardConfigSchema = v.looseObject({
 export type AppConfig = v.InferOutput<typeof appConfigSchema>;
 export type AgentModelConfig = v.InferOutput<typeof agentModelConfigSchema>;
 export type ProviderConfig = v.InferOutput<typeof providerConfigSchema>;
+export type ThinkingLevel = v.InferOutput<typeof thinkingLevelSchema>;
 export type ExecutionConfig = v.InferOutput<typeof executionConfigSchema>;
 export type ExecutionBackend = v.InferOutput<typeof executionBackendSchema>;
 export type ExecutionPreapprovedCommand = v.InferOutput<

@@ -5,9 +5,12 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { listWorkflowSummaries } from './app-state';
+import { readAgentModelSelectionSync } from './agent-config';
 import { parseNeonCommand, runNeonCommand } from './commands';
+import { updateAgentModels } from './config-actions';
 import { listRepoStatus, runDevDoctor } from './dev-doctor';
 import { runtimePaths } from './runtime-home';
+import { readNeonSessionState } from './session-actions';
 import { addPrWatch } from './watch-actions';
 
 const execFileAsync = promisify(execFile);
@@ -58,6 +61,13 @@ describe('Neon commands', () => {
       command: {
         name: 'draft-pr-description',
         args: [],
+      },
+    });
+    expect(parseNeonCommand('/reasoning high')).toMatchObject({
+      ok: true,
+      command: {
+        name: 'reasoning',
+        args: ['high'],
       },
     });
     expect(
@@ -481,6 +491,96 @@ describe('Neon commands', () => {
             value: 'finish roadmap item 3',
           },
         ],
+      },
+    });
+  });
+
+  it('shows and changes display assistant reasoning through slash command', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    const beforeSession = await readNeonSessionState(paths);
+
+    await expect(
+      runNeonCommand({ command: '/reasoning' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      command: 'reasoning',
+      status: 'completed',
+      message: 'Current reasoning is medium for kilocode/kilo-auto/balanced.',
+      data: {
+        model: 'kilocode/kilo-auto/balanced',
+        thinkingLevel: 'medium',
+        supportedLevels: expect.arrayContaining(['off', 'high', 'xhigh']),
+      },
+      workflowSummary: {
+        workflow: 'command:reasoning',
+        status: 'completed',
+      },
+    });
+
+    await expect(
+      runNeonCommand({ command: '/reasoning high' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      command: 'reasoning',
+      status: 'completed',
+      message:
+        'Set reasoning to high for kilocode/kilo-auto/balanced and started a fresh Neon session.',
+      data: {
+        model: 'kilocode/kilo-auto/balanced',
+        previousLevel: 'medium',
+        thinkingLevel: 'high',
+        sessionStarted: true,
+        session: {
+          activeSession: {
+            label: 'Reasoning high',
+            reason: 'reasoning-level:high',
+          },
+        },
+      },
+      workflowSummary: {
+        workflow: 'command:reasoning',
+        status: 'completed',
+      },
+    });
+
+    expect(readAgentModelSelectionSync(paths)).toMatchObject({
+      displayAssistantThinkingLevel: 'high',
+    });
+    const afterSession = await readNeonSessionState(paths);
+    expect(afterSession.activeSession.id).not.toBe(
+      beforeSession.activeSession.id,
+    );
+  });
+
+  it('rejects reasoning levels unsupported by the selected model', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    await updateAgentModels(
+      {
+        displayAssistant: 'openai/gpt-4o',
+        displayAssistantThinkingLevel: 'off',
+      },
+      paths,
+    );
+
+    await expect(
+      runNeonCommand({ command: '/reasoning high' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      command: 'reasoning',
+      status: 'failed',
+      requires: ['reasoningLevel'],
+      message: 'openai/gpt-4o supports off reasoning, not "high".',
+      data: {
+        model: 'openai/gpt-4o',
+        currentLevel: 'off',
+        requestedLevel: 'high',
+        supportedLevels: ['off'],
+      },
+      workflowSummary: {
+        workflow: 'command:reasoning',
+        status: 'failed',
       },
     });
   });

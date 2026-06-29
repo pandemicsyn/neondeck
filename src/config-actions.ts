@@ -30,11 +30,14 @@ import {
   parseScheduleConfig,
   readRuntimeJson,
   runtimePaths,
+  thinkingLevelSchema,
   validateRuntimeFiles,
 } from './runtime-home';
 import {
   isRegisteredProvider,
+  resolveAnthropicProviderStatus,
   resolveKilocodeProviderStatus,
+  resolveOpenAiProviderStatus,
 } from './providers';
 import {
   asExecutionPolicyData,
@@ -128,13 +131,19 @@ const updateScheduleInputSchema = v.object({
 });
 const subagentModelInputSchema = v.object({
   default: v.optional(providerQualifiedModelSchema),
+  defaultThinkingLevel: v.optional(thinkingLevelSchema),
   repoResearcher: v.optional(providerQualifiedModelSchema),
+  repoResearcherThinkingLevel: v.optional(thinkingLevelSchema),
   ciInvestigator: v.optional(providerQualifiedModelSchema),
+  ciInvestigatorThinkingLevel: v.optional(thinkingLevelSchema),
   releaseReviewer: v.optional(providerQualifiedModelSchema),
+  releaseReviewerThinkingLevel: v.optional(thinkingLevelSchema),
 });
 const updateAgentModelsInputSchema = v.object({
   default: v.optional(providerQualifiedModelSchema),
+  defaultThinkingLevel: v.optional(thinkingLevelSchema),
   displayAssistant: v.optional(providerQualifiedModelSchema),
+  displayAssistantThinkingLevel: v.optional(thinkingLevelSchema),
   subagents: v.optional(subagentModelInputSchema),
 });
 const updateSkillRootsInputSchema = v.object({
@@ -145,7 +154,7 @@ const envVarNameSchema = v.pipe(
   v.regex(/^[A-Z_][A-Z0-9_]*$/, 'Expected an environment variable name.'),
 );
 const updateProviderInputSchema = v.object({
-  provider: v.literal('kilocode'),
+  provider: v.picklist(['kilocode', 'openai', 'anthropic']),
   enabled: v.optional(v.boolean()),
   apiKeyEnv: v.optional(v.nullable(envVarNameSchema)),
   organizationIdEnv: v.optional(v.nullable(envVarNameSchema)),
@@ -573,6 +582,13 @@ export async function updateProviderConfig(
   if (!parsed.ok) return parsed.result;
 
   const input = parsed.input;
+  if (input.provider !== 'kilocode' && input.organizationIdEnv !== undefined) {
+    return failResult('config_update_provider', paths, [paths.config], {
+      message: `${input.provider} provider does not support organizationIdEnv.`,
+      requires: ['enabled', 'apiKeyEnv'],
+    });
+  }
+
   if (
     input.enabled === undefined &&
     input.apiKeyEnv === undefined &&
@@ -1164,11 +1180,17 @@ function hasAgentModelUpdate(
 ) {
   return Boolean(
     input.default ||
+    input.defaultThinkingLevel ||
     input.displayAssistant ||
+    input.displayAssistantThinkingLevel ||
     input.subagents?.default ||
+    input.subagents?.defaultThinkingLevel ||
     input.subagents?.repoResearcher ||
+    input.subagents?.repoResearcherThinkingLevel ||
     input.subagents?.ciInvestigator ||
-    input.subagents?.releaseReviewer,
+    input.subagents?.ciInvestigatorThinkingLevel ||
+    input.subagents?.releaseReviewer ||
+    input.subagents?.releaseReviewerThinkingLevel,
   );
 }
 
@@ -1184,8 +1206,14 @@ function mergeAgentModelConfig(
   return {
     ...current,
     ...(input.default !== undefined ? { default: input.default } : {}),
+    ...(input.defaultThinkingLevel !== undefined
+      ? { defaultThinkingLevel: input.defaultThinkingLevel }
+      : {}),
     ...(input.displayAssistant !== undefined
       ? { displayAssistant: input.displayAssistant }
+      : {}),
+    ...(input.displayAssistantThinkingLevel !== undefined
+      ? { displayAssistantThinkingLevel: input.displayAssistantThinkingLevel }
       : {}),
     ...(Object.keys(subagents).length > 0 ? { subagents } : {}),
   };
@@ -1195,8 +1223,8 @@ function mergeProviderConfig(
   current: AppConfig['providers'] | undefined,
   input: v.InferOutput<typeof updateProviderInputSchema>,
 ): ProviderConfig {
-  const existing = current?.kilocode ?? {};
-  const kilocode = {
+  const existing = current?.[input.provider] ?? {};
+  const provider = {
     ...existing,
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
     ...(input.apiKeyEnv !== undefined
@@ -1204,7 +1232,7 @@ function mergeProviderConfig(
         ? {}
         : { apiKeyEnv: input.apiKeyEnv }
       : {}),
-    ...(input.organizationIdEnv !== undefined
+    ...(input.provider === 'kilocode' && input.organizationIdEnv !== undefined
       ? input.organizationIdEnv === null
         ? {}
         : { organizationIdEnv: input.organizationIdEnv }
@@ -1212,14 +1240,15 @@ function mergeProviderConfig(
   };
 
   if (input.apiKeyEnv === null) {
-    delete kilocode.apiKeyEnv;
+    delete provider.apiKeyEnv;
   }
-  if (input.organizationIdEnv === null) {
-    delete kilocode.organizationIdEnv;
+  if (input.provider === 'kilocode' && input.organizationIdEnv === null) {
+    delete provider.organizationIdEnv;
   }
 
   return {
-    kilocode,
+    ...current,
+    [input.provider]: provider,
   };
 }
 
@@ -1228,12 +1257,22 @@ function effectiveProviderConfig(
   env: NodeJS.ProcessEnv = process.env,
 ) {
   const kilocode = resolveKilocodeProviderStatus({ providers: current }, env);
+  const openai = resolveOpenAiProviderStatus({ providers: current }, env);
+  const anthropic = resolveAnthropicProviderStatus({ providers: current }, env);
 
   return {
     kilocode: {
       enabled: kilocode.enabled,
       apiKeyEnv: kilocode.apiKeyEnv,
       organizationIdEnv: kilocode.organizationIdEnv,
+    },
+    openai: {
+      enabled: openai.enabled,
+      apiKeyEnv: openai.apiKeyEnv,
+    },
+    anthropic: {
+      enabled: anthropic.enabled,
+      apiKeyEnv: anthropic.apiKeyEnv,
     },
   };
 }

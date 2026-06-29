@@ -34,8 +34,9 @@ import { deleteMemory, listMemories, upsertMemory } from './memory-actions';
 import { readHostMetrics } from './metrics';
 import { readRepoHealthSnapshot, readRepoRegistrySnapshot } from './repos';
 import {
-  readKilocodeProviderCredentials,
+  isRegisteredProvider,
   readProviderConfigSync,
+  providerRuntimeRegistrations,
 } from './providers';
 import {
   listRepoEditEvents,
@@ -86,20 +87,11 @@ const paths = runtimePaths();
 ensureRuntimeHomeSync(paths);
 loadNeondeckEnv(paths);
 const providerConfig = readProviderConfigSync(paths);
-const { apiKey: kiloApiKey, organizationId: kiloOrganizationId } =
-  readKilocodeProviderCredentials(process.env, providerConfig);
-const kiloProviderEnabled =
-  providerConfig.providers?.kilocode?.enabled !== false;
-
-if (kiloProviderEnabled) {
-  registerProvider('kilocode', {
-    api: 'openai-completions',
-    baseUrl: 'https://api.kilo.ai/api/gateway',
-    apiKey: kiloApiKey,
-    headers: kiloOrganizationId
-      ? { 'X-KiloCode-OrganizationId': kiloOrganizationId }
-      : undefined,
-  });
+for (const provider of providerRuntimeRegistrations(
+  process.env,
+  providerConfig,
+)) {
+  registerProvider(provider.id, provider.registration);
 }
 
 const app = new Hono();
@@ -377,6 +369,32 @@ app.post('/api/providers/kilocode', async (c) => {
       {
         ...input,
         provider: 'kilocode',
+      },
+      paths,
+    ),
+  );
+});
+
+app.post('/api/providers/:provider', async (c) => {
+  const input = (await safeJsonObject(c)) as Record<string, unknown>;
+  const provider = c.req.param('provider');
+  if (!isRegisteredProvider(provider)) {
+    return c.json(
+      {
+        ok: false,
+        changed: false,
+        action: 'config_update_provider',
+        message: `Unsupported provider "${provider}".`,
+      },
+      400,
+    );
+  }
+
+  return c.json(
+    await updateProviderConfig(
+      {
+        ...input,
+        provider,
       },
       paths,
     ),

@@ -5,16 +5,20 @@ import {
   readRuntimeJsonSync,
   runtimePaths,
   type RuntimePaths,
+  type ThinkingLevel,
 } from './runtime-home';
 
 export const defaultAgentModel = 'kilocode/kilo-auto/balanced';
+export const defaultThinkingLevel: ThinkingLevel = 'medium';
 
 export type NeondeckSubagentKey =
   'repoResearcher' | 'ciInvestigator' | 'releaseReviewer';
 
 export type AgentModelSelection = {
   displayAssistant: string;
+  displayAssistantThinkingLevel: ThinkingLevel;
   subagents: Record<NeondeckSubagentKey, string>;
+  subagentThinkingLevels: Record<NeondeckSubagentKey, ThinkingLevel>;
 };
 
 export function readAgentModelSelectionSync(
@@ -41,15 +45,28 @@ export function resolveAgentModelSelection(
     env.FLUE_AGENT_MODEL,
     defaultAgentModel,
   );
+  const displayAssistantThinkingLevel = firstThinkingLevel(
+    config?.models?.displayAssistantThinkingLevel,
+    config?.models?.defaultThinkingLevel,
+    env.FLUE_AGENT_THINKING_LEVEL,
+    defaultThinkingLevel,
+  );
   const subagentDefault = firstModel(
     config?.models?.subagents?.default,
     env.FLUE_SUBAGENT_MODEL,
     config?.models?.default,
     displayAssistant,
   );
+  const subagentThinkingDefault = firstThinkingLevel(
+    config?.models?.subagents?.defaultThinkingLevel,
+    env.FLUE_SUBAGENT_THINKING_LEVEL,
+    config?.models?.defaultThinkingLevel,
+    displayAssistantThinkingLevel,
+  );
 
   return {
     displayAssistant,
+    displayAssistantThinkingLevel,
     subagents: {
       repoResearcher: firstModel(
         config?.models?.subagents?.repoResearcher,
@@ -64,6 +81,20 @@ export function resolveAgentModelSelection(
         subagentDefault,
       ),
     },
+    subagentThinkingLevels: {
+      repoResearcher: firstThinkingLevel(
+        config?.models?.subagents?.repoResearcherThinkingLevel,
+        subagentThinkingDefault,
+      ),
+      ciInvestigator: firstThinkingLevel(
+        config?.models?.subagents?.ciInvestigatorThinkingLevel,
+        subagentThinkingDefault,
+      ),
+      releaseReviewer: firstThinkingLevel(
+        config?.models?.subagents?.releaseReviewerThinkingLevel,
+        subagentThinkingDefault,
+      ),
+    },
   };
 }
 
@@ -71,5 +102,26 @@ export function firstModel(...values: Array<string | undefined>) {
   return (
     values.find((value) => value && value.trim().length > 0)?.trim() ??
     defaultAgentModel
+  );
+}
+
+export function firstThinkingLevel(
+  ...values: Array<string | undefined>
+): ThinkingLevel {
+  const value = values
+    .find((item) => item && isThinkingLevel(item.trim()))
+    ?.trim();
+
+  return value ? (value as ThinkingLevel) : defaultThinkingLevel;
+}
+
+export function isThinkingLevel(value: string): value is ThinkingLevel {
+  return (
+    value === 'off' ||
+    value === 'minimal' ||
+    value === 'low' ||
+    value === 'medium' ||
+    value === 'high' ||
+    value === 'xhigh'
   );
 }
