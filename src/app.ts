@@ -14,6 +14,7 @@ import {
 } from './config-actions';
 import {
   formatConfigServerSentEvent,
+  replayConfigEventsAfter,
   subscribeConfigEvents,
 } from './config-events';
 import {
@@ -201,7 +202,8 @@ app.get('/api/runtime/status', async (c) => {
   return c.json(await readRuntimeStatus(paths));
 });
 
-app.get('/api/events/config', () => {
+app.get('/api/events/config', (c) => {
+  const lastEventId = c.req.header('last-event-id');
   const encoder = new TextEncoder();
   let cleanup = () => {};
 
@@ -217,6 +219,9 @@ app.get('/api/events/config', () => {
       const unsubscribe = subscribeConfigEvents((event) => {
         send(formatConfigServerSentEvent(event));
       });
+      for (const event of replayConfigEventsAfter(lastEventId)) {
+        send(formatConfigServerSentEvent(event));
+      }
       const heartbeat = setInterval(() => {
         send(`: heartbeat ${Date.now()}\n\n`);
       }, configEventHeartbeatMs);
