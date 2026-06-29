@@ -657,6 +657,36 @@ button:disabled {
   color: var(--deck-faint);
 }
 
+.command-typeahead {
+  max-height: min(45vh, 240px);
+  overflow: hidden;
+  border-bottom: 1px solid var(--deck-line);
+  background:
+    linear-gradient(180deg, rgba(0, 183, 199, 0.035), transparent 42%),
+    var(--deck-bg);
+}
+
+.command-typeahead-option {
+  min-height: calc(32px * var(--deck-density-space));
+  border-bottom: 1px solid var(--deck-line3);
+  transition:
+    background-color 160ms ease-out,
+    color 160ms ease-out;
+}
+
+.command-typeahead-option:last-child {
+  border-bottom: 0;
+}
+
+.command-typeahead-option:hover,
+.command-typeahead-option[data-active='true'] {
+  background: var(--field);
+}
+
+.command-typeahead-option[data-active='true'] span:first-child {
+  color: var(--primary-strong);
+}
+
 /*
  * Vertical column arrangement (portrait / compact profiles, or mode 'stacked').
  * The deck stays height-contained: panels never push the page into a scroll,
@@ -684,7 +714,8 @@ button:disabled {
   border-bottom-width: 0;
 }
 
-.dashboard-grid[data-deck-arrangement='column'] .panel[data-region-role='agent'] {
+.dashboard-grid[data-deck-arrangement='column']
+  .panel[data-region-role='agent'] {
   /*
    * Floor + grow without overflowing the shell. flex-basis 40vh keeps the
    * agent dominant when there is room; shrink: 1 lets it cede height
@@ -696,7 +727,8 @@ button:disabled {
   min-height: 0;
 }
 
-.dashboard-grid[data-deck-arrangement='column'] .panel[data-region-role='data'] {
+.dashboard-grid[data-deck-arrangement='column']
+  .panel[data-region-role='data'] {
   flex: 0 1 auto;
   min-height: 0;
   max-height: 42vh;
@@ -707,7 +739,8 @@ button:disabled {
   max-height: 38vh;
 }
 
-.dashboard-grid[data-deck-arrangement='column'] .panel[data-region-role='status'] {
+.dashboard-grid[data-deck-arrangement='column']
+  .panel[data-region-role='status'] {
   flex: 0 0 auto;
 }
 
