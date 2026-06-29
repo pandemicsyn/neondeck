@@ -17,6 +17,7 @@ import {
   getExecutionApprovals,
   getRepoEditEvents,
   getWorkflowObservability,
+  openNotificationEventStream,
   markNotificationRead,
   resolveNotification,
   resolveExecutionApproval,
@@ -175,6 +176,19 @@ export const RuntimeOverviewPlugin = {
     useConfigEvents(() => {
       void invalidateRuntimeQueries(queryClient);
     });
+
+    useEffect(() => {
+      return openNotificationEventStream(() => {
+        void Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.notifications,
+          }),
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.runtimeStatus,
+          }),
+        ]);
+      });
+    }, [queryClient]);
 
     if (statusQuery.isLoading) {
       return (
