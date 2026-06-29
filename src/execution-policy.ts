@@ -446,9 +446,7 @@ function preapprovalMatches(
 ) {
   if (item.match === 'exact') return command === item.command;
   if (item.match === 'prefix') {
-    return (
-      command === item.command || command.startsWith(`${item.command} `)
-    );
+    return command === item.command || command.startsWith(`${item.command} `);
   }
   return globToRegExp(item.command).test(command);
 }

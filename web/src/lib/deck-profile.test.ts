@@ -40,19 +40,19 @@ describe('classifyDeckProfile', () => {
     // Pinned because useDeckProfile's initial render relies on this: when the
     // shell hasn't been measured yet, a configured mode must still win over
     // the zero-size 'wide' fallback so the first paint matches intent.
-    expect(
-      classifyDeckProfile({ width: 0, height: 0, mode: 'xeneon' }),
-    ).toBe('ultrawide');
-    expect(
-      classifyDeckProfile({ width: 0, height: 0, mode: 'stacked' }),
-    ).toBe('portrait');
+    expect(classifyDeckProfile({ width: 0, height: 0, mode: 'xeneon' })).toBe(
+      'ultrawide',
+    );
+    expect(classifyDeckProfile({ width: 0, height: 0, mode: 'stacked' })).toBe(
+      'portrait',
+    );
   });
 
   it('falls back to wide before the first measurement', () => {
     expect(classifyDeckProfile({ width: 0, height: 0 })).toBe('wide');
-    expect(
-      classifyDeckProfile({ width: Number.NaN, height: Number.NaN }),
-    ).toBe('wide');
+    expect(classifyDeckProfile({ width: Number.NaN, height: Number.NaN })).toBe(
+      'wide',
+    );
   });
 });
 

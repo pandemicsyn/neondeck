@@ -159,9 +159,9 @@ describe('github foundation', () => {
         query.includes('repo:pandemicsyn/neondeck'),
       ),
     ).toHaveLength(2);
-    expect(
-      new Set(buildPullRequestQueries('pandemicsyn', repos)).size,
-    ).toEqual(buildPullRequestQueries('pandemicsyn', repos).length);
+    expect(new Set(buildPullRequestQueries('pandemicsyn', repos)).size).toEqual(
+      buildPullRequestQueries('pandemicsyn', repos).length,
+    );
   });
 
   it('paginates PR searches and merges queue relations', async () => {

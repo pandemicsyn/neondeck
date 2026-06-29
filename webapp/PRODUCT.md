@@ -25,7 +25,7 @@ Avoid generic SaaS landing-page clichés: the hero-metric template (big number +
 - Show the deck, don't just describe it: a faithful dashboard mockup in its real aspect ratio is the strongest possible proof.
 - Sell local-first as the headline value, not a footnote — this runs on the user's machine.
 - Get to the command fast: the install/run command is a first-class, copyable hero element.
-- Let the brand be louder than the product UI, but keep it the *same* brand — same fonts, same palette, turned up.
+- Let the brand be louder than the product UI, but keep it the _same_ brand — same fonts, same palette, turned up.
 - Docs and marketing share one shell: reading the docs should feel like the same site, not a bolted-on wiki.
 
 ## Accessibility & Inclusion

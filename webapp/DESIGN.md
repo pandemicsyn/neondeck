@@ -2,94 +2,94 @@
 name: neondeck.dev
 description: Electric, local-first developer marketing in warped Miami camo.
 colors:
-  bg: "#0e0f13"
-  bg-strong: "#090a0f"
-  surface: "#12141b"
-  chrome: "#070810"
-  card: "#0e0f13"
-  ink: "#f7fbff"
-  body: "#d7f7ff"
-  muted: "#d7f7ffad"
-  faint: "#d7f7ff70"
-  line: "#ffffff1a"
-  pink: "#ff4fb8"
-  teal: "#00b7c7"
-  cyan: "#69e6ff"
-  violet: "#8b4dff"
-  bg-light: "#e7f3f7"
-  surface-light: "#ffffff"
-  ink-light: "#13171e"
-  cyan-light: "#0093a8"
-  pink-light: "#e0399b"
+  bg: '#0e0f13'
+  bg-strong: '#090a0f'
+  surface: '#12141b'
+  chrome: '#070810'
+  card: '#0e0f13'
+  ink: '#f7fbff'
+  body: '#d7f7ff'
+  muted: '#d7f7ffad'
+  faint: '#d7f7ff70'
+  line: '#ffffff1a'
+  pink: '#ff4fb8'
+  teal: '#00b7c7'
+  cyan: '#69e6ff'
+  violet: '#8b4dff'
+  bg-light: '#e7f3f7'
+  surface-light: '#ffffff'
+  ink-light: '#13171e'
+  cyan-light: '#0093a8'
+  pink-light: '#e0399b'
 typography:
   display:
-    fontFamily: "Chakra Petch, sans-serif"
-    fontSize: "clamp(2.6rem, 6.4vw, 5.4rem)"
+    fontFamily: 'Chakra Petch, sans-serif'
+    fontSize: 'clamp(2.6rem, 6.4vw, 5.4rem)'
     fontWeight: 700
     lineHeight: 0.98
-    letterSpacing: "-0.01em"
+    letterSpacing: '-0.01em'
   headline:
-    fontFamily: "Chakra Petch, sans-serif"
-    fontSize: "clamp(2rem, 4vw, 3.3rem)"
+    fontFamily: 'Chakra Petch, sans-serif'
+    fontSize: 'clamp(2rem, 4vw, 3.3rem)'
     fontWeight: 700
     lineHeight: 1
-    letterSpacing: "-0.015em"
+    letterSpacing: '-0.015em'
   title:
-    fontFamily: "Chakra Petch, sans-serif"
-    fontSize: "18px"
+    fontFamily: 'Chakra Petch, sans-serif'
+    fontSize: '18px'
     fontWeight: 700
     lineHeight: 1.2
-    letterSpacing: "0"
+    letterSpacing: '0'
   body:
-    fontFamily: "IBM Plex Sans, system-ui, sans-serif"
-    fontSize: "15px"
+    fontFamily: 'IBM Plex Sans, system-ui, sans-serif'
+    fontSize: '15px'
     fontWeight: 400
     lineHeight: 1.7
-    letterSpacing: "0"
+    letterSpacing: '0'
   mono:
-    fontFamily: "IBM Plex Mono, monospace"
-    fontSize: "13px"
+    fontFamily: 'IBM Plex Mono, monospace'
+    fontSize: '13px'
     fontWeight: 500
     lineHeight: 1.6
-    letterSpacing: "0"
+    letterSpacing: '0'
   kicker:
-    fontFamily: "IBM Plex Mono, monospace"
-    fontSize: "12px"
+    fontFamily: 'IBM Plex Mono, monospace'
+    fontSize: '12px'
     fontWeight: 500
     lineHeight: 1.4
-    letterSpacing: "0.24em"
+    letterSpacing: '0.24em'
 rounded:
-  none: "0"
-  pill: "999px"
+  none: '0'
+  pill: '999px'
 spacing:
-  nav-h: "64px"
-  section: "clamp(62px, 8vw, 104px)"
-  hero: "clamp(72px, 9vw, 92px)"
-  container: "min(1180px, calc(100vw - 48px))"
+  nav-h: '64px'
+  section: 'clamp(62px, 8vw, 104px)'
+  hero: 'clamp(72px, 9vw, 92px)'
+  container: 'min(1180px, calc(100vw - 48px))'
 components:
   button-primary:
-    backgroundColor: "{colors.cyan}"
-    textColor: "{colors.bg}"
-    rounded: "{rounded.none}"
-    padding: "13px 22px"
+    backgroundColor: '{colors.cyan}'
+    textColor: '{colors.bg}'
+    rounded: '{rounded.none}'
+    padding: '13px 22px'
   button-primary-hover:
-    backgroundColor: "{colors.pink}"
-    textColor: "{colors.bg}"
+    backgroundColor: '{colors.pink}'
+    textColor: '{colors.bg}'
   button-secondary:
-    backgroundColor: "transparent"
-    textColor: "{colors.cyan}"
-    rounded: "{rounded.none}"
-    padding: "13px 22px"
+    backgroundColor: 'transparent'
+    textColor: '{colors.cyan}'
+    rounded: '{rounded.none}'
+    padding: '13px 22px'
   hero-command:
-    backgroundColor: "{colors.chrome}"
-    textColor: "{colors.body}"
-    rounded: "{rounded.none}"
-    padding: "14px 18px"
+    backgroundColor: '{colors.chrome}'
+    textColor: '{colors.body}'
+    rounded: '{rounded.none}'
+    padding: '14px 18px'
   feature:
-    backgroundColor: "{colors.card}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.none}"
-    padding: "26px 24px"
+    backgroundColor: '{colors.card}'
+    textColor: '{colors.ink}'
+    rounded: '{rounded.none}'
+    padding: '26px 24px'
 ---
 
 # Design System: neondeck.dev
@@ -105,6 +105,7 @@ The structure underneath is disciplined: a sticky blurred nav, a centered hero w
 This system explicitly rejects SaaS landing-page grammar: no hero-metric template, no identical feature-card carousels, no stock art, no "trusted by" logo wall, no enterprise blandness. The neon is intentional and bounded — a developer tool that looks electric, not a peripheral ad.
 
 **Key Characteristics:**
+
 - Warped SVG tiger-stripe camo hero, washes + vignette, drifting slowly.
 - Three named "looks" (camo / deck / light) on top of a dark/light theme.
 - Zero radius on structure (buttons, features, code windows); pills reserved for dots.
@@ -116,22 +117,27 @@ This system explicitly rejects SaaS landing-page grammar: no hero-metric templat
 The dashboard's Miami palette, pushed brighter and used more freely: near-black ground, electric cyan as primary action, pink as the hot signal, violet as the third light.
 
 ### Primary
+
 - **Cyan** (`#69e6ff`, light `#0093a8`): primary CTA fill, links, kicker text, active nav and look-toggle. The "go" color.
 - **Teal** (`#00b7c7`, light `#0093a8`): the calmer primary — code-window dots, secondary washes, spark variants.
 
 ### Secondary
+
 - **Hot Pink** (`#ff4fb8`, light `#e0399b`): the hero accent and hover state — the primary button flips to pink on hover, the command prompt `$` is pink, selection is pink, the brand diamond glows pink. The loudest color, used as punctuation.
 
 ### Tertiary
+
 - **Violet** (`#8b4dff`, light `#7a37e6`): the third hero wash and spark variant. Completes the Miami triad.
 
 ### Neutral
+
 - **Page Black** (`#0e0f13`, strong `#090a0f`, light `#e7f3f7`): body ground and feature-card fill.
 - **Surface / Chrome** (`#12141b` / `#070810`, light `#ffffff`): raised surfaces and the dark command/code chrome that stays dark even in light theme.
 - **Ink** (`#f7fbff`, light `#13171e`): headings. **Body** (`#d7f7ff`, light `#222b34`): prose. **Muted** (`body` at ~68%) and **Faint** (~44%) for secondary and footer text — verify AA per look.
 - **Line** (`#ffffff` at 10%, light `#122837` at 14%): hairline borders and the 1px gaps that form the feature grid.
 
 ### Named Rules
+
 **The Same-Brand Rule.** The marketing palette is the dashboard palette turned up, never a new identity. Same hex family, same three hues. If a color isn't in the product's Miami set, it doesn't belong here.
 
 **The Pink-Punctuation Rule.** Pink is the loudest hue and is used as punctuation — the hover flip, the `$` prompt, the diamond glow, selection. It is never a large fill.
@@ -145,6 +151,7 @@ The dashboard's Miami palette, pushed brighter and used more freely: near-black 
 **Character:** The same three-font split as the product, scaled up for a marketing surface. Chakra Petch carries identity at large, tightly-tracked, uppercase display sizes; Plex Sans handles readable prose at a generous 1.7 line-height; Plex Mono signals "developer" everywhere structure or code appears.
 
 ### Hierarchy
+
 - **Display / h1** (Chakra Petch 700, `clamp(2.6rem, 6.4vw, 5.4rem)`, 0.98, uppercase, `-0.01em`): the hero headline, with a faint pink text-shadow halo.
 - **Headline / h2** (Chakra Petch 700, `clamp(2rem, 4vw, 3.3rem)`, 1, `-0.015em`): section and docs titles.
 - **Title / h3** (Chakra Petch 700, 18px): feature names.
@@ -153,6 +160,7 @@ The dashboard's Miami palette, pushed brighter and used more freely: near-black 
 - **Mono** (Plex Mono, 13px): nav links, commands, code windows, footer, docs sidebar.
 
 ### Named Rules
+
 **The One-Kicker Rule.** The wide-tracked mono kicker appears once, in the hero, as a brand signature. It is never repeated above every section — that's the SaaS eyebrow reflex this site rejects.
 
 ## 4. Elevation
@@ -160,39 +168,48 @@ The dashboard's Miami palette, pushed brighter and used more freely: near-black 
 Mostly flat with hairlines, like the product — but the brand surface earns a few deliberate, atmospheric depth cues that the dashboard forbids. The nav uses `backdrop-filter: blur(10px)` over a translucent ground to float above scrolling content. The hero command bar carries a real drop shadow (`0 18px 50px rgba(0,0,0,0.5)`) plus a tight cyan inset, and the primary hero button glows (`0 0 28px rgba(255,79,184,0.5)`). The hero's depth is atmospheric: blurred radial washes (`filter: blur(70px)`) behind warped stripes behind a gradient vignette. Everything else — feature grid, code window, footer — is flat, separated only by 1px `--line`.
 
 ### Shadow Vocabulary
+
 - **Command lift** (`0 0 0 1px rgba(0,0,0,0.4), 0 18px 50px rgba(0,0,0,0.5)`): the floating install-command bar.
 - **CTA glow** (`0 0 28px rgba(255,79,184,0.5)`): the hero primary button only.
 - **Diamond halo** (`0 0 14px rgba(255,79,184,0.7)`): the brand mark.
 
 ### Named Rules
+
 **The Atmosphere-Not-Cards Rule.** Depth lives in the hero atmosphere (washes, blur, vignette, glow) and on two hero objects (command bar, CTA). Content sections stay flat and hairline-ruled. Never put a drop shadow on a feature card.
 
 ## 5. Components
 
 ### Buttons
+
 - **Shape:** hard rectangle (0 radius).
 - **Primary:** solid `cyan` fill, `bg`-dark text, mono 14px/600, `13px 22px`. **Hover:** flips to `pink` (fill + border).
 - **Secondary:** transparent with cyan text and border; hover gets a faint cyan tint and `ink` text.
 - **Hero primary (signature):** pink fill with a `0 0 28px` pink glow; hover flips to cyan. The `deck` look drops the glow and inverts cyan↔pink.
 
 ### Hero Command (signature)
+
 - A dark, slightly translucent (`rgba(8,9,12,0.72)`) mono bar with a cyan-tinted border, `backdrop-filter: blur(4px)`, and the **command lift** shadow. The `$` prompt is pink; a right-hand **copy** button (uppercase mono, hairline left border) writes to clipboard and flips its label to `copied` for ~1.4s.
 
 ### Feature Grid (signature)
-- A `repeat(auto-fit, minmax(250px, 1fr))` grid where the 1px gaps *are* the borders: the grid background is `--line` and each `.feature` is a `--card` fill, so the hairlines read as a seamless ruled wall. Each cell: a colored **spark** diamond (cyan/pink/teal/violet, glowing via `box-shadow: 0 0 13px currentColor`), a Chakra title, muted body. ≥210px min-height, `26px 24px` padding.
+
+- A `repeat(auto-fit, minmax(250px, 1fr))` grid where the 1px gaps _are_ the borders: the grid background is `--line` and each `.feature` is a `--card` fill, so the hairlines read as a seamless ruled wall. Each cell: a colored **spark** diamond (cyan/pink/teal/violet, glowing via `box-shadow: 0 0 13px currentColor`), a Chakra title, muted body. ≥210px min-height, `26px 24px` padding.
 
 ### Code Window
+
 - Flat `--code-bg` panel with a hairline border and a faux title bar of three pill **dots** (pink / teal / cyan). Mono 13px, `1.75` line-height, horizontal scroll, `white-space: pre`. The one place pills are allowed.
 
 ### Navigation
+
 - Sticky, `backdrop-filter: blur(10px)` over translucent `--bg`, hairline base, 64px min-height. Brand: a gradient (pink→cyan) rotated diamond with a glow + Chakra wordmark. Links are muted mono, cyan on hover. A segmented **look-toggle** (camo/deck/light) with `aria-pressed` and a cyan active state. On ≤900px, secondary links and CTA hide.
 
 ### Docs Shell
+
 - A `220px / 1fr` grid: sticky mono sidebar (muted links, cyan hover) + an 780px-max prose column sharing the site's headings, links, and bordered code blocks. Collapses to a single stacked column at ≤900px.
 
 ## 6. Do's and Don'ts
 
 ### Do:
+
 - **Do** keep the hero camo decorative and behind the vignette so headline text always meets AA across camo / deck / light.
 - **Do** treat the install command as a first-class, copyable hero object — pink `$`, working copy button, mono.
 - **Do** use the same Miami hues and Chakra/Plex fonts as the product; this is the same brand, louder.
@@ -201,6 +218,7 @@ Mostly flat with hairlines, like the product — but the brand surface earns a f
 - **Do** honor `prefers-reduced-motion` — the drifting stripes and smooth scroll must settle (the global override clamps to 1ms).
 
 ### Don't:
+
 - **Don't** use SaaS landing clichés: no hero-metric template (big number + small label + stats), no identical feature-card carousels, no stock illustrations, no "trusted by" logo wall.
 - **Don't** add an eyebrow/kicker above every section — one kicker, in the hero, period.
 - **Don't** put drop shadows or radii on feature cards; the grid is flat hairlines.
