@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "flue": {
+      "source": "withastro/flue",
+      "sourceType": "github",
+      "skillPath": "skills/flue/SKILL.md",
+      "computedHash": "c9ccd18babb912f52037e42b674a6c0de09d0459331000b11be98d31687f35fd"
+    }
+  }
+}
