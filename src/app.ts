@@ -3,6 +3,7 @@ import { flue } from '@flue/runtime/routing';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { supportedCommands } from './commands';
+import { preparePrWorktree, triagePrEvent } from './autopilot';
 import {
   readProviderConfig,
   reloadConfig,
@@ -911,6 +912,16 @@ app.get('/api/kilo/sessions/:id/diff', async (c) => {
     paths,
   );
   return c.json(result, result.ok ? 200 : 404);
+});
+
+app.post('/api/autopilot/triage-pr-event', async (c) => {
+  const result = await triagePrEvent(await safeJsonBody(c));
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/autopilot/prepare-pr-worktree', async (c) => {
+  const result = await preparePrWorktree(await safeJsonBody(c), paths);
+  return c.json(result, result.ok ? 200 : 400);
 });
 
 app.get('/api/watches', async (c) => {

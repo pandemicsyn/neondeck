@@ -210,6 +210,13 @@ Use this format:
 - Reason: The roadmap confirmation policy says enabling Kilo `--auto` requires explicit confirmation, and this slice should preserve Kilo as a user-invoked delegated worker rather than a default autonomous runtime.
 - Follow-up: If a future repo/workflow policy opts into unattended `--auto`, model that as an audited policy change with visible user controls.
 
+## 2026-06-30 - Autopilot Triage And PR Worktree Preparation
+
+- Roadmap item: Phase 19B / PR event autopilot triage and prepare worktree workflows
+- Decision: Added `triage_pr_event` and `prepare_pr_worktree` workflow/action/API surfaces over a narrow structured PR event adapter, but did not add watcher event watermark persistence, queue admission, review comment lookup, fix, verify, push, or PR comment workflows. `prepare_pr_worktree` does not accept caller-supplied PR facts, check facts, or workflow run ids; it fetches GitHub facts server-side and reports that worktree run-id linkage is not attached yet.
+- Reason: Phase 19A event/watermark ownership is not present in this worktree, and this slice was explicitly limited to classification plus isolated worktree preparation. Flue `ActionContext` intentionally excludes workflow identity, so accepting a caller-supplied run id would create a spoofable audit field.
+- Follow-up: Phase 19A should feed durable watcher deltas into `triage_pr_event`; later Phase 19 slices should add unresolved review/check facts, reconciliation, fixer, verifier, push-back, comment, queue, dashboard surfaces, and a non-spoofable Flue run-id/worktree linkage if Flue exposes a supported run-context hook.
+
 ## 2026-06-30 - PR Event Model And Watermarks
 
 - Roadmap item: Phase 19 / PR Event Autopilot
