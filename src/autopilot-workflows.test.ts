@@ -1421,6 +1421,7 @@ describe('PR event autopilot', () => {
 
     const result = await pushPrAutofix({ preparedDiffId }, paths, {
       getBranchPermissions: pushAllowedPermissions,
+      pushGit: pushToFixtureOrigin(remote),
     });
 
     expect(result).toMatchObject({
@@ -1690,6 +1691,26 @@ async function pushAllowedPermissions() {
 
 async function pushDeniedPermissions() {
   return branchPermissionResult(false);
+}
+
+function pushToFixtureOrigin(remote: string) {
+  return async (
+    cwd: string,
+    input: { remote: string; branch: string; force?: boolean },
+  ) => {
+    expect(input).toMatchObject({
+      remote: 'https://github.com/example/sample.git',
+      branch: 'feature',
+      force: false,
+    });
+    await git(cwd, ['push', remote, 'HEAD:refs/heads/feature']);
+    return {
+      remote: input.remote,
+      branch: input.branch,
+      force: Boolean(input.force),
+      stdout: '',
+    } as never;
+  };
 }
 
 function branchPermissionResult(canLikelyPush: boolean) {

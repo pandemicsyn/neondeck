@@ -2772,23 +2772,29 @@ function recoveryOptionsForPushBlock(
 
 function remoteForPush(worktree: WorktreeRecord, branchPermissions: unknown) {
   const headRepoFullName = stringField(branchPermissions, 'headRepoFullName');
-  const baseRepoFullName = stringField(branchPermissions, 'baseRepoFullName');
+  const worktreeHeadFullName =
+    worktree.headOwner && worktree.headName
+      ? `${worktree.headOwner}/${worktree.headName}`
+      : undefined;
+  return githubRemoteUrl(
+    headRepoFullName ?? worktreeHeadFullName ?? worktree.repoFullName,
+  );
+}
+
+function githubRemoteUrl(fullName: string) {
+  const [owner, repo, extra] = fullName.split('/');
   if (
-    headRepoFullName &&
-    baseRepoFullName &&
-    headRepoFullName.toLowerCase() !== baseRepoFullName.toLowerCase()
+    extra !== undefined ||
+    !owner ||
+    !repo ||
+    !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(owner) ||
+    !/^[A-Za-z0-9._-]+$/.test(repo) ||
+    repo === '.' ||
+    repo === '..'
   ) {
-    return `https://github.com/${headRepoFullName}.git`;
+    throw new Error(`Invalid GitHub repository full name: ${fullName}`);
   }
-  if (
-    worktree.headOwner &&
-    worktree.headName &&
-    worktree.repoFullName.toLowerCase() !==
-      `${worktree.headOwner}/${worktree.headName}`.toLowerCase()
-  ) {
-    return `https://github.com/${worktree.headOwner}/${worktree.headName}.git`;
-  }
-  return 'origin';
+  return `https://github.com/${fullName}.git`;
 }
 
 function preparedDiffCommitSha(
