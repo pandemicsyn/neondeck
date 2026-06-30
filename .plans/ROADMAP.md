@@ -1261,7 +1261,7 @@ Must-haves:
 
 ### Phase 19: PR Event Autopilot
 
-- Status: partially complete and actively being finished. Event watermarks, triage, worktree preparation, review/CI fix workflows, verification, push-back, PR result comments, concurrency controls, dashboard/TUI-ready state, notification policy, runtime guidance, and fixture-backed smoke/integration coverage have landed.
+- Status: complete for current in-scope PR autopilot work. Event watermarks, triage, worktree preparation, review/CI fix workflows, verification, push-back, PR result comments, concurrency controls, dashboard/TUI-ready state, notification policy, runtime guidance, and fixture-backed smoke/integration coverage have landed. Future refinements such as richer model-planning orchestration, provider-specific log adapters, and broader production rollout policy can build on this foundation.
 
 - [x] Extend PR watches to persist event watermarks for commits, review threads, requested-changes reviews, check suites, check runs, mergeability, and out-of-date branch state.
 - [x] Add a `triage_pr_event` workflow that classifies deltas into no-op, notify-only, explain-only, draft-fix, auto-fix-no-push, or auto-fix-push-after-checks.
