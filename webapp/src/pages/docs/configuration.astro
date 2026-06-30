@@ -68,6 +68,8 @@ GITHUB_LOGIN=...</code></pre>
   "models": &#123;
     "displayAssistant": "kilocode/kilo-auto/balanced",
     "displayAssistantThinkingLevel": "medium",
+    "utility": "kilocode/kilo-auto/fast",
+    "utilityThinkingLevel": "low",
     "subagents": &#123;
       "default": "kilocode/kilo-auto/balanced",
       "defaultThinkingLevel": "medium",
@@ -97,7 +99,10 @@ GITHUB_LOGIN=...</code></pre>
 &#125;</code></pre>
         <p>
           Provider config stores environment variable names, not raw secrets or
-          arbitrary endpoints. <code>thinkingLevel</code> values use Flue's
+          arbitrary endpoints. <code>thinkingLevel</code> values use Flue's exposed
+          reasoning tiers. The utility model is optional and falls back to the display
+          assistant when omitted, but a low-cost utility model is recommended for
+          titles, labels, notifications, and compact summaries.
           <code>off</code>, <code>minimal</code>, <code>low</code>,
           <code>medium</code>, <code>high</code>, or <code>xhigh</code> levels. Provider
           registration changes require a server restart.

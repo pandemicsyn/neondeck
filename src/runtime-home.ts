@@ -52,6 +52,8 @@ export const agentModelConfigSchema = v.looseObject({
   defaultThinkingLevel: v.optional(thinkingLevelSchema),
   displayAssistant: v.optional(nonEmptyStringSchema),
   displayAssistantThinkingLevel: v.optional(thinkingLevelSchema),
+  utility: v.optional(nonEmptyStringSchema),
+  utilityThinkingLevel: v.optional(thinkingLevelSchema),
   subagents: v.optional(
     v.looseObject({
       default: v.optional(nonEmptyStringSchema),

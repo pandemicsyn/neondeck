@@ -138,8 +138,8 @@ GITHUB_LOGIN=...</code></pre>
 
         <h2 id="agent-models">Agent models</h2>
         <p>
-          Configure the display assistant and subagent model choices in
-          runtime-home
+          Configure the display assistant, utility, and subagent model choices
+          in runtime-home
           <code>config.json</code>. Environment variables remain fallback
           values, but runtime config is the preferred local control point.
         </p>
@@ -148,6 +148,8 @@ GITHUB_LOGIN=...</code></pre>
   "models": &#123;
     "displayAssistant": "kilocode/kilo-auto/balanced",
     "displayAssistantThinkingLevel": "medium",
+    "utility": "kilocode/kilo-auto/fast",
+    "utilityThinkingLevel": "low",
     "subagents": &#123;
       "default": "kilocode/kilo-auto/balanced",
       "defaultThinkingLevel": "medium",
@@ -165,7 +167,9 @@ GITHUB_LOGIN=...</code></pre>
           <code>neondeck_config_update_agent_models</code> action. Model strings must
           reference allowlisted providers. Thinking levels use Flue's
           <code>thinkingLevel</code> values such as <code>low</code>,
-          <code>medium</code>, and <code>high</code>.
+          <code>medium</code>, and <code>high</code>. The utility model is
+          optional; when skipped, Neondeck falls back to the display assistant
+          and recommends a cheaper model for bounded helper work.
         </p>
 
         <h2 id="execution-approvals">Execution approvals</h2>

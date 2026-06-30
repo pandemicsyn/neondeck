@@ -321,7 +321,7 @@ const entries: SafetyPolicyEntry[] = [
       ...safeMutation,
       auditTarget: 'config_history',
     },
-    'Updates display-assistant or known subagent model strings using already registered providers.',
+    'Updates display-assistant, utility, or known subagent model strings using already registered providers.',
   ),
   action(
     'neondeck_config_update_provider',
@@ -645,7 +645,7 @@ const entries: SafetyPolicyEntry[] = [
       ...safeMutation,
       auditTarget: 'config_history',
     },
-    'Updates display-assistant and subagent model settings.',
+    'Updates display-assistant, utility, and subagent model settings.',
   ),
   route(
     '/api/providers/:provider',

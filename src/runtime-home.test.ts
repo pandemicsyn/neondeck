@@ -146,6 +146,8 @@ describe('runtime home', () => {
           models: {
             default: 'kilocode/kilo-auto/balanced',
             displayAssistant: 'kilocode/kilo/main',
+            utility: 'kilocode/kilo/utility',
+            utilityThinkingLevel: 'low',
             subagents: {
               default: 'kilocode/kilo/subagent',
               repoResearcher: 'kilocode/kilo/repo',
@@ -164,6 +166,7 @@ describe('runtime home', () => {
     ).resolves.toMatchObject({
       models: {
         displayAssistant: 'kilocode/kilo/main',
+        utility: 'kilocode/kilo/utility',
         subagents: {
           repoResearcher: 'kilocode/kilo/repo',
           ciInvestigator: 'kilocode/kilo/ci',
@@ -174,6 +177,9 @@ describe('runtime home', () => {
     expect(readAgentModelSelectionSync(paths)).toEqual({
       displayAssistant: 'kilocode/kilo/main',
       displayAssistantThinkingLevel: 'medium',
+      utility: 'kilocode/kilo/utility',
+      utilityConfigured: true,
+      utilityThinkingLevel: 'low',
       subagents: {
         repoResearcher: 'kilocode/kilo/repo',
         ciInvestigator: 'kilocode/kilo/ci',
@@ -184,6 +190,30 @@ describe('runtime home', () => {
         ciInvestigator: 'medium',
         releaseReviewer: 'medium',
       },
+    });
+  });
+
+  it('falls back utility model selection to the display assistant', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
+    tempRoots.push(root);
+    const paths = runtimePaths(root);
+
+    await ensureRuntimeHome(paths);
+    await writeFile(
+      paths.config,
+      JSON.stringify({
+        version: 1,
+        models: {
+          displayAssistant: 'openai/gpt-5-mini',
+        },
+      }),
+    );
+
+    expect(readAgentModelSelectionSync(paths)).toMatchObject({
+      displayAssistant: 'openai/gpt-5-mini',
+      utility: 'openai/gpt-5-mini',
+      utilityConfigured: false,
+      utilityThinkingLevel: 'low',
     });
   });
 
