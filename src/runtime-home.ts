@@ -912,6 +912,22 @@ function initializeAppDatabase(path: string) {
         data_json TEXT,
         created_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS kilo_session_audit (
+        id TEXT PRIMARY KEY,
+        task_id TEXT,
+        session_id TEXT,
+        child_session_id TEXT,
+        read_type TEXT NOT NULL,
+        requester_surface TEXT NOT NULL,
+        reason TEXT,
+        limit_count INTEGER,
+        offset_count INTEGER,
+        include_full_transcript INTEGER NOT NULL DEFAULT 0,
+        include_tool_output INTEGER NOT NULL DEFAULT 0,
+        include_diff INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
     `);
 
     ensureColumn(database, 'repo_edit_events', 'worktree_id', 'TEXT');
@@ -1015,6 +1031,9 @@ function initializeAppDatabase(path: string) {
 
       CREATE INDEX IF NOT EXISTS idx_kilo_task_events_task
         ON kilo_task_events(task_id, event_index);
+
+      CREATE INDEX IF NOT EXISTS idx_kilo_session_audit_session
+        ON kilo_session_audit(session_id, created_at DESC);
     `);
     reconcileExistingNotificationDuplicates(database);
     reconcileActiveNeonSessions(database);

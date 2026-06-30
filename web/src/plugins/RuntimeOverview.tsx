@@ -18,6 +18,7 @@ import {
   getRepoEditEvents,
   getWorktrees,
   getWorkflowObservability,
+  getKiloTasks,
   openNotificationEventStream,
   markNotificationRead,
   resolveNotification,
@@ -46,6 +47,8 @@ import {
   type MemoryResponse,
   type WorkflowEventRecord,
   type WorkflowObservability,
+  type KiloTaskRecord,
+  type KiloTasksResponse,
   type WorktreeCleanupFailure,
   type WorktreeLockRecord,
   type WorktreeRecord,
@@ -78,6 +81,7 @@ type RuntimeSnapshot = {
   executionApprovals: ExecutionApprovalsResponse;
   safety: SafetyPolicy;
   workflows: WorkflowObservability;
+  kiloTasks: KiloTasksResponse;
   repoEditEvents: RepoEditEventsResponse;
   worktrees: WorktreesResponse;
   secondaryErrors: string[];
@@ -118,6 +122,7 @@ export const RuntimeOverviewPlugin = {
       executionApprovalsQuery,
       safetyQuery,
       workflowsQuery,
+      kiloTasksQuery,
       repoEditEventsQuery,
       worktreesQuery,
     ] = useQueries({
@@ -171,6 +176,11 @@ export const RuntimeOverviewPlugin = {
           queryKey: queryKeys.workflowObservability,
           queryFn: getWorkflowObservability,
           refetchInterval: 30_000,
+        },
+        {
+          queryKey: queryKeys.kiloTasks,
+          queryFn: getKiloTasks,
+          refetchInterval: 15_000,
         },
         {
           queryKey: queryKeys.repoEditEvents,
@@ -232,6 +242,7 @@ export const RuntimeOverviewPlugin = {
       executionApprovals: executionApprovalsQuery,
       safety: safetyQuery,
       workflows: workflowsQuery,
+      kiloTasks: kiloTasksQuery,
       repoEditEvents: repoEditEventsQuery,
       worktrees: worktreesQuery,
     });
@@ -260,6 +271,7 @@ type RuntimeSnapshotQueries = {
   executionApprovals: UseQueryResult<ExecutionApprovalsResponse>;
   safety: UseQueryResult<SafetyPolicy>;
   workflows: UseQueryResult<WorkflowObservability>;
+  kiloTasks: UseQueryResult<KiloTasksResponse>;
   repoEditEvents: UseQueryResult<RepoEditEventsResponse>;
   worktrees: UseQueryResult<WorktreesResponse>;
 };
@@ -278,6 +290,7 @@ function runtimeSnapshotFromQueries(
     queryResultError(queries.executionApprovals),
     queryResultError(queries.safety),
     queryResultError(queries.workflows),
+    queryResultError(queries.kiloTasks),
     queryResultError(queries.repoEditEvents),
     queryResultError(queries.worktrees),
   ].filter((error): error is string => !!error);
@@ -322,6 +335,14 @@ function runtimeSnapshotFromQueries(
     },
     safety: queries.safety.data ?? emptySafetyPolicy(status.fetchedAt),
     workflows: queries.workflows.data ?? emptyWorkflows(),
+    kiloTasks: queries.kiloTasks.data ?? {
+      ok: false,
+      action: 'kilo_tasks_list',
+      changed: false,
+      message: 'Kilo tasks unavailable.',
+      tasks: [],
+      fetchedAt: status.fetchedAt,
+    },
     repoEditEvents: queries.repoEditEvents.data ?? {
       ok: false,
       action: 'repo_edit_events_list',
@@ -360,6 +381,7 @@ async function invalidateRuntimeQueries(queryClient: QueryClient) {
     queryClient.invalidateQueries({
       queryKey: queryKeys.workflowObservability,
     }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.kiloTasks }),
     queryClient.invalidateQueries({ queryKey: queryKeys.memories }),
     queryClient.invalidateQueries({ queryKey: queryKeys.notifications }),
     queryClient.invalidateQueries({ queryKey: queryKeys.executionApprovals }),
@@ -390,6 +412,17 @@ function RuntimeView({
     0,
     5,
   );
+  const activeKiloTasks = snapshot.kiloTasks.tasks.filter((task) =>
+    ['running', 'needs-reconcile', 'needs-review', 'unknown'].includes(
+      task.status,
+    ),
+  );
+  const recentKiloTasks = [
+    ...activeKiloTasks,
+    ...snapshot.kiloTasks.tasks.filter(
+      (task) => !activeKiloTasks.some((active) => active.id === task.id),
+    ),
+  ].slice(0, 5);
   const healthByRepoId = new Map(
     snapshot.repoHealth.repos.map((repo) => [repo.id, repo]),
   );
@@ -541,6 +574,20 @@ function RuntimeView({
               ))}
               {recentExecutionApprovals.length === 0 ? (
                 <MiniEmpty label="No execution approvals recorded." />
+              ) : null}
+            </div>
+          </RuntimeSection>
+          <RuntimeSection
+            count={activeKiloTasks.length}
+            title="KILO WORK"
+            tone={activeKiloTasks.length > 0 ? 'accent' : 'violet'}
+          >
+            <div className="space-y-1.5">
+              {recentKiloTasks.map((task) => (
+                <KiloTaskRow key={task.id} task={task} />
+              ))}
+              {recentKiloTasks.length === 0 ? (
+                <MiniEmpty label="No delegated Kilo work recorded." />
               ) : null}
             </div>
           </RuntimeSection>
@@ -1663,6 +1710,69 @@ function RepoEditEventRow({ event }: { event: RepoEditEvent }) {
   );
 }
 
+function KiloTaskRow({ task }: { task: KiloTaskRecord }) {
+  const changed =
+    task.diff && task.diff.ok
+      ? `${task.diff.fileCount} files +${task.diff.additions} -${task.diff.deletions}`
+      : task.diff?.error
+        ? task.diff.error
+        : 'diff not read';
+  const childLabel =
+    task.childSessionIds.length > 0
+      ? `${task.childSessionIds.length} child session${task.childSessionIds.length === 1 ? '' : 's'}`
+      : 'no child sessions';
+  const sessionLabel = task.rootSessionId ?? 'session pending';
+
+  return (
+    <article className="border border-line bg-soft px-2.5 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-ink">
+            {task.repoId} · {task.title}
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
+            {sessionLabel} · {childLabel} · {changed}
+          </p>
+        </div>
+        <Badge className={kiloTaskStatusClass(task.status)}>
+          {task.status}
+        </Badge>
+      </div>
+      <div className="mt-1.5 flex justify-between gap-2 font-mono text-[10px] text-muted">
+        <span className="truncate">
+          {task.worktreeId
+            ? `worktree ${task.worktreeId}`
+            : shortPath(task.cwd)}
+        </span>
+        <span className="shrink-0">{relativeTime(task.updatedAt)}</span>
+      </div>
+      <div className="mt-1.5 grid grid-cols-2 gap-1.5 font-mono text-[10px] text-muted">
+        <div className="border border-line bg-field px-2 py-1">
+          verify {task.verificationState ?? 'not-run'}
+        </div>
+        <div className="border border-line bg-field px-2 py-1">
+          approvals {task.pendingApprovals?.length ?? 0}
+        </div>
+      </div>
+      {task.childSessionIds.length > 0 ? (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {task.childSessionIds.slice(0, 3).map((id) => (
+            <Badge key={id}>child {id}</Badge>
+          ))}
+          {task.childSessionIds.length > 3 ? (
+            <Badge>+{task.childSessionIds.length - 3}</Badge>
+          ) : null}
+        </div>
+      ) : null}
+      {task.error ? (
+        <p className="mt-1.5 line-clamp-2 text-[10.5px] leading-4 text-accent">
+          {task.error}
+        </p>
+      ) : null}
+    </article>
+  );
+}
+
 function WorktreeRow({ worktree }: { worktree: WorktreeRecord }) {
   const pr = worktree.prNumber ? `PR #${worktree.prNumber}` : 'repo work';
   return (
@@ -2033,6 +2143,18 @@ function repoEditEventClass(event: RepoEditEvent) {
     return 'border-accent text-accent';
   }
   if (event.status === 'preview') return 'border-violet text-violet';
+  return '';
+}
+
+function kiloTaskStatusClass(status: KiloTaskRecord['status']) {
+  if (status === 'succeeded') return 'border-primary text-primary';
+  if (status === 'failed' || status === 'unknown') {
+    return 'border-accent text-accent';
+  }
+  if (status === 'needs-reconcile' || status === 'needs-review') {
+    return 'border-violet text-violet';
+  }
+  if (status === 'running') return 'border-primary text-primary';
   return '';
 }
 
