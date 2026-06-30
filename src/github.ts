@@ -64,8 +64,12 @@ export type GitHubPullRequestDetail = {
   merged: boolean;
   mergeCommitSha: string | null;
   headSha: string;
+  headRef?: string;
+  headOwner?: string;
+  headName?: string;
   baseRef: string;
   updatedAt: string;
+  maintainerCanModify?: boolean;
 };
 
 export type GitHubCheckSummary = {
@@ -283,8 +287,12 @@ export async function fetchPullRequestDetail(options: {
     merged: data.merged,
     mergeCommitSha: data.merge_commit_sha,
     headSha: data.head.sha,
+    headRef: data.head.ref ?? data.head.sha,
+    headOwner: data.head.repo?.owner.login ?? options.owner,
+    headName: data.head.repo?.name ?? options.repo,
     baseRef: data.base.ref,
     updatedAt: data.updated_at,
+    maintainerCanModify: data.maintainer_can_modify ?? false,
   };
 }
 
@@ -519,8 +527,20 @@ const githubPullRequestApiResponseSchema = v.object({
   merged: v.boolean(),
   merge_commit_sha: v.nullable(v.string()),
   updated_at: v.string(),
-  head: v.object({ sha: v.string() }),
+  head: v.object({
+    sha: v.string(),
+    ref: v.optional(v.string()),
+    repo: v.optional(
+      v.nullable(
+        v.object({
+          name: v.string(),
+          owner: v.object({ login: v.string() }),
+        }),
+      ),
+    ),
+  }),
   base: v.object({ ref: v.string() }),
+  maintainer_can_modify: v.optional(v.boolean()),
 });
 
 const githubCheckRunsApiResponseSchema = v.object({

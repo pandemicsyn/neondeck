@@ -1264,9 +1264,9 @@ Must-haves:
 - Status: planned.
 
 - [ ] Extend PR watches to persist event watermarks for commits, review threads, requested-changes reviews, check suites, check runs, mergeability, and out-of-date branch state.
-- [ ] Add a `triage_pr_event` workflow that classifies deltas into no-op, notify-only, explain-only, draft-fix, auto-fix-no-push, or auto-fix-push-after-checks.
+- [x] Add a `triage_pr_event` workflow that classifies deltas into no-op, notify-only, explain-only, draft-fix, auto-fix-no-push, or auto-fix-push-after-checks.
 - [ ] Add deterministic GitHub tools/actions for unresolved review comments, review thread state, requested-changes state, branch push permissions, and PR comment posting.
-- [ ] Add `prepare_pr_worktree` workflow to create/sync/lock a PR worktree and gather deterministic repo/GitHub/check facts.
+- [x] Add `prepare_pr_worktree` workflow to create/sync/lock a PR worktree and gather deterministic repo/GitHub/check facts.
 - [ ] Add `fix_pr_review_feedback` workflow:
   - fetch unresolved review comments
   - group comments by file/path/topic
@@ -1295,7 +1295,7 @@ Must-haves:
   - attention when push/checks are blocked
   - urgent only for production/main failures
   - quiet no-op when a watch delta is reconciled without action
-- [ ] Add runtime skill guidance for worktree autopilot, including when Neon must avoid direct edits, when to ask for approval, and how to explain autonomous fixes.
+- [x] Add runtime skill guidance for worktree autopilot, including when Neon must avoid direct edits, when to ask for approval, and how to explain autonomous fixes.
 - [ ] Add fixture-driven integration tests for same-PR event reconciliation, cross-PR parallelism, direct-push permission checks, blocked push-back worktrees, and blocked high-risk file changes.
 - [ ] Add Flue workflow smoke tests for `triage_pr_event`, `prepare_pr_worktree`, `fix_pr_review_feedback`, `fix_pr_ci_failure`, `verify_pr_worktree`, and `push_pr_autofix` using temporary `NEONDECK_HOME`, temporary repos/worktrees, and fake GitHub/check fixtures.
 - [ ] Add local smoke scripts that run watch/autopilot workflows through `flue run` or `@flue/sdk` and assert workflow summaries, notifications, prepared diffs, and run observability records.
