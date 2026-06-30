@@ -5,6 +5,7 @@ import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import * as v from 'valibot';
 import { supportedCommands } from './commands';
 import { autopilotStateSchema, readAutopilotState } from './autopilot';
+import { preparePrWorktree, triagePrEvent } from './autopilot-workflows';
 import {
   readProviderConfig,
   reloadConfig,
@@ -809,6 +810,16 @@ app.post('/api/worktree-locks/:id/release', async (c) => {
 
 app.post('/api/worktrees/cleanup', async (c) => {
   const result = await cleanupWorktrees(await safeJsonBody(c), paths);
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/autopilot/triage-pr-event', async (c) => {
+  const result = await triagePrEvent(await safeJsonBody(c));
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/autopilot/prepare-pr-worktree', async (c) => {
+  const result = await preparePrWorktree(await safeJsonBody(c), paths);
   return c.json(result, result.ok ? 200 : 400);
 });
 

@@ -38,6 +38,14 @@ describe('app API safety routes', () => {
           id: 'neondeck_safety_policy_lookup',
           primitive: 'tool',
         }),
+        expect.objectContaining({
+          id: 'prepare-pr-worktree',
+          primitive: 'workflow',
+        }),
+        expect.objectContaining({
+          id: '/api/autopilot/prepare-pr-worktree',
+          primitive: 'route',
+        }),
       ]),
     );
   });
@@ -225,5 +233,66 @@ describe('app API safety routes', () => {
         process.env.GITHUB_TOKEN = token;
       }
     }
+  });
+
+  it('serves PR event autopilot triage over the local API', async () => {
+    const response = await app.request(
+      'http://localhost/api/autopilot/triage-pr-event',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          host: 'localhost',
+          origin: 'http://localhost',
+        },
+        body: JSON.stringify({
+          repoId: 'sample',
+          prNumber: 1,
+          autopilotMode: 'draft-fix',
+          deltas: [{ type: 'check-failure', actionable: true }],
+          current: { state: 'open', checkStatus: 'failure' },
+        }),
+      },
+    );
+    const body = (await response.json()) as {
+      ok: boolean;
+      data?: { classification?: string };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      ok: true,
+      data: { classification: 'draft-fix' },
+    });
+  });
+
+  it('rejects caller-supplied PR facts on the prepare worktree API', async () => {
+    const response = await app.request(
+      'http://localhost/api/autopilot/prepare-pr-worktree',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          host: 'localhost',
+          origin: 'http://localhost',
+        },
+        body: JSON.stringify({
+          repoId: 'sample',
+          prNumber: 1,
+          pr: { headSha: 'fabricated' },
+          checks: { status: 'success' },
+        }),
+      },
+    );
+    const body = (await response.json()) as {
+      ok: boolean;
+      message?: string;
+    };
+
+    expect(response.status).toBe(400);
+    expect(body).toMatchObject({
+      ok: false,
+      message: 'Invalid autopilot input.',
+    });
   });
 });

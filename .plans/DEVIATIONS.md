@@ -203,6 +203,13 @@ Use this format:
 - Reason: Phase 19A/19B workflow admission, prepared-diff records, push-back, and GitHub event persistence are parallel/deferred work. A composable read adapter gives the dashboard and Neon a useful surface now without inventing a second agent runtime or preempting those backend contracts.
 - Follow-up: Replace placeholder adapters with first-class autopilot queue/admission rows, prepared-diff records and APIs, dedicated push approval flows, workflow smoke tests, recovery actions, and policy enforcement when the Phase 19 workflows and Phase 20 push-back services land.
 
+## 2026-06-30 - Autopilot Triage And PR Worktree Preparation
+
+- Roadmap item: Phase 19B / PR event autopilot triage and prepare worktree workflows
+- Decision: Added `triage_pr_event` and `prepare_pr_worktree` workflow/action/API surfaces over a narrow structured PR event adapter, but did not add watcher event watermark persistence, queue admission, review comment lookup, fix, verify, push, or PR comment workflows. `prepare_pr_worktree` does not accept caller-supplied PR facts, check facts, or workflow run ids; it fetches GitHub facts server-side and reports that worktree run-id linkage is not attached yet.
+- Reason: Phase 19A event/watermark ownership is not present in this worktree, and this slice was explicitly limited to classification plus isolated worktree preparation. Flue `ActionContext` intentionally excludes workflow identity, so accepting a caller-supplied run id would create a spoofable audit field.
+- Follow-up: Phase 19A should feed durable watcher deltas into `triage_pr_event`; later Phase 19 slices should add unresolved review/check facts, reconciliation, fixer, verifier, push-back, comment, queue, dashboard surfaces, and a non-spoofable Flue run-id/worktree linkage if Flue exposes a supported run-context hook.
+
 ## 2026-06-30 - PR Event Model And Watermarks
 
 - Roadmap item: Phase 19 / PR Event Autopilot
