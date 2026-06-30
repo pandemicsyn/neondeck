@@ -16,7 +16,9 @@ import {
   readChatSession,
   readChatSessionMessages,
   readNeonSessionState,
+  referenceChatSession,
   renameChatSession,
+  refreshChatSessionSummary,
   restoreChatSession,
   searchChatSessions,
   startNeonSession,
@@ -170,6 +172,20 @@ describe('session actions', () => {
         paths,
       ),
     ).resolves.toMatchObject({
+      ok: false,
+      requires: ['explicitUserRequest'],
+      transcriptUnavailable: true,
+    });
+    await expect(
+      readChatSessionMessages(
+        {
+          id: sessionId,
+          reason: 'test-transcript',
+          explicitUserRequest: true,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
       ok: true,
       transcriptUnavailable: true,
       messages: [],
@@ -195,6 +211,7 @@ describe('session actions', () => {
           'pin',
           'link_context',
           'read',
+          'messages_denied',
           'messages_read',
         ]),
       );
@@ -263,6 +280,91 @@ describe('session actions', () => {
     });
   });
 
+  it('refreshes and references sessions by summary metadata before transcript reads', async () => {
+    const paths = runtimePaths(await tempDir());
+    const created = await createChatSession(
+      {
+        title: 'Review queue',
+        linkedRepoId: 'neondeck',
+        uiMetadata: { source: 'test', prNumber: 123 },
+      },
+      paths,
+    );
+    const sessionId = (created as { session: ChatSessionRecord }).session.id;
+
+    await expect(
+      refreshChatSessionSummary(
+        { id: sessionId, reason: 'test-summary' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'session_refresh_summary',
+      session: {
+        id: sessionId,
+        summarySource: 'metadata',
+        summaryStatus: 'fresh',
+        summary: expect.stringContaining('Review queue'),
+      },
+    });
+
+    await expect(
+      referenceChatSession(
+        {
+          id: sessionId,
+          fromSessionId: 'neondeck-main',
+          reason: 'test-reference',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'session_reference',
+      reference: {
+        id: sessionId,
+        summaryStatus: 'fresh',
+        transcript: {
+          requested: false,
+          available: false,
+        },
+      },
+    });
+
+    await expect(
+      referenceChatSession(
+        {
+          id: sessionId,
+          includeRawTranscript: true,
+          explicitUserRequest: false,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['explicitUserRequest'],
+    });
+
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      const audits = database
+        .prepare(
+          `
+          SELECT action
+          FROM chat_session_audit
+          WHERE session_id = ?
+          ORDER BY id ASC;
+        `,
+        )
+        .all(sessionId)
+        .map((row) => String((row as { action: unknown }).action));
+      expect(audits).toEqual(
+        expect.arrayContaining(['summary_refresh', 'reference']),
+      );
+    } finally {
+      database.close();
+    }
+  });
+
   it('reports stale context after model config and memory changes', async () => {
     const paths = runtimePaths(await tempDir());
     await startNeonSession({ reason: 'fresh-baseline' }, paths);
@@ -280,7 +382,7 @@ describe('session actions', () => {
     expect(state.staleReasons).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          type: 'config',
+          type: 'model',
           target: 'models',
         }),
         expect.objectContaining({

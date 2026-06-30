@@ -208,7 +208,8 @@ export type RuntimeStatus = {
     label: string;
     stale: boolean;
     staleReasons: Array<{
-      type: 'config' | 'memory';
+      type:
+        'config' | 'memory' | 'model' | 'provider' | 'repo' | 'skill' | 'soul';
       message: string;
       changedAt: string;
       target: string | null;
@@ -683,13 +684,18 @@ export type ChatSessionRecord = {
   linkedWatchId: string | null;
   linkedTaskId: string | null;
   staleReasons: Array<{
-    type: 'config' | 'memory';
+    type:
+      'config' | 'memory' | 'model' | 'provider' | 'repo' | 'skill' | 'soul';
     message: string;
     changedAt: string;
     target: string | null;
   }>;
   uiMetadata: unknown;
   summary: string | null;
+  summaryGeneratedAt: string | null;
+  summarySource: 'manual' | 'metadata' | 'agent' | 'transcript-summary' | null;
+  summaryRefreshNote: string | null;
+  summaryStatus: 'missing' | 'fresh' | 'stale';
   contextLoadedAt: string;
   createdAt: string;
   updatedAt: string;
@@ -705,7 +711,8 @@ export type NeonSessionState = {
   surface: string;
   stale: boolean;
   staleReasons: Array<{
-    type: 'config' | 'memory';
+    type:
+      'config' | 'memory' | 'model' | 'provider' | 'repo' | 'skill' | 'soul';
     message: string;
     changedAt: string;
     target: string | null;
@@ -732,7 +739,9 @@ export type ChatSessionMutationResponse = {
   message: string;
   session?: ChatSessionRecord;
   state?: NeonSessionState;
+  reference?: unknown;
   errors?: string[];
+  requires?: string[];
 };
 
 export type ChatSessionChangeEvent = {
@@ -1149,9 +1158,47 @@ export async function createChatSession(
     kind?: ChatSessionKind;
     activate?: boolean;
     surface?: string;
+    linkedRepoId?: string | null;
+    linkedWatchId?: string | null;
+    linkedTaskId?: string | null;
+    uiMetadata?: unknown;
+    summary?: string | null;
+    summarySource?: 'manual' | 'metadata' | 'agent' | 'transcript-summary';
+    reason?: string;
   } = {},
 ) {
   return postJson<ChatSessionMutationResponse>('/api/sessions', input);
+}
+
+export async function refreshChatSessionSummary(
+  id: string,
+  input: {
+    providedSummary?: string;
+    source?: 'manual' | 'metadata' | 'agent' | 'transcript-summary';
+    reason?: string;
+    surface?: string;
+  } = {},
+) {
+  return postJson<ChatSessionMutationResponse>(
+    `/api/sessions/${id}/summary/refresh`,
+    input,
+  );
+}
+
+export async function referenceChatSession(
+  id: string,
+  input: {
+    fromSessionId?: string;
+    reason?: string;
+    surface?: string;
+    includeRawTranscript?: boolean;
+    explicitUserRequest?: boolean;
+  } = {},
+) {
+  return postJson<ChatSessionMutationResponse>(
+    `/api/sessions/${id}/reference`,
+    input,
+  );
 }
 
 export async function switchChatSession(id: string) {

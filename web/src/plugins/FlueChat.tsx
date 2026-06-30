@@ -14,6 +14,8 @@ import {
   getChatSessions,
   getNeonSession,
   pinChatSession,
+  referenceChatSession,
+  refreshChatSessionSummary,
   renameChatSession,
   restoreChatSession,
   switchChatSession,
@@ -225,6 +227,29 @@ export const FlueChatPlugin = {
         });
       },
     });
+    const referenceMutation = useMutation({
+      async mutationFn(session: ChatSessionRecord) {
+        if (session.summaryStatus !== 'fresh') {
+          const refreshed = await refreshChatSessionSummary(session.id, {
+            surface: 'dashboard',
+            reason: 'dashboard-reference-active-session',
+          });
+          if (!refreshed.ok) throw new Error(refreshed.message);
+        }
+        const result = await referenceChatSession(session.id, {
+          fromSessionId: sessionState?.activeSessionId,
+          surface: 'dashboard',
+          reason: 'dashboard-reference-active-session',
+        });
+        if (!result.ok) throw new Error(result.message);
+        return result;
+      },
+      onSuccess() {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.chatSessions,
+        });
+      },
+    });
     const sessions = sessionIndex?.sessions ?? sessionState?.sessions ?? [];
     const activeRecord =
       sessions.find(
@@ -315,6 +340,16 @@ export const FlueChatPlugin = {
               {activeRecord?.archivedAt ? 'Restore' : 'Archive'}
             </Button>
             <Button
+              className="h-5 border-transparent bg-transparent px-1.5 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
+              disabled={!activeRecord || referenceMutation.isPending}
+              onClick={() =>
+                activeRecord && referenceMutation.mutate(activeRecord)
+              }
+              type="button"
+            >
+              {referenceMutation.isPending ? 'Ref...' : 'Ref'}
+            </Button>
+            <Button
               className="h-5 border-transparent bg-transparent px-2 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
               disabled={startSessionMutation.isPending}
               onClick={() => void startFreshSession()}
@@ -333,15 +368,24 @@ export const FlueChatPlugin = {
         sessionIndexError ||
         startSessionMutation.error ||
         switchSessionMutation.error ||
-        sessionMetadataMutation.error ? (
+        sessionMetadataMutation.error ||
+        referenceMutation.error ? (
           <div className="border-b border-accent/60 bg-soft px-4 py-1.5 text-[11px] text-accent">
             {queryErrorMessage(
               sessionError ??
                 sessionIndexError ??
                 startSessionMutation.error ??
                 switchSessionMutation.error ??
-                sessionMetadataMutation.error,
+                sessionMetadataMutation.error ??
+                referenceMutation.error,
             )}
+          </div>
+        ) : null}
+        {referenceMutation.data?.session ? (
+          <div className="border-b border-line bg-soft px-4 py-1.5 text-[11px] text-muted">
+            Reference ready · {referenceMutation.data.session.id} ·{' '}
+            {referenceMutation.data.session.summary ??
+              'summary metadata refreshed'}
           </div>
         ) : null}
         <FlueChatSessionView

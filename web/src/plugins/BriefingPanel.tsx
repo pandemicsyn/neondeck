@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { getWorkflowSummaries, type WorkflowSummary } from '../api';
 import { EmptyState } from '../App';
+import { SessionReferenceButton } from '../components/SessionReferenceButton';
 import { Badge, ScrollArea } from '../components/ui';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
@@ -68,7 +69,23 @@ function BriefingView({
     <div className="flex h-full min-h-0 flex-col">
       <header className="panel-header flex h-8 items-center justify-between border-b border-line px-3 font-mono text-[10.5px] tracking-[0.12em]">
         <span className="text-primary">BRIEFING</span>
-        <Badge>{relativeTime(summary.createdAt)}</Badge>
+        <div className="flex items-center gap-1.5">
+          <SessionReferenceButton
+            kind="briefing"
+            label="session"
+            linkedTaskId={summary.id}
+            summary={briefingSummaryText(data)}
+            title={`Briefing ${relativeTime(summary.createdAt)}`}
+            uiMetadata={{
+              source: 'workflow-summary',
+              workflow: summary.workflow,
+              summaryId: summary.id,
+              runId: summary.runId,
+              status: summary.status,
+            }}
+          />
+          <Badge>{relativeTime(summary.createdAt)}</Badge>
+        </div>
       </header>
       <ScrollArea className="flex-1">
         <div className="space-y-2.5 p-3">
@@ -137,6 +154,14 @@ function readAction(value: unknown) {
     status: readString(record.status),
     level: readString(record.level),
   };
+}
+
+function briefingSummaryText(data: ReturnType<typeof readBriefing>) {
+  const top = data.topActions
+    .slice(0, 3)
+    .map((action) => action.title)
+    .join('; ');
+  return `Briefing summary: ${data.repos} repos, ${data.reviewQueue} PRs, ${data.watches} watches, ${data.notifications} alerts. Top actions: ${top || 'none'}.`;
 }
 
 function readRecord(value: unknown): Record<string, unknown> {

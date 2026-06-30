@@ -11,6 +11,7 @@ import {
   type AutopilotWatchPolicy,
 } from '../api';
 import { EmptyState } from '../App';
+import { SessionReferenceButton } from '../components/SessionReferenceButton';
 import { Badge, ScrollArea } from '../components/ui';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
@@ -240,7 +241,27 @@ function QueueRow({ item }: { item: AutopilotQueueItem }) {
       </p>
       <div className="mt-2 flex min-w-0 items-center justify-between gap-2 font-mono text-[10px] text-muted">
         <span className="truncate">{item.nextStep}</span>
-        <span className="shrink-0">{item.mode}</span>
+        <span className="flex shrink-0 items-center gap-1.5">
+          <SessionReferenceButton
+            kind="task"
+            label="session"
+            linkedRepoId={item.repoId}
+            linkedTaskId={item.id}
+            summary={`${item.title}: ${item.reason} Next step: ${item.nextStep}. Mode ${item.mode}; status ${item.status}.`}
+            title={`Autopilot ${item.title}`}
+            uiMetadata={{
+              source: 'autopilot-queue',
+              itemId: item.id,
+              repoFullName: item.repoFullName,
+              prNumber: item.prNumber,
+              worktreeId: item.worktreeId,
+              runId: item.runId,
+              mode: item.mode,
+              status: item.status,
+            }}
+          />
+          {item.mode}
+        </span>
       </div>
     </article>
   );
@@ -261,6 +282,24 @@ function PreparedDiffRow({ diff }: { diff: AutopilotPreparedDiff }) {
       <p className="mt-1 truncate font-mono text-[10px] text-muted">
         {diff.localPath}
       </p>
+      <div className="mt-1.5 flex justify-end font-mono text-[10px]">
+        <SessionReferenceButton
+          kind="task"
+          label="session"
+          linkedRepoId={diff.repoId}
+          linkedTaskId={diff.id}
+          summary={`${diff.title}: ${diff.summary}. Prepared diff ${diff.status} in ${diff.localPath}.`}
+          title={`Prepared ${diff.title}`}
+          uiMetadata={{
+            source: 'autopilot-prepared-diff',
+            preparedDiffId: diff.id,
+            repoFullName: diff.repoFullName,
+            prNumber: diff.prNumber,
+            worktreeId: diff.worktreeId,
+            status: diff.status,
+          }}
+        />
+      </div>
     </article>
   );
 }
@@ -374,6 +413,24 @@ function ActivityRow({ item }: { item: AutopilotActivity }) {
       <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-muted">
         {item.message}
       </p>
+      <div className="mt-1.5 flex justify-end font-mono text-[10px]">
+        <SessionReferenceButton
+          kind="task"
+          label="session"
+          linkedRepoId={item.repoId}
+          linkedTaskId={item.id}
+          summary={`${item.title}: ${item.message}`}
+          title={`Activity ${item.title}`}
+          uiMetadata={{
+            source: 'autopilot-activity',
+            activityId: item.id,
+            type: item.type,
+            repoFullName: item.repoFullName,
+            prNumber: item.prNumber,
+            level: item.level,
+          }}
+        />
+      </div>
     </article>
   );
 }

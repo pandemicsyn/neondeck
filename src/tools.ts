@@ -72,6 +72,7 @@ const sessionMessagesInputSchema = v.object({
   limit: v.optional(v.number()),
   reason: v.optional(v.string()),
   surface: v.optional(nonEmptyStringSchema),
+  explicitUserRequest: v.optional(v.boolean()),
 });
 const toolOutputSchema = v.looseObject({
   ok: v.boolean(),

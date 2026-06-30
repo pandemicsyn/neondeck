@@ -78,6 +78,8 @@ For new installs, prefer `npm run init`; `npm run setup` is the lower-level non-
 
 The built-in Neondeck guidance is an application-owned Flue skill at `src/skills/neondeck/SKILL.md`. User runtime skills live under `skills/<skill-id>/SKILL.md`; valid user skills from that root, plus external skill roots from `config.json`, are registered as Flue skills when the agent initializes. Start a new session or restart the server after changing runtime skills. Treat runtime skill directories as trusted input; do not put secrets in skill resources.
 
+Chat sessions are indexed in `data/neondeck.db` while Flue remains the owner of `display-assistant/:id` transcripts. Neondeck stores titles, linked repo/watch/task metadata, compact summaries, stale-context badges, and audit records so agents and dashboard rows can reference other sessions without reading raw transcript pages by default. Raw transcript access is audited and requires an explicit user request.
+
 Agent, utility, and subagent models are configurable in runtime-home `config.json`. Environment variables remain a fallback, but checked-in defaults should live in config:
 
 ```json
@@ -214,6 +216,8 @@ curl -X POST 'http://127.0.0.1:5173/api/flue/workflows/command-run?wait=result' 
 ```
 
 Supported commands include `/repo-status`, `/review-queue`, `/briefing`, `/reasoning [level]`, `/dev-doctor`, `/watch-pr <ref>`, and `/watch-release <repo>`. A `/reasoning` command shows the current display-assistant reasoning level; `/reasoning high` changes it to a level supported by the selected model and starts a fresh Neon session. A `/watch-pr` command creates a persistent PR watch, polls for merge/check changes, and shows it in the active watches panel. `/watch-release` tracks default-branch GitHub checks until green; `/watch-pr ... until prod` waits for the source PR to merge, then tracks the source PR merge SHA until checks are green. `/dev-doctor` checks local repo health, package scripts, Node version, env keys, dev ports, API health, and runtime databases. Runtime home, repository, scheduler job, and skill state are shown in the runtime overview panel. Results are stored in `workflow_summaries` and exposed at `/api/workflows/summaries`.
+
+Dashboard PR, watch, repo, briefing, Kilo, and autopilot rows include session affordances that create or open linked chat sessions. The chat panel also has a compact reference control for the active session; it refreshes summary metadata and records cross-session context use without forcing side-by-side chat.
 
 Dashboard panels subscribe to `/api/events/config` for local config action and reload events, so model/provider/repo/schedule/dashboard changes refresh affected surfaces without a browser reload.
 
