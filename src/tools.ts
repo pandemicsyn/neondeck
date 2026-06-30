@@ -5,6 +5,7 @@ import { supportedCommands } from './commands';
 import { listRepoStatus } from './dev-doctor';
 import { executionPolicyLookupTool } from './execution-policy';
 import { getGitHubCheckSummary, listGitHubPrQueue } from './github-actions';
+import { neondeckKiloTools } from './kilo-actions';
 import { listMemories } from './memory-actions';
 import { prWatchEventWatermarksLookupTool } from './pr-event-state';
 import { neondeckRepoEditTools } from './repo-edit';
@@ -299,4 +300,5 @@ export const neondeckFactTools = [
   executionPolicyTool,
   ...neondeckRepoEditTools,
   ...neondeckWorktreeTools,
+  ...neondeckKiloTools,
 ];
