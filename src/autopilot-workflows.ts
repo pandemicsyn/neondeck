@@ -35,6 +35,7 @@ import {
   readPreparedDiff,
   readPreparedDiffRecord,
   recordPreparedDiffVerification,
+  type PreparedDiffRecord,
 } from './prepared-diffs';
 import { readRepoRegistrySnapshot, repoFullName } from './repos';
 import {
@@ -990,6 +991,16 @@ export async function pushPrAutofix(
       preparedDiff.repoId,
       paths,
     );
+    const readinessGates = pushReadinessGates(preparedDiff);
+    const failedReadinessGates = readinessGates.filter((gate) => !gate.ok);
+    if (failedReadinessGates.length > 0) {
+      return pushNotReadyResult(
+        preparedDiff,
+        worktree.id,
+        readinessGates,
+        recoveryOptionsForPushBlock(failedReadinessGates),
+      );
+    }
     const registry = await readRepoRegistrySnapshot(paths);
     const repo = registry.repos.find(
       (candidate) => candidate.id === preparedDiff.repoId,
@@ -2662,6 +2673,59 @@ function generatedCiFixCommitMessage(
   return checkIds
     ? `Fix PR CI failure for ${pr} (checks ${checkIds})`
     : `Fix PR CI failure for ${pr}`;
+}
+
+function pushReadinessGates(preparedDiff: PreparedDiffRecord) {
+  return [
+    {
+      gate: 'prepared-diff-status',
+      ok: ['push-approved', 'push-blocked'].includes(preparedDiff.status),
+      reason: ['push-approved', 'push-blocked'].includes(preparedDiff.status)
+        ? `Prepared diff status is ${preparedDiff.status}.`
+        : ['pushed', 'abandoned'].includes(preparedDiff.status)
+          ? `Prepared diff status is ${preparedDiff.status}; terminal records are not pushed again.`
+          : `Prepared diff status is ${preparedDiff.status}, not ready to push.`,
+    },
+    {
+      gate: 'prepared-diff-approval',
+      ok: preparedDiff.pushApprovalStatus === 'approved',
+      reason:
+        preparedDiff.pushApprovalStatus === 'approved'
+          ? 'Prepared diff push approval is approved.'
+          : `Prepared diff push approval is ${preparedDiff.pushApprovalStatus}.`,
+    },
+    {
+      gate: 'verification',
+      ok: preparedDiff.verificationStatus === 'passed',
+      reason:
+        preparedDiff.verificationStatus === 'passed'
+          ? 'Prepared diff verification passed.'
+          : `Prepared diff verification is ${preparedDiff.verificationStatus}.`,
+    },
+  ];
+}
+
+function pushNotReadyResult(
+  preparedDiff: PreparedDiffRecord,
+  worktreeId: string,
+  gates: Array<{ gate: string; ok: boolean; reason: string }>,
+  recoveryOptions: string[],
+): AutopilotActionResult {
+  const failedGates = gates.filter((gate) => !gate.ok);
+  return {
+    ok: false,
+    action: 'autopilot_push_pr_autofix',
+    changed: false,
+    message: 'Prepared diff is not ready for push-back.',
+    data: asJsonValue({
+      preparedDiff,
+      worktree: { id: worktreeId },
+      gates,
+      recoveryOptions,
+    }),
+    requires: failedGates.map((gate) => gate.gate),
+    errors: failedGates.map((gate) => gate.reason),
+  };
 }
 
 async function blockPushAttempt(

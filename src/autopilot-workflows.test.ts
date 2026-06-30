@@ -21,6 +21,7 @@ import {
   verifyPrWorktree,
 } from './autopilot-workflows';
 import {
+  abandonPreparedDiff,
   approvePreparedDiffPush,
   ensurePreparedDiffForWorktree,
   readPreparedDiff,
@@ -1444,6 +1445,116 @@ describe('PR event autopilot', () => {
       status: 'pushed',
       verificationStatus: 'passed',
     });
+
+    const duplicate = await pushPrAutofix({ preparedDiffId }, paths, {
+      getBranchPermissions: failUnexpectedBranchPermissions,
+      pushGit: failUnexpectedPush,
+    });
+    expect(duplicate).toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'autopilot_push_pr_autofix',
+      requires: ['prepared-diff-status'],
+      data: {
+        preparedDiff: { status: 'pushed' },
+      },
+    });
+    expect(readPreparedDiff(preparedDiffId, paths)).toMatchObject({
+      status: 'pushed',
+      verificationStatus: 'passed',
+    });
+  });
+
+  it('does not mark a prepared diff push-blocked before push approval', async () => {
+    const { paths, featureSha, remote } = await fixture();
+    const prepared = await prepareReviewPreparedDiff(paths, featureSha);
+    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
+    const preparedDiffId = stringPath(prepared, ['data', 'preparedDiff', 'id']);
+
+    const premature = await pushPrAutofix({ preparedDiffId }, paths, {
+      getBranchPermissions: failUnexpectedBranchPermissions,
+      pushGit: failUnexpectedPush,
+    });
+
+    expect(premature).toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'autopilot_push_pr_autofix',
+      requires: [
+        'prepared-diff-status',
+        'prepared-diff-approval',
+        'verification',
+      ],
+      data: {
+        preparedDiff: {
+          status: 'prepared',
+          pushApprovalStatus: 'pending',
+        },
+      },
+    });
+    expect(readPreparedDiff(preparedDiffId, paths)).toMatchObject({
+      status: 'prepared',
+      pushApprovalStatus: 'pending',
+    });
+
+    const approval = await approvePreparedDiffPush(
+      { preparedDiffId, confirm: true },
+      paths,
+    );
+    expect(approval).toMatchObject({
+      ok: true,
+      preparedDiff: { status: 'push-approved' },
+    });
+    const verification = await verifyPrWorktree(
+      { worktreeId, checks: ['npm run check'], lock: false },
+      paths,
+      { runExecution: successfulExecution },
+    );
+    expect(verification.ok).toBe(true);
+
+    const pushed = await pushPrAutofix({ preparedDiffId }, paths, {
+      getBranchPermissions: pushAllowedPermissions,
+      pushGit: pushToFixtureOrigin(remote),
+    });
+    expect(pushed).toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        preparedDiff: { status: 'pushed' },
+      },
+    });
+  });
+
+  it('does not rewrite abandoned prepared diffs on duplicate push calls', async () => {
+    const { paths, featureSha } = await fixture();
+    const prepared = await prepareReviewPreparedDiff(paths, featureSha);
+    const preparedDiffId = stringPath(prepared, ['data', 'preparedDiff', 'id']);
+    const abandoned = await abandonPreparedDiff(
+      { preparedDiffId, confirm: true, reason: 'No longer needed.' },
+      paths,
+    );
+    expect(abandoned).toMatchObject({
+      ok: true,
+      preparedDiff: { status: 'abandoned' },
+    });
+
+    const result = await pushPrAutofix({ preparedDiffId }, paths, {
+      getBranchPermissions: failUnexpectedBranchPermissions,
+      pushGit: failUnexpectedPush,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'autopilot_push_pr_autofix',
+      data: {
+        preparedDiff: { status: 'abandoned' },
+      },
+    });
+    expect(readPreparedDiff(preparedDiffId, paths)).toMatchObject({
+      status: 'abandoned',
+      pushApprovalStatus: 'rejected',
+    });
   });
 
   it('blocks push-back when GitHub branch permissions do not allow direct push', async () => {
@@ -1711,6 +1822,14 @@ function pushToFixtureOrigin(remote: string) {
       stdout: '',
     } as never;
   };
+}
+
+async function failUnexpectedBranchPermissions(): Promise<never> {
+  throw new Error('Branch permissions should not be fetched.');
+}
+
+async function failUnexpectedPush(): Promise<never> {
+  throw new Error('Git push should not be attempted.');
 }
 
 function branchPermissionResult(canLikelyPush: boolean) {
