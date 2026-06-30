@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import {
   chmod,
   mkdir,
@@ -14,6 +14,7 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   abortKiloTask,
+  readKiloSessionMessages,
   readKiloTaskEvents,
   readKiloTaskSessions,
   readKiloTaskStatus,
@@ -111,12 +112,59 @@ describe('Kilo handoff runner', () => {
     });
   });
 
-  it('marks persisted-only running tasks failed before enforcing concurrency', async () => {
+  it('holds concurrency for a reconciled task whose Kilo process still matches persisted context', async () => {
+    const { paths, kilo } = await fixture({
+      script: hangingKiloScript(),
+      concurrency: 1,
+    });
+    const child = spawn(
+      kilo,
+      ['run', 'Old prompt', '--dir', paths.home, '--title', 'Stale task'],
+      {
+        cwd: paths.home,
+        stdio: 'ignore',
+      },
+    );
+    try {
+      insertStaleRunningTask(paths, 'stale-task', {
+        pid: child.pid,
+        cliPath: kilo,
+      });
+
+      const started = await startKiloTask(
+        {
+          repoId: 'sample',
+          title: 'Fresh task',
+          prompt: 'Run after restart.',
+          explicitUserRequest: true,
+        },
+        paths,
+      );
+      const stale = await readKiloTaskStatus({ taskId: 'stale-task' }, paths);
+
+      expect(started).toMatchObject({
+        ok: false,
+        message: 'Kilo handoff concurrency limit reached (1).',
+      });
+      expect(stale).toMatchObject({
+        ok: true,
+        task: {
+          status: 'needs-reconcile',
+          completedAt: null,
+          error: expect.stringContaining('cannot be safely reattached'),
+        },
+      });
+    } finally {
+      child.kill('SIGTERM');
+    }
+  });
+
+  it('reconciles a dead persisted Kilo process and admits fresh work', async () => {
     const { paths } = await fixture({
       script: completedKiloScript(),
       concurrency: 1,
     });
-    insertStaleRunningTask(paths, 'stale-task');
+    insertStaleRunningTask(paths, 'stale-task', { pid: 999_999 });
 
     const started = await startKiloTask(
       {
@@ -135,11 +183,78 @@ describe('Kilo handoff runner', () => {
     expect(stale).toMatchObject({
       ok: true,
       task: {
-        status: 'failed',
-        error:
-          'Marked failed after Neondeck restart because Kilo restart reconciliation is not implemented yet.',
+        status: 'unknown',
+        error: expect.stringContaining('outcome is unknown'),
       },
     });
+  });
+
+  it('returns bounded transcript pages and audits Kilo session reads', async () => {
+    const { paths } = await fixture({
+      script: completedKiloScript(),
+    });
+    const started = await startKiloTask(
+      {
+        repoId: 'sample',
+        title: 'Transcript task',
+        prompt: 'Capture transcript.',
+        explicitUserRequest: true,
+      },
+      paths,
+    );
+    const taskId = taskIdFrom(started);
+    await waitForTask(taskId, 'succeeded', paths);
+
+    const messages = await readKiloSessionMessages(
+      {
+        sessionId: 'ses_root',
+        limit: 1,
+        includeFullTranscript: true,
+        includeToolOutput: true,
+        requesterSurface: 'test',
+        readReason: 'transcript-test',
+      },
+      paths,
+    );
+
+    expect(messages).toMatchObject({
+      ok: true,
+      transcript: {
+        unavailable: false,
+        limit: 1,
+        hasMore: true,
+        fullTranscriptIncluded: true,
+        messages: [expect.objectContaining({ sessionId: 'ses_root' })],
+      },
+    });
+
+    const database = new DatabaseSync(paths.neondeckDatabase, {
+      readOnly: true,
+    });
+    try {
+      const row = database
+        .prepare(
+          `
+          SELECT read_type, requester_surface, reason, limit_count,
+                 include_full_transcript, include_tool_output
+          FROM kilo_session_audit
+          WHERE session_id = ?
+          ORDER BY created_at DESC
+          LIMIT 1;
+        `,
+        )
+        .get('ses_root');
+      expect(row).toEqual({
+        read_type: 'messages',
+        requester_surface: 'test',
+        reason: 'transcript-test',
+        limit_count: 1,
+        include_full_transcript: 1,
+        include_tool_output: 1,
+      });
+    } finally {
+      database.close();
+    }
   });
 
   it('requires managed worktrees for draft-fix mode and explicit confirmation for auto', async () => {
@@ -209,6 +324,30 @@ describe('Kilo handoff runner', () => {
       task: {
         status: 'cancelled',
         rootSessionId: 'ses_hanging',
+      },
+    });
+  });
+
+  it('marks a failed fake Kilo task failed with stderr context', async () => {
+    const { paths } = await fixture({ script: failingKiloScript() });
+    const started = await startKiloTask(
+      {
+        repoId: 'sample',
+        title: 'Failing task',
+        prompt: 'Fail for coverage.',
+        explicitUserRequest: true,
+      },
+      paths,
+    );
+    const taskId = taskIdFrom(started);
+    const status = await waitForTask(taskId, 'failed', paths);
+
+    expect(status).toMatchObject({
+      ok: true,
+      task: {
+        status: 'failed',
+        exitCode: 2,
+        error: expect.stringContaining('fake kilo failed'),
       },
     });
   });
@@ -347,6 +486,23 @@ setInterval(() => {}, 1000);
 `;
 }
 
+function failingKiloScript() {
+  return `#!/usr/bin/env node
+if (process.argv.slice(2)[0] === 'session') {
+  console.log(JSON.stringify([]));
+  process.exit(0);
+}
+console.log(JSON.stringify({
+  type: 'text',
+  timestamp: Date.now(),
+  sessionID: 'ses_failed',
+  part: { type: 'text', text: 'About to fail.', time: { end: Date.now() } }
+}));
+console.error('fake kilo failed');
+process.exit(2);
+`;
+}
+
 async function tempDir() {
   const path = await mkdtemp(join(tmpdir(), 'neondeck-kilo-test-'));
   tempRoots.push(path);
@@ -436,7 +592,11 @@ async function waitForEvent(
   throw new Error(`Timed out waiting for task ${taskId} event ${eventType}.`);
 }
 
-function insertStaleRunningTask(paths: RuntimePaths, taskId: string) {
+function insertStaleRunningTask(
+  paths: RuntimePaths,
+  taskId: string,
+  input: { pid?: number; cliPath?: string } = {},
+) {
   const now = new Date().toISOString();
   const database = new DatabaseSync(paths.neondeckDatabase);
   try {
@@ -466,9 +626,9 @@ function insertStaleRunningTask(paths: RuntimePaths, taskId: string) {
         'running',
         1,
         0,
-        'kilo',
+        input.cliPath ?? 'kilo',
         JSON.stringify(['run', 'Old prompt']),
-        4242,
+        input.pid ?? 4242,
         now,
         null,
         JSON.stringify([]),

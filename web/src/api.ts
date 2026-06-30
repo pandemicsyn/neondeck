@@ -389,6 +389,81 @@ export type WorktreesResponse = {
   fetchedAt: string;
 };
 
+export type KiloTaskStatus =
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled'
+  | 'needs-reconcile'
+  | 'needs-review'
+  | 'unknown';
+
+export type KiloChildSessionNode = {
+  id: string;
+  title: string;
+  status: 'unknown' | 'active' | 'completed';
+  latestSummary: string | null;
+  eventCount: number;
+  collapsed: boolean;
+};
+
+export type KiloTaskRecord = {
+  id: string;
+  title: string;
+  prompt: string;
+  repoId: string;
+  repoFullName: string;
+  worktreeId: string | null;
+  lockId: string | null;
+  cwd: string;
+  mode: 'draft-fix' | 'patch-proposal' | 'direct-edit';
+  status: KiloTaskStatus;
+  explicitUserRequest: boolean;
+  autoEnabled: boolean;
+  cliPath: string;
+  args: string[];
+  pid: number | null;
+  processStartedAt: string | null;
+  rootSessionId: string | null;
+  childSessionIds: string[];
+  rawLogPath: string | null;
+  summary: string | null;
+  exitCode: number | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  changedFiles?: string[];
+  diff?: {
+    ok: boolean;
+    repo: string;
+    path: string;
+    baseRef: string;
+    files: Array<{
+      path: string;
+      status: string;
+      additions: number;
+      deletions: number;
+    }>;
+    fileCount: number;
+    additions: number;
+    deletions: number;
+    binaryFiles: number;
+    error?: string;
+  };
+  verificationState?: string;
+  pendingApprovals?: unknown[];
+};
+
+export type KiloTasksResponse = {
+  ok: boolean;
+  action: 'kilo_tasks_list';
+  changed: boolean;
+  message: string;
+  tasks: KiloTaskRecord[];
+  fetchedAt: string;
+};
+
 export type AutopilotMode =
   | 'notify-only'
   | 'prepare-only'
@@ -1118,6 +1193,10 @@ export async function updateProvider(provider: string, input: ProviderUpdate) {
 
 export async function getWorkflowObservability() {
   return getJson<WorkflowObservability>('/api/workflows/observability');
+}
+
+export async function getKiloTasks() {
+  return getJson<KiloTasksResponse>('/api/kilo/tasks?limit=8&includeDiff=1');
 }
 
 export async function getExecutionApprovals(

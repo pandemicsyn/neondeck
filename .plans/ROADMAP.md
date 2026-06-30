@@ -1386,7 +1386,7 @@ Must-haves:
   - child session ids where exposed by Kilo task tool metadata
   - raw JSONL log path when configured
 - [x] Add recovery lookup with `kilo session list --format json --all --search <task-title>` when a task starts but no session id was captured.
-- [ ] Add restart reconciliation for in-flight CLI Kilo tasks using persisted pid/start time/cwd/title/session ids/log path.
+- [x] Add restart reconciliation for in-flight CLI Kilo tasks using persisted pid/start time/cwd/title/session ids/log path.
 - [x] Add typed Kilo actions:
   - `neondeck_kilo_task_start`
   - `neondeck_kilo_task_status`
@@ -1400,17 +1400,17 @@ Must-haves:
   - `neondeck_kilo_session_children`
   - `neondeck_kilo_session_todos`
   - `neondeck_kilo_session_diff`
-- [ ] Implement Kilo session access with layered adapters:
+- [x] Implement Kilo session access with layered adapters:
   - managed SDK first
   - CLI `kilo session list --format json` fallback
   - read-only current SQLite disk fallback only for recovery
 - [x] Normalize Kilo session search/read results into one Valibot-validated schema before exposing them to Neon, APIs, dashboard, or TUI.
-- [ ] Add transcript view controls:
+- [x] Add transcript view controls:
   - default bounded snippets
   - explicit limits for transcript page size
   - full transcript/tool output/diff access without default redaction
   - basic audit record for session reads
-- [ ] Add child Kilo session tree support with collapsed dashboard/TUI display by default.
+- [x] Add child Kilo session tree support with collapsed dashboard/TUI display by default.
 - [ ] Add `handoff_to_kilo` workflow:
   - resolve repo/worktree
   - acquire lock
@@ -1428,7 +1428,7 @@ Must-haves:
 - [ ] Add `verify_kilo_result` workflow to run configured checks through Neondeck execution policy.
 - [ ] Add `promote_kilo_result` workflow that can commit/push/comment only when autopilot policy allows.
 - [ ] Add dashboard/TUI-ready APIs for active Kilo tasks, task events, session ids, session search, transcript pages, todos, child sessions, changed files, verification state, and pending approvals.
-- [ ] Add dashboard panels or Runtime Overview rows for active delegated Kilo work.
+- [x] Add dashboard panels or Runtime Overview rows for active delegated Kilo work.
 - [ ] Add notification policy for Kilo handoffs:
   - ready when a task completes and has a reviewable diff
   - attention when Kilo fails, stalls, or produces high-risk changes
@@ -1437,7 +1437,7 @@ Must-haves:
 - [x] Add runtime skill guidance that Kilo delegation is explicit-handoff only by default; Neon should normally do work itself or use Neon subagents unless the user asks for Kilo or policy opts in.
 - [x] Add runtime skill guidance that tells Neon to use Kilo session actions/workflows for session search/read/summarization and to avoid direct Kilo storage reads.
 - [x] Add docs for Kilo handoff setup, trust boundaries, worktree behavior, session tracking, cancellation, and troubleshooting.
-- [ ] Add Kilo handoff smoke tests using a fake `kilo` CLI that emits JSONL events, including session id capture, child session capture, task completion, failure, abort, and restart reconciliation.
+- [x] Add Kilo handoff smoke tests using a fake `kilo` CLI that emits JSONL events, including session id capture, child session capture, task completion, failure, abort, and restart reconciliation.
 - [ ] Add Flue workflow smoke tests for `handoff_to_kilo`, `reconcile_kilo_task`, `summarize_kilo_session`, `review_kilo_result`, `verify_kilo_result`, and `promote_kilo_result` with fake Kilo event streams and temporary worktrees.
 - [ ] After CLI MVP, evaluate managed `kilo serve` plus SDK integration:
   - server lifecycle supervisor

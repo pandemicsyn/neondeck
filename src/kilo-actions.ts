@@ -2,8 +2,9 @@ import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
 import { spawn, execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createWriteStream, type WriteStream } from 'node:fs';
-import { mkdir, realpath } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { access, mkdir, open, readdir, realpath, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { basename, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { promisify } from 'node:util';
@@ -27,7 +28,14 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-export type KiloTaskStatus = 'running' | 'succeeded' | 'failed' | 'cancelled';
+export type KiloTaskStatus =
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled'
+  | 'needs-reconcile'
+  | 'needs-review'
+  | 'unknown';
 
 export type KiloHandoffMode = 'draft-fix' | 'patch-proposal' | 'direct-edit';
 
@@ -57,6 +65,26 @@ export type KiloTaskRecord = {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+};
+
+export type KiloChildSessionNode = {
+  id: string;
+  title: string;
+  status: 'unknown' | 'active' | 'completed';
+  latestSummary: string | null;
+  eventCount: number;
+  collapsed: boolean;
+};
+
+export type KiloSessionReadOptions = {
+  limit: number;
+  offset: number;
+  includeFullTranscript: boolean;
+  includeToolOutput: boolean;
+  includeDiff: boolean;
+  maxBytes: number;
+  requesterSurface: string;
+  readReason: string | null;
 };
 
 export type KiloTaskEventRecord = {
@@ -124,14 +152,26 @@ const eventsInputSchema = v.object({
 });
 const tasksListInputSchema = v.object({
   status: v.optional(
-    v.picklist(['running', 'succeeded', 'failed', 'cancelled']),
+    v.picklist([
+      'running',
+      'succeeded',
+      'failed',
+      'cancelled',
+      'needs-reconcile',
+      'needs-review',
+      'unknown',
+    ]),
   ),
   repoId: v.optional(nonEmptyStringSchema),
   limit: v.optional(positiveIntegerSchema),
+  includeDiff: v.optional(v.boolean()),
 });
 const sessionsSearchInputSchema = v.object({
   query: v.optional(nonEmptyStringSchema),
+  sessionId: v.optional(nonEmptyStringSchema),
   repoId: v.optional(nonEmptyStringSchema),
+  worktreeId: v.optional(nonEmptyStringSchema),
+  directory: v.optional(nonEmptyStringSchema),
   taskId: v.optional(nonEmptyStringSchema),
   limit: v.optional(positiveIntegerSchema),
 });
@@ -139,6 +179,14 @@ const sessionReadInputSchema = v.object({
   sessionId: v.optional(nonEmptyStringSchema),
   taskId: v.optional(nonEmptyStringSchema),
   titleQuery: v.optional(nonEmptyStringSchema),
+  limit: v.optional(positiveIntegerSchema),
+  offset: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0))),
+  includeFullTranscript: v.optional(v.boolean()),
+  includeToolOutput: v.optional(v.boolean()),
+  includeDiff: v.optional(v.boolean()),
+  maxBytes: v.optional(positiveIntegerSchema),
+  requesterSurface: v.optional(nonEmptyStringSchema),
+  readReason: v.optional(nonEmptyStringSchema),
 });
 const summarizeInputSchema = v.object({
   taskId: v.optional(nonEmptyStringSchema),
@@ -212,7 +260,7 @@ const normalizedKiloSessionSchema = v.object({
     ),
   ),
   neondeckTaskId: v.optional(v.string()),
-  role: v.picklist(['root', 'child', 'cli']),
+  role: v.picklist(['root', 'child', 'cli', 'managed', 'disk']),
 });
 
 export const kiloTaskStartAction = defineAction({
@@ -547,12 +595,16 @@ export async function listKiloTasks(
       )
       .all(...values)
       .map(readTaskRow);
+    const tasks = parsed.input.includeDiff
+      ? await Promise.all(rows.map((task) => taskWithDiff(task)))
+      : rows;
     return {
       ok: true,
       action: 'kilo_tasks_list',
       changed: false,
-      message: `Read ${rows.length} Kilo task(s).`,
-      tasks: rows,
+      message: `Read ${tasks.length} Kilo task(s).`,
+      tasks,
+      fetchedAt: new Date().toISOString(),
     };
   } finally {
     database.close();
@@ -683,6 +735,7 @@ export async function readKiloTaskSessions(
     taskId: task.id,
     rootSessionId: task.rootSessionId,
     childSessionIds: task.childSessionIds,
+    tree: taskSessionTree(task, paths),
   };
 }
 
@@ -705,11 +758,7 @@ export async function readKiloTaskDiff(
     action: 'kilo_task_diff',
     changed: false,
     message: `Read diff summary for Kilo task ${task.id}.`,
-    diff: await readGitDiffSummary({
-      path: task.cwd,
-      github: splitRepoFullName(task.repoFullName),
-      defaultBranch: 'HEAD',
-    }),
+    diff: await taskDiffSummary(task),
   };
 }
 
@@ -725,14 +774,26 @@ export async function searchKiloSessions(
   if (!parsed.ok) return parsed.result;
   await ensureRuntimeHome(paths);
   const linked = searchLinkedSessionsSync(parsed.input, paths);
-  const cli = await searchKiloSessionsWithCli(parsed.input, paths).catch(
-    (error) => ({
-      ok: false as const,
-      error: errorMessage(error),
-      sessions: [],
-    }),
-  );
-  const sessions = dedupeSessions([...linked, ...cli.sessions]);
+  const managed = await searchKiloSessionsWithManagedSdk(
+    parsed.input,
+    paths,
+  ).catch((error) => ({
+    ok: false as const,
+    error: errorMessage(error),
+    sessions: [],
+  }));
+  const cli = managed.ok
+    ? { ok: false as const, error: 'managed-sdk-used', sessions: [] }
+    : await searchKiloSessionsWithCli(parsed.input, paths).catch((error) => ({
+        ok: false as const,
+        error: errorMessage(error),
+        sessions: [],
+      }));
+  const sessions = dedupeSessions([
+    ...linked,
+    ...managed.sessions,
+    ...cli.sessions,
+  ]).filter((session) => sessionMatchesSearch(session, parsed.input));
   return {
     ok: true,
     action: 'kilo_sessions_search',
@@ -740,9 +801,12 @@ export async function searchKiloSessions(
     message: `Found ${sessions.length} Kilo session metadata record(s).`,
     sessions,
     adapters: {
+      managedSdk: managed.ok ? 'ok' : 'unavailable',
+      managedSdkError: managed.ok ? undefined : managed.error,
       linkedTasks: linked.length,
       cli: cli.ok ? 'ok' : 'unavailable',
       cliError: cli.ok ? undefined : cli.error,
+      disk: 'recovery-only',
     },
   };
 }
@@ -762,13 +826,27 @@ export async function readKiloSession(
   if (!session) {
     return failResult('kilo_session_read', 'Kilo session was not found.');
   }
+  const task = resolveTaskForSessionInput(parsed.input, paths);
+  const options = sessionReadOptions(parsed.input);
+  addSessionAudit(task, session.id, 'metadata', options, paths);
+  const transcript = task
+    ? await sessionTranscriptFromTask(task, session.id, options, paths)
+    : unavailableTranscript(options);
   return {
     ok: true,
     action: 'kilo_session_read',
     changed: false,
     message: `Read Kilo session ${session.id}.`,
     session,
-    transcriptUnavailable: true,
+    transcript,
+    transcriptUnavailable: transcript.unavailable,
+    children: task ? taskSessionTree(task, paths).children : [],
+    todos: [],
+    todoAccess: 'unavailable',
+    diff:
+      task && options.includeDiff
+        ? await taskDiffSummary(task)
+        : { included: false, reason: 'includeDiff=false' },
   };
 }
 
@@ -784,15 +862,23 @@ export async function readKiloSessionMessages(
   if (!parsed.ok) return parsed.result;
   await ensureRuntimeHome(paths);
   const session = await resolveSession(parsed.input, paths);
+  const task = resolveTaskForSessionInput(parsed.input, paths);
+  const options = sessionReadOptions(parsed.input);
+  if (session) addSessionAudit(task, session.id, 'messages', options, paths);
+  const transcript =
+    session && task
+      ? await sessionTranscriptFromTask(task, session.id, options, paths)
+      : unavailableTranscript(options);
   return {
     ok: Boolean(session),
     action: 'kilo_session_messages',
     changed: false,
     message: session
-      ? 'Kilo session transcript adapter is not available in the CLI MVP.'
+      ? `Read ${transcript.messages.length} bounded Kilo message(s).`
       : 'Kilo session was not found.',
     session,
-    transcriptUnavailable: true,
+    transcript,
+    transcriptUnavailable: transcript.unavailable,
   };
 }
 
@@ -808,6 +894,15 @@ export async function readKiloSessionChildren(
   if (!parsed.ok) return parsed.result;
   await ensureRuntimeHome(paths);
   const task = resolveTaskForSessionInput(parsed.input, paths);
+  const options = sessionReadOptions(parsed.input);
+  addSessionAudit(
+    task,
+    parsed.input.sessionId ?? task?.rootSessionId ?? null,
+    'children',
+    options,
+    paths,
+  );
+  const tree = task ? taskSessionTree(task, paths) : null;
   return {
     ok: Boolean(task),
     action: 'kilo_session_children',
@@ -818,6 +913,8 @@ export async function readKiloSessionChildren(
     taskId: task?.id,
     rootSessionId: task?.rootSessionId,
     childSessionIds: task?.childSessionIds ?? [],
+    tree,
+    children: tree?.children ?? [],
   };
 }
 
@@ -834,6 +931,9 @@ export async function readUnavailableSessionAdapter(
   if (!parsed.ok) return parsed.result;
   await ensureRuntimeHome(paths);
   const session = await resolveSession(parsed.input, paths);
+  const task = resolveTaskForSessionInput(parsed.input, paths);
+  const options = sessionReadOptions(parsed.input);
+  if (session) addSessionAudit(task, session.id, adapter, options, paths);
   return {
     ok: Boolean(session),
     action: `kilo_session_${adapter}`,
@@ -864,6 +964,14 @@ export async function readKiloSessionDiff(
       'No linked Kilo task was found for that session input.',
     );
   }
+  const options = sessionReadOptions({ ...parsed.input, includeDiff: true });
+  addSessionAudit(
+    task,
+    parsed.input.sessionId ?? task.rootSessionId,
+    'diff',
+    options,
+    paths,
+  );
   return readKiloTaskDiff({ taskId: task.id }, paths);
 }
 
@@ -1054,14 +1162,22 @@ function handleKiloLine(
 
 async function recoverMissingSessionId(taskId: string, paths: RuntimePaths) {
   const task = tryTask(taskId, paths);
-  if (!task || task.rootSessionId) return;
+  if (!task || task.rootSessionId) return false;
   const result = await searchKiloSessions(
     { query: task.title, taskId, limit: 5 },
     paths,
   );
   const sessions = 'sessions' in result ? result.sessions : [];
-  const id = Array.isArray(sessions) ? sessions[0]?.id : undefined;
-  if (!id || typeof id !== 'string') return;
+  let id = Array.isArray(sessions) ? sessions[0]?.id : undefined;
+  if (!id) {
+    const disk = await searchKiloSessionsWithDisk({
+      query: task.title,
+      taskId,
+      limit: 5,
+    }).catch(() => ({ ok: false as const, sessions: [] }));
+    id = disk.sessions[0]?.id;
+  }
+  if (!id || typeof id !== 'string') return false;
   updateTaskSessions(taskId, id, [], paths);
   addTaskEvent(
     taskId,
@@ -1074,6 +1190,7 @@ async function recoverMissingSessionId(taskId: string, paths: RuntimePaths) {
     },
     paths,
   );
+  return true;
 }
 
 async function resolveWorkspace(
@@ -1335,6 +1452,36 @@ function markTaskFinished(
   }
 }
 
+function updateTaskStatus(
+  taskId: string,
+  status: KiloTaskStatus,
+  error: string | null,
+  completed: boolean,
+  paths: RuntimePaths,
+) {
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        UPDATE kilo_tasks
+        SET status = ?,
+            error = ?,
+            updated_at = ?,
+            completed_at = CASE
+              WHEN ? = 1 THEN COALESCE(completed_at, ?)
+              ELSE completed_at
+            END
+        WHERE id = ?;
+      `,
+      )
+      .run(status, error, now, completed ? 1 : 0, now, taskId);
+  } finally {
+    database.close();
+  }
+}
+
 async function reconcilePersistedRunningTasks(paths: RuntimePaths) {
   const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
   let tasks: KiloTaskRecord[] = [];
@@ -1356,24 +1503,47 @@ async function reconcilePersistedRunningTasks(paths: RuntimePaths) {
   }
 
   for (const task of tasks) {
-    const message =
-      'Marked failed after Neondeck restart because Kilo restart reconciliation is not implemented yet.';
-    markTaskFinished(task.id, 'failed', null, message, paths);
+    const processInspection = await inspectPersistedKiloProcess(task);
+    const processAlive = processInspection.matched;
+    const recovered = await recoverMissingSessionId(task.id, paths);
+    const diff = await taskDiffSummary(task);
+    const status: KiloTaskStatus = processAlive
+      ? 'needs-reconcile'
+      : diff.ok && diff.fileCount > 0
+        ? 'needs-review'
+        : 'unknown';
+    const message = processAlive
+      ? 'Neondeck restarted while this Kilo task process may still be running. The process cannot be safely reattached; review the raw log/session before acting.'
+      : status === 'needs-review'
+        ? 'Neondeck restarted and the Kilo process is no longer attached. Session/diff state was recovered and needs review.'
+        : 'Neondeck restarted and the Kilo process is no longer attached. No changed files were observed; task outcome is unknown.';
+    updateTaskStatus(task.id, status, message, !processAlive, paths);
     addTaskEvent(
       task.id,
       {
-        eventType: 'task.reconciled_failed',
+        eventType: `task.reconciled_${status}`,
         stream: 'system',
         summary: message,
         data: {
           pid: task.pid,
           processStartedAt: task.processStartedAt,
           cwd: task.cwd,
+          title: task.title,
+          rootSessionId: tryTask(task.id, paths)?.rootSessionId,
+          childSessionIds: tryTask(task.id, paths)?.childSessionIds ?? [],
+          rawLogPath: task.rawLogPath,
+          processAlive: processInspection.alive,
+          processMatched: processInspection.matched,
+          processMatchReason: processInspection.reason,
+          processCommand: processInspection.command,
+          observedProcessStartedAt: processInspection.startedAt,
+          recoveredSession: recovered,
+          diff,
         },
       },
       paths,
     );
-    await releaseTaskLock(task, 'failed', paths);
+    if (!processAlive) await releaseTaskLock(task, status, paths);
   }
 }
 
@@ -1403,7 +1573,13 @@ async function releaseKiloTaskLock(
 }
 
 function worktreeStatusForKiloStatus(status: KiloTaskStatus) {
-  if (status === 'succeeded') return 'prepared-diff';
+  if (
+    status === 'succeeded' ||
+    status === 'needs-review' ||
+    status === 'needs-reconcile'
+  ) {
+    return 'prepared-diff';
+  }
   if (status === 'failed') return 'failed';
   return 'ready';
 }
@@ -1603,7 +1779,7 @@ function countRunningTasks(paths: RuntimePaths) {
   try {
     const row = database
       .prepare(
-        "SELECT COUNT(*) AS count FROM kilo_tasks WHERE status = 'running';",
+        "SELECT COUNT(*) AS count FROM kilo_tasks WHERE status IN ('running', 'needs-reconcile');",
       )
       .get() as { count?: number } | undefined;
     return row?.count ?? 0;
@@ -1687,7 +1863,15 @@ function parseMode(value: string): KiloHandoffMode {
 
 function parseTaskStatus(value: string): KiloTaskStatus {
   const parsed = v.safeParse(
-    v.picklist(['running', 'succeeded', 'failed', 'cancelled']),
+    v.picklist([
+      'running',
+      'succeeded',
+      'failed',
+      'cancelled',
+      'needs-reconcile',
+      'needs-review',
+      'unknown',
+    ]),
     value,
   );
   return parsed.success ? parsed.output : 'failed';
@@ -1705,7 +1889,8 @@ async function searchKiloSessionsWithCli(
   const config = await readRuntimeJson(paths.config, parseAppConfig);
   const kilo = resolveKiloConfig(config.kilo);
   const args = ['session', 'list', '--format', 'json', '--all'];
-  if (input.query) args.push('--search', input.query);
+  const query = input.query ?? input.sessionId ?? input.directory;
+  if (query) args.push('--search', query);
   args.push('--max-count', String(input.limit ?? 50));
   const { stdout } = await execFileAsync(kilo.cliPath, args, {
     cwd: paths.home,
@@ -1718,6 +1903,209 @@ async function searchKiloSessionsWithCli(
     ok: true as const,
     sessions: parsed.map((session) => normalizeKiloSession(session)),
   };
+}
+
+async function searchKiloSessionsWithManagedSdk(
+  input: v.InferOutput<typeof sessionsSearchInputSchema>,
+  _paths: RuntimePaths,
+) {
+  const sdk = await optionalImport('@kilocode/sdk/v2');
+  const client = createOptionalKiloSdkClient(sdk);
+  const sessionsApi = isRecord(client) ? client.sessions : undefined;
+  if (!isRecord(sessionsApi)) {
+    throw new Error(
+      'Kilo managed SDK is not installed or exposes no sessions API.',
+    );
+  }
+  const search =
+    typeof sessionsApi.search === 'function'
+      ? sessionsApi.search
+      : typeof sessionsApi.list === 'function'
+        ? sessionsApi.list
+        : undefined;
+  if (!search) {
+    throw new Error('Kilo managed SDK sessions API cannot search sessions.');
+  }
+  const raw = (await search.call(sessionsApi, {
+    query: input.query,
+    repoId: input.repoId,
+    taskId: input.taskId,
+    limit: input.limit ?? 50,
+  })) as unknown;
+  const items = Array.isArray(raw)
+    ? raw
+    : isRecord(raw) && Array.isArray(raw.sessions)
+      ? raw.sessions
+      : isRecord(raw) && Array.isArray(raw.items)
+        ? raw.items
+        : [];
+  const parsed = v.parse(v.array(kiloSessionSchema), items);
+  return {
+    ok: true as const,
+    sessions: parsed.map((session) =>
+      normalizeSession({
+        ...normalizeKiloSession(session),
+        role: 'managed',
+      }),
+    ),
+  };
+}
+
+async function searchKiloSessionsWithDisk(
+  input: v.InferOutput<typeof sessionsSearchInputSchema>,
+) {
+  const paths = await discoverKiloSqlitePaths();
+  const sessions: Array<v.InferOutput<typeof normalizedKiloSessionSchema>> = [];
+  for (const path of paths) {
+    sessions.push(...readKiloSessionsFromSqlite(path, input));
+    if (sessions.length >= (input.limit ?? 50)) break;
+  }
+  if (sessions.length === 0) {
+    throw new Error(
+      'No readable local Kilo SQLite session store was discovered.',
+    );
+  }
+  return {
+    ok: true as const,
+    sessions: sessions.slice(0, input.limit ?? 50),
+  };
+}
+
+async function optionalImport(specifier: string): Promise<unknown> {
+  const importer = new Function('specifier', 'return import(specifier)') as (
+    specifier: string,
+  ) => Promise<unknown>;
+  return importer(specifier);
+}
+
+function createOptionalKiloSdkClient(sdk: unknown) {
+  if (!isRecord(sdk)) return undefined;
+  if (isRecord(sdk.default)) return createOptionalKiloSdkClient(sdk.default);
+  if (typeof sdk.createClient === 'function') return sdk.createClient();
+  if (typeof sdk.KiloClient === 'function') {
+    const Client = sdk.KiloClient as new () => unknown;
+    return new Client();
+  }
+  return sdk;
+}
+
+async function discoverKiloSqlitePaths() {
+  const candidates = [
+    process.env.KILO_SESSION_DB,
+    process.env.KILOCODE_SESSION_DB,
+    join(homedir(), '.config', 'kilo'),
+    join(homedir(), '.config', 'kilocode'),
+    join(homedir(), '.kilo'),
+  ].filter((path): path is string => Boolean(path));
+  const files: string[] = [];
+  for (const candidate of candidates) {
+    files.push(...(await sqliteFiles(candidate)));
+  }
+  return [...new Set(files)];
+}
+
+async function sqliteFiles(path: string): Promise<string[]> {
+  try {
+    const info = await stat(path);
+    if (info.isFile()) return looksLikeSqlitePath(path) ? [path] : [];
+    if (!info.isDirectory()) return [];
+    const entries = await readdir(path, { withFileTypes: true });
+    const nested = await Promise.all(
+      entries.map((entry) => {
+        const entryPath = join(path, entry.name);
+        if (entry.isFile()) {
+          return Promise.resolve(
+            looksLikeSqlitePath(entryPath) ? [entryPath] : [],
+          );
+        }
+        if (entry.isDirectory()) return sqliteFiles(entryPath);
+        return Promise.resolve([]);
+      }),
+    );
+    return nested.flat();
+  } catch {
+    return [];
+  }
+}
+
+function looksLikeSqlitePath(path: string) {
+  return /\.(db|sqlite|sqlite3)$/i.test(path) || basename(path) === 'state';
+}
+
+function readKiloSessionsFromSqlite(
+  path: string,
+  input: v.InferOutput<typeof sessionsSearchInputSchema>,
+) {
+  const database = new DatabaseSync(path, { readOnly: true });
+  try {
+    const table = findSessionTable(database);
+    if (!table) return [];
+    const rows = database
+      .prepare(`SELECT * FROM "${table}" LIMIT ?;`)
+      .all(Math.max(input.limit ?? 50, 200));
+    return rows
+      .map((row) => normalizeDiskSession(row))
+      .filter(
+        (
+          session,
+        ): session is v.InferOutput<typeof normalizedKiloSessionSchema> =>
+          Boolean(session),
+      )
+      .filter((session) => sessionMatchesSearch(session, input));
+  } finally {
+    database.close();
+  }
+}
+
+function findSessionTable(database: DatabaseSync) {
+  const tables = database
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name;",
+    )
+    .all()
+    .flatMap((row) =>
+      isRecord(row) && typeof row.name === 'string' ? [row.name] : [],
+    );
+  return tables.find((table) => /session|conversation/i.test(table));
+}
+
+function normalizeDiskSession(row: unknown) {
+  if (!isRecord(row)) return null;
+  const id = stringField(row, ['id', 'session_id', 'sessionID']);
+  if (!id) return null;
+  const title = stringField(row, ['title', 'name', 'summary']) ?? id;
+  return normalizeSession({
+    id,
+    title,
+    updated: numberOrDateField(row, [
+      'updated',
+      'updated_at',
+      'last_active_at',
+    ]),
+    created: numberOrDateField(row, ['created', 'created_at']),
+    projectId: stringField(row, ['project_id', 'projectId']),
+    directory: stringField(row, ['directory', 'cwd', 'path', 'worktree']),
+    role: 'disk',
+  });
+}
+
+function sessionMatchesSearch(
+  session: v.InferOutput<typeof normalizedKiloSessionSchema>,
+  input: v.InferOutput<typeof sessionsSearchInputSchema>,
+) {
+  if (input.query) {
+    const query = input.query.toLowerCase();
+    const haystack = [session.id, session.title, session.directory ?? '']
+      .join('\n')
+      .toLowerCase();
+    if (!haystack.includes(query)) return false;
+  }
+  if (input.sessionId && session.id !== input.sessionId) return false;
+  if (input.directory && !session.directory?.includes(input.directory)) {
+    return false;
+  }
+  if (input.taskId && session.neondeckTaskId !== input.taskId) return false;
+  return true;
 }
 
 function searchLinkedSessionsSync(
@@ -1735,9 +2123,28 @@ function searchLinkedSessionsSync(
     filters.push('id = ?');
     values.push(input.taskId);
   }
+  if (input.worktreeId) {
+    filters.push('worktree_id = ?');
+    values.push(input.worktreeId);
+  }
+  if (input.directory) {
+    filters.push('cwd LIKE ?');
+    values.push(`%${input.directory}%`);
+  }
+  if (input.sessionId) {
+    filters.push('(root_session_id = ? OR child_session_ids_json LIKE ?)');
+    values.push(input.sessionId, `%${input.sessionId}%`);
+  }
   if (input.query) {
-    filters.push('(title LIKE ? OR root_session_id LIKE ?)');
-    values.push(`%${input.query}%`, `%${input.query}%`);
+    filters.push(
+      '(title LIKE ? OR root_session_id LIKE ? OR child_session_ids_json LIKE ? OR cwd LIKE ?)',
+    );
+    values.push(
+      `%${input.query}%`,
+      `%${input.query}%`,
+      `%${input.query}%`,
+      `%${input.query}%`,
+    );
   }
   values.push(input.limit ?? 50);
   try {
@@ -1850,6 +2257,308 @@ function dedupeSessions(
     seen.add(id);
     return true;
   });
+}
+
+function sessionReadOptions(
+  input: v.InferOutput<typeof sessionReadInputSchema>,
+): KiloSessionReadOptions {
+  const limit = Math.min(input.limit ?? 20, 200);
+  return {
+    limit,
+    offset: input.offset ?? 0,
+    includeFullTranscript: input.includeFullTranscript ?? false,
+    includeToolOutput: input.includeToolOutput ?? false,
+    includeDiff: input.includeDiff ?? false,
+    maxBytes: Math.min(input.maxBytes ?? 64_000, 1_000_000),
+    requesterSurface: input.requesterSurface ?? 'agent',
+    readReason: input.readReason ?? null,
+  };
+}
+
+async function sessionTranscriptFromTask(
+  task: KiloTaskRecord,
+  sessionId: string,
+  options: KiloSessionReadOptions,
+  paths: RuntimePaths,
+) {
+  const events = listTaskEvents(task.id, 1_000, paths)
+    .filter(
+      (event) =>
+        event.sessionId === sessionId || event.childSessionId === sessionId,
+    )
+    .filter(
+      (event) => options.includeToolOutput || event.eventType !== 'tool_use',
+    );
+  const page = events.slice(options.offset, options.offset + options.limit);
+  const rawLog =
+    options.includeFullTranscript && task.rawLogPath
+      ? await readBoundedFile(task.rawLogPath, options.maxBytes)
+      : null;
+  return {
+    unavailable: false,
+    source: rawLog ? 'raw-log+events' : 'events',
+    limit: options.limit,
+    offset: options.offset,
+    totalKnown: events.length,
+    hasMore: options.offset + options.limit < events.length,
+    fullTranscriptIncluded: Boolean(rawLog),
+    maxBytes: options.maxBytes,
+    messages: page.map((event) => ({
+      id: event.id,
+      index: event.eventIndex,
+      type: event.eventType,
+      stream: event.stream,
+      sessionId: event.sessionId,
+      childSessionId: event.childSessionId,
+      summary: event.summary,
+      data: options.includeToolOutput ? event.data : null,
+      createdAt: event.createdAt,
+    })),
+    rawLog,
+  };
+}
+
+function unavailableTranscript(options: KiloSessionReadOptions) {
+  return {
+    unavailable: true,
+    source: 'none',
+    limit: options.limit,
+    offset: options.offset,
+    totalKnown: 0,
+    hasMore: false,
+    fullTranscriptIncluded: false,
+    maxBytes: options.maxBytes,
+    messages: [],
+    rawLog: null,
+  };
+}
+
+async function readBoundedFile(path: string, maxBytes: number) {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    await access(path);
+    handle = await open(path, 'r');
+    const buffer = Buffer.alloc(maxBytes + 1);
+    const { bytesRead } = await handle.read(buffer, 0, maxBytes + 1, 0);
+    const truncated = bytesRead > maxBytes;
+    const slice = buffer.subarray(0, Math.min(bytesRead, maxBytes));
+    return {
+      path,
+      text: slice.toString('utf8'),
+      bytesRead: slice.byteLength,
+      truncated,
+    };
+  } catch (error) {
+    return {
+      path,
+      text: '',
+      bytesRead: 0,
+      truncated: false,
+      error: errorMessage(error),
+    };
+  } finally {
+    await handle?.close();
+  }
+}
+
+function taskSessionTree(task: KiloTaskRecord, paths: RuntimePaths) {
+  const events = listTaskEvents(task.id, 1_000, paths);
+  return {
+    id: task.rootSessionId,
+    title: task.title,
+    status: task.status,
+    collapsed: false,
+    children: task.childSessionIds.map((id) =>
+      childSessionNode(id, task, events),
+    ),
+  };
+}
+
+function childSessionNode(
+  id: string,
+  task: KiloTaskRecord,
+  events: KiloTaskEventRecord[],
+): KiloChildSessionNode {
+  const childEvents = events.filter((event) => event.childSessionId === id);
+  const latest = childEvents.at(-1);
+  return {
+    id,
+    title: `${task.title} child`,
+    status: task.status === 'running' ? 'active' : 'unknown',
+    latestSummary: latest?.summary ?? null,
+    eventCount: childEvents.length,
+    collapsed: true,
+  };
+}
+
+function addSessionAudit(
+  task: KiloTaskRecord | undefined,
+  sessionId: string | null | undefined,
+  readType: string,
+  options: KiloSessionReadOptions,
+  paths: RuntimePaths,
+) {
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        INSERT INTO kilo_session_audit (
+          id, task_id, session_id, child_session_id, read_type,
+          requester_surface, reason, limit_count, offset_count,
+          include_full_transcript, include_tool_output, include_diff, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      `,
+      )
+      .run(
+        randomUUID(),
+        task?.id ?? null,
+        sessionId ?? null,
+        task?.childSessionIds.includes(sessionId ?? '')
+          ? (sessionId ?? null)
+          : null,
+        readType,
+        options.requesterSurface,
+        options.readReason,
+        options.limit,
+        options.offset,
+        options.includeFullTranscript ? 1 : 0,
+        options.includeToolOutput ? 1 : 0,
+        options.includeDiff ? 1 : 0,
+        new Date().toISOString(),
+      );
+  } finally {
+    database.close();
+  }
+}
+
+async function taskWithDiff(task: KiloTaskRecord) {
+  const diff = await taskDiffSummary(task);
+  return {
+    ...task,
+    changedFiles: diff.files.map((file) => file.path),
+    diff,
+    verificationState: 'not-run',
+    pendingApprovals: [],
+  };
+}
+
+async function taskDiffSummary(task: KiloTaskRecord) {
+  return readGitDiffSummary({
+    path: task.cwd,
+    github: splitRepoFullName(task.repoFullName),
+    defaultBranch: 'HEAD',
+  });
+}
+
+async function inspectPersistedKiloProcess(task: KiloTaskRecord) {
+  if (!task.pid || !isProcessAlive(task.pid)) {
+    return {
+      alive: false,
+      matched: false,
+      reason: 'pid-not-running',
+      command: null,
+      startedAt: null,
+    };
+  }
+  const observed = await readProcessSnapshot(task.pid);
+  if (!observed.command) {
+    return {
+      alive: true,
+      matched: false,
+      reason: 'process-command-unavailable',
+      command: null,
+      startedAt: observed.startedAt,
+    };
+  }
+  const command = observed.command.toLowerCase();
+  const expectedCli = basename(task.cliPath).toLowerCase();
+  const hasKiloCommand =
+    command.includes(expectedCli) || command.includes('kilo');
+  const hasWorkspace = command.includes(task.cwd.toLowerCase());
+  const hasTitle = command.includes(task.title.toLowerCase());
+  const hasTaskId = command.includes(task.id.toLowerCase());
+  const hasKnownSession =
+    Boolean(task.rootSessionId && command.includes(task.rootSessionId)) ||
+    task.childSessionIds.some((id) => command.includes(id));
+  const hasStartMatch = processStartMatches(
+    task.processStartedAt,
+    observed.startedAt,
+  );
+  const matched =
+    hasKiloCommand &&
+    hasStartMatch &&
+    (hasWorkspace || hasTitle || hasTaskId || hasKnownSession);
+  return {
+    alive: true,
+    matched,
+    reason: matched
+      ? 'command-line-matched-persisted-context'
+      : 'command-line-did-not-match-persisted-context',
+    command: observed.command,
+    startedAt: observed.startedAt,
+  };
+}
+
+function processStartMatches(expected: string | null, observed: string | null) {
+  if (!expected || !observed) return true;
+  const delta = Math.abs(Date.parse(expected) - Date.parse(observed));
+  return Number.isFinite(delta) && delta < 5 * 60_000;
+}
+
+async function readProcessSnapshot(pid: number) {
+  try {
+    const { stdout } = await execFileAsync(
+      'ps',
+      ['-p', String(pid), '-o', 'lstart=', '-o', 'command='],
+      { timeout: 2_000, maxBuffer: 64 * 1024 },
+    );
+    const line = stdout.trim();
+    if (!line) return { command: null, startedAt: null };
+    const parts = line.split(/\s+/);
+    const startText = parts.slice(0, 5).join(' ');
+    const startedAtMs = Date.parse(startText);
+    return {
+      command: parts.slice(5).join(' ') || line,
+      startedAt: Number.isFinite(startedAtMs)
+        ? new Date(startedAtMs).toISOString()
+        : null,
+    };
+  } catch {
+    return { command: null, startedAt: null };
+  }
+}
+
+function isProcessAlive(pid: number) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function stringField(row: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return undefined;
+}
+
+function numberOrDateField(row: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') {
+      const numeric = Number(value);
+      if (Number.isFinite(numeric)) return numeric;
+      const parsed = Date.parse(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return undefined;
 }
 
 function parseJsonLine(

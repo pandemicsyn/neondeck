@@ -851,6 +851,7 @@ app.get('/api/kilo/tasks', async (c) => {
         status: c.req.query('status'),
         repoId: c.req.query('repoId'),
         limit: queryNumber(c.req.query('limit')),
+        includeDiff: queryBoolean(c.req.query('includeDiff')),
       },
       paths,
     ),
@@ -899,13 +900,16 @@ app.post('/api/kilo/sessions/search', async (c) => {
 });
 
 app.get('/api/kilo/sessions/:id', async (c) => {
-  const result = await readKiloSession({ sessionId: c.req.param('id') }, paths);
+  const result = await readKiloSession(
+    { sessionId: c.req.param('id'), ...kiloSessionQuery(c) },
+    paths,
+  );
   return c.json(result, result.ok ? 200 : 404);
 });
 
 app.get('/api/kilo/sessions/:id/messages', async (c) => {
   const result = await readKiloSessionMessages(
-    { sessionId: c.req.param('id') },
+    { sessionId: c.req.param('id'), ...kiloSessionQuery(c) },
     paths,
   );
   return c.json(result, result.ok ? 200 : 404);
@@ -913,7 +917,7 @@ app.get('/api/kilo/sessions/:id/messages', async (c) => {
 
 app.get('/api/kilo/sessions/:id/children', async (c) => {
   const result = await readKiloSessionChildren(
-    { sessionId: c.req.param('id') },
+    { sessionId: c.req.param('id'), ...kiloSessionQuery(c) },
     paths,
   );
   return c.json(result, result.ok ? 200 : 404);
@@ -921,7 +925,7 @@ app.get('/api/kilo/sessions/:id/children', async (c) => {
 
 app.get('/api/kilo/sessions/:id/todos', async (c) => {
   const result = await readUnavailableSessionAdapter(
-    { sessionId: c.req.param('id') },
+    { sessionId: c.req.param('id'), ...kiloSessionQuery(c) },
     'todos',
     paths,
   );
@@ -930,7 +934,7 @@ app.get('/api/kilo/sessions/:id/todos', async (c) => {
 
 app.get('/api/kilo/sessions/:id/diff', async (c) => {
   const result = await readKiloSessionDiff(
-    { sessionId: c.req.param('id') },
+    { sessionId: c.req.param('id'), ...kiloSessionQuery(c) },
     paths,
   );
   return c.json(result, result.ok ? 200 : 404);
@@ -1360,8 +1364,23 @@ function queryNumber(value: string | undefined) {
 }
 
 function queryBoolean(value: string | undefined) {
-  if (value === undefined) return undefined;
-  return value === 'true' || value === '1';
+  if (!value) return undefined;
+  if (value === '1' || value === 'true') return true;
+  if (value === '0' || value === 'false') return false;
+  return undefined;
+}
+
+function kiloSessionQuery(c: Context) {
+  return {
+    limit: queryNumber(c.req.query('limit')),
+    offset: queryNumber(c.req.query('offset')),
+    maxBytes: queryNumber(c.req.query('maxBytes')),
+    includeFullTranscript: queryBoolean(c.req.query('includeFullTranscript')),
+    includeToolOutput: queryBoolean(c.req.query('includeToolOutput')),
+    includeDiff: queryBoolean(c.req.query('includeDiff')),
+    requesterSurface: c.req.query('requesterSurface') ?? 'dashboard',
+    readReason: c.req.query('readReason') ?? 'dashboard-kilo-session-read',
+  };
 }
 
 function preparedDiffHttpStatus(result: {

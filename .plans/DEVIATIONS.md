@@ -218,6 +218,13 @@ Use this format:
 - Reason: The roadmap confirmation policy says enabling Kilo `--auto` requires explicit confirmation, and this slice should preserve Kilo as a user-invoked delegated worker rather than a default autonomous runtime.
 - Follow-up: If a future repo/workflow policy opts into unattended `--auto`, model that as an audited policy change with visible user controls.
 
+## 2026-06-30 - Kilo Reconciliation And Session Access
+
+- Roadmap item: Phase 21 / KiloCode handoff reconciliation, session access, transcript controls, and dashboard/API basics
+- Decision: Implemented restart reconciliation states for detached CLI tasks, dynamic managed-SDK session lookup when `@kilocode/sdk/v2` is locally installed, CLI session-list fallback, read-only SQLite discovery only for missing-session recovery, bounded transcript pages from persisted task events/raw logs, Kilo session read audit rows, child-session trees, diff-enriched Kilo task APIs, and Runtime Overview Kilo rows. Verification state and pending approvals are surfaced as explicit placeholders because the `review_kilo_result`, `verify_kilo_result`, and `promote_kilo_result` workflows are still deferred. No TUI was implemented.
+- Reason: The installed project does not include a Kilo SDK/server dependency, so the managed adapter must remain optional and dependency-free. Persisted event/raw-log transcript pages provide useful bounded recovery without assuming unverified Kilo message/todo APIs, while direct disk reads must remain private recovery behavior. Keeping verification/promote as placeholders avoids inventing policy outside the dedicated roadmap workflows.
+- Follow-up: Add first-class Kilo SDK/server lifecycle integration when the dependency and API are proven, implement true Kilo todo/diff/message adapters, add notification policy, and land review/verify/promote workflows with real verification and approval state.
+
 ## 2026-06-30 - Autopilot Triage And PR Worktree Preparation
 
 - Roadmap item: Phase 19B / PR event autopilot triage and prepare worktree workflows
