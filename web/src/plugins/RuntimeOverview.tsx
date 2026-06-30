@@ -16,6 +16,7 @@ import {
   getNotifications,
   getExecutionApprovals,
   getRepoEditEvents,
+  getWorktrees,
   getWorkflowObservability,
   openNotificationEventStream,
   markNotificationRead,
@@ -45,6 +46,10 @@ import {
   type MemoryResponse,
   type WorkflowEventRecord,
   type WorkflowObservability,
+  type WorktreeCleanupFailure,
+  type WorktreeLockRecord,
+  type WorktreeRecord,
+  type WorktreesResponse,
 } from '../api';
 import { EmptyState } from '../App';
 import { Badge, ScrollArea } from '../components/ui';
@@ -74,6 +79,7 @@ type RuntimeSnapshot = {
   safety: SafetyPolicy;
   workflows: WorkflowObservability;
   repoEditEvents: RepoEditEventsResponse;
+  worktrees: WorktreesResponse;
   secondaryErrors: string[];
   fetchedAt: string;
 };
@@ -113,6 +119,7 @@ export const RuntimeOverviewPlugin = {
       safetyQuery,
       workflowsQuery,
       repoEditEventsQuery,
+      worktreesQuery,
     ] = useQueries({
       queries: [
         {
@@ -170,6 +177,11 @@ export const RuntimeOverviewPlugin = {
           queryFn: getRepoEditEvents,
           refetchInterval: 30_000,
         },
+        {
+          queryKey: queryKeys.worktrees,
+          queryFn: getWorktrees,
+          refetchInterval: 30_000,
+        },
       ],
     });
 
@@ -221,6 +233,7 @@ export const RuntimeOverviewPlugin = {
       safety: safetyQuery,
       workflows: workflowsQuery,
       repoEditEvents: repoEditEventsQuery,
+      worktrees: worktreesQuery,
     });
 
     if (!snapshot) {
@@ -248,6 +261,7 @@ type RuntimeSnapshotQueries = {
   safety: UseQueryResult<SafetyPolicy>;
   workflows: UseQueryResult<WorkflowObservability>;
   repoEditEvents: UseQueryResult<RepoEditEventsResponse>;
+  worktrees: UseQueryResult<WorktreesResponse>;
 };
 
 function runtimeSnapshotFromQueries(
@@ -265,6 +279,7 @@ function runtimeSnapshotFromQueries(
     queryResultError(queries.safety),
     queryResultError(queries.workflows),
     queryResultError(queries.repoEditEvents),
+    queryResultError(queries.worktrees),
   ].filter((error): error is string => !!error);
 
   return {
@@ -315,6 +330,17 @@ function runtimeSnapshotFromQueries(
       events: [],
       fetchedAt: status.fetchedAt,
     },
+    worktrees: queries.worktrees.data ?? {
+      ok: false,
+      action: 'worktrees_list',
+      changed: false,
+      message: 'Worktrees unavailable.',
+      worktrees: [],
+      activeLocks: [],
+      staleLocks: [],
+      cleanupFailures: [],
+      fetchedAt: status.fetchedAt,
+    },
     secondaryErrors: errors,
     fetchedAt: new Date().toISOString(),
   };
@@ -339,6 +365,7 @@ async function invalidateRuntimeQueries(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: queryKeys.executionApprovals }),
     queryClient.invalidateQueries({ queryKey: queryKeys.safetyPolicy }),
     queryClient.invalidateQueries({ queryKey: queryKeys.repoEditEvents }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.worktrees }),
   ]);
 }
 
@@ -531,6 +558,31 @@ function RuntimeView({
               {snapshot.repoEditEvents.events.length === 0 ? (
                 <MiniEmpty label="No repo edits recorded." />
               ) : null}
+            </div>
+          </RuntimeSection>
+          <RuntimeSection
+            count={snapshot.worktrees.worktrees.length}
+            title="WORKTREES"
+            tone={
+              snapshot.worktrees.staleLocks.length > 0 ||
+              snapshot.worktrees.cleanupFailures.length > 0
+                ? 'accent'
+                : 'primary'
+            }
+          >
+            <div className="space-y-1.5">
+              {snapshot.worktrees.worktrees.slice(0, 6).map((worktree) => (
+                <WorktreeRow key={worktree.id} worktree={worktree} />
+              ))}
+              {snapshot.worktrees.worktrees.length === 0 ? (
+                <MiniEmpty label="No managed worktrees recorded." />
+              ) : null}
+              {snapshot.worktrees.staleLocks.map((lock) => (
+                <WorktreeLockRow key={lock.id} lock={lock} />
+              ))}
+              {snapshot.worktrees.cleanupFailures.map((failure) => (
+                <WorktreeCleanupRow failure={failure} key={failure.id} />
+              ))}
             </div>
           </RuntimeSection>
           <RuntimeSection
@@ -1611,6 +1663,78 @@ function RepoEditEventRow({ event }: { event: RepoEditEvent }) {
   );
 }
 
+function WorktreeRow({ worktree }: { worktree: WorktreeRecord }) {
+  const pr = worktree.prNumber ? `PR #${worktree.prNumber}` : 'repo work';
+  return (
+    <article className="border border-line bg-soft px-2.5 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-ink">
+            {worktree.repoId} · {pr}
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
+            {worktree.headRef}
+            {worktree.headSha ? ` · ${worktree.headSha.slice(0, 12)}` : ''}
+          </p>
+        </div>
+        <Badge className={worktreeStatusClass(worktree.lifecycleStatus)}>
+          {worktree.lifecycleStatus}
+        </Badge>
+      </div>
+      <div className="mt-1.5 flex justify-between gap-2 font-mono text-[10px] text-muted">
+        <span className="truncate">{shortPath(worktree.localPath)}</span>
+        <span className="shrink-0">
+          {worktree.adopted ? 'adopted' : worktree.storageKind}
+        </span>
+      </div>
+    </article>
+  );
+}
+
+function WorktreeLockRow({ lock }: { lock: WorktreeLockRecord }) {
+  return (
+    <article className="border border-accent/70 bg-soft px-2.5 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-ink">
+            stale {lock.scope} lock
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
+            {lock.owner} · {lock.scopeKey}
+          </p>
+        </div>
+        <Badge className="border-accent text-accent">stale</Badge>
+      </div>
+      <div className="mt-1.5 flex justify-between gap-2 font-mono text-[10px] text-muted">
+        <span className="truncate">{lock.worktreeId ?? lock.repoId}</span>
+        <span className="shrink-0">{relativeTime(lock.expiresAt)}</span>
+      </div>
+    </article>
+  );
+}
+
+function WorktreeCleanupRow({ failure }: { failure: WorktreeCleanupFailure }) {
+  return (
+    <article className="border border-accent/70 bg-soft px-2.5 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-ink">
+            cleanup failed
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
+            {failure.error ?? failure.reason}
+          </p>
+        </div>
+        <Badge className="border-accent text-accent">failed</Badge>
+      </div>
+      <div className="mt-1.5 flex justify-between gap-2 font-mono text-[10px] text-muted">
+        <span className="truncate">{failure.worktreeId}</span>
+        <span className="shrink-0">{relativeTime(failure.attemptedAt)}</span>
+      </div>
+    </article>
+  );
+}
+
 function ActiveRunRow({
   run,
 }: {
@@ -1909,6 +2033,24 @@ function repoEditEventClass(event: RepoEditEvent) {
     return 'border-accent text-accent';
   }
   if (event.status === 'preview') return 'border-violet text-violet';
+  return '';
+}
+
+function worktreeStatusClass(status: WorktreeRecord['lifecycleStatus']) {
+  if (status === 'ready' || status === 'succeeded') {
+    return 'border-primary text-primary';
+  }
+  if (
+    status === 'failed' ||
+    status === 'needs-sync' ||
+    status === 'stale' ||
+    status === 'cleanup-pending'
+  ) {
+    return 'border-accent text-accent';
+  }
+  if (status === 'busy' || status === 'prepared-diff') {
+    return 'border-violet text-violet';
+  }
   return '';
 }
 

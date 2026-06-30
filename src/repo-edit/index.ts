@@ -18,6 +18,7 @@ import * as v from 'valibot';
 import type { RuntimePaths } from '../runtime-home';
 import { ensureRuntimeHome, runtimePaths } from '../runtime-home';
 import { readNeonSessionState } from '../session-actions';
+import { assertWorktreeMutationAllowed } from '../worktrees';
 import { recordRepoEditEvent, listRepoEditEvents } from './audit';
 import { replaceContent } from './fuzzy-replace';
 import {
@@ -187,6 +188,7 @@ export async function readRepoFile(rawInput: unknown, paths = runtimePaths()) {
     const target = await resolveRepoPath(
       {
         repoId: parsed.input.repoId,
+        worktreeId: parsed.input.worktreeId,
         path: parsed.input.path,
         intent: 'read',
       },
@@ -204,6 +206,7 @@ export async function readRepoFile(rawInput: unknown, paths = runtimePaths()) {
 
     await recordReadStamp(
       parsed.input.repoId,
+      parsed.input.worktreeId,
       target.relativePath,
       file.stamp,
       sessionId,
@@ -212,6 +215,7 @@ export async function readRepoFile(rawInput: unknown, paths = runtimePaths()) {
     await recordRepoEditEvent(
       {
         repoId: parsed.input.repoId,
+        worktreeId: parsed.input.worktreeId,
         sessionId,
         action: 'read',
         status: 'applied',
@@ -226,6 +230,7 @@ export async function readRepoFile(rawInput: unknown, paths = runtimePaths()) {
       changed: false,
       message: `Read ${target.relativePath}.`,
       repoId: parsed.input.repoId,
+      worktreeId: parsed.input.worktreeId,
       path: target.relativePath,
       content,
       startLine: offset + 1,
@@ -257,6 +262,7 @@ export async function searchRepoFiles(
     const root = await resolveRepoPath(
       {
         repoId: parsed.input.repoId,
+        worktreeId: parsed.input.worktreeId,
         path: '.',
         intent: 'read',
       },
@@ -303,6 +309,7 @@ export async function searchRepoFiles(
     await recordRepoEditEvent(
       {
         repoId: parsed.input.repoId,
+        worktreeId: parsed.input.worktreeId,
         sessionId,
         action: 'search',
         status: 'applied',
@@ -318,6 +325,7 @@ export async function searchRepoFiles(
       changed: false,
       message: `Found ${results.length} matches.`,
       repoId: parsed.input.repoId,
+      worktreeId: parsed.input.worktreeId,
       results,
       truncated: results.length >= maxResults,
     };
@@ -332,9 +340,19 @@ export async function writeRepoFile(rawInput: unknown, paths = runtimePaths()) {
   const input = parsed.input;
 
   try {
+    await ensureRuntimeHome(paths);
+    assertWorktreeMutationAllowed(
+      {
+        repoId: input.repoId,
+        worktreeId: input.worktreeId,
+        lockId: input.worktreeLockId,
+      },
+      paths,
+    );
     const target = await resolveRepoPath(
       {
         repoId: input.repoId,
+        worktreeId: input.worktreeId,
         path: input.path,
         intent: 'write',
         createParentDirectories: input.createParentDirectories,
@@ -343,7 +361,7 @@ export async function writeRepoFile(rawInput: unknown, paths = runtimePaths()) {
     );
 
     return await withPathLocks(
-      [lockKey(input.repoId, target.relativePath)],
+      [lockKey(input.repoId, input.worktreeId, target.relativePath)],
       async () => {
         const sessionId = await resolveSessionId(input.sessionId, paths);
         const before = target.exists ? await readTextFile(target) : undefined;
@@ -352,6 +370,7 @@ export async function writeRepoFile(rawInput: unknown, paths = runtimePaths()) {
               input.expectedStamp,
               before.stamp,
               input.repoId,
+              input.worktreeId,
               target.relativePath,
               sessionId,
               paths,
@@ -379,6 +398,7 @@ export async function writeRepoFile(rawInput: unknown, paths = runtimePaths()) {
         const event = await recordRepoEditEvent(
           {
             repoId: input.repoId,
+            worktreeId: input.worktreeId,
             sessionId,
             action: 'write',
             status: input.dryRun ? 'preview' : 'applied',
@@ -397,6 +417,7 @@ export async function writeRepoFile(rawInput: unknown, paths = runtimePaths()) {
             ? `Previewed write to ${target.relativePath}.`
             : `Wrote ${target.relativePath}.`,
           repoId: input.repoId,
+          worktreeId: input.worktreeId,
           path: target.relativePath,
           dryRun: Boolean(input.dryRun),
           sensitive: target.sensitive,
@@ -425,9 +446,19 @@ export async function replaceRepoFile(
   const input = parsed.input;
 
   try {
+    await ensureRuntimeHome(paths);
+    assertWorktreeMutationAllowed(
+      {
+        repoId: input.repoId,
+        worktreeId: input.worktreeId,
+        lockId: input.worktreeLockId,
+      },
+      paths,
+    );
     const target = await resolveRepoPath(
       {
         repoId: input.repoId,
+        worktreeId: input.worktreeId,
         path: input.path,
         intent: 'write',
       },
@@ -435,7 +466,7 @@ export async function replaceRepoFile(
     );
 
     return await withPathLocks(
-      [lockKey(input.repoId, target.relativePath)],
+      [lockKey(input.repoId, input.worktreeId, target.relativePath)],
       async () => {
         const sessionId = await resolveSessionId(input.sessionId, paths);
         const before = await readTextFile(target);
@@ -444,6 +475,7 @@ export async function replaceRepoFile(
             input.expectedStamp,
             before.stamp,
             input.repoId,
+            input.worktreeId,
             target.relativePath,
             sessionId,
             paths,
@@ -460,6 +492,7 @@ export async function replaceRepoFile(
           await recordRepoEditEvent(
             {
               repoId: input.repoId,
+              worktreeId: input.worktreeId,
               sessionId,
               action: 'replace',
               status: 'failed',
@@ -494,6 +527,7 @@ export async function replaceRepoFile(
         const event = await recordRepoEditEvent(
           {
             repoId: input.repoId,
+            worktreeId: input.worktreeId,
             sessionId,
             action: 'replace',
             status: input.dryRun ? 'preview' : 'applied',
@@ -512,6 +546,7 @@ export async function replaceRepoFile(
             ? `Previewed replacement in ${target.relativePath}.`
             : `Replaced ${replaced.replacements} occurrence(s) in ${target.relativePath}.`,
           repoId: input.repoId,
+          worktreeId: input.worktreeId,
           path: target.relativePath,
           matched: replaced.matched,
           replacements: replaced.replacements,
@@ -538,14 +573,24 @@ export async function patchRepoFiles(
   const input = parsed.input;
 
   try {
+    await ensureRuntimeHome(paths);
+    assertWorktreeMutationAllowed(
+      {
+        repoId: input.repoId,
+        worktreeId: input.worktreeId,
+        lockId: input.worktreeLockId,
+      },
+      paths,
+    );
     const patch = parseV4APatch(input.patch);
     const resolved = await resolvePatchPaths(
       input.repoId,
+      input.worktreeId,
       patch.operations,
       paths,
     );
     const lockKeys = resolved.map((item) =>
-      lockKey(input.repoId, item.relativePath),
+      lockKey(input.repoId, input.worktreeId, item.relativePath),
     );
 
     return await withPathLocks(lockKeys, async () => {
@@ -557,6 +602,7 @@ export async function patchRepoFiles(
       const event = await recordRepoEditEvent(
         {
           repoId: input.repoId,
+          worktreeId: input.worktreeId,
           sessionId,
           action: 'patch',
           status: input.dryRun ? 'preview' : 'applied',
@@ -579,6 +625,7 @@ export async function patchRepoFiles(
           ? `Previewed patch touching ${planned.files.length} file(s).`
           : `Applied patch touching ${planned.files.length} file(s).`,
         repoId: input.repoId,
+        worktreeId: input.worktreeId,
         dryRun: Boolean(input.dryRun),
         files: planned.files.map((file) => ({
           path: file.destination?.relativePath ?? file.target.relativePath,
@@ -609,7 +656,12 @@ export async function readRepoDiff(rawInput: unknown, paths = runtimePaths()) {
   if (!parsed.ok) return parsed.result;
   try {
     const root = await resolveRepoPath(
-      { repoId: parsed.input.repoId, path: '.', intent: 'read' },
+      {
+        repoId: parsed.input.repoId,
+        worktreeId: parsed.input.worktreeId,
+        path: '.',
+        intent: 'read',
+      },
       paths,
     );
     const result = await gitDiff(root.repoRoot, parsed.input);
@@ -619,6 +671,7 @@ export async function readRepoDiff(rawInput: unknown, paths = runtimePaths()) {
       changed: false,
       message: `Read diff for ${parsed.input.repoId}.`,
       repoId: parsed.input.repoId,
+      worktreeId: parsed.input.worktreeId,
       base: result.base,
       files: result.files,
       diffSummary: result.summary,
@@ -640,7 +693,12 @@ export async function readRepoCheckoutStatus(
   if (!parsed.ok) return parsed.result;
   try {
     const root = await resolveRepoPath(
-      { repoId: parsed.input.repoId, path: '.', intent: 'read' },
+      {
+        repoId: parsed.input.repoId,
+        worktreeId: parsed.input.worktreeId,
+        path: '.',
+        intent: 'read',
+      },
       paths,
     );
     const status = await gitStatus(root.repoRoot);
@@ -650,6 +708,7 @@ export async function readRepoCheckoutStatus(
       changed: false,
       message: `Read checkout status for ${parsed.input.repoId}.`,
       repoId: parsed.input.repoId,
+      worktreeId: parsed.input.worktreeId,
       ...status,
     };
   } catch (error) {
@@ -659,6 +718,7 @@ export async function readRepoCheckoutStatus(
 
 async function resolvePatchPaths(
   repoId: string,
+  worktreeId: string | undefined,
   operations: ReturnType<typeof parseV4APatch>['operations'],
   paths: RuntimePaths,
 ) {
@@ -667,7 +727,7 @@ async function resolvePatchPaths(
     if (operation.type === 'move') {
       targets.push(
         await resolveRepoPath(
-          { repoId, path: operation.from, intent: 'move' },
+          { repoId, worktreeId, path: operation.from, intent: 'move' },
           paths,
         ),
       );
@@ -675,6 +735,7 @@ async function resolvePatchPaths(
         await resolveRepoPath(
           {
             repoId,
+            worktreeId,
             path: operation.to,
             intent: 'write',
             createParentDirectories: true,
@@ -689,6 +750,7 @@ async function resolvePatchPaths(
       await resolveRepoPath(
         {
           repoId,
+          worktreeId,
           path: operation.path,
           intent: operation.type === 'delete' ? 'delete' : 'write',
           createParentDirectories: operation.type === 'add',
@@ -785,6 +847,7 @@ async function planPatch(
           input.expectedStamps?.[target.relativePath],
           state.stamp!,
           input.repoId,
+          input.worktreeId,
           target.relativePath,
           input.sessionId,
           paths,
@@ -835,6 +898,7 @@ async function planPatch(
           input.expectedStamps?.[target.relativePath],
           state.stamp!,
           input.repoId,
+          input.worktreeId,
           target.relativePath,
           input.sessionId,
           paths,
@@ -884,6 +948,7 @@ async function planPatch(
         expected,
         state.stamp!,
         input.repoId,
+        input.worktreeId,
         target.relativePath,
         input.sessionId,
         paths,
@@ -1187,18 +1252,26 @@ async function isStaleForInput(
   expected: FileStamp | undefined,
   actual: FileStamp,
   repoId: string,
+  worktreeId: string | undefined,
   path: string,
   sessionId: string | undefined,
   paths: RuntimePaths,
 ) {
   if (expected) return isStale(expected, actual);
   if (!sessionId) return false;
-  const latest = await latestReadStamp(repoId, path, sessionId, paths);
+  const latest = await latestReadStamp(
+    repoId,
+    worktreeId,
+    path,
+    sessionId,
+    paths,
+  );
   return Boolean(latest && latest.sha256 !== actual.sha256);
 }
 
 async function latestReadStamp(
   repoId: string,
+  worktreeId: string | undefined,
   path: string,
   sessionId: string,
   paths: RuntimePaths,
@@ -1213,12 +1286,13 @@ async function latestReadStamp(
         FROM repo_file_reads
         WHERE session_id = ?
           AND repo_id = ?
+          AND COALESCE(worktree_id, '') = COALESCE(?, '')
           AND path = ?
         ORDER BY read_at DESC
         LIMIT 1;
       `,
       )
-      .get(sessionId, repoId, path) as
+      .get(sessionId, repoId, worktreeId ?? null, path) as
       { mtime_ms: number; size: number; sha256: string } | undefined;
     if (!row) return undefined;
     return {
@@ -1246,6 +1320,7 @@ function staleResult(action: string, repoId: string, path: string) {
 
 async function recordReadStamp(
   repoId: string,
+  worktreeId: string | undefined,
   path: string,
   stamp: FileStamp,
   sessionId: string | undefined,
@@ -1260,6 +1335,7 @@ async function recordReadStamp(
         INSERT INTO repo_file_reads (
           session_id,
           repo_id,
+          worktree_id,
           path,
           mtime_ms,
           size,
@@ -1267,12 +1343,13 @@ async function recordReadStamp(
           partial,
           read_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
       `,
       )
       .run(
         sessionId ?? null,
         repoId,
+        worktreeId ?? null,
         path,
         stamp.mtimeMs,
         stamp.size,
@@ -1285,8 +1362,8 @@ async function recordReadStamp(
   }
 }
 
-function lockKey(repoId: string, path: string) {
-  return `${repoId}\0${path}`;
+function lockKey(repoId: string, worktreeId: string | undefined, path: string) {
+  return `${repoId}\0${worktreeId ?? 'base'}\0${path}`;
 }
 
 function parseInput<T>(
@@ -1364,6 +1441,10 @@ async function recordFailureEvent(
       ? input.repoId
       : undefined;
   if (!repoId) return;
+  const worktreeId =
+    'worktreeId' in input && typeof input.worktreeId === 'string'
+      ? input.worktreeId
+      : undefined;
   const converted = toRepoEditError(error);
   const requestedPaths = extractRequestedPaths(input);
   const sessionId =
@@ -1373,6 +1454,7 @@ async function recordFailureEvent(
   await recordRepoEditEvent(
     {
       repoId,
+      worktreeId,
       sessionId,
       action,
       status:
@@ -1414,6 +1496,14 @@ function isRepoEditErrorCode(
     'PATCH_PARSE_ERROR',
     'PATCH_VALIDATE_ERROR',
     'GIT_ERROR',
+    'WORKTREE_NOT_FOUND',
+    'WORKTREE_DELETED',
+    'WORKTREE_NOT_READY',
+    'WORKTREE_LOCKED',
+    'PATH_OUTSIDE_WORKTREE_ROOT',
+    'REPO_MISMATCH',
+    'CORRUPT_WORKTREE_ROW',
+    'WORKTREE_ERROR',
     'IO_ERROR',
   ].includes(value);
 }

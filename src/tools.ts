@@ -19,6 +19,7 @@ import {
   searchChatSessions,
 } from './session-actions';
 import { listPrWatches, listRefWatches } from './watch-actions';
+import { neondeckWorktreeTools } from './worktrees';
 
 const emptyInputSchema = v.object({});
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
@@ -295,4 +296,5 @@ export const neondeckFactTools = [
   safetyPolicyTool,
   executionPolicyTool,
   ...neondeckRepoEditTools,
+  ...neondeckWorktreeTools,
 ];

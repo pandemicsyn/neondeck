@@ -39,6 +39,7 @@ export const fileStampSchema = v.object({
 
 export const repoReadInputSchema = v.object({
   repoId: repoIdSchema,
+  worktreeId: v.optional(nonEmptyStringSchema),
   path: repoRelativePathSchema,
   sessionId: v.optional(nonEmptyStringSchema),
   offset: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0))),
@@ -50,6 +51,7 @@ export const repoReadInputSchema = v.object({
 
 export const repoSearchInputSchema = v.object({
   repoId: repoIdSchema,
+  worktreeId: v.optional(nonEmptyStringSchema),
   query: nonEmptyStringSchema,
   globs: v.optional(v.array(repoRelativePathSchema)),
   maxResults: v.optional(
@@ -67,6 +69,8 @@ export const repoSearchInputSchema = v.object({
 
 export const repoWriteInputSchema = v.object({
   repoId: repoIdSchema,
+  worktreeId: v.optional(nonEmptyStringSchema),
+  worktreeLockId: v.optional(nonEmptyStringSchema),
   path: repoRelativePathSchema,
   content: v.string(),
   sessionId: v.optional(nonEmptyStringSchema),
@@ -78,6 +82,8 @@ export const repoWriteInputSchema = v.object({
 
 export const repoReplaceInputSchema = v.object({
   repoId: repoIdSchema,
+  worktreeId: v.optional(nonEmptyStringSchema),
+  worktreeLockId: v.optional(nonEmptyStringSchema),
   path: repoRelativePathSchema,
   oldString: nonEmptyStringSchema,
   newString: v.string(),
@@ -91,6 +97,8 @@ export const repoReplaceInputSchema = v.object({
 
 export const repoPatchInputSchema = v.object({
   repoId: repoIdSchema,
+  worktreeId: v.optional(nonEmptyStringSchema),
+  worktreeLockId: v.optional(nonEmptyStringSchema),
   patch: v.pipe(v.string(), v.minLength(1), v.maxLength(maxPatchBytes)),
   sessionId: v.optional(nonEmptyStringSchema),
   expectedStamps: v.optional(v.record(v.string(), fileStampSchema)),
@@ -100,6 +108,7 @@ export const repoPatchInputSchema = v.object({
 
 export const repoDiffInputSchema = v.object({
   repoId: repoIdSchema,
+  worktreeId: v.optional(nonEmptyStringSchema),
   base: v.optional(gitRefSchema),
   paths: v.optional(v.array(repoRelativePathSchema)),
   includePatch: v.optional(v.boolean()),
@@ -110,6 +119,7 @@ export const repoDiffInputSchema = v.object({
 
 export const repoStatusInputSchema = v.object({
   repoId: repoIdSchema,
+  worktreeId: v.optional(nonEmptyStringSchema),
 });
 
 export const repoEditOutputSchema = v.looseObject({
@@ -145,6 +155,14 @@ export type RepoEditErrorCode =
   | 'PATCH_PARSE_ERROR'
   | 'PATCH_VALIDATE_ERROR'
   | 'GIT_ERROR'
+  | 'WORKTREE_NOT_FOUND'
+  | 'WORKTREE_DELETED'
+  | 'WORKTREE_NOT_READY'
+  | 'WORKTREE_LOCKED'
+  | 'PATH_OUTSIDE_WORKTREE_ROOT'
+  | 'REPO_MISMATCH'
+  | 'CORRUPT_WORKTREE_ROW'
+  | 'WORKTREE_ERROR'
   | 'IO_ERROR';
 
 export type RepoEditError = {

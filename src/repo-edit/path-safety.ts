@@ -7,12 +7,14 @@ import {
   readRuntimeJson,
   runtimePaths,
 } from '../runtime-home';
+import { readManagedWorktree } from '../worktrees';
 import type { RepoEditError } from './schemas';
 
 export type RepoPathIntent = 'read' | 'write' | 'delete' | 'move';
 
 export type ResolvedRepoPath = {
   repo: RepoConfig;
+  worktreeId?: string;
   repoRoot: string;
   relativePath: string;
   fullPath: string;
@@ -58,6 +60,7 @@ export class RepoPathPolicyError extends Error {
 export async function resolveRepoPath(
   input: {
     repoId: string;
+    worktreeId?: string;
     path: string;
     intent?: RepoPathIntent;
     createParentDirectories?: boolean;
@@ -77,7 +80,10 @@ export async function resolveRepoPath(
   const relativePath = normalizeRepoRelativePath(input.path);
   assertAllowedSegments(relativePath);
 
-  const repoRoot = await realpath(repo.path);
+  const worktree = input.worktreeId
+    ? await readManagedWorktree(input.worktreeId, repo.id, paths)
+    : undefined;
+  const repoRoot = await realpath(worktree?.localPath ?? repo.path);
   const fullPath = resolve(repoRoot, relativePath);
   if (!isInside(repoRoot, fullPath)) {
     throw new RepoPathPolicyError(
@@ -120,6 +126,7 @@ export async function resolveRepoPath(
 
   return {
     repo,
+    worktreeId: worktree?.id,
     repoRoot,
     relativePath,
     fullPath,
@@ -229,8 +236,59 @@ export function toRepoEditError(error: unknown): RepoEditError {
     };
   }
 
+  if (
+    error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    typeof (error as { code?: unknown }).code === 'string' &&
+    isRepoEditErrorCode((error as { code: string }).code)
+  ) {
+    const code = (error as { code: RepoEditError['code'] }).code;
+    return {
+      code,
+      message: error instanceof Error ? error.message : String(error),
+      path:
+        'path' in error &&
+        typeof (error as { path?: unknown }).path === 'string'
+          ? (error as { path: string }).path
+          : undefined,
+      details:
+        'details' in error
+          ? (error as { details?: unknown }).details
+          : undefined,
+    };
+  }
+
   return {
     code: 'IO_ERROR',
     message: error instanceof Error ? error.message : String(error),
   };
+}
+
+function isRepoEditErrorCode(value: string): value is RepoEditError['code'] {
+  return [
+    'INVALID_INPUT',
+    'REPO_NOT_FOUND',
+    'PATH_OUTSIDE_WORKSPACE',
+    'PATH_DENIED',
+    'FILE_NOT_FOUND',
+    'BINARY_FILE',
+    'FILE_TOO_LARGE',
+    'STALE_FILE',
+    'NO_MATCH',
+    'AMBIGUOUS_MATCH',
+    'LOW_CONFIDENCE',
+    'PATCH_PARSE_ERROR',
+    'PATCH_VALIDATE_ERROR',
+    'GIT_ERROR',
+    'WORKTREE_NOT_FOUND',
+    'WORKTREE_DELETED',
+    'WORKTREE_NOT_READY',
+    'WORKTREE_LOCKED',
+    'PATH_OUTSIDE_WORKTREE_ROOT',
+    'REPO_MISMATCH',
+    'CORRUPT_WORKTREE_ROW',
+    'WORKTREE_ERROR',
+    'IO_ERROR',
+  ].includes(value);
 }

@@ -20,6 +20,7 @@ export type RuntimePaths = {
   schedules: string;
   soul: string;
   skills: string;
+  worktrees: string;
   data: string;
   neondeckDatabase: string;
   flueDatabase: string;
@@ -133,12 +134,27 @@ export const executionConfigSchema = v.looseObject({
   ),
 });
 
+export const worktreeCleanupConfigSchema = v.looseObject({
+  retainFailed: v.optional(v.boolean()),
+  retainPreparedDiff: v.optional(v.boolean()),
+  successfulGraceHours: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(0)),
+  ),
+  staleAgeHours: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+});
+
+export const worktreeConfigSchema = v.looseObject({
+  defaultStorage: v.optional(v.picklist(['home', 'repo-local'])),
+  cleanup: v.optional(worktreeCleanupConfigSchema),
+});
+
 export const appConfigSchema = v.looseObject({
   version: positiveIntegerSchema,
   skillRoots: v.optional(v.array(nonEmptyStringSchema)),
   models: v.optional(agentModelConfigSchema),
   providers: v.optional(providerConfigSchema),
   execution: v.optional(executionConfigSchema),
+  worktrees: v.optional(worktreeConfigSchema),
 });
 
 export const repoConfigSchema = v.looseObject({
@@ -149,6 +165,7 @@ export const repoConfigSchema = v.looseObject({
   }),
   path: nonEmptyStringSchema,
   defaultBranch: nonEmptyStringSchema,
+  worktreeRoot: v.optional(v.picklist(['home', 'repo-local'])),
   productionTarget: v.optional(nonEmptyStringSchema),
   packageScripts: v.optional(v.record(v.string(), v.string())),
   metadata: v.optional(unknownRecordSchema),
@@ -229,6 +246,10 @@ export type ExecutionBackend = v.InferOutput<typeof executionBackendSchema>;
 export type ExecutionPreapprovedCommand = v.InferOutput<
   typeof executionPreapprovedCommandSchema
 >;
+export type WorktreeConfig = v.InferOutput<typeof worktreeConfigSchema>;
+export type WorktreeCleanupConfig = v.InferOutput<
+  typeof worktreeCleanupConfigSchema
+>;
 export type RepoConfig = v.InferOutput<typeof repoConfigSchema>;
 export type RepoRegistry = v.InferOutput<typeof repoRegistrySchema>;
 export type ScheduleEntry = v.InferOutput<typeof scheduleEntrySchema>;
@@ -278,6 +299,7 @@ export function runtimePaths(home = resolveRuntimeHome()): RuntimePaths {
     schedules: join(home, 'schedules.json'),
     soul: join(home, 'SOUL.md'),
     skills: join(home, 'skills'),
+    worktrees: join(home, 'worktrees'),
     data: join(home, 'data'),
     neondeckDatabase: join(home, 'data', 'neondeck.db'),
     flueDatabase: join(home, 'data', 'flue.db'),
@@ -288,6 +310,7 @@ export async function ensureRuntimeHome(paths = runtimePaths()) {
   await mkdir(paths.home, { recursive: true });
   await mkdir(paths.data, { recursive: true });
   await mkdir(paths.skills, { recursive: true });
+  await mkdir(paths.worktrees, { recursive: true });
 
   await writeFileIfMissing(paths.env, '');
   await writeJsonIfMissing(paths.config, { version: 1 });
@@ -304,6 +327,7 @@ export function ensureRuntimeHomeSync(paths = runtimePaths()) {
   mkdirSync(paths.home, { recursive: true });
   mkdirSync(paths.data, { recursive: true });
   mkdirSync(paths.skills, { recursive: true });
+  mkdirSync(paths.worktrees, { recursive: true });
 
   writeFileIfMissingSync(paths.env, '');
   writeJsonIfMissingSync(paths.config, { version: 1 });
@@ -653,6 +677,7 @@ function initializeAppDatabase(path: string) {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         session_id TEXT,
         repo_id TEXT NOT NULL,
+        worktree_id TEXT,
         path TEXT NOT NULL,
         mtime_ms REAL NOT NULL,
         size INTEGER NOT NULL,
@@ -660,8 +685,75 @@ function initializeAppDatabase(path: string) {
         partial INTEGER NOT NULL DEFAULT 0,
         read_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS worktrees (
+        id TEXT PRIMARY KEY,
+        repo_id TEXT NOT NULL,
+        repo_full_name TEXT NOT NULL,
+        github_owner TEXT NOT NULL,
+        github_name TEXT NOT NULL,
+        pr_number INTEGER,
+        base_ref TEXT NOT NULL,
+        head_owner TEXT,
+        head_name TEXT,
+        head_ref TEXT NOT NULL,
+        head_sha TEXT,
+        local_path TEXT NOT NULL UNIQUE,
+        storage_kind TEXT NOT NULL,
+        owning_workflow_run_id TEXT,
+        lifecycle_status TEXT NOT NULL,
+        last_synced_sha TEXT,
+        last_pushed_sha TEXT,
+        cleanup_policy_json TEXT,
+        direct_push_allowed INTEGER NOT NULL DEFAULT 0,
+        adopted INTEGER NOT NULL DEFAULT 0,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS worktree_locks (
+        id TEXT PRIMARY KEY,
+        scope TEXT NOT NULL,
+        scope_key TEXT NOT NULL,
+        worktree_id TEXT,
+        repo_id TEXT NOT NULL,
+        pr_number INTEGER,
+        owner TEXT NOT NULL,
+        workflow_run_id TEXT,
+        expires_at TEXT NOT NULL,
+        released_at TEXT,
+        stale_recovered_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS worktree_events (
+        id TEXT PRIMARY KEY,
+        worktree_id TEXT NOT NULL,
+        repo_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        message TEXT NOT NULL,
+        data_json TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS worktree_cleanup_attempts (
+        id TEXT PRIMARY KEY,
+        worktree_id TEXT NOT NULL,
+        repo_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        outcome TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        error TEXT,
+        deleted INTEGER NOT NULL DEFAULT 0,
+        attempted_at TEXT NOT NULL
+      );
     `);
 
+    ensureColumn(database, 'repo_edit_events', 'worktree_id', 'TEXT');
+    ensureColumn(database, 'repo_file_reads', 'worktree_id', 'TEXT');
     ensureColumn(database, 'notifications', 'resolved_at', 'TEXT');
     ensureColumn(database, 'notifications', 'updated_at', 'TEXT');
     ensureColumn(
@@ -680,6 +772,7 @@ function initializeAppDatabase(path: string) {
       `,
       )
       .run();
+    reconcileActiveWorktreeLocks(database);
     database.exec(`
       CREATE INDEX IF NOT EXISTS idx_notifications_source_unresolved
         ON notifications(source, source_id, resolved_at);
@@ -703,7 +796,7 @@ function initializeAppDatabase(path: string) {
         ON repo_edit_events(repo_id, updated_at DESC);
 
       CREATE INDEX IF NOT EXISTS idx_repo_file_reads_lookup
-        ON repo_file_reads(session_id, repo_id, path, read_at DESC);
+        ON repo_file_reads(session_id, repo_id, worktree_id, path, read_at DESC);
 
       CREATE INDEX IF NOT EXISTS idx_chat_sessions_recent
         ON chat_sessions(archived_at, pinned DESC, last_active_at DESC);
@@ -713,6 +806,25 @@ function initializeAppDatabase(path: string) {
 
       CREATE INDEX IF NOT EXISTS idx_chat_session_audit_session
         ON chat_session_audit(session_id, created_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_worktrees_repo
+        ON worktrees(repo_id, lifecycle_status, updated_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_worktrees_pr
+        ON worktrees(repo_id, pr_number, head_ref, lifecycle_status);
+
+      CREATE INDEX IF NOT EXISTS idx_worktree_locks_active
+        ON worktree_locks(scope_key, released_at, expires_at);
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_worktree_locks_one_active
+        ON worktree_locks(scope_key)
+        WHERE released_at IS NULL;
+
+      CREATE INDEX IF NOT EXISTS idx_worktree_events_worktree
+        ON worktree_events(worktree_id, created_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_worktree_cleanup_attempts_worktree
+        ON worktree_cleanup_attempts(worktree_id, attempted_at DESC);
     `);
     reconcileExistingNotificationDuplicates(database);
     reconcileActiveNeonSessions(database);
@@ -985,6 +1097,47 @@ function reconcileExistingNotificationDuplicates(database: DatabaseSync) {
       `,
       )
       .run(now, now, now, ...duplicates.map((row) => row.id));
+  }
+}
+
+function reconcileActiveWorktreeLocks(database: DatabaseSync) {
+  const now = new Date().toISOString();
+  const groups = database
+    .prepare(
+      `
+      SELECT scope_key, COUNT(*) AS count
+      FROM worktree_locks
+      WHERE released_at IS NULL
+      GROUP BY scope_key
+      HAVING COUNT(*) > 1;
+    `,
+    )
+    .all() as Array<{ scope_key: string; count: number }>;
+
+  for (const group of groups) {
+    const rows = database
+      .prepare(
+        `
+        SELECT id
+        FROM worktree_locks
+        WHERE scope_key = ?
+          AND released_at IS NULL
+        ORDER BY expires_at DESC, created_at DESC;
+      `,
+      )
+      .all(group.scope_key) as Array<{ id: string }>;
+    for (const row of rows.slice(1)) {
+      database
+        .prepare(
+          `
+          UPDATE worktree_locks
+          SET released_at = ?, stale_recovered_at = ?, updated_at = ?
+          WHERE id = ?
+            AND released_at IS NULL;
+        `,
+        )
+        .run(now, now, now, row.id);
+    }
   }
 }
 

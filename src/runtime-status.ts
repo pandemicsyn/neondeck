@@ -51,6 +51,7 @@ export const runtimeStatusSchema = v.looseObject({
     schedules: v.string(),
     dashboard: v.string(),
     skills: v.string(),
+    worktrees: v.string(),
     neondeckDatabase: v.string(),
     flueDatabase: v.string(),
   }),
@@ -127,6 +128,9 @@ export const runtimeStatusSchema = v.looseObject({
     ignoredSkills: v.number(),
     failedWorkflowSummaries: v.number(),
     flueFailureNotifications: v.number(),
+    activeWorktrees: v.number(),
+    staleWorktreeLocks: v.number(),
+    worktreeCleanupFailures: v.number(),
   }),
   checks: v.array(
     v.object({
@@ -160,6 +164,9 @@ type AppDatabaseSnapshot = {
     activeWatches: number;
     recentFailedWorkflowSummaries: number;
     unreadFlueFailureNotifications: number;
+    activeWorktrees: number;
+    staleWorktreeLocks: number;
+    worktreeCleanupFailures: number;
   };
   errors: RuntimeStatus['lastFlueErrors'];
 };
@@ -343,6 +350,24 @@ export async function readRuntimeStatus(
         : `${appDatabase.counts.recentFailedWorkflowSummaries + appDatabase.counts.unreadFlueFailureNotifications} recent unresolved Flue failure signals are recorded.`,
     ),
     check(
+      'worktree-cleanup',
+      'Worktree cleanup',
+      appDatabase.counts.worktreeCleanupFailures === 0,
+      'attention',
+      appDatabase.counts.worktreeCleanupFailures === 0
+        ? `${appDatabase.counts.activeWorktrees} active worktree${appDatabase.counts.activeWorktrees === 1 ? '' : 's'}; no cleanup failures.`
+        : `${appDatabase.counts.worktreeCleanupFailures} worktree cleanup failure${appDatabase.counts.worktreeCleanupFailures === 1 ? '' : 's'} recorded.`,
+    ),
+    check(
+      'worktree-locks',
+      'Worktree locks',
+      appDatabase.counts.staleWorktreeLocks === 0,
+      'attention',
+      appDatabase.counts.staleWorktreeLocks === 0
+        ? 'No stale worktree locks are recorded.'
+        : `${appDatabase.counts.staleWorktreeLocks} stale worktree lock${appDatabase.counts.staleWorktreeLocks === 1 ? '' : 's'} need recovery.`,
+    ),
+    check(
       'app-db',
       'App database',
       appDatabase.ok,
@@ -371,6 +396,7 @@ export async function readRuntimeStatus(
       schedules: paths.schedules,
       dashboard: paths.dashboard,
       skills: paths.skills,
+      worktrees: paths.worktrees,
       neondeckDatabase: paths.neondeckDatabase,
       flueDatabase: paths.flueDatabase,
     },
@@ -458,6 +484,9 @@ export async function readRuntimeStatus(
       failedWorkflowSummaries: appDatabase.counts.recentFailedWorkflowSummaries,
       flueFailureNotifications:
         appDatabase.counts.unreadFlueFailureNotifications,
+      activeWorktrees: appDatabase.counts.activeWorktrees,
+      staleWorktreeLocks: appDatabase.counts.staleWorktreeLocks,
+      worktreeCleanupFailures: appDatabase.counts.worktreeCleanupFailures,
     },
     checks,
     lastFlueErrors: appDatabase.errors,
@@ -560,6 +589,32 @@ function inspectAppDatabase(paths: RuntimePaths): AppDatabaseSnapshot {
           AND resolved_at IS NULL;
       `,
     );
+    const activeWorktrees = count(
+      database,
+      `
+        SELECT COUNT(*) AS count
+        FROM worktrees
+        WHERE lifecycle_status != 'deleted';
+      `,
+    );
+    const staleWorktreeLocks = count(
+      database,
+      `
+        SELECT COUNT(*) AS count
+        FROM worktree_locks
+        WHERE released_at IS NULL
+          AND expires_at <= ?;
+      `,
+      new Date().toISOString(),
+    );
+    const worktreeCleanupFailures = count(
+      database,
+      `
+        SELECT COUNT(*) AS count
+        FROM worktree_cleanup_attempts
+        WHERE outcome = 'failed';
+      `,
+    );
     const errors = [
       ...database
         .prepare(
@@ -599,6 +654,9 @@ function inspectAppDatabase(paths: RuntimePaths): AppDatabaseSnapshot {
         activeWatches,
         recentFailedWorkflowSummaries,
         unreadFlueFailureNotifications,
+        activeWorktrees,
+        staleWorktreeLocks,
+        worktreeCleanupFailures,
       },
       errors,
     };
@@ -640,6 +698,9 @@ function emptyDatabaseSnapshot(message: string): AppDatabaseSnapshot {
       activeWatches: 0,
       recentFailedWorkflowSummaries: 0,
       unreadFlueFailureNotifications: 0,
+      activeWorktrees: 0,
+      staleWorktreeLocks: 0,
+      worktreeCleanupFailures: 0,
     },
     errors: [],
   };
