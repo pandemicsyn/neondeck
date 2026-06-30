@@ -24,7 +24,7 @@ Configuration and mutable runtime state live in the configured Neondeck runtime 
 - `data/neondeck.db`: neondeck app state.
 - `data/flue.db`: Flue runtime state.
 
-`config.json` can also include `skillRoots`, an array of external directories containing additional runtime skill folders. It can also include `worktrees.defaultStorage` and `worktrees.cleanup` policy. Update worktree policy through `neondeck_config_update_worktree_policy`, not direct file edits.
+`config.json` can also include `skillRoots`, an array of external directories containing additional runtime skill folders. It can also include `worktrees.defaultStorage`, `worktrees.cleanup` policy, and `kilo` handoff settings such as `enabled`, `cliPath`, `defaultModel`, `defaultAgent`, `defaultMode`, `autoPolicy`, `explicitHandoffOnly`, `concurrency`, `rawLogRetentionDays`, and per-repo allow/deny entries. Update worktree policy through `neondeck_config_update_worktree_policy`, not direct file edits.
 
 ## Mutation Rules
 
@@ -68,6 +68,12 @@ For autonomous PR fixes, delegated Kilo work, or other agent-driven mutations, p
 
 Cleanup policy is conservative. Failed worktrees and prepared-diff worktrees are retained by default. Successfully completed Neondeck-owned worktrees are deleted only after the configured grace period. Stale Neondeck-owned worktrees are deleted only after the configured age threshold. Adopted worktrees are never deleted without explicit confirmation.
 
+Use Kilo handoff only when the user explicitly asks for KiloCode/Kilo delegation or a future repo policy opts into Kilo. Do not delegate to Kilo by default, and do not use Kilo as a second Neondeck runtime. Start handoffs with `neondeck_kilo_task_start` or the `handoff_to_kilo` workflow; the input must include `explicitUserRequest: true` and must target a configured `repoId` or Neondeck-managed `worktreeId`. Prefer `worktreeId` for code-changing work. `draft-fix` handoffs require a managed worktree. Direct edits outside a managed worktree require explicit confirmation through `confirmDirectEdit`.
+
+Kilo `--auto` is a stronger trust boundary. Use it only when the user explicitly confirms it and the action input includes `allowAuto: true` and `confirmAuto: true`; by default it is limited to `draft-fix` work in managed worktrees. Never enable or increase Kilo automation silently.
+
+Supervise Kilo through typed actions and workflows. Use `neondeck_kilo_task_status`, `neondeck_kilo_task_events`, `neondeck_kilo_task_sessions`, `neondeck_kilo_task_diff`, `neondeck_kilo_sessions_search`, `neondeck_kilo_session_read`, `neondeck_kilo_session_messages`, `neondeck_kilo_session_children`, `neondeck_kilo_session_todos`, and `neondeck_kilo_session_diff` instead of reading Kilo storage directly. Use `summarize_kilo_session` when a bounded summary should be persisted back to the task. Transcript, todo, and SDK-backed session adapters may report unavailable in the CLI MVP; state that limitation plainly.
+
 For repo edits, search or read the relevant file first. Prefer `neondeck_repo_file_replace` for small precise edits and `neondeck_repo_file_patch` for multi-file V4A/Codex-style patches. Use `neondeck_repo_file_write` for new generated files or deliberate full-file rewrites. If an edit fails because content is stale, ambiguous, or missing, re-read the file and retry with current context. After applying changes, use `neondeck_repo_diff` or `neondeck_repo_checkout_status` when useful and summarize exact touched files.
 
 Do not use repo edit actions as the primary path for Neondeck runtime config changes. Use the typed `neondeck_config_*` actions for `config.json`, `repos.json`, `dashboard.json`, `schedules.json`, provider settings, models, schedules, and dashboard layout.
@@ -76,7 +82,7 @@ Use PR assistant commands for PR lifecycle help. Run `/explain-ci`, `/summarize-
 
 Use release watch scheduling for GitHub check status. Run `/watch-release <repo>` or create a `release-watch` scheduler blueprint. Provider-specific production deploy adapters are future work; direct release watches track the configured default branch, and linked `until prod` PR release watches track the source PR merge SHA until checks are green.
 
-Use Flue workflows for bounded command runs when durable Flue run identity matters. The app provides `command-run`, `briefing`, `watch-pr`, `watch-release`, `dev-doctor`, and `scheduler-tick` workflows over the same deterministic backend operations used by chat commands and UI buttons.
+Use Flue workflows for bounded command runs when durable Flue run identity matters. The app provides `command-run`, `briefing`, `watch-pr`, `watch-release`, `dev-doctor`, `scheduler-tick`, `handoff_to_kilo`, and `summarize_kilo_session` workflows over the same deterministic backend operations used by chat commands and UI buttons. Do not keep Flue workflow runs open merely to supervise a Kilo background process; Neondeck app state is the durable record for Kilo task progress.
 
 Use command actions for slash commands. Run `/repo-status`, `/review-queue`, `/explain-ci`, `/summarize-pr`, `/draft-pr-description`, `/prepare-pr`, `/review-local`, `/briefing`, `/memory`, `/watch-pr`, `/watch-release`, and `/dev-doctor` through the `command-run` workflow so command results are persisted with a real Flue run id.
 

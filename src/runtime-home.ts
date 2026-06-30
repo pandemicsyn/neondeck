@@ -148,6 +148,33 @@ export const worktreeConfigSchema = v.looseObject({
   cleanup: v.optional(worktreeCleanupConfigSchema),
 });
 
+const kiloHandoffModeSchema = v.picklist([
+  'draft-fix',
+  'patch-proposal',
+  'direct-edit',
+]);
+const kiloAutoPolicySchema = v.picklist([
+  'never',
+  'managed-worktree-draft-fix',
+  'explicit-confirmation',
+]);
+const kiloRepoPolicySchema = v.picklist(['allow', 'deny']);
+
+export const kiloConfigSchema = v.looseObject({
+  enabled: v.optional(v.boolean()),
+  cliPath: v.optional(nonEmptyStringSchema),
+  defaultModel: v.optional(nonEmptyStringSchema),
+  defaultAgent: v.optional(nonEmptyStringSchema),
+  defaultMode: v.optional(kiloHandoffModeSchema),
+  autoPolicy: v.optional(kiloAutoPolicySchema),
+  explicitHandoffOnly: v.optional(v.boolean()),
+  concurrency: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+  rawLogRetentionDays: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(0)),
+  ),
+  repos: v.optional(v.record(v.string(), kiloRepoPolicySchema)),
+});
+
 export const appConfigSchema = v.looseObject({
   version: positiveIntegerSchema,
   skillRoots: v.optional(v.array(nonEmptyStringSchema)),
@@ -155,6 +182,7 @@ export const appConfigSchema = v.looseObject({
   providers: v.optional(providerConfigSchema),
   execution: v.optional(executionConfigSchema),
   worktrees: v.optional(worktreeConfigSchema),
+  kilo: v.optional(kiloConfigSchema),
 });
 
 export const repoConfigSchema = v.looseObject({
@@ -250,6 +278,7 @@ export type WorktreeConfig = v.InferOutput<typeof worktreeConfigSchema>;
 export type WorktreeCleanupConfig = v.InferOutput<
   typeof worktreeCleanupConfigSchema
 >;
+export type KiloConfig = v.InferOutput<typeof kiloConfigSchema>;
 export type RepoConfig = v.InferOutput<typeof repoConfigSchema>;
 export type RepoRegistry = v.InferOutput<typeof repoRegistrySchema>;
 export type ScheduleEntry = v.InferOutput<typeof scheduleEntrySchema>;
@@ -750,10 +779,52 @@ function initializeAppDatabase(path: string) {
         deleted INTEGER NOT NULL DEFAULT 0,
         attempted_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS kilo_tasks (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        repo_id TEXT NOT NULL,
+        repo_full_name TEXT NOT NULL,
+        worktree_id TEXT,
+        lock_id TEXT,
+        cwd TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        status TEXT NOT NULL,
+        explicit_user_request INTEGER NOT NULL,
+        auto_enabled INTEGER NOT NULL DEFAULT 0,
+        cli_path TEXT NOT NULL,
+        args_json TEXT NOT NULL,
+        pid INTEGER,
+        process_started_at TEXT,
+        root_session_id TEXT,
+        child_session_ids_json TEXT NOT NULL DEFAULT '[]',
+        raw_log_path TEXT,
+        summary TEXT,
+        exit_code INTEGER,
+        error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        completed_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS kilo_task_events (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        event_index INTEGER NOT NULL,
+        event_type TEXT NOT NULL,
+        stream TEXT NOT NULL,
+        session_id TEXT,
+        child_session_id TEXT,
+        summary TEXT NOT NULL,
+        data_json TEXT,
+        created_at TEXT NOT NULL
+      );
     `);
 
     ensureColumn(database, 'repo_edit_events', 'worktree_id', 'TEXT');
     ensureColumn(database, 'repo_file_reads', 'worktree_id', 'TEXT');
+    ensureColumn(database, 'kilo_tasks', 'lock_id', 'TEXT');
     ensureColumn(database, 'notifications', 'resolved_at', 'TEXT');
     ensureColumn(database, 'notifications', 'updated_at', 'TEXT');
     ensureColumn(
@@ -825,6 +896,18 @@ function initializeAppDatabase(path: string) {
 
       CREATE INDEX IF NOT EXISTS idx_worktree_cleanup_attempts_worktree
         ON worktree_cleanup_attempts(worktree_id, attempted_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_kilo_tasks_status
+        ON kilo_tasks(status, updated_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_kilo_tasks_repo
+        ON kilo_tasks(repo_id, updated_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_kilo_tasks_session
+        ON kilo_tasks(root_session_id);
+
+      CREATE INDEX IF NOT EXISTS idx_kilo_task_events_task
+        ON kilo_task_events(task_id, event_index);
     `);
     reconcileExistingNotificationDuplicates(database);
     reconcileActiveNeonSessions(database);

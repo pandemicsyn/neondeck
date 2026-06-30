@@ -35,6 +35,21 @@ import {
 import { checkExecutionPolicy, readExecutionPolicy } from './execution-policy';
 import { loadNeondeckEnv } from './env';
 import { listGitHubPrQueue } from './github-actions';
+import {
+  abortKiloTask,
+  listKiloTasks,
+  readKiloSession,
+  readKiloSessionChildren,
+  readKiloSessionDiff,
+  readKiloSessionMessages,
+  readKiloTaskDiff,
+  readKiloTaskEvents,
+  readKiloTaskSessions,
+  readKiloTaskStatus,
+  readUnavailableSessionAdapter,
+  searchKiloSessions,
+  startKiloTask,
+} from './kilo-actions';
 import { deleteMemory, listMemories, upsertMemory } from './memory-actions';
 import { readHostMetrics } from './metrics';
 import { readRepoHealthSnapshot, readRepoRegistrySnapshot } from './repos';
@@ -798,6 +813,98 @@ app.post('/api/worktrees/cleanup', async (c) => {
   return c.json(result, result.ok ? 200 : 400);
 });
 
+app.get('/api/kilo/tasks', async (c) => {
+  return c.json(
+    await listKiloTasks(
+      {
+        status: c.req.query('status'),
+        repoId: c.req.query('repoId'),
+        limit: queryNumber(c.req.query('limit')),
+      },
+      paths,
+    ),
+  );
+});
+
+app.post('/api/kilo/tasks', async (c) => {
+  const result = await startKiloTask(await safeJsonBody(c), paths);
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.get('/api/kilo/tasks/:id', async (c) => {
+  const result = await readKiloTaskStatus({ taskId: c.req.param('id') }, paths);
+  return c.json(result, result.ok ? 200 : 404);
+});
+
+app.get('/api/kilo/tasks/:id/events', async (c) => {
+  const result = await readKiloTaskEvents(
+    { taskId: c.req.param('id'), limit: queryNumber(c.req.query('limit')) },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 404);
+});
+
+app.post('/api/kilo/tasks/:id/abort', async (c) => {
+  const result = await abortKiloTask({ taskId: c.req.param('id') }, paths);
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.get('/api/kilo/tasks/:id/sessions', async (c) => {
+  const result = await readKiloTaskSessions(
+    { taskId: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 404);
+});
+
+app.get('/api/kilo/tasks/:id/diff', async (c) => {
+  const result = await readKiloTaskDiff({ taskId: c.req.param('id') }, paths);
+  return c.json(result, result.ok ? 200 : 404);
+});
+
+app.post('/api/kilo/sessions/search', async (c) => {
+  const result = await searchKiloSessions(await safeJsonBody(c), paths);
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.get('/api/kilo/sessions/:id', async (c) => {
+  const result = await readKiloSession({ sessionId: c.req.param('id') }, paths);
+  return c.json(result, result.ok ? 200 : 404);
+});
+
+app.get('/api/kilo/sessions/:id/messages', async (c) => {
+  const result = await readKiloSessionMessages(
+    { sessionId: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 404);
+});
+
+app.get('/api/kilo/sessions/:id/children', async (c) => {
+  const result = await readKiloSessionChildren(
+    { sessionId: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 404);
+});
+
+app.get('/api/kilo/sessions/:id/todos', async (c) => {
+  const result = await readUnavailableSessionAdapter(
+    { sessionId: c.req.param('id') },
+    'todos',
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 404);
+});
+
+app.get('/api/kilo/sessions/:id/diff', async (c) => {
+  const result = await readKiloSessionDiff(
+    { sessionId: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 404);
+});
+
 app.get('/api/watches', async (c) => {
   return c.json(await listPrWatches(paths));
 });
@@ -1051,6 +1158,12 @@ function sessionKind(value: string | undefined) {
   }
 
   return undefined;
+}
+
+function queryNumber(value: string | undefined) {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function notificationPolicy() {

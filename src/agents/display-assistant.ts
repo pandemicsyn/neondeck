@@ -5,6 +5,7 @@ import { neondeckConfigActions } from '../config-actions';
 import { neondeckDevDoctorActions } from '../dev-doctor';
 import { neondeckExecutionActions } from '../execution-actions';
 import { executionPolicyCheckAction } from '../execution-policy';
+import { neondeckKiloActions } from '../kilo-actions';
 import {
   memoryInstructionsSync,
   neondeckMemoryActions,
@@ -59,6 +60,7 @@ export default defineAgent(() => {
       'For local repository status, use neondeck_repo_status_lookup when you need deterministic git facts without a persisted command summary.',
       'For host repository file reads and edits, use neondeck_repo_file_read, neondeck_repo_file_search, neondeck_repo_file_replace, neondeck_repo_file_patch, neondeck_repo_file_write, neondeck_repo_diff, and neondeck_repo_checkout_status. These actions operate only inside declared Neondeck repo workspaces and never prompt for approval inside that boundary; blocked paths return typed policy errors. Prefer replace for small edits and V4A patches for multi-file edits.',
       'For autonomous or delegated code changes, use Neondeck-managed worktrees as the isolation boundary. Create, sync, inspect, lock, release, and clean them up with neondeck_worktree_* actions. When editing inside an isolated worktree, pass worktreeId to repo-edit actions; do not mutate the user primary checkout for autonomous fix work.',
+      'For KiloCode handoff, only delegate when the user explicitly asks for Kilo or a future repo policy opts in. Use neondeck_kilo_task_start for explicit handoff, then neondeck_kilo_task_status, neondeck_kilo_task_events, neondeck_kilo_task_sessions, neondeck_kilo_sessions_search, and neondeck_kilo_session_read to supervise and summarize results. Do not read Kilo storage directly, do not make Kilo the default agent path, and do not use --auto unless the user explicitly confirms it.',
       'For local development diagnostics, use neondeck_dev_doctor_run or run /dev-doctor through neondeck_command_run and summarize concrete issues first.',
       'For durable user preferences, project/repo conventions, session notes, and watch notes, use neondeck_memory_* actions. Memory writes are durable immediately but active session context changes only on a new session.',
       'For follow-up questions about prior conversations, search or read session metadata first and cite session ids/titles intentionally. Prefer stored summaries and linked repo/watch/task metadata before requesting raw transcript pages with neondeck_session_messages.',
@@ -85,6 +87,7 @@ export default defineAgent(() => {
       ...neondeckMemoryActions,
       ...neondeckRepoEditActions,
       ...neondeckWorktreeActions,
+      ...neondeckKiloActions,
     ],
   };
 });

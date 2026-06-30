@@ -196,3 +196,17 @@ Use this format:
 - Decision: Implemented the planned worktree runtime foundation: runtime-home `worktrees/`, repo-local `.neondeck/worktrees` option, app SQLite records/locks/events/cleanup attempts, deterministic `neondeck_worktree_*` actions/tools, repo registry active-worktree links, repo-edit `worktreeId` targeting, cleanup policy config/action, Runtime Overview rows, runtime skill guidance, and focused service tests. No Phase 18 scope deviations were taken.
 - Reason: Worktrees are the required isolation boundary for later PR event autopilot and Kilo handoff, but this phase should remain deterministic app state and service plumbing.
 - Follow-up: Phase 19 and later should add PR event autopilot workflows, prepared-diff UI/push-back flows, and Kilo handoff orchestration on top of these worktree services.
+
+## 2026-06-30 - Minimal KiloCode Handoff Runner
+
+- Roadmap item: Phase 21 / KiloCode Handoff Runner
+- Decision: Landed the CLI MVP as an explicit handoff path: `kilo` app config schema, `kilo_tasks` and `kilo_task_events`, an app-owned `kilo run --format json` supervisor, JSONL event/session capture, root-session recovery through `kilo session list`, typed Kilo actions/tools, minimal `/api/kilo/*` routes, `handoff_to_kilo` and `summarize_kilo_session` workflow wrappers, runtime skill guidance, README docs, and fake-CLI tests. Deferred SDK/server adapters, direct transcript/todo reads, restart reconciliation, child-session tree UI, dashboard panels, notification policy, review/verify/promote flows, and ACP.
+- Reason: The requested 21A slice was exploratory and concrete but explicitly excluded PR autopilot, push-back policy, queue UI, and ACP. The local Kilo CLI exposes JSON streaming and session-list search, but stable transcript/todo/diff adapters were not proven in this pass.
+- Follow-up: Add restart reconciliation for persisted running tasks, evaluate `kilo serve`/SDK for transcript/todo/children/diff access, add dashboard/TUI panels and notifications, and implement review/verify/promote workflows after the durable task model proves useful.
+
+## 2026-06-30 - Kilo Auto Policy
+
+- Roadmap item: Phase 21 / Kilo CLI MVP command construction
+- Decision: Kilo `--auto` is not enabled merely by `draft-fix` mode; the action also requires `allowAuto: true` and `confirmAuto: true`, then applies the configured `autoPolicy`.
+- Reason: The roadmap confirmation policy says enabling Kilo `--auto` requires explicit confirmation, and this slice should preserve Kilo as a user-invoked delegated worker rather than a default autonomous runtime.
+- Follow-up: If a future repo/workflow policy opts into unattended `--auto`, model that as an audited policy change with visible user controls.
