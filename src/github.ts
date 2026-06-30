@@ -159,6 +159,30 @@ export type GitHubCheckRunDetail = {
   completedAt: string | null;
 };
 
+export type GitHubCheckAnnotation = {
+  path: string;
+  startLine: number | null;
+  endLine: number | null;
+  annotationLevel: string;
+  message: string;
+  title: string | null;
+  rawDetails: string | null;
+};
+
+export type GitHubFailingCheckFact = GitHubCheckRunDetail & {
+  outputTitle: string | null;
+  outputSummary: string | null;
+  outputText: string | null;
+  annotations: GitHubCheckAnnotation[];
+  log: {
+    available: boolean;
+    source: 'github-actions-job' | null;
+    text: string | null;
+    truncated: boolean;
+    unavailableReason: string | null;
+  };
+};
+
 export type GitHubBranchPushPermissions = {
   headRepoFullName: string | null;
   baseRepoFullName: string | null;
@@ -578,6 +602,157 @@ async function fetchCheckRuns(token: string, initialUrl: string) {
   return runs;
 }
 
+function isFailingCheckRun(run: GitHubCheckRun) {
+  return [
+    'failure',
+    'cancelled',
+    'timed_out',
+    'action_required',
+    'startup_failure',
+  ].includes(run.conclusion ?? '');
+}
+
+async function fetchCheckRunAnnotations(
+  token: string,
+  owner: string,
+  repo: string,
+  checkRunId: number,
+): Promise<GitHubCheckAnnotation[]> {
+  const annotations: GitHubCheckAnnotation[] = [];
+  let nextUrl: string | undefined =
+    `https://api.github.com/repos/${owner}/${repo}/check-runs/${checkRunId}/annotations?per_page=100`;
+
+  while (nextUrl) {
+    const response = await githubFetch(token, nextUrl);
+    const data = v.parse(
+      githubCheckRunAnnotationsApiResponseSchema,
+      await response.json(),
+    );
+    annotations.push(
+      ...data.map((annotation) => ({
+        path: annotation.path,
+        startLine: annotation.start_line ?? null,
+        endLine: annotation.end_line ?? null,
+        annotationLevel: annotation.annotation_level,
+        message: annotation.message,
+        title: annotation.title ?? null,
+        rawDetails: annotation.raw_details ?? null,
+      })),
+    );
+    nextUrl = nextLink(response.headers.get('link'));
+  }
+
+  return annotations;
+}
+
+async function fetchCheckRunLog(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  detailsUrl: string | null;
+  maxLogBytes?: number;
+}): Promise<GitHubFailingCheckFact['log']> {
+  const jobId = githubActionsJobId(options.detailsUrl);
+  if (!jobId) {
+    return {
+      available: false,
+      source: null,
+      text: null,
+      truncated: false,
+      unavailableReason:
+        'Full logs are unavailable because the check details URL does not expose a GitHub Actions job id.',
+    };
+  }
+
+  try {
+    const response = await githubFetch(
+      options.token,
+      `https://api.github.com/repos/${options.owner}/${options.repo}/actions/jobs/${jobId}/logs`,
+    );
+    const contentType = response.headers.get('content-type') ?? '';
+    const { buffer, truncated } = await readBoundedResponseBytes(
+      response,
+      options.maxLogBytes ?? 64 * 1024,
+    );
+    if (
+      buffer.includes(0) ||
+      /zip|octet-stream|gzip/i.test(contentType) ||
+      !isLikelyUtf8(buffer)
+    ) {
+      return {
+        available: false,
+        source: null,
+        text: null,
+        truncated: false,
+        unavailableReason: `Full logs were returned as non-text content (${contentType || 'unknown content type'}).`,
+      };
+    }
+    const maxBytes = options.maxLogBytes ?? 64 * 1024;
+    const text = buffer.toString('utf8');
+    return {
+      available: true,
+      source: 'github-actions-job',
+      text:
+        Buffer.byteLength(text, 'utf8') > maxBytes
+          ? text.slice(0, maxBytes)
+          : text,
+      truncated: truncated || Buffer.byteLength(text, 'utf8') > maxBytes,
+      unavailableReason: null,
+    };
+  } catch (error) {
+    return {
+      available: false,
+      source: null,
+      text: null,
+      truncated: false,
+      unavailableReason: errorMessage(error),
+    };
+  }
+}
+
+function githubActionsJobId(detailsUrl: string | null) {
+  if (!detailsUrl) return null;
+  const match = /\/actions\/runs\/\d+\/job\/(\d+)(?:\D|$)/.exec(detailsUrl);
+  return match?.[1] ?? null;
+}
+
+function isLikelyUtf8(buffer: Buffer) {
+  return buffer.toString('utf8').includes('\uFFFD') === false;
+}
+
+async function readBoundedResponseBytes(response: Response, maxBytes: number) {
+  const limit = Math.max(1, maxBytes);
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return {
+      buffer: buffer.subarray(0, limit),
+      truncated: buffer.byteLength > limit,
+    };
+  }
+
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let truncated = false;
+  while (total <= limit) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    const remaining = limit - total;
+    if (value.byteLength > remaining) {
+      chunks.push(value.subarray(0, Math.max(0, remaining)));
+      total = limit + 1;
+      truncated = true;
+      await reader.cancel().catch(() => undefined);
+      break;
+    }
+    chunks.push(value);
+    total += value.byteLength;
+  }
+
+  return { buffer: Buffer.concat(chunks), truncated };
+}
+
 export async function fetchCheckRunDetails(options: {
   token: string;
   owner: string;
@@ -604,6 +779,56 @@ export async function fetchCheckRunDetails(options: {
     startedAt: run.started_at ?? null,
     completedAt: run.completed_at ?? null,
   }));
+}
+
+export async function fetchFailingCheckFacts(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  ref: string;
+  maxLogBytes?: number;
+}): Promise<GitHubFailingCheckFact[]> {
+  const owner = encodePathSegment(options.owner);
+  const repo = encodePathSegment(options.repo);
+  const ref = encodePathSegment(options.ref);
+  const runs = await fetchCheckRuns(
+    options.token,
+    `https://api.github.com/repos/${owner}/${repo}/commits/${ref}/check-runs?per_page=100`,
+  );
+  const failingRuns = runs.filter(isFailingCheckRun);
+
+  return Promise.all(
+    failingRuns.map(async (run, index) => {
+      const id = run.id ?? index;
+      const [annotations, log] = await Promise.all([
+        id ? fetchCheckRunAnnotations(options.token, owner, repo, id) : [],
+        fetchCheckRunLog({
+          token: options.token,
+          owner,
+          repo,
+          detailsUrl: run.details_url ?? null,
+          maxLogBytes: options.maxLogBytes,
+        }),
+      ]);
+      return {
+        id,
+        name: run.name ?? `check-run-${index + 1}`,
+        headSha: run.head_sha ?? options.ref,
+        status: run.status,
+        conclusion: run.conclusion,
+        url: run.url ?? null,
+        htmlUrl: run.html_url ?? null,
+        detailsUrl: run.details_url ?? null,
+        startedAt: run.started_at ?? null,
+        completedAt: run.completed_at ?? null,
+        outputTitle: run.output?.title ?? null,
+        outputSummary: run.output?.summary ?? null,
+        outputText: run.output?.text ?? null,
+        annotations,
+        log,
+      };
+    }),
+  );
 }
 
 export async function fetchCheckSuites(options: {
@@ -1096,6 +1321,15 @@ const githubCheckRunsApiResponseSchema = v.object({
         details_url: v.optional(v.nullable(v.string())),
         started_at: v.optional(v.nullable(v.string())),
         completed_at: v.optional(v.nullable(v.string())),
+        output: v.optional(
+          v.nullable(
+            v.object({
+              title: v.optional(v.nullable(v.string())),
+              summary: v.optional(v.nullable(v.string())),
+              text: v.optional(v.nullable(v.string())),
+            }),
+          ),
+        ),
       }),
     ),
   ),
@@ -1104,6 +1338,18 @@ const githubCheckRunsApiResponseSchema = v.object({
 type GitHubCheckRun = NonNullable<
   v.InferOutput<typeof githubCheckRunsApiResponseSchema>['check_runs']
 >[number];
+
+const githubCheckRunAnnotationsApiResponseSchema = v.array(
+  v.object({
+    path: v.string(),
+    start_line: v.optional(v.nullable(v.number())),
+    end_line: v.optional(v.nullable(v.number())),
+    annotation_level: v.string(),
+    message: v.string(),
+    title: v.optional(v.nullable(v.string())),
+    raw_details: v.optional(v.nullable(v.string())),
+  }),
+);
 
 const githubCommitStatusApiResponseSchema = v.object({
   statuses: v.optional(

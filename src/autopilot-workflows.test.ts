@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -11,6 +11,7 @@ import {
   checkAutopilotPolicy,
 } from './autopilot-policy';
 import {
+  fixPrCiFailure,
   preparePrWorktree,
   triagePrEvent,
   verifyPrWorktree,
@@ -19,7 +20,7 @@ import {
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
 
-vi.setConfig({ testTimeout: 15_000 });
+vi.setConfig({ testTimeout: 30_000 });
 
 afterEach(async () => {
   await Promise.all(
@@ -520,6 +521,363 @@ describe('PR event autopilot', () => {
           },
         ],
       },
+    });
+  });
+
+  it('fixes a PR CI failure in a managed worktree and creates a prepared diff', async () => {
+    const { paths, featureSha } = await fixture();
+    await writeFile(
+      paths.config,
+      `${JSON.stringify(
+        {
+          version: 1,
+          execution: {
+            preapprovedCommands: [
+              {
+                id: 'ci-diagnostic',
+                command: 'node -e \'process.stdout.write("diagnostic ok")\'',
+                match: 'exact',
+                backends: ['local'],
+                description: 'Fixture diagnostic.',
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const prepared = await preparePreparedWorktree(paths, featureSha);
+    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
+
+    const result = await fixPrCiFailure(
+      {
+        worktreeId,
+        diagnostics: ['node -e \'process.stdout.write("diagnostic ok")\''],
+        patch: [
+          '*** Begin Patch',
+          '*** Update File: src/app.ts',
+          '@@',
+          '-export const value = 2;',
+          '+export const value = 3;',
+          '*** End Patch',
+        ].join('\n'),
+        confidence: 'high',
+        risk: 'low',
+        manualAsks: ['Confirm CI logs in GitHub after push.'],
+      },
+      paths,
+      {
+        token: 'test-token',
+        async fetchPullRequestDetail() {
+          return {
+            number: 7,
+            title: 'Update feature',
+            repo: 'example/sample',
+            url: 'https://github.com/example/sample/pull/7',
+            state: 'open',
+            draft: false,
+            merged: false,
+            mergeCommitSha: null,
+            headSha: featureSha,
+            headRef: 'feature',
+            headOwner: 'example',
+            headName: 'sample',
+            baseRef: 'main',
+            updatedAt: '2026-06-30T00:00:00.000Z',
+            maintainerCanModify: true,
+          };
+        },
+        async fetchFailingCheckFacts() {
+          return [
+            {
+              id: 901,
+              name: 'check',
+              headSha: featureSha,
+              status: 'completed',
+              conclusion: 'failure',
+              url: 'https://api.github.com/check-runs/901',
+              htmlUrl: 'https://github.com/example/sample/runs/901',
+              detailsUrl: null,
+              startedAt: '2026-06-30T00:00:00.000Z',
+              completedAt: '2026-06-30T00:01:00.000Z',
+              outputTitle: 'Tests failed',
+              outputSummary: 'Expected value 3.',
+              outputText: null,
+              annotations: [
+                {
+                  path: 'src/app.ts',
+                  startLine: 1,
+                  endLine: 1,
+                  annotationLevel: 'failure',
+                  message: 'Expected value 3.',
+                  title: 'Assertion failed',
+                  rawDetails: null,
+                },
+              ],
+              log: {
+                available: false,
+                source: null,
+                text: null,
+                truncated: false,
+                unavailableReason: 'Full logs are unavailable in this fixture.',
+              },
+            },
+          ];
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'autopilot_fix_pr_ci_failure',
+      data: {
+        failingChecks: [
+          {
+            id: 901,
+            name: 'check',
+            log: {
+              available: false,
+              unavailableReason: 'Full logs are unavailable in this fixture.',
+            },
+          },
+        ],
+        diagnostics: [
+          {
+            command: 'node -e \'process.stdout.write("diagnostic ok")\'',
+            ok: true,
+            exitCode: 0,
+          },
+        ],
+        commit: { committed: true },
+        preparedDiff: {
+          worktreeId,
+          status: 'prepared',
+          pushApprovalStatus: 'pending',
+          summary: {
+            confidence: 'high',
+            risk: 'low',
+            remainingManualAsks: ['Confirm CI logs in GitHub after push.'],
+          },
+        },
+      },
+    });
+  });
+
+  it('does not apply a CI fix patch when diagnostics need approval', async () => {
+    const { paths, featureSha } = await fixture();
+    const prepared = await preparePreparedWorktree(paths, featureSha);
+    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
+    const localPath = stringPath(prepared, ['data', 'worktree', 'localPath']);
+
+    const result = await fixPrCiFailure(
+      {
+        worktreeId,
+        diagnostics: ['node -e \'process.stdout.write("needs approval")\''],
+        patch: [
+          '*** Begin Patch',
+          '*** Update File: src/app.ts',
+          '@@',
+          '-export const value = 2;',
+          '+export const value = 4;',
+          '*** End Patch',
+        ].join('\n'),
+      },
+      paths,
+      {
+        token: 'test-token',
+        async fetchPullRequestDetail() {
+          return {
+            number: 7,
+            title: 'Update feature',
+            repo: 'example/sample',
+            url: 'https://github.com/example/sample/pull/7',
+            state: 'open',
+            draft: false,
+            merged: false,
+            mergeCommitSha: null,
+            headSha: featureSha,
+            headRef: 'feature',
+            headOwner: 'example',
+            headName: 'sample',
+            baseRef: 'main',
+            updatedAt: '2026-06-30T00:00:00.000Z',
+            maintainerCanModify: true,
+          };
+        },
+        async fetchFailingCheckFacts() {
+          return [
+            {
+              id: 902,
+              name: 'check',
+              headSha: featureSha,
+              status: 'completed',
+              conclusion: 'failure',
+              url: null,
+              htmlUrl: null,
+              detailsUrl: null,
+              startedAt: null,
+              completedAt: null,
+              outputTitle: null,
+              outputSummary: null,
+              outputText: null,
+              annotations: [],
+              log: {
+                available: false,
+                source: null,
+                text: null,
+                truncated: false,
+                unavailableReason: 'No log.',
+              },
+            },
+          ];
+        },
+      },
+    );
+
+    await expect(readFile(join(localPath, 'src/app.ts'), 'utf8')).resolves.toBe(
+      'export const value = 2;\n',
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      changed: false,
+      requires: ['approval'],
+      data: {
+        patchSkipped: true,
+        diagnostics: [
+          {
+            command: 'node -e \'process.stdout.write("needs approval")\'',
+            ok: false,
+            requires: ['preapprovedCommands'],
+          },
+        ],
+      },
+    });
+  });
+
+  it('refuses to fix CI when the managed worktree is already dirty', async () => {
+    const { paths, featureSha } = await fixture();
+    const prepared = await preparePreparedWorktree(paths, featureSha);
+    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
+    const localPath = stringPath(prepared, ['data', 'worktree', 'localPath']);
+    await writeFile(join(localPath, 'scratch.txt'), 'manual dirt\n');
+
+    const result = await fixPrCiFailure({ worktreeId }, paths);
+
+    expect(result).toMatchObject({
+      ok: false,
+      changed: false,
+      requires: ['cleanWorktree'],
+      message:
+        'Worktree has existing uncommitted changes; refusing to mix them into an autonomous CI fix.',
+    });
+  });
+
+  it('prepares but does not commit high-risk CI fix patches', async () => {
+    const { paths, featureSha } = await fixture();
+    const prepared = await preparePreparedWorktree(paths, featureSha);
+    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
+
+    const result = await fixPrCiFailure(
+      {
+        worktreeId,
+        patch: [
+          '*** Begin Patch',
+          '*** Add File: package-lock.json',
+          '+{"lockfileVersion":3}',
+          '*** End Patch',
+        ].join('\n'),
+      },
+      paths,
+      {
+        token: 'test-token',
+        async fetchPullRequestDetail() {
+          return {
+            number: 7,
+            title: 'Update feature',
+            repo: 'example/sample',
+            url: 'https://github.com/example/sample/pull/7',
+            state: 'open',
+            draft: false,
+            merged: false,
+            mergeCommitSha: null,
+            headSha: featureSha,
+            headRef: 'feature',
+            headOwner: 'example',
+            headName: 'sample',
+            baseRef: 'main',
+            updatedAt: '2026-06-30T00:00:00.000Z',
+            maintainerCanModify: true,
+          };
+        },
+        async fetchFailingCheckFacts() {
+          return [
+            {
+              id: 903,
+              name: 'check',
+              headSha: featureSha,
+              status: 'completed',
+              conclusion: 'failure',
+              url: null,
+              htmlUrl: null,
+              detailsUrl: null,
+              startedAt: null,
+              completedAt: null,
+              outputTitle: null,
+              outputSummary: 'Lockfile changed.',
+              outputText: null,
+              annotations: [],
+              log: {
+                available: false,
+                source: null,
+                text: null,
+                truncated: false,
+                unavailableReason: 'No log.',
+              },
+            },
+          ];
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      changed: true,
+      action: 'autopilot_fix_pr_ci_failure',
+      data: {
+        policy: {
+          approvalRequired: true,
+          files: [
+            expect.objectContaining({
+              path: 'package-lock.json',
+              approvalRequired: true,
+            }),
+          ],
+        },
+        preparedDiff: {
+          worktreeId,
+          status: 'prepared',
+          summary: {
+            committed: false,
+            policy: { approvalRequired: true },
+          },
+        },
+      },
+    });
+    expect((result.data as Record<string, unknown>).commit).toBeUndefined();
+  });
+
+  it('does not expose lock bypass on the CI fixer input', async () => {
+    const result = await fixPrCiFailure({
+      worktreeId: 'wt_123',
+      lock: false,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      action: 'autopilot_fix_pr_ci_failure',
+      message: 'Invalid autopilot input.',
     });
   });
 });

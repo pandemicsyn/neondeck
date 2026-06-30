@@ -1274,7 +1274,7 @@ Must-haves:
   - plan and apply bounded changes through repo-edit replace/patch actions
   - commit locally with a generated message that references addressed comments
   - produce a prepared diff and summary
-- [ ] Add `fix_pr_ci_failure` workflow:
+- [x] Add `fix_pr_ci_failure` workflow:
   - fetch failing check metadata and logs where available
   - identify likely failing package script or command
   - run configured diagnostics through approved execution actions

@@ -716,6 +716,16 @@ const entries: SafetyPolicyEntry[] = [
     'Classifies a worktree diff against autopilot limits, high-risk file classes, push destination policy, and concurrency settings without mutating repos or GitHub.',
   ),
   action(
+    'neondeck_autopilot_fix_pr_ci_failure',
+    'Fix PR CI failure',
+    {
+      ...hostExecution,
+      auditTarget:
+        'worktrees/worktree_locks/repo_edit_events/prepared_diffs/execution_approvals',
+    },
+    'Fetches deterministic failing check facts/log availability, runs configured diagnostics through execution policy, applies an optional scoped repo-edit patch in a managed worktree, commits locally, and creates a prepared diff without pushing or commenting.',
+  ),
+  action(
     'neondeck_autopilot_verify_pr_worktree',
     'Verify PR worktree',
     {
@@ -1016,6 +1026,16 @@ const entries: SafetyPolicyEntry[] = [
     'Creates, syncs, locks, and inspects an isolated PR worktree through the Flue workflow surface without fixing, committing, pushing, or commenting.',
   ),
   workflow(
+    'fix-pr-ci-failure',
+    'Run PR CI fixer workflow',
+    {
+      ...hostExecution,
+      auditTarget:
+        'worktrees/worktree_locks/repo_edit_events/prepared_diffs/execution_approvals/workflow_events',
+    },
+    'Runs the bounded PR CI fixer through the Flue workflow surface. It may apply scoped repo-edit patches, commit locally, and prepare a diff, but it does not push or comment.',
+  ),
+  workflow(
     'verify-pr-worktree',
     'Run PR worktree verification workflow',
     {
@@ -1170,6 +1190,16 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'worktrees/worktree_locks',
     },
     'Fetches deterministic GitHub PR/check facts and prepares a managed PR worktree without fixing, committing, pushing, or commenting.',
+  ),
+  route(
+    '/api/autopilot/fix-pr-ci-failure',
+    'PR CI fixer API',
+    {
+      ...hostExecution,
+      auditTarget:
+        'worktrees/worktree_locks/repo_edit_events/prepared_diffs/execution_approvals',
+    },
+    'Fetches failing check facts/log availability, runs diagnostics, optionally applies a scoped repo-edit patch in a managed worktree, commits locally, and creates a prepared diff without pushing or commenting.',
   ),
   route(
     '/api/prepared-diffs',

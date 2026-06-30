@@ -6,6 +6,7 @@ import * as v from 'valibot';
 import { supportedCommands } from './commands';
 import { autopilotStateSchema, readAutopilotState } from './autopilot';
 import {
+  fixPrCiFailure,
   preparePrWorktree,
   triagePrEvent,
   verifyPrWorktree,
@@ -947,6 +948,11 @@ app.post('/api/autopilot/triage-pr-event', async (c) => {
 
 app.post('/api/autopilot/prepare-pr-worktree', async (c) => {
   const result = await preparePrWorktree(await safeJsonBody(c), paths);
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/autopilot/fix-pr-ci-failure', async (c) => {
+  const result = await fixPrCiFailure(await safeJsonBody(c), paths);
   return c.json(result, result.ok ? 200 : 400);
 });
 
