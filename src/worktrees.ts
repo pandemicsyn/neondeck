@@ -144,6 +144,7 @@ const syncInputSchema = v.object({
   headSha: v.optional(safeGitRefSchema),
   fetch: v.optional(v.boolean()),
   force: v.optional(v.boolean()),
+  strategy: v.optional(v.picklist(['checkout', 'rebase'])),
 });
 
 const statusInputSchema = v.object({
@@ -182,6 +183,8 @@ const cleanupInputSchema = v.object({
   worktreeId: v.optional(nonEmptyStringSchema),
   dryRun: v.optional(v.boolean()),
   confirmAdopted: v.optional(v.boolean()),
+  confirmPreparedDiff: v.optional(v.boolean()),
+  force: v.optional(v.boolean()),
 });
 const rowNullableStringSchema = v.nullable(v.string());
 const rowNullableNumberSchema = v.nullable(v.number());
@@ -542,7 +545,28 @@ export async function syncWorktree(
     }
     const nextRef =
       input.headSha ?? input.headRef ?? record.headSha ?? record.headRef;
-    await git(record.localPath, ['checkout', '--detach', nextRef]);
+    const strategy = input.strategy ?? 'checkout';
+    try {
+      if (strategy === 'rebase') {
+        await git(record.localPath, ['rebase', nextRef]);
+      } else {
+        await git(record.localPath, ['checkout', '--detach', nextRef]);
+      }
+    } catch (error) {
+      if (strategy === 'rebase') {
+        updateWorktreeStatus(record.id, 'needs-sync', paths);
+        await recordWorktreeEvent(
+          record.id,
+          record.repoId,
+          'sync_blocked',
+          'needs-sync',
+          `Rebase/resync blocked: ${errorMessage(error)}`,
+          { strategy, ref: nextRef, error: errorMessage(error) },
+          paths,
+        );
+      }
+      throw error;
+    }
     const headSha = (await git(record.localPath, ['rev-parse', 'HEAD'])).trim();
     const now = new Date().toISOString();
     const next = {
@@ -560,7 +584,7 @@ export async function syncWorktree(
       'synced',
       'ready',
       `Synced worktree ${record.id} to ${headSha.slice(0, 12)}.`,
-      { headSha },
+      { headSha, strategy },
       paths,
     );
 
@@ -1255,7 +1279,11 @@ async function isGitClean(localPath: string) {
 
 async function cleanupDecision(
   record: WorktreeRecord,
-  input: { confirmAdopted?: boolean },
+  input: {
+    confirmAdopted?: boolean;
+    confirmPreparedDiff?: boolean;
+    force?: boolean;
+  },
   paths: RuntimePaths,
 ): Promise<{ delete: boolean; reason: string }> {
   const policy = await currentCleanupPolicy(record, paths);
@@ -1271,7 +1299,11 @@ async function cleanupDecision(
   if (record.lifecycleStatus === 'failed' && policy.retainFailed) {
     return { delete: false, reason: 'failed worktrees are retained by policy' };
   }
-  if (record.lifecycleStatus === 'prepared-diff' && policy.retainPreparedDiff) {
+  if (
+    record.lifecycleStatus === 'prepared-diff' &&
+    policy.retainPreparedDiff &&
+    !input.confirmPreparedDiff
+  ) {
     return {
       delete: false,
       reason: 'prepared-diff worktrees are retained by policy',
@@ -1286,6 +1318,22 @@ async function cleanupDecision(
   if (await exists(record.localPath)) {
     const clean = await isGitClean(record.localPath).catch(() => false);
     if (!clean) return { delete: false, reason: 'worktree is dirty' };
+  }
+  if (input.force) {
+    const forceCleanupStatuses = [
+      'stale',
+      'needs-sync',
+      'cleanup-pending',
+      'succeeded',
+      ...(policy.retainFailed ? [] : ['failed']),
+      ...(record.lifecycleStatus === 'prepared-diff' &&
+      input.confirmPreparedDiff
+        ? ['prepared-diff']
+        : []),
+    ];
+    if (forceCleanupStatuses.includes(record.lifecycleStatus)) {
+      return { delete: true, reason: 'explicit cleanup requested' };
+    }
   }
   const ageHours =
     (Date.now() - Date.parse(record.updatedAt)) / (60 * 60 * 1000);

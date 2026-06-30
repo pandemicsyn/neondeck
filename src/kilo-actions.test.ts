@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { listNotifications } from './app-state';
 import {
   abortKiloTask,
   readKiloSessionMessages,
@@ -81,6 +82,7 @@ describe('Kilo handoff runner', () => {
     await waitForEvent(taskId, 'process.exit', paths);
     const sessions = await readKiloTaskSessions({ taskId }, paths);
     const events = await readKiloTaskEvents({ taskId }, paths);
+    const notifications = await listNotifications(paths);
 
     expect(status).toMatchObject({
       ok: true,
@@ -88,8 +90,26 @@ describe('Kilo handoff runner', () => {
         rootSessionId: 'ses_root',
         childSessionIds: ['ses_child'],
         status: 'succeeded',
+        notificationFacts: expect.arrayContaining([
+          expect.objectContaining({ state: 'completed' }),
+        ]),
+        resultPlaceholders: [
+          expect.objectContaining({
+            type: 'review',
+            workflow: 'review_kilo_result',
+          }),
+        ],
       },
     });
+    expect(notifications).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'kilo',
+          sourceId: `task:${taskId}:completed`,
+          level: 'ready',
+        }),
+      ]),
+    );
     expect(sessions).toMatchObject({
       ok: true,
       rootSessionId: 'ses_root',
@@ -435,6 +455,8 @@ async function setupGitRepo(repo: string) {
 
 function completedKiloScript() {
   return `#!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
 const args = process.argv.slice(2);
 if (args[0] === 'session') {
   console.log(JSON.stringify([
@@ -449,6 +471,10 @@ if (args[0] === 'session') {
     }
   ]));
   process.exit(0);
+}
+const dir = args[args.indexOf('--dir') + 1];
+if (dir) {
+  fs.writeFileSync(path.join(dir, 'README.md'), '# sample\\\\n\\\\nkilo changed\\\\n');
 }
 console.log(JSON.stringify({
   type: 'text',

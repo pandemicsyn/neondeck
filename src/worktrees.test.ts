@@ -116,6 +116,80 @@ describe('worktree runtime foundation', () => {
     });
   });
 
+  it('rebases a clean worktree onto a refreshed head ref', async () => {
+    const { paths, repo } = await fixture();
+    const created = await createWorktree(
+      { repoId: 'sample', prNumber: 7, headRef: 'feature' },
+      paths,
+    );
+    const worktree = worktreeFrom(created);
+    await writeFile(
+      join(worktree.localPath, 'src/app.ts'),
+      'export const value = 20;\n',
+    );
+    await git(worktree.localPath, ['add', '-A']);
+    await git(worktree.localPath, ['commit', '-m', 'local fix']);
+    await git(repo, ['checkout', 'feature']);
+    await writeFile(join(repo, 'src/other.ts'), 'export const other = 1;\n');
+    await git(repo, ['add', '-A']);
+    await git(repo, ['commit', '-m', 'new feature commit']);
+
+    const result = await syncWorktree(
+      {
+        worktreeId: worktree.id,
+        headRef: 'feature',
+        strategy: 'rebase',
+      },
+      paths,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      worktree: { lifecycleStatus: 'ready' },
+    });
+    await expect(
+      readFile(join(worktree.localPath, 'src/app.ts'), 'utf8'),
+    ).resolves.toBe('export const value = 20;\n');
+    await expect(
+      readFile(join(worktree.localPath, 'src/other.ts'), 'utf8'),
+    ).resolves.toBe('export const other = 1;\n');
+  });
+
+  it('marks a rebase conflict as needs-sync', async () => {
+    const { paths, repo } = await fixture();
+    const created = await createWorktree(
+      { repoId: 'sample', prNumber: 7, headRef: 'feature' },
+      paths,
+    );
+    const worktree = worktreeFrom(created);
+    await writeFile(
+      join(worktree.localPath, 'src/app.ts'),
+      'export const value = 20;\n',
+    );
+    await git(worktree.localPath, ['add', '-A']);
+    await git(worktree.localPath, ['commit', '-m', 'local fix']);
+    await git(repo, ['checkout', 'feature']);
+    await writeFile(join(repo, 'src/app.ts'), 'export const value = 30;\n');
+    await git(repo, ['commit', '-am', 'new feature commit']);
+
+    const result = await syncWorktree(
+      {
+        worktreeId: worktree.id,
+        headRef: 'feature',
+        strategy: 'rebase',
+      },
+      paths,
+    );
+
+    expect(result).toMatchObject({ ok: false, action: 'worktree_sync' });
+    expect(
+      await readWorktreeStatus({ worktreeId: worktree.id }, paths),
+    ).toMatchObject({
+      worktree: { lifecycleStatus: 'needs-sync' },
+    });
+  });
+
   it('creates worktrees under repo-local roots when the repo opts in', async () => {
     const { paths, repo } = await fixture({ worktreeRoot: 'repo-local' });
 
@@ -343,6 +417,48 @@ describe('worktree runtime foundation', () => {
       ok: true,
       changed: true,
       results: [expect.objectContaining({ outcome: 'deleted' })],
+    });
+  });
+
+  it('requires explicit prepared-diff confirmation before forced cleanup', async () => {
+    const { paths } = await fixture();
+    const created = await createWorktree(
+      { repoId: 'sample', prNumber: 17, headRef: 'feature' },
+      paths,
+    );
+    const worktree = worktreeFrom(created);
+    markLifecycleOld(paths.neondeckDatabase, worktree.id, 'prepared-diff');
+
+    await expect(
+      cleanupWorktrees({ worktreeId: worktree.id, force: true }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      results: [
+        expect.objectContaining({
+          reason: 'prepared-diff worktrees are retained by policy',
+        }),
+      ],
+    });
+
+    await expect(
+      cleanupWorktrees(
+        {
+          worktreeId: worktree.id,
+          force: true,
+          confirmPreparedDiff: true,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      results: [
+        expect.objectContaining({
+          outcome: 'deleted',
+          reason: 'explicit cleanup requested',
+        }),
+      ],
     });
   });
 

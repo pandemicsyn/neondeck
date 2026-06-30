@@ -33,6 +33,7 @@
     "secrets:check:staged": "gitleaks git --staged --redact --no-banner",
     "setup": "node src/setup.ts",
     "smoke:autopilot": "node scripts/autopilot-smoke.mjs",
+    "smoke:kilo": "node scripts/kilo-smoke.mjs",
     "start": "node dist/server.mjs",
     "test": "vitest run",
     "test:watch": "vitest",

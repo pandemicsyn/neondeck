@@ -1261,7 +1261,7 @@ Must-haves:
 
 ### Phase 19: PR Event Autopilot
 
-- Status: partially complete and actively being finished. Event watermarks, triage, worktree preparation, review/CI fix workflows, verification, push-back, PR result comments, concurrency controls, dashboard/TUI-ready state, notification policy, runtime guidance, and fixture-backed smoke/integration coverage have landed.
+- Status: complete for current in-scope PR autopilot work. Event watermarks, triage, worktree preparation, review/CI fix workflows, verification, push-back, PR result comments, concurrency controls, dashboard/TUI-ready state, notification policy, runtime guidance, and fixture-backed smoke/integration coverage have landed. Future refinements such as richer model-planning orchestration, provider-specific log adapters, and broader production rollout policy can build on this foundation.
 
 - [x] Extend PR watches to persist event watermarks for commits, review threads, requested-changes reviews, check suites, check runs, mergeability, and out-of-date branch state.
 - [x] Add a `triage_pr_event` workflow that classifies deltas into no-op, notify-only, explain-only, draft-fix, auto-fix-no-push, or auto-fix-push-after-checks.
@@ -1302,7 +1302,7 @@ Must-haves:
 
 ### Phase 20: Autopilot Policy And UX Hardening
 
-- Status: partially complete and active. Repo/watch policy, high-risk classes, prepared-diff records/APIs/actions, approval primitives, dashboard decision visibility, human-readable audit summaries, bounded recovery actions, notification policy, and docs have landed. Rebase/resync and cleanup-specific recovery controls remain open.
+- Status: complete. Repo/watch policy, high-risk classes, prepared-diff records/APIs/actions, approval primitives, dashboard decision visibility, human-readable audit summaries, bounded recovery actions, rebase/resync and cleanup-specific recovery controls, notification policy, and docs have landed.
 
 - [x] Add repo-level autopilot config with explicit modes:
   - `notify-only`
@@ -1353,7 +1353,7 @@ Must-haves:
   - request revision
   - abandon prepared fix
   - surface manual follow-up
-- [ ] Add rebase/resync and cleanup-specific recovery actions:
+- [x] Add rebase/resync and cleanup-specific recovery actions:
   - retry after new commit
   - rebase/resync worktree
   - clean up worktree
@@ -1361,7 +1361,7 @@ Must-haves:
 
 ### Phase 21: KiloCode Handoff Runner
 
-- Status: partially complete. CLI task execution, reconciliation, session access, bounded transcript controls, dashboard/runtime overview rows, and review/verify/promote admission have landed. Richer Kilo workflow completion, actual promote mutation through push-back, notification policy, full smoke coverage, and managed `kilo serve`/SDK evaluation remain open.
+- Status: partially complete. CLI task execution, reconciliation, session access, bounded transcript controls, dashboard/runtime overview rows, Kilo notification policy, notification-linked API state, review/verify/promote admission, and Kilo workflow smoke coverage have landed. Richer Kilo workflow completion, actual promote mutation through push-back, and managed `kilo serve`/SDK evaluation remain open.
 
 - [x] Add Kilo handoff config under app config:
   - enabled flag
@@ -1433,9 +1433,9 @@ Must-haves:
 - [x] Add `review_kilo_result` workflow to inspect the Kilo-produced diff and classify it as discard, needs-review, ready-to-verify, or ready-to-push.
 - [x] Add `verify_kilo_result` workflow to run configured checks through Neondeck execution policy.
 - [ ] Add `promote_kilo_result` workflow that can commit/push/comment only when autopilot policy allows. Admission/decision state is implemented; actual commit/push/comment mutation remains deferred to the push-back workflow.
-- [ ] Add dashboard/TUI-ready APIs for active Kilo tasks, task events, session ids, session search, transcript pages, todos, child sessions, changed files, verification state, and pending approvals. Partially complete through current task/session/result APIs and Runtime Overview rows; keep open until todos, approvals, and richer dashboard/TUI contracts are complete.
+- [ ] Add dashboard/TUI-ready APIs for active Kilo tasks, task events, session ids, session search, transcript pages, todos, child sessions, changed files, verification state, and pending approvals. Partially complete through current task/session/result APIs, notification-linked task facts, pending approval/result placeholders, and Runtime Overview rows; keep open until todos, approvals, and richer dashboard/TUI contracts are complete.
 - [x] Add dashboard panels or Runtime Overview rows for active delegated Kilo work.
-- [ ] Add notification policy for Kilo handoffs:
+- [x] Add notification policy for Kilo handoffs:
   - ready when a task completes and has a reviewable diff
   - attention when Kilo fails, stalls, or produces high-risk changes
   - quiet no-op for cancelled/discarded tasks that were superseded
@@ -1444,7 +1444,7 @@ Must-haves:
 - [x] Add runtime skill guidance that tells Neon to use Kilo session actions/workflows for session search/read/summarization and to avoid direct Kilo storage reads.
 - [x] Add docs for Kilo handoff setup, trust boundaries, worktree behavior, session tracking, cancellation, and troubleshooting.
 - [x] Add Kilo handoff smoke tests using a fake `kilo` CLI that emits JSONL events, including session id capture, child session capture, task completion, failure, abort, and restart reconciliation.
-- [ ] Add Flue workflow smoke tests for `handoff_to_kilo`, `reconcile_kilo_task`, `summarize_kilo_session`, `review_kilo_result`, `verify_kilo_result`, and `promote_kilo_result` with fake Kilo event streams and temporary worktrees.
+- [x] Add Flue workflow smoke tests for `handoff_to_kilo`, `reconcile_kilo_task`, `summarize_kilo_session`, `review_kilo_result`, `verify_kilo_result`, and `promote_kilo_result` with fake Kilo event streams and temporary worktrees.
 - [ ] After CLI MVP, evaluate managed `kilo serve` plus SDK integration:
   - server lifecycle supervisor
   - SDK session creation and `promptAsync`

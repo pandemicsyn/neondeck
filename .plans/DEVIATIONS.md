@@ -244,7 +244,14 @@ Use this format:
 - Roadmap item: Phase 19 / `push_pr_autofix` workflow and Phase 20 / push-back recovery actions
 - Decision: Added `push_pr_autofix` as a bounded Flue workflow/action and local API over approved prepared-diff records. It pushes only approved, verified, clean committed worktrees when autopilot policy and GitHub branch permission facts allow PR-head push-back. Blocked attempts update prepared-diff/worktree state and notifications while retaining the worktree. Result comments remain owned by `comment_pr_autofix_result`, and force-push support remains deferred.
 - Reason: The requested slice explicitly kept PR comments separate unless required by the push action contract, and the roadmap forbids force-push unless a future narrowly scoped repo policy enables it. The current safe default is forward push only with durable blocked-attempt recovery data.
-- Follow-up: Add dedicated retry/resync/cleanup recovery actions and any future force-push policy only behind explicit repo-level configuration and approval.
+- Follow-up: Rebase/resync and cleanup recovery actions were completed by the 2026-06-30 Phase 20 recovery entry below. Any future force-push policy remains deferred behind explicit repo-level configuration and approval.
+
+## 2026-06-30 - Rebase And Cleanup Recovery Actions
+
+- Roadmap item: Phase 20 / rebase/resync and cleanup-specific recovery actions
+- Decision: Added prepared-diff recovery actions for retry-after-new-commit, rebase/resync worktree, and cleanup worktree through the existing `neondeck_autopilot_recovery_run` API/action. Rebase/resync delegates to `neondeck_worktree_sync` with a rebase strategy and resets stale prepared-diff push/verification decisions. Cleanup delegates to `neondeck_worktree_cleanup`, requires confirmation unless it is a dry run, and still observes dirty-worktree, lock, adopted-worktree, and cleanup-policy checks.
+- Reason: Prepared diffs and managed worktrees are already the durable source of truth for autopilot recovery. Extending those services keeps mutations deterministic and audited without adding a parallel queue or git runtime.
+- Follow-up: None.
 
 ## 2026-06-30 - Autopilot Smoke And Integration Coverage
 
@@ -322,3 +329,17 @@ Use this format:
 - Decision: Added a bounded `comment_pr_autofix_result` workflow/action/API that renders PR comments from prepared-diff/autopilot result facts and posts through the existing server-side PR comment action. Prepared-diff summaries now include a human-readable audit summary, and posted/failed result-comment attempts persist a `workflow_summaries` audit record. This slice did not add a dedicated PR-comment audit table or implement `push_pr_autofix`.
 - Reason: `workflow_summaries` is the existing durable timeline surface and avoids duplicating the prepared-diff/autopilot business state. Push-back is still explicitly out of scope for this slice, so the result comment consumes prepared/pushed/blocked facts without performing GitHub branch mutations.
 - Follow-up: Add the real `push_pr_autofix` workflow and a first-class PR-comment/autopilot event table when queue admission and push-back persistence land.
+
+## 2026-06-30 - Kilo Notification Policy And Dashboard State
+
+- Roadmap item: Phase 21 / Kilo notification policy and richer dashboard/API state
+- Decision: Added deterministic Kilo notification states for started, progress, waiting-approval, completed, failed, timed-out, needs-review, verified, promote-blocked, and promoted; enriched Kilo task list/status API results with active notification facts and result placeholders; and surfaced those facts in Runtime Overview rows. Actual commit/push/comment promotion, future TUI controls, provider-specific deploy adapters, and managed `kilo serve`/SDK lifecycle work remain deferred.
+- Reason: Existing Kilo task/session/result tables, app-state notifications, and review/verify/promote workflows already provide enough durable facts for notification-linked dashboard state. Reusing them avoids a second runtime and keeps Kilo delegation explicit.
+- Follow-up: Add first-class Kilo SDK/server lifecycle integration, true todo/diff/message adapters, future TUI controls over the same APIs, and real promote mutation through the prepared-diff/autopilot push-back workflow.
+
+## 2026-06-30 - Kilo Workflow Smoke Coverage
+
+- Roadmap item: Phase 21 / KiloCode workflow smoke and integration coverage
+- Decision: Added deterministic Kilo workflow smoke coverage for `handoff_to_kilo`, `reconcile_kilo_task`, `summarize_kilo_session`, `review_kilo_result`, `verify_kilo_result`, and `promote_kilo_result` using a fake JSONL Kilo CLI, temporary runtime homes, temporary repos, and managed worktrees. Added a `smoke:kilo` script that routes each named workflow through `flue run workflow:<name>` before the fixture-driven Vitest suite exercises the deeper managed-worktree success path.
+- Reason: The smoke should validate Neondeck/Flue workflow wiring and app-state transitions without live Kilo, network, or provider dependencies. `promote_kilo_result` remains admission-only because actual commit/push/comment mutations are intentionally owned by the push-back workflows.
+- Follow-up: Add SDK/server-backed session/todo/diff fixtures and actual promotion mutation coverage only after those provider/runtime contracts are implemented.
