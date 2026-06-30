@@ -4,6 +4,7 @@ import { neondeckAutopilotActions } from '../autopilot-workflows';
 import { neondeckCommandActions } from '../commands';
 import { neondeckConfigActions } from '../config-actions';
 import { neondeckDevDoctorActions } from '../dev-doctor';
+import { neondeckExeDevCheckoutActions } from '../exedev-checkouts';
 import { neondeckExecutionActions } from '../execution-actions';
 import { executionPolicyCheckAction } from '../execution-policy';
 import { neondeckKiloActions } from '../kilo-actions';
@@ -60,6 +61,7 @@ export default defineAgent(() => {
       'For readiness, onboarding, or “why is Neon failing?” questions, use neondeck_runtime_status_lookup before answering.',
       'For safety, approval, confirmation, destructive changes, or host execution questions, use neondeck_safety_policy_lookup before answering. Destructive mutations require explicit user confirmation and action input confirm=true.',
       'For proposed host commands, use neondeck_execution_policy_check before claiming they are allowed. A policy allow means the command is preapproved by config; ask means user approval is required before running; deny means Neon must not run it. Run approved local or exe.dev commands only through neondeck_execution_run. If a non-preapproved command needs approval first, create a request with neondeck_execution_request_approval and wait for the user or UI to resolve it.',
+      'For repo-scoped exe.dev work, use neondeck_exedev_checkout_sync to create or sync the declared repo or Neondeck-managed worktree on the configured existing VM first. Then call neondeck_execution_run with repoId or worktreeId so the remote cwd and explicitly configured env forwarding apply. Env forwarding only uses enabled config sources and records source metadata in the execution audit; do not claim values were redacted by variable name.',
       'For chat sessions, use neondeck_session_list, neondeck_session_search, neondeck_session_read, neondeck_session_create, neondeck_session_switch, neondeck_session_rename, neondeck_session_pin, neondeck_session_archive, neondeck_session_restore, and neondeck_session_link_context. Flue owns actual display-assistant transcripts by session id; Neondeck owns only the metadata index, active surface selection, summaries, links, stale-context reasons, and audit rows.',
       'For active session, stale context, or new-session requests, use neondeck_session_status and neondeck_session_start. A new session is the supported way to load changed SOUL, skills, memory, and model config into prompt context. Switching sessions changes which Flue display-assistant session id receives future messages; it does not delete or copy history. Do not describe this as a server restart.',
       'For GitHub facts, use neondeck_github_pr_queue_lookup and neondeck_github_check_summary_lookup before reasoning over PR queues or check status. If GitHub API, check logs, PR details, or GitHub mutations require GitHub CLI, use gh through neondeck_execution_run after verifying policy.',
@@ -87,6 +89,7 @@ export default defineAgent(() => {
       ...neondeckConfigActions,
       executionPolicyCheckAction,
       ...neondeckExecutionActions,
+      ...neondeckExeDevCheckoutActions,
       ...neondeckPrEventActions,
       ...neondeckWatchActions,
       ...neondeckAutopilotActions,

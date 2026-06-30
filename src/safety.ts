@@ -296,6 +296,15 @@ const entries: SafetyPolicyEntry[] = [
     'Runs one approved local command or one approved exe.dev sandbox command, records bounded redacted output, and never bypasses hardline denies.',
   ),
   action(
+    'neondeck_exedev_checkout_sync',
+    'Sync exe.dev checkout',
+    {
+      ...hostExecution,
+      auditTarget: 'execution_approvals',
+    },
+    'Creates or syncs a declared repo/worktree checkout on the existing exe.dev VM by routing each remote mkdir/git step through execution approvals.',
+  ),
+  action(
     'neondeck_config_read',
     'Read runtime config',
     readOnly,
@@ -1256,6 +1265,15 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'execution_approvals',
     },
     'Runs one approved local or exe.dev command and records bounded redacted output.',
+  ),
+  route(
+    '/api/execution/exedev/sync-checkout',
+    'exe.dev checkout sync API',
+    {
+      ...hostExecution,
+      auditTarget: 'execution_approvals',
+    },
+    'Syncs a declared repo/worktree checkout on an existing exe.dev VM through approved execution steps.',
   ),
   route(
     '/api/autopilot/triage-pr-event',

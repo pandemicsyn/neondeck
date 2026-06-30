@@ -1163,7 +1163,7 @@ Must-haves:
 
 ### Phase 14: Approved Host Execution And exe.dev Sandbox
 
-- Status: partially complete. Approved local execution and existing-VM `exe.dev` execution now share the approval/audit path; app-owned exe.dev lifecycle orchestration is deferred in favor of using a configured remote Linux VM and syncing declared repos/worktrees there.
+- Status: complete for approved local execution and existing-VM `exe.dev` execution. App-owned exe.dev lifecycle orchestration remains deferred in favor of using a configured remote Linux VM and syncing declared repos/worktrees there.
 
 - [x] Verify the current Flue `local()` API and exe.dev connector API against installed package docs before implementing executors.
 - [x] Add runtime config for execution credentials and sandbox lifecycle using secret environment variable references only.
@@ -1173,8 +1173,8 @@ Must-haves:
 - [x] Add dashboard/API approval resolution endpoints for allow once, allow session, allow always/preapprove, and deny.
 - [x] Add a local executor action that calls `neondeck_execution_policy_check`, requires approval when the decision is `ask`, refuses `deny`, and records execution audit metadata.
 - [x] Add an exe.dev sandbox executor action through the Flue sandbox connector for an existing VM configured by `EXE_VM_HOST` or `execution.exeDev.vmHostEnv`.
-- [ ] Add existing-VM exe.dev repo/worktree checkout and sync helpers for declared repos. In flight in the current exe.dev sync helper worktree.
-- [ ] Add exe.dev per-repo/per-checkout env forwarding from repo-local `.env` files and Neondeck config. In flight in the current exe.dev sync helper worktree.
+- [x] Add existing-VM exe.dev repo/worktree checkout and sync helpers for declared repos.
+- [x] Add exe.dev per-repo/per-checkout env forwarding from repo-local `.env` files and Neondeck config.
 - [x] Ensure both executors share the same hardline deny list, preapproval matching, unattended policy, and audit path.
 - [x] Add bounded output capture before exposing execution results to the agent, dashboard, workflow summaries, or notifications.
 - [x] Add dashboard controls for pending approvals, recent approvals, and execution failures.

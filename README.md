@@ -134,7 +134,27 @@ Host execution is also configured in runtime-home `config.json`, but Neondeck do
       "lifecycle": "existing-vm",
       "vmHostEnv": "EXE_VM_HOST",
       "sshKeyEnv": "EXE_SSH_KEY",
-      "apiTokenEnv": "EXE_API_TOKEN"
+      "apiTokenEnv": "EXE_API_TOKEN",
+      "remoteRoot": "/home/user/neondeck/checkouts",
+      "repos": {
+        "neondeck": {
+          "env": {
+            "enabled": true,
+            "files": [".env.exe"],
+            "vars": {
+              "NEONDECK_PROFILE": "sandbox"
+            },
+            "hostEnv": {
+              "GITHUB_TOKEN": "GITHUB_TOKEN"
+            }
+          }
+        }
+      },
+      "checkouts": {
+        "worktree-id": {
+          "remotePath": "/home/user/neondeck/checkouts/neondeck-pr-123"
+        }
+      }
     },
     "preapprovedCommands": [
       {
@@ -152,6 +172,8 @@ Host execution is also configured in runtime-home `config.json`, but Neondeck do
 Preapproved commands must be single commands without shell operators such as `&&`, `|`, redirection, subshells, or newlines. Commands outside the preapproval list require interactive approval and are denied in unattended contexts. Hardline destructive commands cannot be preapproved. Neon can inspect policy through `neondeck_execution_policy_lookup` and `neondeck_execution_policy_check`, update policy through `neondeck_config_update_execution_policy`, request approvals through `neondeck_execution_request_approval`, and run approved commands through `neondeck_execution_run`. Approval resolution is dashboard/API/user-owned, not model-callable. Policy updates are audited in `config_history`; executions are audited in `execution_approvals`.
 
 Trusted-local execution runs on your machine and is best for local git/dev commands you already trust. `exe.dev` is the isolated sandbox option; enable it explicitly by adding `"exe.dev"` to `enabledBackends` after `EXE_VM_HOST` points at an existing VM and SSH auth is configured.
+
+Use `neondeck_exedev_checkout_sync` to clone or sync a configured repo or Neondeck-managed worktree on the existing VM. If a sync step needs approval, approve the returned execution request and retry with `approvals[blockedStep]` set to that approval id. Then call `neondeck_execution_run` with `repoId` or `worktreeId` so the remote cwd resolves to that checkout. Env forwarding is opt-in per global/repo/checkout config. Enabled sources can include repo-relative `.env` files, literal config `vars`, and explicitly mapped host env variables. Neondeck does not filter forwarded variable names by heuristic; execution audit metadata records which sources and keys were used, not the values.
 
 KiloCode handoff is available only as an explicit delegated-worker path. Neon should normally do work itself or use Neondeck subagents unless the user asks for Kilo or a future repo policy opts in. Optional runtime-home `config.json` settings:
 

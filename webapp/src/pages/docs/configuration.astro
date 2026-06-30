@@ -115,6 +115,14 @@ GITHUB_LOGIN=...</code></pre>
           repo diagnostics. GitHub API features use <code>GITHUB_TOKEN</code>
           and do not expose the token to the browser.
         </p>
+        <p>
+          Existing-VM <code>exe.dev</code> repo execution uses
+          <code>execution.exeDev.remoteRoot</code>, optional per-repo
+          <code>execution.exeDev.repos</code>, and per-checkout
+          <code>execution.exeDev.checkouts</code> config. Env forwarding is opt-in
+          and can combine repo-relative <code>.env</code> files, config vars, and
+          explicit host env mappings.
+        </p>
 
         <h2>Dashboard</h2>
         <p>

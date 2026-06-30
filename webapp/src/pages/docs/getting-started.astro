@@ -228,6 +228,15 @@ GITHUB_LOGIN=...</code></pre>
           <code>enabledBackends</code> after <code>EXE_VM_HOST</code> points at an
           existing VM and SSH auth is configured.
         </p>
+        <p>
+          Repo-scoped <code>exe.dev</code> work should first call
+          <code>neondeck_exedev_checkout_sync</code> for a configured
+          <code>repoId</code> or managed <code>worktreeId</code>. Subsequent
+          <code>neondeck_execution_run</code> calls can pass the same target so the
+          remote cwd and explicitly enabled env forwarding apply. Env audit metadata
+          records source ids and keys, not values, and Neondeck does not filter env
+          vars by heuristic name.
+        </p>
 
         <h2 id="verify">Verify locally</h2>
         <pre><code>npm run check

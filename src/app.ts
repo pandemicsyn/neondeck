@@ -42,6 +42,7 @@ import {
   resolveExecutionApproval,
   runApprovedExecution,
 } from './execution-actions';
+import { syncExeDevCheckout } from './exedev-checkouts';
 import { checkExecutionPolicy, readExecutionPolicy } from './execution-policy';
 import { loadNeondeckEnv } from './env';
 import { listGitHubPrQueue } from './github-actions';
@@ -455,6 +456,11 @@ app.post('/api/execution/approvals/:id/resolve', async (c) => {
 
 app.post('/api/execution/run', async (c) => {
   const result = await runApprovedExecution(await safeJsonBody(c), paths);
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/execution/exedev/sync-checkout', async (c) => {
+  const result = await syncExeDevCheckout(await safeJsonBody(c), paths);
   return c.json(result, result.ok ? 200 : 400);
 });
 
