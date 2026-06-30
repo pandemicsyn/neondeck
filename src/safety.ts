@@ -180,6 +180,12 @@ const entries: SafetyPolicyEntry[] = [
     'Fetches GitHub check summary facts for a configured repository ref.',
   ),
   tool(
+    'neondeck_pr_watch_event_watermarks_lookup',
+    'Read PR event watermarks',
+    readOnly,
+    'Reads persisted PR watch event watermarks without contacting GitHub.',
+  ),
+  tool(
     'neondeck_scheduler_jobs_lookup',
     'Read scheduler jobs',
     readOnly,
@@ -511,6 +517,45 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'pr_watches/notifications',
     },
     'Refreshes a watch and records meaningful state changes; silent no-op refreshes should not notify.',
+  ),
+  action(
+    'neondeck_github_pr_event_state_get',
+    'Fetch PR event state',
+    readOnly,
+    'Fetches read-only GitHub PR event facts without persisting watermarks.',
+  ),
+  action(
+    'neondeck_github_pr_review_threads_get',
+    'Fetch PR review threads',
+    readOnly,
+    'Fetches read-only GitHub PR review thread and unresolved comment facts.',
+  ),
+  action(
+    'neondeck_github_pr_requested_changes_get',
+    'Fetch requested changes',
+    readOnly,
+    'Fetches read-only requested-changes review facts for a PR.',
+  ),
+  action(
+    'neondeck_github_pr_branch_permissions_get',
+    'Fetch PR branch permissions',
+    readOnly,
+    'Fetches read-only branch push permission facts without pushing.',
+  ),
+  action(
+    'neondeck_pr_watch_event_state_refresh',
+    'Refresh PR event watermarks',
+    {
+      ...safeMutation,
+      auditTarget: 'pr_watch_event_watermarks',
+    },
+    'Fetches read-only GitHub PR event facts and updates per-watch app-state watermarks only.',
+  ),
+  action(
+    'neondeck_pr_watch_event_watermarks_list',
+    'List PR event watermarks',
+    readOnly,
+    'Lists persisted PR watch event watermarks.',
   ),
   action(
     'neondeck_watch_ref_add',

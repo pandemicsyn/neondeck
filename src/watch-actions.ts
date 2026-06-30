@@ -1385,6 +1385,9 @@ function readRefWatch(paths: RuntimePaths, id: string) {
 function deleteWatch(paths: RuntimePaths, id: string) {
   const database = new DatabaseSync(paths.neondeckDatabase);
   try {
+    database
+      .prepare('DELETE FROM pr_watch_event_watermarks WHERE watch_id = ?;')
+      .run(id);
     database.prepare('DELETE FROM pr_watches WHERE id = ?;').run(id);
   } finally {
     database.close();

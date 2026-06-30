@@ -196,10 +196,16 @@ Use this format:
 - Decision: Implemented the planned worktree runtime foundation: runtime-home `worktrees/`, repo-local `.neondeck/worktrees` option, app SQLite records/locks/events/cleanup attempts, deterministic `neondeck_worktree_*` actions/tools, repo registry active-worktree links, repo-edit `worktreeId` targeting, cleanup policy config/action, Runtime Overview rows, runtime skill guidance, and focused service tests. No Phase 18 scope deviations were taken.
 - Reason: Worktrees are the required isolation boundary for later PR event autopilot and Kilo handoff, but this phase should remain deterministic app state and service plumbing.
 - Follow-up: Phase 19 and later should add PR event autopilot workflows, prepared-diff UI/push-back flows, and Kilo handoff orchestration on top of these worktree services.
-
 ## 2026-06-30 - Autopilot Triage And PR Worktree Preparation
 
 - Roadmap item: Phase 19B / PR event autopilot triage and prepare worktree workflows
 - Decision: Added `triage_pr_event` and `prepare_pr_worktree` workflow/action/API surfaces over a narrow structured PR event adapter, but did not add watcher event watermark persistence, queue admission, review comment lookup, fix, verify, push, or PR comment workflows. `prepare_pr_worktree` does not accept caller-supplied PR facts, check facts, or workflow run ids; it fetches GitHub facts server-side and reports that worktree run-id linkage is not attached yet.
 - Reason: Phase 19A event/watermark ownership is not present in this worktree, and this slice was explicitly limited to classification plus isolated worktree preparation. Flue `ActionContext` intentionally excludes workflow identity, so accepting a caller-supplied run id would create a spoofable audit field.
 - Follow-up: Phase 19A should feed durable watcher deltas into `triage_pr_event`; later Phase 19 slices should add unresolved review/check facts, reconciliation, fixer, verifier, push-back, comment, queue, dashboard surfaces, and a non-spoofable Flue run-id/worktree linkage if Flue exposes a supported run-context hook.
+
+## 2026-06-30 - PR Event Model And Watermarks
+
+- Roadmap item: Phase 19 / PR Event Autopilot
+- Decision: Landed the read-only Phase 19A foundation: GitHub PR event-state collection, persistent per-watch event watermarks, focused lookup/actions, and local APIs. Deferred PR comment posting, triage workflow admission, worktree preparation, autonomous fixes, push-back, and dashboard queue panels.
+- Reason: The delegated slice explicitly asked for the event model and watermarks only, and PR commenting/push/autofix behavior crosses into later mutating autopilot policy.
+- Follow-up: Later Phase 19 work should add `triage_pr_event`, PR comment posting, worktree preparation, fix/verify/push workflows, concurrency controls, and dashboard/TUI queue surfaces on top of these watermarks.
