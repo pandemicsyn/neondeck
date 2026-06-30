@@ -61,7 +61,7 @@ Neondeck is usable when a new local install can answer “what should I pay atte
 The usability gate requires:
 
 - [x] first-run readiness that identifies missing provider keys, GitHub credentials, repos, schedules, watches, skills, and database issues
-- [x] typed configuration for display assistant and subagent models
+- [x] typed configuration for display assistant, utility, and subagent models
 - [x] allowlisted provider configuration through secret environment variable references, not raw secrets or arbitrary provider endpoints
 - [x] visible session lifecycle controls for new sessions and restart-after-config-change flows
 - [x] a work queue that prioritizes review requests, authored PRs, assigned PRs, failing checks, stale work, and active watches
@@ -717,6 +717,7 @@ Readiness should include:
 - Kilo/agent provider key presence
 - GitHub token presence
 - configured display assistant model
+- configured low-cost utility model
 - configured subagent models
 - registered provider ids
 - configured repo count
@@ -727,17 +728,37 @@ Readiness should include:
 
 This should be available as a deterministic API and as a dashboard panel. The agent should use the same facts when answering “is Neon ready?” or “why is Neon failing?”.
 
+### Testing And Smoke Strategy
+
+Neondeck should treat Flue workflows as first-class smoke-test boundaries. Deterministic services and actions should still be tested directly with Vitest, but workflows should also be exercised through the same Flue surfaces that production and the dashboard use.
+
+Testing layers:
+
+- Unit tests for deterministic app services, tools, actions, policy checks, parsers, path safety, GitHub normalization, worktree state machines, and Kilo event parsing.
+- Fixture-driven integration tests with temporary `NEONDECK_HOME`, temporary repos/worktrees, fake GitHub responses, fake Kilo JSONL streams, and isolated SQLite databases.
+- Flue workflow smoke tests that invoke discovered workflows with `flue run workflow:<name>` or `@flue/sdk` `client.workflows.invoke(..., { wait: 'result' })`.
+- Workflow run inspection tests that assert workflow summaries, emitted `data` progress, run ids, and observed events are recorded in app state.
+- Local smoke scripts for the happy path: create watch, run scheduler tick, inspect workflow summary, verify notification, and confirm no-op watcher silence.
+- Evals only for model-sensitive behavior such as explanation quality, triage prioritization, and summary usefulness. Do not use evals for deterministic watch or worktree mechanics.
+
+Every planned autonomous workflow should have a non-model fixture path first. For example, `triage_pr_event`, `prepare_pr_worktree`, `fix_pr_review_feedback`, `verify_pr_worktree`, and `push_pr_autofix` should be smoke-testable without live GitHub by injecting structured PR/check/review fixtures and temporary repos.
+
+First-party workflows that are useful to inspect from tests or UI should expose guarded `runs` middleware so SDK clients and the dashboard can fetch run records/events. CLI smoke tests can use `flue run` against the local authored `/api/flue` mount to verify routing, middleware, persistence, and workflow behavior together.
+
 ### Provider And Model Configuration
 
-Users should be able to configure model strings for the display assistant and subagents through typed actions. Neon should be the primary way users configure additional providers.
+Users should be able to configure model strings for the display assistant, low-cost utility model, and subagents through typed actions. Neon should be the primary way users configure additional providers.
+
+Neondeck should ask users to configure a low-cost lightweight utility model during setup. This model is for small bounded tasks such as short summaries, session/diff title suggestions, notification text, naming suggestions, compact classification, and other low-stakes utility work. Examples might include a fast Flash/Mini-class model from any supported provider, but Neondeck should store this as a normal provider-qualified model string rather than hardcoding one vendor.
 
 Model config requirements:
 
 - preserve current `config.json` structure
-- allow partial display assistant and subagent model updates
+- allow partial display assistant, utility, and subagent model updates
 - validate non-empty provider-qualified model strings
 - record config history
 - tell users that active sessions may need a new session or server restart
+- expose the utility model as a named model role usable by workflows/actions for small bounded tasks
 
 Provider config requirements:
 
@@ -750,11 +771,12 @@ Provider config requirements:
 
 ### Agent And Subagent Topology
 
-Neondeck should treat the display assistant and subagents as named runtime roles, not anonymous model calls.
+Neondeck should treat the display assistant, utility model, and subagents as named runtime roles, not anonymous model calls.
 
 Runtime roles should include:
 
 - display assistant
+- low-cost utility model role for small bounded tasks
 - code review subagent
 - Flue idiom review subagent
 - CI/debugging subagent
@@ -762,9 +784,9 @@ Runtime roles should include:
 
 Decision: v1 should expose and document `repo_researcher`, `ci_investigator`, `code_reviewer`, `release_reviewer`, and `flue_idiom_reviewer` as named configurable roles. Low-level summarizers, classifiers, and one-off workflow helper agents can remain app-internal until there is a user-facing reason to configure them.
 
-Each role should have configurable model selection through `config.json`, with safe defaults and readiness warnings when the configured provider is unavailable. Subagents should be spawned through typed app helpers or Flue workflows/actions so their inputs, outputs, and summaries can be audited.
+Each role should have configurable model selection through `config.json`, with safe defaults and readiness warnings when the configured provider is unavailable. The utility model should be easy to swap independently from Neon’s primary display-assistant model so users can keep small tasks cheap. Subagents should be spawned through typed app helpers or Flue workflows/actions so their inputs, outputs, and summaries can be audited.
 
-The agent should be allowed to update subagent model choices only through typed model config actions. It should not directly edit config files or create arbitrary provider registrations.
+The agent should be allowed to update display assistant, utility, and subagent model choices only through typed model config actions. It should not directly edit config files or create arbitrary provider registrations.
 
 ### Workflow Observability
 
@@ -889,6 +911,8 @@ exe.dev environment handling:
 
 First-run setup decision: the CLI setup flow is the recommended onboarding path and should remain documented as such. The dashboard readiness panel and chat setup flows supplement CLI setup after the provider/runtime is working; they are not the primary bootstrapping path.
 
+First-run setup should ask for the primary display assistant model and an optional low-cost utility model. If the user skips the utility model, Neondeck should fall back to the display assistant model and show a readiness recommendation, not a hard failure.
+
 ### Extensibility
 
 Backend extension points:
@@ -937,7 +961,7 @@ Must-haves:
 16. [x] Dedicated briefing panel.
 17. [x] Backend event/API shape suitable for reuse by a future TUI.
 18. [x] Runtime readiness/status panel and API.
-19. [x] Typed model config actions for display assistant and subagent models.
+19. [x] Typed model config actions for display assistant, utility, and subagent models.
 20. [x] Flue workflow/run observability for recent command and scheduler activity.
 21. [x] Structured memory actions for user, project, session, and watch memory.
 22. [x] Named subagent roles with configurable model choices.
@@ -985,7 +1009,7 @@ Must-haves:
   - add schedule
   - update schedule
   - remove schedule
-  - update display assistant and subagent model settings
+  - update display assistant, utility, and subagent model settings
   - reload config
 - [x] Ensure actions write config atomically.
 - [x] Ensure JSON config remains formatted consistently.
@@ -1128,7 +1152,7 @@ Must-haves:
 
 - [x] Design provider config schema and allowed provider types.
 - [x] Use secret references or environment-backed credentials rather than raw secrets in normal config.
-- [x] Add typed model config for named agent and subagent roles.
+- [x] Add typed model config for named agent, utility, and subagent roles.
 - [x] Add readiness/dev-doctor checks for provider credentials.
 - [x] Add dashboard controls for model choices and provider environment variable references.
 - [x] Treat provider registration changes as restart-required until Flue offers a safe dynamic provider mechanism.
@@ -1272,7 +1296,9 @@ Must-haves:
   - urgent only for production/main failures
   - quiet no-op when a watch delta is reconciled without action
 - [ ] Add runtime skill guidance for worktree autopilot, including when Neon must avoid direct edits, when to ask for approval, and how to explain autonomous fixes.
-- [ ] Add tests for same-PR event reconciliation, cross-PR parallelism, direct-push permission checks, blocked push-back worktrees, and blocked high-risk file changes.
+- [ ] Add fixture-driven integration tests for same-PR event reconciliation, cross-PR parallelism, direct-push permission checks, blocked push-back worktrees, and blocked high-risk file changes.
+- [ ] Add Flue workflow smoke tests for `triage_pr_event`, `prepare_pr_worktree`, `fix_pr_review_feedback`, `fix_pr_ci_failure`, `verify_pr_worktree`, and `push_pr_autofix` using temporary `NEONDECK_HOME`, temporary repos/worktrees, and fake GitHub/check fixtures.
+- [ ] Add local smoke scripts that run watch/autopilot workflows through `flue run` or `@flue/sdk` and assert workflow summaries, notifications, prepared diffs, and run observability records.
 
 ### Phase 20: Autopilot Policy And UX Hardening
 
@@ -1411,6 +1437,8 @@ Must-haves:
 - [ ] Add runtime skill guidance that Kilo delegation is explicit-handoff only by default; Neon should normally do work itself or use Neon subagents unless the user asks for Kilo or policy opts in.
 - [ ] Add runtime skill guidance that tells Neon to use Kilo session actions/workflows for session search/read/summarization and to avoid direct Kilo storage reads.
 - [ ] Add docs for Kilo handoff setup, trust boundaries, worktree behavior, session tracking, cancellation, and troubleshooting.
+- [ ] Add Kilo handoff smoke tests using a fake `kilo` CLI that emits JSONL events, including session id capture, child session capture, task completion, failure, abort, and restart reconciliation.
+- [ ] Add Flue workflow smoke tests for `handoff_to_kilo`, `reconcile_kilo_task`, `summarize_kilo_session`, `review_kilo_result`, `verify_kilo_result`, and `promote_kilo_result` with fake Kilo event streams and temporary worktrees.
 - [ ] After CLI MVP, evaluate managed `kilo serve` plus SDK integration:
   - server lifecycle supervisor
   - SDK session creation and `promptAsync`
