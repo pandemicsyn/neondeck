@@ -1261,7 +1261,7 @@ Must-haves:
 
 ### Phase 19: PR Event Autopilot
 
-- Status: partially complete and actively being finished. Event watermarks, triage, worktree preparation, review/CI fix workflows, verification, push-back, result comments, concurrency controls, dashboard/TUI-ready state, notification policy, and runtime guidance have landed. Broader smoke/integration coverage remains open.
+- Status: partially complete and actively being finished. Event watermarks, triage, worktree preparation, review/CI fix workflows, verification, push-back, PR result comments, concurrency controls, dashboard/TUI-ready state, notification policy, runtime guidance, and fixture-backed smoke/integration coverage have landed.
 
 - [x] Extend PR watches to persist event watermarks for commits, review threads, requested-changes reviews, check suites, check runs, mergeability, and out-of-date branch state.
 - [x] Add a `triage_pr_event` workflow that classifies deltas into no-op, notify-only, explain-only, draft-fix, auto-fix-no-push, or auto-fix-push-after-checks.
@@ -1296,9 +1296,9 @@ Must-haves:
   - urgent only for production/main failures
   - quiet no-op when a watch delta is reconciled without action
 - [x] Add runtime skill guidance for worktree autopilot, including when Neon must avoid direct edits, when to ask for approval, and how to explain autonomous fixes.
-- [ ] Add fixture-driven integration tests for same-PR event reconciliation, cross-PR parallelism, direct-push permission checks, blocked push-back worktrees, and blocked high-risk file changes.
-- [ ] Add Flue workflow smoke tests for `triage_pr_event`, `prepare_pr_worktree`, `fix_pr_review_feedback`, `fix_pr_ci_failure`, `verify_pr_worktree`, and `push_pr_autofix` using temporary `NEONDECK_HOME`, temporary repos/worktrees, and fake GitHub/check fixtures.
-- [ ] Add local smoke scripts that run watch/autopilot workflows through `flue run` or `@flue/sdk` and assert workflow summaries, notifications, prepared diffs, and run observability records.
+- [x] Add fixture-driven integration tests for same-PR event reconciliation, cross-PR parallelism, direct-push permission checks, blocked push-back worktrees, and blocked high-risk file changes.
+- [x] Add Flue workflow smoke tests for `triage_pr_event`, `prepare_pr_worktree`, `fix_pr_review_feedback`, `fix_pr_ci_failure`, `verify_pr_worktree`, `comment_pr_autofix_result`, and `push_pr_autofix` using temporary `NEONDECK_HOME`, temporary repos/worktrees, and fake GitHub/check/comment fixtures.
+- [x] Add local smoke scripts that run watch/autopilot workflows through `flue run` or `@flue/sdk` and assert workflow summaries, notifications, prepared diffs, and run observability records.
 
 ### Phase 20: Autopilot Policy And UX Hardening
 
