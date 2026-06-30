@@ -1,8 +1,10 @@
 # neondeck
 
-Local companion-display dashboard and Flue agent server for the Corsair Xeneon Edge.
+Local-first autonomous developer assistant for companion displays and sensor-panel style decks.
 
-neondeck is a local-first Node 26 app with a Hono/Flue backend and a Vite/React/Tailwind dashboard optimized for a 2560 x 720 display. It provides a compact GitHub PR queue, active PR watches, runtime state panels, persistent Flue chat sessions, and a terminal-style host status line.
+neondeck is a Node 26 app with a Hono/Flue backend and a Vite/React/Tailwind dashboard designed to live full time beside your work: on a companion display, on a vertical panel, or as a sensor-panel style deck on your primary monitor. It provides an autonomous local assistant, compact GitHub work queues, active PR watches, runtime state panels, persistent Flue chat sessions, and a terminal-style host status line.
+
+The dashboard supports horizontal and vertical use, from 32:9 ultrawides like the Corsair Xeneon Edge to custom layouts that Neon can adapt through validated runtime config.
 
 The repository also includes an Astro marketing/docs site under `webapp/`, deployed to Cloudflare for `neondeck.dev`.
 

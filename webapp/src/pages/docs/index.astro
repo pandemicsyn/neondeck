@@ -7,7 +7,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
 <BaseLayout
   title="neondeck docs"
-  description="Documentation for installing, configuring, and deploying neondeck."
+  description="Documentation for installing, configuring, and deploying neondeck, a local-first autonomous developer assistant."
 >
   <div class="site-shell">
     <SiteNav />
@@ -16,10 +16,11 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       <article class="docs-prose">
         <h1>Docs</h1>
         <p>
-          neondeck is a local dashboard and agent console for a companion
-          display. The local app serves a React dashboard and Flue backend; this
-          Astro site documents the project and deploys separately to Cloudflare
-          at neondeck.dev.
+          neondeck is a local-first autonomous developer assistant designed to
+          stay visible beside your work on a companion display, vertical panel,
+          or sensor-panel style deck. The local app serves a React dashboard and
+          Flue backend; this Astro site documents the project and deploys
+          separately to Cloudflare at neondeck.dev.
         </p>
 
         <h2>Start here</h2>
@@ -51,9 +52,11 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <p>
           The local app is a Node 26 Hono server with Flue agents, Flue
           workflows, deterministic actions, local SQLite state, and a Vite/React
-          dashboard. It is optimized for the Corsair Xeneon Edge, but the
-          dashboard layout is driven by runtime JSON config rather than the
-          display hardware. Local dashboard surfaces subscribe to
+          dashboard. It is designed for everything from 32:9 ultrawides like the
+          Corsair Xeneon Edge to custom layouts for the size and constraints you
+          want. Dashboard layout is driven by runtime JSON config, measured
+          panel size, and typed actions Neon can use to adapt the surface. Local
+          dashboard surfaces subscribe to
           <code>/api/events/config</code> so config actions and explicit config reloads
           refresh affected panels without a browser reload.
         </p>
