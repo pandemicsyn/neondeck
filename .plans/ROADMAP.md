@@ -1361,7 +1361,7 @@ Must-haves:
 
 ### Phase 21: KiloCode Handoff Runner
 
-- Status: partially complete. CLI task execution, reconciliation, session access, bounded transcript controls, dashboard/runtime overview rows, Kilo notification policy, notification-linked API state, and review/verify/promote admission have landed. Richer Kilo workflow completion, actual promote mutation through push-back, full smoke coverage, and managed `kilo serve`/SDK evaluation remain open.
+- Status: partially complete. CLI task execution, reconciliation, session access, bounded transcript controls, dashboard/runtime overview rows, Kilo notification policy, notification-linked API state, review/verify/promote admission, and Kilo workflow smoke coverage have landed. Richer Kilo workflow completion, actual promote mutation through push-back, and managed `kilo serve`/SDK evaluation remain open.
 
 - [x] Add Kilo handoff config under app config:
   - enabled flag
@@ -1444,7 +1444,7 @@ Must-haves:
 - [x] Add runtime skill guidance that tells Neon to use Kilo session actions/workflows for session search/read/summarization and to avoid direct Kilo storage reads.
 - [x] Add docs for Kilo handoff setup, trust boundaries, worktree behavior, session tracking, cancellation, and troubleshooting.
 - [x] Add Kilo handoff smoke tests using a fake `kilo` CLI that emits JSONL events, including session id capture, child session capture, task completion, failure, abort, and restart reconciliation.
-- [ ] Add Flue workflow smoke tests for `handoff_to_kilo`, `reconcile_kilo_task`, `summarize_kilo_session`, `review_kilo_result`, `verify_kilo_result`, and `promote_kilo_result` with fake Kilo event streams and temporary worktrees.
+- [x] Add Flue workflow smoke tests for `handoff_to_kilo`, `reconcile_kilo_task`, `summarize_kilo_session`, `review_kilo_result`, `verify_kilo_result`, and `promote_kilo_result` with fake Kilo event streams and temporary worktrees.
 - [ ] After CLI MVP, evaluate managed `kilo serve` plus SDK integration:
   - server lifecycle supervisor
   - SDK session creation and `promptAsync`
