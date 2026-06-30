@@ -3,6 +3,7 @@ import {
   buildPullRequestQueries,
   clearGitHubPullRequestQueueCache,
   fetchCheckSummary,
+  fetchPullRequestReviewThreads,
   fetchPullRequestQueue,
 } from './github';
 import type { RepoConfig } from './runtime-home';
@@ -421,6 +422,75 @@ describe('github foundation', () => {
       failed: 1,
     });
   });
+
+  it('paginates review thread comments', async () => {
+    const fetchedBodies: unknown[] = [];
+    globalThis.fetch = vi.fn<typeof fetch>(async (_input, init) => {
+      const body =
+        typeof init?.body === 'string'
+          ? (JSON.parse(init.body) as Record<string, unknown>)
+          : {};
+      fetchedBodies.push(body);
+      if (body.variables && typeof body.variables === 'object') {
+        const variables = body.variables as Record<string, unknown>;
+        if (variables.threadId === 'thread-1') {
+          return jsonResponse({
+            data: {
+              node: {
+                comments: {
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                  nodes: [reviewThreadComment('comment-101', 101)],
+                },
+              },
+            },
+          });
+        }
+      }
+
+      return jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: 'thread-1',
+                    isResolved: false,
+                    isOutdated: false,
+                    path: 'src/app.ts',
+                    line: 12,
+                    comments: {
+                      pageInfo: { hasNextPage: true, endCursor: 'cursor-100' },
+                      nodes: [reviewThreadComment('comment-1', 1)],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+    });
+
+    await expect(
+      fetchPullRequestReviewThreads({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: 'thread-1',
+        comments: [
+          expect.objectContaining({ databaseId: 1 }),
+          expect.objectContaining({ databaseId: 101 }),
+        ],
+      }),
+    ]);
+    expect(fetchedBodies).toHaveLength(2);
+  });
 });
 
 function searchIssue(
@@ -457,4 +527,21 @@ function jsonResponse(
     status,
     headers: { 'Content-Type': 'application/json', ...headers },
   });
+}
+
+function reviewThreadComment(id: string, databaseId: number) {
+  return {
+    id,
+    databaseId,
+    body: `Comment ${databaseId}`,
+    url: `https://github.com/pandemicsyn/neondeck/pull/123#discussion_r${databaseId}`,
+    author: { login: 'reviewer' },
+    createdAt: '2026-06-30T20:05:00Z',
+    updatedAt: '2026-06-30T20:05:00Z',
+    path: 'src/app.ts',
+    line: 12,
+    originalLine: 12,
+    diffHunk: '@@',
+    pullRequestReview: { databaseId: 9001 },
+  };
 }

@@ -64,7 +64,16 @@ export type GitHubPullRequestDetail = {
   merged: boolean;
   mergeCommitSha: string | null;
   headSha: string;
+  headRef?: string | null;
+  headOwner?: string | null;
+  headName?: string | null;
+  headRepoFullName?: string | null;
   baseRef: string;
+  baseSha?: string | null;
+  baseRepoFullName?: string | null;
+  mergeable?: boolean | null;
+  mergeableState?: string | null;
+  maintainerCanModify?: boolean;
   updatedAt: string;
 };
 
@@ -76,6 +85,116 @@ export type GitHubCheckSummary = {
   pending: number;
   statusContexts?: number;
   checkedAt: string;
+};
+
+export type GitHubPullRequestCommit = {
+  sha: string;
+  url: string;
+  authorLogin: string | null;
+  committedAt: string | null;
+};
+
+export type GitHubPullRequestReview = {
+  id: number;
+  nodeId: string | null;
+  state: string;
+  authorLogin: string | null;
+  submittedAt: string | null;
+  commitId: string | null;
+  url: string | null;
+};
+
+export type GitHubPullRequestRequestedChangesState = {
+  active: GitHubPullRequestReview[];
+  latestByReviewer: GitHubPullRequestReview[];
+  history: GitHubPullRequestReview[];
+};
+
+export type GitHubPullRequestReviewThread = {
+  id: string;
+  isResolved: boolean;
+  isOutdated: boolean;
+  path: string | null;
+  line: number | null;
+  comments: GitHubPullRequestReviewThreadComment[];
+};
+
+export type GitHubPullRequestReviewThreadComment = {
+  id: string;
+  databaseId: number | null;
+  authorLogin: string | null;
+  body: string;
+  url: string | null;
+  path: string | null;
+  line: number | null;
+  originalLine: number | null;
+  diffHunk: string | null;
+  reviewId: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GitHubCheckSuiteDetail = {
+  id: number;
+  headSha: string;
+  status: string;
+  conclusion: string | null;
+  appSlug: string | null;
+  url: string | null;
+  htmlUrl: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type GitHubCheckRunDetail = {
+  id: number;
+  name: string;
+  headSha: string;
+  status: string;
+  conclusion: string | null;
+  url: string | null;
+  htmlUrl: string | null;
+  detailsUrl: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+};
+
+export type GitHubBranchPushPermissions = {
+  headRepoFullName: string | null;
+  baseRepoFullName: string | null;
+  isFork: boolean;
+  maintainerCanModify: boolean;
+  headRepoPush: boolean | null;
+  baseRepoPush: boolean | null;
+  canLikelyPush: boolean | null;
+  checkedAt: string;
+};
+
+export type GitHubPullRequestEventState = {
+  repo: string;
+  number: number;
+  url: string;
+  title: string;
+  state: string;
+  draft: boolean;
+  merged: boolean;
+  mergeCommitSha: string | null;
+  headSha: string;
+  headRef: string | null;
+  baseRef: string;
+  baseSha: string | null;
+  mergeable: boolean | null;
+  mergeableState: string | null;
+  maintainerCanModify: boolean;
+  commits: GitHubPullRequestCommit[];
+  reviewThreads: GitHubPullRequestReviewThread[];
+  requestedChangesReviews: GitHubPullRequestReview[];
+  requestedChangesState: GitHubPullRequestRequestedChangesState;
+  checkSuites: GitHubCheckSuiteDetail[];
+  checkRuns: GitHubCheckRunDetail[];
+  branchPermissions: GitHubBranchPushPermissions;
+  isOutOfDate: boolean;
+  fetchedAt: string;
 };
 
 const searchPerPage = 50;
@@ -283,8 +402,84 @@ export async function fetchPullRequestDetail(options: {
     merged: data.merged,
     mergeCommitSha: data.merge_commit_sha,
     headSha: data.head.sha,
+    headRef: data.head.ref ?? null,
+    headOwner: data.head.repo?.owner?.login ?? null,
+    headName: data.head.repo?.name ?? null,
+    headRepoFullName: data.head.repo?.full_name ?? null,
     baseRef: data.base.ref,
+    baseSha: data.base.sha ?? null,
+    baseRepoFullName: data.base.repo?.full_name ?? null,
+    mergeable: data.mergeable ?? null,
+    mergeableState: data.mergeable_state ?? null,
+    maintainerCanModify: data.maintainer_can_modify ?? false,
     updatedAt: data.updated_at,
+  };
+}
+
+export async function fetchPullRequestEventState(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+}): Promise<GitHubPullRequestEventState> {
+  const detail = await fetchPullRequestDetail(options);
+  const [
+    commits,
+    reviews,
+    reviewThreads,
+    checkSuites,
+    checkRuns,
+    branchPermissions,
+  ] = await Promise.all([
+    fetchPullRequestCommits(options),
+    fetchPullRequestReviews(options),
+    fetchPullRequestReviewThreads(options),
+    fetchCheckSuites({
+      token: options.token,
+      owner: options.owner,
+      repo: options.repo,
+      ref: detail.headSha,
+    }),
+    fetchCheckRunDetails({
+      token: options.token,
+      owner: options.owner,
+      repo: options.repo,
+      ref: detail.headSha,
+    }),
+    fetchBranchPushPermissions({
+      token: options.token,
+      owner: options.owner,
+      repo: options.repo,
+      detail,
+    }),
+  ]);
+  const requestedChangesState = requestedChangesStateFromReviews(reviews);
+
+  return {
+    repo: detail.repo,
+    number: detail.number,
+    url: detail.url,
+    title: detail.title,
+    state: detail.state,
+    draft: detail.draft ?? false,
+    merged: detail.merged,
+    mergeCommitSha: detail.mergeCommitSha,
+    headSha: detail.headSha,
+    headRef: detail.headRef ?? null,
+    baseRef: detail.baseRef,
+    baseSha: detail.baseSha ?? null,
+    mergeable: detail.mergeable ?? null,
+    mergeableState: detail.mergeableState ?? null,
+    maintainerCanModify: detail.maintainerCanModify ?? false,
+    commits,
+    reviewThreads,
+    requestedChangesReviews: requestedChangesState.active,
+    requestedChangesState,
+    checkSuites,
+    checkRuns,
+    branchPermissions,
+    isOutOfDate: isOutOfDateMergeState(detail.mergeableState),
+    fetchedAt: new Date().toISOString(),
   };
 }
 
@@ -371,6 +566,281 @@ async function fetchCheckRuns(token: string, initialUrl: string) {
   }
 
   return runs;
+}
+
+export async function fetchCheckRunDetails(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  ref: string;
+}): Promise<GitHubCheckRunDetail[]> {
+  const owner = encodePathSegment(options.owner);
+  const repo = encodePathSegment(options.repo);
+  const ref = encodePathSegment(options.ref);
+  const runs = await fetchCheckRuns(
+    options.token,
+    `https://api.github.com/repos/${owner}/${repo}/commits/${ref}/check-runs?per_page=100`,
+  );
+
+  return runs.map((run, index) => ({
+    id: run.id ?? index,
+    name: run.name ?? `check-run-${index + 1}`,
+    headSha: run.head_sha ?? options.ref,
+    status: run.status,
+    conclusion: run.conclusion,
+    url: run.url ?? null,
+    htmlUrl: run.html_url ?? null,
+    detailsUrl: run.details_url ?? null,
+    startedAt: run.started_at ?? null,
+    completedAt: run.completed_at ?? null,
+  }));
+}
+
+export async function fetchCheckSuites(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  ref: string;
+}): Promise<GitHubCheckSuiteDetail[]> {
+  const owner = encodePathSegment(options.owner);
+  const repo = encodePathSegment(options.repo);
+  const ref = encodePathSegment(options.ref);
+  const suites: GitHubCheckSuiteApiResponse['check_suites'] = [];
+  let nextUrl: string | undefined =
+    `https://api.github.com/repos/${owner}/${repo}/commits/${ref}/check-suites?per_page=100`;
+
+  while (nextUrl) {
+    const response = await githubFetch(options.token, nextUrl);
+    const data = v.parse(
+      githubCheckSuitesApiResponseSchema,
+      await response.json(),
+    );
+    suites.push(...(data.check_suites ?? []));
+    nextUrl = nextLink(response.headers.get('link'));
+  }
+
+  return suites.map((suite) => ({
+    id: suite.id,
+    headSha: suite.head_sha,
+    status: suite.status,
+    conclusion: suite.conclusion,
+    appSlug: suite.app?.slug ?? suite.app?.name ?? null,
+    url: suite.url ?? null,
+    htmlUrl: suite.html_url ?? null,
+    createdAt: suite.created_at ?? null,
+    updatedAt: suite.updated_at ?? null,
+  }));
+}
+
+export async function fetchPullRequestCommits(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+}): Promise<GitHubPullRequestCommit[]> {
+  const commits: GitHubPullRequestCommitApiItem[] = [];
+  let nextUrl: string | undefined =
+    `https://api.github.com/repos/${encodePathSegment(options.owner)}/${encodePathSegment(options.repo)}/pulls/${options.number}/commits?per_page=100`;
+
+  while (nextUrl) {
+    const response = await githubFetch(options.token, nextUrl);
+    const data = v.parse(
+      v.array(githubPullRequestCommitApiItemSchema),
+      await response.json(),
+    );
+    commits.push(...data);
+    nextUrl = nextLink(response.headers.get('link'));
+  }
+
+  return commits.map((commit) => ({
+    sha: commit.sha,
+    url: commit.html_url,
+    authorLogin: commit.author?.login ?? null,
+    committedAt:
+      commit.commit.committer?.date ?? commit.commit.author?.date ?? null,
+  }));
+}
+
+export async function fetchPullRequestReviews(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+}): Promise<GitHubPullRequestReview[]> {
+  const reviews: GitHubPullRequestReviewApiItem[] = [];
+  let nextUrl: string | undefined =
+    `https://api.github.com/repos/${encodePathSegment(options.owner)}/${encodePathSegment(options.repo)}/pulls/${options.number}/reviews?per_page=100`;
+
+  while (nextUrl) {
+    const response = await githubFetch(options.token, nextUrl);
+    const data = v.parse(
+      v.array(githubPullRequestReviewApiItemSchema),
+      await response.json(),
+    );
+    reviews.push(...data);
+    nextUrl = nextLink(response.headers.get('link'));
+  }
+
+  return reviews.map((review) => ({
+    id: review.id,
+    nodeId: review.node_id ?? null,
+    state: review.state,
+    authorLogin: review.user?.login ?? null,
+    submittedAt: review.submitted_at ?? null,
+    commitId: review.commit_id ?? null,
+    url: review.html_url ?? null,
+  }));
+}
+
+export async function fetchPullRequestReviewThreads(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+}): Promise<GitHubPullRequestReviewThread[]> {
+  const threads: GitHubPullRequestReviewThread[] = [];
+  let cursor: string | null = null;
+
+  for (let page = 0; page < 5; page += 1) {
+    const data = await githubGraphqlFetch(
+      options.token,
+      pullRequestReviewThreadsQuery,
+      {
+        owner: options.owner,
+        name: options.repo,
+        number: options.number,
+        after: cursor,
+      },
+    );
+    const parsed = v.parse(githubReviewThreadsGraphqlResponseSchema, data);
+    const pullRequest = parsed.data.repository?.pullRequest;
+    if (!pullRequest) break;
+    for (const thread of pullRequest.reviewThreads.nodes ?? []) {
+      const comments = await fetchAllReviewThreadComments(
+        options.token,
+        thread,
+      );
+      threads.push({
+        id: thread.id,
+        isResolved: thread.isResolved,
+        isOutdated: thread.isOutdated,
+        path: thread.path ?? null,
+        line: thread.line ?? null,
+        comments: comments.map((comment) =>
+          normalizeReviewThreadComment(comment, thread),
+        ),
+      });
+    }
+
+    if (!pullRequest.reviewThreads.pageInfo.hasNextPage) break;
+    cursor = pullRequest.reviewThreads.pageInfo.endCursor ?? null;
+    if (!cursor) break;
+  }
+
+  return threads;
+}
+
+async function fetchAllReviewThreadComments(
+  token: string,
+  thread: GitHubReviewThreadGraphqlNode,
+) {
+  const comments = [...(thread.comments.nodes ?? [])];
+  let cursor = thread.comments.pageInfo.endCursor;
+
+  for (let page = 0; thread.comments.pageInfo.hasNextPage && page < 10;) {
+    page += 1;
+    if (!cursor) break;
+    const data = await githubGraphqlFetch(token, reviewThreadCommentsQuery, {
+      threadId: thread.id,
+      after: cursor,
+    });
+    const parsed = v.parse(
+      githubReviewThreadCommentsGraphqlResponseSchema,
+      data,
+    );
+    const node = parsed.data.node;
+    if (!node?.comments) break;
+    comments.push(...(node.comments.nodes ?? []));
+    if (!node.comments.pageInfo.hasNextPage) break;
+    cursor = node.comments.pageInfo.endCursor;
+  }
+
+  return comments;
+}
+
+function normalizeReviewThreadComment(
+  comment: GitHubReviewThreadCommentGraphqlNode,
+  thread: Pick<GitHubReviewThreadGraphqlNode, 'path' | 'line'>,
+): GitHubPullRequestReviewThreadComment {
+  return {
+    id: comment.id,
+    databaseId: comment.databaseId ?? null,
+    authorLogin: comment.author?.login ?? null,
+    body: comment.body,
+    url: comment.url ?? null,
+    path: comment.path ?? thread.path ?? null,
+    line: comment.line ?? thread.line ?? null,
+    originalLine: comment.originalLine ?? null,
+    diffHunk: comment.diffHunk ?? null,
+    reviewId: comment.pullRequestReview?.databaseId ?? null,
+    createdAt: comment.createdAt,
+    updatedAt: comment.updatedAt,
+  };
+}
+
+async function fetchBranchPushPermissions(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  detail: GitHubPullRequestDetail;
+}): Promise<GitHubBranchPushPermissions> {
+  const headRepoFullName = options.detail.headRepoFullName ?? null;
+  const baseRepoFullName =
+    options.detail.baseRepoFullName ?? `${options.owner}/${options.repo}`;
+  const isFork =
+    headRepoFullName !== null &&
+    headRepoFullName.toLowerCase() !== baseRepoFullName.toLowerCase();
+  const [headRepo, baseRepo] = await Promise.all([
+    headRepoFullName
+      ? fetchRepositoryPermissions(options.token, headRepoFullName).catch(
+          () => null,
+        )
+      : Promise.resolve(null),
+    fetchRepositoryPermissions(options.token, baseRepoFullName).catch(
+      () => null,
+    ),
+  ]);
+  const headRepoPush = headRepo?.permissions?.push ?? null;
+  const baseRepoPush = baseRepo?.permissions?.push ?? null;
+  const maintainerCanModify = options.detail.maintainerCanModify ?? false;
+  const canLikelyPush =
+    headRepoPush === true ||
+    (isFork && maintainerCanModify && baseRepoPush === true)
+      ? true
+      : headRepoPush === false || baseRepoPush === false
+        ? false
+        : null;
+
+  return {
+    headRepoFullName,
+    baseRepoFullName,
+    isFork,
+    maintainerCanModify,
+    headRepoPush,
+    baseRepoPush,
+    canLikelyPush,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+async function fetchRepositoryPermissions(token: string, fullName: string) {
+  const [owner, repo] = fullName.split('/');
+  if (!owner || !repo) return null;
+  const response = await githubFetch(
+    token,
+    `https://api.github.com/repos/${encodePathSegment(owner)}/${encodePathSegment(repo)}`,
+  );
+  return v.parse(githubRepositoryApiResponseSchema, await response.json());
 }
 
 async function searchPullRequests(
@@ -461,13 +931,36 @@ async function enrichPullRequest(token: string, item: GitHubPullRequest) {
   }
 }
 
-async function githubFetch(token: string, url: string) {
+async function githubGraphqlFetch(
+  token: string,
+  query: string,
+  variables: Record<string, unknown>,
+) {
+  const response = await githubFetch(token, 'https://api.github.com/graphql', {
+    method: 'POST',
+    body: JSON.stringify({ query, variables }),
+  });
+  const data = await response.json();
+  const parsed = v.parse(githubGraphqlBaseResponseSchema, data);
+  if (parsed.errors?.length) {
+    throw new Error(
+      `GitHub GraphQL request failed: ${parsed.errors.map((item) => item.message).join('; ')}`,
+    );
+  }
+
+  return data;
+}
+
+async function githubFetch(token: string, url: string, init: RequestInit = {}) {
   let response: Response;
   try {
     response = await fetch(url, {
+      ...init,
       headers: {
         Accept: 'application/vnd.github+json',
         Authorization: `Bearer ${token}`,
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        ...init.headers,
         'User-Agent': 'neondeck',
         'X-GitHub-Api-Version': '2022-11-28',
       },
@@ -518,17 +1011,50 @@ const githubPullRequestApiResponseSchema = v.object({
   draft: v.optional(v.boolean()),
   merged: v.boolean(),
   merge_commit_sha: v.nullable(v.string()),
+  mergeable: v.optional(v.nullable(v.boolean())),
+  mergeable_state: v.optional(v.nullable(v.string())),
+  maintainer_can_modify: v.optional(v.boolean()),
   updated_at: v.string(),
-  head: v.object({ sha: v.string() }),
-  base: v.object({ ref: v.string() }),
+  head: v.object({
+    sha: v.string(),
+    ref: v.optional(v.string()),
+    repo: v.optional(
+      v.nullable(
+        v.object({
+          full_name: v.string(),
+          name: v.string(),
+          owner: v.object({ login: v.string() }),
+        }),
+      ),
+    ),
+  }),
+  base: v.object({
+    sha: v.optional(v.string()),
+    ref: v.string(),
+    repo: v.optional(
+      v.nullable(
+        v.object({
+          full_name: v.string(),
+        }),
+      ),
+    ),
+  }),
 });
 
 const githubCheckRunsApiResponseSchema = v.object({
   check_runs: v.optional(
     v.array(
       v.object({
+        id: v.optional(v.number()),
+        name: v.optional(v.string()),
+        head_sha: v.optional(v.string()),
         status: v.string(),
         conclusion: v.nullable(v.string()),
+        url: v.optional(v.nullable(v.string())),
+        html_url: v.optional(v.nullable(v.string())),
+        details_url: v.optional(v.nullable(v.string())),
+        started_at: v.optional(v.nullable(v.string())),
+        completed_at: v.optional(v.nullable(v.string())),
       }),
     ),
   ),
@@ -547,6 +1073,246 @@ const githubCommitStatusApiResponseSchema = v.object({
     ),
   ),
 });
+
+const githubCheckSuitesApiResponseSchema = v.object({
+  check_suites: v.optional(
+    v.array(
+      v.object({
+        id: v.number(),
+        head_sha: v.string(),
+        status: v.string(),
+        conclusion: v.nullable(v.string()),
+        url: v.optional(v.nullable(v.string())),
+        html_url: v.optional(v.nullable(v.string())),
+        created_at: v.optional(v.nullable(v.string())),
+        updated_at: v.optional(v.nullable(v.string())),
+        app: v.optional(
+          v.nullable(
+            v.object({
+              slug: v.optional(v.nullable(v.string())),
+              name: v.optional(v.nullable(v.string())),
+            }),
+          ),
+        ),
+      }),
+    ),
+  ),
+});
+type GitHubCheckSuiteApiResponse = v.InferOutput<
+  typeof githubCheckSuitesApiResponseSchema
+>;
+
+const githubPullRequestCommitApiItemSchema = v.object({
+  sha: v.string(),
+  html_url: v.string(),
+  author: v.optional(v.nullable(v.object({ login: v.string() }))),
+  commit: v.object({
+    author: v.optional(v.nullable(v.object({ date: v.string() }))),
+    committer: v.optional(v.nullable(v.object({ date: v.string() }))),
+  }),
+});
+type GitHubPullRequestCommitApiItem = v.InferOutput<
+  typeof githubPullRequestCommitApiItemSchema
+>;
+
+const githubPullRequestReviewApiItemSchema = v.object({
+  id: v.number(),
+  node_id: v.optional(v.string()),
+  state: v.string(),
+  user: v.optional(v.nullable(v.object({ login: v.string() }))),
+  submitted_at: v.optional(v.nullable(v.string())),
+  commit_id: v.optional(v.nullable(v.string())),
+  html_url: v.optional(v.nullable(v.string())),
+});
+type GitHubPullRequestReviewApiItem = v.InferOutput<
+  typeof githubPullRequestReviewApiItemSchema
+>;
+
+const githubRepositoryApiResponseSchema = v.object({
+  full_name: v.string(),
+  permissions: v.optional(
+    v.object({
+      admin: v.optional(v.boolean()),
+      maintain: v.optional(v.boolean()),
+      push: v.optional(v.boolean()),
+      triage: v.optional(v.boolean()),
+      pull: v.optional(v.boolean()),
+    }),
+  ),
+});
+
+const githubGraphqlBaseResponseSchema = v.looseObject({
+  errors: v.optional(v.array(v.object({ message: v.string() }))),
+});
+
+const githubReviewThreadCommentGraphqlNodeSchema = v.object({
+  id: v.string(),
+  databaseId: v.optional(v.nullable(v.number())),
+  body: v.string(),
+  url: v.optional(v.nullable(v.string())),
+  author: v.optional(v.nullable(v.object({ login: v.string() }))),
+  createdAt: v.string(),
+  updatedAt: v.string(),
+  path: v.optional(v.nullable(v.string())),
+  line: v.optional(v.nullable(v.number())),
+  originalLine: v.optional(v.nullable(v.number())),
+  diffHunk: v.optional(v.nullable(v.string())),
+  pullRequestReview: v.optional(
+    v.nullable(
+      v.object({
+        databaseId: v.optional(v.nullable(v.number())),
+      }),
+    ),
+  ),
+});
+type GitHubReviewThreadCommentGraphqlNode = v.InferOutput<
+  typeof githubReviewThreadCommentGraphqlNodeSchema
+>;
+
+const githubReviewThreadsGraphqlResponseSchema = v.object({
+  data: v.object({
+    repository: v.nullable(
+      v.object({
+        pullRequest: v.nullable(
+          v.object({
+            reviewThreads: v.object({
+              pageInfo: v.object({
+                hasNextPage: v.boolean(),
+                endCursor: v.nullable(v.string()),
+              }),
+              nodes: v.optional(
+                v.array(
+                  v.object({
+                    id: v.string(),
+                    isResolved: v.boolean(),
+                    isOutdated: v.boolean(),
+                    path: v.optional(v.nullable(v.string())),
+                    line: v.optional(v.nullable(v.number())),
+                    comments: v.object({
+                      pageInfo: v.object({
+                        hasNextPage: v.boolean(),
+                        endCursor: v.nullable(v.string()),
+                      }),
+                      nodes: v.optional(
+                        v.array(githubReviewThreadCommentGraphqlNodeSchema),
+                      ),
+                    }),
+                  }),
+                ),
+              ),
+            }),
+          }),
+        ),
+      }),
+    ),
+  }),
+});
+type GitHubReviewThreadGraphqlNode = NonNullable<
+  NonNullable<
+    NonNullable<
+      v.InferOutput<
+        typeof githubReviewThreadsGraphqlResponseSchema
+      >['data']['repository']
+    >['pullRequest']
+  >['reviewThreads']['nodes']
+>[number];
+
+const githubReviewThreadCommentsGraphqlResponseSchema = v.object({
+  data: v.object({
+    node: v.nullable(
+      v.object({
+        comments: v.object({
+          pageInfo: v.object({
+            hasNextPage: v.boolean(),
+            endCursor: v.nullable(v.string()),
+          }),
+          nodes: v.optional(
+            v.array(githubReviewThreadCommentGraphqlNodeSchema),
+          ),
+        }),
+      }),
+    ),
+  }),
+});
+
+const pullRequestReviewThreadsQuery = `
+  query NeondeckPullRequestReviewThreads($owner: String!, $name: String!, $number: Int!, $after: String) {
+    repository(owner: $owner, name: $name) {
+      pullRequest(number: $number) {
+        reviewThreads(first: 100, after: $after) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            id
+            isResolved
+            isOutdated
+            path
+            line
+            comments(first: 100) {
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+              nodes {
+                id
+                databaseId
+                body
+                url
+                author {
+                  login
+                }
+                createdAt
+                updatedAt
+                path
+                line
+                originalLine
+                diffHunk
+                pullRequestReview {
+                  databaseId
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+const reviewThreadCommentsQuery = `
+  query NeondeckPullRequestReviewThreadComments($threadId: ID!, $after: String) {
+    node(id: $threadId) {
+      ... on PullRequestReviewThread {
+        comments(first: 100, after: $after) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            id
+            databaseId
+            body
+            url
+            author {
+              login
+            }
+            createdAt
+            updatedAt
+            path
+            line
+            originalLine
+            diffHunk
+            pullRequestReview {
+              databaseId
+            }
+          }
+        }
+      }
+    }
+  }
+`;
 
 type GitHubSearchIssue = v.InferOutput<typeof githubSearchIssueSchema>;
 
@@ -581,6 +1347,48 @@ function ageDays(value: string) {
 
 function isStale(value: string) {
   return ageDays(value) >= 7;
+}
+
+function requestedChangesStateFromReviews(
+  reviews: GitHubPullRequestReview[],
+): GitHubPullRequestRequestedChangesState {
+  const relevantStates = new Set([
+    'APPROVED',
+    'CHANGES_REQUESTED',
+    'DISMISSED',
+  ]);
+  const history = reviews
+    .filter((review) => relevantStates.has(review.state))
+    .sort(compareReviewAge);
+  const latestByReviewer = Array.from(
+    history
+      .reduce((items, review) => {
+        items.set(review.authorLogin ?? `review:${review.id}`, review);
+        return items;
+      }, new Map<string, GitHubPullRequestReview>())
+      .values(),
+  ).sort(compareReviewAge);
+
+  return {
+    active: latestByReviewer.filter(
+      (review) => review.state === 'CHANGES_REQUESTED',
+    ),
+    latestByReviewer,
+    history,
+  };
+}
+
+function compareReviewAge(
+  left: GitHubPullRequestReview,
+  right: GitHubPullRequestReview,
+) {
+  const leftTime = left.submittedAt ? Date.parse(left.submittedAt) : 0;
+  const rightTime = right.submittedAt ? Date.parse(right.submittedAt) : 0;
+  return leftTime - rightTime || left.id - right.id;
+}
+
+function isOutOfDateMergeState(value: string | null | undefined) {
+  return value === 'behind' || value === 'dirty' || value === 'blocked';
 }
 
 function pullRequestQueueCacheKey(

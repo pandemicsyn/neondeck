@@ -196,7 +196,6 @@ Use this format:
 - Decision: Implemented the planned worktree runtime foundation: runtime-home `worktrees/`, repo-local `.neondeck/worktrees` option, app SQLite records/locks/events/cleanup attempts, deterministic `neondeck_worktree_*` actions/tools, repo registry active-worktree links, repo-edit `worktreeId` targeting, cleanup policy config/action, Runtime Overview rows, runtime skill guidance, and focused service tests. No Phase 18 scope deviations were taken.
 - Reason: Worktrees are the required isolation boundary for later PR event autopilot and Kilo handoff, but this phase should remain deterministic app state and service plumbing.
 - Follow-up: Phase 19 and later should add PR event autopilot workflows, prepared-diff UI/push-back flows, and Kilo handoff orchestration on top of these worktree services.
-
 ## 2026-06-30 - Minimal KiloCode Handoff Runner
 
 - Roadmap item: Phase 21 / KiloCode Handoff Runner
@@ -210,3 +209,10 @@ Use this format:
 - Decision: Kilo `--auto` is not enabled merely by `draft-fix` mode; the action also requires `allowAuto: true` and `confirmAuto: true`, then applies the configured `autoPolicy`.
 - Reason: The roadmap confirmation policy says enabling Kilo `--auto` requires explicit confirmation, and this slice should preserve Kilo as a user-invoked delegated worker rather than a default autonomous runtime.
 - Follow-up: If a future repo/workflow policy opts into unattended `--auto`, model that as an audited policy change with visible user controls.
+
+## 2026-06-30 - PR Event Model And Watermarks
+
+- Roadmap item: Phase 19 / PR Event Autopilot
+- Decision: Landed the read-only Phase 19A foundation: GitHub PR event-state collection, persistent per-watch event watermarks, focused lookup/actions, and local APIs. Deferred PR comment posting, triage workflow admission, worktree preparation, autonomous fixes, push-back, and dashboard queue panels.
+- Reason: The delegated slice explicitly asked for the event model and watermarks only, and PR commenting/push/autofix behavior crosses into later mutating autopilot policy.
+- Follow-up: Later Phase 19 work should add `triage_pr_event`, PR comment posting, worktree preparation, fix/verify/push workflows, concurrency controls, and dashboard/TUI queue surfaces on top of these watermarks.
