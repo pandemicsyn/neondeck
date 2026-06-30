@@ -519,6 +519,17 @@ function initializeAppDatabase(path: string) {
         UNIQUE(repo_full_name, ref)
       );
 
+      CREATE TABLE IF NOT EXISTS pr_watch_event_watermarks (
+        watch_id TEXT NOT NULL,
+        category TEXT NOT NULL,
+        watermark_json TEXT NOT NULL,
+        source_updated_at TEXT,
+        checked_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(watch_id, category)
+      );
+
       CREATE TABLE IF NOT EXISTS jobs (
         id TEXT PRIMARY KEY,
         type TEXT NOT NULL,
@@ -806,6 +817,9 @@ function initializeAppDatabase(path: string) {
       CREATE INDEX IF NOT EXISTS idx_notifications_source_unresolved
         ON notifications(source, source_id, resolved_at);
 
+      CREATE INDEX IF NOT EXISTS idx_pr_watch_event_watermarks_watch
+        ON pr_watch_event_watermarks(watch_id, updated_at DESC);
+
       CREATE INDEX IF NOT EXISTS idx_notifications_attention
         ON notifications(resolved_at, read_at, level, created_at DESC);
 
@@ -897,7 +911,7 @@ function initializeAppDatabase(path: string) {
       .prepare(
         `
         INSERT INTO app_metadata (key, value, updated_at)
-        VALUES ('schema_version', '6', datetime('now'))
+        VALUES ('schema_version', '7', datetime('now'))
         ON CONFLICT(key) DO UPDATE SET
           value = excluded.value,
           updated_at = excluded.updated_at;

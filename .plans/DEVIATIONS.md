@@ -196,10 +196,16 @@ Use this format:
 - Decision: Implemented the planned worktree runtime foundation: runtime-home `worktrees/`, repo-local `.neondeck/worktrees` option, app SQLite records/locks/events/cleanup attempts, deterministic `neondeck_worktree_*` actions/tools, repo registry active-worktree links, repo-edit `worktreeId` targeting, cleanup policy config/action, Runtime Overview rows, runtime skill guidance, and focused service tests. No Phase 18 scope deviations were taken.
 - Reason: Worktrees are the required isolation boundary for later PR event autopilot and Kilo handoff, but this phase should remain deterministic app state and service plumbing.
 - Follow-up: Phase 19 and later should add PR event autopilot workflows, prepared-diff UI/push-back flows, and Kilo handoff orchestration on top of these worktree services.
-
 ## 2026-06-30 - Autopilot Queue And Policy Surface
 
 - Roadmap item: Phase 19 / dashboard/TUI autopilot APIs and runtime skill guidance; Phase 20 / repo/watch policy and dashboard decision panel
 - Decision: Implemented a read-only operator surface over existing app state rather than new autopilot workflow admission tables. `/api/autopilot/state` and `neondeck_autopilot_state_lookup` derive queue, prepared-diff, explicit autopilot approval, running-check, recent-activity, repo-policy, and watch-policy views from PR watches, worktrees, execution approvals, Flue observations, notifications, `config.json`, and repo metadata. Prepared diffs are represented by `worktrees.lifecycle_status = prepared-diff`, watch overrides live under repo `metadata.autopilot.watchOverrides`, missing autopilot config reports conservative `notify-only`, and older roadmap mode names are normalized to the display modes `prepare-only`, `autofix-with-approval`, and `autofix-push-when-safe`.
 - Reason: Phase 19A/19B workflow admission, prepared-diff records, push-back, and GitHub event persistence are parallel/deferred work. A composable read adapter gives the dashboard and Neon a useful surface now without inventing a second agent runtime or preempting those backend contracts.
 - Follow-up: Replace placeholder adapters with first-class autopilot queue/admission rows, prepared-diff records and APIs, dedicated push approval flows, workflow smoke tests, recovery actions, and policy enforcement when the Phase 19 workflows and Phase 20 push-back services land.
+
+## 2026-06-30 - PR Event Model And Watermarks
+
+- Roadmap item: Phase 19 / PR Event Autopilot
+- Decision: Landed the read-only Phase 19A foundation: GitHub PR event-state collection, persistent per-watch event watermarks, focused lookup/actions, and local APIs. Deferred PR comment posting, triage workflow admission, worktree preparation, autonomous fixes, push-back, and dashboard queue panels.
+- Reason: The delegated slice explicitly asked for the event model and watermarks only, and PR commenting/push/autofix behavior crosses into later mutating autopilot policy.
+- Follow-up: Later Phase 19 work should add `triage_pr_event`, PR comment posting, worktree preparation, fix/verify/push workflows, concurrency controls, and dashboard/TUI queue surfaces on top of these watermarks.

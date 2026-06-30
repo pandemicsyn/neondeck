@@ -1263,7 +1263,7 @@ Must-haves:
 
 - Status: planned.
 
-- [ ] Extend PR watches to persist event watermarks for commits, review threads, requested-changes reviews, check suites, check runs, mergeability, and out-of-date branch state.
+- [x] Extend PR watches to persist event watermarks for commits, review threads, requested-changes reviews, check suites, check runs, mergeability, and out-of-date branch state.
 - [ ] Add a `triage_pr_event` workflow that classifies deltas into no-op, notify-only, explain-only, draft-fix, auto-fix-no-push, or auto-fix-push-after-checks.
 - [ ] Add deterministic GitHub tools/actions for unresolved review comments, review thread state, requested-changes state, branch push permissions, and PR comment posting.
 - [ ] Add `prepare_pr_worktree` workflow to create/sync/lock a PR worktree and gather deterministic repo/GitHub/check facts.
