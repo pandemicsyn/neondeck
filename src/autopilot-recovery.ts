@@ -5,7 +5,12 @@ import {
   type AutopilotRecoveryActionId,
 } from './autopilot-notifications';
 import {
+  type GitHubPullRequestEventState,
+  fetchPullRequestEventState,
+} from './github';
+import {
   abandonPreparedDiff,
+  ensurePreparedDiffForWorktree,
   openPreparedDiffWorktree,
   readPreparedDiffChangedFiles,
   readPreparedDiffRecord,
@@ -18,6 +23,13 @@ import {
   verifyPrWorktree,
 } from './autopilot-workflows';
 import { type RuntimePaths, runtimePaths } from './runtime-home';
+import {
+  cleanupWorktrees,
+  lockWorktree,
+  readWorktreeRecord,
+  releaseWorktreeLock,
+  syncWorktree,
+} from './worktrees';
 
 type AutopilotRecoveryResult = {
   ok: boolean;
@@ -46,13 +58,21 @@ type AutopilotRecoveryOption = {
   };
 };
 
+type AutopilotRecoveryDependencies = {
+  fetchPullRequestEventState?: typeof fetchPullRequestEventState;
+  token?: string;
+};
+
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 const recoveryActionSchema = v.picklist([
   'inspect-worktree',
+  'retry-after-new-commit',
+  'rebase-resync-worktree',
   'retry-verify',
   'retry-push',
   'retry-comment',
   'request-revision',
+  'cleanup-worktree',
   'abandon',
   'manual-follow-up',
 ]);
@@ -65,6 +85,10 @@ const recoveryRunInputSchema = v.object({
   reason: v.optional(v.string()),
   confirm: v.optional(v.boolean()),
   checks: v.optional(v.array(nonEmptyStringSchema)),
+  headRef: v.optional(nonEmptyStringSchema),
+  headSha: v.optional(nonEmptyStringSchema),
+  fetch: v.optional(v.boolean()),
+  dryRun: v.optional(v.boolean()),
   approverSurface: v.optional(nonEmptyStringSchema),
   lock: v.optional(v.boolean()),
   lockOwner: v.optional(nonEmptyStringSchema),
@@ -155,6 +179,7 @@ export async function readAutopilotRecoveryOptions(
 export async function runAutopilotRecoveryAction(
   rawInput: unknown,
   paths: RuntimePaths = runtimePaths(),
+  dependencies: AutopilotRecoveryDependencies = {},
 ): Promise<AutopilotRecoveryResult> {
   const parsed = parseInput(
     recoveryRunInputSchema,
@@ -215,6 +240,87 @@ export async function runAutopilotRecoveryAction(
     return wrapRecoveryResult(input.recoveryAction, preparedDiff.id, result);
   }
 
+  if (
+    input.recoveryAction === 'retry-after-new-commit' ||
+    input.recoveryAction === 'rebase-resync-worktree'
+  ) {
+    const currentHead = await resolveCurrentPrHead(
+      preparedDiff,
+      input,
+      dependencies,
+    );
+    if ('ok' in currentHead) return currentHead;
+    const lockOwner = input.lockOwner ?? 'autopilot_recovery_rebase_resync';
+    const locked = await lockWorktree(
+      {
+        worktreeId: preparedDiff.worktreeId,
+        owner: lockOwner,
+        ttlSeconds: 3_600,
+      },
+      paths,
+    );
+    if (!locked.ok) {
+      return wrapRecoveryResult(input.recoveryAction, preparedDiff.id, locked);
+    }
+    const lockId = stringField(locked, ['lock', 'id']);
+    if (!lockId) {
+      return {
+        ok: false,
+        action: 'autopilot_recovery_run',
+        changed: true,
+        message: 'Worktree lock did not return a lock id.',
+        preparedDiffId: preparedDiff.id,
+        result: locked,
+        requires: ['worktreeLock'],
+      };
+    }
+    const result = await syncWorktree(
+      {
+        worktreeId: preparedDiff.worktreeId,
+        lockId,
+        headRef: currentHead.headRef,
+        headSha: currentHead.headSha,
+        fetch: input.fetch ?? true,
+        strategy: 'rebase',
+      },
+      paths,
+    );
+    if (!result.ok) {
+      await releaseWorktreeLock(
+        { lockId, owner: lockOwner, finalStatus: 'needs-sync' },
+        paths,
+      );
+      return wrapRecoveryResult(input.recoveryAction, preparedDiff.id, result);
+    }
+    await releaseWorktreeLock(
+      { lockId, owner: lockOwner, finalStatus: 'prepared-diff' },
+      paths,
+    );
+    const worktree = readWorktreeRecord(preparedDiff.worktreeId, paths);
+    const updatedPreparedDiff = await ensurePreparedDiffForWorktree(
+      worktree,
+      paths,
+      {
+        createdBy: `autopilot_recovery_${input.recoveryAction}`,
+        resetDecisionState: true,
+      },
+    );
+    return {
+      ...wrapRecoveryResult(input.recoveryAction, preparedDiff.id, result),
+      changed: true,
+      message:
+        input.recoveryAction === 'retry-after-new-commit'
+          ? `Rebased/resynced prepared diff ${preparedDiff.id} after a new PR commit. Verify again before retrying push.`
+          : `Rebased/resynced prepared diff ${preparedDiff.id}. Verify again before retrying push.`,
+      result: {
+        sync: result,
+        preparedDiff: updatedPreparedDiff,
+        currentPrHead: currentHead,
+        nextActions: ['retry-verify', 'retry-push'],
+      },
+    };
+  }
+
   if (input.recoveryAction === 'retry-push') {
     const result = await pushPrAutofix(
       {
@@ -250,6 +356,30 @@ export async function runAutopilotRecoveryAction(
         preparedDiffId: preparedDiff.id,
         reason: input.reason,
         approverSurface: input.approverSurface ?? 'autopilot-recovery',
+      },
+      paths,
+    );
+    return wrapRecoveryResult(input.recoveryAction, preparedDiff.id, result);
+  }
+
+  if (input.recoveryAction === 'cleanup-worktree') {
+    if (input.confirm !== true && !input.dryRun) {
+      return {
+        ok: false,
+        action: 'autopilot_recovery_run',
+        changed: false,
+        message:
+          'Cleaning up a prepared-diff worktree requires confirm=true, or dryRun=true for a policy preview.',
+        preparedDiffId: preparedDiff.id,
+        requires: ['confirm'],
+      };
+    }
+    const result = await cleanupWorktrees(
+      {
+        worktreeId: preparedDiff.worktreeId,
+        dryRun: input.dryRun,
+        confirmPreparedDiff: input.confirm === true,
+        force: input.confirm === true,
       },
       paths,
     );
@@ -296,7 +426,7 @@ function optionFromAction(
     description,
     enabled: true,
     requires: requirementsForAction(id),
-    destructive: id === 'abandon',
+    destructive: id === 'abandon' || id === 'cleanup-worktree',
     api: {
       method: 'POST',
       path: '/api/prepared-diffs/:id/recovery/run',
@@ -306,12 +436,87 @@ function optionFromAction(
 
 function requirementsForAction(id: AutopilotRecoveryActionId) {
   if (id === 'abandon') return ['confirm'];
+  if (id === 'cleanup-worktree') return ['confirm'];
   if (id === 'request-revision') return ['reason'];
+  if (id === 'retry-after-new-commit' || id === 'rebase-resync-worktree') {
+    return [
+      'currentPrHead',
+      'worktreeLock',
+      'clean-worktree',
+      'retry-verification-after-sync',
+    ];
+  }
   if (id === 'retry-push') {
     return ['pushApprovalStatus=approved', 'verificationStatus=passed'];
   }
   if (id === 'retry-comment') return ['GITHUB_TOKEN'];
   return [];
+}
+
+async function resolveCurrentPrHead(
+  preparedDiff: {
+    id: string;
+    repoFullName: string;
+    prNumber: number | null;
+  },
+  input: { headRef?: string; headSha?: string },
+  dependencies: AutopilotRecoveryDependencies,
+): Promise<
+  | {
+      headRef: string;
+      headSha: string;
+      source: 'github-pr-event-state' | 'input';
+    }
+  | AutopilotRecoveryResult
+> {
+  const [owner, repo] = preparedDiff.repoFullName.split('/');
+  const token = dependencies.token ?? process.env.GITHUB_TOKEN;
+  if (owner && repo && preparedDiff.prNumber && token) {
+    try {
+      const state: GitHubPullRequestEventState = await (
+        dependencies.fetchPullRequestEventState ?? fetchPullRequestEventState
+      )({
+        token,
+        owner,
+        repo,
+        number: preparedDiff.prNumber,
+      });
+      return {
+        headRef: state.headRef ?? state.headSha,
+        headSha: state.headSha,
+        source: 'github-pr-event-state',
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        action: 'autopilot_recovery_run',
+        changed: false,
+        message: `Could not fetch current PR head for prepared diff ${preparedDiff.id}: ${errorMessage(error)}`,
+        preparedDiffId: preparedDiff.id,
+        requires: ['currentPrHead'],
+        errors: [errorMessage(error)],
+      };
+    }
+  }
+  if (input.headSha) {
+    return {
+      headRef: input.headRef ?? input.headSha,
+      headSha: input.headSha,
+      source: 'input',
+    };
+  }
+  return {
+    ok: false,
+    action: 'autopilot_recovery_run',
+    changed: false,
+    message:
+      'Rebase/resync recovery requires the current PR head from GitHub or an explicit headSha.',
+    preparedDiffId: preparedDiff.id,
+    requires: [
+      'currentPrHead',
+      token ? 'repoFullName/prNumber' : 'GITHUB_TOKEN',
+    ],
+  };
 }
 
 function wrapRecoveryResult(
@@ -337,6 +542,21 @@ function wrapRecoveryResult(
     ...(result.requires ? { requires: result.requires } : {}),
     ...(result.errors ? { errors: result.errors } : {}),
   };
+}
+
+function stringField(value: unknown, path: string[]) {
+  let current = value;
+  for (const key of path) {
+    if (!current || typeof current !== 'object' || !(key in current)) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === 'string' && current.trim() ? current : undefined;
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function parseInput<T>(

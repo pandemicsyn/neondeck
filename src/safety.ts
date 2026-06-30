@@ -729,7 +729,7 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget:
         'prepared_diffs/prepared_diff_approvals/worktrees/workflow_summaries/notifications/execution_approvals',
     },
-    'Dispatches one bounded recovery action to existing prepared-diff or autopilot workflow services; confirmation, execution, policy, GitHub, and push gates are still enforced by the delegated service.',
+    'Dispatches one bounded recovery action to existing prepared-diff, worktree sync/cleanup, or autopilot workflow services; confirmation, execution, policy, GitHub, and push gates are still enforced by the delegated service.',
   ),
   action(
     'neondeck_prepared_diff_run_verification',
@@ -817,7 +817,7 @@ const entries: SafetyPolicyEntry[] = [
       ...safeMutation,
       auditTarget: 'worktrees/worktree_events',
     },
-    'Moves a clean managed worktree to a requested head ref or SHA and records lifecycle events.',
+    'Moves or rebases a clean managed worktree to a requested head ref or SHA and records lifecycle events.',
   ),
   action(
     'neondeck_worktree_lock',
@@ -1466,7 +1466,7 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget:
         'prepared_diffs/prepared_diff_approvals/worktrees/workflow_summaries/notifications/execution_approvals',
     },
-    'Dispatches one bounded recovery action through the same prepared-diff and autopilot workflow services used by Flue actions.',
+    'Dispatches one bounded recovery action through the same prepared-diff, worktree sync/cleanup, and autopilot workflow services used by Flue actions.',
   ),
   route(
     '/api/autopilot/verify-pr-worktree',

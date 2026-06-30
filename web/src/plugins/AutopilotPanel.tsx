@@ -1,18 +1,22 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import {
   getAutopilotState,
+  getAutopilotRecoveryOptions,
+  runAutopilotRecovery,
   type AutopilotActivity,
   type AutopilotApproval,
   type AutopilotPreparedDiff,
   type AutopilotQueueItem,
+  type AutopilotRecoveryActionId,
+  type AutopilotRecoveryOption,
   type AutopilotRepoPolicy,
   type AutopilotState,
   type AutopilotWatchPolicy,
 } from '../api';
 import { EmptyState } from '../App';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
-import { Badge, ScrollArea } from '../components/ui';
+import { Badge, Button, ScrollArea } from '../components/ui';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 
@@ -300,8 +304,107 @@ function PreparedDiffRow({ diff }: { diff: AutopilotPreparedDiff }) {
           }}
         />
       </div>
+      <PreparedDiffRecoveryControls preparedDiffId={diff.id} />
     </article>
   );
+}
+
+function PreparedDiffRecoveryControls({
+  preparedDiffId,
+}: {
+  preparedDiffId: string;
+}) {
+  const queryClient = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ['autopilot-recovery-options', preparedDiffId],
+    queryFn: () => getAutopilotRecoveryOptions(preparedDiffId),
+    refetchInterval: 30_000,
+  });
+  const mutation = useMutation({
+    mutationFn: runAutopilotRecovery,
+    onSuccess() {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.autopilotState,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ['autopilot-recovery-options', preparedDiffId],
+      });
+    },
+  });
+  const options = (data?.options ?? []).filter((option) =>
+    visibleRecoveryAction(option.id),
+  );
+  if (options.length === 0) return null;
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {options.map((option) => (
+        <Button
+          className="px-2 py-1 font-mono text-[10px]"
+          disabled={mutation.isPending}
+          key={option.id}
+          onClick={() => {
+            const input = recoveryInputForClick(preparedDiffId, option);
+            if (input) mutation.mutate(input);
+          }}
+          title={option.description}
+          type="button"
+        >
+          {recoveryButtonLabel(option.id)}
+        </Button>
+      ))}
+      {mutation.data ? (
+        <p className="basis-full text-[10px] leading-4 text-muted">
+          {mutation.data.message}
+        </p>
+      ) : null}
+      {mutation.error ? (
+        <p className="basis-full text-[10px] leading-4 text-accent">
+          {queryErrorMessage(mutation.error)}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function visibleRecoveryAction(id: AutopilotRecoveryActionId) {
+  return [
+    'inspect-worktree',
+    'retry-after-new-commit',
+    'rebase-resync-worktree',
+    'retry-verify',
+    'retry-push',
+    'retry-comment',
+    'cleanup-worktree',
+  ].includes(id);
+}
+
+function recoveryButtonLabel(id: AutopilotRecoveryActionId) {
+  if (id === 'inspect-worktree') return 'inspect';
+  if (id === 'retry-after-new-commit') return 'new commit';
+  if (id === 'rebase-resync-worktree') return 'resync';
+  if (id === 'retry-verify') return 'verify';
+  if (id === 'retry-push') return 'push';
+  if (id === 'retry-comment') return 'comment';
+  if (id === 'cleanup-worktree') return 'cleanup';
+  return id;
+}
+
+function recoveryInputForClick(
+  preparedDiffId: string,
+  option: AutopilotRecoveryOption,
+) {
+  if (option.id === 'cleanup-worktree') {
+    if (
+      !window.confirm(
+        'Clean up this prepared-diff worktree if policy, locks, and dirty-state checks allow it?',
+      )
+    ) {
+      return null;
+    }
+    return { preparedDiffId, recoveryAction: option.id, confirm: true };
+  }
+  return { preparedDiffId, recoveryAction: option.id };
 }
 
 function ApprovalRow({ approval }: { approval: AutopilotApproval }) {

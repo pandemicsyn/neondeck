@@ -244,7 +244,14 @@ Use this format:
 - Roadmap item: Phase 19 / `push_pr_autofix` workflow and Phase 20 / push-back recovery actions
 - Decision: Added `push_pr_autofix` as a bounded Flue workflow/action and local API over approved prepared-diff records. It pushes only approved, verified, clean committed worktrees when autopilot policy and GitHub branch permission facts allow PR-head push-back. Blocked attempts update prepared-diff/worktree state and notifications while retaining the worktree. Result comments remain owned by `comment_pr_autofix_result`, and force-push support remains deferred.
 - Reason: The requested slice explicitly kept PR comments separate unless required by the push action contract, and the roadmap forbids force-push unless a future narrowly scoped repo policy enables it. The current safe default is forward push only with durable blocked-attempt recovery data.
-- Follow-up: Add dedicated retry/resync/cleanup recovery actions and any future force-push policy only behind explicit repo-level configuration and approval.
+- Follow-up: Rebase/resync and cleanup recovery actions were completed by the 2026-06-30 Phase 20 recovery entry below. Any future force-push policy remains deferred behind explicit repo-level configuration and approval.
+
+## 2026-06-30 - Rebase And Cleanup Recovery Actions
+
+- Roadmap item: Phase 20 / rebase/resync and cleanup-specific recovery actions
+- Decision: Added prepared-diff recovery actions for retry-after-new-commit, rebase/resync worktree, and cleanup worktree through the existing `neondeck_autopilot_recovery_run` API/action. Rebase/resync delegates to `neondeck_worktree_sync` with a rebase strategy and resets stale prepared-diff push/verification decisions. Cleanup delegates to `neondeck_worktree_cleanup`, requires confirmation unless it is a dry run, and still observes dirty-worktree, lock, adopted-worktree, and cleanup-policy checks.
+- Reason: Prepared diffs and managed worktrees are already the durable source of truth for autopilot recovery. Extending those services keeps mutations deterministic and audited without adding a parallel queue or git runtime.
+- Follow-up: None.
 
 ## 2026-06-30 - Autopilot Smoke And Integration Coverage
 

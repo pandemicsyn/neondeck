@@ -17,10 +17,13 @@ export type AutopilotNotificationOutcome =
 
 export type AutopilotRecoveryActionId =
   | 'inspect-worktree'
+  | 'retry-after-new-commit'
+  | 'rebase-resync-worktree'
   | 'retry-verify'
   | 'retry-push'
   | 'retry-comment'
   | 'request-revision'
+  | 'cleanup-worktree'
   | 'abandon'
   | 'manual-follow-up';
 
@@ -63,10 +66,13 @@ const notificationInputSchema = v.object({
       v.object({
         id: v.picklist([
           'inspect-worktree',
+          'retry-after-new-commit',
+          'rebase-resync-worktree',
           'retry-verify',
           'retry-push',
           'retry-comment',
           'request-revision',
+          'cleanup-worktree',
           'abandon',
           'manual-follow-up',
         ]),
@@ -98,10 +104,25 @@ export function recoveryActionsForPreparedDiff(
     [
       'prepared',
       'verification-requested',
+      'revision-requested',
       'push-approved',
       'push-blocked',
     ].includes(preparedDiff.status)
   ) {
+    actions.push(
+      {
+        id: 'retry-after-new-commit',
+        label: 'Retry after new commit',
+        description:
+          'Fetch and rebase/resync the retained worktree before retrying verification or push.',
+      },
+      {
+        id: 'rebase-resync-worktree',
+        label: 'Rebase/resync worktree',
+        description:
+          'Rebase the prepared worktree onto the configured PR head ref and reset stale push decisions.',
+      },
+    );
     actions.push({
       id: 'retry-verify',
       label: 'Retry verify',
@@ -149,6 +170,13 @@ export function recoveryActionsForPreparedDiff(
       },
     );
   }
+
+  actions.push({
+    id: 'cleanup-worktree',
+    label: 'Clean up worktree',
+    description:
+      'Run worktree cleanup with explicit confirmation for prepared-diff retention.',
+  });
 
   actions.push({
     id: 'manual-follow-up',
