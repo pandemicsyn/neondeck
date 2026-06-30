@@ -4,6 +4,8 @@ import {
   type GitHubCheckSummary,
   type GitHubFailingCheckFact,
   type GitHubPullRequestDetail,
+  type GitHubPullRequestEventState,
+  fetchPullRequestEventState,
   fetchCheckSummary,
   fetchFailingCheckFacts,
   fetchPullRequestDetail,
@@ -11,14 +13,26 @@ import {
 import {
   checkAutopilotConcurrency,
   checkAutopilotPolicy,
+  pathDeniedByAutopilotPolicy,
   repoAutopilotPolicy,
   withAutopilotLocalExecutionSlot,
 } from './autopilot-policy';
 import { runApprovedExecution } from './execution-actions';
 import { ensurePreparedDiffForWorktree } from './prepared-diffs';
-import { patchRepoFiles } from './repo-edit';
-import { gitCommitAll } from './repo-edit/git';
 import { readRepoRegistrySnapshot, repoFullName } from './repos';
+import {
+  gitCommitAll,
+  gitCommitPaths,
+  type GitCommitResult,
+} from './repo-edit/git';
+import {
+  patchRepoFiles,
+  readRepoDiff,
+  readRepoFile,
+  replaceRepoFile,
+} from './repo-edit';
+import { parseV4APatch } from './repo-edit/patch-parser';
+import { repoRelativePathSchema } from './repo-edit/schemas';
 import {
   type RuntimePaths,
   parseAppConfig,
@@ -30,9 +44,11 @@ import {
   createWorktree,
   listWorktrees,
   lockWorktree,
+  readManagedWorktree,
   readWorktreeStatus,
   releaseWorktreeLock,
   syncWorktree,
+  type WorktreeRecord,
 } from './worktrees';
 
 export type AutopilotTriageClass =
@@ -58,6 +74,7 @@ type AutopilotDependencies = {
   fetchPullRequestDetail?: typeof fetchPullRequestDetail;
   fetchCheckSummary?: typeof fetchCheckSummary;
   fetchFailingCheckFacts?: typeof fetchFailingCheckFacts;
+  fetchPullRequestEventState?: typeof fetchPullRequestEventState;
   runExecution?: typeof runApprovedExecution;
   token?: string;
 };
@@ -140,6 +157,98 @@ const checkSummarySchema = v.object({
   statusContexts: v.optional(v.number()),
   checkedAt: nonEmptyStringSchema,
 });
+const nullableStringSchema = v.nullable(v.string());
+const reviewCommentSchema = v.object({
+  id: nonEmptyStringSchema,
+  databaseId: v.nullable(v.number()),
+  authorLogin: nullableStringSchema,
+  body: v.string(),
+  url: nullableStringSchema,
+  path: nullableStringSchema,
+  line: v.nullable(v.number()),
+  originalLine: v.nullable(v.number()),
+  diffHunk: nullableStringSchema,
+  reviewId: v.nullable(v.number()),
+  createdAt: nonEmptyStringSchema,
+  updatedAt: nonEmptyStringSchema,
+});
+const reviewThreadSchema = v.object({
+  id: nonEmptyStringSchema,
+  isResolved: v.boolean(),
+  isOutdated: v.boolean(),
+  path: nullableStringSchema,
+  line: v.nullable(v.number()),
+  comments: v.array(reviewCommentSchema),
+});
+const reviewSchema = v.object({
+  id: v.number(),
+  nodeId: nullableStringSchema,
+  state: nonEmptyStringSchema,
+  authorLogin: nullableStringSchema,
+  submittedAt: nullableStringSchema,
+  commitId: nullableStringSchema,
+  url: nullableStringSchema,
+});
+const requestedChangesStateSchema = v.object({
+  active: v.array(reviewSchema),
+  latestByReviewer: v.array(reviewSchema),
+  history: v.array(reviewSchema),
+});
+const prCommitSchema = v.object({
+  sha: nonEmptyStringSchema,
+  url: nonEmptyStringSchema,
+  authorLogin: nullableStringSchema,
+  committedAt: nullableStringSchema,
+});
+const checkSuiteSchema = v.looseObject({
+  id: v.number(),
+  headSha: nonEmptyStringSchema,
+  status: nonEmptyStringSchema,
+  conclusion: nullableStringSchema,
+});
+const checkRunSchema = v.looseObject({
+  id: v.number(),
+  name: nonEmptyStringSchema,
+  headSha: nonEmptyStringSchema,
+  status: nonEmptyStringSchema,
+  conclusion: nullableStringSchema,
+});
+const branchPermissionsSchema = v.object({
+  headRepoFullName: nullableStringSchema,
+  baseRepoFullName: nullableStringSchema,
+  isFork: v.boolean(),
+  maintainerCanModify: v.boolean(),
+  headRepoPush: v.nullable(v.boolean()),
+  baseRepoPush: v.nullable(v.boolean()),
+  canLikelyPush: v.nullable(v.boolean()),
+  checkedAt: nonEmptyStringSchema,
+});
+const prReviewEventStateSchema = v.object({
+  repo: nonEmptyStringSchema,
+  number: positiveIntegerSchema,
+  url: nonEmptyStringSchema,
+  title: nonEmptyStringSchema,
+  state: nonEmptyStringSchema,
+  draft: v.boolean(),
+  merged: v.boolean(),
+  mergeCommitSha: nullableStringSchema,
+  headSha: nonEmptyStringSchema,
+  headRef: nullableStringSchema,
+  baseRef: nonEmptyStringSchema,
+  baseSha: nullableStringSchema,
+  mergeable: v.nullable(v.boolean()),
+  mergeableState: nullableStringSchema,
+  maintainerCanModify: v.boolean(),
+  commits: v.array(prCommitSchema),
+  reviewThreads: v.array(reviewThreadSchema),
+  requestedChangesReviews: v.array(reviewSchema),
+  requestedChangesState: requestedChangesStateSchema,
+  checkSuites: v.array(checkSuiteSchema),
+  checkRuns: v.array(checkRunSchema),
+  branchPermissions: branchPermissionsSchema,
+  isOutOfDate: v.boolean(),
+  fetchedAt: nonEmptyStringSchema,
+});
 const preparePrWorktreeInputSchema = v.strictObject({
   repoId: nonEmptyStringSchema,
   prNumber: positiveIntegerSchema,
@@ -189,6 +298,35 @@ const fixPrCiFailureInputSchema = v.strictObject({
   maxOutputBytes: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
   maxLogBytes: v.optional(
     v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(256 * 1024)),
+  ),
+});
+const reviewFixReplacementSchema = v.strictObject({
+  path: repoRelativePathSchema,
+  oldString: nonEmptyStringSchema,
+  newString: v.string(),
+  replaceAll: v.optional(v.boolean()),
+  fuzzy: v.optional(v.picklist(['off', 'safe'])),
+});
+const fixPrReviewFeedbackInputSchema = v.strictObject({
+  repoId: nonEmptyStringSchema,
+  prNumber: positiveIntegerSchema,
+  worktreeId: v.optional(nonEmptyStringSchema),
+  addressedReviewCommentIds: v.optional(v.array(nonEmptyStringSchema)),
+  addressedReviewThreadIds: v.optional(v.array(nonEmptyStringSchema)),
+  replacements: v.optional(v.array(reviewFixReplacementSchema)),
+  patch: v.optional(v.pipe(v.string(), v.minLength(1))),
+  createWorktree: v.optional(v.boolean()),
+  sync: v.optional(v.boolean()),
+  fetch: v.optional(v.boolean()),
+  lock: v.optional(v.boolean()),
+  lockOwner: v.optional(nonEmptyStringSchema),
+  lockTtlSeconds: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(30), v.maxValue(86_400)),
+  ),
+  commit: v.optional(v.boolean()),
+  dryRun: v.optional(v.boolean()),
+  maxReadLinesPerFile: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(2_000)),
   ),
 });
 const autopilotOutputSchema = v.looseObject({
@@ -267,12 +405,24 @@ export const fixPrCiFailureAction = defineAction({
   },
 });
 
+export const fixPrReviewFeedbackAction = defineAction({
+  name: 'neondeck_autopilot_fix_pr_review_feedback',
+  description:
+    'Fetch unresolved PR review feedback, group it by file/topic, read affected files through repo-edit, apply bounded caller-supplied repo-edit replacements or patches in an isolated worktree, commit locally, and prepare a diff for operator review.',
+  input: fixPrReviewFeedbackInputSchema,
+  output: autopilotOutputSchema,
+  async run({ input }) {
+    return fixPrReviewFeedback(input);
+  },
+});
+
 export const neondeckAutopilotActions = [
   triagePrEventAction,
   preparePrWorktreeAction,
   autopilotPolicyCheckAction,
-  fixPrCiFailureAction,
   verifyPrWorktreeAction,
+  fixPrCiFailureAction,
+  fixPrReviewFeedbackAction,
 ];
 
 export async function triagePrEvent(
@@ -1130,6 +1280,449 @@ export async function fixPrCiFailure(
   }
 }
 
+export async function fixPrReviewFeedback(
+  rawInput: unknown,
+  paths: RuntimePaths = runtimePaths(),
+  dependencies: AutopilotDependencies = {},
+): Promise<AutopilotActionResult> {
+  const parsed = parseInput(
+    fixPrReviewFeedbackInputSchema,
+    rawInput,
+    'autopilot_fix_pr_review_feedback',
+  );
+  if (!parsed.ok) return parsed.result;
+  const input = parsed.input;
+  const lockOwner = input.lockOwner ?? 'fix_pr_review_feedback';
+  let acquiredLockId: string | undefined;
+  let finalLockStatus: 'ready' | 'prepared-diff' | 'failed' = 'ready';
+  let worktree: WorktreeRecord | undefined;
+
+  try {
+    await ensureRuntimeHome(paths);
+    const [registry, appConfig] = await Promise.all([
+      readRepoRegistrySnapshot(paths),
+      readRuntimeJson(paths.config, parseAppConfig),
+    ]);
+    const repo = registry.repos.find((item) => item.id === input.repoId);
+    if (!repo) {
+      return failResult(
+        'autopilot_fix_pr_review_feedback',
+        `Repository "${input.repoId}" is not configured.`,
+        { requires: ['repo'] },
+      );
+    }
+
+    const fetchedEventState = await fetchReviewEventState(
+      repo.github.owner,
+      repo.github.name,
+      input.prNumber,
+      dependencies,
+    );
+    if (isAutopilotActionResult(fetchedEventState)) return fetchedEventState;
+    const eventState = fetchedEventState;
+
+    const reviewFacts = reviewFactsFromEventState(eventState);
+    const groups = groupReviewFeedback(reviewFacts.unresolvedComments);
+    const plan = buildReviewFixPlan(groups, reviewFacts.requestedChanges);
+    if (reviewFacts.unresolvedCommentCount === 0) {
+      return failResult(
+        'autopilot_fix_pr_review_feedback',
+        'No unresolved PR review comments were found.',
+        { requires: ['unresolvedReviewComments'] },
+      );
+    }
+    const hasEdits =
+      (input.replacements?.length ?? 0) > 0 || typeof input.patch === 'string';
+    const addressed = addressedFeedback(
+      reviewFacts.unresolvedComments,
+      input.addressedReviewCommentIds,
+      input.addressedReviewThreadIds,
+    );
+    if (
+      addressed.ignoredReviewCommentIds.length > 0 ||
+      addressed.ignoredReviewThreadIds.length > 0
+    ) {
+      return failResult(
+        'autopilot_fix_pr_review_feedback',
+        'One or more addressed review ids are not unresolved comments or threads on this PR.',
+        {
+          errors: [
+            `Ignored review comments: ${formatIds(addressed.ignoredReviewCommentIds)}.`,
+            `Ignored review threads: ${formatIds(addressed.ignoredReviewThreadIds)}.`,
+          ],
+        },
+      );
+    }
+    const reviewTargetPaths = reviewTargetPathSet(groups);
+    const plannedPaths = plannedEditPaths(
+      input.replacements ?? [],
+      input.patch,
+    );
+    const invalidPlannedPaths = plannedPaths.filter(
+      (path) => !reviewTargetPaths.has(path),
+    );
+    if (invalidPlannedPaths.length > 0) {
+      return failResult(
+        'autopilot_fix_pr_review_feedback',
+        'Review feedback fixes may only edit files that have unresolved review comments.',
+        {
+          errors: [
+            `Outside review feedback paths: ${invalidPlannedPaths.join(', ')}.`,
+          ],
+        },
+      );
+    }
+    const preflightPolicy = repoAutopilotPolicy(repo, appConfig);
+    const deniedPlannedPaths = plannedPaths.filter((path) =>
+      pathDeniedByAutopilotPolicy(path, preflightPolicy.limits),
+    );
+    if (deniedPlannedPaths.length > 0) {
+      return failResult(
+        'autopilot_fix_pr_review_feedback',
+        'Autopilot policy denies one or more planned review feedback paths.',
+        {
+          errors: [`Denied paths: ${deniedPlannedPaths.join(', ')}.`],
+          requires: ['deniedFileGlobs'],
+        },
+      );
+    }
+
+    const concurrency = await checkAutopilotConcurrency(
+      {
+        repoId: repo.id,
+        prNumber: input.prNumber,
+        workflow: 'fix_pr_review_feedback',
+        mutation: true,
+      },
+      paths,
+    );
+    if (!concurrency.allowed) {
+      return {
+        ok: false,
+        action: 'autopilot_fix_pr_review_feedback',
+        changed: false,
+        message: concurrency.message,
+        data: asJsonValue({ concurrency, reviewFacts, plan }),
+        errors: concurrency.reasons,
+        requires: ['concurrency'],
+      };
+    }
+
+    const createEnabled = input.createWorktree ?? !input.worktreeId;
+    if (input.worktreeId) {
+      worktree = await readManagedWorktree(input.worktreeId, repo.id, paths);
+      if (worktree.prNumber !== input.prNumber) {
+        return failResult(
+          'autopilot_fix_pr_review_feedback',
+          `Worktree "${worktree.id}" belongs to PR ${worktree.prNumber ?? 'none'}, not PR ${input.prNumber}.`,
+          { requires: ['worktreeId'] },
+        );
+      }
+    } else if (createEnabled) {
+      const created = await createWorktree(
+        {
+          repoId: repo.id,
+          prNumber: input.prNumber,
+          baseRef: eventState.headSha,
+          headRef: eventState.headRef ?? eventState.headSha,
+          headSha: eventState.headSha,
+          directPushAllowed: Boolean(eventState.maintainerCanModify),
+          createdBy: 'neondeck',
+        },
+        paths,
+      );
+      if (!created.ok) {
+        return lowerLevelFailure(
+          'autopilot_fix_pr_review_feedback',
+          'worktree_create',
+          created,
+        );
+      }
+      worktree = objectField(created, 'worktree') as WorktreeRecord | undefined;
+    }
+
+    if (!worktree) {
+      return failResult(
+        'autopilot_fix_pr_review_feedback',
+        'A worktreeId is required when createWorktree is false.',
+        { requires: ['worktreeId'] },
+      );
+    }
+
+    if (input.sync ?? true) {
+      const synced = await syncWorktree(
+        {
+          worktreeId: worktree.id,
+          headRef: eventState.headRef ?? eventState.headSha,
+          headSha: eventState.headSha,
+          fetch: input.fetch,
+        },
+        paths,
+      );
+      if (!synced.ok) {
+        return lowerLevelFailure(
+          'autopilot_fix_pr_review_feedback',
+          'worktree_sync',
+          synced,
+        );
+      }
+      worktree =
+        (objectField(synced, 'worktree') as WorktreeRecord | undefined) ??
+        worktree;
+    }
+
+    if (input.lock ?? true) {
+      const locked = await lockWorktree(
+        {
+          worktreeId: worktree.id,
+          scope: 'pr',
+          owner: lockOwner,
+          ttlSeconds: input.lockTtlSeconds ?? 3_600,
+        },
+        paths,
+      );
+      if (!locked.ok) {
+        return lowerLevelFailure(
+          'autopilot_fix_pr_review_feedback',
+          'worktree_lock',
+          locked,
+        );
+      }
+      acquiredLockId = stringField(objectField(locked, 'lock'), 'id');
+    }
+
+    const baselineStatus = await readWorktreeStatus(
+      { worktreeId: worktree.id },
+      paths,
+    );
+    if (worktreeStatusDirty(baselineStatus)) {
+      return {
+        ok: false,
+        action: 'autopilot_fix_pr_review_feedback',
+        changed: false,
+        message:
+          'Review feedback fix requires a clean managed worktree before applying edits.',
+        data: asJsonValue({
+          repo: repoSummary(repo),
+          worktree,
+          reviewFacts,
+          plan,
+          status: baselineStatus,
+          concurrency,
+        }),
+        requires: ['cleanWorktree'],
+      };
+    }
+
+    const fileReads = await readReviewTargetFiles(
+      repo.id,
+      worktree.id,
+      groups,
+      input.maxReadLinesPerFile ?? 2_000,
+      paths,
+    );
+    const failedReads = fileReads.filter((item) => !item.ok);
+    if (failedReads.length > 0) {
+      return {
+        ok: false,
+        action: 'autopilot_fix_pr_review_feedback',
+        changed: false,
+        message: 'Could not read one or more review target files.',
+        data: asJsonValue({
+          repo: repoSummary(repo),
+          worktree,
+          reviewFacts,
+          plan,
+          fileReads,
+          concurrency,
+        }),
+        errors: failedReads.map((item) => item.message),
+      };
+    }
+
+    const editResults = hasEdits
+      ? await applyReviewEdits(
+          {
+            repoId: repo.id,
+            worktreeId: worktree.id,
+            lockId: acquiredLockId,
+            replacements: input.replacements ?? [],
+            patch: input.patch,
+            dryRun: input.dryRun,
+            fileReads,
+          },
+          paths,
+        )
+      : [];
+    const failedEdits = editResults.filter((item) => !booleanField(item, 'ok'));
+    if (failedEdits.length > 0) {
+      finalLockStatus = 'failed';
+      return {
+        ok: false,
+        action: 'autopilot_fix_pr_review_feedback',
+        changed: editResults.some((item) => booleanField(item, 'changed')),
+        message: 'One or more review feedback edits failed.',
+        data: asJsonValue({
+          repo: repoSummary(repo),
+          worktree,
+          reviewFacts,
+          plan,
+          fileReads,
+          editResults,
+          concurrency,
+        }),
+        errors: failedEdits.map(
+          (item) => stringField(item, 'message') ?? 'Edit failed.',
+        ),
+      };
+    }
+
+    const diff = await readRepoDiff(
+      {
+        repoId: repo.id,
+        worktreeId: worktree.id,
+        base: 'HEAD',
+        includePatch: false,
+      },
+      paths,
+    );
+    const postEditPolicy = await checkAutopilotPolicy(
+      {
+        worktreeId: worktree.id,
+        pushDestination: 'pull-request-head',
+      },
+      paths,
+    );
+    const diffSummary = objectField(diff, 'diffSummary');
+    const changedFiles = numberField(diffSummary, 'files') ?? 0;
+    if (!postEditPolicy.ok || postEditPolicy.blocked) {
+      finalLockStatus = 'failed';
+      return {
+        ok: false,
+        action: 'autopilot_fix_pr_review_feedback',
+        changed: changedFiles > 0,
+        message: postEditPolicy.message,
+        data: asJsonValue({
+          repo: repoSummary(repo),
+          worktree,
+          reviewFacts,
+          plan,
+          fileReads,
+          editResults,
+          diff,
+          policy: postEditPolicy,
+          concurrency,
+        }),
+        errors: postEditPolicy.reasons,
+        requires: postEditPolicy.requires,
+      };
+    }
+
+    let commit: GitCommitResult | null = null;
+    if (
+      hasEdits &&
+      !input.dryRun &&
+      (input.commit ?? true) &&
+      changedFiles > 0
+    ) {
+      commit = await gitCommitPaths(
+        worktree.localPath,
+        reviewFixCommitMessage(repoFullName(repo), input.prNumber, addressed),
+        plannedPaths,
+      );
+    }
+
+    const status = await readWorktreeStatus({ worktreeId: worktree.id }, paths);
+    const shouldPrepareDiff = changedFiles > 0 || commit?.committed === true;
+    finalLockStatus = shouldPrepareDiff ? 'prepared-diff' : 'ready';
+    const preparedSummary = {
+      workflow: 'fix_pr_review_feedback',
+      repo: repoSummary(repo),
+      prNumber: input.prNumber,
+      plan,
+      addressed,
+      requestedChanges: reviewFacts.requestedChanges,
+      editResults,
+      commit,
+      policy: postEditPolicy,
+      diffSummary: objectField(diff, 'diffSummary') ?? null,
+      dryRun: Boolean(input.dryRun),
+    };
+    let preparedDiff = null;
+    if (shouldPrepareDiff && !input.dryRun) {
+      if (acquiredLockId) {
+        const released = await releaseWorktreeLock(
+          {
+            lockId: acquiredLockId,
+            owner: lockOwner,
+            finalStatus: 'prepared-diff',
+          },
+          paths,
+        );
+        worktree =
+          (objectField(released, 'worktree') as WorktreeRecord | undefined) ??
+          worktree;
+        acquiredLockId = undefined;
+      }
+      const preparedWorktree = {
+        ...worktree,
+        baseRef: worktree.headSha ?? eventState.headSha,
+      };
+      preparedDiff = await ensurePreparedDiffForWorktree(
+        preparedWorktree,
+        paths,
+        {
+          createdBy: 'fix_pr_review_feedback',
+          title: `Review feedback fix for ${repoFullName(repo)}#${input.prNumber}`,
+          summary: preparedSummary,
+        },
+      );
+    }
+
+    return {
+      ok: true,
+      action: 'autopilot_fix_pr_review_feedback',
+      changed: shouldPrepareDiff,
+      message: shouldPrepareDiff
+        ? `Prepared review-feedback fix for ${repoFullName(repo)}#${input.prNumber}.`
+        : `Planned review-feedback fix for ${repoFullName(repo)}#${input.prNumber}; no edits were applied.`,
+      data: asJsonValue({
+        repo: repoSummary(repo),
+        worktree,
+        reviewFacts,
+        plan,
+        fileReads,
+        editResults,
+        diff,
+        policy: postEditPolicy,
+        concurrency,
+        status,
+        commit,
+        preparedDiff,
+      }),
+      ...(postEditPolicy.approvalRequired ? { requires: ['approval'] } : {}),
+    };
+  } catch (error) {
+    finalLockStatus = 'failed';
+    return failResult(
+      'autopilot_fix_pr_review_feedback',
+      'Could not fix PR review feedback.',
+      { errors: [errorMessage(error)] },
+    );
+  } finally {
+    if (acquiredLockId) {
+      await releaseWorktreeLock(
+        {
+          lockId: acquiredLockId,
+          owner: lockOwner,
+          finalStatus: finalLockStatus,
+        },
+        paths,
+      ).catch(() => undefined);
+    }
+  }
+}
+
 async function fetchPreparedPrFacts(
   owner: string,
   repo: string,
@@ -1320,6 +1913,416 @@ function generatedCiFixCommitMessage(
   return checkIds
     ? `Fix PR CI failure for ${pr} (checks ${checkIds})`
     : `Fix PR CI failure for ${pr}`;
+}
+
+async function fetchReviewEventState(
+  owner: string,
+  repo: string,
+  number: number,
+  dependencies: AutopilotDependencies,
+): Promise<GitHubPullRequestEventState | AutopilotActionResult> {
+  const token = dependencies.token ?? process.env.GITHUB_TOKEN;
+  if (!token) {
+    return failResult(
+      'autopilot_fix_pr_review_feedback',
+      'GITHUB_TOKEN is not configured.',
+      { requires: ['GITHUB_TOKEN'] },
+    );
+  }
+
+  const state = await (
+    dependencies.fetchPullRequestEventState ?? fetchPullRequestEventState
+  )({
+    token,
+    owner,
+    repo,
+    number,
+  });
+  const parsed = v.safeParse(prReviewEventStateSchema, state);
+  if (!parsed.success) {
+    return failResult(
+      'autopilot_fix_pr_review_feedback',
+      'Invalid GitHub PR review event state.',
+      { errors: [v.summarize(parsed.issues)] },
+    );
+  }
+  return parsed.output as GitHubPullRequestEventState;
+}
+
+type ReviewCommentFact = {
+  id: string;
+  databaseId: number | null;
+  threadId: string;
+  authorLogin: string | null;
+  body: string;
+  url: string | null;
+  path: string | null;
+  line: number | null;
+  originalLine: number | null;
+  diffHunk: string | null;
+  reviewId: number | null;
+  createdAt: string;
+  updatedAt: string;
+  threadPath: string | null;
+  threadLine: number | null;
+  threadIsOutdated: boolean;
+};
+
+type ReviewFeedbackGroup = {
+  path: string | null;
+  topic: string;
+  comments: ReviewCommentFact[];
+};
+
+function reviewFactsFromEventState(state: GitHubPullRequestEventState) {
+  const unresolvedThreads = state.reviewThreads.filter(
+    (thread) => !thread.isResolved,
+  );
+  const unresolvedComments = unresolvedThreads.flatMap((thread) =>
+    thread.comments.map((comment) => ({
+      id: comment.id,
+      databaseId: comment.databaseId,
+      threadId: thread.id,
+      authorLogin: comment.authorLogin,
+      body: comment.body,
+      url: comment.url,
+      path: comment.path ?? thread.path,
+      line: comment.line ?? thread.line,
+      originalLine: comment.originalLine,
+      diffHunk: comment.diffHunk,
+      reviewId: comment.reviewId,
+      createdAt: comment.createdAt,
+      updatedAt: comment.updatedAt,
+      threadPath: thread.path,
+      threadLine: thread.line,
+      threadIsOutdated: thread.isOutdated,
+    })),
+  );
+
+  return {
+    pr: {
+      repo: state.repo,
+      number: state.number,
+      title: state.title,
+      url: state.url,
+      state: state.state,
+      draft: state.draft,
+      headSha: state.headSha,
+      headRef: state.headRef,
+      baseRef: state.baseRef,
+      fetchedAt: state.fetchedAt,
+    },
+    unresolvedThreadCount: unresolvedThreads.length,
+    unresolvedCommentCount: unresolvedComments.length,
+    unresolvedComments,
+    requestedChanges: state.requestedChangesReviews.map((review) => ({
+      id: review.id,
+      nodeId: review.nodeId,
+      authorLogin: review.authorLogin,
+      submittedAt: review.submittedAt,
+      commitId: review.commitId,
+      url: review.url,
+    })),
+    requestedChangesState: state.requestedChangesState,
+  };
+}
+
+function groupReviewFeedback(comments: ReviewCommentFact[]) {
+  const groups = new Map<string, ReviewFeedbackGroup>();
+  for (const comment of comments) {
+    const path = comment.path ?? comment.threadPath;
+    const topic = topicFromComment(comment);
+    const key = `${path ?? '(general)'}\u0000${topic}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.comments.push(comment);
+    } else {
+      groups.set(key, { path: path ?? null, topic, comments: [comment] });
+    }
+  }
+
+  return [...groups.values()].sort((a, b) => {
+    const path = (a.path ?? '').localeCompare(b.path ?? '');
+    return path === 0 ? a.topic.localeCompare(b.topic) : path;
+  });
+}
+
+function buildReviewFixPlan(
+  groups: ReviewFeedbackGroup[],
+  requestedChanges: ReturnType<
+    typeof reviewFactsFromEventState
+  >['requestedChanges'],
+) {
+  return {
+    groupCount: groups.length,
+    commentCount: groups.reduce((sum, group) => sum + group.comments.length, 0),
+    requestedChangesCount: requestedChanges.length,
+    groups: groups.map((group) => ({
+      path: group.path,
+      topic: group.topic,
+      commentIds: group.comments.map((comment) => comment.id),
+      threadIds: unique(group.comments.map((comment) => comment.threadId)),
+      lineHints: unique(
+        group.comments
+          .map((comment) => comment.line ?? comment.threadLine)
+          .filter((line): line is number => typeof line === 'number')
+          .map((line) => String(line)),
+      ).map(Number),
+      summaries: group.comments.map((comment) => summarizeComment(comment)),
+      suggestedAction: group.path
+        ? 'Read this file through repo-edit, then apply a bounded replacement or patch that directly addresses the reviewer request.'
+        : 'Review the general thread context; no file path was supplied by GitHub.',
+    })),
+  };
+}
+
+function reviewTargetPathSet(groups: ReviewFeedbackGroup[]) {
+  return new Set(
+    groups
+      .map((group) => group.path)
+      .filter((path): path is string => Boolean(path)),
+  );
+}
+
+function plannedEditPaths(
+  replacements: Array<v.InferOutput<typeof reviewFixReplacementSchema>>,
+  patch: string | undefined,
+) {
+  const paths = new Set(replacements.map((replacement) => replacement.path));
+  if (patch) {
+    for (const operation of parseV4APatch(patch).operations) {
+      if (operation.type === 'move') {
+        paths.add(operation.from);
+        paths.add(operation.to);
+      } else {
+        paths.add(operation.path);
+      }
+    }
+  }
+  return [...paths].sort();
+}
+
+function worktreeStatusDirty(status: unknown) {
+  const git = objectField(status, 'git');
+  return Boolean(booleanField(git, 'dirty'));
+}
+
+async function readReviewTargetFiles(
+  repoId: string,
+  worktreeId: string,
+  groups: ReviewFeedbackGroup[],
+  limit: number,
+  paths: RuntimePaths,
+) {
+  const targetPaths = unique(
+    groups
+      .map((group) => group.path)
+      .filter(
+        (path): path is string => typeof path === 'string' && path !== '',
+      ),
+  );
+  const reads = [];
+  for (const path of targetPaths) {
+    const result = await readRepoFile(
+      {
+        repoId,
+        worktreeId,
+        path,
+        limit,
+        includeLineNumbers: true,
+      },
+      paths,
+    );
+    reads.push({
+      ok: Boolean(booleanField(result, 'ok')),
+      path,
+      message: stringField(result, 'message') ?? `Read ${path}.`,
+      stamp: objectField(result, 'stamp') ?? null,
+      totalLines: numberField(result, 'totalLines') ?? null,
+      truncated: Boolean(booleanField(result, 'truncated')),
+    });
+  }
+  return reads;
+}
+
+async function applyReviewEdits(
+  input: {
+    repoId: string;
+    worktreeId: string;
+    lockId?: string;
+    replacements: Array<v.InferOutput<typeof reviewFixReplacementSchema>>;
+    patch?: string;
+    dryRun?: boolean;
+    fileReads: Array<{ path: string; stamp: object | null }>;
+  },
+  paths: RuntimePaths,
+) {
+  const results: unknown[] = [];
+  const stamps = new Map(
+    input.fileReads
+      .filter((read) => read.stamp)
+      .map((read) => [read.path, read.stamp!]),
+  );
+  const readPaths = new Set(input.fileReads.map((read) => read.path));
+
+  for (const replacement of input.replacements) {
+    if (!readPaths.has(replacement.path) || !stamps.has(replacement.path)) {
+      results.push({
+        ok: false,
+        action: 'repo_file_replace',
+        changed: false,
+        message: `Replacement target ${replacement.path} was not read from unresolved review feedback.`,
+      });
+      continue;
+    }
+    results.push(
+      await replaceRepoFile(
+        {
+          repoId: input.repoId,
+          worktreeId: input.worktreeId,
+          worktreeLockId: input.lockId,
+          path: replacement.path,
+          oldString: replacement.oldString,
+          newString: replacement.newString,
+          replaceAll: replacement.replaceAll,
+          fuzzy: replacement.fuzzy ?? 'safe',
+          expectedStamp: stamps.get(replacement.path),
+          dryRun: input.dryRun,
+          reason: 'fix_pr_review_feedback',
+        },
+        paths,
+      ),
+    );
+  }
+
+  if (input.patch) {
+    const patch = parseV4APatch(input.patch);
+    const patchPaths = patch.operations.flatMap((operation) =>
+      operation.type === 'move'
+        ? [operation.from, operation.to]
+        : [operation.path],
+    );
+    const unreadPatchPaths = unique(
+      patchPaths.filter((path) => !readPaths.has(path) || !stamps.has(path)),
+    );
+    if (unreadPatchPaths.length > 0) {
+      results.push({
+        ok: false,
+        action: 'repo_file_patch',
+        changed: false,
+        message: `Patch target(s) were not read from unresolved review feedback: ${unreadPatchPaths.join(', ')}.`,
+      });
+      return results;
+    }
+    results.push(
+      await patchRepoFiles(
+        {
+          repoId: input.repoId,
+          worktreeId: input.worktreeId,
+          worktreeLockId: input.lockId,
+          patch: input.patch,
+          expectedStamps: Object.fromEntries(stamps),
+          dryRun: input.dryRun,
+          reason: 'fix_pr_review_feedback',
+        },
+        paths,
+      ),
+    );
+  }
+
+  return results;
+}
+
+function addressedFeedback(
+  comments: ReviewCommentFact[],
+  commentIds: string[] | undefined,
+  threadIds: string[] | undefined,
+) {
+  const availableCommentIds = new Set(comments.map((comment) => comment.id));
+  const availableThreadIds = new Set(
+    comments.map((comment) => comment.threadId),
+  );
+  const selectedCommentIds =
+    commentIds && commentIds.length > 0
+      ? commentIds.filter((id) => availableCommentIds.has(id))
+      : comments.map((comment) => comment.id);
+  const selectedThreadIds =
+    threadIds && threadIds.length > 0
+      ? threadIds.filter((id) => availableThreadIds.has(id))
+      : unique(
+          comments
+            .filter((comment) => selectedCommentIds.includes(comment.id))
+            .map((comment) => comment.threadId),
+        );
+
+  return {
+    reviewCommentIds: unique(selectedCommentIds),
+    reviewThreadIds: unique(selectedThreadIds),
+    ignoredReviewCommentIds: (commentIds ?? []).filter(
+      (id) => !availableCommentIds.has(id),
+    ),
+    ignoredReviewThreadIds: (threadIds ?? []).filter(
+      (id) => !availableThreadIds.has(id),
+    ),
+  };
+}
+
+function reviewFixCommitMessage(
+  repo: string,
+  prNumber: number,
+  addressed: ReturnType<typeof addressedFeedback>,
+) {
+  const commentIds = formatIds(addressed.reviewCommentIds);
+  const threadIds = formatIds(addressed.reviewThreadIds);
+  return [
+    'Address PR review feedback',
+    '',
+    `PR: ${repo}#${prNumber}`,
+    `Review comments: ${commentIds}`,
+    `Review threads: ${threadIds}`,
+  ].join('\n');
+}
+
+function formatIds(ids: string[]) {
+  if (ids.length === 0) return 'none';
+  const head = ids.slice(0, 12).join(', ');
+  return ids.length > 12 ? `${head}, +${ids.length - 12} more` : head;
+}
+
+function topicFromComment(comment: ReviewCommentFact) {
+  const firstLine =
+    comment.body
+      .split(/\r?\n/g)
+      .map((line) => line.trim())
+      .find(Boolean) ?? 'review feedback';
+  return firstLine
+    .replace(/\s+/g, ' ')
+    .replace(/[`*_#[\]()]/g, '')
+    .slice(0, 96);
+}
+
+function summarizeComment(comment: ReviewCommentFact) {
+  const body = comment.body.replace(/\s+/g, ' ').trim();
+  return {
+    id: comment.id,
+    threadId: comment.threadId,
+    authorLogin: comment.authorLogin,
+    line: comment.line ?? comment.threadLine,
+    outdated: comment.threadIsOutdated,
+    url: comment.url,
+    body: body.length > 180 ? `${body.slice(0, 177)}...` : body,
+  };
+}
+
+function repoSummary(
+  repo: Awaited<ReturnType<typeof readRepoRegistrySnapshot>>['repos'][number],
+) {
+  return {
+    id: repo.id,
+    fullName: repoFullName(repo),
+    path: repo.path,
+    defaultBranch: repo.defaultBranch,
+  };
 }
 
 function prFactsFromDetail(
@@ -1555,8 +2558,15 @@ function arrayField(value: unknown, key: string) {
     : [];
 }
 
-function worktreeStatusDirty(status: unknown) {
-  return Boolean(booleanField(objectField(status, 'git'), 'dirty'));
+function isAutopilotActionResult(
+  value: GitHubPullRequestEventState | AutopilotActionResult,
+): value is AutopilotActionResult {
+  return (
+    Boolean(value) &&
+    typeof value === 'object' &&
+    'ok' in value &&
+    'action' in value
+  );
 }
 
 function asJsonValue(value: unknown): JsonValue {

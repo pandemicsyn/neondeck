@@ -7,6 +7,7 @@ import { supportedCommands } from './commands';
 import { autopilotStateSchema, readAutopilotState } from './autopilot';
 import {
   fixPrCiFailure,
+  fixPrReviewFeedback,
   preparePrWorktree,
   triagePrEvent,
   verifyPrWorktree,
@@ -953,6 +954,11 @@ app.post('/api/autopilot/prepare-pr-worktree', async (c) => {
 
 app.post('/api/autopilot/fix-pr-ci-failure', async (c) => {
   const result = await fixPrCiFailure(await safeJsonBody(c), paths);
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/autopilot/fix-pr-review-feedback', async (c) => {
+  const result = await fixPrReviewFeedback(await safeJsonBody(c), paths);
   return c.json(result, result.ok ? 200 : 400);
 });
 

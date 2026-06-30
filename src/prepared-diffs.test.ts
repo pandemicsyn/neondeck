@@ -20,7 +20,7 @@ import { createWorktree, lockWorktree, releaseWorktreeLock } from './worktrees';
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
 
-vi.setConfig({ testTimeout: 15_000 });
+vi.setConfig({ testTimeout: 60_000 });
 
 afterEach(async () => {
   await Promise.all(

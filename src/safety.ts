@@ -644,6 +644,15 @@ const entries: SafetyPolicyEntry[] = [
     'Creates, syncs, locks, and inspects a Neondeck-managed PR worktree, but does not edit, commit, push, or comment.',
   ),
   action(
+    'neondeck_autopilot_fix_pr_review_feedback',
+    'Fix PR review feedback',
+    {
+      ...safeMutation,
+      auditTarget: 'worktrees/repo_edit_events/prepared_diffs',
+    },
+    'Fetches unresolved review feedback, groups it into a plan, applies caller-supplied bounded repo-edit changes inside an isolated worktree, commits locally, and prepares a diff without pushing or commenting.',
+  ),
+  action(
     'neondeck_prepared_diff_list',
     'List prepared diffs',
     readOnly,
@@ -1036,6 +1045,15 @@ const entries: SafetyPolicyEntry[] = [
     'Runs the bounded PR CI fixer through the Flue workflow surface. It may apply scoped repo-edit patches, commit locally, and prepare a diff, but it does not push or comment.',
   ),
   workflow(
+    'fix-pr-review-feedback',
+    'Run PR review feedback fix workflow',
+    {
+      ...safeMutation,
+      auditTarget: 'worktrees/repo_edit_events/prepared_diffs/workflow_events',
+    },
+    'Plans review-feedback fixes from deterministic GitHub facts and applies only bounded repo-edit changes inside an isolated worktree; it commits locally and prepares a diff without pushing or commenting.',
+  ),
+  workflow(
     'verify-pr-worktree',
     'Run PR worktree verification workflow',
     {
@@ -1200,6 +1218,15 @@ const entries: SafetyPolicyEntry[] = [
         'worktrees/worktree_locks/repo_edit_events/prepared_diffs/execution_approvals',
     },
     'Fetches failing check facts/log availability, runs diagnostics, optionally applies a scoped repo-edit patch in a managed worktree, commits locally, and creates a prepared diff without pushing or commenting.',
+  ),
+  route(
+    '/api/autopilot/fix-pr-review-feedback',
+    'PR review feedback fix API',
+    {
+      ...safeMutation,
+      auditTarget: 'worktrees/repo_edit_events/prepared_diffs',
+    },
+    'Fetches deterministic review feedback, prepares or reuses a managed worktree, applies bounded repo-edit changes, commits locally, and records a prepared diff without pushing or commenting.',
   ),
   route(
     '/api/prepared-diffs',

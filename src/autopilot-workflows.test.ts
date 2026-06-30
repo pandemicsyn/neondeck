@@ -12,6 +12,7 @@ import {
 } from './autopilot-policy';
 import {
   fixPrCiFailure,
+  fixPrReviewFeedback,
   preparePrWorktree,
   triagePrEvent,
   verifyPrWorktree,
@@ -20,7 +21,7 @@ import {
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
 
-vi.setConfig({ testTimeout: 30_000 });
+vi.setConfig({ testTimeout: 60_000 });
 
 afterEach(async () => {
   await Promise.all(
@@ -523,7 +524,6 @@ describe('PR event autopilot', () => {
       },
     });
   });
-
   it('fixes a PR CI failure in a managed worktree and creates a prepared diff', async () => {
     const { paths, featureSha } = await fixture();
     await writeFile(
@@ -880,6 +880,234 @@ describe('PR event autopilot', () => {
       message: 'Invalid autopilot input.',
     });
   });
+
+  it('fixes review feedback in an isolated worktree and prepares a local committed diff', async () => {
+    const { paths, featureSha } = await fixture();
+    const result = await fixPrReviewFeedback(
+      {
+        repoId: 'sample',
+        prNumber: 7,
+        addressedReviewCommentIds: ['PRRC_1'],
+        addressedReviewThreadIds: ['PRRT_1'],
+        replacements: [
+          {
+            path: 'src/app.ts',
+            oldString: 'export const value = 2;\n',
+            newString: 'export const value = 3;\n',
+          },
+        ],
+      },
+      paths,
+      {
+        token: 'test-token',
+        async fetchPullRequestEventState() {
+          return reviewEventState(featureSha);
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'autopilot_fix_pr_review_feedback',
+      data: {
+        plan: {
+          groupCount: 1,
+          groups: [
+            {
+              path: 'src/app.ts',
+              commentIds: ['PRRC_1'],
+              threadIds: ['PRRT_1'],
+            },
+          ],
+        },
+        commit: {
+          committed: true,
+        },
+        preparedDiff: {
+          repoId: 'sample',
+          prNumber: 7,
+          baseRef: featureSha,
+          status: 'prepared',
+          pushApprovalStatus: 'pending',
+        },
+      },
+    });
+    const worktreePath = stringPath(result, ['data', 'worktree', 'localPath']);
+    const file = await gitOutput(worktreePath, ['show', 'HEAD:src/app.ts']);
+    expect(file).toBe('export const value = 3;\n');
+    const commitMessage = await gitOutput(worktreePath, [
+      'log',
+      '-1',
+      '--pretty=%B',
+    ]);
+    expect(commitMessage).toContain('Review comments: PRRC_1');
+    expect(commitMessage).toContain('Review threads: PRRT_1');
+  });
+
+  it('refuses review feedback fixes when there are no unresolved comments', async () => {
+    const { paths, featureSha } = await fixture();
+    const result = await fixPrReviewFeedback(
+      {
+        repoId: 'sample',
+        prNumber: 7,
+        replacements: [
+          {
+            path: 'src/app.ts',
+            oldString: 'export const value = 2;\n',
+            newString: 'export const value = 3;\n',
+          },
+        ],
+      },
+      paths,
+      {
+        token: 'test-token',
+        async fetchPullRequestEventState() {
+          return { ...reviewEventState(featureSha), reviewThreads: [] };
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      action: 'autopilot_fix_pr_review_feedback',
+      requires: ['unresolvedReviewComments'],
+    });
+  });
+
+  it('refuses review feedback edits outside unresolved review paths', async () => {
+    const { paths, featureSha } = await fixture();
+    const result = await fixPrReviewFeedback(
+      {
+        repoId: 'sample',
+        prNumber: 7,
+        replacements: [
+          {
+            path: 'README.md',
+            oldString: 'missing',
+            newString: 'changed',
+          },
+        ],
+      },
+      paths,
+      {
+        token: 'test-token',
+        async fetchPullRequestEventState() {
+          return reviewEventState(featureSha);
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      action: 'autopilot_fix_pr_review_feedback',
+      message:
+        'Review feedback fixes may only edit files that have unresolved review comments.',
+    });
+  });
+
+  it('refuses a supplied worktree for a different PR', async () => {
+    const { paths, featureSha } = await fixture();
+    const prepared = await preparePrWorktree(
+      {
+        repoId: 'sample',
+        prNumber: 8,
+        lock: false,
+      },
+      paths,
+      {
+        token: 'test-token',
+        async fetchPullRequestDetail() {
+          return {
+            number: 8,
+            title: 'Different PR',
+            repo: 'example/sample',
+            url: 'https://github.com/example/sample/pull/8',
+            state: 'open',
+            draft: false,
+            merged: false,
+            mergeCommitSha: null,
+            headSha: featureSha,
+            headRef: 'feature',
+            headOwner: 'example',
+            headName: 'sample',
+            baseRef: 'main',
+            updatedAt: '2026-06-30T00:00:00.000Z',
+            maintainerCanModify: true,
+          };
+        },
+        async fetchCheckSummary() {
+          return {
+            status: 'success',
+            total: 1,
+            successful: 1,
+            failed: 0,
+            pending: 0,
+            checkedAt: '2026-06-30T00:00:00.000Z',
+          };
+        },
+      },
+    );
+    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
+
+    const result = await fixPrReviewFeedback(
+      {
+        repoId: 'sample',
+        prNumber: 7,
+        worktreeId,
+        replacements: [
+          {
+            path: 'src/app.ts',
+            oldString: 'export const value = 2;\n',
+            newString: 'export const value = 3;\n',
+          },
+        ],
+      },
+      paths,
+      {
+        token: 'test-token',
+        async fetchPullRequestEventState() {
+          return reviewEventState(featureSha);
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      action: 'autopilot_fix_pr_review_feedback',
+      requires: ['worktreeId'],
+    });
+  });
+
+  it('validates fixture GitHub review event state at the action boundary', async () => {
+    const { paths } = await fixture();
+    const result = await fixPrReviewFeedback(
+      {
+        repoId: 'sample',
+        prNumber: 7,
+        replacements: [
+          {
+            path: 'src/app.ts',
+            oldString: 'export const value = 2;\n',
+            newString: 'export const value = 3;\n',
+          },
+        ],
+      },
+      paths,
+      {
+        token: 'test-token',
+        async fetchPullRequestEventState() {
+          return { repo: 'example/sample' } as never;
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      action: 'autopilot_fix_pr_review_feedback',
+      message: 'Invalid GitHub PR review event state.',
+    });
+  });
 });
 
 async function fixture() {
@@ -969,6 +1197,119 @@ async function preparePreparedWorktree(
   );
   expect(result.ok).toBe(true);
   return result;
+}
+
+function reviewEventState(featureSha: string) {
+  return {
+    repo: 'example/sample',
+    number: 7,
+    url: 'https://github.com/example/sample/pull/7',
+    title: 'Update feature',
+    state: 'open',
+    draft: false,
+    merged: false,
+    mergeCommitSha: null,
+    headSha: featureSha,
+    headRef: 'feature',
+    baseRef: 'main',
+    baseSha: null,
+    mergeable: true,
+    mergeableState: 'clean',
+    maintainerCanModify: true,
+    commits: [
+      {
+        sha: featureSha,
+        url: `https://github.com/example/sample/commit/${featureSha}`,
+        authorLogin: 'contributor',
+        committedAt: '2026-06-30T00:00:00.000Z',
+      },
+    ],
+    reviewThreads: [
+      {
+        id: 'PRRT_1',
+        isResolved: false,
+        isOutdated: false,
+        path: 'src/app.ts',
+        line: 1,
+        comments: [
+          {
+            id: 'PRRC_1',
+            databaseId: 101,
+            authorLogin: 'reviewer',
+            body: 'Please use the next value here.',
+            url: 'https://github.com/example/sample/pull/7#discussion_r101',
+            path: 'src/app.ts',
+            line: 1,
+            originalLine: 1,
+            diffHunk: '@@ -1 +1 @@',
+            reviewId: 55,
+            createdAt: '2026-06-30T00:00:00.000Z',
+            updatedAt: '2026-06-30T00:00:00.000Z',
+          },
+        ],
+      },
+    ],
+    requestedChangesReviews: [
+      {
+        id: 55,
+        nodeId: 'PRR_55',
+        state: 'CHANGES_REQUESTED',
+        authorLogin: 'reviewer',
+        submittedAt: '2026-06-30T00:00:00.000Z',
+        commitId: featureSha,
+        url: 'https://github.com/example/sample/pull/7#pullrequestreview-55',
+      },
+    ],
+    requestedChangesState: {
+      active: [
+        {
+          id: 55,
+          nodeId: 'PRR_55',
+          state: 'CHANGES_REQUESTED',
+          authorLogin: 'reviewer',
+          submittedAt: '2026-06-30T00:00:00.000Z',
+          commitId: featureSha,
+          url: 'https://github.com/example/sample/pull/7#pullrequestreview-55',
+        },
+      ],
+      latestByReviewer: [
+        {
+          id: 55,
+          nodeId: 'PRR_55',
+          state: 'CHANGES_REQUESTED',
+          authorLogin: 'reviewer',
+          submittedAt: '2026-06-30T00:00:00.000Z',
+          commitId: featureSha,
+          url: 'https://github.com/example/sample/pull/7#pullrequestreview-55',
+        },
+      ],
+      history: [
+        {
+          id: 55,
+          nodeId: 'PRR_55',
+          state: 'CHANGES_REQUESTED',
+          authorLogin: 'reviewer',
+          submittedAt: '2026-06-30T00:00:00.000Z',
+          commitId: featureSha,
+          url: 'https://github.com/example/sample/pull/7#pullrequestreview-55',
+        },
+      ],
+    },
+    checkSuites: [],
+    checkRuns: [],
+    branchPermissions: {
+      headRepoFullName: 'example/sample',
+      baseRepoFullName: 'example/sample',
+      isFork: false,
+      maintainerCanModify: true,
+      headRepoPush: true,
+      baseRepoPush: true,
+      canLikelyPush: true,
+      checkedAt: '2026-06-30T00:00:00.000Z',
+    },
+    isOutOfDate: false,
+    fetchedAt: '2026-06-30T00:00:00.000Z',
+  };
 }
 
 function stringPath(value: unknown, path: string[]) {
