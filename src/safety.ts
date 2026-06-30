@@ -228,6 +228,12 @@ const entries: SafetyPolicyEntry[] = [
     'Reads Neondeck worktree records, active and stale locks, and cleanup failures.',
   ),
   action(
+    'neondeck_autopilot_triage_pr_event',
+    'Triage PR event',
+    readOnly,
+    'Classifies structured PR watcher deltas without mutating GitHub, repos, or worktrees.',
+  ),
+  action(
     'neondeck_execution_policy_check',
     'Check host execution policy',
     readOnly,
@@ -579,6 +585,15 @@ const entries: SafetyPolicyEntry[] = [
     'Creates or adopts a git worktree only inside declared Neondeck worktree roots.',
   ),
   action(
+    'neondeck_autopilot_prepare_pr_worktree',
+    'Prepare PR worktree',
+    {
+      ...safeMutation,
+      auditTarget: 'worktrees/worktree_locks',
+    },
+    'Creates, syncs, locks, and inspects a Neondeck-managed PR worktree, but does not edit, commit, push, or comment.',
+  ),
+  action(
     'neondeck_worktree_sync',
     'Sync worktree',
     {
@@ -777,6 +792,21 @@ const entries: SafetyPolicyEntry[] = [
     'Creates a release-watch schedule through the Flue workflow surface.',
   ),
   workflow(
+    'triage-pr-event',
+    'Run PR event triage workflow',
+    readOnly,
+    'Classifies a structured PR watcher delta through the Flue workflow surface without mutating GitHub, repos, or worktrees.',
+  ),
+  workflow(
+    'prepare-pr-worktree',
+    'Run PR worktree preparation workflow',
+    {
+      ...safeMutation,
+      auditTarget: 'worktrees/worktree_locks/workflow_events',
+    },
+    'Creates, syncs, locks, and inspects an isolated PR worktree through the Flue workflow surface without fixing, committing, pushing, or commenting.',
+  ),
+  workflow(
     'dev-doctor',
     'Run dev-doctor workflow',
     readOnly,
@@ -889,6 +919,21 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'execution_approvals',
     },
     'Runs one approved local or exe.dev command and records bounded redacted output.',
+  ),
+  route(
+    '/api/autopilot/triage-pr-event',
+    'PR event triage API',
+    readOnly,
+    'Classifies a structured PR watcher delta for dashboard, smoke-test, and future TUI clients.',
+  ),
+  route(
+    '/api/autopilot/prepare-pr-worktree',
+    'PR worktree preparation API',
+    {
+      ...safeMutation,
+      auditTarget: 'worktrees/worktree_locks',
+    },
+    'Fetches deterministic GitHub PR/check facts and prepares a managed PR worktree without fixing, committing, pushing, or commenting.',
   ),
   route(
     '/api/session',

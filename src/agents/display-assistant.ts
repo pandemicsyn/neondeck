@@ -1,5 +1,6 @@
 import { defineAgent, type AgentRouteHandler } from '@flue/runtime';
 import { readAgentModelSelectionSync } from '../agent-config';
+import { neondeckAutopilotActions } from '../autopilot';
 import { neondeckCommandActions } from '../commands';
 import { neondeckConfigActions } from '../config-actions';
 import { neondeckDevDoctorActions } from '../dev-doctor';
@@ -47,6 +48,7 @@ export default defineAgent(() => {
       'For provider configuration, use neondeck_config_read_providers and neondeck_config_update_provider. Provider config is allowlisted and stores environment variable references only; raw secrets, arbitrary base URLs, and arbitrary provider ids are not supported. Server restart is required for provider registration changes.',
       'For dashboard layout changes, use neondeck_config_apply_dashboard_preset for classic or cockpit layouts, or neondeck_config_update_dashboard_layout for a complete validated custom dashboard object. Do not freestyle-edit dashboard.json.',
       'For PR watches, use the provided neondeck_watch_pr_* actions. Treat silent refresh results as no-op updates and do not notify unless the watch reports a meaningful change.',
+      'For PR event autopilot, use neondeck_autopilot_triage_pr_event to classify structured watcher deltas before preparing work. Only use neondeck_autopilot_prepare_pr_worktree when the triage result says to prepare a worktree. These workflows do not fix, commit, push, or comment on PRs.',
       'For PR event facts and watermarks, use neondeck_github_pr_event_state_get, neondeck_github_pr_review_threads_get, neondeck_github_pr_requested_changes_get, neondeck_github_pr_branch_permissions_get, neondeck_pr_watch_event_state_refresh, and neondeck_pr_watch_event_watermarks_list. These are read-only GitHub collectors plus app-state watermarks; they do not prepare fixes, comment, or push.',
       'For release watches, run /watch-release or create a release-watch scheduler blueprint. Provider-specific deploy checks are not available yet; direct release watches track default-branch GitHub checks, and linked until-prod PR release watches track the source PR merge SHA.',
       'For quick deterministic facts, prefer the neondeck_*_lookup tools. Use actions when you need a durable command, mutation, scheduler tick, or persisted workflow summary.',
@@ -81,6 +83,7 @@ export default defineAgent(() => {
       ...neondeckExecutionActions,
       ...neondeckPrEventActions,
       ...neondeckWatchActions,
+      ...neondeckAutopilotActions,
       ...neondeckSchedulerActions,
       ...neondeckSessionActions,
       ...neondeckRuntimeSkillActions,

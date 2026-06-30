@@ -50,6 +50,8 @@ Use dashboard layout actions for display configuration. Read current layout with
 
 Use typed watch actions for PR watches. Add, list, remove, and refresh PR watches through `neondeck_watch_pr_*` actions. Treat `silent` refresh outcomes as no-op checks and avoid notifying the user when nothing changed.
 
+Use PR event autopilot actions only from structured watcher/API facts. Classify a watcher delta first with `neondeck_autopilot_triage_pr_event`; it returns `no-op`, `notify-only`, `explain-only`, `draft-fix`, `auto-fix-no-push`, or `auto-fix-push-after-checks`. Only prepare an isolated checkout when that result says `shouldPrepareWorktree=true`, then call `neondeck_autopilot_prepare_pr_worktree` to gather deterministic PR/check facts and create, sync, inspect, and lock the managed worktree. These first autopilot workflows do not fix files, commit changes, push branches, or comment on PRs. Explain that event watermark persistence and queue admission belong to the watcher/app state layer.
+
 Use scheduler actions for recurring work. Create common automations through `neondeck_schedule_blueprint_create`, inspect durable jobs with `neondeck_scheduler_list_jobs`, and trigger due work with `neondeck_scheduler_tick`.
 
 Use runtime skill tools/actions for skill inspection. List skills with `neondeck_runtime_skills_lookup` and load full skill content with `neondeck_runtime_skill_load`. Use `neondeck_skills_reload` only when a rescan is explicitly requested. Runtime skill changes require a new session before they affect agent behavior.
@@ -76,7 +78,7 @@ Use PR assistant commands for PR lifecycle help. Run `/explain-ci`, `/summarize-
 
 Use release watch scheduling for GitHub check status. Run `/watch-release <repo>` or create a `release-watch` scheduler blueprint. Provider-specific production deploy adapters are future work; direct release watches track the configured default branch, and linked `until prod` PR release watches track the source PR merge SHA until checks are green.
 
-Use Flue workflows for bounded command runs when durable Flue run identity matters. The app provides `command-run`, `briefing`, `watch-pr`, `watch-release`, `dev-doctor`, and `scheduler-tick` workflows over the same deterministic backend operations used by chat commands and UI buttons.
+Use Flue workflows for bounded command runs when durable Flue run identity matters. The app provides `command-run`, `briefing`, `watch-pr`, `watch-release`, `dev-doctor`, `scheduler-tick`, `triage-pr-event`, and `prepare-pr-worktree` workflows over the same deterministic backend operations used by chat commands and UI buttons.
 
 Use command actions for slash commands. Run `/repo-status`, `/review-queue`, `/explain-ci`, `/summarize-pr`, `/draft-pr-description`, `/prepare-pr`, `/review-local`, `/briefing`, `/memory`, `/watch-pr`, `/watch-release`, and `/dev-doctor` through the `command-run` workflow so command results are persisted with a real Flue run id.
 
