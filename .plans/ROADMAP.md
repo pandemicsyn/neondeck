@@ -1261,7 +1261,7 @@ Must-haves:
 
 ### Phase 19: PR Event Autopilot
 
-- Status: partially complete and actively being finished. Event watermarks, triage, worktree preparation, review/CI fix workflows, verification, concurrency controls, dashboard/TUI-ready state, and runtime guidance have landed. Push-back, PR result comments, notification policy, and broader smoke/integration coverage remain open or in flight.
+- Status: partially complete and actively being finished. Event watermarks, triage, worktree preparation, review/CI fix workflows, verification, push-back, concurrency controls, dashboard/TUI-ready state, and runtime guidance have landed. PR result comments, notification policy, and broader smoke/integration coverage remain open or in flight.
 
 - [x] Extend PR watches to persist event watermarks for commits, review threads, requested-changes reviews, check suites, check runs, mergeability, and out-of-date branch state.
 - [x] Add a `triage_pr_event` workflow that classifies deltas into no-op, notify-only, explain-only, draft-fix, auto-fix-no-push, or auto-fix-push-after-checks.
@@ -1281,8 +1281,8 @@ Must-haves:
   - apply scoped fixes through repo-edit actions
   - commit locally and summarize confidence and remaining risk
 - [x] Add `verify_pr_worktree` workflow to run configured repo checks through the execution approval policy.
-- [ ] Add `push_pr_autofix` workflow that pushes only when autopilot policy, GitHub permissions, and checks allow it. In flight in the current push-back worktree.
-- [ ] When direct push is not possible, leave the prepared worktree intact, mark the attempt blocked, and notify the user with recovery options. In flight with `push_pr_autofix`.
+- [x] Add `push_pr_autofix` workflow that pushes only when autopilot policy, GitHub permissions, and checks allow it.
+- [x] When direct push is not possible, leave the prepared worktree intact, mark the attempt blocked, and notify the user with recovery options.
 - [ ] Add `comment_pr_autofix_result` workflow that posts concise PR comments with addressed comments, commit SHA, checks run, and any remaining manual asks. In flight in the current PR autofix audit/comment worktree.
 - [x] Add concurrency controls:
   - global autonomous workflow limit

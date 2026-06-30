@@ -17,18 +17,32 @@ import {
   repoAutopilotPolicy,
   withAutopilotLocalExecutionSlot,
 } from './autopilot-policy';
-import { addWorkflowSummary, updateWorkflowSummary } from './app-state';
+import {
+  addNotification,
+  addWorkflowSummary,
+  updateWorkflowSummary,
+} from './app-state';
 import { buildPreparedDiffAuditSummary } from './autonomous-audit';
 import { runApprovedExecution } from './execution-actions';
 import {
+  getGitHubPrBranchPermissions,
+  postGitHubPrComment,
+} from './pr-event-state';
+import {
   ensurePreparedDiffForWorktree,
+  markPreparedDiffPushBlocked,
+  markPreparedDiffPushed,
+  readPreparedDiff,
   readPreparedDiffRecord,
+  recordPreparedDiffVerification,
 } from './prepared-diffs';
-import { postGitHubPrComment } from './pr-event-state';
 import { readRepoRegistrySnapshot, repoFullName } from './repos';
 import {
+  gitCurrentSha,
   gitCommitAll,
   gitCommitPaths,
+  gitPushHead,
+  gitStatus,
   type GitCommitResult,
 } from './repo-edit/git';
 import {
@@ -50,6 +64,8 @@ import {
   createWorktree,
   listWorktrees,
   lockWorktree,
+  recordWorktreePushBlocked,
+  recordWorktreePushSucceeded,
   readManagedWorktree,
   readWorktreeStatus,
   releaseWorktreeLock,
@@ -82,10 +98,12 @@ type AutopilotDependencies = {
   fetchCheckSummary?: typeof fetchCheckSummary;
   fetchFailingCheckFacts?: typeof fetchFailingCheckFacts;
   fetchPullRequestEventState?: typeof fetchPullRequestEventState;
+  getBranchPermissions?: typeof getGitHubPrBranchPermissions;
   runExecution?: typeof runApprovedExecution;
   postPullRequestComment?: NonNullable<
     Parameters<typeof postGitHubPrComment>[2]
   >['postPullRequestComment'];
+  pushGit?: typeof gitPushHead;
   token?: string;
 };
 
@@ -286,6 +304,14 @@ const verifyPrWorktreeInputSchema = v.strictObject({
   timeoutMs: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
   maxOutputBytes: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
 });
+const pushPrAutofixInputSchema = v.strictObject({
+  preparedDiffId: nonEmptyStringSchema,
+  force: v.optional(v.boolean()),
+  lockOwner: v.optional(nonEmptyStringSchema),
+  lockTtlSeconds: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(30), v.maxValue(86_400)),
+  ),
+});
 const fixPrCiFailureInputSchema = v.strictObject({
   worktreeId: nonEmptyStringSchema,
   checks: v.optional(v.array(nonEmptyStringSchema)),
@@ -407,6 +433,17 @@ export const verifyPrWorktreeAction = defineAction({
   },
 });
 
+export const pushPrAutofixAction = defineAction({
+  name: 'neondeck_autopilot_push_pr_autofix',
+  description:
+    'Push an approved and verified prepared diff back to the PR head branch only when autopilot policy, GitHub permissions, and clean committed worktree state allow it.',
+  input: pushPrAutofixInputSchema,
+  output: autopilotOutputSchema,
+  async run({ input }) {
+    return pushPrAutofix(input);
+  },
+});
+
 export const fixPrCiFailureAction = defineAction({
   name: 'neondeck_autopilot_fix_pr_ci_failure',
   description:
@@ -445,6 +482,7 @@ export const neondeckAutopilotActions = [
   preparePrWorktreeAction,
   autopilotPolicyCheckAction,
   verifyPrWorktreeAction,
+  pushPrAutofixAction,
   fixPrCiFailureAction,
   fixPrReviewFeedbackAction,
   commentPrAutofixResultAction,
@@ -853,6 +891,18 @@ export async function verifyPrWorktree(
       results.length === checks.length && results.every((item) => item.ok);
     const blocked = results.some((item) => item.requires.length > 0);
     const status = await readWorktreeStatus({ worktreeId: worktree.id }, paths);
+    const preparedDiffVerification = await recordPreparedDiffVerification(
+      {
+        worktreeId: worktree.id,
+        status: passed ? 'passed' : 'failed',
+        summary: {
+          checks,
+          results,
+          blocked,
+        },
+      },
+      paths,
+    );
 
     return {
       ok: passed,
@@ -876,6 +926,7 @@ export async function verifyPrWorktree(
         checks,
         results,
         status,
+        preparedDiffVerification,
       }),
       ...(passed
         ? {}
@@ -891,6 +942,425 @@ export async function verifyPrWorktree(
       'autopilot_verify_pr_worktree',
       'Could not verify PR worktree.',
       { errors: [errorMessage(error)] },
+    );
+  } finally {
+    if (acquiredLockId) {
+      await releaseWorktreeLock(
+        {
+          lockId: acquiredLockId,
+          owner: lockOwner,
+          finalStatus: finalLockStatus,
+        },
+        paths,
+      ).catch(() => undefined);
+    }
+  }
+}
+
+export async function pushPrAutofix(
+  rawInput: unknown,
+  paths: RuntimePaths = runtimePaths(),
+  dependencies: AutopilotDependencies = {},
+): Promise<AutopilotActionResult> {
+  const parsed = parseInput(
+    pushPrAutofixInputSchema,
+    rawInput,
+    'autopilot_push_pr_autofix',
+  );
+  if (!parsed.ok) return parsed.result;
+  const input = parsed.input;
+  const lockOwner = input.lockOwner ?? 'push_pr_autofix';
+  let acquiredLockId: string | undefined;
+  let finalLockStatus: 'prepared-diff' | 'succeeded' = 'prepared-diff';
+  let pushedSideEffect:
+    { commitSha: string; remote: string; branch: string } | undefined;
+
+  try {
+    await ensureRuntimeHome(paths);
+    const preparedDiff = readPreparedDiff(input.preparedDiffId, paths);
+    if (!preparedDiff) {
+      return failResult(
+        'autopilot_push_pr_autofix',
+        `Prepared diff "${input.preparedDiffId}" was not found.`,
+        { requires: ['preparedDiffId'] },
+      );
+    }
+    const worktree = await readManagedWorktree(
+      preparedDiff.worktreeId,
+      preparedDiff.repoId,
+      paths,
+    );
+    const registry = await readRepoRegistrySnapshot(paths);
+    const repo = registry.repos.find(
+      (candidate) => candidate.id === preparedDiff.repoId,
+    );
+    if (!repo) {
+      return blockPushAttempt(
+        preparedDiff.id,
+        worktree.id,
+        'Repository is not configured.',
+        {
+          gates: [
+            {
+              gate: 'repo',
+              ok: false,
+              reason: `Repository "${preparedDiff.repoId}" is not configured.`,
+            },
+          ],
+          paths,
+        },
+      );
+    }
+    if (!preparedDiff.prNumber) {
+      return blockPushAttempt(
+        preparedDiff.id,
+        worktree.id,
+        'Prepared diff is not linked to a PR.',
+        {
+          gates: [
+            {
+              gate: 'pull-request',
+              ok: false,
+              reason: 'Prepared diff has no PR number.',
+            },
+          ],
+          paths,
+        },
+      );
+    }
+
+    const concurrency = await checkAutopilotConcurrency(
+      {
+        repoId: repo.id,
+        prNumber: preparedDiff.prNumber,
+        workflow: 'push_pr_autofix',
+        mutation: true,
+      },
+      paths,
+    );
+    if (!concurrency.allowed) {
+      return blockPushAttempt(
+        preparedDiff.id,
+        worktree.id,
+        concurrency.message,
+        {
+          gates: [
+            {
+              gate: 'concurrency',
+              ok: false,
+              reason: concurrency.message,
+            },
+          ],
+          paths,
+          recoveryOptions: [
+            'Wait for the active autopilot workflow to finish, then retry push_pr_autofix.',
+          ],
+        },
+      );
+    }
+
+    const locked = await lockWorktree(
+      {
+        worktreeId: worktree.id,
+        scope: 'pr',
+        owner: lockOwner,
+        ttlSeconds: input.lockTtlSeconds ?? 3_600,
+      },
+      paths,
+    );
+    if (!locked.ok) {
+      return blockPushAttempt(
+        preparedDiff.id,
+        worktree.id,
+        stringField(locked, 'message') ??
+          'Worktree lock could not be acquired.',
+        {
+          gates: [
+            {
+              gate: 'worktree-lock',
+              ok: false,
+              reason:
+                stringField(locked, 'message') ??
+                'Worktree lock could not be acquired.',
+            },
+          ],
+          paths,
+          recoveryOptions: [
+            'Wait for the active worktree lock to release, then retry push_pr_autofix.',
+          ],
+        },
+      );
+    }
+    acquiredLockId = stringField(objectField(locked, 'lock'), 'id');
+
+    const policy = await checkAutopilotPolicy(
+      {
+        worktreeId: worktree.id,
+        diffBaseRef: preparedDiff.headSha ?? preparedDiff.baseRef,
+        pushDestination: 'pull-request-head',
+        forcePush: input.force,
+      },
+      paths,
+    );
+    const permissions = await (
+      dependencies.getBranchPermissions ?? getGitHubPrBranchPermissions
+    )(
+      {
+        repo: preparedDiff.repoFullName,
+        prNumber: preparedDiff.prNumber,
+      },
+      paths,
+    );
+    const status = await gitStatus(worktree.localPath);
+    const currentSha = await gitCurrentSha(worktree.localPath);
+    const branchPermissions = objectField(
+      objectField(permissions, 'data'),
+      'branchPermissions',
+    );
+    const canLikelyPush =
+      booleanField(branchPermissions, 'canLikelyPush') === true;
+    const approvedCommitSha = preparedDiffCommitSha(
+      preparedDiff.summary,
+      'pushApproval',
+      'approvedCommitSha',
+    );
+    const verifiedCommitSha = preparedDiffCommitSha(
+      preparedDiff.summary,
+      'verification',
+      'verifiedCommitSha',
+    );
+    const modeAllowsPush =
+      policy.mode === 'autofix-with-approval' ||
+      policy.mode === 'autofix-push-when-safe';
+    const hasCommittedDiff = policy.diff.filesChanged > 0;
+    const gates = [
+      {
+        gate: 'autopilot-mode',
+        ok: modeAllowsPush,
+        reason: modeAllowsPush
+          ? `Repo policy mode is ${policy.mode}.`
+          : `Repo policy mode is ${policy.mode}, not a push-capable mode.`,
+      },
+      {
+        gate: 'autopilot-policy',
+        ok: Boolean(policy.ok && !policy.blocked && !policy.approvalRequired),
+        reason:
+          policy.ok && !policy.blocked && !policy.approvalRequired
+            ? 'Autopilot policy allows this diff and push destination.'
+            : policy.message,
+      },
+      {
+        gate: 'prepared-diff-approval',
+        ok: preparedDiff.pushApprovalStatus === 'approved',
+        reason:
+          preparedDiff.pushApprovalStatus === 'approved'
+            ? 'Prepared diff push approval is approved.'
+            : `Prepared diff push approval is ${preparedDiff.pushApprovalStatus}.`,
+      },
+      {
+        gate: 'prepared-diff-status',
+        ok: ['push-approved', 'push-blocked'].includes(preparedDiff.status),
+        reason: ['push-approved', 'push-blocked'].includes(preparedDiff.status)
+          ? `Prepared diff status is ${preparedDiff.status}.`
+          : `Prepared diff status is ${preparedDiff.status}, not ready to push.`,
+      },
+      {
+        gate: 'verification',
+        ok: preparedDiff.verificationStatus === 'passed',
+        reason:
+          preparedDiff.verificationStatus === 'passed'
+            ? 'Prepared diff verification passed.'
+            : `Prepared diff verification is ${preparedDiff.verificationStatus}.`,
+      },
+      {
+        gate: 'approved-commit',
+        ok: approvedCommitSha === currentSha,
+        reason:
+          approvedCommitSha === currentSha
+            ? 'Prepared diff push approval matches current HEAD.'
+            : approvedCommitSha
+              ? 'Current HEAD differs from the approved prepared-diff commit.'
+              : 'Prepared diff approval does not record an approved commit SHA.',
+      },
+      {
+        gate: 'verified-commit',
+        ok: verifiedCommitSha === currentSha,
+        reason:
+          verifiedCommitSha === currentSha
+            ? 'Prepared diff verification matches current HEAD.'
+            : verifiedCommitSha
+              ? 'Current HEAD differs from the verified prepared-diff commit.'
+              : 'Prepared diff verification does not record a verified commit SHA.',
+      },
+      {
+        gate: 'github-permissions',
+        ok: canLikelyPush,
+        reason: canLikelyPush
+          ? 'GitHub branch permission facts allow likely push-back.'
+          : permissions.ok
+            ? 'GitHub branch permission facts do not allow direct push-back.'
+            : permissions.message,
+      },
+      {
+        gate: 'clean-worktree',
+        ok: status.clean,
+        reason: status.clean
+          ? 'Worktree has no uncommitted changes.'
+          : `Worktree has ${status.files.length} uncommitted change(s).`,
+      },
+      {
+        gate: 'committed-diff',
+        ok: hasCommittedDiff,
+        reason: hasCommittedDiff
+          ? `Prepared diff contains ${policy.diff.filesChanged} committed file change(s).`
+          : 'No committed diff remains to push.',
+      },
+      {
+        gate: 'force-push',
+        ok: input.force !== true,
+        reason:
+          input.force === true
+            ? 'push_pr_autofix does not perform force-pushes in this slice.'
+            : 'Force-push is not requested.',
+      },
+    ];
+    const failedGates = gates.filter((gate) => !gate.ok);
+    if (failedGates.length > 0) {
+      return blockPushAttempt(
+        preparedDiff.id,
+        worktree.id,
+        'Prepared diff is blocked from push-back.',
+        {
+          gates,
+          paths,
+          recoveryOptions: recoveryOptionsForPushBlock(failedGates),
+          data: { policy, permissions, status, currentSha, concurrency },
+        },
+      );
+    }
+
+    const remote = remoteForPush(worktree, branchPermissions);
+    const branch = worktree.headRef || preparedDiff.headRef;
+    const push = await (dependencies.pushGit ?? gitPushHead)(
+      worktree.localPath,
+      {
+        remote,
+        branch,
+        force: false,
+      },
+    );
+    pushedSideEffect = {
+      commitSha: currentSha,
+      remote: push.remote,
+      branch: push.branch,
+    };
+    finalLockStatus = 'succeeded';
+    const updatedPreparedDiff = markPreparedDiffPushed(
+      preparedDiff.id,
+      {
+        commitSha: currentSha,
+        remote: push.remote,
+        branch: push.branch,
+      },
+      paths,
+    );
+    const updatedWorktree = await recordWorktreePushSucceeded(
+      worktree.id,
+      {
+        commitSha: currentSha,
+        message: `Pushed prepared diff ${preparedDiff.id} to ${push.branch}.`,
+        data: { preparedDiffId: preparedDiff.id, remote: push.remote },
+      },
+      paths,
+    );
+    await addNotification(
+      {
+        level: 'ready',
+        title: 'Autofix pushed',
+        message: `Pushed ${preparedDiff.repoFullName}#${preparedDiff.prNumber} autofix commit ${currentSha.slice(0, 12)}.`,
+        source: 'autopilot',
+        sourceId: `prepared-diff:${preparedDiff.id}:pushed`,
+        data: {
+          preparedDiffId: preparedDiff.id,
+          worktreeId: worktree.id,
+          commitSha: currentSha,
+        },
+      },
+      paths,
+    );
+
+    return {
+      ok: true,
+      action: 'autopilot_push_pr_autofix',
+      changed: true,
+      message: `Pushed autofix commit ${currentSha.slice(0, 12)} to ${preparedDiff.repoFullName}#${preparedDiff.prNumber}.`,
+      data: asJsonValue({
+        preparedDiff: updatedPreparedDiff,
+        worktree: updatedWorktree,
+        push,
+        gates,
+        policy,
+        permissions,
+        status,
+        currentSha,
+        nextWorkflow: 'comment_pr_autofix_result',
+        commentsDeferred: true,
+      }),
+    };
+  } catch (error) {
+    if (pushedSideEffect) {
+      return {
+        ok: false,
+        action: 'autopilot_push_pr_autofix',
+        changed: true,
+        message:
+          'Git push completed, but Neondeck could not finish recording push state. Inspect the retained worktree before retrying.',
+        data: asJsonValue({
+          push: pushedSideEffect,
+          error: errorMessage(error),
+          recoveryOptions: [
+            'Inspect GitHub and the retained worktree before retrying.',
+            'If the commit reached the PR branch, reconcile the prepared-diff state instead of pushing again.',
+          ],
+        }),
+        requires: ['state-reconciliation'],
+        errors: [errorMessage(error)],
+      };
+    }
+    const parsedInput = v.safeParse(pushPrAutofixInputSchema, rawInput);
+    if (parsedInput.success) {
+      const preparedDiff = readPreparedDiff(
+        parsedInput.output.preparedDiffId,
+        paths,
+      );
+      if (preparedDiff) {
+        return blockPushAttempt(
+          preparedDiff.id,
+          preparedDiff.worktreeId,
+          `Could not push prepared diff: ${errorMessage(error)}`,
+          {
+            gates: [
+              {
+                gate: 'git-push',
+                ok: false,
+                reason: errorMessage(error),
+              },
+            ],
+            paths,
+            recoveryOptions: [
+              'Inspect the retained worktree and retry after fixing git credentials or branch state.',
+              'Push manually from the retained worktree if policy allows.',
+            ],
+          },
+        );
+      }
+    }
+    return failResult(
+      'autopilot_push_pr_autofix',
+      'Could not push PR autofix.',
+      {
+        errors: [errorMessage(error)],
+      },
     );
   } finally {
     if (acquiredLockId) {
@@ -2192,6 +2662,141 @@ function generatedCiFixCommitMessage(
   return checkIds
     ? `Fix PR CI failure for ${pr} (checks ${checkIds})`
     : `Fix PR CI failure for ${pr}`;
+}
+
+async function blockPushAttempt(
+  preparedDiffId: string,
+  worktreeId: string,
+  message: string,
+  input: {
+    gates: Array<{ gate: string; ok: boolean; reason: string }>;
+    paths: RuntimePaths;
+    recoveryOptions?: string[];
+    data?: unknown;
+  },
+): Promise<AutopilotActionResult> {
+  const recoveryOptions =
+    input.recoveryOptions ?? recoveryOptionsForPushBlock(input.gates);
+  const preparedDiff = markPreparedDiffPushBlocked(
+    preparedDiffId,
+    {
+      reason: message,
+      gates: input.gates,
+      recoveryOptions,
+    },
+    input.paths,
+  );
+  const worktree = await recordWorktreePushBlocked(
+    worktreeId,
+    {
+      message,
+      data: {
+        preparedDiffId,
+        gates: input.gates,
+        recoveryOptions,
+        details: input.data ?? null,
+      },
+    },
+    input.paths,
+  ).catch(() => null);
+  await addNotification(
+    {
+      level: 'attention',
+      title: 'Autofix push blocked',
+      message,
+      source: 'autopilot',
+      sourceId: `prepared-diff:${preparedDiffId}:push-blocked`,
+      data: {
+        preparedDiffId,
+        worktreeId,
+        gates: input.gates,
+        recoveryOptions,
+      },
+    },
+    input.paths,
+  );
+  return {
+    ok: false,
+    action: 'autopilot_push_pr_autofix',
+    changed: true,
+    message,
+    data: asJsonValue({
+      preparedDiff,
+      worktree,
+      gates: input.gates,
+      recoveryOptions,
+      details: input.data ?? null,
+    }),
+    requires: input.gates.filter((gate) => !gate.ok).map((gate) => gate.gate),
+    errors: input.gates.filter((gate) => !gate.ok).map((gate) => gate.reason),
+  };
+}
+
+function recoveryOptionsForPushBlock(
+  gates: Array<{ gate: string; ok: boolean; reason: string }>,
+) {
+  const failed = new Set(
+    gates.filter((gate) => !gate.ok).map((gate) => gate.gate),
+  );
+  const options: string[] = [];
+  if (failed.has('autopilot-mode') || failed.has('autopilot-policy')) {
+    options.push(
+      'Review repo autopilot policy or request a lower-risk revision before retrying.',
+    );
+  }
+  if (failed.has('prepared-diff-approval')) {
+    options.push('Approve the prepared diff push-back, then retry.');
+  }
+  if (failed.has('verification')) {
+    options.push('Run verify_pr_worktree and retry only after checks pass.');
+  }
+  if (failed.has('github-permissions')) {
+    options.push(
+      'Grant branch push permission, ask the PR author to enable maintainer edits, or push manually from the retained worktree.',
+    );
+  }
+  if (failed.has('clean-worktree') || failed.has('committed-diff')) {
+    options.push(
+      'Commit or discard local worktree changes, then rerun verification and push.',
+    );
+  }
+  if (failed.has('force-push')) {
+    options.push(
+      'Create a normal forward commit; force-push remains deferred.',
+    );
+  }
+  return options.length > 0
+    ? options
+    : ['Inspect the retained worktree, resolve the blocked gate, and retry.'];
+}
+
+function remoteForPush(worktree: WorktreeRecord, branchPermissions: unknown) {
+  const headRepoFullName = stringField(branchPermissions, 'headRepoFullName');
+  const baseRepoFullName = stringField(branchPermissions, 'baseRepoFullName');
+  if (
+    headRepoFullName &&
+    baseRepoFullName &&
+    headRepoFullName.toLowerCase() !== baseRepoFullName.toLowerCase()
+  ) {
+    return `https://github.com/${headRepoFullName}.git`;
+  }
+  if (
+    worktree.headOwner &&
+    worktree.headName &&
+    worktree.repoFullName.toLowerCase() !==
+      `${worktree.headOwner}/${worktree.headName}`.toLowerCase()
+  ) {
+    return `https://github.com/${worktree.headOwner}/${worktree.headName}.git`;
+  }
+  return 'origin';
+}
+
+function preparedDiffCommitSha(
+  summary: JsonValue | null,
+  section: string,
+  key: string,
+) {
+  return stringField(objectField(summary, section), key);
 }
 
 async function fetchReviewEventState(

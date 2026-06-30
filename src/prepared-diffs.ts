@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { addNotification } from './app-state';
 import { buildPreparedDiffAuditSummary } from './autonomous-audit';
-import { gitDiff, type RepoDiffFile } from './repo-edit/git';
+import { gitCurrentSha, gitDiff, type RepoDiffFile } from './repo-edit/git';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
@@ -433,6 +433,105 @@ export async function ensurePreparedDiffForWorktree(
   return record;
 }
 
+export function readPreparedDiff(
+  preparedDiffId: string,
+  paths: RuntimePaths = runtimePaths(),
+) {
+  return readPreparedDiffRecord(preparedDiffId, paths) ?? null;
+}
+
+export function readPreparedDiffByWorktree(
+  worktreeId: string,
+  paths: RuntimePaths = runtimePaths(),
+) {
+  return readPreparedDiffByWorktreeId(worktreeId, paths) ?? null;
+}
+
+export async function recordPreparedDiffVerification(
+  input: {
+    preparedDiffId?: string;
+    worktreeId?: string;
+    status: Extract<PreparedDiffVerificationStatus, 'passed' | 'failed'>;
+    summary?: Record<string, unknown>;
+  },
+  paths: RuntimePaths = runtimePaths(),
+) {
+  const record = input.preparedDiffId
+    ? readPreparedDiffRecord(input.preparedDiffId, paths)
+    : input.worktreeId
+      ? readPreparedDiffByWorktreeId(input.worktreeId, paths)
+      : undefined;
+  if (!record) return null;
+  const verifiedCommitSha = await gitCurrentSha(
+    record.sourceWorktreePath,
+  ).catch(() => null);
+  return updatePreparedDiffState(
+    record.id,
+    {
+      verificationStatus: input.status,
+      summary: mergeSummary(record.summary, {
+        verification: {
+          status: input.status,
+          verifiedCommitSha,
+          recordedAt: new Date().toISOString(),
+          ...input.summary,
+        },
+      }),
+    },
+    paths,
+  );
+}
+
+export function markPreparedDiffPushBlocked(
+  preparedDiffId: string,
+  input: { reason: string; gates?: unknown; recoveryOptions?: string[] },
+  paths: RuntimePaths = runtimePaths(),
+) {
+  const current = readPreparedDiffRecord(preparedDiffId, paths);
+  if (!current) return null;
+  return updatePreparedDiffState(
+    preparedDiffId,
+    {
+      status: 'push-blocked',
+      summary: mergeSummary(current.summary, {
+        push: {
+          status: 'blocked',
+          reason: input.reason,
+          gates: input.gates ?? null,
+          recoveryOptions: input.recoveryOptions ?? [],
+          attemptedAt: new Date().toISOString(),
+        },
+      }),
+    },
+    paths,
+  );
+}
+
+export function markPreparedDiffPushed(
+  preparedDiffId: string,
+  input: { commitSha: string; remote: string; branch: string },
+  paths: RuntimePaths = runtimePaths(),
+) {
+  const current = readPreparedDiffRecord(preparedDiffId, paths);
+  if (!current) return null;
+  return updatePreparedDiffState(
+    preparedDiffId,
+    {
+      status: 'pushed',
+      summary: mergeSummary(current.summary, {
+        push: {
+          status: 'pushed',
+          commitSha: input.commitSha,
+          remote: input.remote,
+          branch: input.branch,
+          pushedAt: new Date().toISOString(),
+        },
+      }),
+    },
+    paths,
+  );
+}
+
 export async function listPreparedDiffs(
   rawInput: unknown = {},
   paths: RuntimePaths = runtimePaths(),
@@ -591,11 +690,21 @@ export async function approvePreparedDiffPush(
     ['prepared', 'verification-requested'],
   );
   if (!transition.ok) return transition.result;
+  const approvedCommitSha = await gitCurrentSha(
+    record.record.sourceWorktreePath,
+  ).catch(() => null);
   const updated = updatePreparedDiffState(
     record.record.id,
     {
       status: 'push-approved',
       pushApprovalStatus: 'approved',
+      summary: mergeSummary(record.record.summary, {
+        pushApproval: {
+          approvedCommitSha,
+          approvedAt: new Date().toISOString(),
+          reason: parsed.input.reason ?? null,
+        },
+      }),
     },
     paths,
   );

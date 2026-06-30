@@ -762,6 +762,15 @@ const entries: SafetyPolicyEntry[] = [
     'Posts a concise PR comment generated only from prepared-diff/autopilot result facts and persists the rendered audit summary.',
   ),
   action(
+    'neondeck_autopilot_push_pr_autofix',
+    'Push PR autofix',
+    {
+      ...destructiveMutation,
+      auditTarget: 'prepared_diffs/worktrees/worktree_events/notifications',
+    },
+    'Pushes an approved and verified prepared diff back to the PR head branch only when autopilot policy, GitHub branch permissions, and clean committed worktree state allow it; blocked attempts retain the worktree.',
+  ),
+  action(
     'neondeck_worktree_sync',
     'Sync worktree',
     {
@@ -1108,6 +1117,16 @@ const entries: SafetyPolicyEntry[] = [
     'Runs configured checks for an isolated PR worktree through the execution approval policy before any push-back workflow is allowed.',
   ),
   workflow(
+    'push-pr-autofix',
+    'Run PR autofix push workflow',
+    {
+      ...destructiveMutation,
+      auditTarget:
+        'prepared_diffs/worktrees/worktree_events/notifications/workflow_events',
+    },
+    'Runs the bounded PR autofix push workflow. It pushes only approved and verified prepared diffs, and records blocked attempts without deleting worktrees.',
+  ),
+  workflow(
     'dev-doctor',
     'Run dev-doctor workflow',
     readOnly,
@@ -1341,6 +1360,24 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'prepared_diffs/prepared_diff_approvals',
     },
     'Records a verification request without running host commands directly.',
+  ),
+  route(
+    '/api/autopilot/push-pr-autofix',
+    'PR autofix push API',
+    {
+      ...destructiveMutation,
+      auditTarget: 'prepared_diffs/worktrees/worktree_events/notifications',
+    },
+    'Pushes an approved and verified prepared diff through the same bounded push service used by the Flue workflow.',
+  ),
+  route(
+    '/api/prepared-diffs/:id/push',
+    'Prepared diff push API',
+    {
+      ...destructiveMutation,
+      auditTarget: 'prepared_diffs/worktrees/worktree_events/notifications',
+    },
+    'Pushes one approved and verified prepared diff through the bounded push service, or records a blocked attempt while retaining the worktree.',
   ),
   route(
     '/api/prepared-diffs/:id/request-revision',
