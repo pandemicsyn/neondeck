@@ -17,6 +17,7 @@ export const queryKeys = {
   memories: ['memories'] as const,
   neonSession: ['neon-session'] as const,
   chatSessions: ['chat-sessions'] as const,
+  autopilotState: ['autopilot-state'] as const,
   prWatches: ['pr-watches'] as const,
   repoHealth: ['repo-health'] as const,
   repoEditEvents: ['repo-edit-events'] as const,

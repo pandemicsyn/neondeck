@@ -1,4 +1,5 @@
 import { ActiveWatchesPlugin } from './ActiveWatches';
+import { AutopilotPanelPlugin } from './AutopilotPanel';
 import { BriefingPanelPlugin } from './BriefingPanel';
 import { ClockStatusPlugin } from './ClockStatus';
 import { FlueChatPlugin } from './FlueChat';
@@ -13,6 +14,7 @@ import type { DisplayPlugin } from '../types';
 export const plugins = [
   GitHubPrListPlugin,
   ActiveWatchesPlugin,
+  AutopilotPanelPlugin,
   RuntimeOverviewPlugin,
   BriefingPanelPlugin,
   MemoryPanelPlugin,

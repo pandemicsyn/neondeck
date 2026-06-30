@@ -43,6 +43,19 @@
             "config": {
               "limit": 8
             }
+          },
+          {
+            "id": "autopilot",
+            "title": "AUTOPILOT",
+            "pluginId": "autopilot",
+            "config": {
+              "queueLimit": 8,
+              "policyLimit": 6,
+              "preparedLimit": 4,
+              "approvalLimit": 4,
+              "checkLimit": 4,
+              "activityLimit": 8
+            }
           }
         ]
       },

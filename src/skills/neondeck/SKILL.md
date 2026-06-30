@@ -50,6 +50,12 @@ Use dashboard layout actions for display configuration. Read current layout with
 
 Use typed watch actions for PR watches. Add, list, remove, and refresh PR watches through `neondeck_watch_pr_*` actions. Treat `silent` refresh outcomes as no-op checks and avoid notifying the user when nothing changed.
 
+Use `neondeck_autopilot_state_lookup` when answering questions about autonomous PR work, repo/watch autopilot policy, prepared worktrees, pending push approvals, running autopilot checks, or why Neon did or did not act. This lookup is read-only operator state. It composes current watches, worktrees, execution approvals, Flue workflow observations, notifications, and config-backed policy. Do not invent prepared diffs, queue admissions, pushes, comments, or fixes that are not present in that state.
+
+Autopilot policy modes are bounded. `notify-only` reports meaningful deltas without preparing a worktree. `prepare-only` may prepare an isolated worktree/diff for human review. `autofix-with-approval` may prepare and verify a fix but waits for explicit approval before push-back. `autofix-push-when-safe` may push only after policy, permissions, and required checks allow it. Older roadmap/config aliases map to these names: `draft-fix` means `prepare-only`, `auto-fix-no-push` means `autofix-with-approval`, and `auto-fix-push-after-checks` means `autofix-push-when-safe`.
+
+Autopilot explanations must distinguish observed facts from inference. Observed facts come from GitHub/watch state, worktree records, approval rows, workflow observations, and policy config. Inference can suggest likely next steps, but say when workflow admission, prepared-diff records, direct push-back, or Kilo handoff are not implemented yet.
+
 Use scheduler actions for recurring work. Create common automations through `neondeck_schedule_blueprint_create`, inspect durable jobs with `neondeck_scheduler_list_jobs`, and trigger due work with `neondeck_scheduler_tick`.
 
 Use runtime skill tools/actions for skill inspection. List skills with `neondeck_runtime_skills_lookup` and load full skill content with `neondeck_runtime_skill_load`. Use `neondeck_skills_reload` only when a rescan is explicitly requested. Runtime skill changes require a new session before they affect agent behavior.

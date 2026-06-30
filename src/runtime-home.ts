@@ -148,6 +148,33 @@ export const worktreeConfigSchema = v.looseObject({
   cleanup: v.optional(worktreeCleanupConfigSchema),
 });
 
+export const autopilotModeSchema = v.picklist([
+  'notify-only',
+  'prepare-only',
+  'autofix-with-approval',
+  'autofix-push-when-safe',
+  'draft-fix',
+  'auto-fix-no-push',
+  'auto-fix-push-after-checks',
+]);
+
+export const autopilotPolicyLimitsSchema = v.looseObject({
+  maxFilesChanged: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+  maxLinesChanged: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+  deniedFileGlobs: v.optional(v.array(nonEmptyStringSchema)),
+  approvalRequiredFileGlobs: v.optional(v.array(nonEmptyStringSchema)),
+  requiredChecks: v.optional(v.array(nonEmptyStringSchema)),
+  allowedPushDestinations: v.optional(v.array(nonEmptyStringSchema)),
+  allowForcePush: v.optional(v.boolean()),
+  highRiskClasses: v.optional(v.array(nonEmptyStringSchema)),
+});
+
+export const autopilotConfigSchema = v.looseObject({
+  defaultMode: v.optional(autopilotModeSchema),
+  mode: v.optional(autopilotModeSchema),
+  limits: v.optional(autopilotPolicyLimitsSchema),
+});
+
 export const appConfigSchema = v.looseObject({
   version: positiveIntegerSchema,
   skillRoots: v.optional(v.array(nonEmptyStringSchema)),
@@ -155,6 +182,7 @@ export const appConfigSchema = v.looseObject({
   providers: v.optional(providerConfigSchema),
   execution: v.optional(executionConfigSchema),
   worktrees: v.optional(worktreeConfigSchema),
+  autopilot: v.optional(autopilotConfigSchema),
 });
 
 export const repoConfigSchema = v.looseObject({
@@ -250,6 +278,7 @@ export type WorktreeConfig = v.InferOutput<typeof worktreeConfigSchema>;
 export type WorktreeCleanupConfig = v.InferOutput<
   typeof worktreeCleanupConfigSchema
 >;
+export type AutopilotConfig = v.InferOutput<typeof autopilotConfigSchema>;
 export type RepoConfig = v.InferOutput<typeof repoConfigSchema>;
 export type RepoRegistry = v.InferOutput<typeof repoRegistrySchema>;
 export type ScheduleEntry = v.InferOutput<typeof scheduleEntrySchema>;

@@ -2,7 +2,9 @@ import { observe, registerProvider, type FlueObservation } from '@flue/runtime';
 import { flue } from '@flue/runtime/routing';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
+import * as v from 'valibot';
 import { supportedCommands } from './commands';
+import { autopilotStateSchema, readAutopilotState } from './autopilot';
 import {
   readProviderConfig,
   reloadConfig,
@@ -224,6 +226,10 @@ app.get('/api/health', (c) =>
 
 app.get('/api/runtime/status', async (c) => {
   return c.json(await readRuntimeStatus(paths));
+});
+
+app.get('/api/autopilot/state', async (c) => {
+  return c.json(v.parse(autopilotStateSchema, await readAutopilotState(paths)));
 });
 
 app.get('/api/events/config', (c) => {

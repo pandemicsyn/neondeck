@@ -1289,13 +1289,13 @@ Must-haves:
   - per-repo autonomous workflow limit
   - one active mutation workflow per PR by default
   - local execution concurrency limit
-- [ ] Add dashboard/TUI-ready APIs for active autopilot queue, prepared diffs, pending push approvals, running checks, and recent autonomous fixes.
+- [x] Add dashboard/TUI-ready APIs for active autopilot queue, prepared diffs, pending push approvals, running checks, and recent autonomous fixes.
 - [ ] Add notification policy for autopilot:
   - ready when a fix is prepared or pushed
   - attention when push/checks are blocked
   - urgent only for production/main failures
   - quiet no-op when a watch delta is reconciled without action
-- [ ] Add runtime skill guidance for worktree autopilot, including when Neon must avoid direct edits, when to ask for approval, and how to explain autonomous fixes.
+- [x] Add runtime skill guidance for worktree autopilot, including when Neon must avoid direct edits, when to ask for approval, and how to explain autonomous fixes.
 - [ ] Add fixture-driven integration tests for same-PR event reconciliation, cross-PR parallelism, direct-push permission checks, blocked push-back worktrees, and blocked high-risk file changes.
 - [ ] Add Flue workflow smoke tests for `triage_pr_event`, `prepare_pr_worktree`, `fix_pr_review_feedback`, `fix_pr_ci_failure`, `verify_pr_worktree`, and `push_pr_autofix` using temporary `NEONDECK_HOME`, temporary repos/worktrees, and fake GitHub/check fixtures.
 - [ ] Add local smoke scripts that run watch/autopilot workflows through `flue run` or `@flue/sdk` and assert workflow summaries, notifications, prepared diffs, and run observability records.
@@ -1304,12 +1304,12 @@ Must-haves:
 
 - Status: planned.
 
-- [ ] Add repo-level autopilot config with explicit modes:
+- [x] Add repo-level autopilot config with explicit modes:
   - `notify-only`
   - `draft-fix`
   - `auto-fix-no-push`
   - `auto-fix-push-after-checks`
-- [ ] Add watch-rule overrides so a single PR watch can be more or less autonomous than the repo default.
+- [x] Add watch-rule overrides so a single PR watch can be more or less autonomous than the repo default.
 - [ ] Add policy limits:
   - maximum files changed
   - maximum lines changed
@@ -1343,7 +1343,7 @@ Must-haves:
   - open worktree path
   - run verification
 - [ ] Keep git/diff operations in backend services and actions; UI clients should not implement git logic.
-- [ ] Add a dashboard panel for autopilot decisions, including why Neon did or did not act.
+- [x] Add a dashboard panel for autopilot decisions, including why Neon did or did not act.
 - [ ] Add human-readable audit summaries for autonomous workflows, suitable for PR comments and timeline UI.
 - [ ] Add recovery actions:
   - retry after new commit
