@@ -723,8 +723,9 @@ export async function refreshChatSessionSummary(
 
     const providedSummary = parsed.output.providedSummary?.trim();
     const summary = providedSummary || buildMetadataSummary(before);
-    const source =
-      parsed.output.source ?? (providedSummary ? 'agent' : 'metadata');
+    const source = providedSummary
+      ? (parsed.output.source ?? 'agent')
+      : 'metadata';
     const note = providedSummary
       ? 'Stored explicitly provided compact summary.'
       : 'Generated from session metadata, links, and stale-context badges because raw transcript paging is not available.';
@@ -1518,7 +1519,7 @@ function readChatSessionRow(
       typeof record.summary_refresh_note === 'string'
         ? record.summary_refresh_note
         : null,
-    summaryStatus: summaryStatus(summary, summaryGeneratedAt, lastActiveAt),
+    summaryStatus: summaryStatus(summary, summaryGeneratedAt),
     contextLoadedAt,
     createdAt: String(record.created_at),
     updatedAt: String(record.updated_at),
@@ -1730,11 +1731,10 @@ function chatSessionSummarySource(
 function summaryStatus(
   summary: string | null,
   generatedAt: string | null,
-  lastActiveAt: string,
 ): ChatSessionSummaryStatus {
   if (!summary) return 'missing';
   if (!generatedAt) return 'stale';
-  return Date.parse(lastActiveAt) > Date.parse(generatedAt) ? 'stale' : 'fresh';
+  return 'fresh';
 }
 
 function buildMetadataSummary(session: ChatSessionRecord) {

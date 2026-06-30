@@ -657,6 +657,7 @@ export async function startKiloTask(
       : undefined;
     runningProcesses.set(id, { child, rawLog });
     updateTaskProcess(id, child.pid ?? null, now, paths);
+    attachProcessHandlers(id, child, rawLog, paths);
     await notifyKiloState(
       {
         taskId: id,
@@ -669,7 +670,6 @@ export async function startKiloTask(
       },
       paths,
     );
-    attachProcessHandlers(id, child, rawLog, paths);
 
     return {
       ok: true,

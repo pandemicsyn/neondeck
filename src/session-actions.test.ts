@@ -294,7 +294,11 @@ describe('session actions', () => {
 
     await expect(
       refreshChatSessionSummary(
-        { id: sessionId, reason: 'test-summary' },
+        {
+          id: sessionId,
+          reason: 'test-summary',
+          source: 'transcript-summary',
+        },
         paths,
       ),
     ).resolves.toMatchObject({
@@ -305,6 +309,22 @@ describe('session actions', () => {
         summarySource: 'metadata',
         summaryStatus: 'fresh',
         summary: expect.stringContaining('Review queue'),
+      },
+    });
+    await expect(
+      switchChatSession(
+        {
+          id: sessionId,
+          surface: 'xeneon-edge',
+          reason: 'open-tab',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      session: {
+        id: sessionId,
+        summaryStatus: 'fresh',
       },
     });
 

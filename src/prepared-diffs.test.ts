@@ -214,6 +214,56 @@ describe('prepared diff lifecycle', () => {
       verificationStatus: 'not-run',
     });
   });
+
+  it('resets approval and verification state when releasing a revised prepared-diff worktree', async () => {
+    const { paths } = await fixture();
+    const prepared = await preparedFixture(paths);
+    await approvePreparedDiffPush(
+      {
+        preparedDiffId: prepared.id,
+        confirm: true,
+        reason: 'Looks safe.',
+        approverSurface: 'test',
+      },
+      paths,
+    );
+    await runPreparedDiffVerification(
+      { preparedDiffId: prepared.id, checkName: 'npm run check' },
+      paths,
+    );
+    const locked = await lockWorktree(
+      {
+        worktreeId: prepared.worktreeId,
+        owner: 'revision',
+        ttlSeconds: 300,
+      },
+      paths,
+    );
+    const lock = objectField(locked, 'lock');
+
+    await expect(
+      releaseWorktreeLock(
+        {
+          lockId: stringField(lock, 'id'),
+          owner: 'revision',
+          finalStatus: 'prepared-diff',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      listPreparedDiffs({ includeTerminal: true }, paths),
+    ).resolves.toMatchObject({
+      preparedDiffs: [
+        expect.objectContaining({
+          id: prepared.id,
+          status: 'prepared',
+          pushApprovalStatus: 'pending',
+          verificationStatus: 'not-run',
+        }),
+      ],
+    });
+  });
 });
 
 async function fixture() {

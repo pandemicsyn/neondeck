@@ -254,6 +254,7 @@ export async function runAutopilotRecoveryAction(
     const locked = await lockWorktree(
       {
         worktreeId: preparedDiff.worktreeId,
+        scope: 'pr',
         owner: lockOwner,
         ttlSeconds: 3_600,
       },

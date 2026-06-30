@@ -206,7 +206,7 @@ describe('Kilo result review, verification, and promotion', () => {
       ok: true,
       changed: true,
       resultState: {
-        classification: 'discard',
+        classification: 'needs-review',
         pendingApprovals: [],
       },
       diff: {
@@ -214,6 +214,14 @@ describe('Kilo result review, verification, and promotion', () => {
         path: missingWorktreePath,
         fileCount: 0,
         error: expect.any(String),
+      },
+    });
+    await expect(
+      readKiloTaskStatus({ taskId: 'kilo-task-missing-cwd' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      task: {
+        status: 'needs-review',
       },
     });
   });

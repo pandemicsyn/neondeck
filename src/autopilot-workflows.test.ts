@@ -1119,7 +1119,7 @@ describe('PR event autopilot', () => {
   });
 
   it('posts and audits concise PR autofix result comments from prepared-diff facts', async () => {
-    process.env.GITHUB_TOKEN = 'token';
+    delete process.env.GITHUB_TOKEN;
     const { paths, featureSha, repo } = await fixture();
     const preparedDiff = await ensurePreparedDiffForWorktree(
       {
@@ -1177,6 +1177,7 @@ describe('PR event autopilot', () => {
       },
       paths,
       {
+        token: 'fixture-token',
         async fetchPullRequestEventState() {
           return reviewEventState(featureSha);
         },

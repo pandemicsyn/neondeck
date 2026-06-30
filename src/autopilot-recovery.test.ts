@@ -153,6 +153,14 @@ describe('autopilot recovery and notifications', () => {
         preparedDiff: { status: 'revision-requested' },
       },
     });
+    await expect(
+      readAutopilotRecoveryOptions({ preparedDiffId: 'pd-recovery' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      options: expect.not.arrayContaining([
+        expect.objectContaining({ id: 'request-revision' }),
+      ]),
+    });
     expect(blockedAbandon).toMatchObject({
       ok: false,
       requires: ['confirm'],
@@ -250,6 +258,7 @@ describe('autopilot recovery and notifications', () => {
     });
     expect(readWorktreeRecord(worktree.id, paths)).toMatchObject({
       lifecycleStatus: 'prepared-diff',
+      headSha: currentHead,
     });
   });
 });

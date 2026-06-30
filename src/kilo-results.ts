@@ -768,7 +768,10 @@ function classifyReview(
   worktree: WorktreeRecord | null,
   policy: Awaited<ReturnType<typeof checkAutopilotPolicy>> | null,
 ): KiloResultClassification {
-  if (!diff.ok || task.status === 'failed' || task.status === 'unknown') {
+  if (!diff.ok) {
+    return 'needs-review';
+  }
+  if (task.status === 'failed' || task.status === 'unknown') {
     return diff.fileCount > 0 ? 'needs-review' : 'discard';
   }
   if (diff.fileCount === 0) return 'discard';

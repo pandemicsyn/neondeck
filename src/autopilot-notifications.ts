@@ -155,20 +155,20 @@ export function recoveryActionsForPreparedDiff(
   }
 
   if (!['abandoned', 'pushed'].includes(preparedDiff.status)) {
-    actions.push(
-      {
+    if (preparedDiff.status !== 'revision-requested') {
+      actions.push({
         id: 'request-revision',
         label: 'Request revision',
         description:
           'Record an operator revision request while retaining the worktree.',
-      },
-      {
-        id: 'abandon',
-        label: 'Abandon',
-        description:
-          'Abandon the prepared-diff record and leave cleanup to worktree policy.',
-      },
-    );
+      });
+    }
+    actions.push({
+      id: 'abandon',
+      label: 'Abandon',
+      description:
+        'Abandon the prepared-diff record and leave cleanup to worktree policy.',
+    });
   }
 
   actions.push({

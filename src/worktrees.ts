@@ -546,6 +546,11 @@ export async function syncWorktree(
     const nextRef =
       input.headSha ?? input.headRef ?? record.headSha ?? record.headRef;
     const strategy = input.strategy ?? 'checkout';
+    const targetHeadSha =
+      strategy === 'rebase'
+        ? (input.headSha ??
+          (await git(record.localPath, ['rev-parse', nextRef])).trim())
+        : null;
     try {
       if (strategy === 'rebase') {
         await git(record.localPath, ['rebase', nextRef]);
@@ -567,13 +572,16 @@ export async function syncWorktree(
       }
       throw error;
     }
-    const headSha = (await git(record.localPath, ['rev-parse', 'HEAD'])).trim();
+    const localHeadSha = (
+      await git(record.localPath, ['rev-parse', 'HEAD'])
+    ).trim();
+    const headSha = targetHeadSha ?? localHeadSha;
     const now = new Date().toISOString();
     const next = {
       ...record,
       headRef: input.headRef ?? record.headRef,
       headSha,
-      lastSyncedSha: headSha,
+      lastSyncedSha: localHeadSha,
       lifecycleStatus: 'ready' as const,
       updatedAt: now,
     };
@@ -584,7 +592,7 @@ export async function syncWorktree(
       'synced',
       'ready',
       `Synced worktree ${record.id} to ${headSha.slice(0, 12)}.`,
-      { headSha, strategy },
+      { headSha, localHeadSha, strategy },
       paths,
     );
 
@@ -789,6 +797,7 @@ export async function releaseWorktreeLock(
       if (finalStatus === 'prepared-diff') {
         await ensurePreparedDiffForWorktree(worktree, paths, {
           createdBy: lock.owner,
+          resetDecisionState: true,
         });
       }
     }

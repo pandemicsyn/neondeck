@@ -142,11 +142,20 @@ describe('worktree runtime foundation', () => {
       },
       paths,
     );
+    const currentHead = await gitOutput(repo, ['rev-parse', 'feature']);
+    const localHead = await gitOutput(worktree.localPath, [
+      'rev-parse',
+      'HEAD',
+    ]);
 
     expect(result).toMatchObject({
       ok: true,
       changed: true,
-      worktree: { lifecycleStatus: 'ready' },
+      worktree: {
+        lifecycleStatus: 'ready',
+        headSha: currentHead,
+        lastSyncedSha: localHead,
+      },
     });
     await expect(
       readFile(join(worktree.localPath, 'src/app.ts'), 'utf8'),
@@ -558,6 +567,11 @@ async function fixture(options: { worktreeRoot?: 'home' | 'repo-local' } = {}) {
 
 async function git(cwd: string, args: string[]) {
   await execFileAsync('git', args, { cwd });
+}
+
+async function gitOutput(cwd: string, args: string[]) {
+  const { stdout } = await execFileAsync('git', args, { cwd });
+  return stdout.trim();
 }
 
 function worktreeFrom(result: unknown) {

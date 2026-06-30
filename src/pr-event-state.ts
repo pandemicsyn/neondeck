@@ -58,6 +58,7 @@ type PullRequestTarget = {
 type PrEventStateDependencies = {
   fetchPullRequestEventState?: typeof fetchPullRequestEventState;
   postPullRequestComment?: typeof postPullRequestComment;
+  token?: string;
 };
 
 const watermarkCategories: PrWatchEventWatermarkCategory[] = [
@@ -361,7 +362,7 @@ export async function postGitHubPrComment(
     });
   }
 
-  const token = process.env.GITHUB_TOKEN;
+  const token = dependencies.token ?? process.env.GITHUB_TOKEN;
   if (!token) {
     return failResult('pr_comment', 'GITHUB_TOKEN is not configured.', {
       requires: ['GITHUB_TOKEN'],

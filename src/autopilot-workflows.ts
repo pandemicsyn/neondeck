@@ -2759,6 +2759,7 @@ export async function commentPrAutofixResult(
       },
       paths,
       {
+        token,
         fetchPullRequestEventState: dependencies.fetchPullRequestEventState,
         postPullRequestComment: dependencies.postPullRequestComment,
       },

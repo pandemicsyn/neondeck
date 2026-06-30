@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -27,6 +28,24 @@ try {
           concurrency: 1,
           rawLogRetentionDays: 7,
         },
+        execution: {
+          enabledBackends: ['local'],
+          unattended: 'allow-preapproved',
+          preapprovedCommands: [
+            {
+              id: 'node-version',
+              command: 'node --version',
+              match: 'exact',
+              backends: ['local'],
+            },
+          ],
+        },
+        autopilot: {
+          defaultMode: 'autofix-push-when-safe',
+          limits: {
+            requiredChecks: ['node --version'],
+          },
+        },
       },
       null,
       2,
@@ -49,15 +68,17 @@ try {
       2,
     )}\n`,
   );
+  const env = { ...process.env, NEONDECK_HOME: home };
+  await bootstrapRuntime(env);
+  const worktree = await createManagedWorktree(repo, home);
 
   const input = {
-    repoId: 'sample',
+    worktreeId: worktree.id,
     title: 'Kilo CLI smoke handoff',
     prompt: 'Run a fake delegated Kilo task.',
     mode: 'patch-proposal',
     explicitUserRequest: true,
   };
-  const env = { ...process.env, NEONDECK_HOME: home };
   const result = await runWorkflow('handoff_to_kilo', input, env);
   assert(
     result?.action === 'kilo_task_start',
@@ -69,7 +90,7 @@ try {
     typeof taskId === 'string',
     'Kilo handoff result did not include taskId',
   );
-  await writeFile(join(repo, '.neondeck-smoke'), 'ok\n');
+  await waitForSmokeFile(worktree.localPath);
   completeTask(home, taskId);
 
   const summary = await runWorkflow('summarize_kilo_session', { taskId }, env);
@@ -82,6 +103,16 @@ try {
   assert(
     review?.action === 'kilo_result_review',
     'flue run did not return the Kilo review workflow result',
+  );
+  assert(review?.ok === true, 'Kilo review workflow did not succeed');
+  assert(
+    review?.resultState?.classification === 'ready-to-verify',
+    'Kilo review did not classify the managed worktree result as ready-to-verify',
+  );
+  const preparedDiffId = review?.resultState?.preparedDiffId;
+  assert(
+    typeof preparedDiffId === 'string',
+    'Kilo review result did not include a prepared diff id',
   );
 
   const verification = await runWorkflow(
@@ -98,11 +129,21 @@ try {
     verification?.action === 'kilo_result_verify',
     'flue run did not return the Kilo verification workflow result',
   );
+  assert(
+    verification?.ok === true,
+    'Kilo verification workflow did not succeed',
+  );
+  approvePreparedDiff(home, preparedDiffId);
 
   const promotion = await runWorkflow('promote_kilo_result', { taskId }, env);
   assert(
     promotion?.action === 'kilo_result_promote',
     'flue run did not return the Kilo promotion workflow result',
+  );
+  assert(promotion?.ok === true, 'Kilo promotion workflow did not succeed');
+  assert(
+    promotion?.data?.admitted === true,
+    'Kilo promotion did not admit the verified result',
   );
 
   insertDetachedRunningTask(home, repo);
@@ -152,6 +193,78 @@ async function runWorkflow(name, input, env) {
   return parseLastJson(run.stdout);
 }
 
+async function bootstrapRuntime(env) {
+  await runWorkflow('summarize_kilo_session', { taskId: 'bootstrap' }, env);
+}
+
+async function createManagedWorktree(repo, home) {
+  const id = `wt-${randomUUID()}`;
+  const worktreeRoot = join(home, 'worktrees');
+  const localPath = join(worktreeRoot, id);
+  await mkdir(worktreeRoot, { recursive: true });
+  await execFileAsync(
+    'git',
+    ['worktree', 'add', '--detach', localPath, 'main'],
+    {
+      cwd: repo,
+    },
+  );
+  const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], {
+    cwd: localPath,
+  });
+  const headSha = stdout.trim();
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(join(home, 'data', 'neondeck.db'));
+  try {
+    database
+      .prepare(
+        `
+        INSERT INTO worktrees (
+          id, repo_id, repo_full_name, github_owner, github_name, pr_number,
+          base_ref, head_owner, head_name, head_ref, head_sha, local_path,
+          storage_kind, owning_workflow_run_id, lifecycle_status,
+          last_synced_sha, last_pushed_sha, cleanup_policy_json,
+          direct_push_allowed, adopted, created_by, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      `,
+      )
+      .run(
+        id,
+        'sample',
+        'pandemicsyn/sample',
+        'pandemicsyn',
+        'sample',
+        null,
+        'main',
+        null,
+        null,
+        'main',
+        headSha,
+        localPath,
+        'home',
+        null,
+        'ready',
+        headSha,
+        null,
+        JSON.stringify({
+          retainFailed: true,
+          retainPreparedDiff: true,
+          successfulGraceHours: 24,
+          staleAgeHours: 168,
+        }),
+        1,
+        0,
+        'neondeck',
+        now,
+        now,
+      );
+  } finally {
+    database.close();
+  }
+  return { id, localPath };
+}
+
 async function setupRepo(path) {
   await mkdir(path, { recursive: true });
   await writeFile(join(path, 'README.md'), '# sample\n');
@@ -164,6 +277,19 @@ async function setupRepo(path) {
   });
   await execFileAsync('git', ['add', 'README.md'], { cwd: path });
   await execFileAsync('git', ['commit', '-m', 'init'], { cwd: path });
+}
+
+async function waitForSmokeFile(worktreePath) {
+  const target = join(worktreePath, '.neondeck-smoke');
+  for (let index = 0; index < 50; index++) {
+    try {
+      await stat(target);
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  throw new Error('Timed out waiting for fake Kilo to write worktree changes');
 }
 
 function completeTask(home, taskId) {
@@ -183,6 +309,45 @@ function completeTask(home, taskId) {
       `,
       )
       .run(now, now, taskId);
+  } finally {
+    database.close();
+  }
+}
+
+function approvePreparedDiff(home, preparedDiffId) {
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(join(home, 'data', 'neondeck.db'));
+  try {
+    database.exec('BEGIN;');
+    database
+      .prepare(
+        `
+        UPDATE prepared_diffs
+        SET status = 'push-approved',
+            push_approval_status = 'approved',
+            updated_at = ?
+        WHERE id = ?;
+      `,
+      )
+      .run(now, preparedDiffId);
+    database
+      .prepare(
+        `
+        UPDATE prepared_diff_approvals
+        SET status = 'approved',
+            reason = 'Kilo CLI smoke approval.',
+            approver_surface = 'smoke:kilo',
+            resolved_at = ?,
+            updated_at = ?
+        WHERE prepared_diff_id = ?
+          AND approval_type = 'push';
+      `,
+      )
+      .run(now, now, preparedDiffId);
+    database.exec('COMMIT;');
+  } catch (error) {
+    database.exec('ROLLBACK;');
+    throw error;
   } finally {
     database.close();
   }

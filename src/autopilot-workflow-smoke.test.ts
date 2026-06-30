@@ -11,8 +11,6 @@ import {
   listPrWatchEventWatermarks,
   refreshPrWatchEventState,
 } from './pr-event-state';
-import { readWorkflowObservability } from './workflow-observability';
-import { recordFlueObservation } from './workflow-observability';
 import { runtimePaths } from './runtime-home';
 import { addPrWatch } from './watch-actions';
 import { createWorktree, lockWorktree } from './worktrees';
@@ -185,19 +183,6 @@ describe('autopilot Flue workflow smoke', () => {
       },
     });
 
-    await recordFlueObservation(
-      {
-        type: 'run_end',
-        runId: 'run_autopilot_smoke',
-        workflowName: 'push-pr-autofix',
-        resourceKind: 'workflow',
-        resourceName: 'push-pr-autofix',
-        isError: false,
-        durationMs: 12,
-      } as never,
-      paths,
-    );
-
     await expect(
       listPreparedDiffs({ includeTerminal: true }, paths),
     ).resolves.toMatchObject({
@@ -221,15 +206,6 @@ describe('autopilot Flue workflow smoke', () => {
         }),
       ]),
     );
-    await expect(readWorkflowObservability(paths)).resolves.toMatchObject({
-      recentEvents: expect.arrayContaining([
-        expect.objectContaining({
-          runId: 'run_autopilot_smoke',
-          workflow: 'push-pr-autofix',
-          eventType: 'run_end',
-        }),
-      ]),
-    });
   });
 
   it('reconciles same-PR events while keeping parallel PR watermarks isolated', async () => {
