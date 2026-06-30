@@ -7,6 +7,7 @@ import {
   ensureRuntimeHome,
   runtimePaths,
 } from './runtime-home';
+import { suggestUtilitySessionTitle } from './utility-model';
 
 export type NeonSessionRecord = {
   id: string;
@@ -46,6 +47,15 @@ const sessionActionOutputSchema = v.looseObject({
   action: v.string(),
   changed: v.boolean(),
   message: v.string(),
+  titleSuggestion: v.optional(
+    v.object({
+      title: v.string(),
+      model: v.string(),
+      thinkingLevel: v.string(),
+      fallback: v.boolean(),
+      invokedModel: v.boolean(),
+    }),
+  ),
 });
 
 export const sessionStatusAction = defineAction({
@@ -135,8 +145,9 @@ export async function startNeonSession(
 
   const now = new Date().toISOString();
   const id = `neondeck-${compactTimestamp(now)}-${randomUUID().slice(0, 8)}`;
-  const label = parsed.output.label ?? 'Fresh';
   const reason = parsed.output.reason ?? 'manual-new-session';
+  const title = suggestUtilitySessionTitle(parsed.output, paths);
+  const label = parsed.output.label ?? title.title;
   const database = new DatabaseSync(paths.neondeckDatabase);
 
   try {
@@ -180,9 +191,11 @@ export async function startNeonSession(
     ok: true,
     action: 'session_start',
     changed: true,
-    message:
-      'Started a new Neon session. New chat messages will load current SOUL, skills, model config, and memory context.',
+    message: title.fallback
+      ? `Started a new Neon session. New chat messages will load current SOUL, skills, model config, and memory context. Session title was compacted deterministically with display assistant fallback metadata because no utility model is configured.`
+      : `Started a new Neon session. New chat messages will load current SOUL, skills, model config, and memory context. Session title was compacted deterministically with utility role metadata for ${title.model}.`,
     state: await readNeonSessionState(paths),
+    titleSuggestion: title,
   };
 }
 

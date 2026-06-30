@@ -65,6 +65,32 @@ describe('session actions', () => {
     );
   });
 
+  it('uses the utility model role metadata for generated session titles', async () => {
+    const paths = runtimePaths(await tempDir());
+
+    const result = await startNeonSession(
+      { reason: 'reasoning-level:high' },
+      paths,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      titleSuggestion: {
+        title: 'reasoning level high',
+        model: 'kilocode/kilo-auto/balanced',
+        thinkingLevel: 'low',
+        fallback: true,
+        invokedModel: false,
+      },
+      state: {
+        activeSession: {
+          label: 'reasoning level high',
+        },
+      },
+    });
+  });
+
   it('reports stale context after model config and memory changes', async () => {
     const paths = runtimePaths(await tempDir());
     await startNeonSession({ reason: 'fresh-baseline' }, paths);

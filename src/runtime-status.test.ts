@@ -46,6 +46,12 @@ describe('runtime status', () => {
       apiKeyPresent: false,
       organizationIdPresent: false,
     });
+    expect(status.models).toMatchObject({
+      displayAssistant: 'kilocode/kilo-auto/balanced',
+      utility: 'kilocode/kilo-auto/balanced',
+      utilityConfigured: false,
+      utilityRecommendation: expect.stringContaining('low-cost'),
+    });
     expect(status.counts.repos).toBe(0);
     expect(status.checks).toEqual(
       expect.arrayContaining([
@@ -63,6 +69,10 @@ describe('runtime status', () => {
           id: 'repos',
           ok: false,
           level: 'needs-config',
+        }),
+        expect.objectContaining({
+          id: 'utility-model',
+          ok: true,
         }),
       ]),
     );
@@ -102,6 +112,7 @@ describe('runtime status', () => {
         version: 1,
         models: {
           displayAssistant: 'openai/gpt-5',
+          utility: 'openai/gpt-5-mini',
         },
       }),
     );
@@ -126,6 +137,8 @@ describe('runtime status', () => {
 
     expect(status.status).toBe('needs-config');
     expect(status.models.displayAssistantProvider).toBe('openai');
+    expect(status.models.utility).toBe('openai/gpt-5-mini');
+    expect(status.models.utilityConfigured).toBe(true);
     expect(status.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -265,6 +278,8 @@ describe('runtime status', () => {
         version: 1,
         models: {
           displayAssistant: 'kilocode/kilo-auto/balanced',
+          utility: 'kilocode/kilo/utility',
+          utilityThinkingLevel: 'low',
           subagents: {
             ciInvestigator: 'kilocode/kilo/ci',
           },
@@ -318,6 +333,9 @@ describe('runtime status', () => {
     });
     expect(status.models.displayAssistant).toBe('kilocode/kilo-auto/balanced');
     expect(status.models.displayAssistantProvider).toBe('kilocode');
+    expect(status.models.utility).toBe('kilocode/kilo/utility');
+    expect(status.models.utilityThinkingLevel).toBe('low');
+    expect(status.models.utilityConfigured).toBe(true);
     expect(status.models.subagents.ciInvestigator).toBe('kilocode/kilo/ci');
     expect(status.counts.repos).toBe(1);
     expect(status.counts.failedWorkflowSummaries).toBe(1);

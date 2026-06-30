@@ -172,6 +172,11 @@ export type RuntimeStatus = {
     displayAssistant: string;
     displayAssistantProvider: string;
     displayAssistantThinkingLevel: string;
+    utility: string;
+    utilityProvider: string;
+    utilityThinkingLevel: string;
+    utilityConfigured: boolean;
+    utilityRecommendation: string | null;
     subagents: Record<string, string>;
     subagentThinkingLevels: Record<string, string>;
   };
@@ -299,6 +304,8 @@ export type ConfigActionResult = {
 export type AgentModelUpdate = {
   displayAssistant?: string;
   displayAssistantThinkingLevel?: string;
+  utility?: string | null;
+  utilityThinkingLevel?: string;
   subagents?: {
     defaultThinkingLevel?: string;
     repoResearcher?: string;

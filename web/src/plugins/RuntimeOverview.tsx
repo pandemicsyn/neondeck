@@ -681,6 +681,9 @@ function RuntimeHome({
     status.models.displayAssistantProvider,
   );
   const modelProviders = activeModelProviderIds(status);
+  const utilityModel = status.models.utilityConfigured
+    ? status.models.utility
+    : `${status.models.utility} fallback`;
   return (
     <section className="border border-line bg-soft p-2.5">
       <div className="flex items-start justify-between gap-2">
@@ -726,6 +729,14 @@ function RuntimeHome({
         <p className="mt-1 truncate font-mono text-[10.5px] text-ink">
           {model} · {status.models.displayAssistantThinkingLevel}
         </p>
+        <p className="mt-1 truncate font-mono text-[10px] text-muted">
+          utility {utilityModel} · {status.models.utilityThinkingLevel}
+        </p>
+        {status.models.utilityRecommendation ? (
+          <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-muted">
+            {status.models.utilityRecommendation}
+          </p>
+        ) : null}
       </div>
       <div className="mt-2 min-w-0 border border-line bg-field px-2 py-1.5">
         <p className="font-mono text-[10px] tracking-[0.12em] text-muted">
@@ -769,6 +780,12 @@ function RuntimeConfigControls({
   const [displayThinking, setDisplayThinking] = useState(
     status.models.displayAssistantThinkingLevel,
   );
+  const [utilityModel, setUtilityModel] = useState(
+    status.models.utilityConfigured ? status.models.utility : '',
+  );
+  const [utilityThinking, setUtilityThinking] = useState(
+    status.models.utilityThinkingLevel,
+  );
   const [repoResearcher, setRepoResearcher] = useState(
     status.models.subagents.repoResearcher ?? '',
   );
@@ -809,6 +826,10 @@ function RuntimeConfigControls({
   useEffect(() => {
     setDisplayAssistant(status.models.displayAssistant);
     setDisplayThinking(status.models.displayAssistantThinkingLevel);
+    setUtilityModel(
+      status.models.utilityConfigured ? status.models.utility : '',
+    );
+    setUtilityThinking(status.models.utilityThinkingLevel);
     setRepoResearcher(status.models.subagents.repoResearcher ?? '');
     setRepoThinking(
       status.models.subagentThinkingLevels.repoResearcher ?? 'medium',
@@ -846,6 +867,8 @@ function RuntimeConfigControls({
       const input = modelUpdateInput(status, {
         displayAssistant,
         displayThinking,
+        utilityModel,
+        utilityThinking,
         repoResearcher,
         repoThinking,
         ciInvestigator,
@@ -921,6 +944,18 @@ function RuntimeConfigControls({
           onChange={setDisplayThinking}
           options={thinkingLevelOptions}
           value={displayThinking}
+        />
+        <ConfigInput
+          label="utility"
+          onChange={setUtilityModel}
+          placeholder={status.models.utility}
+          value={utilityModel}
+        />
+        <ConfigSelect
+          label="utility think"
+          onChange={setUtilityThinking}
+          options={thinkingLevelOptions}
+          value={utilityThinking}
         />
         <ConfigInput
           label="repo"
@@ -1019,6 +1054,8 @@ function modelUpdateInput(
   values: {
     displayAssistant: string;
     displayThinking: string;
+    utilityModel: string;
+    utilityThinking: string;
     repoResearcher: string;
     repoThinking: string;
     ciInvestigator: string;
@@ -1029,6 +1066,8 @@ function modelUpdateInput(
 ) {
   const displayAssistant = values.displayAssistant.trim();
   const displayThinking = values.displayThinking.trim();
+  const utilityModel = values.utilityModel.trim();
+  const utilityThinking = values.utilityThinking.trim();
   const repoResearcher = values.repoResearcher.trim();
   const repoThinking = values.repoThinking.trim();
   const ciInvestigator = values.ciInvestigator.trim();
@@ -1039,6 +1078,8 @@ function modelUpdateInput(
   const input: {
     displayAssistant?: string;
     displayAssistantThinkingLevel?: string;
+    utility?: string | null;
+    utilityThinkingLevel?: string;
     subagents?: Record<string, string>;
   } = {};
 
@@ -1047,6 +1088,19 @@ function modelUpdateInput(
   }
   if (displayThinking !== status.models.displayAssistantThinkingLevel) {
     input.displayAssistantThinkingLevel = displayThinking;
+  }
+  if (utilityModel) {
+    if (
+      !status.models.utilityConfigured ||
+      utilityModel !== status.models.utility
+    ) {
+      input.utility = utilityModel;
+    }
+  } else if (status.models.utilityConfigured) {
+    input.utility = null;
+  }
+  if (utilityThinking !== status.models.utilityThinkingLevel) {
+    input.utilityThinkingLevel = utilityThinking;
   }
 
   if (repoResearcher !== status.models.subagents.repoResearcher) {
@@ -1150,6 +1204,7 @@ function activeModelProviderIds(status: RuntimeStatus): ModelProviderId[] {
     new Set(
       [
         status.models.displayAssistant,
+        status.models.utility,
         ...Object.values(status.models.subagents),
       ]
         .map((model) => model.split('/')[0] ?? 'kilocode')
