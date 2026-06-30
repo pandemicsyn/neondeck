@@ -246,6 +246,13 @@ Use this format:
 - Reason: The requested slice explicitly kept PR comments separate unless required by the push action contract, and the roadmap forbids force-push unless a future narrowly scoped repo policy enables it. The current safe default is forward push only with durable blocked-attempt recovery data.
 - Follow-up: Add dedicated retry/resync/cleanup recovery actions and any future force-push policy only behind explicit repo-level configuration and approval.
 
+## 2026-06-30 - Autopilot Smoke And Integration Coverage
+
+- Roadmap item: Phase 19 / autopilot smoke and integration coverage
+- Decision: Added an explicit `NEONDECK_AUTOPILOT_FIXTURE_PATH` fixture provider for workflow smoke tests instead of adding caller-supplied PR/check/review facts to model-visible workflow inputs. Outside test runs, the fixture provider also requires `NEONDECK_AUTOPILOT_FIXTURE_ENABLE=1`. The local `smoke:autopilot` script runs a real `flue run workflow:triage-pr-event` routing smoke, then runs the deterministic Vitest workflow smoke suite that exercises all stateful autopilot workflow wrappers with temporary repos, fake GitHub/check/comment/push fixtures, prepared diffs, notifications, workflow summaries, and observability records.
+- Reason: Existing production schemas intentionally reject caller-supplied PR facts, and preserving that boundary matters for autopilot safety. Full end-to-end `flue run` coverage for every mutating workflow would require either model-visible fixture inputs or a heavier smoke harness; the validated environment fixture keeps local smoke deterministic and credential-free.
+- Follow-up: If Flue exposes a first-class test fixture/injection surface for workflow dependencies, move the stateful workflow smoke runner from direct workflow action wrappers to that surface while keeping production action inputs fact-free.
+
 ## 2026-06-30 - Kilo Reconciliation And Session Access
 
 - Roadmap item: Phase 21 / KiloCode handoff reconciliation, session access, transcript controls, and dashboard/API basics
