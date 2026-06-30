@@ -144,6 +144,8 @@ const updateAgentModelsInputSchema = v.object({
   defaultThinkingLevel: v.optional(thinkingLevelSchema),
   displayAssistant: v.optional(providerQualifiedModelSchema),
   displayAssistantThinkingLevel: v.optional(thinkingLevelSchema),
+  utility: v.optional(v.nullable(providerQualifiedModelSchema)),
+  utilityThinkingLevel: v.optional(thinkingLevelSchema),
   subagents: v.optional(subagentModelInputSchema),
 });
 const updateSkillRootsInputSchema = v.object({
@@ -212,7 +214,7 @@ export const configReloadAction = defineAction({
 export const updateAgentModelsAction = defineAction({
   name: 'neondeck_config_update_agent_models',
   description:
-    'Update display-assistant and subagent model names in runtime config.json. Provider registration is not changed by this action.',
+    'Update display-assistant, utility, and subagent model names in runtime config.json. Provider registration is not changed by this action.',
   input: updateAgentModelsInputSchema,
   output: configActionOutputSchema,
   async run({ input }) {
@@ -1183,6 +1185,8 @@ function hasAgentModelUpdate(
     input.defaultThinkingLevel ||
     input.displayAssistant ||
     input.displayAssistantThinkingLevel ||
+    input.utility !== undefined ||
+    input.utilityThinkingLevel ||
     input.subagents?.default ||
     input.subagents?.defaultThinkingLevel ||
     input.subagents?.repoResearcher ||
@@ -1198,13 +1202,15 @@ function mergeAgentModelConfig(
   current: AppConfig['models'] | undefined,
   input: v.InferOutput<typeof updateAgentModelsInputSchema>,
 ): AgentModelConfig {
+  const currentModels = { ...current };
+  if (input.utility === null) delete currentModels.utility;
   const subagents = {
     ...current?.subagents,
     ...input.subagents,
   };
 
   return {
-    ...current,
+    ...currentModels,
     ...(input.default !== undefined ? { default: input.default } : {}),
     ...(input.defaultThinkingLevel !== undefined
       ? { defaultThinkingLevel: input.defaultThinkingLevel }
@@ -1214,6 +1220,12 @@ function mergeAgentModelConfig(
       : {}),
     ...(input.displayAssistantThinkingLevel !== undefined
       ? { displayAssistantThinkingLevel: input.displayAssistantThinkingLevel }
+      : {}),
+    ...(input.utility !== undefined && input.utility !== null
+      ? { utility: input.utility }
+      : {}),
+    ...(input.utilityThinkingLevel !== undefined
+      ? { utilityThinkingLevel: input.utilityThinkingLevel }
       : {}),
     ...(Object.keys(subagents).length > 0 ? { subagents } : {}),
   };

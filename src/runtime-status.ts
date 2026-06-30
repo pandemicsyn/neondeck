@@ -87,6 +87,11 @@ export const runtimeStatusSchema = v.looseObject({
     displayAssistant: v.string(),
     displayAssistantProvider: v.string(),
     displayAssistantThinkingLevel: v.string(),
+    utility: v.string(),
+    utilityProvider: v.string(),
+    utilityThinkingLevel: v.string(),
+    utilityConfigured: v.boolean(),
+    utilityRecommendation: v.nullable(v.string()),
     subagents: v.record(v.string(), v.string()),
     subagentThinkingLevels: v.record(v.string(), v.string()),
   }),
@@ -298,6 +303,15 @@ export async function readRuntimeStatus(
             .join(' '),
     ),
     check(
+      'utility-model',
+      'Utility model',
+      true,
+      'needs-config',
+      models.utilityConfigured
+        ? `Utility model is configured as ${models.utility}.`
+        : `Utility model is not configured; falling back to ${models.displayAssistant}. Configure a low-cost model for short summaries, labels, and notifications.`,
+    ),
+    check(
       'execution-policy',
       'Execution policy',
       executionPolicy.enabledBackends.length > 0,
@@ -393,6 +407,13 @@ export async function readRuntimeStatus(
       displayAssistant: models.displayAssistant,
       displayAssistantProvider: providerFromModel(models.displayAssistant),
       displayAssistantThinkingLevel: models.displayAssistantThinkingLevel,
+      utility: models.utility,
+      utilityProvider: providerFromModel(models.utility),
+      utilityThinkingLevel: models.utilityThinkingLevel,
+      utilityConfigured: models.utilityConfigured,
+      utilityRecommendation: models.utilityConfigured
+        ? null
+        : 'Configure models.utility with a low-cost provider-qualified model for bounded utility tasks.',
       subagents: models.subagents,
       subagentThinkingLevels: models.subagentThinkingLevels,
     },
@@ -676,11 +697,13 @@ function workflowSummaryMessage(summaryJson: unknown, workflow: unknown) {
 
 function requiredModelProviders(models: {
   displayAssistant: string;
+  utility: string;
   subagents: Record<string, string>;
 }) {
   return Array.from(
     new Set([
       providerFromModel(models.displayAssistant),
+      providerFromModel(models.utility),
       ...Object.values(models.subagents).map(providerFromModel),
     ]),
   );

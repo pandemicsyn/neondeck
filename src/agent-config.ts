@@ -17,6 +17,9 @@ export type NeondeckSubagentKey =
 export type AgentModelSelection = {
   displayAssistant: string;
   displayAssistantThinkingLevel: ThinkingLevel;
+  utility: string;
+  utilityConfigured: boolean;
+  utilityThinkingLevel: ThinkingLevel;
   subagents: Record<NeondeckSubagentKey, string>;
   subagentThinkingLevels: Record<NeondeckSubagentKey, ThinkingLevel>;
 };
@@ -51,6 +54,16 @@ export function resolveAgentModelSelection(
     env.FLUE_AGENT_THINKING_LEVEL,
     defaultThinkingLevel,
   );
+  const configuredUtility = firstOptionalModel(
+    config?.models?.utility,
+    env.FLUE_UTILITY_MODEL,
+  );
+  const utility = configuredUtility ?? displayAssistant;
+  const utilityThinkingLevel = firstThinkingLevel(
+    config?.models?.utilityThinkingLevel,
+    env.FLUE_UTILITY_THINKING_LEVEL,
+    'low',
+  );
   const subagentDefault = firstModel(
     config?.models?.subagents?.default,
     env.FLUE_SUBAGENT_MODEL,
@@ -67,6 +80,9 @@ export function resolveAgentModelSelection(
   return {
     displayAssistant,
     displayAssistantThinkingLevel,
+    utility,
+    utilityConfigured: Boolean(configuredUtility),
+    utilityThinkingLevel,
     subagents: {
       repoResearcher: firstModel(
         config?.models?.subagents?.repoResearcher,
@@ -99,10 +115,11 @@ export function resolveAgentModelSelection(
 }
 
 export function firstModel(...values: Array<string | undefined>) {
-  return (
-    values.find((value) => value && value.trim().length > 0)?.trim() ??
-    defaultAgentModel
-  );
+  return firstOptionalModel(...values) ?? defaultAgentModel;
+}
+
+function firstOptionalModel(...values: Array<string | undefined>) {
+  return values.find((value) => value && value.trim().length > 0)?.trim();
 }
 
 export function firstThinkingLevel(

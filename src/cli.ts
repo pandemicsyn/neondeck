@@ -667,12 +667,16 @@ async function configureProviderAndModels(paths: RuntimePaths) {
 
   const model = await chooseModel(provider, env);
   const thinkingLevel = await promptThinkingLevel();
+  const utilityModel = await chooseUtilityModel(provider, env, model);
 
   await updateProviderConfig(providerConfigInput(provider, env), paths);
   await updateAgentModels(
     {
       displayAssistant: model,
       displayAssistantThinkingLevel: thinkingLevel,
+      ...(utilityModel
+        ? { utility: utilityModel, utilityThinkingLevel: 'low' }
+        : {}),
       subagents: {
         default: model,
         defaultThinkingLevel: thinkingLevel,
@@ -683,6 +687,34 @@ async function configureProviderAndModels(paths: RuntimePaths) {
     },
     paths,
   );
+}
+
+async function chooseUtilityModel(
+  provider: SetupModelProvider,
+  env: EnvMap,
+  displayModel: string,
+) {
+  const mode = await promptSelect<'default' | 'manual' | 'skip'>({
+    message: 'Utility model',
+    initialValue: 'default',
+    options: [
+      {
+        value: 'default',
+        label: 'Use display model',
+        hint: 'Skip for now; Neondeck will recommend a cheaper model later.',
+      },
+      {
+        value: 'manual',
+        label: 'Choose low-cost model',
+        hint: 'For short titles, labels, notifications, and classifications.',
+      },
+      { value: 'skip', label: 'Skip' },
+    ],
+  });
+
+  if (mode !== 'manual') return undefined;
+  if (provider === 'kilocode') return chooseModel(provider, env);
+  return promptModelText(provider, displayModel, 'Utility model');
 }
 
 async function configureProviderSecret(
@@ -799,9 +831,10 @@ async function chooseModel(provider: SetupModelProvider, env: EnvMap) {
 async function promptModelText(
   provider: SetupModelProvider,
   initialValue: string,
+  message = 'Display assistant model',
 ) {
   return promptText({
-    message: 'Display assistant model',
+    message,
     placeholder: initialValue,
     initialValue,
     validate(value) {
@@ -1258,6 +1291,9 @@ function printStatus(status: RuntimeStatus) {
   console.log(`home      ${status.home}`);
   console.log(`env       ${status.paths.env}`);
   console.log(`model     ${status.models.displayAssistant}`);
+  console.log(
+    `utility  ${status.models.utilityConfigured ? status.models.utility : `${status.models.utility} (fallback)`}`,
+  );
   console.log(
     `github    ${status.providers.credentials.github ? 'configured' : 'missing'}`,
   );

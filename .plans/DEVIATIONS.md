@@ -176,6 +176,13 @@ Use this format:
 - Reason: Users should be able to choose common Flue built-in providers without arbitrary endpoint editing, and reasoning effort is a first-class Flue model setting. KiloCode model search improves onboarding while keeping provider registration deterministic and allowlisted.
 - Follow-up: Consider a richer server-side model catalog API for dashboard model search if model browsing becomes useful outside first-run setup.
 
+## 2026-06-29 - Utility Model Role
+
+- Roadmap item: Usability Gate / typed configuration for display assistant, utility, and subagent models
+- Decision: Added the optional `models.utility` and `models.utilityThinkingLevel` config fields, typed update support, readiness/dashboard/setup/docs visibility, and a minimal session-title helper that reports the utility model role used. If utility is omitted, Neondeck falls back to the display assistant and reports a recommendation instead of failing readiness.
+- Reason: The roadmap calls for a named low-cost role, but the current Flue integration in this worktree does not expose an installed local model-call API to verify. Keeping the first concrete use as a bounded helper path avoids introducing an unverified persistent utility agent session.
+- Follow-up: Replace the deterministic title compaction inside the utility helper with an actual one-shot Flue model call if/when a verified non-session model invocation API is available locally.
+
 ## 2026-06-30 - Chat Session Index And Switcher
 
 - Roadmap item: Phase 16 / Chat session index and switcher

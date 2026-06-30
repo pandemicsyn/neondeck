@@ -253,7 +253,7 @@ describe('config actions', () => {
     ]);
   });
 
-  it('updates agent and subagent model config through a typed action', async () => {
+  it('updates agent, utility, and subagent model config through a typed action', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
 
@@ -261,6 +261,8 @@ describe('config actions', () => {
       updateAgentModels(
         {
           displayAssistant: 'kilocode/kilo/main',
+          utility: 'kilocode/kilo/utility',
+          utilityThinkingLevel: 'low',
           subagents: {
             default: 'kilocode/kilo/subagent',
             ciInvestigator: 'kilocode/kilo/ci',
@@ -285,6 +287,8 @@ describe('config actions', () => {
     );
     expect(config.models).toEqual({
       displayAssistant: 'kilocode/kilo/main',
+      utility: 'kilocode/kilo/utility',
+      utilityThinkingLevel: 'low',
       subagents: {
         default: 'kilocode/kilo/subagent',
         ciInvestigator: 'kilocode/kilo/ci',
@@ -311,6 +315,8 @@ describe('config actions', () => {
     );
     expect(config.models).toEqual({
       displayAssistant: 'kilocode/kilo/main',
+      utility: 'kilocode/kilo/utility',
+      utilityThinkingLevel: 'low',
       subagents: {
         default: 'kilocode/kilo/subagent',
         repoResearcher: 'kilocode/kilo/repo',
@@ -321,6 +327,34 @@ describe('config actions', () => {
       { action: 'config_update_agent_models', target: 'models' },
       { action: 'config_update_agent_models', target: 'models' },
     ]);
+  });
+
+  it('clears utility model config through the typed action', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    await updateAgentModels(
+      {
+        displayAssistant: 'kilocode/kilo/main',
+        utility: 'kilocode/kilo/utility',
+      },
+      paths,
+    );
+    await expect(
+      updateAgentModels({ utility: null }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'config_update_agent_models',
+    });
+
+    const config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.models).toEqual({
+      displayAssistant: 'kilocode/kilo/main',
+    });
   });
 
   it('emits config events for writes and explicit reloads', async () => {

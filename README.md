@@ -26,7 +26,7 @@ Run the guided CLI setup:
 npm run init
 ```
 
-The wizard prepares the runtime home, writes local secrets to `$NEONDECK_HOME/.env`, tunes `SOUL.md`, configures the selected model provider, adds local git checkouts, applies a dashboard preset, and optionally creates schedules and command preapprovals. When KiloCode is selected, init can discover and search available KiloCode models before writing the default model config.
+The wizard prepares the runtime home, writes local secrets to `$NEONDECK_HOME/.env`, tunes `SOUL.md`, configures the selected model provider, optionally sets a low-cost utility model, adds local git checkouts, applies a dashboard preset, and optionally creates schedules and command preapprovals. When KiloCode is selected, init can discover and search available KiloCode models before writing the default model config.
 
 The same CLI is the foundation for future command-and-control surfaces, including an OpenTUI client:
 
@@ -78,7 +78,7 @@ For new installs, prefer `npm run init`; `npm run setup` is the lower-level non-
 
 The built-in Neondeck guidance is an application-owned Flue skill at `src/skills/neondeck/SKILL.md`. User runtime skills live under `skills/<skill-id>/SKILL.md`; valid user skills from that root, plus external skill roots from `config.json`, are registered as Flue skills when the agent initializes. Start a new session or restart the server after changing runtime skills. Treat runtime skill directories as trusted input; do not put secrets in skill resources.
 
-Agent and subagent models are configurable in runtime-home `config.json`. Environment variables remain a fallback, but checked-in defaults should live in config:
+Agent, utility, and subagent models are configurable in runtime-home `config.json`. Environment variables remain a fallback, but checked-in defaults should live in config:
 
 ```json
 {
@@ -87,6 +87,8 @@ Agent and subagent models are configurable in runtime-home `config.json`. Enviro
   "models": {
     "displayAssistant": "kilocode/kilo-auto/balanced",
     "displayAssistantThinkingLevel": "medium",
+    "utility": "kilocode/kilo-auto/fast",
+    "utilityThinkingLevel": "low",
     "subagents": {
       "default": "kilocode/kilo-auto/balanced",
       "defaultThinkingLevel": "medium",
@@ -116,7 +118,7 @@ Agent and subagent models are configurable in runtime-home `config.json`. Enviro
 }
 ```
 
-The Neondeck chat agent can update those model and thinking settings through the typed `neondeck_config_update_agent_models` action when asked. Model strings must use allowlisted provider-qualified names such as `kilocode/...`, `openai/...`, or `anthropic/...`. Provider config stores environment variable names only; raw secrets stay in `.env`.
+The Neondeck chat agent can update those model and thinking settings through the typed `neondeck_config_update_agent_models` action when asked. Model strings must use allowlisted provider-qualified names such as `kilocode/...`, `openai/...`, or `anthropic/...`. `models.utility` is optional; if skipped, Neondeck falls back to the display assistant and recommends configuring a cheaper model for short titles, summaries, notification text, and compact classification. Provider config stores environment variable names only; raw secrets stay in `.env`.
 
 Host execution is also configured in runtime-home `config.json`, but Neondeck does not expose an unrestricted shell executor. `neondeck_execution_run` gates all local and `exe.dev` commands through policy, approvals, and the `execution_approvals` audit log. `local` is the default backend; `exe.dev` uses the Flue sandbox adapter against an existing VM.
 

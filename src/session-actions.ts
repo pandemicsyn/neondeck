@@ -11,6 +11,7 @@ import {
   publishChatSessionEvent,
   type ChatSessionEventAction,
 } from './session-events';
+import { suggestUtilitySessionTitle } from './utility-model';
 
 export type ChatSessionKind =
   'main' | 'scratch' | 'general' | 'repo' | 'watch' | 'task' | 'briefing';
@@ -176,6 +177,15 @@ const sessionActionOutputSchema = v.looseObject({
   action: v.string(),
   changed: v.boolean(),
   message: v.string(),
+  titleSuggestion: v.optional(
+    v.object({
+      title: v.string(),
+      model: v.string(),
+      thinkingLevel: v.string(),
+      fallback: v.boolean(),
+      invokedModel: v.boolean(),
+    }),
+  ),
 });
 
 export const sessionListAction = defineAction({
@@ -601,7 +611,11 @@ export async function createChatSession(
 
   const now = new Date().toISOString();
   const id = `neondeck-${compactTimestamp(now)}-${randomUUID().slice(0, 8)}`;
-  const title = parsed.output.title ?? 'Fresh';
+  const titleSuggestion = suggestUtilitySessionTitle(
+    { label: parsed.output.title, reason: parsed.output.reason },
+    paths,
+  );
+  const title = parsed.output.title ?? titleSuggestion.title;
   const kind = parsed.output.kind ?? inferSessionKind(parsed.output);
   const surface = parsed.output.surface ?? 'dashboard';
   const activate = parsed.output.activate ?? true;
@@ -679,6 +693,7 @@ export async function createChatSession(
       'Created chat session metadata. New messages for this id remain in Flue persistence.',
     session,
     state,
+    titleSuggestion,
   };
 }
 
@@ -693,7 +708,7 @@ export async function startNeonSession(
 
   const result = await createChatSession(
     {
-      title: parsed.output.label ?? 'Fresh',
+      title: parsed.output.label,
       reason: parsed.output.reason ?? 'manual-new-session',
       surface: 'dashboard',
       activate: true,
