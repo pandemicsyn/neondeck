@@ -20,10 +20,11 @@ Configuration and mutable runtime state live in the configured Neondeck runtime 
 - `schedules.json`: local schedule and briefing configuration.
 - `SOUL.md`: stable assistant personality loaded at session start.
 - `skills/`: user-provided Agent Skills-compatible folders. New or changed runtime skills require a new session or server restart before they affect agent behavior.
+- `worktrees/`: default root for Neondeck-owned Git worktrees used as isolated workspaces for autonomous or delegated repo work.
 - `data/neondeck.db`: neondeck app state.
 - `data/flue.db`: Flue runtime state.
 
-`config.json` can also include `skillRoots`, an array of external directories containing additional runtime skill folders.
+`config.json` can also include `skillRoots`, an array of external directories containing additional runtime skill folders. It can also include `worktrees.defaultStorage` and `worktrees.cleanup` policy. Update worktree policy through `neondeck_config_update_worktree_policy`, not direct file edits.
 
 ## Mutation Rules
 
@@ -60,6 +61,12 @@ Use local dev doctor actions for diagnostics. Run `neondeck_dev_doctor_run` or `
 Use repo edit actions for host repository file work. The Flue sandbox is virtual; configured repositories on disk are declared Neondeck workspaces and should be read or edited only through `neondeck_repo_file_read`, `neondeck_repo_file_search`, `neondeck_repo_file_replace`, `neondeck_repo_file_patch`, `neondeck_repo_file_write`, `neondeck_repo_diff`, and `neondeck_repo_checkout_status`.
 
 Declared repo workspaces are trusted for file reads and edits. Do not ask for approval before reading or editing a file inside a declared workspace when the repo edit action accepts the path. Unsafe targets such as `.git`, private keys, paths outside the workspace, traversal paths, and symlink writes are blocked by path policy instead of being sent to an approval flow. Secret-like files such as `.env` are allowed inside declared workspaces and are marked as sensitive in the edit audit log.
+
+Use worktree actions for isolated repo work. Create or adopt worktrees with `neondeck_worktree_create`, sync with `neondeck_worktree_sync`, inspect with `neondeck_worktree_status`, serialize bounded mutation work with `neondeck_worktree_lock` and `neondeck_worktree_release`, and apply retention policy with `neondeck_worktree_cleanup`. Worktrees may live under `NEONDECK_HOME/worktrees` by default or under a repo-local `.neondeck/worktrees` root when explicitly configured. Neondeck only creates or adopts worktree paths inside declared roots.
+
+For autonomous PR fixes, delegated Kilo work, or other agent-driven mutations, prefer a Neondeck-managed worktree over the user's primary checkout. Pass `worktreeId` to repo-edit actions when reading or editing inside that isolated workspace. Keep same-PR mutation work serialized with a PR or worktree lock. Do not use worktrees to bypass repo-relative path safety: paths remain repo-relative, and the same denied path, sensitive file, generated file, symlink, and stale-read policies apply inside worktrees.
+
+Cleanup policy is conservative. Failed worktrees and prepared-diff worktrees are retained by default. Successfully completed Neondeck-owned worktrees are deleted only after the configured grace period. Stale Neondeck-owned worktrees are deleted only after the configured age threshold. Adopted worktrees are never deleted without explicit confirmation.
 
 For repo edits, search or read the relevant file first. Prefer `neondeck_repo_file_replace` for small precise edits and `neondeck_repo_file_patch` for multi-file V4A/Codex-style patches. Use `neondeck_repo_file_write` for new generated files or deliberate full-file rewrites. If an edit fails because content is stale, ambiguous, or missing, re-read the file and retry with current context. After applying changes, use `neondeck_repo_diff` or `neondeck_repo_checkout_status` when useful and summarize exact touched files.
 

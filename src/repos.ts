@@ -8,16 +8,29 @@ import {
   readRuntimeJson,
   runtimePaths,
 } from './runtime-home';
+import { listActiveRepoWorktrees, type WorktreeRecord } from './worktrees';
 
 const execFileAsync = promisify(execFile);
 
 export type RepoRegistrySnapshot = {
   home: string;
   path: string;
-  repos: RepoConfig[];
+  repos: Array<RepoConfig & { activeWorktrees?: RepoRegistryWorktreeLink[] }>;
   count: number;
   fetchedAt: string;
 };
+
+export type RepoRegistryWorktreeLink = Pick<
+  WorktreeRecord,
+  | 'id'
+  | 'prNumber'
+  | 'headRef'
+  | 'headSha'
+  | 'localPath'
+  | 'lifecycleStatus'
+  | 'adopted'
+  | 'updatedAt'
+>;
 
 export type RepoHealth = {
   id: string;
@@ -69,7 +82,12 @@ export async function readRepoRegistrySnapshot(
   return {
     home: paths.home,
     path: paths.repos,
-    repos: registry.repos,
+    repos: registry.repos.map((repo) => ({
+      ...repo,
+      activeWorktrees: listActiveRepoWorktrees(repo.id, paths).map(
+        worktreeLink,
+      ),
+    })),
     count: registry.repos.length,
     fetchedAt: new Date().toISOString(),
   };
@@ -227,4 +245,17 @@ async function git(cwd: string, args: string[]) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function worktreeLink(worktree: WorktreeRecord): RepoRegistryWorktreeLink {
+  return {
+    id: worktree.id,
+    prNumber: worktree.prNumber,
+    headRef: worktree.headRef,
+    headSha: worktree.headSha,
+    localPath: worktree.localPath,
+    lifecycleStatus: worktree.lifecycleStatus,
+    adopted: worktree.adopted,
+    updatedAt: worktree.updatedAt,
+  };
 }

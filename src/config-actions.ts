@@ -22,6 +22,7 @@ import {
   type RepoConfig,
   type RuntimePaths,
   type ScheduleEntry,
+  type WorktreeCleanupConfig,
   ensureRuntimeHome,
   parseAppConfig,
   parseDashboardConfig,
@@ -87,6 +88,7 @@ const addRepoInputSchema = v.object({
   githubOwner: v.optional(nonEmptyStringSchema),
   githubName: v.optional(nonEmptyStringSchema),
   defaultBranch: v.optional(nonEmptyStringSchema),
+  worktreeRoot: v.optional(v.picklist(['home', 'repo-local'])),
   productionTarget: v.optional(nonEmptyStringSchema),
   packageScripts: v.optional(stringRecordSchema),
   metadata: v.optional(unknownRecordSchema),
@@ -99,6 +101,7 @@ const updateRepoInputSchema = v.object({
   githubOwner: v.optional(nonEmptyStringSchema),
   githubName: v.optional(nonEmptyStringSchema),
   defaultBranch: v.optional(nonEmptyStringSchema),
+  worktreeRoot: v.optional(v.picklist(['home', 'repo-local'])),
   productionTarget: v.optional(nonEmptyStringSchema),
   packageScripts: v.optional(stringRecordSchema),
   metadata: v.optional(unknownRecordSchema),
@@ -150,6 +153,19 @@ const updateAgentModelsInputSchema = v.object({
 });
 const updateSkillRootsInputSchema = v.object({
   skillRoots: v.array(nonEmptyStringSchema),
+});
+const worktreeCleanupPolicyInputSchema = v.strictObject({
+  retainFailed: v.optional(v.boolean()),
+  retainPreparedDiff: v.optional(v.boolean()),
+  successfulGraceHours: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(0)),
+  ),
+  staleAgeHours: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+});
+const updateWorktreePolicyInputSchema = v.strictObject({
+  defaultStorage: v.optional(v.picklist(['home', 'repo-local'])),
+  cleanup: v.optional(worktreeCleanupPolicyInputSchema),
+  confirm: v.optional(v.boolean()),
 });
 const envVarNameSchema = v.pipe(
   v.string(),
@@ -230,6 +246,17 @@ export const updateSkillRootsAction = defineAction({
   output: configActionOutputSchema,
   async run({ input }) {
     return updateSkillRoots(input);
+  },
+});
+
+export const updateWorktreePolicyAction = defineAction({
+  name: 'neondeck_config_update_worktree_policy',
+  description:
+    'Update Neondeck worktree storage default and cleanup policy in runtime config.json. Does not create or delete worktrees.',
+  input: updateWorktreePolicyInputSchema,
+  output: configActionOutputSchema,
+  async run({ input }) {
+    return updateWorktreePolicy(input);
   },
 });
 
@@ -363,6 +390,7 @@ export const neondeckConfigActions = [
   configReloadAction,
   updateAgentModelsAction,
   updateSkillRootsAction,
+  updateWorktreePolicyAction,
   readProvidersAction,
   updateProviderAction,
   updateExecutionPolicyAction,
@@ -550,6 +578,87 @@ export async function updateSkillRoots(
       appliesAfter: 'new-session',
     },
   });
+}
+
+export async function updateWorktreePolicy(
+  rawInput: v.InferInput<typeof updateWorktreePolicyInputSchema>,
+  paths = runtimePaths(),
+): Promise<ConfigActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsed = parseActionInput(
+    updateWorktreePolicyInputSchema,
+    rawInput,
+    'config_update_worktree_policy',
+    paths,
+    [paths.config],
+  );
+  if (!parsed.ok) return parsed.result;
+
+  const { confirm, ...input } = parsed.input;
+  if (!hasWorktreePolicyUpdate(input)) {
+    return failResult('config_update_worktree_policy', paths, [paths.config], {
+      message: 'At least one worktree policy setting is required.',
+      requires: ['defaultStorage', 'cleanup'],
+    });
+  }
+
+  const config = await readRuntimeJson(paths.config, parseAppConfig);
+  if (worktreePolicyDeletesSooner(config.worktrees, input) && !confirm) {
+    return failResult('config_update_worktree_policy', paths, [paths.config], {
+      message:
+        'Changing worktree cleanup policy toward faster deletion requires explicit confirmation.',
+      requires: ['confirm'],
+    });
+  }
+  const nextWorktrees = {
+    ...config.worktrees,
+    ...input,
+    cleanup:
+      input.cleanup || config.worktrees?.cleanup
+        ? {
+            ...config.worktrees?.cleanup,
+            ...input.cleanup,
+          }
+        : undefined,
+  };
+  const next = parseAppConfig(
+    {
+      ...config,
+      worktrees: nextWorktrees,
+    },
+    paths.config,
+  );
+  const changed =
+    JSON.stringify(config.worktrees ?? {}) !==
+    JSON.stringify(next.worktrees ?? {});
+
+  if (changed) {
+    await writeJson(paths.config, next);
+    recordConfigChange(paths, {
+      action: 'config_update_worktree_policy',
+      file: paths.config,
+      target: 'worktrees',
+      before: config,
+      after: next,
+    });
+  }
+
+  return okResult(
+    'config_update_worktree_policy',
+    changed,
+    paths,
+    [paths.config],
+    {
+      message: changed
+        ? 'Updated worktree storage and cleanup policy.'
+        : 'Worktree policy already matched the requested values.',
+      data: {
+        worktrees: next.worktrees,
+        policy:
+          'Cleanup keeps failed, prepared-diff, and adopted worktrees unless policy or explicit confirmation allows removal.',
+      },
+    },
+  );
 }
 
 export async function readProviderConfig(
@@ -864,6 +973,7 @@ export async function addRepo(
     },
     path: repoPath,
     defaultBranch,
+    ...(input.worktreeRoot ? { worktreeRoot: input.worktreeRoot } : {}),
     ...(input.productionTarget
       ? { productionTarget: input.productionTarget }
       : {}),
@@ -942,6 +1052,9 @@ export async function updateRepo(
       name: input.githubName ?? current.github.name,
     },
     defaultBranch: input.defaultBranch ?? current.defaultBranch,
+    ...(input.worktreeRoot !== undefined
+      ? { worktreeRoot: input.worktreeRoot }
+      : {}),
     ...(input.productionTarget !== undefined
       ? { productionTarget: input.productionTarget }
       : {}),
@@ -1195,6 +1308,51 @@ function hasAgentModelUpdate(
     input.subagents?.ciInvestigatorThinkingLevel ||
     input.subagents?.releaseReviewer ||
     input.subagents?.releaseReviewerThinkingLevel,
+  );
+}
+
+function hasWorktreePolicyUpdate(
+  input: Omit<v.InferOutput<typeof updateWorktreePolicyInputSchema>, 'confirm'>,
+) {
+  const cleanup = input.cleanup as WorktreeCleanupConfig | undefined;
+  return Boolean(
+    input.defaultStorage !== undefined ||
+    cleanup?.retainFailed !== undefined ||
+    cleanup?.retainPreparedDiff !== undefined ||
+    cleanup?.successfulGraceHours !== undefined ||
+    cleanup?.staleAgeHours !== undefined,
+  );
+}
+
+function worktreePolicyDeletesSooner(
+  current: AppConfig['worktrees'] | undefined,
+  input: Omit<v.InferOutput<typeof updateWorktreePolicyInputSchema>, 'confirm'>,
+) {
+  const currentCleanup = (current?.cleanup ?? {}) as WorktreeCleanupConfig;
+  const nextCleanup = (input.cleanup ?? {}) as WorktreeCleanupConfig;
+  if (
+    currentCleanup.retainFailed !== false &&
+    nextCleanup.retainFailed === false
+  ) {
+    return true;
+  }
+  if (
+    currentCleanup.retainPreparedDiff !== false &&
+    nextCleanup.retainPreparedDiff === false
+  ) {
+    return true;
+  }
+  const currentSuccessfulGrace = currentCleanup.successfulGraceHours ?? 24;
+  const currentStaleAge = currentCleanup.staleAgeHours ?? 168;
+  return (
+    Boolean(
+      nextCleanup.successfulGraceHours !== undefined &&
+      nextCleanup.successfulGraceHours < currentSuccessfulGrace,
+    ) ||
+    Boolean(
+      nextCleanup.staleAgeHours !== undefined &&
+      nextCleanup.staleAgeHours < currentStaleAge,
+    )
   );
 }
 

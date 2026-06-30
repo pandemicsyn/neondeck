@@ -62,11 +62,25 @@ export type RepoConfig = {
   };
   path: string;
   defaultBranch: string;
+  worktreeRoot?: 'home' | 'repo-local';
   productionTarget?: string;
   packageScripts?: Record<string, string>;
   metadata?: Record<string, unknown>;
   watchRules?: unknown[];
+  activeWorktrees?: WorktreeLink[];
 };
+
+export type WorktreeLink = Pick<
+  WorktreeRecord,
+  | 'id'
+  | 'prNumber'
+  | 'headRef'
+  | 'headSha'
+  | 'localPath'
+  | 'lifecycleStatus'
+  | 'adopted'
+  | 'updatedAt'
+>;
 
 export type RepoRegistryResponse = {
   home: string;
@@ -136,6 +150,7 @@ export type RuntimeStatus = {
     schedules: string;
     dashboard: string;
     skills: string;
+    worktrees: string;
     neondeckDatabase: string;
     flueDatabase: string;
   };
@@ -210,6 +225,9 @@ export type RuntimeStatus = {
     ignoredSkills: number;
     failedWorkflowSummaries: number;
     flueFailureNotifications: number;
+    activeWorktrees: number;
+    staleWorktreeLocks: number;
+    worktreeCleanupFailures: number;
   };
   checks: RuntimeStatusCheck[];
   lastFlueErrors: Array<{
@@ -264,6 +282,7 @@ export type ExecutionApprovalsResponse = {
 export type RepoEditEvent = {
   id: string;
   repoId: string;
+  worktreeId: string | null;
   sessionId: string | null;
   workflowRunId: string | null;
   actorType: string;
@@ -286,6 +305,87 @@ export type RepoEditEventsResponse = {
   changed: boolean;
   message: string;
   events: RepoEditEvent[];
+  fetchedAt: string;
+};
+
+export type WorktreeRecord = {
+  id: string;
+  repoId: string;
+  repoFullName: string;
+  githubOwner: string;
+  githubName: string;
+  prNumber: number | null;
+  baseRef: string;
+  headOwner: string | null;
+  headName: string | null;
+  headRef: string;
+  headSha: string | null;
+  localPath: string;
+  storageKind: 'home' | 'repo-local';
+  owningWorkflowRunId: string | null;
+  lifecycleStatus:
+    | 'creating'
+    | 'ready'
+    | 'busy'
+    | 'stale'
+    | 'needs-sync'
+    | 'failed'
+    | 'prepared-diff'
+    | 'succeeded'
+    | 'cleanup-pending'
+    | 'deleted';
+  lastSyncedSha: string | null;
+  lastPushedSha: string | null;
+  cleanupPolicy: {
+    retainFailed: boolean;
+    retainPreparedDiff: boolean;
+    successfulGraceHours: number;
+    staleAgeHours: number;
+  };
+  directPushAllowed: boolean;
+  adopted: boolean;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WorktreeLockRecord = {
+  id: string;
+  scope: 'worktree' | 'pr';
+  scopeKey: string;
+  worktreeId: string | null;
+  repoId: string;
+  prNumber: number | null;
+  owner: string;
+  workflowRunId: string | null;
+  expiresAt: string;
+  releasedAt: string | null;
+  staleRecoveredAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WorktreeCleanupFailure = {
+  id: string;
+  worktreeId: string;
+  repoId: string;
+  action: string;
+  outcome: string;
+  reason: string;
+  error: string | null;
+  deleted: boolean;
+  attemptedAt: string;
+};
+
+export type WorktreesResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  worktrees: WorktreeRecord[];
+  activeLocks: WorktreeLockRecord[];
+  staleLocks: WorktreeLockRecord[];
+  cleanupFailures: WorktreeCleanupFailure[];
   fetchedAt: string;
 };
 
@@ -929,6 +1029,10 @@ export async function getNotifications() {
 
 export async function getRepoEditEvents() {
   return getJson<RepoEditEventsResponse>('/api/repo-edits');
+}
+
+export async function getWorktrees() {
+  return getJson<WorktreesResponse>('/api/worktrees');
 }
 
 export async function markNotificationRead(id: string) {

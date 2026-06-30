@@ -29,6 +29,7 @@ export const queryKeys = {
   notifications: ['notifications'] as const,
   workflowObservability: ['workflow-observability'] as const,
   workflowSummaries: ['workflow-summaries'] as const,
+  worktrees: ['worktrees'] as const,
 };
 
 export function queryErrorMessage(error: unknown) {

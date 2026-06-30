@@ -215,6 +215,12 @@ const entries: SafetyPolicyEntry[] = [
     readOnly,
     'Reads durable Neondeck memory scoped to user, project, session, or watch.',
   ),
+  tool(
+    'neondeck_worktrees_lookup',
+    'Read worktree state',
+    readOnly,
+    'Reads Neondeck worktree records, active and stale locks, and cleanup failures.',
+  ),
   action(
     'neondeck_execution_policy_check',
     'Check host execution policy',
@@ -354,6 +360,12 @@ const entries: SafetyPolicyEntry[] = [
     'Lists deterministic local git status facts.',
   ),
   action(
+    'neondeck_worktree_status',
+    'Read worktree status',
+    readOnly,
+    'Reads git status, head/base SHA, dirty state, and lock state for a managed worktree.',
+  ),
+  action(
     'neondeck_dev_doctor_run',
     'Run local dev diagnostics',
     readOnly,
@@ -412,6 +424,15 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'config_history',
     },
     'Updates allowed execution backends and preapproved single-command patterns. It does not execute commands.',
+  ),
+  action(
+    'neondeck_config_update_worktree_policy',
+    'Update worktree policy',
+    {
+      ...safeMutation,
+      auditTarget: 'config_history',
+    },
+    'Updates default worktree storage and cleanup policy. Faster deletion policies should be confirmed with the user first.',
   ),
   action(
     'neondeck_config_update_dashboard_layout',
@@ -502,6 +523,42 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'ref_watches/notifications',
     },
     'Refreshes a branch or commit ref watch and records meaningful state changes; silent no-op refreshes should not notify.',
+  ),
+  action(
+    'neondeck_worktree_create',
+    'Create or adopt worktree',
+    {
+      ...safeMutation,
+      auditTarget: 'worktrees/worktree_events',
+    },
+    'Creates or adopts a git worktree only inside declared Neondeck worktree roots.',
+  ),
+  action(
+    'neondeck_worktree_sync',
+    'Sync worktree',
+    {
+      ...safeMutation,
+      auditTarget: 'worktrees/worktree_events',
+    },
+    'Moves a clean managed worktree to a requested head ref or SHA and records lifecycle events.',
+  ),
+  action(
+    'neondeck_worktree_lock',
+    'Lock worktree or PR',
+    {
+      ...safeMutation,
+      auditTarget: 'worktree_locks/worktree_events',
+    },
+    'Acquires expiring per-worktree or per-PR locks and recovers stale locks.',
+  ),
+  action(
+    'neondeck_worktree_release',
+    'Release worktree lock',
+    {
+      ...safeMutation,
+      auditTarget: 'worktree_locks/worktree_events',
+    },
+    'Releases a lock and records the final bounded-work status.',
   ),
   action(
     'neondeck_skills_reload',
@@ -628,6 +685,15 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'memories/memory_events',
     },
     'Requires confirm=true before deleting durable memory and recording a memory event.',
+  ),
+  action(
+    'neondeck_worktree_cleanup',
+    'Clean up worktrees',
+    {
+      ...destructiveMutation,
+      auditTarget: 'worktrees/worktree_cleanup_attempts',
+    },
+    'Deletes eligible Neondeck-owned worktrees according to cleanup policy and never deletes adopted worktrees without explicit confirmation.',
   ),
   workflow(
     'command-run',

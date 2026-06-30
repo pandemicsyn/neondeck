@@ -22,6 +22,7 @@ import {
   updateProviderConfig,
   updateSchedule,
   updateSkillRoots,
+  updateWorktreePolicy,
   validateConfig,
 } from './config-actions';
 import { subscribeConfigEvents, type ConfigChangeEvent } from './config-events';
@@ -806,6 +807,87 @@ describe('config actions', () => {
       action: 'config_update_execution_policy',
       message: 'Invalid action input.',
     });
+  });
+
+  it('updates worktree policy and requires confirmation for faster cleanup', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    await expect(
+      updateWorktreePolicy(
+        {
+          defaultStorage: 'repo-local',
+          cleanup: {
+            successfulGraceHours: 72,
+            staleAgeHours: 240,
+          },
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'config_update_worktree_policy',
+      data: {
+        worktrees: {
+          defaultStorage: 'repo-local',
+          cleanup: {
+            successfulGraceHours: 72,
+            staleAgeHours: 240,
+          },
+        },
+      },
+    });
+
+    await expect(
+      updateWorktreePolicy(
+        {
+          cleanup: {
+            retainFailed: false,
+            successfulGraceHours: 1,
+          },
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      requires: ['confirm'],
+    });
+
+    await expect(
+      updateWorktreePolicy(
+        {
+          cleanup: {
+            retainFailed: false,
+            successfulGraceHours: 1,
+          },
+          confirm: true,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'config_update_worktree_policy',
+    });
+
+    const config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.worktrees).toMatchObject({
+      defaultStorage: 'repo-local',
+      cleanup: {
+        retainFailed: false,
+        successfulGraceHours: 1,
+        staleAgeHours: 240,
+      },
+    });
+    expect(readHistory(paths.neondeckDatabase)).toMatchObject([
+      { action: 'config_update_worktree_policy', target: 'worktrees' },
+      { action: 'config_update_worktree_policy', target: 'worktrees' },
+    ]);
   });
 
   it('returns structured failures for empty schedule action fields', async () => {

@@ -1234,30 +1234,30 @@ Must-haves:
 
 ### Phase 18: Worktree Runtime Foundation
 
-- Status: planned.
+- Status: complete.
 
-- [ ] Add `worktrees/` under Neondeck home and keep all Neondeck-owned PR worktrees there by default, with repo-local `.neondeck/worktrees` as an explicit per-repo option.
-- [ ] Add SQLite tables for worktree records, locks, lifecycle events, and cleanup attempts.
-- [ ] Add a worktree path policy that only adopts or creates paths inside declared repo/worktree roots.
-- [ ] Add deterministic worktree actions:
+- [x] Add `worktrees/` under Neondeck home and keep all Neondeck-owned PR worktrees there by default, with repo-local `.neondeck/worktrees` as an explicit per-repo option.
+- [x] Add SQLite tables for worktree records, locks, lifecycle events, and cleanup attempts.
+- [x] Add a worktree path policy that only adopts or creates paths inside declared repo/worktree roots.
+- [x] Add deterministic worktree actions:
   - `neondeck_worktree_create`
   - `neondeck_worktree_sync`
   - `neondeck_worktree_status`
   - `neondeck_worktree_lock`
   - `neondeck_worktree_release`
   - `neondeck_worktree_cleanup`
-- [ ] Add repo registry links from source repo entries to active worktree entries.
-- [ ] Add per-PR and per-worktree lock semantics, with expiration and stale-lock recovery.
-- [ ] Teach repo-edit actions to operate against either a base repo checkout or a Neondeck-managed worktree target.
-- [ ] Ensure worktree repo-edit operations still use repo-relative paths and the same sensitive/generated/path-deny policy.
-- [ ] Add cleanup policy config:
+- [x] Add repo registry links from source repo entries to active worktree entries.
+- [x] Add per-PR and per-worktree lock semantics, with expiration and stale-lock recovery.
+- [x] Teach repo-edit actions to operate against either a base repo checkout or a Neondeck-managed worktree target.
+- [x] Ensure worktree repo-edit operations still use repo-relative paths and the same sensitive/generated/path-deny policy.
+- [x] Add cleanup policy config:
   - retain after failed autonomous fix
   - retain after prepared diff
   - delete Neondeck-owned worktrees after successful push and a configurable grace period
   - delete stale Neondeck-owned worktrees after age threshold
   - never delete adopted worktrees without explicit user confirmation
-- [ ] Add dashboard Runtime Overview rows for active worktrees, stale locks, and cleanup failures.
-- [ ] Add tests for create/sync/status/lock/cleanup behavior, including dirty worktree and stale lock cases.
+- [x] Add dashboard Runtime Overview rows for active worktrees, stale locks, and cleanup failures.
+- [x] Add tests for create/sync/status/lock/cleanup behavior, including dirty worktree and stale lock cases.
 
 ### Phase 19: PR Event Autopilot
 

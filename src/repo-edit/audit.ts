@@ -9,6 +9,7 @@ import type { DiffSummary, RepoEditStatus } from './schemas';
 
 export type RepoEditEventInput = {
   repoId: string;
+  worktreeId?: string | null;
   sessionId?: string | null;
   workflowRunId?: string | null;
   actorType?: 'agent' | 'user' | 'system';
@@ -58,6 +59,7 @@ export async function recordRepoEditEvent(
         INSERT INTO repo_edit_events (
           id,
           repo_id,
+          worktree_id,
           session_id,
           workflow_run_id,
           actor_type,
@@ -73,12 +75,13 @@ export async function recordRepoEditEvent(
           created_at,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `,
       )
       .run(
         record.id,
         record.repoId,
+        record.worktreeId ?? null,
         record.sessionId ?? null,
         record.workflowRunId ?? null,
         record.actorType ?? 'agent',
@@ -134,6 +137,7 @@ function readRepoEditEventRow(row: unknown) {
   return {
     id: String(item.id),
     repoId: String(item.repo_id),
+    worktreeId: nullableString(item.worktree_id),
     sessionId: nullableString(item.session_id),
     workflowRunId: nullableString(item.workflow_run_id),
     actorType: String(item.actor_type),
