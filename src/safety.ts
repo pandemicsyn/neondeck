@@ -709,6 +709,28 @@ const entries: SafetyPolicyEntry[] = [
     readOnly,
     'Returns the managed source worktree path for a prepared diff.',
   ),
+  tool(
+    'neondeck_autopilot_recovery_options_lookup',
+    'Read autopilot recovery options',
+    readOnly,
+    'Reads bounded recovery options for a prepared diff without mutating app state or repos.',
+  ),
+  action(
+    'neondeck_autopilot_recovery_options',
+    'Read autopilot recovery options',
+    readOnly,
+    'Reads bounded recovery options for a prepared diff without mutating app state or repos.',
+  ),
+  action(
+    'neondeck_autopilot_recovery_run',
+    'Run autopilot recovery action',
+    {
+      ...hostExecution,
+      auditTarget:
+        'prepared_diffs/prepared_diff_approvals/worktrees/workflow_summaries/notifications/execution_approvals',
+    },
+    'Dispatches one bounded recovery action to existing prepared-diff or autopilot workflow services; confirmation, execution, policy, GitHub, and push gates are still enforced by the delegated service.',
+  ),
   action(
     'neondeck_prepared_diff_run_verification',
     'Request prepared diff verification',
@@ -1429,6 +1451,22 @@ const entries: SafetyPolicyEntry[] = [
     'Prepared diff worktree path API',
     readOnly,
     'Returns the managed source worktree path for a prepared diff.',
+  ),
+  route(
+    '/api/prepared-diffs/:id/recovery',
+    'Prepared diff recovery options API',
+    readOnly,
+    'Reads bounded recovery options for a prepared diff.',
+  ),
+  route(
+    '/api/prepared-diffs/:id/recovery/run',
+    'Prepared diff recovery runner API',
+    {
+      ...hostExecution,
+      auditTarget:
+        'prepared_diffs/prepared_diff_approvals/worktrees/workflow_summaries/notifications/execution_approvals',
+    },
+    'Dispatches one bounded recovery action through the same prepared-diff and autopilot workflow services used by Flue actions.',
   ),
   route(
     '/api/autopilot/verify-pr-worktree',

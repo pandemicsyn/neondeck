@@ -1,6 +1,7 @@
 import { defineTool } from '@flue/runtime';
 import * as v from 'valibot';
 import { autopilotStateLookupTool } from './autopilot';
+import { neondeckAutopilotRecoveryTools } from './autopilot-recovery';
 import { listWorkflowSummaries } from './app-state';
 import { supportedCommands } from './commands';
 import { listRepoStatus } from './dev-doctor';
@@ -300,6 +301,7 @@ export const neondeckFactTools = [
   runtimeSkillLoadTool,
   memoryLookupTool,
   autopilotStateLookupTool,
+  ...neondeckAutopilotRecoveryTools,
   ...neondeckPreparedDiffTools,
   safetyPolicyTool,
   executionPolicyTool,

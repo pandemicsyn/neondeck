@@ -225,6 +225,13 @@ Use this format:
 - Reason: The roadmap confirmation policy says enabling Kilo `--auto` requires explicit confirmation, and this slice should preserve Kilo as a user-invoked delegated worker rather than a default autonomous runtime.
 - Follow-up: If a future repo/workflow policy opts into unattended `--auto`, model that as an audited policy change with visible user controls.
 
+## 2026-06-30 - Autopilot Notification Policy And Recovery Actions
+
+- Roadmap item: Phase 19 / autopilot notification policy and Phase 20 / recovery actions
+- Decision: Added deterministic autopilot notification states for review-fix, CI-fix, verify, push-blocked, pushed, comment-result, and unexpected failed workflow outcomes, plus a prepared-diff-centered recovery API/action surface for inspect, retry verify, retry push, retry comment, request revision, abandon, and manual follow-up. Rebase/resync-after-new-commit and cleanup-specific recovery buttons remain separate follow-ups.
+- Reason: Prepared-diff records are already the durable source for prepared fixes and push-back gates. Centering recovery on `preparedDiffId` reuses existing workflow, prepared-diff, worktree, execution, GitHub, and safety services without adding a parallel queue model.
+- Follow-up: Add first-class rebase/resync recovery and cleanup-specific controls after the worktree sync/cleanup UX is designed, then cover those paths with fixture-driven integration tests.
+
 ## 2026-06-30 - exe.dev Checkout Sync
 
 - Roadmap item: Phase 14 / existing-VM exe.dev repo/worktree checkout sync helpers and env forwarding

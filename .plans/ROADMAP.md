@@ -1261,7 +1261,7 @@ Must-haves:
 
 ### Phase 19: PR Event Autopilot
 
-- Status: partially complete and actively being finished. Event watermarks, triage, worktree preparation, review/CI fix workflows, verification, push-back, concurrency controls, dashboard/TUI-ready state, and runtime guidance have landed. PR result comments, notification policy, and broader smoke/integration coverage remain open or in flight.
+- Status: partially complete and actively being finished. Event watermarks, triage, worktree preparation, review/CI fix workflows, verification, push-back, result comments, concurrency controls, dashboard/TUI-ready state, notification policy, and runtime guidance have landed. Broader smoke/integration coverage remains open.
 
 - [x] Extend PR watches to persist event watermarks for commits, review threads, requested-changes reviews, check suites, check runs, mergeability, and out-of-date branch state.
 - [x] Add a `triage_pr_event` workflow that classifies deltas into no-op, notify-only, explain-only, draft-fix, auto-fix-no-push, or auto-fix-push-after-checks.
@@ -1283,14 +1283,14 @@ Must-haves:
 - [x] Add `verify_pr_worktree` workflow to run configured repo checks through the execution approval policy.
 - [x] Add `push_pr_autofix` workflow that pushes only when autopilot policy, GitHub permissions, and checks allow it.
 - [x] When direct push is not possible, leave the prepared worktree intact, mark the attempt blocked, and notify the user with recovery options.
-- [ ] Add `comment_pr_autofix_result` workflow that posts concise PR comments with addressed comments, commit SHA, checks run, and any remaining manual asks. In flight in the current PR autofix audit/comment worktree.
+- [x] Add `comment_pr_autofix_result` workflow that posts concise PR comments with addressed comments, commit SHA, checks run, and any remaining manual asks.
 - [x] Add concurrency controls:
   - global autonomous workflow limit
   - per-repo autonomous workflow limit
   - one active mutation workflow per PR by default
   - local execution concurrency limit
 - [x] Add dashboard/TUI-ready APIs for active autopilot queue, prepared diffs, pending push approvals, running checks, and recent autonomous fixes.
-- [ ] Add notification policy for autopilot:
+- [x] Add notification policy for autopilot:
   - ready when a fix is prepared or pushed
   - attention when push/checks are blocked
   - urgent only for production/main failures
@@ -1302,7 +1302,7 @@ Must-haves:
 
 ### Phase 20: Autopilot Policy And UX Hardening
 
-- Status: partially complete and active. Repo/watch policy, high-risk classes, prepared-diff records/APIs/actions, approval primitives, and dashboard decision visibility have landed. Human-readable audit summaries are in flight; recovery actions and docs remain open.
+- Status: partially complete and active. Repo/watch policy, high-risk classes, prepared-diff records/APIs/actions, approval primitives, dashboard decision visibility, human-readable audit summaries, bounded recovery actions, notification policy, and docs have landed. Rebase/resync and cleanup-specific recovery controls remain open.
 
 - [x] Add repo-level autopilot config with explicit modes:
   - `notify-only`
@@ -1344,14 +1344,20 @@ Must-haves:
   - run verification
 - [x] Keep git/diff operations in backend services and actions; UI clients should not implement git logic.
 - [x] Add a dashboard panel for autopilot decisions, including why Neon did or did not act.
-- [ ] Add human-readable audit summaries for autonomous workflows, suitable for PR comments and timeline UI. In flight in the current PR autofix audit/comment worktree.
-- [ ] Add recovery actions:
+- [x] Add human-readable audit summaries for autonomous workflows, suitable for PR comments and timeline UI.
+- [x] Add bounded prepared-diff recovery actions:
+  - inspect retained worktree
+  - retry verification
+  - retry push
+  - retry PR result comment
+  - request revision
+  - abandon prepared fix
+  - surface manual follow-up
+- [ ] Add rebase/resync and cleanup-specific recovery actions:
   - retry after new commit
   - rebase/resync worktree
-  - abandon prepared fix
-  - push prepared fix
   - clean up worktree
-- [ ] Add docs for autonomous modes, trust boundaries, worktree storage, GitHub token permissions, push-back behavior, and how to disable autopilot quickly.
+- [x] Add docs for autonomous modes, trust boundaries, worktree storage, GitHub token permissions, push-back behavior, and how to disable autopilot quickly.
 
 ### Phase 21: KiloCode Handoff Runner
 

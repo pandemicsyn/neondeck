@@ -17,11 +17,11 @@ import {
   repoAutopilotPolicy,
   withAutopilotLocalExecutionSlot,
 } from './autopilot-policy';
+import { addWorkflowSummary, updateWorkflowSummary } from './app-state';
 import {
-  addNotification,
-  addWorkflowSummary,
-  updateWorkflowSummary,
-} from './app-state';
+  notifyAutopilotState,
+  recoveryActionsForPreparedDiff,
+} from './autopilot-notifications';
 import { buildPreparedDiffAuditSummary } from './autonomous-audit';
 import { runApprovedExecution } from './execution-actions';
 import {
@@ -33,6 +33,7 @@ import {
   markPreparedDiffPushBlocked,
   markPreparedDiffPushed,
   readPreparedDiff,
+  readPreparedDiffByWorktree,
   readPreparedDiffRecord,
   recordPreparedDiffVerification,
   type PreparedDiffRecord,
@@ -904,6 +905,29 @@ export async function verifyPrWorktree(
       },
       paths,
     );
+    if (preparedDiffVerification) {
+      await notifyAutopilotState(
+        {
+          state: 'verify',
+          outcome: passed ? 'passed' : blocked ? 'blocked' : 'failed',
+          preparedDiffId: preparedDiffVerification.id,
+          worktreeId: worktree.id,
+          repoFullName: repoFullName(repo),
+          prNumber: worktree.prNumber,
+          workflow: 'verify_pr_worktree',
+          message: passed
+            ? `Verified ${repoFullName(repo)}#${worktree.prNumber ?? 'worktree'} with ${results.length} check(s).`
+            : blocked
+              ? 'Verification is blocked by execution approval or concurrency policy.'
+              : 'One or more verification checks failed.',
+          recoveryActions: recoveryActionsForPreparedDiff(
+            preparedDiffVerification,
+          ),
+          data: { checks, results },
+        },
+        paths,
+      );
+    }
 
     return {
       ok: passed,
@@ -939,6 +963,24 @@ export async function verifyPrWorktree(
       ...(blocked ? { requires: ['approval'] } : {}),
     };
   } catch (error) {
+    const preparedDiff = readPreparedDiffByWorktree(input.worktreeId, paths);
+    if (preparedDiff) {
+      await notifyAutopilotState(
+        {
+          state: 'failed-workflow',
+          outcome: 'failed',
+          preparedDiffId: preparedDiff.id,
+          worktreeId: input.worktreeId,
+          repoFullName: preparedDiff.repoFullName,
+          prNumber: preparedDiff.prNumber,
+          workflow: 'verify_pr_worktree',
+          message: `verify_pr_worktree failed: ${errorMessage(error)}`,
+          recoveryActions: recoveryActionsForPreparedDiff(preparedDiff),
+          data: { error: errorMessage(error) },
+        },
+        paths,
+      ).catch(() => undefined);
+    }
     return failResult(
       'autopilot_verify_pr_worktree',
       'Could not verify PR worktree.',
@@ -1284,21 +1326,27 @@ export async function pushPrAutofix(
       },
       paths,
     );
-    await addNotification(
-      {
-        level: 'ready',
-        title: 'Autofix pushed',
-        message: `Pushed ${preparedDiff.repoFullName}#${preparedDiff.prNumber} autofix commit ${currentSha.slice(0, 12)}.`,
-        source: 'autopilot',
-        sourceId: `prepared-diff:${preparedDiff.id}:pushed`,
-        data: {
-          preparedDiffId: preparedDiff.id,
+    if (updatedPreparedDiff) {
+      await notifyAutopilotState(
+        {
+          state: 'pushed',
+          outcome: 'pushed',
+          preparedDiffId: updatedPreparedDiff.id,
           worktreeId: worktree.id,
-          commitSha: currentSha,
+          repoFullName: preparedDiff.repoFullName,
+          prNumber: preparedDiff.prNumber,
+          workflow: 'push_pr_autofix',
+          message: `Pushed ${preparedDiff.repoFullName}#${preparedDiff.prNumber} autofix commit ${currentSha.slice(0, 12)}.`,
+          recoveryActions: recoveryActionsForPreparedDiff(updatedPreparedDiff),
+          data: {
+            commitSha: currentSha,
+            remote: push.remote,
+            branch: push.branch,
+          },
         },
-      },
-      paths,
-    );
+        paths,
+      );
+    }
 
     return {
       ok: true,
@@ -1320,6 +1368,32 @@ export async function pushPrAutofix(
     };
   } catch (error) {
     if (pushedSideEffect) {
+      const parsedInput = v.safeParse(pushPrAutofixInputSchema, rawInput);
+      const preparedDiff = parsedInput.success
+        ? readPreparedDiff(parsedInput.output.preparedDiffId, paths)
+        : null;
+      if (preparedDiff) {
+        await notifyAutopilotState(
+          {
+            state: 'failed-workflow',
+            outcome: 'failed',
+            preparedDiffId: preparedDiff.id,
+            worktreeId: preparedDiff.worktreeId,
+            repoFullName: preparedDiff.repoFullName,
+            prNumber: preparedDiff.prNumber,
+            workflow: 'push_pr_autofix',
+            message:
+              'Git push completed, but Neondeck could not finish recording push state.',
+            recoveryOptions: [
+              'Inspect GitHub and the retained worktree before retrying.',
+              'If the commit reached the PR branch, reconcile the prepared-diff state instead of pushing again.',
+            ],
+            recoveryActions: recoveryActionsForPreparedDiff(preparedDiff),
+            data: { push: pushedSideEffect, error: errorMessage(error) },
+          },
+          paths,
+        ).catch(() => undefined);
+      }
       return {
         ok: false,
         action: 'autopilot_push_pr_autofix',
@@ -1403,6 +1477,8 @@ export async function fixPrCiFailure(
   const lockOwner = input.lockOwner ?? 'fix_pr_ci_failure';
   let finalLockStatus: 'ready' | 'prepared-diff' | 'failed' = 'ready';
   let mutationApplied = false;
+  let notificationWorktree: WorktreeRecord | undefined;
+  let notificationRepoFullName: string | undefined;
 
   try {
     await ensureRuntimeHome(paths);
@@ -1421,6 +1497,7 @@ export async function fixPrCiFailure(
         { requires: ['worktreeId'] },
       );
     }
+    notificationWorktree = worktree;
     const repo = registry.repos.find(
       (candidate) => candidate.id === worktree.repoId,
     );
@@ -1431,6 +1508,7 @@ export async function fixPrCiFailure(
         { requires: ['repo'] },
       );
     }
+    notificationRepoFullName = repoFullName(repo);
 
     const concurrency = await checkAutopilotConcurrency(
       {
@@ -1651,6 +1729,21 @@ export async function fixPrCiFailure(
             },
           },
         );
+        await notifyAutopilotState(
+          {
+            state: 'ci-fix',
+            outcome: 'prepared',
+            preparedDiffId: preparedDiff.id,
+            worktreeId: worktree.id,
+            repoFullName: repoFullName(repo),
+            prNumber: worktree.prNumber,
+            workflow: 'fix_pr_ci_failure',
+            message: `Prepared a CI-failure fix for ${repoFullName(repo)}#${worktree.prNumber ?? 'worktree'} that needs policy review before commit or push.`,
+            recoveryActions: recoveryActionsForPreparedDiff(preparedDiff),
+            data: { policy, diagnostics },
+          },
+          paths,
+        );
         return {
           ok: false,
           action: 'autopilot_fix_pr_ci_failure',
@@ -1725,6 +1818,25 @@ export async function fixPrCiFailure(
             },
           },
         );
+        await notifyAutopilotState(
+          {
+            state: 'ci-fix',
+            outcome: 'prepared',
+            preparedDiffId: preparedDiff.id,
+            worktreeId: worktree.id,
+            repoFullName: repoFullName(repo),
+            prNumber: worktree.prNumber,
+            workflow: 'fix_pr_ci_failure',
+            message: `Retained a CI-failure fix for ${repoFullName(repo)}#${worktree.prNumber ?? 'worktree'} after commit failed.`,
+            recoveryOptions: [
+              'Inspect the retained worktree and commit or discard local changes manually.',
+              'Retry verification after the worktree is clean and committed.',
+            ],
+            recoveryActions: recoveryActionsForPreparedDiff(preparedDiff),
+            data: { diagnostics, commitError: errorMessage(error) },
+          },
+          paths,
+        );
         return {
           ok: false,
           action: 'autopilot_fix_pr_ci_failure',
@@ -1764,7 +1876,7 @@ export async function fixPrCiFailure(
     const changed =
       Boolean(patchResult) ||
       Boolean((commit as { committed?: boolean } | null)?.committed);
-    let preparedDiff: unknown = null;
+    let preparedDiff: PreparedDiffRecord | null = null;
     if (changed) {
       finalLockStatus = 'prepared-diff';
       preparedDiff = await ensurePreparedDiffForWorktree(worktree, paths, {
@@ -1786,6 +1898,21 @@ export async function fixPrCiFailure(
           commit,
         },
       });
+      await notifyAutopilotState(
+        {
+          state: 'ci-fix',
+          outcome: 'prepared',
+          preparedDiffId: preparedDiff.id,
+          worktreeId: worktree.id,
+          repoFullName: repoFullName(repo),
+          prNumber: worktree.prNumber,
+          workflow: 'fix_pr_ci_failure',
+          message: `Prepared a CI-failure fix for ${repoFullName(repo)}#${worktree.prNumber ?? 'worktree'}.`,
+          recoveryActions: recoveryActionsForPreparedDiff(preparedDiff),
+          data: { diagnostics, commit },
+        },
+        paths,
+      );
     }
 
     const failedDiagnostics = diagnostics.filter((item) => !item.ok);
@@ -1828,6 +1955,30 @@ export async function fixPrCiFailure(
     };
   } catch (error) {
     if (mutationApplied) finalLockStatus = 'failed';
+    if (notificationWorktree) {
+      const preparedDiff = readPreparedDiffByWorktree(
+        notificationWorktree.id,
+        paths,
+      );
+      if (preparedDiff) {
+        await notifyAutopilotState(
+          {
+            state: 'failed-workflow',
+            outcome: 'failed',
+            preparedDiffId: preparedDiff.id,
+            worktreeId: notificationWorktree.id,
+            repoFullName:
+              notificationRepoFullName ?? notificationWorktree.repoFullName,
+            prNumber: notificationWorktree.prNumber,
+            workflow: 'fix_pr_ci_failure',
+            message: `fix_pr_ci_failure failed: ${errorMessage(error)}`,
+            recoveryActions: recoveryActionsForPreparedDiff(preparedDiff),
+            data: { error: errorMessage(error) },
+          },
+          paths,
+        ).catch(() => undefined);
+      }
+    }
     return failResult(
       'autopilot_fix_pr_ci_failure',
       'Could not fix PR CI failure.',
@@ -2246,6 +2397,21 @@ export async function fixPrReviewFeedback(
           summary: preparedSummary,
         },
       );
+      await notifyAutopilotState(
+        {
+          state: 'review-fix',
+          outcome: 'prepared',
+          preparedDiffId: preparedDiff.id,
+          worktreeId: worktree.id,
+          repoFullName: repoFullName(repo),
+          prNumber: input.prNumber,
+          workflow: 'fix_pr_review_feedback',
+          message: `Prepared review-feedback fix for ${repoFullName(repo)}#${input.prNumber}.`,
+          recoveryActions: recoveryActionsForPreparedDiff(preparedDiff),
+          data: { addressed, plan },
+        },
+        paths,
+      );
     }
 
     return {
@@ -2273,6 +2439,26 @@ export async function fixPrReviewFeedback(
     };
   } catch (error) {
     finalLockStatus = 'failed';
+    if (worktree) {
+      const preparedDiff = readPreparedDiffByWorktree(worktree.id, paths);
+      if (preparedDiff) {
+        await notifyAutopilotState(
+          {
+            state: 'failed-workflow',
+            outcome: 'failed',
+            preparedDiffId: preparedDiff.id,
+            worktreeId: worktree.id,
+            repoFullName: worktree.repoFullName,
+            prNumber: worktree.prNumber,
+            workflow: 'fix_pr_review_feedback',
+            message: `fix_pr_review_feedback failed: ${errorMessage(error)}`,
+            recoveryActions: recoveryActionsForPreparedDiff(preparedDiff),
+            data: { error: errorMessage(error) },
+          },
+          paths,
+        ).catch(() => undefined);
+      }
+    }
     return failResult(
       'autopilot_fix_pr_review_feedback',
       'Could not fix PR review feedback.',
@@ -2304,6 +2490,7 @@ export async function commentPrAutofixResult(
   );
   if (!parsed.ok) return parsed.result;
   const input = parsed.input;
+  let notificationPreparedDiff: PreparedDiffRecord | undefined;
 
   try {
     await ensureRuntimeHome(paths);
@@ -2315,6 +2502,7 @@ export async function commentPrAutofixResult(
         { requires: ['preparedDiffId'] },
       );
     }
+    notificationPreparedDiff = preparedDiff;
     if (preparedDiff.prNumber === null) {
       return failResult(
         'autopilot_comment_pr_autofix_result',
@@ -2332,6 +2520,24 @@ export async function commentPrAutofixResult(
     }
     const token = dependencies.token ?? process.env.GITHUB_TOKEN;
     if (!token) {
+      await notifyAutopilotState(
+        {
+          state: 'comment-result',
+          outcome: 'blocked',
+          preparedDiffId: preparedDiff.id,
+          worktreeId: preparedDiff.worktreeId,
+          repoFullName: preparedDiff.repoFullName,
+          prNumber: preparedDiff.prNumber,
+          workflow: 'comment_pr_autofix_result',
+          message:
+            'Autofix result comment is blocked because GITHUB_TOKEN is not configured.',
+          recoveryOptions: [
+            'Configure GITHUB_TOKEN, then retry the result comment.',
+          ],
+          recoveryActions: recoveryActionsForPreparedDiff(preparedDiff),
+        },
+        paths,
+      );
       return failResult(
         'autopilot_comment_pr_autofix_result',
         'GITHUB_TOKEN is not configured.',
@@ -2351,6 +2557,29 @@ export async function commentPrAutofixResult(
       currentState.headSha &&
       preparedDiff.headSha !== currentState.headSha
     ) {
+      await notifyAutopilotState(
+        {
+          state: 'comment-result',
+          outcome: 'blocked',
+          preparedDiffId: preparedDiff.id,
+          worktreeId: preparedDiff.worktreeId,
+          repoFullName: preparedDiff.repoFullName,
+          prNumber: preparedDiff.prNumber,
+          workflow: 'comment_pr_autofix_result',
+          message:
+            'Autofix result comment is blocked because the pull request head changed.',
+          recoveryOptions: [
+            'Inspect the retained worktree and current PR head before retrying.',
+            'Prepare a fresh diff against the new PR head if the old result is stale.',
+          ],
+          recoveryActions: recoveryActionsForPreparedDiff(preparedDiff),
+          data: {
+            preparedHeadSha: preparedDiff.headSha,
+            currentHeadSha: currentState.headSha,
+          },
+        },
+        paths,
+      );
       return {
         ok: false,
         action: 'autopilot_comment_pr_autofix_result',
@@ -2454,6 +2683,23 @@ export async function commentPrAutofixResult(
       ...(comment.ok ? [] : (comment.errors ?? [])),
       ...auditErrors,
     ]);
+    await notifyAutopilotState(
+      {
+        state: 'comment-result',
+        outcome: comment.ok ? 'posted' : 'blocked',
+        preparedDiffId: preparedDiff.id,
+        worktreeId: preparedDiff.worktreeId,
+        repoFullName: preparedDiff.repoFullName,
+        prNumber: preparedDiff.prNumber,
+        workflow: 'comment_pr_autofix_result',
+        message: comment.ok
+          ? `Posted autopilot result comment for ${preparedDiff.repoFullName}#${preparedDiff.prNumber}.`
+          : comment.message,
+        recoveryActions: recoveryActionsForPreparedDiff(preparedDiff),
+        data: { comment, auditErrors },
+      },
+      paths,
+    );
 
     return {
       ok: comment.ok,
@@ -2475,6 +2721,25 @@ export async function commentPrAutofixResult(
       ...(comment.requires ? { requires: comment.requires } : {}),
     };
   } catch (error) {
+    if (notificationPreparedDiff) {
+      await notifyAutopilotState(
+        {
+          state: 'failed-workflow',
+          outcome: 'failed',
+          preparedDiffId: notificationPreparedDiff.id,
+          worktreeId: notificationPreparedDiff.worktreeId,
+          repoFullName: notificationPreparedDiff.repoFullName,
+          prNumber: notificationPreparedDiff.prNumber,
+          workflow: 'comment_pr_autofix_result',
+          message: `comment_pr_autofix_result failed: ${errorMessage(error)}`,
+          recoveryActions: recoveryActionsForPreparedDiff(
+            notificationPreparedDiff,
+          ),
+          data: { error: errorMessage(error) },
+        },
+        paths,
+      ).catch(() => undefined);
+    }
     return failResult(
       'autopilot_comment_pr_autofix_result',
       'Could not comment on PR autofix result.',
@@ -2763,22 +3028,24 @@ async function blockPushAttempt(
     },
     input.paths,
   ).catch(() => null);
-  await addNotification(
-    {
-      level: 'attention',
-      title: 'Autofix push blocked',
-      message,
-      source: 'autopilot',
-      sourceId: `prepared-diff:${preparedDiffId}:push-blocked`,
-      data: {
+  if (preparedDiff) {
+    await notifyAutopilotState(
+      {
+        state: 'push-blocked',
+        outcome: 'blocked',
         preparedDiffId,
         worktreeId,
-        gates: input.gates,
+        repoFullName: preparedDiff.repoFullName,
+        prNumber: preparedDiff.prNumber,
+        workflow: 'push_pr_autofix',
+        message,
         recoveryOptions,
+        recoveryActions: recoveryActionsForPreparedDiff(preparedDiff),
+        data: { gates: input.gates, details: input.data ?? null },
       },
-    },
-    input.paths,
-  );
+      input.paths,
+    );
+  }
   return {
     ok: false,
     action: 'autopilot_push_pr_autofix',

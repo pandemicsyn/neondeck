@@ -624,6 +624,38 @@ export type AutopilotState = {
   fetchedAt: string;
 };
 
+export type AutopilotRecoveryActionId =
+  | 'inspect-worktree'
+  | 'retry-verify'
+  | 'retry-push'
+  | 'retry-comment'
+  | 'request-revision'
+  | 'abandon'
+  | 'manual-follow-up';
+
+export type AutopilotRecoveryOption = {
+  id: AutopilotRecoveryActionId;
+  label: string;
+  description: string;
+  enabled: boolean;
+  requires: string[];
+  destructive: boolean;
+  api: { method: 'GET' | 'POST'; path: string };
+};
+
+export type AutopilotRecoveryResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  preparedDiffId?: string;
+  options?: AutopilotRecoveryOption[];
+  result?: unknown;
+  data?: unknown;
+  requires?: string[];
+  errors?: string[];
+};
+
 export type ConfigActionResult = {
   ok: boolean;
   action: string;
@@ -1074,6 +1106,26 @@ export async function getRuntimeStatus() {
 
 export async function getAutopilotState() {
   return getJson<AutopilotState>('/api/autopilot/state');
+}
+
+export async function getAutopilotRecoveryOptions(preparedDiffId: string) {
+  return getJson<AutopilotRecoveryResponse>(
+    `/api/prepared-diffs/${encodeURIComponent(preparedDiffId)}/recovery`,
+  );
+}
+
+export async function runAutopilotRecovery(input: {
+  preparedDiffId: string;
+  recoveryAction: AutopilotRecoveryActionId;
+  reason?: string;
+  confirm?: boolean;
+  checks?: string[];
+}) {
+  const { preparedDiffId, ...body } = input;
+  return postJson<AutopilotRecoveryResponse>(
+    `/api/prepared-diffs/${encodeURIComponent(preparedDiffId)}/recovery/run`,
+    body,
+  );
 }
 
 export function openConfigEventStream(
