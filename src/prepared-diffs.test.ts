@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   abandonPreparedDiff,
   approvePreparedDiffPush,
+  ensurePreparedDiffForWorktree,
   listPreparedDiffs,
   readPreparedDiffChangedFiles,
   readPreparedDiffFileDiff,
@@ -160,6 +161,59 @@ describe('prepared diff lifecycle', () => {
       preparedDiffs: [],
     });
   });
+
+  it('preserves approval and verification state on idempotent prepared diff reads', async () => {
+    const { paths } = await fixture();
+    const prepared = await preparedFixture(paths);
+    await approvePreparedDiffPush(
+      {
+        preparedDiffId: prepared.id,
+        confirm: true,
+        reason: 'Looks safe.',
+        approverSurface: 'test',
+      },
+      paths,
+    );
+    await runPreparedDiffVerification(
+      { preparedDiffId: prepared.id, checkName: 'npm run check' },
+      paths,
+    );
+
+    const idempotent = await ensurePreparedDiffForWorktree(
+      worktreeLikeFromPrepared(prepared),
+      paths,
+    );
+
+    expect(idempotent).toMatchObject({
+      id: prepared.id,
+      status: 'verification-requested',
+      pushApprovalStatus: 'approved',
+      verificationStatus: 'requested',
+    });
+    await expect(listPreparedDiffs({}, paths)).resolves.toMatchObject({
+      preparedDiffs: [
+        expect.objectContaining({
+          id: prepared.id,
+          status: 'verification-requested',
+          pushApprovalStatus: 'approved',
+          verificationStatus: 'requested',
+        }),
+      ],
+    });
+
+    const regenerated = await ensurePreparedDiffForWorktree(
+      worktreeLikeFromPrepared(prepared),
+      paths,
+      { resetDecisionState: true },
+    );
+
+    expect(regenerated).toMatchObject({
+      id: prepared.id,
+      status: 'prepared',
+      pushApprovalStatus: 'pending',
+      verificationStatus: 'not-run',
+    });
+  });
 });
 
 async function fixture() {
@@ -228,6 +282,22 @@ async function preparedFixture(paths: ReturnType<typeof runtimePaths>) {
   const prepared = listed.preparedDiffs?.[0];
   if (!prepared) throw new Error('Missing prepared diff fixture.');
   return prepared;
+}
+
+function worktreeLikeFromPrepared(
+  prepared: Awaited<ReturnType<typeof preparedFixture>>,
+) {
+  return {
+    id: prepared.worktreeId,
+    repoId: prepared.repoId,
+    repoFullName: prepared.repoFullName,
+    prNumber: prepared.prNumber,
+    localPath: prepared.sourceWorktreePath,
+    baseRef: prepared.baseRef,
+    headRef: prepared.headRef,
+    headSha: prepared.headSha,
+    lifecycleStatus: 'prepared-diff',
+  };
 }
 
 function objectField(value: unknown, field: string): Record<string, unknown> {

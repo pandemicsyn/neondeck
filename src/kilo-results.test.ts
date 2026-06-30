@@ -153,6 +153,33 @@ describe('Kilo result review, verification, and promotion', () => {
     });
   });
 
+  it('keeps Kilo result review recoverable when the task workspace is missing', async () => {
+    const { paths, worktreeId } = await fixture();
+    const missingWorktreePath = join(paths.home, 'missing-kilo-worktree');
+    insertKiloTask(paths, {
+      taskId: 'kilo-task-missing-cwd',
+      worktreeId,
+      cwd: missingWorktreePath,
+    });
+
+    await expect(
+      reviewKiloResult({ taskId: 'kilo-task-missing-cwd' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      resultState: {
+        classification: 'discard',
+        pendingApprovals: [],
+      },
+      diff: {
+        ok: false,
+        path: missingWorktreePath,
+        fileCount: 0,
+        error: expect.any(String),
+      },
+    });
+  });
+
   it('blocks review and verification before a terminal reviewed Kilo result exists', async () => {
     const { paths, worktreeId, worktreePath } = await fixture();
     await writeFile(join(worktreePath, 'README.md'), '# sample\n\nchanged\n');
