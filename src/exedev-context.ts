@@ -1,5 +1,5 @@
-import { readFile } from 'node:fs/promises';
-import { isAbsolute, resolve } from 'node:path';
+import { lstat, readFile, realpath } from 'node:fs/promises';
+import { isAbsolute, relative, resolve } from 'node:path';
 import * as v from 'valibot';
 import {
   type ExeDevCheckoutConfig,
@@ -69,6 +69,9 @@ export async function resolveExeDevCheckoutTarget(
       `Worktree "${worktree.id}" belongs to repo "${worktree.repoId}", not "${input.repoId}".`,
     );
   }
+  if (worktree?.lifecycleStatus === 'deleted') {
+    throw new Error(`Worktree "${worktree.id}" is deleted.`);
+  }
 
   const exeDev = appConfig.execution?.exeDev;
   const repoCheckout = exeDev?.repos?.[repo.id];
@@ -127,7 +130,7 @@ export async function resolveExeDevForwardedEnv(
   for (const { scope, config } of scopes) {
     if (!config?.enabled) continue;
     for (const file of config.files ?? []) {
-      const resolved = resolveRepoEnvFile(target.localPath, file);
+      const resolved = await resolveRepoEnvFile(target.localPath, file);
       if (!resolved) {
         sources.push({
           kind: 'repo-file',
@@ -220,14 +223,30 @@ export function exedevTargetInputSchema() {
   };
 }
 
-function resolveRepoEnvFile(repoRoot: string, file: string) {
+async function resolveRepoEnvFile(repoRoot: string, file: string) {
   if (file.includes('\u0000') || isAbsolute(file)) return undefined;
   const candidate = resolve(repoRoot, file);
   const root = resolve(repoRoot);
   if (candidate !== root && !candidate.startsWith(`${root}/`)) {
     return undefined;
   }
+  try {
+    const [rootRealPath, fileStats] = await Promise.all([
+      realpath(root),
+      lstat(candidate),
+    ]);
+    if (fileStats.isSymbolicLink()) return undefined;
+    const candidateRealPath = await realpath(candidate);
+    if (!isInsidePath(rootRealPath, candidateRealPath)) return undefined;
+  } catch {
+    return undefined;
+  }
   return candidate;
+}
+
+function isInsidePath(root: string, candidate: string) {
+  const segment = relative(root, candidate);
+  return segment === '' || (!segment.startsWith('..') && !isAbsolute(segment));
 }
 
 function unquoteEnvValue(value: string) {

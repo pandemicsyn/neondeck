@@ -1,6 +1,7 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   parseEnvFile,
@@ -129,10 +130,186 @@ PLAIN=value # comment
     expect(JSON.stringify(forwarded.sources)).not.toContain('config-secret');
     expect(JSON.stringify(forwarded.sources)).not.toContain('host-secret');
   });
+
+  it('rejects symlinked repo env files before forwarding values', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const repoPath = join(paths.home, 'repo');
+    const outsidePath = join(paths.home, 'outside.env');
+    await mkdir(repoPath, { recursive: true });
+    await writeFile(outsidePath, 'SECRET_TOKEN=outside\n');
+    await symlink(outsidePath, join(repoPath, '.env.exe'));
+    await writeRepo(paths, repoPath);
+    await writeExeDevEnvConfig(paths, ['.env.exe']);
+
+    const forwarded = await resolveExeDevForwardedEnv({ repoId: 'app' }, paths);
+
+    expect(forwarded.env).toEqual({});
+    expect(forwarded.sources).toEqual([
+      {
+        kind: 'repo-file',
+        scope: 'repo',
+        id: '.env.exe',
+        keys: [],
+        missing: true,
+      },
+    ]);
+  });
+
+  it('rejects repo env files that resolve outside the checkout', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const repoPath = join(paths.home, 'repo');
+    const outsideDir = join(paths.home, 'outside');
+    await mkdir(repoPath, { recursive: true });
+    await mkdir(outsideDir, { recursive: true });
+    await writeFile(join(outsideDir, '.env.exe'), 'SECRET_TOKEN=outside\n');
+    await symlink(outsideDir, join(repoPath, 'linked-env'));
+    await writeRepo(paths, repoPath);
+    await writeExeDevEnvConfig(paths, ['linked-env/.env.exe']);
+
+    const forwarded = await resolveExeDevForwardedEnv({ repoId: 'app' }, paths);
+
+    expect(forwarded.env).toEqual({});
+    expect(forwarded.sources).toEqual([
+      {
+        kind: 'repo-file',
+        scope: 'repo',
+        id: 'linked-env/.env.exe',
+        keys: [],
+        missing: true,
+      },
+    ]);
+  });
+
+  it('rejects deleted managed worktrees before resolving exe.dev targets', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const repoPath = join(paths.home, 'repo');
+    const worktreePath = join(paths.home, 'worktree');
+    await mkdir(repoPath, { recursive: true });
+    await mkdir(worktreePath, { recursive: true });
+    await writeRepo(paths, repoPath);
+    insertWorktree(paths, {
+      id: 'wt_deleted',
+      localPath: worktreePath,
+      lifecycleStatus: 'deleted',
+    });
+
+    await expect(
+      resolveExeDevCheckoutTarget({ worktreeId: 'wt_deleted' }, paths),
+    ).rejects.toThrow('Worktree "wt_deleted" is deleted.');
+  });
 });
 
 async function tempDir() {
   const path = await mkdtemp(join(tmpdir(), 'neondeck-exedev-context-'));
   tempRoots.push(path);
   return path;
+}
+
+async function writeRepo(
+  paths: ReturnType<typeof runtimePaths>,
+  repoPath: string,
+) {
+  await writeFile(
+    paths.repos,
+    JSON.stringify(
+      {
+        repos: [
+          {
+            id: 'app',
+            github: { owner: 'pandemicsyn', name: 'neondeck' },
+            path: repoPath,
+            defaultBranch: 'main',
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+async function writeExeDevEnvConfig(
+  paths: ReturnType<typeof runtimePaths>,
+  files: string[],
+) {
+  await writeFile(
+    paths.config,
+    JSON.stringify(
+      {
+        version: 1,
+        execution: {
+          exeDev: {
+            repos: {
+              app: {
+                env: {
+                  enabled: true,
+                  files,
+                },
+              },
+            },
+          },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+function insertWorktree(
+  paths: ReturnType<typeof runtimePaths>,
+  input: { id: string; localPath: string; lifecycleStatus: string },
+) {
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        INSERT INTO worktrees (
+          id, repo_id, repo_full_name, github_owner, github_name, pr_number,
+          base_ref, head_owner, head_name, head_ref, head_sha, local_path,
+          storage_kind, owning_workflow_run_id, lifecycle_status,
+          last_synced_sha, last_pushed_sha, cleanup_policy_json,
+          direct_push_allowed, adopted, created_by, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      `,
+      )
+      .run(
+        input.id,
+        'app',
+        'pandemicsyn/neondeck',
+        'pandemicsyn',
+        'neondeck',
+        7,
+        'main',
+        'pandemicsyn',
+        'neondeck',
+        'feature',
+        'abc123',
+        input.localPath,
+        'home',
+        null,
+        input.lifecycleStatus,
+        'abc123',
+        null,
+        JSON.stringify({
+          retainFailed: true,
+          retainPreparedDiff: true,
+          successfulGraceHours: 24,
+          staleAgeHours: 168,
+        }),
+        1,
+        0,
+        'neondeck',
+        now,
+        now,
+      );
+  } finally {
+    database.close();
+  }
 }

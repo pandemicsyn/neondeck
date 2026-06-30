@@ -30,6 +30,7 @@ const syncStepSchema = v.picklist([
   'clone',
   'fetch',
   'fetch-worktree-head',
+  'verify-ref',
   'checkout',
   'head',
 ]);
@@ -93,7 +94,7 @@ export async function syncExeDevCheckout(
     if (!target)
       return failure('A repoId or worktreeId is required.', ['repoId']);
     const runExecution = dependencies.runExecution ?? runApprovedExecution;
-    const ref = input.ref ?? target.defaultRef;
+    const ref = input.ref ?? checkoutRefForTarget(target);
     const steps: unknown[] = [];
     const runStep = async (
       step: v.InferOutput<typeof syncStepSchema>,
@@ -169,6 +170,21 @@ export async function syncExeDevCheckout(
       );
       if (!fetchHead.ok) {
         return blocked('fetch-worktree-head', fetchHead, target, steps);
+      }
+    }
+
+    if (target.worktree?.headSha && !input.ref) {
+      const verifyRef = await runStep(
+        'verify-ref',
+        `git -C ${shellArg(target.remotePath)} cat-file -e ${shellArg(
+          `${target.worktree.headSha}^{commit}`,
+        )}`,
+      );
+      if (!verifyRef.ok) {
+        if (executionFinished(verifyRef)) {
+          return unreachableWorktreeHead(verifyRef, target, steps);
+        }
+        return blocked('verify-ref', verifyRef, target, steps);
       }
     }
 
@@ -254,12 +270,46 @@ function shouldFetchWorktreeHead(
   );
 }
 
+function checkoutRefForTarget(
+  target: NonNullable<Awaited<ReturnType<typeof resolveExeDevCheckoutTarget>>>,
+) {
+  if (target.worktree) {
+    if (target.worktree.headSha) return target.worktree.headSha;
+    if (shouldFetchWorktreeHead(target)) return 'FETCH_HEAD';
+    return `origin/${target.worktree.headRef}`;
+  }
+  return `origin/${target.defaultRef}`;
+}
+
 function worktreeHeadRemoteUrl(
   target: NonNullable<Awaited<ReturnType<typeof resolveExeDevCheckoutTarget>>>,
 ) {
   const worktree = target.worktree;
   if (!worktree?.headOwner || !worktree.headName) return target.remoteUrl;
   return `https://github.com/${worktree.headOwner}/${worktree.headName}.git`;
+}
+
+function unreachableWorktreeHead(
+  result: Record<string, unknown>,
+  target: NonNullable<Awaited<ReturnType<typeof resolveExeDevCheckoutTarget>>>,
+  steps: unknown[],
+) {
+  return {
+    ok: false,
+    action: 'exedev_checkout_sync',
+    changed: true,
+    message: `Worktree "${target.worktree?.id}" head SHA "${target.worktree?.headSha}" is not reachable on the exe.dev checkout after fetching GitHub refs. Push or transfer the local worktree commit before syncing to exe.dev.`,
+    requires: ['reachable-ref'],
+    checkout: {
+      repoId: target.repo.id,
+      repoFullName: target.repoFullName,
+      worktreeId: target.worktree?.id ?? null,
+      remotePath: target.remotePath,
+    },
+    blockedStep: 'verify-ref',
+    execution: result,
+    steps,
+  };
 }
 
 function executionFinished(result: unknown) {
