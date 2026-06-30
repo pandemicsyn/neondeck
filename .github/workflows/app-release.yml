@@ -79,7 +79,7 @@ jobs:
           NEONDECK_RELEASE_VERSION: ${{ steps.release.outputs.version }}
 
       - name: Upload app package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: neondeck-${{ steps.release.outputs.version }}
           path: |
