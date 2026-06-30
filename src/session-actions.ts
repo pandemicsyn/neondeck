@@ -16,8 +16,13 @@ import { suggestUtilitySessionTitle } from './utility-model';
 export type ChatSessionKind =
   'main' | 'scratch' | 'general' | 'repo' | 'watch' | 'task' | 'briefing';
 
+export type ChatSessionSummarySource =
+  'manual' | 'metadata' | 'agent' | 'transcript-summary';
+
+export type ChatSessionSummaryStatus = 'missing' | 'fresh' | 'stale';
+
 export type NeonSessionStaleReason = {
-  type: 'config' | 'memory';
+  type: 'config' | 'memory' | 'model' | 'provider' | 'repo' | 'skill' | 'soul';
   message: string;
   changedAt: string;
   target: string | null;
@@ -36,6 +41,10 @@ export type ChatSessionRecord = {
   staleReasons: NeonSessionStaleReason[];
   uiMetadata: JsonValue | null;
   summary: string | null;
+  summaryGeneratedAt: string | null;
+  summarySource: ChatSessionSummarySource | null;
+  summaryRefreshNote: string | null;
+  summaryStatus: ChatSessionSummaryStatus;
   contextLoadedAt: string;
   createdAt: string;
   updatedAt: string;
@@ -79,7 +88,15 @@ const chatSessionKindSchema = v.picklist([
 ]);
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 const persistedStaleReasonSchema = v.object({
-  type: v.picklist(['config', 'memory']),
+  type: v.picklist([
+    'config',
+    'memory',
+    'model',
+    'provider',
+    'repo',
+    'skill',
+    'soul',
+  ]),
   message: nonEmptyStringSchema,
   changedAt: nonEmptyStringSchema,
   target: v.nullable(v.string()),
@@ -125,7 +142,14 @@ const sessionMessagesInputSchema = v.object({
   ),
   reason: v.optional(v.pipe(v.string(), v.maxLength(200))),
   surface: v.optional(surfaceSchema),
+  explicitUserRequest: v.optional(v.boolean()),
 });
+const summarySourceSchema = v.picklist([
+  'manual',
+  'metadata',
+  'agent',
+  'transcript-summary',
+]);
 const sessionCreateInputSchema = v.object({
   title: v.optional(titleSchema),
   kind: v.optional(chatSessionKindSchema),
@@ -136,6 +160,7 @@ const sessionCreateInputSchema = v.object({
   linkedTaskId: nullableLinkSchema,
   uiMetadata: v.optional(v.nullable(jsonValueSchema)),
   summary: v.optional(v.nullable(v.pipe(v.string(), v.maxLength(2_000)))),
+  summarySource: v.optional(summarySourceSchema),
   reason: v.optional(v.pipe(v.string(), v.maxLength(200))),
 });
 const sessionSwitchInputSchema = v.object({
@@ -166,7 +191,23 @@ const sessionLinkContextInputSchema = v.object({
   linkedTaskId: nullableLinkSchema,
   uiMetadata: v.optional(v.nullable(jsonValueSchema)),
   summary: v.optional(v.nullable(v.pipe(v.string(), v.maxLength(2_000)))),
+  summarySource: v.optional(summarySourceSchema),
   reason: v.optional(v.pipe(v.string(), v.maxLength(200))),
+});
+const sessionRefreshSummaryInputSchema = v.object({
+  id: nonEmptyStringSchema,
+  providedSummary: v.optional(v.pipe(v.string(), v.maxLength(2_000))),
+  source: v.optional(summarySourceSchema),
+  reason: v.optional(v.pipe(v.string(), v.maxLength(200))),
+  surface: v.optional(surfaceSchema),
+});
+const sessionReferenceInputSchema = v.object({
+  id: nonEmptyStringSchema,
+  fromSessionId: v.optional(nonEmptyStringSchema),
+  reason: v.optional(v.pipe(v.string(), v.maxLength(200))),
+  surface: v.optional(surfaceSchema),
+  includeRawTranscript: v.optional(v.boolean()),
+  explicitUserRequest: v.optional(v.boolean()),
 });
 const legacySessionStartInputSchema = v.object({
   label: v.optional(titleSchema),
@@ -224,11 +265,33 @@ export const sessionReadAction = defineAction({
 export const sessionMessagesAction = defineAction({
   name: 'neondeck_session_messages',
   description:
-    'Audit a request to read Flue-owned session messages. Neondeck does not duplicate transcripts in app state.',
+    'Audit an explicit user-requested Flue transcript read. Neondeck does not duplicate transcripts in app state.',
   input: sessionMessagesInputSchema,
   output: sessionActionOutputSchema,
   async run({ input }) {
     return readChatSessionMessages(input);
+  },
+});
+
+export const sessionRefreshSummaryAction = defineAction({
+  name: 'neondeck_session_refresh_summary',
+  description:
+    'Refresh a stored chat-session summary from bounded metadata, or store an explicitly provided summary.',
+  input: sessionRefreshSummaryInputSchema,
+  output: sessionActionOutputSchema,
+  async run({ input }) {
+    return refreshChatSessionSummary(input);
+  },
+});
+
+export const sessionReferenceAction = defineAction({
+  name: 'neondeck_session_reference',
+  description:
+    'Read a compact cross-session reference payload from summary and metadata, auditing the context use.',
+  input: sessionReferenceInputSchema,
+  output: sessionActionOutputSchema,
+  async run({ input }) {
+    return referenceChatSession(input);
   },
 });
 
@@ -342,6 +405,8 @@ export const neondeckSessionActions = [
   sessionSearchAction,
   sessionReadAction,
   sessionMessagesAction,
+  sessionRefreshSummaryAction,
+  sessionReferenceAction,
   sessionCreateAction,
   sessionSwitchAction,
   sessionRenameAction,
@@ -569,6 +634,34 @@ export async function readChatSessionMessages(
         `Session ${parsed.output.id} was not found.`,
       );
     }
+    if (!parsed.output.explicitUserRequest) {
+      recordSessionAudit(database, {
+        action: 'messages_denied',
+        sessionId: session.id,
+        surface: parsed.output.surface ?? null,
+        reason: parsed.output.reason ?? null,
+        metadata: {
+          cursor: parsed.output.cursor ?? null,
+          limit: parsed.output.limit ?? 50,
+          requires: 'explicitUserRequest',
+        },
+      });
+
+      return {
+        ok: false,
+        action: 'session_messages',
+        changed: false,
+        message:
+          'Raw transcript access requires an explicit user request. Use session summaries and metadata first.',
+        session,
+        messages: [],
+        nextCursor: null,
+        transcriptUnavailable: true,
+        transcriptOwner: `display-assistant/${session.id}`,
+        requires: ['explicitUserRequest'],
+        fetchedAt: new Date().toISOString(),
+      };
+    }
 
     recordSessionAudit(database, {
       action: 'messages_read',
@@ -578,6 +671,7 @@ export async function readChatSessionMessages(
       metadata: {
         cursor: parsed.output.cursor ?? null,
         limit: parsed.output.limit ?? 50,
+        explicitUserRequest: true,
       },
     });
 
@@ -597,6 +691,183 @@ export async function readChatSessionMessages(
   } finally {
     database.close();
   }
+}
+
+export async function refreshChatSessionSummary(
+  input: v.InferInput<typeof sessionRefreshSummaryInputSchema>,
+  paths: RuntimePaths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const parsed = v.safeParse(sessionRefreshSummaryInputSchema, input);
+  if (!parsed.success) {
+    return failedSessionResult(
+      'session_refresh_summary',
+      v.summarize(parsed.issues),
+    );
+  }
+
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  let session: ChatSessionRecord | undefined;
+
+  try {
+    database.exec('BEGIN;');
+    const before = findChatSession(database, parsed.output.id);
+    if (!before) {
+      database.exec('ROLLBACK;');
+      return failedSessionResult(
+        'session_refresh_summary',
+        `Session ${parsed.output.id} was not found.`,
+      );
+    }
+
+    const providedSummary = parsed.output.providedSummary?.trim();
+    const summary = providedSummary || buildMetadataSummary(before);
+    const source =
+      parsed.output.source ?? (providedSummary ? 'agent' : 'metadata');
+    const note = providedSummary
+      ? 'Stored explicitly provided compact summary.'
+      : 'Generated from session metadata, links, and stale-context badges because raw transcript paging is not available.';
+
+    database
+      .prepare(
+        `
+        UPDATE chat_sessions
+        SET
+          summary = ?,
+          summary_generated_at = ?,
+          summary_source = ?,
+          summary_refresh_note = ?,
+          updated_at = ?
+        WHERE id = ?;
+      `,
+      )
+      .run(summary, now, source, note, now, before.id);
+    recordSessionAudit(database, {
+      action: 'summary_refresh',
+      sessionId: before.id,
+      surface: parsed.output.surface ?? null,
+      reason: parsed.output.reason ?? null,
+      metadata: { source },
+    });
+    database.exec('COMMIT;');
+    session = findChatSession(database, before.id);
+  } catch (error) {
+    database.exec('ROLLBACK;');
+    throw error;
+  } finally {
+    database.close();
+  }
+
+  if (session)
+    publishSessionEvent('updated', session, parsed.output.surface ?? null);
+
+  return {
+    ok: true,
+    action: 'session_refresh_summary',
+    changed: true,
+    message:
+      'Refreshed chat session summary metadata. Raw Flue transcript history was not copied.',
+    session,
+  };
+}
+
+export async function referenceChatSession(
+  input: v.InferInput<typeof sessionReferenceInputSchema>,
+  paths: RuntimePaths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const parsed = v.safeParse(sessionReferenceInputSchema, input);
+  if (!parsed.success) {
+    return failedSessionResult('session_reference', v.summarize(parsed.issues));
+  }
+  if (
+    parsed.output.includeRawTranscript &&
+    !parsed.output.explicitUserRequest
+  ) {
+    return failedSessionResult(
+      'session_reference',
+      'Raw transcript access for a referenced session requires an explicit user request.',
+      ['explicitUserRequest'],
+    );
+  }
+
+  let target = await readChatSessionInternal(parsed.output.id, paths);
+  if (!target) {
+    return failedSessionResult(
+      'session_reference',
+      `Session ${parsed.output.id} was not found.`,
+    );
+  }
+
+  let refreshedSummary = false;
+  if (target.summaryStatus !== 'fresh') {
+    const refreshed = await refreshChatSessionSummary(
+      {
+        id: target.id,
+        reason: parsed.output.reason ?? 'cross-session-reference',
+        surface: parsed.output.surface,
+      },
+      paths,
+    );
+    refreshedSummary = Boolean(refreshed.ok);
+    target =
+      (refreshed as { session?: ChatSessionRecord }).session ??
+      (await readChatSessionInternal(parsed.output.id, paths)) ??
+      target;
+  }
+
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    const fromSession = parsed.output.fromSessionId
+      ? findChatSession(database, parsed.output.fromSessionId)
+      : undefined;
+    recordSessionAudit(database, {
+      action: 'reference',
+      sessionId: target.id,
+      surface: parsed.output.surface ?? null,
+      reason: parsed.output.reason ?? null,
+      metadata: {
+        fromSessionId: fromSession?.id ?? parsed.output.fromSessionId ?? null,
+        includeRawTranscript: parsed.output.includeRawTranscript ?? false,
+        explicitUserRequest: parsed.output.explicitUserRequest ?? false,
+        summaryStatus: target.summaryStatus,
+      },
+    });
+  } finally {
+    database.close();
+  }
+
+  return {
+    ok: true,
+    action: 'session_reference',
+    changed: refreshedSummary,
+    message:
+      'Prepared cross-session reference from summary and metadata. Raw transcript pages were not read.',
+    reference: {
+      id: target.id,
+      title: target.title,
+      kind: target.kind,
+      linkedRepoId: target.linkedRepoId,
+      linkedWatchId: target.linkedWatchId,
+      linkedTaskId: target.linkedTaskId,
+      summary: target.summary,
+      summaryGeneratedAt: target.summaryGeneratedAt,
+      summarySource: target.summarySource,
+      summaryStatus: target.summaryStatus,
+      staleReasons: target.staleReasons,
+      uiMetadata: target.uiMetadata,
+      transcript: {
+        requested: parsed.output.includeRawTranscript ?? false,
+        available: false,
+        owner: `display-assistant/${target.id}`,
+        reason:
+          'Neondeck has no stable Flue transcript paging adapter in this worktree.',
+      },
+    },
+    session: target,
+    fetchedAt: new Date().toISOString(),
+  };
 }
 
 export async function createChatSession(
@@ -623,6 +894,14 @@ export async function createChatSession(
     parsed.output.uiMetadata as JsonValue | null | undefined,
     parsed.output.reason,
   );
+  const summary = parsed.output.summary?.trim() || null;
+  const summaryGeneratedAt = summary ? now : null;
+  const summarySource = summary
+    ? (parsed.output.summarySource ?? 'manual')
+    : null;
+  const summaryRefreshNote = summary
+    ? 'Stored summary provided when the session metadata was created.'
+    : null;
   const database = new DatabaseSync(paths.neondeckDatabase);
 
   try {
@@ -641,12 +920,15 @@ export async function createChatSession(
           linked_task_id,
           ui_metadata_json,
           summary,
+          summary_generated_at,
+          summary_source,
+          summary_refresh_note,
           context_loaded_at,
           created_at,
           updated_at,
           last_active_at
         )
-        VALUES (?, ?, 'display-assistant', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        VALUES (?, ?, 'display-assistant', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `,
       )
       .run(
@@ -657,7 +939,10 @@ export async function createChatSession(
         parsed.output.linkedWatchId ?? null,
         parsed.output.linkedTaskId ?? null,
         uiMetadata === null ? null : JSON.stringify(uiMetadata),
-        parsed.output.summary ?? null,
+        summary,
+        summaryGeneratedAt,
+        summarySource,
+        summaryRefreshNote,
         now,
         now,
         now,
@@ -977,6 +1262,24 @@ export async function linkChatSessionContext(
     'link_context',
     (database, item, now) => {
       const existing = findChatSession(database, item.id);
+      const nextSummary =
+        item.summary === undefined ? (existing?.summary ?? null) : item.summary;
+      const summaryChanged = item.summary !== undefined;
+      const summaryGeneratedAt = summaryChanged
+        ? item.summary === null
+          ? null
+          : now
+        : (existing?.summaryGeneratedAt ?? null);
+      const summarySource = summaryChanged
+        ? item.summary === null
+          ? null
+          : (item.summarySource ?? 'manual')
+        : (existing?.summarySource ?? null);
+      const summaryRefreshNote = summaryChanged
+        ? item.summary === null
+          ? null
+          : 'Stored summary provided while linking session context.'
+        : (existing?.summaryRefreshNote ?? null);
       database
         .prepare(
           `
@@ -988,6 +1291,9 @@ export async function linkChatSessionContext(
             linked_task_id = ?,
             ui_metadata_json = ?,
             summary = ?,
+            summary_generated_at = ?,
+            summary_source = ?,
+            summary_refresh_note = ?,
             updated_at = ?
           WHERE id = ?;
         `,
@@ -1011,9 +1317,10 @@ export async function linkChatSessionContext(
             : item.uiMetadata === null
               ? null
               : JSON.stringify(asJsonValue(item.uiMetadata)),
-          item.summary === undefined
-            ? (existing?.summary ?? null)
-            : item.summary,
+          nextSummary,
+          summaryGeneratedAt,
+          summarySource,
+          summaryRefreshNote,
           now,
           item.id,
         );
@@ -1178,6 +1485,11 @@ function readChatSessionRow(
       ? record.context_loaded_at
       : String(record.created_at);
   const dynamicReasons = readStaleReasons(database, contextLoadedAt);
+  const summaryGeneratedAt =
+    typeof record.summary_generated_at === 'string'
+      ? record.summary_generated_at
+      : null;
+  const summary = typeof record.summary === 'string' ? record.summary : null;
 
   return {
     id: String(record.id),
@@ -1199,7 +1511,14 @@ function readChatSessionRow(
       (a, b) => Date.parse(b.changedAt) - Date.parse(a.changedAt),
     ),
     uiMetadata: parsePersistedJsonValue(record.ui_metadata_json),
-    summary: typeof record.summary === 'string' ? record.summary : null,
+    summary,
+    summaryGeneratedAt,
+    summarySource: chatSessionSummarySource(record.summary_source),
+    summaryRefreshNote:
+      typeof record.summary_refresh_note === 'string'
+        ? record.summary_refresh_note
+        : null,
+    summaryStatus: summaryStatus(summary, summaryGeneratedAt, lastActiveAt),
     contextLoadedAt,
     createdAt: String(record.created_at),
     updatedAt: String(record.updated_at),
@@ -1248,11 +1567,13 @@ function readStaleReasons(
     typeof config?.changed_at === 'string' &&
     Date.parse(config.changed_at) > Date.parse(activatedAt)
   ) {
+    const target = typeof config.target === 'string' ? config.target : null;
+    const type = staleReasonType(String(config.action ?? ''), target);
     reasons.push({
-      type: 'config',
-      message: `${String(config.action ?? 'config')} changed after this session was last active.`,
+      type,
+      message: `${staleReasonLabel(type, target)} changed after this session was last active.`,
       changedAt: config.changed_at,
-      target: typeof config.target === 'string' ? config.target : null,
+      target,
     });
   }
 
@@ -1392,6 +1713,97 @@ function chatSessionKind(value: unknown): ChatSessionKind {
   return 'general';
 }
 
+function chatSessionSummarySource(
+  value: unknown,
+): ChatSessionSummarySource | null {
+  if (
+    value === 'manual' ||
+    value === 'metadata' ||
+    value === 'agent' ||
+    value === 'transcript-summary'
+  ) {
+    return value;
+  }
+  return null;
+}
+
+function summaryStatus(
+  summary: string | null,
+  generatedAt: string | null,
+  lastActiveAt: string,
+): ChatSessionSummaryStatus {
+  if (!summary) return 'missing';
+  if (!generatedAt) return 'stale';
+  return Date.parse(lastActiveAt) > Date.parse(generatedAt) ? 'stale' : 'fresh';
+}
+
+function buildMetadataSummary(session: ChatSessionRecord) {
+  const links = [
+    session.linkedRepoId ? `repo ${session.linkedRepoId}` : null,
+    session.linkedWatchId ? `watch ${session.linkedWatchId}` : null,
+    session.linkedTaskId ? `task ${session.linkedTaskId}` : null,
+  ].filter(Boolean);
+  const metadata = readableMetadata(session.uiMetadata);
+  const stale = session.staleReasons
+    .slice(0, 3)
+    .map((reason) => `${reason.type}:${reason.target ?? 'runtime'}`)
+    .join(', ');
+  const parts = [
+    `${session.title} is a ${session.kind} display-assistant session.`,
+    links.length > 0 ? `Linked context: ${links.join(', ')}.` : null,
+    metadata ? `Metadata: ${metadata}.` : null,
+    stale ? `Stale context badges: ${stale}.` : null,
+    `Created ${session.createdAt}; last active ${session.lastActiveAt}.`,
+    'Transcript-derived summary is deferred until a stable Flue transcript paging adapter is available.',
+  ].filter(Boolean);
+
+  return parts.join(' ').slice(0, 2_000);
+}
+
+function readableMetadata(value: JsonValue | null) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const entries = Object.entries(value)
+    .filter(([, entry]) =>
+      ['string', 'number', 'boolean'].includes(typeof entry),
+    )
+    .slice(0, 6)
+    .map(([key, entry]) => `${key}=${String(entry)}`);
+  return entries.length > 0 ? entries.join(', ') : null;
+}
+
+function staleReasonType(
+  action: string,
+  target: string | null,
+): NeonSessionStaleReason['type'] {
+  if (target === 'models' || action.includes('agent_models')) return 'model';
+  if (target?.startsWith('providers.') || action.includes('provider')) {
+    return 'provider';
+  }
+  if (target === 'skillRoots' || action.includes('skill')) return 'skill';
+  if (
+    action === 'config_add_repo' ||
+    action === 'config_update_repo' ||
+    action === 'config_remove_repo'
+  ) {
+    return 'repo';
+  }
+  if (target === 'soul' || action.includes('soul')) return 'soul';
+  return 'config';
+}
+
+function staleReasonLabel(
+  type: NeonSessionStaleReason['type'],
+  target: string | null,
+) {
+  if (type === 'model') return 'Model configuration';
+  if (type === 'provider') return 'Provider configuration';
+  if (type === 'repo') return 'Repository configuration';
+  if (type === 'skill') return 'Runtime skill configuration';
+  if (type === 'soul') return 'SOUL context';
+  if (type === 'memory') return 'Memory';
+  return target ?? 'Runtime config';
+}
+
 function publishSessionEvent(
   action: ChatSessionEventAction,
   session: ChatSessionRecord,
@@ -1406,13 +1818,18 @@ function publishSessionEvent(
   });
 }
 
-function failedSessionResult(action: string, message: string) {
+function failedSessionResult(
+  action: string,
+  message: string,
+  requires?: string[],
+) {
   return {
     ok: false,
     action,
     changed: false,
     message,
     errors: [message],
+    ...(requires ? { requires } : {}),
   };
 }
 

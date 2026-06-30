@@ -55,6 +55,7 @@ import {
   type WorktreesResponse,
 } from '../api';
 import { EmptyState } from '../App';
+import { SessionReferenceButton } from '../components/SessionReferenceButton';
 import { Badge, ScrollArea } from '../components/ui';
 import { useConfigEvents } from '../lib/config-events';
 import { queryErrorMessage, queryKeys } from '../lib/query';
@@ -1749,7 +1750,26 @@ function KiloTaskRow({ task }: { task: KiloTaskRecord }) {
             ? `worktree ${task.worktreeId}`
             : shortPath(task.cwd)}
         </span>
-        <span className="shrink-0">{relativeTime(task.updatedAt)}</span>
+        <span className="flex shrink-0 items-center gap-1.5">
+          <SessionReferenceButton
+            kind="task"
+            label="session"
+            linkedRepoId={task.repoId}
+            linkedTaskId={task.id}
+            summary={`${task.title}: Kilo task ${task.status}. ${task.summary ?? changed}.`}
+            title={`Kilo ${task.title}`}
+            uiMetadata={{
+              source: 'kilo-task',
+              taskId: task.id,
+              repoFullName: task.repoFullName,
+              worktreeId: task.worktreeId,
+              rootSessionId: task.rootSessionId,
+              childSessionIds: task.childSessionIds,
+              status: task.status,
+            }}
+          />
+          {relativeTime(task.updatedAt)}
+        </span>
       </div>
       <div className="mt-1.5 grid grid-cols-2 gap-1.5 font-mono text-[10px] text-muted">
         <div className="border border-line bg-field px-2 py-1">
@@ -1977,6 +1997,24 @@ function RepoRow({
         <span className="ml-auto shrink-0">
           {health?.changeCount ?? 0} changes · {scripts} scripts
         </span>
+      </div>
+      <div className="mt-1.5 flex justify-end font-mono text-[10px]">
+        <SessionReferenceButton
+          kind="repo"
+          label="session"
+          linkedRepoId={repo.id}
+          summary={`${repo.id}: ${repo.github.owner}/${repo.github.name} on ${health?.branch ?? 'unknown branch'} with ${health?.changeCount ?? 0} local changes and ${scripts} package scripts. Default branch ${repo.defaultBranch}.`}
+          title={`Repo ${repo.id}`}
+          uiMetadata={{
+            source: 'repo-row',
+            repoId: repo.id,
+            repoFullName: `${repo.github.owner}/${repo.github.name}`,
+            path: repo.path,
+            branch: health?.branch ?? null,
+            dirty: health?.dirty ?? null,
+            productionTarget: repo.productionTarget ?? null,
+          }}
+        />
       </div>
     </article>
   );

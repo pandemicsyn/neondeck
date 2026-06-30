@@ -128,7 +128,9 @@ import {
   readChatSession,
   readChatSessionMessages,
   readNeonSessionState,
+  referenceChatSession,
   renameChatSession,
+  refreshChatSessionSummary,
   restoreChatSession,
   searchChatSessions,
   startNeonSession,
@@ -528,10 +530,33 @@ app.get('/api/sessions/:id/messages', async (c) => {
       limit: Number.isFinite(rawLimit) ? rawLimit : undefined,
       surface: c.req.query('surface') || undefined,
       reason: c.req.query('reason') || undefined,
+      explicitUserRequest: c.req.query('explicitUserRequest') === '1',
     },
     paths,
   );
-  return c.json(result, result.ok ? 200 : 404);
+  return c.json(result, result.ok ? 200 : 'requires' in result ? 400 : 404);
+});
+
+app.post('/api/sessions/:id/summary/refresh', async (c) => {
+  const result = await refreshChatSessionSummary(
+    {
+      ...(await safeJsonObject(c)),
+      id: c.req.param('id'),
+    } as Parameters<typeof refreshChatSessionSummary>[0],
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/sessions/:id/reference', async (c) => {
+  const result = await referenceChatSession(
+    {
+      ...(await safeJsonObject(c)),
+      id: c.req.param('id'),
+    } as Parameters<typeof referenceChatSession>[0],
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
 });
 
 app.post('/api/sessions/:id/switch', async (c) => {

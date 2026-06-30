@@ -190,6 +190,13 @@ Use this format:
 - Reason: The roadmap explicitly keeps Flue as the owner of `display-assistant/:id` conversation history and there was no stable local Flue transcript-read API available in this worktree beyond the existing React agent hook. Returning an audited metadata-only response preserves that ownership boundary and avoids copying transcripts into Neondeck app state.
 - Follow-up: Add real transcript paging only through a supported Flue read API, generate/refresh session summaries from bounded Flue-owned transcript reads, add first-class "reference this session" UI affordances from repo/watch/workflow rows, and reuse these APIs from the future TUI surface.
 
+## 2026-06-30 - Session Summaries And Cross-Session References
+
+- Roadmap item: Phase 16 / session summaries and cross-session reference UX
+- Decision: Added summary freshness/source metadata, `neondeck_session_refresh_summary`, `neondeck_session_reference`, local API routes, audited explicit-transcript guards, and web dashboard reference/open-session affordances for chat sessions, repo rows, PR rows, watch rows, briefing/workflow summaries, Kilo task rows, and autopilot queue/prepared/activity rows. Summary refresh currently generates compact metadata summaries or stores explicitly provided summaries; it does not read raw Flue transcript pages.
+- Reason: The current Flue integration still does not expose a stable transcript paging adapter in this worktree, and the delegated slice explicitly excluded TUI-specific work. Metadata summaries and links satisfy the cross-session default path while preserving Flue transcript ownership.
+- Follow-up: Replace metadata-only generated summaries with transcript-derived summaries once a supported bounded Flue transcript reader is available; add future TUI/OpenTUI controls over the same APIs; add direct session hooks for unsupported provider/deploy adapter rows when those data models exist.
+
 ## 2026-06-30 - Worktree Runtime Foundation
 
 - Roadmap item: Phase 18 / Worktree Runtime Foundation

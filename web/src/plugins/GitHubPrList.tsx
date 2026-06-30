@@ -1,6 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getGitHubPullRequests, type GitHubPullRequest } from '../api';
+import {
+  getGitHubPullRequests,
+  getRepoRegistry,
+  type GitHubPullRequest,
+} from '../api';
 import { EmptyState } from '../App';
+import { SessionReferenceButton } from '../components/SessionReferenceButton';
 import { Badge, ScrollArea } from '../components/ui';
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
 import { queryErrorMessage, queryKeys } from '../lib/query';
@@ -24,6 +29,11 @@ export const GitHubPrListPlugin = {
       queryFn: getGitHubPullRequests,
       refetchInterval: 5 * 60_000,
     });
+    const { data: registry } = useQuery({
+      queryKey: queryKeys.repoRegistry,
+      queryFn: getRepoRegistry,
+      refetchInterval: 5 * 60_000,
+    });
 
     useConfigEvents((event) => {
       if (
@@ -31,11 +41,20 @@ export const GitHubPrListPlugin = {
         configEventTouchesFile(event, 'repos.json')
       ) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.githubPrs });
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.repoRegistry,
+        });
       }
     });
 
     const login = data?.login ? `@${data.login}` : '@you';
     const items = data ? data.items.slice(0, config.limit) : [];
+    const repoIds = new Map(
+      (registry?.repos ?? []).map((repo) => [
+        `${repo.github.owner}/${repo.github.name}`,
+        repo.id,
+      ]),
+    );
     const countLabel = data
       ? `${items.length} PR${items.length === 1 ? '' : 's'} · ${data.repos?.length ?? 0} REPOS`
       : 'OPEN PRs';
@@ -70,12 +89,7 @@ export const GitHubPrListPlugin = {
                   key={item.url}
                   className="pr-row px-3.5 py-2 last:border-b-0"
                 >
-                  <a
-                    className="group block"
-                    href={item.url}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
+                  <div className="group">
                     <div className="mb-1 flex items-center justify-between gap-3 font-mono text-[10.5px] text-muted">
                       <span className="truncate">{item.repo}</span>
                       <span className="shrink-0">
@@ -106,7 +120,34 @@ export const GitHubPrListPlugin = {
                         ))}
                       </div>
                     ) : null}
-                  </a>
+                    <div className="mt-1.5 flex justify-end gap-1.5 font-mono text-[10px]">
+                      <SessionReferenceButton
+                        kind="repo"
+                        label="session"
+                        linkedRepoId={repoIds.get(item.repo) ?? null}
+                        linkedTaskId={`github-pr:${item.repo}#${item.number}`}
+                        summary={`${item.repo}#${item.number}: ${item.title}. ${checkLabel(item)}; relation ${relationLabel(item)}.`}
+                        title={`PR ${item.repo}#${item.number}`}
+                        uiMetadata={{
+                          source: 'github-pr',
+                          repo: item.repo,
+                          prNumber: item.number,
+                          url: item.url,
+                          state: item.state,
+                          checks: item.checks?.status ?? null,
+                          relations: item.relations,
+                        }}
+                      />
+                      <a
+                        className="shrink-0 border border-line px-1.5 py-0.5 text-muted hover:border-primary hover:text-primary"
+                        href={item.url}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        open
+                      </a>
+                    </div>
+                  </div>
                 </li>
               ))}
             </ul>

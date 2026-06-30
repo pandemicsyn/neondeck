@@ -110,7 +110,15 @@ export const runtimeStatusSchema = v.looseObject({
     stale: v.boolean(),
     staleReasons: v.array(
       v.object({
-        type: v.picklist(['config', 'memory']),
+        type: v.picklist([
+          'config',
+          'memory',
+          'model',
+          'provider',
+          'repo',
+          'skill',
+          'soul',
+        ]),
         message: v.string(),
         changedAt: v.string(),
         target: v.nullable(v.string()),

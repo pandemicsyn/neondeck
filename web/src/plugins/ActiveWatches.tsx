@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getPrWatches, type PrWatch } from '../api';
+import { SessionReferenceButton } from '../components/SessionReferenceButton';
 import { Badge, Button, ScrollArea } from '../components/ui';
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
 import { queryErrorMessage, queryKeys } from '../lib/query';
@@ -86,15 +87,33 @@ function WatchRow({ watch }: { watch: PrWatch }) {
       </div>
       <div className="mt-2 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
         <span>until {watch.desiredTerminalState}</span>
-        {watch.url ? (
-          <Button
-            className="h-5 border-line bg-transparent px-1.5 py-0 text-[10px] text-muted"
-            onClick={() => window.open(watch.url ?? undefined, '_blank')}
-            type="button"
-          >
-            open
-          </Button>
-        ) : null}
+        <span className="flex shrink-0 gap-1.5">
+          <SessionReferenceButton
+            kind="watch"
+            label="session"
+            linkedRepoId={watch.repoId}
+            linkedWatchId={watch.id}
+            summary={`${watch.repoFullName}#${watch.prNumber} watch is ${watch.status} until ${watch.desiredTerminalState}. ${watch.title ?? 'Untitled PR'}.`}
+            title={`Watch ${watch.repoFullName}#${watch.prNumber}`}
+            uiMetadata={{
+              source: 'pr-watch',
+              repoFullName: watch.repoFullName,
+              prNumber: watch.prNumber,
+              status: watch.status,
+              desiredTerminalState: watch.desiredTerminalState,
+              url: watch.url,
+            }}
+          />
+          {watch.url ? (
+            <Button
+              className="h-5 border-line bg-transparent px-1.5 py-0 text-[10px] text-muted"
+              onClick={() => window.open(watch.url ?? undefined, '_blank')}
+              type="button"
+            >
+              open
+            </Button>
+          ) : null}
+        </span>
       </div>
     </article>
   );

@@ -407,6 +407,24 @@ const entries: SafetyPolicyEntry[] = [
     'Audits a request for Flue-owned messages. Neondeck app state does not store transcript copies.',
   ),
   action(
+    'neondeck_session_refresh_summary',
+    'Refresh session summary',
+    {
+      ...safeMutation,
+      auditTarget: 'chat_sessions/chat_session_audit',
+    },
+    'Refreshes stored session summary metadata without copying raw Flue transcript history.',
+  ),
+  action(
+    'neondeck_session_reference',
+    'Reference chat session',
+    {
+      ...safeMutation,
+      auditTarget: 'chat_sessions/chat_session_audit',
+    },
+    'Audits cross-session context use and may refresh missing or stale summary metadata before returning a compact reference.',
+  ),
+  action(
     'neondeck_memory_list',
     'List structured memory',
     readOnly,
@@ -1464,6 +1482,24 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'chat_session_audit',
     },
     'Audits a request for Flue-owned messages without copying transcripts into app state.',
+  ),
+  route(
+    '/api/sessions/:id/summary/refresh',
+    'Chat session summary refresh API',
+    {
+      ...safeMutation,
+      auditTarget: 'chat_sessions/chat_session_audit',
+    },
+    'Refreshes a compact session summary from metadata or an explicitly provided summary.',
+  ),
+  route(
+    '/api/sessions/:id/reference',
+    'Chat session reference API',
+    {
+      ...safeMutation,
+      auditTarget: 'chat_sessions/chat_session_audit',
+    },
+    'Reads compact cross-session summary and metadata while auditing context use, refreshing stale metadata when needed.',
   ),
   route(
     '/api/sessions/:id/switch',

@@ -1196,7 +1196,7 @@ Must-haves:
 
 ### Phase 16: Chat Session Index And Switcher
 
-- Status: partially complete for the web/chat-session management surface. App-owned session metadata, switching, search/read metadata, audit records, and dashboard controls have landed. Transcript paging, session summaries, stale-context polish, and richer cross-session UI affordances remain open.
+- Status: complete for the web/backend Phase 16 slice, excluding future TUI work. App-owned session metadata, switching, search/read/reference metadata, summary refresh metadata, audit records, stale-context badges, and dashboard controls have landed. Raw transcript paging remains metadata-only until a supported Flue transcript paging API is available.
 
 - [x] Add `chat_sessions` table in `neondeck.db` for session id, title, kind, pinned/archived state, linked repo/watch/task ids, stale-context reasons, created/updated/last-active timestamps, and UI metadata.
 - [x] Keep Flue conversation history in Flue persistence under `display-assistant/:id`; do not duplicate transcripts into app state.
@@ -1214,12 +1214,12 @@ Must-haves:
   - `neondeck_session_link_context`
 - [x] Add app APIs/events for recent sessions, active session per surface, and session metadata changes so web and future TUI clients share the same behavior.
 - [x] Add session search/read APIs that return normalized, Valibot-validated results for agents, dashboard, and future TUI. Current transcript reads are metadata-only until a supported Flue transcript paging API is available.
-- [ ] Add session summary generation or refresh so cross-session references can usually use summaries instead of raw transcript pages.
+- [x] Add session summary generation or refresh so cross-session references can usually use summaries instead of raw transcript pages.
 - [x] Add audit records for session reads, transcript page reads, and cross-session context use.
 - [x] Add dashboard chat-panel switcher with pinned sessions, recent sessions, archived sessions, create-new-session, rename, pin, and archive controls.
-- [ ] Add dashboard/TUI affordances for "reference this session" and "open referenced session" without forcing side-by-side chat.
-- [ ] Add context-aware session creation from repo rows, PR/watch rows, workflow summaries, briefing summaries, and delegated Kilo/autopilot tasks.
-- [ ] Add stale-context badges for sessions affected by SOUL, skill, memory, model, provider, or repo config changes.
+- [x] Add dashboard affordances for "reference this session" and "open referenced session" without forcing side-by-side chat.
+- [x] Add context-aware session creation from repo rows, PR/watch rows, workflow summaries, briefing summaries, and delegated Kilo/autopilot tasks where existing data models support it.
+- [x] Add stale-context badges for sessions affected by SOUL, skill, memory, model, provider, or repo config changes where enough version/change metadata exists.
 - [x] Update runtime skill guidance so Neon can create, switch, search, read, and cite sessions intentionally instead of treating every topic as one global conversation.
 - [x] Add tests for session CRUD, active-session selection, archived filtering, session search/read policy, audit records, stale-context marking, and linked repo/watch/task sessions.
 

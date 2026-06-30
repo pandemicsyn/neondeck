@@ -28,6 +28,13 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           summaries, and repo context. Existing sessions are not silently
           rewritten when those inputs change.
         </p>
+        <p>
+          Neondeck indexes session metadata, linked repo/watch/task context,
+          compact summaries, stale-context badges, and audit records in app
+          state. Cross-session references should use those summaries and
+          metadata first; raw transcript page access remains explicit, audited,
+          and owned by Flue.
+        </p>
 
         <h2>Actions</h2>
         <p>

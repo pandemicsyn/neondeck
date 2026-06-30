@@ -719,6 +719,9 @@ function initializeAppDatabase(path: string) {
         stale_reasons_json TEXT,
         ui_metadata_json TEXT,
         summary TEXT,
+        summary_generated_at TEXT,
+        summary_source TEXT,
+        summary_refresh_note TEXT,
         context_loaded_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -1003,6 +1006,9 @@ function initializeAppDatabase(path: string) {
       'INTEGER NOT NULL DEFAULT 1',
     );
     ensureColumn(database, 'chat_sessions', 'context_loaded_at', 'TEXT');
+    ensureColumn(database, 'chat_sessions', 'summary_generated_at', 'TEXT');
+    ensureColumn(database, 'chat_sessions', 'summary_source', 'TEXT');
+    ensureColumn(database, 'chat_sessions', 'summary_refresh_note', 'TEXT');
     database
       .prepare(
         `
