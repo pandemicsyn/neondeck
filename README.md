@@ -153,6 +153,28 @@ Preapproved commands must be single commands without shell operators such as `&&
 
 Trusted-local execution runs on your machine and is best for local git/dev commands you already trust. `exe.dev` is the isolated sandbox option; enable it explicitly by adding `"exe.dev"` to `enabledBackends` after `EXE_VM_HOST` points at an existing VM and SSH auth is configured.
 
+KiloCode handoff is available only as an explicit delegated-worker path. Neon should normally do work itself or use Neondeck subagents unless the user asks for Kilo or a future repo policy opts in. Optional runtime-home `config.json` settings:
+
+```json
+{
+  "version": 1,
+  "kilo": {
+    "enabled": true,
+    "cliPath": "kilo",
+    "defaultMode": "patch-proposal",
+    "autoPolicy": "managed-worktree-draft-fix",
+    "explicitHandoffOnly": true,
+    "concurrency": 1,
+    "rawLogRetentionDays": 14,
+    "repos": {
+      "neondeck": "allow"
+    }
+  }
+}
+```
+
+Kilo tasks are stored in `data/neondeck.db` as `kilo_tasks` and `kilo_task_events`. The runner starts `kilo run <prompt> --dir <workspace> --title <title> --format json` in a configured repo or Neondeck-managed worktree, captures JSONL stdout/stderr and session ids, and exposes task/session read/search actions plus `/api/kilo/*` routes. `--auto` requires explicit confirmation and is limited by policy; prefer managed worktrees for code-changing handoffs.
+
 ## Run
 
 ```sh

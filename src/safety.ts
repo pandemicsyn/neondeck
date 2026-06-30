@@ -227,6 +227,12 @@ const entries: SafetyPolicyEntry[] = [
     readOnly,
     'Reads Neondeck worktree records, active and stale locks, and cleanup failures.',
   ),
+  tool(
+    'neondeck_kilo_tasks_lookup',
+    'Read Kilo handoff tasks',
+    readOnly,
+    'Reads persisted Kilo handoff task metadata without starting or cancelling work.',
+  ),
   action(
     'neondeck_autopilot_triage_pr_event',
     'Triage PR event',
@@ -621,6 +627,84 @@ const entries: SafetyPolicyEntry[] = [
     'Releases a lock and records the final bounded-work status.',
   ),
   action(
+    'neondeck_kilo_task_start',
+    'Start Kilo handoff',
+    {
+      ...hostExecution,
+      auditTarget: 'kilo_tasks/kilo_task_events',
+    },
+    'Starts Kilo only after an explicit user handoff request and only inside a declared repo or Neondeck-managed worktree.',
+  ),
+  action(
+    'neondeck_kilo_task_status',
+    'Read Kilo task status',
+    readOnly,
+    'Reads one persisted Kilo task status record.',
+  ),
+  action(
+    'neondeck_kilo_task_events',
+    'Read Kilo task events',
+    readOnly,
+    'Reads captured Kilo stdout/stderr and JSON event summaries.',
+  ),
+  action(
+    'neondeck_kilo_task_abort',
+    'Abort Kilo handoff',
+    {
+      ...destructiveMutation,
+      auditTarget: 'kilo_tasks/kilo_task_events',
+    },
+    'Terminates a running delegated Kilo process and marks the task cancelled.',
+  ),
+  action(
+    'neondeck_kilo_task_sessions',
+    'Read Kilo task sessions',
+    readOnly,
+    'Reads root and child Kilo session ids linked to one task.',
+  ),
+  action(
+    'neondeck_kilo_task_diff',
+    'Read Kilo task diff',
+    readOnly,
+    'Reads a git diff summary for the workspace used by a Kilo task.',
+  ),
+  action(
+    'neondeck_kilo_sessions_search',
+    'Search Kilo sessions',
+    readOnly,
+    'Searches linked task metadata and Kilo CLI session metadata.',
+  ),
+  action(
+    'neondeck_kilo_session_read',
+    'Read Kilo session',
+    readOnly,
+    'Reads normalized Kilo session metadata without reading storage directly.',
+  ),
+  action(
+    'neondeck_kilo_session_messages',
+    'Read Kilo session messages',
+    readOnly,
+    'Audits transcript-read intent; the CLI MVP reports transcript adapter availability.',
+  ),
+  action(
+    'neondeck_kilo_session_children',
+    'Read Kilo child sessions',
+    readOnly,
+    'Reads child session ids captured from Kilo task events.',
+  ),
+  action(
+    'neondeck_kilo_session_todos',
+    'Read Kilo todos',
+    readOnly,
+    'Reports Kilo todo adapter availability through the typed Kilo surface.',
+  ),
+  action(
+    'neondeck_kilo_session_diff',
+    'Read Kilo session diff',
+    readOnly,
+    'Reads the linked task workspace diff summary for a Kilo session.',
+  ),
+  action(
     'neondeck_skills_reload',
     'Reload runtime skills',
     {
@@ -821,6 +905,24 @@ const entries: SafetyPolicyEntry[] = [
     },
     'Runs due scheduled work through the Flue workflow surface.',
   ),
+  workflow(
+    'handoff_to_kilo',
+    'Run Kilo handoff workflow',
+    {
+      ...hostExecution,
+      auditTarget: 'kilo_tasks/kilo_task_events/workflow_events',
+    },
+    'Admits an explicit Kilo handoff as a bounded Flue run, then lets the app supervisor own the background process.',
+  ),
+  workflow(
+    'summarize_kilo_session',
+    'Summarize Kilo session workflow',
+    {
+      ...safeMutation,
+      auditTarget: 'kilo_tasks/workflow_events',
+    },
+    'Summarizes linked Kilo task/session metadata and persists the bounded summary on the task record.',
+  ),
   route(
     '/api/runtime/status',
     'Runtime status API',
@@ -1005,6 +1107,15 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'config_history',
     },
     'Updates allowlisted provider environment variable references.',
+  ),
+  route(
+    '/api/kilo/*',
+    'Kilo handoff API',
+    {
+      ...hostExecution,
+      auditTarget: 'kilo_tasks/kilo_task_events',
+    },
+    'Starts, reads, searches, and cancels explicit Kilo handoff tasks through app-owned SQLite state.',
   ),
   route(
     '/api/memories',
