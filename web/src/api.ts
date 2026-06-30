@@ -389,6 +389,148 @@ export type WorktreesResponse = {
   fetchedAt: string;
 };
 
+export type AutopilotMode =
+  | 'notify-only'
+  | 'prepare-only'
+  | 'autofix-with-approval'
+  | 'autofix-push-when-safe';
+
+export type AutopilotPolicyLimits = {
+  maxFilesChanged: number;
+  maxLinesChanged: number;
+  deniedFileGlobs: string[];
+  approvalRequiredFileGlobs: string[];
+  requiredChecks: string[];
+  allowedPushDestinations: string[];
+  allowForcePush: boolean;
+  highRiskClasses: string[];
+};
+
+export type AutopilotQueueItem = {
+  id: string;
+  source: 'watch' | 'worktree' | 'workflow' | 'approval';
+  status:
+    | 'watching'
+    | 'queued'
+    | 'running'
+    | 'prepared'
+    | 'waiting-approval'
+    | 'blocked';
+  priority: 'low' | 'normal' | 'high' | 'urgent';
+  repoId: string;
+  repoFullName: string;
+  prNumber: number | null;
+  title: string;
+  mode: AutopilotMode;
+  reason: string;
+  nextStep: string;
+  worktreeId: string | null;
+  runId: string | null;
+  updatedAt: string;
+};
+
+export type AutopilotRepoPolicy = {
+  repoId: string;
+  repoFullName: string;
+  mode: AutopilotMode;
+  source: 'global-default' | 'repo-metadata';
+  reason: string;
+  limits: AutopilotPolicyLimits;
+};
+
+export type AutopilotWatchPolicy = {
+  watchId: string;
+  repoId: string;
+  repoFullName: string;
+  prNumber: number;
+  mode: AutopilotMode;
+  source: 'repo-policy' | 'watch-override';
+  reason: string;
+};
+
+export type AutopilotPreparedDiff = {
+  id: string;
+  repoId: string;
+  repoFullName: string;
+  prNumber: number | null;
+  worktreeId: string;
+  localPath: string;
+  title: string;
+  status: string;
+  sourceOfTruth: 'worktree';
+  summary: string;
+  updatedAt: string;
+};
+
+export type AutopilotApproval = {
+  id: string;
+  repoId: string | null;
+  repoFullName: string | null;
+  prNumber: number | null;
+  command: string;
+  risk: string;
+  status: string;
+  reason: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AutopilotRunningCheck = {
+  id: string;
+  runId: string;
+  workflow: string;
+  repoId: string | null;
+  repoFullName: string | null;
+  prNumber: number | null;
+  status: 'running';
+  startedAt: string;
+  lastEventAt: string;
+  lastMessage: string;
+  runUrl: string;
+};
+
+export type AutopilotActivity = {
+  id: string;
+  type: 'workflow' | 'worktree' | 'notification';
+  level: NotificationLevel | 'info' | 'attention';
+  title: string;
+  message: string;
+  repoId: string | null;
+  repoFullName: string | null;
+  prNumber: number | null;
+  createdAt: string;
+};
+
+export type AutopilotState = {
+  ok: boolean;
+  action: 'autopilot_state_read';
+  changed: boolean;
+  modeLabels: Record<AutopilotMode, string>;
+  summary: {
+    activeWatches: number;
+    queuedItems: number;
+    preparedDiffs: number;
+    pendingApprovals: number;
+    runningChecks: number;
+    recentActivity: number;
+    placeholderAdapters: string[];
+  };
+  queue: AutopilotQueueItem[];
+  policies: {
+    global: {
+      mode: AutopilotMode;
+      limits: AutopilotPolicyLimits;
+    };
+    repos: AutopilotRepoPolicy[];
+    watches: AutopilotWatchPolicy[];
+  };
+  preparedDiffs: AutopilotPreparedDiff[];
+  pendingApprovals: AutopilotApproval[];
+  runningChecks: AutopilotRunningCheck[];
+  recentActivity: AutopilotActivity[];
+  fetchedAt: string;
+};
+
 export type ConfigActionResult = {
   ok: boolean;
   action: string;
@@ -827,6 +969,10 @@ export async function getRuntimeHealth() {
 
 export async function getRuntimeStatus() {
   return getJson<RuntimeStatus>('/api/runtime/status');
+}
+
+export async function getAutopilotState() {
+  return getJson<AutopilotState>('/api/autopilot/state');
 }
 
 export function openConfigEventStream(

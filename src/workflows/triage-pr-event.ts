@@ -1,6 +1,6 @@
 import { defineWorkflow, type WorkflowRunsHandler } from '@flue/runtime';
 import displayAssistant from '../agents/display-assistant';
-import { triagePrEventAction } from '../autopilot';
+import { triagePrEventAction } from '../autopilot-workflows';
 
 export const runs: WorkflowRunsHandler = async (_c, next) => next();
 

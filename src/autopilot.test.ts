@@ -1,16 +1,16 @@
-import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runtimePaths } from './runtime-home';
-import { preparePrWorktree, triagePrEvent } from './autopilot';
+import { DatabaseSync } from 'node:sqlite';
+import { afterEach, describe, expect, it } from 'vitest';
+import { readAutopilotState } from './autopilot';
+import {
+  ensureRuntimeHome,
+  runtimePaths,
+  type RuntimePaths,
+} from './runtime-home';
 
-const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
-
-vi.setConfig({ testTimeout: 15_000 });
 
 afterEach(async () => {
   await Promise.all(
@@ -20,211 +20,186 @@ afterEach(async () => {
   );
 });
 
-describe('PR event autopilot', () => {
-  it('classifies actionable review feedback according to autopilot mode', async () => {
-    const result = await triagePrEvent({
-      repoId: 'sample',
-      prNumber: 7,
-      source: 'fixture',
-      autopilotMode: 'auto-fix-no-push',
-      current: {
-        state: 'open',
-        draft: false,
-        headSha: 'abc123',
-        baseRef: 'main',
-      },
-      deltas: [
+describe('autopilot operator state', () => {
+  it('normalizes global, repo, and watch policy modes for dashboard display', async () => {
+    const paths = await fixture();
+    await writeFile(
+      paths.config,
+      `${JSON.stringify(
         {
-          type: 'requested-changes',
-          id: 'review-1',
-          actionable: true,
-          severity: 'high',
-          summary: 'Reviewer requested a small code change.',
+          version: 1,
+          autopilot: {
+            defaultMode: 'draft-fix',
+            limits: { maxFilesChanged: 3 },
+          },
         },
-      ],
-    });
-
-    expect(result).toMatchObject({
-      ok: true,
-      changed: true,
-      action: 'autopilot_triage_pr_event',
-      data: {
-        classification: 'auto-fix-no-push',
-        shouldPrepareWorktree: true,
-        nextWorkflow: 'prepare_pr_worktree',
-      },
-    });
-  });
-
-  it('keeps merge conflicts in explain-only triage', async () => {
-    const result = await triagePrEvent({
-      repoId: 'sample',
-      prNumber: 8,
-      source: 'fixture',
-      autopilotMode: 'draft-fix',
-      current: { state: 'open', mergeable: false },
-      deltas: [{ type: 'merge-conflict', actionable: true }],
-    });
-
-    expect(result).toMatchObject({
-      ok: true,
-      changed: true,
-      data: {
-        classification: 'explain-only',
-        shouldPrepareWorktree: false,
-      },
-    });
-  });
-
-  it('prepares a managed PR worktree from deterministic PR facts', async () => {
-    const { paths, featureSha } = await fixture();
-    const result = await preparePrWorktree(
-      {
-        repoId: 'sample',
-        prNumber: 7,
-        eventId: 'watch-event-1',
-        lockOwner: 'test-prepare',
-      },
-      paths,
-      {
-        token: 'test-token',
-        async fetchPullRequestDetail() {
-          return {
-            number: 7,
-            title: 'Update feature',
-            repo: 'example/sample',
-            url: 'https://github.com/example/sample/pull/7',
-            state: 'open',
-            draft: false,
-            merged: false,
-            mergeCommitSha: null,
-            headSha: featureSha,
-            headRef: 'feature',
-            headOwner: 'example',
-            headName: 'sample',
-            baseRef: 'main',
-            updatedAt: '2026-06-30T00:00:00.000Z',
-            maintainerCanModify: true,
-          };
-        },
-        async fetchCheckSummary() {
-          return {
-            status: 'success',
-            total: 1,
-            successful: 1,
-            failed: 0,
-            pending: 0,
-            checkedAt: '2026-06-30T00:00:00.000Z',
-          };
-        },
-      },
+        null,
+        2,
+      )}\n`,
     );
-
-    expect(result).toMatchObject({
-      ok: true,
-      changed: true,
-      action: 'autopilot_prepare_pr_worktree',
-      data: {
-        repo: { id: 'sample', fullName: 'example/sample' },
-        pr: { number: 7, headSha: featureSha },
-        checks: { status: 'success' },
-        worktree: {
-          repoId: 'sample',
-          prNumber: 7,
-          lifecycleStatus: 'ready',
-          directPushAllowed: true,
+    await writeFile(
+      paths.repos,
+      `${JSON.stringify(
+        {
+          repos: [
+            {
+              id: 'neondeck',
+              github: { owner: 'pandemicsyn', name: 'neondeck' },
+              path: '/tmp/neondeck',
+              defaultBranch: 'main',
+              metadata: {
+                autopilot: {
+                  mode: 'auto-fix-no-push',
+                  reason: 'Repo is safe for prepared local fixes.',
+                  limits: { requiredChecks: ['npm run check'] },
+                  watchOverrides: [
+                    {
+                      prNumber: 42,
+                      mode: 'notify-only',
+                      reason: 'High-risk PR stays notification-only.',
+                    },
+                  ],
+                },
+              },
+            },
+          ],
         },
-        lock: {
-          scope: 'pr',
-          owner: 'test-prepare',
-        },
-        status: {
-          ok: true,
-          git: { dirty: false },
-        },
-        eventId: 'watch-event-1',
-        runLinkage: { owningWorkflowRunIdAttached: false },
-      },
+        null,
+        2,
+      )}\n`,
+    );
+    insertWatch(paths, {
+      id: 'pandemicsyn/neondeck#42',
+      prNumber: 42,
+      status: 'watching',
+      title: 'Autopilot policy surface',
     });
+
+    const state = await readAutopilotState(paths);
+
+    expect(state.policies.global).toMatchObject({
+      mode: 'prepare-only',
+      limits: { maxFilesChanged: 3 },
+    });
+    expect(state.policies.repos).toEqual([
+      expect.objectContaining({
+        repoId: 'neondeck',
+        mode: 'autofix-with-approval',
+        source: 'repo-metadata',
+        limits: expect.objectContaining({
+          requiredChecks: ['npm run check'],
+        }),
+      }),
+    ]);
+    expect(state.policies.watches).toEqual([
+      expect.objectContaining({
+        watchId: 'pandemicsyn/neondeck#42',
+        mode: 'notify-only',
+        source: 'watch-override',
+      }),
+    ]);
+    expect(state.queue).toEqual([
+      expect.objectContaining({
+        source: 'watch',
+        mode: 'notify-only',
+        status: 'watching',
+      }),
+    ]);
+    expect(state.summary.placeholderAdapters.length).toBeGreaterThan(0);
   });
 
-  it('does not accept caller-supplied PR facts as authoritative input', async () => {
-    const { paths, featureSha } = await fixture();
-    const previousToken = process.env.GITHUB_TOKEN;
-    delete process.env.GITHUB_TOKEN;
-    try {
-      const result = await preparePrWorktree(
-        {
-          repoId: 'sample',
-          prNumber: 7,
-          pr: {
-            number: 7,
-            title: 'Fabricated',
-            repo: 'example/sample',
-            url: 'https://github.com/example/sample/pull/7',
-            state: 'open',
-            headSha: featureSha,
-            headRef: 'feature',
-            baseRef: 'main',
-            updatedAt: '2026-06-30T00:00:00.000Z',
-            maintainerCanModify: true,
-          },
-          checks: {
-            status: 'success',
-            total: 1,
-            successful: 1,
-            failed: 0,
-            pending: 0,
-            checkedAt: '2026-06-30T00:00:00.000Z',
-          },
-        },
-        paths,
-      );
+  it('adapts watches, prepared worktrees, approvals, checks, and events into one read model', async () => {
+    const paths = await fixture();
+    await writeRepoRegistry(paths);
+    insertWatch(paths, {
+      id: 'pandemicsyn/neondeck#43',
+      prNumber: 43,
+      status: 'attention-needed',
+      title: 'Failing check',
+    });
+    insertWorktree(paths, {
+      id: 'wt-43',
+      prNumber: 43,
+      lifecycleStatus: 'prepared-diff',
+      localPath: join(paths.worktrees, 'pandemicsyn-neondeck-pr-43'),
+      workflowRunId: 'run-verify',
+    });
+    insertExecutionApproval(paths, {
+      id: 'approval-1',
+      command: 'git push origin HEAD:feature',
+      cwd: join(paths.worktrees, 'pandemicsyn-neondeck-pr-43'),
+    });
+    insertWorkflowRun(paths, {
+      runId: 'run-verify',
+      workflow: 'verify_pr_worktree',
+      message: 'Running npm run check.',
+    });
+    insertWorktreeEvent(paths, {
+      id: 'event-1',
+      worktreeId: 'wt-43',
+      message: 'Prepared diff retained for review.',
+    });
 
-      expect(result).toMatchObject({
-        ok: false,
-        action: 'autopilot_prepare_pr_worktree',
-        message: 'Invalid autopilot input.',
-      });
-    } finally {
-      if (previousToken === undefined) {
-        delete process.env.GITHUB_TOKEN;
-      } else {
-        process.env.GITHUB_TOKEN = previousToken;
-      }
-    }
+    const state = await readAutopilotState(paths);
+
+    expect(state.summary).toMatchObject({
+      activeWatches: 1,
+      preparedDiffs: 1,
+      pendingApprovals: 1,
+      runningChecks: 1,
+    });
+    expect(state.preparedDiffs[0]).toMatchObject({
+      worktreeId: 'wt-43',
+      sourceOfTruth: 'worktree',
+    });
+    expect(state.pendingApprovals[0]).toMatchObject({
+      id: 'approval-1',
+      repoFullName: 'pandemicsyn/neondeck',
+      prNumber: 43,
+    });
+    expect(state.runningChecks[0]).toMatchObject({
+      runId: 'run-verify',
+      workflow: 'verify_pr_worktree',
+    });
+    expect(state.recentActivity).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'worktree',
+          message: 'Prepared diff retained for review.',
+        }),
+      ]),
+    );
+    expect(state.queue).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'approval',
+          status: 'waiting-approval',
+        }),
+        expect.objectContaining({ source: 'workflow', status: 'running' }),
+        expect.objectContaining({ source: 'watch', status: 'prepared' }),
+      ]),
+    );
   });
 });
 
 async function fixture() {
-  const home = await mkdtemp(join(tmpdir(), 'neondeck-autopilot-home-'));
-  const repo = await mkdtemp(join(tmpdir(), 'neondeck-autopilot-repo-'));
-  tempRoots.push(home, repo);
+  const home = await mkdtemp(join(tmpdir(), 'neondeck-autopilot-'));
+  tempRoots.push(home);
   const paths = runtimePaths(home);
+  await ensureRuntimeHome(paths);
+  return paths;
+}
 
-  await git(repo, ['init', '-b', 'main']);
-  await git(repo, ['config', 'user.name', 'Test']);
-  await git(repo, ['config', 'user.email', 'test@example.com']);
-  await mkdir(join(repo, 'src'), { recursive: true });
-  await writeFile(join(repo, 'src/app.ts'), 'export const value = 1;\n');
-  await git(repo, ['add', '-A']);
-  await git(repo, ['commit', '-m', 'main']);
-  await git(repo, ['checkout', '-b', 'feature']);
-  await writeFile(join(repo, 'src/app.ts'), 'export const value = 2;\n');
-  await git(repo, ['commit', '-am', 'feature']);
-  const featureSha = await gitOutput(repo, ['rev-parse', 'HEAD']);
-  await git(repo, ['checkout', 'main']);
-
-  await mkdir(paths.home, { recursive: true });
+async function writeRepoRegistry(paths: RuntimePaths) {
   await writeFile(
     paths.repos,
     `${JSON.stringify(
       {
         repos: [
           {
-            id: 'sample',
-            github: { owner: 'example', name: 'sample' },
-            path: repo,
+            id: 'neondeck',
+            github: { owner: 'pandemicsyn', name: 'neondeck' },
+            path: '/tmp/neondeck',
             defaultBranch: 'main',
           },
         ],
@@ -233,15 +208,290 @@ async function fixture() {
       2,
     )}\n`,
   );
-
-  return { paths, featureSha: featureSha.trim() };
 }
 
-async function git(cwd: string, args: string[]) {
-  await execFileAsync('git', args, { cwd });
+function insertWatch(
+  paths: RuntimePaths,
+  input: {
+    id: string;
+    prNumber: number;
+    status: string;
+    title: string;
+  },
+) {
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        INSERT INTO pr_watches (
+          id,
+          repo_id,
+          repo_full_name,
+          github_owner,
+          github_name,
+          pr_number,
+          desired_terminal_state,
+          status,
+          pr_state,
+          title,
+          url,
+          merge_commit_sha,
+          last_snapshot_json,
+          last_outcome,
+          last_checked_at,
+          created_at,
+          updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      `,
+      )
+      .run(
+        input.id,
+        'neondeck',
+        'pandemicsyn/neondeck',
+        'pandemicsyn',
+        'neondeck',
+        input.prNumber,
+        'checks',
+        input.status,
+        'open',
+        input.title,
+        `https://github.com/pandemicsyn/neondeck/pull/${input.prNumber}`,
+        null,
+        null,
+        'created',
+        now,
+        now,
+        now,
+      );
+  } finally {
+    database.close();
+  }
 }
 
-async function gitOutput(cwd: string, args: string[]) {
-  const { stdout } = await execFileAsync('git', args, { cwd });
-  return stdout;
+function insertWorktree(
+  paths: RuntimePaths,
+  input: {
+    id: string;
+    prNumber: number;
+    lifecycleStatus: string;
+    localPath: string;
+    workflowRunId: string;
+  },
+) {
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        INSERT INTO worktrees (
+          id,
+          repo_id,
+          repo_full_name,
+          github_owner,
+          github_name,
+          pr_number,
+          base_ref,
+          head_owner,
+          head_name,
+          head_ref,
+          head_sha,
+          local_path,
+          storage_kind,
+          owning_workflow_run_id,
+          lifecycle_status,
+          last_synced_sha,
+          last_pushed_sha,
+          cleanup_policy_json,
+          direct_push_allowed,
+          adopted,
+          created_by,
+          created_at,
+          updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      `,
+      )
+      .run(
+        input.id,
+        'neondeck',
+        'pandemicsyn/neondeck',
+        'pandemicsyn',
+        'neondeck',
+        input.prNumber,
+        'main',
+        'pandemicsyn',
+        'neondeck',
+        'feature',
+        'abc123',
+        input.localPath,
+        'home',
+        input.workflowRunId,
+        input.lifecycleStatus,
+        'abc123',
+        null,
+        JSON.stringify({
+          retainFailed: true,
+          retainPreparedDiff: true,
+          successfulGraceHours: 24,
+          staleAgeHours: 168,
+        }),
+        1,
+        0,
+        'neondeck',
+        now,
+        now,
+      );
+  } finally {
+    database.close();
+  }
+}
+
+function insertExecutionApproval(
+  paths: RuntimePaths,
+  input: { id: string; command: string; cwd: string },
+) {
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        INSERT INTO execution_approvals (
+          id,
+          command,
+          backend,
+          cwd,
+          context,
+          risk,
+          policy_decision,
+          status,
+          approval_decision,
+          approver_surface,
+          session_id,
+          request_context_json,
+          result_json,
+          exit_code,
+          stdout_preview,
+          stderr_preview,
+          error,
+          created_at,
+          resolved_at,
+          executed_at,
+          updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      `,
+      )
+      .run(
+        input.id,
+        input.command,
+        'local',
+        input.cwd,
+        'interactive',
+        'safe-mutation',
+        'ask',
+        'pending',
+        null,
+        null,
+        null,
+        JSON.stringify({ source: 'autopilot' }),
+        null,
+        null,
+        null,
+        null,
+        null,
+        now,
+        null,
+        null,
+        now,
+      );
+  } finally {
+    database.close();
+  }
+}
+
+function insertWorkflowRun(
+  paths: RuntimePaths,
+  input: { runId: string; workflow: string; message: string },
+) {
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        INSERT INTO workflow_run_observations (
+          run_id,
+          workflow,
+          status,
+          started_at,
+          ended_at,
+          last_event_at,
+          last_message,
+          event_count,
+          duration_ms,
+          is_error,
+          updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      `,
+      )
+      .run(
+        input.runId,
+        input.workflow,
+        'active',
+        now,
+        null,
+        now,
+        input.message,
+        1,
+        null,
+        0,
+        now,
+      );
+  } finally {
+    database.close();
+  }
+}
+
+function insertWorktreeEvent(
+  paths: RuntimePaths,
+  input: { id: string; worktreeId: string; message: string },
+) {
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        INSERT INTO worktree_events (
+          id,
+          worktree_id,
+          repo_id,
+          event_type,
+          status,
+          message,
+          data_json,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+      `,
+      )
+      .run(
+        input.id,
+        input.worktreeId,
+        'neondeck',
+        'prepared_diff',
+        'prepared-diff',
+        input.message,
+        null,
+        now,
+      );
+  } finally {
+    database.close();
+  }
 }

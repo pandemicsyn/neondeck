@@ -50,6 +50,30 @@ describe('app API safety routes', () => {
     );
   });
 
+  it('serves autopilot operator state over the local API', async () => {
+    const response = await app.request('http://localhost/api/autopilot/state', {
+      headers: { host: 'localhost' },
+    });
+    const body = (await response.json()) as {
+      ok: boolean;
+      action: string;
+      queue: unknown[];
+      policies: {
+        global: { mode: string };
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      ok: true,
+      action: 'autopilot_state_read',
+      policies: {
+        global: { mode: 'notify-only' },
+      },
+    });
+    expect(Array.isArray(body.queue)).toBe(true);
+  });
+
   it('serves config events as a local server-sent event stream', async () => {
     const response = await app.request('http://localhost/api/events/config', {
       headers: { host: 'localhost' },
