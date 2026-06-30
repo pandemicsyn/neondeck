@@ -280,3 +280,10 @@ Use this format:
 - Decision: Added bounded `review_kilo_result` and `verify_kilo_result` workflows/actions, Kilo result state/event tables, Kilo result APIs, Runtime Overview state wiring, and a `promote_kilo_result` admission layer. Actual commit, push, and PR comment mutations are explicitly deferred.
 - Reason: Safe promotion needs the broader push-back workflow, durable PR comment audit, and commit/push implementation. This slice establishes deterministic gates over autopilot policy, prepared-diff approval state, GitHub permission facts, and verification without silently adding unsafe GitHub mutations.
 - Follow-up: Implement the real push/comment path in the Phase 19/20 push-back workflow, then let `promote_kilo_result` call or admit that workflow when all gates pass.
+
+## 2026-06-30 - PR Autofix Result Comments And Audit Summaries
+
+- Roadmap item: Phase 19 / `comment_pr_autofix_result`; Phase 20 / human-readable autonomous audit summaries
+- Decision: Added a bounded `comment_pr_autofix_result` workflow/action/API that renders PR comments from prepared-diff/autopilot result facts and posts through the existing server-side PR comment action. Prepared-diff summaries now include a human-readable audit summary, and posted/failed result-comment attempts persist a `workflow_summaries` audit record. This slice did not add a dedicated PR-comment audit table or implement `push_pr_autofix`.
+- Reason: `workflow_summaries` is the existing durable timeline surface and avoids duplicating the prepared-diff/autopilot business state. Push-back is still explicitly out of scope for this slice, so the result comment consumes prepared/pushed/blocked facts without performing GitHub branch mutations.
+- Follow-up: Add the real `push_pr_autofix` workflow and a first-class PR-comment/autopilot event table when queue admission and push-back persistence land.

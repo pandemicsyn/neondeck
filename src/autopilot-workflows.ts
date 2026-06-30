@@ -17,8 +17,14 @@ import {
   repoAutopilotPolicy,
   withAutopilotLocalExecutionSlot,
 } from './autopilot-policy';
+import { addWorkflowSummary, updateWorkflowSummary } from './app-state';
+import { buildPreparedDiffAuditSummary } from './autonomous-audit';
 import { runApprovedExecution } from './execution-actions';
-import { ensurePreparedDiffForWorktree } from './prepared-diffs';
+import {
+  ensurePreparedDiffForWorktree,
+  readPreparedDiffRecord,
+} from './prepared-diffs';
+import { postGitHubPrComment } from './pr-event-state';
 import { readRepoRegistrySnapshot, repoFullName } from './repos';
 import {
   gitCommitAll,
@@ -65,6 +71,7 @@ type AutopilotActionResult = {
   changed: boolean;
   message: string;
   data?: JsonValue;
+  workflowSummary?: JsonValue;
   error?: JsonValue;
   requires?: string[];
   errors?: string[];
@@ -76,6 +83,9 @@ type AutopilotDependencies = {
   fetchFailingCheckFacts?: typeof fetchFailingCheckFacts;
   fetchPullRequestEventState?: typeof fetchPullRequestEventState;
   runExecution?: typeof runApprovedExecution;
+  postPullRequestComment?: NonNullable<
+    Parameters<typeof postGitHubPrComment>[2]
+  >['postPullRequestComment'];
   token?: string;
 };
 
@@ -329,6 +339,9 @@ const fixPrReviewFeedbackInputSchema = v.strictObject({
     v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(2_000)),
   ),
 });
+const commentPrAutofixResultInputSchema = v.strictObject({
+  preparedDiffId: nonEmptyStringSchema,
+});
 const autopilotOutputSchema = v.looseObject({
   ok: v.boolean(),
   action: v.string(),
@@ -416,6 +429,17 @@ export const fixPrReviewFeedbackAction = defineAction({
   },
 });
 
+export const commentPrAutofixResultAction = defineAction({
+  name: 'neondeck_autopilot_comment_pr_autofix_result',
+  description:
+    'Post a concise GitHub PR comment from deterministic prepared-diff/autopilot result facts and persist a human-readable audit summary.',
+  input: commentPrAutofixResultInputSchema,
+  output: autopilotOutputSchema,
+  async run({ input }) {
+    return commentPrAutofixResult(input);
+  },
+});
+
 export const neondeckAutopilotActions = [
   triagePrEventAction,
   preparePrWorktreeAction,
@@ -423,6 +447,7 @@ export const neondeckAutopilotActions = [
   verifyPrWorktreeAction,
   fixPrCiFailureAction,
   fixPrReviewFeedbackAction,
+  commentPrAutofixResultAction,
 ];
 
 export async function triagePrEvent(
@@ -1786,6 +1811,197 @@ export async function fixPrReviewFeedback(
   }
 }
 
+export async function commentPrAutofixResult(
+  rawInput: unknown,
+  paths: RuntimePaths = runtimePaths(),
+  dependencies: AutopilotDependencies = {},
+): Promise<AutopilotActionResult> {
+  const parsed = parseInput(
+    commentPrAutofixResultInputSchema,
+    rawInput,
+    'autopilot_comment_pr_autofix_result',
+  );
+  if (!parsed.ok) return parsed.result;
+  const input = parsed.input;
+
+  try {
+    await ensureRuntimeHome(paths);
+    const preparedDiff = readPreparedDiffRecord(input.preparedDiffId, paths);
+    if (!preparedDiff) {
+      return failResult(
+        'autopilot_comment_pr_autofix_result',
+        `Prepared diff ${input.preparedDiffId} was not found.`,
+        { requires: ['preparedDiffId'] },
+      );
+    }
+    if (preparedDiff.prNumber === null) {
+      return failResult(
+        'autopilot_comment_pr_autofix_result',
+        'Prepared diff is not attached to a pull request.',
+        { requires: ['prNumber'] },
+      );
+    }
+    const [owner, repoName] = preparedDiff.repoFullName.split('/');
+    if (!owner || !repoName) {
+      return failResult(
+        'autopilot_comment_pr_autofix_result',
+        `Prepared diff ${preparedDiff.id} has an invalid repo name.`,
+        { requires: ['repoFullName'] },
+      );
+    }
+    const token = dependencies.token ?? process.env.GITHUB_TOKEN;
+    if (!token) {
+      return failResult(
+        'autopilot_comment_pr_autofix_result',
+        'GITHUB_TOKEN is not configured.',
+        { requires: ['GITHUB_TOKEN'] },
+      );
+    }
+    const fetchEventState =
+      dependencies.fetchPullRequestEventState ?? fetchPullRequestEventState;
+    const currentState = await fetchEventState({
+      token,
+      owner,
+      repo: repoName,
+      number: preparedDiff.prNumber,
+    });
+    if (
+      preparedDiff.headSha &&
+      currentState.headSha &&
+      preparedDiff.headSha !== currentState.headSha
+    ) {
+      return {
+        ok: false,
+        action: 'autopilot_comment_pr_autofix_result',
+        changed: false,
+        message:
+          'Prepared diff is stale because the pull request head has changed.',
+        data: asJsonValue({
+          preparedDiffId: preparedDiff.id,
+          repoFullName: preparedDiff.repoFullName,
+          prNumber: preparedDiff.prNumber,
+          preparedHeadSha: preparedDiff.headSha,
+          currentHeadSha: currentState.headSha,
+        }),
+        requires: ['currentPrHead'],
+        errors: [
+          `Prepared diff head ${preparedDiff.headSha} does not match current PR head ${currentState.headSha}.`,
+        ],
+      };
+    }
+
+    const auditSummary = buildPreparedDiffAuditSummary({
+      preparedDiff,
+      resultUrl: `/api/prepared-diffs/${encodeURIComponent(preparedDiff.id)}/summary`,
+    });
+    const facts = auditSummary.facts as Record<string, unknown>;
+    const resultStatus = stringField(facts, 'status');
+    if (
+      resultStatus !== 'prepared' &&
+      resultStatus !== 'pushed' &&
+      resultStatus !== 'blocked' &&
+      resultStatus !== 'verification-requested'
+    ) {
+      return failResult(
+        'autopilot_comment_pr_autofix_result',
+        `Prepared diff ${preparedDiff.id} is ${preparedDiff.status}, not a prepared, verified, pushed, or blocked autofix result.`,
+        { requires: ['preparedResult'] },
+      );
+    }
+    const checkRunIds = numberArrayField(facts, 'checkRunIds');
+    const addressedReviewThreadIds = arrayField(
+      facts,
+      'addressedReviewThreadIds',
+    );
+    const addressedReviewCommentIds = arrayField(
+      facts,
+      'addressedReviewCommentIds',
+    );
+    const commitSha = stringField(facts, 'commitSha') ?? undefined;
+    let workflowSummary = await addWorkflowSummary(
+      {
+        workflow: 'comment_pr_autofix_result',
+        status: 'pending',
+        summary: {
+          humanSummary: auditSummary.markdown,
+          audit: auditSummary.facts,
+          comment: null,
+        },
+      },
+      paths,
+    );
+
+    const comment = await postGitHubPrComment(
+      {
+        repo: preparedDiff.repoFullName,
+        prNumber: preparedDiff.prNumber,
+        body: auditSummary.markdown,
+        addressedReviewThreadIds,
+        addressedReviewCommentIds,
+        checkRunIds,
+        commitSha,
+      },
+      paths,
+      {
+        fetchPullRequestEventState: dependencies.fetchPullRequestEventState,
+        postPullRequestComment: dependencies.postPullRequestComment,
+      },
+    );
+
+    const auditErrors: string[] = [];
+    try {
+      workflowSummary =
+        (await updateWorkflowSummary(
+          workflowSummary.id,
+          {
+            status: comment.ok ? 'completed' : 'failed',
+            summary: {
+              humanSummary: auditSummary.markdown,
+              audit: auditSummary.facts,
+              comment,
+            },
+          },
+          paths,
+        )) ?? workflowSummary;
+    } catch (error) {
+      auditErrors.push(
+        `Could not update PR autofix comment audit: ${errorMessage(error)}`,
+      );
+    }
+
+    const errors = unique([
+      ...(comment.ok ? [] : (comment.errors ?? [])),
+      ...auditErrors,
+    ]);
+
+    return {
+      ok: comment.ok,
+      action: 'autopilot_comment_pr_autofix_result',
+      changed: comment.changed,
+      message: comment.ok
+        ? auditErrors.length > 0
+          ? `Posted autopilot result comment for ${preparedDiff.repoFullName}#${preparedDiff.prNumber}, but the audit update failed.`
+          : `Posted autopilot result comment for ${preparedDiff.repoFullName}#${preparedDiff.prNumber}.`
+        : comment.message,
+      workflowSummary: asJsonValue(workflowSummary),
+      data: asJsonValue({
+        preparedDiff,
+        auditSummary,
+        comment,
+        workflowSummary,
+      }),
+      ...(errors.length > 0 ? { errors } : {}),
+      ...(comment.requires ? { requires: comment.requires } : {}),
+    };
+  } catch (error) {
+    return failResult(
+      'autopilot_comment_pr_autofix_result',
+      'Could not comment on PR autofix result.',
+      { errors: [errorMessage(error)] },
+    );
+  }
+}
+
 async function fetchPreparedPrFacts(
   owner: string,
   repo: string,
@@ -2627,6 +2843,14 @@ function arrayField(value: unknown, key: string) {
   const field = (value as Record<string, unknown>)[key];
   return Array.isArray(field)
     ? field.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+function numberArrayField(value: unknown, key: string) {
+  if (!value || typeof value !== 'object') return [];
+  const field = (value as Record<string, unknown>)[key];
+  return Array.isArray(field)
+    ? field.filter((item): item is number => typeof item === 'number')
     : [];
 }
 

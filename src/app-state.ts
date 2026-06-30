@@ -593,6 +593,47 @@ export async function setWorkflowSummaryRunId(
   }
 }
 
+export async function updateWorkflowSummary(
+  id: string,
+  input: {
+    status?: string;
+    summary?: unknown;
+  },
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(paths.neondeckDatabase);
+
+  try {
+    database
+      .prepare(
+        `
+        UPDATE workflow_summaries
+        SET
+          status = COALESCE(?, status),
+          summary_json = COALESCE(?, summary_json),
+          updated_at = ?
+        WHERE id = ?;
+      `,
+      )
+      .run(
+        input.status ?? null,
+        input.summary === undefined
+          ? null
+          : JSON.stringify(asJsonValue(input.summary)),
+        now,
+        id,
+      );
+    const row = database
+      .prepare('SELECT * FROM workflow_summaries WHERE id = ?;')
+      .get(id);
+    return row ? readWorkflowSummaryRow(row) : undefined;
+  } finally {
+    database.close();
+  }
+}
+
 export async function listWorkflowSummaries(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
   const database = new DatabaseSync(paths.neondeckDatabase);
