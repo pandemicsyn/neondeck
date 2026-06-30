@@ -37,6 +37,14 @@ import { loadNeondeckEnv } from './env';
 import { listGitHubPrQueue } from './github-actions';
 import { deleteMemory, listMemories, upsertMemory } from './memory-actions';
 import { readHostMetrics } from './metrics';
+import {
+  getGitHubPrBranchPermissions,
+  getGitHubPrEventState,
+  getGitHubPrRequestedChanges,
+  getGitHubPrReviewThreads,
+  listPrWatchEventWatermarks,
+  refreshPrWatchEventState,
+} from './pr-event-state';
 import { readRepoHealthSnapshot, readRepoRegistrySnapshot } from './repos';
 import {
   isRegisteredProvider,
@@ -802,6 +810,29 @@ app.get('/api/watches', async (c) => {
   return c.json(await listPrWatches(paths));
 });
 
+app.get('/api/watches/events/watermarks', async (c) => {
+  return c.json(
+    await listPrWatchEventWatermarks(
+      { watchId: c.req.query('watchId') || undefined },
+      paths,
+    ),
+  );
+});
+
+app.get('/api/watches/:id/events/watermarks', async (c) => {
+  return c.json(
+    await listPrWatchEventWatermarks({ watchId: c.req.param('id') }, paths),
+  );
+});
+
+app.post('/api/watches/:id/events/refresh', async (c) => {
+  const result = await refreshPrWatchEventState(
+    { ...(await safeJsonObject(c)), watchId: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
 app.get('/api/watches/ref', async (c) => {
   return c.json(await listRefWatches(paths));
 });
@@ -945,6 +976,42 @@ app.get('/api/github/prs', async (c) => {
     },
     result.requires?.includes('GITHUB_TOKEN') ? 503 : 502,
   );
+});
+
+app.post('/api/github/prs/event-state', async (c) => {
+  const result = await getGitHubPrEventState(
+    (await safeJsonBody(c)) as Parameters<typeof getGitHubPrEventState>[0],
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/github/prs/review-threads', async (c) => {
+  const result = await getGitHubPrReviewThreads(
+    (await safeJsonBody(c)) as Parameters<typeof getGitHubPrReviewThreads>[0],
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/github/prs/requested-changes', async (c) => {
+  const result = await getGitHubPrRequestedChanges(
+    (await safeJsonBody(c)) as Parameters<
+      typeof getGitHubPrRequestedChanges
+    >[0],
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/github/prs/branch-permissions', async (c) => {
+  const result = await getGitHubPrBranchPermissions(
+    (await safeJsonBody(c)) as Parameters<
+      typeof getGitHubPrBranchPermissions
+    >[0],
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
 });
 
 app.route('/api/flue', flue());
