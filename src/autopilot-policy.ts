@@ -361,6 +361,13 @@ export function repoAutopilotPolicy(
   };
 }
 
+export function pathDeniedByAutopilotPolicy(
+  path: string,
+  limits: AutopilotPolicyLimits,
+) {
+  return matchesAny(path, limits.deniedFileGlobs);
+}
+
 export async function checkAutopilotPolicy(
   input: {
     repoId?: string;

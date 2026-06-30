@@ -1267,7 +1267,7 @@ Must-haves:
 - [x] Add a `triage_pr_event` workflow that classifies deltas into no-op, notify-only, explain-only, draft-fix, auto-fix-no-push, or auto-fix-push-after-checks.
 - [x] Add deterministic GitHub tools/actions for unresolved review comments, review thread state, requested-changes state, branch push permissions, and PR comment posting.
 - [x] Add `prepare_pr_worktree` workflow to create/sync/lock a PR worktree and gather deterministic repo/GitHub/check facts.
-- [ ] Add `fix_pr_review_feedback` workflow:
+- [x] Add `fix_pr_review_feedback` workflow:
   - fetch unresolved review comments
   - group comments by file/path/topic
   - read relevant files through repo-edit actions

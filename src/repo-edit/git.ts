@@ -280,6 +280,64 @@ export async function applyUnifiedPatch(
   };
 }
 
+export async function gitCommitPaths(
+  repoRoot: string,
+  message: string,
+  paths: string[],
+): Promise<GitCommitResult> {
+  if (message.includes('\u0000')) {
+    throw Object.assign(new Error('Invalid git commit message.'), {
+      code: 'GIT_ERROR',
+    });
+  }
+  const pathspec = validatePathspec(paths);
+  if (pathspec.length === 0) {
+    return {
+      committed: false,
+      sha: null,
+      message: 'No paths supplied for commit.',
+    };
+  }
+
+  const before = await git(repoRoot, [
+    'status',
+    '--porcelain=v1',
+    '--',
+    ...pathspec,
+  ]);
+  if (!before.trim()) {
+    return {
+      committed: false,
+      sha: null,
+      message: 'No worktree changes to commit.',
+    };
+  }
+
+  await git(repoRoot, ['add', '-A', '--', ...pathspec]);
+  const staged = await git(repoRoot, [
+    'diff',
+    '--cached',
+    '--name-only',
+    '--',
+    ...pathspec,
+  ]);
+  if (!staged.trim()) {
+    return {
+      committed: false,
+      sha: null,
+      message: 'No staged changes to commit.',
+    };
+  }
+
+  await git(repoRoot, ['commit', '-m', message]);
+  const sha = (await git(repoRoot, ['rev-parse', 'HEAD'])).trim();
+  return {
+    committed: true,
+    sha,
+    message: `Committed ${sha}.`,
+  };
+}
+
 export async function unifiedDiff(
   repoRoot: string,
   relativePath: string,
