@@ -921,10 +921,6 @@ function isAutopilotApproval(
     ReturnType<typeof listExecutionApprovals>
   >['approvals'][number],
 ) {
-  const commandLooksRelevant =
-    /\bgit\s+push\b/.test(approval.command) ||
-    /\bgh\s+pr\b/.test(approval.command);
-  if (!commandLooksRelevant) return false;
   if (requestContextSource(approval.requestContext) === 'autopilot') {
     return true;
   }

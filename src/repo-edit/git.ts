@@ -131,6 +131,9 @@ export async function gitDiff(
     ...(await Promise.all(
       untrackedFiles.map(async (path) => {
         const additions = await countTextLines(join(repoRoot, path));
+        const patch = input.includePatch
+          ? await untrackedFilePatch(repoRoot, path, input.maxPatchBytes)
+          : undefined;
         return {
           path,
           status: 'untracked',
@@ -138,8 +141,8 @@ export async function gitDiff(
           deletions: 0,
           binary: additions === 0,
           generatedLike: generatedLike(path),
-          patch: undefined,
-          truncated: false,
+          patch: patch?.patch,
+          truncated: patch?.truncated ?? false,
         };
       }),
     )),
@@ -190,6 +193,52 @@ async function countTextLines(path: string) {
   if (buffer.includes(0)) return 0;
   const text = buffer.toString('utf8');
   return text ? text.split('\n').filter((line) => line.length > 0).length : 0;
+}
+
+async function untrackedFilePatch(
+  repoRoot: string,
+  path: string,
+  maxBytes = 32 * 1024,
+) {
+  const buffer = await readFile(join(repoRoot, path)).catch(() =>
+    Buffer.alloc(0),
+  );
+  if (buffer.includes(0)) {
+    return {
+      patch: `diff --git a/${path} b/${path}\nnew file mode 100644\nBinary files /dev/null and b/${path} differ\n`,
+      truncated: false,
+    };
+  }
+
+  const text = buffer.toString('utf8');
+  const lines =
+    text.length === 0
+      ? []
+      : text.endsWith('\n')
+        ? text.slice(0, -1).split('\n')
+        : text.split('\n');
+  const missingFinalNewline = text.length > 0 && !text.endsWith('\n');
+  const patchLines = [
+    `diff --git a/${path} b/${path}`,
+    'new file mode 100644',
+    'index 0000000..0000000',
+    '--- /dev/null',
+    `+++ b/${path}`,
+    `@@ -0,0 +1,${lines.length} @@`,
+    ...lines.map((line) => `+${line}`),
+  ];
+  if (missingFinalNewline) {
+    patchLines.push('\\ No newline at end of file');
+  }
+  const patch = `${patchLines.join('\n')}\n`;
+  const limit = Math.max(1, maxBytes);
+  if (Buffer.byteLength(patch, 'utf8') <= limit) {
+    return { patch, truncated: false };
+  }
+  return {
+    patch: patch.slice(0, limit),
+    truncated: true,
+  };
 }
 
 export async function buildWorktreePatch(

@@ -1115,11 +1115,11 @@ Must-haves:
 
 ### Phase 10: Release Watch
 
-- Status: partially complete; provider-specific deploy adapters remain open.
+- Status: complete for current scope. Provider-specific deploy adapters are intentionally skipped for now alongside the TUI work; GitHub checks remain the release-watch signal.
 
 - [x] Add deploy target metadata to repo registry.
 - [x] Support watch until main green.
-- [ ] Add provider-specific deploy adapters, starting with Cloudflare after GitHub Actions/checks because `neondeck.dev` is Cloudflare-hosted.
+- [ ] Add provider-specific deploy adapters, starting with Cloudflare after GitHub Actions/checks because `neondeck.dev` is Cloudflare-hosted. Skipped/deferred for now.
 - [x] Add `/watch-release` and “watch until prod” support.
 
 ### Phase 11: Work Queue Triage And PR Assistant
@@ -1173,8 +1173,8 @@ Must-haves:
 - [x] Add dashboard/API approval resolution endpoints for allow once, allow session, allow always/preapprove, and deny.
 - [x] Add a local executor action that calls `neondeck_execution_policy_check`, requires approval when the decision is `ask`, refuses `deny`, and records execution audit metadata.
 - [x] Add an exe.dev sandbox executor action through the Flue sandbox connector for an existing VM configured by `EXE_VM_HOST` or `execution.exeDev.vmHostEnv`.
-- [ ] Add existing-VM exe.dev repo/worktree checkout and sync helpers for declared repos.
-- [ ] Add exe.dev per-repo/per-checkout env forwarding from repo-local `.env` files and Neondeck config.
+- [ ] Add existing-VM exe.dev repo/worktree checkout and sync helpers for declared repos. In flight in the current exe.dev sync helper worktree.
+- [ ] Add exe.dev per-repo/per-checkout env forwarding from repo-local `.env` files and Neondeck config. In flight in the current exe.dev sync helper worktree.
 - [x] Ensure both executors share the same hardline deny list, preapproval matching, unattended policy, and audit path.
 - [x] Add bounded output capture before exposing execution results to the agent, dashboard, workflow summaries, or notifications.
 - [x] Add dashboard controls for pending approvals, recent approvals, and execution failures.
@@ -1196,11 +1196,11 @@ Must-haves:
 
 ### Phase 16: Chat Session Index And Switcher
 
-- Status: planned.
+- Status: partially complete for the web/chat-session management surface. App-owned session metadata, switching, search/read metadata, audit records, and dashboard controls have landed. Transcript paging, session summaries, stale-context polish, and richer cross-session UI affordances remain open.
 
-- [ ] Add `chat_sessions` table in `neondeck.db` for session id, title, kind, pinned/archived state, linked repo/watch/task ids, stale-context reasons, created/updated/last-active timestamps, and UI metadata.
-- [ ] Keep Flue conversation history in Flue persistence under `display-assistant/:id`; do not duplicate transcripts into app state.
-- [ ] Add deterministic session tools/actions:
+- [x] Add `chat_sessions` table in `neondeck.db` for session id, title, kind, pinned/archived state, linked repo/watch/task ids, stale-context reasons, created/updated/last-active timestamps, and UI metadata.
+- [x] Keep Flue conversation history in Flue persistence under `display-assistant/:id`; do not duplicate transcripts into app state.
+- [x] Add deterministic session tools/actions:
   - `neondeck_session_list`
   - `neondeck_session_search`
   - `neondeck_session_read`
@@ -1212,16 +1212,16 @@ Must-haves:
   - `neondeck_session_archive`
   - `neondeck_session_restore`
   - `neondeck_session_link_context`
-- [ ] Add app APIs/events for recent sessions, active session per surface, and session metadata changes so web and future TUI clients share the same behavior.
-- [ ] Add session search/read APIs that return normalized, Valibot-validated results for agents, dashboard, and future TUI.
+- [x] Add app APIs/events for recent sessions, active session per surface, and session metadata changes so web and future TUI clients share the same behavior.
+- [x] Add session search/read APIs that return normalized, Valibot-validated results for agents, dashboard, and future TUI. Current transcript reads are metadata-only until a supported Flue transcript paging API is available.
 - [ ] Add session summary generation or refresh so cross-session references can usually use summaries instead of raw transcript pages.
-- [ ] Add audit records for session reads, transcript page reads, and cross-session context use.
-- [ ] Add dashboard chat-panel switcher with pinned sessions, recent sessions, archived sessions, create-new-session, rename, pin, and archive controls.
+- [x] Add audit records for session reads, transcript page reads, and cross-session context use.
+- [x] Add dashboard chat-panel switcher with pinned sessions, recent sessions, archived sessions, create-new-session, rename, pin, and archive controls.
 - [ ] Add dashboard/TUI affordances for "reference this session" and "open referenced session" without forcing side-by-side chat.
 - [ ] Add context-aware session creation from repo rows, PR/watch rows, workflow summaries, briefing summaries, and delegated Kilo/autopilot tasks.
 - [ ] Add stale-context badges for sessions affected by SOUL, skill, memory, model, provider, or repo config changes.
-- [ ] Update runtime skill guidance so Neon can create, switch, search, read, and cite sessions intentionally instead of treating every topic as one global conversation.
-- [ ] Add tests for session CRUD, active-session selection, archived filtering, session search/read policy, audit records, stale-context marking, and linked repo/watch/task sessions.
+- [x] Update runtime skill guidance so Neon can create, switch, search, read, and cite sessions intentionally instead of treating every topic as one global conversation.
+- [x] Add tests for session CRUD, active-session selection, archived filtering, session search/read policy, audit records, stale-context marking, and linked repo/watch/task sessions.
 
 ### Phase 17: Future TUI/OpenTUI Surface
 
@@ -1261,7 +1261,7 @@ Must-haves:
 
 ### Phase 19: PR Event Autopilot
 
-- Status: planned.
+- Status: partially complete and actively being finished. Event watermarks, triage, worktree preparation, review/CI fix workflows, verification, concurrency controls, dashboard/TUI-ready state, and runtime guidance have landed. Push-back, PR result comments, notification policy, and broader smoke/integration coverage remain open or in flight.
 
 - [x] Extend PR watches to persist event watermarks for commits, review threads, requested-changes reviews, check suites, check runs, mergeability, and out-of-date branch state.
 - [x] Add a `triage_pr_event` workflow that classifies deltas into no-op, notify-only, explain-only, draft-fix, auto-fix-no-push, or auto-fix-push-after-checks.
@@ -1281,9 +1281,9 @@ Must-haves:
   - apply scoped fixes through repo-edit actions
   - commit locally and summarize confidence and remaining risk
 - [x] Add `verify_pr_worktree` workflow to run configured repo checks through the execution approval policy.
-- [ ] Add `push_pr_autofix` workflow that pushes only when autopilot policy, GitHub permissions, and checks allow it.
-- [ ] When direct push is not possible, leave the prepared worktree intact, mark the attempt blocked, and notify the user with recovery options.
-- [ ] Add `comment_pr_autofix_result` workflow that posts concise PR comments with addressed comments, commit SHA, checks run, and any remaining manual asks.
+- [ ] Add `push_pr_autofix` workflow that pushes only when autopilot policy, GitHub permissions, and checks allow it. In flight in the current push-back worktree.
+- [ ] When direct push is not possible, leave the prepared worktree intact, mark the attempt blocked, and notify the user with recovery options. In flight with `push_pr_autofix`.
+- [ ] Add `comment_pr_autofix_result` workflow that posts concise PR comments with addressed comments, commit SHA, checks run, and any remaining manual asks. In flight in the current PR autofix audit/comment worktree.
 - [x] Add concurrency controls:
   - global autonomous workflow limit
   - per-repo autonomous workflow limit
@@ -1302,7 +1302,7 @@ Must-haves:
 
 ### Phase 20: Autopilot Policy And UX Hardening
 
-- Status: planned.
+- Status: partially complete and active. Repo/watch policy, high-risk classes, prepared-diff records/APIs/actions, approval primitives, and dashboard decision visibility have landed. Human-readable audit summaries are in flight; recovery actions and docs remain open.
 
 - [x] Add repo-level autopilot config with explicit modes:
   - `notify-only`
@@ -1344,7 +1344,7 @@ Must-haves:
   - run verification
 - [x] Keep git/diff operations in backend services and actions; UI clients should not implement git logic.
 - [x] Add a dashboard panel for autopilot decisions, including why Neon did or did not act.
-- [ ] Add human-readable audit summaries for autonomous workflows, suitable for PR comments and timeline UI.
+- [ ] Add human-readable audit summaries for autonomous workflows, suitable for PR comments and timeline UI. In flight in the current PR autofix audit/comment worktree.
 - [ ] Add recovery actions:
   - retry after new commit
   - rebase/resync worktree
@@ -1355,7 +1355,7 @@ Must-haves:
 
 ### Phase 21: KiloCode Handoff Runner
 
-- Status: planned.
+- Status: partially complete. CLI task execution, reconciliation, session access, bounded transcript controls, dashboard/runtime overview rows, and review/verify/promote admission have landed. Richer Kilo workflow completion, actual promote mutation through push-back, notification policy, full smoke coverage, and managed `kilo serve`/SDK evaluation remain open.
 
 - [x] Add Kilo handoff config under app config:
   - enabled flag
@@ -1411,7 +1411,7 @@ Must-haves:
   - full transcript/tool output/diff access without default redaction
   - basic audit record for session reads
 - [x] Add child Kilo session tree support with collapsed dashboard/TUI display by default.
-- [ ] Add `handoff_to_kilo` workflow:
+- [ ] Add `handoff_to_kilo` workflow. Minimal wrapper landed; richer lock/diff/status workflow completion remains open:
   - resolve repo/worktree
   - acquire lock
   - construct task prompt with constraints
@@ -1419,7 +1419,7 @@ Must-haves:
   - stream/persist progress
   - capture final git status and diff
   - release lock
-- [ ] Add `summarize_kilo_session` workflow:
+- [ ] Add `summarize_kilo_session` workflow. Minimal wrapper landed; richer metadata/todos/child-session/diff summarization remains open:
   - resolve by Neondeck task id, Kilo session id, title query, repo, or worktree
   - read metadata, messages, todos, child sessions, and optional diff through typed actions
   - summarize intent, work performed, changed files, blockers, risk, and next steps
@@ -1427,7 +1427,7 @@ Must-haves:
 - [x] Add `review_kilo_result` workflow to inspect the Kilo-produced diff and classify it as discard, needs-review, ready-to-verify, or ready-to-push.
 - [x] Add `verify_kilo_result` workflow to run configured checks through Neondeck execution policy.
 - [ ] Add `promote_kilo_result` workflow that can commit/push/comment only when autopilot policy allows. Admission/decision state is implemented; actual commit/push/comment mutation remains deferred to the push-back workflow.
-- [ ] Add dashboard/TUI-ready APIs for active Kilo tasks, task events, session ids, session search, transcript pages, todos, child sessions, changed files, verification state, and pending approvals.
+- [ ] Add dashboard/TUI-ready APIs for active Kilo tasks, task events, session ids, session search, transcript pages, todos, child sessions, changed files, verification state, and pending approvals. Partially complete through current task/session/result APIs and Runtime Overview rows; keep open until todos, approvals, and richer dashboard/TUI contracts are complete.
 - [x] Add dashboard panels or Runtime Overview rows for active delegated Kilo work.
 - [ ] Add notification policy for Kilo handoffs:
   - ready when a task completes and has a reviewable diff

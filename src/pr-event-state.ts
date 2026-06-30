@@ -383,6 +383,15 @@ export async function postGitHubPrComment(
   }
 
   try {
+    const fetcher =
+      dependencies.fetchPullRequestEventState ?? fetchPullRequestEventState;
+    await fetcher({
+      token,
+      owner: resolved.target.owner,
+      repo: resolved.target.repo,
+      number: resolved.target.number,
+    });
+
     const poster =
       dependencies.postPullRequestComment ?? postPullRequestComment;
     const comment = await poster({

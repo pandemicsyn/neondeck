@@ -7,7 +7,7 @@ import { verifyPrWorktree } from './autopilot-workflows';
 import { getGitHubPrBranchPermissions } from './pr-event-state';
 import { ensurePreparedDiffForWorktree } from './prepared-diffs';
 import { gitDiff } from './repo-edit/git';
-import { readGitDiffSummary, type RepoDiffSummary } from './repos';
+import { type RepoDiffSummary } from './repos';
 import {
   ensureRuntimeHome,
   runtimePaths,
@@ -207,15 +207,18 @@ export async function reviewKiloResult(
           },
         })
       : null;
-  if (preparedDiff && diffChanged) {
+  const adoptedExistingPreparedDiff = Boolean(preparedDiff && !previous);
+  if (preparedDiff && (diffChanged || adoptedExistingPreparedDiff)) {
     resetPreparedDiffApproval(
       preparedDiff.id,
-      'Kilo result diff changed after earlier review.',
+      diffChanged
+        ? 'Kilo result diff changed after earlier review.'
+        : 'Kilo adopted this prepared diff; previous push decision is no longer current.',
       paths,
     );
   }
   const preparedDiffForState =
-    preparedDiff && diffChanged
+    preparedDiff && (diffChanged || adoptedExistingPreparedDiff)
       ? { ...preparedDiff, pushApprovalStatus: 'pending' }
       : preparedDiff;
   const policy = worktree
@@ -436,6 +439,21 @@ export async function promoteKiloResult(
   if (!reviewAdmission.ok) return reviewAdmission.result;
   const worktree = await findTaskWorktree(task, paths);
   const state = readKiloResultState(task.id, paths);
+  const policy = worktree
+    ? await checkAutopilotPolicy(
+        { worktreeId: worktree.id, pushDestination: 'pull-request-head' },
+        paths,
+      )
+    : null;
+  const currentDiff = await readTaskDiff(task);
+  const currentFingerprint = await diffFingerprintForTask(task, currentDiff);
+  const noCheckReadyToPush = Boolean(
+    state?.classification === 'ready-to-push' &&
+    state?.verificationStatus === 'not-run' &&
+    policy?.ok &&
+    policy.limits.requiredChecks.length === 0 &&
+    state.diffFingerprint === currentFingerprint,
+  );
   const gates: Array<{ gate: string; ok: boolean; reason: string }> = [];
 
   gates.push({
@@ -447,32 +465,28 @@ export async function promoteKiloResult(
   });
   gates.push({
     gate: 'verification',
-    ok: state?.verificationStatus === 'passed',
+    ok: state?.verificationStatus === 'passed' || noCheckReadyToPush,
     reason:
       state?.verificationStatus === 'passed'
         ? 'Kilo verification has passed.'
-        : 'Kilo verification has not passed.',
+        : noCheckReadyToPush
+          ? 'No required checks are configured and the reviewed Kilo result is ready to push.'
+          : 'Kilo verification has not passed.',
   });
-  const currentDiff = await readTaskDiff(task);
-  const currentFingerprint = await diffFingerprintForTask(task, currentDiff);
   gates.push({
     gate: 'verified-diff',
     ok:
       state?.diffFingerprint === currentFingerprint &&
-      state?.verifiedDiffFingerprint === currentFingerprint,
+      (state?.verifiedDiffFingerprint === currentFingerprint ||
+        noCheckReadyToPush),
     reason:
       state?.diffFingerprint === currentFingerprint &&
-      state?.verifiedDiffFingerprint === currentFingerprint
+      (state?.verifiedDiffFingerprint === currentFingerprint ||
+        noCheckReadyToPush)
         ? 'Current diff matches the reviewed and verified Kilo result.'
         : 'Current diff does not match the reviewed and verified Kilo result.',
   });
 
-  const policy = worktree
-    ? await checkAutopilotPolicy(
-        { worktreeId: worktree.id, pushDestination: 'pull-request-head' },
-        paths,
-      )
-    : null;
   gates.push({
     gate: 'autopilot-policy',
     ok: Boolean(policy?.ok && !policy.blocked && !policy.approvalRequired),
@@ -796,12 +810,23 @@ async function diffFingerprintForTask(
 }
 
 async function readTaskDiff(task: KiloTaskLike) {
-  const [owner, name] = task.repoFullName.split('/');
-  return readGitDiffSummary({
+  const diff = await gitDiff(task.cwd, { base: 'HEAD', includePatch: false });
+  return {
+    ok: true,
+    repo: task.repoFullName,
     path: task.cwd,
-    github: { owner: owner ?? 'unknown', name: name ?? 'unknown' },
-    defaultBranch: 'HEAD',
-  });
+    baseRef: 'HEAD',
+    files: diff.files.map((file) => ({
+      path: file.path,
+      status: file.status,
+      additions: file.additions,
+      deletions: file.deletions,
+    })),
+    fileCount: diff.files.length,
+    additions: diff.summary.additions,
+    deletions: diff.summary.deletions,
+    binaryFiles: diff.summary.binaryFiles,
+  } satisfies RepoDiffSummary;
 }
 
 async function findTaskWorktree(task: KiloTaskLike, paths: RuntimePaths) {

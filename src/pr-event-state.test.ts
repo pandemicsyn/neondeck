@@ -322,6 +322,7 @@ describe('PR event state watermarks', () => {
         },
         paths,
         {
+          fetchPullRequestEventState: async () => prEventState(),
           postPullRequestComment: async (input) => {
             calls.push(input);
             return {

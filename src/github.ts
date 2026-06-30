@@ -649,10 +649,15 @@ async function fetchCheckRunLog(options: {
   token: string;
   owner: string;
   repo: string;
+  checkRunId?: number | null;
   detailsUrl: string | null;
   maxLogBytes?: number;
 }): Promise<GitHubFailingCheckFact['log']> {
-  const jobId = githubActionsJobId(options.detailsUrl);
+  const jobId =
+    githubActionsJobId(options.detailsUrl) ??
+    (options.checkRunId
+      ? await githubActionsJobIdForCheckRun(options).catch(() => null)
+      : null);
   if (!jobId) {
     return {
       available: false,
@@ -714,6 +719,62 @@ function githubActionsJobId(detailsUrl: string | null) {
   if (!detailsUrl) return null;
   const match = /\/actions\/runs\/\d+\/job\/(\d+)(?:\D|$)/.exec(detailsUrl);
   return match?.[1] ?? null;
+}
+
+async function githubActionsJobIdForCheckRun(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  checkRunId?: number | null;
+}) {
+  if (!options.checkRunId) return null;
+  const checkRunResponse = await githubFetch(
+    options.token,
+    `https://api.github.com/repos/${options.owner}/${options.repo}/check-runs/${options.checkRunId}`,
+  );
+  const checkRun = v.parse(
+    v.looseObject({
+      check_suite: v.optional(v.nullable(v.object({ id: v.number() }))),
+    }),
+    await checkRunResponse.json(),
+  );
+  const checkSuiteId = checkRun.check_suite?.id;
+  if (!checkSuiteId) return null;
+
+  const runsResponse = await githubFetch(
+    options.token,
+    `https://api.github.com/repos/${options.owner}/${options.repo}/actions/runs?check_suite_id=${checkSuiteId}&per_page=10`,
+  );
+  const runs = v.parse(
+    v.object({
+      workflow_runs: v.optional(v.array(v.object({ id: v.number() }))),
+    }),
+    await runsResponse.json(),
+  );
+  for (const run of runs.workflow_runs ?? []) {
+    const jobsResponse = await githubFetch(
+      options.token,
+      `https://api.github.com/repos/${options.owner}/${options.repo}/actions/runs/${run.id}/jobs?per_page=100`,
+    );
+    const jobs = v.parse(
+      v.object({
+        jobs: v.optional(
+          v.array(
+            v.object({
+              id: v.number(),
+              check_run_url: v.optional(v.nullable(v.string())),
+            }),
+          ),
+        ),
+      }),
+      await jobsResponse.json(),
+    );
+    const job = (jobs.jobs ?? []).find((candidate) =>
+      candidate.check_run_url?.endsWith(`/check-runs/${options.checkRunId}`),
+    );
+    if (job) return String(job.id);
+  }
+  return null;
 }
 
 function isLikelyUtf8(buffer: Buffer) {
@@ -806,6 +867,7 @@ export async function fetchFailingCheckFacts(options: {
           token: options.token,
           owner,
           repo,
+          checkRunId: typeof run.id === 'number' ? run.id : null,
           detailsUrl: run.details_url ?? null,
           maxLogBytes: options.maxLogBytes,
         }),

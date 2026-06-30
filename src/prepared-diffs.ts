@@ -370,6 +370,19 @@ export async function ensurePreparedDiffForWorktree(
   await ensureRuntimeHome(paths);
   const now = new Date().toISOString();
   const existing = readPreparedDiffByWorktreeId(worktree.id, paths);
+  const shouldResetDecisionState = existing
+    ? existing.status !== 'prepared' ||
+      existing.pushApprovalStatus !== 'pending' ||
+      existing.verificationStatus !== 'not-run'
+    : false;
+  if (existing && shouldResetDecisionState) {
+    supersedeApprovals(
+      existing.id,
+      'push',
+      'Prepared diff was regenerated; previous push decision is no longer current.',
+      paths,
+    );
+  }
   const record: PreparedDiffRecord = {
     id: existing?.id ?? randomUUID(),
     worktreeId: worktree.id,
@@ -385,11 +398,15 @@ export async function ensurePreparedDiffForWorktree(
     headRef: worktree.headRef,
     headSha: worktree.headSha,
     status:
-      existing?.status === 'abandoned'
+      existing?.status === 'abandoned' || shouldResetDecisionState
         ? 'prepared'
         : (existing?.status ?? 'prepared'),
-    pushApprovalStatus: existing?.pushApprovalStatus ?? 'pending',
-    verificationStatus: existing?.verificationStatus ?? 'not-run',
+    pushApprovalStatus: shouldResetDecisionState
+      ? 'pending'
+      : (existing?.pushApprovalStatus ?? 'pending'),
+    verificationStatus: shouldResetDecisionState
+      ? 'not-run'
+      : (existing?.verificationStatus ?? 'not-run'),
     summary:
       input.summary === undefined
         ? (existing?.summary ?? null)
@@ -1055,6 +1072,34 @@ function ensurePendingApproval(
     undefined,
     paths,
   );
+}
+
+function supersedeApprovals(
+  preparedDiffId: string,
+  approvalType: PreparedDiffApprovalRecord['approvalType'],
+  reason: string,
+  paths: RuntimePaths,
+) {
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        UPDATE prepared_diff_approvals
+        SET status = 'superseded',
+            reason = ?,
+            resolved_at = COALESCE(resolved_at, ?),
+            updated_at = ?
+        WHERE prepared_diff_id = ?
+          AND approval_type = ?
+          AND status IN ('pending', 'approved', 'rejected');
+      `,
+      )
+      .run(reason, now, now, preparedDiffId, approvalType);
+  } finally {
+    database.close();
+  }
 }
 
 function resolvePendingApprovals(

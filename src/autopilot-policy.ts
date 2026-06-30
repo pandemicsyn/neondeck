@@ -118,7 +118,12 @@ type RepoAutopilotConfig = Partial<{
   reason: string;
   limits: Partial<AutopilotPolicyLimits>;
   concurrency: Partial<AutopilotConcurrencyPolicy>;
-  watchOverrides: unknown[];
+  watchOverrides: Array<{
+    watchId?: string;
+    prNumber?: number;
+    mode?: AutopilotMode | AutopilotModeAlias;
+    reason?: string;
+  }>;
 }>;
 
 type ActiveRunRow = {
@@ -138,6 +143,12 @@ const modeSchema = v.picklist([
   'auto-fix-push-after-checks',
 ]);
 const stringArraySchema = v.array(nonEmptyStringSchema);
+const watchOverrideSchema = v.looseObject({
+  watchId: v.optional(nonEmptyStringSchema),
+  prNumber: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+  mode: v.optional(modeSchema),
+  reason: v.optional(nonEmptyStringSchema),
+});
 export const autopilotPolicyLimitsSchema = v.looseObject({
   maxFilesChanged: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
   maxLinesChanged: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
@@ -181,7 +192,7 @@ const metadataSchema = v.looseObject({
       reason: v.optional(nonEmptyStringSchema),
       limits: v.optional(autopilotPolicyLimitsSchema),
       concurrency: v.optional(autopilotConcurrencySchema),
-      watchOverrides: v.optional(v.array(v.unknown())),
+      watchOverrides: v.optional(v.array(watchOverrideSchema)),
     }),
   ),
 });
@@ -492,7 +503,8 @@ export async function checkAutopilotPolicy(
     files,
     blocked,
     approvalRequired,
-    canPush: !blocked && !approvalRequired,
+    canPush:
+      policy.mode === 'autofix-push-when-safe' && !blocked && !approvalRequired,
     reasons,
     requires: [...requires],
     fetchedAt: new Date().toISOString(),
@@ -521,11 +533,13 @@ export async function checkAutopilotConcurrency(
   const activeRuns = readActiveAutopilotRuns(paths);
   const activeRunIds = new Set(activeRuns.map((run) => run.run_id));
   const activeWorkflowRuns = activeRuns.length;
-  const activeWorktrees = worktreeSnapshot.worktrees.filter((worktree) =>
-    worktree.owningWorkflowRunId
-      ? activeRunIds.has(worktree.owningWorkflowRunId)
-      : worktree.lifecycleStatus === 'busy',
-  );
+  const activeWorktrees = worktreeSnapshot.worktrees.filter((worktree) => {
+    if (worktree.owningWorkflowRunId) {
+      return activeRunIds.has(worktree.owningWorkflowRunId);
+    }
+    if (worktree.lifecycleStatus !== 'busy') return false;
+    return input.workflow !== 'verify_pr_worktree';
+  });
   const perRepoAutonomousJobs = activeWorktrees.filter(
     (worktree) => worktree.repoId === input.repoId,
   ).length;

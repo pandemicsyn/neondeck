@@ -339,10 +339,93 @@ describe('app API safety routes', () => {
         ],
       })}\n`,
     );
-    globalThis.fetch = vi.fn<typeof fetch>(async (_input, init) => {
+    globalThis.fetch = vi.fn<typeof fetch>(async (input, init) => {
       expect(init?.headers).toMatchObject({
         Authorization: 'Bearer server-token',
       });
+      const url = String(input);
+      if (url.endsWith('/pulls/123')) {
+        return new Response(
+          JSON.stringify({
+            number: 123,
+            title: 'Review feedback',
+            html_url: 'https://github.com/pandemicsyn/neondeck/pull/123',
+            state: 'open',
+            draft: false,
+            merged: false,
+            merge_commit_sha: null,
+            mergeable: true,
+            mergeable_state: 'clean',
+            maintainer_can_modify: true,
+            updated_at: '2026-06-30T20:00:00Z',
+            head: {
+              sha: 'head-sha',
+              ref: 'feature',
+              repo: {
+                full_name: 'pandemicsyn/neondeck',
+                name: 'neondeck',
+                owner: { login: 'pandemyn' },
+              },
+            },
+            base: {
+              sha: 'base-sha',
+              ref: 'main',
+              repo: { full_name: 'pandemicsyn/neondeck' },
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.includes('/pulls/123/commits')) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/pulls/123/reviews')) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/commits/head-sha/check-suites')) {
+        return new Response(JSON.stringify({ check_suites: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/commits/head-sha/check-runs')) {
+        return new Response(JSON.stringify({ check_runs: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.endsWith('/repos/pandemicsyn/neondeck')) {
+        return new Response(
+          JSON.stringify({
+            full_name: 'pandemicsyn/neondeck',
+            permissions: { push: true, pull: true },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.endsWith('/graphql')) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              repository: {
+                pullRequest: {
+                  reviewThreads: {
+                    nodes: [],
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                  },
+                },
+              },
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
       return new Response(
         JSON.stringify({
           id: 77,
