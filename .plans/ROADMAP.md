@@ -1302,7 +1302,7 @@ Must-haves:
 
 ### Phase 20: Autopilot Policy And UX Hardening
 
-- Status: partially complete and active. Repo/watch policy, high-risk classes, prepared-diff records/APIs/actions, approval primitives, dashboard decision visibility, human-readable audit summaries, bounded recovery actions, notification policy, and docs have landed. Rebase/resync and cleanup-specific recovery controls remain open.
+- Status: complete. Repo/watch policy, high-risk classes, prepared-diff records/APIs/actions, approval primitives, dashboard decision visibility, human-readable audit summaries, bounded recovery actions, rebase/resync and cleanup-specific recovery controls, notification policy, and docs have landed.
 
 - [x] Add repo-level autopilot config with explicit modes:
   - `notify-only`
@@ -1353,7 +1353,7 @@ Must-haves:
   - request revision
   - abandon prepared fix
   - surface manual follow-up
-- [ ] Add rebase/resync and cleanup-specific recovery actions:
+- [x] Add rebase/resync and cleanup-specific recovery actions:
   - retry after new commit
   - rebase/resync worktree
   - clean up worktree

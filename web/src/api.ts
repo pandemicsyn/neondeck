@@ -659,10 +659,13 @@ export type AutopilotState = {
 
 export type AutopilotRecoveryActionId =
   | 'inspect-worktree'
+  | 'retry-after-new-commit'
+  | 'rebase-resync-worktree'
   | 'retry-verify'
   | 'retry-push'
   | 'retry-comment'
   | 'request-revision'
+  | 'cleanup-worktree'
   | 'abandon'
   | 'manual-follow-up';
 
@@ -1156,6 +1159,10 @@ export async function runAutopilotRecovery(input: {
   reason?: string;
   confirm?: boolean;
   checks?: string[];
+  headRef?: string;
+  headSha?: string;
+  fetch?: boolean;
+  dryRun?: boolean;
 }) {
   const { preparedDiffId, ...body } = input;
   return postJson<AutopilotRecoveryResponse>(
