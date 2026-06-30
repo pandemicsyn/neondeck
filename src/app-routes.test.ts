@@ -123,6 +123,21 @@ describe('app API safety routes', () => {
     await reader!.cancel();
   });
 
+  it('serves session events as a local server-sent event stream', async () => {
+    const response = await app.request('http://localhost/api/events/sessions', {
+      headers: { host: 'localhost' },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('text/event-stream');
+
+    const reader = response.body?.getReader();
+    expect(reader).toBeDefined();
+    const chunk = await reader!.read();
+    expect(new TextDecoder().decode(chunk.value)).toContain(': connected');
+    await reader!.cancel();
+  });
+
   it('rejects cross-origin app API mutations', async () => {
     const response = await app.request('http://localhost/api/models', {
       method: 'POST',

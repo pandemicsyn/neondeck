@@ -9,8 +9,15 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  archiveChatSession,
+  createChatSession,
+  getChatSessions,
   getNeonSession,
-  startNeonSession,
+  pinChatSession,
+  renameChatSession,
+  restoreChatSession,
+  switchChatSession,
+  type ChatSessionRecord,
   type NeonCommandResult,
   type NeonSessionState,
 } from '../api';
@@ -137,11 +144,21 @@ export const FlueChatPlugin = {
       queryFn: getNeonSession,
       refetchInterval: 30_000,
     });
+    const {
+      data: sessionIndex,
+      error: sessionIndexError,
+      refetch: refreshSessionIndex,
+    } = useQuery({
+      queryKey: queryKeys.chatSessions,
+      queryFn: () => getChatSessions({ includeArchived: true }),
+      refetchInterval: 30_000,
+    });
     const startSessionMutation = useMutation({
       async mutationFn() {
-        const result = await startNeonSession({
-          label: 'Fresh',
-          reason: 'dashboard-new-session',
+        const result = await createChatSession({
+          title: 'Fresh',
+          surface: 'dashboard',
+          activate: true,
         });
         if (!result.state) {
           throw new Error(result.message);
@@ -150,12 +167,73 @@ export const FlueChatPlugin = {
       },
       onSuccess(state) {
         queryClient.setQueryData(queryKeys.neonSession, state);
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.chatSessions,
+        });
       },
     });
+    const switchSessionMutation = useMutation({
+      async mutationFn(session: ChatSessionRecord) {
+        const restored = session.archivedAt
+          ? await restoreChatSession(session.id)
+          : undefined;
+        if (restored && !restored.ok) throw new Error(restored.message);
+        const result = await switchChatSession(session.id);
+        if (!result.state) throw new Error(result.message);
+        return result.state;
+      },
+      onSuccess(state) {
+        queryClient.setQueryData(queryKeys.neonSession, state);
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.chatSessions,
+        });
+      },
+    });
+    const sessionMetadataMutation = useMutation({
+      async mutationFn(
+        input:
+          | { action: 'rename'; session: ChatSessionRecord; title: string }
+          | { action: 'pin'; session: ChatSessionRecord }
+          | { action: 'archive'; session: ChatSessionRecord }
+          | { action: 'restore'; session: ChatSessionRecord },
+      ) {
+        let result;
+        if (input.action === 'rename') {
+          result = await renameChatSession(input.session.id, input.title);
+        } else if (input.action === 'pin') {
+          result = await pinChatSession(
+            input.session.id,
+            !input.session.pinned,
+          );
+        } else if (input.action === 'restore') {
+          result = await restoreChatSession(input.session.id);
+        } else {
+          result = await archiveChatSession(input.session.id);
+        }
+        if (!result.ok) throw new Error(result.message);
+        return result;
+      },
+      onSuccess(result) {
+        if (result.state) {
+          queryClient.setQueryData(queryKeys.neonSession, result.state);
+        }
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.chatSessions,
+        });
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.neonSession,
+        });
+      },
+    });
+    const sessions = sessionIndex?.sessions ?? sessionState?.sessions ?? [];
+    const activeRecord =
+      sessions.find(
+        (session) => session.id === sessionState?.activeSessionId,
+      ) ?? sessionState?.activeChatSession;
     const activeSession = sessionState
       ? {
-          id: sessionState.activeSession.id,
-          label: sessionState.activeSession.label,
+          id: sessionState.activeSessionId,
+          label: activeRecord?.title ?? sessionState.activeSession.label,
           placeholder: fallbackSession.placeholder,
         }
       : undefined;
@@ -164,7 +242,27 @@ export const FlueChatPlugin = {
       startSessionMutation.mutate();
     }
 
-    useConfigEvents(() => void refreshSession());
+    function switchToSession(id: string) {
+      const session = sessions.find((item) => item.id === id);
+      if (!session || session.id === activeSession?.id) return;
+      switchSessionMutation.mutate(session);
+    }
+
+    function renameActiveSession() {
+      if (!activeRecord) return;
+      const title = window.prompt('Session title', activeRecord.title)?.trim();
+      if (!title || title === activeRecord.title) return;
+      sessionMetadataMutation.mutate({
+        action: 'rename',
+        session: activeRecord,
+        title,
+      });
+    }
+
+    useConfigEvents(() => {
+      void refreshSession();
+      void refreshSessionIndex();
+    });
 
     return (
       <div className="flex h-full min-h-0 flex-col">
@@ -173,7 +271,49 @@ export const FlueChatPlugin = {
             <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />
             FLUE AGENT · triage.ts
           </span>
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <SessionSelect
+              activeSessionId={activeSession?.id}
+              disabled={switchSessionMutation.isPending}
+              onSelect={switchToSession}
+              sessions={sessions}
+            />
+            <Button
+              className="h-5 border-transparent bg-transparent px-1.5 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
+              disabled={!activeRecord || sessionMetadataMutation.isPending}
+              onClick={renameActiveSession}
+              type="button"
+            >
+              Rename
+            </Button>
+            <Button
+              className="h-5 border-transparent bg-transparent px-1.5 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
+              disabled={!activeRecord || sessionMetadataMutation.isPending}
+              onClick={() =>
+                activeRecord &&
+                sessionMetadataMutation.mutate({
+                  action: 'pin',
+                  session: activeRecord,
+                })
+              }
+              type="button"
+            >
+              {activeRecord?.pinned ? 'Unpin' : 'Pin'}
+            </Button>
+            <Button
+              className="h-5 border-transparent bg-transparent px-1.5 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
+              disabled={!activeRecord || sessionMetadataMutation.isPending}
+              onClick={() =>
+                activeRecord &&
+                sessionMetadataMutation.mutate({
+                  action: activeRecord.archivedAt ? 'restore' : 'archive',
+                  session: activeRecord,
+                })
+              }
+              type="button"
+            >
+              {activeRecord?.archivedAt ? 'Restore' : 'Archive'}
+            </Button>
             <Button
               className="h-5 border-transparent bg-transparent px-2 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
               disabled={startSessionMutation.isPending}
@@ -189,9 +329,19 @@ export const FlueChatPlugin = {
             </span>
           </div>
         </header>
-        {sessionError || startSessionMutation.error ? (
+        {sessionError ||
+        sessionIndexError ||
+        startSessionMutation.error ||
+        switchSessionMutation.error ||
+        sessionMetadataMutation.error ? (
           <div className="border-b border-accent/60 bg-soft px-4 py-1.5 text-[11px] text-accent">
-            {queryErrorMessage(sessionError ?? startSessionMutation.error)}
+            {queryErrorMessage(
+              sessionError ??
+                sessionIndexError ??
+                startSessionMutation.error ??
+                switchSessionMutation.error ??
+                sessionMetadataMutation.error,
+            )}
           </div>
         ) : null}
         <FlueChatSessionView
@@ -204,6 +354,69 @@ export const FlueChatPlugin = {
     );
   },
 } satisfies DisplayPlugin<FlueChatConfig>;
+
+function SessionSelect({
+  activeSessionId,
+  disabled,
+  onSelect,
+  sessions,
+}: {
+  activeSessionId: string | undefined;
+  disabled: boolean;
+  onSelect: (id: string) => void;
+  sessions: ChatSessionRecord[];
+}) {
+  const pinned = sessions.filter(
+    (session) => session.pinned && !session.archivedAt,
+  );
+  const recent = sessions.filter(
+    (session) => !session.pinned && !session.archivedAt,
+  );
+  const archived = sessions.filter((session) => session.archivedAt);
+
+  return (
+    <select
+      aria-label="Chat session"
+      className="h-5 max-w-[22ch] border border-line bg-field px-1 font-mono text-[10.5px] tracking-normal text-ink outline-none hover:border-primary"
+      disabled={disabled || sessions.length === 0}
+      onChange={(event) => onSelect(event.target.value)}
+      value={activeSessionId ?? ''}
+    >
+      {!activeSessionId ? <option value="">Loading</option> : null}
+      <SessionOptionGroup label="Pinned" sessions={pinned} />
+      <SessionOptionGroup label="Recent" sessions={recent} />
+      <SessionOptionGroup label="Archived" sessions={archived} />
+    </select>
+  );
+}
+
+function SessionOptionGroup({
+  label,
+  sessions,
+}: {
+  label: string;
+  sessions: ChatSessionRecord[];
+}) {
+  if (sessions.length === 0) return null;
+
+  return (
+    <optgroup label={label}>
+      {sessions.map((session) => (
+        <option key={session.id} value={session.id}>
+          {sessionLabel(session)}
+        </option>
+      ))}
+    </optgroup>
+  );
+}
+
+function sessionLabel(session: ChatSessionRecord) {
+  const parts = [session.title];
+  if (session.kind !== 'general') parts.push(session.kind);
+  if (session.staleReasons.length > 0) parts.push('stale');
+  if (session.archivedAt) parts.push('archived');
+  return parts.join(' · ');
+}
 
 function FlueChatSessionView({
   agentName,

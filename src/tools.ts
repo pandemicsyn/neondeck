@@ -11,7 +11,13 @@ import { readRuntimeStatus, runtimeStatusSchema } from './runtime-status';
 import { safetyPolicyLookupTool } from './safety';
 import { listRuntimeSkills, loadRuntimeSkill } from './runtime-skills';
 import { listSchedulerJobs } from './scheduler';
-import { readNeonSessionState } from './session-actions';
+import {
+  listChatSessions,
+  readChatSession,
+  readChatSessionMessages,
+  readNeonSessionState,
+  searchChatSessions,
+} from './session-actions';
 import { listPrWatches, listRefWatches } from './watch-actions';
 
 const emptyInputSchema = v.object({});
@@ -26,6 +32,40 @@ const skillLoadInputSchema = v.object({
 const memoryLookupInputSchema = v.object({
   scope: v.optional(v.picklist(['user', 'project', 'session', 'watch'])),
   key: v.optional(nonEmptyStringSchema),
+});
+const sessionListInputSchema = v.object({
+  includeArchived: v.optional(v.boolean()),
+  kind: v.optional(
+    v.picklist([
+      'main',
+      'scratch',
+      'general',
+      'repo',
+      'watch',
+      'task',
+      'briefing',
+    ]),
+  ),
+  limit: v.optional(v.number()),
+  surface: v.optional(nonEmptyStringSchema),
+});
+const sessionSearchInputSchema = v.object({
+  query: nonEmptyStringSchema,
+  includeArchived: v.optional(v.boolean()),
+  limit: v.optional(v.number()),
+  surface: v.optional(nonEmptyStringSchema),
+});
+const sessionReadInputSchema = v.object({
+  id: nonEmptyStringSchema,
+  reason: v.optional(v.string()),
+  surface: v.optional(nonEmptyStringSchema),
+});
+const sessionMessagesInputSchema = v.object({
+  id: nonEmptyStringSchema,
+  cursor: v.optional(v.string()),
+  limit: v.optional(v.number()),
+  reason: v.optional(v.string()),
+  surface: v.optional(nonEmptyStringSchema),
 });
 const toolOutputSchema = v.looseObject({
   ok: v.boolean(),
@@ -81,6 +121,50 @@ export const sessionStatusLookupTool = defineTool({
   output: toolOutputSchema,
   async run() {
     return readNeonSessionState();
+  },
+});
+
+export const sessionListLookupTool = defineTool({
+  name: 'neondeck_session_list_lookup',
+  description:
+    'List Neondeck chat session metadata without reading Flue transcripts.',
+  input: sessionListInputSchema,
+  output: toolOutputSchema,
+  async run({ input }) {
+    return listChatSessions(input);
+  },
+});
+
+export const sessionSearchLookupTool = defineTool({
+  name: 'neondeck_session_search_lookup',
+  description:
+    'Search chat session titles, summaries, and linked context metadata without reading raw transcripts.',
+  input: sessionSearchInputSchema,
+  output: toolOutputSchema,
+  async run({ input }) {
+    return searchChatSessions(input);
+  },
+});
+
+export const sessionReadLookupTool = defineTool({
+  name: 'neondeck_session_read_lookup',
+  description:
+    'Read one chat session metadata record and audit the read without copying transcript history.',
+  input: sessionReadInputSchema,
+  output: toolOutputSchema,
+  async run({ input }) {
+    return readChatSession(input);
+  },
+});
+
+export const sessionMessagesLookupTool = defineTool({
+  name: 'neondeck_session_messages_lookup',
+  description:
+    'Audit a request for Flue-owned chat session messages. Neondeck returns metadata only unless a Flue transcript reader is available.',
+  input: sessionMessagesInputSchema,
+  output: toolOutputSchema,
+  async run({ input }) {
+    return readChatSessionMessages(input);
   },
 });
 
@@ -195,6 +279,10 @@ export const neondeckFactTools = [
   workflowSummariesLookupTool,
   runtimeStatusLookupTool,
   sessionStatusLookupTool,
+  sessionListLookupTool,
+  sessionSearchLookupTool,
+  sessionReadLookupTool,
+  sessionMessagesLookupTool,
   repoStatusLookupTool,
   githubPrQueueLookupTool,
   githubCheckSummaryLookupTool,

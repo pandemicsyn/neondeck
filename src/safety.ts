@@ -126,6 +126,42 @@ const entries: SafetyPolicyEntry[] = [
     'Reads the active Neon session id and stale-context reasons.',
   ),
   tool(
+    'neondeck_session_list_lookup',
+    'List chat sessions',
+    readOnly,
+    'Reads indexed chat session metadata without reading Flue transcripts.',
+  ),
+  tool(
+    'neondeck_session_search_lookup',
+    'Search chat sessions',
+    {
+      ...readOnly,
+      audited: true,
+      auditTarget: 'chat_session_audit',
+    },
+    'Searches chat session metadata and summaries, recording an audit row.',
+  ),
+  tool(
+    'neondeck_session_read_lookup',
+    'Read chat session metadata',
+    {
+      ...readOnly,
+      audited: true,
+      auditTarget: 'chat_session_audit',
+    },
+    'Reads one indexed chat session metadata record and audits the read.',
+  ),
+  tool(
+    'neondeck_session_messages_lookup',
+    'Request session messages',
+    {
+      ...readOnly,
+      audited: true,
+      auditTarget: 'chat_session_audit',
+    },
+    'Audits a request for Flue-owned messages without duplicating transcripts into app state.',
+  ),
+  tool(
     'neondeck_repo_status_lookup',
     'Read local repo status',
     readOnly,
@@ -268,6 +304,42 @@ const entries: SafetyPolicyEntry[] = [
     'Read session status',
     readOnly,
     'Reads active Neon session state through an action surface.',
+  ),
+  action(
+    'neondeck_session_list',
+    'List chat sessions',
+    readOnly,
+    'Lists indexed chat session metadata.',
+  ),
+  action(
+    'neondeck_session_search',
+    'Search chat sessions',
+    {
+      ...readOnly,
+      audited: true,
+      auditTarget: 'chat_session_audit',
+    },
+    'Searches indexed chat session metadata and records an audit row.',
+  ),
+  action(
+    'neondeck_session_read',
+    'Read chat session metadata',
+    {
+      ...readOnly,
+      audited: true,
+      auditTarget: 'chat_session_audit',
+    },
+    'Reads one indexed chat session metadata record and records an audit row.',
+  ),
+  action(
+    'neondeck_session_messages',
+    'Request session messages',
+    {
+      ...readOnly,
+      audited: true,
+      auditTarget: 'chat_session_audit',
+    },
+    'Audits a request for Flue-owned messages. Neondeck app state does not store transcript copies.',
   ),
   action(
     'neondeck_memory_list',
@@ -454,9 +526,72 @@ const entries: SafetyPolicyEntry[] = [
     'Start new Neon session',
     {
       ...safeMutation,
-      auditTarget: 'neon_sessions',
+      auditTarget: 'chat_sessions/chat_session_surfaces/chat_session_audit',
     },
-    'Starts a new active Flue agent session id and archives the previous active session.',
+    'Creates and activates a new Flue agent session id without deleting or copying previous history.',
+  ),
+  action(
+    'neondeck_session_create',
+    'Create chat session',
+    {
+      ...safeMutation,
+      auditTarget: 'chat_sessions/chat_session_surfaces/chat_session_audit',
+    },
+    'Creates indexed chat session metadata and optionally activates it for a surface.',
+  ),
+  action(
+    'neondeck_session_switch',
+    'Switch active chat session',
+    {
+      ...safeMutation,
+      auditTarget: 'chat_session_surfaces/chat_session_audit',
+    },
+    'Switches a dashboard or future TUI surface to an existing non-archived session.',
+  ),
+  action(
+    'neondeck_session_rename',
+    'Rename chat session',
+    {
+      ...safeMutation,
+      auditTarget: 'chat_sessions/chat_session_audit',
+    },
+    'Renames indexed chat session metadata.',
+  ),
+  action(
+    'neondeck_session_pin',
+    'Pin chat session',
+    {
+      ...safeMutation,
+      auditTarget: 'chat_sessions/chat_session_audit',
+    },
+    'Pins or unpins indexed chat session metadata.',
+  ),
+  action(
+    'neondeck_session_archive',
+    'Archive chat session',
+    {
+      ...safeMutation,
+      auditTarget: 'chat_sessions/chat_session_audit',
+    },
+    'Archives session metadata without deleting Flue transcript history.',
+  ),
+  action(
+    'neondeck_session_restore',
+    'Restore chat session',
+    {
+      ...safeMutation,
+      auditTarget: 'chat_sessions/chat_session_audit',
+    },
+    'Restores archived session metadata.',
+  ),
+  action(
+    'neondeck_session_link_context',
+    'Link chat session context',
+    {
+      ...safeMutation,
+      auditTarget: 'chat_sessions/chat_session_audit',
+    },
+    'Links repo, watch, task, UI metadata, or summary data to indexed session metadata.',
   ),
   action(
     'neondeck_config_remove_repo',
@@ -564,6 +699,12 @@ const entries: SafetyPolicyEntry[] = [
     'Streams notification inbox changes to dashboard surfaces without browser notification APIs.',
   ),
   route(
+    '/api/events/sessions',
+    'Session event stream API',
+    readOnly,
+    'Streams chat session metadata and active-surface changes to dashboard and future TUI clients.',
+  ),
+  route(
     '/api/config/reload',
     'Config reload API',
     {
@@ -637,6 +778,59 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'execution_approvals',
     },
     'Runs one approved local or exe.dev command and records bounded redacted output.',
+  ),
+  route(
+    '/api/session',
+    'Active session API',
+    readOnly,
+    'Reads the active chat session for a dashboard or future TUI surface.',
+  ),
+  route(
+    '/api/sessions',
+    'Chat sessions API',
+    {
+      ...safeMutation,
+      auditTarget: 'chat_sessions/chat_session_surfaces/chat_session_audit',
+    },
+    'GET lists indexed session metadata; POST creates and optionally activates a new session.',
+  ),
+  route(
+    '/api/sessions/:id',
+    'Chat session read API',
+    {
+      ...readOnly,
+      audited: true,
+      auditTarget: 'chat_session_audit',
+    },
+    'Reads one indexed session metadata record and audits the read.',
+  ),
+  route(
+    '/api/sessions/:id/messages',
+    'Chat session messages API',
+    {
+      ...readOnly,
+      audited: true,
+      auditTarget: 'chat_session_audit',
+    },
+    'Audits a request for Flue-owned messages without copying transcripts into app state.',
+  ),
+  route(
+    '/api/sessions/:id/switch',
+    'Chat session switch API',
+    {
+      ...safeMutation,
+      auditTarget: 'chat_session_surfaces/chat_session_audit',
+    },
+    'Switches a local surface to an existing non-archived session id.',
+  ),
+  route(
+    '/api/sessions/:id/*',
+    'Chat session metadata mutation API',
+    {
+      ...safeMutation,
+      auditTarget: 'chat_sessions/chat_session_audit',
+    },
+    'Renames, pins, archives, restores, or links context metadata without mutating Flue transcripts.',
   ),
   route(
     '/api/models',

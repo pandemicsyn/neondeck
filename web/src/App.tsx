@@ -1,7 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { getDashboardConfig, openConfigEventStream } from './api';
+import {
+  getDashboardConfig,
+  openChatSessionEventStream,
+  openConfigEventStream,
+} from './api';
 import { Card } from './components/ui';
 import {
   configEventTouchesFile,
@@ -42,6 +46,17 @@ export function App() {
           queryKey: queryKeys.dashboardConfig,
         });
       }
+    });
+  }, [queryClient]);
+
+  useEffect(() => {
+    return openChatSessionEventStream(() => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.neonSession,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.chatSessions,
+      });
     });
   }, [queryClient]);
 

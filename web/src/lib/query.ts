@@ -16,6 +16,7 @@ export const queryKeys = {
   hostMetrics: ['host-metrics'] as const,
   memories: ['memories'] as const,
   neonSession: ['neon-session'] as const,
+  chatSessions: ['chat-sessions'] as const,
   prWatches: ['pr-watches'] as const,
   repoHealth: ['repo-health'] as const,
   repoEditEvents: ['repo-edit-events'] as const,
