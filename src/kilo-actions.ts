@@ -1177,7 +1177,7 @@ async function recoverMissingSessionId(taskId: string, paths: RuntimePaths) {
   const task = tryTask(taskId, paths);
   if (!task || task.rootSessionId) return false;
   const result = await searchKiloSessions(
-    { query: task.title, taskId, limit: 5 },
+    { query: task.title, limit: 5 },
     paths,
   );
   const sessions = 'sessions' in result ? result.sessions : [];
@@ -1185,7 +1185,6 @@ async function recoverMissingSessionId(taskId: string, paths: RuntimePaths) {
   if (!id) {
     const disk = await searchKiloSessionsWithDisk({
       query: task.title,
-      taskId,
       limit: 5,
     }).catch(() => ({ ok: false as const, sessions: [] }));
     id = disk.sessions[0]?.id;
@@ -1504,7 +1503,7 @@ async function reconcilePersistedRunningTasks(paths: RuntimePaths) {
         `
         SELECT *
         FROM kilo_tasks
-        WHERE status = 'running'
+        WHERE status IN ('running', 'needs-reconcile')
         ORDER BY updated_at DESC;
       `,
       )

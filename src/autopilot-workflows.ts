@@ -1180,15 +1180,73 @@ export async function fixPrCiFailure(
     const dirty = Boolean(booleanField(objectField(status, 'git'), 'dirty'));
     let commit: unknown = null;
     if (dirty) {
-      commit = await gitCommitAll(
-        worktree.localPath,
-        input.commitMessage ??
-          generatedCiFixCommitMessage(
-            repoFullName(repo),
-            worktree.prNumber,
-            checkFacts,
-          ),
-      );
+      try {
+        commit = await gitCommitAll(
+          worktree.localPath,
+          input.commitMessage ??
+            generatedCiFixCommitMessage(
+              repoFullName(repo),
+              worktree.prNumber,
+              checkFacts,
+            ),
+        );
+      } catch (error) {
+        finalLockStatus = 'prepared-diff';
+        const preparedDiff = await ensurePreparedDiffForWorktree(
+          worktree,
+          paths,
+          {
+            title: `CI fix for ${repoFullName(repo)}#${worktree.prNumber ?? 'worktree'}`,
+            createdBy: 'fix_pr_ci_failure',
+            summary: {
+              confidence: input.confidence ?? 'medium',
+              risk: input.risk ?? 'medium',
+              remainingManualAsks: [
+                'Inspect the dirty worktree and commit the retained CI fix manually.',
+                ...(input.manualAsks ?? []),
+              ],
+              failingChecks: checkFacts.map((fact) => ({
+                id: fact.id,
+                name: fact.name,
+                conclusion: fact.conclusion,
+                logsAvailable: fact.log.available,
+                logsUnavailableReason: fact.log.unavailableReason,
+              })),
+              diagnostics,
+              commitError: errorMessage(error),
+            },
+          },
+        );
+        return {
+          ok: false,
+          action: 'autopilot_fix_pr_ci_failure',
+          changed: true,
+          message:
+            'Applied a CI-failure fix, but could not create the commit. The dirty worktree was retained as a prepared diff.',
+          data: asJsonValue({
+            repo: {
+              id: repo.id,
+              fullName: repoFullName(repo),
+              path: repo.path,
+              defaultBranch: repo.defaultBranch,
+            },
+            worktree,
+            pr: pr && !('ok' in pr) ? pr : null,
+            ref,
+            failingChecks: checkFacts,
+            likelyCommands,
+            diagnostics,
+            patch: patchResult,
+            preparedDiff,
+            status: await readWorktreeStatus(
+              { worktreeId: worktree.id },
+              paths,
+            ),
+          }),
+          errors: [errorMessage(error)],
+          requires: ['manualCommit'],
+        };
+      }
     }
 
     const afterStatus = await readWorktreeStatus(
@@ -1333,10 +1391,16 @@ export async function fixPrReviewFeedback(
     }
     const hasEdits =
       (input.replacements?.length ?? 0) > 0 || typeof input.patch === 'string';
+    const reviewTargetPaths = reviewTargetPathSet(groups);
+    const plannedPaths = plannedEditPaths(
+      input.replacements ?? [],
+      input.patch,
+    );
     const addressed = addressedFeedback(
       reviewFacts.unresolvedComments,
       input.addressedReviewCommentIds,
       input.addressedReviewThreadIds,
+      plannedPaths,
     );
     if (
       addressed.ignoredReviewCommentIds.length > 0 ||
@@ -1353,11 +1417,6 @@ export async function fixPrReviewFeedback(
         },
       );
     }
-    const reviewTargetPaths = reviewTargetPathSet(groups);
-    const plannedPaths = plannedEditPaths(
-      input.replacements ?? [],
-      input.patch,
-    );
     const invalidPlannedPaths = plannedPaths.filter(
       (path) => !reviewTargetPaths.has(path),
     );
@@ -2237,15 +2296,24 @@ function addressedFeedback(
   comments: ReviewCommentFact[],
   commentIds: string[] | undefined,
   threadIds: string[] | undefined,
+  plannedPaths: string[] = [],
 ) {
   const availableCommentIds = new Set(comments.map((comment) => comment.id));
   const availableThreadIds = new Set(
     comments.map((comment) => comment.threadId),
   );
+  const plannedPathSet = new Set(plannedPaths);
+  const defaultComments =
+    plannedPathSet.size > 0
+      ? comments.filter((comment) => {
+          const path = comment.path ?? comment.threadPath;
+          return path ? plannedPathSet.has(path) : false;
+        })
+      : comments;
   const selectedCommentIds =
     commentIds && commentIds.length > 0
       ? commentIds.filter((id) => availableCommentIds.has(id))
-      : comments.map((comment) => comment.id);
+      : defaultComments.map((comment) => comment.id);
   const selectedThreadIds =
     threadIds && threadIds.length > 0
       ? threadIds.filter((id) => availableThreadIds.has(id))
