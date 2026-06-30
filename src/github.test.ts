@@ -5,6 +5,7 @@ import {
   fetchCheckSummary,
   fetchPullRequestReviewThreads,
   fetchPullRequestQueue,
+  postPullRequestComment,
 } from './github';
 import type { RepoConfig } from './runtime-home';
 
@@ -490,6 +491,48 @@ describe('github foundation', () => {
       }),
     ]);
     expect(fetchedBodies).toHaveLength(2);
+  });
+
+  it('posts PR comments through the GitHub issue-comments endpoint', async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    globalThis.fetch = vi.fn<typeof fetch>(async (input, init) => {
+      requests.push({ url: String(input), init });
+      return jsonResponse({
+        id: 77,
+        node_id: 'comment-node-77',
+        html_url:
+          'https://github.com/pandemicsyn/neondeck/pull/123#issuecomment-77',
+        body: 'Addressed review feedback.',
+        user: { login: 'neon' },
+        created_at: '2026-06-30T21:00:00Z',
+        updated_at: '2026-06-30T21:00:00Z',
+      });
+    });
+
+    await expect(
+      postPullRequestComment({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+        body: 'Addressed review feedback.',
+      }),
+    ).resolves.toMatchObject({
+      id: 77,
+      nodeId: 'comment-node-77',
+      url: 'https://github.com/pandemicsyn/neondeck/pull/123#issuecomment-77',
+      authorLogin: 'neon',
+      body: 'Addressed review feedback.',
+    });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      url: 'https://api.github.com/repos/pandemicsyn/neondeck/issues/123/comments',
+      init: { method: 'POST' },
+    });
+    expect(JSON.parse(String(requests[0]?.init?.body))).toEqual({
+      body: 'Addressed review feedback.',
+    });
   });
 });
 

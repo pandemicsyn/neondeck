@@ -12,6 +12,8 @@ Use this skill when the user asks about GitHub pull requests, CI checks, local b
 Use Neondeck's typed actions and tools before reasoning:
 
 - Use `neondeck_github_pr_queue_lookup` for review queues, authored PRs, assigned PRs, requested reviews, stale PRs, and check summaries already available through the GitHub API.
+- Use `neondeck_pr_review_comments_lookup`, `neondeck_pr_requested_changes_lookup`, and `neondeck_pr_branch_permissions_lookup` for PR review-feedback autopilot facts before reasoning about fixes or push-back.
+- Use `neondeck_pr_comment` to post a concise PR summary comment only after the intended body is explicit and grounded in fetched review/check/worktree facts.
 - Use `/review-queue`, `/explain-ci`, `/summarize-pr`, `/draft-pr-description`, `/prepare-pr`, and `/review-local` through `neondeck_command_run` when the user wants a durable command summary.
 - Use `neondeck_repo_status_lookup` for local git status facts that do not need a persisted command result.
 - Use watch actions for persistent PR or release monitoring instead of repeatedly polling from chat.

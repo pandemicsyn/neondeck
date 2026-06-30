@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import {
   fetchPullRequestEventState,
+  postPullRequestComment,
   type GitHubPullRequestEventState,
 } from './github';
 import { readRepoRegistrySnapshot, repoFullName } from './repos';
@@ -56,6 +57,7 @@ type PullRequestTarget = {
 
 type PrEventStateDependencies = {
   fetchPullRequestEventState?: typeof fetchPullRequestEventState;
+  postPullRequestComment?: typeof postPullRequestComment;
 };
 
 const watermarkCategories: PrWatchEventWatermarkCategory[] = [
@@ -77,6 +79,17 @@ const prEventTargetInputSchema = v.object({
 });
 const prWatchEventWatermarkListInputSchema = v.object({
   watchId: v.optional(nonEmptyStringSchema),
+});
+const prCommentInputSchema = v.object({
+  watchId: v.optional(nonEmptyStringSchema),
+  ref: v.optional(nonEmptyStringSchema),
+  repo: v.optional(nonEmptyStringSchema),
+  prNumber: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+  body: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(65_536)),
+  addressedReviewThreadIds: v.optional(v.array(nonEmptyStringSchema)),
+  addressedReviewCommentIds: v.optional(v.array(nonEmptyStringSchema)),
+  checkRunIds: v.optional(v.array(v.pipe(v.number(), v.integer()))),
+  commitSha: v.optional(nonEmptyStringSchema),
 });
 const prEventOutputSchema = v.looseObject({
   ok: v.boolean(),
@@ -129,6 +142,49 @@ export const githubPrBranchPermissionsGetAction = defineAction({
   },
 });
 
+export const prCommentAction = defineAction({
+  name: 'neondeck_pr_comment',
+  description:
+    'Post a GitHub PR summary comment with optional addressed review feedback, commit, and check metadata.',
+  input: prCommentInputSchema,
+  output: prEventOutputSchema,
+  async run({ input }) {
+    return postGitHubPrComment(input);
+  },
+});
+
+export const prReviewCommentsLookupTool = defineTool({
+  name: 'neondeck_pr_review_comments_lookup',
+  description:
+    'Fetch unresolved GitHub PR review comments and review thread metadata.',
+  input: prEventTargetInputSchema,
+  output: prEventOutputSchema,
+  async run({ input }) {
+    return getGitHubPrReviewThreads(input);
+  },
+});
+
+export const prRequestedChangesLookupTool = defineTool({
+  name: 'neondeck_pr_requested_changes_lookup',
+  description: 'Fetch current requested-changes review state for a GitHub PR.',
+  input: prEventTargetInputSchema,
+  output: prEventOutputSchema,
+  async run({ input }) {
+    return getGitHubPrRequestedChanges(input);
+  },
+});
+
+export const prBranchPermissionsLookupTool = defineTool({
+  name: 'neondeck_pr_branch_permissions_lookup',
+  description:
+    'Fetch branch push permission facts for a GitHub PR without pushing.',
+  input: prEventTargetInputSchema,
+  output: prEventOutputSchema,
+  async run({ input }) {
+    return getGitHubPrBranchPermissions(input);
+  },
+});
+
 export const prWatchEventStateRefreshAction = defineAction({
   name: 'neondeck_pr_watch_event_state_refresh',
   description:
@@ -166,8 +222,16 @@ export const neondeckPrEventActions = [
   githubPrReviewThreadsGetAction,
   githubPrRequestedChangesGetAction,
   githubPrBranchPermissionsGetAction,
+  prCommentAction,
   prWatchEventStateRefreshAction,
   prWatchEventWatermarksListAction,
+];
+
+export const neondeckPrEventTools = [
+  prReviewCommentsLookupTool,
+  prRequestedChangesLookupTool,
+  prBranchPermissionsLookupTool,
+  prWatchEventWatermarksLookupTool,
 ];
 
 export async function getGitHubPrEventState(
@@ -207,6 +271,16 @@ export async function getGitHubPrReviewThreads(
   );
   if (!resolved.ok) return resolved.result;
   const threads = resolved.state.reviewThreads;
+  const unresolvedThreads = threads.filter((thread) => !thread.isResolved);
+  const unresolvedReviewComments = unresolvedThreads.flatMap((thread) =>
+    thread.comments.map((comment) => ({
+      ...comment,
+      threadId: thread.id,
+      threadPath: thread.path,
+      threadLine: thread.line,
+      threadIsOutdated: thread.isOutdated,
+    })),
+  );
 
   return okResult(
     'github_pr_review_threads_get',
@@ -215,9 +289,9 @@ export async function getGitHubPrReviewThreads(
     {
       target: eventTargetJson(resolved.target),
       reviewThreads: threads as unknown as JsonValue,
-      unresolvedReviewComments: threads
-        .filter((thread) => !thread.isResolved)
-        .flatMap((thread) => thread.comments) as unknown as JsonValue,
+      unresolvedReviewThreads: unresolvedThreads as unknown as JsonValue,
+      unresolvedReviewComments:
+        unresolvedReviewComments as unknown as JsonValue,
     },
   );
 }
@@ -272,6 +346,75 @@ export async function getGitHubPrBranchPermissions(
         .branchPermissions as unknown as JsonValue,
     },
   );
+}
+
+export async function postGitHubPrComment(
+  input: v.InferInput<typeof prCommentInputSchema>,
+  paths: RuntimePaths = runtimePaths(),
+  dependencies: PrEventStateDependencies = {},
+): Promise<PrEventActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsed = v.safeParse(prCommentInputSchema, input);
+  if (!parsed.success) {
+    return failResult('pr_comment', 'Invalid PR comment input.', {
+      errors: [v.summarize(parsed.issues)],
+    });
+  }
+
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    return failResult('pr_comment', 'GITHUB_TOKEN is not configured.', {
+      requires: ['GITHUB_TOKEN'],
+    });
+  }
+
+  const resolved = await resolvePullRequestTarget(
+    parsed.output,
+    paths,
+    'pr_comment',
+  );
+  if (!resolved.ok) return resolved.result;
+  if (!(await isConfiguredRepoTarget(resolved.target, paths))) {
+    return failResult(
+      'pr_comment',
+      `Repository "${resolved.target.repoFullName}" is not configured for PR comments.`,
+      { requires: ['repo'] },
+    );
+  }
+
+  try {
+    const poster =
+      dependencies.postPullRequestComment ?? postPullRequestComment;
+    const comment = await poster({
+      token,
+      owner: resolved.target.owner,
+      repo: resolved.target.repo,
+      number: resolved.target.number,
+      body: parsed.output.body,
+    });
+
+    return okResult(
+      'pr_comment',
+      true,
+      `Posted PR comment on ${resolved.target.repoFullName}#${resolved.target.number}.`,
+      {
+        target: eventTargetJson(resolved.target),
+        comment: comment as unknown as JsonValue,
+        metadata: {
+          addressedReviewThreadIds:
+            parsed.output.addressedReviewThreadIds ?? [],
+          addressedReviewCommentIds:
+            parsed.output.addressedReviewCommentIds ?? [],
+          checkRunIds: parsed.output.checkRunIds ?? [],
+          commitSha: parsed.output.commitSha ?? null,
+        },
+      },
+    );
+  } catch (error) {
+    return failResult('pr_comment', 'Could not post GitHub PR comment.', {
+      errors: [errorMessage(error)],
+    });
+  }
 }
 
 export async function refreshPrWatchEventState(
@@ -533,6 +676,17 @@ function targetFromWatch(watch: PrWatch): PullRequestTarget {
     number: watch.prNumber,
     watch,
   };
+}
+
+async function isConfiguredRepoTarget(
+  target: PullRequestTarget,
+  paths: RuntimePaths,
+) {
+  const registry = await readRepoRegistrySnapshot(paths);
+  return registry.repos.some(
+    (repo) =>
+      repoFullName(repo).toLowerCase() === target.repoFullName.toLowerCase(),
+  );
 }
 
 function watermarksFromEventState(

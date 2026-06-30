@@ -1,7 +1,7 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { publishConfigEvent, type ConfigChangeEvent } from './config-events';
 
 const originalEnv = { ...process.env };
@@ -294,5 +294,77 @@ describe('app API safety routes', () => {
       ok: false,
       message: 'Invalid autopilot input.',
     });
+  });
+
+  it('posts PR comments through the local GitHub API route without browser tokens', async () => {
+    const token = process.env.GITHUB_TOKEN;
+    const previousFetch = globalThis.fetch;
+    process.env.GITHUB_TOKEN = 'server-token';
+    await writeFile(
+      join(home, 'repos.json'),
+      `${JSON.stringify({
+        repos: [
+          {
+            id: 'neondeck',
+            github: { owner: 'pandemicsyn', name: 'neondeck' },
+            path: '/src/neondeck',
+            defaultBranch: 'main',
+          },
+        ],
+      })}\n`,
+    );
+    globalThis.fetch = vi.fn<typeof fetch>(async (_input, init) => {
+      expect(init?.headers).toMatchObject({
+        Authorization: 'Bearer server-token',
+      });
+      return new Response(
+        JSON.stringify({
+          id: 77,
+          node_id: 'comment-node-77',
+          html_url:
+            'https://github.com/pandemicsyn/neondeck/pull/123#issuecomment-77',
+          body: 'Addressed review feedback.',
+          user: { login: 'neon' },
+          created_at: '2026-06-30T21:00:00Z',
+          updated_at: '2026-06-30T21:00:00Z',
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+    try {
+      const response = await app.request(
+        'http://localhost/api/github/prs/comment',
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            host: 'localhost',
+            origin: 'http://localhost',
+          },
+          body: JSON.stringify({
+            repo: 'pandemicsyn/neondeck',
+            prNumber: 123,
+            body: 'Addressed review feedback.',
+          }),
+        },
+      );
+      const body = (await response.json()) as {
+        ok: boolean;
+        data?: { comment?: { id?: number } };
+      };
+
+      expect(response.status).toBe(200);
+      expect(body).toMatchObject({
+        ok: true,
+        data: { comment: { id: 77 } },
+      });
+    } finally {
+      globalThis.fetch = previousFetch;
+      if (token === undefined) {
+        delete process.env.GITHUB_TOKEN;
+      } else {
+        process.env.GITHUB_TOKEN = token;
+      }
+    }
   });
 });
