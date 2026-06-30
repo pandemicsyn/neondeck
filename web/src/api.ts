@@ -404,6 +404,15 @@ export type AutopilotPolicyLimits = {
   allowedPushDestinations: string[];
   allowForcePush: boolean;
   highRiskClasses: string[];
+  generatedFileSizeThresholdBytes: number;
+};
+
+export type AutopilotConcurrencyPolicy = {
+  maxAutonomousJobs: number;
+  maxActiveWorkflowRuns: number;
+  maxPerRepoAutonomousJobs: number;
+  singleMutationPerPr: boolean;
+  localExecutionLimit: number;
 };
 
 export type AutopilotQueueItem = {
@@ -436,6 +445,7 @@ export type AutopilotRepoPolicy = {
   source: 'global-default' | 'repo-metadata';
   reason: string;
   limits: AutopilotPolicyLimits;
+  concurrency: AutopilotConcurrencyPolicy;
 };
 
 export type AutopilotWatchPolicy = {
@@ -520,6 +530,7 @@ export type AutopilotState = {
     global: {
       mode: AutopilotMode;
       limits: AutopilotPolicyLimits;
+      concurrency: AutopilotConcurrencyPolicy;
     };
     repos: AutopilotRepoPolicy[];
     watches: AutopilotWatchPolicy[];

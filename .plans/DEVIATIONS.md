@@ -245,3 +245,10 @@ Use this format:
 - Decision: Added first-class `prepared_diffs` and `prepared_diff_approvals` app-state records, backend git-diff read APIs/actions, prepared-diff decision actions, app safety/runtime-skill guidance, and autopilot operator-state integration. `approve push` and `run verification` intentionally record state transitions and next workflow names only; they do not push to GitHub or execute checks.
 - Reason: The delegated Phase 20 slice explicitly excluded actual push-back implementation, and this worktree still lacks the later `verify_pr_worktree` and `push_pr_autofix` execution workflows. Recording approval/request state now gives web and future TUI clients a stable shared surface without hiding GitHub or host mutations inside UI paths.
 - Follow-up: Later Phase 19/20 work should implement `verify_pr_worktree`, `push_pr_autofix`, PR comment posting, permission checks, and human-readable workflow audit summaries using these prepared-diff records.
+
+## 2026-06-30 - Autopilot Verification, Policy Limits, And Concurrency
+
+- Roadmap item: Phase 19 / `verify_pr_worktree` and concurrency controls; Phase 20 / policy limits and high-risk approval classes
+- Decision: Added config-backed autopilot policy limits, default high-risk diff classification, concurrency checks, a deterministic policy-check action, and a `verify_pr_worktree` action/workflow/API that runs configured checks through `neondeck_execution_run`. Deferred push-back, prepared-diff records, dedicated push/prepared-diff approval flows, human-readable timeline summaries, recovery actions, and broader fixture/smoke coverage.
+- Reason: This slice was policy and verification infrastructure. Push-back and prepared-diff ownership require separate app-state records and approval UX so verification does not become an implicit push path.
+- Follow-up: Later Phase 19/20 work should add push/readiness actions, prepared-diff records and APIs, explicit prepared-diff/push approval resolution, recovery controls, docs for autonomous modes, and smoke tests for push-blocking and same-PR queue admission.

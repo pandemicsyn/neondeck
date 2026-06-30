@@ -6,16 +6,27 @@ import {
   fetchCheckSummary,
   fetchPullRequestDetail,
 } from './github';
+import {
+  checkAutopilotConcurrency,
+  checkAutopilotPolicy,
+  repoAutopilotPolicy,
+  withAutopilotLocalExecutionSlot,
+} from './autopilot-policy';
+import { runApprovedExecution } from './execution-actions';
 import { readRepoRegistrySnapshot, repoFullName } from './repos';
 import {
   type RuntimePaths,
+  parseAppConfig,
   ensureRuntimeHome,
+  readRuntimeJson,
   runtimePaths,
 } from './runtime-home';
 import {
   createWorktree,
+  listWorktrees,
   lockWorktree,
   readWorktreeStatus,
+  releaseWorktreeLock,
   syncWorktree,
 } from './worktrees';
 
@@ -41,6 +52,7 @@ type AutopilotActionResult = {
 type AutopilotDependencies = {
   fetchPullRequestDetail?: typeof fetchPullRequestDetail;
   fetchCheckSummary?: typeof fetchCheckSummary;
+  runExecution?: typeof runApprovedExecution;
   token?: string;
 };
 
@@ -135,6 +147,20 @@ const preparePrWorktreeInputSchema = v.strictObject({
     v.pipe(v.number(), v.integer(), v.minValue(30), v.maxValue(86_400)),
   ),
 });
+const verifyPrWorktreeInputSchema = v.strictObject({
+  worktreeId: nonEmptyStringSchema,
+  checks: v.optional(v.array(nonEmptyStringSchema)),
+  diffBaseRef: v.optional(nonEmptyStringSchema),
+  backend: v.optional(v.picklist(['local', 'exe.dev'])),
+  context: v.optional(v.picklist(['interactive', 'unattended'])),
+  lock: v.optional(v.boolean()),
+  lockOwner: v.optional(nonEmptyStringSchema),
+  lockTtlSeconds: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(30), v.maxValue(86_400)),
+  ),
+  timeoutMs: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+  maxOutputBytes: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+});
 const autopilotOutputSchema = v.looseObject({
   ok: v.boolean(),
   action: v.string(),
@@ -164,9 +190,47 @@ export const preparePrWorktreeAction = defineAction({
   },
 });
 
+export const autopilotPolicyCheckAction = defineAction({
+  name: 'neondeck_autopilot_policy_check',
+  description:
+    'Classify an autopilot worktree diff against repo policy limits, high-risk file classes, push destination rules, and concurrency settings.',
+  input: v.strictObject({
+    repoId: v.optional(nonEmptyStringSchema),
+    worktreeId: v.optional(nonEmptyStringSchema),
+    diffBaseRef: v.optional(nonEmptyStringSchema),
+    pushDestination: v.optional(nonEmptyStringSchema),
+    forcePush: v.optional(v.boolean()),
+  }),
+  output: autopilotOutputSchema,
+  async run({ input }) {
+    const result = await checkAutopilotPolicy(input);
+    return {
+      ok: result.ok,
+      action: result.action,
+      changed: false,
+      message: result.message,
+      data: asJsonValue(result),
+      requires: result.requires,
+    };
+  },
+});
+
+export const verifyPrWorktreeAction = defineAction({
+  name: 'neondeck_autopilot_verify_pr_worktree',
+  description:
+    'Run configured repo checks for a PR worktree through Neondeck execution approval policy and summarize pass, fail, or approval-blocked results.',
+  input: verifyPrWorktreeInputSchema,
+  output: autopilotOutputSchema,
+  async run({ input }) {
+    return verifyPrWorktree(input);
+  },
+});
+
 export const neondeckAutopilotActions = [
   triagePrEventAction,
   preparePrWorktreeAction,
+  autopilotPolicyCheckAction,
+  verifyPrWorktreeAction,
 ];
 
 export async function triagePrEvent(
@@ -259,6 +323,27 @@ export async function preparePrWorktree(
     );
     if ('ok' in checks && !checks.ok) return checks;
 
+    const concurrency = await checkAutopilotConcurrency(
+      {
+        repoId: repo.id,
+        prNumber: input.prNumber,
+        workflow: 'prepare_pr_worktree',
+        mutation: true,
+      },
+      paths,
+    );
+    if (!concurrency.allowed) {
+      return {
+        ok: false,
+        action: 'autopilot_prepare_pr_worktree',
+        changed: false,
+        message: concurrency.message,
+        data: asJsonValue({ concurrency }),
+        errors: concurrency.reasons,
+        requires: ['concurrency'],
+      };
+    }
+
     let worktree: unknown = null;
     let lock: unknown = null;
     let status: unknown = null;
@@ -278,7 +363,13 @@ export async function preparePrWorktree(
         },
         paths,
       );
-      if (!created.ok) return lowerLevelFailure('worktree_create', created);
+      if (!created.ok) {
+        return lowerLevelFailure(
+          'autopilot_prepare_pr_worktree',
+          'worktree_create',
+          created,
+        );
+      }
       worktree = objectField(created, 'worktree');
       const worktreeId = stringField(worktree, 'id');
       if (!worktreeId) {
@@ -299,7 +390,13 @@ export async function preparePrWorktree(
           },
           paths,
         );
-        if (!synced.ok) return lowerLevelFailure('worktree_sync', synced);
+        if (!synced.ok) {
+          return lowerLevelFailure(
+            'autopilot_prepare_pr_worktree',
+            'worktree_sync',
+            synced,
+          );
+        }
         worktree = objectField(synced, 'worktree') ?? worktree;
       }
 
@@ -313,7 +410,13 @@ export async function preparePrWorktree(
           },
           paths,
         );
-        if (!locked.ok) return lowerLevelFailure('worktree_lock', locked);
+        if (!locked.ok) {
+          return lowerLevelFailure(
+            'autopilot_prepare_pr_worktree',
+            'worktree_lock',
+            locked,
+          );
+        }
         lock = objectField(locked, 'lock');
       }
 
@@ -336,6 +439,7 @@ export async function preparePrWorktree(
         },
         pr: prFacts,
         checks,
+        concurrency,
         worktree,
         lock,
         status,
@@ -353,6 +457,235 @@ export async function preparePrWorktree(
       'Could not prepare PR worktree.',
       { errors: [errorMessage(error)] },
     );
+  }
+}
+
+export async function verifyPrWorktree(
+  rawInput: unknown,
+  paths: RuntimePaths = runtimePaths(),
+  dependencies: AutopilotDependencies = {},
+): Promise<AutopilotActionResult> {
+  const parsed = parseInput(
+    verifyPrWorktreeInputSchema,
+    rawInput,
+    'autopilot_verify_pr_worktree',
+  );
+  if (!parsed.ok) return parsed.result;
+  const input = parsed.input;
+  let acquiredLockId: string | undefined;
+  const lockOwner = input.lockOwner ?? 'verify_pr_worktree';
+  let finalLockStatus: 'ready' | 'prepared-diff' = 'ready';
+
+  try {
+    await ensureRuntimeHome(paths);
+    const [registry, appConfig, worktreeSnapshot] = await Promise.all([
+      readRepoRegistrySnapshot(paths),
+      readRuntimeJson(paths.config, parseAppConfig),
+      listWorktrees(paths),
+    ]);
+    const worktree = worktreeSnapshot.worktrees.find(
+      (candidate) => candidate.id === input.worktreeId,
+    );
+    if (!worktree || worktree.lifecycleStatus === 'deleted') {
+      return failResult(
+        'autopilot_verify_pr_worktree',
+        `Worktree "${input.worktreeId}" was not found.`,
+        { requires: ['worktreeId'] },
+      );
+    }
+    finalLockStatus =
+      worktree.lifecycleStatus === 'prepared-diff' ? 'prepared-diff' : 'ready';
+    const repo = registry.repos.find(
+      (candidate) => candidate.id === worktree.repoId,
+    );
+    if (!repo) {
+      return failResult(
+        'autopilot_verify_pr_worktree',
+        `Repository "${worktree.repoId}" is not configured.`,
+        { requires: ['repo'] },
+      );
+    }
+
+    const concurrency = await checkAutopilotConcurrency(
+      {
+        repoId: repo.id,
+        prNumber: worktree.prNumber,
+        workflow: 'verify_pr_worktree',
+        mutation: true,
+      },
+      paths,
+    );
+    if (!concurrency.allowed) {
+      return {
+        ok: false,
+        action: 'autopilot_verify_pr_worktree',
+        changed: false,
+        message: concurrency.message,
+        data: asJsonValue({ concurrency }),
+        errors: concurrency.reasons,
+        requires: ['concurrency'],
+      };
+    }
+
+    const lockEnabled = input.lock ?? true;
+    if (lockEnabled) {
+      const locked = await lockWorktree(
+        {
+          worktreeId: worktree.id,
+          scope: 'pr',
+          owner: lockOwner,
+          ttlSeconds: input.lockTtlSeconds ?? 3_600,
+        },
+        paths,
+      );
+      if (!locked.ok) {
+        return lowerLevelFailure(
+          'autopilot_verify_pr_worktree',
+          'worktree_lock',
+          locked,
+        );
+      }
+      acquiredLockId = stringField(objectField(locked, 'lock'), 'id');
+    }
+
+    const policy = await checkAutopilotPolicy(
+      {
+        worktreeId: worktree.id,
+        diffBaseRef: input.diffBaseRef,
+        pushDestination: 'pull-request-head',
+      },
+      paths,
+    );
+    if (!policy.ok || policy.blocked) {
+      return {
+        ok: false,
+        action: 'autopilot_verify_pr_worktree',
+        changed: false,
+        message: policy.message,
+        data: asJsonValue({ policy, concurrency }),
+        errors: policy.reasons,
+        requires: policy.requires,
+      };
+    }
+    if (policy.diff.filesChanged > 0) {
+      finalLockStatus = 'prepared-diff';
+    }
+
+    const checks = resolveVerificationChecks(
+      input.checks,
+      repo,
+      repoAutopilotPolicy(repo, appConfig).limits.requiredChecks,
+    );
+    if (checks.length === 0) {
+      return failResult(
+        'autopilot_verify_pr_worktree',
+        'No repo checks are configured for this worktree.',
+        {
+          requires: ['autopilot.limits.requiredChecks', 'repo.packageScripts'],
+        },
+      );
+    }
+
+    const runExecution = dependencies.runExecution ?? runApprovedExecution;
+    const results = [];
+    for (const command of checks) {
+      const slot = await withAutopilotLocalExecutionSlot(
+        policy.concurrency,
+        () =>
+          runExecution(
+            {
+              command,
+              backend: input.backend,
+              cwd: worktree.localPath,
+              context: input.context ?? 'unattended',
+              timeoutMs: input.timeoutMs,
+              maxOutputBytes: input.maxOutputBytes,
+              requestContext: {
+                source: 'autopilot',
+                workflow: 'verify_pr_worktree',
+                repoId: repo.id,
+                repoFullName: repoFullName(repo),
+                prNumber: worktree.prNumber,
+                worktreeId: worktree.id,
+              },
+            },
+            paths,
+          ),
+      );
+      if ('blocked' in slot) {
+        results.push({
+          command,
+          ok: false,
+          message: slot.message,
+          requires: ['localExecutionLimit'],
+        });
+        break;
+      }
+      results.push({
+        command,
+        ok: Boolean(slot.ok),
+        message: stringField(slot, 'message') ?? 'Execution completed.',
+        requires: arrayField(slot, 'requires'),
+        approvalId: stringField(objectField(slot, 'approval'), 'id') ?? null,
+        exitCode: numberField(objectField(slot, 'result'), 'exitCode') ?? null,
+      });
+      if (!slot.ok) break;
+    }
+
+    const passed =
+      results.length === checks.length && results.every((item) => item.ok);
+    const blocked = results.some((item) => item.requires.length > 0);
+    const status = await readWorktreeStatus({ worktreeId: worktree.id }, paths);
+
+    return {
+      ok: passed,
+      action: 'autopilot_verify_pr_worktree',
+      changed: true,
+      message: passed
+        ? `Verified ${repoFullName(repo)}#${worktree.prNumber ?? 'worktree'} with ${results.length} check(s).`
+        : blocked
+          ? 'Verification is blocked by execution approval or concurrency policy.'
+          : 'One or more verification checks failed.',
+      data: asJsonValue({
+        repo: {
+          id: repo.id,
+          fullName: repoFullName(repo),
+          path: repo.path,
+          defaultBranch: repo.defaultBranch,
+        },
+        worktree,
+        policy,
+        concurrency,
+        checks,
+        results,
+        status,
+      }),
+      ...(passed
+        ? {}
+        : {
+            errors: results
+              .filter((item) => !item.ok)
+              .map((item) => item.message),
+          }),
+      ...(blocked ? { requires: ['approval'] } : {}),
+    };
+  } catch (error) {
+    return failResult(
+      'autopilot_verify_pr_worktree',
+      'Could not verify PR worktree.',
+      { errors: [errorMessage(error)] },
+    );
+  } finally {
+    if (acquiredLockId) {
+      await releaseWorktreeLock(
+        {
+          lockId: acquiredLockId,
+          owner: lockOwner,
+          finalStatus: finalLockStatus,
+        },
+        paths,
+      ).catch(() => undefined);
+    }
   }
 }
 
@@ -557,6 +890,7 @@ function failResult(
 }
 
 function lowerLevelFailure(
+  action: string,
   sourceAction: string,
   result: unknown,
 ): AutopilotActionResult {
@@ -565,7 +899,7 @@ function lowerLevelFailure(
     `Could not prepare PR worktree because ${sourceAction} failed.`;
   return {
     ok: false,
-    action: 'autopilot_prepare_pr_worktree',
+    action,
     changed: Boolean(booleanField(result, 'changed')),
     message,
     errors: [message],
@@ -578,6 +912,27 @@ function lowerLevelFailure(
           : undefined,
     }),
   };
+}
+
+function resolveVerificationChecks(
+  inputChecks: string[] | undefined,
+  repo: Awaited<ReturnType<typeof readRepoRegistrySnapshot>>['repos'][number],
+  policyChecks: string[],
+) {
+  if (policyChecks.length > 0) {
+    return unique([...policyChecks, ...(inputChecks ?? [])]);
+  }
+  if (inputChecks && inputChecks.length > 0) return unique(inputChecks);
+
+  const scripts = repo.packageScripts ?? {};
+  const preferred = ['check', 'test', 'typecheck', 'lint'];
+  return preferred
+    .filter((script) => scripts[script])
+    .map((script) => `npm run ${script}`);
+}
+
+function unique(values: string[]) {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
 function objectField(value: unknown, key: string) {
@@ -596,6 +951,20 @@ function booleanField(value: unknown, key: string) {
   if (!value || typeof value !== 'object') return undefined;
   const field = (value as Record<string, unknown>)[key];
   return typeof field === 'boolean' ? field : undefined;
+}
+
+function numberField(value: unknown, key: string) {
+  if (!value || typeof value !== 'object') return undefined;
+  const field = (value as Record<string, unknown>)[key];
+  return typeof field === 'number' ? field : undefined;
+}
+
+function arrayField(value: unknown, key: string) {
+  if (!value || typeof value !== 'object') return [];
+  const field = (value as Record<string, unknown>)[key];
+  return Array.isArray(field)
+    ? field.filter((item): item is string => typeof item === 'string')
+    : [];
 }
 
 function asJsonValue(value: unknown): JsonValue {
