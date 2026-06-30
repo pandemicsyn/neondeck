@@ -273,3 +273,10 @@ Use this format:
 - Decision: Implemented the workflow/action/API as a bounded deterministic fixer that fetches GitHub review/requested-change facts, groups unresolved comments by file/topic, reads target files through repo-edit, and applies only explicit caller-supplied repo-edit replacements or V4A patches before making a local worktree commit and prepared-diff record. It does not synthesize arbitrary edits inside the service, push to GitHub, or post PR comments.
 - Reason: The roadmap requires file changes to route through repo-edit actions and the current verified Flue surface does not provide a safe, typed one-shot code-generation API for autonomous patch synthesis. Keeping edit intent explicit gives fixture-driven coverage now without adding an unbounded model-to-files path.
 - Follow-up: Add a model-planning layer or delegated worker that produces bounded repo-edit replacements/patches from the grouped plan, then feed those edits into this workflow. Later Phase 19/20 slices still own CI-failure fixes, push-back, PR result comments, and full workflow smoke tests.
+
+## 2026-06-30 - Kilo Review Verify Promote Foundation
+
+- Roadmap item: Phase 21 / KiloCode review, verify, and promote workflows
+- Decision: Added bounded `review_kilo_result` and `verify_kilo_result` workflows/actions, Kilo result state/event tables, Kilo result APIs, Runtime Overview state wiring, and a `promote_kilo_result` admission layer. Actual commit, push, and PR comment mutations are explicitly deferred.
+- Reason: Safe promotion needs the broader push-back workflow, durable PR comment audit, and commit/push implementation. This slice establishes deterministic gates over autopilot policy, prepared-diff approval state, GitHub permission facts, and verification without silently adding unsafe GitHub mutations.
+- Follow-up: Implement the real push/comment path in the Phase 19/20 push-back workflow, then let `promote_kilo_result` call or admit that workflow when all gates pass.

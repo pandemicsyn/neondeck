@@ -173,7 +173,7 @@ KiloCode handoff is available only as an explicit delegated-worker path. Neon sh
 }
 ```
 
-Kilo tasks are stored in `data/neondeck.db` as `kilo_tasks` and `kilo_task_events`. The runner starts `kilo run <prompt> --dir <workspace> --title <title> --format json` in a configured repo or Neondeck-managed worktree, captures JSONL stdout/stderr and session ids, and exposes task/session read/search actions plus `/api/kilo/*` routes. `--auto` requires explicit confirmation and is limited by policy; prefer managed worktrees for code-changing handoffs.
+Kilo tasks are stored in `data/neondeck.db` as `kilo_tasks`, `kilo_task_events`, `kilo_result_state`, and `kilo_result_events`. The runner starts `kilo run <prompt> --dir <workspace> --title <title> --format json` in a configured repo or Neondeck-managed worktree, captures JSONL stdout/stderr and session ids, and exposes task/session read/search actions plus `/api/kilo/*` routes. `review_kilo_result` classifies completed diffs, `verify_kilo_result` runs configured checks through the execution approval policy, and `promote_kilo_result` records only the safe promotion admission decision. It does not commit, push, or comment yet. `--auto` requires explicit confirmation and is limited by policy; prefer managed worktrees for code-changing handoffs.
 
 ## Run
 

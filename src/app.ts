@@ -59,6 +59,12 @@ import {
   searchKiloSessions,
   startKiloTask,
 } from './kilo-actions';
+import {
+  listKiloResultStates,
+  promoteKiloResult,
+  reviewKiloResult,
+  verifyKiloResult,
+} from './kilo-results';
 import { deleteMemory, listMemories, upsertMemory } from './memory-actions';
 import { readHostMetrics } from './metrics';
 import {
@@ -860,6 +866,17 @@ app.get('/api/kilo/tasks', async (c) => {
   );
 });
 
+app.get('/api/kilo/results', async (c) => {
+  const result = await listKiloResultStates(
+    {
+      taskId: c.req.query('taskId') || undefined,
+      limit: queryNumber(c.req.query('limit')),
+    },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
 app.post('/api/kilo/tasks', async (c) => {
   const result = await startKiloTask(await safeJsonBody(c), paths);
   return c.json(result, result.ok ? 200 : 400);
@@ -894,6 +911,32 @@ app.get('/api/kilo/tasks/:id/sessions', async (c) => {
 app.get('/api/kilo/tasks/:id/diff', async (c) => {
   const result = await readKiloTaskDiff({ taskId: c.req.param('id') }, paths);
   return c.json(result, result.ok ? 200 : 404);
+});
+
+app.get('/api/kilo/tasks/:id/result', async (c) => {
+  const result = await listKiloResultStates(
+    { taskId: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 404);
+});
+
+app.post('/api/kilo/tasks/:id/review', async (c) => {
+  const result = await reviewKiloResult({ taskId: c.req.param('id') }, paths);
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/kilo/tasks/:id/verify', async (c) => {
+  const result = await verifyKiloResult(
+    { ...(await safeJsonObject(c)), taskId: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/kilo/tasks/:id/promote', async (c) => {
+  const result = await promoteKiloResult({ taskId: c.req.param('id') }, paths);
+  return c.json(result, result.ok ? 200 : 400);
 });
 
 app.post('/api/kilo/sessions/search', async (c) => {
