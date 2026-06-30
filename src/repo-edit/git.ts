@@ -45,6 +45,13 @@ export type GitCommitResult = {
   message: string;
 };
 
+export type GitPushResult = {
+  remote: string;
+  branch: string;
+  force: boolean;
+  stdout: string;
+};
+
 export async function gitStatus(repoRoot: string): Promise<RepoGitStatus> {
   const [branch, upstream, porcelain] = await Promise.all([
     git(repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD']).then((out) =>
@@ -84,6 +91,10 @@ export async function gitStatus(repoRoot: string): Promise<RepoGitStatus> {
     clean: files.length === 0,
     files,
   };
+}
+
+export async function gitCurrentSha(repoRoot: string) {
+  return (await git(repoRoot, ['rev-parse', 'HEAD'])).trim();
 }
 
 export async function gitDiff(
@@ -387,6 +398,22 @@ export async function gitCommitPaths(
   };
 }
 
+export async function gitPushHead(
+  repoRoot: string,
+  input: { remote: string; branch: string; force?: boolean },
+): Promise<GitPushResult> {
+  const remote = validateRemote(input.remote);
+  const branch = validateRef(input.branch);
+  const refspec = `${input.force ? '+' : ''}HEAD:refs/heads/${branch}`;
+  const stdout = await git(repoRoot, ['push', remote, refspec]);
+  return {
+    remote,
+    branch,
+    force: Boolean(input.force),
+    stdout,
+  };
+}
+
 export async function unifiedDiff(
   repoRoot: string,
   relativePath: string,
@@ -504,6 +531,16 @@ function validatePathspec(paths?: string[]) {
     validated.push(path);
   }
   return validated;
+}
+
+function validateRemote(remote: string) {
+  const trimmed = remote.trim();
+  if (!trimmed || trimmed.startsWith('-') || trimmed.includes('\u0000')) {
+    throw Object.assign(new Error(`Invalid git remote: ${remote}`), {
+      code: 'GIT_ERROR',
+    });
+  }
+  return trimmed;
 }
 
 async function git(

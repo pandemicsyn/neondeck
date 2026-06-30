@@ -225,6 +225,13 @@ Use this format:
 - Reason: The current Phase 14 model intentionally avoids owning remote VM lifecycle and long-lived remote repo topology. Independent remote checkouts keep the helper deterministic, work for either base repos or managed worktrees, and let every remote `git` step continue through the existing execution approval/audit path.
 - Follow-up: If a later lifecycle mode owns per-repo VM state, revisit whether remote `git worktree` topology provides enough reuse benefit to justify the extra cleanup and locking semantics.
 
+## 2026-06-30 - PR Autofix Push Workflow
+
+- Roadmap item: Phase 19 / `push_pr_autofix` workflow and Phase 20 / push-back recovery actions
+- Decision: Added `push_pr_autofix` as a bounded Flue workflow/action and local API over approved prepared-diff records. It pushes only approved, verified, clean committed worktrees when autopilot policy and GitHub branch permission facts allow PR-head push-back. Blocked attempts update prepared-diff/worktree state and notifications while retaining the worktree. Result comments remain owned by `comment_pr_autofix_result`, and force-push support remains deferred.
+- Reason: The requested slice explicitly kept PR comments separate unless required by the push action contract, and the roadmap forbids force-push unless a future narrowly scoped repo policy enables it. The current safe default is forward push only with durable blocked-attempt recovery data.
+- Follow-up: Add dedicated retry/resync/cleanup recovery actions and any future force-push policy only behind explicit repo-level configuration and approval.
+
 ## 2026-06-30 - Kilo Reconciliation And Session Access
 
 - Roadmap item: Phase 21 / KiloCode handoff reconciliation, session access, transcript controls, and dashboard/API basics

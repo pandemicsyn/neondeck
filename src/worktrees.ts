@@ -987,6 +987,53 @@ export function assertWorktreeMutationAllowed(
   assertNoForeignActiveLock(record, input.lockId, paths);
 }
 
+export async function recordWorktreePushBlocked(
+  worktreeId: string,
+  input: { message: string; data?: unknown },
+  paths: RuntimePaths = runtimePaths(),
+) {
+  const record = requireWorktree(worktreeId, paths);
+  updateWorktreeStatus(record.id, 'prepared-diff', paths);
+  await recordWorktreeEvent(
+    record.id,
+    record.repoId,
+    'push_blocked',
+    'prepared-diff',
+    input.message,
+    input.data,
+    paths,
+  );
+  return requireWorktree(worktreeId, paths);
+}
+
+export async function recordWorktreePushSucceeded(
+  worktreeId: string,
+  input: { commitSha: string; message: string; data?: unknown },
+  paths: RuntimePaths = runtimePaths(),
+) {
+  const record = requireWorktree(worktreeId, paths);
+  const now = new Date().toISOString();
+  upsertWorktree(
+    {
+      ...record,
+      lifecycleStatus: 'succeeded',
+      lastPushedSha: input.commitSha,
+      updatedAt: now,
+    },
+    paths,
+  );
+  await recordWorktreeEvent(
+    record.id,
+    record.repoId,
+    'pushed',
+    'succeeded',
+    input.message,
+    input.data,
+    paths,
+  );
+  return requireWorktree(worktreeId, paths);
+}
+
 class WorktreeError extends Error {
   readonly code: string;
 

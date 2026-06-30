@@ -10,6 +10,7 @@ import {
   fixPrReviewFeedback,
   commentPrAutofixResult,
   preparePrWorktree,
+  pushPrAutofix,
   triagePrEvent,
   verifyPrWorktree,
 } from './autopilot-workflows';
@@ -1099,6 +1100,19 @@ app.post('/api/prepared-diffs/:id/verify', async (c) => {
 
 app.post('/api/autopilot/verify-pr-worktree', async (c) => {
   const result = await verifyPrWorktree(await safeJsonBody(c), paths);
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/autopilot/push-pr-autofix', async (c) => {
+  const result = await pushPrAutofix(await safeJsonBody(c), paths);
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/prepared-diffs/:id/push', async (c) => {
+  const result = await pushPrAutofix(
+    { ...(await safeJsonObject(c)), preparedDiffId: c.req.param('id') },
+    paths,
+  );
   return c.json(result, result.ok ? 200 : 400);
 });
 
