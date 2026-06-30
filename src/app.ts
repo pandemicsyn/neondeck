@@ -61,6 +61,7 @@ import {
   getGitHubPrRequestedChanges,
   getGitHubPrReviewThreads,
   listPrWatchEventWatermarks,
+  postGitHubPrComment,
   refreshPrWatchEventState,
 } from './pr-event-state';
 import { readRepoHealthSnapshot, readRepoRegistrySnapshot } from './repos';
@@ -1133,6 +1134,14 @@ app.post('/api/github/prs/branch-permissions', async (c) => {
     (await safeJsonBody(c)) as Parameters<
       typeof getGitHubPrBranchPermissions
     >[0],
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/github/prs/comment', async (c) => {
+  const result = await postGitHubPrComment(
+    (await safeJsonBody(c)) as Parameters<typeof postGitHubPrComment>[0],
     paths,
   );
   return c.json(result, result.ok ? 200 : 400);

@@ -80,6 +80,14 @@ const safeMutation = {
   audited: true,
 } satisfies Partial<SafetyPolicyEntry>;
 
+const unauditedSafeMutation = {
+  class: 'safe-mutation',
+  unattended: false,
+  requiresConfirmation: false,
+  audited: false,
+  auditTarget: 'none',
+} satisfies Partial<SafetyPolicyEntry>;
+
 const destructiveMutation = {
   class: 'destructive-mutation',
   unattended: false,
@@ -178,6 +186,24 @@ const entries: SafetyPolicyEntry[] = [
     'Read GitHub check summary',
     readOnly,
     'Fetches GitHub check summary facts for a configured repository ref.',
+  ),
+  tool(
+    'neondeck_pr_review_comments_lookup',
+    'Read PR review comments',
+    readOnly,
+    'Fetches unresolved GitHub PR review comments and review thread metadata.',
+  ),
+  tool(
+    'neondeck_pr_requested_changes_lookup',
+    'Read requested changes',
+    readOnly,
+    'Fetches current requested-changes review state for a GitHub PR.',
+  ),
+  tool(
+    'neondeck_pr_branch_permissions_lookup',
+    'Read PR branch permissions',
+    readOnly,
+    'Fetches branch push permission facts for a GitHub PR without pushing.',
   ),
   tool(
     'neondeck_pr_watch_event_watermarks_lookup',
@@ -549,6 +575,12 @@ const entries: SafetyPolicyEntry[] = [
     'Fetches read-only branch push permission facts without pushing.',
   ),
   action(
+    'neondeck_pr_comment',
+    'Post PR comment',
+    unauditedSafeMutation,
+    'Posts a GitHub PR comment through the server-side GitHub token and returns normalized comment metadata. Durable PR-comment audit records are deferred to the autopilot queue persistence slice.',
+  ),
+  action(
     'neondeck_pr_watch_event_state_refresh',
     'Refresh PR event watermarks',
     {
@@ -562,6 +594,12 @@ const entries: SafetyPolicyEntry[] = [
     'List PR event watermarks',
     readOnly,
     'Lists persisted PR watch event watermarks.',
+  ),
+  route(
+    '/api/github/prs/comment',
+    'Post PR comment API',
+    unauditedSafeMutation,
+    'Local API route for posting a bounded PR comment with the server-side GitHub token. Durable PR-comment audit records are deferred to the autopilot queue persistence slice.',
   ),
   action(
     'neondeck_watch_ref_add',

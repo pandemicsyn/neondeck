@@ -11,6 +11,9 @@ import {
   getGitHubPrRequestedChanges,
   getGitHubPrReviewThreads,
   listPrWatchEventWatermarks,
+  neondeckPrEventActions,
+  neondeckPrEventTools,
+  postGitHubPrComment,
   refreshPrWatchEventState,
 } from './pr-event-state';
 import { runtimePaths } from './runtime-home';
@@ -29,6 +32,19 @@ afterEach(async () => {
 });
 
 describe('PR event state watermarks', () => {
+  it('exposes roadmap PR review fact tools and comment action names', () => {
+    expect(neondeckPrEventTools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining([
+        'neondeck_pr_review_comments_lookup',
+        'neondeck_pr_requested_changes_lookup',
+        'neondeck_pr_branch_permissions_lookup',
+      ]),
+    );
+    expect(neondeckPrEventActions.map((action) => action.name)).toEqual(
+      expect.arrayContaining(['neondeck_pr_comment']),
+    );
+  });
+
   it('persists per-category event watermarks and reports silent unchanged refreshes', async () => {
     process.env.GITHUB_TOKEN = 'token';
     const home = await tempHome();
@@ -286,6 +302,105 @@ describe('PR event state watermarks', () => {
     });
   });
 
+  it('posts PR comments through the server-side GitHub action boundary', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    const calls: unknown[] = [];
+
+    await expect(
+      postGitHubPrComment(
+        {
+          repo: 'neondeck',
+          prNumber: 123,
+          body: 'Addressed review feedback in commit abc123. Checks: test.',
+          addressedReviewThreadIds: ['thread-1'],
+          addressedReviewCommentIds: ['111'],
+          checkRunIds: [6001],
+          commitSha: 'abc123',
+        },
+        paths,
+        {
+          postPullRequestComment: async (input) => {
+            calls.push(input);
+            return {
+              id: 77,
+              nodeId: 'comment-node-77',
+              url: 'https://github.com/pandemicsyn/neondeck/pull/123#issuecomment-77',
+              authorLogin: 'neon',
+              body: input.body,
+              createdAt: '2026-06-30T21:00:00Z',
+              updatedAt: '2026-06-30T21:00:00Z',
+            };
+          },
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'pr_comment',
+      data: {
+        target: {
+          repoFullName: 'pandemicsyn/neondeck',
+          number: 123,
+        },
+        comment: {
+          id: 77,
+          authorLogin: 'neon',
+        },
+        metadata: {
+          addressedReviewThreadIds: ['thread-1'],
+          addressedReviewCommentIds: ['111'],
+          checkRunIds: [6001],
+          commitSha: 'abc123',
+        },
+      },
+    });
+
+    expect(calls).toEqual([
+      expect.objectContaining({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+        body: 'Addressed review feedback in commit abc123. Checks: test.',
+      }),
+    ]);
+  });
+
+  it('blocks PR comments for unconfigured repositories', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    let posted = false;
+
+    await expect(
+      postGitHubPrComment(
+        {
+          repo: 'external/private-repo',
+          prNumber: 123,
+          body: 'This should not post.',
+        },
+        paths,
+        {
+          postPullRequestComment: async () => {
+            posted = true;
+            throw new Error('unexpected post');
+          },
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'pr_comment',
+      requires: ['repo'],
+      message:
+        'Repository "external/private-repo" is not configured for PR comments.',
+    });
+    expect(posted).toBe(false);
+  });
+
   it('validates inputs and reports missing credentials before fetching', async () => {
     delete process.env.GITHUB_TOKEN;
     const home = await tempHome();
@@ -304,6 +419,16 @@ describe('PR event state watermarks', () => {
     ).resolves.toMatchObject({
       ok: false,
       requires: ['watchId', 'ref', 'repo', 'prNumber'],
+    });
+    await expect(
+      postGitHubPrComment(
+        { repo: 'neondeck', prNumber: 123, body: '   ' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'pr_comment',
+      message: 'Invalid PR comment input.',
     });
   });
 });

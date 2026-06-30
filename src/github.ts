@@ -170,6 +170,16 @@ export type GitHubBranchPushPermissions = {
   checkedAt: string;
 };
 
+export type GitHubPullRequestComment = {
+  id: number;
+  nodeId: string | null;
+  url: string;
+  authorLogin: string | null;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type GitHubPullRequestEventState = {
   repo: string;
   number: number;
@@ -692,6 +702,37 @@ export async function fetchPullRequestReviews(options: {
   }));
 }
 
+export async function postPullRequestComment(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+  body: string;
+}): Promise<GitHubPullRequestComment> {
+  const response = await githubFetch(
+    options.token,
+    `https://api.github.com/repos/${encodePathSegment(options.owner)}/${encodePathSegment(options.repo)}/issues/${options.number}/comments`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ body: options.body }),
+    },
+  );
+  const data = v.parse(
+    githubIssueCommentApiResponseSchema,
+    await response.json(),
+  );
+
+  return {
+    id: data.id,
+    nodeId: data.node_id ?? null,
+    url: data.html_url,
+    authorLogin: data.user?.login ?? null,
+    body: data.body,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+  };
+}
+
 export async function fetchPullRequestReviewThreads(options: {
   token: string;
   owner: string;
@@ -1139,6 +1180,16 @@ const githubRepositoryApiResponseSchema = v.object({
       pull: v.optional(v.boolean()),
     }),
   ),
+});
+
+const githubIssueCommentApiResponseSchema = v.object({
+  id: v.number(),
+  node_id: v.optional(v.nullable(v.string())),
+  html_url: v.string(),
+  body: v.string(),
+  user: v.optional(v.nullable(v.object({ login: v.string() }))),
+  created_at: v.string(),
+  updated_at: v.string(),
 });
 
 const githubGraphqlBaseResponseSchema = v.looseObject({

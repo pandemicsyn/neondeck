@@ -196,6 +196,7 @@ Use this format:
 - Decision: Implemented the planned worktree runtime foundation: runtime-home `worktrees/`, repo-local `.neondeck/worktrees` option, app SQLite records/locks/events/cleanup attempts, deterministic `neondeck_worktree_*` actions/tools, repo registry active-worktree links, repo-edit `worktreeId` targeting, cleanup policy config/action, Runtime Overview rows, runtime skill guidance, and focused service tests. No Phase 18 scope deviations were taken.
 - Reason: Worktrees are the required isolation boundary for later PR event autopilot and Kilo handoff, but this phase should remain deterministic app state and service plumbing.
 - Follow-up: Phase 19 and later should add PR event autopilot workflows, prepared-diff UI/push-back flows, and Kilo handoff orchestration on top of these worktree services.
+
 ## 2026-06-30 - Autopilot Queue And Policy Surface
 
 - Roadmap item: Phase 19 / dashboard/TUI autopilot APIs and runtime skill guidance; Phase 20 / repo/watch policy and dashboard decision panel
@@ -230,3 +231,10 @@ Use this format:
 - Decision: Landed the read-only Phase 19A foundation: GitHub PR event-state collection, persistent per-watch event watermarks, focused lookup/actions, and local APIs. Deferred PR comment posting, triage workflow admission, worktree preparation, autonomous fixes, push-back, and dashboard queue panels.
 - Reason: The delegated slice explicitly asked for the event model and watermarks only, and PR commenting/push/autofix behavior crosses into later mutating autopilot policy.
 - Follow-up: Later Phase 19 work should add `triage_pr_event`, PR comment posting, worktree preparation, fix/verify/push workflows, concurrency controls, and dashboard/TUI queue surfaces on top of these watermarks.
+
+## 2026-06-30 - Deterministic GitHub Review Facts And PR Comments
+
+- Roadmap item: Phase 19 / deterministic GitHub review facts/actions
+- Decision: Added focused Flue lookup tools for unresolved review comments/thread metadata, requested-changes state, and branch push permissions; added the `neondeck_pr_comment` action and local API route for server-side PR comment posting. Deferred a dedicated durable PR-comment audit table and did not implement the larger `comment_pr_autofix_result`, `fix_pr_review_feedback`, or push workflows.
+- Reason: This slice was scoped to reusable GitHub facts/mutations. A first-class PR-comment audit table should be designed with the broader autopilot queue/push-back persistence contract instead of being bolted onto the review fact surface.
+- Follow-up: Add durable PR comment/autofix event records when the Phase 19 comment/fix/push workflows and autopilot queue admission tables land.
