@@ -413,9 +413,14 @@ function RuntimeView({
     5,
   );
   const activeKiloTasks = snapshot.kiloTasks.tasks.filter((task) =>
-    ['running', 'needs-reconcile', 'needs-review', 'unknown'].includes(
-      task.status,
-    ),
+    [
+      'running',
+      'needs-reconcile',
+      'needs-review',
+      'ready-to-verify',
+      'ready-to-push',
+      'unknown',
+    ].includes(task.status),
   );
   const recentKiloTasks = [
     ...activeKiloTasks,
@@ -1754,6 +1759,14 @@ function KiloTaskRow({ task }: { task: KiloTaskRecord }) {
           approvals {task.pendingApprovals?.length ?? 0}
         </div>
       </div>
+      <div className="mt-1.5 grid grid-cols-2 gap-1.5 font-mono text-[10px] text-muted">
+        <div className="border border-line bg-field px-2 py-1">
+          review {task.reviewClassification ?? 'pending'}
+        </div>
+        <div className="border border-line bg-field px-2 py-1">
+          promote {task.promotionState ?? 'not-requested'}
+        </div>
+      </div>
       {task.childSessionIds.length > 0 ? (
         <div className="mt-1.5 flex flex-wrap gap-1">
           {task.childSessionIds.slice(0, 3).map((id) => (
@@ -2147,11 +2160,21 @@ function repoEditEventClass(event: RepoEditEvent) {
 }
 
 function kiloTaskStatusClass(status: KiloTaskRecord['status']) {
-  if (status === 'succeeded') return 'border-primary text-primary';
+  if (
+    status === 'succeeded' ||
+    status === 'ready-to-verify' ||
+    status === 'ready-to-push'
+  ) {
+    return 'border-primary text-primary';
+  }
   if (status === 'failed' || status === 'unknown') {
     return 'border-accent text-accent';
   }
-  if (status === 'needs-reconcile' || status === 'needs-review') {
+  if (
+    status === 'needs-reconcile' ||
+    status === 'needs-review' ||
+    status === 'discarded'
+  ) {
     return 'border-violet text-violet';
   }
   if (status === 'running') return 'border-primary text-primary';

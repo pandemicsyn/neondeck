@@ -9,6 +9,7 @@ import { createInterface } from 'node:readline';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { promisify } from 'node:util';
 import * as v from 'valibot';
+import { readKiloResultStateSummary } from './kilo-results';
 import {
   type KiloConfig,
   type RepoConfig,
@@ -35,6 +36,9 @@ export type KiloTaskStatus =
   | 'cancelled'
   | 'needs-reconcile'
   | 'needs-review'
+  | 'ready-to-verify'
+  | 'ready-to-push'
+  | 'discarded'
   | 'unknown';
 
 export type KiloHandoffMode = 'draft-fix' | 'patch-proposal' | 'direct-edit';
@@ -159,6 +163,9 @@ const tasksListInputSchema = v.object({
       'cancelled',
       'needs-reconcile',
       'needs-review',
+      'ready-to-verify',
+      'ready-to-push',
+      'discarded',
       'unknown',
     ]),
   ),
@@ -596,8 +603,11 @@ export async function listKiloTasks(
       .all(...values)
       .map(readTaskRow);
     const tasks = parsed.input.includeDiff
-      ? await Promise.all(rows.map((task) => taskWithDiff(task)))
-      : rows;
+      ? await Promise.all(rows.map((task) => taskWithDiff(task, paths)))
+      : rows.map((task) => ({
+          ...task,
+          ...readKiloResultStateSummary(task.id, paths),
+        }));
     return {
       ok: true,
       action: 'kilo_tasks_list',
@@ -630,7 +640,10 @@ export async function readKiloTaskStatus(
     action: 'kilo_task_status',
     changed: false,
     message: `Read Kilo task ${parsed.input.taskId}.`,
-    task,
+    task: {
+      ...task,
+      ...readKiloResultStateSummary(task.id, paths),
+    },
   };
 }
 
@@ -1576,7 +1589,9 @@ function worktreeStatusForKiloStatus(status: KiloTaskStatus) {
   if (
     status === 'succeeded' ||
     status === 'needs-review' ||
-    status === 'needs-reconcile'
+    status === 'needs-reconcile' ||
+    status === 'ready-to-verify' ||
+    status === 'ready-to-push'
   ) {
     return 'prepared-diff';
   }
@@ -2433,14 +2448,14 @@ function addSessionAudit(
   }
 }
 
-async function taskWithDiff(task: KiloTaskRecord) {
+async function taskWithDiff(task: KiloTaskRecord, paths: RuntimePaths) {
   const diff = await taskDiffSummary(task);
+  const resultState = readKiloResultStateSummary(task.id, paths);
   return {
     ...task,
     changedFiles: diff.files.map((file) => file.path),
     diff,
-    verificationState: 'not-run',
-    pendingApprovals: [],
+    ...resultState,
   };
 }
 

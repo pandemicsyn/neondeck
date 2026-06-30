@@ -928,11 +928,48 @@ function initializeAppDatabase(path: string) {
         include_diff INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS kilo_result_state (
+        task_id TEXT PRIMARY KEY,
+        prepared_diff_id TEXT,
+        classification TEXT NOT NULL,
+        verification_status TEXT NOT NULL,
+        promotion_status TEXT NOT NULL,
+        diff_fingerprint TEXT,
+        verified_diff_fingerprint TEXT,
+        review_summary_json TEXT,
+        diff_summary_json TEXT,
+        policy_json TEXT,
+        verification_json TEXT,
+        promotion_json TEXT,
+        pending_approvals_json TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        reviewed_at TEXT,
+        verified_at TEXT,
+        promoted_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS kilo_result_events (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        data_json TEXT,
+        created_at TEXT NOT NULL
+      );
     `);
 
     ensureColumn(database, 'repo_edit_events', 'worktree_id', 'TEXT');
     ensureColumn(database, 'repo_file_reads', 'worktree_id', 'TEXT');
     ensureColumn(database, 'kilo_tasks', 'lock_id', 'TEXT');
+    ensureColumn(database, 'kilo_result_state', 'diff_fingerprint', 'TEXT');
+    ensureColumn(
+      database,
+      'kilo_result_state',
+      'verified_diff_fingerprint',
+      'TEXT',
+    );
     ensureColumn(database, 'notifications', 'resolved_at', 'TEXT');
     ensureColumn(database, 'notifications', 'updated_at', 'TEXT');
     ensureColumn(
@@ -1034,6 +1071,12 @@ function initializeAppDatabase(path: string) {
 
       CREATE INDEX IF NOT EXISTS idx_kilo_session_audit_session
         ON kilo_session_audit(session_id, created_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_kilo_result_state_updated
+        ON kilo_result_state(updated_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_kilo_result_events_task
+        ON kilo_result_events(task_id, created_at DESC);
     `);
     reconcileExistingNotificationDuplicates(database);
     reconcileActiveNeonSessions(database);
@@ -1077,7 +1120,7 @@ function initializeAppDatabase(path: string) {
       .prepare(
         `
         INSERT INTO app_metadata (key, value, updated_at)
-        VALUES ('schema_version', '7', datetime('now'))
+        VALUES ('schema_version', '8', datetime('now'))
         ON CONFLICT(key) DO UPDATE SET
           value = excluded.value,
           updated_at = excluded.updated_at;

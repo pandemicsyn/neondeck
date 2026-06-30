@@ -1424,9 +1424,9 @@ Must-haves:
   - read metadata, messages, todos, child sessions, and optional diff through typed actions
   - summarize intent, work performed, changed files, blockers, risk, and next steps
   - persist the summary and link it to the Kilo task/session record
-- [ ] Add `review_kilo_result` workflow to inspect the Kilo-produced diff and classify it as discard, needs-review, ready-to-verify, or ready-to-push.
-- [ ] Add `verify_kilo_result` workflow to run configured checks through Neondeck execution policy.
-- [ ] Add `promote_kilo_result` workflow that can commit/push/comment only when autopilot policy allows.
+- [x] Add `review_kilo_result` workflow to inspect the Kilo-produced diff and classify it as discard, needs-review, ready-to-verify, or ready-to-push.
+- [x] Add `verify_kilo_result` workflow to run configured checks through Neondeck execution policy.
+- [ ] Add `promote_kilo_result` workflow that can commit/push/comment only when autopilot policy allows. Admission/decision state is implemented; actual commit/push/comment mutation remains deferred to the push-back workflow.
 - [ ] Add dashboard/TUI-ready APIs for active Kilo tasks, task events, session ids, session search, transcript pages, todos, child sessions, changed files, verification state, and pending approvals.
 - [x] Add dashboard panels or Runtime Overview rows for active delegated Kilo work.
 - [ ] Add notification policy for Kilo handoffs:

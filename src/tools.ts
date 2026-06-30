@@ -7,6 +7,7 @@ import { listRepoStatus } from './dev-doctor';
 import { executionPolicyLookupTool } from './execution-policy';
 import { getGitHubCheckSummary, listGitHubPrQueue } from './github-actions';
 import { neondeckKiloTools } from './kilo-actions';
+import { neondeckKiloResultTools } from './kilo-results';
 import { listMemories } from './memory-actions';
 import { neondeckPrEventTools } from './pr-event-state';
 import { neondeckPreparedDiffTools } from './prepared-diffs';
@@ -305,4 +306,5 @@ export const neondeckFactTools = [
   ...neondeckRepoEditTools,
   ...neondeckWorktreeTools,
   ...neondeckKiloTools,
+  ...neondeckKiloResultTools,
 ];

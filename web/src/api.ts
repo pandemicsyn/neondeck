@@ -396,6 +396,9 @@ export type KiloTaskStatus =
   | 'cancelled'
   | 'needs-reconcile'
   | 'needs-review'
+  | 'ready-to-verify'
+  | 'ready-to-push'
+  | 'discarded'
   | 'unknown';
 
 export type KiloChildSessionNode = {
@@ -452,6 +455,9 @@ export type KiloTaskRecord = {
     error?: string;
   };
   verificationState?: string;
+  reviewClassification?: string | null;
+  promotionState?: string;
+  preparedDiffId?: string | null;
   pendingApprovals?: unknown[];
 };
 

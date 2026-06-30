@@ -849,6 +849,33 @@ const entries: SafetyPolicyEntry[] = [
     'Reads the linked task workspace diff summary for a Kilo session.',
   ),
   action(
+    'neondeck_kilo_result_review',
+    'Review Kilo result',
+    {
+      ...safeMutation,
+      auditTarget: 'kilo_result_state/kilo_result_events/prepared_diffs',
+    },
+    'Classifies a Kilo-produced diff with deterministic facts and autopilot policy, then records review state.',
+  ),
+  action(
+    'neondeck_kilo_result_verify',
+    'Verify Kilo result',
+    {
+      ...hostExecution,
+      auditTarget: 'kilo_result_state/kilo_result_events/execution_approvals',
+    },
+    'Runs checks for a Kilo task worktree through the Neondeck execution approval policy.',
+  ),
+  action(
+    'neondeck_kilo_result_promote',
+    'Promote Kilo result',
+    {
+      ...safeMutation,
+      auditTarget: 'kilo_result_state/kilo_result_events',
+    },
+    'Records the safe promotion admission decision without committing, pushing, or commenting.',
+  ),
+  action(
     'neondeck_skills_reload',
     'Reload runtime skills',
     {
@@ -1094,6 +1121,33 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'kilo_tasks/workflow_events',
     },
     'Summarizes linked Kilo task/session metadata and persists the bounded summary on the task record.',
+  ),
+  workflow(
+    'review_kilo_result',
+    'Review Kilo result workflow',
+    {
+      ...safeMutation,
+      auditTarget: 'kilo_result_state/kilo_result_events/prepared_diffs',
+    },
+    'Runs bounded Kilo result review and records classification in app state.',
+  ),
+  workflow(
+    'verify_kilo_result',
+    'Verify Kilo result workflow',
+    {
+      ...hostExecution,
+      auditTarget: 'kilo_result_state/kilo_result_events/execution_approvals',
+    },
+    'Runs configured Kilo result checks through execution approval policy.',
+  ),
+  workflow(
+    'promote_kilo_result',
+    'Promote Kilo result workflow',
+    {
+      ...safeMutation,
+      auditTarget: 'kilo_result_state/kilo_result_events',
+    },
+    'Runs the Kilo promotion admission layer and explicitly avoids commit, push, or PR comment mutation.',
   ),
   route(
     '/api/runtime/status',
@@ -1379,9 +1433,10 @@ const entries: SafetyPolicyEntry[] = [
     'Kilo handoff API',
     {
       ...hostExecution,
-      auditTarget: 'kilo_tasks/kilo_task_events',
+      auditTarget:
+        'kilo_tasks/kilo_task_events/kilo_result_state/kilo_result_events',
     },
-    'Starts, reads, searches, and cancels explicit Kilo handoff tasks through app-owned SQLite state.',
+    'Starts, reads, searches, cancels, reviews, verifies, and records promotion admission for explicit Kilo handoff tasks through app-owned SQLite state.',
   ),
   route(
     '/api/memories',
