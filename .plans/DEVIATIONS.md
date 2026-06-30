@@ -238,3 +238,10 @@ Use this format:
 - Decision: Added focused Flue lookup tools for unresolved review comments/thread metadata, requested-changes state, and branch push permissions; added the `neondeck_pr_comment` action and local API route for server-side PR comment posting. Deferred a dedicated durable PR-comment audit table and did not implement the larger `comment_pr_autofix_result`, `fix_pr_review_feedback`, or push workflows.
 - Reason: This slice was scoped to reusable GitHub facts/mutations. A first-class PR-comment audit table should be designed with the broader autopilot queue/push-back persistence contract instead of being bolted onto the review fact surface.
 - Follow-up: Add durable PR comment/autofix event records when the Phase 19 comment/fix/push workflows and autopilot queue admission tables land.
+
+## 2026-06-30 - Prepared-Diff Lifecycle And APIs
+
+- Roadmap item: Phase 20 / prepared-diff records, approvals, and shared APIs/actions
+- Decision: Added first-class `prepared_diffs` and `prepared_diff_approvals` app-state records, backend git-diff read APIs/actions, prepared-diff decision actions, app safety/runtime-skill guidance, and autopilot operator-state integration. `approve push` and `run verification` intentionally record state transitions and next workflow names only; they do not push to GitHub or execute checks.
+- Reason: The delegated Phase 20 slice explicitly excluded actual push-back implementation, and this worktree still lacks the later `verify_pr_worktree` and `push_pr_autofix` execution workflows. Recording approval/request state now gives web and future TUI clients a stable shared surface without hiding GitHub or host mutations inside UI paths.
+- Follow-up: Later Phase 19/20 work should implement `verify_pr_worktree`, `push_pr_autofix`, PR comment posting, permission checks, and human-readable workflow audit summaries using these prepared-diff records.

@@ -820,6 +820,40 @@ function initializeAppDatabase(path: string) {
         attempted_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS prepared_diffs (
+        id TEXT PRIMARY KEY,
+        worktree_id TEXT NOT NULL UNIQUE,
+        repo_id TEXT NOT NULL,
+        repo_full_name TEXT NOT NULL,
+        pr_number INTEGER,
+        title TEXT NOT NULL,
+        source_worktree_path TEXT NOT NULL,
+        base_ref TEXT NOT NULL,
+        head_ref TEXT NOT NULL,
+        head_sha TEXT,
+        status TEXT NOT NULL,
+        push_approval_status TEXT NOT NULL,
+        verification_status TEXT NOT NULL,
+        summary_json TEXT,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        abandoned_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS prepared_diff_approvals (
+        id TEXT PRIMARY KEY,
+        prepared_diff_id TEXT NOT NULL,
+        worktree_id TEXT NOT NULL,
+        approval_type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        reason TEXT,
+        approver_surface TEXT,
+        requested_at TEXT NOT NULL,
+        resolved_at TEXT,
+        updated_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS kilo_tasks (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
@@ -939,6 +973,18 @@ function initializeAppDatabase(path: string) {
 
       CREATE INDEX IF NOT EXISTS idx_worktree_cleanup_attempts_worktree
         ON worktree_cleanup_attempts(worktree_id, attempted_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_prepared_diffs_status
+        ON prepared_diffs(status, updated_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_prepared_diffs_repo
+        ON prepared_diffs(repo_id, pr_number, updated_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_prepared_diff_approvals_pending
+        ON prepared_diff_approvals(status, updated_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_prepared_diff_approvals_diff
+        ON prepared_diff_approvals(prepared_diff_id, updated_at DESC);
 
       CREATE INDEX IF NOT EXISTS idx_kilo_tasks_status
         ON kilo_tasks(status, updated_at DESC);

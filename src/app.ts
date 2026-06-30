@@ -56,6 +56,17 @@ import {
 import { deleteMemory, listMemories, upsertMemory } from './memory-actions';
 import { readHostMetrics } from './metrics';
 import {
+  abandonPreparedDiff,
+  approvePreparedDiffPush,
+  listPreparedDiffs,
+  openPreparedDiffWorktree,
+  readPreparedDiffChangedFiles,
+  readPreparedDiffFileDiff,
+  readPreparedDiffSummary,
+  requestPreparedDiffRevision,
+  runPreparedDiffVerification,
+} from './prepared-diffs';
+import {
   getGitHubPrBranchPermissions,
   getGitHubPrEventState,
   getGitHubPrRequestedChanges,
@@ -931,6 +942,86 @@ app.post('/api/autopilot/prepare-pr-worktree', async (c) => {
   return c.json(result, result.ok ? 200 : 400);
 });
 
+app.get('/api/prepared-diffs', async (c) => {
+  const result = await listPreparedDiffs(
+    {
+      status: c.req.query('status') || undefined,
+      includeTerminal: queryBoolean(c.req.query('includeTerminal')),
+      repoId: c.req.query('repoId') || undefined,
+    },
+    paths,
+  );
+  return c.json(result, preparedDiffHttpStatus(result));
+});
+
+app.get('/api/prepared-diffs/:id/summary', async (c) => {
+  const result = await readPreparedDiffSummary(
+    { preparedDiffId: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, preparedDiffHttpStatus(result));
+});
+
+app.get('/api/prepared-diffs/:id/files', async (c) => {
+  const result = await readPreparedDiffChangedFiles(
+    { preparedDiffId: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, preparedDiffHttpStatus(result));
+});
+
+app.get('/api/prepared-diffs/:id/files/diff', async (c) => {
+  const result = await readPreparedDiffFileDiff(
+    {
+      preparedDiffId: c.req.param('id'),
+      path: c.req.query('path'),
+      maxPatchBytes: queryNumber(c.req.query('maxPatchBytes')),
+    },
+    paths,
+  );
+  return c.json(result, preparedDiffHttpStatus(result));
+});
+
+app.post('/api/prepared-diffs/:id/approve-push', async (c) => {
+  const result = await approvePreparedDiffPush(
+    { ...(await safeJsonObject(c)), preparedDiffId: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, preparedDiffHttpStatus(result));
+});
+
+app.post('/api/prepared-diffs/:id/request-revision', async (c) => {
+  const result = await requestPreparedDiffRevision(
+    { ...(await safeJsonObject(c)), preparedDiffId: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, preparedDiffHttpStatus(result));
+});
+
+app.post('/api/prepared-diffs/:id/abandon', async (c) => {
+  const result = await abandonPreparedDiff(
+    { ...(await safeJsonObject(c)), preparedDiffId: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, preparedDiffHttpStatus(result));
+});
+
+app.get('/api/prepared-diffs/:id/worktree-path', async (c) => {
+  const result = await openPreparedDiffWorktree(
+    { preparedDiffId: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, preparedDiffHttpStatus(result));
+});
+
+app.post('/api/prepared-diffs/:id/verify', async (c) => {
+  const result = await runPreparedDiffVerification(
+    { ...(await safeJsonObject(c)), preparedDiffId: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, preparedDiffHttpStatus(result));
+});
+
 app.get('/api/watches', async (c) => {
   return c.json(await listPrWatches(paths));
 });
@@ -1257,6 +1348,20 @@ function queryNumber(value: string | undefined) {
   if (!value) return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function queryBoolean(value: string | undefined) {
+  if (value === undefined) return undefined;
+  return value === 'true' || value === '1';
+}
+
+function preparedDiffHttpStatus(result: {
+  ok: boolean;
+  error?: { code?: string };
+}) {
+  if (result.ok) return 200;
+  if (result.error?.code === 'PREPARED_DIFF_NOT_FOUND') return 404;
+  return 400;
 }
 
 function notificationPolicy() {

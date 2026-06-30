@@ -74,6 +74,24 @@ describe('app API safety routes', () => {
     expect(Array.isArray(body.queue)).toBe(true);
   });
 
+  it('returns prepared-diff API validation errors as bad requests', async () => {
+    const listResponse = await app.request(
+      'http://localhost/api/prepared-diffs?status=bogus',
+      {
+        headers: { host: 'localhost' },
+      },
+    );
+    const diffResponse = await app.request(
+      'http://localhost/api/prepared-diffs/missing/files/diff',
+      {
+        headers: { host: 'localhost' },
+      },
+    );
+
+    expect(listResponse.status).toBe(400);
+    expect(diffResponse.status).toBe(400);
+  });
+
   it('serves config events as a local server-sent event stream', async () => {
     const response = await app.request('http://localhost/api/events/config', {
       headers: { host: 'localhost' },

@@ -6,6 +6,7 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import * as v from 'valibot';
+import { ensurePreparedDiffForWorktree } from './prepared-diffs';
 import {
   type RepoConfig,
   type RuntimePaths,
@@ -761,6 +762,16 @@ export async function releaseWorktreeLock(
         paths,
       );
       worktree = requireWorktree(worktree.id, paths);
+      if (finalStatus === 'prepared-diff') {
+        await ensurePreparedDiffForWorktree(worktree, paths, {
+          createdBy: lock.owner,
+          summary: {
+            lockId: lock.id,
+            workflowRunId: lock.workflowRunId,
+            preparedAt: now,
+          },
+        });
+      }
     }
 
     return {

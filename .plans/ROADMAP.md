@@ -1330,9 +1330,9 @@ Must-haves:
   - binary files
   - vendored code
   - repo-configured globs
-- [ ] Add a pending approval flow for prepared diffs and push-back actions.
-- [ ] Add prepared-diff records in app state that reference the source worktree as the source of truth.
-- [ ] Add shared prepared-diff APIs/actions for web and future TUI:
+- [x] Add a pending approval flow for prepared diffs and push-back actions.
+- [x] Add prepared-diff records in app state that reference the source worktree as the source of truth.
+- [x] Add shared prepared-diff APIs/actions for web and future TUI:
   - list prepared diffs
   - read summary
   - read changed files
@@ -1342,7 +1342,7 @@ Must-haves:
   - abandon
   - open worktree path
   - run verification
-- [ ] Keep git/diff operations in backend services and actions; UI clients should not implement git logic.
+- [x] Keep git/diff operations in backend services and actions; UI clients should not implement git logic.
 - [x] Add a dashboard panel for autopilot decisions, including why Neon did or did not act.
 - [ ] Add human-readable audit summaries for autonomous workflows, suitable for PR comments and timeline UI.
 - [ ] Add recovery actions:

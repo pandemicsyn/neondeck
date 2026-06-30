@@ -9,6 +9,7 @@ import { getGitHubCheckSummary, listGitHubPrQueue } from './github-actions';
 import { neondeckKiloTools } from './kilo-actions';
 import { listMemories } from './memory-actions';
 import { neondeckPrEventTools } from './pr-event-state';
+import { neondeckPreparedDiffTools } from './prepared-diffs';
 import { neondeckRepoEditTools } from './repo-edit';
 import { readRuntimeStatus, runtimeStatusSchema } from './runtime-status';
 import { safetyPolicyLookupTool } from './safety';
@@ -297,6 +298,7 @@ export const neondeckFactTools = [
   runtimeSkillLoadTool,
   memoryLookupTool,
   autopilotStateLookupTool,
+  ...neondeckPreparedDiffTools,
   safetyPolicyTool,
   executionPolicyTool,
   ...neondeckPrEventTools,
