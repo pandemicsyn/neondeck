@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { listWorkflowSummaries } from './app-state';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   checkAutopilotConcurrency,
@@ -13,10 +14,12 @@ import {
 import {
   fixPrCiFailure,
   fixPrReviewFeedback,
+  commentPrAutofixResult,
   preparePrWorktree,
   triagePrEvent,
   verifyPrWorktree,
 } from './autopilot-workflows';
+import { ensurePreparedDiffForWorktree } from './prepared-diffs';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
@@ -1108,6 +1111,285 @@ describe('PR event autopilot', () => {
       message: 'Invalid GitHub PR review event state.',
     });
   });
+
+  it('posts and audits concise PR autofix result comments from prepared-diff facts', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const { paths, featureSha, repo } = await fixture();
+    const preparedDiff = await ensurePreparedDiffForWorktree(
+      {
+        id: 'wt-comment-1',
+        repoId: 'sample',
+        repoFullName: 'example/sample',
+        prNumber: 7,
+        localPath: repo,
+        baseRef: 'main',
+        headRef: 'feature',
+        headSha: featureSha,
+        lifecycleStatus: 'prepared-diff',
+      },
+      paths,
+      {
+        createdBy: 'fix_pr_review_feedback',
+        title: 'Review feedback fix for example/sample#7',
+        summary: {
+          workflow: 'fix_pr_review_feedback',
+          addressed: {
+            reviewCommentIds: ['PRRC_1'],
+            reviewThreadIds: ['PRRT_1'],
+          },
+          commit: {
+            committed: true,
+            sha: featureSha,
+          },
+          diffSummary: {
+            files: 1,
+            additions: 2,
+            deletions: 1,
+            binaryFiles: 0,
+          },
+          checksRun: [
+            {
+              name: 'npm run check',
+              status: 'passed',
+              checkRunId: 6001,
+            },
+          ],
+          remainingManualAsks: ['Reviewer re-review is still needed.'],
+        },
+      },
+    );
+    const calls: Array<{
+      owner: string;
+      repo: string;
+      number: number;
+      body: string;
+    }> = [];
+
+    const result = await commentPrAutofixResult(
+      {
+        preparedDiffId: preparedDiff.id,
+      },
+      paths,
+      {
+        async fetchPullRequestEventState() {
+          return reviewEventState(featureSha);
+        },
+        postPullRequestComment: async (input) => {
+          calls.push(input);
+          return {
+            id: 99,
+            nodeId: 'comment-node-99',
+            url: 'https://github.com/example/sample/pull/7#issuecomment-99',
+            authorLogin: 'neon',
+            body: input.body,
+            createdAt: '2026-06-30T21:00:00Z',
+            updatedAt: '2026-06-30T21:00:00Z',
+          };
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'autopilot_comment_pr_autofix_result',
+      data: {
+        comment: {
+          data: {
+            metadata: {
+              addressedReviewThreadIds: ['PRRT_1'],
+              addressedReviewCommentIds: ['PRRC_1'],
+              checkRunIds: [6001],
+              commitSha: featureSha,
+            },
+          },
+        },
+      },
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      owner: 'example',
+      repo: 'sample',
+      number: 7,
+    });
+    expect(calls[0]?.body).toContain(
+      'Neon autopilot result for example/sample#7: prepared.',
+    );
+    expect(calls[0]?.body).toContain('Addressed review comments: PRRC_1.');
+    expect(calls[0]?.body).toContain('Checks run: npm run check passed.');
+    expect(calls[0]?.body).toContain(
+      'Remaining manual asks: Reviewer re-review is still needed.',
+    );
+
+    const summaries = await listWorkflowSummaries(paths);
+    expect(summaries[0]).toMatchObject({
+      workflow: 'comment_pr_autofix_result',
+      status: 'completed',
+      summary: {
+        humanSummary: expect.stringContaining('prepared diff'),
+        audit: {
+          preparedDiffId: preparedDiff.id,
+          worktreeId: 'wt-comment-1',
+          addressedReviewCommentIds: ['PRRC_1'],
+        },
+      },
+    });
+  });
+
+  it('refuses to comment on prepared diffs that are not result states', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const { paths, featureSha, repo } = await fixture();
+    const preparedDiff = await ensurePreparedDiffForWorktree(
+      {
+        id: 'wt-comment-pending',
+        repoId: 'sample',
+        repoFullName: 'example/sample',
+        prNumber: 7,
+        localPath: repo,
+        baseRef: 'main',
+        headRef: 'feature',
+        headSha: featureSha,
+        lifecycleStatus: 'prepared-diff',
+      },
+      paths,
+    );
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          "UPDATE prepared_diffs SET status = 'push-approved' WHERE id = ?;",
+        )
+        .run(preparedDiff.id);
+    } finally {
+      database.close();
+    }
+    const calls: unknown[] = [];
+
+    const result = await commentPrAutofixResult(
+      { preparedDiffId: preparedDiff.id },
+      paths,
+      {
+        async fetchPullRequestEventState() {
+          return reviewEventState(featureSha);
+        },
+        postPullRequestComment: async (input) => {
+          calls.push(input);
+          throw new Error('should not post');
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      action: 'autopilot_comment_pr_autofix_result',
+      requires: ['preparedResult'],
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it('comments on verification-requested prepared diffs after matching the PR head', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const { paths, featureSha, repo } = await fixture();
+    const preparedDiff = await ensurePreparedDiffForWorktree(
+      {
+        id: 'wt-comment-verified',
+        repoId: 'sample',
+        repoFullName: 'example/sample',
+        prNumber: 7,
+        localPath: repo,
+        baseRef: 'main',
+        headRef: 'feature',
+        headSha: featureSha,
+        lifecycleStatus: 'prepared-diff',
+      },
+      paths,
+      {
+        summary: {
+          checksRun: [{ name: 'npm run check', status: 'passed' }],
+        },
+      },
+    );
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          "UPDATE prepared_diffs SET status = 'verification-requested' WHERE id = ?;",
+        )
+        .run(preparedDiff.id);
+    } finally {
+      database.close();
+    }
+    const calls: unknown[] = [];
+
+    const result = await commentPrAutofixResult(
+      { preparedDiffId: preparedDiff.id },
+      paths,
+      {
+        async fetchPullRequestEventState() {
+          return reviewEventState(featureSha);
+        },
+        postPullRequestComment: async (input) => {
+          calls.push(input);
+          return {
+            id: 100,
+            nodeId: 'comment-node-100',
+            url: 'https://github.com/example/sample/pull/7#issuecomment-100',
+            authorLogin: 'neon',
+            body: input.body,
+            createdAt: '2026-06-30T21:00:00Z',
+            updatedAt: '2026-06-30T21:00:00Z',
+          };
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: 'autopilot_comment_pr_autofix_result',
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('refuses stale prepared diffs when the PR head changed', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const { paths, featureSha, repo } = await fixture();
+    const preparedDiff = await ensurePreparedDiffForWorktree(
+      {
+        id: 'wt-comment-stale',
+        repoId: 'sample',
+        repoFullName: 'example/sample',
+        prNumber: 7,
+        localPath: repo,
+        baseRef: 'main',
+        headRef: 'feature',
+        headSha: featureSha,
+        lifecycleStatus: 'prepared-diff',
+      },
+      paths,
+    );
+    const calls: unknown[] = [];
+
+    const result = await commentPrAutofixResult(
+      { preparedDiffId: preparedDiff.id },
+      paths,
+      {
+        async fetchPullRequestEventState() {
+          return { ...reviewEventState(featureSha), headSha: 'new-head-sha' };
+        },
+        postPullRequestComment: async (input) => {
+          calls.push(input);
+          throw new Error('should not post');
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      action: 'autopilot_comment_pr_autofix_result',
+      requires: ['currentPrHead'],
+    });
+    expect(calls).toEqual([]);
+  });
 });
 
 async function fixture() {
@@ -1148,7 +1430,7 @@ async function fixture() {
     )}\n`,
   );
 
-  return { paths, featureSha: featureSha.trim() };
+  return { paths, repo, featureSha: featureSha.trim() };
 }
 
 async function preparePreparedWorktree(

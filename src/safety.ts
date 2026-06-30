@@ -744,6 +744,15 @@ const entries: SafetyPolicyEntry[] = [
     'Runs configured repo checks through Neondeck execution approval policy and records execution approvals/results.',
   ),
   action(
+    'neondeck_autopilot_comment_pr_autofix_result',
+    'Comment PR autofix result',
+    {
+      ...safeMutation,
+      auditTarget: 'workflow_summaries/GitHub issue comments',
+    },
+    'Posts a concise PR comment generated only from prepared-diff/autopilot result facts and persists the rendered audit summary.',
+  ),
+  action(
     'neondeck_worktree_sync',
     'Sync worktree',
     {
@@ -1356,6 +1365,15 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'execution_approvals',
     },
     'Runs configured checks for a managed PR worktree through the execution approval policy.',
+  ),
+  route(
+    '/api/autopilot/comment-pr-autofix-result',
+    'Comment PR autofix result API',
+    {
+      ...safeMutation,
+      auditTarget: 'workflow_summaries/GitHub issue comments',
+    },
+    'Posts a concise PR comment generated from prepared-diff/autopilot facts and records the human-readable audit summary.',
   ),
   route(
     '/api/session',

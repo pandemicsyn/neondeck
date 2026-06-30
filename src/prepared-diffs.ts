@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { addNotification } from './app-state';
+import { buildPreparedDiffAuditSummary } from './autonomous-audit';
 import { gitDiff, type RepoDiffFile } from './repo-edit/git';
 import {
   type RuntimePaths,
@@ -485,6 +486,9 @@ export async function readPreparedDiffSummary(
       sourceOfTruth: 'worktree',
       base: diff.base,
       summary: loaded.record.summary,
+      auditSummary: buildPreparedDiffAuditSummary({
+        preparedDiff: loaded.record,
+      }),
     }),
   };
 }
@@ -931,7 +935,7 @@ function listPreparedDiffRecords(
   }
 }
 
-function readPreparedDiffRecord(id: string, paths: RuntimePaths) {
+export function readPreparedDiffRecord(id: string, paths: RuntimePaths) {
   const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
