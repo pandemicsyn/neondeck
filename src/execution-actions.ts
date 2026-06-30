@@ -14,6 +14,14 @@ import {
   type ExecutionRisk,
 } from './execution-policy';
 import {
+  resolveExeDevCheckoutTarget,
+  resolveExeDevForwardedEnv,
+  type ExeDevEnvSourceAudit,
+  type ExeDevForwardedEnv,
+  type ExeDevCheckoutTarget,
+  exedevTargetInputSchema,
+} from './exedev-context';
+import {
   ensureRuntimeHome,
   type ExecutionBackend,
   parseAppConfig,
@@ -93,6 +101,8 @@ const requestApprovalInputSchema = v.object({
   command: executionCommandSchema,
   backend: v.optional(backendSchema),
   cwd: v.optional(v.string()),
+  ...exedevTargetInputSchema(),
+  forwardEnv: v.optional(v.boolean()),
   context: v.optional(contextSchema),
   sessionId: v.optional(v.string()),
   requestContext: v.optional(
@@ -109,6 +119,8 @@ const runExecutionInputSchema = v.object({
   command: executionCommandSchema,
   backend: v.optional(backendSchema),
   cwd: v.optional(v.string()),
+  ...exedevTargetInputSchema(),
+  forwardEnv: v.optional(v.boolean()),
   context: v.optional(contextSchema),
   approvalId: v.optional(v.string()),
   sessionId: v.optional(v.string()),
@@ -206,6 +218,13 @@ export async function requestExecutionApproval(
     },
     paths,
   );
+  const requestContextResult = await scopedRequestContext(
+    input.requestContext,
+    input,
+    policyCheck,
+    paths,
+  );
+  if (!requestContextResult.ok) return requestContextResult.result;
 
   if (policyCheck.decision === 'deny') {
     const record = insertApproval(paths, {
@@ -217,7 +236,7 @@ export async function requestExecutionApproval(
       policyDecision: policyCheck.decision,
       status: 'blocked',
       sessionId: input.sessionId,
-      requestContext: input.requestContext,
+      requestContext: requestContextResult.requestContext,
       error: policyCheck.reason,
     });
     return {
@@ -251,7 +270,7 @@ export async function requestExecutionApproval(
     policyDecision: policyCheck.decision,
     status: 'pending',
     sessionId: input.sessionId,
-    requestContext: input.requestContext,
+    requestContext: requestContextResult.requestContext,
   });
   return {
     ok: true,
@@ -604,8 +623,26 @@ async function runExeDevExecution(input: {
   );
   const startedAt = Date.now();
   let dispose: (() => void) | undefined;
+  let checkoutTarget: ExeDevCheckoutTarget | null = null;
+  let forwardedEnv: ExeDevForwardedEnv = { env: {}, sources: [] };
 
   try {
+    checkoutTarget = await resolveExeDevCheckoutTarget(
+      {
+        repoId: input.input.repoId,
+        worktreeId: input.input.worktreeId,
+      },
+      input.paths,
+    );
+    if (input.input.forwardEnv !== false) {
+      forwardedEnv = await resolveExeDevForwardedEnv(
+        {
+          repoId: input.input.repoId,
+          worktreeId: input.input.worktreeId,
+        },
+        input.paths,
+      );
+    }
     const sandbox = exedev(host, {
       ...(privateKeyPath ? { privateKeyPath } : {}),
       ...(!privateKeyPath && process.env.SSH_AUTH_SOCK
@@ -618,7 +655,8 @@ async function runExeDevExecution(input: {
     });
     dispose = () => disposeExeDevSessionEnv(env);
     const remoteResult = await env.exec(input.policyCheck.command, {
-      ...(input.input.cwd ? { cwd: input.input.cwd } : {}),
+      cwd: input.input.cwd ?? checkoutTarget?.remotePath,
+      env: forwardedEnv.env,
       timeoutMs,
     });
     const result = executionResult({
@@ -644,6 +682,8 @@ async function runExeDevExecution(input: {
         backend: 'exe.dev',
         vmHostEnv,
         lifecycle,
+        checkout: checkoutAuditMetadata(checkoutTarget),
+        envSources: envSourceAuditMetadata(forwardedEnv.sources),
       },
       executedAt: new Date().toISOString(),
     });
@@ -680,6 +720,8 @@ async function runExeDevExecution(input: {
         backend: 'exe.dev',
         vmHostEnv,
         lifecycle,
+        checkout: checkoutAuditMetadata(checkoutTarget),
+        envSources: envSourceAuditMetadata(forwardedEnv.sources),
       },
       executedAt: new Date().toISOString(),
     });
@@ -698,6 +740,144 @@ async function runExeDevExecution(input: {
   }
 }
 
+function checkoutAuditMetadata(target: ExeDevCheckoutTarget | null) {
+  if (!target) return null;
+  return {
+    repoId: target.repo.id,
+    repoFullName: target.repoFullName,
+    worktreeId: target.worktree?.id ?? null,
+    remotePath: target.remotePath,
+    remoteRoot: target.remoteRoot,
+    defaultRef: target.defaultRef,
+  };
+}
+
+function envSourceAuditMetadata(sources: ExeDevEnvSourceAudit[]) {
+  return sources.map((source) => ({
+    kind: source.kind,
+    scope: source.scope,
+    id: source.id,
+    keys: source.keys,
+    missing: source.missing ?? false,
+  }));
+}
+
+type ScopedExecutionInput = {
+  repoId?: string;
+  worktreeId?: string;
+  forwardEnv?: boolean;
+};
+
+type ExecutionScope = {
+  backend: 'exe.dev';
+  repoId: string;
+  repoFullName: string;
+  worktreeId: string | null;
+  remotePath: string;
+  forwardEnv: boolean;
+  envSources: ReturnType<typeof envSourceAuditMetadata>;
+};
+
+async function scopedRequestContext(
+  userContext: unknown,
+  input: ScopedExecutionInput,
+  policyCheck: ExecutionPolicyCheck,
+  paths: RuntimePaths,
+  action = 'execution_request_context',
+): Promise<
+  | {
+      ok: true;
+      requestContext: JsonValue | undefined;
+      scope: ExecutionScope | null;
+    }
+  | { ok: false; result: ReturnType<typeof failedResult> }
+> {
+  try {
+    const scope = await resolveExecutionScope(input, policyCheck, paths);
+    return {
+      ok: true,
+      requestContext: mergeExecutionScope(userContext, scope),
+      scope,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      result: failedResult(
+        action,
+        error instanceof Error ? error.message : String(error),
+        ['repoId', 'worktreeId'],
+      ),
+    };
+  }
+}
+
+async function resolveExecutionScope(
+  input: ScopedExecutionInput,
+  policyCheck: ExecutionPolicyCheck,
+  paths: RuntimePaths,
+): Promise<ExecutionScope | null> {
+  if (policyCheck.backend !== 'exe.dev') return null;
+  if (!input.repoId && !input.worktreeId) return null;
+  const target = await resolveExeDevCheckoutTarget(input, paths);
+  if (!target) return null;
+  const forwardEnv = input.forwardEnv !== false;
+  const envSources = forwardEnv
+    ? envSourceAuditMetadata(
+        (await resolveExeDevForwardedEnv(input, paths)).sources,
+      )
+    : [];
+
+  return {
+    backend: 'exe.dev',
+    repoId: target.repo.id,
+    repoFullName: target.repoFullName,
+    worktreeId: target.worktree?.id ?? null,
+    remotePath: target.remotePath,
+    forwardEnv,
+    envSources,
+  };
+}
+
+function mergeExecutionScope(
+  userContext: unknown,
+  scope: ExecutionScope | null,
+): JsonValue | undefined {
+  const context =
+    userContext === undefined ? undefined : sanitizeRequestContext(userContext);
+  if (!scope) return context;
+  if (context && typeof context === 'object' && !Array.isArray(context)) {
+    return { ...context, neondeckExecutionScope: scope };
+  }
+  if (context === undefined) return { neondeckExecutionScope: scope };
+  return { requestContext: context, neondeckExecutionScope: scope };
+}
+
+function sanitizeRequestContext(userContext: unknown): JsonValue {
+  const context = asJsonValue(userContext);
+  if (!context || typeof context !== 'object' || Array.isArray(context)) {
+    return context;
+  }
+  const { neondeckExecutionScope: _reserved, ...rest } = context as Record<
+    string,
+    JsonValue
+  >;
+  return rest;
+}
+
+function executionScopeKey(scope: ExecutionScope | JsonValue | null) {
+  if (!scope) return null;
+  return JSON.stringify(scope);
+}
+
+function approvalExecutionScopeKey(approval: ExecutionApprovalRecord) {
+  const context = approval.requestContext;
+  if (!context || typeof context !== 'object' || Array.isArray(context)) {
+    return null;
+  }
+  const scope = (context as Record<string, JsonValue>).neondeckExecutionScope;
+  return scope === undefined ? null : executionScopeKey(scope);
+}
+
 async function authorizeExecution(
   input: v.InferOutput<typeof runExecutionInputSchema>,
   policyCheck: ExecutionPolicyCheck,
@@ -714,6 +894,26 @@ async function authorizeExecution(
       approval?: ExecutionApprovalRecord;
     }
 > {
+  const requestContextResult = await scopedRequestContext(
+    input.requestContext,
+    input,
+    policyCheck,
+    paths,
+    'execution_run',
+  );
+  if (!requestContextResult.ok) {
+    return {
+      ok: false,
+      action: 'execution_run',
+      changed: false,
+      message: requestContextResult.result.message,
+      requires: requestContextResult.result.requires,
+      policyCheck,
+    };
+  }
+  const requestContext = requestContextResult.requestContext;
+  const expectedScope = requestContextResult.scope;
+
   if (policyCheck.decision === 'allow') {
     return {
       ok: true,
@@ -728,15 +928,18 @@ async function authorizeExecution(
         approvalDecision: 'preapproved',
         approverSurface: 'policy',
         sessionId: input.sessionId,
-        requestContext: input.requestContext,
+        requestContext,
       }),
     };
   }
 
   const approved = input.approvalId
     ? readApproval(paths, input.approvalId)
-    : findSessionApproval(paths, policyCheck, input);
-  if (approved && approvalMatches(approved, policyCheck, input.cwd)) {
+    : findSessionApproval(paths, policyCheck, input, expectedScope);
+  if (
+    approved &&
+    approvalMatches(approved, policyCheck, input.cwd, expectedScope)
+  ) {
     if (approved.status !== 'approved') {
       return {
         ok: false,
@@ -763,12 +966,23 @@ async function authorizeExecution(
           approvalDecision: 'allow-session',
           approverSurface: `session:${approved.id}`,
           sessionId: input.sessionId,
-          requestContext: input.requestContext,
+          requestContext,
         }),
       };
     }
 
     return { ok: true, approval: approved };
+  }
+  if (input.approvalId && approved) {
+    return {
+      ok: false,
+      action: 'execution_run',
+      changed: false,
+      message: `Execution approval "${approved.id}" does not match the requested command scope.`,
+      requires: ['approval'],
+      policyCheck,
+      approval: approved,
+    };
   }
 
   const request = await requestExecutionApproval(
@@ -778,7 +992,10 @@ async function authorizeExecution(
       cwd: input.cwd,
       context: policyCheck.context,
       sessionId: input.sessionId,
-      requestContext: input.requestContext,
+      repoId: input.repoId,
+      worktreeId: input.worktreeId,
+      forwardEnv: input.forwardEnv,
+      requestContext,
     },
     paths,
   );
@@ -797,6 +1014,14 @@ async function addAlwaysPreapproval(
   approval: ExecutionApprovalRecord,
   paths: RuntimePaths,
 ) {
+  if (approvalExecutionScopeKey(approval) !== null) {
+    return failedResult(
+      'execution_resolve_approval',
+      'Scoped exe.dev repo/worktree execution approvals cannot be promoted into global command preapprovals. Update execution policy explicitly if that broader trust boundary is intended.',
+      ['preapprovedCommands'],
+    );
+  }
+
   if (hasShellOperator(approval.command)) {
     return failedResult(
       'execution_resolve_approval',
@@ -948,12 +1173,13 @@ function findSessionApproval(
   paths: RuntimePaths,
   policyCheck: ExecutionPolicyCheck,
   input: v.InferOutput<typeof runExecutionInputSchema>,
+  expectedScope: ExecutionScope | null,
 ) {
   if (!input.sessionId) return undefined;
   const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
 
   try {
-    const row = database
+    const rows = database
       .prepare(
         `
         SELECT *
@@ -966,17 +1192,21 @@ function findSessionApproval(
           AND status = 'approved'
           AND approval_decision = 'allow-session'
         ORDER BY resolved_at DESC, updated_at DESC
-        LIMIT 1;
+        LIMIT 25;
       `,
       )
-      .get(
+      .all(
         policyCheck.command,
         policyCheck.backend,
         policyCheck.context,
         input.cwd ?? '',
         input.sessionId,
       );
-    return row ? readExecutionApprovalRow(row) : undefined;
+    return rows
+      .map(readExecutionApprovalRow)
+      .find((approval) =>
+        approvalMatches(approval, policyCheck, input.cwd, expectedScope),
+      );
   } finally {
     database.close();
   }
@@ -1084,12 +1314,14 @@ function approvalMatches(
   approval: ExecutionApprovalRecord,
   policyCheck: ExecutionPolicyCheck,
   cwd: string | undefined,
+  expectedScope: ExecutionScope | null,
 ) {
   return (
     approval.command === policyCheck.command &&
     approval.backend === policyCheck.backend &&
     approval.context === policyCheck.context &&
-    (approval.cwd ?? undefined) === cwd
+    (approval.cwd ?? undefined) === cwd &&
+    approvalExecutionScopeKey(approval) === executionScopeKey(expectedScope)
   );
 }
 

@@ -218,6 +218,13 @@ Use this format:
 - Reason: The roadmap confirmation policy says enabling Kilo `--auto` requires explicit confirmation, and this slice should preserve Kilo as a user-invoked delegated worker rather than a default autonomous runtime.
 - Follow-up: If a future repo/workflow policy opts into unattended `--auto`, model that as an audited policy change with visible user controls.
 
+## 2026-06-30 - exe.dev Checkout Sync
+
+- Roadmap item: Phase 14 / existing-VM exe.dev repo/worktree checkout sync helpers and env forwarding
+- Decision: Neondeck-managed worktrees are mirrored onto the existing exe.dev VM as separate Git checkouts at the configured worktree ref/SHA rather than as remote Git worktrees linked to another VM checkout.
+- Reason: The current Phase 14 model intentionally avoids owning remote VM lifecycle and long-lived remote repo topology. Independent remote checkouts keep the helper deterministic, work for either base repos or managed worktrees, and let every remote `git` step continue through the existing execution approval/audit path.
+- Follow-up: If a later lifecycle mode owns per-repo VM state, revisit whether remote `git worktree` topology provides enough reuse benefit to justify the extra cleanup and locking semantics.
+
 ## 2026-06-30 - Kilo Reconciliation And Session Access
 
 - Roadmap item: Phase 21 / KiloCode handoff reconciliation, session access, transcript controls, and dashboard/API basics

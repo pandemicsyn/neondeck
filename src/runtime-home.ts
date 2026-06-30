@@ -102,6 +102,16 @@ const executionSandboxLifecycleSchema = v.picklist([
   'reuse-repo',
   'user-selected',
 ]);
+const exeDevEnvForwardingSchema = v.strictObject({
+  enabled: v.optional(v.boolean()),
+  files: v.optional(v.array(nonEmptyStringSchema)),
+  vars: v.optional(v.record(envVarNameSchema, v.string())),
+  hostEnv: v.optional(v.record(envVarNameSchema, envVarNameSchema)),
+});
+const exeDevCheckoutConfigSchema = v.strictObject({
+  remotePath: v.optional(nonEmptyStringSchema),
+  env: v.optional(exeDevEnvForwardingSchema),
+});
 const shellOperatorFreeCommandSchema = v.pipe(
   nonEmptyStringSchema,
   v.check(
@@ -130,6 +140,14 @@ export const executionConfigSchema = v.looseObject({
       lifecycle: v.optional(executionSandboxLifecycleSchema),
       sshKeyEnv: v.optional(envVarNameSchema),
       vmHostEnv: v.optional(envVarNameSchema),
+      remoteRoot: v.optional(nonEmptyStringSchema),
+      env: v.optional(exeDevEnvForwardingSchema),
+      repos: v.optional(
+        v.record(nonEmptyStringSchema, exeDevCheckoutConfigSchema),
+      ),
+      checkouts: v.optional(
+        v.record(nonEmptyStringSchema, exeDevCheckoutConfigSchema),
+      ),
     }),
   ),
 });
@@ -317,6 +335,12 @@ export type ProviderConfig = v.InferOutput<typeof providerConfigSchema>;
 export type ThinkingLevel = v.InferOutput<typeof thinkingLevelSchema>;
 export type ExecutionConfig = v.InferOutput<typeof executionConfigSchema>;
 export type ExecutionBackend = v.InferOutput<typeof executionBackendSchema>;
+export type ExeDevEnvForwardingConfig = v.InferOutput<
+  typeof exeDevEnvForwardingSchema
+>;
+export type ExeDevCheckoutConfig = v.InferOutput<
+  typeof exeDevCheckoutConfigSchema
+>;
 export type ExecutionPreapprovedCommand = v.InferOutput<
   typeof executionPreapprovedCommandSchema
 >;

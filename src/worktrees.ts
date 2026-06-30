@@ -965,6 +965,13 @@ export function listActiveRepoWorktrees(
   );
 }
 
+export function readWorktreeRecord(
+  worktreeId: string,
+  paths: RuntimePaths = runtimePaths(),
+) {
+  return requireWorktree(worktreeId, paths);
+}
+
 export function assertWorktreeMutationAllowed(
   input: { repoId: string; worktreeId?: string; lockId?: string },
   paths: RuntimePaths = runtimePaths(),

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -136,6 +136,114 @@ describe('execution actions', () => {
     });
   });
 
+  it('scopes exe.dev approvals to the requested repo/worktree and env intent', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const appPath = join(paths.home, 'app');
+    const otherPath = join(paths.home, 'other');
+    await mkdir(appPath, { recursive: true });
+    await mkdir(otherPath, { recursive: true });
+    await writeFile(
+      paths.repos,
+      JSON.stringify(
+        {
+          repos: [
+            {
+              id: 'app',
+              github: { owner: 'pandemicsyn', name: 'neondeck' },
+              path: appPath,
+              defaultBranch: 'main',
+            },
+            {
+              id: 'other',
+              github: { owner: 'pandemicsyn', name: 'other' },
+              path: otherPath,
+              defaultBranch: 'main',
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFile(
+      paths.config,
+      JSON.stringify(
+        {
+          version: 1,
+          execution: {
+            enabledBackends: ['local', 'exe.dev'],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const request = await requestExecutionApproval(
+      {
+        command: 'node --version',
+        backend: 'exe.dev',
+        repoId: 'app',
+        sessionId: 'session-1',
+      },
+      paths,
+    );
+    const approvalId = readApprovalId(request);
+    expect(readApproval(request).requestContext).toMatchObject({
+      neondeckExecutionScope: {
+        backend: 'exe.dev',
+        repoId: 'app',
+        remotePath: '/home/user/neondeck/checkouts/pandemicsyn-neondeck-repo',
+        forwardEnv: true,
+        envSources: [],
+      },
+    });
+
+    await expect(
+      resolveExecutionApproval(
+        { id: approvalId, decision: 'allow-always' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['preapprovedCommands'],
+    });
+    await expect(
+      resolveExecutionApproval(
+        { id: approvalId, decision: 'allow-session' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      approval: { status: 'approved', approvalDecision: 'allow-session' },
+    });
+
+    await expect(
+      runApprovedExecution(
+        {
+          command: 'node --version',
+          backend: 'exe.dev',
+          repoId: 'other',
+          sessionId: 'session-1',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['approval'],
+      approval: {
+        status: 'pending',
+        requestContext: {
+          neondeckExecutionScope: {
+            repoId: 'other',
+            remotePath: '/home/user/neondeck/checkouts/pandemicsyn-other-repo',
+          },
+        },
+      },
+    });
+  });
+
   it('blocks hardline commands and writes a blocked audit record', async () => {
     const paths = runtimePaths(await tempDir());
     await ensureRuntimeHome(paths);
@@ -201,7 +309,13 @@ function readApprovalId(result: unknown) {
 
 function readApproval(result: unknown) {
   const approval = (
-    result as { approval?: { id?: unknown; stdoutPreview?: string | null } }
+    result as {
+      approval?: {
+        id?: unknown;
+        stdoutPreview?: string | null;
+        requestContext?: unknown;
+      };
+    }
   ).approval;
   if (!approval) throw new Error('Expected execution approval in result.');
   return approval;
