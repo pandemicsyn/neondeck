@@ -259,6 +259,9 @@ const tasksListInputSchema = v.object({
   limit: v.optional(positiveIntegerSchema),
   includeDiff: v.optional(v.boolean()),
 });
+const reconcileInputSchema = v.object({
+  taskId: v.optional(nonEmptyStringSchema),
+});
 const sessionsSearchInputSchema = v.object({
   query: v.optional(nonEmptyStringSchema),
   sessionId: v.optional(nonEmptyStringSchema),
@@ -417,6 +420,17 @@ export const kiloTaskDiffAction = defineAction({
   },
 });
 
+export const kiloTaskReconcileAction = defineAction({
+  name: 'neondeck_kilo_task_reconcile',
+  description:
+    'Reconcile persisted Kilo task state after restart by inspecting detached task process/session/diff state.',
+  input: reconcileInputSchema,
+  output: outputSchema,
+  async run({ input }) {
+    return reconcileKiloTask(input);
+  },
+});
+
 export const kiloSessionsSearchAction = defineAction({
   name: 'neondeck_kilo_sessions_search',
   description:
@@ -501,6 +515,7 @@ export const neondeckKiloActions = [
   kiloTaskAbortAction,
   kiloTaskSessionsAction,
   kiloTaskDiffAction,
+  kiloTaskReconcileAction,
   kiloSessionsSearchAction,
   kiloSessionReadAction,
   kiloSessionMessagesAction,
@@ -1116,6 +1131,47 @@ export async function readKiloSessionDiff(
   return readKiloTaskDiff({ taskId: task.id }, paths);
 }
 
+export async function reconcileKiloTask(
+  rawInput: unknown,
+  paths: RuntimePaths = runtimePaths(),
+) {
+  const parsed = parseInput(
+    reconcileInputSchema,
+    rawInput,
+    'kilo_task_reconcile',
+  );
+  if (!parsed.ok) return parsed.result;
+  await ensureRuntimeHome(paths);
+
+  const before = parsed.input.taskId
+    ? tryTask(parsed.input.taskId, paths)
+    : null;
+  if (parsed.input.taskId && !before) {
+    return failResult(
+      'kilo_task_reconcile',
+      `Kilo task ${parsed.input.taskId} was not found.`,
+    );
+  }
+
+  await reconcilePersistedRunningTasks(paths, parsed.input.taskId);
+  const after = parsed.input.taskId
+    ? tryTask(parsed.input.taskId, paths)
+    : null;
+  const changed = parsed.input.taskId
+    ? JSON.stringify(before) !== JSON.stringify(after)
+    : true;
+
+  return {
+    ok: true,
+    action: 'kilo_task_reconcile',
+    changed,
+    message: parsed.input.taskId
+      ? `Reconciled Kilo task ${parsed.input.taskId}.`
+      : 'Reconciled persisted Kilo tasks.',
+    ...(after ? { task: after } : {}),
+  };
+}
+
 export async function summarizeKiloSession(
   rawInput: unknown,
   paths: RuntimePaths = runtimePaths(),
@@ -1718,20 +1774,32 @@ function updateTaskStatus(
   }
 }
 
-async function reconcilePersistedRunningTasks(paths: RuntimePaths) {
+async function reconcilePersistedRunningTasks(
+  paths: RuntimePaths,
+  taskId?: string,
+) {
   const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
   let tasks: KiloTaskRecord[] = [];
   try {
-    tasks = database
-      .prepare(
-        `
+    const statement = taskId
+      ? database.prepare(
+          `
+        SELECT *
+        FROM kilo_tasks
+        WHERE id = ?
+          AND status IN ('running', 'needs-reconcile')
+        ORDER BY updated_at DESC;
+      `,
+        )
+      : database.prepare(
+          `
         SELECT *
         FROM kilo_tasks
         WHERE status IN ('running', 'needs-reconcile')
         ORDER BY updated_at DESC;
       `,
-      )
-      .all()
+        );
+    tasks = (taskId ? statement.all(taskId) : statement.all())
       .map(readTaskRow)
       .filter((task) => !runningProcesses.has(task.id));
   } finally {

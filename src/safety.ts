@@ -880,6 +880,15 @@ const entries: SafetyPolicyEntry[] = [
     'Reads a git diff summary for the workspace used by a Kilo task.',
   ),
   action(
+    'neondeck_kilo_task_reconcile',
+    'Reconcile Kilo task',
+    {
+      ...safeMutation,
+      auditTarget: 'kilo_tasks/kilo_task_events/worktree_events',
+    },
+    'Reconciles persisted Kilo task state after restart by inspecting detached process, session, and diff facts.',
+  ),
+  action(
     'neondeck_kilo_sessions_search',
     'Search Kilo sessions',
     readOnly,
@@ -1189,6 +1198,15 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'kilo_tasks/kilo_task_events/workflow_events',
     },
     'Admits an explicit Kilo handoff as a bounded Flue run, then lets the app supervisor own the background process.',
+  ),
+  workflow(
+    'reconcile_kilo_task',
+    'Reconcile Kilo task workflow',
+    {
+      ...safeMutation,
+      auditTarget: 'kilo_tasks/kilo_task_events/worktree_events',
+    },
+    'Reconciles persisted Kilo task state after restart by inspecting detached process, session, and diff facts.',
   ),
   workflow(
     'summarize_kilo_session',

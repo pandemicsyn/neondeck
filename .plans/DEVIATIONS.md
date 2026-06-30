@@ -336,3 +336,10 @@ Use this format:
 - Decision: Added deterministic Kilo notification states for started, progress, waiting-approval, completed, failed, timed-out, needs-review, verified, promote-blocked, and promoted; enriched Kilo task list/status API results with active notification facts and result placeholders; and surfaced those facts in Runtime Overview rows. Actual commit/push/comment promotion, future TUI controls, provider-specific deploy adapters, and managed `kilo serve`/SDK lifecycle work remain deferred.
 - Reason: Existing Kilo task/session/result tables, app-state notifications, and review/verify/promote workflows already provide enough durable facts for notification-linked dashboard state. Reusing them avoids a second runtime and keeps Kilo delegation explicit.
 - Follow-up: Add first-class Kilo SDK/server lifecycle integration, true todo/diff/message adapters, future TUI controls over the same APIs, and real promote mutation through the prepared-diff/autopilot push-back workflow.
+
+## 2026-06-30 - Kilo Workflow Smoke Coverage
+
+- Roadmap item: Phase 21 / KiloCode workflow smoke and integration coverage
+- Decision: Added deterministic Kilo workflow smoke coverage for `handoff_to_kilo`, `reconcile_kilo_task`, `summarize_kilo_session`, `review_kilo_result`, `verify_kilo_result`, and `promote_kilo_result` using a fake JSONL Kilo CLI, temporary runtime homes, temporary repos, and managed worktrees. Added a `smoke:kilo` script that routes each named workflow through `flue run workflow:<name>` before the fixture-driven Vitest suite exercises the deeper managed-worktree success path.
+- Reason: The smoke should validate Neondeck/Flue workflow wiring and app-state transitions without live Kilo, network, or provider dependencies. `promote_kilo_result` remains admission-only because actual commit/push/comment mutations are intentionally owned by the push-back workflows.
+- Follow-up: Add SDK/server-backed session/todo/diff fixtures and actual promotion mutation coverage only after those provider/runtime contracts are implemented.
