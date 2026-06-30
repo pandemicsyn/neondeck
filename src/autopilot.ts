@@ -12,6 +12,12 @@ import {
   type RuntimePaths,
 } from './runtime-home';
 import { listNotifications, type NotificationLevel } from './app-state';
+import {
+  listPreparedDiffs,
+  type PreparedDiffApprovalRecord,
+  type PreparedDiffRecord,
+  type PreparedDiffStatus,
+} from './prepared-diffs';
 import { listPrWatchRecords, type PrWatch } from './watch-actions';
 import {
   listWorktrees,
@@ -95,7 +101,9 @@ export type AutopilotPreparedDiff = {
   worktreeId: string;
   localPath: string;
   title: string;
-  status: WorktreeLifecycleStatus;
+  status: PreparedDiffStatus;
+  pushApprovalStatus: string;
+  verificationStatus: string;
   sourceOfTruth: 'worktree';
   summary: string;
   updatedAt: string;
@@ -306,18 +314,6 @@ const autopilotModeOutputSchema = v.picklist([
   'autofix-with-approval',
   'autofix-push-when-safe',
 ]);
-const worktreeLifecycleStatusOutputSchema = v.picklist([
-  'creating',
-  'ready',
-  'busy',
-  'stale',
-  'needs-sync',
-  'failed',
-  'prepared-diff',
-  'succeeded',
-  'cleanup-pending',
-  'deleted',
-]);
 const policyLimitsOutputSchema = v.object({
   maxFilesChanged: v.number(),
   maxLinesChanged: v.number(),
@@ -376,7 +372,17 @@ const preparedDiffSchema = v.object({
   worktreeId: v.string(),
   localPath: v.string(),
   title: v.string(),
-  status: worktreeLifecycleStatusOutputSchema,
+  status: v.picklist([
+    'prepared',
+    'verification-requested',
+    'revision-requested',
+    'push-approved',
+    'push-blocked',
+    'pushed',
+    'abandoned',
+  ]),
+  pushApprovalStatus: v.string(),
+  verificationStatus: v.string(),
   sourceOfTruth: v.literal('worktree'),
   summary: v.string(),
   updatedAt: v.string(),
@@ -480,6 +486,7 @@ export async function readAutopilotState(
     appConfig,
     watches,
     worktreeSnapshot,
+    preparedDiffSnapshot,
     approvals,
     notifications,
   ] = await Promise.all([
@@ -487,6 +494,7 @@ export async function readAutopilotState(
     readRuntimeJson(paths.config, parseAppConfig),
     listPrWatchRecords(paths),
     listWorktrees(paths),
+    listPreparedDiffs({}, paths),
     listExecutionApprovals(paths, { includeResolved: false }),
     listNotifications(paths, { includeResolved: true }),
   ]);
@@ -506,12 +514,20 @@ export async function readAutopilotState(
   const runningChecks = workflowRuns
     .filter((run) => checkWorkflowNames.has(run.workflow))
     .map((run) => runningCheckFromWorkflow(run, worktrees));
-  const preparedDiffs = worktrees
-    .filter((worktree) => worktree.lifecycleStatus === 'prepared-diff')
-    .map(preparedDiffFromWorktree);
-  const pendingApprovals = approvals.approvals
-    .filter(isAutopilotApproval)
-    .map((approval) => approvalFromExecution(approval, worktrees));
+  const preparedDiffs = (preparedDiffSnapshot.preparedDiffs ?? []).map(
+    preparedDiffFromRecord,
+  );
+  const pendingApprovals = [
+    ...approvals.approvals
+      .filter(isAutopilotApproval)
+      .map((approval) => approvalFromExecution(approval, worktrees)),
+    ...(preparedDiffSnapshot.approvals ?? []).map((approval) =>
+      approvalFromPreparedDiff(
+        approval,
+        preparedDiffSnapshot.preparedDiffs ?? [],
+      ),
+    ),
+  ];
   const queue = [
     ...watches.map((watch) =>
       queueItemFromWatch(
@@ -522,13 +538,17 @@ export async function readAutopilotState(
     ),
     ...worktrees
       .filter((worktree) =>
-        ['busy', 'needs-sync', 'failed', 'prepared-diff'].includes(
-          worktree.lifecycleStatus,
-        ),
+        ['busy', 'needs-sync', 'failed'].includes(worktree.lifecycleStatus),
       )
       .map((worktree) =>
         queueItemFromWorktree(worktree, repoPolicyMap.get(worktree.repoId)),
       ),
+    ...(preparedDiffSnapshot.preparedDiffs ?? []).map((preparedDiff) =>
+      queueItemFromPreparedDiff(
+        preparedDiff,
+        repoPolicyMap.get(preparedDiff.repoId),
+      ),
+    ),
     ...workflowRuns.map((run) => queueItemFromWorkflow(run, worktrees)),
     ...pendingApprovals.map(queueItemFromApproval),
   ]
@@ -568,7 +588,6 @@ export async function readAutopilotState(
       recentActivity: recentActivity.length,
       placeholderAdapters: [
         'Queue entries are derived from watches, worktrees, approvals, and Flue observations until Phase 19 workflow admission tables land.',
-        'Prepared diffs are represented by worktrees with lifecycle_status=prepared-diff until dedicated prepared-diff records land.',
         'Watch-level policy reads repo metadata overrides until durable watch-policy rows land.',
       ],
     },
@@ -787,22 +806,50 @@ function queueItemFromApproval(
   };
 }
 
-function preparedDiffFromWorktree(
-  worktree: WorktreeRecord,
+function preparedDiffFromRecord(
+  record: PreparedDiffRecord,
 ): AutopilotPreparedDiff {
   return {
-    id: `prepared-diff:${worktree.id}`,
-    repoId: worktree.repoId,
-    repoFullName: worktree.repoFullName,
-    prNumber: worktree.prNumber,
-    worktreeId: worktree.id,
-    localPath: worktree.localPath,
-    title: `${worktree.repoFullName}${worktree.prNumber ? `#${worktree.prNumber}` : ''}`,
-    status: worktree.lifecycleStatus,
+    id: record.id,
+    repoId: record.repoId,
+    repoFullName: record.repoFullName,
+    prNumber: record.prNumber,
+    worktreeId: record.worktreeId,
+    localPath: record.sourceWorktreePath,
+    title: record.title,
+    status: record.status,
+    pushApprovalStatus: record.pushApprovalStatus,
+    verificationStatus: record.verificationStatus,
     sourceOfTruth: 'worktree',
-    summary:
-      'Prepared-diff records are not persisted yet; inspect this worktree as the source of truth.',
-    updatedAt: worktree.updatedAt,
+    summary: preparedDiffSummary(record),
+    updatedAt: record.updatedAt,
+  };
+}
+
+function queueItemFromPreparedDiff(
+  record: PreparedDiffRecord,
+  policy: RepoAutopilotPolicy | undefined,
+): AutopilotQueueItem {
+  const waitingApproval =
+    record.pushApprovalStatus === 'pending' && record.status === 'prepared';
+  return {
+    id: `prepared-diff:${record.id}`,
+    source: 'worktree',
+    status: waitingApproval ? 'waiting-approval' : 'prepared',
+    priority: waitingApproval ? 'high' : 'normal',
+    repoId: record.repoId,
+    repoFullName: record.repoFullName,
+    prNumber: record.prNumber,
+    title: record.title,
+    mode: policy?.mode ?? 'notify-only',
+    reason: preparedDiffSummary(record),
+    nextStep:
+      record.status === 'revision-requested'
+        ? 'Revise the prepared worktree diff.'
+        : 'Review, verify, approve push, request revision, or abandon.',
+    worktreeId: record.worktreeId,
+    runId: null,
+    updatedAt: record.updatedAt,
   };
 }
 
@@ -830,6 +877,48 @@ function approvalFromExecution(
     createdAt: approval.createdAt,
     updatedAt: approval.updatedAt,
   };
+}
+
+function approvalFromPreparedDiff(
+  approval: PreparedDiffApprovalRecord,
+  preparedDiffs: PreparedDiffRecord[],
+): AutopilotApproval {
+  const preparedDiff = preparedDiffs.find(
+    (record) => record.id === approval.preparedDiffId,
+  );
+  return {
+    id: approval.id,
+    repoId: preparedDiff?.repoId ?? null,
+    repoFullName: preparedDiff?.repoFullName ?? null,
+    prNumber: preparedDiff?.prNumber ?? null,
+    command: `prepared-diff:${approval.approvalType}`,
+    risk:
+      approval.approvalType === 'push'
+        ? 'push-back'
+        : `prepared-diff-${approval.approvalType}`,
+    status: approval.status,
+    reason:
+      approval.reason ??
+      `Pending ${approval.approvalType} decision for prepared diff.`,
+    createdAt: approval.requestedAt,
+    updatedAt: approval.updatedAt,
+  };
+}
+
+function preparedDiffSummary(record: PreparedDiffRecord) {
+  if (record.status === 'push-approved') {
+    return 'Push-back approval is recorded; push workflow has not run yet.';
+  }
+  if (record.status === 'verification-requested') {
+    return 'Verification is requested; verify_pr_worktree has not run yet.';
+  }
+  if (record.status === 'revision-requested') {
+    return 'Operator requested a revision to the prepared worktree diff.';
+  }
+  if (record.status === 'abandoned') {
+    return 'Prepared diff was abandoned; source worktree is retained for cleanup policy.';
+  }
+  return 'Prepared diff is recorded in app state; source worktree is the file-level source of truth.';
 }
 
 function runningCheckFromWorkflow(

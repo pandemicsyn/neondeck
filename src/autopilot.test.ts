@@ -124,6 +124,12 @@ describe('autopilot operator state', () => {
       localPath: join(paths.worktrees, 'pandemicsyn-neondeck-pr-43'),
       workflowRunId: 'run-verify',
     });
+    insertPreparedDiff(paths, {
+      id: 'pd-43',
+      worktreeId: 'wt-43',
+      prNumber: 43,
+      localPath: join(paths.worktrees, 'pandemicsyn-neondeck-pr-43'),
+    });
     insertExecutionApproval(paths, {
       id: 'approval-1',
       command: 'git push origin HEAD:feature',
@@ -344,6 +350,69 @@ function insertWorktree(
         'neondeck',
         now,
         now,
+      );
+  } finally {
+    database.close();
+  }
+}
+
+function insertPreparedDiff(
+  paths: RuntimePaths,
+  input: {
+    id: string;
+    worktreeId: string;
+    prNumber: number;
+    localPath: string;
+  },
+) {
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        INSERT INTO prepared_diffs (
+          id,
+          worktree_id,
+          repo_id,
+          repo_full_name,
+          pr_number,
+          title,
+          source_worktree_path,
+          base_ref,
+          head_ref,
+          head_sha,
+          status,
+          push_approval_status,
+          verification_status,
+          summary_json,
+          created_by,
+          created_at,
+          updated_at,
+          abandoned_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      `,
+      )
+      .run(
+        input.id,
+        input.worktreeId,
+        'neondeck',
+        'pandemicsyn/neondeck',
+        input.prNumber,
+        `pandemicsyn/neondeck#${input.prNumber}`,
+        input.localPath,
+        'main',
+        'feature',
+        'abc123',
+        'prepared',
+        'pending',
+        'not-run',
+        null,
+        'test',
+        now,
+        now,
+        null,
       );
   } finally {
     database.close();

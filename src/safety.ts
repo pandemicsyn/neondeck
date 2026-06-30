@@ -254,6 +254,12 @@ const entries: SafetyPolicyEntry[] = [
     'Reads Neondeck worktree records, active and stale locks, and cleanup failures.',
   ),
   tool(
+    'neondeck_prepared_diffs_lookup',
+    'Read prepared diffs',
+    readOnly,
+    'Reads prepared-diff records and pending decision rows without reading file patches.',
+  ),
+  tool(
     'neondeck_kilo_tasks_lookup',
     'Read Kilo handoff tasks',
     readOnly,
@@ -636,6 +642,72 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'worktrees/worktree_locks',
     },
     'Creates, syncs, locks, and inspects a Neondeck-managed PR worktree, but does not edit, commit, push, or comment.',
+  ),
+  action(
+    'neondeck_prepared_diff_list',
+    'List prepared diffs',
+    readOnly,
+    'Lists prepared diffs and pending prepared-diff decisions.',
+  ),
+  action(
+    'neondeck_prepared_diff_summary',
+    'Read prepared diff summary',
+    readOnly,
+    'Reads one prepared-diff record and backend-computed git diff summary from the source worktree.',
+  ),
+  action(
+    'neondeck_prepared_diff_changed_files',
+    'Read prepared diff files',
+    readOnly,
+    'Reads changed files for a prepared diff through backend git helpers.',
+  ),
+  action(
+    'neondeck_prepared_diff_file_diff',
+    'Read prepared file diff',
+    readOnly,
+    'Reads one prepared file patch through backend git helpers.',
+  ),
+  action(
+    'neondeck_prepared_diff_open_worktree',
+    'Open prepared diff worktree',
+    readOnly,
+    'Returns the managed source worktree path for a prepared diff.',
+  ),
+  action(
+    'neondeck_prepared_diff_run_verification',
+    'Request prepared diff verification',
+    {
+      ...safeMutation,
+      auditTarget: 'prepared_diffs/prepared_diff_approvals',
+    },
+    'Records a verification request; actual host command execution remains owned by verify_pr_worktree and execution approvals.',
+  ),
+  action(
+    'neondeck_prepared_diff_request_revision',
+    'Request prepared diff revision',
+    {
+      ...safeMutation,
+      auditTarget: 'prepared_diffs/prepared_diff_approvals',
+    },
+    'Records an operator revision request while retaining the source worktree.',
+  ),
+  action(
+    'neondeck_prepared_diff_approve_push',
+    'Approve prepared diff push',
+    {
+      ...destructiveMutation,
+      auditTarget: 'prepared_diffs/prepared_diff_approvals',
+    },
+    'Requires confirm=true and records push-back approval; the later push workflow performs GitHub mutations.',
+  ),
+  action(
+    'neondeck_prepared_diff_abandon',
+    'Abandon prepared diff',
+    {
+      ...destructiveMutation,
+      auditTarget: 'prepared_diffs/prepared_diff_approvals/worktree_events',
+    },
+    'Requires confirm=true and abandons the prepared-diff record without directly deleting the source worktree.',
   ),
   action(
     'neondeck_worktree_sync',
@@ -1074,6 +1146,72 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'worktrees/worktree_locks',
     },
     'Fetches deterministic GitHub PR/check facts and prepares a managed PR worktree without fixing, committing, pushing, or commenting.',
+  ),
+  route(
+    '/api/prepared-diffs',
+    'Prepared diffs API',
+    readOnly,
+    'Lists prepared-diff records for dashboard and future TUI clients.',
+  ),
+  route(
+    '/api/prepared-diffs/:id/summary',
+    'Prepared diff summary API',
+    readOnly,
+    'Reads one prepared-diff record and backend-computed diff summary.',
+  ),
+  route(
+    '/api/prepared-diffs/:id/files',
+    'Prepared diff files API',
+    readOnly,
+    'Reads changed files for a prepared diff through backend git helpers.',
+  ),
+  route(
+    '/api/prepared-diffs/:id/files/diff',
+    'Prepared file diff API',
+    readOnly,
+    'Reads one prepared file patch through backend git helpers.',
+  ),
+  route(
+    '/api/prepared-diffs/:id/verify',
+    'Prepared diff verification API',
+    {
+      ...safeMutation,
+      auditTarget: 'prepared_diffs/prepared_diff_approvals',
+    },
+    'Records a verification request without running host commands directly.',
+  ),
+  route(
+    '/api/prepared-diffs/:id/request-revision',
+    'Prepared diff revision API',
+    {
+      ...safeMutation,
+      auditTarget: 'prepared_diffs/prepared_diff_approvals',
+    },
+    'Records a revision request while retaining the source worktree.',
+  ),
+  route(
+    '/api/prepared-diffs/:id/approve-push',
+    'Prepared diff push approval API',
+    {
+      ...destructiveMutation,
+      auditTarget: 'prepared_diffs/prepared_diff_approvals',
+    },
+    'Requires confirmation and records push-back approval without pushing.',
+  ),
+  route(
+    '/api/prepared-diffs/:id/abandon',
+    'Prepared diff abandon API',
+    {
+      ...destructiveMutation,
+      auditTarget: 'prepared_diffs/prepared_diff_approvals/worktree_events',
+    },
+    'Requires confirmation and abandons the prepared-diff record without deleting the source worktree.',
+  ),
+  route(
+    '/api/prepared-diffs/:id/worktree-path',
+    'Prepared diff worktree path API',
+    readOnly,
+    'Returns the managed source worktree path for a prepared diff.',
   ),
   route(
     '/api/session',
