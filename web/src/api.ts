@@ -335,10 +335,40 @@ export type NeonSessionRecord = {
   updatedAt: string;
 };
 
+export type ChatSessionKind =
+  'main' | 'scratch' | 'general' | 'repo' | 'watch' | 'task' | 'briefing';
+
+export type ChatSessionRecord = {
+  id: string;
+  title: string;
+  agentName: string;
+  kind: ChatSessionKind;
+  pinned: boolean;
+  archivedAt: string | null;
+  linkedRepoId: string | null;
+  linkedWatchId: string | null;
+  linkedTaskId: string | null;
+  staleReasons: Array<{
+    type: 'config' | 'memory';
+    message: string;
+    changedAt: string;
+    target: string | null;
+  }>;
+  uiMetadata: unknown;
+  summary: string | null;
+  contextLoadedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  lastActiveAt: string;
+};
+
 export type NeonSessionState = {
   ok: boolean;
   action: 'session_status';
   activeSession: NeonSessionRecord;
+  activeChatSession: ChatSessionRecord;
+  activeSessionId: string;
+  surface: string;
   stale: boolean;
   staleReasons: Array<{
     type: 'config' | 'memory';
@@ -347,7 +377,36 @@ export type NeonSessionState = {
     target: string | null;
   }>;
   history: NeonSessionRecord[];
+  sessions: ChatSessionRecord[];
   fetchedAt: string;
+};
+
+export type ChatSessionListResponse = {
+  ok: boolean;
+  action: 'session_list';
+  changed: boolean;
+  sessions: ChatSessionRecord[];
+  activeSessionId: string | null;
+  surface: string;
+  fetchedAt: string;
+};
+
+export type ChatSessionMutationResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  session?: ChatSessionRecord;
+  state?: NeonSessionState;
+  errors?: string[];
+};
+
+export type ChatSessionChangeEvent = {
+  id: string;
+  action: 'created' | 'updated' | 'switched' | 'archived' | 'restored';
+  session: ChatSessionRecord;
+  surface: string | null;
+  changedAt: string;
 };
 
 export type WorkflowEventRecord = {
@@ -700,12 +759,34 @@ export function openNotificationEventStream(
   return () => source.close();
 }
 
+export function openChatSessionEventStream(
+  onEvent: (event: ChatSessionChangeEvent) => void,
+  onError?: () => void,
+) {
+  if (typeof EventSource === 'undefined') return () => {};
+
+  const source = new EventSource('/api/events/sessions');
+  source.addEventListener('chat-session-change', (event) => {
+    onEvent(JSON.parse(event.data) as ChatSessionChangeEvent);
+  });
+  if (onError) source.addEventListener('error', onError);
+
+  return () => source.close();
+}
+
 export async function getSafetyPolicy() {
   return getJson<SafetyPolicy>('/api/safety/policy');
 }
 
 export async function getNeonSession() {
   return getJson<NeonSessionState>('/api/session');
+}
+
+export async function getChatSessions(
+  input: { includeArchived?: boolean } = {},
+) {
+  const query = input.includeArchived ? '?includeArchived=1' : '';
+  return getJson<ChatSessionListResponse>(`/api/sessions${query}`);
 }
 
 export async function startNeonSession(
@@ -722,6 +803,52 @@ export async function startNeonSession(
     state?: NeonSessionState;
     errors?: string[];
   }>('/api/session/new', input);
+}
+
+export async function createChatSession(
+  input: {
+    title?: string;
+    kind?: ChatSessionKind;
+    activate?: boolean;
+    surface?: string;
+  } = {},
+) {
+  return postJson<ChatSessionMutationResponse>('/api/sessions', input);
+}
+
+export async function switchChatSession(id: string) {
+  return postJson<ChatSessionMutationResponse>(`/api/sessions/${id}/switch`, {
+    surface: 'dashboard',
+    reason: 'dashboard-session-switcher',
+  });
+}
+
+export async function renameChatSession(id: string, title: string) {
+  return postJson<ChatSessionMutationResponse>(`/api/sessions/${id}/rename`, {
+    title,
+    reason: 'dashboard-session-switcher',
+  });
+}
+
+export async function pinChatSession(id: string, pinned: boolean) {
+  return postJson<ChatSessionMutationResponse>(`/api/sessions/${id}/pin`, {
+    pinned,
+    reason: 'dashboard-session-switcher',
+  });
+}
+
+export async function archiveChatSession(id: string) {
+  return postJson<ChatSessionMutationResponse>(`/api/sessions/${id}/archive`, {
+    surface: 'dashboard',
+    reason: 'dashboard-session-switcher',
+  });
+}
+
+export async function restoreChatSession(id: string) {
+  return postJson<ChatSessionMutationResponse>(`/api/sessions/${id}/restore`, {
+    surface: 'dashboard',
+    reason: 'dashboard-session-switcher',
+  });
 }
 
 export async function updateAgentModels(input: AgentModelUpdate) {

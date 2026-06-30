@@ -6,7 +6,22 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { updateAgentModels } from './config-actions';
 import { deleteMemory, upsertMemory } from './memory-actions';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
-import { readNeonSessionState, startNeonSession } from './session-actions';
+import {
+  archiveChatSession,
+  type ChatSessionRecord,
+  createChatSession,
+  linkChatSessionContext,
+  listChatSessions,
+  pinChatSession,
+  readChatSession,
+  readChatSessionMessages,
+  readNeonSessionState,
+  renameChatSession,
+  restoreChatSession,
+  searchChatSessions,
+  startNeonSession,
+  switchChatSession,
+} from './session-actions';
 
 const tempRoots: string[] = [];
 
@@ -35,7 +50,7 @@ describe('session actions', () => {
     expect(state.history).toHaveLength(1);
   });
 
-  it('starts a new active session and archives the previous one', async () => {
+  it('starts a new active session and keeps previous sessions indexed', async () => {
     const paths = runtimePaths(await tempDir());
 
     const result = await startNeonSession(
@@ -63,6 +78,163 @@ describe('session actions', () => {
         }),
       ]),
     );
+  });
+
+  it('creates, switches, renames, pins, links, searches, and audits sessions', async () => {
+    const paths = runtimePaths(await tempDir());
+
+    const created = await createChatSession(
+      {
+        title: 'Repo investigation',
+        linkedRepoId: 'neondeck',
+        summary: 'Working session for roadmap phase 16.',
+      },
+      paths,
+    );
+
+    expect(created).toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'session_create',
+      session: {
+        title: 'Repo investigation',
+        kind: 'repo',
+        linkedRepoId: 'neondeck',
+      },
+    });
+    const sessionId = (created as { session: ChatSessionRecord }).session.id;
+
+    await expect(
+      renameChatSession({ id: sessionId, title: 'Phase 16' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'session_rename',
+    });
+    await expect(
+      pinChatSession({ id: sessionId, pinned: true }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'session_pin',
+    });
+    await expect(
+      linkChatSessionContext(
+        {
+          id: sessionId,
+          kind: 'task',
+          linkedTaskId: 'roadmap-phase-16',
+          uiMetadata: { source: 'test' },
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'session_link_context',
+    });
+
+    const switched = await switchChatSession({ id: 'neondeck-main' }, paths);
+    expect(switched).toMatchObject({
+      ok: true,
+      action: 'session_switch',
+      state: {
+        activeSessionId: 'neondeck-main',
+      },
+    });
+    const list = await listChatSessions({ includeArchived: true }, paths);
+    expect((list as { sessions: ChatSessionRecord[] }).sessions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: sessionId,
+          title: 'Phase 16',
+          pinned: true,
+          kind: 'task',
+          linkedTaskId: 'roadmap-phase-16',
+        }),
+      ]),
+    );
+
+    await expect(
+      searchChatSessions({ query: 'Phase 16' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      sessions: [expect.objectContaining({ id: sessionId })],
+    });
+    await expect(
+      readChatSession({ id: sessionId, reason: 'test-read' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      session: expect.objectContaining({ id: sessionId }),
+    });
+    await expect(
+      readChatSessionMessages(
+        { id: sessionId, reason: 'test-transcript' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      transcriptUnavailable: true,
+      messages: [],
+    });
+
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      const audits = database
+        .prepare(
+          `
+          SELECT action
+          FROM chat_session_audit
+          WHERE session_id = ?
+          ORDER BY id ASC;
+        `,
+        )
+        .all(sessionId)
+        .map((row) => String((row as { action: unknown }).action));
+      expect(audits).toEqual(
+        expect.arrayContaining([
+          'create',
+          'rename',
+          'pin',
+          'link_context',
+          'read',
+          'messages_read',
+        ]),
+      );
+    } finally {
+      database.close();
+    }
+  });
+
+  it('archives and restores inactive session metadata without deleting history', async () => {
+    const paths = runtimePaths(await tempDir());
+    const created = await createChatSession({ title: 'Archive me' }, paths);
+    const sessionId = (created as { session: ChatSessionRecord }).session.id;
+    await switchChatSession({ id: 'neondeck-main' }, paths);
+
+    await expect(
+      archiveChatSession({ id: sessionId }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'session_archive',
+      session: {
+        id: sessionId,
+        archivedAt: expect.any(String),
+      },
+    });
+    await expect(
+      switchChatSession({ id: sessionId }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'session_switch',
+    });
+    await expect(
+      restoreChatSession({ id: sessionId }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'session_restore',
+      session: {
+        id: sessionId,
+        archivedAt: null,
+      },
+    });
   });
 
   it('uses the utility model role metadata for generated session titles', async () => {
@@ -145,6 +317,56 @@ describe('session actions', () => {
         }),
       ]),
     );
+  });
+
+  it('keeps switched old sessions stale after context-changing writes', async () => {
+    const paths = runtimePaths(await tempDir());
+    const old = await createChatSession({ title: 'Old context' }, paths);
+    const oldId = (old as { session: ChatSessionRecord }).session.id;
+    await sleep(5);
+    await createChatSession({ title: 'Current context' }, paths);
+    await sleep(5);
+
+    await upsertMemory({ scope: 'user', key: 'tone', value: 'brief' }, paths);
+    const switched = await switchChatSession({ id: oldId }, paths);
+
+    expect(switched).toMatchObject({
+      ok: true,
+      state: {
+        activeSessionId: oldId,
+        stale: true,
+        staleReasons: [
+          expect.objectContaining({
+            type: 'memory',
+            target: 'user:tone',
+          }),
+        ],
+      },
+    });
+  });
+
+  it('ignores malformed persisted session JSON instead of failing reads', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `
+          UPDATE chat_sessions
+          SET stale_reasons_json = ?, ui_metadata_json = ?
+          WHERE id = 'neondeck-main';
+        `,
+        )
+        .run('[{"type":"wrong"}]', '{bad json');
+    } finally {
+      database.close();
+    }
+
+    const state = await readNeonSessionState(paths);
+
+    expect(state.activeChatSession.uiMetadata).toBeNull();
+    expect(state.activeChatSession.staleReasons).toEqual([]);
   });
 
   it('recovers duplicate active sessions by keeping the newest active', async () => {

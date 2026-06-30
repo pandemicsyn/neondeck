@@ -571,6 +571,41 @@ function initializeAppDatabase(path: string) {
         updated_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS chat_sessions (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        agent_name TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        pinned INTEGER NOT NULL DEFAULT 0,
+        archived_at TEXT,
+        linked_repo_id TEXT,
+        linked_watch_id TEXT,
+        linked_task_id TEXT,
+        stale_reasons_json TEXT,
+        ui_metadata_json TEXT,
+        summary TEXT,
+        context_loaded_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        last_active_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS chat_session_surfaces (
+        surface TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS chat_session_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        action TEXT NOT NULL,
+        session_id TEXT,
+        surface TEXT,
+        reason TEXT,
+        metadata_json TEXT,
+        created_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS execution_approvals (
         id TEXT PRIMARY KEY,
         command TEXT NOT NULL,
@@ -635,6 +670,7 @@ function initializeAppDatabase(path: string) {
       'occurrence_count',
       'INTEGER NOT NULL DEFAULT 1',
     );
+    ensureColumn(database, 'chat_sessions', 'context_loaded_at', 'TEXT');
     database
       .prepare(
         `
@@ -668,6 +704,15 @@ function initializeAppDatabase(path: string) {
 
       CREATE INDEX IF NOT EXISTS idx_repo_file_reads_lookup
         ON repo_file_reads(session_id, repo_id, path, read_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_chat_sessions_recent
+        ON chat_sessions(archived_at, pinned DESC, last_active_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_chat_sessions_kind
+        ON chat_sessions(kind, archived_at, last_active_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_chat_session_audit_session
+        ON chat_session_audit(session_id, created_at DESC);
     `);
     reconcileExistingNotificationDuplicates(database);
     reconcileActiveNeonSessions(database);
@@ -704,11 +749,14 @@ function initializeAppDatabase(path: string) {
       )
       .run();
 
+    migrateLegacyNeonSessions(database);
+    reconcileActiveChatSession(database);
+
     database
       .prepare(
         `
         INSERT INTO app_metadata (key, value, updated_at)
-        VALUES ('schema_version', '5', datetime('now'))
+        VALUES ('schema_version', '6', datetime('now'))
         ON CONFLICT(key) DO UPDATE SET
           value = excluded.value,
           updated_at = excluded.updated_at;
@@ -718,6 +766,151 @@ function initializeAppDatabase(path: string) {
   } finally {
     database.close();
   }
+}
+
+function migrateLegacyNeonSessions(database: DatabaseSync) {
+  database
+    .prepare(
+      `
+      INSERT INTO chat_sessions (
+        id,
+        title,
+        agent_name,
+        kind,
+        pinned,
+        archived_at,
+        ui_metadata_json,
+        created_at,
+        updated_at,
+        context_loaded_at,
+        last_active_at
+      )
+      SELECT
+        id,
+        label,
+        agent_name,
+        CASE WHEN id = 'neondeck-main' THEN 'main' ELSE 'scratch' END,
+        CASE WHEN id = 'neondeck-main' THEN 1 ELSE 0 END,
+        ended_at,
+        json_object('legacyReason', reason),
+        created_at,
+        updated_at,
+        activated_at,
+        activated_at
+      FROM neon_sessions
+      WHERE NOT EXISTS (
+        SELECT 1 FROM chat_sessions WHERE chat_sessions.id = neon_sessions.id
+      );
+    `,
+    )
+    .run();
+
+  database
+    .prepare(
+      `
+      UPDATE chat_sessions
+      SET
+        context_loaded_at = COALESCE(
+          context_loaded_at,
+          (
+            SELECT activated_at
+            FROM neon_sessions
+            WHERE neon_sessions.id = chat_sessions.id
+          ),
+          created_at
+        ),
+        archived_at = (
+          SELECT ended_at
+          FROM neon_sessions
+          WHERE neon_sessions.id = chat_sessions.id
+        ),
+        updated_at = (
+          SELECT updated_at
+          FROM neon_sessions
+          WHERE neon_sessions.id = chat_sessions.id
+        )
+      WHERE EXISTS (
+        SELECT 1
+        FROM neon_sessions
+        WHERE neon_sessions.id = chat_sessions.id
+      );
+    `,
+    )
+    .run();
+
+  database
+    .prepare(
+      `
+      UPDATE chat_sessions
+      SET context_loaded_at = COALESCE(context_loaded_at, created_at);
+    `,
+    )
+    .run();
+
+  database
+    .prepare(
+      `
+      INSERT OR IGNORE INTO chat_session_surfaces (surface, session_id, updated_at)
+      SELECT 'dashboard', id, datetime('now')
+      FROM chat_sessions
+      WHERE archived_at IS NULL
+      ORDER BY last_active_at DESC, created_at DESC
+      LIMIT 1;
+    `,
+    )
+    .run();
+}
+
+function reconcileActiveChatSession(database: DatabaseSync) {
+  const active = database
+    .prepare(
+      `
+      SELECT session_id
+      FROM chat_session_surfaces
+      WHERE surface = 'dashboard'
+      LIMIT 1;
+    `,
+    )
+    .get() as { session_id?: unknown } | undefined;
+
+  if (typeof active?.session_id === 'string') {
+    const row = database
+      .prepare(
+        `
+        SELECT id
+        FROM chat_sessions
+        WHERE id = ?
+          AND archived_at IS NULL;
+      `,
+      )
+      .get(active.session_id);
+    if (row) return;
+  }
+
+  const fallback = database
+    .prepare(
+      `
+      SELECT id
+      FROM chat_sessions
+      WHERE archived_at IS NULL
+      ORDER BY pinned DESC, last_active_at DESC, created_at DESC
+      LIMIT 1;
+    `,
+    )
+    .get() as { id?: unknown } | undefined;
+
+  if (typeof fallback?.id !== 'string') return;
+  database
+    .prepare(
+      `
+      INSERT INTO chat_session_surfaces (surface, session_id, updated_at)
+      VALUES ('dashboard', ?, datetime('now'))
+      ON CONFLICT(surface) DO UPDATE SET
+        session_id = excluded.session_id,
+        updated_at = excluded.updated_at;
+    `,
+    )
+    .run(fallback.id);
 }
 
 function ensureColumn(

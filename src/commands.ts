@@ -841,7 +841,7 @@ async function reasoningCommand(
       thinkingLevel: nextModels.displayAssistantThinkingLevel,
       supportedLevels,
       sessionStarted: Boolean(session?.ok),
-      session: session?.state ?? null,
+      session: session && 'state' in session ? session.state : null,
     },
   );
 }

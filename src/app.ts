@@ -22,6 +22,10 @@ import {
   subscribeNotificationEvents,
 } from './notification-events';
 import {
+  formatChatSessionServerSentEvent,
+  subscribeChatSessionEvents,
+} from './session-events';
+import {
   listExecutionApprovals,
   requestExecutionApproval,
   resolveExecutionApproval,
@@ -61,7 +65,21 @@ import {
   runSchedulerTick,
   startSchedulerLoop,
 } from './scheduler';
-import { readNeonSessionState, startNeonSession } from './session-actions';
+import {
+  archiveChatSession,
+  createChatSession,
+  linkChatSessionContext,
+  listChatSessions,
+  pinChatSession,
+  readChatSession,
+  readChatSessionMessages,
+  readNeonSessionState,
+  renameChatSession,
+  restoreChatSession,
+  searchChatSessions,
+  startNeonSession,
+  switchChatSession,
+} from './session-actions';
 import {
   ConfigValidationError,
   ensureRuntimeHome,
@@ -288,6 +306,44 @@ app.get('/api/events/notifications', () => {
   });
 });
 
+app.get('/api/events/sessions', () => {
+  const encoder = new TextEncoder();
+  let cleanup = () => {};
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      function send(value: string) {
+        controller.enqueue(encoder.encode(value));
+      }
+
+      send(': connected\n\n');
+      const unsubscribe = subscribeChatSessionEvents((event) => {
+        send(formatChatSessionServerSentEvent(event));
+      });
+      const heartbeat = setInterval(() => {
+        send(`: heartbeat ${Date.now()}\n\n`);
+      }, 25_000);
+
+      cleanup = () => {
+        clearInterval(heartbeat);
+        unsubscribe();
+      };
+    },
+    cancel() {
+      cleanup();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+      'content-type': 'text/event-stream; charset=utf-8',
+      'x-accel-buffering': 'no',
+    },
+  });
+});
+
 app.get('/api/safety/policy', (c) => {
   return c.json(readSafetyPolicy(paths));
 });
@@ -338,7 +394,7 @@ app.post('/api/execution/run', async (c) => {
 });
 
 app.get('/api/session', async (c) => {
-  return c.json(await readNeonSessionState(paths));
+  return c.json(await readNeonSessionState(paths, c.req.query('surface')));
 });
 
 app.post('/api/session/new', async (c) => {
@@ -347,6 +403,116 @@ app.post('/api/session/new', async (c) => {
     unknown
   >;
   const result = await startNeonSession(input, paths);
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.get('/api/sessions', async (c) => {
+  return c.json(
+    await listChatSessions(
+      {
+        includeArchived: c.req.query('includeArchived') === '1',
+        kind: sessionKind(c.req.query('kind')),
+        surface: c.req.query('surface') || undefined,
+      },
+      paths,
+    ),
+  );
+});
+
+app.post('/api/sessions/search', async (c) => {
+  const result = await searchChatSessions(
+    (await safeJsonBody(c)) as Parameters<typeof searchChatSessions>[0],
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/sessions', async (c) => {
+  const result = await createChatSession(
+    (await safeJsonBody(c)) as Parameters<typeof createChatSession>[0],
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.get('/api/sessions/:id', async (c) => {
+  const result = await readChatSession(
+    {
+      id: c.req.param('id'),
+      surface: c.req.query('surface') || undefined,
+      reason: c.req.query('reason') || undefined,
+    },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 404);
+});
+
+app.get('/api/sessions/:id/messages', async (c) => {
+  const rawLimit = Number(c.req.query('limit'));
+  const result = await readChatSessionMessages(
+    {
+      id: c.req.param('id'),
+      cursor: c.req.query('cursor') || undefined,
+      limit: Number.isFinite(rawLimit) ? rawLimit : undefined,
+      surface: c.req.query('surface') || undefined,
+      reason: c.req.query('reason') || undefined,
+    },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 404);
+});
+
+app.post('/api/sessions/:id/switch', async (c) => {
+  const result = await switchChatSession(
+    { ...(await safeJsonObject(c)), id: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/sessions/:id/rename', async (c) => {
+  const result = await renameChatSession(
+    {
+      ...(await safeJsonObject(c)),
+      id: c.req.param('id'),
+    } as Parameters<typeof renameChatSession>[0],
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/sessions/:id/pin', async (c) => {
+  const result = await pinChatSession(
+    {
+      ...(await safeJsonObject(c)),
+      id: c.req.param('id'),
+    } as Parameters<typeof pinChatSession>[0],
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/sessions/:id/archive', async (c) => {
+  const result = await archiveChatSession(
+    { ...(await safeJsonObject(c)), id: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/sessions/:id/restore', async (c) => {
+  const result = await restoreChatSession(
+    { ...(await safeJsonObject(c)), id: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/sessions/:id/link-context', async (c) => {
+  const result = await linkChatSessionContext(
+    { ...(await safeJsonObject(c)), id: c.req.param('id') },
+    paths,
+  );
   return c.json(result, result.ok ? 200 : 400);
 });
 
@@ -800,6 +966,22 @@ function memoryScope(value: string | undefined) {
     value === 'project' ||
     value === 'session' ||
     value === 'watch'
+  ) {
+    return value;
+  }
+
+  return undefined;
+}
+
+function sessionKind(value: string | undefined) {
+  if (
+    value === 'main' ||
+    value === 'scratch' ||
+    value === 'general' ||
+    value === 'repo' ||
+    value === 'watch' ||
+    value === 'task' ||
+    value === 'briefing'
   ) {
     return value;
   }
