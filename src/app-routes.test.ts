@@ -43,7 +43,15 @@ describe('app API safety routes', () => {
           primitive: 'workflow',
         }),
         expect.objectContaining({
+          id: 'fix-pr-ci-failure',
+          primitive: 'workflow',
+        }),
+        expect.objectContaining({
           id: '/api/autopilot/prepare-pr-worktree',
+          primitive: 'route',
+        }),
+        expect.objectContaining({
+          id: '/api/autopilot/fix-pr-ci-failure',
           primitive: 'route',
         }),
       ]),

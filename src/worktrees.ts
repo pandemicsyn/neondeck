@@ -765,11 +765,6 @@ export async function releaseWorktreeLock(
       if (finalStatus === 'prepared-diff') {
         await ensurePreparedDiffForWorktree(worktree, paths, {
           createdBy: lock.owner,
-          summary: {
-            lockId: lock.id,
-            workflowRunId: lock.workflowRunId,
-            preparedAt: now,
-          },
         });
       }
     }

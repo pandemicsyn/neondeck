@@ -39,6 +39,12 @@ export type ApplyPatchResult = {
   conflicts: Array<{ file?: string; reason: string }>;
 };
 
+export type GitCommitResult = {
+  committed: boolean;
+  sha: string | null;
+  message: string;
+};
+
 export async function gitStatus(repoRoot: string): Promise<RepoGitStatus> {
   const [branch, upstream, porcelain] = await Promise.all([
     git(repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD']).then((out) =>
@@ -143,6 +149,28 @@ export async function gitDiff(
     base,
     files,
     summary: summarizeDiff(files),
+  };
+}
+
+export async function gitCommitAll(
+  repoRoot: string,
+  message: string,
+): Promise<GitCommitResult> {
+  await git(repoRoot, ['add', '-A']);
+  const status = await gitStatus(repoRoot);
+  if (status.clean) {
+    return {
+      committed: false,
+      sha: null,
+      message: 'No changes were available to commit.',
+    };
+  }
+  await git(repoRoot, ['commit', '-m', message]);
+  const sha = (await git(repoRoot, ['rev-parse', 'HEAD'])).trim();
+  return {
+    committed: true,
+    sha,
+    message: `Committed ${sha}.`,
   };
 }
 

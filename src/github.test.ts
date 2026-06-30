@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildPullRequestQueries,
   clearGitHubPullRequestQueueCache,
+  fetchFailingCheckFacts,
   fetchCheckSummary,
   fetchPullRequestReviewThreads,
   fetchPullRequestQueue,
@@ -422,6 +423,137 @@ describe('github foundation', () => {
       successful: 100,
       failed: 1,
     });
+  });
+
+  it('collects failing check facts and records unavailable logs', async () => {
+    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.includes('/check-runs') && !url.includes('/annotations')) {
+        return jsonResponse({
+          check_runs: [
+            {
+              id: 901,
+              name: 'check',
+              head_sha: 'abc123',
+              status: 'completed',
+              conclusion: 'failure',
+              url: 'https://api.github.com/repos/pandemicsyn/neondeck/check-runs/901',
+              html_url: 'https://github.com/pandemicsyn/neondeck/runs/901',
+              details_url: 'https://example.com/check/901',
+              started_at: '2026-06-30T00:00:00Z',
+              completed_at: '2026-06-30T00:02:00Z',
+              output: {
+                title: 'Tests failed',
+                summary: 'npm run check failed.',
+                text: 'Expected value 3.',
+              },
+            },
+            {
+              id: 902,
+              name: 'lint',
+              head_sha: 'abc123',
+              status: 'completed',
+              conclusion: 'success',
+            },
+          ],
+        });
+      }
+      if (url.includes('/check-runs/901/annotations')) {
+        return jsonResponse([
+          {
+            path: 'src/app.ts',
+            start_line: 1,
+            end_line: 1,
+            annotation_level: 'failure',
+            message: 'Expected value 3.',
+            title: 'Assertion failed',
+            raw_details: 'received 2',
+          },
+        ]);
+      }
+      return jsonResponse({}, 404);
+    });
+
+    await expect(
+      fetchFailingCheckFacts({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        ref: 'abc123',
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: 901,
+        name: 'check',
+        outputSummary: 'npm run check failed.',
+        annotations: [
+          expect.objectContaining({
+            path: 'src/app.ts',
+            message: 'Expected value 3.',
+          }),
+        ],
+        log: {
+          available: false,
+          source: null,
+          text: null,
+          truncated: false,
+          unavailableReason:
+            'Full logs are unavailable because the check details URL does not expose a GitHub Actions job id.',
+        },
+      }),
+    ]);
+  });
+
+  it('bounds fetched GitHub Actions job logs', async () => {
+    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.includes('/commits/abc123/check-runs')) {
+        return jsonResponse({
+          check_runs: [
+            {
+              id: 901,
+              name: 'check',
+              head_sha: 'abc123',
+              status: 'completed',
+              conclusion: 'failure',
+              details_url:
+                'https://github.com/pandemicsyn/neondeck/actions/runs/111/job/222',
+            },
+          ],
+        });
+      }
+      if (url.includes('/check-runs/901/annotations')) {
+        return jsonResponse([]);
+      }
+      if (url.includes('/actions/jobs/222/logs')) {
+        return new Response('0123456789', {
+          status: 200,
+          headers: { 'content-type': 'text/plain; charset=utf-8' },
+        });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    await expect(
+      fetchFailingCheckFacts({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        ref: 'abc123',
+        maxLogBytes: 5,
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: 901,
+        log: {
+          available: true,
+          source: 'github-actions-job',
+          text: '01234',
+          truncated: true,
+          unavailableReason: null,
+        },
+      }),
+    ]);
   });
 
   it('paginates review thread comments', async () => {
