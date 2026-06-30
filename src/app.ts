@@ -15,6 +15,10 @@ import {
   verifyPrWorktree,
 } from './autopilot-workflows';
 import {
+  readAutopilotRecoveryOptions,
+  runAutopilotRecoveryAction,
+} from './autopilot-recovery';
+import {
   readProviderConfig,
   reloadConfig,
   updateDashboardLayout,
@@ -1123,6 +1127,22 @@ app.post('/api/prepared-diffs/:id/verify', async (c) => {
   return c.json(result, preparedDiffHttpStatus(result));
 });
 
+app.get('/api/prepared-diffs/:id/recovery', async (c) => {
+  const result = await readAutopilotRecoveryOptions(
+    { preparedDiffId: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, preparedDiffHttpStatus(result));
+});
+
+app.post('/api/prepared-diffs/:id/recovery/run', async (c) => {
+  const result = await runAutopilotRecoveryAction(
+    { ...(await safeJsonObject(c)), preparedDiffId: c.req.param('id') },
+    paths,
+  );
+  return c.json(result, preparedDiffHttpStatus(result));
+});
+
 app.post('/api/autopilot/verify-pr-worktree', async (c) => {
   const result = await verifyPrWorktree(await safeJsonBody(c), paths);
   return c.json(result, result.ok ? 200 : 400);
@@ -1508,5 +1528,7 @@ function notificationPolicy() {
       'Release or production-facing failures that should interrupt passive viewing.',
     reconcile:
       'Unresolved notifications with the same source and source id are updated in place and counted.',
+    autopilot:
+      'Autopilot notifications use deterministic source ids by prepared diff/workflow and state: review-fix, ci-fix, verify, push-blocked, pushed, comment-result, and failed-workflow. Repeated retries reconcile in place; state changes create separate actionable records with recovery metadata.',
   };
 }
