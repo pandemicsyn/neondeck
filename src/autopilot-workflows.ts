@@ -1124,6 +1124,7 @@ export async function fixPrCiFailure(
           {
             title: `CI fix for ${repoFullName(repo)}#${worktree.prNumber ?? 'worktree'}`,
             createdBy: 'fix_pr_ci_failure',
+            resetDecisionState: true,
             summary: {
               confidence: input.confidence ?? 'low',
               risk: input.risk ?? 'high',
@@ -1198,6 +1199,7 @@ export async function fixPrCiFailure(
           {
             title: `CI fix for ${repoFullName(repo)}#${worktree.prNumber ?? 'worktree'}`,
             createdBy: 'fix_pr_ci_failure',
+            resetDecisionState: true,
             summary: {
               confidence: input.confidence ?? 'medium',
               risk: input.risk ?? 'medium',
@@ -1262,6 +1264,7 @@ export async function fixPrCiFailure(
       preparedDiff = await ensurePreparedDiffForWorktree(worktree, paths, {
         title: `CI fix for ${repoFullName(repo)}#${worktree.prNumber ?? 'worktree'}`,
         createdBy: 'fix_pr_ci_failure',
+        resetDecisionState: true,
         summary: {
           confidence: input.confidence ?? 'medium',
           risk: input.risk ?? 'medium',
@@ -1733,6 +1736,7 @@ export async function fixPrReviewFeedback(
         {
           createdBy: 'fix_pr_review_feedback',
           title: `Review feedback fix for ${repoFullName(repo)}#${input.prNumber}`,
+          resetDecisionState: true,
           summary: preparedSummary,
         },
       );

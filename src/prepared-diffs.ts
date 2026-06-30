@@ -365,16 +365,19 @@ export const neondeckPreparedDiffTools = [preparedDiffsLookupTool];
 export async function ensurePreparedDiffForWorktree(
   worktree: WorktreeRecordLike,
   paths: RuntimePaths = runtimePaths(),
-  input: { title?: string; createdBy?: string; summary?: unknown } = {},
+  input: {
+    title?: string;
+    createdBy?: string;
+    summary?: unknown;
+    resetDecisionState?: boolean;
+  } = {},
 ) {
   await ensureRuntimeHome(paths);
   const now = new Date().toISOString();
   const existing = readPreparedDiffByWorktreeId(worktree.id, paths);
-  const shouldResetDecisionState = existing
-    ? existing.status !== 'prepared' ||
-      existing.pushApprovalStatus !== 'pending' ||
-      existing.verificationStatus !== 'not-run'
-    : false;
+  const shouldResetDecisionState = Boolean(
+    existing && input.resetDecisionState,
+  );
   if (existing && shouldResetDecisionState) {
     supersedeApprovals(
       existing.id,

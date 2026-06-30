@@ -809,24 +809,39 @@ async function diffFingerprintForTask(
     .digest('hex');
 }
 
-async function readTaskDiff(task: KiloTaskLike) {
-  const diff = await gitDiff(task.cwd, { base: 'HEAD', includePatch: false });
-  return {
-    ok: true,
-    repo: task.repoFullName,
-    path: task.cwd,
-    baseRef: 'HEAD',
-    files: diff.files.map((file) => ({
-      path: file.path,
-      status: file.status,
-      additions: file.additions,
-      deletions: file.deletions,
-    })),
-    fileCount: diff.files.length,
-    additions: diff.summary.additions,
-    deletions: diff.summary.deletions,
-    binaryFiles: diff.summary.binaryFiles,
-  } satisfies RepoDiffSummary;
+async function readTaskDiff(task: KiloTaskLike): Promise<RepoDiffSummary> {
+  try {
+    const diff = await gitDiff(task.cwd, { base: 'HEAD', includePatch: false });
+    return {
+      ok: true,
+      repo: task.repoFullName,
+      path: task.cwd,
+      baseRef: 'HEAD',
+      files: diff.files.map((file) => ({
+        path: file.path,
+        status: file.status,
+        additions: file.additions,
+        deletions: file.deletions,
+      })),
+      fileCount: diff.files.length,
+      additions: diff.summary.additions,
+      deletions: diff.summary.deletions,
+      binaryFiles: diff.summary.binaryFiles,
+    } satisfies RepoDiffSummary;
+  } catch (error) {
+    return {
+      ok: false,
+      repo: task.repoFullName,
+      path: task.cwd,
+      baseRef: 'HEAD',
+      files: [],
+      fileCount: 0,
+      additions: 0,
+      deletions: 0,
+      binaryFiles: 0,
+      error: errorMessage(error),
+    } satisfies RepoDiffSummary;
+  }
 }
 
 async function findTaskWorktree(task: KiloTaskLike, paths: RuntimePaths) {
@@ -913,15 +928,28 @@ function resetPreparedDiffApproval(
     const row = database
       .prepare(
         `
-        SELECT id, worktree_id, push_approval_status
+        SELECT id, worktree_id, status, push_approval_status, verification_status
         FROM prepared_diffs
         WHERE id = ?;
       `,
       )
       .get(preparedDiffId) as
-      | { id: string; worktree_id: string; push_approval_status: string }
+      | {
+          id: string;
+          worktree_id: string;
+          status: string;
+          push_approval_status: string;
+          verification_status: string;
+        }
       | undefined;
-    if (!row || row.push_approval_status === 'pending') return;
+    if (
+      !row ||
+      (row.push_approval_status === 'pending' &&
+        row.status === 'prepared' &&
+        row.verification_status === 'not-run')
+    ) {
+      return;
+    }
     database
       .prepare(
         `
@@ -1195,6 +1223,10 @@ function pendingApprovalsFor(
     });
   }
   return approvals;
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function parseClassification(value: string): KiloResultClassification {
