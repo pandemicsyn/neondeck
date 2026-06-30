@@ -11,6 +11,13 @@ import { promisify } from 'node:util';
 import * as v from 'valibot';
 import { readKiloResultStateSummary } from './kilo-results';
 import {
+  listKiloNotificationFacts,
+  notifyKiloState,
+  readKiloNotificationFacts,
+  resolveKiloNotifications,
+  type KiloNotificationFact,
+} from './kilo-notifications';
+import {
   type KiloConfig,
   type RepoConfig,
   type RuntimePaths,
@@ -69,6 +76,16 @@ export type KiloTaskRecord = {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+  notificationFacts?: KiloNotificationFact[];
+  latestNotificationState?: string | null;
+  resultPlaceholders?: KiloResultPlaceholder[];
+};
+
+export type KiloResultPlaceholder = {
+  type: 'review' | 'verification' | 'promotion';
+  status: 'pending' | 'blocked' | 'unavailable';
+  workflow: 'review_kilo_result' | 'verify_kilo_result' | 'promote_kilo_result';
+  reason: string;
 };
 
 export type KiloChildSessionNode = {
@@ -120,6 +137,7 @@ type RunningProcess = {
 };
 
 const runningProcesses = new Map<string, RunningProcess>();
+const terminalTaskIds = new Set<string>();
 
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 const positiveIntegerSchema = v.pipe(v.number(), v.integer(), v.minValue(1));
@@ -128,11 +146,92 @@ const handoffModeSchema = v.picklist([
   'patch-proposal',
   'direct-edit',
 ]);
+const taskStatusSchema = v.picklist([
+  'running',
+  'succeeded',
+  'failed',
+  'cancelled',
+  'needs-reconcile',
+  'needs-review',
+  'ready-to-verify',
+  'ready-to-push',
+  'discarded',
+  'unknown',
+]);
+const kiloNotificationStateSchema = v.picklist([
+  'started',
+  'progress',
+  'waiting-approval',
+  'completed',
+  'failed',
+  'timed-out',
+  'needs-review',
+  'verified',
+  'promote-blocked',
+  'promoted',
+]);
 const outputSchema = v.looseObject({
   ok: v.boolean(),
   action: v.string(),
   changed: v.boolean(),
   message: v.string(),
+});
+const notificationFactOutputSchema = v.object({
+  id: v.string(),
+  taskId: v.string(),
+  state: kiloNotificationStateSchema,
+  level: v.picklist(['info', 'ready', 'attention', 'urgent']),
+  title: v.string(),
+  message: v.string(),
+  readAt: v.nullable(v.string()),
+  resolvedAt: v.nullable(v.string()),
+  occurrenceCount: v.number(),
+  updatedAt: v.string(),
+});
+const resultPlaceholderOutputSchema = v.object({
+  type: v.picklist(['review', 'verification', 'promotion']),
+  status: v.picklist(['pending', 'blocked', 'unavailable']),
+  workflow: v.picklist([
+    'review_kilo_result',
+    'verify_kilo_result',
+    'promote_kilo_result',
+  ]),
+  reason: v.string(),
+});
+const enrichedTaskOutputSchema = v.looseObject({
+  id: v.string(),
+  title: v.string(),
+  repoId: v.string(),
+  repoFullName: v.string(),
+  worktreeId: v.nullable(v.string()),
+  cwd: v.string(),
+  status: taskStatusSchema,
+  rootSessionId: v.nullable(v.string()),
+  childSessionIds: v.array(v.string()),
+  updatedAt: v.string(),
+  notificationFacts: v.optional(v.array(notificationFactOutputSchema)),
+  latestNotificationState: v.optional(v.nullable(kiloNotificationStateSchema)),
+  resultPlaceholders: v.optional(v.array(resultPlaceholderOutputSchema)),
+  verificationState: v.optional(v.string()),
+  reviewClassification: v.optional(v.nullable(v.string())),
+  promotionState: v.optional(v.string()),
+  preparedDiffId: v.optional(v.nullable(v.string())),
+  pendingApprovals: v.optional(v.array(v.unknown())),
+});
+const taskStatusOutputSchema = v.looseObject({
+  ok: v.boolean(),
+  action: v.string(),
+  changed: v.boolean(),
+  message: v.string(),
+  task: v.optional(enrichedTaskOutputSchema),
+});
+const tasksListOutputSchema = v.looseObject({
+  ok: v.boolean(),
+  action: v.string(),
+  changed: v.boolean(),
+  message: v.string(),
+  tasks: v.optional(v.array(enrichedTaskOutputSchema)),
+  fetchedAt: v.optional(v.string()),
 });
 const startInputSchema = v.object({
   title: nonEmptyStringSchema,
@@ -155,20 +254,7 @@ const eventsInputSchema = v.object({
   limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
 });
 const tasksListInputSchema = v.object({
-  status: v.optional(
-    v.picklist([
-      'running',
-      'succeeded',
-      'failed',
-      'cancelled',
-      'needs-reconcile',
-      'needs-review',
-      'ready-to-verify',
-      'ready-to-push',
-      'discarded',
-      'unknown',
-    ]),
-  ),
+  status: v.optional(taskStatusSchema),
   repoId: v.optional(nonEmptyStringSchema),
   limit: v.optional(positiveIntegerSchema),
   includeDiff: v.optional(v.boolean()),
@@ -285,7 +371,7 @@ export const kiloTaskStatusAction = defineAction({
   name: 'neondeck_kilo_task_status',
   description: 'Read one persisted Kilo handoff task status.',
   input: taskIdInputSchema,
-  output: outputSchema,
+  output: taskStatusOutputSchema,
   async run({ input }) {
     return readKiloTaskStatus(input);
   },
@@ -402,7 +488,7 @@ export const kiloTasksLookupTool = defineTool({
   description:
     'List persisted Kilo handoff tasks without starting or cancelling work.',
   input: tasksListInputSchema,
-  output: outputSchema,
+  output: tasksListOutputSchema,
   async run({ input }) {
     return listKiloTasks(input);
   },
@@ -485,6 +571,7 @@ export async function startKiloTask(
         : join(dirname(paths.neondeckDatabase), 'kilo-logs', `${id}.jsonl`);
 
     if (rawLogPath) await mkdir(dirname(rawLogPath), { recursive: true });
+    terminalTaskIds.delete(id);
     insertTask(
       {
         id,
@@ -532,6 +619,18 @@ export async function startKiloTask(
       },
       paths,
     );
+    await notifyKiloState(
+      {
+        taskId: id,
+        state: 'started',
+        message: `Started Kilo handoff "${parsed.input.title}" in ${workspace.cwd}.`,
+        repoId: workspace.repo.id,
+        repoFullName: workspace.repoFullName,
+        worktreeId: workspace.worktreeId,
+        data: { mode, autoEnabled },
+      },
+      paths,
+    );
 
     const child = spawn(kilo.cliPath, args, {
       cwd: workspace.cwd,
@@ -543,6 +642,18 @@ export async function startKiloTask(
       : undefined;
     runningProcesses.set(id, { child, rawLog });
     updateTaskProcess(id, child.pid ?? null, now, paths);
+    await notifyKiloState(
+      {
+        taskId: id,
+        state: 'progress',
+        message: `Kilo handoff "${parsed.input.title}" is running${child.pid ? ` as pid ${child.pid}` : ''}.`,
+        repoId: workspace.repo.id,
+        repoFullName: workspace.repoFullName,
+        worktreeId: workspace.worktreeId,
+        data: { pid: child.pid ?? null },
+      },
+      paths,
+    );
     attachProcessHandlers(id, child, rawLog, paths);
 
     return {
@@ -602,12 +713,25 @@ export async function listKiloTasks(
       )
       .all(...values)
       .map(readTaskRow);
+    const notificationFacts = await listKiloNotificationFacts(
+      rows.map((task) => task.id),
+      paths,
+    );
     const tasks = parsed.input.includeDiff
-      ? await Promise.all(rows.map((task) => taskWithDiff(task, paths)))
-      : rows.map((task) => ({
-          ...task,
-          ...readKiloResultStateSummary(task.id, paths),
-        }));
+      ? await Promise.all(
+          rows.map((task) =>
+            taskWithDiff(task, paths, notificationFacts.get(task.id) ?? []),
+          ),
+        )
+      : rows.map((task) =>
+          taskWithRuntimeFacts(
+            {
+              ...task,
+              ...readKiloResultStateSummary(task.id, paths),
+            },
+            notificationFacts.get(task.id) ?? [],
+          ),
+        );
     return {
       ok: true,
       action: 'kilo_tasks_list',
@@ -640,10 +764,13 @@ export async function readKiloTaskStatus(
     action: 'kilo_task_status',
     changed: false,
     message: `Read Kilo task ${parsed.input.taskId}.`,
-    task: {
-      ...task,
-      ...readKiloResultStateSummary(task.id, paths),
-    },
+    task: taskWithRuntimeFacts(
+      {
+        ...task,
+        ...readKiloResultStateSummary(task.id, paths),
+      },
+      await readKiloNotificationFacts(task.id, paths),
+    ),
   };
 }
 
@@ -717,6 +844,7 @@ export async function abortKiloTask(
     },
     paths,
   );
+  await resolveKiloNotifications(task.id, ['started', 'progress'], paths);
   return {
     ok: true,
     action: 'kilo_task_abort',
@@ -1087,6 +1215,19 @@ function attachProcessHandlers(
         },
         paths,
       );
+      await notifyKiloState(
+        {
+          taskId,
+          state: 'failed',
+          message: `Kilo task ${taskId} failed to start or continue: ${errorMessage(error)}`,
+          repoId: task.repoId,
+          repoFullName: task.repoFullName,
+          worktreeId: task.worktreeId,
+          sessionId: task.rootSessionId,
+          data: { error: errorMessage(error) },
+        },
+        paths,
+      );
     })();
   });
   child.on('exit', (code, signal) => {
@@ -1106,11 +1247,69 @@ function attachProcessHandlers(
               2_000,
             )
           : null;
-      markTaskFinished(taskId, status, code, error, paths);
-      await releaseTaskLock(task, status, paths);
+      terminalTaskIds.add(taskId);
       if (!tryTask(taskId, paths)?.rootSessionId) {
         await recoverMissingSessionId(taskId, paths);
       }
+      const current = tryTask(taskId, paths);
+      if (status === 'cancelled') {
+        await resolveKiloNotifications(taskId, ['started', 'progress'], paths);
+      } else if (status === 'succeeded') {
+        const diff = await taskDiffSummary(current ?? task);
+        if (diff.ok && diff.fileCount > 0) {
+          await notifyKiloState(
+            {
+              taskId,
+              state: 'completed',
+              message: `Kilo task ${taskId} completed with ${diff.fileCount} changed file(s) and is ready for result review.`,
+              repoId: current?.repoId ?? task.repoId,
+              repoFullName: current?.repoFullName ?? task.repoFullName,
+              worktreeId: current?.worktreeId ?? task.worktreeId,
+              sessionId: current?.rootSessionId ?? task.rootSessionId,
+              data: { status, code, signal, diff },
+            },
+            paths,
+          );
+        } else if (!diff.ok) {
+          await notifyKiloState(
+            {
+              taskId,
+              state: 'needs-review',
+              title: 'Kilo result needs review',
+              message: `Kilo task ${taskId} completed, but Neondeck could not read the workspace diff.`,
+              repoId: current?.repoId ?? task.repoId,
+              repoFullName: current?.repoFullName ?? task.repoFullName,
+              worktreeId: current?.worktreeId ?? task.worktreeId,
+              sessionId: current?.rootSessionId ?? task.rootSessionId,
+              data: { status, code, signal, diff },
+            },
+            paths,
+          );
+        } else {
+          await resolveKiloNotifications(
+            taskId,
+            ['started', 'progress', 'completed'],
+            paths,
+          );
+        }
+      } else {
+        await notifyKiloState(
+          {
+            taskId,
+            state: isTimeoutMessage(error) ? 'timed-out' : 'failed',
+            message:
+              error ?? `Kilo task ${taskId} ended with status ${status}.`,
+            repoId: current?.repoId ?? task.repoId,
+            repoFullName: current?.repoFullName ?? task.repoFullName,
+            worktreeId: current?.worktreeId ?? task.worktreeId,
+            sessionId: current?.rootSessionId ?? task.rootSessionId,
+            data: { status, code, signal },
+          },
+          paths,
+        );
+      }
+      markTaskFinished(taskId, status, code, error, paths);
+      await releaseTaskLock(task, status, paths);
       addTaskEvent(
         taskId,
         {
@@ -1124,6 +1323,7 @@ function attachProcessHandlers(
         paths,
       );
       runningProcesses.delete(taskId);
+      terminalTaskIds.delete(taskId);
       rawLog?.end();
     })();
   });
@@ -1171,6 +1371,30 @@ function handleKiloLine(
     },
     paths,
   );
+  const task = tryTask(taskId, paths);
+  if (terminalTaskIds.has(taskId)) return;
+  if (!task || !['running', 'needs-reconcile'].includes(task.status)) return;
+  void notifyKiloState(
+    {
+      taskId,
+      state: 'progress',
+      message: summarizeEvent(parsed.value),
+      repoId: task?.repoId,
+      repoFullName: task?.repoFullName,
+      worktreeId: task?.worktreeId,
+      sessionId: rootSessionId ?? task?.rootSessionId,
+      data: {
+        eventType: eventType(parsed.value),
+        childSessionId: sessionIds.find((id) => id !== rootSessionId) ?? null,
+      },
+    },
+    paths,
+  ).catch((error) => {
+    console.error('[neondeck] failed to persist Kilo progress notification', {
+      taskId,
+      error: errorMessage(error),
+    });
+  });
 }
 
 async function recoverMissingSessionId(taskId: string, paths: RuntimePaths) {
@@ -1555,6 +1779,30 @@ async function reconcilePersistedRunningTasks(paths: RuntimePaths) {
       },
       paths,
     );
+    await notifyKiloState(
+      {
+        taskId: task.id,
+        state: processAlive
+          ? 'progress'
+          : status === 'needs-review'
+            ? 'needs-review'
+            : 'failed',
+        title: processAlive ? 'Kilo handoff needs reconciliation' : undefined,
+        message,
+        repoId: task.repoId,
+        repoFullName: task.repoFullName,
+        worktreeId: task.worktreeId,
+        sessionId: tryTask(task.id, paths)?.rootSessionId,
+        data: {
+          status,
+          processAlive: processInspection.alive,
+          processMatched: processInspection.matched,
+          recoveredSession: recovered,
+          diff,
+        },
+      },
+      paths,
+    );
     if (!processAlive) await releaseTaskLock(task, status, paths);
   }
 }
@@ -1884,6 +2132,9 @@ function parseTaskStatus(value: string): KiloTaskStatus {
       'cancelled',
       'needs-reconcile',
       'needs-review',
+      'ready-to-verify',
+      'ready-to-push',
+      'discarded',
       'unknown',
     ]),
     value,
@@ -2447,15 +2698,101 @@ function addSessionAudit(
   }
 }
 
-async function taskWithDiff(task: KiloTaskRecord, paths: RuntimePaths) {
+async function taskWithDiff(
+  task: KiloTaskRecord,
+  paths: RuntimePaths,
+  notificationFacts: KiloNotificationFact[] = [],
+) {
   const diff = await taskDiffSummary(task);
   const resultState = readKiloResultStateSummary(task.id, paths);
+  return taskWithRuntimeFacts(
+    {
+      ...task,
+      changedFiles: diff.files.map((file) => file.path),
+      diff,
+      ...resultState,
+    },
+    notificationFacts,
+  );
+}
+
+function taskWithRuntimeFacts<T extends KiloTaskRecord>(
+  task: T & {
+    verificationState?: string;
+    reviewClassification?: string | null;
+    promotionState?: string;
+    pendingApprovals?: unknown[];
+  },
+  notificationFacts: KiloNotificationFact[],
+) {
+  const latest = notificationFacts[0]?.state ?? null;
   return {
     ...task,
-    changedFiles: diff.files.map((file) => file.path),
-    diff,
-    ...resultState,
+    notificationFacts,
+    latestNotificationState: latest,
+    resultPlaceholders: resultPlaceholdersForTask(task),
   };
+}
+
+function resultPlaceholdersForTask(task: {
+  status: KiloTaskStatus;
+  verificationState?: string;
+  reviewClassification?: string | null;
+  promotionState?: string;
+  pendingApprovals?: unknown[];
+}): KiloResultPlaceholder[] {
+  const terminal = [
+    'succeeded',
+    'failed',
+    'unknown',
+    'needs-review',
+    'ready-to-verify',
+    'ready-to-push',
+    'discarded',
+  ].includes(task.status);
+  const placeholders: KiloResultPlaceholder[] = [];
+  if (terminal && !task.reviewClassification) {
+    placeholders.push({
+      type: 'review',
+      status: 'pending',
+      workflow: 'review_kilo_result',
+      reason: 'Run review_kilo_result to classify the completed Kilo result.',
+    });
+  }
+  if (
+    task.reviewClassification === 'ready-to-verify' &&
+    task.verificationState !== 'passed'
+  ) {
+    placeholders.push({
+      type: 'verification',
+      status:
+        task.verificationState === 'blocked' ||
+        task.verificationState === 'failed'
+          ? 'blocked'
+          : 'pending',
+      workflow: 'verify_kilo_result',
+      reason:
+        task.verificationState === 'blocked'
+          ? 'Verification is blocked by execution approval or policy.'
+          : 'Run verify_kilo_result through execution policy before promotion.',
+    });
+  }
+  if (
+    (task.reviewClassification === 'ready-to-push' ||
+      task.verificationState === 'passed') &&
+    task.promotionState !== 'deferred'
+  ) {
+    placeholders.push({
+      type: 'promotion',
+      status: task.promotionState === 'blocked' ? 'blocked' : 'pending',
+      workflow: 'promote_kilo_result',
+      reason:
+        task.promotionState === 'blocked'
+          ? 'Promotion admission is blocked; inspect gates and pending approvals.'
+          : 'Run promote_kilo_result to evaluate push/comment admission gates.',
+    });
+  }
+  return placeholders;
 }
 
 async function taskDiffSummary(task: KiloTaskRecord) {
@@ -2464,6 +2801,10 @@ async function taskDiffSummary(task: KiloTaskRecord) {
     github: splitRepoFullName(task.repoFullName),
     defaultBranch: 'HEAD',
   });
+}
+
+function isTimeoutMessage(message: string | null) {
+  return Boolean(message && /timed?\s*out|timeout/i.test(message));
 }
 
 async function inspectPersistedKiloProcess(task: KiloTaskRecord) {

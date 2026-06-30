@@ -322,3 +322,10 @@ Use this format:
 - Decision: Added a bounded `comment_pr_autofix_result` workflow/action/API that renders PR comments from prepared-diff/autopilot result facts and posts through the existing server-side PR comment action. Prepared-diff summaries now include a human-readable audit summary, and posted/failed result-comment attempts persist a `workflow_summaries` audit record. This slice did not add a dedicated PR-comment audit table or implement `push_pr_autofix`.
 - Reason: `workflow_summaries` is the existing durable timeline surface and avoids duplicating the prepared-diff/autopilot business state. Push-back is still explicitly out of scope for this slice, so the result comment consumes prepared/pushed/blocked facts without performing GitHub branch mutations.
 - Follow-up: Add the real `push_pr_autofix` workflow and a first-class PR-comment/autopilot event table when queue admission and push-back persistence land.
+
+## 2026-06-30 - Kilo Notification Policy And Dashboard State
+
+- Roadmap item: Phase 21 / Kilo notification policy and richer dashboard/API state
+- Decision: Added deterministic Kilo notification states for started, progress, waiting-approval, completed, failed, timed-out, needs-review, verified, promote-blocked, and promoted; enriched Kilo task list/status API results with active notification facts and result placeholders; and surfaced those facts in Runtime Overview rows. Actual commit/push/comment promotion, future TUI controls, provider-specific deploy adapters, and managed `kilo serve`/SDK lifecycle work remain deferred.
+- Reason: Existing Kilo task/session/result tables, app-state notifications, and review/verify/promote workflows already provide enough durable facts for notification-linked dashboard state. Reusing them avoids a second runtime and keeps Kilo delegation explicit.
+- Follow-up: Add first-class Kilo SDK/server lifecycle integration, true todo/diff/message adapters, future TUI controls over the same APIs, and real promote mutation through the prepared-diff/autopilot push-back workflow.

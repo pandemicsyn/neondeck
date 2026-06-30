@@ -411,6 +411,36 @@ export type KiloChildSessionNode = {
   collapsed: boolean;
 };
 
+export type KiloNotificationFact = {
+  id: string;
+  taskId: string;
+  state:
+    | 'started'
+    | 'progress'
+    | 'waiting-approval'
+    | 'completed'
+    | 'failed'
+    | 'timed-out'
+    | 'needs-review'
+    | 'verified'
+    | 'promote-blocked'
+    | 'promoted';
+  level: 'info' | 'ready' | 'attention' | 'urgent';
+  title: string;
+  message: string;
+  readAt: string | null;
+  resolvedAt: string | null;
+  occurrenceCount: number;
+  updatedAt: string;
+};
+
+export type KiloResultPlaceholder = {
+  type: 'review' | 'verification' | 'promotion';
+  status: 'pending' | 'blocked' | 'unavailable';
+  workflow: 'review_kilo_result' | 'verify_kilo_result' | 'promote_kilo_result';
+  reason: string;
+};
+
 export type KiloTaskRecord = {
   id: string;
   title: string;
@@ -460,6 +490,9 @@ export type KiloTaskRecord = {
   promotionState?: string;
   preparedDiffId?: string | null;
   pendingApprovals?: unknown[];
+  notificationFacts?: KiloNotificationFact[];
+  latestNotificationState?: KiloNotificationFact['state'] | null;
+  resultPlaceholders?: KiloResultPlaceholder[];
 };
 
 export type KiloTasksResponse = {
@@ -900,7 +933,10 @@ export type NotificationRecord = {
 
 export type NotificationResponse = {
   items: NotificationRecord[];
-  policy: Record<NotificationLevel | 'reconcile', string>;
+  policy: Record<
+    NotificationLevel | 'reconcile' | 'autopilot' | 'kilo',
+    string
+  >;
   fetchedAt: string;
 };
 

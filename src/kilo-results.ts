@@ -4,6 +4,10 @@ import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { checkAutopilotPolicy } from './autopilot-policy';
 import { verifyPrWorktree } from './autopilot-workflows';
+import {
+  notifyKiloState,
+  resolveKiloNotifications,
+} from './kilo-notifications';
 import { getGitHubPrBranchPermissions } from './pr-event-state';
 import { ensurePreparedDiffForWorktree } from './prepared-diffs';
 import { gitDiff } from './repo-edit/git';
@@ -269,6 +273,40 @@ export async function reviewKiloResult(
     },
     paths,
   );
+  if (classification === 'discard') {
+    await resolveKiloNotifications(
+      task.id,
+      ['started', 'progress', 'completed', 'waiting-approval', 'needs-review'],
+      paths,
+    );
+  } else {
+    await notifyKiloState(
+      {
+        taskId: task.id,
+        state:
+          classification === 'needs-review'
+            ? 'needs-review'
+            : state.pendingApprovals.length > 0
+              ? 'waiting-approval'
+              : 'completed',
+        title:
+          classification === 'ready-to-verify'
+            ? 'Kilo result ready to verify'
+            : classification === 'ready-to-push'
+              ? 'Kilo result ready for promotion'
+              : undefined,
+        message: `Kilo result classified as ${classification}.`,
+        repoId: task.repoId,
+        repoFullName: task.repoFullName,
+        worktreeId: task.worktreeId,
+        preparedDiffId: state.preparedDiffId,
+        workflow: 'review_kilo_result',
+        pendingApprovals: state.pendingApprovals,
+        data: { classification, summary },
+      },
+      paths,
+    );
+  }
 
   return {
     ok: true,
@@ -313,6 +351,22 @@ export async function verifyKiloResult(
       },
       paths,
     );
+    await notifyKiloState(
+      {
+        taskId: task.id,
+        state: reviewGate.requires.includes('approval')
+          ? 'waiting-approval'
+          : 'failed',
+        title: 'Kilo verification blocked',
+        message: reviewGate.message,
+        repoId: task.repoId,
+        repoFullName: task.repoFullName,
+        worktreeId: task.worktreeId,
+        workflow: 'verify_kilo_result',
+        data: { requires: reviewGate.requires },
+      },
+      paths,
+    );
     return {
       ok: false,
       action: 'kilo_result_verify',
@@ -331,6 +385,20 @@ export async function verifyKiloResult(
         verification: {
           reason: 'Kilo verification requires a managed worktree.',
         },
+      },
+      paths,
+    );
+    await notifyKiloState(
+      {
+        taskId: task.id,
+        state: 'failed',
+        title: 'Kilo verification blocked',
+        message: 'Kilo verification requires a managed worktree.',
+        repoId: task.repoId,
+        repoFullName: task.repoFullName,
+        worktreeId: task.worktreeId,
+        workflow: 'verify_kilo_result',
+        data: { requires: ['worktreeId'] },
       },
       paths,
     );
@@ -406,6 +474,33 @@ export async function verifyKiloResult(
     `verification.${verificationStatus}`,
     result.message,
     result,
+    paths,
+  );
+  await notifyKiloState(
+    {
+      taskId: task.id,
+      state:
+        verificationStatus === 'passed'
+          ? 'verified'
+          : verificationStatus === 'blocked' &&
+              Array.isArray(result.requires) &&
+              result.requires.includes('approval')
+            ? 'waiting-approval'
+            : 'failed',
+      title:
+        verificationStatus === 'passed'
+          ? undefined
+          : 'Kilo verification needs attention',
+      message: result.ok ? 'Kilo result verification passed.' : result.message,
+      repoId: task.repoId,
+      repoFullName: task.repoFullName,
+      worktreeId: task.worktreeId,
+      workflow: 'verify_kilo_result',
+      pendingApprovals: Array.isArray(result.requires)
+        ? result.requires.map((item) => ({ type: item }))
+        : [],
+      data: { verificationStatus, result },
+    },
     paths,
   );
 
@@ -567,6 +662,24 @@ export async function promoteKiloResult(
       ? 'Kilo result passed promotion admission; actual push/comment is deferred.'
       : 'Kilo result is blocked from promotion.',
     promotion,
+    paths,
+  );
+  await notifyKiloState(
+    {
+      taskId: task.id,
+      state: admitted ? 'promoted' : 'promote-blocked',
+      title: admitted ? 'Kilo promotion admitted' : undefined,
+      message: admitted
+        ? 'Kilo result passed promotion admission; push/comment remains delegated to push_pr_autofix.'
+        : 'Kilo result is blocked from promotion.',
+      repoId: task.repoId,
+      repoFullName: task.repoFullName,
+      worktreeId: task.worktreeId,
+      preparedDiffId: next.preparedDiffId,
+      workflow: 'promote_kilo_result',
+      pendingApprovals: next.pendingApprovals,
+      data: promotion,
+    },
     paths,
   );
 

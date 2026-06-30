@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { listNotifications } from './app-state';
 import { approvePreparedDiffPush } from './prepared-diffs';
 import { readKiloTaskStatus } from './kilo-actions';
 import {
@@ -62,11 +63,21 @@ describe('Kilo result review, verification, and promotion', () => {
         fileCount: 1,
       },
     });
+    await expect(listNotifications(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'kilo',
+          sourceId: 'task:kilo-task-1:waiting-approval',
+          level: 'attention',
+        }),
+      ]),
+    );
     await expect(
       readKiloTaskStatus({ taskId: 'kilo-task-1' }, paths),
     ).resolves.toMatchObject({
       ok: true,
       task: {
+        status: 'ready-to-verify',
         reviewClassification: 'ready-to-verify',
         verificationState: 'not-run',
         pendingApprovals: [
@@ -93,6 +104,15 @@ describe('Kilo result review, verification, and promotion', () => {
         verificationStatus: 'passed',
       },
     });
+    await expect(listNotifications(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'kilo',
+          sourceId: 'task:kilo-task-1:verified',
+          level: 'ready',
+        }),
+      ]),
+    );
 
     await expect(
       approvePreparedDiffPush(
@@ -122,6 +142,24 @@ describe('Kilo result review, verification, and promotion', () => {
       },
       requires: ['push_pr_autofix'],
     });
+    await expect(
+      readKiloTaskStatus({ taskId: 'kilo-task-1' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      task: {
+        promotionState: 'deferred',
+        resultPlaceholders: [],
+      },
+    });
+    await expect(listNotifications(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'kilo',
+          sourceId: 'task:kilo-task-1:promoted',
+          level: 'ready',
+        }),
+      ]),
+    );
   });
 
   it('discards a completed Kilo task with no diff', async () => {

@@ -1361,7 +1361,7 @@ Must-haves:
 
 ### Phase 21: KiloCode Handoff Runner
 
-- Status: partially complete. CLI task execution, reconciliation, session access, bounded transcript controls, dashboard/runtime overview rows, and review/verify/promote admission have landed. Richer Kilo workflow completion, actual promote mutation through push-back, notification policy, full smoke coverage, and managed `kilo serve`/SDK evaluation remain open.
+- Status: partially complete. CLI task execution, reconciliation, session access, bounded transcript controls, dashboard/runtime overview rows, Kilo notification policy, notification-linked API state, and review/verify/promote admission have landed. Richer Kilo workflow completion, actual promote mutation through push-back, full smoke coverage, and managed `kilo serve`/SDK evaluation remain open.
 
 - [x] Add Kilo handoff config under app config:
   - enabled flag
@@ -1433,9 +1433,9 @@ Must-haves:
 - [x] Add `review_kilo_result` workflow to inspect the Kilo-produced diff and classify it as discard, needs-review, ready-to-verify, or ready-to-push.
 - [x] Add `verify_kilo_result` workflow to run configured checks through Neondeck execution policy.
 - [ ] Add `promote_kilo_result` workflow that can commit/push/comment only when autopilot policy allows. Admission/decision state is implemented; actual commit/push/comment mutation remains deferred to the push-back workflow.
-- [ ] Add dashboard/TUI-ready APIs for active Kilo tasks, task events, session ids, session search, transcript pages, todos, child sessions, changed files, verification state, and pending approvals. Partially complete through current task/session/result APIs and Runtime Overview rows; keep open until todos, approvals, and richer dashboard/TUI contracts are complete.
+- [ ] Add dashboard/TUI-ready APIs for active Kilo tasks, task events, session ids, session search, transcript pages, todos, child sessions, changed files, verification state, and pending approvals. Partially complete through current task/session/result APIs, notification-linked task facts, pending approval/result placeholders, and Runtime Overview rows; keep open until todos, approvals, and richer dashboard/TUI contracts are complete.
 - [x] Add dashboard panels or Runtime Overview rows for active delegated Kilo work.
-- [ ] Add notification policy for Kilo handoffs:
+- [x] Add notification policy for Kilo handoffs:
   - ready when a task completes and has a reviewable diff
   - attention when Kilo fails, stalls, or produces high-risk changes
   - quiet no-op for cancelled/discarded tasks that were superseded

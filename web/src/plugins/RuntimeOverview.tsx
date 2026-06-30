@@ -324,6 +324,8 @@ function runtimeSnapshotFromQueries(
         attention: 'Actionable failures.',
         urgent: 'Production-facing failures.',
         reconcile: 'Repeated source events are reconciled.',
+        autopilot: 'Autopilot state changes create actionable notifications.',
+        kilo: 'Kilo task state changes create delegated-work notifications.',
       },
       fetchedAt: status.fetchedAt,
     },
@@ -1728,6 +1730,9 @@ function KiloTaskRow({ task }: { task: KiloTaskRecord }) {
       ? `${task.childSessionIds.length} child session${task.childSessionIds.length === 1 ? '' : 's'}`
       : 'no child sessions';
   const sessionLabel = task.rootSessionId ?? 'session pending';
+  const notificationFacts = task.notificationFacts ?? [];
+  const latestNotification = notificationFacts[0];
+  const placeholders = task.resultPlaceholders ?? [];
 
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
@@ -1787,6 +1792,23 @@ function KiloTaskRow({ task }: { task: KiloTaskRecord }) {
           promote {task.promotionState ?? 'not-requested'}
         </div>
       </div>
+      {latestNotification || placeholders.length > 0 ? (
+        <div className="mt-1.5 space-y-1">
+          {latestNotification ? (
+            <p className="line-clamp-2 border border-line bg-field px-2 py-1 text-[10px] leading-4 text-muted">
+              notify {latestNotification.state}: {latestNotification.message}
+            </p>
+          ) : null}
+          {placeholders.slice(0, 2).map((placeholder) => (
+            <p
+              className="line-clamp-2 border border-line bg-field px-2 py-1 text-[10px] leading-4 text-muted"
+              key={`${placeholder.type}:${placeholder.workflow}`}
+            >
+              {placeholder.type} {placeholder.status}: {placeholder.reason}
+            </p>
+          ))}
+        </div>
+      ) : null}
       {task.childSessionIds.length > 0 ? (
         <div className="mt-1.5 flex flex-wrap gap-1">
           {task.childSessionIds.slice(0, 3).map((id) => (
