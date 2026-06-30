@@ -19,7 +19,10 @@ const dashboardConfig = `{
 }`;
 ---
 
-<BaseLayout title="neondeck · companion display for durable agents">
+<BaseLayout
+  title="neondeck · autonomous developer assistant for companion displays"
+  description="A local-first autonomous developer assistant designed to live full time on a companion display, vertical panel, or sensor-panel style deck."
+>
   <div class="site-shell">
     <SiteNav />
     <main>
@@ -35,14 +38,15 @@ const dashboardConfig = `{
         <div class="hero-center">
           <p class="kicker">OPEN · ALWAYS-ON · BUILT ON FLUE</p>
           <h1>
-            A sensor-style deck for a<br /><span class="hero-gradient"
-              >durable Flue agent.</span
+            An autonomous dev assistant<br /><span class="hero-gradient"
+              >for your always-on deck.</span
             >
           </h1>
           <p class="hero-copy">
-            GitHub on the left, an always-on chat harness on the right, a live
-            terminal status line across the bottom. Tuned for the ultrawide
-            Corsair Xeneon Edge, fully configurable for any display.
+            Your GitHub queue, watched PRs and issues, tracked deployments,
+            alerts, and assistant sessions in one local, agent-managed console.
+            Run it on a companion display, a vertical panel, or a sensor deck on
+            your primary monitor.
           </p>
           <div class="command">
             <span class="command-code"
@@ -69,9 +73,9 @@ const dashboardConfig = `{
           <div class="section-header">
             <h2>The deck, live.</h2>
             <p>
-              Corsair Xeneon Edge, 2560 x 720, 32:9. The default layout is a
-              12-column surface with a PR queue, Flue sessions, and sensor data
-              designed to stay visible all day.
+              An example 32:9 layout for the Corsair Xeneon Edge. Neondeck is
+              designed for horizontal, vertical, compact, and custom surfaces
+              that Neon itself can configure for you.
             </p>
           </div>
           <DeckMockup />
@@ -83,9 +87,7 @@ const dashboardConfig = `{
           <div class="section-header">
             <h2>Built for work in progress.</h2>
             <p>
-              neondeck keeps deterministic signals and agent conversations in
-              one stable view without turning the companion display into another
-              browser tab.
+              Neon helps you automate developer busy work.
             </p>
           </div>
           <div class="feature-grid">
@@ -93,48 +95,66 @@ const dashboardConfig = `{
               <div class="spark pink"></div>
               <h3>GitHub work queue</h3>
               <p>
-                See authored, assigned, and review-requested pull requests
-                without exposing your GitHub token to the browser.
+                Review requests, authored and assigned PRs, failing checks,
+                stale work, and related GitHub issues are ranked from
+                server-side GitHub data.
               </p>
             </article>
             <article class="feature">
               <div class="spark teal"></div>
-              <h3>Durable Flue chat</h3>
+              <h3>Quiet watches</h3>
               <p>
-                Persistent Flue sessions survive local restarts through
-                SQLite-backed runtime state.
+                Watched PRs, release checks, and deploy targets persist
+                watermarks, survive restarts, and stay quiet until something
+                meaningful changes.
               </p>
             </article>
             <article class="feature">
               <div class="spark"></div>
-              <h3>Sensor statusline</h3>
+              <h3>Alerts that know priority</h3>
               <p>
-                CPU, memory, network, and best-effort GPU or temperature
-                readings are normalized behind one local API.
+                Notifications dedupe repeated watcher output and separate
+                passive updates from ready, attention, and urgent states.
               </p>
             </article>
             <article class="feature">
               <div class="spark violet"></div>
-              <h3>Config-first layout</h3>
+              <h3>Durable sessions</h3>
               <p>
-                Panels are typed plugins selected by local JSON config. Change
-                spans, sessions, and panel settings without rebuilding the app.
+                Neon conversations can be named, pinned, archived, searched, and
+                linked back to repos, watches, tasks, and workflow summaries.
               </p>
             </article>
             <article class="feature">
               <div class="spark pink"></div>
-              <h3>Local-first runtime</h3>
+              <h3>Autopilot worktrees</h3>
               <p>
-                Runs on your machine with your provider keys, your GitHub token,
-                and your SOUL.md agent personality file.
+                When policy allows, Neon prepares review or CI fixes in managed
+                worktrees, verifies checks, and explains the result before push.
               </p>
             </article>
             <article class="feature">
               <div class="spark teal"></div>
-              <h3>Themeable surface</h3>
+              <h3>Local-first runtime</h3>
               <p>
-                The Miami tiger-stripe palette ships as the first preset, with
-                light and dark tokens from the start.
+                Config, schedules, skills, memories, approvals, and Flue session
+                state live on your machine under a runtime home you control.
+              </p>
+            </article>
+            <article class="feature">
+              <div class="spark"></div>
+              <h3>Scheduled briefings</h3>
+              <p>
+                Morning briefings and review digests pull queue state, active
+                watches, CI failures, and recommended next actions on a schedule.
+              </p>
+            </article>
+            <article class="feature">
+              <div class="spark violet"></div>
+              <h3>Workflow observability</h3>
+              <p>
+                Flue runs, command results, subagent summaries, approvals, and
+                failures stay inspectable without turning raw logs into the UI.
               </p>
             </article>
           </div>
@@ -144,13 +164,12 @@ const dashboardConfig = `{
       <section id="config" class="section">
         <div class="container config-grid">
           <div>
-            <p class="kicker">CONFIG · NOT A BUILDER</p>
-            <h2>The layout is a file.</h2>
+            <p class="kicker">CONFIG OR CHAT</p>
+            <h2>The layout is a file. Or a request.</h2>
             <p class="hero-copy">
-              Start with the Xeneon Edge preset, then change regions and plugin
-              config in the runtime-home <code>dashboard.json</code>. The repo
-              preset seeds new homes; local customization lives under
-              <code>NEONDECK_HOME</code> or <code>~/.config/neondeck</code>.
+              Manually tune layouts, text scale, fonts, panel regions, and
+              plugin config in runtime-home <code>dashboard.json</code>, or ask
+              Neon to adapt the deck for your size, orientation, and constraints.
             </p>
             <div class="hero-actions">
               <a class="button secondary" href="/docs/getting-started/"

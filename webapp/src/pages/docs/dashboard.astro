@@ -7,7 +7,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
 <BaseLayout
   title="Dashboard · neondeck"
-  description="The neondeck local dashboard layout, plugin system, themes, and companion-display design target."
+  description="The neondeck local dashboard layout, plugin system, themes, and companion-display orientation targets."
 >
   <div class="site-shell">
     <SiteNav />
@@ -17,20 +17,25 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <h1>Dashboard</h1>
         <p>
           The local dashboard is a Vite/React/Tailwind app served beside the
-          Hono/Flue backend. It is tuned for the Corsair Xeneon Edge, but layout
-          is JSON-driven and can adapt to other displays.
+          Hono/Flue backend. It is the always-on surface for Neon: a companion
+          display, vertical panel, ultrawide strip, or sensor deck on the
+          primary monitor.
         </p>
 
         <h2>Display target</h2>
         <p>
-          The first-class target is <code>2560 x 720</code> at a 32:9 aspect ratio.
-          The UI favors dense, stable panels over marketing-style cards because it
-          is meant to stay visible during real work.
+          Neondeck is designed for everything from 32:9 aspect ratios like the
+          Corsair Xeneon Edge to custom layouts for the size, orientation, and
+          constraints you want. The layout engine supports horizontal, vertical,
+          and compact panels by measuring the deck shell instead of assuming one
+          device, and Neon can adapt validated dashboard config through typed
+          actions. The UI favors dense, stable panels over marketing-style cards
+          because it is meant to stay visible during real work.
         </p>
 
         <h2>Plugins</h2>
         <p>
-          Display panels are typed in-repo plugins selected by runtime
+          Display panels are typed in-repo plugins selected by runtime{' '}
           <code>dashboard.json</code>. The current plugin set covers GitHub PRs,
           Flue chat, runtime overview, commands, watches, memory, workflow
           observability, and terminal-style status surfaces.
