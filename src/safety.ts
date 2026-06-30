@@ -710,6 +710,21 @@ const entries: SafetyPolicyEntry[] = [
     'Requires confirm=true and abandons the prepared-diff record without directly deleting the source worktree.',
   ),
   action(
+    'neondeck_autopilot_policy_check',
+    'Check autopilot policy',
+    readOnly,
+    'Classifies a worktree diff against autopilot limits, high-risk file classes, push destination policy, and concurrency settings without mutating repos or GitHub.',
+  ),
+  action(
+    'neondeck_autopilot_verify_pr_worktree',
+    'Verify PR worktree',
+    {
+      ...hostExecution,
+      auditTarget: 'execution_approvals/workflow_events',
+    },
+    'Runs configured repo checks through Neondeck execution approval policy and records execution approvals/results.',
+  ),
+  action(
     'neondeck_worktree_sync',
     'Sync worktree',
     {
@@ -1001,6 +1016,15 @@ const entries: SafetyPolicyEntry[] = [
     'Creates, syncs, locks, and inspects an isolated PR worktree through the Flue workflow surface without fixing, committing, pushing, or commenting.',
   ),
   workflow(
+    'verify-pr-worktree',
+    'Run PR worktree verification workflow',
+    {
+      ...hostExecution,
+      auditTarget: 'execution_approvals/workflow_events',
+    },
+    'Runs configured checks for an isolated PR worktree through the execution approval policy before any push-back workflow is allowed.',
+  ),
+  workflow(
     'dev-doctor',
     'Run dev-doctor workflow',
     readOnly,
@@ -1212,6 +1236,15 @@ const entries: SafetyPolicyEntry[] = [
     'Prepared diff worktree path API',
     readOnly,
     'Returns the managed source worktree path for a prepared diff.',
+  ),
+  route(
+    '/api/autopilot/verify-pr-worktree',
+    'PR worktree verification API',
+    {
+      ...hostExecution,
+      auditTarget: 'execution_approvals',
+    },
+    'Runs configured checks for a managed PR worktree through the execution approval policy.',
   ),
   route(
     '/api/session',

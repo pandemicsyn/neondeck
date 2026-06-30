@@ -167,12 +167,30 @@ export const autopilotPolicyLimitsSchema = v.looseObject({
   allowedPushDestinations: v.optional(v.array(nonEmptyStringSchema)),
   allowForcePush: v.optional(v.boolean()),
   highRiskClasses: v.optional(v.array(nonEmptyStringSchema)),
+  generatedFileSizeThresholdBytes: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1)),
+  ),
+});
+
+export const autopilotConcurrencySchema = v.looseObject({
+  maxAutonomousJobs: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+  maxActiveWorkflowRuns: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1)),
+  ),
+  maxPerRepoAutonomousJobs: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1)),
+  ),
+  singleMutationPerPr: v.optional(v.boolean()),
+  localExecutionLimit: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1)),
+  ),
 });
 
 export const autopilotConfigSchema = v.looseObject({
   defaultMode: v.optional(autopilotModeSchema),
   mode: v.optional(autopilotModeSchema),
   limits: v.optional(autopilotPolicyLimitsSchema),
+  concurrency: v.optional(autopilotConcurrencySchema),
 });
 
 const kiloHandoffModeSchema = v.picklist([

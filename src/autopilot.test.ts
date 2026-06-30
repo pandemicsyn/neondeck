@@ -31,6 +31,7 @@ describe('autopilot operator state', () => {
           autopilot: {
             defaultMode: 'draft-fix',
             limits: { maxFilesChanged: 3 },
+            concurrency: { maxAutonomousJobs: 2 },
           },
         },
         null,
@@ -52,6 +53,7 @@ describe('autopilot operator state', () => {
                   mode: 'auto-fix-no-push',
                   reason: 'Repo is safe for prepared local fixes.',
                   limits: { requiredChecks: ['npm run check'] },
+                  concurrency: { maxPerRepoAutonomousJobs: 1 },
                   watchOverrides: [
                     {
                       prNumber: 42,
@@ -80,6 +82,7 @@ describe('autopilot operator state', () => {
     expect(state.policies.global).toMatchObject({
       mode: 'prepare-only',
       limits: { maxFilesChanged: 3 },
+      concurrency: expect.objectContaining({ maxAutonomousJobs: 2 }),
     });
     expect(state.policies.repos).toEqual([
       expect.objectContaining({
@@ -88,6 +91,9 @@ describe('autopilot operator state', () => {
         source: 'repo-metadata',
         limits: expect.objectContaining({
           requiredChecks: ['npm run check'],
+        }),
+        concurrency: expect.objectContaining({
+          maxPerRepoAutonomousJobs: 1,
         }),
       }),
     ]);
@@ -137,7 +143,7 @@ describe('autopilot operator state', () => {
     });
     insertWorkflowRun(paths, {
       runId: 'run-verify',
-      workflow: 'verify_pr_worktree',
+      workflow: 'verify-pr-worktree',
       message: 'Running npm run check.',
     });
     insertWorktreeEvent(paths, {
@@ -165,7 +171,7 @@ describe('autopilot operator state', () => {
     });
     expect(state.runningChecks[0]).toMatchObject({
       runId: 'run-verify',
-      workflow: 'verify_pr_worktree',
+      workflow: 'verify-pr-worktree',
     });
     expect(state.recentActivity).toEqual(
       expect.arrayContaining([

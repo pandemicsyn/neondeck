@@ -1280,11 +1280,11 @@ Must-haves:
   - run configured diagnostics through approved execution actions
   - apply scoped fixes through repo-edit actions
   - commit locally and summarize confidence and remaining risk
-- [ ] Add `verify_pr_worktree` workflow to run configured repo checks through the execution approval policy.
+- [x] Add `verify_pr_worktree` workflow to run configured repo checks through the execution approval policy.
 - [ ] Add `push_pr_autofix` workflow that pushes only when autopilot policy, GitHub permissions, and checks allow it.
 - [ ] When direct push is not possible, leave the prepared worktree intact, mark the attempt blocked, and notify the user with recovery options.
 - [ ] Add `comment_pr_autofix_result` workflow that posts concise PR comments with addressed comments, commit SHA, checks run, and any remaining manual asks.
-- [ ] Add concurrency controls:
+- [x] Add concurrency controls:
   - global autonomous workflow limit
   - per-repo autonomous workflow limit
   - one active mutation workflow per PR by default
@@ -1310,7 +1310,7 @@ Must-haves:
   - `auto-fix-no-push`
   - `auto-fix-push-after-checks`
 - [x] Add watch-rule overrides so a single PR watch can be more or less autonomous than the repo default.
-- [ ] Add policy limits:
+- [x] Add policy limits:
   - maximum files changed
   - maximum lines changed
   - denied file globs
@@ -1318,7 +1318,7 @@ Must-haves:
   - required checks before push
   - allowed push destinations
   - no force-push by default
-- [ ] Add default high-risk approval classes:
+- [x] Add default high-risk approval classes:
   - lockfiles
   - dependency manifest changes that alter dependency versions
   - CI/CD config

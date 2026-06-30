@@ -3,6 +3,17 @@ import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { listExecutionApprovals } from './execution-actions';
 import {
+  globalAutopilotPolicy,
+  mergeAutopilotConcurrency,
+  mergeAutopilotLimits,
+  normalizeAutopilotMode,
+  readRepoAutopilotConfig,
+  type AutopilotConcurrencyPolicy,
+  type AutopilotMode,
+  type AutopilotModeAlias,
+  type AutopilotPolicyLimits,
+} from './autopilot-policy';
+import {
   ensureRuntimeHome,
   parseAppConfig,
   parseRepoRegistry,
@@ -25,12 +36,6 @@ import {
   type WorktreeRecord,
 } from './worktrees';
 
-export type AutopilotMode =
-  | 'notify-only'
-  | 'prepare-only'
-  | 'autofix-with-approval'
-  | 'autofix-push-when-safe';
-
 export type AutopilotQueueStatus =
   | 'watching'
   | 'queued'
@@ -41,20 +46,10 @@ export type AutopilotQueueStatus =
 
 export type AutopilotPriority = 'low' | 'normal' | 'high' | 'urgent';
 
-export type AutopilotPolicyLimits = {
-  maxFilesChanged: number;
-  maxLinesChanged: number;
-  deniedFileGlobs: string[];
-  approvalRequiredFileGlobs: string[];
-  requiredChecks: string[];
-  allowedPushDestinations: string[];
-  allowForcePush: boolean;
-  highRiskClasses: string[];
-};
-
 export type AutopilotPolicyConfig = {
   mode: AutopilotMode;
   limits: AutopilotPolicyLimits;
+  concurrency: AutopilotConcurrencyPolicy;
 };
 
 export type RepoAutopilotPolicy = {
@@ -64,6 +59,7 @@ export type RepoAutopilotPolicy = {
   source: 'global-default' | 'repo-metadata';
   reason: string;
   limits: AutopilotPolicyLimits;
+  concurrency: AutopilotConcurrencyPolicy;
 };
 
 export type WatchAutopilotPolicy = {
@@ -179,6 +175,7 @@ type AutopilotRepoConfig = Partial<{
   mode: AutopilotMode | AutopilotModeAlias;
   reason: string;
   limits: Partial<AutopilotPolicyLimits>;
+  concurrency: Partial<AutopilotConcurrencyPolicy>;
   watchOverrides: Array<{
     watchId?: string;
     prNumber?: number;
@@ -186,9 +183,6 @@ type AutopilotRepoConfig = Partial<{
     reason?: string;
   }>;
 }>;
-
-type AutopilotModeAlias =
-  'draft-fix' | 'auto-fix-no-push' | 'auto-fix-push-after-checks';
 
 type WorkflowRunRow = {
   run_id: string;
@@ -220,35 +214,6 @@ type WorktreeEventRow = {
   created_at: string;
 };
 
-const defaultPolicyLimits: AutopilotPolicyLimits = {
-  maxFilesChanged: 12,
-  maxLinesChanged: 500,
-  deniedFileGlobs: ['.git/**', '**/.env*', '**/*.{pem,key,p12,pfx}'],
-  approvalRequiredFileGlobs: [
-    '**/package-lock.json',
-    '**/pnpm-lock.yaml',
-    '**/yarn.lock',
-    '.github/**',
-    '**/migrations/**',
-    '**/*.{png,jpg,jpeg,gif,webp,zip}',
-  ],
-  requiredChecks: [],
-  allowedPushDestinations: ['pull-request-head'],
-  allowForcePush: false,
-  highRiskClasses: [
-    'lockfile',
-    'dependency-manifest',
-    'ci-config',
-    'deployment-config',
-    'security-sensitive-code',
-    'secrets-env',
-    'database-migration',
-    'large-generated-file',
-    'binary-file',
-    'vendored-code',
-  ],
-};
-
 const modeLabels: Record<AutopilotMode, string> = {
   'notify-only': 'Notify only',
   'prepare-only': 'Prepare only',
@@ -256,58 +221,6 @@ const modeLabels: Record<AutopilotMode, string> = {
   'autofix-push-when-safe': 'Autofix push when safe',
 };
 
-const modeAliasMap: Record<AutopilotModeAlias, AutopilotMode> = {
-  'draft-fix': 'prepare-only',
-  'auto-fix-no-push': 'autofix-with-approval',
-  'auto-fix-push-after-checks': 'autofix-push-when-safe',
-};
-
-const modeSchema = v.picklist([
-  'notify-only',
-  'prepare-only',
-  'autofix-with-approval',
-  'autofix-push-when-safe',
-  'draft-fix',
-  'auto-fix-no-push',
-  'auto-fix-push-after-checks',
-]);
-const stringArraySchema = v.array(v.pipe(v.string(), v.minLength(1)));
-const limitsSchema = v.looseObject({
-  maxFilesChanged: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
-  maxLinesChanged: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
-  deniedFileGlobs: v.optional(stringArraySchema),
-  approvalRequiredFileGlobs: v.optional(stringArraySchema),
-  requiredChecks: v.optional(stringArraySchema),
-  allowedPushDestinations: v.optional(stringArraySchema),
-  allowForcePush: v.optional(v.boolean()),
-  highRiskClasses: v.optional(stringArraySchema),
-});
-const globalConfigSchema = v.looseObject({
-  defaultMode: v.optional(modeSchema),
-  mode: v.optional(modeSchema),
-  limits: v.optional(limitsSchema),
-});
-const repoAutopilotSchema = v.looseObject({
-  mode: v.optional(modeSchema),
-  reason: v.optional(v.pipe(v.string(), v.minLength(1))),
-  limits: v.optional(limitsSchema),
-  watchOverrides: v.optional(
-    v.array(
-      v.looseObject({
-        watchId: v.optional(v.pipe(v.string(), v.minLength(1))),
-        prNumber: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
-        mode: v.optional(modeSchema),
-        reason: v.optional(v.pipe(v.string(), v.minLength(1))),
-      }),
-    ),
-  ),
-});
-const appAutopilotSchema = v.looseObject({
-  autopilot: v.optional(globalConfigSchema),
-});
-const metadataSchema = v.looseObject({
-  autopilot: v.optional(repoAutopilotSchema),
-});
 const autopilotModeOutputSchema = v.picklist([
   'notify-only',
   'prepare-only',
@@ -323,6 +236,14 @@ const policyLimitsOutputSchema = v.object({
   allowedPushDestinations: v.array(v.string()),
   allowForcePush: v.boolean(),
   highRiskClasses: v.array(v.string()),
+  generatedFileSizeThresholdBytes: v.number(),
+});
+const concurrencyOutputSchema = v.object({
+  maxAutonomousJobs: v.number(),
+  maxActiveWorkflowRuns: v.number(),
+  maxPerRepoAutonomousJobs: v.number(),
+  singleMutationPerPr: v.boolean(),
+  localExecutionLimit: v.number(),
 });
 const queueItemSchema = v.object({
   id: v.string(),
@@ -354,6 +275,7 @@ const repoPolicySchema = v.object({
   source: v.picklist(['global-default', 'repo-metadata']),
   reason: v.string(),
   limits: policyLimitsOutputSchema,
+  concurrency: concurrencyOutputSchema,
 });
 const watchPolicySchema = v.object({
   watchId: v.string(),
@@ -443,6 +365,7 @@ export const autopilotStateSchema = v.object({
     global: v.object({
       mode: autopilotModeOutputSchema,
       limits: policyLimitsOutputSchema,
+      concurrency: concurrencyOutputSchema,
     }),
     repos: v.array(repoPolicySchema),
     watches: v.array(watchPolicySchema),
@@ -455,16 +378,28 @@ export const autopilotStateSchema = v.object({
 });
 
 const autopilotWorkflowNames = new Set([
-  'triage_pr_event',
-  'prepare_pr_worktree',
-  'fix_pr_review_feedback',
-  'fix_pr_ci_failure',
-  'verify_pr_worktree',
-  'push_pr_autofix',
-  'comment_pr_autofix_result',
-  'cleanup_autopilot_worktree',
+  'triage-pr-event',
+  'prepare-pr-worktree',
+  'fix-pr-review-feedback',
+  'fix-pr-ci-failure',
+  'verify-pr-worktree',
+  'push-pr-autofix',
+  'comment-pr-autofix-result',
+  'cleanup-autopilot-worktree',
 ]);
-const checkWorkflowNames = new Set(['verify_pr_worktree']);
+const checkWorkflowNames = new Set(['verify-pr-worktree']);
+
+function normalizeWorkflowName(workflow: string) {
+  return workflow.replaceAll('_', '-');
+}
+
+function isAutopilotWorkflow(workflow: string) {
+  return autopilotWorkflowNames.has(normalizeWorkflowName(workflow));
+}
+
+function isCheckWorkflow(workflow: string) {
+  return checkWorkflowNames.has(normalizeWorkflowName(workflow));
+}
 
 export const autopilotStateLookupTool = defineTool({
   name: 'neondeck_autopilot_state_lookup',
@@ -512,7 +447,7 @@ export async function readAutopilotState(
   const worktrees = worktreeSnapshot.worktrees;
   const workflowRuns = readActiveAutopilotRuns(paths);
   const runningChecks = workflowRuns
-    .filter((run) => checkWorkflowNames.has(run.workflow))
+    .filter((run) => isCheckWorkflow(run.workflow))
     .map((run) => runningCheckFromWorkflow(run, worktrees));
   const preparedDiffs = (preparedDiffSnapshot.preparedDiffs ?? []).map(
     preparedDiffFromRecord,
@@ -610,19 +545,14 @@ export async function readAutopilotState(
 }
 
 function globalPolicy(appConfig: unknown): AutopilotPolicyConfig {
-  const parsed = v.safeParse(appAutopilotSchema, appConfig);
-  const raw = parsed.success ? parsed.output.autopilot : undefined;
-  return {
-    mode: normalizeMode(raw?.defaultMode ?? raw?.mode ?? 'notify-only'),
-    limits: mergeLimits(defaultPolicyLimits, raw?.limits),
-  };
+  return globalAutopilotPolicy(appConfig);
 }
 
 function repoPolicy(repo: RepoConfig, appConfig: unknown): RepoAutopilotPolicy {
   const global = globalPolicy(appConfig);
   const repoAutopilot = readRepoAutopilot(repo);
   const mode = repoAutopilot?.mode
-    ? normalizeMode(repoAutopilot.mode)
+    ? normalizeAutopilotMode(repoAutopilot.mode)
     : global.mode;
   const source = repoAutopilot?.mode ? 'repo-metadata' : 'global-default';
 
@@ -636,7 +566,11 @@ function repoPolicy(repo: RepoConfig, appConfig: unknown): RepoAutopilotPolicy {
       (source === 'repo-metadata'
         ? 'Repo metadata overrides the global autopilot mode.'
         : 'Repo inherits the global autopilot default.'),
-    limits: mergeLimits(global.limits, repoAutopilot?.limits),
+    limits: mergeAutopilotLimits(global.limits, repoAutopilot?.limits),
+    concurrency: mergeAutopilotConcurrency(
+      global.concurrency,
+      repoAutopilot?.concurrency,
+    ),
   };
 }
 
@@ -651,7 +585,9 @@ function watchPolicy(
       candidate.watchId === watch.id || candidate.prNumber === watch.prNumber,
   );
   const inheritedMode = repoPolicy?.mode ?? 'notify-only';
-  const mode = override?.mode ? normalizeMode(override.mode) : inheritedMode;
+  const mode = override?.mode
+    ? normalizeAutopilotMode(override.mode)
+    : inheritedMode;
 
   return {
     watchId: watch.id,
@@ -669,36 +605,7 @@ function watchPolicy(
 }
 
 function readRepoAutopilot(repo: RepoConfig | undefined) {
-  if (!repo?.metadata) return undefined;
-  const parsed = v.safeParse(metadataSchema, repo.metadata);
-  if (!parsed.success) return undefined;
-  return parsed.output.autopilot as AutopilotRepoConfig | undefined;
-}
-
-function mergeLimits(
-  base: AutopilotPolicyLimits,
-  override: Partial<AutopilotPolicyLimits> | undefined,
-): AutopilotPolicyLimits {
-  return {
-    ...base,
-    ...override,
-    deniedFileGlobs: override?.deniedFileGlobs ?? base.deniedFileGlobs,
-    approvalRequiredFileGlobs:
-      override?.approvalRequiredFileGlobs ?? base.approvalRequiredFileGlobs,
-    requiredChecks: override?.requiredChecks ?? base.requiredChecks,
-    allowedPushDestinations:
-      override?.allowedPushDestinations ?? base.allowedPushDestinations,
-    highRiskClasses: override?.highRiskClasses ?? base.highRiskClasses,
-  };
-}
-
-function normalizeMode(
-  mode: AutopilotMode | AutopilotModeAlias,
-): AutopilotMode {
-  if (mode in modeAliasMap) {
-    return modeAliasMap[mode as AutopilotModeAlias];
-  }
-  return mode as AutopilotMode;
+  return readRepoAutopilotConfig(repo) as AutopilotRepoConfig | undefined;
 }
 
 function queueItemFromWatch(
@@ -1059,7 +966,7 @@ function readActiveAutopilotRuns(paths: RuntimePaths) {
       )
       .all()
       .map(readWorkflowRunRow)
-      .filter((row) => autopilotWorkflowNames.has(row.workflow));
+      .filter((row) => isAutopilotWorkflow(row.workflow));
   } finally {
     database.close();
   }
@@ -1081,7 +988,7 @@ function readRecentAutopilotWorkflowEvents(
       )
       .all()
       .map(readWorkflowEventRow)
-      .filter((row) => row.workflow && autopilotWorkflowNames.has(row.workflow))
+      .filter((row) => row.workflow && isAutopilotWorkflow(row.workflow))
       .slice(0, 20)
       .map((row) => ({
         id: `workflow-event:${row.id}`,

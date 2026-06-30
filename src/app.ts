@@ -5,7 +5,11 @@ import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import * as v from 'valibot';
 import { supportedCommands } from './commands';
 import { autopilotStateSchema, readAutopilotState } from './autopilot';
-import { preparePrWorktree, triagePrEvent } from './autopilot-workflows';
+import {
+  preparePrWorktree,
+  triagePrEvent,
+  verifyPrWorktree,
+} from './autopilot-workflows';
 import {
   readProviderConfig,
   reloadConfig,
@@ -1020,6 +1024,11 @@ app.post('/api/prepared-diffs/:id/verify', async (c) => {
     paths,
   );
   return c.json(result, preparedDiffHttpStatus(result));
+});
+
+app.post('/api/autopilot/verify-pr-worktree', async (c) => {
+  const result = await verifyPrWorktree(await safeJsonBody(c), paths);
+  return c.json(result, result.ok ? 200 : 400);
 });
 
 app.get('/api/watches', async (c) => {

@@ -2,10 +2,19 @@ import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runtimePaths } from './runtime-home';
-import { preparePrWorktree, triagePrEvent } from './autopilot-workflows';
+import { ensureRuntimeHome, runtimePaths } from './runtime-home';
+import {
+  checkAutopilotConcurrency,
+  checkAutopilotPolicy,
+} from './autopilot-policy';
+import {
+  preparePrWorktree,
+  triagePrEvent,
+  verifyPrWorktree,
+} from './autopilot-workflows';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
@@ -194,6 +203,325 @@ describe('PR event autopilot', () => {
       }
     }
   });
+
+  it('classifies default high-risk worktree changes before verification or push', async () => {
+    const { paths, featureSha } = await fixture();
+    const prepared = await preparePreparedWorktree(paths, featureSha);
+    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
+    const localPath = stringPath(prepared, ['data', 'worktree', 'localPath']);
+    await writeFile(
+      join(localPath, 'package-lock.json'),
+      '{"lockfileVersion":3}\n',
+    );
+
+    const policy = await checkAutopilotPolicy({ worktreeId }, paths);
+
+    expect(policy).toMatchObject({
+      ok: true,
+      approvalRequired: true,
+      blocked: false,
+      diff: { filesChanged: 1 },
+    });
+    expect(policy.files[0]).toMatchObject({
+      path: 'package-lock.json',
+      approvalRequired: true,
+      classes: expect.arrayContaining(['lockfile']),
+    });
+  });
+
+  it('classifies root package dependency changes even without approval globs', async () => {
+    const { paths, featureSha } = await fixture();
+    await writeFile(
+      paths.config,
+      `${JSON.stringify(
+        {
+          version: 1,
+          autopilot: {
+            limits: {
+              approvalRequiredFileGlobs: [],
+              highRiskClasses: ['dependency-manifest'],
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const prepared = await preparePreparedWorktree(paths, featureSha);
+    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
+    const localPath = stringPath(prepared, ['data', 'worktree', 'localPath']);
+    await writeFile(
+      join(localPath, 'package.json'),
+      `${JSON.stringify({ dependencies: { react: '^19.0.0' } }, null, 2)}\n`,
+    );
+
+    const policy = await checkAutopilotPolicy({ worktreeId }, paths);
+
+    expect(policy.files[0]).toMatchObject({
+      path: 'package.json',
+      approvalRequired: true,
+      classes: expect.arrayContaining(['dependency-manifest']),
+    });
+  });
+
+  it('blocks push destinations outside autopilot policy', async () => {
+    const { paths, featureSha } = await fixture();
+    const prepared = await preparePreparedWorktree(paths, featureSha);
+    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
+
+    const policy = await checkAutopilotPolicy(
+      { worktreeId, pushDestination: 'base-branch' },
+      paths,
+    );
+
+    expect(policy).toMatchObject({
+      blocked: true,
+      canPush: false,
+      requires: expect.arrayContaining(['allowedPushDestinations']),
+    });
+  });
+
+  it('counts hyphenated active Flue workflow names for concurrency limits', async () => {
+    const { paths } = await fixture();
+    await ensureRuntimeHome(paths);
+    await writeFile(
+      paths.config,
+      `${JSON.stringify(
+        {
+          version: 1,
+          autopilot: {
+            concurrency: { maxActiveWorkflowRuns: 1 },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    insertActiveWorkflowRun(paths, 'run-verify', 'verify-pr-worktree');
+
+    const concurrency = await checkAutopilotConcurrency(
+      {
+        repoId: 'sample',
+        prNumber: 7,
+        workflow: 'prepare_pr_worktree',
+        mutation: true,
+      },
+      paths,
+    );
+
+    expect(concurrency).toMatchObject({
+      allowed: false,
+      usage: { activeWorkflowRuns: 1 },
+    });
+  });
+
+  it('verifies a PR worktree by running configured checks through execution policy', async () => {
+    const { paths, featureSha } = await fixture();
+    await writeFile(
+      paths.config,
+      `${JSON.stringify(
+        {
+          version: 1,
+          autopilot: {
+            limits: { requiredChecks: ["node -e 'process.exit(0)'"] },
+          },
+          execution: {
+            preapprovedCommands: [
+              {
+                id: 'node-ok',
+                command: "node -e 'process.exit(0)'",
+                match: 'exact',
+                backends: ['local'],
+                description: 'Fixture check.',
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const prepared = await preparePreparedWorktree(paths, featureSha);
+    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
+
+    const result = await verifyPrWorktree({ worktreeId, lock: false }, paths);
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: 'autopilot_verify_pr_worktree',
+      data: {
+        checks: ["node -e 'process.exit(0)'"],
+        results: [
+          {
+            command: "node -e 'process.exit(0)'",
+            ok: true,
+            exitCode: 0,
+          },
+        ],
+      },
+    });
+  });
+
+  it('runs policy-required checks even when caller supplies additional checks', async () => {
+    const { paths, featureSha } = await fixture();
+    await writeFile(
+      paths.config,
+      `${JSON.stringify(
+        {
+          version: 1,
+          autopilot: {
+            limits: {
+              requiredChecks: ['node -e \'process.stdout.write("required")\''],
+            },
+          },
+          execution: {
+            preapprovedCommands: [
+              {
+                id: 'required',
+                command: 'node -e \'process.stdout.write("required")\'',
+                match: 'exact',
+                backends: ['local'],
+                description: 'Required fixture check.',
+              },
+              {
+                id: 'caller',
+                command: 'node -e \'process.stdout.write("caller")\'',
+                match: 'exact',
+                backends: ['local'],
+                description: 'Caller fixture check.',
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const prepared = await preparePreparedWorktree(paths, featureSha);
+    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
+
+    const result = await verifyPrWorktree(
+      {
+        worktreeId,
+        checks: ['node -e \'process.stdout.write("caller")\''],
+        lock: false,
+      },
+      paths,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        checks: [
+          'node -e \'process.stdout.write("required")\'',
+          'node -e \'process.stdout.write("caller")\'',
+        ],
+      },
+    });
+  });
+
+  it('applies concurrency limits before preparing a PR worktree', async () => {
+    const { paths, featureSha } = await fixture();
+    await ensureRuntimeHome(paths);
+    await writeFile(
+      paths.config,
+      `${JSON.stringify(
+        {
+          version: 1,
+          autopilot: {
+            concurrency: { maxActiveWorkflowRuns: 1 },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    insertActiveWorkflowRun(paths, 'run-prepare', 'prepare-pr-worktree');
+
+    const result = await preparePrWorktree(
+      {
+        repoId: 'sample',
+        prNumber: 7,
+        lock: false,
+      },
+      paths,
+      {
+        token: 'test-token',
+        async fetchPullRequestDetail() {
+          return {
+            number: 7,
+            title: 'Update feature',
+            repo: 'example/sample',
+            url: 'https://github.com/example/sample/pull/7',
+            state: 'open',
+            draft: false,
+            merged: false,
+            mergeCommitSha: null,
+            headSha: featureSha,
+            headRef: 'feature',
+            headOwner: 'example',
+            headName: 'sample',
+            baseRef: 'main',
+            updatedAt: '2026-06-30T00:00:00.000Z',
+            maintainerCanModify: true,
+          };
+        },
+        async fetchCheckSummary() {
+          return {
+            status: 'success',
+            total: 1,
+            successful: 1,
+            failed: 0,
+            pending: 0,
+            checkedAt: '2026-06-30T00:00:00.000Z',
+          };
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      action: 'autopilot_prepare_pr_worktree',
+      requires: ['concurrency'],
+    });
+  });
+
+  it('blocks unattended verification checks that are not preapproved', async () => {
+    const { paths, featureSha } = await fixture();
+    await writeFile(
+      paths.config,
+      `${JSON.stringify(
+        {
+          version: 1,
+          autopilot: {
+            limits: { requiredChecks: ["node -e 'process.exit(0)'"] },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const prepared = await preparePreparedWorktree(paths, featureSha);
+    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
+
+    const result = await verifyPrWorktree({ worktreeId, lock: false }, paths);
+
+    expect(result).toMatchObject({
+      ok: false,
+      action: 'autopilot_verify_pr_worktree',
+      message:
+        'Verification is blocked by execution approval or concurrency policy.',
+      data: {
+        results: [
+          {
+            command: "node -e 'process.exit(0)'",
+            ok: false,
+            requires: ['preapprovedCommands'],
+          },
+        ],
+      },
+    });
+  });
 });
 
 async function fixture() {
@@ -235,6 +563,99 @@ async function fixture() {
   );
 
   return { paths, featureSha: featureSha.trim() };
+}
+
+async function preparePreparedWorktree(
+  paths: ReturnType<typeof runtimePaths>,
+  featureSha: string,
+) {
+  const result = await preparePrWorktree(
+    {
+      repoId: 'sample',
+      prNumber: 7,
+      lock: false,
+    },
+    paths,
+    {
+      token: 'test-token',
+      async fetchPullRequestDetail() {
+        return {
+          number: 7,
+          title: 'Update feature',
+          repo: 'example/sample',
+          url: 'https://github.com/example/sample/pull/7',
+          state: 'open',
+          draft: false,
+          merged: false,
+          mergeCommitSha: null,
+          headSha: featureSha,
+          headRef: 'feature',
+          headOwner: 'example',
+          headName: 'sample',
+          baseRef: 'main',
+          updatedAt: '2026-06-30T00:00:00.000Z',
+          maintainerCanModify: true,
+        };
+      },
+      async fetchCheckSummary() {
+        return {
+          status: 'success',
+          total: 1,
+          successful: 1,
+          failed: 0,
+          pending: 0,
+          checkedAt: '2026-06-30T00:00:00.000Z',
+        };
+      },
+    },
+  );
+  expect(result.ok).toBe(true);
+  return result;
+}
+
+function stringPath(value: unknown, path: string[]) {
+  let current = value;
+  for (const key of path) {
+    current =
+      current && typeof current === 'object'
+        ? (current as Record<string, unknown>)[key]
+        : undefined;
+  }
+  if (typeof current !== 'string') {
+    throw new Error(`Expected string at ${path.join('.')}`);
+  }
+  return current;
+}
+
+function insertActiveWorkflowRun(
+  paths: ReturnType<typeof runtimePaths>,
+  runId: string,
+  workflow: string,
+) {
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        INSERT INTO workflow_run_observations (
+          run_id,
+          workflow,
+          status,
+          started_at,
+          last_event_at,
+          last_message,
+          event_count,
+          is_error,
+          updated_at
+        )
+        VALUES (?, ?, 'active', ?, ?, ?, 1, 0, ?);
+      `,
+      )
+      .run(runId, workflow, now, now, `Running ${workflow}.`, now);
+  } finally {
+    database.close();
+  }
 }
 
 async function git(cwd: string, args: string[]) {
