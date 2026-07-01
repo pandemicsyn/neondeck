@@ -61,9 +61,13 @@ Extend runtime-home `config.json` with a `learning` object:
     "enabled": true,
     "memoryWriteMode": "auto",
     "skillWriteMode": "auto",
+    "memoryCurationEnabled": true,
+    "memoryCurationMode": "review",
     "conversationReviewTurnInterval": 10,
+    "memoryCurationTurnInterval": 200,
     "prRetrospectiveThreshold": 5,
     "notifications": "on",
+    "memoryMaxActiveItems": 200,
     "maxRecentTurns": 30,
     "maxPrBatchItems": 8
   },
@@ -79,6 +83,14 @@ Learning write modes:
 - `auto`: apply low-risk learning changes immediately and record audit evidence.
 - `review`: create candidates/proposals that require explicit approval.
 - `off`: do not create or apply this class of learning change.
+
+Memory curation modes:
+
+- `off`: never run memory curation automatically.
+- `review`: propose memory rewrites, merges, and archives for approval.
+- `auto`: allow the learning agent to curate memory directly through typed actions and audit events.
+
+Manual curation commands should work even when automatic curation is disabled.
 
 Model selection:
 
@@ -107,41 +119,67 @@ Default behavior should work without extra setup. If no explicit self-improvemen
 
 Update the Neondeck app SQLite schema.
 
-### Memory Table Upgrade
+### Simple Memory Table Upgrade
 
-Extend `memories` with:
+Keep memory closer to Hermes: a small current working set of guidance, not an evidence graph. SQLite should provide durability, indexing, audit, and UI visibility without making every memory a forensic record.
 
-- `kind TEXT`
+Extend or normalize `memories` toward:
+
+- `id TEXT PRIMARY KEY`
+- `scope TEXT NOT NULL`
+- `key TEXT NOT NULL`
+- `value_json TEXT NOT NULL`
 - `repo_id TEXT`
-- `tool_id TEXT`
-- `source TEXT`
-- `source_id TEXT`
-- `evidence_json TEXT`
-- `confidence REAL`
 - `status TEXT NOT NULL DEFAULT 'active'`
-- `last_used_at TEXT`
 - `use_count INTEGER NOT NULL DEFAULT 0`
-- `safety_flags_json TEXT`
+- `last_used_at TEXT`
+- `created_at TEXT NOT NULL`
+- `updated_at TEXT NOT NULL`
 
-Supported `kind` values:
+Supported `scope` values for new writes:
 
-- `preference`
-- `style`
-- `convention`
-- `workaround`
-- `failure-pattern`
-- `lesson`
-- `policy`
+- `user`
+- `local`
+- `project`
 
 Supported `status` values:
 
 - `active`
-- `candidate`
-- `rejected`
 - `archived`
-- `blocked`
 
-Keep `scope`, `key`, `value_json`, timestamps, and unique identity. Adjust uniqueness to account for active records safely. If SQLite migration cannot change the existing unique constraint cleanly, keep `UNIQUE(scope, key)` for v1 and make updates explicit.
+Keep unique identity simple. Prefer `UNIQUE(scope, key)` for v1 and make rewrites explicit. If a project memory needs repo-specific identity, include repo id in the key or keep `repo_id` nullable and enforce uniqueness in service code.
+
+The learning agent should have free rein to update, rewrite, merge, and archive memory through typed actions. If a user correction contradicts an old memory, the correct behavior is to replace or archive the old guidance and write the new current guidance.
+
+### Memory Events
+
+Add `memory_events` as the rollback/audit trail:
+
+- `id TEXT PRIMARY KEY`
+- `memory_id TEXT`
+- `action TEXT NOT NULL`
+- `actor TEXT NOT NULL`
+- `reason TEXT`
+- `before_json TEXT`
+- `after_json TEXT`
+- `created_at TEXT NOT NULL`
+
+Actions:
+
+- `created`
+- `updated`
+- `rewritten`
+- `merged`
+- `archived`
+- `rejected`
+
+Actors:
+
+- `user`
+- `neon`
+- `workflow`
+
+Do not store rejected prompt-injection-like content as an active memory. Record a `memory_events` rejection with a bounded reason instead.
 
 ### Learning Events
 
@@ -164,6 +202,7 @@ Event types:
 - `memory_applied`
 - `memory_rejected`
 - `memory_archived`
+- `memory_curated`
 - `skill_patch_proposed`
 - `skill_patch_applied`
 - `pr_handled`
@@ -202,14 +241,12 @@ Add `learning_candidates`:
 - `target TEXT NOT NULL`
 - `status TEXT NOT NULL`
 - `scope TEXT`
-- `kind TEXT`
 - `key TEXT`
 - `value_json TEXT`
 - `skill_id TEXT`
 - `patch_json TEXT`
 - `repo_id TEXT`
-- `confidence REAL`
-- `evidence_json TEXT NOT NULL`
+- `reason TEXT`
 - `review_id TEXT`
 - `created_at TEXT NOT NULL`
 - `decided_at TEXT`
@@ -225,9 +262,8 @@ Statuses:
 - `applied`
 - `rejected`
 - `archived`
-- `blocked`
 
-Even in `auto` mode, create a candidate row first, then mark it applied in the same transaction. This preserves a uniform audit trail and makes rollback/review possible.
+Use candidates only when policy is `review` or when the workflow intentionally wants user inspection. In `auto` mode, the workflow can mutate memory directly through typed actions and rely on `memory_events` for audit/rollback.
 
 ### PR Learning Cursor
 
@@ -301,21 +337,25 @@ Add schema-backed actions using Valibot at all IO boundaries.
 Add:
 
 - `neondeck_memory_learn`
+- `neondeck_memory_rewrite`
+- `neondeck_memory_merge`
+- `neondeck_memory_archive`
 - `neondeck_memory_candidate_create`
 - `neondeck_memory_candidate_list`
 - `neondeck_memory_candidate_decide`
-- `neondeck_memory_archive`
 - `neondeck_memory_mark_used`
 
 `neondeck_memory_learn` should:
 
-- accept `scope`, `kind`, `key`, `value`, `evidence`, `confidence`, optional `repoId` and `toolId`
+- accept `scope`, `key`, `value`, optional `repoId`, and optional `reason`
 - validate active scopes: `user | local | project`
-- reject secrets and blocked prompt-injection patterns
-- deduplicate by scope/key and similar evidence
-- write candidate + active memory according to policy
+- reject secrets and prompt-injection-like content before writing active memory
+- upsert by scope/key
+- write memory event audit rows with before/after snapshots
 - return a compact result, not full memory blobs
 - mark active sessions stale when active memory changes
+
+The learning agent should use these actions as its maintenance surface. It can rewrite old guidance, merge duplicates, archive stale entries, and add new entries without direct file/database edits. The guardrail is typed mutation plus audit history, not a timid learning agent.
 
 ### Skill Learning Actions
 
@@ -376,7 +416,7 @@ Inputs:
 
 Output:
 
-- list of memory candidates/applied memories
+- list of memory writes, rewrites, merges, archives, or candidates depending on policy
 - list of skill patch candidates/applied patches
 - skipped reasons
 - review summary
@@ -464,7 +504,6 @@ Example learned outputs:
   "memories": [
     {
       "scope": "project",
-      "kind": "failure-pattern",
       "repoId": "neondeck",
       "key": "autofix.valibot-boundaries",
       "value": "Autofix changes touching API/action inputs must use Valibot schemas at IO boundaries; missing schemas caused repeated review feedback."
@@ -492,10 +531,7 @@ Selection order:
 
 Exclude:
 
-- `candidate`
-- `rejected`
 - `archived`
-- `blocked`
 - suspicious memory
 - deprecated `session`/`watch` unless explicitly requested for migration visibility
 
@@ -545,13 +581,63 @@ Prefer learning:
 Security scanning:
 
 - reuse or port Hermes-style strict prompt-injection/exfiltration pattern checks for memory content before prompt loading
-- blocked entries remain inspectable in dashboard/CLI but are excluded from prompt snapshots
+- rejected suspicious writes should create bounded audit events, not active prompt-loadable memory
 
 Audit:
 
-- every candidate and auto-write must link to evidence
+- every memory mutation should record a concise reason and before/after audit data
 - every skill patch must retain diff/backup data
 - every learning review should persist model, thinking level, trigger, input summary, and result summary
+
+## Memory Curation Workflow
+
+Create `curate_learning_store`.
+
+Purpose:
+
+- keep the active memory set small and useful
+- remove stale or contradicted guidance
+- merge duplicates
+- rewrite vague memories into crisp current guidance
+- preserve audit history without keeping cruft in the prompt working set
+
+Automatic curation should be optional and tuneable:
+
+- `learning.memoryCurationEnabled`, default `true`
+- `learning.memoryCurationMode`, default `review`
+- `learning.memoryCurationTurnInterval`, default `200`
+- `learning.memoryMaxActiveItems`, default `200`
+
+Triggers:
+
+- every configured curation turn interval
+- when active memory exceeds `memoryMaxActiveItems`
+- manual `/learning curate`
+- CLI/API curation request
+
+Modes:
+
+- `off`: no automatic curation
+- `review`: create rewrite/merge/archive candidates
+- `auto`: directly curate through typed memory actions and audit events
+
+Inputs:
+
+- active `user`, `local`, and relevant `project` memories
+- recent memory event summaries
+- recent user corrections
+- usage counts and last-used timestamps
+- prompt budget pressure signals
+
+Outputs:
+
+- rewritten memories
+- merged memories
+- archived memories
+- review candidates when mode is `review`
+- short curation summary
+
+The workflow should not try to preserve every historical rationale in memory rows. Memory rows represent current guidance. `memory_events` is the audit/rollback trail.
 
 ## Dashboard
 
@@ -564,13 +650,15 @@ Sections:
 - skill patches applied/proposed
 - PR retrospective findings
 - candidates awaiting approval when mode is `review`
-- blocked/suspicious entries
+- recent memory curation summaries
+- rejected/suspicious write audit events
 - model configuration and readiness
 
 Controls:
 
 - run conversation review
 - run PR retrospective
+- run memory curation
 - approve/reject candidate
 - archive memory
 - rollback skill patch
@@ -587,6 +675,9 @@ Add commands:
 neondeck learning status
 neondeck learning review
 neondeck learning review-prs
+neondeck learning curate
+neondeck learning curate --review
+neondeck learning curate --auto
 neondeck learning candidates
 neondeck learning approve <id>
 neondeck learning reject <id>
@@ -599,6 +690,8 @@ Update first-run setup:
 
 - Ask whether learning is enabled.
 - Ask for memory/skill write mode, default `auto`.
+- Ask whether automatic memory curation is enabled, default `true`.
+- Ask for memory curation mode, default `review`.
 - Ask for optional self-improvement/reflection model.
 - Default the reflection model to utility model when available.
 - Ask for reflection reasoning effort, default `low`.
@@ -611,6 +704,7 @@ Add local APIs:
 - `GET /api/learning/reviews`
 - `POST /api/learning/reviews/conversation`
 - `POST /api/learning/reviews/prs`
+- `POST /api/learning/curate`
 - `GET /api/learning/candidates`
 - `POST /api/learning/candidates/:id/approve`
 - `POST /api/learning/candidates/:id/reject`
@@ -669,6 +763,8 @@ Fast tests should cover:
 - self-improvement model and thinking level resolution
 - memory scope validation
 - memory learn/upsert/archive behavior
+- memory rewrite/merge behavior
+- optional memory curation modes and thresholds
 - candidate auto/review/off modes
 - prompt snapshot selection and budget behavior
 - stale-session marking after memory/skill changes
@@ -680,15 +776,17 @@ Fast tests should cover:
 Integration tests should cover:
 
 - conversation learning workflow with mocked model result
+- memory curation workflow with mocked model result
 - PR retrospective workflow with mocked workflow/prepared-diff history
 - skill patch proposal/apply/rollback on a temp skill directory
-- blocked suspicious memory excluded from prompt snapshot
+- rejected suspicious memory write excluded from prompt snapshot
 
 Smoke scripts:
 
 - create temp runtime home
 - configure self-improvement model fallback
 - create three memories
+- run memory curation with mocked reviewer output
 - simulate five PR handled events
 - run PR retrospective with mocked reviewer output
 - verify memory/skill candidate audit rows
@@ -702,6 +800,7 @@ Do not make `npm run check` depend on slow real-model calls. Mock reviewer outpu
 - Display-assistant sessions load a bounded, auditable memory snapshot.
 - Self-improvement model and reasoning level are configurable with sane defaults.
 - Conversation reflection runs after the configured cadence without blocking chat.
+- Memory curation is optional, tuneable, and auditable.
 - PR/autopilot retrospectives run after the configured handled-PR threshold.
 - Repeated PR failure patterns can become project/local memory.
 - Procedural lessons can patch Neondeck skills or create reviewable skill patch candidates.

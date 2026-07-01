@@ -1463,18 +1463,19 @@ Must-haves:
 - [ ] Add Hermes-inspired learning as a first-class Neondeck subsystem, not ad hoc prompt text.
 - [ ] Keep active learning memory scopes to `user`, `local`, and `project`; stop writing new `session` or `watch` memories.
 - [ ] Preserve session stability by applying new learned memory and skill changes only to new sessions or explicit refresh flows.
-- [ ] Add runtime learning config for enablement, memory write mode, skill write mode, conversation review cadence, PR retrospective cadence, notifications, and review input budgets.
+- [ ] Add runtime learning config for enablement, memory write mode, skill write mode, optional/tuneable memory curation, conversation review cadence, PR retrospective cadence, notifications, and review input budgets.
 - [ ] Add explicit self-improvement model config with defaults and fallbacks:
   - `models.selfImprovement`
   - `models.selfImprovementThinkingLevel`
   - `FLUE_SELF_IMPROVEMENT_MODEL`
   - `FLUE_SELF_IMPROVEMENT_THINKING_LEVEL`
   - fallback through utility model, display-assistant model, then the existing default agent model
-- [ ] Add app SQLite schema for learning events, learning reviews, learning candidates, and richer memory evidence/status metadata.
-- [ ] Add deterministic Valibot-backed memory actions for learn, upsert, archive, list candidates, decide candidates, and mark-used behavior.
+- [ ] Add app SQLite schema for simple active/archived memory, memory event audit history, learning events, learning reviews, and review-mode learning candidates.
+- [ ] Add deterministic Valibot-backed memory actions for learn, upsert, rewrite, merge, archive, list candidates, decide candidates, and mark-used behavior.
 - [ ] Add deterministic skill patch actions for propose, apply, reject, list, audit, and rollback where practical.
 - [ ] Add bounded Flue workflows for:
   - conversation reflection after a configurable turn count, defaulting to 10
+  - optional memory curation after a configurable turn count, defaulting to 200
   - PR/autopilot retrospective after a configurable handled-PR batch, defaulting to 5
   - manual learning review/curation
 - [ ] Add PR/autopilot handled-event accounting so recurring review, CI, verification, push-back, Kilo, and notification recovery patterns can become memory or skill patch candidates.
