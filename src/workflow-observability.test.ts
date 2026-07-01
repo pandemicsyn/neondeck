@@ -20,7 +20,7 @@ afterEach(async () => {
 });
 
 describe('workflow observability', () => {
-  it('records sanitized active run, data, log, and tool events', async () => {
+  it('records sanitized active run, result, log, and tool events', async () => {
     const paths = runtimePaths(await tempHome());
     await recordFlueObservation(
       event({
@@ -34,11 +34,11 @@ describe('workflow observability', () => {
     );
     await recordFlueObservation(
       event({
-        type: 'data',
+        type: 'run_end',
         runId: 'run_1',
-        name: 'neondeck.command',
-        id: '/review-queue',
-        data: { status: 'running', command: '/review-queue' },
+        isError: false,
+        durationMs: 1_250,
+        result: { status: 'completed', command: '/review-queue' },
       }),
       paths,
     );
@@ -67,19 +67,14 @@ describe('workflow observability', () => {
 
     const snapshot = await readWorkflowObservability(paths);
 
-    expect(snapshot.activeRuns).toEqual([
+    expect(snapshot.activeRuns).toEqual([]);
+    expect(snapshot.recentData).toEqual([
       expect.objectContaining({
-        runId: 'run_1',
-        workflow: 'command-run',
+        eventType: 'run_end',
+        message: 'Workflow completed in 1.3s.',
         runUrl: expect.stringMatching(
           /^\/api\/flue\/runs\/run_1\?meta&neondeckApiToken=[A-Za-z0-9_-]{32,}$/,
         ),
-      }),
-    ]);
-    expect(snapshot.recentData).toEqual([
-      expect.objectContaining({
-        eventType: 'data',
-        name: 'neondeck.command',
       }),
     ]);
     expect(snapshot.recentLogs).toEqual([
@@ -95,7 +90,7 @@ describe('workflow observability', () => {
       }),
     ]);
     expect(snapshot.recentData[0]?.summary).toMatchObject({
-      data: {
+      result: {
         type: 'object',
         keys: ['status', 'command'],
       },
@@ -179,12 +174,13 @@ describe('workflow observability', () => {
     for (let index = 0; index < 130; index += 1) {
       await recordFlueObservation(
         event({
-          type: 'data',
+          type: 'log',
           runId: 'run_long',
           eventIndex: index + 2,
           timestamp: `2026-06-27T20:${String(index % 60).padStart(2, '0')}:00Z`,
-          name: 'neondeck.command',
-          data: { status: 'running', index },
+          level: 'info',
+          message: `Still running ${index}`,
+          attributes: { index },
         }),
         paths,
       );
@@ -205,10 +201,11 @@ describe('workflow observability', () => {
     const paths = runtimePaths(await tempHome());
     await recordFlueObservation(
       event({
-        type: 'data',
+        type: 'run_end',
         runId: 'run_secret',
-        name: 'neondeck.secret',
-        data: 'token=abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz',
+        isError: false,
+        durationMs: 10,
+        result: 'token=abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz',
       }),
       paths,
     );
@@ -216,7 +213,7 @@ describe('workflow observability', () => {
     const snapshot = await readWorkflowObservability(paths);
 
     expect(snapshot.recentData[0]?.summary).toMatchObject({
-      data: '[redacted]',
+      result: '[redacted]',
     });
   });
 });

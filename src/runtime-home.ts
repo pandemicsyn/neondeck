@@ -576,16 +576,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 async function writeJsonAtomic(path: string, value: unknown) {
   await mkdir(dirname(path), { recursive: true });
-  const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+  const tempPath = temporaryJsonPath(path);
   await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
   await rename(tempPath, path);
 }
 
 function writeJsonAtomicSync(path: string, value: unknown) {
   mkdirSync(dirname(path), { recursive: true });
-  const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+  const tempPath = temporaryJsonPath(path);
   writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
   renameSync(tempPath, path);
+}
+
+function temporaryJsonPath(path: string) {
+  return `${path}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`;
 }
 
 async function writeJsonIfMissing(path: string, value: unknown) {

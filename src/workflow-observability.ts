@@ -54,7 +54,6 @@ const persistedEventTypes = new Set([
   'tool',
   'turn',
   'log',
-  'data',
 ]);
 
 export async function recordFlueObservation(
@@ -151,7 +150,7 @@ export async function readWorkflowObservability(paths = runtimePaths()) {
         .filter((event) => event.eventType === 'run_end' && event.isError)
         .slice(0, 10),
       recentData: recentEvents
-        .filter((event) => event.eventType === 'data')
+        .filter((event) => event.eventType === 'run_end' && !event.isError)
         .slice(0, 10),
       recentLogs: recentEvents
         .filter((event) => event.eventType === 'log')
@@ -229,20 +228,6 @@ function summarizeObservation(event: FlueObservation) {
         summary: {
           level: event.level,
           attributes: sanitizeRecord(event.attributes),
-        },
-      };
-    case 'data':
-      return {
-        message: `${event.name} progress data emitted.`,
-        name: event.name,
-        operationKind: null,
-        operationId: readString(event, 'operationId'),
-        durationMs: null,
-        isError: false,
-        summary: {
-          name: event.name,
-          id: event.id ?? null,
-          data: summarizeUnknown(event.data),
         },
       };
     case 'operation_start':

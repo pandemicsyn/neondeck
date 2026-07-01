@@ -681,7 +681,7 @@ function RuntimeView({
           </RuntimeSection>
           <RuntimeSection
             count={snapshot.workflows.recentData.length}
-            title="PROGRESS DATA"
+            title="RUN RESULTS"
             tone="violet"
           >
             <div className="space-y-1.5">
@@ -691,7 +691,7 @@ function RuntimeView({
                   <WorkflowEventRow event={event} key={`data:${event.id}`} />
                 ))}
               {snapshot.workflows.recentData.length === 0 ? (
-                <MiniEmpty label="No emitted workflow data yet." />
+                <MiniEmpty label="No completed workflow results yet." />
               ) : null}
             </div>
           </RuntimeSection>

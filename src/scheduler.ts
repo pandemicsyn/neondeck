@@ -125,13 +125,8 @@ export const schedulerTickAction = defineAction({
     'Synchronize configured schedules into durable jobs and run jobs that are due.',
   input: v.object({}),
   output: schedulerActionOutputSchema,
-  async run({ log, emitData }) {
+  async run({ log }) {
     log.info('Scheduler tick requested');
-    emitData(
-      'neondeck.scheduler_tick',
-      { status: 'running', message: 'Checking due jobs.' },
-      { id: 'latest' },
-    );
 
     const result = await runSchedulerTick();
     const payload = {
@@ -142,8 +137,6 @@ export const schedulerTickAction = defineAction({
       jobs: result.jobs?.length ?? 0,
       notifications: result.notifications?.length ?? 0,
     };
-    emitData('neondeck.scheduler_tick', payload, { id: 'latest' });
-
     if (result.ok) {
       log.info('Scheduler tick completed', payload);
     } else {

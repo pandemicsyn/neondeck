@@ -19,6 +19,7 @@ Core principles:
 - Use skills for behavior, conventions, and domain guidance.
 - Treat chat commands and UI buttons as two frontends over the same backend workflows.
 - Keep session context stable: SOUL, selected skills, repo config, and memory summaries should be loaded deliberately rather than silently changing mid-turn.
+- Treat learning as an explicit, auditable runtime subsystem: durable memory and skill changes should be derived from high-signal evidence, reviewed when policy requires it, and applied only to new sessions or deliberate context refreshes.
 - Use deterministic watchers first and agent summarization only when a watcher detects a meaningful state change.
 - Treat worktrees as the isolation boundary for autonomous PR work. Automated fix workflows should not mutate the user's primary checkout.
 - Treat external agent harnesses such as KiloCode as delegated workers that operate inside declared repos or Neondeck-managed worktrees and report durable task state back to Neondeck.
@@ -52,7 +53,8 @@ Status markers:
 7. Chat session index and session switcher.
 8. Worktree-backed PR autonomy and review-feedback autopilot.
 9. KiloCode handoff for large delegated work inside managed worktrees.
-10. Later TUI/OpenTUI surface over the same backend API.
+10. Hermes-style self-improvement and learning over memory, skills, and PR/autopilot retrospectives.
+11. Later TUI/OpenTUI surface over the same backend API.
 
 ## Usability Gate
 
@@ -1453,6 +1455,36 @@ Must-haves:
   - session list/search, message/todo/children/diff inspection
   - reattach after Neondeck restart
 - [x] Defer ACP until Kilo-specific handoff proves useful and a concrete generic-harness need exists.
+
+### Phase 22: Self-Improvement And Learning
+
+- Status: planned. Detailed implementation plan lives in `.plans/SELF_IMPROVEMENT_LEARNING_PLAN.md`.
+
+- [ ] Add Hermes-inspired learning as a first-class Neondeck subsystem, not ad hoc prompt text.
+- [ ] Keep active learning memory scopes to `user`, `local`, and `project`; stop writing new `session` or `watch` memories.
+- [ ] Preserve session stability by applying new learned memory and skill changes only to new sessions or explicit refresh flows.
+- [ ] Add runtime learning config for enablement, memory write mode, skill write mode, optional/tuneable memory curation, conversation review cadence, PR retrospective cadence, notifications, and review input budgets.
+- [ ] Add explicit self-improvement model config with defaults and fallbacks:
+  - `models.selfImprovement`
+  - `models.selfImprovementThinkingLevel`
+  - `FLUE_SELF_IMPROVEMENT_MODEL`
+  - `FLUE_SELF_IMPROVEMENT_THINKING_LEVEL`
+  - fallback through utility model, display-assistant model, then the existing default agent model
+- [ ] Add app SQLite schema for simple active/archived memory, memory event audit history, learning events, learning reviews, and review-mode learning candidates.
+- [ ] Add deterministic Valibot-backed memory actions for learn, upsert, rewrite, merge, archive, list candidates, decide candidates, and mark-used behavior.
+- [ ] Add deterministic skill patch actions for propose, apply, reject, list, audit, and rollback where practical.
+- [ ] Add bounded Flue workflows for:
+  - conversation reflection after a configurable turn count, defaulting to 10
+  - optional memory curation after a configurable turn count, defaulting to 200
+  - PR/autopilot retrospective after a configurable handled-PR batch, defaulting to 5
+  - manual learning review/curation
+- [ ] Add PR/autopilot handled-event accounting so recurring review, CI, verification, push-back, Kilo, and notification recovery patterns can become memory or skill patch candidates.
+- [ ] Build a deliberate learning snapshot for display-assistant sessions that includes bounded, auditable `user`, `local`, and relevant `project` memories.
+- [ ] Record which memory ids were loaded into a session and mark active sessions stale when relevant learned context changes.
+- [ ] Add dashboard, API, and CLI surfaces for learning status, reviews, candidates, memory decisions, skill patch decisions, and audit history.
+- [ ] Update runtime skills, README, AGENTS.md, and Astro docs to explain learning, memory scopes, self-improvement model config, PR retrospectives, and rollback/curation controls.
+- [ ] Add fast tests with mocked reflection/model output for config fallback, scope validation, candidate policies, prompt snapshot budgets, session staleness, PR retrospective thresholds, API validation, and skill patch proposals.
+- [ ] Add opt-in smoke/integration tests for conversation reflection and PR retrospective workflows without slowing `npm run check`.
 
 ## Open Questions
 

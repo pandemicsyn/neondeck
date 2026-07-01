@@ -588,7 +588,6 @@ function FlueChatSessionView({
   const agent = useFlueAgent({
     name: agentName,
     id: session?.id,
-    history: 'all',
   });
   const commandCatalog = useMemo(
     () => mergeCommandCatalog(quickCommands),
