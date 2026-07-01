@@ -17,7 +17,7 @@ export const vite = defineViteConfig({
         '**/dist/**',
         '**/research-repos/**',
         '**/web/**',
-        '**/webapp/**',
+        '**/docs/**',
       ],
     },
   },

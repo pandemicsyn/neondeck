@@ -248,20 +248,20 @@ npm run verify</code></pre>
           <code>npm run test:integration</code> runs the slower git, worktree, Kilo,
           and autopilot workflow suites. <code>npm run verify</code> runs lint, typecheck,
           all tests, formatting, the dashboard build, the Flue Node build, and the
-          Astro webapp build.
+          Astro docs site build.
         </p>
 
-        <h2>Run the webapp</h2>
-        <pre><code>npm run webapp:astro-dev</code></pre>
+        <h2>Run the docs site</h2>
+        <pre><code>npm run docs:astro-dev</code></pre>
         <p>
           The Astro marketing/docs site runs separately from the local dashboard
           and deploys to Cloudflare.
         </p>
 
         <h2>Deploy neondeck.dev</h2>
-        <pre><code>npm run webapp:deploy</code></pre>
+        <pre><code>npm run docs:deploy</code></pre>
         <p>
-          The Worker is configured in <code>webapp/wrangler.jsonc</code> with custom
+          The Worker is configured in <code>docs/wrangler.jsonc</code> with custom
           domains for <code>neondeck.dev</code> and <code>www.neondeck.dev</code
           >. See <a href="/docs/deployment/">deployment</a> for the deploy surface.
         </p>

@@ -15,7 +15,7 @@ The roadmap is the source of truth for direction and implementation order. The c
 
 - Backend: Node 26, Hono, Flue.
 - Dashboard: Vite, React, Tailwind v4.
-- Marketing/docs site: Astro under `webapp/`, deployed to Cloudflare for `neondeck.dev`.
+- Marketing/docs site: Astro under `docs/`, deployed to Cloudflare for `neondeck.dev`.
 - Persistence: local SQLite. Keep Neondeck app state separate from Flue runtime state unless the roadmap changes.
 - Runtime config target: `NEONDECK_HOME`, then `XDG_CONFIG_HOME/neondeck`, then `~/.config/neondeck`.
 
@@ -26,7 +26,7 @@ Design toward one backend command/event surface. The web dashboard is the first 
 - `src/`: Hono/Flue backend, agents, metrics, SOUL loading, database setup.
 - `web/`: local dashboard SPA.
 - `web/src/plugins/`: typed dashboard display plugins.
-- `webapp/`: Astro marketing/docs site.
+- `docs/`: Astro marketing/docs site.
 - `config/dashboard.json`: current local dashboard layout config.
 - `.codex/skills/flue/`: in-repo development skill for Flue.
 - `.kilo/skills/flue`: Kilo link to the Flue skill.
@@ -82,8 +82,8 @@ npm run dev
 Marketing/docs site:
 
 ```sh
-npm run webapp:astro-dev
-npm run webapp:build
+npm run docs:astro-dev
+npm run docs:build
 ```
 
 ## Formatting And Linting

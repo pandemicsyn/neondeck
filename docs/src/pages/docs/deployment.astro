@@ -23,22 +23,22 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
         <h2>Astro site</h2>
         <p>
-          The site lives in <code>webapp/</code> and builds to static assets.
+          The site lives in <code>docs/</code> and builds to static assets.
         </p>
-        <pre><code>npm run webapp:build
-npm run webapp:preview</code></pre>
+        <pre><code>npm run docs:build
+npm run docs:preview</code></pre>
 
         <h2>Cloudflare deploy</h2>
-        <pre><code>npm run webapp:deploy</code></pre>
+        <pre><code>npm run docs:deploy</code></pre>
         <p>
-          Wrangler config lives at <code>webapp/wrangler.jsonc</code>. It
-          deploys the built <code>webapp/dist</code> assets to the
+          Wrangler config lives at <code>docs/wrangler.jsonc</code>. It deploys
+          the built <code>docs/dist</code> assets to the
           <code>neondeck-site</code> Worker with custom domains for
           <code>neondeck.dev</code> and <code>www.neondeck.dev</code>.
         </p>
 
         <h2>Validation</h2>
-        <pre><code>cd webapp
+        <pre><code>cd docs
 npx wrangler deploy --dry-run</code></pre>
         <p>
           Use a dry run before important deploys to validate the Worker config
