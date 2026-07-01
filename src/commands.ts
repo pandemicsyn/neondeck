@@ -245,7 +245,7 @@ export function supportedCommands() {
     {
       name: 'memory',
       usage:
-        '/memory [scope] | /memory set <scope> <key> <json-or-text> | /memory delete <scope> <key> --confirm',
+        '/memory [scope] | /memory set <user|local|project> <key> <json-or-text> | /memory delete <scope> <key> --confirm',
       description:
         'List or mutate durable structured memory through typed memory actions.',
     },
@@ -863,11 +863,11 @@ async function memoryCommand(
 
   if (operation === 'set' || operation === 'upsert') {
     const [scope, key, ...valueParts] = rest;
-    if (!isMemoryScope(scope) || !key || valueParts.length === 0) {
+    if (!isActiveMemoryScope(scope) || !key || valueParts.length === 0) {
       return failedCommand(
         command.name,
         command.raw,
-        '/memory set requires scope, key, and a JSON-safe value.',
+        '/memory set requires user, local, or project scope, key, and a JSON-safe value.',
         {
           requires: ['scope', 'key', 'value'],
         },
@@ -935,7 +935,7 @@ async function memoryCommand(
       requires: ['memoryOperation'],
       data: {
         usage:
-          '/memory [scope] | /memory set <scope> <key> <json-or-text> | /memory delete <scope> <key> --confirm',
+          '/memory [scope] | /memory set <user|local|project> <key> <json-or-text> | /memory delete <scope> <key> --confirm',
       },
     },
   );
@@ -1750,10 +1750,17 @@ function formatList(values: string[]) {
 function isMemoryScope(value: string | undefined): value is MemoryScope {
   return (
     value === 'user' ||
+    value === 'local' ||
     value === 'project' ||
     value === 'session' ||
     value === 'watch'
   );
+}
+
+function isActiveMemoryScope(
+  value: string | undefined,
+): value is 'user' | 'local' | 'project' {
+  return value === 'user' || value === 'local' || value === 'project';
 }
 
 function parseMemoryValue(raw: string): JsonValue {

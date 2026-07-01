@@ -70,6 +70,8 @@ export const agentModelConfigSchema = v.looseObject({
   displayAssistantThinkingLevel: v.optional(thinkingLevelSchema),
   utility: v.optional(nonEmptyStringSchema),
   utilityThinkingLevel: v.optional(thinkingLevelSchema),
+  selfImprovement: v.optional(nonEmptyStringSchema),
+  selfImprovementThinkingLevel: v.optional(thinkingLevelSchema),
   subagents: v.optional(
     v.looseObject({
       default: v.optional(nonEmptyStringSchema),
@@ -82,6 +84,29 @@ export const agentModelConfigSchema = v.looseObject({
       releaseReviewerThinkingLevel: v.optional(thinkingLevelSchema),
     }),
   ),
+});
+
+const learningWriteModeSchema = v.picklist(['off', 'review', 'auto']);
+const memoryCurationModeSchema = v.picklist(['off', 'review', 'auto']);
+const learningNotificationsSchema = v.picklist(['off', 'on']);
+
+export const learningConfigSchema = v.looseObject({
+  enabled: v.optional(v.boolean()),
+  memoryWriteMode: v.optional(learningWriteModeSchema),
+  skillWriteMode: v.optional(learningWriteModeSchema),
+  memoryCurationEnabled: v.optional(v.boolean()),
+  memoryCurationMode: v.optional(memoryCurationModeSchema),
+  conversationReviewTurnInterval: v.optional(positiveIntegerSchema),
+  memoryCurationTurnInterval: v.optional(positiveIntegerSchema),
+  prRetrospectiveThreshold: v.optional(positiveIntegerSchema),
+  notifications: v.optional(learningNotificationsSchema),
+  memoryMaxActiveItems: v.optional(positiveIntegerSchema),
+  maxRecentTurns: v.optional(positiveIntegerSchema),
+  maxPrBatchItems: v.optional(positiveIntegerSchema),
+  memoryPromptBudgetChars: v.optional(positiveIntegerSchema),
+  userMemoryBudgetChars: v.optional(positiveIntegerSchema),
+  localMemoryBudgetChars: v.optional(positiveIntegerSchema),
+  projectMemoryBudgetChars: v.optional(positiveIntegerSchema),
 });
 
 export const providerConfigSchema = v.strictObject({
@@ -267,6 +292,7 @@ export const appConfigSchema = v.looseObject({
   worktrees: v.optional(worktreeConfigSchema),
   autopilot: v.optional(autopilotConfigSchema),
   kilo: v.optional(kiloConfigSchema),
+  learning: v.optional(learningConfigSchema),
 });
 
 export const repoConfigSchema = v.looseObject({
@@ -351,6 +377,8 @@ export const dashboardConfigSchema = v.looseObject({
 
 export type AppConfig = v.InferOutput<typeof appConfigSchema>;
 export type AgentModelConfig = v.InferOutput<typeof agentModelConfigSchema>;
+export type LearningConfig = v.InferOutput<typeof learningConfigSchema>;
+export type ResolvedLearningConfig = Required<LearningConfig>;
 export type ProviderConfig = v.InferOutput<typeof providerConfigSchema>;
 export type ThinkingLevel = v.InferOutput<typeof thinkingLevelSchema>;
 export type ExecutionConfig = v.InferOutput<typeof executionConfigSchema>;
@@ -518,6 +546,31 @@ function defaultAppConfig(): AppConfig {
 
 export function generateLocalApiToken() {
   return randomBytes(32).toString('base64url');
+}
+
+export function resolveLearningConfig(
+  config?: Pick<AppConfig, 'learning'>,
+): ResolvedLearningConfig {
+  const learning = config?.learning ?? {};
+  return {
+    enabled: learning.enabled ?? true,
+    memoryWriteMode: learning.memoryWriteMode ?? 'auto',
+    skillWriteMode: learning.skillWriteMode ?? 'auto',
+    memoryCurationEnabled: learning.memoryCurationEnabled ?? true,
+    memoryCurationMode: learning.memoryCurationMode ?? 'review',
+    conversationReviewTurnInterval:
+      learning.conversationReviewTurnInterval ?? 10,
+    memoryCurationTurnInterval: learning.memoryCurationTurnInterval ?? 200,
+    prRetrospectiveThreshold: learning.prRetrospectiveThreshold ?? 5,
+    notifications: learning.notifications ?? 'on',
+    memoryMaxActiveItems: learning.memoryMaxActiveItems ?? 200,
+    maxRecentTurns: learning.maxRecentTurns ?? 30,
+    maxPrBatchItems: learning.maxPrBatchItems ?? 8,
+    memoryPromptBudgetChars: learning.memoryPromptBudgetChars ?? 3500,
+    userMemoryBudgetChars: learning.userMemoryBudgetChars ?? 1000,
+    localMemoryBudgetChars: learning.localMemoryBudgetChars ?? 1000,
+    projectMemoryBudgetChars: learning.projectMemoryBudgetChars ?? 1500,
+  };
 }
 
 async function ensureLocalApiConfig(path: string) {
@@ -740,17 +793,67 @@ function initializeAppDatabase(path: string) {
         scope TEXT NOT NULL,
         key TEXT NOT NULL,
         value_json TEXT NOT NULL,
+        repo_id TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        use_count INTEGER NOT NULL DEFAULT 0,
+        last_used_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         UNIQUE(scope, key)
       );
 
       CREATE TABLE IF NOT EXISTS memory_events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id TEXT PRIMARY KEY,
+        memory_id TEXT,
         action TEXT NOT NULL,
-        scope TEXT NOT NULL,
-        key TEXT NOT NULL,
-        changed_at TEXT NOT NULL
+        actor TEXT NOT NULL,
+        reason TEXT,
+        before_json TEXT,
+        after_json TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS learning_events (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        source TEXT NOT NULL,
+        source_id TEXT,
+        repo_id TEXT,
+        session_id TEXT,
+        pr_key TEXT,
+        data_json TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS learning_reviews (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        status TEXT NOT NULL,
+        model TEXT NOT NULL,
+        thinking_level TEXT NOT NULL,
+        trigger_json TEXT NOT NULL,
+        input_summary_json TEXT,
+        result_json TEXT,
+        error TEXT,
+        started_at TEXT NOT NULL,
+        completed_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS learning_candidates (
+        id TEXT PRIMARY KEY,
+        target TEXT NOT NULL,
+        status TEXT NOT NULL,
+        action TEXT,
+        scope TEXT,
+        key TEXT,
+        value_json TEXT,
+        skill_id TEXT,
+        patch_json TEXT,
+        repo_id TEXT,
+        reason TEXT,
+        review_id TEXT,
+        created_at TEXT NOT NULL,
+        decided_at TEXT
       );
 
       CREATE TABLE IF NOT EXISTS workflow_summaries (
@@ -829,6 +932,7 @@ function initializeAppDatabase(path: string) {
         summary_source TEXT,
         summary_refresh_note TEXT,
         context_loaded_at TEXT,
+        context_memory_ids_json TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         last_active_at TEXT NOT NULL
@@ -1115,6 +1219,23 @@ function initializeAppDatabase(path: string) {
     ensureColumn(database, 'chat_sessions', 'summary_generated_at', 'TEXT');
     ensureColumn(database, 'chat_sessions', 'summary_source', 'TEXT');
     ensureColumn(database, 'chat_sessions', 'summary_refresh_note', 'TEXT');
+    ensureColumn(database, 'chat_sessions', 'context_memory_ids_json', 'TEXT');
+    ensureColumn(database, 'memories', 'repo_id', 'TEXT');
+    ensureColumn(
+      database,
+      'memories',
+      'status',
+      "TEXT NOT NULL DEFAULT 'active'",
+    );
+    ensureColumn(
+      database,
+      'memories',
+      'use_count',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+    ensureColumn(database, 'memories', 'last_used_at', 'TEXT');
+    migrateMemoryEvents(database);
+    ensureColumn(database, 'learning_candidates', 'action', 'TEXT');
     database
       .prepare(
         `
@@ -1136,7 +1257,19 @@ function initializeAppDatabase(path: string) {
         ON notifications(resolved_at, read_at, level, created_at DESC);
 
       CREATE INDEX IF NOT EXISTS idx_memory_events_changed
-        ON memory_events(changed_at DESC);
+        ON memory_events(created_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_memories_active_scope
+        ON memories(status, scope, updated_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_learning_events_type
+        ON learning_events(type, created_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_learning_reviews_kind
+        ON learning_reviews(kind, status, started_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_learning_candidates_status
+        ON learning_candidates(target, status, created_at DESC);
 
       CREATE INDEX IF NOT EXISTS idx_execution_approvals_status
         ON execution_approvals(status, updated_at DESC);
@@ -1256,7 +1389,7 @@ function initializeAppDatabase(path: string) {
       .prepare(
         `
         INSERT INTO app_metadata (key, value, updated_at)
-        VALUES ('schema_version', '8', datetime('now'))
+        VALUES ('schema_version', '9', datetime('now'))
         ON CONFLICT(key) DO UPDATE SET
           value = excluded.value,
           updated_at = excluded.updated_at;
@@ -1283,6 +1416,7 @@ function migrateLegacyNeonSessions(database: DatabaseSync) {
         created_at,
         updated_at,
         context_loaded_at,
+        context_memory_ids_json,
         last_active_at
       )
       SELECT
@@ -1296,6 +1430,7 @@ function migrateLegacyNeonSessions(database: DatabaseSync) {
         created_at,
         updated_at,
         activated_at,
+        '[]',
         activated_at
       FROM neon_sessions
       WHERE NOT EXISTS (
@@ -1427,6 +1562,71 @@ function ensureColumn(
   }
 
   database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`);
+}
+
+function migrateMemoryEvents(database: DatabaseSync) {
+  const columns = database
+    .prepare('PRAGMA table_info(memory_events);')
+    .all() as Array<{ name?: unknown; type?: unknown }>;
+  const id = columns.find((item) => item.name === 'id');
+  const hasCreatedAt = columns.some((item) => item.name === 'created_at');
+  if (String(id?.type ?? '').toUpperCase() === 'TEXT' && hasCreatedAt) {
+    return;
+  }
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS memory_events_v2 (
+      id TEXT PRIMARY KEY,
+      memory_id TEXT,
+      action TEXT NOT NULL,
+      actor TEXT NOT NULL,
+      reason TEXT,
+      before_json TEXT,
+      after_json TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    INSERT INTO memory_events_v2 (
+      id,
+      memory_id,
+      action,
+      actor,
+      reason,
+      before_json,
+      after_json,
+      created_at
+    )
+    SELECT
+      lower(hex(randomblob(4))) || '-' ||
+        lower(hex(randomblob(2))) || '-' ||
+        lower(hex(randomblob(2))) || '-' ||
+        lower(hex(randomblob(2))) || '-' ||
+        lower(hex(randomblob(6))),
+      NULL,
+      CASE
+        WHEN action = 'upsert' THEN 'updated'
+        WHEN action = 'delete' THEN 'archived'
+        ELSE action
+      END,
+      'neon',
+      NULL,
+      NULL,
+      CASE
+        WHEN scope IS NOT NULL AND key IS NOT NULL THEN
+          json_object('scope', scope, 'key', key)
+        ELSE NULL
+      END,
+      COALESCE(changed_at, datetime('now'))
+    FROM memory_events
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM memory_events_v2
+      WHERE memory_events_v2.id = CAST(memory_events.id AS TEXT)
+    );
+
+    DROP TABLE memory_events;
+    ALTER TABLE memory_events_v2 RENAME TO memory_events;
+  `);
 }
 
 function reconcileExistingNotificationDuplicates(database: DatabaseSync) {

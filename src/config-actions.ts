@@ -18,6 +18,7 @@ import {
   type AgentModelConfig,
   type AppConfig,
   type DashboardConfig,
+  type LearningConfig,
   type ProviderConfig,
   type RepoConfig,
   type RuntimePaths,
@@ -149,7 +150,43 @@ const updateAgentModelsInputSchema = v.object({
   displayAssistantThinkingLevel: v.optional(thinkingLevelSchema),
   utility: v.optional(v.nullable(providerQualifiedModelSchema)),
   utilityThinkingLevel: v.optional(thinkingLevelSchema),
+  selfImprovement: v.optional(v.nullable(providerQualifiedModelSchema)),
+  selfImprovementThinkingLevel: v.optional(thinkingLevelSchema),
   subagents: v.optional(subagentModelInputSchema),
+});
+const updateLearningConfigInputSchema = v.strictObject({
+  enabled: v.optional(v.boolean()),
+  memoryWriteMode: v.optional(v.picklist(['off', 'review', 'auto'])),
+  skillWriteMode: v.optional(v.picklist(['off', 'review', 'auto'])),
+  memoryCurationEnabled: v.optional(v.boolean()),
+  memoryCurationMode: v.optional(v.picklist(['off', 'review', 'auto'])),
+  conversationReviewTurnInterval: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1)),
+  ),
+  memoryCurationTurnInterval: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1)),
+  ),
+  prRetrospectiveThreshold: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1)),
+  ),
+  notifications: v.optional(v.picklist(['off', 'on'])),
+  memoryMaxActiveItems: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1)),
+  ),
+  maxRecentTurns: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+  maxPrBatchItems: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+  memoryPromptBudgetChars: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1)),
+  ),
+  userMemoryBudgetChars: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1)),
+  ),
+  localMemoryBudgetChars: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1)),
+  ),
+  projectMemoryBudgetChars: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1)),
+  ),
 });
 const updateSkillRootsInputSchema = v.object({
   skillRoots: v.array(nonEmptyStringSchema),
@@ -230,7 +267,7 @@ export const configReloadAction = defineAction({
 export const updateAgentModelsAction = defineAction({
   name: 'neondeck_config_update_agent_models',
   description:
-    'Update display-assistant, utility, and subagent model names in runtime config.json. Provider registration is not changed by this action.',
+    'Update display-assistant, utility, self-improvement, and subagent model names in runtime config.json. Provider registration is not changed by this action.',
   input: updateAgentModelsInputSchema,
   output: configActionOutputSchema,
   async run({ input }) {
@@ -246,6 +283,17 @@ export const updateSkillRootsAction = defineAction({
   output: configActionOutputSchema,
   async run({ input }) {
     return updateSkillRoots(input);
+  },
+});
+
+export const updateLearningConfigAction = defineAction({
+  name: 'neondeck_config_update_learning',
+  description:
+    'Update Neondeck learning and memory-curation policy in runtime config.json.',
+  input: updateLearningConfigInputSchema,
+  output: configActionOutputSchema,
+  async run({ input }) {
+    return updateLearningConfig(input);
   },
 });
 
@@ -390,6 +438,7 @@ export const neondeckConfigActions = [
   configReloadAction,
   updateAgentModelsAction,
   updateSkillRootsAction,
+  updateLearningConfigAction,
   updateWorktreePolicyAction,
   readProvidersAction,
   updateProviderAction,
@@ -575,6 +624,62 @@ export async function updateSkillRoots(
       : 'Runtime skill roots already matched the requested values.',
     data: {
       skillRoots: next.skillRoots ?? [],
+      appliesAfter: 'new-session',
+    },
+  });
+}
+
+export async function updateLearningConfig(
+  rawInput: v.InferInput<typeof updateLearningConfigInputSchema>,
+  paths = runtimePaths(),
+): Promise<ConfigActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsed = parseActionInput(
+    updateLearningConfigInputSchema,
+    rawInput,
+    'config_update_learning',
+    paths,
+    [paths.config],
+  );
+  if (!parsed.ok) return parsed.result;
+
+  if (!hasLearningConfigUpdate(parsed.input)) {
+    return failResult('config_update_learning', paths, [paths.config], {
+      message: 'At least one learning config value is required.',
+      requires: ['learning'],
+    });
+  }
+
+  const config = await readRuntimeJson(paths.config, parseAppConfig);
+  const nextLearning = mergeLearningConfig(config.learning, parsed.input);
+  const next = parseAppConfig(
+    {
+      ...config,
+      learning: nextLearning,
+    },
+    paths.config,
+  );
+  const changed =
+    JSON.stringify(config.learning ?? {}) !==
+    JSON.stringify(next.learning ?? {});
+
+  if (changed) {
+    await writeJson(paths.config, next);
+    recordConfigChange(paths, {
+      action: 'config_update_learning',
+      file: paths.config,
+      target: 'learning',
+      before: config,
+      after: next,
+    });
+  }
+
+  return okResult('config_update_learning', changed, paths, [paths.config], {
+    message: changed
+      ? 'Updated learning configuration. Existing sessions keep their loaded memory context until a new session or explicit refresh.'
+      : 'Learning configuration already matched the requested values.',
+    data: {
+      learning: next.learning,
       appliesAfter: 'new-session',
     },
   });
@@ -1300,6 +1405,8 @@ function hasAgentModelUpdate(
     input.displayAssistantThinkingLevel ||
     input.utility !== undefined ||
     input.utilityThinkingLevel ||
+    input.selfImprovement !== undefined ||
+    input.selfImprovementThinkingLevel ||
     input.subagents?.default ||
     input.subagents?.defaultThinkingLevel ||
     input.subagents?.repoResearcher ||
@@ -1309,6 +1416,12 @@ function hasAgentModelUpdate(
     input.subagents?.releaseReviewer ||
     input.subagents?.releaseReviewerThinkingLevel,
   );
+}
+
+function hasLearningConfigUpdate(
+  input: v.InferOutput<typeof updateLearningConfigInputSchema>,
+) {
+  return Object.values(input).some((value) => value !== undefined);
 }
 
 function hasWorktreePolicyUpdate(
@@ -1362,6 +1475,7 @@ function mergeAgentModelConfig(
 ): AgentModelConfig {
   const currentModels = { ...current };
   if (input.utility === null) delete currentModels.utility;
+  if (input.selfImprovement === null) delete currentModels.selfImprovement;
   const subagents = {
     ...current?.subagents,
     ...input.subagents,
@@ -1385,7 +1499,23 @@ function mergeAgentModelConfig(
     ...(input.utilityThinkingLevel !== undefined
       ? { utilityThinkingLevel: input.utilityThinkingLevel }
       : {}),
+    ...(input.selfImprovement !== undefined && input.selfImprovement !== null
+      ? { selfImprovement: input.selfImprovement }
+      : {}),
+    ...(input.selfImprovementThinkingLevel !== undefined
+      ? { selfImprovementThinkingLevel: input.selfImprovementThinkingLevel }
+      : {}),
     ...(Object.keys(subagents).length > 0 ? { subagents } : {}),
+  };
+}
+
+function mergeLearningConfig(
+  current: AppConfig['learning'] | undefined,
+  input: v.InferOutput<typeof updateLearningConfigInputSchema>,
+): LearningConfig {
+  return {
+    ...current,
+    ...input,
   };
 }
 

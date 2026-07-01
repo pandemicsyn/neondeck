@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
-import { readAgentModelSelectionSync } from './agent-config';
+import {
+  readAgentModelSelectionSync,
+  resolveAgentModelSelection,
+} from './agent-config';
 import {
   ConfigValidationError,
   ensureRuntimeHome,
@@ -12,6 +15,7 @@ import {
   parseDashboardConfig,
   parseRepoRegistry,
   parseScheduleConfig,
+  resolveLearningConfig,
   readRuntimeJson,
   resolveRuntimeHome,
   runtimePaths,
@@ -151,6 +155,8 @@ describe('runtime home', () => {
             displayAssistant: 'kilocode/kilo/main',
             utility: 'kilocode/kilo/utility',
             utilityThinkingLevel: 'low',
+            selfImprovement: 'kilocode/kilo/reflect',
+            selfImprovementThinkingLevel: 'minimal',
             subagents: {
               default: 'kilocode/kilo/subagent',
               repoResearcher: 'kilocode/kilo/repo',
@@ -183,6 +189,9 @@ describe('runtime home', () => {
       utility: 'kilocode/kilo/utility',
       utilityConfigured: true,
       utilityThinkingLevel: 'low',
+      selfImprovement: 'kilocode/kilo/reflect',
+      selfImprovementConfigured: true,
+      selfImprovementThinkingLevel: 'minimal',
       subagents: {
         repoResearcher: 'kilocode/kilo/repo',
         ciInvestigator: 'kilocode/kilo/ci',
@@ -217,6 +226,54 @@ describe('runtime home', () => {
       utility: 'openai/gpt-5-mini',
       utilityConfigured: false,
       utilityThinkingLevel: 'low',
+      selfImprovement: 'openai/gpt-5-mini',
+      selfImprovementConfigured: false,
+      selfImprovementThinkingLevel: 'low',
+    });
+  });
+
+  it('falls back self-improvement model through utility and env settings', () => {
+    expect(
+      resolveAgentModelSelection(
+        {
+          models: {
+            displayAssistant: 'openai/gpt-5',
+            utility: 'openai/gpt-5-mini',
+          },
+        },
+        {},
+      ),
+    ).toMatchObject({
+      selfImprovement: 'openai/gpt-5-mini',
+      selfImprovementConfigured: false,
+      selfImprovementThinkingLevel: 'low',
+    });
+  });
+
+  it('parses learning config and applies defaults', () => {
+    const config = parseAppConfig(
+      {
+        version: 1,
+        learning: {
+          memoryCurationMode: 'auto',
+          memoryCurationTurnInterval: 300,
+          memoryMaxActiveItems: 25,
+        },
+      },
+      'config.json',
+    );
+
+    expect(resolveLearningConfig(config)).toMatchObject({
+      enabled: true,
+      memoryWriteMode: 'auto',
+      skillWriteMode: 'auto',
+      memoryCurationEnabled: true,
+      memoryCurationMode: 'auto',
+      conversationReviewTurnInterval: 10,
+      memoryCurationTurnInterval: 300,
+      prRetrospectiveThreshold: 5,
+      memoryMaxActiveItems: 25,
+      memoryPromptBudgetChars: 3500,
     });
   });
 

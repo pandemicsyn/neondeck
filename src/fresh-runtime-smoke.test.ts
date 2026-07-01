@@ -82,7 +82,7 @@ describe('fresh runtime smoke test', () => {
     await expect(
       upsertMemory(
         {
-          scope: 'session',
+          scope: 'local',
           key: 'smoke',
           value: 'fresh runtime is writable',
         },
@@ -94,11 +94,11 @@ describe('fresh runtime smoke test', () => {
       action: 'memory_upsert',
     });
     await expect(
-      listMemories({ scope: 'session', key: 'smoke' }, paths),
+      listMemories({ scope: 'local', key: 'smoke' }, paths),
     ).resolves.toMatchObject({
       memories: [
         {
-          scope: 'session',
+          scope: 'local',
           key: 'smoke',
           value: 'fresh runtime is writable',
         },
@@ -106,7 +106,7 @@ describe('fresh runtime smoke test', () => {
     });
 
     await expect(
-      runNeonCommand({ command: '/memory session' }, paths),
+      runNeonCommand({ command: '/memory local' }, paths),
     ).resolves.toMatchObject({
       ok: true,
       command: 'memory',

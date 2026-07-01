@@ -67,10 +67,13 @@ watch-release</code></pre>
 
         <h2>Memory</h2>
         <p>
-          Structured memory supports user, project, session, and watch scopes.
-          Memory changes should enter active prompt context through a new
-          session or another explicit reload path, not by mutating a live prompt
-          invisibly.
+          Structured memory supports active <code>user</code>,
+          <code>local</code>, and <code>project</code> scopes. Legacy
+          <code>session</code> and <code>watch</code> rows may be read for compatibility,
+          but new learning writes do not create them. Memory is current guidance for
+          future sessions; archive history and audit events preserve what changed.
+          See <a href="/docs/memory-learning/">memory and learning</a> for scopes,
+          curation, and session-stability behavior.
         </p>
 
         <h2>Schedules and watches</h2>

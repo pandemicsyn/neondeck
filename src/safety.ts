@@ -245,7 +245,7 @@ const entries: SafetyPolicyEntry[] = [
     'neondeck_memory_lookup',
     'Read structured memory',
     readOnly,
-    'Reads durable Neondeck memory scoped to user, project, session, or watch.',
+    'Reads durable Neondeck memory scoped to user, local, project, or legacy session/watch rows.',
   ),
   tool(
     'neondeck_worktrees_lookup',
@@ -431,6 +431,18 @@ const entries: SafetyPolicyEntry[] = [
     'Lists durable structured memory entries.',
   ),
   action(
+    'neondeck_memory_events',
+    'List memory audit events',
+    readOnly,
+    'Lists durable memory mutation audit history.',
+  ),
+  action(
+    'neondeck_memory_candidate_list',
+    'List memory candidates',
+    readOnly,
+    'Lists review-mode memory learning candidates.',
+  ),
+  action(
     'neondeck_repo_status_list',
     'List repo status',
     readOnly,
@@ -482,7 +494,16 @@ const entries: SafetyPolicyEntry[] = [
       ...safeMutation,
       auditTarget: 'config_history',
     },
-    'Updates display-assistant, utility, or known subagent model strings using already registered providers.',
+    'Updates display-assistant, utility, self-improvement, or known subagent model strings using already registered providers.',
+  ),
+  action(
+    'neondeck_config_update_learning',
+    'Update learning config',
+    {
+      ...safeMutation,
+      auditTarget: 'config_history',
+    },
+    'Updates learning, memory write, and memory curation policy without running reviews or mutating memory.',
   ),
   action(
     'neondeck_config_update_provider',
@@ -967,7 +988,79 @@ const entries: SafetyPolicyEntry[] = [
       ...safeMutation,
       auditTarget: 'memories/memory_events',
     },
-    'Writes scoped durable memory. Active prompt context changes only on a new session.',
+    'Compatibility alias for learning scoped durable memory. Autonomous writes obey learning.memoryWriteMode; active prompt context changes only on a new session.',
+  ),
+  action(
+    'neondeck_memory_learn',
+    'Learn structured memory',
+    {
+      ...safeMutation,
+      auditTarget: 'memories/memory_events/learning_events',
+    },
+    'Writes user, local, or project current-guidance memory. Autonomous writes obey learning.memoryWriteMode.',
+  ),
+  action(
+    'neondeck_memory_rewrite',
+    'Rewrite structured memory',
+    {
+      ...safeMutation,
+      auditTarget: 'memories/memory_events',
+    },
+    'Rewrites one memory row with before/after audit. Autonomous rewrites obey learning.memoryWriteMode.',
+  ),
+  action(
+    'neondeck_memory_merge',
+    'Merge structured memories',
+    {
+      ...safeMutation,
+      auditTarget: 'memories/memory_events',
+    },
+    'Merges duplicate memories by rewriting a target and archiving source rows with audit history.',
+  ),
+  action(
+    'neondeck_memory_archive',
+    'Archive structured memory',
+    {
+      ...safeMutation,
+      auditTarget: 'memories/memory_events',
+    },
+    'Archives one memory so it no longer loads into new prompt snapshots while preserving audit history.',
+  ),
+  action(
+    'neondeck_memory_mark_used',
+    'Mark memory used',
+    {
+      ...safeMutation,
+      auditTarget: 'memories',
+    },
+    'Updates memory usage counters without creating a prompt-context-changing memory event.',
+  ),
+  action(
+    'neondeck_memory_candidate_create',
+    'Create memory candidate',
+    {
+      ...safeMutation,
+      auditTarget: 'learning_candidates/learning_events',
+    },
+    'Creates a review-mode memory candidate without mutating active memory.',
+  ),
+  action(
+    'neondeck_memory_candidate_decide',
+    'Decide memory candidate',
+    {
+      ...safeMutation,
+      auditTarget: 'learning_candidates/memories/memory_events',
+    },
+    'Applies, rejects, or archives a memory candidate after explicit user/API decision.',
+  ),
+  action(
+    'neondeck_memory_curate',
+    'Curate memory store',
+    {
+      ...safeMutation,
+      auditTarget: 'learning_candidates/memories/memory_events',
+    },
+    'Runs bounded memory curation. Review mode creates candidates; auto mode may apply audited archive cleanup.',
   ),
   action(
     'neondeck_session_start',
@@ -1189,6 +1282,15 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'jobs/notifications/workflow_events',
     },
     'Runs due scheduled work through the Flue workflow surface.',
+  ),
+  workflow(
+    'curate_learning_store',
+    'Run memory curation workflow',
+    {
+      ...safeMutation,
+      auditTarget: 'learning_candidates/memories/memory_events/workflow_events',
+    },
+    'Runs bounded memory curation through typed audited actions.',
   ),
   workflow(
     'handoff_to_kilo',
@@ -1610,7 +1712,55 @@ const entries: SafetyPolicyEntry[] = [
       ...destructiveMutation,
       auditTarget: 'memories/memory_events',
     },
-    'POST writes structured memory; DELETE requires confirm=true before deleting memory.',
+    'GET reads memory, POST writes user-scoped memory, and DELETE requires confirm=true before archiving through the delete alias.',
+  ),
+  route(
+    '/api/memories/:id/archive',
+    'Memory archive API',
+    {
+      ...safeMutation,
+      auditTarget: 'memories/memory_events',
+    },
+    'Archives one memory row while preserving audit history.',
+  ),
+  route(
+    '/api/memory-events',
+    'Memory events API',
+    readOnly,
+    'Reads memory event audit history.',
+  ),
+  route(
+    '/api/learning/curate',
+    'Learning curation API',
+    {
+      ...safeMutation,
+      auditTarget: 'learning_candidates/memories/memory_events',
+    },
+    'Runs manual memory curation through typed audited actions.',
+  ),
+  route(
+    '/api/learning/candidates',
+    'Learning candidates API',
+    readOnly,
+    'Lists memory learning candidates.',
+  ),
+  route(
+    '/api/learning/candidates/:id/approve',
+    'Approve learning candidate API',
+    {
+      ...safeMutation,
+      auditTarget: 'learning_candidates/memories/memory_events',
+    },
+    'Applies one reviewed memory learning candidate.',
+  ),
+  route(
+    '/api/learning/candidates/:id/reject',
+    'Reject learning candidate API',
+    {
+      ...safeMutation,
+      auditTarget: 'learning_candidates/memory_events',
+    },
+    'Rejects one reviewed memory learning candidate.',
   ),
 ];
 
@@ -1632,7 +1782,7 @@ export function readSafetyPolicy(
   return {
     ok: true,
     action: 'safety_policy_read',
-    version: 3,
+    version: 4,
     summary: summarizeEntries(entries),
     confirmationPolicy:
       'Destructive mutations require explicit user confirmation and action input confirm=true. Safe mutations should be user-directed and audited when they change durable state.',
