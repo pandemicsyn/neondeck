@@ -2,8 +2,8 @@ node_modules
 .agents
 dist
 web/dist
-webapp/dist
-webapp/.astro
+docs/dist
+docs/.astro
 data
 design
 research-repos

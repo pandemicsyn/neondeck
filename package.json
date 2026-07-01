@@ -8,10 +8,10 @@
     "neondeck": "src/cli.ts"
   },
   "workspaces": [
-    "webapp"
+    "docs"
   ],
   "scripts": {
-    "build": "npm run build:dashboard && npm run webapp:build",
+    "build": "npm run build:dashboard && npm run docs:build",
     "build:dashboard": "npm run build:web && flue build --target node",
     "build:server": "flue build --target node",
     "build:web": "vite build --config web/vite.config.ts",
@@ -41,15 +41,15 @@
     "test:watch": "vitest --config vitest.unit.config.ts",
     "package:app": "node scripts/package-app-release.mjs",
     "release:app": "npm run build:dashboard && npm run package:app",
-    "typecheck": "npm run typecheck:app && npm run webapp:check",
+    "typecheck": "npm run typecheck:app && npm run docs:check",
     "typecheck:app": "tsc --noEmit && tsc -p web/tsconfig.json --noEmit",
     "verify": "npm run lint && npm run typecheck && npm run test:all && npm run format:check && npm run build",
-    "webapp:build": "npm --workspace webapp run build",
-    "webapp:check": "npm --workspace webapp run check",
-    "webapp:deploy": "npm --workspace webapp run deploy",
-    "webapp:dev": "npm --workspace webapp run dev",
-    "webapp:astro-dev": "npm --workspace webapp run astro-dev",
-    "webapp:preview": "npm --workspace webapp run preview"
+    "docs:build": "npm --workspace @neondeck/docs-site run build",
+    "docs:check": "npm --workspace @neondeck/docs-site run check",
+    "docs:deploy": "npm --workspace @neondeck/docs-site run deploy",
+    "docs:dev": "npm --workspace @neondeck/docs-site run dev",
+    "docs:astro-dev": "npm --workspace @neondeck/docs-site run astro-dev",
+    "docs:preview": "npm --workspace @neondeck/docs-site run preview"
   },
   "keywords": [
     "flue",

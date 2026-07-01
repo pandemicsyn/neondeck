@@ -6,7 +6,7 @@ neondeck is a Node 26 app with a Hono/Flue backend and a Vite/React/Tailwind das
 
 The dashboard supports horizontal and vertical use, from 32:9 ultrawides like the Corsair Xeneon Edge to custom layouts that Neon can adapt through validated runtime config.
 
-The repository also includes an Astro marketing/docs site under `webapp/`, deployed to Cloudflare for `neondeck.dev`.
+The repository also includes an Astro marketing/docs site under `docs/`, deployed to Cloudflare for `neondeck.dev`.
 
 ## Requirements
 
@@ -259,11 +259,11 @@ format check, and production builds.
 ## Marketing/docs site
 
 ```sh
-npm run webapp:dev
-npm run webapp:astro-dev
-npm run webapp:build
-npm run webapp:preview
-npm run webapp:deploy
+npm run docs:dev
+npm run docs:astro-dev
+npm run docs:build
+npm run docs:preview
+npm run docs:deploy
 ```
 
-The Cloudflare deployment config is `webapp/wrangler.jsonc`.
+The Cloudflare deployment config is `docs/wrangler.jsonc`.
