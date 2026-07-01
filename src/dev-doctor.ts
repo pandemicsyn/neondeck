@@ -72,13 +72,8 @@ export const devDoctorRunAction = defineAction({
     'Run deterministic local development health checks for configured repos, scripts, env, ports, runtime databases, and Node version.',
   input: v.object({}),
   output: devDoctorOutputSchema,
-  async run({ log, emitData }) {
+  async run({ log }) {
     log.info('Dev doctor requested');
-    emitData(
-      'neondeck.dev_doctor',
-      { status: 'running', message: 'Running deterministic local checks.' },
-      { id: 'latest' },
-    );
 
     const result = await runDevDoctor();
     const payload = {
@@ -88,8 +83,6 @@ export const devDoctorRunAction = defineAction({
       repos: result.summary.repos,
       envMissing: result.summary.envMissing,
     };
-    emitData('neondeck.dev_doctor', payload, { id: 'latest' });
-
     if (result.status === 'attention') {
       log.warn('Dev doctor found issues', payload);
     } else {

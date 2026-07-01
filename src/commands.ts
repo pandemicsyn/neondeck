@@ -131,14 +131,8 @@ export const commandRunAction = defineAction({
     'Run a Neon slash command such as /repo-status, /review-queue, /explain-ci, /summarize-pr, /draft-pr-description, /prepare-pr, /review-local, /briefing, /reasoning, /memory, /watch-pr, /watch-release, or /dev-doctor and persist a workflow summary.',
   input: commandRunInputSchema,
   output: commandRunOutputSchema,
-  async run({ input, log, emitData }) {
-    const commandId = input.command.trim() || 'unknown';
+  async run({ input, log }) {
     log.info('Neon command requested', { command: input.command });
-    emitData(
-      'neondeck.command',
-      { status: 'running', command: input.command },
-      { id: commandId },
-    );
 
     const result = await runNeonCommand(input);
     const payload = {
@@ -148,8 +142,6 @@ export const commandRunAction = defineAction({
       message: result.message,
       workflowSummaryId: result.workflowSummary?.id ?? null,
     };
-    emitData('neondeck.command', payload, { id: commandId });
-
     if (result.ok) {
       log.info('Neon command completed', payload);
     } else {
