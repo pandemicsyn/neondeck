@@ -45,6 +45,9 @@
   "dependencies": {
     "@raycast/api": "^1.104.20"
   },
+  "overrides": {
+    "esbuild": "0.28.1"
+  },
   "devDependencies": {
     "@types/node": "^26.0.1",
     "typescript": "^6.0.3"

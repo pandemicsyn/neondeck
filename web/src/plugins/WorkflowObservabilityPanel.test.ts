@@ -9,7 +9,11 @@ describe('workflow observability drilldown', () => {
       eventType: 'workflow:error',
       isError: true,
     });
-    const progress = event({ id: 2, eventType: 'data', message: 'step 2/4' });
+    const progress = event({
+      id: 2,
+      eventType: 'run_end',
+      message: 'Workflow completed in 1.2s.',
+    });
     const log = event({ id: 3, eventType: 'log', message: 'called action' });
     const workflows: WorkflowObservability = {
       ok: true,
@@ -45,7 +49,7 @@ describe('workflow observability drilldown', () => {
 
     const progressOnly = workflowDrilldownItems(workflows, 'progress');
     expect(progressOnly).toHaveLength(1);
-    expect(progressOnly[0]?.message).toBe('step 2/4');
+    expect(progressOnly[0]?.message).toBe('Workflow completed in 1.2s.');
   });
 });
 
