@@ -6,7 +6,7 @@ import { access, mkdir, open, readdir, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
+import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import * as v from 'valibot';
 import { readKiloResultStateSummary } from './kilo-results';
@@ -17,6 +17,28 @@ import {
   resolveKiloNotifications,
   type KiloNotificationFact,
 } from './kilo-notifications';
+import {
+  addKiloTaskEvent,
+  countRunningKiloTasks,
+  insertKiloTask,
+  listKiloTaskEvents,
+  listKiloTaskRows,
+  listLinkedKiloSessionTasks,
+  listReconcileableKiloTasks,
+  markKiloTaskFinished,
+  readKiloTaskWorktree,
+  requireKiloTask,
+  resolveKiloTaskForSessionInput,
+  tryKiloTask,
+  updateKiloTaskProcess,
+  updateKiloTaskSessions,
+  updateKiloTaskStatus,
+  updateKiloTaskSummary,
+  type KiloHandoffMode,
+  type KiloTaskEventRecord,
+  type KiloTaskRecord,
+  type KiloTaskStatus,
+} from './kilo-task-store';
 import {
   type KiloConfig,
   type RepoConfig,
@@ -36,49 +58,11 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-export type KiloTaskStatus =
-  | 'running'
-  | 'succeeded'
-  | 'failed'
-  | 'cancelled'
-  | 'needs-reconcile'
-  | 'needs-review'
-  | 'ready-to-verify'
-  | 'ready-to-push'
-  | 'discarded'
-  | 'unknown';
-
-export type KiloHandoffMode = 'draft-fix' | 'patch-proposal' | 'direct-edit';
-
-export type KiloTaskRecord = {
-  id: string;
-  title: string;
-  prompt: string;
-  repoId: string;
-  repoFullName: string;
-  worktreeId: string | null;
-  lockId: string | null;
-  cwd: string;
-  mode: KiloHandoffMode;
-  status: KiloTaskStatus;
-  explicitUserRequest: boolean;
-  autoEnabled: boolean;
-  cliPath: string;
-  args: string[];
-  pid: number | null;
-  processStartedAt: string | null;
-  rootSessionId: string | null;
-  childSessionIds: string[];
-  rawLogPath: string | null;
-  summary: string | null;
-  exitCode: number | null;
-  error: string | null;
-  createdAt: string;
-  updatedAt: string;
-  completedAt: string | null;
-  notificationFacts?: KiloNotificationFact[];
-  latestNotificationState?: string | null;
-  resultPlaceholders?: KiloResultPlaceholder[];
+export type {
+  KiloHandoffMode,
+  KiloTaskEventRecord,
+  KiloTaskRecord,
+  KiloTaskStatus,
 };
 
 export type KiloResultPlaceholder = {
@@ -106,19 +90,6 @@ export type KiloSessionReadOptions = {
   maxBytes: number;
   requesterSurface: string;
   readReason: string | null;
-};
-
-export type KiloTaskEventRecord = {
-  id: string;
-  taskId: string;
-  eventIndex: number;
-  eventType: string;
-  stream: string;
-  sessionId: string | null;
-  childSessionId: string | null;
-  summary: string;
-  data: JsonValue | null;
-  createdAt: string;
 };
 
 type WorkspaceResolution = {
@@ -288,47 +259,6 @@ const summarizeInputSchema = v.object({
   taskId: v.optional(nonEmptyStringSchema),
   sessionId: v.optional(nonEmptyStringSchema),
   titleQuery: v.optional(nonEmptyStringSchema),
-});
-const rowNullableStringSchema = v.nullable(v.string());
-const rowNullableNumberSchema = v.nullable(v.number());
-const taskRowSchema = v.object({
-  id: v.string(),
-  title: v.string(),
-  prompt: v.string(),
-  repo_id: v.string(),
-  repo_full_name: v.string(),
-  worktree_id: rowNullableStringSchema,
-  lock_id: rowNullableStringSchema,
-  cwd: v.string(),
-  mode: v.string(),
-  status: v.string(),
-  explicit_user_request: v.number(),
-  auto_enabled: v.number(),
-  cli_path: v.string(),
-  args_json: v.string(),
-  pid: rowNullableNumberSchema,
-  process_started_at: rowNullableStringSchema,
-  root_session_id: rowNullableStringSchema,
-  child_session_ids_json: v.string(),
-  raw_log_path: rowNullableStringSchema,
-  summary: rowNullableStringSchema,
-  exit_code: rowNullableNumberSchema,
-  error: rowNullableStringSchema,
-  created_at: v.string(),
-  updated_at: v.string(),
-  completed_at: rowNullableStringSchema,
-});
-const eventRowSchema = v.object({
-  id: v.string(),
-  task_id: v.string(),
-  event_index: v.number(),
-  event_type: v.string(),
-  stream: v.string(),
-  session_id: rowNullableStringSchema,
-  child_session_id: rowNullableStringSchema,
-  summary: v.string(),
-  data_json: rowNullableStringSchema,
-  created_at: v.string(),
 });
 const kiloSessionSchema = v.looseObject({
   id: nonEmptyStringSchema,
@@ -547,7 +477,7 @@ export async function startKiloTask(
     workspace = await resolveWorkspace(parsed.input, id, paths);
     assertRepoAllowed(kilo, workspace.repo, workspace.repoFullName);
     assertModeAllowed(parsed.input, workspace);
-    const running = countRunningTasks(paths);
+    const running = countRunningKiloTasks(paths);
     if (running >= kilo.concurrency) {
       return failResult(
         'kilo_task_start',
@@ -587,7 +517,7 @@ export async function startKiloTask(
 
     if (rawLogPath) await mkdir(dirname(rawLogPath), { recursive: true });
     terminalTaskIds.delete(id);
-    insertTask(
+    insertKiloTask(
       {
         id,
         title: parsed.input.title,
@@ -617,7 +547,7 @@ export async function startKiloTask(
       },
       paths,
     );
-    addTaskEvent(
+    addKiloTaskEvent(
       id,
       {
         eventType: 'task.started',
@@ -656,7 +586,7 @@ export async function startKiloTask(
       ? createWriteStream(rawLogPath, { flags: 'a' })
       : undefined;
     runningProcesses.set(id, { child, rawLog });
-    updateTaskProcess(id, child.pid ?? null, now, paths);
+    updateKiloTaskProcess(id, child.pid ?? null, now, paths);
     attachProcessHandlers(id, child, rawLog, paths);
     await notifyKiloState(
       {
@@ -680,7 +610,7 @@ export async function startKiloTask(
       pid: child.pid ?? null,
       rawLogPath,
       command: [kilo.cliPath, ...args],
-      task: requireTask(id, paths),
+      task: requireKiloTask(id, paths),
     };
   } catch (error) {
     if (workspace?.lockId) {
@@ -703,61 +633,41 @@ export async function listKiloTasks(
   if (!parsed.ok) return parsed.result;
   await ensureRuntimeHome(paths);
   const limit = parsed.input.limit ?? 50;
-  const filters: string[] = [];
-  const values: SQLInputValue[] = [];
-  if (parsed.input.status) {
-    filters.push('status = ?');
-    values.push(parsed.input.status);
-  }
-  if (parsed.input.repoId) {
-    filters.push('repo_id = ?');
-    values.push(parsed.input.repoId);
-  }
-  values.push(limit);
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
-  try {
-    const rows = database
-      .prepare(
-        `
-        SELECT *
-        FROM kilo_tasks
-        ${filters.length ? `WHERE ${filters.join(' AND ')}` : ''}
-        ORDER BY updated_at DESC, created_at DESC
-        LIMIT ?;
-      `,
+  const rows = listKiloTaskRows(
+    {
+      limit,
+      status: parsed.input.status,
+      repoId: parsed.input.repoId,
+    },
+    paths,
+  );
+  const notificationFacts = await listKiloNotificationFacts(
+    rows.map((task) => task.id),
+    paths,
+  );
+  const tasks = parsed.input.includeDiff
+    ? await Promise.all(
+        rows.map((task) =>
+          taskWithDiff(task, paths, notificationFacts.get(task.id) ?? []),
+        ),
       )
-      .all(...values)
-      .map(readTaskRow);
-    const notificationFacts = await listKiloNotificationFacts(
-      rows.map((task) => task.id),
-      paths,
-    );
-    const tasks = parsed.input.includeDiff
-      ? await Promise.all(
-          rows.map((task) =>
-            taskWithDiff(task, paths, notificationFacts.get(task.id) ?? []),
-          ),
-        )
-      : rows.map((task) =>
-          taskWithRuntimeFacts(
-            {
-              ...task,
-              ...readKiloResultStateSummary(task.id, paths),
-            },
-            notificationFacts.get(task.id) ?? [],
-          ),
-        );
-    return {
-      ok: true,
-      action: 'kilo_tasks_list',
-      changed: false,
-      message: `Read ${tasks.length} Kilo task(s).`,
-      tasks,
-      fetchedAt: new Date().toISOString(),
-    };
-  } finally {
-    database.close();
-  }
+    : rows.map((task) =>
+        taskWithRuntimeFacts(
+          {
+            ...task,
+            ...readKiloResultStateSummary(task.id, paths),
+          },
+          notificationFacts.get(task.id) ?? [],
+        ),
+      );
+  return {
+    ok: true,
+    action: 'kilo_tasks_list',
+    changed: false,
+    message: `Read ${tasks.length} Kilo task(s).`,
+    tasks,
+    fetchedAt: new Date().toISOString(),
+  };
 }
 
 export async function readKiloTaskStatus(
@@ -767,7 +677,7 @@ export async function readKiloTaskStatus(
   const parsed = parseInput(taskIdInputSchema, rawInput, 'kilo_task_status');
   if (!parsed.ok) return parsed.result;
   await ensureRuntimeHome(paths);
-  const task = tryTask(parsed.input.taskId, paths);
+  const task = tryKiloTask(parsed.input.taskId, paths);
   if (!task) {
     return notFoundResult(
       'kilo_task_status',
@@ -796,14 +706,14 @@ export async function readKiloTaskEvents(
   const parsed = parseInput(eventsInputSchema, rawInput, 'kilo_task_events');
   if (!parsed.ok) return parsed.result;
   await ensureRuntimeHome(paths);
-  const task = tryTask(parsed.input.taskId, paths);
+  const task = tryKiloTask(parsed.input.taskId, paths);
   if (!task) {
     return notFoundResult(
       'kilo_task_events',
       `Kilo task ${parsed.input.taskId} was not found.`,
     );
   }
-  const events = listTaskEvents(
+  const events = listKiloTaskEvents(
     parsed.input.taskId,
     parsed.input.limit ?? 100,
     paths,
@@ -824,7 +734,7 @@ export async function abortKiloTask(
   const parsed = parseInput(taskIdInputSchema, rawInput, 'kilo_task_abort');
   if (!parsed.ok) return parsed.result;
   await ensureRuntimeHome(paths);
-  const task = tryTask(parsed.input.taskId, paths);
+  const task = tryKiloTask(parsed.input.taskId, paths);
   if (!task) {
     return notFoundResult(
       'kilo_task_abort',
@@ -847,9 +757,15 @@ export async function abortKiloTask(
       'Kilo task is not attached to this Neondeck process; restart reconciliation is required before it can be safely aborted.',
     );
   }
-  markTaskFinished(task.id, 'cancelled', null, 'Cancelled by Neondeck.', paths);
+  markKiloTaskFinished(
+    task.id,
+    'cancelled',
+    null,
+    'Cancelled by Neondeck.',
+    paths,
+  );
   await releaseTaskLock(task, 'cancelled', paths);
-  addTaskEvent(
+  addKiloTaskEvent(
     task.id,
     {
       eventType: 'task.cancelled',
@@ -865,7 +781,7 @@ export async function abortKiloTask(
     action: 'kilo_task_abort',
     changed: true,
     message: `Cancelled Kilo task ${task.id}.`,
-    task: requireTask(task.id, paths),
+    task: requireKiloTask(task.id, paths),
   };
 }
 
@@ -876,7 +792,7 @@ export async function readKiloTaskSessions(
   const parsed = parseInput(taskIdInputSchema, rawInput, 'kilo_task_sessions');
   if (!parsed.ok) return parsed.result;
   await ensureRuntimeHome(paths);
-  const task = tryTask(parsed.input.taskId, paths);
+  const task = tryKiloTask(parsed.input.taskId, paths);
   if (!task) {
     return notFoundResult(
       'kilo_task_sessions',
@@ -902,7 +818,7 @@ export async function readKiloTaskDiff(
   const parsed = parseInput(taskIdInputSchema, rawInput, 'kilo_task_diff');
   if (!parsed.ok) return parsed.result;
   await ensureRuntimeHome(paths);
-  const task = tryTask(parsed.input.taskId, paths);
+  const task = tryKiloTask(parsed.input.taskId, paths);
   if (!task) {
     return notFoundResult(
       'kilo_task_diff',
@@ -982,7 +898,7 @@ export async function readKiloSession(
   if (!session) {
     return failResult('kilo_session_read', 'Kilo session was not found.');
   }
-  const task = resolveTaskForSessionInput(parsed.input, paths);
+  const task = resolveKiloTaskForSessionInput(parsed.input, paths);
   const options = sessionReadOptions(parsed.input);
   addSessionAudit(task, session.id, 'metadata', options, paths);
   const transcript = task
@@ -1018,7 +934,7 @@ export async function readKiloSessionMessages(
   if (!parsed.ok) return parsed.result;
   await ensureRuntimeHome(paths);
   const session = await resolveSession(parsed.input, paths);
-  const task = resolveTaskForSessionInput(parsed.input, paths);
+  const task = resolveKiloTaskForSessionInput(parsed.input, paths);
   const options = sessionReadOptions(parsed.input);
   if (session) addSessionAudit(task, session.id, 'messages', options, paths);
   const transcript =
@@ -1049,7 +965,7 @@ export async function readKiloSessionChildren(
   );
   if (!parsed.ok) return parsed.result;
   await ensureRuntimeHome(paths);
-  const task = resolveTaskForSessionInput(parsed.input, paths);
+  const task = resolveKiloTaskForSessionInput(parsed.input, paths);
   const options = sessionReadOptions(parsed.input);
   addSessionAudit(
     task,
@@ -1087,7 +1003,7 @@ export async function readUnavailableSessionAdapter(
   if (!parsed.ok) return parsed.result;
   await ensureRuntimeHome(paths);
   const session = await resolveSession(parsed.input, paths);
-  const task = resolveTaskForSessionInput(parsed.input, paths);
+  const task = resolveKiloTaskForSessionInput(parsed.input, paths);
   const options = sessionReadOptions(parsed.input);
   if (session) addSessionAudit(task, session.id, adapter, options, paths);
   return {
@@ -1113,7 +1029,7 @@ export async function readKiloSessionDiff(
   );
   if (!parsed.ok) return parsed.result;
   await ensureRuntimeHome(paths);
-  const task = resolveTaskForSessionInput(parsed.input, paths);
+  const task = resolveKiloTaskForSessionInput(parsed.input, paths);
   if (!task) {
     return failResult(
       'kilo_session_diff',
@@ -1144,7 +1060,7 @@ export async function reconcileKiloTask(
   await ensureRuntimeHome(paths);
 
   const before = parsed.input.taskId
-    ? tryTask(parsed.input.taskId, paths)
+    ? tryKiloTask(parsed.input.taskId, paths)
     : null;
   if (parsed.input.taskId && !before) {
     return failResult(
@@ -1155,7 +1071,7 @@ export async function reconcileKiloTask(
 
   await reconcilePersistedRunningTasks(paths, parsed.input.taskId);
   const after = parsed.input.taskId
-    ? tryTask(parsed.input.taskId, paths)
+    ? tryKiloTask(parsed.input.taskId, paths)
     : null;
   const changed = parsed.input.taskId
     ? JSON.stringify(before) !== JSON.stringify(after)
@@ -1183,7 +1099,7 @@ export async function summarizeKiloSession(
   );
   if (!parsed.ok) return parsed.result;
   await ensureRuntimeHome(paths);
-  const task = resolveTaskForSessionInput(parsed.input, paths);
+  const task = resolveKiloTaskForSessionInput(parsed.input, paths);
   const session = await resolveSession(parsed.input, paths);
   if (!task && !session) {
     return failResult(
@@ -1191,7 +1107,7 @@ export async function summarizeKiloSession(
       'No matching Kilo task or session was found.',
     );
   }
-  const events = task ? listTaskEvents(task.id, 25, paths) : [];
+  const events = task ? listKiloTaskEvents(task.id, 25, paths) : [];
   const summary = [
     `Kilo session: ${session?.id ?? task?.rootSessionId ?? 'unknown'}`,
     task ? `Task: ${task.title} (${task.status})` : undefined,
@@ -1211,7 +1127,7 @@ export async function summarizeKiloSession(
     .filter(Boolean)
     .join('\n');
 
-  if (task) updateTaskSummary(task.id, summary, paths);
+  if (task) updateKiloTaskSummary(task.id, summary, paths);
 
   return {
     ok: true,
@@ -1244,7 +1160,7 @@ function attachProcessHandlers(
   stderrLines.on('line', (line) => {
     stderr += `${line}\n`;
     writeRawLog(rawLog, 'stderr', line);
-    addTaskEvent(
+    addKiloTaskEvent(
       taskId,
       {
         eventType: 'stderr',
@@ -1257,11 +1173,11 @@ function attachProcessHandlers(
   });
   child.on('error', (error) => {
     void (async () => {
-      const task = tryTask(taskId, paths);
+      const task = tryKiloTask(taskId, paths);
       if (!task) return;
-      markTaskFinished(taskId, 'failed', null, errorMessage(error), paths);
+      markKiloTaskFinished(taskId, 'failed', null, errorMessage(error), paths);
       await releaseTaskLock(task, 'failed', paths);
-      addTaskEvent(
+      addKiloTaskEvent(
         taskId,
         {
           eventType: 'process.error',
@@ -1288,7 +1204,7 @@ function attachProcessHandlers(
   });
   child.on('exit', (code, signal) => {
     void (async () => {
-      const task = tryTask(taskId, paths);
+      const task = tryKiloTask(taskId, paths);
       if (!task) return;
       const cancelled = task?.status === 'cancelled';
       const status = cancelled
@@ -1304,10 +1220,10 @@ function attachProcessHandlers(
             )
           : null;
       terminalTaskIds.add(taskId);
-      if (!tryTask(taskId, paths)?.rootSessionId) {
+      if (!tryKiloTask(taskId, paths)?.rootSessionId) {
         await recoverMissingSessionId(taskId, paths);
       }
-      const current = tryTask(taskId, paths);
+      const current = tryKiloTask(taskId, paths);
       if (status === 'cancelled') {
         await resolveKiloNotifications(taskId, ['started', 'progress'], paths);
       } else if (status === 'succeeded') {
@@ -1364,9 +1280,9 @@ function attachProcessHandlers(
           paths,
         );
       }
-      markTaskFinished(taskId, status, code, error, paths);
+      markKiloTaskFinished(taskId, status, code, error, paths);
       await releaseTaskLock(task, status, paths);
-      addTaskEvent(
+      addKiloTaskEvent(
         taskId,
         {
           eventType: 'process.exit',
@@ -1393,7 +1309,7 @@ function handleKiloLine(
 ) {
   const parsed = parseJsonLine(line);
   if (!parsed.ok) {
-    addTaskEvent(
+    addKiloTaskEvent(
       taskId,
       {
         eventType: 'stdout',
@@ -1408,14 +1324,14 @@ function handleKiloLine(
 
   const sessionIds = extractSessionIds(parsed.value);
   const rootSessionId = topLevelSessionId(parsed.value);
-  if (rootSessionId) updateTaskSessions(taskId, rootSessionId, [], paths);
-  updateTaskSessions(
+  if (rootSessionId) updateKiloTaskSessions(taskId, rootSessionId, [], paths);
+  updateKiloTaskSessions(
     taskId,
     rootSessionId ?? undefined,
     sessionIds.filter((id) => id !== rootSessionId),
     paths,
   );
-  addTaskEvent(
+  addKiloTaskEvent(
     taskId,
     {
       eventType: eventType(parsed.value),
@@ -1427,7 +1343,7 @@ function handleKiloLine(
     },
     paths,
   );
-  const task = tryTask(taskId, paths);
+  const task = tryKiloTask(taskId, paths);
   if (terminalTaskIds.has(taskId)) return;
   if (!task || !['running', 'needs-reconcile'].includes(task.status)) return;
   void notifyKiloState(
@@ -1454,7 +1370,7 @@ function handleKiloLine(
 }
 
 async function recoverMissingSessionId(taskId: string, paths: RuntimePaths) {
-  const task = tryTask(taskId, paths);
+  const task = tryKiloTask(taskId, paths);
   if (!task || task.rootSessionId) return false;
   const result = await searchKiloSessions(
     { query: task.title, limit: 5 },
@@ -1470,8 +1386,8 @@ async function recoverMissingSessionId(taskId: string, paths: RuntimePaths) {
     id = disk.sessions[0]?.id;
   }
   if (!id || typeof id !== 'string') return false;
-  updateTaskSessions(taskId, id, [], paths);
-  addTaskEvent(
+  updateKiloTaskSessions(taskId, id, [], paths);
+  addKiloTaskEvent(
     taskId,
     {
       eventType: 'session.recovered',
@@ -1492,7 +1408,7 @@ async function resolveWorkspace(
 ): Promise<WorkspaceResolution> {
   const registry = await readRuntimeJson(paths.repos, parseRepoRegistry);
   if (input.worktreeId) {
-    const row = readWorktree(input.worktreeId, paths);
+    const row = readKiloTaskWorktree(input.worktreeId, paths);
     const record = await readManagedWorktree(
       input.worktreeId,
       row.repo_id,
@@ -1646,165 +1562,13 @@ function handoffPrompt(input: {
   return `${constraints.join('\n')}\n\nUser task:\n${input.prompt}`;
 }
 
-function insertTask(task: KiloTaskRecord, paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
-  try {
-    database
-      .prepare(
-        `
-        INSERT INTO kilo_tasks (
-          id, title, prompt, repo_id, repo_full_name, worktree_id, lock_id, cwd, mode,
-          status, explicit_user_request, auto_enabled, cli_path, args_json, pid,
-          process_started_at, root_session_id, child_session_ids_json,
-          raw_log_path, summary, exit_code, error, created_at, updated_at,
-          completed_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-      `,
-      )
-      .run(
-        task.id,
-        task.title,
-        task.prompt,
-        task.repoId,
-        task.repoFullName,
-        task.worktreeId,
-        task.lockId,
-        task.cwd,
-        task.mode,
-        task.status,
-        task.explicitUserRequest ? 1 : 0,
-        task.autoEnabled ? 1 : 0,
-        task.cliPath,
-        JSON.stringify(task.args),
-        task.pid,
-        task.processStartedAt,
-        task.rootSessionId,
-        JSON.stringify(task.childSessionIds),
-        task.rawLogPath,
-        task.summary,
-        task.exitCode,
-        task.error,
-        task.createdAt,
-        task.updatedAt,
-        task.completedAt,
-      );
-  } finally {
-    database.close();
-  }
-}
-
-function updateTaskProcess(
-  taskId: string,
-  pid: number | null,
-  startedAt: string,
-  paths: RuntimePaths,
-) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
-  try {
-    database
-      .prepare(
-        `
-        UPDATE kilo_tasks
-        SET pid = ?, process_started_at = ?, updated_at = ?
-        WHERE id = ?;
-      `,
-      )
-      .run(pid, startedAt, startedAt, taskId);
-  } finally {
-    database.close();
-  }
-}
-
-function markTaskFinished(
-  taskId: string,
-  status: KiloTaskStatus,
-  exitCode: number | null,
-  error: string | null,
-  paths: RuntimePaths,
-) {
-  const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
-  try {
-    database
-      .prepare(
-        `
-        UPDATE kilo_tasks
-        SET status = ?,
-            exit_code = ?,
-            error = ?,
-            updated_at = ?,
-            completed_at = COALESCE(completed_at, ?)
-        WHERE id = ?;
-      `,
-      )
-      .run(status, exitCode, error, now, now, taskId);
-  } finally {
-    database.close();
-  }
-}
-
-function updateTaskStatus(
-  taskId: string,
-  status: KiloTaskStatus,
-  error: string | null,
-  completed: boolean,
-  paths: RuntimePaths,
-) {
-  const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
-  try {
-    database
-      .prepare(
-        `
-        UPDATE kilo_tasks
-        SET status = ?,
-            error = ?,
-            updated_at = ?,
-            completed_at = CASE
-              WHEN ? = 1 THEN COALESCE(completed_at, ?)
-              ELSE completed_at
-            END
-        WHERE id = ?;
-      `,
-      )
-      .run(status, error, now, completed ? 1 : 0, now, taskId);
-  } finally {
-    database.close();
-  }
-}
-
 async function reconcilePersistedRunningTasks(
   paths: RuntimePaths,
   taskId?: string,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
-  let tasks: KiloTaskRecord[] = [];
-  try {
-    const statement = taskId
-      ? database.prepare(
-          `
-        SELECT *
-        FROM kilo_tasks
-        WHERE id = ?
-          AND status IN ('running', 'needs-reconcile')
-        ORDER BY updated_at DESC;
-      `,
-        )
-      : database.prepare(
-          `
-        SELECT *
-        FROM kilo_tasks
-        WHERE status IN ('running', 'needs-reconcile')
-        ORDER BY updated_at DESC;
-      `,
-        );
-    tasks = (taskId ? statement.all(taskId) : statement.all())
-      .map(readTaskRow)
-      .filter((task) => !runningProcesses.has(task.id));
-  } finally {
-    database.close();
-  }
+  const tasks = listReconcileableKiloTasks(paths, taskId).filter(
+    (task) => !runningProcesses.has(task.id),
+  );
 
   for (const task of tasks) {
     const processInspection = await inspectPersistedKiloProcess(task);
@@ -1821,8 +1585,8 @@ async function reconcilePersistedRunningTasks(
       : status === 'needs-review'
         ? 'Neondeck restarted and the Kilo process is no longer attached. Session/diff state was recovered and needs review.'
         : 'Neondeck restarted and the Kilo process is no longer attached. No changed files were observed; task outcome is unknown.';
-    updateTaskStatus(task.id, status, message, !processAlive, paths);
-    addTaskEvent(
+    updateKiloTaskStatus(task.id, status, message, !processAlive, paths);
+    addKiloTaskEvent(
       task.id,
       {
         eventType: `task.reconciled_${status}`,
@@ -1833,8 +1597,8 @@ async function reconcilePersistedRunningTasks(
           processStartedAt: task.processStartedAt,
           cwd: task.cwd,
           title: task.title,
-          rootSessionId: tryTask(task.id, paths)?.rootSessionId,
-          childSessionIds: tryTask(task.id, paths)?.childSessionIds ?? [],
+          rootSessionId: tryKiloTask(task.id, paths)?.rootSessionId,
+          childSessionIds: tryKiloTask(task.id, paths)?.childSessionIds ?? [],
           rawLogPath: task.rawLogPath,
           processAlive: processInspection.alive,
           processMatched: processInspection.matched,
@@ -1860,7 +1624,7 @@ async function reconcilePersistedRunningTasks(
         repoId: task.repoId,
         repoFullName: task.repoFullName,
         worktreeId: task.worktreeId,
-        sessionId: tryTask(task.id, paths)?.rootSessionId,
+        sessionId: tryKiloTask(task.id, paths)?.rootSessionId,
         data: {
           status,
           processAlive: processInspection.alive,
@@ -1917,304 +1681,6 @@ function worktreeStatusForKiloStatus(status: KiloTaskStatus) {
 function kiloLockOwner(taskId: string) {
   return `kilo:${taskId}`;
 }
-
-function updateTaskSummary(
-  taskId: string,
-  summary: string,
-  paths: RuntimePaths,
-) {
-  const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
-  try {
-    database
-      .prepare(
-        `
-        UPDATE kilo_tasks
-        SET summary = ?, updated_at = ?
-        WHERE id = ?;
-      `,
-      )
-      .run(summary, now, taskId);
-  } finally {
-    database.close();
-  }
-}
-
-function updateTaskSessions(
-  taskId: string,
-  rootSessionId: string | undefined,
-  childSessionIds: string[],
-  paths: RuntimePaths,
-) {
-  if (!rootSessionId && childSessionIds.length === 0) return;
-  const task = tryTask(taskId, paths);
-  if (!task) return;
-  const nextChildren = [
-    ...new Set([...task.childSessionIds, ...childSessionIds]),
-  ];
-  const nextRoot = task.rootSessionId ?? rootSessionId ?? null;
-  const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
-  try {
-    database
-      .prepare(
-        `
-        UPDATE kilo_tasks
-        SET root_session_id = ?,
-            child_session_ids_json = ?,
-            updated_at = ?
-        WHERE id = ?;
-      `,
-      )
-      .run(nextRoot, JSON.stringify(nextChildren), now, taskId);
-  } finally {
-    database.close();
-  }
-}
-
-function addTaskEvent(
-  taskId: string,
-  input: {
-    eventType: string;
-    stream: string;
-    sessionId?: string | null;
-    childSessionId?: string | null;
-    summary: string;
-    data: unknown;
-  },
-  paths: RuntimePaths,
-) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
-  const now = new Date().toISOString();
-  try {
-    const row = database
-      .prepare(
-        `
-        SELECT COALESCE(MAX(event_index), -1) + 1 AS next_index
-        FROM kilo_task_events
-        WHERE task_id = ?;
-      `,
-      )
-      .get(taskId) as { next_index?: number } | undefined;
-    const eventIndex = row?.next_index ?? 0;
-    database
-      .prepare(
-        `
-        INSERT INTO kilo_task_events (
-          id, task_id, event_index, event_type, stream, session_id,
-          child_session_id, summary, data_json, created_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-      `,
-      )
-      .run(
-        randomUUID(),
-        taskId,
-        eventIndex,
-        input.eventType,
-        input.stream,
-        input.sessionId ?? null,
-        input.childSessionId ?? null,
-        truncate(input.summary, 2_000),
-        input.data === null || input.data === undefined
-          ? null
-          : JSON.stringify(asJsonValue(input.data)),
-        now,
-      );
-  } finally {
-    database.close();
-  }
-}
-
-function requireTask(taskId: string, paths: RuntimePaths) {
-  const task = tryTask(taskId, paths);
-  if (!task) throw new Error(`Kilo task ${taskId} was not found.`);
-  return task;
-}
-
-function tryTask(taskId: string, paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
-  try {
-    const row = database
-      .prepare('SELECT * FROM kilo_tasks WHERE id = ?;')
-      .get(taskId);
-    return row ? readTaskRow(row) : undefined;
-  } finally {
-    database.close();
-  }
-}
-
-function resolveTaskForSessionInput(
-  input: v.InferOutput<typeof sessionReadInputSchema>,
-  paths: RuntimePaths,
-) {
-  if (input.taskId) return tryTask(input.taskId, paths);
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
-  try {
-    const row = input.sessionId
-      ? database
-          .prepare(
-            `
-            SELECT *
-            FROM kilo_tasks
-            WHERE root_session_id = ?
-              OR child_session_ids_json LIKE ?
-            ORDER BY updated_at DESC
-            LIMIT 1;
-          `,
-          )
-          .get(input.sessionId, `%${input.sessionId}%`)
-      : input.titleQuery
-        ? database
-            .prepare(
-              `
-              SELECT *
-              FROM kilo_tasks
-              WHERE title LIKE ?
-              ORDER BY updated_at DESC
-              LIMIT 1;
-            `,
-            )
-            .get(`%${input.titleQuery}%`)
-        : undefined;
-    return row ? readTaskRow(row) : undefined;
-  } finally {
-    database.close();
-  }
-}
-
-function listTaskEvents(taskId: string, limit: number, paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
-  try {
-    return database
-      .prepare(
-        `
-        SELECT *
-        FROM kilo_task_events
-        WHERE task_id = ?
-        ORDER BY event_index DESC
-        LIMIT ?;
-      `,
-      )
-      .all(taskId, limit)
-      .map(readEventRow)
-      .reverse();
-  } finally {
-    database.close();
-  }
-}
-
-function countRunningTasks(paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
-  try {
-    const row = database
-      .prepare(
-        "SELECT COUNT(*) AS count FROM kilo_tasks WHERE status IN ('running', 'needs-reconcile');",
-      )
-      .get() as { count?: number } | undefined;
-    return row?.count ?? 0;
-  } finally {
-    database.close();
-  }
-}
-
-function readWorktree(id: string, paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
-  try {
-    const row = database
-      .prepare(
-        `
-        SELECT repo_id, local_path, lifecycle_status
-        FROM worktrees
-        WHERE id = ?;
-      `,
-      )
-      .get(id) as
-      | { repo_id: string; local_path: string; lifecycle_status: string }
-      | undefined;
-    if (!row) throw new Error(`Worktree ${id} was not found.`);
-    return row;
-  } finally {
-    database.close();
-  }
-}
-
-function readTaskRow(row: unknown): KiloTaskRecord {
-  const parsed = v.parse(taskRowSchema, row);
-  return {
-    id: parsed.id,
-    title: parsed.title,
-    prompt: parsed.prompt,
-    repoId: parsed.repo_id,
-    repoFullName: parsed.repo_full_name,
-    worktreeId: parsed.worktree_id,
-    lockId: parsed.lock_id,
-    cwd: parsed.cwd,
-    mode: parseMode(parsed.mode),
-    status: parseTaskStatus(parsed.status),
-    explicitUserRequest: parsed.explicit_user_request === 1,
-    autoEnabled: parsed.auto_enabled === 1,
-    cliPath: parsed.cli_path,
-    args: parseStringArray(parsed.args_json),
-    pid: parsed.pid,
-    processStartedAt: parsed.process_started_at,
-    rootSessionId: parsed.root_session_id,
-    childSessionIds: parseStringArray(parsed.child_session_ids_json),
-    rawLogPath: parsed.raw_log_path,
-    summary: parsed.summary,
-    exitCode: parsed.exit_code,
-    error: parsed.error,
-    createdAt: parsed.created_at,
-    updatedAt: parsed.updated_at,
-    completedAt: parsed.completed_at,
-  };
-}
-
-function readEventRow(row: unknown): KiloTaskEventRecord {
-  const parsed = v.parse(eventRowSchema, row);
-  return {
-    id: parsed.id,
-    taskId: parsed.task_id,
-    eventIndex: parsed.event_index,
-    eventType: parsed.event_type,
-    stream: parsed.stream,
-    sessionId: parsed.session_id,
-    childSessionId: parsed.child_session_id,
-    summary: parsed.summary,
-    data: parsed.data_json ? asJsonValue(JSON.parse(parsed.data_json)) : null,
-    createdAt: parsed.created_at,
-  };
-}
-
-function parseMode(value: string): KiloHandoffMode {
-  const parsed = v.safeParse(handoffModeSchema, value);
-  return parsed.success ? parsed.output : 'patch-proposal';
-}
-
-function parseTaskStatus(value: string): KiloTaskStatus {
-  const parsed = v.safeParse(
-    v.picklist([
-      'running',
-      'succeeded',
-      'failed',
-      'cancelled',
-      'needs-reconcile',
-      'needs-review',
-      'ready-to-verify',
-      'ready-to-push',
-      'discarded',
-      'unknown',
-    ]),
-    value,
-  );
-  return parsed.success ? parsed.output : 'failed';
-}
-
-function parseStringArray(source: string): string[] {
-  const parsed = v.safeParse(v.array(v.string()), JSON.parse(source));
-  return parsed.success ? parsed.output : [];
-}
-
 async function searchKiloSessionsWithCli(
   input: v.InferOutput<typeof sessionsSearchInputSchema>,
   paths: RuntimePaths,
@@ -2445,58 +1911,18 @@ function searchLinkedSessionsSync(
   input: v.InferOutput<typeof sessionsSearchInputSchema>,
   paths: RuntimePaths,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
-  const filters: string[] = [];
-  const values: SQLInputValue[] = [];
-  if (input.repoId) {
-    filters.push('repo_id = ?');
-    values.push(input.repoId);
-  }
-  if (input.taskId) {
-    filters.push('id = ?');
-    values.push(input.taskId);
-  }
-  if (input.worktreeId) {
-    filters.push('worktree_id = ?');
-    values.push(input.worktreeId);
-  }
-  if (input.directory) {
-    filters.push('cwd LIKE ?');
-    values.push(`%${input.directory}%`);
-  }
-  if (input.sessionId) {
-    filters.push('(root_session_id = ? OR child_session_ids_json LIKE ?)');
-    values.push(input.sessionId, `%${input.sessionId}%`);
-  }
-  if (input.query) {
-    filters.push(
-      '(title LIKE ? OR root_session_id LIKE ? OR child_session_ids_json LIKE ? OR cwd LIKE ?)',
-    );
-    values.push(
-      `%${input.query}%`,
-      `%${input.query}%`,
-      `%${input.query}%`,
-      `%${input.query}%`,
-    );
-  }
-  values.push(input.limit ?? 50);
-  try {
-    return database
-      .prepare(
-        `
-        SELECT *
-        FROM kilo_tasks
-        ${filters.length ? `WHERE ${filters.join(' AND ')}` : ''}
-        ORDER BY updated_at DESC
-        LIMIT ?;
-      `,
-      )
-      .all(...values)
-      .map(readTaskRow)
-      .flatMap(taskToSessions);
-  } finally {
-    database.close();
-  }
+  return listLinkedKiloSessionTasks(
+    {
+      repoId: input.repoId,
+      taskId: input.taskId,
+      worktreeId: input.worktreeId,
+      directory: input.directory,
+      sessionId: input.sessionId,
+      query: input.query,
+      limit: input.limit ?? 50,
+    },
+    paths,
+  ).flatMap(taskToSessions);
 }
 
 function taskToSessions(task: KiloTaskRecord) {
@@ -2534,7 +1960,7 @@ async function resolveSession(
   input: v.InferOutput<typeof sessionReadInputSchema>,
   paths: RuntimePaths,
 ) {
-  const task = resolveTaskForSessionInput(input, paths);
+  const task = resolveKiloTaskForSessionInput(input, paths);
   const linked = task ? taskToSessions(task) : [];
   const targetId = input.sessionId ?? task?.rootSessionId;
   const exact = targetId
@@ -2614,7 +2040,7 @@ async function sessionTranscriptFromTask(
   options: KiloSessionReadOptions,
   paths: RuntimePaths,
 ) {
-  const events = listTaskEvents(task.id, 1_000, paths)
+  const events = listKiloTaskEvents(task.id, 1_000, paths)
     .filter(
       (event) =>
         event.sessionId === sessionId || event.childSessionId === sessionId,
@@ -2695,7 +2121,7 @@ async function readBoundedFile(path: string, maxBytes: number) {
 }
 
 function taskSessionTree(task: KiloTaskRecord, paths: RuntimePaths) {
-  const events = listTaskEvents(task.id, 1_000, paths);
+  const events = listKiloTaskEvents(task.id, 1_000, paths);
   return {
     id: task.rootSessionId,
     title: task.title,
