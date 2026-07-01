@@ -1043,11 +1043,16 @@ function statusFromSnapshot(
   snapshot: PrWatchSnapshot,
   desiredTerminalState: DesiredTerminalState,
 ): PrWatchStatus {
+  if (
+    desiredTerminalState === 'merged' &&
+    snapshot.state === 'closed' &&
+    snapshot.merged
+  ) {
+    return 'merged';
+  }
   if (snapshot.checks?.status === 'success') return 'green';
   if (snapshot.checks?.status === 'failure') return 'attention-needed';
-  if (snapshot.state === 'closed' && snapshot.merged) {
-    return desiredTerminalState === 'merged' ? 'merged' : 'watching';
-  }
+  if (snapshot.state === 'closed' && snapshot.merged) return 'watching';
   if (snapshot.state === 'closed') return 'closed';
   if (snapshot.state === 'open') return 'watching';
   return 'unknown';

@@ -41,7 +41,7 @@ describe('runtime status', () => {
     });
     expect(status.providers.configs.kilocode).toMatchObject({
       enabled: true,
-      apiKeyEnv: 'KILO_API_KEY',
+      apiKeyEnv: 'KILOCODE_API_KEY',
       organizationIdEnv: null,
       apiKeyPresent: false,
       organizationIdPresent: false,

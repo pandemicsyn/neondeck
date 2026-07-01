@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -80,6 +80,48 @@ describe('app API safety routes', () => {
       },
     });
     expect(Array.isArray(body.queue)).toBe(true);
+  });
+
+  it('serves the saved local API token to the local dashboard session', async () => {
+    const response = await app.request(
+      'http://localhost/api/local-api/session',
+      {
+        headers: { host: 'localhost' },
+      },
+    );
+    const body = (await response.json()) as {
+      ok: boolean;
+      action: string;
+      token: string;
+      header: string;
+      queryParam: string;
+    };
+    const config = JSON.parse(
+      await readFile(join(home, 'config.json'), 'utf8'),
+    ) as {
+      localApi?: { token?: string };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      ok: true,
+      action: 'local_api_session_read',
+      header: 'x-neondeck-api-token',
+      queryParam: 'neondeckApiToken',
+    });
+    expect(body.token).toBe(config.localApi?.token);
+    expect(body.token).toMatch(/^[A-Za-z0-9_-]{32,}$/);
+  });
+
+  it('hides raw Flue run inspection without the local API token', async () => {
+    const response = await app.request(
+      'http://localhost/api/flue/runs/missing?meta',
+      {
+        headers: { host: 'localhost' },
+      },
+    );
+
+    expect(response.status).toBe(404);
   });
 
   it('returns prepared-diff API validation errors as bad requests', async () => {

@@ -5,18 +5,23 @@ import { Badge, Button, ScrollArea } from '../components/ui';
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
+import { parsePositiveIntegerConfig } from './config';
 
 type ActiveWatchesConfig = {
   limit: number;
+};
+
+const activeWatchesDefaultConfig = {
+  limit: 8,
 };
 
 export const ActiveWatchesPlugin = {
   id: 'active-watches',
   title: 'Active watches',
   kind: 'data',
-  defaultConfig: {
-    limit: 8,
-  },
+  defaultConfig: activeWatchesDefaultConfig,
+  parseConfig: (config) =>
+    parsePositiveIntegerConfig(activeWatchesDefaultConfig, config),
   Component({ config }) {
     const queryClient = useQueryClient();
     const { data, error, isLoading } = useQuery({
@@ -107,7 +112,13 @@ function WatchRow({ watch }: { watch: PrWatch }) {
           {watch.url ? (
             <Button
               className="h-5 border-line bg-transparent px-1.5 py-0 text-[10px] text-muted"
-              onClick={() => window.open(watch.url ?? undefined, '_blank')}
+              onClick={() =>
+                window.open(
+                  watch.url ?? undefined,
+                  '_blank',
+                  'noopener,noreferrer',
+                )
+              }
               type="button"
             >
               open

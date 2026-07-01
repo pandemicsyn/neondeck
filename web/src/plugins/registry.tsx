@@ -28,3 +28,19 @@ export const plugins = [
 export const pluginRegistry = Object.fromEntries(
   plugins.map((plugin) => [plugin.id, plugin]),
 ) as Record<string, DisplayPlugin<any>>;
+
+export function resolvePluginConfig<TConfig extends Record<string, unknown>>(
+  plugin: DisplayPlugin<TConfig>,
+  config: Record<string, unknown> | undefined,
+) {
+  if (plugin.parseConfig) return plugin.parseConfig(config);
+
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    return { config: plugin.defaultConfig, issues: [] };
+  }
+
+  return {
+    config: { ...plugin.defaultConfig, ...config },
+    issues: [],
+  };
+}

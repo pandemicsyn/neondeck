@@ -1173,13 +1173,13 @@ export async function runAutopilotRecovery(input: {
 
 export function openConfigEventStream(
   onEvent: (event: ConfigChangeEvent) => void,
-  onError?: () => void,
+  onError?: (error?: Error | Event) => void,
 ) {
   if (typeof EventSource === 'undefined') return () => {};
 
   const source = new EventSource('/api/events/config');
   source.addEventListener('config-change', (event) => {
-    onEvent(JSON.parse(event.data) as ConfigChangeEvent);
+    parseEventData('config-change', event, onEvent, onError);
   });
   if (onError) source.addEventListener('error', onError);
 
@@ -1188,13 +1188,13 @@ export function openConfigEventStream(
 
 export function openNotificationEventStream(
   onEvent: (event: NotificationChangeEvent) => void,
-  onError?: () => void,
+  onError?: (error?: Error | Event) => void,
 ) {
   if (typeof EventSource === 'undefined') return () => {};
 
   const source = new EventSource('/api/events/notifications');
   source.addEventListener('notification-change', (event) => {
-    onEvent(JSON.parse(event.data) as NotificationChangeEvent);
+    parseEventData('notification-change', event, onEvent, onError);
   });
   if (onError) source.addEventListener('error', onError);
 
@@ -1203,13 +1203,13 @@ export function openNotificationEventStream(
 
 export function openChatSessionEventStream(
   onEvent: (event: ChatSessionChangeEvent) => void,
-  onError?: () => void,
+  onError?: (error?: Error | Event) => void,
 ) {
   if (typeof EventSource === 'undefined') return () => {};
 
   const source = new EventSource('/api/events/sessions');
   source.addEventListener('chat-session-change', (event) => {
-    onEvent(JSON.parse(event.data) as ChatSessionChangeEvent);
+    parseEventData('chat-session-change', event, onEvent, onError);
   });
   if (onError) source.addEventListener('error', onError);
 
@@ -1435,34 +1435,72 @@ export async function getPrWatches() {
   return getJson<PrWatchResponse>('/api/watches');
 }
 
-async function getJson<T>(url: string) {
-  const response = await fetch(url);
-  const data = (await response.json()) as T;
-
-  if (!response.ok) {
-    const message =
-      readErrorMessage(data) ?? `Request failed with ${response.status}`;
-    throw new Error(message);
-  }
-
-  return data;
+async function getJson<T>(url: string, options: { signal?: AbortSignal } = {}) {
+  const response = await fetch(url, { signal: options.signal });
+  return readJsonResponse<T>(response, url);
 }
 
-async function postJson<T>(url: string, body: unknown) {
+async function postJson<T>(
+  url: string,
+  body: unknown,
+  options: { signal?: AbortSignal } = {},
+) {
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
+    signal: options.signal,
   });
-  const data = (await response.json()) as T;
+  return readJsonResponse<T>(response, url);
+}
+
+async function readJsonResponse<T>(response: Response, url: string) {
+  const text = await response.text();
+  const contentType = response.headers.get('content-type') ?? '';
+  const hasBody = text.trim().length > 0;
+  const expectsJson = contentType.toLowerCase().includes('json');
+  let data: unknown;
+
+  if (hasBody && expectsJson) {
+    try {
+      data = JSON.parse(text) as unknown;
+    } catch (cause) {
+      throw new Error(
+        `Invalid JSON response from ${url}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+    }
+  } else if (hasBody && response.ok) {
+    throw new Error(
+      `Expected JSON response from ${url}, received ${contentType || 'unknown content type'}.`,
+    );
+  }
 
   if (!response.ok) {
     const message =
-      readErrorMessage(data) ?? `Request failed with ${response.status}`;
+      readErrorMessage(data) ??
+      readTextErrorMessage(text) ??
+      `Request failed with ${response.status}`;
     throw new Error(message);
   }
 
-  return data;
+  return data as T;
+}
+
+function parseEventData<T>(
+  eventName: string,
+  event: MessageEvent,
+  onEvent: (event: T) => void,
+  onError?: (error?: Error | Event) => void,
+) {
+  try {
+    onEvent(JSON.parse(event.data) as T);
+  } catch (cause) {
+    const error = new Error(
+      `Invalid ${eventName} event payload: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+    if (onError) onError(error);
+    else console.warn(error.message);
+  }
 }
 
 function readErrorMessage(data: unknown) {
@@ -1481,4 +1519,9 @@ function readErrorMessage(data: unknown) {
   }
 
   return undefined;
+}
+
+function readTextErrorMessage(text: string) {
+  const trimmed = text.trim();
+  return trimmed.length > 0 ? trimmed.slice(0, 400) : undefined;
 }

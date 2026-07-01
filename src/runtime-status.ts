@@ -764,7 +764,7 @@ function workflowSummaryMessage(summaryJson: unknown, workflow: unknown) {
   return `${String(workflow)} failed.`;
 }
 
-function requiredModelProviders(models: {
+export function requiredModelProviders(models: {
   displayAssistant: string;
   utility: string;
   subagents: Record<string, string>;

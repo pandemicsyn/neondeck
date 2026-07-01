@@ -8,6 +8,7 @@ import {
 import { Badge, ScrollArea } from '../components/ui';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
+import { parsePositiveIntegerConfig } from './config';
 
 type WorkflowObservabilityConfig = {
   eventLimit: number;
@@ -28,6 +29,11 @@ type WorkflowDrilldownItem = {
   isError: boolean;
 };
 
+const workflowObservabilityDefaultConfig = {
+  eventLimit: 18,
+  refreshSeconds: 20,
+};
+
 const filters: Array<{
   id: WorkflowFilter;
   label: string;
@@ -43,10 +49,9 @@ export const WorkflowObservabilityPanelPlugin = {
   id: 'workflow-observability',
   title: 'Workflow observability',
   kind: 'data',
-  defaultConfig: {
-    eventLimit: 18,
-    refreshSeconds: 20,
-  },
+  defaultConfig: workflowObservabilityDefaultConfig,
+  parseConfig: (config) =>
+    parsePositiveIntegerConfig(workflowObservabilityDefaultConfig, config),
   Component({ config }) {
     const [filter, setFilter] = useState<WorkflowFilter>('all');
     const {

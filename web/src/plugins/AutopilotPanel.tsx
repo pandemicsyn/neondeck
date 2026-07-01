@@ -19,6 +19,7 @@ import { SessionReferenceButton } from '../components/SessionReferenceButton';
 import { Badge, Button, ScrollArea } from '../components/ui';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
+import { parsePositiveIntegerConfig } from './config';
 
 type AutopilotPanelConfig = {
   queueLimit: number;
@@ -29,18 +30,22 @@ type AutopilotPanelConfig = {
   activityLimit: number;
 };
 
+const autopilotPanelDefaultConfig = {
+  queueLimit: 8,
+  policyLimit: 6,
+  preparedLimit: 4,
+  approvalLimit: 4,
+  checkLimit: 4,
+  activityLimit: 8,
+};
+
 export const AutopilotPanelPlugin = {
   id: 'autopilot',
   title: 'Autopilot',
   kind: 'data',
-  defaultConfig: {
-    queueLimit: 8,
-    policyLimit: 6,
-    preparedLimit: 4,
-    approvalLimit: 4,
-    checkLimit: 4,
-    activityLimit: 8,
-  },
+  defaultConfig: autopilotPanelDefaultConfig,
+  parseConfig: (config) =>
+    parsePositiveIntegerConfig(autopilotPanelDefaultConfig, config),
   Component({ config }) {
     const { data, error, isLoading } = useQuery({
       queryKey: queryKeys.autopilotState,

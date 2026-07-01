@@ -67,7 +67,7 @@ XDG_CONFIG_HOME/neondeck
 ~/.config/neondeck
 ```
 
-The runtime home contains `.env`, `config.json`, `repos.json`, `dashboard.json`, `schedules.json`, `SOUL.md`, `skills/`, and separate `data/neondeck.db` and `data/flue.db` databases. The repo-local `config/dashboard.json` and `SOUL.md` files are defaults for new homes; edit the runtime-home copies for local customization.
+The runtime home contains `.env`, `config.json`, `repos.json`, `dashboard.json`, `schedules.json`, `SOUL.md`, `skills/`, and separate `data/neondeck.db` and `data/flue.db` databases. `config.json` includes a generated `localApi.token` used by the local dashboard for guarded raw Flue run inspection. The repo-local `config/dashboard.json` and `SOUL.md` files are defaults for new homes; edit the runtime-home copies for local customization.
 
 You can initialize or validate the runtime home explicitly without starting the server:
 

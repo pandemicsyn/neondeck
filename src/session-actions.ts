@@ -904,57 +904,102 @@ export async function createChatSession(
     ? 'Stored summary provided when the session metadata was created.'
     : null;
   const database = new DatabaseSync(paths.neondeckDatabase);
+  let sessionId = id;
+  let eventAction: ChatSessionEventAction = 'created';
+  let reusedExisting = false;
+  let reusedSessionChanged = false;
 
   try {
     database.exec('BEGIN;');
-    database
-      .prepare(
-        `
-        INSERT INTO chat_sessions (
+    const existing = findLinkedChatSession(database, {
+      kind,
+      linkedRepoId: parsed.output.linkedRepoId ?? null,
+      linkedWatchId: parsed.output.linkedWatchId ?? null,
+      linkedTaskId: parsed.output.linkedTaskId ?? null,
+    });
+
+    if (existing) {
+      reusedExisting = true;
+      sessionId = existing.id;
+      const shouldStoreSummary = Boolean(summary && !existing.summary);
+      reusedSessionChanged = Boolean(existing.archivedAt || shouldStoreSummary);
+      eventAction = existing.archivedAt
+        ? 'restored'
+        : activate
+          ? 'switched'
+          : 'updated';
+      database
+        .prepare(
+          `
+          UPDATE chat_sessions
+          SET
+            archived_at = NULL,
+            summary = ?,
+            summary_generated_at = ?,
+            summary_source = ?,
+            summary_refresh_note = ?,
+            updated_at = ?
+          WHERE id = ?;
+        `,
+        )
+        .run(
+          shouldStoreSummary ? summary : existing.summary,
+          shouldStoreSummary ? summaryGeneratedAt : existing.summaryGeneratedAt,
+          shouldStoreSummary ? summarySource : existing.summarySource,
+          shouldStoreSummary ? summaryRefreshNote : existing.summaryRefreshNote,
+          now,
+          sessionId,
+        );
+    } else {
+      database
+        .prepare(
+          `
+          INSERT INTO chat_sessions (
+            id,
+            title,
+            agent_name,
+            kind,
+            pinned,
+            linked_repo_id,
+            linked_watch_id,
+            linked_task_id,
+            ui_metadata_json,
+            summary,
+            summary_generated_at,
+            summary_source,
+            summary_refresh_note,
+            context_loaded_at,
+            created_at,
+            updated_at,
+            last_active_at
+          )
+          VALUES (?, ?, 'display-assistant', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        `,
+        )
+        .run(
           id,
           title,
-          agent_name,
           kind,
-          pinned,
-          linked_repo_id,
-          linked_watch_id,
-          linked_task_id,
-          ui_metadata_json,
+          parsed.output.linkedRepoId ?? null,
+          parsed.output.linkedWatchId ?? null,
+          parsed.output.linkedTaskId ?? null,
+          uiMetadata === null ? null : JSON.stringify(uiMetadata),
           summary,
-          summary_generated_at,
-          summary_source,
-          summary_refresh_note,
-          context_loaded_at,
-          created_at,
-          updated_at,
-          last_active_at
-        )
-        VALUES (?, ?, 'display-assistant', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-      `,
-      )
-      .run(
-        id,
-        title,
-        kind,
-        parsed.output.linkedRepoId ?? null,
-        parsed.output.linkedWatchId ?? null,
-        parsed.output.linkedTaskId ?? null,
-        uiMetadata === null ? null : JSON.stringify(uiMetadata),
-        summary,
-        summaryGeneratedAt,
-        summarySource,
-        summaryRefreshNote,
-        now,
-        now,
-        now,
-        now,
-      );
+          summaryGeneratedAt,
+          summarySource,
+          summaryRefreshNote,
+          now,
+          now,
+          now,
+          now,
+        );
+    }
     if (activate) {
-      setActiveSession(database, surface, id, now);
+      setActiveSession(database, surface, sessionId, now);
     }
     recordSessionAudit(database, {
-      action: 'create',
-      sessionId: id,
+      action: reusedExisting ? 'reuse-linked' : 'create',
+      sessionId,
       surface: activate ? surface : null,
       reason: parsed.output.reason ?? null,
     });
@@ -968,15 +1013,23 @@ export async function createChatSession(
 
   const state = await readNeonSessionState(paths, surface);
   const session =
-    state.sessions.find((item) => item.id === id) ?? state.activeChatSession;
-  publishSessionEvent('created', session, activate ? surface : null);
+    state.sessions.find((item) => item.id === sessionId) ??
+    state.activeChatSession;
+  const changed = !reusedExisting || reusedSessionChanged || activate;
+  if (changed) {
+    publishSessionEvent(eventAction, session, activate ? surface : null);
+  }
 
   return {
     ok: true,
     action: 'session_create',
-    changed: true,
+    changed,
     message:
-      'Created chat session metadata. New messages for this id remain in Flue persistence.',
+      reusedExisting && activate
+        ? 'Reused linked chat session metadata and switched the surface to it.'
+        : reusedExisting
+          ? 'Reused linked chat session metadata.'
+          : 'Created chat session metadata. New messages for this id remain in Flue persistence.',
     session,
     state,
     titleSuggestion,
@@ -1472,6 +1525,71 @@ function findChatSession(database: DatabaseSync, id: string) {
   return row ? readChatSessionRow(row, database) : undefined;
 }
 
+function findLinkedChatSession(
+  database: DatabaseSync,
+  input: {
+    kind: ChatSessionKind;
+    linkedRepoId: string | null;
+    linkedWatchId: string | null;
+    linkedTaskId: string | null;
+  },
+) {
+  if (input.linkedTaskId) {
+    const row = database
+      .prepare(
+        `
+        SELECT *
+        FROM chat_sessions
+        WHERE agent_name = 'display-assistant'
+          AND kind = ?
+          AND linked_task_id = ?
+        ORDER BY archived_at IS NULL DESC, last_active_at DESC, created_at DESC
+        LIMIT 1;
+      `,
+      )
+      .get(input.kind, input.linkedTaskId);
+    return row ? readChatSessionRow(row, database) : undefined;
+  }
+
+  if (input.linkedWatchId) {
+    const row = database
+      .prepare(
+        `
+        SELECT *
+        FROM chat_sessions
+        WHERE agent_name = 'display-assistant'
+          AND kind = ?
+          AND linked_watch_id = ?
+        ORDER BY archived_at IS NULL DESC, last_active_at DESC, created_at DESC
+        LIMIT 1;
+      `,
+      )
+      .get(input.kind, input.linkedWatchId);
+    return row ? readChatSessionRow(row, database) : undefined;
+  }
+
+  if (input.linkedRepoId) {
+    const row = database
+      .prepare(
+        `
+        SELECT *
+        FROM chat_sessions
+        WHERE agent_name = 'display-assistant'
+          AND kind = ?
+          AND linked_repo_id = ?
+          AND linked_watch_id IS NULL
+          AND linked_task_id IS NULL
+        ORDER BY archived_at IS NULL DESC, last_active_at DESC, created_at DESC
+        LIMIT 1;
+      `,
+      )
+      .get(input.kind, input.linkedRepoId);
+    return row ? readChatSessionRow(row, database) : undefined;
+  }
+
+  return undefined;
+}
+
 function readChatSessionRow(
   row: unknown,
   database: DatabaseSync,
@@ -1681,9 +1799,9 @@ function toNeonSessionRecord(
 function inferSessionKind(
   input: v.InferOutput<typeof sessionCreateInputSchema>,
 ): ChatSessionKind {
-  if (input.linkedRepoId) return 'repo';
-  if (input.linkedWatchId) return 'watch';
   if (input.linkedTaskId) return 'task';
+  if (input.linkedWatchId) return 'watch';
+  if (input.linkedRepoId) return 'repo';
   return 'scratch';
 }
 

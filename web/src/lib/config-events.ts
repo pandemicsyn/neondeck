@@ -38,5 +38,7 @@ export function configEventTouchesFile(
   event: ConfigChangeEvent,
   fileName: string,
 ) {
-  return event.files.some((file) => file.endsWith(`/${fileName}`));
+  return event.files.some(
+    (file) => file === fileName || file.endsWith(`/${fileName}`),
+  );
 }

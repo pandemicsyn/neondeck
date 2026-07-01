@@ -60,6 +60,7 @@ import { Badge, ScrollArea } from '../components/ui';
 import { useConfigEvents } from '../lib/config-events';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
+import { parsePositiveIntegerConfig } from './config';
 
 type RuntimeOverviewConfig = {
   repoLimit: number;
@@ -97,19 +98,23 @@ type SetupStep = {
   detail: string;
 };
 
+const runtimeOverviewDefaultConfig = {
+  repoLimit: 5,
+  jobLimit: 5,
+  skillLimit: 5,
+  memoryLimit: 5,
+  notificationLimit: 5,
+  workflowEventLimit: 6,
+  repoEditLimit: 5,
+};
+
 export const RuntimeOverviewPlugin = {
   id: 'runtime-overview',
   title: 'Runtime overview',
   kind: 'data',
-  defaultConfig: {
-    repoLimit: 5,
-    jobLimit: 5,
-    skillLimit: 5,
-    memoryLimit: 5,
-    notificationLimit: 5,
-    workflowEventLimit: 6,
-    repoEditLimit: 5,
-  },
+  defaultConfig: runtimeOverviewDefaultConfig,
+  parseConfig: (config) =>
+    parsePositiveIntegerConfig(runtimeOverviewDefaultConfig, config),
   Component({ config }) {
     const queryClient = useQueryClient();
     const [
@@ -559,7 +564,7 @@ function RuntimeView({
               <MiniEmpty
                 label={`Execution defaults to ${snapshot.safety.executionPolicy.defaultBackend}; ${snapshot.safety.executionPolicy.enabledBackends.join(', ')} enabled; ${snapshot.safety.executionPolicy.preapprovedCommandCount} preapproved commands.`}
               />
-              {snapshot.safety.entries
+              {[...snapshot.safety.entries]
                 .sort((a, b) => safetyRank(a) - safetyRank(b))
                 .slice(0, 8)
                 .map((entry) => (
@@ -925,12 +930,19 @@ function RuntimeConfigControls({
   const [organizationIdEnv, setOrganizationIdEnv] = useState(
     selectedProvider.organizationIdEnv ?? '',
   );
+  const [modelDirty, setModelDirty] = useState(false);
+  const [providerDirty, setProviderDirty] = useState(false);
+  const skipModelSyncForStatus = useRef<string | null>(null);
+  const skipProviderSyncForStatus = useRef<string | null>(null);
   const [modelMessage, setModelMessage] = useState<string | null>(null);
   const [providerMessage, setProviderMessage] = useState<string | null>(null);
   const [savingModels, setSavingModels] = useState(false);
   const [savingProvider, setSavingProvider] = useState(false);
 
   useEffect(() => {
+    if (skipModelSyncForStatus.current === status.fetchedAt) return;
+    skipModelSyncForStatus.current = null;
+    if (modelDirty || savingModels) return;
     setDisplayAssistant(status.models.displayAssistant);
     setDisplayThinking(status.models.displayAssistantThinkingLevel);
     setUtilityModel(
@@ -956,14 +968,17 @@ function RuntimeConfigControls({
       previousDisplayProvider.current = nextDisplayProvider;
       setProviderId(nextDisplayProvider);
     }
-  }, [status]);
+  }, [modelDirty, savingModels, status]);
 
   useEffect(() => {
+    if (skipProviderSyncForStatus.current === status.fetchedAt) return;
+    skipProviderSyncForStatus.current = null;
+    if (providerDirty || savingProvider) return;
     const provider = providerStatusSummary(status, providerId);
     setProviderEnabled(provider.enabled);
     setApiKeyEnv(provider.apiKeyEnv);
     setOrganizationIdEnv(provider.organizationIdEnv ?? '');
-  }, [providerId, status]);
+  }, [providerDirty, providerId, savingProvider, status]);
 
   async function saveModels(event: FormEvent) {
     event.preventDefault();
@@ -991,6 +1006,8 @@ function RuntimeConfigControls({
 
       const result = await updateAgentModels(input);
       setModelMessage(result.message);
+      skipModelSyncForStatus.current = status.fetchedAt;
+      setModelDirty(false);
       onRefresh();
     } catch (cause) {
       setModelMessage(cause instanceof Error ? cause.message : String(cause));
@@ -1013,6 +1030,8 @@ function RuntimeConfigControls({
           : {}),
       });
       setProviderMessage(result.message);
+      skipProviderSyncForStatus.current = status.fetchedAt;
+      setProviderDirty(false);
       onRefresh();
     } catch (cause) {
       setProviderMessage(
@@ -1043,57 +1062,97 @@ function RuntimeConfigControls({
         </div>
         <ConfigInput
           label="display"
-          onChange={setDisplayAssistant}
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setDisplayAssistant(value);
+          }}
           value={displayAssistant}
         />
         <ConfigSelect
           label="display think"
-          onChange={setDisplayThinking}
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setDisplayThinking(value);
+          }}
           options={thinkingLevelOptions}
           value={displayThinking}
         />
         <ConfigInput
           label="utility"
-          onChange={setUtilityModel}
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setUtilityModel(value);
+          }}
           placeholder={status.models.utility}
           value={utilityModel}
         />
         <ConfigSelect
           label="utility think"
-          onChange={setUtilityThinking}
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setUtilityThinking(value);
+          }}
           options={thinkingLevelOptions}
           value={utilityThinking}
         />
         <ConfigInput
           label="repo"
-          onChange={setRepoResearcher}
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setRepoResearcher(value);
+          }}
           value={repoResearcher}
         />
         <ConfigSelect
           label="repo think"
-          onChange={setRepoThinking}
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setRepoThinking(value);
+          }}
           options={thinkingLevelOptions}
           value={repoThinking}
         />
         <ConfigInput
           label="ci"
-          onChange={setCiInvestigator}
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setCiInvestigator(value);
+          }}
           value={ciInvestigator}
         />
         <ConfigSelect
           label="ci think"
-          onChange={setCiThinking}
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setCiThinking(value);
+          }}
           options={thinkingLevelOptions}
           value={ciThinking}
         />
         <ConfigInput
           label="release"
-          onChange={setReleaseReviewer}
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setReleaseReviewer(value);
+          }}
           value={releaseReviewer}
         />
         <ConfigSelect
           label="release think"
-          onChange={setReleaseThinking}
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setReleaseThinking(value);
+          }}
           options={thinkingLevelOptions}
           value={releaseThinking}
         />
@@ -1108,7 +1167,11 @@ function RuntimeConfigControls({
             <input
               checked={providerEnabled}
               className="size-3 accent-current"
-              onChange={(event) => setProviderEnabled(event.target.checked)}
+              onChange={(event) => {
+                skipProviderSyncForStatus.current = null;
+                setProviderDirty(true);
+                setProviderEnabled(event.target.checked);
+              }}
               type="checkbox"
             />
             PROVIDER TARGET
@@ -1116,9 +1179,11 @@ function RuntimeConfigControls({
           <select
             aria-label="Provider to configure"
             className="border border-line bg-field px-2 py-1 font-mono text-[10px] text-ink outline-none focus:border-violet"
-            onChange={(event) =>
-              setProviderId(modelProviderId(event.target.value))
-            }
+            onChange={(event) => {
+              skipProviderSyncForStatus.current = null;
+              setProviderDirty(false);
+              setProviderId(modelProviderId(event.target.value));
+            }}
             value={providerId}
           >
             <option value="kilocode">KiloCode</option>
@@ -1135,13 +1200,21 @@ function RuntimeConfigControls({
         </div>
         <ConfigInput
           label="key env"
-          onChange={setApiKeyEnv}
+          onChange={(value) => {
+            skipProviderSyncForStatus.current = null;
+            setProviderDirty(true);
+            setApiKeyEnv(value);
+          }}
           value={apiKeyEnv}
         />
         {providerId === 'kilocode' ? (
           <ConfigInput
             label="org env"
-            onChange={setOrganizationIdEnv}
+            onChange={(value) => {
+              skipProviderSyncForStatus.current = null;
+              setProviderDirty(true);
+              setOrganizationIdEnv(value);
+            }}
             placeholder="optional"
             value={organizationIdEnv}
           />

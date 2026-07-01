@@ -1,5 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs';
+import { cp, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
@@ -38,6 +45,14 @@ const dashboardTextScaleSchema = v.pipe(
 const envVarNameSchema = v.pipe(
   v.string(),
   v.regex(/^[A-Z_][A-Z0-9_]*$/, 'Expected an environment variable name.'),
+);
+export const localApiTokenSchema = v.pipe(
+  v.string(),
+  v.minLength(32),
+  v.regex(
+    /^[A-Za-z0-9_-]+$/,
+    'Expected a base64url-compatible local API token.',
+  ),
 );
 export const thinkingLevelSchema = v.picklist([
   'off',
@@ -238,8 +253,13 @@ export const kiloConfigSchema = v.looseObject({
   repos: v.optional(v.record(v.string(), kiloRepoPolicySchema)),
 });
 
+export const localApiConfigSchema = v.strictObject({
+  token: localApiTokenSchema,
+});
+
 export const appConfigSchema = v.looseObject({
   version: positiveIntegerSchema,
+  localApi: v.optional(localApiConfigSchema),
   skillRoots: v.optional(v.array(nonEmptyStringSchema)),
   models: v.optional(agentModelConfigSchema),
   providers: v.optional(providerConfigSchema),
@@ -350,6 +370,7 @@ export type WorktreeCleanupConfig = v.InferOutput<
 >;
 export type AutopilotConfig = v.InferOutput<typeof autopilotConfigSchema>;
 export type KiloConfig = v.InferOutput<typeof kiloConfigSchema>;
+export type LocalApiConfig = v.InferOutput<typeof localApiConfigSchema>;
 export type RepoConfig = v.InferOutput<typeof repoConfigSchema>;
 export type RepoRegistry = v.InferOutput<typeof repoRegistrySchema>;
 export type ScheduleEntry = v.InferOutput<typeof scheduleEntrySchema>;
@@ -413,7 +434,8 @@ export async function ensureRuntimeHome(paths = runtimePaths()) {
   await mkdir(paths.worktrees, { recursive: true });
 
   await writeFileIfMissing(paths.env, '');
-  await writeJsonIfMissing(paths.config, { version: 1 });
+  await writeJsonIfMissing(paths.config, defaultAppConfig());
+  await ensureLocalApiConfig(paths.config);
   await writeJsonIfMissing(paths.repos, { repos: [] });
   await writeJsonIfMissing(paths.schedules, { schedules: [] });
   await copyIfMissing(defaultDashboardPath, paths.dashboard);
@@ -430,7 +452,8 @@ export function ensureRuntimeHomeSync(paths = runtimePaths()) {
   mkdirSync(paths.worktrees, { recursive: true });
 
   writeFileIfMissingSync(paths.env, '');
-  writeJsonIfMissingSync(paths.config, { version: 1 });
+  writeJsonIfMissingSync(paths.config, defaultAppConfig());
+  ensureLocalApiConfigSync(paths.config);
   writeJsonIfMissingSync(paths.repos, { repos: [] });
   writeJsonIfMissingSync(paths.schedules, { schedules: [] });
   copyIfMissingSync(defaultDashboardPath, paths.dashboard);
@@ -484,6 +507,85 @@ function expandHome(path: string, env: RuntimeHomeEnv) {
 
 function hasShellOperator(value: string) {
   return /(?:\n|&&|\|\||[;&|<>`]|\$\()/.test(value);
+}
+
+function defaultAppConfig(): AppConfig {
+  return {
+    version: 1,
+    localApi: { token: generateLocalApiToken() },
+  };
+}
+
+export function generateLocalApiToken() {
+  return randomBytes(32).toString('base64url');
+}
+
+async function ensureLocalApiConfig(path: string) {
+  const value = await readJsonObjectLenient(path);
+  if (!value) return;
+  if (isValidLocalApiToken(readLocalApiTokenValue(value))) return;
+
+  await writeJsonAtomic(path, {
+    ...value,
+    localApi: { token: generateLocalApiToken() },
+  });
+}
+
+function ensureLocalApiConfigSync(path: string) {
+  const value = readJsonObjectLenientSync(path);
+  if (!value) return;
+  if (isValidLocalApiToken(readLocalApiTokenValue(value))) return;
+
+  writeJsonAtomicSync(path, {
+    ...value,
+    localApi: { token: generateLocalApiToken() },
+  });
+}
+
+async function readJsonObjectLenient(path: string) {
+  try {
+    const value = JSON.parse(await readFile(path, 'utf8')) as unknown;
+    return isRecord(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function readJsonObjectLenientSync(path: string) {
+  try {
+    const value = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+    return isRecord(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function readLocalApiTokenValue(value: Record<string, unknown>) {
+  const localApi = value.localApi;
+  if (!isRecord(localApi)) return undefined;
+  return localApi.token;
+}
+
+function isValidLocalApiToken(value: unknown) {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{32,}$/.test(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+async function writeJsonAtomic(path: string, value: unknown) {
+  await mkdir(dirname(path), { recursive: true });
+  const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+  await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  await rename(tempPath, path);
+}
+
+function writeJsonAtomicSync(path: string, value: unknown) {
+  mkdirSync(dirname(path), { recursive: true });
+  const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  renameSync(tempPath, path);
 }
 
 async function writeJsonIfMissing(path: string, value: unknown) {

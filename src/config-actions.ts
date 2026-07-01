@@ -1644,7 +1644,11 @@ function chatTab() {
 
 async function readTarget(target: ConfigTarget, paths: RuntimePaths) {
   if (target === 'config') {
-    return { config: await readRuntimeJson(paths.config, parseAppConfig) };
+    return {
+      config: publicAppConfig(
+        await readRuntimeJson(paths.config, parseAppConfig),
+      ),
+    };
   }
 
   if (target === 'repos') {
@@ -1664,7 +1668,9 @@ async function readTarget(target: ConfigTarget, paths: RuntimePaths) {
   }
 
   return {
-    config: await readRuntimeJson(paths.config, parseAppConfig),
+    config: publicAppConfig(
+      await readRuntimeJson(paths.config, parseAppConfig),
+    ),
     repos: await readRuntimeJson(paths.repos, parseRepoRegistry),
     dashboard: await readRuntimeJson(paths.dashboard, parseDashboardConfig),
     schedules: await readRuntimeJson(paths.schedules, parseScheduleConfig),
@@ -1677,6 +1683,17 @@ function targetFiles(target: ConfigTarget, paths: RuntimePaths) {
   if (target === 'dashboard') return [paths.dashboard];
   if (target === 'schedules') return [paths.schedules];
   return [paths.config, paths.repos, paths.dashboard, paths.schedules];
+}
+
+function publicAppConfig(config: AppConfig) {
+  if (!config.localApi) return config;
+  return {
+    ...config,
+    localApi: {
+      ...config.localApi,
+      token: '[redacted-local-api-token]',
+    },
+  };
 }
 
 async function discoverGitRepo(path: string) {
@@ -1802,8 +1819,8 @@ function recordConfigChange(
         change.action,
         change.file,
         change.target ?? null,
-        JSON.stringify(change.before),
-        JSON.stringify(change.after),
+        JSON.stringify(redactLocalApiToken(change.before)),
+        JSON.stringify(redactLocalApiToken(change.after)),
         now,
       );
     publishConfigEvent(
@@ -1819,6 +1836,26 @@ function recordConfigChange(
   } finally {
     database.close();
   }
+}
+
+function redactLocalApiToken(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+
+  const record = value as Record<string, unknown>;
+  const localApi = record.localApi;
+  if (!localApi || typeof localApi !== 'object' || Array.isArray(localApi)) {
+    return value;
+  }
+
+  return {
+    ...record,
+    localApi: {
+      ...(localApi as Record<string, unknown>),
+      token: '[redacted-local-api-token]',
+    },
+  };
 }
 
 function resolveUserPath(path: string) {

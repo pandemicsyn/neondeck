@@ -116,9 +116,9 @@ export function resolveKilocodeProviderStatus(
   const kilocode = config?.providers?.kilocode;
   const apiKeyEnv =
     kilocode?.apiKeyEnv ??
-    (env[defaultKilocodeApiKeyEnv]
-      ? defaultKilocodeApiKeyEnv
-      : fallbackKilocodeApiKeyEnv);
+    (env[fallbackKilocodeApiKeyEnv] && !env[defaultKilocodeApiKeyEnv]
+      ? fallbackKilocodeApiKeyEnv
+      : defaultKilocodeApiKeyEnv);
   const organizationIdEnv =
     kilocode?.organizationIdEnv ??
     (env[defaultKilocodeOrganizationIdEnv]

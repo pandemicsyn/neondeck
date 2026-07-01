@@ -71,7 +71,9 @@ describe('workflow observability', () => {
       expect.objectContaining({
         runId: 'run_1',
         workflow: 'command-run',
-        runUrl: '/api/flue/runs/run_1?meta',
+        runUrl: expect.stringMatching(
+          /^\/api\/flue\/runs\/run_1\?meta&neondeckApiToken=[A-Za-z0-9_-]{32,}$/,
+        ),
       }),
     ]);
     expect(snapshot.recentData).toEqual([

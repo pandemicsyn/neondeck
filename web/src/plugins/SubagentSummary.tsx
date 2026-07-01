@@ -12,9 +12,14 @@ import { Badge, ScrollArea } from '../components/ui';
 import { useConfigEvents } from '../lib/config-events';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
+import { parsePositiveIntegerConfig } from './config';
 
 type SubagentSummaryConfig = {
   eventLimit: number;
+};
+
+const subagentSummaryDefaultConfig = {
+  eventLimit: 5,
 };
 
 const subagentLabels: Record<string, string> = {
@@ -27,9 +32,9 @@ export const SubagentSummaryPlugin = {
   id: 'subagent-summary',
   title: 'Subagents',
   kind: 'data',
-  defaultConfig: {
-    eventLimit: 5,
-  },
+  defaultConfig: subagentSummaryDefaultConfig,
+  parseConfig: (config) =>
+    parsePositiveIntegerConfig(subagentSummaryDefaultConfig, config),
   Component({ config }) {
     const queryClient = useQueryClient();
     const [runtime, workflows] = useQueries({

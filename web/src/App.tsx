@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import {
   getDashboardConfig,
@@ -14,7 +14,7 @@ import {
 import type { DeckArrangement } from './lib/deck-profile';
 import { useDeckProfile } from './lib/deck-profile';
 import { queryErrorMessage, queryKeys } from './lib/query';
-import { pluginRegistry } from './plugins/registry';
+import { pluginRegistry, resolvePluginConfig } from './plugins/registry';
 import type {
   DashboardConfig,
   DashboardDensity,
@@ -214,7 +214,7 @@ function StatuslinePanel({
     );
   }
 
-  const mergedConfig = { ...plugin.defaultConfig, ...statusline.config };
+  const resolvedConfig = resolvePluginConfig(plugin, statusline.config);
   const PluginComponent = plugin.Component;
 
   return (
@@ -224,8 +224,9 @@ function StatuslinePanel({
       title="Statusline"
       variant="statusline"
     >
+      <ConfigIssues issues={resolvedConfig.issues} />
       <PluginComponent
-        config={mergedConfig}
+        config={resolvedConfig.config}
         region={statuslineRegion(statusline)}
       />
     </PanelFrame>
@@ -243,6 +244,7 @@ function DashboardPanel({
 }) {
   const initialTabId = region.defaultTab ?? region.tabs[0]?.id ?? '';
   const [activeTabId, setActiveTabId] = useState(initialTabId);
+  const defaultTabRef = useRef({ regionId: region.id, tabId: initialTabId });
   const activeTab =
     region.tabs.find((tab) => tab.id === activeTabId) ?? region.tabs[0];
   const role = regionPrimaryRole(region);
@@ -255,9 +257,18 @@ function DashboardPanel({
       : { order: columnOrder(role) };
 
   useEffect(() => {
+    const defaultChanged =
+      defaultTabRef.current.regionId !== region.id ||
+      defaultTabRef.current.tabId !== initialTabId;
+    defaultTabRef.current = { regionId: region.id, tabId: initialTabId };
+    if (defaultChanged) {
+      setActiveTabId(initialTabId);
+      return;
+    }
+
     if (region.tabs.some((tab) => tab.id === activeTabId)) return;
     setActiveTabId(initialTabId);
-  }, [activeTabId, initialTabId, region.tabs]);
+  }, [activeTabId, initialTabId, region.id, region.tabs]);
 
   // In column mode an error frame must stay visible, not be capped under the
   // data band's max-height. Promote the failing region to the agent role so it
@@ -301,7 +312,7 @@ function DashboardPanel({
     );
   }
 
-  const mergedConfig = { ...plugin.defaultConfig, ...activeTab.config };
+  const resolvedConfig = resolvePluginConfig(plugin, activeTab.config);
   const PluginComponent = plugin.Component;
 
   return (
@@ -317,14 +328,25 @@ function DashboardPanel({
           onChange={setActiveTabId}
           tabs={region.tabs}
         />
+        <ConfigIssues issues={resolvedConfig.issues} />
         <div className="min-h-0 flex-1">
           <PluginComponent
-            config={mergedConfig}
+            config={resolvedConfig.config}
             region={tabRegion(region, activeTab)}
           />
         </div>
       </div>
     </PanelFrame>
+  );
+}
+
+function ConfigIssues({ issues }: { issues: string[] }) {
+  if (issues.length === 0) return null;
+
+  return (
+    <div className="border-b border-accent bg-field px-2 py-1 font-mono text-[10px] leading-4 text-accent">
+      Invalid panel config ignored: {issues.join(' ')}
+    </div>
   );
 }
 

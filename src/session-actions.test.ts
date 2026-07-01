@@ -254,6 +254,55 @@ describe('session actions', () => {
     });
   });
 
+  it('reuses existing linked chat sessions instead of creating duplicates', async () => {
+    const paths = runtimePaths(await tempDir());
+
+    const first = await createChatSession(
+      {
+        title: 'Watch first',
+        kind: 'watch',
+        linkedRepoId: 'neondeck',
+        linkedWatchId: 'watch-1',
+        summary: 'Initial watch summary.',
+      },
+      paths,
+    );
+    const firstSession = (first as { session: ChatSessionRecord }).session;
+    await archiveChatSession({ id: firstSession.id }, paths);
+
+    const second = await createChatSession(
+      {
+        title: 'Watch duplicate',
+        kind: 'watch',
+        linkedRepoId: 'neondeck',
+        linkedWatchId: 'watch-1',
+        summary: 'Replacement summary should not overwrite.',
+      },
+      paths,
+    );
+    const secondSession = (second as { session: ChatSessionRecord }).session;
+
+    expect(second).toMatchObject({
+      ok: true,
+      changed: true,
+      message: expect.stringContaining('Reused linked chat session'),
+      session: {
+        id: firstSession.id,
+        archivedAt: null,
+        summary: 'Initial watch summary.',
+      },
+    });
+    expect(secondSession.id).toBe(firstSession.id);
+
+    const list = await listChatSessions(
+      { includeArchived: true, kind: 'watch' },
+      paths,
+    );
+    expect((list as { sessions: ChatSessionRecord[] }).sessions).toHaveLength(
+      1,
+    );
+  });
+
   it('uses the utility model role metadata for generated session titles', async () => {
     const paths = runtimePaths(await tempDir());
 

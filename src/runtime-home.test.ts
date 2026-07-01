@@ -76,8 +76,11 @@ describe('runtime home', () => {
 
     await expect(
       readRuntimeJson(paths.config, parseAppConfig),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       version: 1,
+      localApi: {
+        token: expect.stringMatching(/^[A-Za-z0-9_-]{32,}$/),
+      },
     });
     await expect(
       readRuntimeJson(paths.repos, parseRepoRegistry),

@@ -926,6 +926,21 @@ describe('config actions', () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
 
+    const configResult = await readConfig({ target: 'config' }, paths);
+    expect(
+      (
+        configResult.data as {
+          config?: { localApi?: { token?: string } };
+        }
+      ).config?.localApi?.token,
+    ).toBe('[redacted-local-api-token]');
+    expect(
+      parseAppConfig(
+        JSON.parse(await readFile(paths.config, 'utf8')),
+        paths.config,
+      ).localApi?.token,
+    ).toMatch(/^[A-Za-z0-9_-]{32,}$/);
+
     await expect(readConfig({ target: 'repos' }, paths)).resolves.toMatchObject(
       {
         ok: true,

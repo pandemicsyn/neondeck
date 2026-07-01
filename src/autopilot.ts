@@ -2,6 +2,7 @@ import { defineTool } from '@flue/runtime';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { listExecutionApprovals } from './execution-actions';
+import { flueRunInspectionUrl } from './local-api-auth';
 import {
   globalAutopilotPolicy,
   mergeAutopilotConcurrency,
@@ -448,7 +449,9 @@ export async function readAutopilotState(
   const workflowRuns = readActiveAutopilotRuns(paths);
   const runningChecks = workflowRuns
     .filter((run) => isCheckWorkflow(run.workflow))
-    .map((run) => runningCheckFromWorkflow(run, worktrees));
+    .map((run) =>
+      runningCheckFromWorkflow(run, worktrees, appConfig.localApi?.token),
+    );
   const preparedDiffs = (preparedDiffSnapshot.preparedDiffs ?? []).map(
     preparedDiffFromRecord,
   );
@@ -831,6 +834,7 @@ function preparedDiffSummary(record: PreparedDiffRecord) {
 function runningCheckFromWorkflow(
   run: WorkflowRunRow,
   worktrees: WorktreeRecord[],
+  localApiToken?: string,
 ): AutopilotRunningCheck {
   const related = worktrees.find(
     (worktree) => worktree.owningWorkflowRunId === run.run_id,
@@ -846,7 +850,7 @@ function runningCheckFromWorkflow(
     startedAt: run.started_at,
     lastEventAt: run.last_event_at,
     lastMessage: run.last_message,
-    runUrl: `/api/flue/runs/${run.run_id}`,
+    runUrl: flueRunInspectionUrl(run.run_id, localApiToken),
   };
 }
 

@@ -372,14 +372,12 @@ program
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
     loadEnvForPaths(paths);
     const desiredTerminalState = parseWatchTarget(options.until);
-    const intervalSeconds = options.interval
-      ? Number(options.interval)
-      : undefined;
+    const intervalSeconds = parseOptionalIntervalSeconds(options.interval);
     const result = await addPrWatch(
       {
         ref,
         desiredTerminalState,
-        ...(intervalSeconds ? { intervalSeconds } : {}),
+        ...(intervalSeconds !== undefined ? { intervalSeconds } : {}),
       },
       paths,
     );
@@ -397,16 +395,14 @@ program
       await schedulerModule();
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
     loadEnvForPaths(paths);
-    const intervalSeconds = options.interval
-      ? Number(options.interval)
-      : undefined;
+    const intervalSeconds = parseOptionalIntervalSeconds(options.interval);
 
     if (options.morningBriefing) {
       printActionResult(
         await createScheduleBlueprint(
           {
             blueprint: 'morning-briefing',
-            ...(intervalSeconds ? { intervalSeconds } : {}),
+            ...(intervalSeconds !== undefined ? { intervalSeconds } : {}),
           },
           paths,
         ),
@@ -419,7 +415,7 @@ program
         await createScheduleBlueprint(
           {
             blueprint: 'review-queue-digest',
-            ...(intervalSeconds ? { intervalSeconds } : {}),
+            ...(intervalSeconds !== undefined ? { intervalSeconds } : {}),
           },
           paths,
         ),
@@ -515,24 +511,41 @@ async function runInit(options: { home?: string }) {
   await configureSkillRoots(paths);
 
   const status = await readRuntimeStatus(paths);
-  note(
-    [
-      `home      ${paths.home}`,
-      `status    ${status.status}`,
-      `model     ${status.models.displayAssistant}`,
-      `github    ${status.providers.credentials.github ? 'configured' : 'missing'}`,
-      `kilo      ${status.providers.credentials.kilo ? 'configured' : 'missing'}`,
-      `openai    ${status.providers.credentials.openai ? 'configured' : 'missing'}`,
-      `anthropic ${status.providers.credentials.anthropic ? 'configured' : 'missing'}`,
-      `repos     ${status.counts.repos}`,
+  const failedChecks = status.checks.filter((check) => !check.ok);
+  const statusLines = [
+    `home      ${paths.home}`,
+    `status    ${status.status}`,
+    `model     ${status.models.displayAssistant}`,
+    `github    ${status.providers.credentials.github ? 'configured' : 'missing'}`,
+    `kilo      ${status.providers.credentials.kilo ? 'configured' : 'missing'}`,
+    `openai    ${status.providers.credentials.openai ? 'configured' : 'missing'}`,
+    `anthropic ${status.providers.credentials.anthropic ? 'configured' : 'missing'}`,
+    `repos     ${status.counts.repos}`,
+  ];
+  if (failedChecks.length > 0) {
+    statusLines.push(
       '',
-      'Next:',
-      '  npm run dev',
-      '  open http://127.0.0.1:5173/',
-    ].join('\n'),
-    'neondeck is ready',
+      'Remaining:',
+      ...failedChecks.map((check) => `  ${check.label}: ${check.message}`),
+    );
+  }
+  statusLines.push(
+    '',
+    'Next:',
+    '  npm run dev',
+    '  open http://127.0.0.1:5173/',
   );
-  outro('The deck is live.');
+  note(
+    statusLines.join('\n'),
+    status.status === 'ready'
+      ? 'neondeck is ready'
+      : 'neondeck runtime prepared; config remains',
+  );
+  outro(
+    status.status === 'ready'
+      ? 'The deck is live.'
+      : 'Finish the remaining config, then start the deck.',
+  );
 }
 
 async function configureSecrets(paths: RuntimePaths, envLoad: EnvLoadResult) {
@@ -1143,6 +1156,19 @@ function parseWatchTarget(value: string | undefined) {
   if (value === 'checks' || value === 'merged' || value === 'prod')
     return value;
   throw new Error('--until must be checks, merged, or prod');
+}
+
+function parseOptionalIntervalSeconds(value: string | undefined) {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error('--interval must be an integer >= 60');
+  }
+  const seconds = Number(trimmed);
+  if (!Number.isSafeInteger(seconds) || seconds < 60) {
+    throw new Error('--interval must be an integer >= 60');
+  }
+  return seconds;
 }
 
 function printActionResult(result: {

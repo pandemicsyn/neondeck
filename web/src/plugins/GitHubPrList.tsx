@@ -10,18 +10,23 @@ import { Badge, ScrollArea } from '../components/ui';
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
+import { parsePositiveIntegerConfig } from './config';
 
 type GitHubPrListConfig = {
   limit: number;
+};
+
+const githubPrListDefaultConfig = {
+  limit: 12,
 };
 
 export const GitHubPrListPlugin = {
   id: 'github-pr-list',
   title: 'GitHub PR list',
   kind: 'data',
-  defaultConfig: {
-    limit: 12,
-  },
+  defaultConfig: githubPrListDefaultConfig,
+  parseConfig: (config) =>
+    parsePositiveIntegerConfig(githubPrListDefaultConfig, config),
   Component({ config }) {
     const queryClient = useQueryClient();
     const { data, error, isLoading } = useQuery({

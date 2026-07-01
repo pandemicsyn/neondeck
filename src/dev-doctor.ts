@@ -5,16 +5,28 @@ import net from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as v from 'valibot';
+import { resolveAgentModelSelection } from './agent-config';
 import { readEnvFiles } from './env';
+import {
+  isRegisteredProvider,
+  resolveAnthropicProviderStatus,
+  resolveKilocodeProviderStatus,
+  resolveOpenAiProviderStatus,
+  type RegisteredProviderId,
+} from './providers';
 import {
   readGitRepoStatus,
   readRepoHealthSnapshot,
   readRepoRegistrySnapshot,
 } from './repos';
+import { requiredModelProviders } from './runtime-status';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
+  parseAppConfig,
+  readRuntimeJson,
   runtimePaths,
+  type AppConfig,
 } from './runtime-home';
 
 type DoctorStatus = 'ok' | 'attention';
@@ -46,6 +58,11 @@ type PackageSnapshot = {
   path: string;
   scripts: Record<string, string>;
   error?: string;
+};
+
+type EnvRequirement = {
+  id: string;
+  aliases?: string[];
 };
 
 const packageJsonSchema = v.object({
@@ -116,9 +133,9 @@ export const neondeckDevDoctorActions = [devDoctorRunAction];
 export async function runDevDoctor(
   paths: RuntimePaths = runtimePaths(),
 ): Promise<DevDoctorResult> {
-  const databases = databaseCheck(paths);
   await ensureRuntimeHome(paths);
-  const [repos, localEnv, rootPackage, ports] = await Promise.all([
+  const databases = databaseCheck(paths);
+  const [repos, localEnv, rootPackage, ports, appConfig] = await Promise.all([
     readRepoHealthSnapshot(paths),
     readEnvFiles(paths),
     readPackageSnapshot(rootDir),
@@ -126,12 +143,13 @@ export async function runDevDoctor(
       { id: 'dashboard', host: '127.0.0.1', port: 5173 },
       { id: 'api', host: '127.0.0.1', port: 3583 },
     ]),
+    readAppConfig(paths),
   ]);
   const repoPackages = await Promise.all(
     repos.repos.map((repo) => readPackageSnapshot(repo.path)),
   );
 
-  const envResult = envCheck(localEnv);
+  const envResult = envCheck(localEnv, appConfig, repos);
   const checks = [
     repoHealthCheck(repos),
     packageScriptsCheck(rootPackage, repoPackages),
@@ -255,19 +273,22 @@ function nodeVersionCheck(): DoctorCheck {
   };
 }
 
-function envCheck(localEnv: Map<string, string>): {
+function envCheck(
+  localEnv: Map<string, string>,
+  config: AppConfig | undefined,
+  repos: Awaited<ReturnType<typeof readRepoHealthSnapshot>>,
+): {
   missing: string[];
   check: DoctorCheck;
 } {
-  const requirements = [
-    { id: 'KILOCODE_API_KEY', aliases: ['KILO_API_KEY'] },
-    { id: 'GITHUB_TOKEN', aliases: [] },
-  ];
+  const requirements = envRequirements(localEnv, config, repos);
   const missing = requirements
     .filter(
       (requirement) =>
         !hasEnvKey(requirement.id, localEnv) &&
-        !requirement.aliases.some((alias) => hasEnvKey(alias, localEnv)),
+        !(requirement.aliases ?? []).some((alias) =>
+          hasEnvKey(alias, localEnv),
+        ),
     )
     .map((requirement) => requirement.id);
 
@@ -296,6 +317,80 @@ function envCheck(localEnv: Map<string, string>): {
       },
     },
   };
+}
+
+async function readAppConfig(paths: RuntimePaths) {
+  try {
+    return await readRuntimeJson(paths.config, parseAppConfig);
+  } catch {
+    return undefined;
+  }
+}
+
+function envRequirements(
+  localEnv: Map<string, string>,
+  config: AppConfig | undefined,
+  repos: Awaited<ReturnType<typeof readRepoHealthSnapshot>>,
+): EnvRequirement[] {
+  const env = mergedEnv(localEnv);
+  const models = resolveAgentModelSelection(
+    config ? { models: config.models } : undefined,
+    env,
+  );
+  const modelProviders =
+    requiredModelProviders(models).filter(isRegisteredProvider);
+  const requirements = new Map<string, EnvRequirement>();
+
+  for (const provider of modelProviders) {
+    const requirement = providerEnvRequirement(provider, config, env);
+    if (requirement) requirements.set(requirement.id, requirement);
+  }
+
+  if (repos.count > 0) requirements.set('GITHUB_TOKEN', { id: 'GITHUB_TOKEN' });
+
+  return Array.from(requirements.values());
+}
+
+function providerEnvRequirement(
+  provider: RegisteredProviderId,
+  config: AppConfig | undefined,
+  env: NodeJS.ProcessEnv,
+): EnvRequirement | undefined {
+  if (provider === 'kilocode') {
+    const status = resolveKilocodeProviderStatus(
+      config ? { providers: config.providers } : undefined,
+      env,
+    );
+    if (!status.enabled) return undefined;
+    return {
+      id: status.apiKeyEnv,
+      aliases:
+        status.apiKeyEnv === 'KILOCODE_API_KEY'
+          ? ['KILO_API_KEY']
+          : ['KILOCODE_API_KEY'],
+    };
+  }
+
+  if (provider === 'openai') {
+    const status = resolveOpenAiProviderStatus(
+      config ? { providers: config.providers } : undefined,
+      env,
+    );
+    return status.enabled ? { id: status.apiKeyEnv } : undefined;
+  }
+
+  const status = resolveAnthropicProviderStatus(
+    config ? { providers: config.providers } : undefined,
+    env,
+  );
+  return status.enabled ? { id: status.apiKeyEnv } : undefined;
+}
+
+function mergedEnv(localEnv: Map<string, string>): NodeJS.ProcessEnv {
+  return {
+    ...Object.fromEntries(localEnv),
+    ...process.env,
+  } as NodeJS.ProcessEnv;
 }
 
 function portsCheck(ports: Array<{ id: string; port: number; open: boolean }>) {

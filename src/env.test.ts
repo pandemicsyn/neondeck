@@ -2,7 +2,12 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadNeondeckEnv, parseDotEnv, readEnvFiles } from './env';
+import {
+  loadNeondeckEnv,
+  parseDotEnv,
+  quoteEnvValue,
+  readEnvFiles,
+} from './env';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 
 const tempRoots: string[] = [];
@@ -28,6 +33,14 @@ GITHUB_LOGIN=octo
         ['KILOCODE_API_KEY', 'secret value'],
         ['GITHUB_LOGIN', 'octo'],
       ]),
+    );
+  });
+
+  it('round-trips escaped quoted dotenv values written by quoteEnvValue', () => {
+    const value = 'secret "quoted" value with \\ slash';
+
+    expect(parseDotEnv(`TOKEN=${quoteEnvValue(value)}\n`)).toEqual(
+      new Map([['TOKEN', value]]),
     );
   });
 

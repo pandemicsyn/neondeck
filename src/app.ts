@@ -52,6 +52,13 @@ import { checkExecutionPolicy, readExecutionPolicy } from './execution-policy';
 import { loadNeondeckEnv } from './env';
 import { listGitHubPrQueue } from './github-actions';
 import {
+  bearerToken,
+  localApiAuthHeader,
+  localApiTokenMatches,
+  localApiTokenQueryParam,
+  readLocalApiToken,
+} from './local-api-auth';
+import {
   abortKiloTask,
   listKiloTasks,
   readKiloSession,
@@ -202,6 +209,20 @@ const requireLocalApiAccess: MiddlewareHandler = async (c, next) => {
   return c.json({ error: 'Not found' }, 404);
 };
 
+const requireFlueRunInspectionToken: MiddlewareHandler = async (c, next) => {
+  const expected = await readLocalApiToken(paths);
+  const provided =
+    c.req.header(localApiAuthHeader) ??
+    bearerToken(c.req.header('authorization')) ??
+    c.req.query(localApiTokenQueryParam);
+
+  if (!localApiTokenMatches(provided, expected)) {
+    return c.json({ error: 'Not found' }, 404);
+  }
+
+  await next();
+};
+
 await ensureRuntimeHome(paths);
 observe((event) => {
   void recordFlueObservation(event, paths).catch((error) => {
@@ -283,6 +304,16 @@ app.get('/api/health', (c) =>
 
 app.get('/api/runtime/status', async (c) => {
   return c.json(await readRuntimeStatus(paths));
+});
+
+app.get('/api/local-api/session', async (c) => {
+  return c.json({
+    ok: true,
+    action: 'local_api_session_read',
+    token: await readLocalApiToken(paths),
+    header: localApiAuthHeader,
+    queryParam: localApiTokenQueryParam,
+  });
 });
 
 app.get('/api/autopilot/state', async (c) => {
@@ -1377,6 +1408,8 @@ app.post('/api/github/prs/comment', async (c) => {
   return c.json(result, result.ok ? 200 : 400);
 });
 
+app.use('/api/flue/runs', requireFlueRunInspectionToken);
+app.use('/api/flue/runs/*', requireFlueRunInspectionToken);
 app.route('/api/flue', flue());
 
 app.use('/assets/*', serveStatic({ root: staticRoot }));

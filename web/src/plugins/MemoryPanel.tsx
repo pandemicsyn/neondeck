@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   getMemories,
   upsertMemory,
@@ -10,18 +10,23 @@ import { EmptyState } from '../App';
 import { Badge, Button, ScrollArea } from '../components/ui';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
+import { parsePositiveIntegerConfig } from './config';
 
 type MemoryPanelConfig = {
   limit: number;
+};
+
+const memoryPanelDefaultConfig = {
+  limit: 8,
 };
 
 export const MemoryPanelPlugin = {
   id: 'memory-panel',
   title: 'Memory',
   kind: 'data',
-  defaultConfig: {
-    limit: 8,
-  },
+  defaultConfig: memoryPanelDefaultConfig,
+  parseConfig: (config) =>
+    parsePositiveIntegerConfig(memoryPanelDefaultConfig, config),
   Component({ config }) {
     const { data, error, isLoading } = useQuery({
       queryKey: queryKeys.memories,
@@ -98,12 +103,17 @@ function CurrentTaskForm({
   currentTask: MemoryRecord | undefined;
 }) {
   const queryClient = useQueryClient();
-  const [value, setValue] = useState(memoryPreview(currentTask?.value ?? ''));
+  const remoteValue = memoryPreview(currentTask?.value ?? '');
+  const [value, setValue] = useState(remoteValue);
+  const [isDirty, setIsDirty] = useState(false);
+  const skipSyncForRemoteValue = useRef<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const mutation = useMutation({
     mutationFn: upsertMemory,
     onSuccess(result) {
       setMessage(result.message);
+      skipSyncForRemoteValue.current = remoteValue;
+      setIsDirty(false);
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.memories }),
         queryClient.invalidateQueries({ queryKey: queryKeys.runtimeStatus }),
@@ -116,8 +126,11 @@ function CurrentTaskForm({
   });
 
   useEffect(() => {
-    setValue(memoryPreview(currentTask?.value ?? ''));
-  }, [currentTask]);
+    if (skipSyncForRemoteValue.current === remoteValue) return;
+    skipSyncForRemoteValue.current = null;
+    if (isDirty || mutation.isPending) return;
+    setValue(remoteValue);
+  }, [isDirty, mutation.isPending, remoteValue]);
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -145,7 +158,10 @@ function CurrentTaskForm({
       </div>
       <textarea
         className="mt-2 h-14 w-full resize-none border border-line bg-field px-2 py-1.5 text-[11px] leading-4 text-ink outline-none focus:border-violet"
-        onChange={(event) => setValue(event.target.value)}
+        onChange={(event) => {
+          setIsDirty(true);
+          setValue(event.target.value);
+        }}
         placeholder="What is Neon focused on right now?"
         value={value}
       />

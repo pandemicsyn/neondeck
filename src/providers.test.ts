@@ -1,7 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { providerRuntimeRegistrations } from './providers';
+import {
+  providerRuntimeRegistrations,
+  resolveKilocodeProviderStatus,
+} from './providers';
 
 describe('provider runtime registrations', () => {
+  it('prefers KILOCODE_API_KEY unless only the legacy Kilo key is present', () => {
+    expect(resolveKilocodeProviderStatus(undefined, {})).toMatchObject({
+      apiKeyEnv: 'KILOCODE_API_KEY',
+      apiKeyPresent: false,
+    });
+    expect(
+      resolveKilocodeProviderStatus(undefined, {
+        KILO_API_KEY: 'legacy',
+      } as NodeJS.ProcessEnv),
+    ).toMatchObject({
+      apiKeyEnv: 'KILO_API_KEY',
+      apiKeyPresent: true,
+    });
+  });
+
   it('uses configured OpenAI and Anthropic environment references for Flue', () => {
     const registrations = providerRuntimeRegistrations(
       {

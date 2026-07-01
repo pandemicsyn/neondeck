@@ -6,18 +6,23 @@ import { SessionReferenceButton } from '../components/SessionReferenceButton';
 import { Badge, ScrollArea } from '../components/ui';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
+import { parsePositiveIntegerConfig } from './config';
 
 type BriefingPanelConfig = {
   actionLimit: number;
+};
+
+const briefingPanelDefaultConfig = {
+  actionLimit: 5,
 };
 
 export const BriefingPanelPlugin = {
   id: 'briefing-panel',
   title: 'Briefing',
   kind: 'data',
-  defaultConfig: {
-    actionLimit: 5,
-  },
+  defaultConfig: briefingPanelDefaultConfig,
+  parseConfig: (config) =>
+    parsePositiveIntegerConfig(briefingPanelDefaultConfig, config),
   Component({ config }) {
     const { data, error, isLoading } = useQuery({
       queryKey: queryKeys.workflowSummaries,

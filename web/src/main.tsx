@@ -7,9 +7,29 @@ import { App } from './App';
 import { queryClient } from './lib/query';
 import './styles.css';
 
+type LocalApiSession = {
+  ok: boolean;
+  token?: string | null;
+  header?: string | null;
+};
+
+const localApiSession = fetch('/api/local-api/session')
+  .then((response) =>
+    response.ok ? (response.json() as Promise<LocalApiSession>) : null,
+  )
+  .catch(() => null);
+
 const client = createFlueClient({
   baseUrl: '/api/flue',
-  fetch: (input, init) => fetch(input, init),
+  fetch: async (input, init) => {
+    const session = await localApiSession;
+    const headers = new Headers(init?.headers);
+    if (session?.token) {
+      headers.set(session.header || 'x-neondeck-api-token', session.token);
+    }
+
+    return fetch(input, { ...init, headers });
+  },
 });
 
 createRoot(document.getElementById('root')!).render(
