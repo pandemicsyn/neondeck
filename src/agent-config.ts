@@ -20,6 +20,9 @@ export type AgentModelSelection = {
   utility: string;
   utilityConfigured: boolean;
   utilityThinkingLevel: ThinkingLevel;
+  selfImprovement: string;
+  selfImprovementConfigured: boolean;
+  selfImprovementThinkingLevel: ThinkingLevel;
   subagents: Record<NeondeckSubagentKey, string>;
   subagentThinkingLevels: Record<NeondeckSubagentKey, ThinkingLevel>;
 };
@@ -64,6 +67,23 @@ export function resolveAgentModelSelection(
     env.FLUE_UTILITY_THINKING_LEVEL,
     'low',
   );
+  const configuredSelfImprovement = firstOptionalModel(
+    config?.models?.selfImprovement,
+    env.FLUE_SELF_IMPROVEMENT_MODEL,
+  );
+  const selfImprovement = firstModel(
+    configuredSelfImprovement,
+    configuredUtility,
+    env.FLUE_UTILITY_MODEL,
+    displayAssistant,
+  );
+  const selfImprovementThinkingLevel = firstThinkingLevel(
+    config?.models?.selfImprovementThinkingLevel,
+    env.FLUE_SELF_IMPROVEMENT_THINKING_LEVEL,
+    config?.models?.utilityThinkingLevel,
+    env.FLUE_UTILITY_THINKING_LEVEL,
+    'low',
+  );
   const subagentDefault = firstModel(
     config?.models?.subagents?.default,
     env.FLUE_SUBAGENT_MODEL,
@@ -83,6 +103,9 @@ export function resolveAgentModelSelection(
     utility,
     utilityConfigured: Boolean(configuredUtility),
     utilityThinkingLevel,
+    selfImprovement,
+    selfImprovementConfigured: Boolean(configuredSelfImprovement),
+    selfImprovementThinkingLevel,
     subagents: {
       repoResearcher: firstModel(
         config?.models?.subagents?.repoResearcher,

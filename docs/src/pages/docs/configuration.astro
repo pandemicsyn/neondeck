@@ -70,6 +70,8 @@ GITHUB_LOGIN=...</code></pre>
     "displayAssistantThinkingLevel": "medium",
     "utility": "kilocode/kilo-auto/fast",
     "utilityThinkingLevel": "low",
+    "selfImprovement": "kilocode/kilo-auto/fast",
+    "selfImprovementThinkingLevel": "low",
     "subagents": &#123;
       "default": "kilocode/kilo-auto/balanced",
       "defaultThinkingLevel": "medium",
@@ -102,11 +104,33 @@ GITHUB_LOGIN=...</code></pre>
           arbitrary endpoints. <code>thinkingLevel</code> values use Flue's exposed
           reasoning tiers. The utility model is optional and falls back to the display
           assistant when omitted, but a low-cost utility model is recommended for
-          titles, labels, notifications, and compact summaries.
+          titles, labels, notifications, and compact summaries. The self-improvement
+          model is optional and falls back through the utility model and display assistant.
+          It reserves a cheap fast model role for future background learning reviews;
+          the current memory foundation uses deterministic curation actions.
           <code>off</code>, <code>minimal</code>, <code>low</code>,
           <code>medium</code>, <code>high</code>, or <code>xhigh</code> levels. Provider
           registration changes require a server restart.
         </p>
+
+        <h2>Learning</h2>
+        <p>
+          Learning config controls memory writes, review policy, and bounded
+          memory curation. Memory uses active <code>user</code>,
+          <code>local</code>, and <code>project</code> scopes; active sessions are
+          marked stale after memory changes rather than being silently rewritten.
+        </p>
+        <pre><code>&#123;
+  "learning": &#123;
+    "enabled": true,
+    "memoryWriteMode": "auto",
+    "skillWriteMode": "auto",
+    "memoryCurationEnabled": true,
+    "memoryCurationMode": "review",
+    "memoryCurationTurnInterval": 200,
+    "memoryMaxActiveItems": 200
+  &#125;
+&#125;</code></pre>
 
         <h2>Repositories</h2>
         <p>

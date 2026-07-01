@@ -38,6 +38,7 @@ Design toward one backend command/event surface. The web dashboard is the first 
 - Prefer deterministic APIs/actions for facts and mutations.
 - Do not make the agent freestyle-edit Neondeck config as the primary path. Config changes should go through typed Flue actions once those exist.
 - Keep session context stable. SOUL, selected skills, memory summaries, and repo config should be loaded deliberately rather than silently changing mid-session.
+- Treat memory as current guidance for future sessions. New memory writes should use only `user`, `local`, and `project` scopes; legacy `session` and `watch` memories are readable compatibility rows, not new write targets. Archive stale guidance instead of deleting it so audit history remains intact.
 - Build deterministic watchers first. Invoke agent reasoning only when there is a meaningful state change to summarize or act on.
 - Treat skills as guidance and actions as execution.
 - Keep UI work consistent with the existing Xeneon/Miami tiger-stripe design language unless the user asks to change direction.

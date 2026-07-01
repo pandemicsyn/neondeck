@@ -79,7 +79,16 @@ import {
   reviewKiloResult,
   verifyKiloResult,
 } from './kilo-results';
-import { deleteMemory, listMemories, upsertMemory } from './memory-actions';
+import {
+  archiveMemory,
+  curateMemoryStore,
+  decideMemoryCandidate,
+  deleteMemory,
+  listMemories,
+  listMemoryCandidates,
+  listMemoryEvents,
+  upsertMemory,
+} from './memory-actions';
 import { readHostMetrics } from './metrics';
 import {
   abandonPreparedDiff,
@@ -1260,6 +1269,8 @@ app.get('/api/memories', async (c) => {
   const rawScope = c.req.query('scope');
   const scope = memoryScope(rawScope);
   const key = c.req.query('key');
+  const rawStatus = c.req.query('status');
+  const status = memoryStatus(rawStatus);
   if (rawScope && !scope) {
     return c.json(
       {
@@ -1271,12 +1282,26 @@ app.get('/api/memories', async (c) => {
       400,
     );
   }
+  if (rawStatus && !status) {
+    return c.json(
+      {
+        ok: false,
+        action: 'memory_list',
+        changed: false,
+        message: `Invalid memory status "${rawStatus}".`,
+      },
+      400,
+    );
+  }
 
   return c.json(
     await listMemories(
       {
         scope,
         key: key || undefined,
+        status,
+        includeArchived: c.req.query('includeArchived') === 'true',
+        repoId: c.req.query('repoId') || undefined,
       },
       paths,
     ),
@@ -1304,6 +1329,91 @@ app.delete('/api/memories', async (c) => {
 
   const result = await deleteMemory(
     { scope, key, confirm: c.req.query('confirm') === 'true' },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/memories/:id/archive', async (c) => {
+  const result = await archiveMemory(
+    {
+      ...((await safeJsonBody(c)) as Record<string, unknown>),
+      id: c.req.param('id'),
+    },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.get('/api/memory-events', async (c) => {
+  const limit = Number(c.req.query('limit') ?? '100');
+  return c.json(
+    await listMemoryEvents(
+      {
+        memoryId: c.req.query('memoryId') || undefined,
+        limit: Number.isFinite(limit) ? limit : undefined,
+      },
+      paths,
+    ),
+  );
+});
+
+app.post('/api/learning/curate', async (c) => {
+  return c.json(
+    await curateMemoryStore(
+      (await safeJsonBody(c)) as {
+        mode?: 'off' | 'review' | 'auto';
+        reason?: string;
+      },
+      paths,
+    ),
+  );
+});
+
+app.get('/api/learning/candidates', async (c) => {
+  const status = learningCandidateStatus(c.req.query('status'));
+  if (c.req.query('status') && !status) {
+    return c.json(
+      {
+        ok: false,
+        action: 'memory_candidate_list',
+        changed: false,
+        message: `Invalid candidate status "${c.req.query('status')}".`,
+      },
+      400,
+    );
+  }
+  const limit = Number(c.req.query('limit') ?? '100');
+  return c.json(
+    await listMemoryCandidates(
+      {
+        status,
+        limit: Number.isFinite(limit) ? limit : undefined,
+      },
+      paths,
+    ),
+  );
+});
+
+app.post('/api/learning/candidates/:id/approve', async (c) => {
+  const result = await decideMemoryCandidate(
+    {
+      ...((await safeJsonBody(c)) as Record<string, unknown>),
+      id: c.req.param('id'),
+      decision: 'apply',
+    },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/learning/candidates/:id/reject', async (c) => {
+  const result = await decideMemoryCandidate(
+    {
+      ...((await safeJsonBody(c)) as Record<string, unknown>),
+      id: c.req.param('id'),
+      decision: 'reject',
+    },
     paths,
   );
   return c.json(result, result.ok ? 200 : 400);
@@ -1490,9 +1600,28 @@ function isLocalUrl(value: string) {
 function memoryScope(value: string | undefined) {
   if (
     value === 'user' ||
+    value === 'local' ||
     value === 'project' ||
     value === 'session' ||
     value === 'watch'
+  ) {
+    return value;
+  }
+
+  return undefined;
+}
+
+function memoryStatus(value: string | undefined) {
+  if (value === 'active' || value === 'archived') return value;
+  return undefined;
+}
+
+function learningCandidateStatus(value: string | undefined) {
+  if (
+    value === 'proposed' ||
+    value === 'applied' ||
+    value === 'rejected' ||
+    value === 'archived'
   ) {
     return value;
   }

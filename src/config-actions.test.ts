@@ -17,6 +17,7 @@ import {
   removeSchedule,
   updateRepo,
   updateAgentModels,
+  updateLearningConfig,
   updateExecutionPolicy,
   updateDashboardLayout,
   updateProviderConfig,
@@ -254,7 +255,7 @@ describe('config actions', () => {
     ]);
   });
 
-  it('updates agent, utility, and subagent model config through a typed action', async () => {
+  it('updates agent, utility, self-improvement, and subagent model config through a typed action', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
 
@@ -264,6 +265,8 @@ describe('config actions', () => {
           displayAssistant: 'kilocode/kilo/main',
           utility: 'kilocode/kilo/utility',
           utilityThinkingLevel: 'low',
+          selfImprovement: 'kilocode/kilo/reflect',
+          selfImprovementThinkingLevel: 'minimal',
           subagents: {
             default: 'kilocode/kilo/subagent',
             ciInvestigator: 'kilocode/kilo/ci',
@@ -290,6 +293,8 @@ describe('config actions', () => {
       displayAssistant: 'kilocode/kilo/main',
       utility: 'kilocode/kilo/utility',
       utilityThinkingLevel: 'low',
+      selfImprovement: 'kilocode/kilo/reflect',
+      selfImprovementThinkingLevel: 'minimal',
       subagents: {
         default: 'kilocode/kilo/subagent',
         ciInvestigator: 'kilocode/kilo/ci',
@@ -318,6 +323,8 @@ describe('config actions', () => {
       displayAssistant: 'kilocode/kilo/main',
       utility: 'kilocode/kilo/utility',
       utilityThinkingLevel: 'low',
+      selfImprovement: 'kilocode/kilo/reflect',
+      selfImprovementThinkingLevel: 'minimal',
       subagents: {
         default: 'kilocode/kilo/subagent',
         repoResearcher: 'kilocode/kilo/repo',
@@ -327,6 +334,50 @@ describe('config actions', () => {
     expect(readHistory(paths.neondeckDatabase)).toMatchObject([
       { action: 'config_update_agent_models', target: 'models' },
       { action: 'config_update_agent_models', target: 'models' },
+    ]);
+  });
+
+  it('updates learning and memory curation config through a typed action', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    await expect(
+      updateLearningConfig(
+        {
+          memoryCurationEnabled: true,
+          memoryCurationMode: 'review',
+          memoryCurationTurnInterval: 200,
+          memoryMaxActiveItems: 25,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'config_update_learning',
+      data: {
+        appliesAfter: 'new-session',
+        learning: {
+          memoryCurationEnabled: true,
+          memoryCurationMode: 'review',
+          memoryCurationTurnInterval: 200,
+          memoryMaxActiveItems: 25,
+        },
+      },
+    });
+
+    const config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.learning).toMatchObject({
+      memoryCurationEnabled: true,
+      memoryCurationMode: 'review',
+      memoryCurationTurnInterval: 200,
+      memoryMaxActiveItems: 25,
+    });
+    expect(readHistory(paths.neondeckDatabase)).toMatchObject([
+      { action: 'config_update_learning', target: 'learning' },
     ]);
   });
 

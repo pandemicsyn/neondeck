@@ -93,6 +93,8 @@ Agent, utility, and subagent models are configurable in runtime-home `config.jso
     "displayAssistantThinkingLevel": "medium",
     "utility": "kilocode/kilo-auto/fast",
     "utilityThinkingLevel": "low",
+    "selfImprovement": "kilocode/kilo-auto/fast",
+    "selfImprovementThinkingLevel": "low",
     "subagents": {
       "default": "kilocode/kilo-auto/balanced",
       "defaultThinkingLevel": "medium",
@@ -122,7 +124,9 @@ Agent, utility, and subagent models are configurable in runtime-home `config.jso
 }
 ```
 
-The Neondeck chat agent can update those model and thinking settings through the typed `neondeck_config_update_agent_models` action when asked. Model strings must use allowlisted provider-qualified names such as `kilocode/...`, `openai/...`, or `anthropic/...`. `models.utility` is optional; if skipped, Neondeck falls back to the display assistant and recommends configuring a cheaper model for short titles, summaries, notification text, and compact classification. Provider config stores environment variable names only; raw secrets stay in `.env`.
+The Neondeck chat agent can update those model and thinking settings through the typed `neondeck_config_update_agent_models` action when asked. Model strings must use allowlisted provider-qualified names such as `kilocode/...`, `openai/...`, or `anthropic/...`. `models.utility` is optional; if skipped, Neondeck falls back to the display assistant and recommends configuring a cheaper model for short titles, summaries, notification text, and compact classification. `models.selfImprovement` is optional, falls back through the utility and display-assistant model, and reserves a role for bounded learning reviews and future reflection workflows. Provider config stores environment variable names only; raw secrets stay in `.env`.
+
+Structured memory is current guidance, not a transcript archive. New memory writes use `user`, `local`, and `project` scopes only; legacy `session` and `watch` memory rows remain readable but are not created by learning actions. Memory rows are either `active` or `archived`; archived rows stay in audit history but do not load into new session prompts. Memory curation is configured under `learning.memoryCurationEnabled`, `learning.memoryCurationMode`, `learning.memoryCurationTurnInterval`, and `learning.memoryMaxActiveItems`. Memory writes update SQLite immediately and mark sessions stale, but active prompt context changes only after a new session or explicit context refresh.
 
 Host execution is also configured in runtime-home `config.json`, but Neondeck does not expose an unrestricted shell executor. `neondeck_execution_run` gates all local and `exe.dev` commands through policy, approvals, and the `execution_approvals` audit log. `local` is the default backend; `exe.dev` uses the Flue sandbox adapter against an existing VM.
 

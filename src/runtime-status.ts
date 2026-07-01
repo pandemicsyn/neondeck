@@ -93,6 +93,10 @@ export const runtimeStatusSchema = v.looseObject({
     utilityThinkingLevel: v.string(),
     utilityConfigured: v.boolean(),
     utilityRecommendation: v.nullable(v.string()),
+    selfImprovement: v.string(),
+    selfImprovementProvider: v.string(),
+    selfImprovementThinkingLevel: v.string(),
+    selfImprovementConfigured: v.boolean(),
     subagents: v.record(v.string(), v.string()),
     subagentThinkingLevels: v.record(v.string(), v.string()),
   }),
@@ -448,6 +452,10 @@ export async function readRuntimeStatus(
       utilityRecommendation: models.utilityConfigured
         ? null
         : 'Configure models.utility with a low-cost provider-qualified model for bounded utility tasks.',
+      selfImprovement: models.selfImprovement,
+      selfImprovementProvider: providerFromModel(models.selfImprovement),
+      selfImprovementThinkingLevel: models.selfImprovementThinkingLevel,
+      selfImprovementConfigured: models.selfImprovementConfigured,
       subagents: models.subagents,
       subagentThinkingLevels: models.subagentThinkingLevels,
     },
@@ -767,12 +775,14 @@ function workflowSummaryMessage(summaryJson: unknown, workflow: unknown) {
 export function requiredModelProviders(models: {
   displayAssistant: string;
   utility: string;
+  selfImprovement: string;
   subagents: Record<string, string>;
 }) {
   return Array.from(
     new Set([
       providerFromModel(models.displayAssistant),
       providerFromModel(models.utility),
+      providerFromModel(models.selfImprovement),
       ...Object.values(models.subagents).map(providerFromModel),
     ]),
   );
