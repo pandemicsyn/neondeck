@@ -62,6 +62,8 @@ Individual checks:
 npm run lint
 npm run typecheck
 npm run test
+npm run test:integration
+npm run test:all
 npm run format:check
 ```
 
@@ -89,8 +91,11 @@ npm run webapp:build
 - Lint: Oxlint.
 - Format: Prettier with Astro plugin.
 - Tests: Vitest.
-- `npm run check` is intended to stay fast.
-- `npm run verify` includes format check and full build.
+- `npm run test` runs the fast unit suite.
+- `npm run test:integration` runs the slower git/worktree/Kilo/autopilot workflow suites.
+- `npm run test:all` runs every Vitest suite.
+- `npm run check` is intended to stay fast and uses the unit suite.
+- `npm run verify` includes the full Vitest suite, format check, and full build.
 
 ## Current Notes
 

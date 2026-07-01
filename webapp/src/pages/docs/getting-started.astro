@@ -241,10 +241,14 @@ GITHUB_LOGIN=...</code></pre>
 
         <h2 id="verify">Verify locally</h2>
         <pre><code>npm run check
+npm run test:integration
 npm run verify</code></pre>
         <p>
-          <code>npm run verify</code> runs lint, typecheck, tests, formatting, the
-          dashboard build, the Flue Node build, and the Astro webapp build.
+          <code>npm run check</code> is the fast loop with unit tests.
+          <code>npm run test:integration</code> runs the slower git, worktree, Kilo,
+          and autopilot workflow suites. <code>npm run verify</code> runs lint, typecheck,
+          all tests, formatting, the dashboard build, the Flue Node build, and the
+          Astro webapp build.
         </p>
 
         <h2>Run the webapp</h2>

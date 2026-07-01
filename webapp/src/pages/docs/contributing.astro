@@ -50,22 +50,24 @@ npm run dev</code></pre>
         <h2>Fast checks</h2>
         <pre><code>npm run check</code></pre>
         <p>
-          The fast loop runs Oxlint, TypeScript checks, Astro sync, and Vitest.
-          Keep it fast enough to run often.
+          The fast loop runs Oxlint, TypeScript checks, Astro sync, and the unit
+          Vitest suite. Keep it fast enough to run often.
         </p>
 
         <h2>Individual checks</h2>
         <pre><code>npm run lint
 npm run typecheck
 npm run test
+npm run test:integration
+npm run test:all
 npm run format:check
 npm run webapp:build</code></pre>
 
         <h2>Full verification</h2>
         <pre><code>npm run verify</code></pre>
         <p>
-          Full verification adds formatting and production builds. Run it before
-          broad or release-oriented changes.
+          Full verification runs all Vitest suites, then adds formatting and
+          production builds. Run it before broad or release-oriented changes.
         </p>
 
         <h2>Code style</h2>

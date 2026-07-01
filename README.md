@@ -241,6 +241,21 @@ npm run build
 npm start
 ```
 
+## Test
+
+```sh
+npm run check
+npm run test:integration
+npm run test:all
+npm run verify
+```
+
+`npm run check` is the fast local loop: lint, typecheck, and the unit Vitest
+suite. The slower git/worktree/Kilo/autopilot workflow coverage lives under
+`npm run test:integration`, while `npm run test:all` runs every Vitest suite.
+`npm run verify` keeps the full pre-release path: lint, typecheck, all tests,
+format check, and production builds.
+
 ## Marketing/docs site
 
 ```sh
