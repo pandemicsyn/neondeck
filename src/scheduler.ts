@@ -1,4 +1,6 @@
 import { defineAction, type JsonValue } from '@flue/runtime';
+import { randomUUID } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import {
   addNotification,
@@ -76,10 +78,22 @@ type SchedulerDependencies = {
     workflow: ScheduledWorkflowName,
     input: JsonValue,
   ) => Promise<{ runId: string }>;
+  tickLeaseTtlMs?: number;
 };
 
 type ScheduledWorkflowName = 'briefing' | 'command-run';
+type SchedulerTickLease = {
+  owner: string;
+  acquiredAt: string;
+  expiresAt: string;
+};
+type SchedulerTickLeaseResult =
+  | { acquired: true; owner: string }
+  | { acquired: false; reason: 'active' | 'busy' };
+type SchedulerTickLeaseRenewResult = 'renewed' | 'lost' | 'busy';
 
+const schedulerTickLeaseKey = 'scheduler.tick.lease';
+const defaultSchedulerTickLeaseTtlMs = 5 * 60 * 1000;
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 const blueprintSchema = v.picklist([
   'morning-briefing',
@@ -325,63 +339,366 @@ export async function runSchedulerTick(
   dependencies: SchedulerDependencies = {},
 ): Promise<SchedulerResult> {
   await ensureRuntimeHome(paths);
-  await syncScheduledJobs(paths);
-  const jobs = (await listJobs(paths)).filter(
-    (job) =>
-      job.enabled &&
-      (!job.nextRunAt || Date.parse(job.nextRunAt) <= now.getTime()),
-  );
-  const notifications = [];
-
-  for (const job of jobs) {
-    const result = await executeJob(job, paths, dependencies);
-    const nextRunAt = new Date(
-      now.getTime() + job.intervalSeconds * 1000,
-    ).toISOString();
-
-    await updateJobRun(
-      job.id,
+  const leaseTtlMs =
+    dependencies.tickLeaseTtlMs ?? defaultSchedulerTickLeaseTtlMs;
+  const lease = acquireSchedulerTickLease(paths, new Date(), leaseTtlMs);
+  if (!lease.acquired) {
+    return okResult(
+      'scheduler_tick',
+      false,
+      'silent',
+      'Scheduler tick skipped because another tick is active.',
       {
-        outcome: result.outcome,
-        message: result.message,
-        result: result.result,
-        nextRunAt,
+        jobs: await listJobs(paths),
+        notifications: [],
+        extra: { lease: lease.reason },
       },
-      paths,
     );
-
-    for (const notification of result.notifications ?? []) {
-      notifications.push(await addNotification(notification, paths));
-    }
   }
-
-  const changed = notifications.length > 0;
-  return okResult(
-    'scheduler_tick',
-    changed,
-    changed ? 'updated' : 'silent',
-    jobs.length === 0
-      ? 'No scheduled jobs were due.'
-      : `Ran ${jobs.length} scheduled job${jobs.length === 1 ? '' : 's'}.`,
-    {
-      jobs: await listJobs(paths),
-      notifications,
-    },
+  const stopLeaseHeartbeat = startSchedulerTickLeaseHeartbeat(
+    paths,
+    lease.owner,
+    leaseTtlMs,
   );
+
+  try {
+    await syncScheduledJobs(paths);
+    const jobs = (await listJobs(paths)).filter(
+      (job) =>
+        job.enabled &&
+        (!job.nextRunAt || Date.parse(job.nextRunAt) <= now.getTime()),
+    );
+    const notifications = [];
+    let stoppedForLostLease = false;
+
+    for (const job of jobs) {
+      if (!isSchedulerTickLeaseOwned(paths, lease.owner, new Date())) {
+        stoppedForLostLease = true;
+        break;
+      }
+
+      const nextRunAt = new Date(
+        now.getTime() + job.intervalSeconds * 1000,
+      ).toISOString();
+
+      // Advance before external side effects so a crash after admission does
+      // not leave the same job immediately due for duplicate admission.
+      await updateJobRun(
+        job.id,
+        {
+          outcome: 'started',
+          message: 'Scheduler job started.',
+          result: job.lastResult,
+          nextRunAt,
+        },
+        paths,
+      );
+
+      let result: JobExecutionResult;
+      try {
+        result = await executeJob(job, paths, dependencies);
+      } catch (error) {
+        await updateJobRun(
+          job.id,
+          {
+            outcome: 'failed',
+            message: `Scheduler job failed: ${errorMessage(error)}.`,
+            result: { error: errorMessage(error) },
+            nextRunAt: now.toISOString(),
+          },
+          paths,
+        );
+        throw error;
+      }
+
+      await updateJobRun(
+        job.id,
+        {
+          outcome: result.outcome,
+          message: result.message,
+          result: result.result,
+          nextRunAt,
+        },
+        paths,
+      );
+
+      for (const notification of result.notifications ?? []) {
+        notifications.push(await addNotification(notification, paths));
+      }
+    }
+
+    const changed = notifications.length > 0;
+    return okResult(
+      'scheduler_tick',
+      changed,
+      changed ? 'updated' : 'silent',
+      jobs.length === 0
+        ? 'No scheduled jobs were due.'
+        : stoppedForLostLease
+          ? 'Scheduler tick stopped because it no longer owns the active lease.'
+          : `Ran ${jobs.length} scheduled job${jobs.length === 1 ? '' : 's'}.`,
+      {
+        jobs: await listJobs(paths),
+        notifications,
+      },
+    );
+  } finally {
+    stopLeaseHeartbeat();
+    await releaseSchedulerTickLease(paths, lease.owner);
+  }
 }
 
 export function startSchedulerLoop(
   paths = runtimePaths(),
   intervalMs = 60_000,
+  runTick: (paths: RuntimePaths) => Promise<SchedulerResult> = runSchedulerTick,
 ) {
+  let tickInFlight = false;
   const timer = setInterval(() => {
-    void runSchedulerTick(paths).catch((error) => {
-      console.error('[neondeck] scheduler tick failed', error);
-    });
+    if (tickInFlight) return;
+    tickInFlight = true;
+    void runTick(paths)
+      .catch((error) => {
+        console.error('[neondeck] scheduler tick failed', error);
+      })
+      .finally(() => {
+        tickInFlight = false;
+      });
   }, intervalMs);
 
   timer.unref?.();
   return timer;
+}
+
+function acquireSchedulerTickLease(
+  paths: RuntimePaths,
+  now: Date,
+  ttlMs: number,
+): SchedulerTickLeaseResult {
+  const database = new DatabaseSync(paths.neondeckDatabase);
+
+  try {
+    database.exec('BEGIN IMMEDIATE;');
+    const existing = database
+      .prepare('SELECT value FROM app_metadata WHERE key = ?;')
+      .get(schedulerTickLeaseKey);
+    const existingLease = parseSchedulerTickLease(readMetadataValue(existing));
+    if (existingLease && Date.parse(existingLease.expiresAt) > now.getTime()) {
+      database.exec('COMMIT;');
+      return { acquired: false, reason: 'active' };
+    }
+
+    const acquiredAt = now.toISOString();
+    const lease: SchedulerTickLease = {
+      owner: `pid-${process.pid}-${randomUUID()}`,
+      acquiredAt,
+      expiresAt: new Date(now.getTime() + ttlMs).toISOString(),
+    };
+    database
+      .prepare(
+        `
+        INSERT INTO app_metadata (key, value, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+          value = excluded.value,
+          updated_at = excluded.updated_at;
+      `,
+      )
+      .run(schedulerTickLeaseKey, JSON.stringify(lease), acquiredAt);
+    database.exec('COMMIT;');
+
+    return { acquired: true, owner: lease.owner };
+  } catch (error) {
+    rollbackQuietly(database);
+    if (isSqliteBusy(error)) return { acquired: false, reason: 'busy' };
+    throw error;
+  } finally {
+    database.close();
+  }
+}
+
+function startSchedulerTickLeaseHeartbeat(
+  paths: RuntimePaths,
+  owner: string,
+  ttlMs: number,
+) {
+  const intervalMs = Math.max(10, Math.floor(ttlMs / 3));
+  const timer = setInterval(() => {
+    try {
+      const result = renewSchedulerTickLease(paths, owner, new Date(), ttlMs);
+      if (result === 'lost') {
+        clearInterval(timer);
+      }
+    } catch (error) {
+      console.warn(
+        `[neondeck] scheduler tick lease heartbeat failed: ${errorMessage(error)}`,
+      );
+    }
+  }, intervalMs);
+
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
+function renewSchedulerTickLease(
+  paths: RuntimePaths,
+  owner: string,
+  now: Date,
+  ttlMs: number,
+): SchedulerTickLeaseRenewResult {
+  const database = new DatabaseSync(paths.neondeckDatabase);
+
+  try {
+    database.exec('BEGIN IMMEDIATE;');
+    const existing = database
+      .prepare('SELECT value FROM app_metadata WHERE key = ?;')
+      .get(schedulerTickLeaseKey);
+    const existingLease = parseSchedulerTickLease(readMetadataValue(existing));
+    if (existingLease?.owner !== owner) {
+      database.exec('COMMIT;');
+      return 'lost';
+    }
+
+    const renewedLease = {
+      ...existingLease,
+      expiresAt: new Date(now.getTime() + ttlMs).toISOString(),
+    };
+    database
+      .prepare(
+        `
+        UPDATE app_metadata
+        SET value = ?, updated_at = ?
+        WHERE key = ?;
+      `,
+      )
+      .run(
+        JSON.stringify(renewedLease),
+        now.toISOString(),
+        schedulerTickLeaseKey,
+      );
+    database.exec('COMMIT;');
+    return 'renewed';
+  } catch (error) {
+    rollbackQuietly(database);
+    if (isSqliteBusy(error)) return 'busy';
+    throw error;
+  } finally {
+    database.close();
+  }
+}
+
+function isSchedulerTickLeaseOwned(
+  paths: RuntimePaths,
+  owner: string,
+  now: Date,
+) {
+  const database = new DatabaseSync(paths.neondeckDatabase);
+
+  try {
+    const existing = database
+      .prepare('SELECT value FROM app_metadata WHERE key = ?;')
+      .get(schedulerTickLeaseKey);
+    const existingLease = parseSchedulerTickLease(readMetadataValue(existing));
+    return (
+      existingLease?.owner === owner &&
+      Date.parse(existingLease.expiresAt) > now.getTime()
+    );
+  } catch (error) {
+    if (isSqliteBusy(error)) return false;
+    throw error;
+  } finally {
+    database.close();
+  }
+}
+
+async function releaseSchedulerTickLease(paths: RuntimePaths, owner: string) {
+  const maxAttempts = 5;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const released = releaseSchedulerTickLeaseOnce(paths, owner);
+    if (released) return;
+    if (attempt < maxAttempts) {
+      await sleep(25 * attempt);
+    }
+  }
+
+  console.warn(
+    '[neondeck] scheduler tick lease release was blocked by SQLite; lease will expire automatically.',
+  );
+}
+
+function releaseSchedulerTickLeaseOnce(paths: RuntimePaths, owner: string) {
+  const database = new DatabaseSync(paths.neondeckDatabase);
+
+  try {
+    database.exec('BEGIN IMMEDIATE;');
+    const existing = database
+      .prepare('SELECT value FROM app_metadata WHERE key = ?;')
+      .get(schedulerTickLeaseKey);
+    const existingLease = parseSchedulerTickLease(readMetadataValue(existing));
+    if (existingLease?.owner === owner) {
+      database
+        .prepare('DELETE FROM app_metadata WHERE key = ?;')
+        .run(schedulerTickLeaseKey);
+    }
+    database.exec('COMMIT;');
+    return true;
+  } catch (error) {
+    rollbackQuietly(database);
+    if (isSqliteBusy(error)) return false;
+    throw error;
+  } finally {
+    database.close();
+  }
+}
+
+function parseSchedulerTickLease(value: string | undefined) {
+  if (!value) return;
+
+  try {
+    const parsed = JSON.parse(value) as Partial<SchedulerTickLease>;
+    if (
+      typeof parsed.owner === 'string' &&
+      typeof parsed.acquiredAt === 'string' &&
+      typeof parsed.expiresAt === 'string'
+    ) {
+      return {
+        owner: parsed.owner,
+        acquiredAt: parsed.acquiredAt,
+        expiresAt: parsed.expiresAt,
+      };
+    }
+  } catch {
+    return;
+  }
+}
+
+function readMetadataValue(row: unknown) {
+  if (row && typeof row === 'object' && 'value' in row) {
+    const value = row.value;
+    return typeof value === 'string' ? value : undefined;
+  }
+}
+
+function rollbackQuietly(database: DatabaseSync) {
+  try {
+    database.exec('ROLLBACK;');
+  } catch {
+    // The transaction may already be closed.
+  }
+}
+
+function isSqliteBusy(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes('SQLITE_BUSY') ||
+    message.includes('SQLITE_LOCKED') ||
+    message.includes('database is locked')
+  );
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function executeJob(

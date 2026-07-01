@@ -1,14 +1,16 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { listJobs, listNotifications } from './app-state';
 import {
   createScheduleBlueprint,
   runSchedulerTick,
+  startSchedulerLoop,
   syncScheduledJobs,
 } from './scheduler';
-import { runtimePaths } from './runtime-home';
+import { type RuntimePaths, runtimePaths } from './runtime-home';
 import { addPrWatch, refreshPrWatch } from './watch-actions';
 
 const tempRoots: string[] = [];
@@ -25,6 +27,11 @@ type SchedulerPrDetail = {
   headSha: string;
   baseRef: string;
   updatedAt: string;
+};
+type TestSchedulerLease = {
+  owner: string;
+  acquiredAt: string;
+  expiresAt: string;
 };
 
 afterEach(async () => {
@@ -129,6 +136,282 @@ describe('scheduler', () => {
     await expect(listNotifications(paths)).resolves.toMatchObject([
       { title: 'Review queue digest due', level: 'info' },
     ]);
+  });
+
+  it('skips concurrent ticks instead of admitting the same workflow twice', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    const firstWorkflow = deferred<void>();
+    let admissions = 0;
+
+    await writeFile(
+      paths.schedules,
+      `${JSON.stringify({
+        schedules: [
+          {
+            id: 'digest',
+            type: 'review-queue-digest',
+            enabled: true,
+            preset: 'review-queue-digest',
+            config: { intervalSeconds: 60 },
+          },
+        ],
+      })}\n`,
+    );
+    await syncScheduledJobs(paths);
+    const now = new Date(Date.now() + 1_000);
+
+    const firstTick = runSchedulerTick(paths, now, {
+      tickLeaseTtlMs: 50,
+      invokeWorkflow: async () => {
+        admissions += 1;
+        await firstWorkflow.promise;
+        return { runId: 'run_first' };
+      },
+    });
+    await waitUntil(() => admissions === 1);
+    await delay(120);
+
+    await expect(
+      runSchedulerTick(paths, new Date(), {
+        tickLeaseTtlMs: 50,
+        invokeWorkflow: async () => {
+          throw new Error('second tick should not execute jobs');
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      outcome: 'silent',
+      message: 'Scheduler tick skipped because another tick is active.',
+      extra: { lease: 'active' },
+    });
+
+    firstWorkflow.resolve();
+    await expect(firstTick).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      notifications: [{ title: 'Review queue digest due' }],
+    });
+    expect(admissions).toBe(1);
+    expect(readSchedulerLease(paths)).toBeUndefined();
+  });
+
+  it('respects an active durable tick lease', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    const now = new Date();
+
+    await syncScheduledJobs(paths);
+    writeSchedulerLease(paths, {
+      owner: 'other-process',
+      acquiredAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + 60_000).toISOString(),
+    });
+
+    await expect(
+      runSchedulerTick(paths, now, {
+        invokeWorkflow: async () => {
+          throw new Error('active lease should skip execution');
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      outcome: 'silent',
+      message: 'Scheduler tick skipped because another tick is active.',
+      extra: { lease: 'active' },
+    });
+    expect(readSchedulerLease(paths)).toMatchObject({ owner: 'other-process' });
+  });
+
+  it('uses wall clock time for tick lease expiry instead of logical schedule time', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    const leaseTime = new Date();
+
+    await syncScheduledJobs(paths);
+    writeSchedulerLease(paths, {
+      owner: 'wall-clock-active',
+      acquiredAt: leaseTime.toISOString(),
+      expiresAt: new Date(leaseTime.getTime() + 60_000).toISOString(),
+    });
+
+    await expect(
+      runSchedulerTick(paths, new Date(leaseTime.getTime() + 3_600_000), {
+        invokeWorkflow: async () => {
+          throw new Error('future logical now should not steal lease');
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      outcome: 'silent',
+      extra: { lease: 'active' },
+    });
+    expect(readSchedulerLease(paths)).toMatchObject({
+      owner: 'wall-clock-active',
+    });
+  });
+
+  it('replaces stale durable tick leases', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+
+    await writeFile(
+      paths.schedules,
+      `${JSON.stringify({
+        schedules: [
+          {
+            id: 'digest',
+            type: 'review-queue-digest',
+            enabled: true,
+            preset: 'review-queue-digest',
+            config: { intervalSeconds: 60 },
+          },
+        ],
+      })}\n`,
+    );
+    await syncScheduledJobs(paths);
+    const now = new Date(Date.now() + 1_000);
+    writeSchedulerLease(paths, {
+      owner: 'stale-process',
+      acquiredAt: new Date(now.getTime() - 120_000).toISOString(),
+      expiresAt: new Date(now.getTime() - 60_000).toISOString(),
+    });
+
+    await expect(
+      runSchedulerTick(paths, now, {
+        invokeWorkflow: async () => ({ runId: 'run_after_stale' }),
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      notifications: [{ title: 'Review queue digest due' }],
+    });
+    expect(readSchedulerLease(paths)).toBeUndefined();
+  });
+
+  it('stops remaining jobs when tick lease ownership is lost', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    let admissions = 0;
+
+    await writeFile(
+      paths.schedules,
+      `${JSON.stringify({
+        schedules: [
+          {
+            id: 'digest-one',
+            type: 'review-queue-digest',
+            enabled: true,
+            preset: 'review-queue-digest',
+            config: { intervalSeconds: 60 },
+          },
+          {
+            id: 'digest-two',
+            type: 'review-queue-digest',
+            enabled: true,
+            preset: 'review-queue-digest',
+            config: { intervalSeconds: 60 },
+          },
+        ],
+      })}\n`,
+    );
+    await syncScheduledJobs(paths);
+    const now = new Date(Date.now() + 1_000);
+
+    await expect(
+      runSchedulerTick(paths, now, {
+        invokeWorkflow: async () => {
+          admissions += 1;
+          writeSchedulerLease(paths, {
+            owner: 'stolen-by-another-tick',
+            acquiredAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          });
+          return { runId: `run_${admissions}` };
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      message:
+        'Scheduler tick stopped because it no longer owns the active lease.',
+    });
+
+    expect(admissions).toBe(1);
+    expect(readSchedulerLease(paths)).toMatchObject({
+      owner: 'stolen-by-another-tick',
+    });
+  });
+
+  it('records failed workflow admissions without leaving jobs started', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+
+    await writeFile(
+      paths.schedules,
+      `${JSON.stringify({
+        schedules: [
+          {
+            id: 'digest',
+            type: 'review-queue-digest',
+            enabled: true,
+            preset: 'review-queue-digest',
+            config: { intervalSeconds: 60 },
+          },
+        ],
+      })}\n`,
+    );
+    await syncScheduledJobs(paths);
+    const now = new Date(Date.now() + 1_000);
+
+    await expect(
+      runSchedulerTick(paths, now, {
+        invokeWorkflow: async () => {
+          throw new Error('admission failed');
+        },
+      }),
+    ).rejects.toThrow('admission failed');
+
+    await expect(listJobs(paths)).resolves.toMatchObject([
+      {
+        id: 'schedule:digest',
+        lastOutcome: 'failed',
+        lastMessage: 'Scheduler job failed: admission failed.',
+        nextRunAt: now.toISOString(),
+      },
+    ]);
+    expect(readSchedulerLease(paths)).toBeUndefined();
+  });
+
+  it('does not start overlapping interval loop ticks in one process', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    const activeTick = deferred<void>();
+    let ticks = 0;
+
+    const timer = startSchedulerLoop(paths, 5, async () => {
+      ticks += 1;
+      await activeTick.promise;
+      return {
+        ok: true,
+        action: 'scheduler_tick',
+        changed: false,
+        outcome: 'silent',
+        message: 'done',
+      };
+    });
+
+    try {
+      await waitUntil(() => ticks === 1);
+      await delay(25);
+      expect(ticks).toBe(1);
+      activeTick.resolve();
+    } finally {
+      clearInterval(timer);
+    }
   });
 
   it('creates blueprint schedules and syncs jobs', async () => {
@@ -529,4 +812,64 @@ function checkSummary(status: 'success' | 'failure' | 'pending' | 'none') {
     pending: status === 'pending' ? 1 : 0,
     checkedAt: '2026-06-27T20:05:30Z',
   };
+}
+
+function writeSchedulerLease(paths: RuntimePaths, lease: TestSchedulerLease) {
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  const updatedAt = lease.acquiredAt;
+
+  try {
+    database
+      .prepare(
+        `
+        INSERT INTO app_metadata (key, value, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+          value = excluded.value,
+          updated_at = excluded.updated_at;
+      `,
+      )
+      .run('scheduler.tick.lease', JSON.stringify(lease), updatedAt);
+  } finally {
+    database.close();
+  }
+}
+
+function readSchedulerLease(paths: RuntimePaths) {
+  const database = new DatabaseSync(paths.neondeckDatabase);
+
+  try {
+    const row = database
+      .prepare('SELECT value FROM app_metadata WHERE key = ?;')
+      .get('scheduler.tick.lease');
+    if (!row || typeof row !== 'object' || !('value' in row)) return;
+    return JSON.parse(String(row.value)) as TestSchedulerLease;
+  } finally {
+    database.close();
+  }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+
+  return { promise, resolve, reject };
+}
+
+async function waitUntil(predicate: () => boolean, timeoutMs = 500) {
+  const startedAt = Date.now();
+  while (!predicate()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error('Timed out waiting for condition.');
+    }
+    await delay(5);
+  }
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
