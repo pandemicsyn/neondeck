@@ -9,10 +9,12 @@ import {
   listMemories,
   listMemoryEvents,
   mergeMemories,
+  type MemoryRecord,
   rewriteMemory,
   upsertMemory,
 } from './memory-actions';
 import {
+  readChatSession,
   referenceChatSession,
   readNeonSessionState,
   refreshChatSessionSummary,
@@ -221,7 +223,10 @@ export async function prepareConversationReflection(
     },
     paths,
   );
-  const memories = await listActiveLearningMemories(paths);
+  const memories = await listConversationLearningMemories(
+    reviewedSession,
+    paths,
+  );
   const models = readAgentModelSelectionSync(paths);
   const inputSummary = compactJson({
     kind: 'conversation',
@@ -770,10 +775,18 @@ export function attachLearningReviewRunId(
 }
 
 async function readSessionForReview(sessionId: string, paths: RuntimePaths) {
-  const state = await readNeonSessionState(paths);
-  const session = state.sessions.find((item) => item.id === sessionId);
-  if (!session) throw new Error(`Session ${sessionId} was not found.`);
-  return session;
+  const result = await readChatSession(
+    {
+      id: sessionId,
+      reason: 'conversation-learning-review',
+      surface: 'learning',
+    },
+    paths,
+  );
+  if (!result.ok || !('session' in result)) {
+    throw new Error(`Session ${sessionId} was not found.`);
+  }
+  return result.session as ChatSessionRecord;
 }
 
 function learningPrompt(
@@ -934,7 +947,23 @@ async function listActiveLearningMemories(paths: RuntimePaths) {
     listMemories({ status: 'active', scope: 'local' }, paths),
     listMemories({ status: 'active', scope: 'project' }, paths),
   ]);
-  return scopes.flatMap((scope) => scope.memories);
+  return scopes.flatMap((scope) => scope.memories) as MemoryRecord[];
+}
+
+async function listConversationLearningMemories(
+  session: ChatSessionRecord,
+  paths: RuntimePaths,
+) {
+  const memories = await listActiveLearningMemories(paths);
+  const contextIds = new Set(session.contextMemoryIds);
+  if (contextIds.size > 0) {
+    return memories.filter((memory) => contextIds.has(memory.id));
+  }
+
+  return memories.filter((memory) => {
+    if (memory.scope === 'user' || memory.scope === 'local') return true;
+    return memory.repoId === null || memory.repoId === session.linkedRepoId;
+  });
 }
 
 function proposalTargetsAllowed(

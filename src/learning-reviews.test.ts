@@ -118,6 +118,92 @@ describe('learning review orchestration', () => {
     });
   });
 
+  it('scopes conversation learning evidence to the session memory context', async () => {
+    const paths = runtimePaths(await tempHome());
+    const repoA = await upsertMemory(
+      {
+        scope: 'project',
+        key: 'checks',
+        repoId: 'repo-a',
+        value: 'npm run check',
+      },
+      paths,
+    );
+    const repoB = await upsertMemory(
+      {
+        scope: 'project',
+        key: 'checks',
+        repoId: 'repo-b',
+        value: 'pnpm test',
+      },
+      paths,
+    );
+    await upsertMemory(
+      {
+        scope: 'project',
+        key: 'global',
+        value: 'Use Node 26.',
+      },
+      paths,
+    );
+    const session = await createChatSession(
+      {
+        title: 'Repo A session',
+        linkedRepoId: 'repo-a',
+        summary: 'Repo A work.',
+        summarySource: 'manual',
+      },
+      paths,
+    );
+    const prepared = await prepareConversationReflection(
+      {
+        sessionId: (session as { session: { id: string } }).session.id,
+        trigger: 'manual',
+      },
+      paths,
+    );
+    if (!prepared.ok) throw new Error(prepared.message);
+
+    expect(prepared.allowedMemoryIds).toContain(
+      (repoA as { memory: { id: string } }).memory.id,
+    );
+    expect(prepared.allowedMemoryIds).not.toContain(
+      (repoB as { memory: { id: string } }).memory.id,
+    );
+    expect(JSON.stringify(prepared.inputSummary)).not.toContain('pnpm test');
+  });
+
+  it('prepares manual reviews for valid sessions outside the recent state list', async () => {
+    const paths = runtimePaths(await tempHome());
+    const first = await createChatSession(
+      {
+        title: 'Old session',
+        linkedTaskId: 'task-0',
+        summary: 'Older but valid session.',
+        summarySource: 'manual',
+      },
+      paths,
+    );
+    const firstId = (first as { session: { id: string } }).session.id;
+    for (let index = 1; index <= 35; index += 1) {
+      await createChatSession(
+        {
+          title: `Recent session ${index}`,
+          linkedTaskId: `task-${index}`,
+          activate: true,
+        },
+        paths,
+      );
+    }
+
+    await expect(
+      prepareConversationReflection({ sessionId: firstId }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      kind: 'conversation',
+    });
+  });
+
   it('applies auto-mode model curation through memory actions', async () => {
     const paths = runtimePaths(await tempHome());
     await updateLearningConfig(
