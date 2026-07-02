@@ -26,7 +26,7 @@ describe('safety policy', () => {
     expect(policy).toMatchObject({
       ok: true,
       action: 'safety_policy_read',
-      version: 3,
+      version: 4,
     });
     expect(policy.summary.destructiveMutation).toBeGreaterThanOrEqual(4);
     expect(policy.summary.hostExecution).toBeGreaterThanOrEqual(2);

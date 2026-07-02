@@ -7,6 +7,7 @@ import {
   ensureRuntimeHome,
   runtimePaths,
 } from './runtime-home';
+import { buildMemoryPromptSnapshotSync } from './memory-actions';
 import {
   publishChatSessionEvent,
   type ChatSessionEventAction,
@@ -46,6 +47,7 @@ export type ChatSessionRecord = {
   summaryRefreshNote: string | null;
   summaryStatus: ChatSessionSummaryStatus;
   contextLoadedAt: string;
+  contextMemoryIds: string[];
   createdAt: string;
   updatedAt: string;
   lastActiveAt: string;
@@ -903,6 +905,9 @@ export async function createChatSession(
   const summaryRefreshNote = summary
     ? 'Stored summary provided when the session metadata was created.'
     : null;
+  const memorySnapshot = buildMemoryPromptSnapshotSync(paths, {
+    repoId: parsed.output.linkedRepoId ?? null,
+  });
   const database = new DatabaseSync(paths.neondeckDatabase);
   let sessionId = id;
   let eventAction: ChatSessionEventAction = 'created';
@@ -969,11 +974,12 @@ export async function createChatSession(
             summary_source,
             summary_refresh_note,
             context_loaded_at,
+            context_memory_ids_json,
             created_at,
             updated_at,
             last_active_at
           )
-          VALUES (?, ?, 'display-assistant', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+          VALUES (?, ?, 'display-assistant', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         `,
         )
         .run(
@@ -989,6 +995,7 @@ export async function createChatSession(
           summarySource,
           summaryRefreshNote,
           now,
+          JSON.stringify(memorySnapshot.memoryIds),
           now,
           now,
           now,
@@ -997,6 +1004,7 @@ export async function createChatSession(
     if (activate) {
       setActiveSession(database, surface, sessionId, now);
     }
+    markLoadedMemoriesUsed(database, memorySnapshot.memoryIds, now);
     recordSessionAudit(database, {
       action: reusedExisting ? 'reuse-linked' : 'create',
       sessionId,
@@ -1603,7 +1611,14 @@ function readChatSessionRow(
     typeof record.context_loaded_at === 'string'
       ? record.context_loaded_at
       : String(record.created_at);
-  const dynamicReasons = readStaleReasons(database, contextLoadedAt);
+  const contextMemoryIds = parsePersistedStringArray(
+    record.context_memory_ids_json,
+  );
+  const dynamicReasons = readStaleReasons(
+    database,
+    contextLoadedAt,
+    contextMemoryIds,
+  );
   const summaryGeneratedAt =
     typeof record.summary_generated_at === 'string'
       ? record.summary_generated_at
@@ -1639,6 +1654,7 @@ function readChatSessionRow(
         : null,
     summaryStatus: summaryStatus(summary, summaryGeneratedAt),
     contextLoadedAt,
+    contextMemoryIds,
     createdAt: String(record.created_at),
     updatedAt: String(record.updated_at),
     lastActiveAt,
@@ -1668,6 +1684,7 @@ function parsePersistedJsonValue(value: unknown): JsonValue | null {
 function readStaleReasons(
   database: DatabaseSync,
   activatedAt: string,
+  contextMemoryIds: string[] = [],
 ): NeonSessionStaleReason[] {
   const reasons: NeonSessionStaleReason[] = [];
   const config = database
@@ -1699,39 +1716,101 @@ function readStaleReasons(
   const memory = database
     .prepare(
       `
-      SELECT action, scope, key, changed_at
+      SELECT memory_id, action, after_json, before_json, created_at
       FROM memory_events
-      ORDER BY changed_at DESC
+      ${
+        contextMemoryIds.length > 0
+          ? `WHERE memory_id IN (${contextMemoryIds.map(() => '?').join(', ')})`
+          : ''
+      }
+      ORDER BY created_at DESC
       LIMIT 1;
     `,
     )
-    .get() as
+    .get(...contextMemoryIds) as
     | {
+        memory_id?: unknown;
         action?: unknown;
-        scope?: unknown;
-        key?: unknown;
-        changed_at?: unknown;
+        after_json?: unknown;
+        before_json?: unknown;
+        created_at?: unknown;
       }
     | undefined;
 
   if (
-    typeof memory?.changed_at === 'string' &&
-    Date.parse(memory.changed_at) > Date.parse(activatedAt)
+    typeof memory?.created_at === 'string' &&
+    Date.parse(memory.created_at) > Date.parse(activatedAt)
   ) {
+    const target = memoryEventTarget(memory.after_json, memory.before_json);
     reasons.push({
       type: 'memory',
-      message: `Memory ${String(memory.scope ?? 'unknown')}:${String(memory.key ?? 'unknown')} ${String(memory.action ?? 'changed')} after this session was last active.`,
-      changedAt: memory.changed_at,
+      message: `Memory ${target ?? 'unknown'} ${String(memory.action ?? 'changed')} after this session was last active.`,
+      changedAt: memory.created_at,
       target:
-        typeof memory.scope === 'string' && typeof memory.key === 'string'
-          ? `${memory.scope}:${memory.key}`
-          : null,
+        target ??
+        (typeof memory.memory_id === 'string' ? memory.memory_id : null),
     });
   }
 
   return reasons.sort(
     (a, b) => Date.parse(b.changedAt) - Date.parse(a.changedAt),
   );
+}
+
+function parsePersistedStringArray(value: unknown) {
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function markLoadedMemoriesUsed(
+  database: DatabaseSync,
+  memoryIds: string[],
+  usedAt: string,
+) {
+  for (const id of new Set(memoryIds)) {
+    database
+      .prepare(
+        `
+        UPDATE memories
+        SET use_count = use_count + 1,
+          last_used_at = ?
+        WHERE id = ?
+          AND status = 'active';
+      `,
+      )
+      .run(usedAt, id);
+  }
+}
+
+function memoryEventTarget(afterJson: unknown, beforeJson: unknown) {
+  const after = parseMemoryEventSnapshot(afterJson);
+  const before = parseMemoryEventSnapshot(beforeJson);
+  const snapshot = after ?? before;
+  if (!snapshot) return null;
+  return `${snapshot.scope}:${snapshot.key}`;
+}
+
+function parseMemoryEventSnapshot(value: unknown) {
+  if (typeof value !== 'string') return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return null;
+    }
+    const record = parsed as Record<string, unknown>;
+    return typeof record.scope === 'string' && typeof record.key === 'string'
+      ? { scope: record.scope, key: record.key }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function recordSessionAudit(

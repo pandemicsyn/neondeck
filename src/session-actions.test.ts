@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { updateAgentModels } from './config-actions';
-import { deleteMemory, upsertMemory } from './memory-actions';
+import { deleteMemory, rewriteMemory, upsertMemory } from './memory-actions';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   archiveChatSession,
@@ -465,14 +465,14 @@ describe('session actions', () => {
   it('reports stale context after memory deletion', async () => {
     const paths = runtimePaths(await tempDir());
     await upsertMemory(
-      { scope: 'session', key: 'current-task', value: 'debug CI' },
+      { scope: 'local', key: 'current-task', value: 'debug CI' },
       paths,
     );
     await startNeonSession({ reason: 'fresh-after-memory-load' }, paths);
     await sleep(5);
 
     await deleteMemory(
-      { scope: 'session', key: 'current-task', confirm: true },
+      { scope: 'local', key: 'current-task', confirm: true },
       paths,
     );
 
@@ -483,10 +483,101 @@ describe('session actions', () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: 'memory',
-          target: 'session:current-task',
-          message: expect.stringContaining('delete'),
+          target: 'local:current-task',
+          message: expect.stringContaining('archived'),
         }),
       ]),
+    );
+  });
+
+  it('records loaded memory ids on new sessions and only marks those memory changes stale', async () => {
+    const paths = runtimePaths(await tempDir());
+    const loaded = await upsertMemory(
+      { scope: 'user', key: 'loaded', value: 'brief' },
+      paths,
+    );
+    await startNeonSession({ reason: 'memory-snapshot' }, paths);
+    await sleep(5);
+    await upsertMemory(
+      { scope: 'user', key: 'not-loaded-later', value: 'ignore for session' },
+      paths,
+    );
+
+    let state = await readNeonSessionState(paths);
+    expect(state.activeChatSession.contextMemoryIds).toEqual([
+      (loaded as { memory: { id: string } }).memory.id,
+    ]);
+    expect(state.staleReasons.some((reason) => reason.type === 'memory')).toBe(
+      false,
+    );
+
+    await rewriteMemory(
+      {
+        id: (loaded as { memory: { id: string } }).memory.id,
+        value: 'very brief',
+      },
+      paths,
+    );
+
+    state = await readNeonSessionState(paths);
+    expect(state.staleReasons).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'memory',
+          target: 'user:loaded',
+        }),
+      ]),
+    );
+  });
+
+  it('records only matching repo-scoped project memories for linked repo sessions', async () => {
+    const paths = runtimePaths(await tempDir());
+    const user = await upsertMemory(
+      { scope: 'user', key: 'tone', value: 'brief' },
+      paths,
+    );
+    const globalProject = await upsertMemory(
+      { scope: 'project', key: 'global-checks', value: 'npm run check' },
+      paths,
+    );
+    const repoProject = await upsertMemory(
+      {
+        scope: 'project',
+        key: 'repo-checks',
+        repoId: 'repo-a',
+        value: 'npm run verify',
+      },
+      paths,
+    );
+    const otherRepoProject = await upsertMemory(
+      {
+        scope: 'project',
+        key: 'repo-checks',
+        repoId: 'repo-b',
+        value: 'pnpm test',
+      },
+      paths,
+    );
+
+    const created = await createChatSession(
+      {
+        title: 'Repo A',
+        linkedRepoId: 'repo-a',
+      },
+      paths,
+    );
+    expect(created.ok).toBe(true);
+    const session = (created as { session: ChatSessionRecord }).session;
+
+    expect(session.contextMemoryIds).toEqual(
+      expect.arrayContaining([
+        (user as { memory: { id: string } }).memory.id,
+        (globalProject as { memory: { id: string } }).memory.id,
+        (repoProject as { memory: { id: string } }).memory.id,
+      ]),
+    );
+    expect(session.contextMemoryIds).not.toContain(
+      (otherRepoProject as { memory: { id: string } }).memory.id,
     );
   });
 

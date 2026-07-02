@@ -898,13 +898,17 @@ export type SchedulerJobsResponse = {
   jobs: SchedulerJob[];
 };
 
-export type MemoryScope = 'user' | 'project' | 'session' | 'watch';
+export type MemoryScope = 'user' | 'local' | 'project' | 'session' | 'watch';
 
 export type MemoryRecord = {
   id: string;
   scope: MemoryScope;
   key: string;
   value: unknown;
+  repoId: string | null;
+  status: 'active' | 'archived';
+  useCount: number;
+  lastUsedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -1384,17 +1388,27 @@ export async function getRuntimeSkills() {
   return getJson<RuntimeSkillsResponse>('/api/skills');
 }
 
-export async function getMemories(input: { scope?: MemoryScope } = {}) {
+export async function getMemories(
+  input: {
+    scope?: MemoryScope;
+    status?: 'active' | 'archived';
+    includeArchived?: boolean;
+  } = {},
+) {
   const params = new URLSearchParams();
   if (input.scope) params.set('scope', input.scope);
+  if (input.status) params.set('status', input.status);
+  if (input.includeArchived) params.set('includeArchived', 'true');
   const query = params.toString();
   return getJson<MemoryResponse>(`/api/memories${query ? `?${query}` : ''}`);
 }
 
 export async function upsertMemory(input: {
-  scope: MemoryScope;
+  scope: 'user' | 'local' | 'project';
   key: string;
   value: unknown;
+  repoId?: string;
+  reason?: string;
 }) {
   return postJson<{
     ok: boolean;

@@ -260,6 +260,13 @@ Use this format:
 - Reason: Existing production schemas intentionally reject caller-supplied PR facts, and preserving that boundary matters for autopilot safety. Full end-to-end `flue run` coverage for every mutating workflow would require either model-visible fixture inputs or a heavier smoke harness; the validated environment fixture keeps local smoke deterministic and credential-free.
 - Follow-up: If Flue exposes a first-class test fixture/injection surface for workflow dependencies, move the stateful workflow smoke runner from direct workflow action wrappers to that surface while keeping production action inputs fact-free.
 
+## 2026-07-01 - Self-Improvement Memory Foundation
+
+- Roadmap item: Phase 22 / Self-Improvement And Learning
+- Decision: Landed the memory foundation subset only: active `user`, `local`, and `project` memory writes; legacy `session`/`watch` memory read compatibility; active/archived statuses; audited create/update/rewrite/merge/archive/reject events; learning events/reviews/candidates schema; memory curation config and bounded curation action/workflow; self-improvement model config/fallbacks; prompt snapshot memory-id recording; safety policy entries; and docs. Deferred model-backed conversation reflection, PR/autopilot retrospectives, skill patch propose/apply/reject/rollback actions, a dedicated learning dashboard panel, CLI learning commands, and full learning review orchestration.
+- Reason: The requested PR scope was the core memory side of Phase 22 as a focused PR. Implementing skill patching, reflection agents, PR retrospective triggers, and full dashboard/CLI surfaces would be a much larger feature slice and would risk mixing unproven model-backed learning with the storage/action foundation.
+- Follow-up: Add bounded reflection and PR retrospective workflows using the configured self-improvement model, implement audited skill patch candidates, add dashboard/CLI learning review surfaces, and replace deterministic curation placeholders with model/user-authored rewrite proposals.
+
 ## 2026-06-30 - Kilo Reconciliation And Session Access
 
 - Roadmap item: Phase 21 / KiloCode handoff reconciliation, session access, transcript controls, and dashboard/API basics
