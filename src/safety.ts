@@ -1096,6 +1096,21 @@ const entries: SafetyPolicyEntry[] = [
     'Lists skill patch candidates and decision history.',
   ),
   action(
+    'neondeck_learning_skill_patch_restore',
+    'Restore skill patch',
+    {
+      ...safeMutation,
+      auditTarget: 'learning_events/config_history/SKILL.md',
+    },
+    'Restores an applied skill patch from audited before-content after explicit user/API confirmation, only when the current skill file still matches the applied content.',
+  ),
+  action(
+    'neondeck_learning_operator_state',
+    'Read learning operator state',
+    readOnly,
+    'Reads consolidated learning reviews, candidates, memory decisions, skill patch decisions, and audit history.',
+  ),
+  action(
     'neondeck_session_start',
     'Start new Neon session',
     {
@@ -1794,6 +1809,12 @@ const entries: SafetyPolicyEntry[] = [
     'Queues manual model-backed memory curation through the bounded Flue workflow surface.',
   ),
   route(
+    '/api/learning/state',
+    'Learning operator state API',
+    readOnly,
+    'Reads consolidated learning reviews, candidates, memory decisions, skill patch decisions, and audit history.',
+  ),
+  route(
     '/api/learning/reviews',
     'Learning reviews API',
     readOnly,
@@ -1866,6 +1887,15 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'learning_candidates/learning_events',
     },
     'Rejects one reviewed skill patch candidate.',
+  ),
+  route(
+    '/api/skills/patches/:id/restore',
+    'Restore skill patch API',
+    {
+      ...safeMutation,
+      auditTarget: 'learning_events/config_history/SKILL.md',
+    },
+    'Restores an applied skill patch from audit after explicit confirmation when the skill file still matches the applied content.',
   ),
 ];
 

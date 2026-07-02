@@ -34,6 +34,7 @@
     "setup": "node src/setup.ts",
     "smoke:autopilot": "node scripts/autopilot-smoke.mjs",
     "smoke:kilo": "node scripts/kilo-smoke.mjs",
+    "smoke:learning": "vitest run --config vitest.integration.config.ts src/learning-workflow-smoke.test.ts",
     "start": "node dist/server.mjs",
     "test": "vitest run --config vitest.unit.config.ts",
     "test:all": "vitest run",

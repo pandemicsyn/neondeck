@@ -358,6 +358,128 @@ program
     printRepoEditEventsResult(result);
   });
 
+const learning = program
+  .command('learning')
+  .description('Inspect and decide Neondeck learning reviews and candidates.');
+
+learning
+  .command('status')
+  .description(
+    'Show learning policy, counts, reviews, candidates, and audit state.',
+  )
+  .option('--limit <count>', 'number of rows to show')
+  .action(async (options: { limit?: string }) => {
+    const { readLearningOperatorState } = await learningOperatorModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
+    const result = await readLearningOperatorState(
+      { limit: parseOptionalLimit(options.limit) },
+      paths,
+    );
+    printLearningState(result, 'status');
+  });
+
+learning
+  .command('reviews')
+  .description('List recent learning reviews.')
+  .option('--limit <count>', 'number of reviews to show')
+  .action(async (options: { limit?: string }) => {
+    const { readLearningOperatorState } = await learningOperatorModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
+    const result = await readLearningOperatorState(
+      { limit: parseOptionalLimit(options.limit) },
+      paths,
+    );
+    printLearningState(result, 'reviews');
+  });
+
+learning
+  .command('candidates')
+  .description('List memory and skill learning candidates.')
+  .option(
+    '--status <status>',
+    'candidate status: proposed, applied, rejected, or archived',
+  )
+  .option('--target <target>', 'candidate target: memory or skill')
+  .option('--limit <count>', 'number of candidates to show')
+  .action(
+    async (options: { status?: string; target?: string; limit?: string }) => {
+      const { readLearningOperatorState } = await learningOperatorModule();
+      const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+      loadEnvForPaths(paths);
+      const result = await readLearningOperatorState(
+        {
+          limit: parseOptionalLimit(options.limit),
+          candidateStatus: parseCandidateStatus(options.status),
+          candidateTarget: parseCandidateTarget(options.target),
+        },
+        paths,
+      );
+      printLearningState(result, 'candidates');
+    },
+  );
+
+learning
+  .command('events')
+  .description('List recent learning and memory audit events.')
+  .option('--limit <count>', 'number of events to show')
+  .action(async (options: { limit?: string }) => {
+    const { readLearningOperatorState } = await learningOperatorModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
+    const result = await readLearningOperatorState(
+      { limit: parseOptionalLimit(options.limit) },
+      paths,
+    );
+    printLearningState(result, 'events');
+  });
+
+learning
+  .command('approve <id>')
+  .description('Apply one proposed memory or skill learning candidate.')
+  .option('--reason <reason>', 'audit reason')
+  .action(async (id: string, options: { reason?: string }) => {
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
+    printActionResult(
+      await decideLearningCandidateCli(id, 'apply', options.reason, paths),
+    );
+  });
+
+learning
+  .command('reject <id>')
+  .description('Reject one proposed memory or skill learning candidate.')
+  .option('--reason <reason>', 'audit reason')
+  .action(async (id: string, options: { reason?: string }) => {
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
+    printActionResult(
+      await decideLearningCandidateCli(id, 'reject', options.reason, paths),
+    );
+  });
+
+learning
+  .command('restore-skill-patch <id>')
+  .description(
+    'Restore an applied skill patch from audit if the file is unchanged.',
+  )
+  .option('--reason <reason>', 'audit reason')
+  .action(async (id: string, options: { reason?: string }) => {
+    const { restoreSkillPatchCandidate } = await skillPatchesModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
+    const result = await restoreSkillPatchCandidate(
+      {
+        id,
+        confirm: true,
+        reason: options.reason ?? 'CLI skill patch restore.',
+      },
+      paths,
+    );
+    printActionResult(result);
+  });
+
 program
   .command('watch-pr <ref>')
   .description('Create a persistent PR watch.')
@@ -1140,6 +1262,48 @@ async function addRepoWithFeedback(repoPath: string, paths: RuntimePaths) {
   }
 }
 
+async function decideLearningCandidateCli(
+  id: string,
+  decision: 'apply' | 'reject',
+  reason: string | undefined,
+  paths: RuntimePaths,
+) {
+  const { decideMemoryCandidate } = await memoryActionsModule();
+  const memoryResult = await decideMemoryCandidate(
+    {
+      id,
+      decision,
+      reason: reason ?? `CLI learning candidate ${decision}.`,
+    },
+    paths,
+  );
+  if (memoryResult.ok || !memoryCandidateWasNotFound(memoryResult)) {
+    return memoryResult;
+  }
+
+  const { applySkillPatchCandidate, rejectSkillPatchCandidate } =
+    await skillPatchesModule();
+  return decision === 'apply'
+    ? applySkillPatchCandidate(
+        { id, reason: reason ?? 'CLI skill patch approval.' },
+        paths,
+      )
+    : rejectSkillPatchCandidate(
+        { id, reason: reason ?? 'CLI skill patch rejection.' },
+        paths,
+      );
+}
+
+function memoryCandidateWasNotFound(result: unknown) {
+  if (!result || typeof result !== 'object') return false;
+  const record = result as { message?: unknown; requires?: unknown };
+  return (
+    record.message === 'Memory candidate was not found.' &&
+    Array.isArray(record.requires) &&
+    record.requires.includes('id')
+  );
+}
+
 async function pathsFromOptions(options: GlobalOptions) {
   const { runtimePaths } = await runtimeHomeModule();
   return runtimePaths(options.home ? expandHome(options.home) : undefined);
@@ -1171,6 +1335,38 @@ function parseOptionalIntervalSeconds(value: string | undefined) {
   return seconds;
 }
 
+function parseOptionalLimit(value: string | undefined) {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error('--limit must be an integer from 1 to 100');
+  }
+  const limit = Number(trimmed);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error('--limit must be an integer from 1 to 100');
+  }
+  return limit;
+}
+
+function parseCandidateStatus(value: string | undefined) {
+  if (value === undefined) return undefined;
+  if (
+    value === 'proposed' ||
+    value === 'applied' ||
+    value === 'rejected' ||
+    value === 'archived'
+  ) {
+    return value;
+  }
+  throw new Error('--status must be proposed, applied, rejected, or archived');
+}
+
+function parseCandidateTarget(value: string | undefined) {
+  if (value === undefined) return undefined;
+  if (value === 'memory' || value === 'skill') return value;
+  throw new Error('--target must be memory or skill');
+}
+
 function printActionResult(result: {
   ok: boolean;
   message: string;
@@ -1190,6 +1386,97 @@ function printActionResult(result: {
     for (const error of result.errors) console.log(`error: ${error}`);
   }
   if (!result.ok) process.exitCode = 1;
+}
+
+function printLearningState(
+  result: unknown,
+  view: 'status' | 'reviews' | 'candidates' | 'events',
+) {
+  if (program.opts<GlobalOptions>().json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if (!result || typeof result !== 'object') {
+    console.log('Learning state unavailable.');
+    process.exitCode = 1;
+    return;
+  }
+  const state = result as Record<string, unknown>;
+  if (state.ok === false) {
+    printActionResult({
+      ok: false,
+      message:
+        typeof state.message === 'string'
+          ? state.message
+          : 'Learning state failed.',
+    });
+    return;
+  }
+
+  const summary = objectField(state.summary);
+  if (view === 'status') {
+    console.log('learning:ready');
+    console.log(`pending   ${numberField(summary, 'pendingDecisions')}`);
+    console.log(`failed    ${numberField(summary, 'failedReviews')}`);
+    console.log(`memories  ${numberField(summary, 'activeMemories')} active`);
+    console.log(`PR events ${numberField(summary, 'handledPrEvents')}`);
+  }
+
+  if (view === 'status' || view === 'reviews') {
+    const reviews = arrayField(state.reviews);
+    if (view === 'reviews') console.log(`reviews ${reviews.length}`);
+    for (const review of reviews.slice(
+      0,
+      view === 'status' ? 5 : reviews.length,
+    )) {
+      const item = objectField(review);
+      console.log(
+        `${stringField(item, 'startedAt')} ${stringField(item, 'status').padEnd(9)} ${stringField(item, 'kind').padEnd(12)} ${stringField(item, 'id')}`,
+      );
+    }
+  }
+
+  if (view === 'status' || view === 'candidates') {
+    const candidates = arrayField(state.candidates);
+    if (view === 'candidates') console.log(`candidates ${candidates.length}`);
+    for (const candidate of candidates.slice(
+      0,
+      view === 'status' ? 8 : candidates.length,
+    )) {
+      const item = objectField(candidate);
+      const label =
+        stringField(item, 'skillId') ||
+        [stringField(item, 'scope'), stringField(item, 'key')]
+          .filter(Boolean)
+          .join(':') ||
+        stringField(item, 'id');
+      console.log(
+        `${stringField(item, 'createdAt')} ${stringField(item, 'status').padEnd(9)} ${stringField(item, 'target').padEnd(6)} ${label}`,
+      );
+      const reason = stringField(item, 'reason');
+      if (reason) console.log(`  ${reason}`);
+    }
+  }
+
+  if (view === 'events') {
+    const events = [
+      ...arrayField(state.learningEvents),
+      ...arrayField(state.memoryEvents),
+    ]
+      .map(objectField)
+      .sort(
+        (a, b) =>
+          Date.parse(stringField(b, 'createdAt')) -
+          Date.parse(stringField(a, 'createdAt')),
+      );
+    console.log(`events ${events.length}`);
+    for (const event of events) {
+      const label = stringField(event, 'type') || stringField(event, 'action');
+      console.log(
+        `${stringField(event, 'createdAt')} ${label.padEnd(26)} ${stringField(event, 'source') || stringField(event, 'actor')}`,
+      );
+    }
+  }
 }
 
 function printRepoDiffResult(result: {
@@ -1310,6 +1597,26 @@ function diffSummaryText(value: unknown) {
   const deletions =
     typeof summary.deletions === 'number' ? summary.deletions : 0;
   return files > 0 ? `${files} files +${additions} -${deletions}` : '';
+}
+
+function objectField(value: unknown) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function arrayField(value: unknown) {
+  return Array.isArray(value) ? value : [];
+}
+
+function stringField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return typeof value === 'string' ? value : '';
+}
+
+function numberField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return typeof value === 'number' ? value : 0;
 }
 
 function printStatus(status: RuntimeStatus) {
@@ -1457,6 +1764,18 @@ async function githubModule() {
   >;
 }
 
+async function learningOperatorModule() {
+  return import(
+    new URL('./learning-operator.ts', import.meta.url).href
+  ) as Promise<typeof import('./learning-operator')>;
+}
+
+async function memoryActionsModule() {
+  return import(
+    new URL('./memory-actions.ts', import.meta.url).href
+  ) as Promise<typeof import('./memory-actions')>;
+}
+
 async function modelDiscoveryModule() {
   return import(
     new URL('./model-discovery.ts', import.meta.url).href
@@ -1490,6 +1809,12 @@ async function runtimeStatusModule() {
 async function schedulerModule() {
   return import(new URL('./scheduler.ts', import.meta.url).href) as Promise<
     typeof import('./scheduler')
+  >;
+}
+
+async function skillPatchesModule() {
+  return import(new URL('./skill-patches.ts', import.meta.url).href) as Promise<
+    typeof import('./skill-patches')
   >;
 }
 

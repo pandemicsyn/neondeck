@@ -5,6 +5,7 @@ import { ClockStatusPlugin } from './ClockStatus';
 import { FlueChatPlugin } from './FlueChat';
 import { GitHubPrListPlugin } from './GitHubPrList';
 import { HostMetricsPlugin } from './HostMetrics';
+import { LearningOperatorPanelPlugin } from './LearningOperatorPanel';
 import { MemoryPanelPlugin } from './MemoryPanel';
 import { RuntimeOverviewPlugin } from './RuntimeOverview';
 import { SubagentSummaryPlugin } from './SubagentSummary';
@@ -18,6 +19,7 @@ export const plugins = [
   RuntimeOverviewPlugin,
   BriefingPanelPlugin,
   MemoryPanelPlugin,
+  LearningOperatorPanelPlugin,
   SubagentSummaryPlugin,
   WorkflowObservabilityPanelPlugin,
   FlueChatPlugin,

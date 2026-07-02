@@ -37,8 +37,16 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <p>
           Display panels are typed in-repo plugins selected by runtime{' '}
           <code>dashboard.json</code>. The current plugin set covers GitHub PRs,
-          Flue chat, runtime overview, commands, watches, memory, workflow
-          observability, and terminal-style status surfaces.
+          Flue chat, runtime overview, commands, watches, memory, learning
+          operator review, workflow observability, and terminal-style status
+          surfaces.
+        </p>
+        <p>
+          The Learning panel is the operator surface for self-improvement. It
+          shows review runs, pending memory and skill candidates, audit events,
+          and buttons for manual conversation or PR retrospective reviews. Skill
+          patch rows can apply, reject, or restore audited patches when the
+          backend restore guard allows it.
         </p>
         <p>
           Work rows can open linked chat sessions without a side-by-side chat

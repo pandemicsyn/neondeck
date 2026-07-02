@@ -253,6 +253,13 @@ Use this format:
 - Reason: Prepared diffs and managed worktrees are already the durable source of truth for autopilot recovery. Extending those services keeps mutations deterministic and audited without adding a parallel queue or git runtime.
 - Follow-up: None.
 
+## 2026-07-02 - Learning Operator Surfaces
+
+- Roadmap item: Phase 22 / dashboard, API, CLI, audit, and rollback surfaces
+- Decision: Implemented a consolidated learning operator read model, local API route, Flue read action/tool, dashboard panel, CLI inspect/decide/restore commands, and explicit skill patch restore from retained audit data. The CLI can inspect reviews/candidates/events and decide candidates, but manual workflow admission remains on the local API/dashboard surfaces for now.
+- Reason: The existing CLI is a direct local action/config tool and does not yet have a clean Flue workflow invocation pattern. Keeping workflow admission on the already-validated HTTP/dashboard routes avoids adding a second invocation path while still giving operators CLI coverage for review and decision work.
+- Follow-up: Add CLI commands for queuing conversation reflection and PR retrospective workflows if the CLI grows a shared Flue invocation helper.
+
 ## 2026-06-30 - Autopilot Smoke And Integration Coverage
 
 - Roadmap item: Phase 19 / autopilot smoke and integration coverage

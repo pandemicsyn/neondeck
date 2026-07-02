@@ -1708,6 +1708,12 @@ function dashboardPresetConfig(
                 config: { limit: 5 },
               },
               {
+                id: 'learning',
+                title: 'LEARNING',
+                pluginId: 'learning-operator',
+                config: { limit: 16, refreshSeconds: 30 },
+              },
+              {
                 id: 'runtime',
                 title: 'RUNTIME',
                 pluginId: 'runtime-overview',

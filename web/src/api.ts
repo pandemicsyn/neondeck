@@ -921,6 +921,104 @@ export type MemoryResponse = {
   fetchedAt: string;
 };
 
+export type LearningWriteMode = 'off' | 'review' | 'auto';
+
+export type LearningConfig = {
+  enabled: boolean;
+  memoryWriteMode: LearningWriteMode;
+  skillWriteMode: LearningWriteMode;
+  memoryCurationEnabled: boolean;
+  memoryCurationMode: LearningWriteMode;
+  conversationReviewTurnInterval: number;
+  memoryCurationTurnInterval: number;
+  prRetrospectiveThreshold: number;
+  notifications: 'off' | 'on';
+  memoryMaxActiveItems: number;
+  maxRecentTurns: number;
+  maxPrBatchItems: number;
+  memoryPromptBudgetChars: number;
+  userMemoryBudgetChars: number;
+  localMemoryBudgetChars: number;
+  projectMemoryBudgetChars: number;
+};
+
+export type LearningReviewRecord = {
+  id: string;
+  kind: 'conversation' | 'curation' | 'pr-batch';
+  status: 'running' | 'completed' | 'failed';
+  model: string;
+  thinkingLevel: string;
+  trigger: unknown;
+  inputSummary: unknown;
+  result: unknown;
+  error: string | null;
+  flueRunId: string | null;
+  startedAt: string;
+  completedAt: string | null;
+};
+
+export type LearningCandidateStatus =
+  'proposed' | 'applied' | 'rejected' | 'archived';
+
+export type LearningCandidate = {
+  id: string;
+  target: 'memory' | 'skill';
+  status: LearningCandidateStatus;
+  action: string | null;
+  scope: string | null;
+  key: string | null;
+  value: unknown;
+  skillId: string | null;
+  repoId: string | null;
+  reason: string | null;
+  reviewId: string | null;
+  patch: unknown;
+  createdAt: string;
+  decidedAt: string | null;
+};
+
+export type LearningAuditEvent = {
+  id: string;
+  type?: string;
+  source?: string;
+  sourceId?: string | null;
+  repoId?: string | null;
+  sessionId?: string | null;
+  prKey?: string | null;
+  memoryId?: string | null;
+  action?: string;
+  actor?: string;
+  reason?: string | null;
+  data?: unknown;
+  before?: unknown;
+  after?: unknown;
+  createdAt: string;
+};
+
+export type LearningOperatorState = {
+  ok: boolean;
+  action: 'learning_operator_state';
+  changed: boolean;
+  config: LearningConfig;
+  summary: {
+    reviews: Record<string, number>;
+    candidates: Record<string, number>;
+    targets: Record<string, number>;
+    activeMemories: number;
+    archivedMemories: number;
+    handledPrEvents: number;
+    pendingDecisions: number;
+    failedReviews: number;
+  };
+  reviews: LearningReviewRecord[];
+  candidates: LearningCandidate[];
+  memoryCandidates: LearningCandidate[];
+  skillPatchCandidates: LearningCandidate[];
+  memoryEvents: LearningAuditEvent[];
+  learningEvents: LearningAuditEvent[];
+  fetchedAt: string;
+};
+
 export type NotificationLevel = 'info' | 'ready' | 'attention' | 'urgent';
 
 export type NotificationRecord = {
@@ -1419,6 +1517,69 @@ export async function upsertMemory(input: {
     errors?: string[];
     requires?: string[];
   }>('/api/memories', input);
+}
+
+export async function getLearningOperatorState(
+  input: {
+    limit?: number;
+    candidateStatus?: LearningCandidateStatus;
+    candidateTarget?: 'memory' | 'skill';
+  } = {},
+) {
+  const params = new URLSearchParams();
+  if (input.limit) params.set('limit', String(input.limit));
+  if (input.candidateStatus) {
+    params.set('candidateStatus', input.candidateStatus);
+  }
+  if (input.candidateTarget) {
+    params.set('candidateTarget', input.candidateTarget);
+  }
+  const query = params.toString();
+  return getJson<LearningOperatorState>(
+    `/api/learning/state${query ? `?${query}` : ''}`,
+  );
+}
+
+export async function decideLearningCandidate(
+  id: string,
+  decision: 'approve' | 'reject',
+  reason?: string,
+) {
+  return postJson<{
+    ok: boolean;
+    action: string;
+    changed: boolean;
+    message: string;
+  }>(`/api/learning/candidates/${id}/${decision}`, {
+    reason: reason || undefined,
+  });
+}
+
+export async function restoreSkillPatch(id: string, reason?: string) {
+  return postJson<{
+    ok: boolean;
+    action: string;
+    changed: boolean;
+    message: string;
+  }>(`/api/skills/patches/${id}/restore`, {
+    confirm: true,
+    reason: reason || 'Dashboard skill patch restore.',
+  });
+}
+
+export async function queueLearningReview(kind: 'conversation' | 'pr-batch') {
+  return postJson<{
+    ok: boolean;
+    action: string;
+    changed: boolean;
+    runId?: string;
+    message: string;
+  }>(
+    kind === 'conversation'
+      ? '/api/learning/reviews/conversation'
+      : '/api/learning/reviews/prs',
+    { reason: 'Dashboard manual learning review.' },
+  );
 }
 
 export async function getNotifications() {

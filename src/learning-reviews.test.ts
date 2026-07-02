@@ -17,7 +17,9 @@ import {
   failLearningReview,
   startLearningReview,
 } from './learning-reviews';
+import { readLearningOperatorState } from './learning-operator';
 import {
+  createMemoryCandidate,
   listMemories,
   listMemoryCandidates,
   upsertMemory,
@@ -28,6 +30,7 @@ import {
   listSkillPatchCandidates,
   proposeSkillPatch,
   rejectSkillPatchCandidate,
+  restoreSkillPatchCandidate,
 } from './skill-patches';
 import { runtimePaths } from './runtime-home';
 
@@ -1150,6 +1153,47 @@ describe('learning review orchestration', () => {
       changed: true,
       action: 'skill_patch_apply',
     });
+    await expect(
+      restoreSkillPatchCandidate(
+        {
+          id: candidateId,
+          confirm: true,
+          reason: 'Model restore should be blocked.',
+        },
+        paths,
+        { source: 'neon' },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['explicit-user-decision'],
+    });
+    await expect(
+      restoreSkillPatchCandidate(
+        {
+          id: candidateId,
+          confirm: true,
+          reason: 'Restore test patch.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'skill_patch_restore',
+    });
+    await expect(
+      restoreSkillPatchCandidate(
+        {
+          id: candidateId,
+          confirm: true,
+          reason: 'Already restored.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['applied-skill-patch'],
+    });
 
     await expect(
       proposeSkillPatch(
@@ -1181,6 +1225,85 @@ describe('learning review orchestration', () => {
       changed: true,
       action: 'skill_patch_reject',
     });
+    await expect(
+      readLearningOperatorState({ candidateTarget: 'skill' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'learning_operator_state',
+      summary: {
+        candidates: expect.objectContaining({
+          archived: expect.any(Number),
+          rejected: expect.any(Number),
+        }),
+      },
+      skillPatchCandidates: expect.arrayContaining([
+        expect.objectContaining({ id: candidateId, status: 'archived' }),
+        expect.objectContaining({ id: String(rejectId), status: 'rejected' }),
+      ]),
+    });
+  });
+
+  it('keeps dedicated learning operator candidate lists independently bounded', async () => {
+    const paths = runtimePaths(await tempHome());
+    await writeUserSkill(paths.home, 'test-skill');
+    const proposedSkill = await proposeSkillPatch(
+      {
+        skillId: 'test-skill',
+        summary: 'Add operator guidance.',
+        operation: {
+          type: 'append-section',
+          heading: 'Operator',
+          content: '- Keep learning operator lists target-specific.\n',
+        },
+      },
+      paths,
+    );
+    expect(proposedSkill).toMatchObject({
+      ok: true,
+      changed: true,
+      candidate: expect.objectContaining({ target: 'skill' }),
+    });
+    const skillCandidateId = (proposedSkill as { candidate: { id: string } })
+      .candidate.id;
+
+    await expect(
+      createMemoryCandidate(
+        {
+          action: 'upsert',
+          scope: 'local',
+          key: 'operator.one',
+          value: 'First operator memory.',
+          reason: 'Bounded candidate list test.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+    await expect(
+      createMemoryCandidate(
+        {
+          action: 'upsert',
+          scope: 'local',
+          key: 'operator.two',
+          value: 'Second operator memory.',
+          reason: 'Bounded candidate list test.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+
+    const state = await readLearningOperatorState({ limit: 1 }, paths);
+    if (!state.ok) throw new Error(state.message);
+    expect(state.candidates).toHaveLength(1);
+    expect(state.memoryCandidates).toHaveLength(1);
+    expect(state.skillPatchCandidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: skillCandidateId,
+          target: 'skill',
+          status: 'proposed',
+        }),
+      ]),
+    );
   });
 });
 

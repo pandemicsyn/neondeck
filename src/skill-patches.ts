@@ -60,6 +60,11 @@ const skillPatchDecideInputSchema = v.object({
   reason: v.optional(v.string()),
   actor: v.optional(v.picklist(['user', 'neon', 'workflow'])),
 });
+const skillPatchRestoreInputSchema = v.object({
+  id: nonEmptyStringSchema,
+  confirm: v.literal(true),
+  reason: v.optional(v.string()),
+});
 const skillPatchActionOutputSchema = v.looseObject({
   ok: v.boolean(),
   action: v.string(),
@@ -115,11 +120,25 @@ export const skillPatchListAction = defineAction({
   },
 });
 
+export const skillPatchRestoreAction = defineAction({
+  name: 'neondeck_learning_skill_patch_restore',
+  description:
+    'Restore an applied skill patch from its audited before-content when the current file still matches the applied patch.',
+  input: skillPatchRestoreInputSchema,
+  output: skillPatchActionOutputSchema,
+  async run({ input }) {
+    return restoreSkillPatchCandidate(input, runtimePaths(), {
+      source: 'neon',
+    });
+  },
+});
+
 export const neondeckSkillPatchActions = [
   skillPatchProposeAction,
   skillPatchApplyAction,
   skillPatchRejectAction,
   skillPatchListAction,
+  skillPatchRestoreAction,
 ];
 
 export async function proposeSkillPatch(
@@ -457,6 +476,202 @@ export async function rejectSkillPatchCandidate(
       changed: true,
       candidateId: candidate.id,
       message: 'Rejected skill patch candidate.',
+    };
+  } finally {
+    database.close();
+  }
+}
+
+export async function restoreSkillPatchCandidate(
+  input: v.InferInput<typeof skillPatchRestoreInputSchema>,
+  paths = runtimePaths(),
+  options: { source?: SkillPatchMutationSource } = {},
+) {
+  await ensureRuntimeHome(paths);
+  const parsed = v.safeParse(skillPatchRestoreInputSchema, input);
+  if (!parsed.success) {
+    return failedSkillPatch('skill_patch_restore', v.summarize(parsed.issues));
+  }
+  if ((options.source ?? 'user') !== 'user') {
+    return failedSkillPatch(
+      'skill_patch_restore',
+      'Skill patch restore requires an explicit user/API decision.',
+      ['explicit-user-decision'],
+    );
+  }
+
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  const now = new Date().toISOString();
+  try {
+    const candidate = readSkillPatchCandidateById(database, parsed.output.id);
+    if (!candidate) {
+      return failedSkillPatch(
+        'skill_patch_restore',
+        'Skill patch was not found.',
+        ['id'],
+      );
+    }
+    if (candidate.status !== 'applied') {
+      return failedSkillPatch(
+        'skill_patch_restore',
+        'Only applied skill patches can be restored from audit.',
+        ['applied-skill-patch'],
+      );
+    }
+
+    const patch = parsePatchPayload(candidate.patch);
+    const target = await resolvePatchableSkill(candidate.skillId, paths);
+    if (!target.ok) return target.result;
+    if (resolve(target.skill.path) !== resolve(patch.path)) {
+      return failedSkillPatch(
+        'skill_patch_restore',
+        'Skill path no longer matches the audited patch target.',
+        ['skill-path'],
+      );
+    }
+
+    const currentContent = await readFile(target.skill.path, 'utf8');
+    if (sha256(currentContent) !== patch.afterHash) {
+      return failedSkillPatch(
+        'skill_patch_restore',
+        'Skill content changed after this patch was applied. Use the audit diff for manual restore or create a fresh patch.',
+        ['stale-skill-content'],
+      );
+    }
+    const validation = validateSkillPatch(
+      patch.afterContent,
+      patch.beforeContent,
+    );
+    if (!validation.ok) {
+      return failedSkillPatch('skill_patch_restore', validation.message, [
+        'valid-skill-patch',
+      ]);
+    }
+
+    recordLearningEvent(database, {
+      type: 'skill_patch_restore_started',
+      source: options.source ?? 'user',
+      data: {
+        candidateId: candidate.id,
+        skillId: candidate.skillId,
+        fromHash: patch.afterHash,
+        toHash: patch.beforeHash,
+        reason:
+          parsed.output.reason ??
+          candidate.reason ??
+          'Restoring from skill patch audit.',
+      },
+      createdAt: now,
+    });
+
+    try {
+      await writeFile(target.skill.path, patch.beforeContent, 'utf8');
+    } catch (error) {
+      await writeFile(target.skill.path, patch.afterContent, 'utf8').catch(
+        () => {},
+      );
+      try {
+        recordLearningEvent(database, {
+          type: 'skill_patch_restore_failed',
+          source: options.source ?? 'user',
+          data: {
+            candidateId: candidate.id,
+            skillId: candidate.skillId,
+            phase: 'file-write',
+            error: errorMessage(error),
+          },
+          createdAt: new Date().toISOString(),
+        });
+      } catch {
+        // Best-effort failure audit when the restore write itself fails.
+      }
+      return failedSkillPatch(
+        'skill_patch_restore',
+        `Skill patch restore file write failed; reapplied the patched content when possible. ${errorMessage(error)}`,
+        ['skill-patch-write'],
+      );
+    }
+    try {
+      database.exec('BEGIN;');
+      database
+        .prepare(
+          `
+          UPDATE learning_candidates
+          SET status = 'archived', decided_at = ?
+          WHERE id = ?;
+        `,
+        )
+        .run(now, candidate.id);
+      recordLearningEvent(database, {
+        type: 'skill_patch_restored',
+        source: options.source ?? 'user',
+        data: {
+          candidateId: candidate.id,
+          skillId: candidate.skillId,
+          beforeHash: patch.afterHash,
+          afterHash: patch.beforeHash,
+          reason:
+            parsed.output.reason ??
+            candidate.reason ??
+            'Restored from skill patch audit.',
+        },
+        createdAt: now,
+      });
+      recordConfigHistory(database, {
+        action: 'skill_patch_restored',
+        target: `skill:${candidate.skillId}`,
+        before: {
+          path: patch.path,
+          sha256: patch.afterHash,
+          content: patch.afterContent,
+        },
+        after: {
+          path: patch.path,
+          sha256: patch.beforeHash,
+          content: patch.beforeContent,
+        },
+        changedAt: now,
+      });
+      database.exec('COMMIT;');
+    } catch (error) {
+      try {
+        database.exec('ROLLBACK;');
+      } catch {
+        // Ignore rollback failures; the file compensation below is the critical step.
+      }
+      await writeFile(target.skill.path, patch.afterContent, 'utf8').catch(
+        () => {},
+      );
+      try {
+        recordLearningEvent(database, {
+          type: 'skill_patch_restore_failed',
+          source: options.source ?? 'user',
+          data: {
+            candidateId: candidate.id,
+            skillId: candidate.skillId,
+            error: errorMessage(error),
+          },
+          createdAt: new Date().toISOString(),
+        });
+      } catch {
+        // Best-effort failure audit after the file compensation path.
+      }
+      return failedSkillPatch(
+        'skill_patch_restore',
+        `Skill patch restore audit failed; reapplied the patched content. ${errorMessage(error)}`,
+        ['skill-patch-audit'],
+      );
+    }
+
+    return {
+      ok: true,
+      action: 'skill_patch_restore',
+      changed: true,
+      candidateId: candidate.id,
+      skillId: candidate.skillId,
+      appliesAfter: 'new-session',
+      message:
+        'Restored skill content from audit. Start a new Neon session for restored guidance to enter prompt context.',
     };
   } finally {
     database.close();

@@ -526,6 +526,7 @@ describe('config actions', () => {
       'chat',
       'briefing',
       'memory',
+      'learning',
       'runtime',
       'workflows',
       'subagents',
