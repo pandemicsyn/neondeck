@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -10,7 +10,12 @@ import {
   listLearningReviews,
   prepareConversationReflection,
   prepareMemoryCurationReview,
+  preparePrBatchLearningReview,
   recordConversationTurnAndMaybeQueueLearning,
+  recordHandledPrEventAndMaybeQueueLearning,
+  recordHandledPrFromWorkflowResult,
+  failLearningReview,
+  startLearningReview,
 } from './learning-reviews';
 import {
   listMemories,
@@ -18,6 +23,12 @@ import {
   upsertMemory,
 } from './memory-actions';
 import { createChatSession } from './session-actions';
+import {
+  applySkillPatchCandidate,
+  listSkillPatchCandidates,
+  proposeSkillPatch,
+  rejectSkillPatchCandidate,
+} from './skill-patches';
 import { runtimePaths } from './runtime-home';
 
 const tempRoots: string[] = [];
@@ -575,6 +586,602 @@ describe('learning review orchestration', () => {
       }),
     ]);
   });
+
+  it('records handled PR events idempotently and queues threshold reviews', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig({ prRetrospectiveThreshold: 2 }, paths);
+    const queued: unknown[] = [];
+    const first = await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'prepared-diff-verified',
+        source: 'workflow',
+        sourceId: 'neondeck#42:prepared-diff-verified:pd-1',
+        repoId: 'neondeck',
+        repoFullName: 'pandemicsyn/neondeck',
+        prNumber: 42,
+        summary: 'Verification passed.',
+      },
+      paths,
+      {
+        async invokePrBatchReview(input) {
+          queued.push(input);
+          return { runId: 'run-pr-review' };
+        },
+      },
+    );
+    const duplicate = await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'prepared-diff-verified',
+        source: 'workflow',
+        sourceId: 'neondeck#42:prepared-diff-verified:pd-1',
+        repoId: 'neondeck',
+        repoFullName: 'pandemicsyn/neondeck',
+        prNumber: 42,
+      },
+      paths,
+    );
+    const second = await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'prepared-diff-pushed',
+        source: 'workflow',
+        sourceId: 'neondeck#42:prepared-diff-pushed:pd-1',
+        repoId: 'neondeck',
+        repoFullName: 'pandemicsyn/neondeck',
+        prNumber: 42,
+        summary: 'Autofix pushed.',
+      },
+      paths,
+      {
+        async invokePrBatchReview(input) {
+          queued.push(input);
+          return { runId: 'run-pr-review' };
+        },
+      },
+    );
+
+    expect(first).toMatchObject({
+      recorded: true,
+      duplicate: false,
+      handledCountSinceReview: 1,
+    });
+    expect(duplicate).toMatchObject({ recorded: false, duplicate: true });
+    expect(second).toMatchObject({
+      recorded: true,
+      handledCountSinceReview: 2,
+      queued: [expect.objectContaining({ runId: 'run-pr-review' })],
+    });
+    expect(queued).toEqual([expect.objectContaining({ trigger: 'threshold' })]);
+    expect((queued[0] as { repoId?: unknown }).repoId).toBeUndefined();
+  });
+
+  it('queues threshold PR retrospectives over the full unreviewed batch', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig({ prRetrospectiveThreshold: 2 }, paths);
+    const queued: unknown[] = [];
+
+    await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'prepared-diff-verified',
+        source: 'workflow',
+        sourceId: 'alpha#10:prepared-diff-verified:pd-10',
+        repoId: 'alpha',
+        repoFullName: 'example/alpha',
+        prNumber: 10,
+      },
+      paths,
+    );
+    const second = await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'prepared-diff-pushed',
+        source: 'workflow',
+        sourceId: 'beta#20:prepared-diff-pushed:pd-20',
+        repoId: 'beta',
+        repoFullName: 'example/beta',
+        prNumber: 20,
+      },
+      paths,
+      {
+        async invokePrBatchReview(input) {
+          queued.push(input);
+          return { runId: 'run-pr-review' };
+        },
+      },
+    );
+
+    expect(second).toMatchObject({
+      recorded: true,
+      handledCountSinceReview: 2,
+      queued: [expect.objectContaining({ runId: 'run-pr-review' })],
+    });
+    expect(queued).toEqual([expect.objectContaining({ trigger: 'threshold' })]);
+    expect((queued[0] as { repoId?: unknown }).repoId).toBeUndefined();
+  });
+
+  it('retries automatic PR retrospectives after workflow admission failure', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig({ prRetrospectiveThreshold: 2 }, paths);
+    const attempts: unknown[] = [];
+
+    await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'prepared-diff-verified',
+        source: 'workflow',
+        sourceId: 'neondeck#51:prepared-diff-verified:pd-1',
+        repoId: 'neondeck',
+        repoFullName: 'pandemicsyn/neondeck',
+        prNumber: 51,
+      },
+      paths,
+    );
+    await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'prepared-diff-pushed',
+        source: 'workflow',
+        sourceId: 'neondeck#51:prepared-diff-pushed:pd-1',
+        repoId: 'neondeck',
+        repoFullName: 'pandemicsyn/neondeck',
+        prNumber: 51,
+      },
+      paths,
+      {
+        async invokePrBatchReview(input) {
+          attempts.push(input);
+          throw new Error('admission failed');
+        },
+      },
+    );
+    const retry = await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'result-comment-completed',
+        source: 'workflow',
+        sourceId: 'neondeck#51:result-comment-completed:pd-1',
+        repoId: 'neondeck',
+        repoFullName: 'pandemicsyn/neondeck',
+        prNumber: 51,
+      },
+      paths,
+      {
+        async invokePrBatchReview(input) {
+          attempts.push(input);
+          return { runId: 'run-pr-review-retry' };
+        },
+      },
+    );
+
+    expect(attempts).toHaveLength(2);
+    expect(retry).toMatchObject({
+      recorded: true,
+      queued: [expect.objectContaining({ runId: 'run-pr-review-retry' })],
+    });
+  });
+
+  it('retries automatic PR retrospectives after a failed review', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig({ prRetrospectiveThreshold: 2 }, paths);
+    const queued: unknown[] = [];
+    await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'prepared-diff-verified',
+        source: 'workflow',
+        sourceId: 'neondeck#50:prepared-diff-verified:pd-1',
+        repoId: 'neondeck',
+        repoFullName: 'pandemicsyn/neondeck',
+        prNumber: 50,
+      },
+      paths,
+    );
+    await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'prepared-diff-pushed',
+        source: 'workflow',
+        sourceId: 'neondeck#50:prepared-diff-pushed:pd-1',
+        repoId: 'neondeck',
+        repoFullName: 'pandemicsyn/neondeck',
+        prNumber: 50,
+      },
+      paths,
+      {
+        async invokePrBatchReview(input) {
+          queued.push(input);
+          return { runId: 'run-pr-review-1' };
+        },
+      },
+    );
+    const failedReviewId = startLearningReview(
+      {
+        kind: 'pr-batch',
+        model: 'openai/test',
+        thinkingLevel: 'low',
+        trigger: { type: 'threshold' },
+        inputSummary: { handledEventIds: [] },
+      },
+      paths,
+    );
+    failLearningReview(failedReviewId, 'model failed', paths);
+    await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'result-comment-completed',
+        source: 'workflow',
+        sourceId: 'neondeck#50:result-comment-completed:pd-1',
+        repoId: 'neondeck',
+        repoFullName: 'pandemicsyn/neondeck',
+        prNumber: 50,
+      },
+      paths,
+      {
+        async invokePrBatchReview(input) {
+          queued.push(input);
+          return { runId: 'run-pr-review-2' };
+        },
+      },
+    );
+
+    expect(queued).toHaveLength(2);
+    expect(queued[1]).toEqual(
+      expect.objectContaining({ trigger: 'threshold' }),
+    );
+    expect((queued[1] as { repoId?: unknown }).repoId).toBeUndefined();
+  });
+
+  it('records nested Kilo verification results as handled PR events', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig({ prRetrospectiveThreshold: 1 }, paths);
+    const queued: unknown[] = [];
+
+    const result = await recordHandledPrFromWorkflowResult(
+      {
+        workflow: 'verify_kilo_result',
+        runId: 'run-kilo-verify',
+        result: {
+          ok: true,
+          action: 'kilo_result_verify',
+          changed: true,
+          message: 'Kilo result verification passed.',
+          task: {
+            id: 'kilo-task-verify',
+            repoId: 'neondeck',
+            repoFullName: 'pandemicsyn/neondeck',
+            worktreeId: 'wt-kilo',
+          },
+          data: {
+            verification: {
+              ok: true,
+              action: 'autopilot_verify_pr_worktree',
+              changed: true,
+              message: 'Verified pandemicsyn/neondeck#77.',
+              data: {
+                worktree: {
+                  id: 'wt-kilo',
+                  repoId: 'neondeck',
+                  repoFullName: 'pandemicsyn/neondeck',
+                  prNumber: 77,
+                },
+                preparedDiffVerification: {
+                  id: 'pd-kilo-verify',
+                  repoId: 'neondeck',
+                  repoFullName: 'pandemicsyn/neondeck',
+                  prNumber: 77,
+                  status: 'passed',
+                },
+              },
+            },
+          },
+        },
+      },
+      paths,
+      {
+        async invokePrBatchReview(input) {
+          queued.push(input);
+          return { runId: 'run-pr-review-kilo' };
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      recorded: true,
+      duplicate: false,
+      queued: [expect.objectContaining({ runId: 'run-pr-review-kilo' })],
+    });
+    expect(queued).toEqual([expect.objectContaining({ trigger: 'threshold' })]);
+  });
+
+  it('labels blocked workflow outcomes without successful handled-event names', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig({ prRetrospectiveThreshold: 10 }, paths);
+
+    await recordHandledPrFromWorkflowResult(
+      {
+        workflow: 'verify_pr_worktree',
+        runId: 'run-verify-blocked',
+        result: {
+          ok: false,
+          action: 'autopilot_verify_pr_worktree',
+          changed: true,
+          message: 'Verification is blocked by execution approval.',
+          requires: ['approval'],
+          data: {
+            worktree: {
+              id: 'wt-verify-blocked',
+              repoId: 'neondeck',
+              repoFullName: 'pandemicsyn/neondeck',
+              prNumber: 78,
+            },
+            preparedDiffVerification: {
+              id: 'pd-verify-blocked',
+              repoId: 'neondeck',
+              repoFullName: 'pandemicsyn/neondeck',
+              prNumber: 78,
+              status: 'failed',
+            },
+          },
+        },
+      },
+      paths,
+    );
+    await recordHandledPrFromWorkflowResult(
+      {
+        workflow: 'push_pr_autofix',
+        runId: 'run-push-blocked',
+        result: {
+          ok: false,
+          action: 'autopilot_push_pr_autofix',
+          changed: true,
+          message: 'Push is blocked by policy.',
+          requires: ['pushApproval'],
+          data: {
+            preparedDiff: {
+              id: 'pd-push-blocked',
+              repoId: 'neondeck',
+              repoFullName: 'pandemicsyn/neondeck',
+              prNumber: 78,
+              status: 'push-blocked',
+            },
+          },
+        },
+      },
+      paths,
+    );
+
+    const prepared = await preparePrBatchLearningReview(
+      { trigger: 'manual' },
+      paths,
+    );
+    if (!prepared.ok) throw new Error(prepared.message);
+    const summary = prepared.inputSummary as {
+      handledEvents?: Array<{ eventType?: string | null }>;
+    };
+
+    expect(summary.handledEvents?.map((event) => event.eventType)).toEqual([
+      'prepared-diff-verification-blocked',
+      'prepared-diff-push-blocked',
+    ]);
+  });
+
+  it('turns PR retrospective output into memory and skill candidates', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig(
+      {
+        memoryWriteMode: 'review',
+        skillWriteMode: 'review',
+      },
+      paths,
+    );
+    await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'review-feedback-workflow-completed',
+        source: 'workflow',
+        sourceId: 'neondeck#77:review-feedback-workflow-completed:run-1',
+        repoId: 'neondeck',
+        repoFullName: 'pandemicsyn/neondeck',
+        prNumber: 77,
+        summary: 'Review feedback repeatedly asked for Valibot IO guards.',
+      },
+      paths,
+    );
+    const prepared = await preparePrBatchLearningReview(
+      { trigger: 'manual' },
+      paths,
+    );
+    expect(prepared).toMatchObject({
+      ok: true,
+      kind: 'pr-batch',
+      mode: 'review',
+      skillMode: 'review',
+    });
+    if (!prepared.ok) throw new Error(prepared.message);
+
+    await expect(
+      completeLearningReviewFromModelOutput(
+        prepared,
+        {
+          summary: 'Valibot boundary feedback is recurring.',
+          memoryActions: [
+            {
+              action: 'upsert',
+              scope: 'project',
+              repoId: 'neondeck',
+              key: 'autopilot.valibot-boundaries',
+              value:
+                'Autopilot TypeScript changes touching API/action inputs should verify Valibot schemas at IO boundaries before preparing diffs.',
+              reason: 'Repeated PR feedback in handled work.',
+            },
+          ],
+          skillPatches: [
+            {
+              skillId: 'neondeck',
+              summary: 'Add Valibot autopilot pitfall.',
+              reason: 'Repeated PR feedback in handled work.',
+              operation: {
+                type: 'append-section',
+                heading: 'Learning Guidance',
+                content:
+                  '- Before preparing TypeScript autopilot diffs, check API/action input changes for Valibot schemas at IO boundaries.\n',
+              },
+            },
+          ],
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      memoryCandidates: [expect.objectContaining({ target: 'memory' })],
+      skillCandidates: [expect.objectContaining({ target: 'skill' })],
+    });
+
+    await expect(
+      listMemoryCandidates({ status: 'proposed' }, paths),
+    ).resolves.toMatchObject({
+      candidates: [
+        expect.objectContaining({
+          target: 'memory',
+          repoId: 'neondeck',
+          reviewId: prepared.reviewId,
+        }),
+      ],
+    });
+    await expect(
+      listSkillPatchCandidates({ status: 'proposed' }, paths),
+    ).resolves.toMatchObject({
+      candidates: [
+        expect.objectContaining({
+          target: 'skill',
+          skillId: 'neondeck',
+          reviewId: prepared.reviewId,
+        }),
+      ],
+    });
+  });
+
+  it('reports skill-only PR retrospective candidates as changed', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig({ skillWriteMode: 'review' }, paths);
+    await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'ci-failure-workflow-completed',
+        source: 'workflow',
+        sourceId: 'neondeck#88:ci-failure-workflow-completed:run-1',
+        repoId: 'neondeck',
+        repoFullName: 'pandemicsyn/neondeck',
+        prNumber: 88,
+        summary: 'CI fixes repeatedly missed the configured check order.',
+      },
+      paths,
+    );
+    const prepared = await preparePrBatchLearningReview(
+      { trigger: 'manual' },
+      paths,
+    );
+    if (!prepared.ok) throw new Error(prepared.message);
+
+    const result = await completeLearningReviewFromModelOutput(
+      prepared,
+      {
+        summary: 'Skill-only procedural lesson.',
+        memoryActions: [],
+        skillPatches: [
+          {
+            skillId: 'neondeck',
+            summary: 'Add check-order guidance.',
+            operation: {
+              type: 'append-section',
+              heading: 'Learning Guidance',
+              content:
+                '- Verify configured required checks before summarizing CI autofix readiness.\n',
+            },
+          },
+        ],
+      },
+      paths,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      skillCandidates: [expect.objectContaining({ target: 'skill' })],
+    });
+    expect(listLearningReviews({ kind: 'pr-batch' }, paths)).toMatchObject({
+      reviews: [
+        expect.objectContaining({
+          id: prepared.reviewId,
+          result: expect.objectContaining({
+            candidatesCreated: 1,
+            memoryCandidatesCreated: 0,
+            skillCandidatesCreated: 1,
+          }),
+        }),
+      ],
+    });
+  });
+
+  it('proposes, applies, and rejects skill patch candidates for user runtime skills', async () => {
+    const paths = runtimePaths(await tempHome());
+    await writeUserSkill(paths.home, 'test-skill');
+    const proposed = await proposeSkillPatch(
+      {
+        skillId: 'test-skill',
+        summary: 'Add verification guidance.',
+        operation: {
+          type: 'append-section',
+          heading: 'Verification',
+          content: '- Run npm run check before summarizing local changes.\n',
+        },
+      },
+      paths,
+    );
+    expect(proposed).toMatchObject({
+      ok: true,
+      changed: true,
+      candidate: expect.objectContaining({ skillId: 'test-skill' }),
+    });
+    const candidateId = (proposed as { candidate: { id: string } }).candidate
+      .id;
+
+    await expect(
+      applySkillPatchCandidate({ id: candidateId }, paths, { source: 'neon' }),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['explicit-user-decision'],
+    });
+    await expect(
+      applySkillPatchCandidate({ id: candidateId }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'skill_patch_apply',
+    });
+
+    await expect(
+      proposeSkillPatch(
+        {
+          skillId: 'test-skill',
+          summary: 'Add review guidance.',
+          operation: {
+            type: 'append-section',
+            heading: 'Review',
+            content: '- Prefer typed actions over direct config edits.\n',
+          },
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+    });
+    const listed = await listSkillPatchCandidates(
+      { status: 'proposed', skillId: 'test-skill' },
+      paths,
+    );
+    const rejectId = listed.candidates[0]?.id;
+    expect(rejectId).toEqual(expect.any(String));
+    await expect(
+      rejectSkillPatchCandidate({ id: String(rejectId) }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'skill_patch_reject',
+    });
+  });
 });
 
 async function tempHome() {
@@ -612,4 +1219,24 @@ function insertLegacyMemory(
     database.close();
   }
   return id;
+}
+
+async function writeUserSkill(home: string, id: string) {
+  const directory = join(home, 'skills', id);
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    join(directory, 'SKILL.md'),
+    [
+      '---',
+      `name: ${id}`,
+      'description: Test runtime skill.',
+      '---',
+      '',
+      '# Test Skill',
+      '',
+      'Initial guidance.',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
 }

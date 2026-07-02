@@ -1300,6 +1300,10 @@ function initializeAppDatabase(path: string) {
       CREATE INDEX IF NOT EXISTS idx_learning_events_type
         ON learning_events(type, created_at DESC);
 
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_learning_pr_handled_source
+        ON learning_events(source_id)
+        WHERE type = 'pr_handled' AND source_id IS NOT NULL;
+
       CREATE INDEX IF NOT EXISTS idx_learning_reviews_kind
         ON learning_reviews(kind, status, started_at DESC);
 

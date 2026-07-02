@@ -106,8 +106,8 @@ GITHUB_LOGIN=...</code></pre>
           assistant when omitted, but a low-cost utility model is recommended for
           titles, labels, notifications, and compact summaries. The self-improvement
           model is optional and falls back through the utility model and display assistant.
-          It reserves a cheap fast model role for future background learning reviews;
-          the current memory foundation uses deterministic curation actions.
+          It is used for bounded conversation reflection, memory curation, and PR/autopilot
+          retrospective workflows.
           <code>off</code>, <code>minimal</code>, <code>low</code>,
           <code>medium</code>, <code>high</code>, or <code>xhigh</code> levels. Provider
           registration changes require a server restart.
@@ -115,10 +115,11 @@ GITHUB_LOGIN=...</code></pre>
 
         <h2>Learning</h2>
         <p>
-          Learning config controls memory writes, review policy, and bounded
-          memory curation. Memory uses active <code>user</code>,
+          Learning config controls memory writes, skill patch policy, PR
+          retrospective thresholds, review policy, and bounded memory curation.
+          Memory uses active <code>user</code>,
           <code>local</code>, and <code>project</code> scopes; active sessions are
-          marked stale after memory changes rather than being silently rewritten.
+          marked stale after memory or skill changes rather than being silently rewritten.
         </p>
         <pre><code>&#123;
   "learning": &#123;
@@ -128,6 +129,8 @@ GITHUB_LOGIN=...</code></pre>
     "memoryCurationEnabled": true,
     "memoryCurationMode": "review",
     "memoryCurationTurnInterval": 200,
+    "prRetrospectiveThreshold": 5,
+    "maxPrBatchItems": 8,
     "memoryMaxActiveItems": 200
   &#125;
 &#125;</code></pre>
