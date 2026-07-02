@@ -1458,32 +1458,33 @@ Must-haves:
 
 ### Phase 22: Self-Improvement And Learning
 
-- Status: planned. Detailed implementation plan lives in `.plans/SELF_IMPROVEMENT_LEARNING_PLAN.md`.
+- Status: partially complete. The core memory foundation has landed: simple active/archived memory, `user`/`local`/`project` learning scopes, audited memory events, learning schema, memory curation config/action/workflow foundation, self-improvement model config/fallbacks, prompt-snapshot memory id recording, session stale-context integration, safety policy entries, and memory docs. Model-backed conversation reflection, PR/autopilot retrospectives, skill patching, richer learning dashboard/CLI surfaces, and full learning-review orchestration remain open. Detailed implementation plan lives in `.plans/SELF_IMPROVEMENT_LEARNING_PLAN.md`.
 
-- [ ] Add Hermes-inspired learning as a first-class Neondeck subsystem, not ad hoc prompt text.
-- [ ] Keep active learning memory scopes to `user`, `local`, and `project`; stop writing new `session` or `watch` memories.
-- [ ] Preserve session stability by applying new learned memory and skill changes only to new sessions or explicit refresh flows.
-- [ ] Add runtime learning config for enablement, memory write mode, skill write mode, optional/tuneable memory curation, conversation review cadence, PR retrospective cadence, notifications, and review input budgets.
-- [ ] Add explicit self-improvement model config with defaults and fallbacks:
+- [x] Add Hermes-inspired memory as a first-class Neondeck subsystem, not ad hoc prompt text.
+- [x] Keep active learning memory scopes to `user`, `local`, and `project`; stop writing new `session` or `watch` memories.
+- [x] Preserve session stability by applying new learned memory changes only to new sessions or explicit refresh flows.
+- [x] Add runtime learning config for enablement, memory write mode, skill write mode, optional/tuneable memory curation, conversation review cadence, PR retrospective cadence, notifications, and review input budgets.
+- [x] Add explicit self-improvement model config with defaults and fallbacks:
   - `models.selfImprovement`
   - `models.selfImprovementThinkingLevel`
   - `FLUE_SELF_IMPROVEMENT_MODEL`
   - `FLUE_SELF_IMPROVEMENT_THINKING_LEVEL`
   - fallback through utility model, display-assistant model, then the existing default agent model
-- [ ] Add app SQLite schema for simple active/archived memory, memory event audit history, learning events, learning reviews, and review-mode learning candidates.
-- [ ] Add deterministic Valibot-backed memory actions for learn, upsert, rewrite, merge, archive, list candidates, decide candidates, and mark-used behavior.
+- [x] Add app SQLite schema for simple active/archived memory, memory event audit history, learning events, learning reviews, and review-mode learning candidates.
+- [x] Add deterministic Valibot-backed memory actions for learn, upsert, rewrite, merge, archive, list candidates, decide candidates, curate, and mark-used behavior.
 - [ ] Add deterministic skill patch actions for propose, apply, reject, list, audit, and rollback where practical.
-- [ ] Add bounded Flue workflows for:
-  - conversation reflection after a configurable turn count, defaulting to 10
-  - optional memory curation after a configurable turn count, defaulting to 200
-  - PR/autopilot retrospective after a configurable handled-PR batch, defaulting to 5
-  - manual learning review/curation
+- [ ] Add bounded Flue workflows:
+  - [ ] conversation reflection after a configurable turn count, defaulting to 10
+  - [x] optional memory curation foundation after a configurable turn count, defaulting to 200
+  - [ ] model-backed memory curation proposals using the configured self-improvement model
+  - [ ] PR/autopilot retrospective after a configurable handled-PR batch, defaulting to 5
+  - [ ] manual learning review orchestration
 - [ ] Add PR/autopilot handled-event accounting so recurring review, CI, verification, push-back, Kilo, and notification recovery patterns can become memory or skill patch candidates.
-- [ ] Build a deliberate learning snapshot for display-assistant sessions that includes bounded, auditable `user`, `local`, and relevant `project` memories.
-- [ ] Record which memory ids were loaded into a session and mark active sessions stale when relevant learned context changes.
-- [ ] Add dashboard, API, and CLI surfaces for learning status, reviews, candidates, memory decisions, skill patch decisions, and audit history.
-- [ ] Update runtime skills, README, AGENTS.md, and Astro docs to explain learning, memory scopes, self-improvement model config, PR retrospectives, and rollback/curation controls.
-- [ ] Add fast tests with mocked reflection/model output for config fallback, scope validation, candidate policies, prompt snapshot budgets, session staleness, PR retrospective thresholds, API validation, and skill patch proposals.
+- [x] Build a deliberate learning snapshot for display-assistant sessions that includes bounded, auditable `user`, `local`, and relevant `project` memories.
+- [x] Record which memory ids were loaded into a session and mark active sessions stale when relevant learned context changes.
+- [ ] Add dashboard, API, and CLI surfaces for learning status, reviews, candidates, memory decisions, skill patch decisions, and audit history. Initial memory APIs and panel integration have landed; dedicated learning dashboard and CLI surfaces remain open.
+- [ ] Update runtime skills, README, AGENTS.md, and Astro docs to explain learning, memory scopes, self-improvement model config, PR retrospectives, and rollback/curation controls. Memory/current-guidance docs have landed; model-backed reflection, PR retrospective, and skill patch docs remain open.
+- [ ] Add fast tests with mocked reflection/model output for config fallback, scope validation, candidate policies, prompt snapshot budgets, session staleness, PR retrospective thresholds, API validation, and skill patch proposals. Memory/config/snapshot/curation foundation tests have landed; reflection, retrospective, and skill patch tests remain open.
 - [ ] Add opt-in smoke/integration tests for conversation reflection and PR retrospective workflows without slowing `npm run check`.
 
 ## Open Questions
