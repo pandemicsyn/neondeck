@@ -19,6 +19,7 @@ import {
 } from './learning-reviews';
 import { readLearningOperatorState } from './learning-operator';
 import {
+  createMemoryCandidate,
   listMemories,
   listMemoryCandidates,
   upsertMemory,
@@ -1240,6 +1241,69 @@ describe('learning review orchestration', () => {
         expect.objectContaining({ id: String(rejectId), status: 'rejected' }),
       ]),
     });
+  });
+
+  it('keeps dedicated learning operator candidate lists independently bounded', async () => {
+    const paths = runtimePaths(await tempHome());
+    await writeUserSkill(paths.home, 'test-skill');
+    const proposedSkill = await proposeSkillPatch(
+      {
+        skillId: 'test-skill',
+        summary: 'Add operator guidance.',
+        operation: {
+          type: 'append-section',
+          heading: 'Operator',
+          content: '- Keep learning operator lists target-specific.\n',
+        },
+      },
+      paths,
+    );
+    expect(proposedSkill).toMatchObject({
+      ok: true,
+      changed: true,
+      candidate: expect.objectContaining({ target: 'skill' }),
+    });
+    const skillCandidateId = (proposedSkill as { candidate: { id: string } })
+      .candidate.id;
+
+    await expect(
+      createMemoryCandidate(
+        {
+          action: 'upsert',
+          scope: 'local',
+          key: 'operator.one',
+          value: 'First operator memory.',
+          reason: 'Bounded candidate list test.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+    await expect(
+      createMemoryCandidate(
+        {
+          action: 'upsert',
+          scope: 'local',
+          key: 'operator.two',
+          value: 'Second operator memory.',
+          reason: 'Bounded candidate list test.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+
+    const state = await readLearningOperatorState({ limit: 1 }, paths);
+    if (!state.ok) throw new Error(state.message);
+    expect(state.candidates).toHaveLength(1);
+    expect(state.memoryCandidates).toHaveLength(1);
+    expect(state.skillPatchCandidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: skillCandidateId,
+          target: 'skill',
+          status: 'proposed',
+        }),
+      ]),
+    );
   });
 });
 

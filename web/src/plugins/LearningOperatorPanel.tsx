@@ -41,13 +41,22 @@ export const LearningOperatorPanelPlugin = {
     const [tab, setTab] = useState<LearningTab>('candidates');
     const [candidateFilter, setCandidateFilter] =
       useState<CandidateFilter>('all');
+    const candidateStatus =
+      candidateFilter === 'all' ? undefined : candidateFilter;
     const {
       data: state,
       error,
       isLoading,
     } = useQuery({
-      queryKey: queryKeys.learningState,
-      queryFn: () => getLearningOperatorState({ limit: config.limit }),
+      queryKey: [
+        ...queryKeys.learningState,
+        { candidateStatus, limit: config.limit },
+      ],
+      queryFn: () =>
+        getLearningOperatorState({
+          candidateStatus,
+          limit: config.limit,
+        }),
       refetchInterval: Math.max(10, config.refreshSeconds) * 1000,
     });
 

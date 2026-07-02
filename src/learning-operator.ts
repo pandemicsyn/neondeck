@@ -119,6 +119,22 @@ export async function readLearningOperatorState(
       status: parsed.output.candidateStatus,
       limit,
     });
+    const memoryCandidates =
+      parsed.output.candidateTarget === 'skill'
+        ? []
+        : readCandidates(database, {
+            target: 'memory',
+            status: parsed.output.candidateStatus,
+            limit,
+          });
+    const skillPatchCandidates =
+      parsed.output.candidateTarget === 'memory'
+        ? []
+        : readCandidates(database, {
+            target: 'skill',
+            status: parsed.output.candidateStatus,
+            limit,
+          });
     const memoryEvents = readMemoryEvents(database, {
       memoryId: parsed.output.memoryId,
       limit,
@@ -133,12 +149,8 @@ export async function readLearningOperatorState(
       summary,
       reviews,
       candidates,
-      memoryCandidates: candidates.filter(
-        (candidate) => candidate.target === 'memory',
-      ),
-      skillPatchCandidates: candidates.filter(
-        (candidate) => candidate.target === 'skill',
-      ),
+      memoryCandidates,
+      skillPatchCandidates,
       memoryEvents,
       learningEvents,
       fetchedAt: new Date().toISOString(),

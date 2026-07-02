@@ -564,7 +564,33 @@ export async function restoreSkillPatchCandidate(
       createdAt: now,
     });
 
-    await writeFile(target.skill.path, patch.beforeContent, 'utf8');
+    try {
+      await writeFile(target.skill.path, patch.beforeContent, 'utf8');
+    } catch (error) {
+      await writeFile(target.skill.path, patch.afterContent, 'utf8').catch(
+        () => {},
+      );
+      try {
+        recordLearningEvent(database, {
+          type: 'skill_patch_restore_failed',
+          source: options.source ?? 'user',
+          data: {
+            candidateId: candidate.id,
+            skillId: candidate.skillId,
+            phase: 'file-write',
+            error: errorMessage(error),
+          },
+          createdAt: new Date().toISOString(),
+        });
+      } catch {
+        // Best-effort failure audit when the restore write itself fails.
+      }
+      return failedSkillPatch(
+        'skill_patch_restore',
+        `Skill patch restore file write failed; reapplied the patched content when possible. ${errorMessage(error)}`,
+        ['skill-patch-write'],
+      );
+    }
     try {
       database.exec('BEGIN;');
       database
