@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { publishConfigEvent, type ConfigChangeEvent } from './config-events';
+import { createMemoryCandidate } from './memory-actions';
 
 const originalEnv = { ...process.env };
 let home: string;
@@ -371,6 +372,93 @@ describe('app API safety routes', () => {
     await expect(badPatchLimit.json()).resolves.toMatchObject({
       ok: false,
       action: 'skill_patch_list',
+    });
+  });
+
+  it('preserves memory candidate errors on combined candidate decisions', async () => {
+    const headers = {
+      'content-type': 'application/json',
+      host: 'localhost',
+      origin: 'http://localhost',
+    };
+    const applyCandidate = await createMemoryCandidate({
+      action: 'upsert',
+      scope: 'local',
+      key: `route-apply-${Date.now()}`,
+      value: 'durable route candidate',
+      reason: 'route regression test',
+    });
+    if (!applyCandidate.ok || !('candidate' in applyCandidate)) {
+      throw new Error(applyCandidate.message);
+    }
+    const applyId = String(applyCandidate.candidate.id);
+
+    const firstApply = await app.request(
+      `http://localhost/api/learning/candidates/${applyId}/approve`,
+      {
+        method: 'POST',
+        headers,
+        body: '{}',
+      },
+    );
+    const secondApply = await app.request(
+      `http://localhost/api/learning/candidates/${applyId}/approve`,
+      {
+        method: 'POST',
+        headers,
+        body: '{}',
+      },
+    );
+    const secondApplyBody = (await secondApply.json()) as {
+      action?: string;
+      message?: string;
+    };
+
+    expect(firstApply.status).toBe(200);
+    expect(secondApply.status).toBe(400);
+    expect(secondApplyBody).toMatchObject({
+      action: 'memory_candidate_decide',
+      message: 'Memory candidate was already decided.',
+    });
+
+    const rejectCandidate = await createMemoryCandidate({
+      action: 'upsert',
+      scope: 'local',
+      key: `route-reject-${Date.now()}`,
+      value: 'reject route candidate',
+      reason: 'route regression test',
+    });
+    if (!rejectCandidate.ok || !('candidate' in rejectCandidate)) {
+      throw new Error(rejectCandidate.message);
+    }
+    const rejectId = String(rejectCandidate.candidate.id);
+
+    const firstReject = await app.request(
+      `http://localhost/api/learning/candidates/${rejectId}/reject`,
+      {
+        method: 'POST',
+        headers,
+        body: '{}',
+      },
+    );
+    const secondReject = await app.request(
+      `http://localhost/api/learning/candidates/${rejectId}/reject`,
+      {
+        method: 'POST',
+        headers,
+        body: '{}',
+      },
+    );
+    const secondRejectBody = (await secondReject.json()) as {
+      action?: string;
+      message?: string;
+    };
+
+    expect(firstReject.status).toBe(200);
+    expect(secondReject.status).toBe(400);
+    expect(secondRejectBody).toMatchObject({
+      action: 'memory_candidate_decide',
+      message: 'Memory candidate was already decided.',
     });
   });
 

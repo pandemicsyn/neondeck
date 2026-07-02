@@ -1625,6 +1625,7 @@ app.post('/api/learning/candidates/:id/approve', async (c) => {
     paths,
   );
   if (result.ok) return c.json(result);
+  if (!memoryCandidateWasNotFound(result)) return c.json(result, 400);
   const skillResult = await applySkillPatchCandidate(
     { ...body, id: c.req.param('id') },
     paths,
@@ -1643,6 +1644,7 @@ app.post('/api/learning/candidates/:id/reject', async (c) => {
     paths,
   );
   if (result.ok) return c.json(result);
+  if (!memoryCandidateWasNotFound(result)) return c.json(result, 400);
   const skillResult = await rejectSkillPatchCandidate(
     { ...body, id: c.req.param('id') },
     paths,
@@ -1864,6 +1866,16 @@ function workflowLabel(event: FlueObservation) {
   }
 
   return `Workflow run ${event.runId ?? 'unknown'}`;
+}
+
+function memoryCandidateWasNotFound(result: unknown) {
+  if (!result || typeof result !== 'object') return false;
+  const record = result as { message?: unknown; requires?: unknown };
+  return (
+    record.message === 'Memory candidate was not found.' &&
+    Array.isArray(record.requires) &&
+    record.requires.includes('id')
+  );
 }
 
 function hostName(host: string | undefined) {

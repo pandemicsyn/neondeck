@@ -914,14 +914,13 @@ export async function recordHandledPrEventAndMaybeQueueLearning(
     !due.activeAdmission &&
     dependencies.invokePrBatchReview &&
     markPrRetrospectiveAdmitted(paths, {
-      repoId: input.repoId ?? null,
+      repoId: null,
       count: due.count,
       threshold: config.prRetrospectiveThreshold,
     })
   ) {
     try {
       const receipt = await dependencies.invokePrBatchReview({
-        repoId: input.repoId ?? undefined,
         trigger: 'threshold',
         reason: `Handled PR threshold reached with ${due.count} event${due.count === 1 ? '' : 's'} since the last retrospective.`,
       });
@@ -1528,6 +1527,19 @@ function hasActivePrRetrospectiveAdmission(
       .get(...(checkpoint ? [checkpoint] : []));
     return Boolean(running);
   }
+  const failedAdmission = database
+    .prepare(
+      `
+      SELECT id
+      FROM learning_events
+      WHERE type = 'pr_retrospective_failed'
+        AND created_at >= ?
+      ORDER BY created_at DESC
+      LIMIT 1;
+    `,
+    )
+    .get(admittedAt);
+  if (failedAdmission) return false;
   const review = database
     .prepare(
       `
@@ -1823,27 +1835,51 @@ function extractHandledPrEvent(input: {
   if (!result) return null;
   const action = typeof result.action === 'string' ? result.action : null;
   const data = objectRecord(result.data) ?? {};
+  const nestedResult =
+    objectRecord(data.verification) ??
+    objectRecord(data.promotion) ??
+    objectRecord(data.result);
+  const nestedData = objectRecord(nestedResult?.data) ?? {};
+  const task = objectRecord(result.task) ?? objectRecord(data.task);
+  const resultState =
+    objectRecord(result.resultState) ?? objectRecord(data.resultState);
   const preparedDiff =
     objectRecord(result.preparedDiff) ??
     objectRecord(data.preparedDiff) ??
+    objectRecord(nestedResult?.preparedDiff) ??
+    objectRecord(nestedData.preparedDiff) ??
     objectRecord(result.preparedDiffVerification) ??
-    objectRecord(data.preparedDiffVerification);
-  const worktree = objectRecord(result.worktree) ?? objectRecord(data.worktree);
+    objectRecord(data.preparedDiffVerification) ??
+    objectRecord(nestedResult?.preparedDiffVerification) ??
+    objectRecord(nestedData.preparedDiffVerification);
+  const worktree =
+    objectRecord(result.worktree) ??
+    objectRecord(data.worktree) ??
+    objectRecord(nestedResult?.worktree) ??
+    objectRecord(nestedData.worktree);
   const repoId = firstString(
     result.repoId,
     data.repoId,
+    nestedResult?.repoId,
+    nestedData.repoId,
     preparedDiff?.repoId,
     worktree?.repoId,
+    task?.repoId,
   );
   const repoFullName = firstString(
     result.repoFullName,
     data.repoFullName,
+    nestedResult?.repoFullName,
+    nestedData.repoFullName,
     preparedDiff?.repoFullName,
     worktree?.repoFullName,
+    task?.repoFullName,
   );
   const prNumber = firstNumber(
     result.prNumber,
     data.prNumber,
+    nestedResult?.prNumber,
+    nestedData.prNumber,
     preparedDiff?.prNumber,
     worktree?.prNumber,
   );
@@ -1852,9 +1888,18 @@ function extractHandledPrEvent(input: {
   const preparedDiffId = firstString(
     result.preparedDiffId,
     data.preparedDiffId,
+    nestedResult?.preparedDiffId,
+    nestedData.preparedDiffId,
     preparedDiff?.id,
   );
-  const taskId = firstString(result.taskId, data.taskId);
+  const taskId = firstString(
+    result.taskId,
+    data.taskId,
+    nestedResult?.taskId,
+    nestedData.taskId,
+    task?.id,
+    resultState?.taskId,
+  );
   const eventType = handledEventType(
     action,
     input.workflow,

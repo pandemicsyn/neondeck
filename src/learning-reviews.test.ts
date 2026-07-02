@@ -13,6 +13,7 @@ import {
   preparePrBatchLearningReview,
   recordConversationTurnAndMaybeQueueLearning,
   recordHandledPrEventAndMaybeQueueLearning,
+  recordHandledPrFromWorkflowResult,
   failLearningReview,
   startLearningReview,
 } from './learning-reviews';
@@ -649,9 +650,109 @@ describe('learning review orchestration', () => {
       handledCountSinceReview: 2,
       queued: [expect.objectContaining({ runId: 'run-pr-review' })],
     });
-    expect(queued).toEqual([
-      expect.objectContaining({ trigger: 'threshold', repoId: 'neondeck' }),
-    ]);
+    expect(queued).toEqual([expect.objectContaining({ trigger: 'threshold' })]);
+    expect((queued[0] as { repoId?: unknown }).repoId).toBeUndefined();
+  });
+
+  it('queues threshold PR retrospectives over the full unreviewed batch', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig({ prRetrospectiveThreshold: 2 }, paths);
+    const queued: unknown[] = [];
+
+    await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'prepared-diff-verified',
+        source: 'workflow',
+        sourceId: 'alpha#10:prepared-diff-verified:pd-10',
+        repoId: 'alpha',
+        repoFullName: 'example/alpha',
+        prNumber: 10,
+      },
+      paths,
+    );
+    const second = await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'prepared-diff-pushed',
+        source: 'workflow',
+        sourceId: 'beta#20:prepared-diff-pushed:pd-20',
+        repoId: 'beta',
+        repoFullName: 'example/beta',
+        prNumber: 20,
+      },
+      paths,
+      {
+        async invokePrBatchReview(input) {
+          queued.push(input);
+          return { runId: 'run-pr-review' };
+        },
+      },
+    );
+
+    expect(second).toMatchObject({
+      recorded: true,
+      handledCountSinceReview: 2,
+      queued: [expect.objectContaining({ runId: 'run-pr-review' })],
+    });
+    expect(queued).toEqual([expect.objectContaining({ trigger: 'threshold' })]);
+    expect((queued[0] as { repoId?: unknown }).repoId).toBeUndefined();
+  });
+
+  it('retries automatic PR retrospectives after workflow admission failure', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig({ prRetrospectiveThreshold: 2 }, paths);
+    const attempts: unknown[] = [];
+
+    await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'prepared-diff-verified',
+        source: 'workflow',
+        sourceId: 'neondeck#51:prepared-diff-verified:pd-1',
+        repoId: 'neondeck',
+        repoFullName: 'pandemicsyn/neondeck',
+        prNumber: 51,
+      },
+      paths,
+    );
+    await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'prepared-diff-pushed',
+        source: 'workflow',
+        sourceId: 'neondeck#51:prepared-diff-pushed:pd-1',
+        repoId: 'neondeck',
+        repoFullName: 'pandemicsyn/neondeck',
+        prNumber: 51,
+      },
+      paths,
+      {
+        async invokePrBatchReview(input) {
+          attempts.push(input);
+          throw new Error('admission failed');
+        },
+      },
+    );
+    const retry = await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'result-comment-completed',
+        source: 'workflow',
+        sourceId: 'neondeck#51:result-comment-completed:pd-1',
+        repoId: 'neondeck',
+        repoFullName: 'pandemicsyn/neondeck',
+        prNumber: 51,
+      },
+      paths,
+      {
+        async invokePrBatchReview(input) {
+          attempts.push(input);
+          return { runId: 'run-pr-review-retry' };
+        },
+      },
+    );
+
+    expect(attempts).toHaveLength(2);
+    expect(retry).toMatchObject({
+      recorded: true,
+      queued: [expect.objectContaining({ runId: 'run-pr-review-retry' })],
+    });
   });
 
   it('retries automatic PR retrospectives after a failed review', async () => {
@@ -717,8 +818,71 @@ describe('learning review orchestration', () => {
 
     expect(queued).toHaveLength(2);
     expect(queued[1]).toEqual(
-      expect.objectContaining({ trigger: 'threshold', repoId: 'neondeck' }),
+      expect.objectContaining({ trigger: 'threshold' }),
     );
+    expect((queued[1] as { repoId?: unknown }).repoId).toBeUndefined();
+  });
+
+  it('records nested Kilo verification results as handled PR events', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig({ prRetrospectiveThreshold: 1 }, paths);
+    const queued: unknown[] = [];
+
+    const result = await recordHandledPrFromWorkflowResult(
+      {
+        workflow: 'verify_kilo_result',
+        runId: 'run-kilo-verify',
+        result: {
+          ok: true,
+          action: 'kilo_result_verify',
+          changed: true,
+          message: 'Kilo result verification passed.',
+          task: {
+            id: 'kilo-task-verify',
+            repoId: 'neondeck',
+            repoFullName: 'pandemicsyn/neondeck',
+            worktreeId: 'wt-kilo',
+          },
+          data: {
+            verification: {
+              ok: true,
+              action: 'autopilot_verify_pr_worktree',
+              changed: true,
+              message: 'Verified pandemicsyn/neondeck#77.',
+              data: {
+                worktree: {
+                  id: 'wt-kilo',
+                  repoId: 'neondeck',
+                  repoFullName: 'pandemicsyn/neondeck',
+                  prNumber: 77,
+                },
+                preparedDiffVerification: {
+                  id: 'pd-kilo-verify',
+                  repoId: 'neondeck',
+                  repoFullName: 'pandemicsyn/neondeck',
+                  prNumber: 77,
+                  status: 'passed',
+                },
+              },
+            },
+          },
+        },
+      },
+      paths,
+      {
+        async invokePrBatchReview(input) {
+          queued.push(input);
+          return { runId: 'run-pr-review-kilo' };
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      recorded: true,
+      duplicate: false,
+      queued: [expect.objectContaining({ runId: 'run-pr-review-kilo' })],
+    });
+    expect(queued).toEqual([expect.objectContaining({ trigger: 'threshold' })]);
   });
 
   it('turns PR retrospective output into memory and skill candidates', async () => {
