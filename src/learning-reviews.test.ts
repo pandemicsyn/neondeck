@@ -173,6 +173,98 @@ describe('learning review orchestration', () => {
     expect(JSON.stringify(prepared.inputSummary)).not.toContain('pnpm test');
   });
 
+  it('rejects conversation upserts outside the reviewed project scope', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig({ memoryWriteMode: 'auto' }, paths);
+    await upsertMemory(
+      {
+        scope: 'project',
+        key: 'checks',
+        repoId: 'repo-a',
+        value: 'npm run check',
+      },
+      paths,
+    );
+    await upsertMemory(
+      {
+        scope: 'project',
+        key: 'checks',
+        repoId: 'repo-b',
+        value: 'pnpm test',
+      },
+      paths,
+    );
+    const session = await createChatSession(
+      {
+        title: 'Repo A session',
+        linkedRepoId: 'repo-a',
+        summary: 'Repo A work.',
+        summarySource: 'manual',
+      },
+      paths,
+    );
+    const prepared = await prepareConversationReflection(
+      {
+        sessionId: (session as { session: { id: string } }).session.id,
+        trigger: 'manual',
+      },
+      paths,
+    );
+    if (!prepared.ok) throw new Error(prepared.message);
+
+    await expect(
+      completeLearningReviewFromModelOutput(
+        prepared,
+        {
+          summary: 'Repo A has a durable test command.',
+          memoryActions: [
+            {
+              action: 'upsert',
+              scope: 'project',
+              key: 'learned-check',
+              repoId: 'repo-b',
+              value: 'pnpm test',
+              reason: 'This repo was not in the review snapshot.',
+            },
+            {
+              action: 'upsert',
+              scope: 'project',
+              key: 'learned-check',
+              repoId: 'repo-a',
+              value: 'npm run check',
+              reason: 'Repo A was the reviewed session scope.',
+            },
+          ],
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      applied: [expect.objectContaining({ action: 'memory_upsert' })],
+      skipped: [
+        expect.objectContaining({
+          action: 'upsert',
+          reason: 'memory-not-in-review-snapshot',
+        }),
+      ],
+    });
+    await expect(
+      listMemories(
+        { scope: 'project', repoId: 'repo-b', key: 'learned-check' },
+        paths,
+      ),
+    ).resolves.toMatchObject({ memories: [] });
+    await expect(
+      listMemories(
+        { scope: 'project', repoId: 'repo-a', key: 'learned-check' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      memories: [expect.objectContaining({ value: 'npm run check' })],
+    });
+  });
+
   it('prepares manual reviews for valid sessions outside the recent state list', async () => {
     const paths = runtimePaths(await tempHome());
     const first = await createChatSession(

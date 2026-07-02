@@ -141,6 +141,7 @@ type PreparedLearningReview = {
   inputSummary: JsonValue;
   prompt: string;
   allowedMemoryIds: string[];
+  allowedProjectRepoIds: Array<string | null>;
 };
 type FailedLearningReview = ReturnType<typeof failedReview>;
 
@@ -285,6 +286,10 @@ export async function prepareConversationReflection(
       config.memoryWriteMode,
     ),
     allowedMemoryIds: memories.map((memory) => memory.id),
+    allowedProjectRepoIds: conversationProjectRepoIds(
+      reviewedSession,
+      memories,
+    ),
   };
 }
 
@@ -374,6 +379,7 @@ export async function prepareMemoryCurationReview(
     inputSummary,
     prompt: learningPrompt('curation', inputSummary, mode),
     allowedMemoryIds: memories.map((memory) => memory.id),
+    allowedProjectRepoIds: projectRepoIdsFromMemories(memories),
   };
 }
 
@@ -393,8 +399,11 @@ export async function completeLearningReviewFromModelOutput(
   const candidates = [];
   const skipped = [];
   const allowedMemoryIds = new Set(prepared.allowedMemoryIds);
+  const allowedProjectRepoIds = new Set(prepared.allowedProjectRepoIds);
   for (const proposal of parsed.output.memoryActions) {
-    if (!proposalTargetsAllowed(proposal, allowedMemoryIds)) {
+    if (
+      !proposalTargetsAllowed(proposal, allowedMemoryIds, allowedProjectRepoIds)
+    ) {
       skipped.push({
         action: proposal.action,
         reason: 'memory-not-in-review-snapshot',
@@ -969,8 +978,12 @@ async function listConversationLearningMemories(
 function proposalTargetsAllowed(
   proposal: MemoryProposal,
   allowedMemoryIds: Set<string>,
+  allowedProjectRepoIds: Set<string | null>,
 ) {
-  if (proposal.action === 'upsert') return true;
+  if (proposal.action === 'upsert') {
+    if (proposal.scope !== 'project') return proposal.repoId === undefined;
+    return allowedProjectRepoIds.has(proposal.repoId ?? null);
+  }
   if (proposal.action === 'rewrite' || proposal.action === 'archive') {
     return allowedMemoryIds.has(proposal.memoryId);
   }
@@ -978,6 +991,28 @@ function proposalTargetsAllowed(
     allowedMemoryIds.has(proposal.targetId) &&
     proposal.sourceIds.every((id) => allowedMemoryIds.has(id))
   );
+}
+
+function conversationProjectRepoIds(
+  session: ChatSessionRecord,
+  memories: MemoryRecord[],
+) {
+  const repoIds = projectRepoIdsFromMemories(memories);
+  if (session.linkedRepoId) repoIds.push(session.linkedRepoId);
+  return uniqueRepoIds(repoIds);
+}
+
+function projectRepoIdsFromMemories(memories: MemoryRecord[]) {
+  return uniqueRepoIds([
+    null,
+    ...memories
+      .filter((memory) => memory.scope === 'project')
+      .map((memory) => memory.repoId),
+  ]);
+}
+
+function uniqueRepoIds(repoIds: Array<string | null>) {
+  return Array.from(new Set(repoIds));
 }
 
 function markLearningCadenceAdmitted(
