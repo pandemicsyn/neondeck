@@ -530,6 +530,57 @@ describe('session actions', () => {
     );
   });
 
+  it('records only matching repo-scoped project memories for linked repo sessions', async () => {
+    const paths = runtimePaths(await tempDir());
+    const user = await upsertMemory(
+      { scope: 'user', key: 'tone', value: 'brief' },
+      paths,
+    );
+    const globalProject = await upsertMemory(
+      { scope: 'project', key: 'global-checks', value: 'npm run check' },
+      paths,
+    );
+    const repoProject = await upsertMemory(
+      {
+        scope: 'project',
+        key: 'repo-checks',
+        repoId: 'repo-a',
+        value: 'npm run verify',
+      },
+      paths,
+    );
+    const otherRepoProject = await upsertMemory(
+      {
+        scope: 'project',
+        key: 'repo-checks',
+        repoId: 'repo-b',
+        value: 'pnpm test',
+      },
+      paths,
+    );
+
+    const created = await createChatSession(
+      {
+        title: 'Repo A',
+        linkedRepoId: 'repo-a',
+      },
+      paths,
+    );
+    expect(created.ok).toBe(true);
+    const session = (created as { session: ChatSessionRecord }).session;
+
+    expect(session.contextMemoryIds).toEqual(
+      expect.arrayContaining([
+        (user as { memory: { id: string } }).memory.id,
+        (globalProject as { memory: { id: string } }).memory.id,
+        (repoProject as { memory: { id: string } }).memory.id,
+      ]),
+    );
+    expect(session.contextMemoryIds).not.toContain(
+      (otherRepoProject as { memory: { id: string } }).memory.id,
+    );
+  });
+
   it('keeps switched old sessions stale after context-changing writes', async () => {
     const paths = runtimePaths(await tempDir());
     const old = await createChatSession({ title: 'Old context' }, paths);

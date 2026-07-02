@@ -80,6 +80,7 @@ const memoryIdentifierSchema = v.object({
   id: v.optional(nonEmptyStringSchema),
   scope: v.optional(allMemoryScopeSchema),
   key: v.optional(nonEmptyStringSchema),
+  repoId: v.optional(nonEmptyStringSchema),
 });
 const jsonValueSchema = v.pipe(
   v.unknown(),
@@ -105,6 +106,7 @@ const memoryRewriteInputSchema = v.object({
   id: v.optional(nonEmptyStringSchema),
   scope: v.optional(allMemoryScopeSchema),
   key: v.optional(nonEmptyStringSchema),
+  repoId: v.optional(nonEmptyStringSchema),
   value: jsonValueSchema,
   reason: v.optional(v.string()),
   actor: v.optional(memoryActorSchema),
@@ -120,6 +122,7 @@ const memoryArchiveInputSchema = v.object({
   id: v.optional(nonEmptyStringSchema),
   scope: v.optional(allMemoryScopeSchema),
   key: v.optional(nonEmptyStringSchema),
+  repoId: v.optional(nonEmptyStringSchema),
   reason: v.optional(v.string()),
   actor: v.optional(memoryActorSchema),
   confirm: v.optional(v.boolean()),
@@ -446,13 +449,33 @@ export async function upsertMemory(
       database,
       parsed.output.scope,
       parsed.output.key,
+      parsed.output.repoId ?? null,
     );
     const before = existing ? memoryToJson(existing) : null;
     const id = existing?.id ?? randomUUID();
 
-    database
-      .prepare(
-        `
+    if (existing) {
+      database
+        .prepare(
+          `
+          UPDATE memories
+          SET value_json = ?,
+            repo_id = ?,
+            status = 'active',
+            updated_at = ?
+          WHERE id = ?;
+        `,
+        )
+        .run(
+          JSON.stringify(value),
+          parsed.output.repoId ?? null,
+          now,
+          existing.id,
+        );
+    } else {
+      database
+        .prepare(
+          `
         INSERT INTO memories (
           id,
           scope,
@@ -465,28 +488,25 @@ export async function upsertMemory(
           created_at,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?, 'active', 0, NULL, ?, ?)
-        ON CONFLICT(scope, key) DO UPDATE SET
-          value_json = excluded.value_json,
-          repo_id = excluded.repo_id,
-          status = 'active',
-          updated_at = excluded.updated_at;
+        VALUES (?, ?, ?, ?, ?, 'active', 0, NULL, ?, ?);
       `,
-      )
-      .run(
-        id,
-        parsed.output.scope,
-        parsed.output.key,
-        JSON.stringify(value),
-        parsed.output.repoId ?? null,
-        now,
-        now,
-      );
+        )
+        .run(
+          id,
+          parsed.output.scope,
+          parsed.output.key,
+          JSON.stringify(value),
+          parsed.output.repoId ?? null,
+          now,
+          now,
+        );
+    }
 
     const memory = readMemoryByScopeKey(
       database,
       parsed.output.scope,
       parsed.output.key,
+      parsed.output.repoId ?? null,
     );
     const after = memory ? memoryToJson(memory) : null;
     const changed = JSON.stringify(before) !== JSON.stringify(after);
@@ -1236,22 +1256,29 @@ export async function curateMemoryStore(
   };
 }
 
-export function memoryInstructionsSync(paths = runtimePaths()) {
+export function memoryInstructionsSync(
+  paths = runtimePaths(),
+  options: { repoId?: string | null } = {},
+) {
   try {
-    const snapshot = buildMemoryPromptSnapshotSync(paths);
+    const snapshot = buildMemoryPromptSnapshotSync(paths, options);
     return snapshot.instructions;
   } catch {
     return 'Structured memory: unavailable for this session.';
   }
 }
 
-export function buildMemoryPromptSnapshotSync(paths = runtimePaths()) {
+export function buildMemoryPromptSnapshotSync(
+  paths = runtimePaths(),
+  options: { repoId?: string | null } = {},
+) {
   const database = new DatabaseSync(paths.neondeckDatabase, {
     readOnly: true,
   });
 
   try {
     const config = readLearningConfigSync(paths);
+    const repoId = options.repoId ?? null;
     const memories = database
       .prepare(
         `
@@ -1259,6 +1286,11 @@ export function buildMemoryPromptSnapshotSync(paths = runtimePaths()) {
         FROM memories
         WHERE status = 'active'
           AND scope IN ('user', 'local', 'project')
+          AND (
+            scope != 'project'
+            OR repo_id IS NULL
+            OR repo_id = ?
+          )
         ORDER BY
           CASE scope
             WHEN 'user' THEN 0
@@ -1272,7 +1304,7 @@ export function buildMemoryPromptSnapshotSync(paths = runtimePaths()) {
         LIMIT ?;
       `,
       )
-      .all(config.memoryMaxActiveItems)
+      .all(repoId, config.memoryMaxActiveItems)
       .map(readMemoryRow);
 
     if (memories.length === 0) {
@@ -1358,7 +1390,12 @@ function resolveMemory(
 ) {
   if (input.id) return readMemoryById(database, input.id);
   if (input.scope && input.key) {
-    return readMemoryByScopeKey(database, input.scope, input.key);
+    return readMemoryByScopeKey(
+      database,
+      input.scope,
+      input.key,
+      input.repoId ?? null,
+    );
   }
   return undefined;
 }
@@ -1380,16 +1417,19 @@ function readMemoryByScopeKey(
   database: DatabaseSync,
   scope: MemoryScope,
   key: string,
+  repoId: string | null = null,
 ) {
   const row = database
     .prepare(
       `
       SELECT *
       FROM memories
-      WHERE scope = ? AND key = ?;
+      WHERE scope = ?
+        AND key = ?
+        AND COALESCE(repo_id, '') = COALESCE(?, '');
     `,
     )
-    .get(scope, key);
+    .get(scope, key, repoId);
   return row ? readMemoryRow(row) : undefined;
 }
 
@@ -1688,7 +1728,8 @@ function curationProposals(
       a.useCount - b.useCount ||
       Date.parse(a.updatedAt) - Date.parse(b.updatedAt),
   );
-  for (const memory of sortedOldest.slice(maxActiveItems)) {
+  const overflowCount = Math.max(0, sortedOldest.length - maxActiveItems);
+  for (const memory of sortedOldest.slice(0, overflowCount)) {
     proposals.push({
       action: 'archive',
       scope: isActiveLearningMemory(memory) ? memory.scope : undefined,

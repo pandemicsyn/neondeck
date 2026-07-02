@@ -72,6 +72,66 @@ describe('structured memory actions', () => {
     );
   });
 
+  it('keeps project memories distinct by repo id', async () => {
+    const paths = runtimePaths(await tempHome());
+
+    await upsertMemory(
+      {
+        scope: 'project',
+        key: 'checks',
+        repoId: 'repo-a',
+        value: 'npm run check',
+      },
+      paths,
+    );
+    await upsertMemory(
+      {
+        scope: 'project',
+        key: 'checks',
+        repoId: 'repo-b',
+        value: 'pnpm test',
+      },
+      paths,
+    );
+    await upsertMemory(
+      {
+        scope: 'project',
+        key: 'checks',
+        repoId: 'repo-a',
+        value: 'npm run verify',
+      },
+      paths,
+    );
+
+    await expect(
+      listMemories({ scope: 'project', key: 'checks' }, paths),
+    ).resolves.toMatchObject({
+      memories: expect.arrayContaining([
+        expect.objectContaining({
+          repoId: 'repo-a',
+          value: 'npm run verify',
+        }),
+        expect.objectContaining({
+          repoId: 'repo-b',
+          value: 'pnpm test',
+        }),
+      ]),
+    });
+    await expect(
+      listMemories(
+        { scope: 'project', key: 'checks', repoId: 'repo-a' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      memories: [
+        expect.objectContaining({
+          repoId: 'repo-a',
+          value: 'npm run verify',
+        }),
+      ],
+    });
+  });
+
   it('rejects new session and watch memory writes while keeping old scopes listable', async () => {
     const paths = runtimePaths(await tempHome());
 
@@ -246,6 +306,54 @@ describe('structured memory actions', () => {
     expect(instructions).not.toContain('summary-style');
   });
 
+  it('filters repo-scoped project memory from prompt snapshots', async () => {
+    const paths = runtimePaths(await tempHome());
+    await upsertMemory({ scope: 'user', key: 'tone', value: 'brief' }, paths);
+    await upsertMemory(
+      { scope: 'project', key: 'global-checks', value: 'npm run check' },
+      paths,
+    );
+    const repoA = await upsertMemory(
+      {
+        scope: 'project',
+        key: 'repo-checks',
+        repoId: 'repo-a',
+        value: 'npm run verify',
+      },
+      paths,
+    );
+    const repoB = await upsertMemory(
+      {
+        scope: 'project',
+        key: 'repo-checks',
+        repoId: 'repo-b',
+        value: 'pnpm test',
+      },
+      paths,
+    );
+
+    const globalSnapshot = buildMemoryPromptSnapshotSync(paths);
+    const repoSnapshot = buildMemoryPromptSnapshotSync(paths, {
+      repoId: 'repo-a',
+    });
+
+    expect(globalSnapshot.instructions).toContain('global-checks');
+    expect(globalSnapshot.memoryIds).not.toContain(
+      (repoA as { memory: { id: string } }).memory.id,
+    );
+    expect(globalSnapshot.memoryIds).not.toContain(
+      (repoB as { memory: { id: string } }).memory.id,
+    );
+    expect(repoSnapshot.memoryIds).toContain(
+      (repoA as { memory: { id: string } }).memory.id,
+    );
+    expect(repoSnapshot.memoryIds).not.toContain(
+      (repoB as { memory: { id: string } }).memory.id,
+    );
+    expect(repoSnapshot.instructions).toContain('repo-checks (repo-a)');
+    expect(repoSnapshot.instructions).not.toContain('repo-checks (repo-b)');
+  });
+
   it('marks loaded memories as used without creating stale-context events', async () => {
     const paths = runtimePaths(await tempHome());
     const result = await upsertMemory(
@@ -413,8 +521,9 @@ describe('structured memory actions', () => {
       },
       paths,
     );
+    const created = [];
     for (let index = 0; index < 3; index += 1) {
-      await upsertMemory(
+      const result = await upsertMemory(
         {
           scope: 'local',
           key: `item-${index}`,
@@ -422,7 +531,14 @@ describe('structured memory actions', () => {
         },
         paths,
       );
+      created.push((result as { memory: { id: string } }).memory);
     }
+    await markMemoriesUsed(
+      {
+        ids: [created[1]!.id, created[2]!.id],
+      },
+      paths,
+    );
 
     await expect(
       curateMemoryStore({ mode: 'auto' }, paths),
@@ -434,14 +550,15 @@ describe('structured memory actions', () => {
     });
     await expect(listMemories({}, paths)).resolves.toMatchObject({
       memories: expect.arrayContaining([
-        expect.objectContaining({ status: 'active' }),
+        expect.objectContaining({ key: 'item-1', status: 'active' }),
+        expect.objectContaining({ key: 'item-2', status: 'active' }),
       ]),
     });
     await expect(
       listMemories({ includeArchived: true }, paths),
     ).resolves.toMatchObject({
       memories: expect.arrayContaining([
-        expect.objectContaining({ status: 'archived' }),
+        expect.objectContaining({ key: 'item-0', status: 'archived' }),
       ]),
     });
   });

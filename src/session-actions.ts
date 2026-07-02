@@ -905,7 +905,9 @@ export async function createChatSession(
   const summaryRefreshNote = summary
     ? 'Stored summary provided when the session metadata was created.'
     : null;
-  const memorySnapshot = buildMemoryPromptSnapshotSync(paths);
+  const memorySnapshot = buildMemoryPromptSnapshotSync(paths, {
+    repoId: parsed.output.linkedRepoId ?? null,
+  });
   const database = new DatabaseSync(paths.neondeckDatabase);
   let sessionId = id;
   let eventAction: ChatSessionEventAction = 'created';

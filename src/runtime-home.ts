@@ -798,8 +798,7 @@ function initializeAppDatabase(path: string) {
         use_count INTEGER NOT NULL DEFAULT 0,
         last_used_at TEXT,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        UNIQUE(scope, key)
+        updated_at TEXT NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS memory_events (
@@ -1234,6 +1233,7 @@ function initializeAppDatabase(path: string) {
       'INTEGER NOT NULL DEFAULT 0',
     );
     ensureColumn(database, 'memories', 'last_used_at', 'TEXT');
+    migrateMemoriesRepoIdentity(database);
     migrateMemoryEvents(database);
     ensureColumn(database, 'learning_candidates', 'action', 'TEXT');
     database
@@ -1261,6 +1261,9 @@ function initializeAppDatabase(path: string) {
 
       CREATE INDEX IF NOT EXISTS idx_memories_active_scope
         ON memories(status, scope, updated_at DESC);
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_scope_key_repo
+        ON memories(scope, key, COALESCE(repo_id, ''));
 
       CREATE INDEX IF NOT EXISTS idx_learning_events_type
         ON learning_events(type, created_at DESC);
@@ -1562,6 +1565,66 @@ function ensureColumn(
   }
 
   database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`);
+}
+
+function migrateMemoriesRepoIdentity(database: DatabaseSync) {
+  const table = database
+    .prepare(
+      `
+      SELECT sql
+      FROM sqlite_master
+      WHERE type = 'table'
+        AND name = 'memories';
+    `,
+    )
+    .get() as { sql?: unknown } | undefined;
+  const sql = typeof table?.sql === 'string' ? table.sql : '';
+  if (!/UNIQUE\s*\(\s*scope\s*,\s*key\s*\)/i.test(sql)) return;
+
+  database.exec(`
+    DROP TABLE IF EXISTS memories_repo_identity_migration;
+
+    CREATE TABLE memories_repo_identity_migration (
+      id TEXT PRIMARY KEY,
+      scope TEXT NOT NULL,
+      key TEXT NOT NULL,
+      value_json TEXT NOT NULL,
+      repo_id TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      use_count INTEGER NOT NULL DEFAULT 0,
+      last_used_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    INSERT INTO memories_repo_identity_migration (
+      id,
+      scope,
+      key,
+      value_json,
+      repo_id,
+      status,
+      use_count,
+      last_used_at,
+      created_at,
+      updated_at
+    )
+    SELECT
+      id,
+      scope,
+      key,
+      value_json,
+      repo_id,
+      COALESCE(status, 'active'),
+      COALESCE(use_count, 0),
+      last_used_at,
+      created_at,
+      updated_at
+    FROM memories;
+
+    DROP TABLE memories;
+    ALTER TABLE memories_repo_identity_migration RENAME TO memories;
+  `);
 }
 
 function migrateMemoryEvents(database: DatabaseSync) {
