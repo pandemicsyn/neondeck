@@ -932,6 +932,11 @@ function initializeAppDatabase(path: string) {
         summary_refresh_note TEXT,
         context_loaded_at TEXT,
         context_memory_ids_json TEXT,
+        learning_turn_count INTEGER NOT NULL DEFAULT 0,
+        last_learning_review_turn_count INTEGER NOT NULL DEFAULT 0,
+        last_learning_review_at TEXT,
+        last_learning_curation_turn_count INTEGER NOT NULL DEFAULT 0,
+        last_learning_curation_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         last_active_at TEXT NOT NULL
@@ -1219,6 +1224,31 @@ function initializeAppDatabase(path: string) {
     ensureColumn(database, 'chat_sessions', 'summary_source', 'TEXT');
     ensureColumn(database, 'chat_sessions', 'summary_refresh_note', 'TEXT');
     ensureColumn(database, 'chat_sessions', 'context_memory_ids_json', 'TEXT');
+    ensureColumn(
+      database,
+      'chat_sessions',
+      'learning_turn_count',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+    ensureColumn(
+      database,
+      'chat_sessions',
+      'last_learning_review_turn_count',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+    ensureColumn(database, 'chat_sessions', 'last_learning_review_at', 'TEXT');
+    ensureColumn(
+      database,
+      'chat_sessions',
+      'last_learning_curation_turn_count',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+    ensureColumn(
+      database,
+      'chat_sessions',
+      'last_learning_curation_at',
+      'TEXT',
+    );
     ensureColumn(database, 'memories', 'repo_id', 'TEXT');
     ensureColumn(
       database,

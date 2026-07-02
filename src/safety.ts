@@ -1288,9 +1288,20 @@ const entries: SafetyPolicyEntry[] = [
     'Run memory curation workflow',
     {
       ...safeMutation,
-      auditTarget: 'learning_candidates/memories/memory_events/workflow_events',
+      auditTarget:
+        'learning_reviews/learning_candidates/memories/memory_events/workflow_events',
     },
-    'Runs bounded memory curation through typed audited actions.',
+    'Runs bounded model-backed memory curation and applies or proposes changes through typed audited memory actions.',
+  ),
+  workflow(
+    'review_conversation_for_learning',
+    'Run conversation learning review workflow',
+    {
+      ...safeMutation,
+      auditTarget:
+        'learning_reviews/learning_candidates/memories/memory_events/workflow_events',
+    },
+    'Runs bounded model-backed conversation reflection and applies or proposes durable memory changes through typed audited memory actions.',
   ),
   workflow(
     'handoff_to_kilo',
@@ -1734,9 +1745,26 @@ const entries: SafetyPolicyEntry[] = [
     'Learning curation API',
     {
       ...safeMutation,
-      auditTarget: 'learning_candidates/memories/memory_events',
+      auditTarget:
+        'learning_reviews/learning_candidates/memories/memory_events',
     },
-    'Runs manual memory curation through typed audited actions.',
+    'Queues manual model-backed memory curation through the bounded Flue workflow surface.',
+  ),
+  route(
+    '/api/learning/reviews',
+    'Learning reviews API',
+    readOnly,
+    'Lists persisted learning review records, summaries, model selections, and failures.',
+  ),
+  route(
+    '/api/learning/reviews/conversation',
+    'Conversation learning review API',
+    {
+      ...safeMutation,
+      auditTarget:
+        'learning_reviews/learning_candidates/memories/memory_events',
+    },
+    'Queues manual model-backed conversation reflection through the bounded Flue workflow surface.',
   ),
   route(
     '/api/learning/candidates',
