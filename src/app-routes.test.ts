@@ -306,10 +306,44 @@ describe('app API safety routes', () => {
         headers: { host: 'localhost' },
       },
     );
+    const badPrReview = await app.request(
+      'http://localhost/api/learning/reviews/prs',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          host: 'localhost',
+          origin: 'http://localhost',
+        },
+        body: JSON.stringify({ limit: 0 }),
+      },
+    );
+    const badSkillPatchList = await app.request(
+      'http://localhost/api/skills/patches?status=bogus',
+      {
+        headers: { host: 'localhost' },
+      },
+    );
+    const badCandidateLimit = await app.request(
+      'http://localhost/api/learning/candidates?limit=bogus',
+      {
+        headers: { host: 'localhost' },
+      },
+    );
+    const badPatchLimit = await app.request(
+      'http://localhost/api/skills/patches?limit=0',
+      {
+        headers: { host: 'localhost' },
+      },
+    );
 
     expect(badReview.status).toBe(400);
     expect(missingSession.status).toBe(400);
     expect(badLimit.status).toBe(400);
+    expect(badPrReview.status).toBe(400);
+    expect(badSkillPatchList.status).toBe(400);
+    expect(badCandidateLimit.status).toBe(400);
+    expect(badPatchLimit.status).toBe(400);
     await expect(badReview.json()).resolves.toMatchObject({
       ok: false,
       action: 'learning_review_conversation',
@@ -321,6 +355,22 @@ describe('app API safety routes', () => {
     await expect(badLimit.json()).resolves.toMatchObject({
       ok: false,
       action: 'learning_review_list',
+    });
+    await expect(badPrReview.json()).resolves.toMatchObject({
+      ok: false,
+      action: 'learning_review_pr_batch',
+    });
+    await expect(badSkillPatchList.json()).resolves.toMatchObject({
+      ok: false,
+      action: 'skill_patch_list',
+    });
+    await expect(badCandidateLimit.json()).resolves.toMatchObject({
+      ok: false,
+      action: 'learning_candidate_list',
+    });
+    await expect(badPatchLimit.json()).resolves.toMatchObject({
+      ok: false,
+      action: 'skill_patch_list',
     });
   });
 

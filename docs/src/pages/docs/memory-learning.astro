@@ -80,7 +80,10 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     "memoryCurationEnabled": true,
     "memoryCurationMode": "review",
     "memoryCurationTurnInterval": 200,
-    "memoryMaxActiveItems": 200
+    "memoryMaxActiveItems": 200,
+    "prRetrospectiveThreshold": 5,
+    "maxPrBatchItems": 8,
+    "skillWriteMode": "review"
   &#125;
 &#125;</code></pre>
         <p>
@@ -121,6 +124,59 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           inspected through the learning APIs and guarded Flue run inspection.
         </p>
 
+        <h2>PR and autopilot retrospectives</h2>
+        <p>
+          Neondeck records handled PR/autopilot outcomes as durable
+          <code>pr_handled</code> learning events with idempotent source ids. Repeated
+          observation of the same PR outcome is ignored. When the count since the
+          previous PR retrospective reaches
+          <code>learning.prRetrospectiveThreshold</code>, default <code>5</code
+          >, Neondeck can queue <code>review_pr_batch_for_learning</code>.
+        </p>
+        <p>
+          The retrospective reviews compact summaries only: handled-event rows,
+          workflow summaries, prepared-diff summaries, verification results,
+          review feedback summaries, notification and recovery outcomes, Kilo
+          result summaries, final PR outcomes when available, current memories,
+          and relevant skill snippets. It does not copy raw transcripts, raw
+          diffs, raw logs, or secrets into learning review input.
+        </p>
+        <p>
+          Manual review can be queued with
+          <code>POST /api/learning/reviews/prs</code>. Review output can create
+          <code>project</code> or <code>local</code> memory changes through the existing
+          memory actions and can also create skill patch candidates when a repeated
+          operational lesson should change future procedure. The PR retrospective
+          v1 supplies the built-in <code>neondeck</code> skill snippet to the reviewer;
+          user skill patching is supported through the manual skill patch APIs.
+        </p>
+
+        <h2>Skill patch candidates</h2>
+        <p>
+          Skill patches are for procedural guidance, such as verification order,
+          review-thread lookup rules, or autopilot pitfalls. They are limited to
+          the built-in <code>neondeck</code> runtime skill and user skills under
+          <code>NEONDECK_HOME/skills</code>. Third-party bundled or external
+          skills are not patched by this first implementation.
+        </p>
+        <p>
+          Patch candidates preserve YAML frontmatter and store before and after
+          content hashes, full before/after text, and a unified diff in
+          <code>learning_candidates.patch_json</code>. Applying a patch writes
+          <code>config_history</code> so existing sessions can show stale skill context.
+          Automatic workflow application is append-only; whole-file skill replacements
+          require review. Rollback is currently manual from the retained before/after
+          audit data.
+        </p>
+        <p>
+          Inspect patch candidates with <code>GET /api/skills/patches</code> or
+          <code>GET /api/learning/candidates</code>. Apply or reject them with
+          <code>POST /api/skills/patches/:id/apply</code>,
+          <code>POST /api/skills/patches/:id/reject</code>,
+          <code>POST /api/learning/candidates/:id/approve</code>, or
+          <code>POST /api/learning/candidates/:id/reject</code>.
+        </p>
+
         <h2>Audit history</h2>
         <p>
           <code>data/neondeck.db</code> stores <code>memories</code>,
@@ -133,7 +189,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           Use <code>GET /api/learning/reviews</code> to inspect review records, compact
           input summaries, model and thinking level used, result summaries, and failures.
           Use <code>GET /api/learning/candidates</code> to inspect review-mode memory
-          proposals, then approve or reject individual candidates.
+          and skill proposals, then approve or reject individual candidates.
         </p>
 
         <h2>Session stability</h2>
@@ -148,8 +204,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <p>
           <code>models.selfImprovement</code> and
           <code>models.selfImprovementThinkingLevel</code> select the model role for
-          bounded conversation reflection and memory curation workflows. If omitted,
-          Neondeck falls back through
+          bounded conversation reflection, memory curation, and PR retrospective workflows.
+          If omitted, Neondeck falls back through
           <code>FLUE_SELF_IMPROVEMENT_MODEL</code>, the utility model,
           <code>FLUE_UTILITY_MODEL</code>, the display assistant model,
           <code>FLUE_AGENT_MODEL</code>, and then the built-in default.

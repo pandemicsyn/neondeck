@@ -1063,6 +1063,39 @@ const entries: SafetyPolicyEntry[] = [
     'Runs bounded memory curation. Review mode creates candidates; auto mode may apply audited archive cleanup.',
   ),
   action(
+    'neondeck_learning_skill_patch_propose',
+    'Propose skill patch',
+    {
+      ...safeMutation,
+      auditTarget: 'learning_candidates/learning_events',
+    },
+    'Creates a diff-backed skill patch candidate for the built-in neondeck skill or safe user runtime skills.',
+  ),
+  action(
+    'neondeck_learning_skill_patch_apply',
+    'Apply skill patch',
+    {
+      ...safeMutation,
+      auditTarget: 'learning_candidates/config_history/learning_events',
+    },
+    'Applies one proposed skill patch after policy or explicit review and stores before/after audit data.',
+  ),
+  action(
+    'neondeck_learning_skill_patch_reject',
+    'Reject skill patch',
+    {
+      ...safeMutation,
+      auditTarget: 'learning_candidates/learning_events',
+    },
+    'Rejects one proposed skill patch candidate.',
+  ),
+  action(
+    'neondeck_learning_skill_patch_list',
+    'List skill patches',
+    readOnly,
+    'Lists skill patch candidates and decision history.',
+  ),
+  action(
     'neondeck_session_start',
     'Start new Neon session',
     {
@@ -1302,6 +1335,16 @@ const entries: SafetyPolicyEntry[] = [
         'learning_reviews/learning_candidates/memories/memory_events/workflow_events',
     },
     'Runs bounded model-backed conversation reflection and applies or proposes durable memory changes through typed audited memory actions.',
+  ),
+  workflow(
+    'review_pr_batch_for_learning',
+    'Run PR learning retrospective workflow',
+    {
+      ...safeMutation,
+      auditTarget:
+        'learning_reviews/learning_candidates/memories/memory_events/config_history/workflow_events',
+    },
+    'Runs bounded model-backed PR/autopilot retrospectives over compact summaries and applies or proposes memory and skill changes through typed actions.',
   ),
   workflow(
     'handoff_to_kilo',
@@ -1767,28 +1810,62 @@ const entries: SafetyPolicyEntry[] = [
     'Queues manual model-backed conversation reflection through the bounded Flue workflow surface.',
   ),
   route(
+    '/api/learning/reviews/prs',
+    'PR learning retrospective API',
+    {
+      ...safeMutation,
+      auditTarget:
+        'learning_reviews/learning_candidates/memories/memory_events/config_history',
+    },
+    'Queues manual PR/autopilot retrospectives through the bounded Flue workflow surface.',
+  ),
+  route(
     '/api/learning/candidates',
     'Learning candidates API',
     readOnly,
-    'Lists memory learning candidates.',
+    'Lists memory and skill learning candidates.',
   ),
   route(
     '/api/learning/candidates/:id/approve',
     'Approve learning candidate API',
     {
       ...safeMutation,
-      auditTarget: 'learning_candidates/memories/memory_events',
+      auditTarget: 'learning_candidates/memories/memory_events/config_history',
     },
-    'Applies one reviewed memory learning candidate.',
+    'Applies one reviewed memory or skill learning candidate.',
   ),
   route(
     '/api/learning/candidates/:id/reject',
     'Reject learning candidate API',
     {
       ...safeMutation,
-      auditTarget: 'learning_candidates/memory_events',
+      auditTarget: 'learning_candidates/memory_events/learning_events',
     },
-    'Rejects one reviewed memory learning candidate.',
+    'Rejects one reviewed memory or skill learning candidate.',
+  ),
+  route(
+    '/api/skills/patches',
+    'Skill patches API',
+    readOnly,
+    'Lists skill patch candidates and decisions.',
+  ),
+  route(
+    '/api/skills/patches/:id/apply',
+    'Apply skill patch API',
+    {
+      ...safeMutation,
+      auditTarget: 'learning_candidates/config_history/learning_events',
+    },
+    'Applies one reviewed skill patch candidate.',
+  ),
+  route(
+    '/api/skills/patches/:id/reject',
+    'Reject skill patch API',
+    {
+      ...safeMutation,
+      auditTarget: 'learning_candidates/learning_events',
+    },
+    'Rejects one reviewed skill patch candidate.',
   ),
 ];
 

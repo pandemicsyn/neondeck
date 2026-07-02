@@ -20,6 +20,7 @@ import {
   neondeckRuntimeSkillActions,
   runtimeSkillReferencesSync,
 } from '../runtime-skills';
+import { neondeckSkillPatchActions } from '../skill-patches';
 import { neondeckRepoEditActions } from '../repo-edit';
 import { neondeckSchedulerActions } from '../scheduler';
 import { neondeckSessionActions } from '../session-actions';
@@ -74,6 +75,7 @@ export default defineAgent(() => {
       'For KiloCode handoff, only delegate when the user explicitly asks for Kilo or a future repo policy opts in. Use neondeck_kilo_task_start for explicit handoff, then neondeck_kilo_task_status, neondeck_kilo_task_events, neondeck_kilo_task_sessions, neondeck_kilo_task_reconcile, neondeck_kilo_sessions_search, and neondeck_kilo_session_read to supervise and summarize results. Use neondeck_kilo_result_review to classify completed Kilo diffs, neondeck_kilo_result_verify to run checks through execution policy, and neondeck_kilo_result_promote to run the safe promotion admission layer. Push-back is handled by neondeck_autopilot_push_pr_autofix once the prepared diff gates pass; PR comments remain separate. Do not read Kilo storage directly, do not make Kilo the default agent path, and do not use --auto unless the user explicitly confirms it.',
       'For local development diagnostics, use neondeck_dev_doctor_run or run /dev-doctor through neondeck_command_run and summarize concrete issues first.',
       'For durable user preferences, local machine/tool facts, and project/repo conventions, use neondeck_memory_learn, neondeck_memory_rewrite, neondeck_memory_merge, neondeck_memory_archive, and review-mode memory candidate actions. New memory writes are limited to user, local, and project scopes; legacy session/watch memories are readable only. Memory rows are current guidance, not an evidence graph. Memory writes are durable immediately but active session context changes only on a new session or explicit refresh.',
+      'For procedural learning, use neondeck_learning_skill_patch_propose, neondeck_learning_skill_patch_list, neondeck_learning_skill_patch_apply, and neondeck_learning_skill_patch_reject. Skill patches are limited to the built-in neondeck skill and user skills under NEONDECK_HOME/skills, preserve frontmatter, store before/after/diff audit data, and apply only to new sessions after approval or learning policy.',
       'For follow-up questions about prior conversations, search or read session metadata first and cite session ids/titles intentionally. Prefer neondeck_session_reference, stored summaries, and linked repo/watch/task metadata before requesting raw transcript pages with neondeck_session_messages. Only request raw transcript pages when the user explicitly asks for transcript detail or the active session context makes that need explicit.',
       'For follow-up questions about prior command runs, use neondeck_workflow_summaries_lookup instead of relying only on chat transcript.',
       'Delegate focused research to subagents when it will improve accuracy, but gather deterministic command/action facts first and pass those facts into the subagent request. Use repo_researcher for repo context, ci_investigator for checks and validation, and release_reviewer for release/watch readiness. Do not ask subagents to discover host tools or run raw bash for GitHub or CI data.',
@@ -99,6 +101,7 @@ export default defineAgent(() => {
       ...neondeckSchedulerActions,
       ...neondeckSessionActions,
       ...neondeckRuntimeSkillActions,
+      ...neondeckSkillPatchActions,
       ...neondeckDevDoctorActions,
       ...neondeckMemoryActions,
       ...neondeckRepoEditActions,

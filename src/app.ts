@@ -97,7 +97,13 @@ import {
   attachLearningReviewRunId,
   listLearningReviews,
   recordConversationTurnAndMaybeQueueLearning,
+  recordHandledPrFromWorkflowResult,
 } from './learning-reviews';
+import {
+  applySkillPatchCandidate,
+  listSkillPatchCandidates,
+  rejectSkillPatchCandidate,
+} from './skill-patches';
 import { readHostMetrics } from './metrics';
 import {
   abandonPreparedDiff,
@@ -196,6 +202,7 @@ import {
 } from './worktrees';
 import curateLearningStoreWorkflow from './workflows/curate_learning_store';
 import reviewConversationForLearningWorkflow from './workflows/review_conversation_for_learning';
+import reviewPrBatchForLearningWorkflow from './workflows/review_pr_batch_for_learning';
 
 const paths = runtimePaths();
 ensureRuntimeHomeSync(paths);
@@ -270,6 +277,30 @@ observe((event) => {
         .catch((error) => {
           console.error(
             '[neondeck] failed to attach learning review run id',
+            error,
+          );
+        });
+    }
+    if (!learningReviewId && !event.isError && 'result' in event) {
+      void Promise.resolve()
+        .then(() =>
+          recordHandledPrFromWorkflowResult(
+            {
+              workflow: workflowLabel(event),
+              runId: event.runId,
+              result: event.result,
+            },
+            paths,
+            {
+              async invokePrBatchReview(input) {
+                return invoke(reviewPrBatchForLearningWorkflow, { input });
+              },
+            },
+          ),
+        )
+        .catch((error) => {
+          console.error(
+            '[neondeck] failed to record handled PR learning event',
             error,
           );
         });
@@ -1507,6 +1538,38 @@ app.post('/api/learning/reviews/conversation', async (c) => {
   });
 });
 
+app.post('/api/learning/reviews/prs', async (c) => {
+  const parsed = v.safeParse(
+    v.object({
+      repoId: v.optional(v.pipe(v.string(), v.minLength(1))),
+      reason: v.optional(v.string()),
+      limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+    }),
+    await safeJsonBody(c),
+  );
+  if (!parsed.success) {
+    return c.json(
+      {
+        ok: false,
+        action: 'learning_review_pr_batch',
+        changed: false,
+        message: v.summarize(parsed.issues),
+      },
+      400,
+    );
+  }
+  const receipt = await invoke(reviewPrBatchForLearningWorkflow, {
+    input: { ...parsed.output, trigger: 'manual' },
+  });
+  return c.json({
+    ok: true,
+    action: 'learning_review_pr_batch',
+    changed: true,
+    runId: receipt.runId,
+    message: 'Queued PR/autopilot learning retrospective workflow.',
+  });
+});
+
 app.get('/api/learning/candidates', async (c) => {
   const status = learningCandidateStatus(c.req.query('status'));
   if (c.req.query('status') && !status) {
@@ -1521,36 +1584,119 @@ app.get('/api/learning/candidates', async (c) => {
     );
   }
   const limit = Number(c.req.query('limit') ?? '100');
+  if (c.req.query('limit') && !boundedQueryLimit(c.req.query('limit'), 100)) {
+    return c.json(
+      {
+        ok: false,
+        action: 'learning_candidate_list',
+        changed: false,
+        message: `Invalid candidate limit "${c.req.query('limit')}".`,
+      },
+      400,
+    );
+  }
+  const boundedLimit = Number.isFinite(limit) ? limit : undefined;
+  const [memoryCandidates, skillCandidates] = await Promise.all([
+    listMemoryCandidates({ status, limit: boundedLimit }, paths),
+    listSkillPatchCandidates({ status, limit: boundedLimit }, paths),
+  ]);
+  return c.json({
+    ok: memoryCandidates.ok && skillCandidates.ok,
+    action: 'learning_candidate_list',
+    changed: false,
+    candidates: [
+      ...(memoryCandidates.candidates ?? []),
+      ...(skillCandidates.candidates ?? []),
+    ],
+    memoryCandidates: memoryCandidates.candidates ?? [],
+    skillCandidates: skillCandidates.candidates ?? [],
+    fetchedAt: new Date().toISOString(),
+  });
+});
+
+app.post('/api/learning/candidates/:id/approve', async (c) => {
+  const body = (await safeJsonBody(c)) as Record<string, unknown>;
+  const result = await decideMemoryCandidate(
+    {
+      ...body,
+      id: c.req.param('id'),
+      decision: 'apply',
+    },
+    paths,
+  );
+  if (result.ok) return c.json(result);
+  const skillResult = await applySkillPatchCandidate(
+    { ...body, id: c.req.param('id') },
+    paths,
+  );
+  return c.json(skillResult, skillResult.ok ? 200 : 400);
+});
+
+app.post('/api/learning/candidates/:id/reject', async (c) => {
+  const body = (await safeJsonBody(c)) as Record<string, unknown>;
+  const result = await decideMemoryCandidate(
+    {
+      ...body,
+      id: c.req.param('id'),
+      decision: 'reject',
+    },
+    paths,
+  );
+  if (result.ok) return c.json(result);
+  const skillResult = await rejectSkillPatchCandidate(
+    { ...body, id: c.req.param('id') },
+    paths,
+  );
+  return c.json(skillResult, skillResult.ok ? 200 : 400);
+});
+
+app.get('/api/skills/patches', async (c) => {
+  const status = learningCandidateStatus(c.req.query('status'));
+  if (c.req.query('status') && !status) {
+    return c.json(
+      {
+        ok: false,
+        action: 'skill_patch_list',
+        changed: false,
+        message: `Invalid candidate status "${c.req.query('status')}".`,
+      },
+      400,
+    );
+  }
+  if (c.req.query('limit') && !boundedQueryLimit(c.req.query('limit'), 100)) {
+    return c.json(
+      {
+        ok: false,
+        action: 'skill_patch_list',
+        changed: false,
+        message: `Invalid patch limit "${c.req.query('limit')}".`,
+      },
+      400,
+    );
+  }
   return c.json(
-    await listMemoryCandidates(
+    await listSkillPatchCandidates(
       {
         status,
-        limit: Number.isFinite(limit) ? limit : undefined,
+        skillId: c.req.query('skillId') || undefined,
+        limit: boundedQueryLimit(c.req.query('limit'), 100),
       },
       paths,
     ),
   );
 });
 
-app.post('/api/learning/candidates/:id/approve', async (c) => {
-  const result = await decideMemoryCandidate(
-    {
-      ...((await safeJsonBody(c)) as Record<string, unknown>),
-      id: c.req.param('id'),
-      decision: 'apply',
-    },
+app.post('/api/skills/patches/:id/apply', async (c) => {
+  const result = await applySkillPatchCandidate(
+    { ...(await safeJsonObject(c)), id: c.req.param('id') },
     paths,
   );
   return c.json(result, result.ok ? 200 : 400);
 });
 
-app.post('/api/learning/candidates/:id/reject', async (c) => {
-  const result = await decideMemoryCandidate(
-    {
-      ...((await safeJsonBody(c)) as Record<string, unknown>),
-      id: c.req.param('id'),
-      decision: 'reject',
-    },
+app.post('/api/skills/patches/:id/reject', async (c) => {
+  const result = await rejectSkillPatchCandidate(
+    { ...(await safeJsonObject(c)), id: c.req.param('id') },
     paths,
   );
   return c.json(result, result.ok ? 200 : 400);
@@ -1703,7 +1849,8 @@ function learningReviewResultId(event: FlueObservation) {
   const action = (result as { action?: unknown }).action;
   if (
     action !== 'learning_review_conversation' &&
-    action !== 'learning_curate'
+    action !== 'learning_curate' &&
+    action !== 'learning_review_pr_batch'
   ) {
     return undefined;
   }
@@ -1801,7 +1948,13 @@ function learningCandidateStatus(value: string | undefined) {
 }
 
 function learningReviewKind(value: string | undefined) {
-  if (value === 'conversation' || value === 'curation') return value;
+  if (
+    value === 'conversation' ||
+    value === 'curation' ||
+    value === 'pr-batch'
+  ) {
+    return value;
+  }
   return undefined;
 }
 
