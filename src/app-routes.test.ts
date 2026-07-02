@@ -331,6 +331,12 @@ describe('app API safety routes', () => {
         headers: { host: 'localhost' },
       },
     );
+    const badLearningState = await app.request(
+      'http://localhost/api/learning/state?candidateTarget=bogus',
+      {
+        headers: { host: 'localhost' },
+      },
+    );
     const badPatchLimit = await app.request(
       'http://localhost/api/skills/patches?limit=0',
       {
@@ -368,6 +374,10 @@ describe('app API safety routes', () => {
     await expect(badCandidateLimit.json()).resolves.toMatchObject({
       ok: false,
       action: 'learning_candidate_list',
+    });
+    await expect(badLearningState.json()).resolves.toMatchObject({
+      ok: false,
+      action: 'learning_operator_state',
     });
     await expect(badPatchLimit.json()).resolves.toMatchObject({
       ok: false,

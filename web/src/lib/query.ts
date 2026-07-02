@@ -15,6 +15,7 @@ export const queryKeys = {
   githubPrs: ['github-prs'] as const,
   hostMetrics: ['host-metrics'] as const,
   kiloTasks: ['kilo-tasks'] as const,
+  learningState: ['learning-state'] as const,
   memories: ['memories'] as const,
   neonSession: ['neon-session'] as const,
   chatSessions: ['chat-sessions'] as const,

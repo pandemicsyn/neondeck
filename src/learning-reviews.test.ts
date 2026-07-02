@@ -17,6 +17,7 @@ import {
   failLearningReview,
   startLearningReview,
 } from './learning-reviews';
+import { readLearningOperatorState } from './learning-operator';
 import {
   listMemories,
   listMemoryCandidates,
@@ -28,6 +29,7 @@ import {
   listSkillPatchCandidates,
   proposeSkillPatch,
   rejectSkillPatchCandidate,
+  restoreSkillPatchCandidate,
 } from './skill-patches';
 import { runtimePaths } from './runtime-home';
 
@@ -1150,6 +1152,47 @@ describe('learning review orchestration', () => {
       changed: true,
       action: 'skill_patch_apply',
     });
+    await expect(
+      restoreSkillPatchCandidate(
+        {
+          id: candidateId,
+          confirm: true,
+          reason: 'Model restore should be blocked.',
+        },
+        paths,
+        { source: 'neon' },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['explicit-user-decision'],
+    });
+    await expect(
+      restoreSkillPatchCandidate(
+        {
+          id: candidateId,
+          confirm: true,
+          reason: 'Restore test patch.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'skill_patch_restore',
+    });
+    await expect(
+      restoreSkillPatchCandidate(
+        {
+          id: candidateId,
+          confirm: true,
+          reason: 'Already restored.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['applied-skill-patch'],
+    });
 
     await expect(
       proposeSkillPatch(
@@ -1180,6 +1223,22 @@ describe('learning review orchestration', () => {
       ok: true,
       changed: true,
       action: 'skill_patch_reject',
+    });
+    await expect(
+      readLearningOperatorState({ candidateTarget: 'skill' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'learning_operator_state',
+      summary: {
+        candidates: expect.objectContaining({
+          archived: expect.any(Number),
+          rejected: expect.any(Number),
+        }),
+      },
+      skillPatchCandidates: expect.arrayContaining([
+        expect.objectContaining({ id: candidateId, status: 'archived' }),
+        expect.objectContaining({ id: String(rejectId), status: 'rejected' }),
+      ]),
     });
   });
 });

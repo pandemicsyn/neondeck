@@ -99,10 +99,12 @@ import {
   recordConversationTurnAndMaybeQueueLearning,
   recordHandledPrFromWorkflowResult,
 } from './learning-reviews';
+import { readLearningOperatorState } from './learning-operator';
 import {
   applySkillPatchCandidate,
   listSkillPatchCandidates,
   rejectSkillPatchCandidate,
+  restoreSkillPatchCandidate,
 } from './skill-patches';
 import { readHostMetrics } from './metrics';
 import {
@@ -1447,6 +1449,74 @@ app.post('/api/learning/curate', async (c) => {
   });
 });
 
+app.get('/api/learning/state', async (c) => {
+  const input = {
+    limit: boundedQueryLimit(c.req.query('limit'), 25),
+    reviewKind: learningReviewKind(c.req.query('reviewKind')),
+    reviewStatus: learningReviewStatus(c.req.query('reviewStatus')),
+    candidateStatus: learningCandidateStatus(c.req.query('candidateStatus')),
+    candidateTarget: learningCandidateTarget(c.req.query('candidateTarget')),
+    memoryId: c.req.query('memoryId') || undefined,
+  };
+  if (c.req.query('limit') && input.limit === undefined) {
+    return c.json(
+      {
+        ok: false,
+        action: 'learning_operator_state',
+        changed: false,
+        message: `Invalid learning state limit "${c.req.query('limit')}".`,
+      },
+      400,
+    );
+  }
+  if (c.req.query('reviewKind') && !input.reviewKind) {
+    return c.json(
+      {
+        ok: false,
+        action: 'learning_operator_state',
+        changed: false,
+        message: `Invalid review kind "${c.req.query('reviewKind')}".`,
+      },
+      400,
+    );
+  }
+  if (c.req.query('reviewStatus') && !input.reviewStatus) {
+    return c.json(
+      {
+        ok: false,
+        action: 'learning_operator_state',
+        changed: false,
+        message: `Invalid review status "${c.req.query('reviewStatus')}".`,
+      },
+      400,
+    );
+  }
+  if (c.req.query('candidateStatus') && !input.candidateStatus) {
+    return c.json(
+      {
+        ok: false,
+        action: 'learning_operator_state',
+        changed: false,
+        message: `Invalid candidate status "${c.req.query('candidateStatus')}".`,
+      },
+      400,
+    );
+  }
+  if (c.req.query('candidateTarget') && !input.candidateTarget) {
+    return c.json(
+      {
+        ok: false,
+        action: 'learning_operator_state',
+        changed: false,
+        message: `Invalid candidate target "${c.req.query('candidateTarget')}".`,
+      },
+      400,
+    );
+  }
+  const result = await readLearningOperatorState(input, paths);
+  return c.json(result, result.ok ? 200 : 400);
+});
+
 app.get('/api/learning/reviews', (c) => {
   const kind = learningReviewKind(c.req.query('kind'));
   const status = learningReviewStatus(c.req.query('status'));
@@ -1704,6 +1774,19 @@ app.post('/api/skills/patches/:id/reject', async (c) => {
   return c.json(result, result.ok ? 200 : 400);
 });
 
+app.post('/api/skills/patches/:id/restore', async (c) => {
+  const body = await safeJsonObject(c);
+  const result = await restoreSkillPatchCandidate(
+    { ...body, id: c.req.param('id') } as {
+      id: string;
+      confirm: true;
+      reason?: string;
+    },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
 app.get('/api/skills', async (c) => {
   return c.json(await listRuntimeSkills(paths));
 });
@@ -1946,7 +2029,9 @@ function memoryStatus(value: string | undefined) {
   return undefined;
 }
 
-function learningCandidateStatus(value: string | undefined) {
+function learningCandidateStatus(
+  value: string | undefined,
+): 'proposed' | 'applied' | 'rejected' | 'archived' | undefined {
   if (
     value === 'proposed' ||
     value === 'applied' ||
@@ -1959,7 +2044,16 @@ function learningCandidateStatus(value: string | undefined) {
   return undefined;
 }
 
-function learningReviewKind(value: string | undefined) {
+function learningCandidateTarget(
+  value: string | undefined,
+): 'memory' | 'skill' | undefined {
+  if (value === 'memory' || value === 'skill') return value;
+  return undefined;
+}
+
+function learningReviewKind(
+  value: string | undefined,
+): 'conversation' | 'curation' | 'pr-batch' | undefined {
   if (
     value === 'conversation' ||
     value === 'curation' ||
@@ -1970,7 +2064,9 @@ function learningReviewKind(value: string | undefined) {
   return undefined;
 }
 
-function learningReviewStatus(value: string | undefined) {
+function learningReviewStatus(
+  value: string | undefined,
+): 'running' | 'completed' | 'failed' | undefined {
   if (value === 'running' || value === 'completed' || value === 'failed') {
     return value;
   }

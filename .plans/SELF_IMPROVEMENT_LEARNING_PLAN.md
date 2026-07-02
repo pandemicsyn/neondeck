@@ -365,6 +365,7 @@ Add:
 - `neondeck_learning_skill_patch_apply`
 - `neondeck_learning_skill_patch_reject`
 - `neondeck_learning_skill_patch_list`
+- `neondeck_learning_skill_patch_restore`
 
 Initial support can be restricted to Neondeck-owned runtime skills:
 
@@ -379,6 +380,7 @@ Skill patches should:
 - write audit rows
 - avoid patching bundled third-party skills unless explicitly allowed
 - create a backup or record enough diff data to rollback
+- restore applied patches only through the audit-backed restore action when the target file still matches the applied patch hash
 
 Do not create new skills automatically in the first implementation unless the user explicitly invokes learning for a new skill. Prefer patching existing skills or creating candidates.
 

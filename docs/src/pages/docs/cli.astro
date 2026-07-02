@@ -76,6 +76,21 @@ npm run cli -- schedule --review-queue-digest</code></pre>
           creates known schedule blueprints and lists configured jobs.
         </p>
 
+        <h2>Learning</h2>
+        <pre><code>npm run cli -- learning status
+npm run cli -- learning reviews
+npm run cli -- learning candidates --status proposed
+npm run cli -- learning approve &lt;candidate-id&gt;
+npm run cli -- learning reject &lt;candidate-id&gt;
+npm run cli -- learning restore-skill-patch &lt;candidate-id&gt;</code></pre>
+        <p>
+          Learning commands inspect the same review, candidate, and audit state
+          as <code>GET /api/learning/state</code>. Approve/reject commands
+          decide memory or skill candidates through typed actions. Restore only
+          works for applied skill patches whose current file still matches the
+          applied audit hash.
+        </p>
+
         <h2>TUI</h2>
         <pre><code>npm run cli -- tui</code></pre>
         <p>

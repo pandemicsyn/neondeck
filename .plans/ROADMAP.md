@@ -1458,7 +1458,7 @@ Must-haves:
 
 ### Phase 22: Self-Improvement And Learning
 
-- Status: partially complete. The core memory foundation has landed: simple active/archived memory, `user`/`local`/`project` learning scopes, audited memory events, learning schema, memory curation config/action/workflow foundation, self-improvement model config/fallbacks, prompt-snapshot memory id recording, session stale-context integration, safety policy entries, and memory docs. Model-backed conversation reflection and memory curation orchestration have also landed. PR/autopilot retrospective accounting/review orchestration and audited skill patch candidates have landed for built-in Neondeck and runtime-home user skills. Richer learning dashboard/CLI surfaces, broader production automatic admission coverage, and explicit rollback actions remain open. Detailed implementation plan lives in `.plans/SELF_IMPROVEMENT_LEARNING_PLAN.md`.
+- Status: mostly complete for the web/backend/CLI learning operator slice. The core memory foundation has landed: simple active/archived memory, `user`/`local`/`project` learning scopes, audited memory events, learning schema, memory curation config/action/workflow foundation, self-improvement model config/fallbacks, prompt-snapshot memory id recording, session stale-context integration, safety policy entries, and memory docs. Model-backed conversation reflection and memory curation orchestration have also landed. PR/autopilot retrospective accounting/review orchestration and audited skill patch candidates have landed for built-in Neondeck and runtime-home user skills. Dedicated learning operator API/action/tool state, dashboard panel, CLI inspect/decide/restore commands, explicit audit-backed skill patch restore, and opt-in learning workflow smoke coverage have landed. Broader production automatic admission coverage and deeper dashboard/CLI adapter tests remain open. Detailed implementation plan lives in `.plans/SELF_IMPROVEMENT_LEARNING_PLAN.md`.
 
 - [x] Add Hermes-inspired memory as a first-class Neondeck subsystem, not ad hoc prompt text.
 - [x] Keep active learning memory scopes to `user`, `local`, and `project`; stop writing new `session` or `watch` memories.
@@ -1482,10 +1482,10 @@ Must-haves:
 - [x] Add PR/autopilot handled-event accounting so recurring review, CI, verification, push-back, Kilo, and notification recovery patterns can become memory or skill patch candidates.
 - [x] Build a deliberate learning snapshot for display-assistant sessions that includes bounded, auditable `user`, `local`, and relevant `project` memories.
 - [x] Record which memory ids were loaded into a session and mark active sessions stale when relevant learned context changes.
-- [ ] Add dashboard, API, and CLI surfaces for learning status, reviews, candidates, memory decisions, skill patch decisions, and audit history. Initial memory APIs, PR retrospective trigger API, candidate APIs, skill patch APIs, and panel integration have landed; dedicated learning dashboard and CLI surfaces remain open.
-- [ ] Update runtime skills, README, AGENTS.md, and Astro docs to explain learning, memory scopes, self-improvement model config, PR retrospectives, and rollback/curation controls. Runtime skill, README, and Astro memory/config docs now cover PR retrospectives and skill patch candidates; AGENTS.md and richer rollback docs remain open.
+- [x] Add dashboard, API, and CLI surfaces for learning status, reviews, candidates, memory decisions, skill patch decisions, and audit history.
+- [x] Update runtime skills, README, AGENTS.md, and Astro docs to explain learning, memory scopes, self-improvement model config, PR retrospectives, and rollback/curation controls.
 - [ ] Add fast tests with mocked reflection/model output for config fallback, scope validation, candidate policies, prompt snapshot budgets, session staleness, PR retrospective thresholds, API validation, and skill patch proposals. Memory/config/snapshot/curation/reflection tests plus retrospective threshold/result handling, skill patch, and API validation coverage have landed; broader dashboard/CLI adapter tests remain open.
-- [ ] Add opt-in smoke/integration tests for conversation reflection and PR retrospective workflows without slowing `npm run check`.
+- [x] Add opt-in smoke/integration tests for conversation reflection and PR retrospective workflows without slowing `npm run check`.
 
 ## Open Questions
 

@@ -151,6 +151,25 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           user skill patching is supported through the manual skill patch APIs.
         </p>
 
+        <h2>Operator surfaces</h2>
+        <p>
+          The dashboard includes a <strong>Learning</strong> operator panel. It shows
+          review status, failed reviews, pending memory and skill candidates, recent
+          memory decisions, learning events, and manual buttons for conversation and
+          PR retrospective reviews.
+        </p>
+        <p>
+          The consolidated API is <code>GET /api/learning/state</code>. It
+          returns learning policy, review counts, recent reviews, memory
+          candidates, skill patch candidates, memory audit events, and learning
+          audit events. The same read model is available to Neon through
+          <code>neondeck_learning_operator_state_lookup</code> and to operators through
+          CLI commands such as <code>neondeck learning status</code>,
+          <code>neondeck learning reviews</code>, <code
+            >neondeck learning candidates</code
+          >, and <code>neondeck learning events</code>.
+        </p>
+
         <h2>Skill patch candidates</h2>
         <p>
           Skill patches are for procedural guidance, such as verification order,
@@ -165,8 +184,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           <code>learning_candidates.patch_json</code>. Applying a patch writes
           <code>config_history</code> so existing sessions can show stale skill context.
           Automatic workflow application is append-only; whole-file skill replacements
-          require review. Rollback is currently manual from the retained before/after
-          audit data.
+          require review.
         </p>
         <p>
           Inspect patch candidates with <code>GET /api/skills/patches</code> or
@@ -175,6 +193,15 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           <code>POST /api/skills/patches/:id/reject</code>,
           <code>POST /api/learning/candidates/:id/approve</code>, or
           <code>POST /api/learning/candidates/:id/reject</code>.
+        </p>
+        <p>
+          Applied skill patches can be restored from audit with
+          <code>POST /api/skills/patches/:id/restore</code> or
+          <code>neondeck learning restore-skill-patch &lt;id&gt;</code>. Restore
+          requires explicit confirmation and only writes when the current skill
+          file still matches the applied patch content. If the file has changed
+          since application, Neondeck refuses the restore and the retained
+          diff/before content should be used for manual review or a fresh patch.
         </p>
 
         <h2>Audit history</h2>
@@ -190,6 +217,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           input summaries, model and thinking level used, result summaries, and failures.
           Use <code>GET /api/learning/candidates</code> to inspect review-mode memory
           and skill proposals, then approve or reject individual candidates.
+          <code>GET /api/learning/state</code> is the preferred high-level operator
+          view because it combines review, candidate, memory-event, and learning-event
+          history in one bounded response.
         </p>
 
         <h2>Session stability</h2>

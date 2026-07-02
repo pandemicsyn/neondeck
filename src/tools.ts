@@ -9,6 +9,7 @@ import { executionPolicyLookupTool } from './execution-policy';
 import { getGitHubCheckSummary, listGitHubPrQueue } from './github-actions';
 import { neondeckKiloTools } from './kilo-actions';
 import { neondeckKiloResultTools } from './kilo-results';
+import { neondeckLearningOperatorTools } from './learning-operator';
 import { listMemories } from './memory-actions';
 import { neondeckPrEventTools } from './pr-event-state';
 import { neondeckPreparedDiffTools } from './prepared-diffs';
@@ -304,6 +305,7 @@ export const neondeckFactTools = [
   runtimeSkillsLookupTool,
   runtimeSkillLoadTool,
   memoryLookupTool,
+  ...neondeckLearningOperatorTools,
   autopilotStateLookupTool,
   ...neondeckAutopilotRecoveryTools,
   ...neondeckPreparedDiffTools,
