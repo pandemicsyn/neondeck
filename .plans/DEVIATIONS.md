@@ -260,6 +260,13 @@ Use this format:
 - Reason: The existing CLI is a direct local action/config tool and does not yet have a clean Flue workflow invocation pattern. Keeping workflow admission on the already-validated HTTP/dashboard routes avoids adding a second invocation path while still giving operators CLI coverage for review and decision work.
 - Follow-up: Add CLI commands for queuing conversation reflection and PR retrospective workflows if the CLI grows a shared Flue invocation helper.
 
+## 2026-07-02 - Phase 22 V1 Closure
+
+- Roadmap item: Phase 22 / Self-Improvement And Learning
+- Decision: Marked Phase 22 complete for v1 after adding fast dashboard/API/CLI adapter coverage and extending handled-PR learning accounting to practical direct local API action routes for autopilot preparation/fixes, prepared-diff verification/push, result comments, recovery actions, and Kilo review/verify/promote decisions. Broader automatic admission beyond Flue workflow observations and typed local action routes is deferred.
+- Reason: The remaining broad “production automatic admission” language was too open-ended for v1. Current production PR/autopilot outcomes either flow through Flue workflow observations or these typed local action routes, both of which return structured action results that the existing Valibot-backed extractor can account for idempotently. Provider-specific deploy adapters, future TUI/OpenTUI clients, generic harnesses, and any future non-action mutation paths do not have stable v1 contracts yet.
+- Follow-up: When new provider-specific deploy/release adapters or non-Flue automation frontends are added, route their terminal PR outcomes through the same handled-PR accounting helper or a typed successor service.
+
 ## 2026-06-30 - Autopilot Smoke And Integration Coverage
 
 - Roadmap item: Phase 19 / autopilot smoke and integration coverage

@@ -1060,6 +1060,7 @@ app.get('/api/kilo/tasks/:id/result', async (c) => {
 
 app.post('/api/kilo/tasks/:id/review', async (c) => {
   const result = await reviewKiloResult({ taskId: c.req.param('id') }, paths);
+  recordHandledPrApiResult('api:kilo_result_review', result);
   return c.json(result, result.ok ? 200 : 400);
 });
 
@@ -1068,11 +1069,13 @@ app.post('/api/kilo/tasks/:id/verify', async (c) => {
     { ...(await safeJsonObject(c)), taskId: c.req.param('id') },
     paths,
   );
+  recordHandledPrApiResult('api:kilo_result_verify', result);
   return c.json(result, result.ok ? 200 : 400);
 });
 
 app.post('/api/kilo/tasks/:id/promote', async (c) => {
   const result = await promoteKiloResult({ taskId: c.req.param('id') }, paths);
+  recordHandledPrApiResult('api:kilo_result_promote', result);
   return c.json(result, result.ok ? 200 : 400);
 });
 
@@ -1134,16 +1137,19 @@ app.post('/api/autopilot/prepare-pr-worktree', async (c) => {
 
 app.post('/api/autopilot/fix-pr-ci-failure', async (c) => {
   const result = await fixPrCiFailure(await safeJsonBody(c), paths);
+  recordHandledPrApiResult('api:fix_pr_ci_failure', result);
   return c.json(result, result.ok ? 200 : 400);
 });
 
 app.post('/api/autopilot/fix-pr-review-feedback', async (c) => {
   const result = await fixPrReviewFeedback(await safeJsonBody(c), paths);
+  recordHandledPrApiResult('api:fix_pr_review_feedback', result);
   return c.json(result, result.ok ? 200 : 400);
 });
 
 app.post('/api/autopilot/comment-pr-autofix-result', async (c) => {
   const result = await commentPrAutofixResult(await safeJsonBody(c), paths);
+  recordHandledPrApiResult('api:comment_pr_autofix_result', result);
   return c.json(result, result.ok ? 200 : 400);
 });
 
@@ -1240,16 +1246,19 @@ app.post('/api/prepared-diffs/:id/recovery/run', async (c) => {
     { ...(await safeJsonObject(c)), preparedDiffId: c.req.param('id') },
     paths,
   );
+  recordHandledPrApiResult('api:autopilot_recovery', result);
   return c.json(result, preparedDiffHttpStatus(result));
 });
 
 app.post('/api/autopilot/verify-pr-worktree', async (c) => {
   const result = await verifyPrWorktree(await safeJsonBody(c), paths);
+  recordHandledPrApiResult('api:verify_pr_worktree', result);
   return c.json(result, result.ok ? 200 : 400);
 });
 
 app.post('/api/autopilot/push-pr-autofix', async (c) => {
   const result = await pushPrAutofix(await safeJsonBody(c), paths);
+  recordHandledPrApiResult('api:push_pr_autofix', result);
   return c.json(result, result.ok ? 200 : 400);
 });
 
@@ -1258,6 +1267,7 @@ app.post('/api/prepared-diffs/:id/push', async (c) => {
     { ...(await safeJsonObject(c)), preparedDiffId: c.req.param('id') },
     paths,
   );
+  recordHandledPrApiResult('api:push_pr_autofix', result);
   return c.json(result, result.ok ? 200 : 400);
 });
 
@@ -1913,6 +1923,30 @@ app.get('/favicon.svg', serveStatic({ root: staticRoot, path: 'favicon.svg' }));
 app.get('*', serveStatic({ root: staticRoot, path: 'index.html' }));
 
 export default app;
+
+function recordHandledPrApiResult(workflow: string, result: unknown) {
+  void Promise.resolve()
+    .then(() =>
+      recordHandledPrFromWorkflowResult(
+        {
+          workflow,
+          result,
+        },
+        paths,
+        {
+          async invokePrBatchReview(input) {
+            return invoke(reviewPrBatchForLearningWorkflow, { input });
+          },
+        },
+      ),
+    )
+    .catch((error) => {
+      console.error(
+        '[neondeck] failed to record handled PR learning event',
+        error,
+      );
+    });
+}
 
 function commandRunSummaryId(event: FlueObservation) {
   if (!('result' in event)) return undefined;

@@ -1526,18 +1526,26 @@ export async function getLearningOperatorState(
     candidateTarget?: 'memory' | 'skill';
   } = {},
 ) {
+  return getJson<LearningOperatorState>(learningOperatorStateUrl(input));
+}
+
+export function learningOperatorStateUrl(
+  input: {
+    limit?: number;
+    candidateStatus?: LearningCandidateStatus;
+    candidateTarget?: 'memory' | 'skill';
+  } = {},
+) {
   const params = new URLSearchParams();
-  if (input.limit) params.set('limit', String(input.limit));
   if (input.candidateStatus) {
     params.set('candidateStatus', input.candidateStatus);
   }
   if (input.candidateTarget) {
     params.set('candidateTarget', input.candidateTarget);
   }
+  if (input.limit) params.set('limit', String(input.limit));
   const query = params.toString();
-  return getJson<LearningOperatorState>(
-    `/api/learning/state${query ? `?${query}` : ''}`,
-  );
+  return `/api/learning/state${query ? `?${query}` : ''}`;
 }
 
 export async function decideLearningCandidate(

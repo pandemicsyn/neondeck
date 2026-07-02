@@ -127,7 +127,10 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <h2>PR and autopilot retrospectives</h2>
         <p>
           Neondeck records handled PR/autopilot outcomes as durable
-          <code>pr_handled</code> learning events with idempotent source ids. Repeated
+          <code>pr_handled</code> learning events with idempotent source ids. V1 accounting
+          covers Flue workflow observations and direct local API action routes for
+          autopilot preparation/fixes, prepared-diff verification and push, result
+          comments, recovery actions, and Kilo review/verify/promote decisions. Repeated
           observation of the same PR outcome is ignored. When the count since the
           previous PR retrospective reaches
           <code>learning.prRetrospectiveThreshold</code>, default <code>5</code
@@ -147,8 +150,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           <code>project</code> or <code>local</code> memory changes through the existing
           memory actions and can also create skill patch candidates when a repeated
           operational lesson should change future procedure. The PR retrospective
-          v1 supplies the built-in <code>neondeck</code> skill snippet to the reviewer;
-          user skill patching is supported through the manual skill patch APIs.
+          v1 can propose patches for the built-in <code>neondeck</code> skill and
+          runtime-home user skills; bundled third-party and external skills remain
+          review-only/manual.
         </p>
 
         <h2>Operator surfaces</h2>

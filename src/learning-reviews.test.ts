@@ -20,6 +20,7 @@ import {
 import { readLearningOperatorState } from './learning-operator';
 import {
   createMemoryCandidate,
+  decideMemoryCandidate,
   listMemories,
   listMemoryCandidates,
   upsertMemory,
@@ -888,6 +889,135 @@ describe('learning review orchestration', () => {
     expect(queued).toEqual([expect.objectContaining({ trigger: 'threshold' })]);
   });
 
+  it('records direct API action results with idempotent handled PR source ids', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig({ prRetrospectiveThreshold: 10 }, paths);
+
+    const apiResult = {
+      ok: true,
+      action: 'autopilot_push_pr_autofix',
+      changed: true,
+      message: 'Pushed autofix.',
+      data: {
+        preparedDiff: {
+          id: 'pd-direct-api',
+          repoId: 'neondeck',
+          repoFullName: 'pandemicsyn/neondeck',
+          prNumber: 91,
+          status: 'pushed',
+        },
+      },
+    };
+    const first = await recordHandledPrFromWorkflowResult(
+      {
+        workflow: 'api:push_pr_autofix',
+        result: apiResult,
+      },
+      paths,
+    );
+    const duplicate = await recordHandledPrFromWorkflowResult(
+      {
+        workflow: 'push_pr_autofix',
+        runId: 'run-direct-api-duplicate',
+        result: apiResult,
+      },
+      paths,
+    );
+
+    expect(first).toMatchObject({
+      recorded: true,
+      duplicate: false,
+      handledCountSinceReview: 1,
+    });
+    expect(duplicate).toMatchObject({
+      recorded: false,
+      duplicate: true,
+    });
+  });
+
+  it('ignores request-only and diagnostic-only autopilot API results', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig({ prRetrospectiveThreshold: 10 }, paths);
+
+    await expect(
+      recordHandledPrFromWorkflowResult(
+        {
+          workflow: 'api:prepared_diff_verify',
+          result: {
+            ok: true,
+            action: 'prepared_diff_run_verification',
+            changed: true,
+            message: 'Recorded verification request.',
+            preparedDiff: {
+              id: 'pd-request-only',
+              repoId: 'neondeck',
+              repoFullName: 'pandemicsyn/neondeck',
+              prNumber: 92,
+              status: 'verification-requested',
+            },
+          },
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      recorded: false,
+      message: 'Workflow result did not contain handled PR evidence.',
+    });
+
+    await expect(
+      recordHandledPrFromWorkflowResult(
+        {
+          workflow: 'api:fix_pr_ci_failure',
+          result: {
+            ok: true,
+            action: 'autopilot_fix_pr_ci_failure',
+            changed: false,
+            message: 'No patch was prepared.',
+            data: {
+              worktree: {
+                id: 'wt-diagnostic-only',
+                repoId: 'neondeck',
+                repoFullName: 'pandemicsyn/neondeck',
+                prNumber: 93,
+              },
+            },
+          },
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      recorded: false,
+      message: 'Workflow result did not contain handled PR evidence.',
+    });
+
+    await expect(
+      recordHandledPrFromWorkflowResult(
+        {
+          workflow: 'api:fix_pr_ci_failure',
+          result: {
+            ok: true,
+            action: 'autopilot_fix_pr_ci_failure',
+            changed: true,
+            message: 'Prepared CI fix.',
+            data: {
+              preparedDiff: {
+                id: 'pd-ci-fix',
+                repoId: 'neondeck',
+                repoFullName: 'pandemicsyn/neondeck',
+                prNumber: 94,
+                status: 'prepared',
+              },
+            },
+          },
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      recorded: true,
+      duplicate: false,
+    });
+  });
+
   it('labels blocked workflow outcomes without successful handled-event names', async () => {
     const paths = runtimePaths(await tempHome());
     await updateLearningConfig({ prRetrospectiveThreshold: 10 }, paths);
@@ -1266,18 +1396,17 @@ describe('learning review orchestration', () => {
     const skillCandidateId = (proposedSkill as { candidate: { id: string } })
       .candidate.id;
 
-    await expect(
-      createMemoryCandidate(
-        {
-          action: 'upsert',
-          scope: 'local',
-          key: 'operator.one',
-          value: 'First operator memory.',
-          reason: 'Bounded candidate list test.',
-        },
-        paths,
-      ),
-    ).resolves.toMatchObject({ ok: true, changed: true });
+    const firstMemory = await createMemoryCandidate(
+      {
+        action: 'upsert',
+        scope: 'local',
+        key: 'operator.one',
+        value: 'First operator memory.',
+        reason: 'Bounded candidate list test.',
+      },
+      paths,
+    );
+    expect(firstMemory).toMatchObject({ ok: true, changed: true });
     await expect(
       createMemoryCandidate(
         {
@@ -1286,6 +1415,29 @@ describe('learning review orchestration', () => {
           key: 'operator.two',
           value: 'Second operator memory.',
           reason: 'Bounded candidate list test.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+    const appliedMemory = await createMemoryCandidate(
+      {
+        action: 'upsert',
+        scope: 'local',
+        key: 'operator.applied',
+        value: 'Applied operator memory.',
+        reason: 'Bounded candidate list test.',
+      },
+      paths,
+    );
+    expect(appliedMemory).toMatchObject({ ok: true, changed: true });
+    const appliedMemoryId = (appliedMemory as { candidate: { id: string } })
+      .candidate.id;
+    await expect(
+      decideMemoryCandidate(
+        {
+          id: appliedMemoryId,
+          decision: 'apply',
+          reason: 'Mark one memory candidate applied.',
         },
         paths,
       ),
@@ -1304,6 +1456,40 @@ describe('learning review orchestration', () => {
         }),
       ]),
     );
+
+    const proposedMemoryState = await readLearningOperatorState(
+      { candidateTarget: 'memory', candidateStatus: 'proposed', limit: 1 },
+      paths,
+    );
+    if (!proposedMemoryState.ok) throw new Error(proposedMemoryState.message);
+    expect(proposedMemoryState.candidates).toHaveLength(1);
+    expect(proposedMemoryState.memoryCandidates).toHaveLength(1);
+    expect(proposedMemoryState.skillPatchCandidates).toHaveLength(0);
+    expect(proposedMemoryState.candidates[0]).toMatchObject({
+      target: 'memory',
+      status: 'proposed',
+    });
+
+    const proposedSkillState = await readLearningOperatorState(
+      { candidateTarget: 'skill', candidateStatus: 'proposed', limit: 1 },
+      paths,
+    );
+    if (!proposedSkillState.ok) throw new Error(proposedSkillState.message);
+    expect(proposedSkillState.candidates).toEqual([
+      expect.objectContaining({
+        id: skillCandidateId,
+        target: 'skill',
+        status: 'proposed',
+      }),
+    ]);
+    expect(proposedSkillState.memoryCandidates).toHaveLength(0);
+    expect(proposedSkillState.skillPatchCandidates).toEqual([
+      expect.objectContaining({
+        id: skillCandidateId,
+        target: 'skill',
+        status: 'proposed',
+      }),
+    ]);
   });
 });
 

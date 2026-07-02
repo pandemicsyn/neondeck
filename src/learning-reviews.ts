@@ -1906,12 +1906,22 @@ function extractHandledPrEvent(input: {
     nestedResult?.ok,
     nestedData.ok,
   );
+  const changed = firstBoolean(
+    result.changed,
+    data.changed,
+    nestedResult?.changed,
+    nestedData.changed,
+  );
   const blocked = hasRequires(
     result.requires,
     data.requires,
     nestedResult?.requires,
     nestedData.requires,
   );
+  if (action === 'prepared_diff_run_verification') return null;
+  if (isAutopilotFixOutcome(action, input.workflow) && resultOk !== false) {
+    if (!preparedDiff && changed !== true) return null;
+  }
   const eventType = handledEventType(
     action,
     input.workflow,
@@ -1941,10 +1951,24 @@ function extractHandledPrEvent(input: {
       preparedDiffId: preparedDiffId ?? null,
       taskId: taskId ?? null,
       ok: resultOk,
+      changed,
       blocked,
       status: firstString(result.status, data.status, preparedDiff?.status),
     }),
   };
+}
+
+function isAutopilotFixOutcome(
+  action: string | null,
+  workflow?: string | null,
+) {
+  const value = `${workflow ?? ''}:${action ?? ''}`.toLowerCase();
+  return (
+    value.includes('fix_pr_review') ||
+    value.includes('review-feedback') ||
+    value.includes('fix_pr_ci') ||
+    value.includes('ci-failure')
+  );
 }
 
 function handledEventType(
