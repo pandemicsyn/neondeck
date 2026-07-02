@@ -1,4 +1,9 @@
-import { observe, registerProvider, type FlueObservation } from '@flue/runtime';
+import {
+  invoke,
+  observe,
+  registerProvider,
+  type FlueObservation,
+} from '@flue/runtime';
 import { flue } from '@flue/runtime/routing';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
@@ -81,7 +86,6 @@ import {
 } from './kilo-results';
 import {
   archiveMemory,
-  curateMemoryStore,
   decideMemoryCandidate,
   deleteMemory,
   listMemories,
@@ -89,6 +93,11 @@ import {
   listMemoryEvents,
   upsertMemory,
 } from './memory-actions';
+import {
+  attachLearningReviewRunId,
+  listLearningReviews,
+  recordConversationTurnAndMaybeQueueLearning,
+} from './learning-reviews';
 import { readHostMetrics } from './metrics';
 import {
   abandonPreparedDiff,
@@ -185,6 +194,8 @@ import {
   releaseWorktreeLock,
   syncWorktree,
 } from './worktrees';
+import curateLearningStoreWorkflow from './workflows/curate_learning_store';
+import reviewConversationForLearningWorkflow from './workflows/review_conversation_for_learning';
 
 const paths = runtimePaths();
 ensureRuntimeHomeSync(paths);
@@ -246,6 +257,22 @@ observe((event) => {
           console.error('[neondeck] failed to attach Flue run id', error);
         },
       );
+    }
+    const learningReviewId = learningReviewResultId(event);
+    if (learningReviewId) {
+      void Promise.resolve()
+        .then(() =>
+          attachLearningReviewRunId(
+            { reviewId: learningReviewId, runId: event.runId },
+            paths,
+          ),
+        )
+        .catch((error) => {
+          console.error(
+            '[neondeck] failed to attach learning review run id',
+            error,
+          );
+        });
     }
 
     if (event.isError) {
@@ -1359,15 +1386,125 @@ app.get('/api/memory-events', async (c) => {
 });
 
 app.post('/api/learning/curate', async (c) => {
+  const parsed = v.safeParse(
+    v.object({
+      mode: v.optional(v.picklist(['off', 'review', 'auto'])),
+      reason: v.optional(v.string()),
+    }),
+    await safeJsonBody(c),
+  );
+  if (!parsed.success) {
+    return c.json(
+      {
+        ok: false,
+        action: 'learning_curate',
+        changed: false,
+        message: v.summarize(parsed.issues),
+      },
+      400,
+    );
+  }
+  const receipt = await invoke(curateLearningStoreWorkflow, {
+    input: { ...parsed.output, trigger: 'manual' },
+  });
+  return c.json({
+    ok: true,
+    action: 'learning_curate',
+    changed: true,
+    runId: receipt.runId,
+    message: 'Queued memory curation learning workflow.',
+  });
+});
+
+app.get('/api/learning/reviews', (c) => {
+  const kind = learningReviewKind(c.req.query('kind'));
+  const status = learningReviewStatus(c.req.query('status'));
+  const limit = boundedQueryLimit(c.req.query('limit'), 50);
+  if (c.req.query('kind') && !kind) {
+    return c.json(
+      {
+        ok: false,
+        action: 'learning_review_list',
+        changed: false,
+        message: `Invalid learning review kind "${c.req.query('kind')}".`,
+      },
+      400,
+    );
+  }
+  if (c.req.query('status') && !status) {
+    return c.json(
+      {
+        ok: false,
+        action: 'learning_review_list',
+        changed: false,
+        message: `Invalid learning review status "${c.req.query('status')}".`,
+      },
+      400,
+    );
+  }
+  if (c.req.query('limit') && limit === undefined) {
+    return c.json(
+      {
+        ok: false,
+        action: 'learning_review_list',
+        changed: false,
+        message: `Invalid review limit "${c.req.query('limit')}".`,
+      },
+      400,
+    );
+  }
   return c.json(
-    await curateMemoryStore(
-      (await safeJsonBody(c)) as {
-        mode?: 'off' | 'review' | 'auto';
-        reason?: string;
+    listLearningReviews(
+      {
+        kind,
+        status,
+        limit,
       },
       paths,
     ),
   );
+});
+
+app.post('/api/learning/reviews/conversation', async (c) => {
+  const parsed = v.safeParse(
+    v.object({
+      sessionId: v.optional(v.pipe(v.string(), v.minLength(1))),
+      reason: v.optional(v.string()),
+    }),
+    await safeJsonBody(c),
+  );
+  if (!parsed.success) {
+    return c.json(
+      {
+        ok: false,
+        action: 'learning_review_conversation',
+        changed: false,
+        message: v.summarize(parsed.issues),
+      },
+      400,
+    );
+  }
+  if (parsed.output.sessionId) {
+    const session = await readChatSession(
+      {
+        id: parsed.output.sessionId,
+        reason: 'manual-conversation-learning-review',
+        surface: 'learning',
+      },
+      paths,
+    );
+    if (!session.ok) return c.json(session, 400);
+  }
+  const receipt = await invoke(reviewConversationForLearningWorkflow, {
+    input: { ...parsed.output, trigger: 'manual' },
+  });
+  return c.json({
+    ok: true,
+    action: 'learning_review_conversation',
+    changed: true,
+    runId: receipt.runId,
+    message: 'Queued conversation learning review workflow.',
+  });
 });
 
 app.get('/api/learning/candidates', async (c) => {
@@ -1518,6 +1655,24 @@ app.post('/api/github/prs/comment', async (c) => {
   return c.json(result, result.ok ? 200 : 400);
 });
 
+app.use('/api/flue/agents/display-assistant/*', async (c, next) => {
+  const method = c.req.method.toUpperCase();
+  const sessionId = displayAssistantSessionId(c.req.path);
+  await next();
+  if (!sessionId || method !== 'POST' || c.res.status >= 400) return;
+
+  void recordConversationTurnAndMaybeQueueLearning(sessionId, paths, {
+    async invokeConversationReview(input) {
+      return invoke(reviewConversationForLearningWorkflow, { input });
+    },
+    async invokeCurationReview(input) {
+      return invoke(curateLearningStoreWorkflow, { input });
+    },
+  }).catch((error) => {
+    console.error('[neondeck] failed to queue learning review', error);
+  });
+});
+
 app.use('/api/flue/runs', requireFlueRunInspectionToken);
 app.use('/api/flue/runs/*', requireFlueRunInspectionToken);
 app.route('/api/flue', flue());
@@ -1538,6 +1693,22 @@ function commandRunSummaryId(event: FlueObservation) {
 
   const id = (summary as { id?: unknown }).id;
   return typeof id === 'string' ? id : undefined;
+}
+
+function learningReviewResultId(event: FlueObservation) {
+  if (!('result' in event)) return undefined;
+  const result = event.result;
+  if (!result || typeof result !== 'object') return undefined;
+
+  const action = (result as { action?: unknown }).action;
+  if (
+    action !== 'learning_review_conversation' &&
+    action !== 'learning_curate'
+  ) {
+    return undefined;
+  }
+  const reviewId = (result as { reviewId?: unknown }).reviewId;
+  return typeof reviewId === 'string' ? reviewId : undefined;
 }
 
 function workflowLabel(event: FlueObservation) {
@@ -1627,6 +1798,33 @@ function learningCandidateStatus(value: string | undefined) {
   }
 
   return undefined;
+}
+
+function learningReviewKind(value: string | undefined) {
+  if (value === 'conversation' || value === 'curation') return value;
+  return undefined;
+}
+
+function learningReviewStatus(value: string | undefined) {
+  if (value === 'running' || value === 'completed' || value === 'failed') {
+    return value;
+  }
+  return undefined;
+}
+
+function displayAssistantSessionId(path: string) {
+  const prefix = '/api/flue/agents/display-assistant/';
+  if (!path.startsWith(prefix)) return undefined;
+  const remainder = path.slice(prefix.length);
+  if (!remainder || remainder.includes('/')) return undefined;
+  return decodeURIComponent(remainder);
+}
+
+function boundedQueryLimit(value: string | undefined, fallback: number) {
+  if (!value) return fallback;
+  const limit = Number(value);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) return undefined;
+  return limit;
 }
 
 function sessionKind(value: string | undefined) {

@@ -70,11 +70,13 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
         <h2>Curation</h2>
         <p>
-          Memory curation keeps the active working set bounded. Configure it in
-          runtime-home <code>config.json</code>.
+          Memory curation keeps the active working set bounded. Model-backed
+          curation runs as a finite Flue workflow using the self-improvement
+          model role. Configure it in runtime-home <code>config.json</code>.
         </p>
         <pre><code>&#123;
   "learning": &#123;
+    "conversationReviewTurnInterval": 10,
     "memoryCurationEnabled": true,
     "memoryCurationMode": "review",
     "memoryCurationTurnInterval": 200,
@@ -83,9 +85,40 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 &#125;</code></pre>
         <p>
           <code>off</code> disables automatic curation. <code>review</code>
-          creates candidates for approval. <code>auto</code> may apply safe, audited
-          typed actions; the current foundation only auto-applies bounded archive
-          cleanup for overflow memories.
+          creates candidates for approval. <code>auto</code> lets the bounded learning
+          workflow apply audited memory actions directly. Manual curation can be queued
+          with <code>POST /api/learning/curate</code>.
+        </p>
+
+        <h2>Conversation reflection</h2>
+        <p>
+          After every configured
+          <code>learning.conversationReviewTurnInterval</code> user turns, default
+          <code>10</code>, Neondeck queues a bounded
+          <code>review_conversation_for_learning</code> workflow for the active display-assistant
+          session. The workflow reviews compact session metadata, stored summaries,
+          stale-context markers, loaded memory ids, and current memory summaries.
+          Raw Flue transcript pages are not copied into app state.
+        </p>
+        <p>
+          Reflection can propose durable memory writes, rewrites, merges, or
+          archives. When <code>learning.memoryWriteMode</code> is <code
+            >review</code
+          >, those changes become <code>learning_candidates</code> for approval. When
+          it is
+          <code>auto</code>, the workflow applies changes only through
+          <code>neondeck_memory_learn</code>, <code
+            >neondeck_memory_rewrite</code
+          >,
+          <code>neondeck_memory_merge</code>, and
+          <code>neondeck_memory_archive</code>. When it is <code>off</code>,
+          reviews may record a summary but do not write or propose memory.
+        </p>
+        <p>
+          Manual reflection can be queued with
+          <code>POST /api/learning/reviews/conversation</code>. The route
+          returns a Flue run id; review records and candidate decisions are
+          inspected through the learning APIs and guarded Flue run inspection.
         </p>
 
         <h2>Audit history</h2>
@@ -95,6 +128,12 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           <code>learning_reviews</code>, and <code>learning_candidates</code>.
           Suspicious or secret-like writes are rejected and audited without
           becoming active prompt-loadable memory.
+        </p>
+        <p>
+          Use <code>GET /api/learning/reviews</code> to inspect review records, compact
+          input summaries, model and thinking level used, result summaries, and failures.
+          Use <code>GET /api/learning/candidates</code> to inspect review-mode memory
+          proposals, then approve or reject individual candidates.
         </p>
 
         <h2>Session stability</h2>
@@ -108,10 +147,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <h2>Model role</h2>
         <p>
           <code>models.selfImprovement</code> and
-          <code>models.selfImprovementThinkingLevel</code> reserve a model role for
-          bounded learning reviews and future reflection workflows. The current foundation
-          uses deterministic memory actions and curation. If omitted, Neondeck falls
-          back through
+          <code>models.selfImprovementThinkingLevel</code> select the model role for
+          bounded conversation reflection and memory curation workflows. If omitted,
+          Neondeck falls back through
           <code>FLUE_SELF_IMPROVEMENT_MODEL</code>, the utility model,
           <code>FLUE_UTILITY_MODEL</code>, the display assistant model,
           <code>FLUE_AGENT_MODEL</code>, and then the built-in default.

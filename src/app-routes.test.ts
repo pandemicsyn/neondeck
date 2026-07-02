@@ -275,6 +275,55 @@ describe('app API safety routes', () => {
     });
   });
 
+  it('validates learning review API inputs before workflow admission', async () => {
+    const badReview = await app.request(
+      'http://localhost/api/learning/reviews/conversation',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          host: 'localhost',
+          origin: 'http://localhost',
+        },
+        body: JSON.stringify({ sessionId: '' }),
+      },
+    );
+    const missingSession = await app.request(
+      'http://localhost/api/learning/reviews/conversation',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          host: 'localhost',
+          origin: 'http://localhost',
+        },
+        body: JSON.stringify({ sessionId: 'missing-session' }),
+      },
+    );
+    const badLimit = await app.request(
+      'http://localhost/api/learning/reviews?limit=-1',
+      {
+        headers: { host: 'localhost' },
+      },
+    );
+
+    expect(badReview.status).toBe(400);
+    expect(missingSession.status).toBe(400);
+    expect(badLimit.status).toBe(400);
+    await expect(badReview.json()).resolves.toMatchObject({
+      ok: false,
+      action: 'learning_review_conversation',
+    });
+    await expect(missingSession.json()).resolves.toMatchObject({
+      ok: false,
+      action: 'session_read',
+    });
+    await expect(badLimit.json()).resolves.toMatchObject({
+      ok: false,
+      action: 'learning_review_list',
+    });
+  });
+
   it('returns structured GitHub PR queue errors', async () => {
     const token = process.env.GITHUB_TOKEN;
     delete process.env.GITHUB_TOKEN;

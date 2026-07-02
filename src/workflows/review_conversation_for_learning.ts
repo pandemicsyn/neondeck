@@ -1,22 +1,22 @@
 import { defineWorkflow, type WorkflowRunsHandler } from '@flue/runtime';
 import {
   completeLearningReviewFromModelOutput,
-  curationReviewInputSchema,
+  conversationReviewInputSchema,
   failPreparedLearningReview,
   learningReviewCoordinator,
   learningReviewerOutputSchema,
   learningReviewOutputSchema,
-  prepareMemoryCurationReview,
+  prepareConversationReflection,
 } from '../learning-reviews';
 
 export const runs: WorkflowRunsHandler = async (_c, next) => next();
 
 export default defineWorkflow({
   agent: learningReviewCoordinator,
-  input: curationReviewInputSchema,
+  input: conversationReviewInputSchema,
   output: learningReviewOutputSchema,
   async run({ harness, input }) {
-    const prepared = await prepareMemoryCurationReview(input);
+    const prepared = await prepareConversationReflection(input);
     if (!prepared.ok) return prepared;
 
     try {
