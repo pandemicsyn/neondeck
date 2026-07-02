@@ -40,6 +40,7 @@ export type LearningReviewRecord = {
   inputSummary: JsonValue | null;
   result: JsonValue | null;
   error: string | null;
+  flueRunId: string | null;
   startedAt: string;
   completedAt: string | null;
 };
@@ -137,6 +138,7 @@ type PreparedLearningReview = {
   thinkingLevel: string;
   inputSummary: JsonValue;
   prompt: string;
+  allowedMemoryIds: string[];
 };
 type FailedLearningReview = ReturnType<typeof failedReview>;
 
@@ -183,7 +185,13 @@ export async function prepareConversationReflection(
       v.summarize(parsed.issues),
     );
   }
-  const config = await readLearningConfig(paths);
+  const configResult = await readLearningConfig(paths);
+  if (!configResult.ok) {
+    return failedReview('learning_review_conversation', configResult.message, [
+      'valid-learning-config',
+    ]);
+  }
+  const config = configResult.config;
   if (!config.enabled) {
     return failedReview(
       'learning_review_conversation',
@@ -213,7 +221,7 @@ export async function prepareConversationReflection(
     },
     paths,
   );
-  const memories = await listMemories({ status: 'active' }, paths);
+  const memories = await listActiveLearningMemories(paths);
   const models = readAgentModelSelectionSync(paths);
   const inputSummary = compactJson({
     kind: 'conversation',
@@ -241,7 +249,7 @@ export async function prepareConversationReflection(
         (reference as { reference?: { transcript?: { available: boolean } } })
           .reference?.transcript?.available === false,
     },
-    activeMemories: summarizeMemories(memories.memories),
+    activeMemories: summarizeMemories(memories),
   });
   const reviewId = startLearningReview(
     {
@@ -271,6 +279,7 @@ export async function prepareConversationReflection(
       inputSummary,
       config.memoryWriteMode,
     ),
+    allowedMemoryIds: memories.map((memory) => memory.id),
   };
 }
 
@@ -283,7 +292,13 @@ export async function prepareMemoryCurationReview(
   if (!parsed.success) {
     return failedReview('learning_curate', v.summarize(parsed.issues));
   }
-  const config = await readLearningConfig(paths);
+  const configResult = await readLearningConfig(paths);
+  if (!configResult.ok) {
+    return failedReview('learning_curate', configResult.message, [
+      'valid-learning-config',
+    ]);
+  }
+  const config = configResult.config;
   const mode = parsed.output.mode ?? config.memoryCurationMode;
   const trigger = parsed.output.trigger ?? 'manual';
   if (!config.enabled) {
@@ -306,7 +321,7 @@ export async function prepareMemoryCurationReview(
     return failedReview('learning_curate', 'Memory curation mode is off.');
   }
 
-  const memories = await listMemories({ status: 'active' }, paths);
+  const memories = await listActiveLearningMemories(paths);
   const events = await listMemoryEvents({ limit: 40 }, paths);
   const models = readAgentModelSelectionSync(paths);
   const inputSummary = compactJson({
@@ -319,7 +334,7 @@ export async function prepareMemoryCurationReview(
       memoryWriteMode: config.memoryWriteMode,
       memoryMaxActiveItems: config.memoryMaxActiveItems,
     },
-    activeMemories: summarizeMemories(memories.memories, 160),
+    activeMemories: summarizeMemories(memories, 160),
     recentMemoryEvents: (events.events as Array<Record<string, unknown>>).map(
       (event) => ({
         action: event.action,
@@ -353,6 +368,7 @@ export async function prepareMemoryCurationReview(
     thinkingLevel: models.selfImprovementThinkingLevel,
     inputSummary,
     prompt: learningPrompt('curation', inputSummary, mode),
+    allowedMemoryIds: memories.map((memory) => memory.id),
   };
 }
 
@@ -371,7 +387,15 @@ export async function completeLearningReviewFromModelOutput(
   const applied = [];
   const candidates = [];
   const skipped = [];
+  const allowedMemoryIds = new Set(prepared.allowedMemoryIds);
   for (const proposal of parsed.output.memoryActions) {
+    if (!proposalTargetsAllowed(proposal, allowedMemoryIds)) {
+      skipped.push({
+        action: proposal.action,
+        reason: 'memory-not-in-review-snapshot',
+      });
+      continue;
+    }
     if (prepared.mode === 'off') {
       skipped.push({ action: proposal.action, reason: 'mode-off' });
       continue;
@@ -434,7 +458,10 @@ export function failPreparedLearningReview(
 ) {
   const message = errorMessage(error);
   failLearningReview(prepared.reviewId, message, paths);
-  return failedReview(reviewAction(prepared.kind), message);
+  return {
+    ...failedReview(reviewAction(prepared.kind), message),
+    reviewId: prepared.reviewId,
+  };
 }
 
 export async function recordConversationTurnAndMaybeQueueLearning(
@@ -450,7 +477,11 @@ export async function recordConversationTurnAndMaybeQueueLearning(
   } = {},
 ) {
   await ensureRuntimeHome(paths);
-  const config = await readLearningConfig(paths);
+  const configResult = await readLearningConfig(paths);
+  if (!configResult.ok) {
+    return { queued: [], turnCount: 0, message: configResult.message };
+  }
+  const config = configResult.config;
   if (!config.enabled) {
     return { queued: [], turnCount: 0, message: 'Learning is disabled.' };
   }
@@ -492,29 +523,12 @@ export async function recordConversationTurnAndMaybeQueueLearning(
         `
         UPDATE chat_sessions
         SET learning_turn_count = ?,
-          last_learning_review_turn_count = CASE WHEN ? THEN ? ELSE last_learning_review_turn_count END,
-          last_learning_review_at = CASE WHEN ? THEN ? ELSE last_learning_review_at END,
-          last_learning_curation_turn_count = CASE WHEN ? THEN ? ELSE last_learning_curation_turn_count END,
-          last_learning_curation_at = CASE WHEN ? THEN ? ELSE last_learning_curation_at END,
           last_active_at = ?,
           updated_at = ?
         WHERE id = ?;
       `,
       )
-      .run(
-        turnCount,
-        queueConversation ? 1 : 0,
-        turnCount,
-        queueConversation ? 1 : 0,
-        now,
-        queueCuration ? 1 : 0,
-        turnCount,
-        queueCuration ? 1 : 0,
-        now,
-        now,
-        now,
-        sessionId,
-      );
+      .run(turnCount, now, now, sessionId);
   } finally {
     database.close();
   }
@@ -527,6 +541,7 @@ export async function recordConversationTurnAndMaybeQueueLearning(
         trigger: 'turn-threshold',
         turnCount,
       });
+      markLearningCadenceAdmitted(paths, sessionId, 'conversation', turnCount);
       queued.push({ workflow: 'review_conversation_for_learning', ...receipt });
     } catch (error) {
       recordLearningEvent(paths, {
@@ -543,6 +558,7 @@ export async function recordConversationTurnAndMaybeQueueLearning(
         trigger: 'turn-threshold',
         turnCount,
       });
+      markLearningCadenceAdmitted(paths, sessionId, 'curation', turnCount);
       queued.push({ workflow: 'curate_learning_store', ...receipt });
     } catch (error) {
       recordLearningEvent(paths, {
@@ -730,6 +746,29 @@ export function failLearningReview(
   }
 }
 
+export function attachLearningReviewRunId(
+  input: {
+    reviewId: string;
+    runId: string;
+  },
+  paths = runtimePaths(),
+) {
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        UPDATE learning_reviews
+        SET flue_run_id = ?
+        WHERE id = ?;
+      `,
+      )
+      .run(input.runId, input.reviewId);
+  } finally {
+    database.close();
+  }
+}
+
 async function readSessionForReview(sessionId: string, paths: RuntimePaths) {
   const state = await readNeonSessionState(paths);
   const session = state.sessions.find((item) => item.id === sessionId);
@@ -864,10 +903,91 @@ async function applyProposal(proposal: MemoryProposal, paths: RuntimePaths) {
   );
 }
 
-async function readLearningConfig(paths: RuntimePaths) {
-  return readRuntimeJson(paths.config, parseAppConfig)
-    .then((value) => resolveLearningConfig(value))
-    .catch(() => resolveLearningConfig());
+async function readLearningConfig(paths: RuntimePaths): Promise<
+  | {
+      ok: true;
+      config: ReturnType<typeof resolveLearningConfig>;
+    }
+  | {
+      ok: false;
+      message: string;
+    }
+> {
+  try {
+    return {
+      ok: true,
+      config: resolveLearningConfig(
+        await readRuntimeJson(paths.config, parseAppConfig),
+      ),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: `Learning config is invalid; model-backed learning is blocked. ${errorMessage(error)}`,
+    };
+  }
+}
+
+async function listActiveLearningMemories(paths: RuntimePaths) {
+  const scopes = await Promise.all([
+    listMemories({ status: 'active', scope: 'user' }, paths),
+    listMemories({ status: 'active', scope: 'local' }, paths),
+    listMemories({ status: 'active', scope: 'project' }, paths),
+  ]);
+  return scopes.flatMap((scope) => scope.memories);
+}
+
+function proposalTargetsAllowed(
+  proposal: MemoryProposal,
+  allowedMemoryIds: Set<string>,
+) {
+  if (proposal.action === 'upsert') return true;
+  if (proposal.action === 'rewrite' || proposal.action === 'archive') {
+    return allowedMemoryIds.has(proposal.memoryId);
+  }
+  return (
+    allowedMemoryIds.has(proposal.targetId) &&
+    proposal.sourceIds.every((id) => allowedMemoryIds.has(id))
+  );
+}
+
+function markLearningCadenceAdmitted(
+  paths: RuntimePaths,
+  sessionId: string,
+  kind: LearningReviewKind,
+  turnCount: number,
+) {
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    if (kind === 'conversation') {
+      database
+        .prepare(
+          `
+          UPDATE chat_sessions
+          SET last_learning_review_turn_count = ?,
+            last_learning_review_at = ?,
+            updated_at = ?
+          WHERE id = ?;
+        `,
+        )
+        .run(turnCount, now, now, sessionId);
+      return;
+    }
+    database
+      .prepare(
+        `
+        UPDATE chat_sessions
+        SET last_learning_curation_turn_count = ?,
+          last_learning_curation_at = ?,
+          updated_at = ?
+        WHERE id = ?;
+      `,
+      )
+      .run(turnCount, now, now, sessionId);
+  } finally {
+    database.close();
+  }
 }
 
 function recordLearningEvent(
@@ -951,6 +1071,8 @@ function readLearningReviewRow(row: unknown): LearningReviewRecord {
     inputSummary: parseNullableJson(record.input_summary_json),
     result: parseNullableJson(record.result_json),
     error: typeof record.error === 'string' ? record.error : null,
+    flueRunId:
+      typeof record.flue_run_id === 'string' ? record.flue_run_id : null,
     startedAt: String(record.started_at),
     completedAt:
       typeof record.completed_at === 'string' ? record.completed_at : null,

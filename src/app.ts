@@ -94,6 +94,7 @@ import {
   upsertMemory,
 } from './memory-actions';
 import {
+  attachLearningReviewRunId,
   listLearningReviews,
   recordConversationTurnAndMaybeQueueLearning,
 } from './learning-reviews';
@@ -256,6 +257,22 @@ observe((event) => {
           console.error('[neondeck] failed to attach Flue run id', error);
         },
       );
+    }
+    const learningReviewId = learningReviewResultId(event);
+    if (learningReviewId) {
+      void Promise.resolve()
+        .then(() =>
+          attachLearningReviewRunId(
+            { reviewId: learningReviewId, runId: event.runId },
+            paths,
+          ),
+        )
+        .catch((error) => {
+          console.error(
+            '[neondeck] failed to attach learning review run id',
+            error,
+          );
+        });
     }
 
     if (event.isError) {
@@ -1676,6 +1693,22 @@ function commandRunSummaryId(event: FlueObservation) {
 
   const id = (summary as { id?: unknown }).id;
   return typeof id === 'string' ? id : undefined;
+}
+
+function learningReviewResultId(event: FlueObservation) {
+  if (!('result' in event)) return undefined;
+  const result = event.result;
+  if (!result || typeof result !== 'object') return undefined;
+
+  const action = (result as { action?: unknown }).action;
+  if (
+    action !== 'learning_review_conversation' &&
+    action !== 'learning_curate'
+  ) {
+    return undefined;
+  }
+  const reviewId = (result as { reviewId?: unknown }).reviewId;
+  return typeof reviewId === 'string' ? reviewId : undefined;
 }
 
 function workflowLabel(event: FlueObservation) {

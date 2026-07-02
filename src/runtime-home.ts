@@ -834,6 +834,7 @@ function initializeAppDatabase(path: string) {
         input_summary_json TEXT,
         result_json TEXT,
         error TEXT,
+        flue_run_id TEXT,
         started_at TEXT NOT NULL,
         completed_at TEXT
       );
@@ -1266,6 +1267,7 @@ function initializeAppDatabase(path: string) {
     migrateMemoriesRepoIdentity(database);
     migrateMemoryEvents(database);
     ensureColumn(database, 'learning_candidates', 'action', 'TEXT');
+    ensureColumn(database, 'learning_reviews', 'flue_run_id', 'TEXT');
     database
       .prepare(
         `

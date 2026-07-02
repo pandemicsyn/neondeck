@@ -1,6 +1,8 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { updateAgentModels, updateLearningConfig } from './config-actions';
 import {
@@ -221,6 +223,120 @@ describe('learning review orchestration', () => {
     });
   });
 
+  it('retries threshold reflection after workflow admission failure', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig(
+      {
+        conversationReviewTurnInterval: 2,
+        memoryCurationEnabled: false,
+      },
+      paths,
+    );
+    const session = await createChatSession({ title: 'Retry cadence' }, paths);
+    const sessionId = (session as { session: { id: string } }).session.id;
+    const attempts: number[] = [];
+
+    await recordConversationTurnAndMaybeQueueLearning(sessionId, paths, {
+      async invokeConversationReview() {
+        throw new Error('not due');
+      },
+    });
+    await recordConversationTurnAndMaybeQueueLearning(sessionId, paths, {
+      async invokeConversationReview(input) {
+        attempts.push(input.turnCount ?? 0);
+        throw new Error('admission failed');
+      },
+    });
+    await recordConversationTurnAndMaybeQueueLearning(sessionId, paths, {
+      async invokeConversationReview(input) {
+        attempts.push(input.turnCount ?? 0);
+        return { runId: 'run-retry' };
+      },
+    });
+
+    expect(attempts).toEqual([2, 3]);
+  });
+
+  it('fails closed when learning config cannot be parsed', async () => {
+    const paths = runtimePaths(await tempHome());
+    const session = await createChatSession({ title: 'Invalid config' }, paths);
+    const sessionId = (session as { session: { id: string } }).session.id;
+    await writeFile(paths.config, '{ invalid json', 'utf8');
+
+    await expect(
+      prepareConversationReflection({ sessionId }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'learning_review_conversation',
+      requires: ['valid-learning-config'],
+    });
+    await expect(
+      recordConversationTurnAndMaybeQueueLearning(sessionId, paths, {
+        async invokeConversationReview() {
+          throw new Error('should not queue');
+        },
+      }),
+    ).resolves.toMatchObject({
+      queued: [],
+      turnCount: 0,
+      message: expect.stringContaining('Learning config is invalid'),
+    });
+  });
+
+  it('does not expose legacy memory rows as model curation targets', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig(
+      {
+        memoryCurationMode: 'auto',
+        memoryWriteMode: 'auto',
+      },
+      paths,
+    );
+    const legacyId = insertLegacyMemory(paths, {
+      scope: 'session',
+      key: 'old-task',
+      value: 'legacy task state',
+    });
+
+    const prepared = await prepareMemoryCurationReview(
+      { trigger: 'manual', mode: 'auto' },
+      paths,
+    );
+    if (!prepared.ok) throw new Error(prepared.message);
+    expect(prepared.allowedMemoryIds).not.toContain(legacyId);
+    expect(JSON.stringify(prepared.inputSummary)).not.toContain(legacyId);
+
+    await expect(
+      completeLearningReviewFromModelOutput(
+        prepared,
+        {
+          summary: 'Ignore legacy rows.',
+          memoryActions: [
+            {
+              action: 'archive',
+              memoryId: legacyId,
+              reason: 'Legacy row should not be model-curated.',
+            },
+          ],
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      skipped: [
+        expect.objectContaining({
+          reason: 'memory-not-in-review-snapshot',
+        }),
+      ],
+    });
+    await expect(
+      listMemories({ includeArchived: true, scope: 'session' }, paths),
+    ).resolves.toMatchObject({
+      memories: [expect.objectContaining({ id: legacyId, status: 'active' })],
+    });
+  });
+
   it('queues bounded learning workflows on configured turn intervals', async () => {
     const paths = runtimePaths(await tempHome());
     await updateLearningConfig(
@@ -287,4 +403,35 @@ async function tempHome() {
   const home = await mkdtemp(join(tmpdir(), 'neondeck-learning-'));
   tempRoots.push(home);
   return home;
+}
+
+function insertLegacyMemory(
+  paths: ReturnType<typeof runtimePaths>,
+  input: { scope: 'session' | 'watch'; key: string; value: string },
+) {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        INSERT INTO memories (
+          id,
+          scope,
+          key,
+          value_json,
+          status,
+          use_count,
+          created_at,
+          updated_at
+        )
+        VALUES (?, ?, ?, ?, 'active', 0, ?, ?);
+      `,
+      )
+      .run(id, input.scope, input.key, JSON.stringify(input.value), now, now);
+  } finally {
+    database.close();
+  }
+  return id;
 }

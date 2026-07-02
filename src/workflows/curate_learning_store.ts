@@ -26,7 +26,10 @@ export default defineWorkflow({
         agent: 'learning_reviewer',
         result: learningReviewerOutputSchema,
       });
-      return completeLearningReviewFromModelOutput(prepared, response.data);
+      return await completeLearningReviewFromModelOutput(
+        prepared,
+        response.data,
+      );
     } catch (error) {
       return failPreparedLearningReview(prepared, error);
     }
