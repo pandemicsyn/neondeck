@@ -1900,10 +1900,23 @@ function extractHandledPrEvent(input: {
     task?.id,
     resultState?.taskId,
   );
+  const resultOk = firstBoolean(
+    result.ok,
+    data.ok,
+    nestedResult?.ok,
+    nestedData.ok,
+  );
+  const blocked = hasRequires(
+    result.requires,
+    data.requires,
+    nestedResult?.requires,
+    nestedData.requires,
+  );
   const eventType = handledEventType(
     action,
     input.workflow,
     preparedDiff ?? undefined,
+    { ok: resultOk, blocked },
   );
   if (!eventType) return null;
   const stableSource =
@@ -1927,6 +1940,8 @@ function extractHandledPrEvent(input: {
       runId: input.runId ?? null,
       preparedDiffId: preparedDiffId ?? null,
       taskId: taskId ?? null,
+      ok: resultOk,
+      blocked,
       status: firstString(result.status, data.status, preparedDiff?.status),
     }),
   };
@@ -1936,29 +1951,87 @@ function handledEventType(
   action: string | null,
   workflow?: string | null,
   preparedDiff?: Record<string, unknown>,
+  outcome: { ok: boolean | null; blocked: boolean } = {
+    ok: null,
+    blocked: false,
+  },
 ) {
   const value = `${workflow ?? ''}:${action ?? ''}`.toLowerCase();
+  const outcomeLabel = (completed: string, blocked: string, failed: string) =>
+    outcome.ok === false ? (outcome.blocked ? blocked : failed) : completed;
   if (value.includes('fix_pr_review') || value.includes('review-feedback')) {
-    return 'review-feedback-workflow-completed';
+    return outcomeLabel(
+      'review-feedback-workflow-completed',
+      'review-feedback-workflow-blocked',
+      'review-feedback-workflow-failed',
+    );
   }
   if (value.includes('fix_pr_ci') || value.includes('ci-failure')) {
-    return 'ci-failure-workflow-completed';
+    return outcomeLabel(
+      'ci-failure-workflow-completed',
+      'ci-failure-workflow-blocked',
+      'ci-failure-workflow-failed',
+    );
   }
   if (value.includes('verify_pr') || value.includes('verification')) {
-    return 'prepared-diff-verified';
+    return outcomeLabel(
+      'prepared-diff-verified',
+      'prepared-diff-verification-blocked',
+      'prepared-diff-verification-failed',
+    );
   }
   if (value.includes('push_pr') || value.includes('push_autofix')) {
-    return 'prepared-diff-pushed';
+    return outcomeLabel(
+      'prepared-diff-pushed',
+      'prepared-diff-push-blocked',
+      'prepared-diff-push-failed',
+    );
   }
-  if (value.includes('comment_pr')) return 'result-comment-completed';
-  if (value.includes('recovery')) return 'notification-recovery-completed';
-  if (value.includes('kilo_result_review')) return 'kilo-result-reviewed';
-  if (value.includes('kilo_result_promote')) return 'kilo-result-promoted';
-  if (value.includes('kilo_result_verify')) return 'kilo-result-verified';
+  if (value.includes('comment_pr')) {
+    return outcomeLabel(
+      'result-comment-completed',
+      'result-comment-blocked',
+      'result-comment-failed',
+    );
+  }
+  if (value.includes('recovery')) {
+    return outcomeLabel(
+      'notification-recovery-completed',
+      'notification-recovery-blocked',
+      'notification-recovery-failed',
+    );
+  }
+  if (value.includes('kilo_result_review')) {
+    return outcomeLabel(
+      'kilo-result-reviewed',
+      'kilo-result-review-blocked',
+      'kilo-result-review-failed',
+    );
+  }
+  if (value.includes('kilo_result_promote')) {
+    return outcomeLabel(
+      'kilo-result-promoted',
+      'kilo-result-promotion-blocked',
+      'kilo-result-promotion-failed',
+    );
+  }
+  if (value.includes('kilo_result_verify')) {
+    return outcomeLabel(
+      'kilo-result-verified',
+      'kilo-result-verification-blocked',
+      'kilo-result-verification-failed',
+    );
+  }
   const status =
     typeof preparedDiff?.status === 'string' ? preparedDiff.status : null;
   if (status === 'abandoned') return 'prepared-diff-abandoned';
-  if (preparedDiff) return 'prepared-diff-created';
+  if (preparedDiff) {
+    return outcomeLabel(
+      'prepared-diff-created',
+      'prepared-diff-blocked',
+      'prepared-diff-failed',
+    );
+  }
   return null;
 }
 
@@ -2047,6 +2120,16 @@ function firstNumber(...values: unknown[]) {
     (value): value is number =>
       typeof value === 'number' && Number.isFinite(value),
   );
+}
+
+function firstBoolean(...values: unknown[]) {
+  return (
+    values.find((value): value is boolean => typeof value === 'boolean') ?? null
+  );
+}
+
+function hasRequires(...values: unknown[]) {
+  return values.some((value) => Array.isArray(value) && value.length > 0);
 }
 
 function summarizeJson(value: JsonValue | null, maxLength: number) {

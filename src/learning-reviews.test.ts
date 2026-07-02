@@ -885,6 +885,78 @@ describe('learning review orchestration', () => {
     expect(queued).toEqual([expect.objectContaining({ trigger: 'threshold' })]);
   });
 
+  it('labels blocked workflow outcomes without successful handled-event names', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig({ prRetrospectiveThreshold: 10 }, paths);
+
+    await recordHandledPrFromWorkflowResult(
+      {
+        workflow: 'verify_pr_worktree',
+        runId: 'run-verify-blocked',
+        result: {
+          ok: false,
+          action: 'autopilot_verify_pr_worktree',
+          changed: true,
+          message: 'Verification is blocked by execution approval.',
+          requires: ['approval'],
+          data: {
+            worktree: {
+              id: 'wt-verify-blocked',
+              repoId: 'neondeck',
+              repoFullName: 'pandemicsyn/neondeck',
+              prNumber: 78,
+            },
+            preparedDiffVerification: {
+              id: 'pd-verify-blocked',
+              repoId: 'neondeck',
+              repoFullName: 'pandemicsyn/neondeck',
+              prNumber: 78,
+              status: 'failed',
+            },
+          },
+        },
+      },
+      paths,
+    );
+    await recordHandledPrFromWorkflowResult(
+      {
+        workflow: 'push_pr_autofix',
+        runId: 'run-push-blocked',
+        result: {
+          ok: false,
+          action: 'autopilot_push_pr_autofix',
+          changed: true,
+          message: 'Push is blocked by policy.',
+          requires: ['pushApproval'],
+          data: {
+            preparedDiff: {
+              id: 'pd-push-blocked',
+              repoId: 'neondeck',
+              repoFullName: 'pandemicsyn/neondeck',
+              prNumber: 78,
+              status: 'push-blocked',
+            },
+          },
+        },
+      },
+      paths,
+    );
+
+    const prepared = await preparePrBatchLearningReview(
+      { trigger: 'manual' },
+      paths,
+    );
+    if (!prepared.ok) throw new Error(prepared.message);
+    const summary = prepared.inputSummary as {
+      handledEvents?: Array<{ eventType?: string | null }>;
+    };
+
+    expect(summary.handledEvents?.map((event) => event.eventType)).toEqual([
+      'prepared-diff-verification-blocked',
+      'prepared-diff-push-blocked',
+    ]);
+  });
+
   it('turns PR retrospective output into memory and skill candidates', async () => {
     const paths = runtimePaths(await tempHome());
     await updateLearningConfig(
