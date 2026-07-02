@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   archiveMemory,
   buildMemoryPromptSnapshotSync,
+  createMemoryCandidate,
   curateMemoryStore,
   decideMemoryCandidate,
   deleteMemory,
@@ -415,6 +416,37 @@ describe('structured memory actions', () => {
       errors: [expect.stringContaining('secret')],
     });
 
+    await expect(listMemoryEvents({}, paths)).resolves.toMatchObject({
+      events: [expect.objectContaining({ action: 'rejected' })],
+    });
+  });
+
+  it('rejects suspicious memory candidate values before storing them', async () => {
+    const paths = runtimePaths(await tempHome());
+
+    await expect(
+      createMemoryCandidate(
+        {
+          action: 'upsert',
+          scope: 'local',
+          key: 'credential',
+          value: 'token=abc123',
+        },
+        paths,
+        { source: 'workflow' },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'memory_candidate_create',
+      errors: [expect.stringContaining('secret')],
+    });
+
+    await expect(
+      listMemoryCandidates({ status: 'proposed' }, paths),
+    ).resolves.toMatchObject({
+      candidates: [],
+    });
     await expect(listMemoryEvents({}, paths)).resolves.toMatchObject({
       events: [expect.objectContaining({ action: 'rejected' })],
     });

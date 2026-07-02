@@ -955,6 +955,28 @@ export async function createMemoryCandidate(
   }
 
   const now = new Date().toISOString();
+  if (parsed.output.value !== undefined) {
+    const rejection = memoryRejectionReason(parsed.output.value);
+    if (rejection) {
+      const database = new DatabaseSync(paths.neondeckDatabase);
+      try {
+        recordMemoryEvent(database, {
+          action: 'rejected',
+          actor: options.source ?? 'user',
+          reason: rejection,
+          before: null,
+          after: boundedRejectedCandidateAfter(parsed.output),
+          createdAt: now,
+        });
+      } finally {
+        database.close();
+      }
+      return failedMemoryMutation('memory_candidate_create', rejection, [
+        'value',
+      ]);
+    }
+  }
+
   const candidate: MemoryCandidateRecord = {
     id: randomUUID(),
     target: 'memory',
@@ -1873,6 +1895,23 @@ function boundedRejectedAfter(input: {
     scope: input.scope,
     key: input.key,
     repoId: input.repoId ?? null,
+    rejected: true,
+  };
+}
+
+function boundedRejectedCandidateAfter(input: {
+  action: v.InferOutput<typeof memoryCandidateActionSchema>;
+  scope?: ActiveMemoryScope;
+  key?: string;
+  repoId?: string;
+  reviewId?: string;
+}): JsonValue {
+  return {
+    candidateAction: input.action,
+    scope: input.scope ?? null,
+    key: input.key ?? null,
+    repoId: input.repoId ?? null,
+    reviewId: input.reviewId ?? null,
     rejected: true,
   };
 }
