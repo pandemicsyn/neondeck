@@ -261,7 +261,7 @@ you land a phase.
 | 1 | `src/lib/` shared utilities | done |
 | 2 | `runtime-home` split ⚙ | done |
 | 3 | `server/` route split of `app.ts` | done |
-| 4 | `domains/github` | todo |
+| 4 | `domains/github` | done |
 | 5 | `domains/worktrees` ⚙ | todo |
 | 6 | `domains/sessions` + `domains/config` + `domains/repos` | todo |
 | 7 | `domains/safety` + `domains/execution` | todo |
@@ -392,6 +392,11 @@ src/domains/github/
   until Phase 12.
 
 Verification: `github.test.ts` fixture-based parsing tests move with the code; unit suite.
+
+Status note (2026-07-03): implemented in `src/domains/github/` with top-level `src/github.ts` and
+`src/github-actions.ts` preserved as compatibility re-export shims. Existing GitHub tests remain at
+the top level and exercise the shimmed public surface; no consumers were migrated off the shims in
+this phase.
 
 ### Phase 5: `domains/worktrees` ⚙
 
