@@ -90,6 +90,15 @@ top-level modules plus a handful of directories.
 | `src/autopilot-policy.ts` | 970 | Autopilot gate policy |
 | `src/runtime-status.ts` | 802 | Runtime readiness checks |
 | `src/runtime-skills.ts` | 795 | Skill discovery/validation |
+| `src/app-state.ts` | 741 | App notification/state/event store helpers |
+| `src/kilo-task-store.ts` | 689 | Kilo task SQLite store |
+| `src/sandboxes/exedev.ts` | 676 | exe.dev sandbox adapter |
+| `src/repo-edit/git.ts` | 669 | Repo-edit git subprocess helpers |
+| `src/workflow-observability.ts` | 611 | Workflow run/event observability store |
+| `src/autopilot-recovery.ts` | 601 | Autopilot recovery actions and summaries |
+| `src/dev-doctor.ts` | 532 | Runtime diagnostic checks |
+| `src/execution-policy.ts` | 488 | Execution policy evaluation |
+| `src/learning-operator.ts` | 404 | Learning operator dashboard state |
 
 ### Oversized frontend files
 
@@ -99,6 +108,7 @@ top-level modules plus a handful of directories.
 | `web/src/api.ts` | 1,710 | 130 exports: hand-maintained response types + fetch helpers + EventSource parsing + every endpoint function for every domain |
 | `web/src/plugins/FlueChat.tsx` | 1,104 | Chat shell, session select, message rendering, event part formatting, command typeahead, command result summary |
 | `web/src/plugins/AutopilotPanel.tsx` | 556 | Borderline; revisit after the feature-folder pattern exists |
+| `web/src/App.tsx` | 518 | Dashboard shell, plugin layout, and shared app state wiring |
 | `web/src/plugins/LearningOperatorPanel.tsx` | 513 | Same |
 
 ### Duplicated low-level patterns (measured)
@@ -247,7 +257,7 @@ you land a phase.
 
 | Phase | Scope | Status |
 | --- | --- | --- |
-| 0 | Guardrails: size report script, inventory check | todo |
+| 0 | Guardrails: size report script, inventory check | done |
 | 1 | `src/lib/` shared utilities | todo |
 | 2 | `runtime-home` split ⚙ | todo |
 | 3 | `server/` route split of `app.ts` | todo |

@@ -42,6 +42,7 @@
     "test:watch": "vitest --config vitest.unit.config.ts",
     "package:app": "node scripts/package-app-release.mjs",
     "release:app": "npm run build:dashboard && npm run package:app",
+    "report:file-sizes": "node scripts/file-size-report.mjs",
     "typecheck": "npm run typecheck:app && npm run docs:check",
     "typecheck:app": "tsc --noEmit && tsc -p web/tsconfig.json --noEmit",
     "verify": "npm run lint && npm run typecheck && npm run test:all && npm run format:check && npm run build",
