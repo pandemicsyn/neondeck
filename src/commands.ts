@@ -1,1 +1,1 @@
-export * from './domains/commands';
+export * from './modules/commands';

@@ -1,1 +1,1 @@
-export * from './domains/learning/reviews';
+export * from './modules/learning/reviews';

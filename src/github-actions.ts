@@ -1,1 +1,1 @@
-export * from './domains/github/actions';
+export * from './modules/github/actions';

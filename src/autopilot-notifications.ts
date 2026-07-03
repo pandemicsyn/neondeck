@@ -1,1 +1,1 @@
-export * from './domains/autopilot/notifications';
+export * from './modules/autopilot/notifications';

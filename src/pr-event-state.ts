@@ -1,1 +1,1 @@
-export * from './domains/pr-events';
+export * from './modules/pr-events';

@@ -1,1 +1,1 @@
-export * from './domains/execution/exedev/checkouts';
+export * from './modules/execution/exedev/checkouts';

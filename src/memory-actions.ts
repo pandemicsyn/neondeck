@@ -1,1 +1,1 @@
-export * from './domains/memory';
+export * from './modules/memory';

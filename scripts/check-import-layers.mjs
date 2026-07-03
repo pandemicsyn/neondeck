@@ -11,22 +11,22 @@ const backendLayers = new Map([
   ['src/runtime-home', 1],
   ['src/repo-edit', 2],
   ['src/sandboxes', 2],
-  ['src/domains/github', 2],
-  ['src/domains/worktrees', 2],
-  ['src/domains/sessions', 2],
-  ['src/domains/repos', 2],
-  ['src/domains/safety', 2],
-  ['src/domains/memory', 2],
-  ['src/domains/config', 3],
-  ['src/domains/execution', 3],
-  ['src/domains/kilo', 3],
-  ['src/domains/watches', 3],
-  ['src/domains/scheduler', 3],
-  ['src/domains/prepared-diffs', 3],
-  ['src/domains/pr-events', 3],
-  ['src/domains/autopilot', 4],
-  ['src/domains/learning', 4],
-  ['src/domains/commands', 4],
+  ['src/modules/github', 2],
+  ['src/modules/worktrees', 2],
+  ['src/modules/sessions', 2],
+  ['src/modules/repos', 2],
+  ['src/modules/safety', 2],
+  ['src/modules/memory', 2],
+  ['src/modules/config', 3],
+  ['src/modules/execution', 3],
+  ['src/modules/kilo', 3],
+  ['src/modules/watches', 3],
+  ['src/modules/scheduler', 3],
+  ['src/modules/prepared-diffs', 3],
+  ['src/modules/pr-events', 3],
+  ['src/modules/autopilot', 4],
+  ['src/modules/learning', 4],
+  ['src/modules/commands', 4],
   ['src/server', 5],
   ['src/cli', 5],
   ['src/workflows', 5],
@@ -93,17 +93,17 @@ const compatibilityShimLayers = new Map([
 ]);
 
 const allowedLayerBridges = new Set([
-  'src/domains/kilo/results/gates.ts -> src/autopilot-policy.ts',
-  'src/domains/kilo/results/service.ts -> src/autopilot-policy.ts',
-  'src/domains/kilo/results/service.ts -> src/autopilot-workflows.ts',
-  'src/domains/kilo/results/state.ts -> src/autopilot-policy.ts',
-  'src/domains/prepared-diffs/schemas.ts -> src/autonomous-audit.ts',
-  'src/domains/prepared-diffs/service.ts -> src/autonomous-audit.ts',
-  'src/domains/prepared-diffs/store.ts -> src/autonomous-audit.ts',
-  'src/domains/safety/service.ts -> src/execution-policy.ts',
-  'src/domains/scheduler/dispatch.ts -> src/workflows/briefing.ts',
-  'src/domains/scheduler/dispatch.ts -> src/workflows/command-run.ts',
-  'src/domains/worktrees/service.ts -> src/prepared-diffs.ts',
+  'src/modules/kilo/results/gates.ts -> src/autopilot-policy.ts',
+  'src/modules/kilo/results/service.ts -> src/autopilot-policy.ts',
+  'src/modules/kilo/results/service.ts -> src/autopilot-workflows.ts',
+  'src/modules/kilo/results/state.ts -> src/autopilot-policy.ts',
+  'src/modules/prepared-diffs/schemas.ts -> src/autonomous-audit.ts',
+  'src/modules/prepared-diffs/service.ts -> src/autonomous-audit.ts',
+  'src/modules/prepared-diffs/store.ts -> src/autonomous-audit.ts',
+  'src/modules/safety/service.ts -> src/execution-policy.ts',
+  'src/modules/scheduler/dispatch.ts -> src/workflows/briefing.ts',
+  'src/modules/scheduler/dispatch.ts -> src/workflows/command-run.ts',
+  'src/modules/worktrees/service.ts -> src/prepared-diffs.ts',
 ]);
 
 const frontendApiHelperImports = new Set(['web/src/lib/query.ts']);
@@ -196,18 +196,18 @@ function checkBackendImport(sourceRel, targetRel) {
     });
   }
 
-  const sourceDomain = domainName(sourceRel);
-  const targetDomain = domainName(targetRel);
+  const sourceModule = moduleName(sourceRel);
+  const targetModule = moduleName(targetRel);
   if (
-    sourceDomain &&
-    targetDomain &&
-    sourceDomain !== targetDomain &&
-    targetRel !== `src/domains/${targetDomain}/index.ts`
+    sourceModule &&
+    targetModule &&
+    sourceModule !== targetModule &&
+    targetRel !== `src/modules/${targetModule}/index.ts`
   ) {
     violations.push({
       source: sourceRel,
       target: targetRel,
-      reason: `cross-domain imports must use src/domains/${targetDomain}/index.ts`,
+      reason: `cross-module imports must use src/modules/${targetModule}/index.ts`,
     });
   }
 }
@@ -268,7 +268,7 @@ function backendLayerFor(path) {
   return undefined;
 }
 
-function domainName(path) {
-  const match = /^src\/domains\/([^/]+)\//.exec(path);
+function moduleName(path) {
+  const match = /^src\/modules\/([^/]+)\//.exec(path);
   return match?.[1];
 }

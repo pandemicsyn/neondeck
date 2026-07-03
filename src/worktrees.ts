@@ -1,1 +1,1 @@
-export * from './domains/worktrees';
+export * from './modules/worktrees';

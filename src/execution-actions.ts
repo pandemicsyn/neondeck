@@ -2,15 +2,15 @@ export {
   executionRequestApprovalAction,
   executionRunAction,
   neondeckExecutionActions,
-} from './domains/execution/actions';
+} from './modules/execution/actions';
 export {
   listExecutionApprovals,
   requestExecutionApproval,
   resolveExecutionApproval,
-} from './domains/execution/approvals';
-export { runApprovedExecution } from './domains/execution/run';
+} from './modules/execution/approvals';
+export { runApprovedExecution } from './modules/execution/run';
 export type {
   ExecutionApprovalDecision,
   ExecutionApprovalRecord,
   ExecutionApprovalStatus,
-} from './domains/execution/schemas';
+} from './modules/execution/schemas';

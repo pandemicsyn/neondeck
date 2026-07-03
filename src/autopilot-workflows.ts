@@ -1,1 +1,1 @@
-export * from './domains/autopilot';
+export * from './modules/autopilot';

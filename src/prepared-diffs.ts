@@ -1,1 +1,1 @@
-export * from './domains/prepared-diffs';
+export * from './modules/prepared-diffs';

@@ -1,1 +1,1 @@
-export * from './domains/repos/model-discovery';
+export * from './modules/repos/model-discovery';

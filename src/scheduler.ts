@@ -1,1 +1,1 @@
-export * from './domains/scheduler';
+export * from './modules/scheduler';

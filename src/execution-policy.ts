@@ -1,1 +1,1 @@
-export * from './domains/execution/policy';
+export * from './modules/execution/policy';

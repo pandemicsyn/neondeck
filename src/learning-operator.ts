@@ -1,1 +1,1 @@
-export * from './domains/learning/operator';
+export * from './modules/learning/operator';

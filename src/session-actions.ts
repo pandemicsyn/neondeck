@@ -15,15 +15,15 @@ export {
   sessionStartAction,
   sessionStatusAction,
   sessionSwitchAction,
-} from './domains/sessions/actions';
-export { readNeonSessionState } from './domains/sessions/active-session';
+} from './modules/sessions/actions';
+export { readNeonSessionState } from './modules/sessions/active-session';
 export {
   listChatSessions,
   readChatSession,
   readChatSessionMessages,
   searchChatSessions,
-} from './domains/sessions/queries';
-export { referenceChatSession } from './domains/sessions/references';
+} from './modules/sessions/queries';
+export { referenceChatSession } from './modules/sessions/references';
 export type {
   ChatSessionKind,
   ChatSessionRecord,
@@ -32,7 +32,7 @@ export type {
   NeonSessionRecord,
   NeonSessionStaleReason,
   NeonSessionState,
-} from './domains/sessions/schemas';
+} from './modules/sessions/schemas';
 export {
   archiveChatSession,
   createChatSession,
@@ -42,5 +42,5 @@ export {
   restoreChatSession,
   startNeonSession,
   switchChatSession,
-} from './domains/sessions/service';
-export { refreshChatSessionSummary } from './domains/sessions/summaries';
+} from './modules/sessions/service';
+export { refreshChatSessionSummary } from './modules/sessions/summaries';

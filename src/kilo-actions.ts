@@ -1,1 +1,1 @@
-export * from './domains/kilo/actions';
+export * from './modules/kilo/actions';

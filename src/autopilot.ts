@@ -1,2 +1,2 @@
-export * from './domains/autopilot/state';
-export * from './domains/autopilot/state-schemas';
+export * from './modules/autopilot/state';
+export * from './modules/autopilot/state-schemas';

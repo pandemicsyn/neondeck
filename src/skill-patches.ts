@@ -1,1 +1,1 @@
-export * from './domains/learning/skill-patches';
+export * from './modules/learning/skill-patches';

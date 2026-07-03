@@ -1,1 +1,1 @@
-export * from './domains/learning/observability';
+export * from './modules/learning/observability';

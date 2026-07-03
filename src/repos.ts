@@ -1,1 +1,1 @@
-export * from './domains/repos/registry';
+export * from './modules/repos/registry';

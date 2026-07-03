@@ -1,1 +1,1 @@
-export * from './domains/learning/audit';
+export * from './modules/learning/audit';

@@ -18,34 +18,34 @@ export {
   updateScheduleAction,
   updateSkillRootsAction,
   updateWorktreePolicyAction,
-} from './domains/config/actions';
+} from './modules/config/actions';
 export {
   readConfig,
   reloadConfig,
   validateConfig,
-} from './domains/config/read';
+} from './modules/config/read';
 export {
   applyDashboardPreset,
   updateDashboardLayout,
-} from './domains/config/mutations/dashboard';
-export { updateExecutionPolicy } from './domains/config/mutations/execution';
+} from './modules/config/mutations/dashboard';
+export { updateExecutionPolicy } from './modules/config/mutations/execution';
 export {
   updateAgentModels,
   updateLearningConfig,
   updateSkillRoots,
   updateWorktreePolicy,
-} from './domains/config/mutations/models';
+} from './modules/config/mutations/models';
 export {
   readProviderConfig,
   updateProviderConfig,
-} from './domains/config/mutations/providers';
+} from './modules/config/mutations/providers';
 export {
   addRepo,
   removeRepo,
   updateRepo,
-} from './domains/config/mutations/repos';
+} from './modules/config/mutations/repos';
 export {
   addSchedule,
   removeSchedule,
   updateSchedule,
-} from './domains/config/mutations/schedules';
+} from './modules/config/mutations/schedules';

@@ -1,1 +1,1 @@
-export * from './domains/config/events';
+export * from './modules/config/events';

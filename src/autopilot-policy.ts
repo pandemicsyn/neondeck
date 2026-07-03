@@ -1,4 +1,4 @@
-export * from './domains/autopilot/policy-schemas';
-export * from './domains/autopilot/policy-config';
-export * from './domains/autopilot/policy';
-export { pathDeniedByAutopilotPolicy } from './domains/autopilot/policy-config';
+export * from './modules/autopilot/policy-schemas';
+export * from './modules/autopilot/policy-config';
+export * from './modules/autopilot/policy';
+export { pathDeniedByAutopilotPolicy } from './modules/autopilot/policy-config';

@@ -1,1 +1,1 @@
-export * from './domains/kilo/notifications';
+export * from './modules/kilo/notifications';

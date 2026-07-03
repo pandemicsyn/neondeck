@@ -1,1 +1,1 @@
-export * from './domains/watches';
+export * from './modules/watches';
