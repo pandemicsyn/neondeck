@@ -260,7 +260,7 @@ you land a phase.
 | 0 | Guardrails: size report script, inventory check | done |
 | 1 | `src/lib/` shared utilities | done |
 | 2 | `runtime-home` split ⚙ | done |
-| 3 | `server/` route split of `app.ts` | todo |
+| 3 | `server/` route split of `app.ts` | done |
 | 4 | `domains/github` | todo |
 | 5 | `domains/worktrees` ⚙ | todo |
 | 6 | `domains/sessions` + `domains/config` + `domains/repos` | todo |
@@ -368,6 +368,13 @@ guard. Keep `src/app.ts` as the Flue/build entry that re-exports from `src/serve
 Flue build config references it (check `flue.config.ts` before moving the entry point).
 
 Verification: `app-routes.test.ts`, unit suite, `npm run dev` boots, dashboard loads.
+
+Status note (2026-07-03): implemented as a `src/app.ts` Flue/build entry shim over
+`src/server/app.ts`. API middleware, Flue run inspection auth, SSE streams, route groups, Flue
+learning hooks, and static serving are split under `src/server/**` without moving domain logic.
+Verified with `src/app-routes.test.ts`, `npm run check`, `npm run build:server`, and an API mount
+smoke for representative route roots. A fresh temporary `NEONDECK_HOME` `npm run dev` boot brought
+up Vite and Flue; `http://127.0.0.1:5173/` returned dashboard HTML and `/api/health` returned 200.
 
 ### Phase 4: `domains/github`
 
