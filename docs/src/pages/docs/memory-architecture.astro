@@ -1,5 +1,6 @@
 ---
 import DocsNav from '../../components/DocsNav.astro';
+import MermaidDiagram from '../../components/MermaidDiagram.astro';
 import SiteFooter from '../../components/SiteFooter.astro';
 import SiteNav from '../../components/SiteNav.astro';
 import BaseLayout from '../../layouts/BaseLayout.astro';
@@ -138,7 +139,10 @@ const storeDiagram = `flowchart TB
           reviewer output can apply memory immediately, create review
           candidates, or propose skill patches.
         </p>
-        <pre class="mermaid-block"><code>{systemDiagram}</code></pre>
+        <MermaidDiagram
+          chart={systemDiagram}
+          label="System map showing how memory, learning reviews, candidates, sessions, and operator surfaces connect"
+        />
 
         <h2>The feedback loop</h2>
         <p>
@@ -149,7 +153,10 @@ const storeDiagram = `flowchart TB
           when a bounded Flue workflow should ask the self-improvement model for
           durable lessons.
         </p>
-        <pre class="mermaid-block"><code>{feedbackDiagram}</code></pre>
+        <MermaidDiagram
+          chart={feedbackDiagram}
+          label="Feedback loop from chat and PR work through learning review into future sessions"
+        />
         <p>
           The important constraint is that the model does not write arbitrary
           state. It returns structured <code>memoryActions</code> and
@@ -166,7 +173,10 @@ const storeDiagram = `flowchart TB
           workflow runtime state. Runtime-home files hold configuration,
           secrets, and user skills.
         </p>
-        <pre class="mermaid-block"><code>{storeDiagram}</code></pre>
+        <MermaidDiagram
+          chart={storeDiagram}
+          label="Storage layout for Neondeck app state, Flue runtime state, and runtime-home files"
+        />
 
         <h2>Memory rows</h2>
         <p>
@@ -291,14 +301,5 @@ const storeDiagram = `flowchart TB
 <style>
   .memory-architecture {
     max-width: 900px;
-  }
-
-  .mermaid-block {
-    border-color: color-mix(in srgb, var(--cyan) 34%, var(--line));
-    box-shadow: 0 0 0 1px rgba(105, 230, 255, 0.04);
-  }
-
-  .mermaid-block code {
-    color: var(--code-ink);
   }
 </style>

@@ -1,0 +1,138 @@
+---
+type Props = {
+  chart: string;
+  label: string;
+};
+
+const { chart, label } = Astro.props;
+---
+
+<figure class="diagram-panel">
+  <div class="mermaid-diagram" data-chart={chart} role="img" aria-label={label}>
+    {chart}
+  </div>
+</figure>
+
+<script>
+  const renderedAttribute = 'data-rendered';
+  let mermaidImport;
+
+  async function loadMermaid() {
+    mermaidImport ??= import('mermaid');
+    const module = await mermaidImport;
+    return module.default;
+  }
+
+  function readThemeVariables() {
+    const styles = getComputedStyle(document.documentElement);
+    const color = (name: string, fallback: string) =>
+      styles.getPropertyValue(name).trim() || fallback;
+
+    return {
+      background: color('--surface', '#12141b'),
+      primaryColor: color('--card', '#0e0f13'),
+      primaryTextColor: color('--body', '#d7f7ff'),
+      primaryBorderColor: color('--cyan', '#69e6ff'),
+      lineColor: color('--cyan', '#69e6ff'),
+      secondaryColor: color('--bg-strong', '#090a0f'),
+      tertiaryColor: color('--surface', '#12141b'),
+      noteBkgColor: color('--code-bg', '#070810'),
+      noteTextColor: color('--body', '#d7f7ff'),
+      actorBkg: color('--card', '#0e0f13'),
+      actorBorder: color('--cyan', '#69e6ff'),
+      actorTextColor: color('--body', '#d7f7ff'),
+      signalColor: color('--cyan', '#69e6ff'),
+      signalTextColor: color('--body', '#d7f7ff'),
+      labelTextColor: color('--body', '#d7f7ff'),
+      fontFamily: "'IBM Plex Mono', monospace",
+    };
+  }
+
+  function resetDiagrams() {
+    for (const element of document.querySelectorAll<HTMLElement>(
+      '.mermaid-diagram[data-chart]',
+    )) {
+      element.removeAttribute(renderedAttribute);
+      element.textContent = element.dataset.chart ?? '';
+    }
+  }
+
+  async function renderDiagrams() {
+    const diagrams = document.querySelectorAll<HTMLElement>(
+      `.mermaid-diagram[data-chart]:not([${renderedAttribute}])`,
+    );
+    if (diagrams.length === 0) return;
+
+    const mermaid = await loadMermaid();
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: 'base',
+      themeVariables: readThemeVariables(),
+    });
+
+    for (const element of diagrams) {
+      const chart = element.dataset.chart;
+      if (!chart) continue;
+
+      element.setAttribute(renderedAttribute, 'true');
+      try {
+        const id = `neondeck-mermaid-${crypto.randomUUID()}`;
+        const { svg, bindFunctions } = await mermaid.render(id, chart);
+        element.innerHTML = svg;
+        bindFunctions?.(element);
+      } catch {
+        element.setAttribute(renderedAttribute, 'error');
+        element.textContent = chart;
+      }
+    }
+  }
+
+  void renderDiagrams();
+
+  const themeObserver = new MutationObserver(() => {
+    resetDiagrams();
+    void renderDiagrams();
+  });
+
+  themeObserver.observe(document.documentElement, {
+    attributeFilter: ['data-look', 'data-theme'],
+    attributes: true,
+  });
+</script>
+
+<style>
+  .diagram-panel {
+    margin: 28px 0;
+  }
+
+  .mermaid-diagram {
+    overflow-x: auto;
+    border: 1px solid color-mix(in srgb, var(--cyan) 34%, var(--line));
+    background:
+      linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--cyan) 8%, transparent),
+        transparent 38%
+      ),
+      var(--code-bg);
+    box-shadow: 0 0 0 1px rgba(105, 230, 255, 0.04);
+    color: var(--code-ink);
+    padding: 18px;
+  }
+
+  .mermaid-diagram[aria-busy='true'] {
+    min-height: 180px;
+  }
+
+  .mermaid-diagram :global(svg) {
+    display: block;
+    height: auto;
+    margin: 0 auto;
+    max-width: 100%;
+  }
+
+  .mermaid-diagram[data-rendered='error'] {
+    white-space: pre;
+  }
+</style>
