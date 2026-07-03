@@ -7,7 +7,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
 <BaseLayout
   title="Memory and learning · neondeck"
-  description="How Neondeck stores durable memory, curates current guidance, and keeps active sessions stable."
+  description="What Neon remembers, how it learns from conversations and PR work, and how you review and control every change."
 >
   <div class="site-shell">
     <SiteNav />
@@ -16,68 +16,150 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       <article class="docs-prose">
         <h1>Memory and learning</h1>
         <p>
-          Neondeck memory is a small current working set of durable guidance. It
-          is not a transcript archive and it is not an evidence graph. Chat
-          history, watch state, workflow summaries, and repo facts stay in their
-          own stores; memory keeps the guidance Neon should carry into future
-          sessions. For a diagrammed implementation view, read
+          Memory is Neon's small working set of durable guidance — the lessons
+          it should carry into future sessions. It is not a transcript archive
+          or an evidence graph; chat history, watch state, and workflow results
+          live in their own stores. Learning is the audited loop that turns
+          finished work into memory updates and skill improvements, at a level
+          of autonomy you choose. For diagrams and internals, see
           <a href="/docs/memory-architecture/">Memory architecture</a>.
         </p>
 
-        <h2>Scopes</h2>
-        <p>New memory writes use three active learning scopes.</p>
+        <h2>What Neon remembers</h2>
+        <p>New memory uses three scopes:</p>
         <ul>
-          <li><code>user</code>: durable user preferences and expectations.</li>
           <li>
-            <code>local</code>: machine, tool, provider, CLI, and workflow facts
-            that are not tied to one repository.
+            <code>user</code> — your preferences and expectations. <em
+              >"Prefers squash merges; keep summaries terse."</em
+            >
           </li>
           <li>
-            <code>project</code>: repo, product, team, verification, and deploy
-            conventions.
+            <code>local</code> — machine and tool facts not tied to one repo.
+            <em>"fnm manages Node; gh is authenticated as X."</em>
+          </li>
+          <li>
+            <code>project</code> — repo and team conventions.
+            <em>"Run npm run verify before pushing to api-service."</em>
           </li>
         </ul>
         <p>
-          Older <code>session</code> and <code>watch</code> memories may still be
-          readable for compatibility, but new learning writes do not create them.
-          Session state belongs in Flue transcripts plus Neondeck session summaries.
-          Watch state belongs in watch tables, watermarks, notifications, and workflow
-          summaries.
+          Rows are <code>active</code> (loaded into new session prompts) or
+          <code>archived</code> (kept for history, no longer shaping prompts). Neon
+          rewrites, merges, and archives instead of deleting, so the audit trail can
+          always explain what changed. Legacy
+          <code>session</code>/<code>watch</code> rows remain readable but are never
+          written anymore.
         </p>
 
-        <h2>Active and archived</h2>
+        <h2>How memory changes</h2>
         <p>
-          Memory rows have <code>active</code> or <code>archived</code> status. Active
-          rows can load into new session prompt snapshots. Archived rows stay available
-          for history and audit, but they do not shape new prompts.
-        </p>
-        <p>
-          Rewrites and merges replace old guidance with clearer current
-          guidance. Archiving is preferred over physical deletion so the audit
-          trail can explain what changed.
-        </p>
-
-        <h2>Actions</h2>
-        <p>
-          Neon changes memory through typed Valibot-backed actions:
-          <code>neondeck_memory_learn</code>,
-          <code>neondeck_memory_rewrite</code>,
-          <code>neondeck_memory_merge</code>,
-          <code>neondeck_memory_archive</code>,
-          <code>neondeck_memory_candidate_*</code>, and
-          <code>neondeck_memory_curate</code>. These actions write audit events
-          with before and after snapshots.
+          Every write goes through typed, validated actions —
+          <code>neondeck_memory_learn</code>, <code>_rewrite</code>,
+          <code>_merge</code>, <code>_archive</code>, and the candidate decision
+          actions — each recording a before/after audit event. There is no path
+          where the model edits memory state directly, and secret-like or
+          prompt-injection-like values are rejected before they can become
+          prompt-loadable.
         </p>
 
-        <h2>Curation</h2>
+        <h2>How Neon learns</h2>
         <p>
-          Memory curation keeps the active working set bounded. Model-backed
-          curation runs as a finite Flue workflow using the self-improvement
-          model role. Configure it in runtime-home <code>config.json</code>.
+          Three bounded review loops run as finite Flue workflows using the
+          self-improvement model role. Each prepares a compact evidence snapshot
+          (summaries and metadata — never raw transcripts, diffs, or logs) and
+          gets back structured proposals, which Neondeck validates and applies
+          only through the memory actions above.
+        </p>
+        <ul>
+          <li>
+            <strong>Conversation reflection</strong> — every
+            <code>conversationReviewTurnInterval</code> user turns (default 10), reviews
+            the active session for durable lessons.
+          </li>
+          <li>
+            <strong>PR retrospectives</strong> — after
+            <code>prRetrospectiveThreshold</code> handled PR/autopilot outcomes (default
+            5), reviews the batch for repeated operational lessons. Outcomes are recorded
+            with idempotent source ids, so re-observing the same PR never inflates
+            the signal.
+          </li>
+          <li>
+            <strong>Curation</strong> — periodically prunes the active set toward
+            <code>memoryMaxActiveItems</code> with rewrites, merges, and archives.
+          </li>
+        </ul>
+
+        <h2>Write modes</h2>
+        <p>You pick the autonomy level per write path:</p>
+        <ul>
+          <li><code>off</code> — reviews may run, nothing is written.</li>
+          <li>
+            <code>review</code> — proposals queue as candidates for your approval.
+            This is the default posture.
+          </li>
+          <li>
+            <code>auto</code> — the workflow applies allowed changes itself, still
+            through typed actions, still audited.
+          </li>
+        </ul>
+        <p>
+          Skill patches have a separate, more conservative mode (<code
+            >skillWriteMode</code
+          >): automatic application is append-only, and whole-file skill
+          rewrites always require review.
+        </p>
+
+        <h2>Skill patches</h2>
+        <p>
+          When a lesson is procedural — verification order, a recurring
+          autopilot pitfall — learning can propose a patch to the built-in
+          <code>neondeck</code> skill or your skills under
+          <code>NEONDECK_HOME/skills</code> (never third-party or external skills).
+          Patches preserve frontmatter and store before/after content, hashes, and
+          a unified diff. An applied patch can later be restored from audit, but only
+          with explicit confirmation and only while the skill file still matches the
+          applied content — otherwise Neondeck refuses and leaves the diff for manual
+          review.
+        </p>
+
+        <h2>Reviewing what Neon learned</h2>
+        <p>
+          The <strong>Learning</strong> dashboard panel shows review runs, pending
+          memory and skill candidates, recent decisions, and manual trigger buttons.
+          The same state is available everywhere:
+        </p>
+        <pre><code>neondeck learning status | reviews | candidates | events
+GET  /api/learning/state          # consolidated operator view
+POST /api/learning/reviews/conversation
+POST /api/learning/reviews/prs
+POST /api/learning/curate
+POST /api/learning/candidates/:id/approve | reject
+POST /api/skills/patches/:id/apply | reject | restore</code></pre>
+        <p>
+          Neon itself reads the same state through
+          <code>neondeck_learning_operator_state_lookup</code>, so you can just
+          ask it what it learned lately.
+        </p>
+
+        <h2>Session stability</h2>
+        <p>
+          Memory writes are durable immediately, but a live chat session is
+          never silently rewritten. Changes mark affected sessions stale; the
+          new guidance loads when you start a new session (or explicitly
+          refresh). If Neon seems unaware of something it just learned, that is
+          why.
+        </p>
+
+        <h2>Configuration</h2>
+        <p>
+          Everything lives under <code>learning</code> in runtime-home <code
+            >config.json</code
+          >:
         </p>
         <pre><code>&#123;
   "learning": &#123;
     "conversationReviewTurnInterval": 10,
+    "memoryWriteMode": "review",
     "memoryCurationEnabled": true,
     "memoryCurationMode": "review",
     "memoryCurationTurnInterval": 200,
@@ -88,162 +170,10 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   &#125;
 &#125;</code></pre>
         <p>
-          <code>off</code> disables automatic curation. <code>review</code>
-          creates candidates for approval. <code>auto</code> lets the bounded learning
-          workflow apply audited memory actions directly. Manual curation can be queued
-          with <code>POST /api/learning/curate</code>.
-        </p>
-
-        <h2>Conversation reflection</h2>
-        <p>
-          After every configured
-          <code>learning.conversationReviewTurnInterval</code> user turns, default
-          <code>10</code>, Neondeck queues a bounded
-          <code>review_conversation_for_learning</code> workflow for the active display-assistant
-          session. The workflow reviews compact session metadata, stored summaries,
-          stale-context markers, loaded memory ids, and current memory summaries.
-          Raw Flue transcript pages are not copied into app state.
-        </p>
-        <p>
-          Reflection can propose durable memory writes, rewrites, merges, or
-          archives. When <code>learning.memoryWriteMode</code> is <code
-            >review</code
-          >, those changes become <code>learning_candidates</code> for approval. When
-          it is
-          <code>auto</code>, the workflow applies changes only through
-          <code>neondeck_memory_learn</code>, <code
-            >neondeck_memory_rewrite</code
-          >,
-          <code>neondeck_memory_merge</code>, and
-          <code>neondeck_memory_archive</code>. When it is <code>off</code>,
-          reviews may record a summary but do not write or propose memory.
-        </p>
-        <p>
-          Manual reflection can be queued with
-          <code>POST /api/learning/reviews/conversation</code>. The route
-          returns a Flue run id; review records and candidate decisions are
-          inspected through the learning APIs and guarded Flue run inspection.
-        </p>
-
-        <h2>PR and autopilot retrospectives</h2>
-        <p>
-          Neondeck records handled PR/autopilot outcomes as durable
-          <code>pr_handled</code> learning events with idempotent source ids. V1 accounting
-          covers Flue workflow observations and direct local API action routes for
-          autopilot preparation/fixes, prepared-diff verification and push, result
-          comments, recovery actions, and Kilo review/verify/promote decisions. Repeated
-          observation of the same PR outcome is ignored. When the count since the
-          previous PR retrospective reaches
-          <code>learning.prRetrospectiveThreshold</code>, default <code>5</code
-          >, Neondeck can queue <code>review_pr_batch_for_learning</code>.
-        </p>
-        <p>
-          The retrospective reviews compact summaries only: handled-event rows,
-          workflow summaries, prepared-diff summaries, verification results,
-          review feedback summaries, notification and recovery outcomes, Kilo
-          result summaries, final PR outcomes when available, current memories,
-          and relevant skill snippets. It does not copy raw transcripts, raw
-          diffs, raw logs, or secrets into learning review input.
-        </p>
-        <p>
-          Manual review can be queued with
-          <code>POST /api/learning/reviews/prs</code>. Review output can create
-          <code>project</code> or <code>local</code> memory changes through the existing
-          memory actions and can also create skill patch candidates when a repeated
-          operational lesson should change future procedure. The PR retrospective
-          v1 can propose patches for the built-in <code>neondeck</code> skill and
-          runtime-home user skills; bundled third-party and external skills remain
-          review-only/manual.
-        </p>
-
-        <h2>Operator surfaces</h2>
-        <p>
-          The dashboard includes a <strong>Learning</strong> operator panel. It shows
-          review status, failed reviews, pending memory and skill candidates, recent
-          memory decisions, learning events, and manual buttons for conversation and
-          PR retrospective reviews.
-        </p>
-        <p>
-          The consolidated API is <code>GET /api/learning/state</code>. It
-          returns learning policy, review counts, recent reviews, memory
-          candidates, skill patch candidates, memory audit events, and learning
-          audit events. The same read model is available to Neon through
-          <code>neondeck_learning_operator_state_lookup</code> and to operators through
-          CLI commands such as <code>neondeck learning status</code>,
-          <code>neondeck learning reviews</code>, <code
-            >neondeck learning candidates</code
-          >, and <code>neondeck learning events</code>.
-        </p>
-
-        <h2>Skill patch candidates</h2>
-        <p>
-          Skill patches are for procedural guidance, such as verification order,
-          review-thread lookup rules, or autopilot pitfalls. They are limited to
-          the built-in <code>neondeck</code> runtime skill and user skills under
-          <code>NEONDECK_HOME/skills</code>. Third-party bundled or external
-          skills are not patched by this first implementation.
-        </p>
-        <p>
-          Patch candidates preserve YAML frontmatter and store before and after
-          content hashes, full before/after text, and a unified diff in
-          <code>learning_candidates.patch_json</code>. Applying a patch writes
-          <code>config_history</code> so existing sessions can show stale skill context.
-          Automatic workflow application is append-only; whole-file skill replacements
-          require review.
-        </p>
-        <p>
-          Inspect patch candidates with <code>GET /api/skills/patches</code> or
-          <code>GET /api/learning/candidates</code>. Apply or reject them with
-          <code>POST /api/skills/patches/:id/apply</code>,
-          <code>POST /api/skills/patches/:id/reject</code>,
-          <code>POST /api/learning/candidates/:id/approve</code>, or
-          <code>POST /api/learning/candidates/:id/reject</code>.
-        </p>
-        <p>
-          Applied skill patches can be restored from audit with
-          <code>POST /api/skills/patches/:id/restore</code> or
-          <code>neondeck learning restore-skill-patch &lt;id&gt;</code>. Restore
-          requires explicit confirmation and only writes when the current skill
-          file still matches the applied patch content. If the file has changed
-          since application, Neondeck refuses the restore and the retained
-          diff/before content should be used for manual review or a fresh patch.
-        </p>
-
-        <h2>Audit history</h2>
-        <p>
-          <code>data/neondeck.db</code> stores <code>memories</code>,
-          <code>memory_events</code>, <code>learning_events</code>,
-          <code>learning_reviews</code>, and <code>learning_candidates</code>.
-          Suspicious or secret-like writes are rejected and audited without
-          becoming active prompt-loadable memory.
-        </p>
-        <p>
-          Use <code>GET /api/learning/reviews</code> to inspect review records, compact
-          input summaries, model and thinking level used, result summaries, and failures.
-          Use <code>GET /api/learning/candidates</code> to inspect review-mode memory
-          and skill proposals, then approve or reject individual candidates.
-          <code>GET /api/learning/state</code> is the preferred high-level operator
-          view because it combines review, candidate, memory-event, and learning-event
-          history in one bounded response.
-        </p>
-
-        <h2>Session stability</h2>
-        <p>
-          Memory writes take effect in durable state immediately, but active
-          display-assistant sessions are not silently rewritten. New or changed
-          memory marks relevant sessions stale. Start a new session, or use a
-          future explicit context-refresh flow, to load the new prompt snapshot.
-        </p>
-
-        <h2>Model role</h2>
-        <p>
-          <code>models.selfImprovement</code> and
-          <code>models.selfImprovementThinkingLevel</code> select the model role for
-          bounded conversation reflection, memory curation, and PR retrospective workflows.
-          If omitted, Neondeck falls back through
-          <code>FLUE_SELF_IMPROVEMENT_MODEL</code>, the utility model,
-          <code>FLUE_UTILITY_MODEL</code>, the display assistant model,
-          <code>FLUE_AGENT_MODEL</code>, and then the built-in default.
+          The reviewer model is <code>models.selfImprovement</code> (with
+          <code>models.selfImprovementThinkingLevel</code>), falling back
+          through <code>FLUE_SELF_IMPROVEMENT_MODEL</code>, the utility model,
+          and the display assistant model.
         </p>
       </article>
     </main>
