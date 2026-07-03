@@ -8,20 +8,21 @@ const { chart, label } = Astro.props;
 ---
 
 <figure class="diagram-panel">
-  <div class="mermaid-diagram" data-chart={chart} role="img" aria-label={label}>
+  <div
+    class="mermaid-diagram"
+    data-chart={chart}
+    role="img"
+    aria-label={label}
+    aria-busy="true"
+  >
     {chart}
   </div>
 </figure>
 
 <script>
-  const renderedAttribute = 'data-rendered';
-  let mermaidImport;
+  import mermaid from 'mermaid';
 
-  async function loadMermaid() {
-    mermaidImport ??= import('mermaid');
-    const module = await mermaidImport;
-    return module.default;
-  }
+  const renderedAttribute = 'data-rendered';
 
   function readThemeVariables() {
     const styles = getComputedStyle(document.documentElement);
@@ -53,6 +54,7 @@ const { chart, label } = Astro.props;
       '.mermaid-diagram[data-chart]',
     )) {
       element.removeAttribute(renderedAttribute);
+      element.setAttribute('aria-busy', 'true');
       element.textContent = element.dataset.chart ?? '';
     }
   }
@@ -63,7 +65,6 @@ const { chart, label } = Astro.props;
     );
     if (diagrams.length === 0) return;
 
-    const mermaid = await loadMermaid();
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: 'strict',
@@ -80,9 +81,11 @@ const { chart, label } = Astro.props;
         const id = `neondeck-mermaid-${crypto.randomUUID()}`;
         const { svg, bindFunctions } = await mermaid.render(id, chart);
         element.innerHTML = svg;
+        element.setAttribute('aria-busy', 'false');
         bindFunctions?.(element);
       } catch {
         element.setAttribute(renderedAttribute, 'error');
+        element.setAttribute('aria-busy', 'false');
         element.textContent = chart;
       }
     }
@@ -126,7 +129,8 @@ const { chart, label } = Astro.props;
   }
 
   .mermaid-diagram[aria-busy='true'] {
-    min-height: 180px;
+    min-height: clamp(260px, 52vw, 480px);
+    color: transparent;
   }
 
   .mermaid-diagram :global(svg) {
