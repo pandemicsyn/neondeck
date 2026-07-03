@@ -30,4 +30,4 @@ Avoid generic SaaS landing-page clichés: the hero-metric template (big number +
 
 ## Accessibility & Inclusion
 
-Target WCAG AA contrast across all three "looks" (camo, deck, light) and both themes. Keep the warped-stripe hero decorative and behind a vignette so it never reduces text contrast. Support keyboard navigation and visible focus, honor `prefers-reduced-motion` (the drifting hero stripes and smooth scroll must settle), and keep the copy-command and look-toggle controls fully operable and labeled.
+Target WCAG AA contrast across the dark/camo and light themes. Keep the warped-stripe hero decorative and behind a vignette so it never reduces text contrast. Support keyboard navigation and visible focus, honor `prefers-reduced-motion` (the drifting hero stripes and smooth scroll must settle), and keep the copy-command and theme-toggle controls fully operable and labeled.

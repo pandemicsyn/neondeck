@@ -52,7 +52,7 @@
             3 of your 4 open PRs are green. <span>neondeck/core #312</span> has 1
             failing check. <b>flue/harness #1284</b> has 2 reviewers waiting on you.
           </div>
-          <div class="bubble user small">yes, re-run it</div>
+          <div class="bubble user small">fix it</div>
         </div>
         <div class="composer">
           <span>›</span><em>Message neondeck...</em><small
@@ -310,5 +310,86 @@
 
   .composer small {
     color: rgba(215, 247, 255, 0.35);
+  }
+
+  :global(:root[data-theme='light']) .deck-frame {
+    border-color: rgba(18, 40, 55, 0.18);
+    background: #d8eaf0;
+  }
+
+  :global(:root[data-theme='light']) .deck-screen {
+    background: #eef7fa;
+  }
+
+  :global(:root[data-theme='light']) .statusline,
+  :global(:root[data-theme='light']) .composer {
+    border-color: rgba(18, 40, 55, 0.13);
+    background: #d9ecf2;
+    color: var(--cyan);
+  }
+
+  :global(:root[data-theme='light']) .brand-segment {
+    background: rgba(224, 57, 155, 0.11);
+  }
+
+  :global(:root[data-theme='light']) .brand-segment em,
+  :global(:root[data-theme='light']) .clock,
+  :global(:root[data-theme='light']) .github-panel header span:last-child,
+  :global(:root[data-theme='light']) .chat-panel header span:last-child,
+  :global(:root[data-theme='light']) .pr-row p,
+  :global(:root[data-theme='light']) .pr-row small,
+  :global(:root[data-theme='light']) .tool-chip span,
+  :global(:root[data-theme='light']) .composer em,
+  :global(:root[data-theme='light']) .composer small {
+    color: rgba(19, 23, 30, 0.58);
+  }
+
+  :global(:root[data-theme='light']) .divider {
+    color: rgba(18, 40, 55, 0.18);
+  }
+
+  :global(:root[data-theme='light']) .github-panel,
+  :global(:root[data-theme='light']) .chat-panel {
+    border-color: rgba(18, 40, 55, 0.13);
+    background: linear-gradient(
+      180deg,
+      rgba(224, 57, 155, 0.08),
+      transparent 42%
+    );
+  }
+
+  :global(:root[data-theme='light']) .chat-panel {
+    background: linear-gradient(
+      180deg,
+      rgba(0, 147, 168, 0.08),
+      transparent 38%
+    );
+  }
+
+  :global(:root[data-theme='light']) .github-panel header,
+  :global(:root[data-theme='light']) .chat-panel header,
+  :global(:root[data-theme='light']) .pr-row,
+  :global(:root[data-theme='light']) .composer {
+    border-color: rgba(18, 40, 55, 0.11);
+  }
+
+  :global(:root[data-theme='light']) .pr-row strong,
+  :global(:root[data-theme='light']) .bubble {
+    color: #19232e;
+  }
+
+  :global(:root[data-theme='light']) .bubble {
+    border-color: rgba(18, 40, 55, 0.12);
+    background: rgba(255, 255, 255, 0.54);
+  }
+
+  :global(:root[data-theme='light']) .bubble.user {
+    border-color: rgba(0, 147, 168, 0.24);
+    background: rgba(0, 147, 168, 0.12);
+  }
+
+  :global(:root[data-theme='light']) .tool-chip {
+    border-color: rgba(122, 55, 230, 0.28);
+    background: rgba(122, 55, 230, 0.1);
   }
 </style>
