@@ -262,7 +262,7 @@ you land a phase.
 | 2 | `runtime-home` split ⚙ | done |
 | 3 | `server/` route split of `app.ts` | done |
 | 4 | `domains/github` | done |
-| 5 | `domains/worktrees` ⚙ | todo |
+| 5 | `domains/worktrees` ⚙ | done |
 | 6 | `domains/sessions` + `domains/config` + `domains/repos` | todo |
 | 7 | `domains/safety` + `domains/execution` | todo |
 | 8 | `domains/kilo` ⚙ | todo |
@@ -415,6 +415,12 @@ src/domains/worktrees/
 
 Verification: `worktrees.test.ts`, unit + integration suites; review lock uniqueness and cleanup
 semantics diffs carefully — this domain guards autonomy safety.
+
+Status note (2026-07-03): implemented in `src/domains/worktrees/` with top-level
+`src/worktrees.ts` preserved as a compatibility re-export shim. The split keeps lock and cleanup
+semantics intact and moves git command execution through `lib/exec`. `verify.ts` is present as a
+documented placeholder; moving `verifyPrWorktree` mechanics is deferred to Phase 9 because the
+current verifier is still coupled to autopilot workflow orchestration and prepared-diff state.
 
 ### Phase 6: `domains/sessions` + `domains/config` + `domains/repos`
 
