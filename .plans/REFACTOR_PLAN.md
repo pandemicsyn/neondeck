@@ -259,7 +259,7 @@ you land a phase.
 | --- | --- | --- |
 | 0 | Guardrails: size report script, inventory check | done |
 | 1 | `src/lib/` shared utilities | done |
-| 2 | `runtime-home` split ⚙ | todo |
+| 2 | `runtime-home` split ⚙ | done |
 | 3 | `server/` route split of `app.ts` | todo |
 | 4 | `domains/github` | todo |
 | 5 | `domains/worktrees` ⚙ | todo |
@@ -338,6 +338,11 @@ boot (`npm run dev` smoke) after this split, not just tests.
 
 Verification: `runtime-home.test.ts` (split alongside), unit suite, integration suite,
 `fresh-runtime-smoke.test.ts`.
+
+Status note (2026-07-03): implemented as `schemas.ts` instead of `schemas/` because the complete
+schema surface is 475 lines after extraction and splitting it further would add cross-schema import
+churn without reducing an oversized module. Revisit if schema-only growth pushes this file over the
+700-line review guide.
 
 ### Phase 3: Server route split
 
