@@ -1018,6 +1018,113 @@ describe('learning review orchestration', () => {
     });
   });
 
+  it('unwraps recovery delegated results and uses worktree ids for direct API source ids', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig({ prRetrospectiveThreshold: 10 }, paths);
+
+    const recovery = await recordHandledPrFromWorkflowResult(
+      {
+        workflow: 'api:autopilot_recovery',
+        result: {
+          ok: true,
+          action: 'autopilot_recovery_run',
+          changed: true,
+          message: 'Pushed through recovery.',
+          preparedDiffId: 'pd-recovery-push',
+          data: {
+            recoveryAction: 'retry-push',
+            delegatedAction: 'autopilot_push_pr_autofix',
+          },
+          result: {
+            ok: true,
+            action: 'autopilot_push_pr_autofix',
+            changed: true,
+            message: 'Pushed autofix.',
+            data: {
+              preparedDiff: {
+                id: 'pd-recovery-push',
+                repoId: 'neondeck',
+                repoFullName: 'pandemicsyn/neondeck',
+                prNumber: 95,
+                status: 'pushed',
+              },
+            },
+          },
+        },
+      },
+      paths,
+    );
+    const firstVerify = await recordHandledPrFromWorkflowResult(
+      {
+        workflow: 'api:verify_pr_worktree',
+        result: {
+          ok: true,
+          action: 'autopilot_verify_pr_worktree',
+          changed: true,
+          message: 'Verified first worktree.',
+          data: {
+            worktree: {
+              id: 'wt-verify-direct-1',
+              repoId: 'neondeck',
+              repoFullName: 'pandemicsyn/neondeck',
+              prNumber: 96,
+            },
+          },
+        },
+      },
+      paths,
+    );
+    const secondVerify = await recordHandledPrFromWorkflowResult(
+      {
+        workflow: 'api:verify_pr_worktree',
+        result: {
+          ok: true,
+          action: 'autopilot_verify_pr_worktree',
+          changed: true,
+          message: 'Verified second worktree.',
+          data: {
+            worktree: {
+              id: 'wt-verify-direct-2',
+              repoId: 'neondeck',
+              repoFullName: 'pandemicsyn/neondeck',
+              prNumber: 96,
+            },
+          },
+        },
+      },
+      paths,
+    );
+
+    expect(recovery).toMatchObject({ recorded: true, duplicate: false });
+    expect(firstVerify).toMatchObject({ recorded: true, duplicate: false });
+    expect(secondVerify).toMatchObject({ recorded: true, duplicate: false });
+
+    const state = await readLearningOperatorState({ limit: 10 }, paths);
+    if (!state.ok) throw new Error(state.message);
+    expect(state.learningEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'pr_handled',
+          sourceId: expect.stringContaining(
+            'notification-recovery-completed:pd-recovery-push:retry-push',
+          ),
+        }),
+        expect.objectContaining({
+          type: 'pr_handled',
+          sourceId: expect.stringContaining(
+            'prepared-diff-verified:wt-verify-direct-1',
+          ),
+        }),
+        expect.objectContaining({
+          type: 'pr_handled',
+          sourceId: expect.stringContaining(
+            'prepared-diff-verified:wt-verify-direct-2',
+          ),
+        }),
+      ]),
+    );
+  });
+
   it('labels blocked workflow outcomes without successful handled-event names', async () => {
     const paths = runtimePaths(await tempHome());
     await updateLearningConfig({ prRetrospectiveThreshold: 10 }, paths);

@@ -1835,10 +1835,12 @@ function extractHandledPrEvent(input: {
   if (!result) return null;
   const action = typeof result.action === 'string' ? result.action : null;
   const data = objectRecord(result.data) ?? {};
+  const recoveryAction = firstString(data.recoveryAction);
   const nestedResult =
     objectRecord(data.verification) ??
     objectRecord(data.promotion) ??
-    objectRecord(data.result);
+    objectRecord(data.result) ??
+    objectRecord(result.result);
   const nestedData = objectRecord(nestedResult?.data) ?? {};
   const task = objectRecord(result.task) ?? objectRecord(data.task);
   const resultState =
@@ -1892,6 +1894,13 @@ function extractHandledPrEvent(input: {
     nestedData.preparedDiffId,
     preparedDiff?.id,
   );
+  const worktreeId = firstString(
+    result.worktreeId,
+    data.worktreeId,
+    nestedResult?.worktreeId,
+    nestedData.worktreeId,
+    worktree?.id,
+  );
   const taskId = firstString(
     result.taskId,
     data.taskId,
@@ -1919,6 +1928,12 @@ function extractHandledPrEvent(input: {
     nestedData.requires,
   );
   if (action === 'prepared_diff_run_verification') return null;
+  if (
+    action === 'autopilot_recovery_run' &&
+    !countedRecoveryAction(recoveryAction)
+  ) {
+    return null;
+  }
   if (isAutopilotFixOutcome(action, input.workflow) && resultOk !== false) {
     if (!preparedDiff && changed !== true) return null;
   }
@@ -1930,11 +1945,17 @@ function extractHandledPrEvent(input: {
   );
   if (!eventType) return null;
   const stableSource =
-    preparedDiffId ??
-    taskId ??
-    firstString(result.id, data.id) ??
-    input.runId ??
-    'unknown';
+    [
+      preparedDiffId ??
+        taskId ??
+        worktreeId ??
+        firstString(result.id, data.id) ??
+        input.runId ??
+        'unknown',
+      recoveryAction,
+    ]
+      .filter(Boolean)
+      .join(':') || 'unknown';
   const sourceId = `${repoFullName ?? repoId}#${prNumber}:${eventType}:${stableSource}`;
   return {
     eventType,
@@ -1949,13 +1970,28 @@ function extractHandledPrEvent(input: {
       workflow: input.workflow ?? null,
       runId: input.runId ?? null,
       preparedDiffId: preparedDiffId ?? null,
+      worktreeId: worktreeId ?? null,
       taskId: taskId ?? null,
       ok: resultOk,
       changed,
       blocked,
+      recoveryAction: recoveryAction ?? null,
       status: firstString(result.status, data.status, preparedDiff?.status),
     }),
   };
+}
+
+function countedRecoveryAction(value: string | null | undefined) {
+  return (
+    value === 'retry-after-new-commit' ||
+    value === 'rebase-resync-worktree' ||
+    value === 'retry-verify' ||
+    value === 'retry-push' ||
+    value === 'retry-comment' ||
+    value === 'request-revision' ||
+    value === 'cleanup-worktree' ||
+    value === 'abandon'
+  );
 }
 
 function isAutopilotFixOutcome(
