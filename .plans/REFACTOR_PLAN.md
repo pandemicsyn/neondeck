@@ -263,7 +263,7 @@ you land a phase.
 | 3 | `server/` route split of `app.ts` | done |
 | 4 | `domains/github` | done |
 | 5 | `domains/worktrees` ⚙ | done |
-| 6 | `domains/sessions` + `domains/config` + `domains/repos` | todo |
+| 6 | `domains/sessions` + `domains/config` + `domains/repos` | done |
 | 7 | `domains/safety` + `domains/execution` | todo |
 | 8 | `domains/kilo` ⚙ | todo |
 | 9 | `domains/autopilot` ⚙ | todo |
@@ -450,6 +450,11 @@ These three can be three commits in one PR or three PRs — implementer's choice
 
 Verification: `session-actions.test.ts`, `config-actions.test.ts`, `providers.test.ts`,
 `repos.test.ts`; unit suite.
+
+Status note (2026-07-03): implemented in `src/domains/repos/`, `src/domains/config/`, and
+`src/domains/sessions/` with top-level compatibility shims preserving the old public export
+surfaces. Repos, config, and sessions were reviewed as separate slices and landed as separate
+commits in this PR.
 
 ### Phase 7: `domains/safety` + `domains/execution`
 
