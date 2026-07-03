@@ -1,0 +1,187 @@
+---
+import DocsNav from '../../components/DocsNav.astro';
+import MermaidDiagram from '../../components/MermaidDiagram.astro';
+import SiteFooter from '../../components/SiteFooter.astro';
+import SiteNav from '../../components/SiteNav.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+
+const layersDiagram = `flowchart TB
+  subgraph Brain["Host: Neon's brain"]
+    Agent["display assistant<br/>(virtual Flue sandbox)"]
+    Actions["typed actions and tools"]
+    Policy["execution policy<br/>allow / ask / deny"]
+    Approvals["approvals + audit"]
+    State["config + SQLite + GitHub API"]
+  end
+
+  subgraph Work["Workspaces"]
+    LocalExec["local backend<br/>host shell"]
+    ExeDev["exe.dev backend<br/>VM over SSH"]
+    Repos["declared repos<br/>+ managed worktrees"]
+  end
+
+  Agent --> Actions
+  Actions --> Policy
+  Policy --> Approvals
+  Approvals --> LocalExec
+  Approvals --> ExeDev
+  Actions --> Repos
+  Actions --> State`;
+---
+
+<BaseLayout
+  title="Execution environments · neondeck"
+  description="Where Neon's work actually runs: the virtual Flue sandbox, policy-gated host execution, exe.dev VMs, and the planned remote workspace mode."
+>
+  <div class="site-shell">
+    <SiteNav />
+    <main class="container docs-layout">
+      <DocsNav />
+      <article class="docs-prose">
+        <h1>Execution environments</h1>
+        <p>
+          Neon separates its <strong>brain</strong> from its
+          <strong>workspace</strong>. The brain — config, app state, GitHub
+          facts, sessions, schedules — always runs on the host inside the
+          Neondeck server. The workspace — checkouts, file edits, and shell
+          commands — is governed: the model never holds a raw shell, and every
+          command runs through a policy gate you can inspect and audit.
+        </p>
+        <MermaidDiagram
+          chart={layersDiagram}
+          label="Execution layers: agent to typed actions to policy gate to local or exe.dev backends"
+        />
+
+        <h2>Flue sandbox patterns, and which ones Neondeck uses</h2>
+        <p>
+          Flue offers three sandbox patterns for an agent's built-in file and
+          shell tools. Neondeck takes a deliberate position on each:
+        </p>
+        <ul>
+          <li>
+            <strong>Virtual (used, the default).</strong> Neon's chat agent works
+            in Flue's in-memory <code>/workspace</code>. It is scratch space
+            only — no host files, nothing persists.
+          </li>
+          <li>
+            <strong>Local (deliberately unused).</strong> Flue's
+            <code>local()</code> sandbox would give the model direct host filesystem
+            and shell access, bypassing every Neondeck policy gate. No Neondeck agent
+            uses it, and none should.
+          </li>
+          <li>
+            <strong>Remote / exe.dev (planned).</strong> The planned workspace mode
+            relocates the whole workspace — including the agent's Flue sandbox — to
+            an exe.dev VM. See below.
+          </li>
+        </ul>
+        <p>
+          Instead of a shell, the agent gets <em>mediated</em> access to everything
+          through typed actions: repo files through repo-edit, commands through execution
+          actions, isolated changes through managed worktrees, config through config
+          actions. Access is broad; it is never direct.
+        </p>
+
+        <h2>The execution policy gate</h2>
+        <p>
+          Every host or VM command flows through
+          <code>neondeck_execution_run</code> and is checked against the config-backed
+          execution policy first:
+        </p>
+        <ul>
+          <li>
+            <strong>allow</strong>: the command matches a preapproved entry in
+            <code>execution.preapprovedCommands</code> and runs immediately. Preapproved
+            commands are single commands without shell operators; hardline destructive
+            commands cannot be preapproved.
+          </li>
+          <li>
+            <strong>ask</strong>: anything else needs an approval, resolved by
+            you in the dashboard, API, or CLI — never by the model. Unattended
+            contexts (scheduler, autopilot) deny instead of asking.
+          </li>
+          <li><strong>deny</strong>: refused with a typed reason.</li>
+        </ul>
+        <p>
+          Every run — allowed, approved, or failed — records an approval row
+          with exit code, output previews, and backend metadata, visible in the
+          Runtime Overview panel.
+        </p>
+
+        <h2>Backends</h2>
+        <p>
+          <code>execution.defaultBackend</code> and
+          <code>execution.enabledBackends</code> select where approved commands execute:
+        </p>
+        <ul>
+          <li>
+            <strong><code>local</code></strong>: the host machine, in the
+            server's environment.
+          </li>
+          <li>
+            <strong><code>exe.dev</code></strong>: an existing exe.dev VM you
+            own, reached over SSH. Configure it with
+            <code>execution.exeDev</code> (<code>vmHostEnv</code>, default
+            <code>EXE_VM_HOST</code>; <code>sshKeyEnv</code>, default
+            <code>EXE_SSH_KEY</code>; falls back to <code>SSH_AUTH_SOCK</code>).
+            Neondeck adapts the VM through Flue's exe.dev sandbox adapter but
+            never creates or deletes VMs on your behalf.
+          </li>
+        </ul>
+        <p>
+          Repo-scoped exe.dev work uses
+          <code>neondeck_exedev_checkout_sync</code> to clone or sync a declared repo
+          (or a managed worktree) onto the VM under
+          <code>execution.exeDev.remoteRoot</code>, with every git step running
+          through the same policy gate. Environment forwarding to the VM is
+          opt-in per scope (<code>execution.exeDev.env</code>), sourced from
+          repo env files, config vars, or named host variables, and each
+          forwarded source is recorded in the execution audit.
+        </p>
+
+        <h2>Repo boundaries and worktrees</h2>
+        <p>
+          File reads and edits use the repo-edit actions, which operate only
+          inside declared Neondeck repo workspaces: path containment, symlink
+          escape checks, and sensitive-path rules return typed policy errors
+          instead of prompting. Autonomous change flows (autopilot, Kilo
+          results) never mutate your primary checkout — they work in managed
+          worktrees, and results re-enter through prepared diffs, verification
+          through the policy gate, and push gates.
+        </p>
+
+        <h2>Planned: exe.dev workspace mode</h2>
+        <p>
+          <em>Status: planned, not yet implemented.</em> A single config switch will
+          relocate the entire workspace to your exe.dev VM:
+        </p>
+        <pre><code>&#123;
+  "workspace": &#123; "mode": "exe.dev" &#125;
+&#125;</code></pre>
+        <p>
+          With the mode on, repo checkouts, managed worktrees, repo-edit file
+          operations, verification commands, and the agent's own Flue sandbox
+          all live on the VM; GitHub facts, config, sessions, and schedules stay
+          on the host. The trust model is unchanged — the policy gate controls <em
+            >what</em
+          > runs, not <em>where</em> — and there is no silent fallback: if the VM
+          is unreachable, workspace operations fail with typed errors and runtime
+          status says why. The design is documented in
+          <a
+            href="https://github.com/pandemicsyn/neondeck/blob/main/.plans/EXEDEV_WORKSPACE_MODE_PLAN.md"
+            >the workspace mode plan</a
+          >.
+        </p>
+
+        <h2>Related</h2>
+        <p>
+          See <a href="/docs/security/">Security</a> for secrets, tokens, and local
+          API trust boundaries, and
+          <a href="/docs/agent-runtime/">Agent runtime</a> for how actions and workflows
+          fit together.
+        </p>
+      </article>
+    </main>
+    <SiteFooter />
+  </div>
+</BaseLayout>

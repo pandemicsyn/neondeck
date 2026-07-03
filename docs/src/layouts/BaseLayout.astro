@@ -65,23 +65,28 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
       const root = document.documentElement;
       const urlLook = new URLSearchParams(window.location.search).get('look');
       const storedLook = window.localStorage.getItem('neondeck-look');
+
+      function normalizeLook(look) {
+        return look === 'light' ? 'light' : 'camo';
+      }
+
       const initialLook =
-        urlLook === 'deck' || urlLook === 'light' || urlLook === 'camo'
-          ? urlLook
-          : storedLook === 'deck' ||
-              storedLook === 'light' ||
-              storedLook === 'camo'
-            ? storedLook
-            : 'camo';
+        urlLook === 'light' ||
+        urlLook === 'dark' ||
+        urlLook === 'camo' ||
+        urlLook === 'deck'
+          ? normalizeLook(urlLook)
+          : normalizeLook(storedLook);
 
       function setLook(look) {
-        root.dataset.look = look;
-        root.dataset.theme = look === 'light' ? 'light' : 'dark';
-        window.localStorage.setItem('neondeck-look', look);
+        const normalizedLook = normalizeLook(look);
+        root.dataset.look = normalizedLook;
+        root.dataset.theme = normalizedLook === 'light' ? 'light' : 'dark';
+        window.localStorage.setItem('neondeck-look', normalizedLook);
         document.querySelectorAll('[data-look-button]').forEach((button) => {
           button.setAttribute(
             'aria-pressed',
-            button.dataset.lookButton === look ? 'true' : 'false',
+            button.dataset.lookButton === normalizedLook ? 'true' : 'false',
           );
         });
       }
@@ -810,13 +815,14 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   .feature-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr));
-    gap: 1px;
+    gap: 0;
     border: 1px solid var(--line);
-    background: var(--line);
   }
 
   .feature {
     min-height: 210px;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
     background: var(--card);
     padding: 26px 24px;
   }

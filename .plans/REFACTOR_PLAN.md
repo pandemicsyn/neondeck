@@ -36,7 +36,9 @@ with `npm run check` green and the relevant integration suites passing.
   same composability without build-tooling churn. Revisit only if a piece needs independent
   publishing (none does today).
 - No dependency-injection container, no base classes, no generic repository/ORM. SQL stays explicit
-  in domain stores; services stay plain functions.
+  in domain stores; services stay plain functions. (Drizzle is adopted for schema definition and
+  migrations only, per `.plans/DB_MIGRATIONS_PLAN.md` — its query builder is not adopted in
+  stores.)
 - No replacement of Flue primitives. Flue actions/workflows/agents remain the orchestration layer;
   Neondeck's app DB stores product state only, Flue's DB stores Flue runtime state.
 - No trust-posture or approval-friction changes. `safety.ts` policy semantics are preserved
@@ -331,6 +333,11 @@ src/runtime-home/
     migrations.ts
     reconcile.ts
 ```
+
+Note: `.plans/DB_MIGRATIONS_PLAN.md` supersedes the hand-rolled `schema.ts`/`migrations.ts` split
+above with Drizzle schema + generated migrations. If that plan lands first, this phase moves the
+Drizzle `db/` module and `reconcile.ts` instead; if this phase lands first, the migrations plan
+replaces the two files it created. Coordinate via the status tables.
 
 `src/runtime-home.ts` becomes `export * from './runtime-home/index'`. Note `src/db.ts` (the Flue
 persistence adapter) calls `runtimePaths`/`ensureRuntimeHomeSync` at module load — verify server

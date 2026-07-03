@@ -90,7 +90,7 @@ const storeDiagram = `flowchart TB
 
 <BaseLayout
   title="Memory architecture · neondeck"
-  description="A technical guide to Neondeck memory, learning reviews, audit state, and the feedback loop that improves future sessions."
+  description="The internals of Neondeck memory and learning: system map, feedback loop, storage layout, and safety properties."
 >
   <div class="site-shell">
     <SiteNav />
@@ -99,45 +99,42 @@ const storeDiagram = `flowchart TB
       <article class="docs-prose memory-architecture">
         <h1>Memory architecture</h1>
         <p>
-          Neondeck memory is deliberately small: it stores current guidance that
-          should affect future sessions. It is not the transcript store, not the
-          PR database, and not a generic knowledge graph. Those systems keep
-          evidence. Memory keeps the distilled behavior Neon should carry
-          forward.
+          This page is the implementation view of memory and learning: how
+          evidence flows into reviews, how reviews become durable state, and
+          where everything is stored. For scopes, write modes, and day-to-day
+          operation, start with
+          <a href="/docs/memory-learning/">Memory and learning</a>.
         </p>
 
-        <h2>Design review</h2>
-        <p>
-          The implementation follows three boundaries that are worth preserving.
-          First, every write goes through typed Valibot-validated actions such
-          as
-          <code>neondeck_memory_learn</code>, <code
-            >neondeck_memory_rewrite</code
-          >,
-          <code>neondeck_memory_merge</code>, <code
-            >neondeck_memory_archive</code
-          >, and the candidate decision actions. Second, model-backed learning
-          runs as finite Flue workflows that prepare bounded evidence snapshots
-          before calling the self-improvement model. Third, active sessions do
-          not silently inherit new guidance. Config and skill changes are
-          recorded as stale context, and memory events mark a session stale when
-          they affect memory ids that were loaded into that session. New memory
-          guidance loads on the next prompt snapshot or explicit refresh.
-        </p>
-        <p>
-          That shape keeps the system close to the Hermes-style learning loop
-          without turning memory into a vague dump of recent context. The model
-          can suggest durable lessons, but SQLite state changes remain
-          deterministic, auditable, and narrow.
-        </p>
+        <h2>Boundaries</h2>
+        <p>Three rules shape the whole design:</p>
+        <ul>
+          <li>
+            <strong>Every write is a typed action.</strong> Memory state changes only
+            through Valibot-validated actions that record before/after audit events
+            — the same actions whether a human, the dashboard, or a learning workflow
+            is the caller.
+          </li>
+          <li>
+            <strong>Model-backed learning is bounded.</strong> Reviews run as finite
+            Flue workflows that prepare compact evidence snapshots first. The model
+            returns structured
+            <code>memoryActions</code> and <code>skillPatches</code> — never raw state,
+            never SQL.
+          </li>
+          <li>
+            <strong>Active sessions stay stable.</strong> Changes mark loaded sessions
+            stale rather than mutating them; new guidance loads on the next prompt
+            snapshot.
+          </li>
+        </ul>
 
         <h2>System map</h2>
         <p>
           Memory sits between runtime evidence and future prompt snapshots.
-          Conversation turns, PR outcomes, workflow summaries, and
-          Kilo/autopilot facts are compacted into learning review inputs. The
-          reviewer output can apply memory immediately, create review
-          candidates, or propose skill patches.
+          Conversation turns and PR/autopilot outcomes feed learning reviews;
+          reviewer output lands as direct memory writes, review candidates, or
+          skill patch proposals; everything is visible to the operator surfaces.
         </p>
         <MermaidDiagram
           chart={systemDiagram}
@@ -145,108 +142,32 @@ const storeDiagram = `flowchart TB
         />
 
         <h2>The feedback loop</h2>
-        <p>
-          The loop starts with work Neon already performs: chat turns, reviews,
-          CI fixes, push-back attempts, recovery actions, and Kilo handoffs. The
-          app records compact facts with stable ids so repeat observations do
-          not inflate the learning signal. Cadence and threshold rules decide
-          when a bounded Flue workflow should ask the self-improvement model for
-          durable lessons.
-        </p>
         <MermaidDiagram
           chart={feedbackDiagram}
           label="Feedback loop from chat and PR work through learning review into future sessions"
         />
         <p>
-          The important constraint is that the model does not write arbitrary
-          state. It returns structured <code>memoryActions</code> and
-          <code>skillPatches</code>. Neondeck validates those outputs, rejects
-          suspicious or secret-like content, and applies the result through the
-          same action layer a human or dashboard uses.
+          Work Neon already performs is compacted into learning events with
+          stable, idempotent source ids, so repeat observations of the same
+          outcome never inflate the signal. Cadence and threshold rules decide
+          when a bounded workflow asks the self-improvement model for durable
+          lessons; Neondeck validates the structured output, rejects secret-like
+          or injection-like content, and applies the remainder through the
+          action layer.
         </p>
 
         <h2>Storage layout</h2>
         <p>
-          Neondeck keeps app state separate from Flue runtime state. The app
-          database stores memory, learning events, review records, candidates,
-          session metadata, and audit history. Flue owns agent transcripts and
-          workflow runtime state. Runtime-home files hold configuration,
-          secrets, and user skills.
+          App state and Flue runtime state are separate databases. The app
+          database owns memory, learning records, and session metadata; Flue
+          owns transcripts and run state; runtime-home files hold config,
+          secrets, and skills. Learning reviews read Flue run observations, but
+          only compact summaries ever cross back into app state.
         </p>
         <MermaidDiagram
           chart={storeDiagram}
           label="Storage layout for Neondeck app state, Flue runtime state, and runtime-home files"
         />
-
-        <h2>Memory rows</h2>
-        <p>
-          Active writes use three scopes:
-          <code>user</code> for durable user preferences,
-          <code>local</code> for machine and tool facts, and
-          <code>project</code> for repository or product conventions. Legacy
-          <code>session</code> and <code>watch</code> rows are readable for compatibility,
-          but new learning writes do not create them.
-        </p>
-        <p>
-          A memory row is either <code>active</code> or <code>archived</code>.
-          Active rows can load into prompt snapshots. Archived rows remain in
-          history but stop shaping future sessions. Rewrites and merges keep
-          guidance concise; archiving replaces deletion so the audit trail can
-          explain what changed.
-        </p>
-
-        <h2>Review modes</h2>
-        <p>
-          Learning write policy is configurable. <code>off</code> records review results
-          without changing memory. <code>review</code> creates candidates under <code
-            >learning_candidates</code
-          >. <code>auto</code> lets bounded workflows apply allowed memory changes
-          through typed actions. Skill patch writes have their own mode and remain
-          conservative: append-style automatic patches are possible, while whole-skill
-          replacements require review.
-        </p>
-
-        <h2>Conversation reflection</h2>
-        <p>
-          Conversation reflection is cadence-based. After the configured turn
-          interval, Neondeck queues <code>review_conversation_for_learning</code
-          >. The workflow reviews compact session metadata, stored summaries,
-          stale-context reasons, loaded memory ids, and current memory
-          summaries. It does not copy raw Flue transcript pages into app state.
-        </p>
-
-        <h2>PR and autopilot retrospectives</h2>
-        <p>
-          PR learning is outcome-based. Neondeck records idempotent
-          <code>pr_handled</code> events from Flue workflow observations and typed
-          local API action results for autopilot, prepared-diff, recovery, and Kilo
-          result paths. When the count reaches the configured retrospective threshold,
-          <code>review_pr_batch_for_learning</code> reviews compact summaries and
-          proposes durable memory or skill candidates.
-        </p>
-
-        <h2>Curation</h2>
-        <p>
-          Curation is the pruning mechanism. The
-          <code>curate_learning_store</code> workflow reviews active memory, recent
-          audit events, and configured limits. In review mode it proposes upserts,
-          rewrites, merges, and archives as candidates. In auto mode, those same allowed
-          actions can be applied directly after snapshot-target checks and typed action
-          validation. The deterministic
-          <code>neondeck_memory_curate</code> action is the narrower cleanup path
-          for archive-oriented pruning.
-        </p>
-
-        <h2>Operator controls</h2>
-        <p>
-          Operators can inspect the entire loop through
-          <code>GET /api/learning/state</code>, the Learning dashboard panel, or
-          <code>neondeck learning ...</code>. That surface combines review
-          records, memory candidates, skill patch candidates, memory audit
-          events, and learning events. Candidate filters are sent to the backend
-          before limits are applied so memory and skill queues stay visible
-          independently.
-        </p>
 
         <h2>Safety properties</h2>
         <ul>
