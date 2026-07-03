@@ -1,0 +1,355 @@
+import { listJobs, listNotifications } from '../../../app-state';
+import { readAgentModelSelectionSync, isThinkingLevel } from '../../../agent-config';
+import { updateAgentModels } from '../../../config-actions';
+import { runDevDoctor } from '../../../dev-doctor';
+import { deleteMemory, listMemories, upsertMemory } from '../../memory';
+import { readRepoRegistrySnapshot } from '../../../repos';
+import { createScheduleBlueprint } from '../../scheduler';
+import { startNeonSession } from '../../../session-actions';
+import { addPrWatch, listPrWatchRecords } from '../../watches';
+import type { RuntimePaths } from '../../../runtime-home';
+import type { NeonCommandResult, ParsedNeonCommand, CommandDependencies } from '../schemas';
+import { readReviewQueue, triageReviewQueue } from './queue';
+import { completedCommand, failedCommand } from '../summaries';
+import { formatList, isActiveMemoryScope, isMemoryScope, parseMemoryValue, readStringArrayProperty, supportedReasoningLevelsForModel } from '../utils';
+
+export async function briefingCommand(
+  command: ParsedNeonCommand,
+  paths: RuntimePaths,
+  dependencies: CommandDependencies,
+): Promise<NeonCommandResult> {
+  const [registry, watches, jobs, notifications, queue] = await Promise.all([
+    readRepoRegistrySnapshot(paths),
+    listPrWatchRecords(paths),
+    listJobs(paths),
+    listNotifications(paths),
+    readReviewQueue(paths, dependencies),
+  ]);
+  const unreadNotifications = notifications.filter(
+    (notification) => !notification.readAt,
+  );
+  const activeJobs = jobs.filter((job) => job.enabled);
+  const activeWatches = watches.filter((watch) =>
+    ['watching', 'merged', 'attention-needed'].includes(watch.status),
+  );
+  const topActions = [
+    ...(queue.ok ? triageReviewQueue(queue.queue, watches).topActions : []),
+    ...activeWatches.slice(0, 3).map((watch) => ({
+      title: `Check watch ${watch.id}`,
+      status: watch.status,
+      url: watch.url,
+    })),
+    ...unreadNotifications.slice(0, 3).map((notification) => ({
+      title: notification.title,
+      level: notification.level,
+    })),
+  ].slice(0, 3);
+
+  return completedCommand(command.name, command.raw, 'Prepared briefing.', {
+    repos: {
+      count: registry.count,
+      configured: registry.repos.map((repo) => repo.id),
+    },
+    reviewQueue: queue.ok
+      ? {
+          count: queue.queue.items.length,
+          fetchedAt: queue.queue.fetchedAt,
+          truncated: queue.queue.truncated,
+          issues: queue.queue.issues.length,
+        }
+      : {
+          count: null,
+          error: queue.message,
+          requires: queue.requires,
+        },
+    watches: {
+      total: watches.length,
+      active: activeWatches.length,
+      attention: watches.filter((watch) => watch.status === 'attention-needed')
+        .length,
+    },
+    jobs: {
+      total: jobs.length,
+      active: activeJobs.length,
+    },
+    notifications: {
+      unread: unreadNotifications.length,
+    },
+    topActions,
+  });
+}
+
+export async function reasoningCommand(
+  command: ParsedNeonCommand,
+  paths: RuntimePaths,
+): Promise<NeonCommandResult> {
+  const models = readAgentModelSelectionSync(paths);
+  const supportedLevels = supportedReasoningLevelsForModel(
+    models.displayAssistant,
+  );
+  const requestedLevel = command.args[0]?.toLowerCase();
+
+  if (!requestedLevel) {
+    return completedCommand(
+      command.name,
+      command.raw,
+      `Current reasoning is ${models.displayAssistantThinkingLevel} for ${models.displayAssistant}.`,
+      {
+        model: models.displayAssistant,
+        thinkingLevel: models.displayAssistantThinkingLevel,
+        supportedLevels,
+        usage: '/reasoning [off|minimal|low|medium|high|xhigh]',
+      },
+    );
+  }
+
+  if (!isThinkingLevel(requestedLevel)) {
+    return failedCommand(
+      command.name,
+      command.raw,
+      `Unknown reasoning level "${requestedLevel}".`,
+      {
+        requires: ['reasoningLevel'],
+        data: {
+          model: models.displayAssistant,
+          currentLevel: models.displayAssistantThinkingLevel,
+          supportedLevels,
+        },
+      },
+    );
+  }
+
+  if (!supportedLevels.includes(requestedLevel)) {
+    return failedCommand(
+      command.name,
+      command.raw,
+      `${models.displayAssistant} supports ${formatList(supportedLevels)} reasoning, not "${requestedLevel}".`,
+      {
+        requires: ['reasoningLevel'],
+        data: {
+          model: models.displayAssistant,
+          currentLevel: models.displayAssistantThinkingLevel,
+          requestedLevel,
+          supportedLevels,
+        },
+      },
+    );
+  }
+
+  const update = await updateAgentModels(
+    { displayAssistantThinkingLevel: requestedLevel },
+    paths,
+  );
+  if (!update.ok) {
+    return failedCommand(command.name, command.raw, update.message, {
+      errors: update.errors,
+      requires: update.requires,
+    });
+  }
+
+  const session = update.changed
+    ? await startNeonSession(
+        {
+          label: `Reasoning ${requestedLevel}`,
+          reason: `reasoning-level:${requestedLevel}`,
+        },
+        paths,
+      )
+    : undefined;
+  const nextModels = readAgentModelSelectionSync(paths);
+
+  return completedCommand(
+    command.name,
+    command.raw,
+    update.changed
+      ? `Set reasoning to ${requestedLevel} for ${models.displayAssistant} and started a fresh Neon session.`
+      : `Reasoning is already ${requestedLevel} for ${models.displayAssistant}.`,
+    {
+      model: models.displayAssistant,
+      previousLevel: models.displayAssistantThinkingLevel,
+      thinkingLevel: nextModels.displayAssistantThinkingLevel,
+      supportedLevels,
+      sessionStarted: Boolean(session?.ok),
+      session: session && 'state' in session ? session.state : null,
+    },
+  );
+}
+
+export async function memoryCommand(
+  command: ParsedNeonCommand,
+  paths: RuntimePaths,
+): Promise<NeonCommandResult> {
+  const [operation, ...rest] = command.args;
+
+  if (!operation || isMemoryScope(operation)) {
+    const result = await listMemories(
+      {
+        scope: isMemoryScope(operation) ? operation : undefined,
+      },
+      paths,
+    );
+    return completedCommand(
+      command.name,
+      command.raw,
+      result.memories.length === 0
+        ? 'No durable memory entries matched.'
+        : `Listed ${result.memories.length} durable memory entr${result.memories.length === 1 ? 'y' : 'ies'}.`,
+      result,
+    );
+  }
+
+  if (operation === 'set' || operation === 'upsert') {
+    const [scope, key, ...valueParts] = rest;
+    if (!isActiveMemoryScope(scope) || !key || valueParts.length === 0) {
+      return failedCommand(
+        command.name,
+        command.raw,
+        '/memory set requires user, local, or project scope, key, and a JSON-safe value.',
+        {
+          requires: ['scope', 'key', 'value'],
+        },
+      );
+    }
+
+    const result = await upsertMemory(
+      {
+        scope,
+        key,
+        value: parseMemoryValue(valueParts.join(' ')),
+      },
+      paths,
+    );
+    if (!result.ok) {
+      return failedCommand(command.name, command.raw, result.message, {
+        requires: readStringArrayProperty(result, 'requires'),
+        errors: readStringArrayProperty(result, 'errors'),
+        data: result,
+      });
+    }
+
+    return completedCommand(command.name, command.raw, result.message, result);
+  }
+
+  if (operation === 'delete' || operation === 'remove') {
+    const [scope, key, ...flags] = rest;
+    if (!isMemoryScope(scope) || !key) {
+      return failedCommand(
+        command.name,
+        command.raw,
+        '/memory delete requires scope and key.',
+        {
+          requires: ['scope', 'key'],
+        },
+      );
+    }
+
+    const result = await deleteMemory(
+      {
+        scope,
+        key,
+        confirm:
+          flags.includes('--confirm') ||
+          flags.includes('confirm=true') ||
+          flags.includes('confirm'),
+      },
+      paths,
+    );
+    if (!result.ok) {
+      return failedCommand(command.name, command.raw, result.message, {
+        requires: readStringArrayProperty(result, 'requires'),
+        data: result,
+      });
+    }
+
+    return completedCommand(command.name, command.raw, result.message, result);
+  }
+
+  return failedCommand(
+    command.name,
+    command.raw,
+    `Unknown /memory operation "${operation}".`,
+    {
+      requires: ['memoryOperation'],
+      data: {
+        usage:
+          '/memory [scope] | /memory set <user|local|project> <key> <json-or-text> | /memory delete <scope> <key> --confirm',
+      },
+    },
+  );
+}
+
+export async function watchPrCommand(
+  command: ParsedNeonCommand,
+  paths: RuntimePaths,
+): Promise<NeonCommandResult> {
+  const ref = command.args.join(' ').trim();
+  if (!ref) {
+    return failedCommand(
+      command.name,
+      command.raw,
+      '/watch-pr requires a PR reference.',
+      {
+        requires: ['ref'],
+      },
+    );
+  }
+
+  const watch = await addPrWatch({ ref }, paths);
+  if (!watch.ok) {
+    return failedCommand(command.name, command.raw, watch.message, {
+      errors: watch.errors,
+      requires: watch.requires,
+      data: { watch },
+    });
+  }
+
+  return completedCommand(command.name, command.raw, watch.message, {
+    watch: watch.watch,
+  });
+}
+
+export async function watchReleaseCommand(
+  command: ParsedNeonCommand,
+  paths: RuntimePaths,
+): Promise<NeonCommandResult> {
+  const repo = command.args.join(' ').trim();
+  if (!repo) {
+    return failedCommand(
+      command.name,
+      command.raw,
+      '/watch-release requires a repository id or owner/repo.',
+      {
+        requires: ['repo'],
+      },
+    );
+  }
+
+  const result = await createScheduleBlueprint(
+    {
+      blueprint: 'release-watch',
+      repo,
+    },
+    paths,
+  );
+
+  if (!result.ok) {
+    return failedCommand(command.name, command.raw, result.message, {
+      errors: result.errors,
+      requires: result.requires,
+      data: { result },
+    });
+  }
+
+  return completedCommand(command.name, command.raw, result.message, {
+    result,
+  });
+}
+
+export async function devDoctorCommand(
+  command: ParsedNeonCommand,
+  paths: RuntimePaths,
+): Promise<NeonCommandResult> {
+  const doctor = await runDevDoctor(paths);
+
+  return completedCommand(command.name, command.raw, doctor.message, doctor);
+}

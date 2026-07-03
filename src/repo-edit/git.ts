@@ -1,11 +1,9 @@
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
+import { runExecFile } from '../lib/exec';
 import type { DiffSummary } from './schemas';
-
-const execFileAsync = promisify(execFile);
 
 export type RepoGitStatus = {
   branch: string;
@@ -548,7 +546,7 @@ async function git(
   args: string[],
   options: { env?: NodeJS.ProcessEnv } = {},
 ) {
-  const { stdout } = await execFileAsync('git', args, {
+  const { stdout } = await runExecFile('git', args, {
     cwd,
     env: options.env,
     maxBuffer: 8 * 1024 * 1024,

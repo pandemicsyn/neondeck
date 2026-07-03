@@ -4,6 +4,7 @@ import {
   type JsonValue,
   type SkillReference,
 } from '@flue/runtime';
+import { asJsonValue } from './lib/action-result';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -723,9 +724,6 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function asJsonValue(value: unknown): JsonValue {
-  return JSON.parse(JSON.stringify(value)) as JsonValue;
-}
 
 function runtimeSkillReference(skill: RuntimeSkillMetadata): SkillReference {
   const source = readFileSync(skill.path, 'utf8');
