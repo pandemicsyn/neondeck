@@ -30,18 +30,40 @@ devs, an auto-applying migrator at every database-open path for users.
   files). This is a feature for the npm-install story: zero native dependencies to compile.
 - **Drizzle's `node:sqlite` driver exists only in the v1 line.** Verified against the npm
   registry: `drizzle-orm@1.0.0-rc.4` exports `./node-sqlite`; the current stable (`0.45.2`) does
-  not. `drizzle-kit`'s v1 RC line tracks it. Consequence: this plan pins Drizzle v1 (RC today,
-  likely stable by implementation time). Do **not** switch the driver to `better-sqlite3` to get
-  stable Drizzle — that would add native compilation to every user install, which is worse than an
-  RC dependency in a codebase already running on `@flue/*` betas. Pin exact versions.
+  not. Consequence: this plan pins Drizzle v1 (RC today, likely stable by implementation time).
+  Do **not** switch the driver to `better-sqlite3` to get stable Drizzle — that would add native
+  compilation to every user install, which is worse than an RC dependency in a codebase already
+  running on `@flue/*` betas. Pin exact versions.
+- **Drizzle v1 facts, verified against the installed `1.0.0-rc.4` packages** (not docs):
+  - `drizzle-orm/node-sqlite` exports `drizzle({ client })` accepting an existing `DatabaseSync`
+    instance — it wraps the connection Neondeck already opens.
+  - The node-sqlite `migrate(db, { migrationsFolder })` is **synchronous** (`migrateSync`
+    internally), so it works inside `ensureRuntimeHomeSync`. The sync-runner fallback below is
+    retained only as contingency.
+  - `drizzle-kit pull --init` is first-class baselining: it introspects an existing database,
+    writes the pulled schema as the initial migration, and records migration metadata in the
+    database. The runtime migrator has matching init awareness (`MigratorInitFailResponse` with
+    `databaseMigrations`/`localMigrations` exit codes). This is the dev-side bootstrap for our
+    baseline migration; runtime stamping of *user* databases (who never run drizzle-kit) remains
+    our `migrate.ts` responsibility.
+  - `drizzle-kit migrate` performs **commutativity conflict checks** by default
+    (`--ignore-conflicts` to skip) — parallel-branch migration conflicts are detected natively;
+    our CI journal gate builds on this instead of reimplementing it.
+  - drizzle-kit v1 is built for agent-driven use: `--output json` emits a machine-decodable
+    envelope and is guaranteed non-interactive; `--explain` is a dry run returning planned SQL; a
+    programmatic SDK (`drizzle-kit/api-sqlite`: `generate(...)` etc.) exposes the same
+    operations; and the package ships eight Agent Skills (`drizzle`, `drizzle-generate`,
+    `drizzle-migrations`, `drizzle-pull`, `drizzle-push`, `drizzle-output-modes`,
+    `drizzle-hints`, `drizzle-responses-and-errors`) under `node_modules/drizzle-kit/skills/`,
+    plus a `drizzle-kit mcp` server.
 - **Auto-apply already happens implicitly.** `ensureRuntimeHome`/`ensureRuntimeHomeSync` run
   `initializeAppDatabase` on server boot (`app.ts`, `db.ts` at module load) and CLI startup. The
   new migrator slots into the same choke point — there is exactly one place to wire it.
 - **Both sync and async entry paths exist.** `db.ts` (the Flue persistence adapter) calls
-  `ensureRuntimeHomeSync` at module load. `node:sqlite` is synchronous, so migration application
-  must work synchronously. Verify in the spike that Drizzle's node-sqlite migrator is sync (as it
-  is for better-sqlite3); if it is not, apply the journal-and-SQL files with our own ~40-line sync
-  runner instead of the Drizzle helper — the journal format is stable and documented.
+  `ensureRuntimeHomeSync` at module load. Confirmed handled: the node-sqlite migrator is sync. If
+  a future RC regresses this, the contingency is applying the journal-and-SQL files with our own
+  ~40-line sync runner — the journal format is stable and readable via the exported
+  `readMigrationFiles`.
 - **Scope is `neondeck.db` only.** `flue.db` is Flue runtime state, owned and migrated by Flue.
 - **REFACTOR_PLAN alignment.** The refactor's "no ORM" non-goal stands: Drizzle is adopted here
   for schema definition, migration generation, and migration application ONLY. Store files keep
@@ -81,11 +103,20 @@ maintenance, not schema — they stay as post-migrate code, unchanged.
 ### Dev workflow
 
 1. Edit `src/db/schema.ts`.
-2. `npm run db:generate` → drizzle-kit emits `NNNN_<name>.sql` + journal update. Commit both.
-3. `npm run check` includes a drift gate: generate into a temp dir and fail if it produces a
-   diff (schema.ts changed without a committed migration), plus `drizzle-kit check` for journal
-   consistency (catches conflicting migrations from parallel branches).
+2. `npm run db:generate` (wrapping `drizzle-kit generate --output json`) → emits
+   `NNNN_<name>.sql` + journal update. Commit both. `--explain` is the dry run.
+3. `npm run check` includes a drift gate — prefer the `drizzle-kit/api-sqlite` SDK
+   (`generate(...)` in explain mode) over shelling out: fail if the schema would produce a new
+   migration (schema.ts changed without a committed migration). `drizzle-kit check` plus the
+   native commutativity conflict check cover journal consistency across parallel branches.
 4. Applied migrations are immutable — fixing a mistake means a new migration, never an edit.
+5. Agent ergonomics: drizzle-kit ships Agent Skills for exactly this workflow. Register the
+   relevant ones (`drizzle`, `drizzle-generate`, `drizzle-migrations`, `drizzle-pull`,
+   `drizzle-output-modes`, `drizzle-responses-and-errors`) with the repo's skill setup the same
+   way the Flue skill is linked (`.codex/skills/`, `.kilo/skills/`) so implementation agents use
+   the intended JSON/non-interactive surface instead of guessing CLI flags. `drizzle-kit mcp` is
+   available as an optional dev-time MCP server — a natural test subject once
+   `.plans/MCP_SUPPORT_PLAN.md` lands, but not part of this plan.
 
 ### User workflow
 
@@ -107,7 +138,8 @@ the DB:
 Existing databases have all the tables but no Drizzle journal. Solution — a stamped baseline:
 
 - Migration `0000_baseline.sql` is the complete current schema (bootstrap it with
-  `drizzle-kit pull` against a freshly created legacy DB, then hand-verify).
+  `drizzle-kit pull --init` against a freshly created legacy DB — v1's first-class baselining,
+  which also records the migration metadata — then hand-verify the pulled schema).
 - `migrate.ts` pre-step: if `__drizzle_migrations` is missing **and** the DB already has the
   legacy schema (detect: `app_metadata` row `schema_version = '9'`, or presence of a sentinel
   table), create the journal table and record `0000` as applied *without executing it*. Fresh
@@ -149,10 +181,13 @@ story.
 Commit order within the PR:
 
 1. **Spike commit**: add `drizzle-orm@1.0.0-rc.x` + `drizzle-kit` (exact pins), throwaway test
-   proving: node-sqlite driver + migrator API names, sync application, per-migration transaction
-   behavior, journal table shape, `drizzle-kit pull/generate/check` against a legacy-created DB.
-   Record findings by editing this section. This decides whether the Drizzle migrator or the
-   ~40-line sync runner applies the files.
+   covering what package inspection could not confirm: per-migration transaction behavior of
+   `migrateSync`, the `__drizzle_migrations` table shape (needed by the baseline stamp and
+   downgrade guard), `pull --init` output against a legacy-created DB, and the SDK explain-mode
+   drift check. (Already verified from the installed RC, no need to re-prove: `./node-sqlite`
+   driver, `drizzle({ client: DatabaseSync })`, sync `migrate()`, `pull --init` and commutativity
+   checks existing, `--output json`/`--explain`/skills/MCP shipping.) Record findings by editing
+   this section.
 2. `schema.ts` bootstrapped via introspection + `0000_baseline.sql` + **parity test**: create one
    DB via legacy `initializeAppDatabase`, one via migrations; dump and compare normalized schema
    (tables, columns, indexes) — must be identical.
