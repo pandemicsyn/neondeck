@@ -24,6 +24,7 @@ type LearningOperatorConfig = {
 
 type LearningTab = 'reviews' | 'candidates' | 'audit';
 type CandidateFilter = 'all' | LearningCandidateStatus;
+type CandidateTargetFilter = 'all' | 'memory' | 'skill';
 
 const learningOperatorDefaultConfig = {
   limit: 18,
@@ -41,8 +42,12 @@ export const LearningOperatorPanelPlugin = {
     const [tab, setTab] = useState<LearningTab>('candidates');
     const [candidateFilter, setCandidateFilter] =
       useState<CandidateFilter>('all');
+    const [candidateTargetFilter, setCandidateTargetFilter] =
+      useState<CandidateTargetFilter>('all');
     const candidateStatus =
       candidateFilter === 'all' ? undefined : candidateFilter;
+    const candidateTarget =
+      candidateTargetFilter === 'all' ? undefined : candidateTargetFilter;
     const {
       data: state,
       error,
@@ -50,11 +55,12 @@ export const LearningOperatorPanelPlugin = {
     } = useQuery({
       queryKey: [
         ...queryKeys.learningState,
-        { candidateStatus, limit: config.limit },
+        { candidateStatus, candidateTarget, limit: config.limit },
       ],
       queryFn: () =>
         getLearningOperatorState({
           candidateStatus,
+          candidateTarget,
           limit: config.limit,
         }),
       refetchInterval: Math.max(10, config.refreshSeconds) * 1000,
@@ -82,8 +88,10 @@ export const LearningOperatorPanelPlugin = {
     return (
       <LearningOperatorView
         candidateFilter={candidateFilter}
+        candidateTargetFilter={candidateTargetFilter}
         limit={config.limit}
         onCandidateFilterChange={setCandidateFilter}
+        onCandidateTargetFilterChange={setCandidateTargetFilter}
         onTabChange={setTab}
         state={state}
         tab={tab}
@@ -94,15 +102,19 @@ export const LearningOperatorPanelPlugin = {
 
 function LearningOperatorView({
   candidateFilter,
+  candidateTargetFilter,
   limit,
   onCandidateFilterChange,
+  onCandidateTargetFilterChange,
   onTabChange,
   state,
   tab,
 }: {
   candidateFilter: CandidateFilter;
+  candidateTargetFilter: CandidateTargetFilter;
   limit: number;
   onCandidateFilterChange: (filter: CandidateFilter) => void;
+  onCandidateTargetFilterChange: (filter: CandidateTargetFilter) => void;
   onTabChange: (tab: LearningTab) => void;
   state: LearningOperatorState;
   tab: LearningTab;
@@ -157,10 +169,16 @@ function LearningOperatorView({
         </div>
       </div>
       {tab === 'candidates' ? (
-        <CandidateFilterBar
-          filter={candidateFilter}
-          onFilterChange={onCandidateFilterChange}
-        />
+        <>
+          <CandidateFilterBar
+            filter={candidateFilter}
+            onFilterChange={onCandidateFilterChange}
+          />
+          <CandidateTargetFilterBar
+            filter={candidateTargetFilter}
+            onFilterChange={onCandidateTargetFilterChange}
+          />
+        </>
       ) : null}
       <ScrollArea className="flex-1">
         <div className="space-y-1.5 p-3">
@@ -194,6 +212,30 @@ function CandidateFilterBar({
   ];
   return (
     <div className="grid grid-cols-5 gap-1 border-b border-line px-3 py-2">
+      {filters.map((option) => (
+        <button
+          className={tabClass(filter === option)}
+          key={option}
+          onClick={() => onFilterChange(option)}
+          type="button"
+        >
+          {option}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CandidateTargetFilterBar({
+  filter,
+  onFilterChange,
+}: {
+  filter: CandidateTargetFilter;
+  onFilterChange: (filter: CandidateTargetFilter) => void;
+}) {
+  const filters: CandidateTargetFilter[] = ['all', 'memory', 'skill'];
+  return (
+    <div className="grid grid-cols-3 gap-1 border-b border-line px-3 py-2">
       {filters.map((option) => (
         <button
           className={tabClass(filter === option)}

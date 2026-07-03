@@ -1458,7 +1458,7 @@ Must-haves:
 
 ### Phase 22: Self-Improvement And Learning
 
-- Status: mostly complete for the web/backend/CLI learning operator slice. The core memory foundation has landed: simple active/archived memory, `user`/`local`/`project` learning scopes, audited memory events, learning schema, memory curation config/action/workflow foundation, self-improvement model config/fallbacks, prompt-snapshot memory id recording, session stale-context integration, safety policy entries, and memory docs. Model-backed conversation reflection and memory curation orchestration have also landed. PR/autopilot retrospective accounting/review orchestration and audited skill patch candidates have landed for built-in Neondeck and runtime-home user skills. Dedicated learning operator API/action/tool state, dashboard panel, CLI inspect/decide/restore commands, explicit audit-backed skill patch restore, and opt-in learning workflow smoke coverage have landed. Broader production automatic admission coverage and deeper dashboard/CLI adapter tests remain open. Detailed implementation plan lives in `.plans/SELF_IMPROVEMENT_LEARNING_PLAN.md`.
+- Status: complete for v1. The memory/learning foundation has landed: simple active/archived memory, active `user`/`local`/`project` learning scopes, audited memory events, learning schema, memory curation config/action/workflow support, self-improvement model config/fallbacks, prompt-snapshot memory id recording, session stale-context integration, safety policy entries, and memory docs. Model-backed conversation reflection, memory curation orchestration, PR/autopilot retrospective accounting/review orchestration, and audited skill patch candidates have landed for the built-in Neondeck skill and runtime-home user skills. Dedicated learning operator API/action/tool state, dashboard panel, CLI inspect/decide/restore commands, explicit audit-backed skill patch restore, opt-in learning workflow smoke coverage, and fast dashboard/CLI adapter coverage have landed. Automatic handled-PR accounting now covers Flue workflow observations plus practical direct local API action routes for autopilot, prepared-diff, recovery, and Kilo result outcomes; future provider-specific or non-action admission paths remain non-v1 follow-ups. Detailed implementation plan lives in `.plans/SELF_IMPROVEMENT_LEARNING_PLAN.md`.
 
 - [x] Add Hermes-inspired memory as a first-class Neondeck subsystem, not ad hoc prompt text.
 - [x] Keep active learning memory scopes to `user`, `local`, and `project`; stop writing new `session` or `watch` memories.
@@ -1472,8 +1472,8 @@ Must-haves:
   - fallback through utility model, display-assistant model, then the existing default agent model
 - [x] Add app SQLite schema for simple active/archived memory, memory event audit history, learning events, learning reviews, and review-mode learning candidates.
 - [x] Add deterministic Valibot-backed memory actions for learn, upsert, rewrite, merge, archive, list candidates, decide candidates, curate, and mark-used behavior.
-- [x] Add deterministic skill patch actions for propose, apply, reject, list, audit, and rollback where practical. Initial support retains rollback data in candidate audit; explicit rollback action remains deferred.
-- [ ] Add bounded Flue workflows:
+- [x] Add deterministic skill patch actions for propose, apply, reject, list, audit, and rollback where practical. Applied skill patches can be restored from retained audit when the target file is unchanged since application.
+- [x] Add bounded Flue workflows:
   - [x] conversation reflection after a configurable turn count, defaulting to 10
   - [x] optional memory curation foundation after a configurable turn count, defaulting to 200
   - [x] model-backed memory curation proposals using the configured self-improvement model
@@ -1484,7 +1484,7 @@ Must-haves:
 - [x] Record which memory ids were loaded into a session and mark active sessions stale when relevant learned context changes.
 - [x] Add dashboard, API, and CLI surfaces for learning status, reviews, candidates, memory decisions, skill patch decisions, and audit history.
 - [x] Update runtime skills, README, AGENTS.md, and Astro docs to explain learning, memory scopes, self-improvement model config, PR retrospectives, and rollback/curation controls.
-- [ ] Add fast tests with mocked reflection/model output for config fallback, scope validation, candidate policies, prompt snapshot budgets, session staleness, PR retrospective thresholds, API validation, and skill patch proposals. Memory/config/snapshot/curation/reflection tests plus retrospective threshold/result handling, skill patch, and API validation coverage have landed; broader dashboard/CLI adapter tests remain open.
+- [x] Add fast tests with mocked reflection/model output for config fallback, scope validation, candidate policies, prompt snapshot budgets, session staleness, PR retrospective thresholds, API validation, skill patch proposals, direct handled-PR accounting, dashboard query adapters, and CLI learning inspect/decision/restore paths.
 - [x] Add opt-in smoke/integration tests for conversation reflection and PR retrospective workflows without slowing `npm run check`.
 
 ## Open Questions

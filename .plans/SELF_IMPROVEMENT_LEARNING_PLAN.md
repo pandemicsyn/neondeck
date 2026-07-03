@@ -774,6 +774,8 @@ Fast tests should cover:
 - PR retrospective trigger after threshold
 - API route validation and guards
 - dashboard data adapters where practical
+- CLI learning inspect/decide/restore adapters where practical
+- direct local API action-route handled-PR accounting
 
 Integration tests should cover:
 
@@ -804,9 +806,11 @@ Do not make `npm run check` depend on slow real-model calls. Mock reviewer outpu
 - Conversation reflection runs after the configured cadence without blocking chat.
 - Memory curation is optional, tuneable, and auditable.
 - PR/autopilot retrospectives run after the configured handled-PR threshold.
+- Handled PR/autopilot accounting covers Flue workflow observations and typed local API action routes with idempotent source ids.
 - Repeated PR failure patterns can become project/local memory.
 - Procedural lessons can patch Neondeck skills or create reviewable skill patch candidates.
 - Learning events and reviews are visible through API, CLI, and dashboard.
+- Learning dashboard and CLI adapters preserve candidate status/target filters and dedicated memory versus skill candidate views.
 - Active sessions are marked stale when relevant learned context changes.
 - All new IO boundaries use Valibot.
 - Fast tests stay fast by mocking model/reflection outputs.
