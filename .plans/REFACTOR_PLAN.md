@@ -264,7 +264,7 @@ you land a phase.
 | 4 | `domains/github` | done |
 | 5 | `domains/worktrees` ⚙ | done |
 | 6 | `domains/sessions` + `domains/config` + `domains/repos` | done |
-| 7 | `domains/safety` + `domains/execution` | todo |
+| 7 | `domains/safety` + `domains/execution` | done |
 | 8 | `domains/kilo` ⚙ | todo |
 | 9 | `domains/autopilot` ⚙ | todo |
 | 10 | `domains/learning` + `domains/memory` ⚙ | todo |
@@ -484,6 +484,11 @@ file moves over any restructuring of logic.
 
 Verification: `safety.test.ts`, `execution-policy.test.ts`, `execution-actions.test.ts`,
 `exedev-*.test.ts`; unit suite.
+
+Status note (2026-07-03): implemented in `src/domains/safety/` and
+`src/domains/execution/` with top-level compatibility shims preserving old imports. The large
+safety policy table remains declarative in `policy-entries.ts`; execution policy, approvals, run
+logic, and exe.dev context/checkout helpers were moved without consumer migration.
 
 ### Phase 8: `domains/kilo` ⚙
 
