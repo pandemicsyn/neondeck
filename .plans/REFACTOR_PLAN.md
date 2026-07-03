@@ -258,7 +258,7 @@ you land a phase.
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 0 | Guardrails: size report script, inventory check | done |
-| 1 | `src/lib/` shared utilities | todo |
+| 1 | `src/lib/` shared utilities | done |
 | 2 | `runtime-home` split ⚙ | todo |
 | 3 | `server/` route split of `app.ts` | todo |
 | 4 | `domains/github` | todo |
@@ -305,6 +305,12 @@ Deliverables:
 
 Verification: unit tests for each lib module; full unit suite; spot-check a few action outputs
 against `main` via existing tests.
+
+Status note (2026-07-03): shared utilities are introduced with unit coverage. Low-risk exact
+call sites were migrated for JSON conversion, common failed/invalid action results, Valibot parse
+wrappers, selected git subprocess calls, and app-state DB opens. Remaining local helpers are
+intentional variants for now because they differ in JSON semantics, error/result shape, property
+order, or domain-specific failure handling; revisit them during the owning domain split.
 
 ### Phase 2: `runtime-home` split ⚙
 

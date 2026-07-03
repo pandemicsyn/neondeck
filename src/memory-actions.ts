@@ -1,4 +1,5 @@
 import { defineAction, type JsonValue } from '@flue/runtime';
+import { asJsonValue } from './lib/action-result';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
@@ -1916,9 +1917,6 @@ function boundedRejectedCandidateAfter(input: {
   };
 }
 
-function asJsonValue(value: unknown): JsonValue {
-  return JSON.parse(JSON.stringify(value)) as JsonValue;
-}
 
 function isJsonValue(value: unknown): boolean {
   if (

@@ -1,4 +1,5 @@
 import { defineAction, type JsonValue } from '@flue/runtime';
+import { asJsonValue } from './lib/action-result';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -1041,9 +1042,6 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function asJsonValue(value: unknown): JsonValue {
-  return JSON.parse(JSON.stringify(value)) as JsonValue;
-}
 
 function parseNullableJson(value: unknown): JsonValue | null {
   if (typeof value !== 'string') return null;

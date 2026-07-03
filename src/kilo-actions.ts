@@ -1,4 +1,5 @@
-import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
+import { defineAction, defineTool } from '@flue/runtime';
+import { asJsonValue, invalidInputAction } from './lib/action-result';
 import { spawn, execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createWriteStream, type WriteStream } from 'node:fs';
@@ -9,6 +10,7 @@ import { createInterface } from 'node:readline';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import * as v from 'valibot';
+import { parseInput as parseActionInput } from './lib/valibot';
 import { readKiloResultStateSummary } from './kilo-results';
 import {
   listKiloNotificationFacts,
@@ -2506,27 +2508,15 @@ function parseInput<T>(
 ):
   | { ok: true; input: T }
   | { ok: false; result: ReturnType<typeof invalidInputResult> } {
-  const parsed = v.safeParse(schema, rawInput);
-  if (parsed.success) return { ok: true, input: parsed.output };
-  return {
-    ok: false,
-    result: invalidInputResult(
-      action,
-      parsed.issues[0]?.message ?? 'Invalid input.',
-    ),
-  };
+  return parseActionInput(
+    schema,
+    rawInput,
+    (message) => invalidInputResult(action, message),
+    (issues) => issues[0]?.message ?? 'Invalid input.',
+  );
 }
 
-function invalidInputResult(action: string, message: string) {
-  return {
-    ok: false,
-    action,
-    changed: false,
-    message,
-    errors: [message],
-    error: { code: 'INVALID_INPUT', message },
-  };
-}
+const invalidInputResult = invalidInputAction;
 
 function failResult(action: string, message: string) {
   return {
@@ -2557,8 +2547,4 @@ function truncate(value: string, max: number) {
 function errorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
   return String(error);
-}
-
-function asJsonValue(value: unknown): JsonValue {
-  return JSON.parse(JSON.stringify(value)) as JsonValue;
 }

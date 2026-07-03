@@ -1,7 +1,9 @@
 import { defineAction, type JsonValue } from '@flue/runtime';
+import { asJsonValue, failedAction } from './lib/action-result';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
+import { parseInput as parseSharedInput } from './lib/valibot';
 import {
   addNotification,
   disableStaleScheduleJobs,
@@ -1241,15 +1243,11 @@ function parseActionInput<T>(
   input: unknown,
   action: string,
 ) {
-  const result = v.safeParse(schema, input);
-  if (result.success) return { ok: true as const, input: result.output };
-
-  return {
-    ok: false as const,
-    result: failResult(action, 'Invalid action input.', {
-      errors: [v.summarize(result.issues)],
+  return parseSharedInput(schema, input, (message) =>
+    failResult(action, 'Invalid action input.', {
+      errors: [message],
     }),
-  };
+  );
 }
 
 function okResult(
@@ -1277,24 +1275,7 @@ function okResult(
   } as SchedulerResult;
 }
 
-function failResult(
-  action: string,
-  message: string,
-  details: Pick<SchedulerResult, 'errors' | 'requires'> = {},
-): SchedulerResult {
-  return {
-    ok: false,
-    action,
-    changed: false,
-    message,
-    ...(details.errors ? { errors: details.errors } : {}),
-    ...(details.requires ? { requires: details.requires } : {}),
-  };
-}
-
-function asJsonValue(value: unknown): JsonValue {
-  return JSON.parse(JSON.stringify(value)) as JsonValue;
-}
+const failResult = failedAction<Pick<SchedulerResult, 'errors' | 'requires'>>;
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);

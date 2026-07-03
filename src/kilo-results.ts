@@ -1,8 +1,9 @@
 import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
+import { asJsonValue } from './lib/action-result';
 import { createHash, randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { checkAutopilotPolicy } from './autopilot-policy';
+import { openDb } from './lib/sqlite';
 import { verifyPrWorktree } from './autopilot-workflows';
 import {
   notifyKiloState,
@@ -710,7 +711,7 @@ export async function listKiloResultStates(
   );
   if (!parsed.ok) return parsed.result;
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const rows = parsed.input.taskId
       ? database
@@ -970,7 +971,7 @@ async function findTaskWorktree(task: KiloTaskLike, paths: RuntimePaths) {
 }
 
 function readKiloTask(taskId: string, paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare(
@@ -998,7 +999,7 @@ function readKiloTask(taskId: string, paths: RuntimePaths) {
 }
 
 function readKiloResultState(taskId: string, paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare('SELECT * FROM kilo_result_state WHERE task_id = ?;')
@@ -1010,7 +1011,7 @@ function readKiloResultState(taskId: string, paths: RuntimePaths) {
 }
 
 function readPreparedDiffByWorktree(worktreeId: string, paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare(
@@ -1039,7 +1040,7 @@ function resetPreparedDiffApproval(
   paths: RuntimePaths,
 ) {
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const row = database
       .prepare(
@@ -1172,7 +1173,7 @@ function upsertKiloResultState(
     verifiedAt: stateField(input, 'verifiedAt', current?.verifiedAt ?? null),
     promotedAt: stateField(input, 'promotedAt', current?.promotedAt ?? null),
   };
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -1245,7 +1246,7 @@ function updateKiloTaskStatus(
   status: string,
   paths: RuntimePaths,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -1269,7 +1270,7 @@ function insertKiloResultEvent(
   paths: RuntimePaths,
 ) {
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -1429,8 +1430,4 @@ function parseJsonArray(value: string): JsonValue[] {
   } catch {
     return [];
   }
-}
-
-function asJsonValue(value: unknown): JsonValue {
-  return JSON.parse(JSON.stringify(value)) as JsonValue;
 }

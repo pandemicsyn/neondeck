@@ -1,4 +1,5 @@
 import { defineAction, type JsonValue } from '@flue/runtime';
+import { asJsonValue } from './lib/action-result';
 import { execFile } from 'node:child_process';
 import { constants } from 'node:fs';
 import {
@@ -11,9 +12,9 @@ import {
 } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import * as v from 'valibot';
+import { openDb } from './lib/sqlite';
 import {
   type AgentModelConfig,
   type AppConfig,
@@ -1933,7 +1934,7 @@ function recordConfigChange(
     after: unknown;
   },
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
 
   try {
@@ -2060,8 +2061,4 @@ function parseActionInput<T>(
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
-}
-
-function asJsonValue(value: unknown): JsonValue {
-  return JSON.parse(JSON.stringify(value)) as JsonValue;
 }

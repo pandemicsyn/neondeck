@@ -1,5 +1,6 @@
 import { type JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
+import { failedAction } from './lib/action-result';
 import {
   fetchCheckSummary,
   fetchGitHubLogin,
@@ -156,20 +157,9 @@ function okResult(
   };
 }
 
-function failResult(
-  action: string,
-  message: string,
-  details: Pick<GitHubActionResult, 'errors' | 'requires'> = {},
-): GitHubActionResult {
-  return {
-    ok: false,
-    action,
-    changed: false,
-    message,
-    ...(details.errors ? { errors: details.errors } : {}),
-    ...(details.requires ? { requires: details.requires } : {}),
-  };
-}
+const failResult = failedAction<
+  Pick<GitHubActionResult, 'errors' | 'requires'>
+>;
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);

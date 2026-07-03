@@ -1,11 +1,12 @@
 import { defineAction, defineTool } from '@flue/runtime';
-import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { promisify } from 'node:util';
 import * as v from 'valibot';
+import { invalidInputAction } from './lib/action-result';
+import { runExecFile } from './lib/exec';
+import { parseInput as parseActionInput } from './lib/valibot';
 import { ensurePreparedDiffForWorktree } from './prepared-diffs';
 import {
   type RepoConfig,
@@ -17,8 +18,6 @@ import {
   readRuntimeJson,
   runtimePaths,
 } from './runtime-home';
-
-const execFileAsync = promisify(execFile);
 
 export type WorktreeStorageKind = 'home' | 'repo-local';
 export type WorktreeLockScope = 'worktree' | 'pr';
@@ -1976,7 +1975,7 @@ function slug(value: string) {
 }
 
 async function git(cwd: string, args: string[]) {
-  const { stdout } = await execFileAsync('git', args, {
+  const { stdout } = await runExecFile('git', args, {
     cwd,
     maxBuffer: 10 * 1024 * 1024,
   });
@@ -1999,27 +1998,15 @@ function parseInput<T>(
 ):
   | { ok: true; input: T }
   | { ok: false; result: ReturnType<typeof invalidInputResult> } {
-  const parsed = v.safeParse(schema, rawInput);
-  if (parsed.success) return { ok: true, input: parsed.output };
-  return {
-    ok: false,
-    result: invalidInputResult(
-      action,
-      parsed.issues[0]?.message ?? 'Invalid input.',
-    ),
-  };
+  return parseActionInput(
+    schema,
+    rawInput,
+    (message) => invalidInputResult(action, message),
+    (issues) => issues[0]?.message ?? 'Invalid input.',
+  );
 }
 
-function invalidInputResult(action: string, message: string) {
-  return {
-    ok: false,
-    action,
-    changed: false,
-    message,
-    errors: [message],
-    error: { code: 'INVALID_INPUT', message },
-  };
-}
+const invalidInputResult = invalidInputAction;
 
 function failureResult(action: string, error: unknown) {
   const message = errorMessage(error);

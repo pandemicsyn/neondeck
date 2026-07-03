@@ -1,9 +1,10 @@
 import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
+import { asJsonValue } from './lib/action-result';
 import { randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { addNotification } from './app-state';
 import { buildPreparedDiffAuditSummary } from './autonomous-audit';
+import { openDb } from './lib/sqlite';
 import { gitCurrentSha, gitDiff, type RepoDiffFile } from './repo-edit/git';
 import {
   type RuntimePaths,
@@ -1012,7 +1013,7 @@ function listPreparedDiffRecords(
   input: v.InferOutput<typeof listInputSchema>,
   paths: RuntimePaths,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const clauses: string[] = [];
     const args: Array<string | number> = [];
@@ -1045,7 +1046,7 @@ function listPreparedDiffRecords(
 }
 
 export function readPreparedDiffRecord(id: string, paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare('SELECT * FROM prepared_diffs WHERE id = ?;')
@@ -1057,7 +1058,7 @@ export function readPreparedDiffRecord(id: string, paths: RuntimePaths) {
 }
 
 function readPreparedDiffByWorktreeId(worktreeId: string, paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare('SELECT * FROM prepared_diffs WHERE worktree_id = ?;')
@@ -1069,7 +1070,7 @@ function readPreparedDiffByWorktreeId(worktreeId: string, paths: RuntimePaths) {
 }
 
 function upsertPreparedDiff(record: PreparedDiffRecord, paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -1197,7 +1198,7 @@ function supersedeApprovals(
   paths: RuntimePaths,
 ) {
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -1239,7 +1240,7 @@ function resolvePendingApprovals(
   }
 
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -1280,7 +1281,7 @@ function pendingApproval(
   approvalType: PreparedDiffApprovalRecord['approvalType'],
   paths: RuntimePaths,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare(
@@ -1302,7 +1303,7 @@ function pendingApproval(
 }
 
 function readApprovalRecord(id: string, paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare('SELECT * FROM prepared_diff_approvals WHERE id = ?;')
@@ -1334,7 +1335,7 @@ function insertApproval(
     resolvedAt: status === 'pending' ? null : now,
     updatedAt: now,
   };
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -1371,7 +1372,7 @@ function listApprovalRecords(
   if (input.preparedDiffIds && input.preparedDiffIds.length === 0) {
     return [];
   }
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const clauses: string[] = [];
     const args: Array<string | number> = [];
@@ -1409,7 +1410,7 @@ function updateWorktreeLifecycle(
   paths: RuntimePaths,
 ) {
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const row = database
       .prepare('SELECT * FROM worktrees WHERE id = ?;')
@@ -1539,8 +1540,4 @@ function failure(action: string, message: string, code: string) {
     errors: [message],
     error: { code, message },
   };
-}
-
-function asJsonValue(value: unknown): JsonValue {
-  return JSON.parse(JSON.stringify(value)) as JsonValue;
 }

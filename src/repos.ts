@@ -1,5 +1,4 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { runExecFile } from './lib/exec';
 import {
   type RepoConfig,
   type RuntimePaths,
@@ -9,8 +8,6 @@ import {
   runtimePaths,
 } from './runtime-home';
 import { listActiveRepoWorktrees, type WorktreeRecord } from './worktrees';
-
-const execFileAsync = promisify(execFile);
 
 export type RepoRegistrySnapshot = {
   home: string;
@@ -239,7 +236,7 @@ export function repoFullName(repo: Pick<RepoConfig, 'github'>) {
 }
 
 async function git(cwd: string, args: string[]) {
-  const { stdout } = await execFileAsync('git', args, { cwd });
+  const { stdout } = await runExecFile('git', args, { cwd });
   return stdout;
 }
 

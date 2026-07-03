@@ -1,7 +1,9 @@
 import { defineAction, type JsonValue } from '@flue/runtime';
+import { asJsonValue } from './lib/action-result';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
+import { openDb } from './lib/sqlite';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
@@ -425,7 +427,7 @@ export async function readNeonSessionState(
   surface = 'dashboard',
 ): Promise<NeonSessionState> {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     const active = readActiveChatSession(database, surface);
@@ -473,7 +475,7 @@ export async function listChatSessions(
     return failedSessionResult('session_list', v.summarize(parsed.issues));
   }
 
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const filters = ['agent_name = ?'];
     const params: Array<string | number> = ['display-assistant'];
@@ -525,7 +527,7 @@ export async function searchChatSessions(
     return failedSessionResult('session_search', v.summarize(parsed.issues));
   }
 
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const filters = [
       'agent_name = ?',
@@ -586,7 +588,7 @@ export async function readChatSession(
     return failedSessionResult('session_read', v.summarize(parsed.issues));
   }
 
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const session = findChatSession(database, parsed.output.id);
     if (!session) {
@@ -627,7 +629,7 @@ export async function readChatSessionMessages(
     return failedSessionResult('session_messages', v.summarize(parsed.issues));
   }
 
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const session = findChatSession(database, parsed.output.id);
     if (!session) {
@@ -709,7 +711,7 @@ export async function refreshChatSessionSummary(
   }
 
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   let session: ChatSessionRecord | undefined;
 
   try {
@@ -820,7 +822,7 @@ export async function referenceChatSession(
       target;
   }
 
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const fromSession = parsed.output.fromSessionId
       ? findChatSession(database, parsed.output.fromSessionId)
@@ -908,7 +910,7 @@ export async function createChatSession(
   const memorySnapshot = buildMemoryPromptSnapshotSync(paths, {
     repoId: parsed.output.linkedRepoId ?? null,
   });
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   let sessionId = id;
   let eventAction: ChatSessionEventAction = 'created';
   let reusedExisting = false;
@@ -1083,7 +1085,7 @@ export async function switchChatSession(
 
   const now = new Date().toISOString();
   const surface = parsed.output.surface ?? 'dashboard';
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   let session: ChatSessionRecord | undefined;
 
   try {
@@ -1200,7 +1202,7 @@ export async function archiveChatSession(
 
   const now = new Date().toISOString();
   const surface = parsed.output.surface ?? 'dashboard';
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   let archived: ChatSessionRecord | undefined;
 
   try {
@@ -1400,7 +1402,7 @@ function updateOneSession<TInput extends { id: string; reason?: string }>(
   return (async () => {
     await ensureRuntimeHome(paths);
     const now = new Date().toISOString();
-    const database = new DatabaseSync(paths.neondeckDatabase);
+    const database = openDb(paths.neondeckDatabase);
 
     try {
       database.exec('BEGIN;');
@@ -1444,7 +1446,7 @@ async function readChatSessionInternal(
   paths: RuntimePaths,
 ): Promise<ChatSessionRecord | undefined> {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     return findChatSession(database, id);
@@ -2052,8 +2054,4 @@ function isJsonValue(value: unknown): boolean {
     return Object.values(value).every(isJsonValue);
   }
   return false;
-}
-
-function asJsonValue(value: unknown): JsonValue {
-  return JSON.parse(JSON.stringify(value)) as JsonValue;
 }

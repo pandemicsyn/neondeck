@@ -1,11 +1,12 @@
 import { defineAction, type JsonValue } from '@flue/runtime';
+import { asJsonValue } from './lib/action-result';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import * as v from 'valibot';
 import { updateExecutionPolicy } from './config-actions';
+import { openDb } from './lib/sqlite';
 import {
   checkExecutionPolicy,
   type ExecutionContext,
@@ -169,7 +170,7 @@ export async function listExecutionApprovals(
   options: { includeResolved?: boolean } = {},
 ) {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
 
   try {
     return {
@@ -326,7 +327,7 @@ export async function resolveExecutionApproval(
     input.decision === 'deny' ? 'denied' : 'approved';
   const result =
     input.note === undefined ? existing.result : { note: input.note };
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     database
@@ -1092,7 +1093,7 @@ function insertApproval(
 ) {
   const now = new Date().toISOString();
   const id = randomUUID();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     database
@@ -1151,7 +1152,7 @@ function insertApproval(
 }
 
 function readApproval(paths: RuntimePaths, id: string) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
 
   try {
     const row = database
@@ -1176,7 +1177,7 @@ function findSessionApproval(
   expectedScope: ExecutionScope | null,
 ) {
   if (!input.sessionId) return undefined;
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
 
   try {
     const rows = database
@@ -1226,7 +1227,7 @@ function updateApprovalResult(
   },
 ) {
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     database
@@ -1422,8 +1423,4 @@ function isJsonValue(value: unknown): value is JsonValue {
   } catch {
     return false;
   }
-}
-
-function asJsonValue(value: unknown): JsonValue {
-  return JSON.parse(JSON.stringify(value)) as JsonValue;
 }

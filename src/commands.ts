@@ -1,4 +1,5 @@
 import { defineAction, type JsonValue } from '@flue/runtime';
+import { asJsonValue } from './lib/action-result';
 import * as v from 'valibot';
 import {
   addWorkflowSummary,
@@ -1783,8 +1784,4 @@ function readStringArrayProperty(
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
-}
-
-function asJsonValue(value: unknown): JsonValue {
-  return JSON.parse(JSON.stringify(value)) as JsonValue;
 }
