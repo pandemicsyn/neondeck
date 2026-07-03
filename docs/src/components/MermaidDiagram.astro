@@ -103,11 +103,15 @@ const { chart, label } = Astro.props;
 
 <style>
   .diagram-panel {
+    max-width: 100%;
+    min-width: 0;
     margin: 28px 0;
   }
 
   .mermaid-diagram {
+    max-width: 100%;
     overflow-x: auto;
+    overscroll-behavior-x: contain;
     border: 1px solid color-mix(in srgb, var(--cyan) 34%, var(--line));
     background:
       linear-gradient(
@@ -134,5 +138,16 @@ const { chart, label } = Astro.props;
 
   .mermaid-diagram[data-rendered='error'] {
     white-space: pre;
+  }
+
+  @media (max-width: 640px) {
+    .mermaid-diagram {
+      padding: 14px;
+    }
+
+    .mermaid-diagram :global(svg) {
+      min-width: 560px;
+      max-width: none;
+    }
   }
 </style>

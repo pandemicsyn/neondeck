@@ -16,7 +16,10 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
     <meta name="description" content={description} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
@@ -160,12 +163,14 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   }
 
   html {
+    overflow-x: hidden;
     scroll-behavior: smooth;
   }
 
   body {
     margin: 0;
     min-height: 100vh;
+    overflow-x: hidden;
     background: var(--bg);
     color: var(--body);
     -webkit-font-smoothing: antialiased;
@@ -181,7 +186,14 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   }
 
   .site-shell {
-    overflow: hidden;
+    min-width: 0;
+    overflow-x: clip;
+  }
+
+  @supports not (overflow: clip) {
+    .site-shell {
+      overflow-x: hidden;
+    }
   }
 
   .svg-defs {
@@ -190,6 +202,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   }
 
   .container {
+    max-width: 100%;
     width: min(1180px, calc(100vw - 48px));
     margin: 0 auto;
   }
@@ -204,6 +217,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   }
 
   .nav-inner {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -215,6 +229,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     display: inline-flex;
     align-items: center;
     gap: 10px;
+    min-width: 0;
     font-family: 'Chakra Petch', sans-serif;
     font-size: 19px;
     font-weight: 700;
@@ -234,6 +249,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     display: flex;
     align-items: center;
     gap: 18px;
+    min-width: 0;
     font-family: 'IBM Plex Mono', monospace;
     font-size: 13px;
   }
@@ -271,10 +287,84 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     color: var(--cyan);
   }
 
+  .mobile-nav {
+    position: relative;
+    display: none;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .mobile-nav summary {
+    display: grid;
+    width: 44px;
+    height: 44px;
+    place-content: center;
+    gap: 4px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--cyan);
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .mobile-nav summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .mobile-nav summary span {
+    display: block;
+    width: 18px;
+    height: 2px;
+    background: currentColor;
+  }
+
+  .mobile-nav[open] summary {
+    border-color: var(--cyan);
+    background: color-mix(in srgb, var(--cyan) 12%, transparent);
+  }
+
+  .mobile-nav-panel {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    z-index: 30;
+    display: grid;
+    width: min(300px, calc(100vw - 32px));
+    gap: 4px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
+    backdrop-filter: blur(10px);
+  }
+
+  .mobile-nav-panel a {
+    display: flex;
+    min-height: 42px;
+    align-items: center;
+    border: 1px solid transparent;
+    color: var(--body);
+    padding: 0 12px;
+    text-decoration: none;
+  }
+
+  .mobile-nav-panel a:hover {
+    border-color: var(--line);
+    color: var(--cyan);
+  }
+
+  .mobile-look-toggle {
+    margin-top: 8px;
+  }
+
+  .mobile-look-toggle button {
+    flex: 1;
+    min-height: 44px;
+  }
+
   .button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    min-height: 44px;
     border: 1px solid var(--cyan);
     background: var(--cyan);
     color: var(--bg);
@@ -513,6 +603,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   .hero-center {
     position: relative;
     z-index: 2;
+    width: min(1040px, 100%);
     max-width: 1040px;
     margin: 0 auto;
     padding-inline: 28px;
@@ -532,6 +623,8 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   h3 {
     font-family: 'Chakra Petch', sans-serif;
     color: var(--ink);
+    overflow-wrap: break-word;
+    text-wrap: balance;
   }
 
   h1 {
@@ -565,6 +658,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     color: var(--muted);
     font-size: clamp(1rem, 1.6vw, 1.15rem);
     line-height: 1.7;
+    text-wrap: pretty;
   }
 
   .hero-actions {
@@ -582,6 +676,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   .command {
     display: inline-flex;
     align-items: stretch;
+    max-width: 100%;
     margin-top: 38px;
     padding: 0;
     border: 1px solid rgba(105, 230, 255, 0.28);
@@ -602,7 +697,9 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   .command-code {
     display: inline-flex;
     align-items: center;
+    min-width: 0;
     gap: 12px;
+    overflow-x: auto;
     padding: 14px 18px;
     white-space: nowrap;
   }
@@ -712,7 +809,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
 
   .feature-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr));
     gap: 1px;
     border: 1px solid var(--line);
     background: var(--line);
@@ -800,6 +897,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   }
 
   pre {
+    max-width: 100%;
     margin: 0;
     padding: 18px;
     color: var(--code-ink);
@@ -813,8 +911,13 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   .docs-layout {
     display: grid;
     grid-template-columns: 220px minmax(0, 1fr);
+    align-items: start;
     gap: 44px;
     padding: 58px 0 96px;
+  }
+
+  .docs-layout > * {
+    min-width: 0;
   }
 
   .docs-sidebar {
@@ -837,7 +940,10 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   }
 
   .docs-prose {
+    width: 100%;
     max-width: 780px;
+    min-width: 0;
+    overflow-wrap: break-word;
   }
 
   .docs-prose h1 {
@@ -849,15 +955,45 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     font-size: clamp(1.6rem, 3vw, 2.4rem);
   }
 
+  .docs-prose p,
+  .docs-prose li {
+    max-width: 70ch;
+    overflow-wrap: break-word;
+    text-wrap: pretty;
+  }
+
   .docs-prose a {
     color: var(--cyan);
   }
 
+  .docs-prose :not(pre) > code {
+    margin-inline: 0.08em;
+    padding: 0.06em 0.24em;
+    border: 1px solid var(--line-weak);
+    background: color-mix(in srgb, var(--cyan) 8%, transparent);
+    color: var(--code-ink);
+    font-size: 0.92em;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
   .docs-prose pre {
+    max-width: 100%;
     margin: 18px 0;
     border: 1px solid var(--line);
     background: var(--code-bg);
     overflow: auto;
+  }
+
+  .docs-prose pre code {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: inherit;
+    overflow-wrap: inherit;
   }
 
   .footer {
@@ -877,9 +1013,17 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
   }
 
   @media (max-width: 900px) {
+    .nav-inner {
+      gap: 12px;
+    }
+
     .nav-link,
     .nav-cta {
       display: none;
+    }
+
+    .mobile-nav {
+      display: block;
     }
 
     .hero-grid,
@@ -913,10 +1057,114 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
       margin-top: 16px;
     }
 
+    .docs-layout {
+      gap: 26px;
+      padding: 34px 0 72px;
+    }
+
     .docs-sidebar {
       position: static;
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      max-width: 100%;
+      gap: 8px;
+      padding-bottom: 4px;
+    }
+
+    .docs-sidebar a {
+      display: inline-flex;
+      min-height: 40px;
+      align-items: center;
+      border: 1px solid var(--line);
+      background: var(--card);
+      color: var(--body);
+      padding: 8px 10px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .container {
+      width: min(1180px, calc(100vw - 32px));
+    }
+
+    .brand {
+      font-size: 18px;
+      letter-spacing: 0.02em;
+    }
+
+    .nav-links > .look-toggle {
+      display: none;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 10vw, 3.4rem);
+      line-height: 1.02;
+    }
+
+    .section-header h2,
+    .docs-prose h1,
+    .docs-prose h2 {
+      line-height: 1.05;
+    }
+
+    .docs-prose h1 {
+      font-size: clamp(2rem, 10vw, 2.65rem);
+    }
+
+    .docs-prose h2 {
+      margin-top: 38px;
+      font-size: clamp(1.45rem, 7vw, 2rem);
+    }
+
+    .docs-prose p,
+    .docs-prose li {
+      font-size: 16px;
+      line-height: 1.68;
+    }
+
+    .docs-prose ul,
+    .docs-prose ol {
+      padding-left: 22px;
+    }
+
+    .docs-prose pre {
+      padding: 14px;
+      font-size: 12px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .hero-center {
+      padding-inline: 16px;
+    }
+
+    .command {
+      width: 100%;
+      font-size: 12px;
+    }
+
+    .command button {
+      min-width: 72px;
+      min-height: 44px;
+    }
+
+    .hero-actions .button {
+      width: 100%;
+      max-width: 320px;
+    }
+  }
+
+  @media (max-width: 420px) {
+    .kicker {
+      font-size: 11px;
+      letter-spacing: 0.14em;
+    }
+
+    .command-code {
+      gap: 8px;
+      padding: 12px;
     }
   }
 
