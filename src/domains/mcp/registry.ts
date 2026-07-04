@@ -71,15 +71,12 @@ type McpRegistryPendingRefreshTestHookInput = {
 };
 
 let mcpRegistryPublishTestHook:
-  ((input: McpRegistryPublishTestHookInput) => Promise<void> | void) | null =
-  null;
+  ((input: McpRegistryPublishTestHookInput) => void) | null = null;
 let mcpRegistryPendingRefreshTestHook:
-  | ((input: McpRegistryPendingRefreshTestHookInput) => Promise<void> | void)
-  | null = null;
+  ((input: McpRegistryPendingRefreshTestHookInput) => void) | null = null;
 
 export function setMcpRegistryPublishHookForTests(
-  hook:
-    ((input: McpRegistryPublishTestHookInput) => Promise<void> | void) | null,
+  hook: ((input: McpRegistryPublishTestHookInput) => void) | null,
 ) {
   const previous = mcpRegistryPublishTestHook;
   mcpRegistryPublishTestHook = hook;
@@ -89,9 +86,7 @@ export function setMcpRegistryPublishHookForTests(
 }
 
 export function setMcpRegistryPendingRefreshHookForTests(
-  hook:
-    | ((input: McpRegistryPendingRefreshTestHookInput) => Promise<void> | void)
-    | null,
+  hook: ((input: McpRegistryPendingRefreshTestHookInput) => void) | null,
 ) {
   const previous = mcpRegistryPendingRefreshTestHook;
   mcpRegistryPendingRefreshTestHook = hook;
@@ -211,7 +206,7 @@ export class McpRegistry {
     const generation = current.refreshGeneration;
     if (current.refreshPromise) {
       current.pendingServer = server;
-      await mcpRegistryPendingRefreshTestHook?.({ serverId: id, server });
+      mcpRegistryPendingRefreshTestHook?.({ serverId: id, server });
       return current.refreshPromise;
     }
 
@@ -305,7 +300,7 @@ export class McpRegistry {
         await this.clearStaleCatalog(id);
         return;
       }
-      await mcpRegistryPublishTestHook?.({
+      mcpRegistryPublishTestHook?.({
         serverId: id,
         tools: connection.tools,
       });
