@@ -1,5 +1,5 @@
-import type { RepoRegistrySnapshot } from '../../repos';
-import { repoFullName } from '../../repos';
+import type { RepoRegistrySnapshot } from '../repos';
+import { repoFullName } from '../repos';
 import type {
   DesiredTerminalState,
   ResolvedPrReference,
@@ -276,7 +276,9 @@ export function findConfiguredRepo(
   };
 }
 
-export function okReference(input: Omit<ResolvedPrReference, 'id' | 'repoFullName'>): {
+export function okReference(
+  input: Omit<ResolvedPrReference, 'id' | 'repoFullName'>,
+): {
   ok: true;
   reference: ResolvedPrReference;
 } {

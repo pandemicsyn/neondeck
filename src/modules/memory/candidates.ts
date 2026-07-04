@@ -11,7 +11,11 @@ import {
   runtimePaths,
   type RuntimePaths,
 } from '../../runtime-home';
-import type { MemoryCandidateRecord, MemoryMutationSource, MemoryRecord } from './schemas';
+import type {
+  MemoryCandidateRecord,
+  MemoryMutationSource,
+  MemoryRecord,
+} from './schemas';
 import {
   memoryCandidateCreateInputSchema,
   memoryCandidateDecideInputSchema,

@@ -2,10 +2,7 @@ import { asJsonValue } from '../../lib/action-result';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
-import {
-  ensureRuntimeHome,
-  runtimePaths,
-} from '../../runtime-home';
+import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import type { MemoryMutationSource, MemoryRecord } from './schemas';
 import {
   memoryArchiveInputSchema,

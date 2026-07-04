@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import type { RuntimePaths } from '../../runtime-home';
-import type { SchedulerTickLease, SchedulerTickLeaseRenewResult, SchedulerTickLeaseResult } from './schemas';
+import type {
+  SchedulerTickLease,
+  SchedulerTickLeaseRenewResult,
+  SchedulerTickLeaseResult,
+} from './schemas';
 import { schedulerTickLeaseKey } from './schemas';
 import { errorMessage } from './utils';
 
@@ -146,7 +150,10 @@ export function isSchedulerTickLeaseOwned(
   }
 }
 
-export async function releaseSchedulerTickLease(paths: RuntimePaths, owner: string) {
+export async function releaseSchedulerTickLease(
+  paths: RuntimePaths,
+  owner: string,
+) {
   const maxAttempts = 5;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -162,7 +169,10 @@ export async function releaseSchedulerTickLease(paths: RuntimePaths, owner: stri
   );
 }
 
-export function releaseSchedulerTickLeaseOnce(paths: RuntimePaths, owner: string) {
+export function releaseSchedulerTickLeaseOnce(
+  paths: RuntimePaths,
+  owner: string,
+) {
   const database = new DatabaseSync(paths.neondeckDatabase);
 
   try {

@@ -22,8 +22,14 @@ import { queryErrorMessage, queryKeys } from '../../lib/query';
 import type { DisplayPlugin } from '../../types';
 import { parsePositiveIntegerConfig } from '../../plugins/config';
 import { RuntimeView } from './components/runtime-view';
-import { invalidateRuntimeQueries, runtimeSnapshotFromQueries } from './queries';
-import { runtimeOverviewDefaultConfig, type RuntimeOverviewConfig } from './types';
+import {
+  invalidateRuntimeQueries,
+  runtimeSnapshotFromQueries,
+} from './queries';
+import {
+  runtimeOverviewDefaultConfig,
+  type RuntimeOverviewConfig,
+} from './types';
 
 export const RuntimeOverviewPlugin = {
   id: 'runtime-overview',

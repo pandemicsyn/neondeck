@@ -7,7 +7,7 @@ import {
   readRuntimeJson,
   runtimePaths,
 } from '../../runtime-home';
-import { listActiveRepoWorktrees, type WorktreeRecord } from '../../worktrees';
+import { listActiveRepoWorktrees, type WorktreeRecord } from '../worktrees';
 
 export type RepoRegistrySnapshot = {
   home: string;

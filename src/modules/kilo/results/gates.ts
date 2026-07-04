@@ -1,10 +1,15 @@
 import { createHash } from 'node:crypto';
-import { checkAutopilotPolicy } from '../../../autopilot-policy';
+import { checkAutopilotPolicy } from '../../autopilot-policy';
 import { gitDiff } from '../../../repo-edit/git';
-import { type RepoDiffSummary } from '../../../repos';
+import { type RepoDiffSummary } from '../../repos';
 import { type RuntimePaths } from '../../../runtime-home';
-import { listWorktrees, type WorktreeRecord } from '../../../worktrees';
-import { type KiloResultActionResult, type KiloResultClassification, type KiloResultState, type KiloTaskLike } from './schemas';
+import { listWorktrees, type WorktreeRecord } from '../../worktrees';
+import {
+  type KiloResultActionResult,
+  type KiloResultClassification,
+  type KiloResultState,
+  type KiloTaskLike,
+} from './schemas';
 import { errorMessage } from './state';
 
 export function classifyReview(
@@ -45,7 +50,9 @@ export function reviewReasons(
   return reasons;
 }
 
-export function taskStatusForClassification(classification: KiloResultClassification) {
+export function taskStatusForClassification(
+  classification: KiloResultClassification,
+) {
   if (classification === 'discard') return 'discarded';
   return classification;
 }
@@ -170,7 +177,9 @@ export async function diffFingerprintForTask(
     .digest('hex');
 }
 
-export async function readTaskDiff(task: KiloTaskLike): Promise<RepoDiffSummary> {
+export async function readTaskDiff(
+  task: KiloTaskLike,
+): Promise<RepoDiffSummary> {
   try {
     const diff = await gitDiff(task.cwd, { base: 'HEAD', includePatch: false });
     return {
@@ -205,7 +214,10 @@ export async function readTaskDiff(task: KiloTaskLike): Promise<RepoDiffSummary>
   }
 }
 
-export async function findTaskWorktree(task: KiloTaskLike, paths: RuntimePaths) {
+export async function findTaskWorktree(
+  task: KiloTaskLike,
+  paths: RuntimePaths,
+) {
   if (!task.worktreeId) return null;
   const snapshot = await listWorktrees(paths);
   return (

@@ -1,6 +1,6 @@
 import * as v from 'valibot';
-import { addNotification, type NotificationLevel } from '../../app-state';
-import { type PreparedDiffRecord } from '../../prepared-diffs';
+import { addNotification, type NotificationLevel } from '../app-state';
+import { type PreparedDiffRecord } from '../prepared-diffs';
 import { type RuntimePaths, runtimePaths } from '../../runtime-home';
 
 export type AutopilotNotificationState =

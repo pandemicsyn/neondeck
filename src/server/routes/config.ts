@@ -7,8 +7,8 @@ import {
   updateDashboardLayout,
   updateProviderConfig,
   updateWorktreePolicy,
-} from '../../config-actions';
-import { isRegisteredProvider } from '../../providers';
+} from '../../modules/config';
+import { isRegisteredProvider } from '../../modules/repos';
 import {
   ConfigValidationError,
   parseDashboardConfig,

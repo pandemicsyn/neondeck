@@ -11,7 +11,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { quoteEnvValue } from '../env';
+import { quoteEnvValue } from '../modules/runtime';
 import type { EnvMap } from './types';
 
 export async function findGitRepos(parent: string) {

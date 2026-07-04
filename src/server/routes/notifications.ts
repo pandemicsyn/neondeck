@@ -3,7 +3,7 @@ import {
   listNotifications,
   markNotificationRead,
   resolveNotification,
-} from '../../app-state';
+} from '../../modules/app-state';
 import type { RuntimePaths } from '../../runtime-home';
 
 export function createNotificationRoutes(paths: RuntimePaths) {

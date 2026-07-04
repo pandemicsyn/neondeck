@@ -121,11 +121,15 @@ export const learningReviewOutputSchema = v.looseObject({
 });
 
 export type MemoryProposal = v.InferOutput<typeof memoryProposalSchema>;
-export type LearningReviewerOutput = v.InferInput<typeof learningReviewerOutputSchema>;
+export type LearningReviewerOutput = v.InferInput<
+  typeof learningReviewerOutputSchema
+>;
 export type ConversationReviewInput = v.InferInput<
   typeof conversationReviewInputSchema
 >;
-export type CurationReviewInput = v.InferInput<typeof curationReviewInputSchema>;
+export type CurationReviewInput = v.InferInput<
+  typeof curationReviewInputSchema
+>;
 export type PrBatchReviewInput = v.InferInput<typeof prBatchReviewInputSchema>;
 
 export type PreparedLearningReview = {

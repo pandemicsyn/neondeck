@@ -7,7 +7,7 @@ import {
   parseDotEnv,
   quoteEnvValue,
   readEnvFiles,
-} from './env';
+} from './modules/runtime';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 
 const tempRoots: string[] = [];

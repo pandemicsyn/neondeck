@@ -1,23 +1,17 @@
-export {
-  generateLocalApiToken,
-  resolveLearningConfig,
-} from './defaults';
-export {
-  ensureRuntimeHome,
-  ensureRuntimeHomeSync,
-} from './bootstrap';
+export { generateLocalApiToken, resolveLearningConfig } from './defaults.ts';
+export { ensureRuntimeHome, ensureRuntimeHomeSync } from './bootstrap.ts';
 export {
   readRuntimeJson,
   readRuntimeJsonSync,
   validateRuntimeFiles,
   validateRuntimeFilesSync,
-} from './files';
+} from './files.ts';
 export {
   type RuntimeHomeEnv,
   type RuntimePaths,
   resolveRuntimeHome,
   runtimePaths,
-} from './paths';
+} from './paths.ts';
 export {
   agentModelConfigSchema,
   appConfigSchema,
@@ -70,4 +64,4 @@ export {
   type ThinkingLevel,
   type WorktreeCleanupConfig,
   type WorktreeConfig,
-} from './schemas';
+} from './schemas.ts';

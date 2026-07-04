@@ -1,7 +1,29 @@
 import { SessionReferenceButton } from '../../../components/SessionReferenceButton';
 import { Badge } from '../../../components/ui';
-import type { KiloTaskRecord, MemoryRecord, RepoConfig, RepoEditEvent, RepoHealth, RuntimeSkill, RuntimeSkillsResponse, SchedulerJob, WorkflowEventRecord, WorkflowObservability, WorktreeCleanupFailure, WorktreeLockRecord, WorktreeRecord } from '../../../api';
-import { formatInterval, kiloTaskStatusClass, relativeTime, repoEditEventClass, repoHealthStatus, shortPath, worktreeStatusClass } from '../lib/format';
+import type {
+  KiloTaskRecord,
+  MemoryRecord,
+  RepoConfig,
+  RepoEditEvent,
+  RepoHealth,
+  RuntimeSkill,
+  RuntimeSkillsResponse,
+  SchedulerJob,
+  WorkflowEventRecord,
+  WorkflowObservability,
+  WorktreeCleanupFailure,
+  WorktreeLockRecord,
+  WorktreeRecord,
+} from '../../../api';
+import {
+  formatInterval,
+  kiloTaskStatusClass,
+  relativeTime,
+  repoEditEventClass,
+  repoHealthStatus,
+  shortPath,
+  worktreeStatusClass,
+} from '../lib/format';
 
 export function RepoEditEventRow({ event }: { event: RepoEditEvent }) {
   const paths = event.paths.length > 0 ? event.paths.join(', ') : 'no paths';
@@ -189,7 +211,11 @@ export function WorktreeLockRow({ lock }: { lock: WorktreeLockRecord }) {
   );
 }
 
-export function WorktreeCleanupRow({ failure }: { failure: WorktreeCleanupFailure }) {
+export function WorktreeCleanupRow({
+  failure,
+}: {
+  failure: WorktreeCleanupFailure;
+}) {
   return (
     <article className="border border-accent/70 bg-soft px-2.5 py-2">
       <div className="flex items-start justify-between gap-2">

@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
-import type { AppConfig, ResolvedLearningConfig } from './schemas';
+import type { AppConfig, ResolvedLearningConfig } from './schemas.ts';
 
 export function defaultAppConfig(): AppConfig {
   return {
@@ -37,4 +37,3 @@ export function resolveLearningConfig(
     projectMemoryBudgetChars: learning.projectMemoryBudgetChars ?? 1500,
   };
 }
-

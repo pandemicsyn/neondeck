@@ -1,12 +1,10 @@
 import { type JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 import { failedAction } from '../../lib/action-result';
-import {
-  fetchCheckSummary,
-  fetchGitHubLogin,
-  fetchPullRequestQueue,
-} from './index';
-import { readRepoRegistrySnapshot, repoFullName } from '../../repos';
+import { fetchCheckSummary } from './checks';
+import { fetchGitHubLogin } from './client';
+import { fetchPullRequestQueue } from './queue';
+import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import { type RuntimePaths, runtimePaths } from '../../runtime-home';
 
 type GitHubActionResult<TData extends JsonValue = JsonValue> = {

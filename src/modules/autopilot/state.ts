@@ -2,17 +2,70 @@
 import { defineTool } from '@flue/runtime';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
-import { listExecutionApprovals } from '../../execution-actions';
-import { flueRunInspectionUrl } from '../../local-api-auth';
-import { globalAutopilotPolicy, mergeAutopilotConcurrency, mergeAutopilotLimits, normalizeAutopilotMode, readRepoAutopilotConfig, type AutopilotConcurrencyPolicy, type AutopilotMode, type AutopilotModeAlias, type AutopilotPolicyLimits } from '../../autopilot-policy';
-import { ensureRuntimeHome, parseAppConfig, parseRepoRegistry, readRuntimeJson, runtimePaths, type RepoConfig, type RuntimePaths } from '../../runtime-home';
-import { listNotifications, type NotificationLevel } from '../../app-state';
-import { listPreparedDiffs, type PreparedDiffApprovalRecord, type PreparedDiffRecord, type PreparedDiffStatus } from '../../prepared-diffs';
-import { listPrWatchRecords, type PrWatch } from '../../watch-actions';
-import { listWorktrees, type WorktreeLifecycleStatus, type WorktreeRecord } from '../../worktrees';
-import { autopilotStateSchema, modeLabels, isCheckWorkflow, type AutopilotState } from './state-schemas';
-import { approvalFromExecution, approvalFromPreparedDiff, globalPolicy, isAutopilotApproval, preparedDiffFromRecord, queueItemFromApproval, queueItemFromPreparedDiff, queueItemFromWatch, queueItemFromWorkflow, queueItemFromWorktree, queueSort, repoPolicy, runningCheckFromWorkflow, watchPolicy } from './state-mappers';
-import { readActiveAutopilotRuns, readRecentAutopilotWorkflowEvents, readRecentWorktreeEvents } from './state-store';
+import { listExecutionApprovals } from '../execution';
+import { flueRunInspectionUrl } from '../runtime';
+import {
+  globalAutopilotPolicy,
+  mergeAutopilotConcurrency,
+  mergeAutopilotLimits,
+  normalizeAutopilotMode,
+  readRepoAutopilotConfig,
+  type AutopilotConcurrencyPolicy,
+  type AutopilotMode,
+  type AutopilotModeAlias,
+  type AutopilotPolicyLimits,
+} from '../autopilot-policy';
+import {
+  ensureRuntimeHome,
+  parseAppConfig,
+  parseRepoRegistry,
+  readRuntimeJson,
+  runtimePaths,
+  type RepoConfig,
+  type RuntimePaths,
+} from '../../runtime-home';
+import { listNotifications, type NotificationLevel } from '../app-state';
+import {
+  listPreparedDiffs,
+  type PreparedDiffApprovalRecord,
+  type PreparedDiffRecord,
+  type PreparedDiffStatus,
+} from '../prepared-diffs';
+import { listPrWatchRecords, type PrWatch } from '../watches';
+import {
+  listWorktrees,
+  type WorktreeLifecycleStatus,
+  type WorktreeRecord,
+} from '../worktrees';
+import {
+  autopilotStateSchema,
+  modeLabels,
+  isCheckWorkflow,
+  type AutopilotState,
+} from './state-schemas';
+import {
+  approvalFromExecution,
+  approvalFromPreparedDiff,
+  globalPolicy,
+  isAutopilotApproval,
+  preparedDiffFromRecord,
+  queueItemFromApproval,
+  queueItemFromPreparedDiff,
+  queueItemFromWatch,
+  queueItemFromWorkflow,
+  queueItemFromWorktree,
+  queueSort,
+  repoPolicy,
+  runningCheckFromWorkflow,
+  watchPolicy,
+} from './state-mappers';
+import {
+  readActiveAutopilotRuns,
+  readRecentAutopilotWorkflowEvents,
+  readRecentWorktreeEvents,
+} from './state-store';
+
+export { autopilotStateSchema } from './state-schemas';
 
 export const autopilotStateLookupTool = defineTool({
   name: 'neondeck_autopilot_state_lookup',

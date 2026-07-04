@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { readDotEnvFile, type EnvLoadResult } from '../env';
+import { readDotEnvFile, type EnvLoadResult } from '../modules/runtime';
 import type { RuntimePaths } from '../runtime-home';
 import type { EnvMap } from './types';
 import {
@@ -107,7 +107,10 @@ export async function runInit(options: { home?: string }) {
   );
 }
 
-export async function configureSecrets(paths: RuntimePaths, envLoad: EnvLoadResult) {
+export async function configureSecrets(
+  paths: RuntimePaths,
+  envLoad: EnvLoadResult,
+) {
   const { fetchGitHubLogin } = await githubModule();
   const env = await readDotEnvFile(paths.env);
   const shouldEdit = await promptConfirm({
@@ -678,8 +681,10 @@ export function detectExternalSkillRoots() {
   );
 }
 
-
-export async function addRepoWithFeedback(repoPath: string, paths: RuntimePaths) {
+export async function addRepoWithFeedback(
+  repoPath: string,
+  paths: RuntimePaths,
+) {
   const { addRepo } = await configActionsModule();
   const result = await addRepo({ path: repoPath }, paths);
   if (result.ok) log.success(result.message);

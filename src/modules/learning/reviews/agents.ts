@@ -1,5 +1,5 @@
 import { defineAgent, defineAgentProfile } from '@flue/runtime';
-import { readAgentModelSelectionSync } from '../../../agent-config';
+import { readAgentModelSelectionSync } from '../../runtime';
 
 export const learningReviewerProfile = defineAgentProfile({
   name: 'learning_reviewer',

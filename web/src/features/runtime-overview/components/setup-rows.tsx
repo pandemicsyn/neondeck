@@ -1,8 +1,24 @@
 import { useState } from 'react';
-import { markNotificationRead, resolveExecutionApproval, resolveNotification, type ExecutionApproval, type NotificationRecord, type RuntimeStatus, type RuntimeStatusCheck, type SafetyPolicyEntry } from '../../../api';
+import {
+  markNotificationRead,
+  resolveExecutionApproval,
+  resolveNotification,
+  type ExecutionApproval,
+  type NotificationRecord,
+  type RuntimeStatus,
+  type RuntimeStatusCheck,
+  type SafetyPolicyEntry,
+} from '../../../api';
 import { Badge } from '../../../components/ui';
 import { MiniEmpty } from './atoms';
-import { checkClass, executionApprovalClass, notificationClass, relativeTime, setupStep, shortPath } from '../lib/format';
+import {
+  checkClass,
+  executionApprovalClass,
+  notificationClass,
+  relativeTime,
+  setupStep,
+  shortPath,
+} from '../lib/format';
 import type { SetupStep } from '../types';
 
 export function RuntimeSection({

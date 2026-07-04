@@ -42,4 +42,3 @@ export function memoryCandidateWasNotFound(result: unknown) {
     record.requires.includes('id')
   );
 }
-

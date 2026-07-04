@@ -1,7 +1,7 @@
 import { type FlueObservation, type JsonValue } from '@flue/runtime';
 import { DatabaseSync } from 'node:sqlite';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
-import { flueRunInspectionUrl, readLocalApiToken } from '../../local-api-auth';
+import { flueRunInspectionUrl, readLocalApiToken } from '../runtime';
 
 export type WorkflowEventRecord = {
   id: number;

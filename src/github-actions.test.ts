@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { getGitHubCheckSummary, listGitHubPrQueue } from './github-actions';
+import { getGitHubCheckSummary, listGitHubPrQueue } from './modules/github';
 import { runtimePaths } from './runtime-home';
 
 const tempRoots: string[] = [];

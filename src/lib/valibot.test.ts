@@ -4,9 +4,11 @@ import { parseInput } from './valibot';
 
 describe('valibot helpers', () => {
   it('returns parsed input on success', () => {
-    const parsed = parseInput(v.object({ id: v.string() }), { id: 'one' }, (
-      message,
-    ) => ({ message }));
+    const parsed = parseInput(
+      v.object({ id: v.string() }),
+      { id: 'one' },
+      (message) => ({ message }),
+    );
 
     expect(parsed).toEqual({ ok: true, input: { id: 'one' } });
   });

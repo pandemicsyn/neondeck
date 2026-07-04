@@ -14,9 +14,13 @@ import {
   readPreparedDiffSummary,
   requestPreparedDiffRevision,
   runPreparedDiffVerification,
-} from './prepared-diffs';
+} from './modules/prepared-diffs';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
-import { createWorktree, lockWorktree, releaseWorktreeLock } from './worktrees';
+import {
+  createWorktree,
+  lockWorktree,
+  releaseWorktreeLock,
+} from './modules/worktrees';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];

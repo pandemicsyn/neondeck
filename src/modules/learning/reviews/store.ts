@@ -373,7 +373,11 @@ export function parseNullableJson(value: unknown): JsonValue | null {
   return JSON.parse(value) as JsonValue;
 }
 
-export function failedReview(action: string, message: string, requires?: string[]) {
+export function failedReview(
+  action: string,
+  message: string,
+  requires?: string[],
+) {
   return {
     ok: false as const,
     action,

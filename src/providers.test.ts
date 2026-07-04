@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   providerRuntimeRegistrations,
   resolveKilocodeProviderStatus,
-} from './providers';
+} from './modules/repos';
 
 describe('provider runtime registrations', () => {
   it('prefers KILOCODE_API_KEY unless only the legacy Kilo key is present', () => {

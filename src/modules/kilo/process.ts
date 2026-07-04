@@ -7,11 +7,30 @@ import { asJsonValue } from '../../lib/action-result';
 import { notifyKiloState, resolveKiloNotifications } from './notifications';
 import { taskDiffSummary, isTimeoutMessage } from './runtime-facts';
 import { type RunningProcess } from './schemas';
-import { searchKiloSessions, searchKiloSessionsWithDisk } from './sessions';
-import { addKiloTaskEvent, listReconcileableKiloTasks, markKiloTaskFinished, tryKiloTask, updateKiloTaskSessions, updateKiloTaskStatus, type KiloTaskRecord, type KiloTaskStatus } from './store';
-import { errorMessage, eventType, extractSessionIds, parseJsonLine, summarizeEvent, topLevelSessionId, truncate, writeRawLog } from './utils';
+import { searchKiloSessions } from './sessions';
+import { searchKiloSessionsWithDisk } from './sessions-adapters';
+import {
+  addKiloTaskEvent,
+  listReconcileableKiloTasks,
+  markKiloTaskFinished,
+  tryKiloTask,
+  updateKiloTaskSessions,
+  updateKiloTaskStatus,
+  type KiloTaskRecord,
+  type KiloTaskStatus,
+} from './store';
+import {
+  errorMessage,
+  eventType,
+  extractSessionIds,
+  parseJsonLine,
+  summarizeEvent,
+  topLevelSessionId,
+  truncate,
+  writeRawLog,
+} from './utils';
 import { type RuntimePaths } from '../../runtime-home';
-import { releaseWorktreeLock } from '../../worktrees';
+import { releaseWorktreeLock } from '../worktrees';
 
 const execFileAsync = promisify(execFile);
 export const runningProcesses = new Map<string, RunningProcess>();
@@ -27,6 +46,21 @@ export function attachProcessHandlers(
   if (!child.stdout || !child.stderr) {
     throw new Error('Kilo process was spawned without stdout/stderr pipes.');
   }
+  let settled = false;
+  let settle: () => void = () => {};
+  const completed = new Promise<void>((resolve) => {
+    settle = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+  });
+  const cleanup = () => {
+    runningProcesses.delete(taskId);
+    terminalTaskIds.delete(taskId);
+    rawLog?.end();
+    settle();
+  };
   const stdoutLines = createInterface({ input: child.stdout });
   const stderrLines = createInterface({ input: child.stderr });
 
@@ -77,7 +111,7 @@ export function attachProcessHandlers(
         },
         paths,
       );
-    })();
+    })().finally(cleanup);
   });
   child.on('exit', (code, signal) => {
     void (async () => {
@@ -101,6 +135,19 @@ export function attachProcessHandlers(
         await recoverMissingSessionId(taskId, paths);
       }
       const current = tryKiloTask(taskId, paths);
+      markKiloTaskFinished(taskId, status, code, error, paths);
+      addKiloTaskEvent(
+        taskId,
+        {
+          eventType: 'process.exit',
+          stream: 'system',
+          summary: signal
+            ? `Kilo exited from signal ${signal}.`
+            : `Kilo exited with code ${code ?? 'unknown'}.`,
+          data: { code, signal },
+        },
+        paths,
+      );
       if (status === 'cancelled') {
         await resolveKiloNotifications(taskId, ['started', 'progress'], paths);
       } else if (status === 'succeeded') {
@@ -157,25 +204,10 @@ export function attachProcessHandlers(
           paths,
         );
       }
-      markKiloTaskFinished(taskId, status, code, error, paths);
       await releaseTaskLock(task, status, paths);
-      addKiloTaskEvent(
-        taskId,
-        {
-          eventType: 'process.exit',
-          stream: 'system',
-          summary: signal
-            ? `Kilo exited from signal ${signal}.`
-            : `Kilo exited with code ${code ?? 'unknown'}.`,
-          data: { code, signal },
-        },
-        paths,
-      );
-      runningProcesses.delete(taskId);
-      terminalTaskIds.delete(taskId);
-      rawLog?.end();
-    })();
+    })().finally(cleanup);
   });
+  return completed;
 }
 
 function handleKiloLine(

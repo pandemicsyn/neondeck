@@ -7,7 +7,7 @@ import {
   parseEnvFile,
   resolveExeDevCheckoutTarget,
   resolveExeDevForwardedEnv,
-} from './exedev-context';
+} from './modules/execution';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 
 const tempRoots: string[] = [];

@@ -4,14 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
-import { listWorkflowSummaries } from './app-state';
-import { readAgentModelSelectionSync } from './agent-config';
-import { parseNeonCommand, runNeonCommand } from './commands';
-import { updateAgentModels } from './config-actions';
-import { listRepoStatus, runDevDoctor } from './dev-doctor';
+import { listWorkflowSummaries } from './modules/app-state';
+import { readAgentModelSelectionSync } from './modules/runtime';
+import { parseNeonCommand, runNeonCommand } from './modules/commands';
+import { updateAgentModels } from './modules/config';
+import { listRepoStatus, runDevDoctor } from './modules/runtime';
 import { runtimePaths } from './runtime-home';
-import { readNeonSessionState } from './session-actions';
-import { addPrWatch } from './watch-actions';
+import { readNeonSessionState } from './modules/sessions';
+import { addPrWatch } from './modules/watches';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
@@ -619,7 +619,7 @@ describe('Neon commands', () => {
     });
   });
 
-  it('reports missing runtime databases before bootstrap repair', async () => {
+  it('creates runtime databases before reporting diagnostics', async () => {
     const home = await tempDir('neondeck-home-');
     const repoPath = await tempGitRepo();
     const paths = runtimePaths(home);
@@ -630,11 +630,11 @@ describe('Neon commands', () => {
       checks: expect.arrayContaining([
         expect.objectContaining({
           id: 'databases',
-          status: 'attention',
+          status: 'ok',
           data: {
             databases: expect.arrayContaining([
-              expect.objectContaining({ id: 'neondeck', exists: false }),
-              expect.objectContaining({ id: 'flue', exists: false }),
+              expect.objectContaining({ id: 'neondeck', exists: true }),
+              expect.objectContaining({ id: 'flue', exists: true }),
             ]),
           },
         }),

@@ -3,14 +3,14 @@ import {
   listRuntimeSkills,
   loadRuntimeSkill,
   reloadRuntimeSkills,
-} from '../../runtime-skills';
+} from '../../modules/runtime';
 import type { RuntimePaths } from '../../runtime-home';
 import {
   applySkillPatchCandidate,
   listSkillPatchCandidates,
   rejectSkillPatchCandidate,
   restoreSkillPatchCandidate,
-} from '../../skill-patches';
+} from '../../modules/learning/skill-patches';
 import { boundedQueryLimit, safeJsonObject } from '../http';
 import { learningCandidateStatus } from './learning';
 

@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { updateAgentModels, updateProvider, type RuntimeStatus } from '../../../api';
+import {
+  updateAgentModels,
+  updateProvider,
+  type RuntimeStatus,
+} from '../../../api';
 
 export function RuntimeConfigControls({
   onRefresh,
@@ -501,7 +505,9 @@ function modelProviderId(value: string): ModelProviderId {
   return 'kilocode';
 }
 
-export function activeModelProviderIds(status: RuntimeStatus): ModelProviderId[] {
+export function activeModelProviderIds(
+  status: RuntimeStatus,
+): ModelProviderId[] {
   return Array.from(
     new Set(
       [

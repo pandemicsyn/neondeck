@@ -1,17 +1,23 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs';
 import { cp, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { dirname } from 'node:path';
 
-import { generateLocalApiToken } from './defaults';
-import { runtimePaths } from './paths';
+import { generateLocalApiToken } from './defaults.ts';
+import { runtimePaths } from './paths.ts';
 import {
   ConfigValidationError,
   parseAppConfig,
   parseDashboardConfig,
   parseRepoRegistry,
   parseScheduleConfig,
-} from './schemas';
+} from './schemas.ts';
 
 export async function readRuntimeJson<T>(
   path: string,
@@ -175,4 +181,3 @@ function parseJson<T>(
     throw new ConfigValidationError(path, message);
   }
 }
-

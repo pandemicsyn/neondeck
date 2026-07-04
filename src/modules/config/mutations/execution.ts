@@ -14,7 +14,7 @@ import {
   executionPolicyUpdateSchema,
   hasExecutionPolicyUpdate,
   mergeExecutionConfig,
-} from '../../../execution-policy';
+} from '../../execution-policy';
 import type { ConfigActionResult } from '../schemas';
 
 export async function updateExecutionPolicy(

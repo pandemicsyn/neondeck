@@ -2,16 +2,29 @@ import { type JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../../lib/action-result';
 import { randomUUID } from 'node:crypto';
 import * as v from 'valibot';
-import { checkAutopilotPolicy } from '../../../autopilot-policy';
+import { checkAutopilotPolicy } from '../../autopilot-policy';
 import { openDb } from '../../../lib/sqlite';
 import { type RuntimePaths } from '../../../runtime-home';
-import { stateRowSchema, taskRowSchema, type KiloPromotionStatus, type KiloResultActionResult, type KiloResultClassification, type KiloResultState, type KiloVerificationStatus } from './schemas';
+import {
+  stateRowSchema,
+  taskRowSchema,
+  type KiloPromotionStatus,
+  type KiloResultActionResult,
+  type KiloResultClassification,
+  type KiloResultState,
+  type KiloVerificationStatus,
+} from './schemas';
 
-export function listStateRows(input: { taskId?: string; limit?: number }, paths: RuntimePaths) {
+export function listStateRows(
+  input: { taskId?: string; limit?: number },
+  paths: RuntimePaths,
+) {
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     return input.taskId
-      ? database.prepare('SELECT * FROM kilo_result_state WHERE task_id = ?;').all(input.taskId)
+      ? database
+          .prepare('SELECT * FROM kilo_result_state WHERE task_id = ?;')
+          .all(input.taskId)
       : database
           .prepare(
             `
@@ -66,7 +79,10 @@ export function readKiloResultState(taskId: string, paths: RuntimePaths) {
   }
 }
 
-export function readPreparedDiffByWorktree(worktreeId: string, paths: RuntimePaths) {
+export function readPreparedDiffByWorktree(
+  worktreeId: string,
+  paths: RuntimePaths,
+) {
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
@@ -445,7 +461,10 @@ export function parseInput<T>(
   };
 }
 
-export function notFound(action: string, taskId: string): KiloResultActionResult {
+export function notFound(
+  action: string,
+  taskId: string,
+): KiloResultActionResult {
   return {
     ok: false,
     action,

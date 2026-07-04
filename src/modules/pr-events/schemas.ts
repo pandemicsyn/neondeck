@@ -2,10 +2,22 @@
 import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
-import { fetchPullRequestEventState, postPullRequestComment, type GitHubPullRequestEventState } from '../../github';
-import { readRepoRegistrySnapshot, repoFullName } from '../../repos';
-import { type RuntimePaths, ensureRuntimeHome, runtimePaths } from '../../runtime-home';
-import { listPrWatchRecords, parseWatchPrReference, type PrWatch } from '../../watch-actions';
+import {
+  fetchPullRequestEventState,
+  postPullRequestComment,
+  type GitHubPullRequestEventState,
+} from '../github';
+import { readRepoRegistrySnapshot, repoFullName } from '../repos';
+import {
+  type RuntimePaths,
+  ensureRuntimeHome,
+  runtimePaths,
+} from '../../runtime-home';
+import {
+  listPrWatchRecords,
+  parseWatchPrReference,
+  type PrWatch,
+} from '../watches';
 
 export type PrEventActionResult<TData extends JsonValue = JsonValue> = {
   ok: boolean;

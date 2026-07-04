@@ -22,12 +22,18 @@ if (options.help) {
   process.exit(0);
 }
 
-const {
-  ConfigValidationError,
-  ensureRuntimeHome,
-  runtimePaths,
-  validateRuntimeFiles,
-} = await import(new URL('./runtime-home.ts', import.meta.url).href);
+const { ConfigValidationError } = await import(
+  new URL('./runtime-home/schemas.ts', import.meta.url).href
+);
+const { ensureRuntimeHome } = await import(
+  new URL('./runtime-home/bootstrap.ts', import.meta.url).href
+);
+const { runtimePaths } = await import(
+  new URL('./runtime-home/paths.ts', import.meta.url).href
+);
+const { validateRuntimeFiles } = await import(
+  new URL('./runtime-home/files.ts', import.meta.url).href
+);
 const paths = runtimePaths(options.home ? expandHome(options.home) : undefined);
 const trackedPaths = [
   paths.env,

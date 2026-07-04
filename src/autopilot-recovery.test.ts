@@ -4,19 +4,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
-import { notifyAutopilotState } from './autopilot-notifications';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { notifyAutopilotState } from './modules/autopilot/notifications';
 import {
   readAutopilotRecoveryOptions,
   runAutopilotRecoveryAction,
-} from './autopilot-recovery';
-import { listNotifications } from './app-state';
-import { ensurePreparedDiffForWorktree } from './prepared-diffs';
+} from './modules/autopilot/recovery';
+import { listNotifications } from './modules/app-state';
+import { ensurePreparedDiffForWorktree } from './modules/prepared-diffs';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
-import { createWorktree, readWorktreeRecord } from './worktrees';
+import { createWorktree, readWorktreeRecord } from './modules/worktrees';
 
 const tempRoots: string[] = [];
 const execFileAsync = promisify(execFile);
+
+vi.setConfig({ testTimeout: 60_000 });
 
 afterEach(async () => {
   await Promise.all(

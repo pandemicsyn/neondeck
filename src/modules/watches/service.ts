@@ -1,5 +1,5 @@
-import { deleteJob, deleteJobsByConfigField } from '../../app-state';
-import { readRepoRegistrySnapshot } from '../../repos';
+import { deleteJob, deleteJobsByConfigField } from '../app-state';
+import { readRepoRegistrySnapshot } from '../repos';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import type {
   CheckFetcher,
@@ -45,10 +45,7 @@ import {
   upsertWatchPollingJob,
   watchPollingJobId,
 } from './store';
-import {
-  resolvePrReference,
-  resolveRefReference,
-} from './references';
+import { resolvePrReference, resolveRefReference } from './references';
 import { failResult, okResult, parseActionInput } from './utils';
 
 export async function addPrWatch(

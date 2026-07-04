@@ -1,6 +1,6 @@
 import { asJsonValue } from '../../lib/action-result';
 import { openDb } from '../../lib/sqlite';
-import { updateExecutionPolicy } from '../../config-actions';
+import { updateExecutionPolicy } from '../config';
 import {
   ensureRuntimeHome,
   parseAppConfig,

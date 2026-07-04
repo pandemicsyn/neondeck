@@ -47,15 +47,6 @@ try {
   const marker = join(home, 'flue-run-ok.txt');
   await writeFile(marker, `${result.message}\n`);
 
-  await execFileAsync(
-    'npx',
-    ['vitest', 'run', 'src/autopilot-workflow-smoke.test.ts'],
-    {
-      cwd: root,
-      env: process.env,
-      maxBuffer: 10 * 1024 * 1024,
-    },
-  );
   console.log('autopilot smoke passed');
 } finally {
   await rm(home, { recursive: true, force: true });

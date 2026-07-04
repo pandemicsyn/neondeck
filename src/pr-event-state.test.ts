@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type {
   GitHubPullRequestDetail,
   GitHubPullRequestEventState,
-} from './github';
+} from './modules/github';
 import {
   getGitHubPrBranchPermissions,
   getGitHubPrRequestedChanges,
@@ -15,9 +15,9 @@ import {
   neondeckPrEventTools,
   postGitHubPrComment,
   refreshPrWatchEventState,
-} from './pr-event-state';
+} from './modules/pr-events';
 import { runtimePaths } from './runtime-home';
-import { addPrWatch, removePrWatch } from './watch-actions';
+import { addPrWatch, removePrWatch } from './modules/watches';
 
 const tempRoots: string[] = [];
 const originalEnv = { ...process.env };

@@ -1,17 +1,28 @@
-import { listJobs, listNotifications } from '../../../app-state';
-import { readAgentModelSelectionSync, isThinkingLevel } from '../../../agent-config';
-import { updateAgentModels } from '../../../config-actions';
-import { runDevDoctor } from '../../../dev-doctor';
+import { listJobs, listNotifications } from '../../app-state';
+import { readAgentModelSelectionSync, isThinkingLevel } from '../../runtime';
+import { updateAgentModels } from '../../config';
+import { runDevDoctor } from '../../runtime';
 import { deleteMemory, listMemories, upsertMemory } from '../../memory';
-import { readRepoRegistrySnapshot } from '../../../repos';
+import { readRepoRegistrySnapshot } from '../../repos';
 import { createScheduleBlueprint } from '../../scheduler';
-import { startNeonSession } from '../../../session-actions';
+import { startNeonSession } from '../../sessions';
 import { addPrWatch, listPrWatchRecords } from '../../watches';
 import type { RuntimePaths } from '../../../runtime-home';
-import type { NeonCommandResult, ParsedNeonCommand, CommandDependencies } from '../schemas';
+import type {
+  NeonCommandResult,
+  ParsedNeonCommand,
+  CommandDependencies,
+} from '../schemas';
 import { readReviewQueue, triageReviewQueue } from './queue';
 import { completedCommand, failedCommand } from '../summaries';
-import { formatList, isActiveMemoryScope, isMemoryScope, parseMemoryValue, readStringArrayProperty, supportedReasoningLevelsForModel } from '../utils';
+import {
+  formatList,
+  isActiveMemoryScope,
+  isMemoryScope,
+  parseMemoryValue,
+  readStringArrayProperty,
+  supportedReasoningLevelsForModel,
+} from '../utils';
 
 export async function briefingCommand(
   command: ParsedNeonCommand,

@@ -1,8 +1,11 @@
 import { mkdirSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 
-import { initializeAppDatabase, initializeFlueDatabase } from './app-db';
-import { defaultAppConfig } from './defaults';
+import {
+  initializeAppDatabase,
+  initializeFlueDatabase,
+} from './app-db/index.ts';
+import { defaultAppConfig } from './defaults.ts';
 import {
   copyIfMissing,
   copyIfMissingSync,
@@ -12,13 +15,13 @@ import {
   writeFileIfMissingSync,
   writeJsonIfMissing,
   writeJsonIfMissingSync,
-} from './files';
+} from './files.ts';
 import {
   defaultDashboardPath,
   defaultDashboardSchemaPath,
   defaultSoulPath,
   runtimePaths,
-} from './paths';
+} from './paths.ts';
 
 export async function ensureRuntimeHome(paths = runtimePaths()) {
   await mkdir(paths.home, { recursive: true });
@@ -55,4 +58,3 @@ export function ensureRuntimeHomeSync(paths = runtimePaths()) {
   initializeAppDatabase(paths.neondeckDatabase);
   initializeFlueDatabase(paths.flueDatabase);
 }
-

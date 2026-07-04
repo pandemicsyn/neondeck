@@ -44,7 +44,7 @@ devs, an auto-applying migrator at every database-open path for users.
     writes the pulled schema as the initial migration, and records migration metadata in the
     database. The runtime migrator has matching init awareness (`MigratorInitFailResponse` with
     `databaseMigrations`/`localMigrations` exit codes). This is the dev-side bootstrap for our
-    baseline migration; runtime stamping of *user* databases (who never run drizzle-kit) remains
+    baseline migration; runtime stamping of _user_ databases (who never run drizzle-kit) remains
     our `migrate.ts` responsibility.
   - `drizzle-kit migrate` performs **commutativity conflict checks** by default
     (`--ignore-conflicts` to skip) — parallel-branch migration conflicts are detected natively;
@@ -142,7 +142,7 @@ Existing databases have all the tables but no Drizzle journal. Solution — a st
   which also records the migration metadata — then hand-verify the pulled schema).
 - `migrate.ts` pre-step: if `__drizzle_migrations` is missing **and** the DB already has the
   legacy schema (detect: `app_metadata` row `schema_version = '9'`, or presence of a sentinel
-  table), create the journal table and record `0000` as applied *without executing it*. Fresh
+  table), create the journal table and record `0000` as applied _without executing it_. Fresh
   databases execute `0000` normally.
 - A legacy DB at `schema_version < 9` (predates the last hand-rolled rebuild) is not expected in
   the wild, but handle it honestly: run the retained legacy upgrade functions once to reach v9,
@@ -215,7 +215,7 @@ integration suite must pass unchanged. Sanctioned split if the PR bloats: land c
 - **Concurrent open during migration.** Server booting while a CLI command runs. The
   `BEGIN IMMEDIATE` gate + busy timeout covers it; test it explicitly with two processes.
 - **tsx-run bin vs packaged layout.** `bin` currently points at `src/cli.ts` via tsx; migration
-  path resolution must work in repo checkouts *and* installed packages. `import.meta.url`-relative
+  path resolution must work in repo checkouts _and_ installed packages. `import.meta.url`-relative
   resolution handles both, but the `npm pack` smoke test is the proof.
 - **Open question — WAL mode.** Enabling WAL would make concurrent server+CLI access smoother and
   backups slightly more involved (must copy `-wal` too, or checkpoint first). Not required for

@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { repoFullName } from '../../repos';
+import { repoFullName } from '../repos';
 import type { RepoConfig } from '../../runtime-home';
 import { githubFetch } from './client';
 import { fetchCheckSummary } from './checks';

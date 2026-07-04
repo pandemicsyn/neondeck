@@ -1,8 +1,8 @@
 /* eslint-disable no-unused-vars */
 import { type JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
-import { type GitHubPullRequestEventState } from '../../github';
-import { readRepoRegistrySnapshot } from '../../repos';
+import { type GitHubPullRequestEventState } from '../github';
+import { readRepoRegistrySnapshot } from '../repos';
 import { AutopilotActionResult } from './schemas';
 
 export function parseInput<

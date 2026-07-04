@@ -1,8 +1,18 @@
 import * as v from 'valibot';
-import { archiveMemory, createMemoryCandidate, mergeMemories, rewriteMemory, upsertMemory } from '../../memory';
+import {
+  archiveMemory,
+  createMemoryCandidate,
+  mergeMemories,
+  rewriteMemory,
+  upsertMemory,
+} from '../../memory';
 import { applySkillPatchCandidate, proposeSkillPatch } from '../skill-patches';
 import { runtimePaths, type RuntimePaths } from '../../../runtime-home';
-import type { MemoryProposal, LearningReviewerOutput, PreparedLearningReview } from './schemas';
+import type {
+  MemoryProposal,
+  LearningReviewerOutput,
+  PreparedLearningReview,
+} from './schemas';
 import { learningReviewerOutputSchema } from './schemas';
 import {
   compactJson,
@@ -238,7 +248,10 @@ export async function createCandidateFromProposal(
   );
 }
 
-export async function applyProposal(proposal: MemoryProposal, paths: RuntimePaths) {
+export async function applyProposal(
+  proposal: MemoryProposal,
+  paths: RuntimePaths,
+) {
   if (proposal.action === 'upsert') {
     return upsertMemory(
       {

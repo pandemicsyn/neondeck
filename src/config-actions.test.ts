@@ -25,8 +25,11 @@ import {
   updateSkillRoots,
   updateWorktreePolicy,
   validateConfig,
-} from './config-actions';
-import { subscribeConfigEvents, type ConfigChangeEvent } from './config-events';
+} from './modules/config';
+import {
+  subscribeConfigEvents,
+  type ConfigChangeEvent,
+} from './modules/config';
 import {
   parseAppConfig,
   parseDashboardConfig,

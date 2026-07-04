@@ -5,7 +5,7 @@ import {
   listMemories,
   listMemoryEvents,
   upsertMemory,
-} from '../../memory-actions';
+} from '../../modules/memory';
 import type { RuntimePaths } from '../../runtime-home';
 import { safeJsonBody } from '../http';
 

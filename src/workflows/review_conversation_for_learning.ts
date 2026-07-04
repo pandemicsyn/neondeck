@@ -7,7 +7,7 @@ import {
   learningReviewerOutputSchema,
   learningReviewOutputSchema,
   prepareConversationReflection,
-} from '../learning-reviews';
+} from '../modules/learning/reviews';
 
 export const runs: WorkflowRunsHandler = async (_c, next) => next();
 

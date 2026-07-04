@@ -37,11 +37,11 @@ summary docs. Re-verify on Flue upgrades.
 - **Flue has native remote MCP support.** `@flue/runtime` exports
   `connectMcpServer(name, options): Promise<McpServerConnection>` where options are
   `{ url, transport?: 'streamable-http' | 'sse', headers?, requestInit?, fetch?, timeoutMs?,
-  resetTimeoutOnProgress? }` and the connection is `{ name, tools: ToolDefinition[], close() }`.
+resetTimeoutOnProgress? }` and the connection is `{ name, tools: ToolDefinition[], close() }`.
   Adapted tool names use `mcp__<server>__<tool>` (unsupported characters become underscores;
   duplicate adapted names are rejected). Flue owns the JSON-Schema→Valibot conversion inside the
   adapter — Neondeck must not reimplement it.
-- **What Flue's MCP support does *not* cover** (Neondeck owns these): stdio transport (options
+- **What Flue's MCP support does _not_ cover** (Neondeck owns these): stdio transport (options
   take a `url` only), OAuth (only static `headers`/`requestInit`/custom `fetch`), connection
   supervision and reconnect, tool-list caching across restarts, per-tool trust policy, config
   files, and CLI/dashboard surfaces.
@@ -139,12 +139,12 @@ other config schemas in runtime-home so `validateRuntimeFiles` covers it.
       "transport": "http",
       "url": "https://mcp.linear.app/mcp",
       "enabled": true,
-      "auth": { "kind": "oauth" },              // tokens live in the app DB, never here
+      "auth": { "kind": "oauth" }, // tokens live in the app DB, never here
       "tools": {
-        "autoApprove": ["list_issues", "get_issue"],  // exact tool names; everything else asks
-        "deny": []                                     // hard-blocked tool names
+        "autoApprove": ["list_issues", "get_issue"], // exact tool names; everything else asks
+        "deny": [], // hard-blocked tool names
       },
-      "timeoutMs": 30000
+      "timeoutMs": 30000,
     },
     "sentry": {
       "transport": "http",
@@ -152,17 +152,21 @@ other config schemas in runtime-home so `validateRuntimeFiles` covers it.
       "enabled": true,
       "auth": {
         "kind": "header",
-        "headers": { "Authorization": { "env": "SENTRY_MCP_TOKEN" } }  // env refs only
-      }
+        "headers": { "Authorization": { "env": "SENTRY_MCP_TOKEN" } }, // env refs only
+      },
     },
     "files": {
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/notes"],
-      "env": { "SOME_VAR": { "env": "SOME_VAR" } },   // allowlisted env forwarding, env refs only
-      "enabled": true
-    }
-  }
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/home/user/notes",
+      ],
+      "env": { "SOME_VAR": { "env": "SOME_VAR" } }, // allowlisted env forwarding, env refs only
+      "enabled": true,
+    },
+  },
 }
 ```
 
@@ -185,8 +189,8 @@ One in-process manager, the only component that owns MCP connections:
 - For each enabled server, establishes a long-lived `connectMcpServer` connection (lazily, with
   capped reconnect backoff), wraps every adapted `ToolDefinition` with the trust gate
   (`gate.ts`), and caches the gated tool set plus catalog metadata (names, descriptions, input
-  schema JSON) in memory and in the app DB — so tool *catalogs* survive restarts even when a
-  server is down, while tool *execution* requires a live connection.
+  schema JSON) in memory and in the app DB — so tool _catalogs_ survive restarts even when a
+  server is down, while tool _execution_ requires a live connection.
 - Exposes async APIs for routes/CLI/actions (`status()`, `listTools(serverId)`, `refresh()`) and
   `mcpAgentToolsSync()` / `mcpSnapshotSync()` for agent wiring: the current gated
   `ToolDefinition[]` and catalog snapshot, returning instantly from cache. A session created
@@ -234,7 +238,7 @@ Third-party tools are untrusted code with untrusted output. The gate checks ever
 1. `deny` list → typed refusal.
 2. `autoApprove` list (exact tool names, per server, user-configured) → allow.
 3. Everything else → **ask**: the call returns `{ ok: false, status: 'approval-required',
-   approvalId, summary }` including the tool name and an arguments preview, and records a pending
+approvalId, summary }` including the tool name and an arguments preview, and records a pending
    approval bound to `(server, tool, argumentsHash)`. The user resolves it via dashboard, CLI
    (`neondeck mcp approvals`), or by telling Neon (resolution is itself a destructive-class action
    requiring `confirm: true`). The agent then simply **retries the same tool call with the same
@@ -343,7 +347,7 @@ neondeck_mcp_login_start / logout(confirm)
 neondeck_mcp_approval_resolve(confirm)       # user-instructed approval only
 ```
 
-Tool *calls* go through the adapted `mcp__<server>__<tool>` Flue tools, not through an action.
+Tool _calls_ go through the adapted `mcp__<server>__<tool>` Flue tools, not through an action.
 
 Agent instruction (add to `display-assistant.ts`, one paragraph in the house style): use
 `neondeck_mcp_*` actions for MCP configuration instead of editing `mcp.json`; `mcp__*` tools are
@@ -366,7 +370,7 @@ MCP tool output is attacker-controllable text entering the agent's context. Miti
 - The instruction block above (untrusted-data framing).
 - Tool results are wrapped by `gate.ts` in a typed envelope with the server id and an
   `untrusted: true` marker; formatting for chat labels the source.
-- Approval prompts show the *arguments*, so a poisoned tool description can't silently redirect a
+- Approval prompts show the _arguments_, so a poisoned tool description can't silently redirect a
   call the user approves.
 - `autoApprove` is user-set, per-server, exact-match only. No wildcard, no "approve all".
 - Tool descriptions rendered in catalogs/UI are length-clamped and displayed as text (no markdown
@@ -393,7 +397,7 @@ Everything except OAuth and dashboard. Suggested commit order within the PR:
 4. Gate: policy/approvals/audit stores, `gate.ts` decorator, lookup tools,
    `mcpInstructionsSync()`, agent wiring.
 5. Adapters: routes (servers/tools/refresh/approvals/audit/gateway), CLI subcommands (`list/add/
-   remove/enable/disable/tools/status/approvals`), `neondeck_mcp_server_*` +
+remove/enable/disable/tools/status/approvals`), `neondeck_mcp_server_*` +
    `neondeck_mcp_approval_resolve` actions, safety-table entries (including the adapted-tool
    family entry), runtime-status check.
 

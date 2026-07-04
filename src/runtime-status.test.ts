@@ -8,9 +8,9 @@ import {
   addWorkflowSummary,
   markNotificationRead,
   resolveNotification,
-} from './app-state';
+} from './modules/app-state';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
-import { readRuntimeStatus } from './runtime-status';
+import { readRuntimeStatus } from './modules/runtime';
 
 const tempRoots: string[] = [];
 
