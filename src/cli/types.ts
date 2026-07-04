@@ -27,3 +27,7 @@ export type ScheduleOptions = {
   reviewQueueDigest?: boolean;
   interval?: string;
 };
+
+export type ServeOptions = {
+  port?: string;
+};
