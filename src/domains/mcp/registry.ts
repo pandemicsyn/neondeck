@@ -60,6 +60,46 @@ type RegistryEntry = {
 
 const registries = new Map<string, McpRegistry>();
 
+type McpRegistryPublishTestHookInput = {
+  serverId: string;
+  tools: ToolDefinition[];
+};
+
+type McpRegistryPendingRefreshTestHookInput = {
+  serverId: string;
+  server: McpServerConfig;
+};
+
+let mcpRegistryPublishTestHook:
+  ((input: McpRegistryPublishTestHookInput) => Promise<void> | void) | null =
+  null;
+let mcpRegistryPendingRefreshTestHook:
+  | ((input: McpRegistryPendingRefreshTestHookInput) => Promise<void> | void)
+  | null = null;
+
+export function setMcpRegistryPublishHookForTests(
+  hook:
+    ((input: McpRegistryPublishTestHookInput) => Promise<void> | void) | null,
+) {
+  const previous = mcpRegistryPublishTestHook;
+  mcpRegistryPublishTestHook = hook;
+  return () => {
+    mcpRegistryPublishTestHook = previous;
+  };
+}
+
+export function setMcpRegistryPendingRefreshHookForTests(
+  hook:
+    | ((input: McpRegistryPendingRefreshTestHookInput) => Promise<void> | void)
+    | null,
+) {
+  const previous = mcpRegistryPendingRefreshTestHook;
+  mcpRegistryPendingRefreshTestHook = hook;
+  return () => {
+    mcpRegistryPendingRefreshTestHook = previous;
+  };
+}
+
 export function getMcpRegistry(paths = runtimePaths()) {
   const existing = registries.get(paths.home);
   if (existing) return existing;
@@ -171,6 +211,7 @@ export class McpRegistry {
     const generation = current.refreshGeneration;
     if (current.refreshPromise) {
       current.pendingServer = server;
+      await mcpRegistryPendingRefreshTestHook?.({ serverId: id, server });
       return current.refreshPromise;
     }
 
@@ -264,6 +305,10 @@ export class McpRegistry {
         await this.clearStaleCatalog(id);
         return;
       }
+      await mcpRegistryPublishTestHook?.({
+        serverId: id,
+        tools: connection.tools,
+      });
       entry.connection = connection;
       entry.tools = connection.tools;
       entry.catalog = catalog;

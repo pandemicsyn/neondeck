@@ -16,6 +16,8 @@ import {
   readMcpConfig,
   resolveMcpApprovalWithPaths,
   setMcpCatalogReplaceHookForTests,
+  setMcpRegistryPendingRefreshHookForTests,
+  setMcpRegistryPublishHookForTests,
   startMcpOAuthLogin,
   updateMcpServer,
 } from './index';
@@ -214,14 +216,26 @@ describe('MCP support', () => {
     );
 
     const catalogReplaceStarted = deferred<void>();
+    const disabledRefreshQueued = deferred<void>();
     const resumeCatalogReplace = deferred<void>();
     let hooked = false;
+    let stalePublishObserved = false;
     const restoreHook = setMcpCatalogReplaceHookForTests(async (input) => {
       if (input.serverId !== 'fixture' || hooked) return;
       hooked = true;
       catalogReplaceStarted.resolve();
       await resumeCatalogReplace.promise;
     });
+    const restorePublishHook = setMcpRegistryPublishHookForTests((input) => {
+      if (input.serverId === 'fixture') stalePublishObserved = true;
+    });
+    const restorePendingRefreshHook = setMcpRegistryPendingRefreshHookForTests(
+      (input) => {
+        if (input.serverId === 'fixture' && input.server.enabled === false) {
+          disabledRefreshQueued.resolve();
+        }
+      },
+    );
     try {
       const staleRefresh = registry.refresh('fixture');
       await catalogReplaceStarted.promise;
@@ -230,6 +244,7 @@ describe('MCP support', () => {
         paths,
       );
       const disabledRefresh = registry.refresh('fixture');
+      await disabledRefreshQueued.promise;
       resumeCatalogReplace.resolve();
       await Promise.all([staleRefresh, disabledRefresh]);
 
@@ -241,6 +256,7 @@ describe('MCP support', () => {
           toolCount: 0,
         },
       ]);
+      expect(stalePublishObserved).toBe(false);
       expect(
         registry.toolsSync().some((tool) => tool.name === 'mcp__fixture__echo'),
       ).toBe(false);
@@ -251,6 +267,8 @@ describe('MCP support', () => {
       );
     } finally {
       restoreHook();
+      restorePublishHook();
+      restorePendingRefreshHook();
       resumeCatalogReplace.resolve();
     }
   });
