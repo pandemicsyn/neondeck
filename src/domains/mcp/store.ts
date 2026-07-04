@@ -57,6 +57,27 @@ export type McpAuditRecord = {
 
 const defaultApprovalTtlMs = 15 * 60 * 1000;
 
+type McpCatalogReplaceTestHookInput = {
+  serverId: string;
+  records: McpToolCatalogRecord[];
+  paths: RuntimePaths;
+};
+
+let mcpCatalogReplaceTestHook:
+  ((input: McpCatalogReplaceTestHookInput) => Promise<void> | void) | null =
+  null;
+
+export function setMcpCatalogReplaceHookForTests(
+  hook:
+    ((input: McpCatalogReplaceTestHookInput) => Promise<void> | void) | null,
+) {
+  const previous = mcpCatalogReplaceTestHook;
+  mcpCatalogReplaceTestHook = hook;
+  return () => {
+    mcpCatalogReplaceTestHook = previous;
+  };
+}
+
 export function hashMcpArguments(value: unknown) {
   return createHash('sha256').update(stableJson(value)).digest('hex');
 }
@@ -67,6 +88,7 @@ export async function replaceMcpToolCatalog(
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
+  await mcpCatalogReplaceTestHook?.({ serverId, records, paths });
   const database = new DatabaseSync(paths.neondeckDatabase);
   const now = new Date().toISOString();
 

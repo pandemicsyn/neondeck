@@ -14,7 +14,9 @@ import {
   listMcpAudit,
   readMcpOAuthStatus,
   readMcpConfig,
+  removeMcpServer,
   resolveMcpApprovalWithPaths,
+  setMcpCatalogReplaceHookForTests,
   startMcpOAuthLogin,
   updateMcpServer,
 } from './index';
@@ -188,60 +190,49 @@ describe('MCP support', () => {
     });
   });
 
-  it('does not publish stale MCP tools from an in-flight refresh', async () => {
+  it('cleans stale MCP catalog writes from an in-flight refresh', async () => {
     const home = await tempDir();
     const paths = runtimePaths(home);
     await ensureRuntimeHome(paths);
-    const previous = process.env.NEONDECK_MCP_START_DELAY_MS;
-    process.env.NEONDECK_MCP_START_DELAY_MS = '0';
+    await addMcpServer(
+      {
+        id: 'fixture',
+        server: {
+          transport: 'stdio',
+          command: process.execPath,
+          args: [fixturePath()],
+        },
+      },
+      paths,
+    );
+
+    const registry = getMcpRegistry(paths);
+    await registry.refresh('fixture');
+    await expect(registry.listTools('fixture')).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: 'available', toolName: 'echo' }),
+      ]),
+    );
+
+    const catalogReplaceStarted = deferred<void>();
+    const resumeCatalogReplace = deferred<void>();
+    let hooked = false;
+    const restoreHook = setMcpCatalogReplaceHookForTests(async (input) => {
+      if (input.serverId !== 'fixture' || hooked) return;
+      hooked = true;
+      catalogReplaceStarted.resolve();
+      await resumeCatalogReplace.promise;
+    });
     try {
-      await addMcpServer(
-        {
-          id: 'fixture',
-          server: {
-            transport: 'stdio',
-            command: process.execPath,
-            args: [fixturePath()],
-            env: {
-              NEONDECK_MCP_START_DELAY_MS: {
-                env: 'NEONDECK_MCP_START_DELAY_MS',
-              },
-            },
-          },
-        },
-        paths,
-      );
+      const staleRefresh = registry.refresh('fixture');
+      await catalogReplaceStarted.promise;
+      await removeMcpServer({ id: 'fixture', confirm: true }, paths);
+      const removalRefresh = registry.refresh('fixture');
+      await removalRefresh;
+      resumeCatalogReplace.resolve();
+      await staleRefresh;
 
-      const registry = getMcpRegistry(paths);
-      await registry.refresh('fixture');
-      await expect(registry.listTools('fixture')).resolves.toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ status: 'available', toolName: 'echo' }),
-        ]),
-      );
-
-      process.env.NEONDECK_MCP_START_DELAY_MS = '150';
-      const firstRefresh = registry.refresh('fixture');
-      await updateMcpServer(
-        {
-          id: 'fixture',
-          server: {
-            enabled: false,
-          },
-        },
-        paths,
-      );
-      const secondRefresh = registry.refresh('fixture');
-      await Promise.all([firstRefresh, secondRefresh]);
-
-      await expect(registry.status()).resolves.toMatchObject([
-        {
-          id: 'fixture',
-          enabled: false,
-          status: 'disabled',
-          toolCount: 0,
-        },
-      ]);
+      await expect(registry.status()).resolves.toEqual([]);
       expect(
         registry.toolsSync().some((tool) => tool.name === 'mcp__fixture__echo'),
       ).toBe(false);
@@ -251,11 +242,8 @@ describe('MCP support', () => {
         ]),
       );
     } finally {
-      if (previous === undefined) {
-        delete process.env.NEONDECK_MCP_START_DELAY_MS;
-      } else {
-        process.env.NEONDECK_MCP_START_DELAY_MS = previous;
-      }
+      restoreHook();
+      resumeCatalogReplace.resolve();
     }
   });
 
@@ -882,4 +870,14 @@ async function tempDir() {
   const root = await mkdtemp(join(tmpdir(), 'neondeck-mcp-'));
   tempRoots.push(root);
   return root;
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
