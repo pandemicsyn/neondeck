@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -10,9 +11,11 @@ import {
   getMcpRegistry,
   listMcpApprovals,
   listMcpAudit,
+  readMcpOAuthStatus,
   readMcpConfig,
   resolveMcpApprovalWithPaths,
   startMcpOAuthLogin,
+  updateMcpServer,
 } from './index';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 
@@ -229,6 +232,20 @@ describe('MCP support', () => {
         paths,
       ),
     ).resolves.toBeNull();
+    await expect(
+      resolveMcpApprovalWithPaths(
+        {
+          id: request!.id,
+          decision: 'deny',
+          approverSurface: 'test',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      approval: { id: request!.id, status: 'used' },
+    });
   });
 
   it('rejects non-loopback MCP OAuth redirect URLs', async () => {
@@ -260,6 +277,158 @@ describe('MCP support', () => {
       ok: false,
       action: 'mcp_login_start',
       requires: ['redirectUrl'],
+    });
+  });
+
+  it('returns typed MCP OAuth login errors for non-oauth servers', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+
+    await expect(
+      startMcpOAuthLogin({ id: 'missing' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'mcp_login_start',
+      changed: false,
+      message: expect.stringContaining('was not found'),
+    });
+
+    await addMcpServer(
+      {
+        id: 'plain',
+        server: {
+          transport: 'http',
+          url: 'https://mcp.example.test/mcp',
+        },
+      },
+      paths,
+    );
+    await expect(
+      startMcpOAuthLogin({ id: 'plain' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'mcp_login_start',
+      changed: false,
+      message: expect.stringContaining('not configured for OAuth'),
+    });
+  });
+
+  it('clears stored MCP OAuth state when user-owned endpoint identity changes', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+
+    await addMcpServer(
+      {
+        id: 'remote',
+        server: {
+          transport: 'http',
+          url: 'https://mcp.example.test/mcp',
+          auth: { kind: 'oauth' },
+        },
+      },
+      paths,
+    );
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `
+          INSERT INTO mcp_oauth_tokens (
+            server_id,
+            server_identity,
+            access_token,
+            refresh_token,
+            token_type,
+            id_token,
+            expires_at,
+            scopes_json,
+            client_information_json,
+            discovery_state_json,
+            code_verifier,
+            updated_at
+          )
+          VALUES (?, ?, ?, NULL, ?, NULL, NULL, ?, NULL, NULL, NULL, ?);
+        `,
+        )
+        .run(
+          'remote',
+          oauthServerIdentity('https://mcp.example.test/mcp'),
+          'token-1',
+          'Bearer',
+          JSON.stringify(['read']),
+          new Date().toISOString(),
+        );
+    } finally {
+      database.close();
+    }
+
+    await expect(readMcpOAuthStatus('remote', paths)).resolves.toMatchObject({
+      authorized: true,
+    });
+    await updateMcpServer(
+      {
+        id: 'remote',
+        server: {
+          url: 'https://mcp2.example.test/mcp',
+        },
+      },
+      paths,
+    );
+    await expect(readMcpOAuthStatus('remote', paths)).resolves.toMatchObject({
+      authorized: false,
+    });
+  });
+
+  it('hydrates cached MCP tool placeholders after a restart when reconnect fails', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+
+    await addMcpServer(
+      {
+        id: 'fixture',
+        server: {
+          transport: 'stdio',
+          command: process.execPath,
+          args: [fixturePath()],
+          tools: {
+            autoApprove: ['echo'],
+          },
+        },
+      },
+      paths,
+    );
+    const registry = getMcpRegistry(paths);
+    await registry.refresh('fixture');
+    await expect(registry.listTools('fixture')).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ adaptedName: 'mcp__fixture__echo' }),
+      ]),
+    );
+    await registry.stop();
+    await updateMcpServer(
+      {
+        id: 'fixture',
+        server: {
+          command: '/definitely/not/a/command',
+        },
+      },
+      paths,
+    );
+    await registry.refresh('fixture');
+    const echo = registry
+      .toolsSync()
+      .find((tool) => tool.name === 'mcp__fixture__echo');
+    expect(echo).toBeTruthy();
+    await expect(
+      echo!.run({ input: { text: 'offline' } } as never),
+    ).resolves.toMatchObject({
+      ok: false,
+      status: 'server-disconnected',
+      server: 'fixture',
+      tool: 'echo',
     });
   });
 
@@ -352,6 +521,15 @@ describe('MCP support', () => {
 
 function fixturePath() {
   return fileURLToPath(new URL('./fixtures/stdio-server.mjs', import.meta.url));
+}
+
+function oauthServerIdentity(url: string) {
+  return JSON.stringify({
+    url,
+    sse: false,
+    clientId: null,
+    clientSecretEnv: null,
+  });
 }
 
 async function tempDir() {

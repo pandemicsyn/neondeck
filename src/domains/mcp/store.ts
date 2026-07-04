@@ -434,31 +434,42 @@ export async function resolveMcpApprovalWithPaths(
 ) {
   await ensureRuntimeHome(paths);
   expireOldApprovals(paths);
-  const existing = readApproval(paths, rawInput.id);
-  if (!existing) {
-    return {
-      ok: false,
-      action: 'mcp_approval_resolve',
-      changed: false,
-      message: `MCP approval "${rawInput.id}" was not found.`,
-      requires: ['id'],
-    };
-  }
-  if (existing.status !== 'pending') {
-    return {
-      ok: false,
-      action: 'mcp_approval_resolve',
-      changed: false,
-      message: `MCP approval "${rawInput.id}" is already ${existing.status}.`,
-      approval: existing,
-    };
-  }
-
   const nextStatus = rawInput.decision === 'approve' ? 'approved' : 'denied';
   const now = new Date().toISOString();
   const database = new DatabaseSync(paths.neondeckDatabase);
+  let transactionStarted = false;
   try {
-    database
+    database.exec('BEGIN IMMEDIATE;');
+    transactionStarted = true;
+    const existingRow = database
+      .prepare('SELECT * FROM mcp_tool_approvals WHERE id = ?;')
+      .get(rawInput.id) as McpApprovalRow | undefined;
+    if (!existingRow) {
+      database.exec('COMMIT;');
+      transactionStarted = false;
+      return {
+        ok: false,
+        action: 'mcp_approval_resolve',
+        changed: false,
+        message: `MCP approval "${rawInput.id}" was not found.`,
+        requires: ['id'],
+      };
+    }
+
+    const existing = readApprovalRow(existingRow);
+    if (existing.status !== 'pending') {
+      database.exec('COMMIT;');
+      transactionStarted = false;
+      return {
+        ok: false,
+        action: 'mcp_approval_resolve',
+        changed: false,
+        message: `MCP approval "${rawInput.id}" is already ${existing.status}.`,
+        approval: existing,
+      };
+    }
+
+    const result = database
       .prepare(
         `
         UPDATE mcp_tool_approvals
@@ -466,7 +477,8 @@ export async function resolveMcpApprovalWithPaths(
             approver_surface = ?,
             resolved_at = ?,
             updated_at = ?
-        WHERE id = ?;
+        WHERE id = ?
+          AND status = 'pending';
       `,
       )
       .run(
@@ -476,20 +488,50 @@ export async function resolveMcpApprovalWithPaths(
         now,
         rawInput.id,
       );
+
+    if (result.changes !== 1) {
+      const currentRow = database
+        .prepare('SELECT * FROM mcp_tool_approvals WHERE id = ?;')
+        .get(rawInput.id) as McpApprovalRow | undefined;
+      const current = currentRow ? readApprovalRow(currentRow) : null;
+      database.exec('COMMIT;');
+      transactionStarted = false;
+      return {
+        ok: false,
+        action: 'mcp_approval_resolve',
+        changed: false,
+        message: current
+          ? `MCP approval "${rawInput.id}" is already ${current.status}.`
+          : `MCP approval "${rawInput.id}" was not found.`,
+        ...(current ? { approval: current } : { requires: ['id'] }),
+      };
+    }
+
+    const approval = readApprovalRow({
+      ...existingRow,
+      status: nextStatus,
+      approver_surface: rawInput.approverSurface ?? 'unknown',
+      resolved_at: now,
+      updated_at: now,
+    });
+    database.exec('COMMIT;');
+    transactionStarted = false;
+    return {
+      ok: true,
+      action: 'mcp_approval_resolve',
+      changed: true,
+      message:
+        nextStatus === 'approved'
+          ? `Approved MCP tool call "${rawInput.id}". Retry the same tool call with the same arguments.`
+          : `Denied MCP tool call "${rawInput.id}".`,
+      approval,
+    };
+  } catch (error) {
+    if (transactionStarted) database.exec('ROLLBACK;');
+    throw error;
   } finally {
     database.close();
   }
-
-  return {
-    ok: true,
-    action: 'mcp_approval_resolve',
-    changed: true,
-    message:
-      nextStatus === 'approved'
-        ? `Approved MCP tool call "${rawInput.id}". Retry the same tool call with the same arguments.`
-        : `Denied MCP tool call "${rawInput.id}".`,
-    approval: readApproval(paths, rawInput.id),
-  };
 }
 
 export async function listMcpApprovals(

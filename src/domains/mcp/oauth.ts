@@ -45,6 +45,7 @@ export type McpOAuthStatus = {
 };
 
 type TokenState = {
+  serverIdentity: string | null;
   accessToken: string | null;
   refreshToken: string | null;
   tokenType: string | null;
@@ -64,32 +65,34 @@ export async function startMcpOAuthLogin(
   input: { id: string; redirectUrl?: string },
   paths = runtimePaths(),
 ) {
-  const { server } = await requireOAuthServer(input.id, paths);
-  const redirectUrl = input.redirectUrl ?? defaultCallbackUrl;
-  if (!isAllowedOAuthRedirectUrl(redirectUrl)) {
-    return {
-      ok: false,
-      action: 'mcp_login_start',
-      changed: false,
-      message:
-        'MCP OAuth redirects must use the local /api/mcp/oauth/callback route on a loopback host.',
-      requires: ['redirectUrl'],
-    };
-  }
-  const login = await createOAuthLogin(input.id, redirectUrl, paths);
-  const provider = new NeondeckMcpOAuthProvider({
-    paths,
-    serverId: input.id,
-    server,
-    redirectUrl,
-    state: login.state,
-  });
-
+  let login: McpOAuthLoginRecord | null = null;
   try {
+    const { server } = await requireOAuthServer(input.id, paths);
+    const redirectUrl = input.redirectUrl ?? defaultCallbackUrl;
+    if (!isAllowedOAuthRedirectUrl(redirectUrl)) {
+      return {
+        ok: false,
+        action: 'mcp_login_start',
+        changed: false,
+        message:
+          'MCP OAuth redirects must use the local /api/mcp/oauth/callback route on a loopback host.',
+        requires: ['redirectUrl'],
+      };
+    }
+    login = await createOAuthLogin(input.id, redirectUrl, paths);
+    const provider = new NeondeckMcpOAuthProvider({
+      paths,
+      serverId: input.id,
+      server,
+      redirectUrl,
+      state: login.state,
+    });
     const result = await auth(provider, { serverUrl: server.url });
     const updated = await readMcpOAuthLogin(login.id, paths);
     if (result === 'AUTHORIZED') {
-      await markOAuthLoginAuthorized(login.id, paths);
+      if (!(await markOAuthLoginAuthorized(login.id, paths))) {
+        return inactiveOAuthLoginResult(login.id, paths);
+      }
       return {
         ok: true,
         action: 'mcp_login_start',
@@ -111,13 +114,15 @@ export async function startMcpOAuthLogin(
       authorized: false,
     };
   } catch (error) {
-    await failOAuthLogin(login.id, errorMessage(error), paths);
+    if (login) await failOAuthLogin(login.id, errorMessage(error), paths);
     return {
       ok: false,
       action: 'mcp_login_start',
       changed: false,
       message: `Failed to start MCP OAuth login for "${input.id}": ${errorMessage(error)}`,
-      login: await readPublicMcpOAuthLogin(login.id, paths),
+      ...(login
+        ? { login: await readPublicMcpOAuthLogin(login.id, paths) }
+        : {}),
     };
   }
 }
@@ -189,7 +194,20 @@ export async function completeMcpOAuthCallback(
     };
   }
 
-  const { server } = await requireOAuthServer(login.serverId, paths);
+  let server: McpServerConfig;
+  try {
+    ({ server } = await requireOAuthServer(login.serverId, paths));
+  } catch (error) {
+    await failOAuthLogin(login.id, errorMessage(error), paths);
+    return {
+      ok: false,
+      action: 'mcp_login_callback',
+      changed: true,
+      message: `Failed to finish MCP OAuth login: ${errorMessage(error)}`,
+      login: await readPublicMcpOAuthLogin(login.id, paths),
+    };
+  }
+
   const provider = new NeondeckMcpOAuthProvider({
     paths,
     serverId: login.serverId,
@@ -203,7 +221,13 @@ export async function completeMcpOAuthCallback(
       serverUrl: server.url,
       authorizationCode: input.code,
     });
-    await markOAuthLoginAuthorized(login.id, paths);
+    if (!(await markOAuthLoginAuthorized(login.id, paths))) {
+      const current = await readMcpOAuthLogin(login.id, paths);
+      if (current?.status !== 'authorized') {
+        clearTokenState(paths, login.serverId);
+      }
+      return inactiveOAuthLoginResult(login.id, paths);
+    }
     return {
       ok: true,
       action: 'mcp_login_callback',
@@ -248,6 +272,7 @@ export async function logoutMcpOAuthServer(
         `
         UPDATE mcp_oauth_logins
         SET status = 'expired',
+            code_verifier = NULL,
             updated_at = ?
         WHERE server_id = ?
           AND status IN ('pending', 'redirect');
@@ -274,8 +299,16 @@ export async function readMcpOAuthStatus(
 ): Promise<McpOAuthStatus> {
   await ensureRuntimeHome(paths);
   const state = readTokenState(paths, serverId);
+  const config = await readMcpConfig(paths).catch(() => null);
+  const server = config?.servers[serverId];
+  const identityMatches =
+    server?.transport === 'http' && server.auth?.kind === 'oauth'
+      ? state.serverIdentity === oauthServerIdentity(server)
+      : false;
   return {
-    authorized: Boolean(state.accessToken || state.refreshToken),
+    authorized: Boolean(
+      identityMatches && (state.accessToken || state.refreshToken),
+    ),
     expiresAt: state.expiresAt,
     scopes: state.scopes,
     updatedAt: state.updatedAt,
@@ -334,6 +367,19 @@ export function publicMcpOAuthLogin(
   if (!login) return null;
   const { state: _state, ...safeLogin } = login;
   return safeLogin;
+}
+
+async function inactiveOAuthLoginResult(id: string, paths: RuntimePaths) {
+  const login = await readPublicMcpOAuthLogin(id, paths);
+  return {
+    ok: false,
+    action: 'mcp_login_callback',
+    changed: false,
+    message: login
+      ? `MCP OAuth login "${id}" is already ${login.status}.`
+      : `MCP OAuth login "${id}" was not found.`,
+    ...(login ? { login } : { requires: ['id'] }),
+  };
 }
 
 export function createMcpOAuthProvider(input: {
@@ -396,6 +442,9 @@ class NeondeckMcpOAuthProvider implements OAuthClientProvider {
 
   tokens() {
     const state = readTokenState(this.input.paths, this.input.serverId);
+    if (state.serverIdentity !== oauthServerIdentity(this.input.server)) {
+      return undefined;
+    }
     if (!state.accessToken || !state.tokenType) return undefined;
     return {
       access_token: state.accessToken,
@@ -411,6 +460,7 @@ class NeondeckMcpOAuthProvider implements OAuthClientProvider {
 
   saveTokens(tokens: OAuthTokens) {
     writeTokenState(this.input.paths, this.input.serverId, {
+      serverIdentity: oauthServerIdentity(this.input.server),
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token ?? null,
       tokenType: tokens.token_type,
@@ -432,14 +482,20 @@ class NeondeckMcpOAuthProvider implements OAuthClientProvider {
   }
 
   saveCodeVerifier(codeVerifier: string) {
+    if (
+      writeLoginStateByState(this.input.paths, this.input.state, {
+        codeVerifier,
+      })
+    ) {
+      return;
+    }
     writeTokenState(this.input.paths, this.input.serverId, { codeVerifier });
   }
 
   codeVerifier() {
-    const verifier = readTokenState(
-      this.input.paths,
-      this.input.serverId,
-    ).codeVerifier;
+    const verifier =
+      readLoginStateByState(this.input.paths, this.input.state)?.codeVerifier ??
+      readTokenState(this.input.paths, this.input.serverId).codeVerifier;
     if (!verifier) {
       throw new Error('Missing MCP OAuth code verifier for login callback.');
     }
@@ -447,6 +503,13 @@ class NeondeckMcpOAuthProvider implements OAuthClientProvider {
   }
 
   saveDiscoveryState(state: OAuthDiscoveryState) {
+    if (
+      writeLoginStateByState(this.input.paths, this.input.state, {
+        discoveryState: state,
+      })
+    ) {
+      return;
+    }
     writeTokenState(this.input.paths, this.input.serverId, {
       discoveryState: state,
     });
@@ -454,6 +517,8 @@ class NeondeckMcpOAuthProvider implements OAuthClientProvider {
 
   discoveryState() {
     return (
+      readLoginStateByState(this.input.paths, this.input.state)
+        ?.discoveryState ??
       readTokenState(this.input.paths, this.input.serverId).discoveryState ??
       undefined
     );
@@ -508,6 +573,18 @@ function configuredClientInformation(server: McpServerConfig) {
   } satisfies OAuthClientInformationMixed;
 }
 
+function oauthServerIdentity(server: McpServerConfig) {
+  if (server.transport !== 'http' || server.auth?.kind !== 'oauth') {
+    return 'not-oauth';
+  }
+  return JSON.stringify({
+    url: server.url,
+    sse: server.sse ?? false,
+    clientId: server.auth.clientId ?? null,
+    clientSecretEnv: server.auth.clientSecret?.env ?? null,
+  });
+}
+
 async function createOAuthLogin(
   serverId: string,
   redirectUrl: string,
@@ -531,13 +608,15 @@ async function createOAuthLogin(
           status,
           redirect_url,
           authorization_url,
+          discovery_state_json,
+          code_verifier,
           error,
           created_at,
           expires_at,
           completed_at,
           updated_at
         )
-        VALUES (?, ?, ?, 'pending', ?, NULL, NULL, ?, ?, NULL, ?);
+        VALUES (?, ?, ?, 'pending', ?, NULL, NULL, NULL, NULL, ?, ?, NULL, ?);
       `,
       )
       .run(id, serverId, state, redirectUrl, createdAt, expiresAt, createdAt);
@@ -575,22 +654,90 @@ async function updateOAuthLoginAuthorizationUrl(
   }
 }
 
+type LoginStatePatch = {
+  codeVerifier?: string | null;
+  discoveryState?: OAuthDiscoveryState | null;
+};
+
+function writeLoginStateByState(
+  paths: RuntimePaths,
+  state: string,
+  patch: LoginStatePatch,
+) {
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    const fields: string[] = [];
+    const values: Array<string | null> = [];
+    if ('codeVerifier' in patch) {
+      fields.push('code_verifier = ?');
+      values.push(patch.codeVerifier ?? null);
+    }
+    if ('discoveryState' in patch) {
+      fields.push('discovery_state_json = ?');
+      values.push(
+        patch.discoveryState ? JSON.stringify(patch.discoveryState) : null,
+      );
+    }
+    if (fields.length === 0) return false;
+    values.push(new Date().toISOString(), state);
+    const result = database
+      .prepare(
+        `
+        UPDATE mcp_oauth_logins
+        SET ${fields.join(', ')},
+            updated_at = ?
+        WHERE state = ?
+          AND status IN ('pending', 'redirect');
+      `,
+      )
+      .run(...values);
+    return result.changes === 1;
+  } finally {
+    database.close();
+  }
+}
+
+function readLoginStateByState(paths: RuntimePaths, state: string) {
+  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  try {
+    const row = database
+      .prepare(
+        `
+        SELECT code_verifier, discovery_state_json
+        FROM mcp_oauth_logins
+        WHERE state = ?;
+      `,
+      )
+      .get(state) as McpOAuthLoginStateRow | undefined;
+    if (!row) return null;
+    return {
+      codeVerifier: row.code_verifier,
+      discoveryState: parseJson<OAuthDiscoveryState>(row.discovery_state_json),
+    };
+  } finally {
+    database.close();
+  }
+}
+
 async function markOAuthLoginAuthorized(id: string, paths: RuntimePaths) {
   await ensureRuntimeHome(paths);
   const database = new DatabaseSync(paths.neondeckDatabase);
   const now = new Date().toISOString();
   try {
-    database
+    const result = database
       .prepare(
         `
         UPDATE mcp_oauth_logins
         SET status = 'authorized',
+            code_verifier = NULL,
             completed_at = ?,
             updated_at = ?
-        WHERE id = ?;
+        WHERE id = ?
+          AND status IN ('pending', 'redirect');
       `,
       )
       .run(now, now, id);
+    return result.changes === 1;
   } finally {
     database.close();
   }
@@ -605,18 +752,21 @@ async function failOAuthLogin(
   const database = new DatabaseSync(paths.neondeckDatabase);
   const now = new Date().toISOString();
   try {
-    database
+    const result = database
       .prepare(
         `
         UPDATE mcp_oauth_logins
         SET status = 'failed',
             error = ?,
+            code_verifier = NULL,
             completed_at = ?,
             updated_at = ?
-        WHERE id = ?;
+        WHERE id = ?
+          AND status IN ('pending', 'redirect');
       `,
       )
       .run(message, now, now, id);
+    return result.changes === 1;
   } finally {
     database.close();
   }
@@ -631,6 +781,7 @@ function expireOldOAuthLogins(paths: RuntimePaths) {
         `
         UPDATE mcp_oauth_logins
         SET status = 'expired',
+            code_verifier = NULL,
             updated_at = ?
         WHERE status IN ('pending', 'redirect')
           AND expires_at <= ?;
@@ -650,6 +801,7 @@ function readTokenState(paths: RuntimePaths, serverId: string): TokenState {
       .get(serverId) as McpOAuthTokenRow | undefined;
     if (!row) return emptyTokenState();
     return {
+      serverIdentity: row.server_identity,
       accessToken: row.access_token,
       refreshToken: row.refresh_token,
       tokenType: row.token_type,
@@ -680,6 +832,7 @@ function writeTokenState(
         `
         INSERT INTO mcp_oauth_tokens (
           server_id,
+          server_identity,
           access_token,
           refresh_token,
           token_type,
@@ -691,8 +844,9 @@ function writeTokenState(
           code_verifier,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(server_id) DO UPDATE SET
+          server_identity = excluded.server_identity,
           access_token = excluded.access_token,
           refresh_token = excluded.refresh_token,
           token_type = excluded.token_type,
@@ -707,6 +861,7 @@ function writeTokenState(
       )
       .run(
         serverId,
+        next.serverIdentity,
         next.accessToken,
         next.refreshToken,
         next.tokenType,
@@ -736,6 +891,7 @@ function clearTokenState(paths: RuntimePaths, serverId: string) {
 
 function emptyTokenState(): TokenState {
   return {
+    serverIdentity: null,
     accessToken: null,
     refreshToken: null,
     tokenType: null,
@@ -750,6 +906,7 @@ function emptyTokenState(): TokenState {
 }
 
 type McpOAuthTokenRow = {
+  server_identity: string | null;
   access_token: string | null;
   refresh_token: string | null;
   token_type: string | null;
@@ -769,11 +926,18 @@ type McpOAuthLoginRow = {
   status: McpOAuthLoginStatus;
   redirect_url: string;
   authorization_url: string | null;
+  discovery_state_json: string | null;
+  code_verifier: string | null;
   error: string | null;
   created_at: string;
   expires_at: string;
   completed_at: string | null;
   updated_at: string;
+};
+
+type McpOAuthLoginStateRow = {
+  code_verifier: string | null;
+  discovery_state_json: string | null;
 };
 
 function readLoginRow(row: McpOAuthLoginRow): McpOAuthLoginRecord {

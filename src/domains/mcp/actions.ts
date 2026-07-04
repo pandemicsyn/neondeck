@@ -258,6 +258,19 @@ async function guardAgentMcpServerUpdate(
       'This MCP server update changes stdio, header-auth, or auto-approval policy and must be made from a user-owned surface.',
     );
   }
+  if (
+    existing.transport === 'http' &&
+    existing.auth?.kind === 'oauth' &&
+    (Object.hasOwn(patch, 'url') ||
+      Object.hasOwn(patch, 'sse') ||
+      Object.hasOwn(patch, 'auth') ||
+      patch.transport !== undefined)
+  ) {
+    return blockedAgentMcpAction(
+      'mcp_server_update',
+      'OAuth MCP server endpoint and client identity changes must be made from a user-owned surface because stored tokens are bound to that identity.',
+    );
+  }
   if (existing.transport === 'http' && existing.auth?.kind === 'header') {
     return blockedAgentMcpAction(
       'mcp_server_update',

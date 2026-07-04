@@ -662,7 +662,8 @@ app.get('/api/mcp/oauth/callback', async (c) => {
     },
     paths,
   );
-  const login = isRecord(result.login) ? result.login : null;
+  const login =
+    'login' in result && isRecord(result.login) ? result.login : null;
   const serverId =
     login && typeof login.serverId === 'string' ? login.serverId : undefined;
   if (result.ok && serverId) {

@@ -126,21 +126,24 @@ export async function updateMcpServer(
     );
   }
 
-  const merged = parseServerConfig(
-    {
-      ...existing,
-      ...parsed.output.server,
-      auth: mergeNested(
-        readRecordField(existing, 'auth'),
-        parsed.output.server.auth,
-      ),
-      tools: mergeNested(
-        readRecordField(existing, 'tools'),
-        parsed.output.server.tools,
-      ),
-    },
-    paths,
+  const mergedRaw: Record<string, unknown> = {
+    ...existing,
+    ...parsed.output.server,
+  };
+  const auth = mergeNested(
+    readRecordField(existing, 'auth'),
+    parsed.output.server.auth,
   );
+  const tools = mergeNested(
+    readRecordField(existing, 'tools'),
+    parsed.output.server.tools,
+  );
+  if (auth === undefined) delete mergedRaw.auth;
+  else mergedRaw.auth = auth;
+  if (tools === undefined) delete mergedRaw.tools;
+  else mergedRaw.tools = tools;
+
+  const merged = parseServerConfig(mergedRaw, paths);
   const next = parseConfig(
     {
       servers: {
@@ -153,6 +156,7 @@ export async function updateMcpServer(
   const changed =
     JSON.stringify(config.servers[parsed.output.id]) !== JSON.stringify(merged);
   if (changed) {
+    const clearOAuth = mcpOAuthIdentityChanged(existing, merged);
     await writeChangedConfig(
       paths,
       'mcp_server_update',
@@ -160,6 +164,9 @@ export async function updateMcpServer(
       config,
       next,
     );
+    if (clearOAuth) {
+      deleteMcpOAuthState(paths, parsed.output.id);
+    }
   }
   return okResult('mcp_server_update', changed, paths, {
     message: changed
@@ -359,6 +366,47 @@ function deleteMcpServerState(paths: RuntimePaths, serverId: string) {
   } finally {
     database.close();
   }
+}
+
+function deleteMcpOAuthState(paths: RuntimePaths, serverId: string) {
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    database
+      .prepare('DELETE FROM mcp_oauth_tokens WHERE server_id = ?;')
+      .run(serverId);
+    database
+      .prepare(
+        `
+        UPDATE mcp_oauth_logins
+        SET status = 'expired',
+            code_verifier = NULL,
+            updated_at = ?
+        WHERE server_id = ?
+          AND status IN ('pending', 'redirect');
+      `,
+      )
+      .run(new Date().toISOString(), serverId);
+  } finally {
+    database.close();
+  }
+}
+
+function mcpOAuthIdentityChanged(
+  before: McpServerConfig,
+  after: McpServerConfig,
+) {
+  if (before.transport !== 'http' || before.auth?.kind !== 'oauth') {
+    return false;
+  }
+  if (after.transport !== 'http' || after.auth?.kind !== 'oauth') {
+    return true;
+  }
+  return (
+    before.url !== after.url ||
+    before.sse !== after.sse ||
+    before.auth.clientId !== after.auth.clientId ||
+    before.auth.clientSecret?.env !== after.auth.clientSecret?.env
+  );
 }
 
 function mergeNested(existing: unknown, patch: unknown) {

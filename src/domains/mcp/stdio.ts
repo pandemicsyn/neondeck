@@ -273,6 +273,8 @@ function createToolDescription(serverName: string, tool: Tool) {
 }
 
 const ajv = new Ajv({ allErrors: true, strict: false });
+const maxMcpOutputPartChars = 8_000;
+const maxMcpOutputTotalChars = 24_000;
 
 function assertUniqueAdaptedNames(serverId: string, tools: Tool[]) {
   const seen = new Map<string, string>();
@@ -373,31 +375,46 @@ function jsonSchemaToValibot(schema: object): v.GenericSchema {
 
 function formatMcpResult(result: CallToolResult) {
   const parts: string[] = [];
-  if (result.structuredContent !== undefined) {
+  const addPart = (value: string) => {
+    if (!value) return;
+    const remaining =
+      maxMcpOutputTotalChars -
+      parts.join('\n\n').length -
+      (parts.length ? 2 : 0);
+    if (remaining <= 0) return;
+    const part = truncateMcpOutputPart(value);
     parts.push(
+      part.length > remaining
+        ? `${part.slice(0, Math.max(0, remaining - 22))}\n[truncated output]`
+        : part,
+    );
+  };
+
+  if (result.structuredContent !== undefined) {
+    addPart(
       `Structured content:\n${JSON.stringify(result.structuredContent, null, 2)}`,
     );
   }
 
   for (const item of result.content ?? []) {
     if (item.type === 'text') {
-      parts.push(item.text);
+      addPart(item.text);
       continue;
     }
     if (item.type === 'image') {
-      parts.push(`[Image: ${item.mimeType}, ${item.data.length} base64 chars]`);
+      addPart(`[Image: ${item.mimeType}, ${item.data.length} base64 chars]`);
       continue;
     }
     if (item.type === 'audio') {
-      parts.push(`[Audio: ${item.mimeType}, ${item.data.length} base64 chars]`);
+      addPart(`[Audio: ${item.mimeType}, ${item.data.length} base64 chars]`);
       continue;
     }
     if (item.type === 'resource') {
       const resource = item.resource;
       if ('text' in resource) {
-        parts.push(`[Resource: ${resource.uri}]\n${resource.text}`);
+        addPart(`[Resource: ${resource.uri}]\n${resource.text}`);
       } else {
-        parts.push(
+        addPart(
           `[Resource: ${resource.uri}, ${resource.blob.length} base64 chars]`,
         );
       }
@@ -405,13 +422,18 @@ function formatMcpResult(result: CallToolResult) {
     }
     if (item.type === 'resource_link') {
       const description = item.description ? ` - ${item.description}` : '';
-      parts.push(`[Resource link: ${item.name} (${item.uri})${description}]`);
+      addPart(`[Resource link: ${item.name} (${item.uri})${description}]`);
       continue;
     }
-    parts.push(JSON.stringify(item));
+    addPart(JSON.stringify(item));
   }
 
   return parts.filter(Boolean).join('\n\n') || '(MCP tool returned no content)';
+}
+
+function truncateMcpOutputPart(value: string) {
+  if (value.length <= maxMcpOutputPartChars) return value;
+  return `${value.slice(0, maxMcpOutputPartChars - 22)}\n[truncated output]`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

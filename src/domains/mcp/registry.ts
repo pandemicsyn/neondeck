@@ -198,7 +198,8 @@ export class McpRegistry {
     ) {
       await entry.connection?.close().catch(() => undefined);
       entry.connection = null;
-      entry.tools = [];
+      entry.catalog = await cachedCatalog(id, this.paths);
+      entry.tools = disconnectedTools(id, entry.catalog);
       entry.status = 'needs-login';
       entry.message =
         'OAuth login is required before connecting this MCP server.';
@@ -236,6 +237,11 @@ export class McpRegistry {
       const message = error instanceof Error ? error.message : String(error);
       await entry.connection?.close().catch(() => undefined);
       entry.connection = null;
+      await markMcpCatalogUnavailable(id, this.paths);
+      entry.catalog =
+        entry.catalog.length > 0
+          ? entry.catalog
+          : await cachedCatalog(id, this.paths);
       entry.tools = disconnectedTools(id, entry.catalog);
       entry.status =
         error instanceof UnauthorizedError ? 'needs-login' : 'error';
@@ -244,7 +250,6 @@ export class McpRegistry {
           ? 'OAuth login is required before connecting this MCP server.'
           : message;
       entry.lastErrorAt = new Date().toISOString();
-      await markMcpCatalogUnavailable(id, this.paths);
     }
   }
 
@@ -264,6 +269,11 @@ export class McpRegistry {
     this.entries.set(id, entry);
     return entry;
   }
+}
+
+async function cachedCatalog(serverId: string, paths: RuntimePaths) {
+  const catalog = await listMcpToolCatalog(paths, { serverId });
+  return catalog.map((tool) => ({ ...tool, status: 'unavailable' as const }));
 }
 
 function resolveHeaderAuth(server: McpServerConfig) {

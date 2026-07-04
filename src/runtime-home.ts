@@ -1047,6 +1047,7 @@ function initializeAppDatabase(path: string) {
 
       CREATE TABLE IF NOT EXISTS mcp_oauth_tokens (
         server_id TEXT PRIMARY KEY,
+        server_identity TEXT,
         access_token TEXT,
         refresh_token TEXT,
         token_type TEXT,
@@ -1066,6 +1067,8 @@ function initializeAppDatabase(path: string) {
         status TEXT NOT NULL,
         redirect_url TEXT NOT NULL,
         authorization_url TEXT,
+        discovery_state_json TEXT,
+        code_verifier TEXT,
         error TEXT,
         created_at TEXT NOT NULL,
         expires_at TEXT NOT NULL,
@@ -1358,9 +1361,12 @@ function initializeAppDatabase(path: string) {
     migrateMemoryEvents(database);
     ensureColumn(database, 'learning_candidates', 'action', 'TEXT');
     ensureColumn(database, 'learning_reviews', 'flue_run_id', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_tokens', 'server_identity', 'TEXT');
     ensureColumn(database, 'mcp_oauth_tokens', 'token_type', 'TEXT');
     ensureColumn(database, 'mcp_oauth_tokens', 'id_token', 'TEXT');
     ensureColumn(database, 'mcp_oauth_tokens', 'code_verifier', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_logins', 'discovery_state_json', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_logins', 'code_verifier', 'TEXT');
     database
       .prepare(
         `
