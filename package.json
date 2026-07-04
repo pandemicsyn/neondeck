@@ -33,6 +33,7 @@
     "secrets:check": "gitleaks git --redact --no-banner --log-opts=--all",
     "secrets:check:staged": "gitleaks git --staged --redact --no-banner",
     "setup": "node src/setup.ts",
+    "reset:flue-db": "node scripts/reset-flue-db.mjs",
     "smoke:autopilot": "node scripts/autopilot-smoke.mjs",
     "smoke:kilo": "node scripts/kilo-smoke.mjs",
     "smoke:learning": "vitest run --config vitest.integration.config.ts src/learning-workflow-smoke.test.ts",
