@@ -31,3 +31,7 @@ export type ScheduleOptions = {
 export type ServeOptions = {
   port?: string;
 };
+
+export type ServiceInstallOptions = {
+  port?: string;
+};

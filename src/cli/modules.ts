@@ -82,6 +82,12 @@ export async function schedulerModule() {
   ) as Promise<typeof import('../modules/scheduler')>;
 }
 
+export async function serviceModule() {
+  return import(
+    new URL('../desktop/service.ts', import.meta.url).href
+  ) as Promise<typeof import('../desktop/service')>;
+}
+
 export async function skillPatchesModule() {
   return import(
     new URL('../modules/learning/skill-patches/index.ts', import.meta.url).href

@@ -26,7 +26,7 @@ describe('safety policy', () => {
     expect(policy).toMatchObject({
       ok: true,
       action: 'safety_policy_read',
-      version: 4,
+      version: 5,
     });
     expect(policy.summary.destructiveMutation).toBeGreaterThanOrEqual(4);
     expect(policy.summary.hostExecution).toBeGreaterThanOrEqual(2);
@@ -111,6 +111,18 @@ describe('safety policy', () => {
           class: 'host-execution',
           audited: true,
           auditTarget: 'execution_approvals',
+        }),
+        expect.objectContaining({
+          id: 'neondeck_service_install',
+          primitive: 'cli',
+          class: 'host-execution',
+          requiresConfirmation: true,
+        }),
+        expect.objectContaining({
+          id: 'neondeck_service_uninstall',
+          primitive: 'cli',
+          class: 'destructive-mutation',
+          requiresConfirmation: true,
         }),
         expect.objectContaining({
           id: '/api/execution/run',

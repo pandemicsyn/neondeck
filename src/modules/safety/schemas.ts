@@ -3,7 +3,7 @@ import * as v from 'valibot';
 export type SafetyClass =
   'read-only' | 'safe-mutation' | 'destructive-mutation' | 'host-execution';
 
-export type SafetyPrimitive = 'tool' | 'action' | 'workflow' | 'route';
+export type SafetyPrimitive = 'tool' | 'action' | 'workflow' | 'route' | 'cli';
 
 export type SafetyPolicyEntry = {
   id: string;
