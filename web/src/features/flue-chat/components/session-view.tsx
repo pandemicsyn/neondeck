@@ -1,8 +1,20 @@
 import { useFlueAgent, useFlueClient } from '@flue/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react';
 import type { NeonCommandResult, NeonSessionState } from '../../../api';
-import { Badge, Button, Kbd, ScrollArea, Textarea } from '../../../components/ui';
+import {
+  Badge,
+  Button,
+  Kbd,
+  ScrollArea,
+  Textarea,
+} from '../../../components/ui';
 import { queryKeys } from '../../../lib/query';
 import { CommandResultSummary, CommandTypeahead } from './command-controls';
 import {
@@ -10,8 +22,17 @@ import {
   errorMessage,
   renderMessagePart,
 } from './message-parts';
-import { commandQueryFromInput, filterCommands, mergeCommandCatalog } from '../lib/commands';
-import type { FlueChatCommand, FlueChatConfig, FlueChatSession } from '../types';
+import {
+  commandQueryFromInput,
+  filterCommands,
+  mergeCommandCatalog,
+} from '../lib/commands';
+import { chatMessagesForRender } from '../lib/messages';
+import type {
+  FlueChatCommand,
+  FlueChatConfig,
+  FlueChatSession,
+} from '../types';
 
 export function FlueChatSessionView({
   agentName,
@@ -37,6 +58,14 @@ export function FlueChatSessionView({
     name: agentName,
     id: session?.id,
   });
+  const [canonicalMessages, setCanonicalMessages] =
+    useState<typeof agent.messages>();
+  const [pendingHistoryRefresh, setPendingHistoryRefresh] = useState(false);
+  const messages = chatMessagesForRender(
+    agent.messages,
+    canonicalMessages,
+    agent.status,
+  );
   const commandCatalog = useMemo(
     () => mergeCommandCatalog(quickCommands),
     [quickCommands],
@@ -57,6 +86,37 @@ export function FlueChatSessionView({
   useEffect(() => {
     setActiveCommandIndex(0);
   }, [commandQuery]);
+
+  useEffect(() => {
+    setCanonicalMessages(undefined);
+    setPendingHistoryRefresh(Boolean(session?.id));
+  }, [agentName, session?.id]);
+
+  useEffect(() => {
+    if (!pendingHistoryRefresh) return;
+    if (agent.status === 'error') {
+      setPendingHistoryRefresh(false);
+      return;
+    }
+    if (!session?.id || agent.status !== 'idle') return;
+
+    let cancelled = false;
+    void flue.agents
+      .history(agentName, session.id)
+      .then((history) => {
+        if (cancelled) return;
+        setCanonicalMessages(history.messages);
+        setPendingHistoryRefresh(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPendingHistoryRefresh(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [agent.status, agentName, flue, pendingHistoryRefresh, session?.id]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -87,9 +147,12 @@ export function FlueChatSessionView({
 
     setSendingMessage(true);
     try {
+      setCanonicalMessages(undefined);
       await agent.sendMessage(message);
+      setPendingHistoryRefresh(true);
       setInput('');
     } catch (error) {
+      setPendingHistoryRefresh(false);
       setSubmitError(errorMessage(error));
     } finally {
       setSendingMessage(false);
@@ -181,11 +244,11 @@ export function FlueChatSessionView({
               </p>
             </div>
           ) : null}
-          {agent.messages.length > 0 ? (
+          {messages.length > 0 ? (
             <div className="chat-workflow px-2.5 py-1 font-mono text-[10.5px]">
               <span>workflow</span>
               <span className="text-muted">
-                session · {agent.messages.length} messages
+                session · {messages.length} messages
               </span>
             </div>
           ) : null}
@@ -193,7 +256,7 @@ export function FlueChatSessionView({
             latest={commandResult}
             runningCommand={runningCommand}
           />
-          {agent.messages.length === 0 ? (
+          {messages.length === 0 ? (
             <div className="flex flex-1 items-center justify-center text-center text-[13px] text-muted">
               <div className="max-w-[42ch]">
                 <div className="miami-accent mx-auto mb-2 h-1.5 w-12" />
@@ -208,7 +271,7 @@ export function FlueChatSessionView({
               </div>
             </div>
           ) : (
-            agent.messages.map((message) => (
+            messages.map((message) => (
               <article
                 className={`chat-message chat-message-${message.role} space-y-1.5`}
                 key={message.id}

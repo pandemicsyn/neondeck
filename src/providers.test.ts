@@ -5,6 +5,24 @@ import {
 } from './providers';
 
 describe('provider runtime registrations', () => {
+  it('sets an explicit KiloCode gateway output-token budget', () => {
+    const registrations = providerRuntimeRegistrations({
+      KILOCODE_API_KEY: 'kilo-key',
+    } as NodeJS.ProcessEnv);
+
+    expect(registrations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'kilocode',
+          registration: expect.objectContaining({
+            api: 'openai-completions',
+            maxTokens: 16_384,
+          }),
+        }),
+      ]),
+    );
+  });
+
   it('prefers KILOCODE_API_KEY unless only the legacy Kilo key is present', () => {
     expect(resolveKilocodeProviderStatus(undefined, {})).toMatchObject({
       apiKeyEnv: 'KILOCODE_API_KEY',
