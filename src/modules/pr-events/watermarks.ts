@@ -2,11 +2,27 @@
 import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
-import { fetchPullRequestEventState, postPullRequestComment, type GitHubPullRequestEventState } from '../../github';
+import {
+  fetchPullRequestEventState,
+  postPullRequestComment,
+  type GitHubPullRequestEventState,
+} from '../../github';
 import { readRepoRegistrySnapshot, repoFullName } from '../../repos';
-import { type RuntimePaths, ensureRuntimeHome, runtimePaths } from '../../runtime-home';
-import { listPrWatchRecords, parseWatchPrReference, type PrWatch } from '../../watch-actions';
-import { watermarkCategories, type PrWatchEventWatermarkCategory, type PrWatchEventWatermarkRecord } from './schemas';
+import {
+  type RuntimePaths,
+  ensureRuntimeHome,
+  runtimePaths,
+} from '../../runtime-home';
+import {
+  listPrWatchRecords,
+  parseWatchPrReference,
+  type PrWatch,
+} from '../../watch-actions';
+import {
+  watermarkCategories,
+  type PrWatchEventWatermarkCategory,
+  type PrWatchEventWatermarkRecord,
+} from './schemas';
 import { isFailingConclusion, maxString } from './utils';
 
 export function watermarksFromEventState(

@@ -2,11 +2,28 @@
 import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
-import { fetchPullRequestEventState, postPullRequestComment, type GitHubPullRequestEventState } from '../../github';
+import {
+  fetchPullRequestEventState,
+  postPullRequestComment,
+  type GitHubPullRequestEventState,
+} from '../../github';
 import { readRepoRegistrySnapshot, repoFullName } from '../../repos';
-import { type RuntimePaths, ensureRuntimeHome, runtimePaths } from '../../runtime-home';
-import { listPrWatchRecords, parseWatchPrReference, type PrWatch } from '../../watch-actions';
-import { prEventTargetInputSchema, type PrEventActionResult, type PrEventStateDependencies, type PullRequestTarget } from './schemas';
+import {
+  type RuntimePaths,
+  ensureRuntimeHome,
+  runtimePaths,
+} from '../../runtime-home';
+import {
+  listPrWatchRecords,
+  parseWatchPrReference,
+  type PrWatch,
+} from '../../watch-actions';
+import {
+  prEventTargetInputSchema,
+  type PrEventActionResult,
+  type PrEventStateDependencies,
+  type PullRequestTarget,
+} from './schemas';
 import { errorMessage, failResult } from './utils';
 
 export async function fetchEventState(

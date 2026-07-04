@@ -1,8 +1,20 @@
 import { useFlueAgent, useFlueClient } from '@flue/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react';
 import type { NeonCommandResult, NeonSessionState } from '../../../api';
-import { Badge, Button, Kbd, ScrollArea, Textarea } from '../../../components/ui';
+import {
+  Badge,
+  Button,
+  Kbd,
+  ScrollArea,
+  Textarea,
+} from '../../../components/ui';
 import { queryKeys } from '../../../lib/query';
 import { CommandResultSummary, CommandTypeahead } from './command-controls';
 import {
@@ -10,8 +22,16 @@ import {
   errorMessage,
   renderMessagePart,
 } from './message-parts';
-import { commandQueryFromInput, filterCommands, mergeCommandCatalog } from '../lib/commands';
-import type { FlueChatCommand, FlueChatConfig, FlueChatSession } from '../types';
+import {
+  commandQueryFromInput,
+  filterCommands,
+  mergeCommandCatalog,
+} from '../lib/commands';
+import type {
+  FlueChatCommand,
+  FlueChatConfig,
+  FlueChatSession,
+} from '../types';
 
 export function FlueChatSessionView({
   agentName,

@@ -4,9 +4,26 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { gitDiff, type RepoDiffFile } from '../../repo-edit/git';
-import { ensureRuntimeHome, parseAppConfig, parseRepoRegistry, readRuntimeJson, runtimePaths, type AppConfig, type RepoConfig, type RuntimePaths } from '../../runtime-home';
+import {
+  ensureRuntimeHome,
+  parseAppConfig,
+  parseRepoRegistry,
+  readRuntimeJson,
+  runtimePaths,
+  type AppConfig,
+  type RepoConfig,
+  type RuntimePaths,
+} from '../../runtime-home';
 import { listWorktrees } from '../../worktrees';
-import { autopilotWorkflowNames, defaultAutopilotConcurrency, defaultAutopilotPolicyLimits, type ActiveRunRow, type AutopilotFileRisk, type AutopilotPolicyDecision, type AutopilotPolicyLimits } from './policy-schemas';
+import {
+  autopilotWorkflowNames,
+  defaultAutopilotConcurrency,
+  defaultAutopilotPolicyLimits,
+  type ActiveRunRow,
+  type AutopilotFileRisk,
+  type AutopilotPolicyDecision,
+  type AutopilotPolicyLimits,
+} from './policy-schemas';
 
 export async function classifyFileRisk(
   root: string,

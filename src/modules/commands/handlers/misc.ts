@@ -1,5 +1,8 @@
 import { listJobs, listNotifications } from '../../../app-state';
-import { readAgentModelSelectionSync, isThinkingLevel } from '../../../agent-config';
+import {
+  readAgentModelSelectionSync,
+  isThinkingLevel,
+} from '../../../agent-config';
 import { updateAgentModels } from '../../../config-actions';
 import { runDevDoctor } from '../../../dev-doctor';
 import { deleteMemory, listMemories, upsertMemory } from '../../memory';
@@ -8,10 +11,21 @@ import { createScheduleBlueprint } from '../../scheduler';
 import { startNeonSession } from '../../../session-actions';
 import { addPrWatch, listPrWatchRecords } from '../../watches';
 import type { RuntimePaths } from '../../../runtime-home';
-import type { NeonCommandResult, ParsedNeonCommand, CommandDependencies } from '../schemas';
+import type {
+  NeonCommandResult,
+  ParsedNeonCommand,
+  CommandDependencies,
+} from '../schemas';
 import { readReviewQueue, triageReviewQueue } from './queue';
 import { completedCommand, failedCommand } from '../summaries';
-import { formatList, isActiveMemoryScope, isMemoryScope, parseMemoryValue, readStringArrayProperty, supportedReasoningLevelsForModel } from '../utils';
+import {
+  formatList,
+  isActiveMemoryScope,
+  isMemoryScope,
+  parseMemoryValue,
+  readStringArrayProperty,
+  supportedReasoningLevelsForModel,
+} from '../utils';
 
 export async function briefingCommand(
   command: ParsedNeonCommand,

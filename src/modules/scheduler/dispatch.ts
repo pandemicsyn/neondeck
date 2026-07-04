@@ -1,12 +1,14 @@
 import type { JsonValue } from '@flue/runtime';
-import {
-  type JobRecord,
-  type NotificationLevel,
-} from '../../app-state';
+import { type JobRecord, type NotificationLevel } from '../../app-state';
 import { fetchCheckSummary, type GitHubCheckSummary } from '../../github';
 import { readRepoRegistrySnapshot, repoFullName } from '../../repos';
 import type { RuntimePaths } from '../../runtime-home';
-import { listPrWatchRecords, listRefWatchRecords, refreshPrWatch, refreshRefWatch } from '../watches';
+import {
+  listPrWatchRecords,
+  listRefWatchRecords,
+  refreshPrWatch,
+  refreshRefWatch,
+} from '../watches';
 import type {
   BlueprintKind,
   JobExecutionResult,
@@ -484,7 +486,10 @@ export function failedWatchSourceId(
   return target?.id ?? target?.ref ?? 'all-watches';
 }
 
-export function readIntervalSeconds(config: unknown, type: BlueprintKind | string) {
+export function readIntervalSeconds(
+  config: unknown,
+  type: BlueprintKind | string,
+) {
   const record = readObjectConfig(config);
   const value = record.intervalSeconds;
   if (typeof value === 'number' && Number.isInteger(value) && value >= 60) {
@@ -511,7 +516,10 @@ export function defaultBlueprintId(blueprint: BlueprintKind, target?: string) {
   return `${blueprint}-${suffix}`;
 }
 
-export async function resolveReleaseWatchRepo(repoRef: string, paths: RuntimePaths) {
+export async function resolveReleaseWatchRepo(
+  repoRef: string,
+  paths: RuntimePaths,
+) {
   const registry = await readRepoRegistrySnapshot(paths);
   const matches = registry.repos.filter(
     (repo) =>

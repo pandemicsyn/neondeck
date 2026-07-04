@@ -1,8 +1,7 @@
 import * as v from 'valibot';
 
 export type ParseInputResult<TInput, TResult> =
-  | { ok: true; input: TInput }
-  | { ok: false; result: TResult };
+  { ok: true; input: TInput } | { ok: false; result: TResult };
 
 export function parseInput<TInput, TResult>(
   schema: v.GenericSchema<unknown, TInput>,
@@ -30,4 +29,5 @@ export function parseInput<TInput, TResult>(
 export const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 export const nullableStringColumnSchema = v.nullable(v.string());
 export const isoDateStringSchema = v.pipe(v.string(), v.isoTimestamp());
-export const nullableIsoDateStringColumnSchema = v.nullable(isoDateStringSchema);
+export const nullableIsoDateStringColumnSchema =
+  v.nullable(isoDateStringSchema);

@@ -11,7 +11,9 @@ export const allThinkingLevels: ThinkingLevel[] = [
   'xhigh',
 ];
 
-export function supportedReasoningLevelsForModel(model: string): ThinkingLevel[] {
+export function supportedReasoningLevelsForModel(
+  model: string,
+): ThinkingLevel[] {
   const specifier = parseModelSpecifier(model);
   if (!specifier) return ['off'];
 

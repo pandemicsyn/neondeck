@@ -11,7 +11,10 @@ export function stringField(row: Record<string, unknown>, keys: string[]) {
   return undefined;
 }
 
-export function numberOrDateField(row: Record<string, unknown>, keys: string[]) {
+export function numberOrDateField(
+  row: Record<string, unknown>,
+  keys: string[],
+) {
   for (const key of keys) {
     const value = row[key];
     if (typeof value === 'number') return value;

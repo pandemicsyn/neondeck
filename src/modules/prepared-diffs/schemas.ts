@@ -7,7 +7,11 @@ import { addNotification } from '../../app-state';
 import { buildPreparedDiffAuditSummary } from '../../autonomous-audit';
 import { openDb } from '../../lib/sqlite';
 import { gitCurrentSha, gitDiff, type RepoDiffFile } from '../../repo-edit/git';
-import { type RuntimePaths, ensureRuntimeHome, runtimePaths } from '../../runtime-home';
+import {
+  type RuntimePaths,
+  ensureRuntimeHome,
+  runtimePaths,
+} from '../../runtime-home';
 
 export type PreparedDiffStatus =
   | 'prepared'

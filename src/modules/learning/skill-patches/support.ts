@@ -10,11 +10,20 @@ import {
   resolveLearningConfig,
   type RuntimePaths,
 } from '../../../runtime-home';
-import { listRuntimeSkills, type RuntimeSkillMetadata } from '../../../runtime-skills';
-import type { SkillPatchCandidateRecord, SkillPatchMutationSource } from './schemas';
+import {
+  listRuntimeSkills,
+  type RuntimeSkillMetadata,
+} from '../../../runtime-skills';
+import type {
+  SkillPatchCandidateRecord,
+  SkillPatchMutationSource,
+} from './schemas';
 import { nonEmptyStringSchema, skillPatchOperationSchema } from './schemas';
 
-export async function resolvePatchableSkill(skillId: string, paths: RuntimePaths) {
+export async function resolvePatchableSkill(
+  skillId: string,
+  paths: RuntimePaths,
+) {
   const inventory = await listRuntimeSkills(paths);
   const skill = inventory.skills.find(
     (candidate) => candidate.id === skillId && candidate.status === 'active',
@@ -83,7 +92,10 @@ export function applyPatchOperation(
   return `${beforeContent.slice(0, insertAt)}${block}\n${beforeContent.slice(insertAt)}`;
 }
 
-export function validateSkillPatch(beforeContent: string, afterContent: string) {
+export function validateSkillPatch(
+  beforeContent: string,
+  afterContent: string,
+) {
   const beforeFrontmatter = frontmatterBlock(beforeContent);
   const afterFrontmatter = frontmatterBlock(afterContent);
   if (!beforeFrontmatter || !afterFrontmatter) {
@@ -250,7 +262,9 @@ export function readSkillPatchCandidateById(
   return row ? readSkillPatchCandidateRow(row) : null;
 }
 
-export function readSkillPatchCandidateRow(row: unknown): SkillPatchCandidateRecord {
+export function readSkillPatchCandidateRow(
+  row: unknown,
+): SkillPatchCandidateRecord {
   const record = row as Record<string, unknown>;
   return {
     id: String(record.id),
@@ -352,7 +366,11 @@ export function recordConfigHistory(
     );
 }
 
-export function unifiedWholeFileDiff(path: string, before: string, after: string) {
+export function unifiedWholeFileDiff(
+  path: string,
+  before: string,
+  after: string,
+) {
   const beforeLines = before.split('\n');
   const afterLines = after.split('\n');
   return [
@@ -376,7 +394,6 @@ export function ensureTrailingNewline(value: string) {
 export function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
-
 
 export function parseNullableJson(value: unknown): JsonValue | null {
   if (typeof value !== 'string') return null;

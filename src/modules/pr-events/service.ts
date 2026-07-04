@@ -2,14 +2,46 @@
 import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
-import { fetchPullRequestEventState, postPullRequestComment, type GitHubPullRequestEventState } from '../../github';
+import {
+  fetchPullRequestEventState,
+  postPullRequestComment,
+  type GitHubPullRequestEventState,
+} from '../../github';
 import { readRepoRegistrySnapshot, repoFullName } from '../../repos';
-import { type RuntimePaths, ensureRuntimeHome, runtimePaths } from '../../runtime-home';
-import { listPrWatchRecords, parseWatchPrReference, type PrWatch } from '../../watch-actions';
-import { prCommentInputSchema, prEventTargetInputSchema, prWatchEventWatermarkListInputSchema, type PrEventActionResult, type PrEventStateDependencies } from './schemas';
-import { fetchEventState, isConfiguredRepoTarget, resolvePullRequestTarget } from './target';
-import { readWatermarks, upsertWatermarks, watermarksFromEventState } from './watermarks';
-import { errorMessage, eventTargetJson, failResult, okResult, stableJson } from './utils';
+import {
+  type RuntimePaths,
+  ensureRuntimeHome,
+  runtimePaths,
+} from '../../runtime-home';
+import {
+  listPrWatchRecords,
+  parseWatchPrReference,
+  type PrWatch,
+} from '../../watch-actions';
+import {
+  prCommentInputSchema,
+  prEventTargetInputSchema,
+  prWatchEventWatermarkListInputSchema,
+  type PrEventActionResult,
+  type PrEventStateDependencies,
+} from './schemas';
+import {
+  fetchEventState,
+  isConfiguredRepoTarget,
+  resolvePullRequestTarget,
+} from './target';
+import {
+  readWatermarks,
+  upsertWatermarks,
+  watermarksFromEventState,
+} from './watermarks';
+import {
+  errorMessage,
+  eventTargetJson,
+  failResult,
+  okResult,
+  stableJson,
+} from './utils';
 
 export async function getGitHubPrEventState(
   input: v.InferInput<typeof prEventTargetInputSchema>,

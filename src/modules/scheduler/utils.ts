@@ -42,7 +42,9 @@ export function okResult(
   } as SchedulerResult;
 }
 
-export const failResult = failedAction<Pick<SchedulerResult, 'errors' | 'requires'>>;
+export const failResult = failedAction<
+  Pick<SchedulerResult, 'errors' | 'requires'>
+>;
 
 export function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);

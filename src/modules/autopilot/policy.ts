@@ -4,11 +4,31 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { gitDiff, type RepoDiffFile } from '../../repo-edit/git';
-import { ensureRuntimeHome, parseAppConfig, parseRepoRegistry, readRuntimeJson, runtimePaths, type AppConfig, type RepoConfig, type RuntimePaths } from '../../runtime-home';
+import {
+  ensureRuntimeHome,
+  parseAppConfig,
+  parseRepoRegistry,
+  readRuntimeJson,
+  runtimePaths,
+  type AppConfig,
+  type RepoConfig,
+  type RuntimePaths,
+} from '../../runtime-home';
 import { listWorktrees } from '../../worktrees';
 import { repoAutopilotPolicy, globalAutopilotPolicy } from './policy-config';
-import { classifyFileRisk, emptyPolicyFailure, normalizeWorkflowName, readActiveAutopilotRuns } from './policy-risk';
-import { mutationWorkflowNames, type ActiveRunRow, type AutopilotConcurrencyDecision, type AutopilotConcurrencyPolicy, type AutopilotPolicyDecision } from './policy-schemas';
+import {
+  classifyFileRisk,
+  emptyPolicyFailure,
+  normalizeWorkflowName,
+  readActiveAutopilotRuns,
+} from './policy-risk';
+import {
+  mutationWorkflowNames,
+  type ActiveRunRow,
+  type AutopilotConcurrencyDecision,
+  type AutopilotConcurrencyPolicy,
+  type AutopilotPolicyDecision,
+} from './policy-schemas';
 
 let activeLocalExecutions = 0;
 

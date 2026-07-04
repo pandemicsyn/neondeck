@@ -4,12 +4,39 @@ import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { listExecutionApprovals } from '../../execution-actions';
 import { flueRunInspectionUrl } from '../../local-api-auth';
-import { globalAutopilotPolicy, mergeAutopilotConcurrency, mergeAutopilotLimits, normalizeAutopilotMode, readRepoAutopilotConfig, type AutopilotConcurrencyPolicy, type AutopilotMode, type AutopilotModeAlias, type AutopilotPolicyLimits } from '../../autopilot-policy';
-import { ensureRuntimeHome, parseAppConfig, parseRepoRegistry, readRuntimeJson, runtimePaths, type RepoConfig, type RuntimePaths } from '../../runtime-home';
+import {
+  globalAutopilotPolicy,
+  mergeAutopilotConcurrency,
+  mergeAutopilotLimits,
+  normalizeAutopilotMode,
+  readRepoAutopilotConfig,
+  type AutopilotConcurrencyPolicy,
+  type AutopilotMode,
+  type AutopilotModeAlias,
+  type AutopilotPolicyLimits,
+} from '../../autopilot-policy';
+import {
+  ensureRuntimeHome,
+  parseAppConfig,
+  parseRepoRegistry,
+  readRuntimeJson,
+  runtimePaths,
+  type RepoConfig,
+  type RuntimePaths,
+} from '../../runtime-home';
 import { listNotifications, type NotificationLevel } from '../../app-state';
-import { listPreparedDiffs, type PreparedDiffApprovalRecord, type PreparedDiffRecord, type PreparedDiffStatus } from '../../prepared-diffs';
+import {
+  listPreparedDiffs,
+  type PreparedDiffApprovalRecord,
+  type PreparedDiffRecord,
+  type PreparedDiffStatus,
+} from '../../prepared-diffs';
 import { listPrWatchRecords, type PrWatch } from '../../watch-actions';
-import { listWorktrees, type WorktreeLifecycleStatus, type WorktreeRecord } from '../../worktrees';
+import {
+  listWorktrees,
+  type WorktreeLifecycleStatus,
+  type WorktreeRecord,
+} from '../../worktrees';
 
 export type AutopilotQueueStatus =
   | 'watching'

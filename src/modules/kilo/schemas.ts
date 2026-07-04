@@ -2,7 +2,12 @@ import { spawn } from 'node:child_process';
 import { type WriteStream } from 'node:fs';
 import * as v from 'valibot';
 import { type RepoConfig } from '../../runtime-home';
-import { type KiloHandoffMode, type KiloTaskEventRecord, type KiloTaskRecord, type KiloTaskStatus } from './store';
+import {
+  type KiloHandoffMode,
+  type KiloTaskEventRecord,
+  type KiloTaskRecord,
+  type KiloTaskStatus,
+} from './store';
 
 export type {
   KiloHandoffMode,
@@ -70,7 +75,11 @@ export const runningProcesses = new Map<string, RunningProcess>();
 export const terminalTaskIds = new Set<string>();
 
 export const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
-export const positiveIntegerSchema = v.pipe(v.number(), v.integer(), v.minValue(1));
+export const positiveIntegerSchema = v.pipe(
+  v.number(),
+  v.integer(),
+  v.minValue(1),
+);
 export const handoffModeSchema = v.picklist([
   'draft-fix',
   'patch-proposal',

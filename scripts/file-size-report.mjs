@@ -31,11 +31,17 @@ const rows = roots
   .map((file) => {
     const contents = readFileSync(file, 'utf8');
     const newlineCount = contents.match(/\n/g)?.length ?? 0;
-    const lines = contents === '' || contents.endsWith('\n') ? newlineCount : newlineCount + 1;
+    const lines =
+      contents === '' || contents.endsWith('\n')
+        ? newlineCount
+        : newlineCount + 1;
     return { file: relative(process.cwd(), file), lines };
   })
   .filter((row) => row.lines > threshold)
-  .sort((left, right) => right.lines - left.lines || left.file.localeCompare(right.file));
+  .sort(
+    (left, right) =>
+      right.lines - left.lines || left.file.localeCompare(right.file),
+  );
 
 for (const row of rows) {
   console.log(`${row.lines.toString().padStart(5, ' ')} ${row.file}`);

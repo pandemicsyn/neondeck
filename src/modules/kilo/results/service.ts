@@ -4,10 +4,46 @@ import { verifyPrWorktree } from '../../../autopilot-workflows';
 import { notifyKiloState, resolveKiloNotifications } from '../notifications';
 import { getGitHubPrBranchPermissions } from '../../../pr-event-state';
 import { ensurePreparedDiffForWorktree } from '../../../prepared-diffs';
-import { ensureRuntimeHome, runtimePaths, type RuntimePaths } from '../../../runtime-home';
-import { assertReviewableTask, assertVerificationGate, classifyReview, diffFingerprintForTask, findTaskWorktree, readTaskDiff, reviewReasons, taskStatusForClassification } from './gates';
-import { jsonBoolean, listStateRows, notFound, parseInput, pendingApprovalsFor, readKiloResultState, readKiloTask, readPreparedDiffByWorktree, readStateRow, resetPreparedDiffApproval, insertKiloResultEvent, updateKiloTaskStatus, upsertKiloResultState } from './state';
-import { promoteInputSchema, stateListInputSchema, taskIdInputSchema, verifyInputSchema, type KiloResultActionResult, type KiloResultClassification, type KiloResultState, type KiloVerificationStatus } from './schemas';
+import {
+  ensureRuntimeHome,
+  runtimePaths,
+  type RuntimePaths,
+} from '../../../runtime-home';
+import {
+  assertReviewableTask,
+  assertVerificationGate,
+  classifyReview,
+  diffFingerprintForTask,
+  findTaskWorktree,
+  readTaskDiff,
+  reviewReasons,
+  taskStatusForClassification,
+} from './gates';
+import {
+  jsonBoolean,
+  listStateRows,
+  notFound,
+  parseInput,
+  pendingApprovalsFor,
+  readKiloResultState,
+  readKiloTask,
+  readPreparedDiffByWorktree,
+  readStateRow,
+  resetPreparedDiffApproval,
+  insertKiloResultEvent,
+  updateKiloTaskStatus,
+  upsertKiloResultState,
+} from './state';
+import {
+  promoteInputSchema,
+  stateListInputSchema,
+  taskIdInputSchema,
+  verifyInputSchema,
+  type KiloResultActionResult,
+  type KiloResultClassification,
+  type KiloResultState,
+  type KiloVerificationStatus,
+} from './schemas';
 
 export async function reviewKiloResult(
   rawInput: unknown,
@@ -541,13 +577,13 @@ export async function listKiloResultStates(
   await ensureRuntimeHome(paths);
   const rows = listStateRows(parsed.input, paths);
   const resultStates = rows.map(readStateRow);
-    return {
-      ok: true,
-      action: 'kilo_result_state',
-      changed: false,
-      message: `Read ${resultStates.length} Kilo result state record(s).`,
-      resultStates,
-    };
+  return {
+    ok: true,
+    action: 'kilo_result_state',
+    changed: false,
+    message: `Read ${resultStates.length} Kilo result state record(s).`,
+    resultStates,
+  };
 }
 
 export function readKiloResultStateSummary(

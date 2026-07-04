@@ -45,10 +45,7 @@ import {
   upsertWatchPollingJob,
   watchPollingJobId,
 } from './store';
-import {
-  resolvePrReference,
-  resolveRefReference,
-} from './references';
+import { resolvePrReference, resolveRefReference } from './references';
 import { failResult, okResult, parseActionInput } from './utils';
 
 export async function addPrWatch(

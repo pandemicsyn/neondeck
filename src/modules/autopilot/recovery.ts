@@ -17,9 +17,7 @@ import {
   readPreparedDiffSummary,
   requestPreparedDiffRevision,
 } from '../../prepared-diffs';
-import {
-  commentPrAutofixResult,
-} from './comments';
+import { commentPrAutofixResult } from './comments';
 import { pushPrAutofix } from './push';
 import { verifyPrWorktree } from './worktree';
 import { type RuntimePaths, runtimePaths } from '../../runtime-home';

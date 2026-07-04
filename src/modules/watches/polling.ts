@@ -198,7 +198,9 @@ export function statusFromSnapshot(
   return 'unknown';
 }
 
-export function refStatusFromChecks(checks: GitHubCheckSummary): RefWatchStatus {
+export function refStatusFromChecks(
+  checks: GitHubCheckSummary,
+): RefWatchStatus {
   if (checks.status === 'success') return 'green';
   if (checks.status === 'failure') return 'attention-needed';
   if (checks.status === 'pending' || checks.status === 'none') {

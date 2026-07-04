@@ -4,21 +4,80 @@ import { readFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { type JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
-import { type GitHubCheckSummary, type GitHubFailingCheckFact, type GitHubPullRequestDetail, type GitHubPullRequestEventState, fetchPullRequestEventState, fetchCheckSummary, fetchFailingCheckFacts, fetchPullRequestDetail } from '../../github';
-import { checkAutopilotConcurrency, checkAutopilotPolicy, pathDeniedByAutopilotPolicy, repoAutopilotPolicy, withAutopilotLocalExecutionSlot } from '../../autopilot-policy';
+import {
+  type GitHubCheckSummary,
+  type GitHubFailingCheckFact,
+  type GitHubPullRequestDetail,
+  type GitHubPullRequestEventState,
+  fetchPullRequestEventState,
+  fetchCheckSummary,
+  fetchFailingCheckFacts,
+  fetchPullRequestDetail,
+} from '../../github';
+import {
+  checkAutopilotConcurrency,
+  checkAutopilotPolicy,
+  pathDeniedByAutopilotPolicy,
+  repoAutopilotPolicy,
+  withAutopilotLocalExecutionSlot,
+} from '../../autopilot-policy';
 import { addWorkflowSummary, updateWorkflowSummary } from '../../app-state';
-import { notifyAutopilotState, recoveryActionsForPreparedDiff } from '../../autopilot-notifications';
+import {
+  notifyAutopilotState,
+  recoveryActionsForPreparedDiff,
+} from '../../autopilot-notifications';
 import { buildPreparedDiffAuditSummary } from '../../autonomous-audit';
 import { runApprovedExecution } from '../../execution-actions';
-import { getGitHubPrBranchPermissions, postGitHubPrComment } from '../../pr-event-state';
-import { ensurePreparedDiffForWorktree, markPreparedDiffPushBlocked, markPreparedDiffPushed, readPreparedDiff, readPreparedDiffByWorktree, readPreparedDiffRecord, recordPreparedDiffVerification, type PreparedDiffRecord } from '../../prepared-diffs';
+import {
+  getGitHubPrBranchPermissions,
+  postGitHubPrComment,
+} from '../../pr-event-state';
+import {
+  ensurePreparedDiffForWorktree,
+  markPreparedDiffPushBlocked,
+  markPreparedDiffPushed,
+  readPreparedDiff,
+  readPreparedDiffByWorktree,
+  readPreparedDiffRecord,
+  recordPreparedDiffVerification,
+  type PreparedDiffRecord,
+} from '../../prepared-diffs';
 import { readRepoRegistrySnapshot, repoFullName } from '../../repos';
-import { gitCurrentSha, gitCommitAll, gitCommitPaths, gitPushHead, gitStatus, type GitCommitResult } from '../../repo-edit/git';
-import { patchRepoFiles, readRepoDiff, readRepoFile, replaceRepoFile } from '../../repo-edit';
+import {
+  gitCurrentSha,
+  gitCommitAll,
+  gitCommitPaths,
+  gitPushHead,
+  gitStatus,
+  type GitCommitResult,
+} from '../../repo-edit/git';
+import {
+  patchRepoFiles,
+  readRepoDiff,
+  readRepoFile,
+  replaceRepoFile,
+} from '../../repo-edit';
 import { parseV4APatch } from '../../repo-edit/patch-parser';
 import { repoRelativePathSchema } from '../../repo-edit/schemas';
-import { type RuntimePaths, parseAppConfig, ensureRuntimeHome, readRuntimeJson, runtimePaths } from '../../runtime-home';
-import { createWorktree, listWorktrees, lockWorktree, recordWorktreePushBlocked, recordWorktreePushSucceeded, readManagedWorktree, readWorktreeStatus, releaseWorktreeLock, syncWorktree, type WorktreeRecord } from '../../worktrees';
+import {
+  type RuntimePaths,
+  parseAppConfig,
+  ensureRuntimeHome,
+  readRuntimeJson,
+  runtimePaths,
+} from '../../runtime-home';
+import {
+  createWorktree,
+  listWorktrees,
+  lockWorktree,
+  recordWorktreePushBlocked,
+  recordWorktreePushSucceeded,
+  readManagedWorktree,
+  readWorktreeStatus,
+  releaseWorktreeLock,
+  syncWorktree,
+  type WorktreeRecord,
+} from '../../worktrees';
 import { AutopilotActionResult } from './schemas';
 import { asJsonValue, objectField, stringField } from './utils';
 
@@ -183,7 +242,10 @@ export function recoveryOptionsForPushBlock(
     : ['Inspect the retained worktree, resolve the blocked gate, and retry.'];
 }
 
-export function remoteForPush(worktree: WorktreeRecord, branchPermissions: unknown) {
+export function remoteForPush(
+  worktree: WorktreeRecord,
+  branchPermissions: unknown,
+) {
   const headRepoFullName = stringField(branchPermissions, 'headRepoFullName');
   const worktreeHeadFullName =
     worktree.headOwner && worktree.headName

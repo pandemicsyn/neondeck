@@ -276,7 +276,9 @@ export function findConfiguredRepo(
   };
 }
 
-export function okReference(input: Omit<ResolvedPrReference, 'id' | 'repoFullName'>): {
+export function okReference(
+  input: Omit<ResolvedPrReference, 'id' | 'repoFullName'>,
+): {
   ok: true;
   reference: ResolvedPrReference;
 } {

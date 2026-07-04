@@ -1,5 +1,12 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { dirname, extname, join, normalize, relative, resolve } from 'node:path';
+import {
+  dirname,
+  extname,
+  join,
+  normalize,
+  relative,
+  resolve,
+} from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -252,7 +259,8 @@ function checkFrontendImport(sourceRel, targetRel) {
     violations.push({
       source: sourceRel,
       target: targetRel,
-      reason: 'frontend lib modules must stay below components, features, and plugins',
+      reason:
+        'frontend lib modules must stay below components, features, and plugins',
     });
   }
 }

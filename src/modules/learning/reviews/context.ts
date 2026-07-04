@@ -1,11 +1,22 @@
 import type { JsonValue } from '@flue/runtime';
-import { readChatSession, type ChatSessionRecord } from '../../../session-actions';
+import {
+  readChatSession,
+  type ChatSessionRecord,
+} from '../../../session-actions';
 import { listMemories, type MemoryRecord } from '../../memory';
-import { parseAppConfig, readRuntimeJson, resolveLearningConfig, type RuntimePaths } from '../../../runtime-home';
+import {
+  parseAppConfig,
+  readRuntimeJson,
+  resolveLearningConfig,
+  type RuntimePaths,
+} from '../../../runtime-home';
 import type { LearningReviewKind } from './schemas';
 import { errorMessage, truncate } from './store';
 
-export async function readSessionForReview(sessionId: string, paths: RuntimePaths) {
+export async function readSessionForReview(
+  sessionId: string,
+  paths: RuntimePaths,
+) {
   const result = await readChatSession(
     {
       id: sessionId,

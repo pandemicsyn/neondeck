@@ -4,9 +4,30 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { gitDiff, type RepoDiffFile } from '../../repo-edit/git';
-import { ensureRuntimeHome, parseAppConfig, parseRepoRegistry, readRuntimeJson, runtimePaths, type AppConfig, type RepoConfig, type RuntimePaths } from '../../runtime-home';
+import {
+  ensureRuntimeHome,
+  parseAppConfig,
+  parseRepoRegistry,
+  readRuntimeJson,
+  runtimePaths,
+  type AppConfig,
+  type RepoConfig,
+  type RuntimePaths,
+} from '../../runtime-home';
 import { listWorktrees } from '../../worktrees';
-import { appAutopilotSchema, defaultAutopilotConcurrency, defaultAutopilotPolicyLimits, metadataSchema, modeAliasMap, type AutopilotConcurrencyPolicy, type AutopilotMode, type AutopilotModeAlias, type AutopilotPolicyConfig, type AutopilotPolicyLimits, type RepoAutopilotConfig } from './policy-schemas';
+import {
+  appAutopilotSchema,
+  defaultAutopilotConcurrency,
+  defaultAutopilotPolicyLimits,
+  metadataSchema,
+  modeAliasMap,
+  type AutopilotConcurrencyPolicy,
+  type AutopilotMode,
+  type AutopilotModeAlias,
+  type AutopilotPolicyConfig,
+  type AutopilotPolicyLimits,
+  type RepoAutopilotConfig,
+} from './policy-schemas';
 import { matchesAny } from './policy-risk';
 
 export function normalizeAutopilotMode(

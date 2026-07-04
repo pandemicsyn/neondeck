@@ -724,7 +724,6 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-
 function runtimeSkillReference(skill: RuntimeSkillMetadata): SkillReference {
   const source = readFileSync(skill.path, 'utf8');
   const metadata = parseFrontmatter(source);

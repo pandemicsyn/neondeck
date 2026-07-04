@@ -1,10 +1,23 @@
-import type { GitHubPullRequestQueue, GitHubPullRequest, GitHubQueueIssue } from '../../../github';
+import type {
+  GitHubPullRequestQueue,
+  GitHubPullRequest,
+  GitHubQueueIssue,
+} from '../../../github';
 import { fetchGitHubLogin, fetchPullRequestQueue } from '../../../github';
 import { readRepoRegistrySnapshot } from '../../../repos';
 import { listPrWatchRecords } from '../../watches';
 import type { RuntimePaths } from '../../../runtime-home';
-import type { CommandDependencies, NeonCommandResult, ParsedNeonCommand, ReviewQueueAction } from '../schemas';
-import { completedCommand, failedCommand, needsConfigCommand } from '../summaries';
+import type {
+  CommandDependencies,
+  NeonCommandResult,
+  ParsedNeonCommand,
+  ReviewQueueAction,
+} from '../schemas';
+import {
+  completedCommand,
+  failedCommand,
+  needsConfigCommand,
+} from '../summaries';
 import { errorMessage } from '../utils';
 
 export async function reviewQueueCommand(
@@ -316,7 +329,9 @@ export function dedupeActions(actions: ReviewQueueAction[]) {
   });
 }
 
-export function reviewQueueMessage(triage: ReturnType<typeof triageReviewQueue>) {
+export function reviewQueueMessage(
+  triage: ReturnType<typeof triageReviewQueue>,
+) {
   const { summary } = triage;
   const partial = summary.truncated || summary.issues > 0;
   return `Triaged ${summary.authored + summary.assigned + summary.requestedReviews} user-related PR signal${summary.authored + summary.assigned + summary.requestedReviews === 1 ? '' : 's'}: ${summary.requestedReviews} review request${summary.requestedReviews === 1 ? '' : 's'}, ${summary.failedChecks} failing check set${summary.failedChecks === 1 ? '' : 's'}, ${summary.checkErrors} unknown check state${summary.checkErrors === 1 ? '' : 's'}, ${summary.stale} stale PR${summary.stale === 1 ? '' : 's'}.${partial ? ' Results are partial; inspect queue issues.' : ''}`;

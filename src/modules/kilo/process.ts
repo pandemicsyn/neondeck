@@ -8,8 +8,26 @@ import { notifyKiloState, resolveKiloNotifications } from './notifications';
 import { taskDiffSummary, isTimeoutMessage } from './runtime-facts';
 import { type RunningProcess } from './schemas';
 import { searchKiloSessions, searchKiloSessionsWithDisk } from './sessions';
-import { addKiloTaskEvent, listReconcileableKiloTasks, markKiloTaskFinished, tryKiloTask, updateKiloTaskSessions, updateKiloTaskStatus, type KiloTaskRecord, type KiloTaskStatus } from './store';
-import { errorMessage, eventType, extractSessionIds, parseJsonLine, summarizeEvent, topLevelSessionId, truncate, writeRawLog } from './utils';
+import {
+  addKiloTaskEvent,
+  listReconcileableKiloTasks,
+  markKiloTaskFinished,
+  tryKiloTask,
+  updateKiloTaskSessions,
+  updateKiloTaskStatus,
+  type KiloTaskRecord,
+  type KiloTaskStatus,
+} from './store';
+import {
+  errorMessage,
+  eventType,
+  extractSessionIds,
+  parseJsonLine,
+  summarizeEvent,
+  topLevelSessionId,
+  truncate,
+  writeRawLog,
+} from './utils';
 import { type RuntimePaths } from '../../runtime-home';
 import { releaseWorktreeLock } from '../../worktrees';
 
