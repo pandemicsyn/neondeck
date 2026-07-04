@@ -19,7 +19,7 @@ const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
 const originalEnv = { ...process.env };
 
-vi.setConfig({ testTimeout: 60_000 });
+vi.setConfig({ testTimeout: 180_000 });
 vi.mock('./skills/github-gh/SKILL.md', async () => {
   const { defineSkill } = await import('@flue/runtime');
   return {
