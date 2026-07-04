@@ -3,7 +3,7 @@
 Status: **active** — planning doc for a workspace-location mode: when enabled, Neon's repo
 checkouts, worktrees, file edits, verification commands, and the agent's own workspace all live on
 a configured exe.dev VM instead of the host. Written 2026-07-03 for implementation agents; sibling
-to `.plans/REFACTOR_PLAN.md` and `.plans/MCP_SUPPORT_PLAN.md`, whose conventions this follows.
+to `.plans/archived/REFACTOR_PLAN.md` and `.plans/archived/MCP_SUPPORT_PLAN.md`, whose conventions this follows.
 
 ## Purpose
 
