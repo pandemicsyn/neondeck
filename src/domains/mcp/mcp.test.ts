@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   addMcpServer,
+  completeMcpOAuthCallback,
   consumeUsableMcpApproval,
   createMcpApprovalRequest,
   getMcpRegistry,
@@ -379,6 +380,187 @@ describe('MCP support', () => {
     await expect(readMcpOAuthStatus('remote', paths)).resolves.toMatchObject({
       authorized: false,
     });
+  });
+
+  it('rejects MCP OAuth callbacks when server identity changed since login start', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+
+    await addMcpServer(
+      {
+        id: 'remote',
+        server: {
+          transport: 'http',
+          url: 'https://mcp2.example.test/mcp',
+          auth: { kind: 'oauth' },
+        },
+      },
+      paths,
+    );
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `
+          INSERT INTO mcp_oauth_logins (
+            id,
+            server_id,
+            server_identity,
+            state,
+            status,
+            redirect_url,
+            authorization_url,
+            discovery_state_json,
+            code_verifier,
+            error,
+            created_at,
+            expires_at,
+            completed_at,
+            updated_at
+          )
+          VALUES (?, ?, ?, ?, 'redirect', ?, ?, NULL, ?, NULL, ?, ?, NULL, ?);
+        `,
+        )
+        .run(
+          'login-1',
+          'remote',
+          oauthServerIdentity('https://mcp.example.test/mcp'),
+          'state-1',
+          'http://127.0.0.1:3583/api/mcp/oauth/callback',
+          'https://auth.example.test/authorize',
+          'verifier-1',
+          new Date().toISOString(),
+          new Date(Date.now() + 60_000).toISOString(),
+          new Date().toISOString(),
+        );
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      completeMcpOAuthCallback({ state: 'state-1', code: 'code-1' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'mcp_login_callback',
+      changed: true,
+      message: expect.stringContaining('identity changed'),
+    });
+  });
+
+  it('does not rebind stale MCP OAuth tokens when identity-scoped metadata changes', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `
+          INSERT INTO mcp_oauth_tokens (
+            server_id,
+            server_identity,
+            access_token,
+            refresh_token,
+            token_type,
+            id_token,
+            expires_at,
+            scopes_json,
+            client_information_json,
+            discovery_state_json,
+            code_verifier,
+            updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, NULL, NULL, NULL, ?)
+          ON CONFLICT(server_id) DO UPDATE SET
+            server_identity = excluded.server_identity,
+            access_token = excluded.access_token,
+            refresh_token = excluded.refresh_token,
+            token_type = excluded.token_type,
+            scopes_json = excluded.scopes_json,
+            updated_at = excluded.updated_at;
+        `,
+        )
+        .run(
+          'remote',
+          oauthServerIdentity('https://mcp.example.test/mcp'),
+          'old-access-token',
+          'old-refresh-token',
+          'Bearer',
+          JSON.stringify(['read']),
+          new Date().toISOString(),
+        );
+    } finally {
+      database.close();
+    }
+
+    const { createMcpOAuthProvider } = await import('./oauth');
+    const provider = createMcpOAuthProvider({
+      paths,
+      serverId: 'remote',
+      server: {
+        transport: 'http',
+        url: 'https://mcp2.example.test/mcp',
+        auth: { kind: 'oauth' },
+      },
+      state: 'metadata-state',
+    });
+    provider.saveClientInformation({ client_id: 'client-2' });
+
+    const after = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+    try {
+      const row = after
+        .prepare('SELECT * FROM mcp_oauth_tokens WHERE server_id = ?;')
+        .get('remote') as Record<string, unknown>;
+      expect(row.server_identity).toBe(
+        oauthServerIdentity('https://mcp2.example.test/mcp'),
+      );
+      expect(row.access_token).toBeNull();
+      expect(row.refresh_token).toBeNull();
+      expect(row.token_type).toBeNull();
+      expect(JSON.stringify(row.client_information_json)).toContain('client-2');
+    } finally {
+      after.close();
+    }
+  });
+
+  it('bounds MCP structured content returned to the model', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+
+    await addMcpServer(
+      {
+        id: 'fixture',
+        server: {
+          transport: 'stdio',
+          command: process.execPath,
+          args: [fixturePath()],
+          tools: {
+            autoApprove: ['echo'],
+          },
+        },
+      },
+      paths,
+    );
+    const registry = getMcpRegistry(paths);
+    await registry.refresh('fixture');
+    const echo = registry
+      .toolsSync()
+      .find((tool) => tool.name === 'mcp__fixture__echo');
+    const result = await echo!.run({
+      input: { text: 'x'.repeat(30_000) },
+    } as never);
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: 'ok',
+      structuredContent: {
+        truncated: true,
+      },
+    });
+    expect(JSON.stringify(result).length).toBeLessThan(35_000);
   });
 
   it('hydrates cached MCP tool placeholders after a restart when reconnect fails', async () => {

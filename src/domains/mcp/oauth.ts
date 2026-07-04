@@ -24,6 +24,7 @@ export type McpOAuthLoginStatus =
 export type McpOAuthLoginRecord = {
   id: string;
   serverId: string;
+  serverIdentity: string | null;
   state: string;
   status: McpOAuthLoginStatus;
   redirectUrl: string;
@@ -35,7 +36,10 @@ export type McpOAuthLoginRecord = {
   updatedAt: string;
 };
 
-export type PublicMcpOAuthLoginRecord = Omit<McpOAuthLoginRecord, 'state'>;
+export type PublicMcpOAuthLoginRecord = Omit<
+  McpOAuthLoginRecord,
+  'state' | 'serverIdentity'
+>;
 
 export type McpOAuthStatus = {
   authorized: boolean;
@@ -79,7 +83,12 @@ export async function startMcpOAuthLogin(
         requires: ['redirectUrl'],
       };
     }
-    login = await createOAuthLogin(input.id, redirectUrl, paths);
+    login = await createOAuthLogin(
+      input.id,
+      redirectUrl,
+      oauthServerIdentity(server),
+      paths,
+    );
     const provider = new NeondeckMcpOAuthProvider({
       paths,
       serverId: input.id,
@@ -204,6 +213,22 @@ export async function completeMcpOAuthCallback(
       action: 'mcp_login_callback',
       changed: true,
       message: `Failed to finish MCP OAuth login: ${errorMessage(error)}`,
+      login: await readPublicMcpOAuthLogin(login.id, paths),
+    };
+  }
+
+  if (login.serverIdentity !== oauthServerIdentity(server)) {
+    await failOAuthLogin(
+      login.id,
+      'MCP OAuth server identity changed before callback completion.',
+      paths,
+    );
+    return {
+      ok: false,
+      action: 'mcp_login_callback',
+      changed: true,
+      message:
+        'MCP OAuth server identity changed before callback completion. Start login again.',
       login: await readPublicMcpOAuthLogin(login.id, paths),
     };
   }
@@ -365,7 +390,11 @@ export function publicMcpOAuthLogin(
   login: McpOAuthLoginRecord | null,
 ): PublicMcpOAuthLoginRecord | null {
   if (!login) return null;
-  const { state: _state, ...safeLogin } = login;
+  const {
+    state: _state,
+    serverIdentity: _serverIdentity,
+    ...safeLogin
+  } = login;
   return safeLogin;
 }
 
@@ -427,24 +456,19 @@ class NeondeckMcpOAuthProvider implements OAuthClientProvider {
   clientInformation() {
     const configured = configuredClientInformation(this.input.server);
     if (configured) return configured;
-    return (
-      readTokenState(this.input.paths, this.input.serverId).clientInformation ??
-      undefined
-    );
+    return this.currentTokenState().clientInformation ?? undefined;
   }
 
   saveClientInformation(clientInformation: OAuthClientInformationMixed) {
     if (configuredClientInformation(this.input.server)) return;
     writeTokenState(this.input.paths, this.input.serverId, {
+      serverIdentity: oauthServerIdentity(this.input.server),
       clientInformation,
     });
   }
 
   tokens() {
-    const state = readTokenState(this.input.paths, this.input.serverId);
-    if (state.serverIdentity !== oauthServerIdentity(this.input.server)) {
-      return undefined;
-    }
+    const state = this.currentTokenState();
     if (!state.accessToken || !state.tokenType) return undefined;
     return {
       access_token: state.accessToken,
@@ -489,13 +513,16 @@ class NeondeckMcpOAuthProvider implements OAuthClientProvider {
     ) {
       return;
     }
-    writeTokenState(this.input.paths, this.input.serverId, { codeVerifier });
+    writeTokenState(this.input.paths, this.input.serverId, {
+      serverIdentity: oauthServerIdentity(this.input.server),
+      codeVerifier,
+    });
   }
 
   codeVerifier() {
     const verifier =
       readLoginStateByState(this.input.paths, this.input.state)?.codeVerifier ??
-      readTokenState(this.input.paths, this.input.serverId).codeVerifier;
+      this.currentTokenState().codeVerifier;
     if (!verifier) {
       throw new Error('Missing MCP OAuth code verifier for login callback.');
     }
@@ -511,17 +538,18 @@ class NeondeckMcpOAuthProvider implements OAuthClientProvider {
       return;
     }
     writeTokenState(this.input.paths, this.input.serverId, {
+      serverIdentity: oauthServerIdentity(this.input.server),
       discoveryState: state,
     });
   }
 
   discoveryState() {
-    return (
-      readLoginStateByState(this.input.paths, this.input.state)
-        ?.discoveryState ??
-      readTokenState(this.input.paths, this.input.serverId).discoveryState ??
-      undefined
+    const loginState = readLoginStateByState(
+      this.input.paths,
+      this.input.state,
     );
+    if (loginState) return loginState.discoveryState ?? undefined;
+    return this.currentTokenState().discoveryState ?? undefined;
   }
 
   invalidateCredentials(
@@ -544,6 +572,13 @@ class NeondeckMcpOAuthProvider implements OAuthClientProvider {
     if (scope === 'verifier') patch.codeVerifier = null;
     if (scope === 'discovery') patch.discoveryState = null;
     writeTokenState(this.input.paths, this.input.serverId, patch);
+  }
+
+  private currentTokenState() {
+    const state = readTokenState(this.input.paths, this.input.serverId);
+    return state.serverIdentity === oauthServerIdentity(this.input.server)
+      ? state
+      : emptyTokenState();
   }
 }
 
@@ -588,6 +623,7 @@ function oauthServerIdentity(server: McpServerConfig) {
 async function createOAuthLogin(
   serverId: string,
   redirectUrl: string,
+  serverIdentity: string,
   paths: RuntimePaths,
 ) {
   await ensureRuntimeHome(paths);
@@ -604,6 +640,7 @@ async function createOAuthLogin(
         INSERT INTO mcp_oauth_logins (
           id,
           server_id,
+          server_identity,
           state,
           status,
           redirect_url,
@@ -616,10 +653,19 @@ async function createOAuthLogin(
           completed_at,
           updated_at
         )
-        VALUES (?, ?, ?, 'pending', ?, NULL, NULL, NULL, NULL, ?, ?, NULL, ?);
+        VALUES (?, ?, ?, ?, 'pending', ?, NULL, NULL, NULL, NULL, ?, ?, NULL, ?);
       `,
       )
-      .run(id, serverId, state, redirectUrl, createdAt, expiresAt, createdAt);
+      .run(
+        id,
+        serverId,
+        serverIdentity,
+        state,
+        redirectUrl,
+        createdAt,
+        expiresAt,
+        createdAt,
+      );
   } finally {
     database.close();
   }
@@ -824,7 +870,10 @@ function writeTokenState(
   patch: Partial<TokenState>,
 ) {
   const current = readTokenState(paths, serverId);
-  const next = { ...current, ...patch };
+  const identityChanged =
+    patch.serverIdentity !== undefined &&
+    patch.serverIdentity !== current.serverIdentity;
+  const next = { ...(identityChanged ? emptyTokenState() : current), ...patch };
   const database = new DatabaseSync(paths.neondeckDatabase);
   try {
     database
@@ -922,6 +971,7 @@ type McpOAuthTokenRow = {
 type McpOAuthLoginRow = {
   id: string;
   server_id: string;
+  server_identity: string | null;
   state: string;
   status: McpOAuthLoginStatus;
   redirect_url: string;
@@ -944,6 +994,7 @@ function readLoginRow(row: McpOAuthLoginRow): McpOAuthLoginRecord {
   return {
     id: row.id,
     serverId: row.server_id,
+    serverIdentity: row.server_identity,
     state: row.state,
     status: row.status,
     redirectUrl: row.redirect_url,

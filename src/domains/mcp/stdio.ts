@@ -233,9 +233,9 @@ function createMcpToolDefinition(input: {
           }
           return {
             text,
-            structuredContent: isRecord(result.structuredContent)
-              ? result.structuredContent
-              : undefined,
+            structuredContent: boundedStructuredContent(
+              result.structuredContent,
+            ),
             raw: result,
           };
         },
@@ -434,6 +434,19 @@ function formatMcpResult(result: CallToolResult) {
 function truncateMcpOutputPart(value: string) {
   if (value.length <= maxMcpOutputPartChars) return value;
   return `${value.slice(0, maxMcpOutputPartChars - 22)}\n[truncated output]`;
+}
+
+function boundedStructuredContent(value: unknown) {
+  if (value === undefined) return undefined;
+  const json = JSON.stringify(value);
+  if (json.length <= maxMcpOutputPartChars) {
+    return isRecord(value) ? value : { value };
+  }
+  return {
+    truncated: true,
+    originalBytes: Buffer.byteLength(json, 'utf8'),
+    preview: `${json.slice(0, maxMcpOutputPartChars - 22)}\n[truncated output]`,
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

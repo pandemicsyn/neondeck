@@ -1063,6 +1063,7 @@ function initializeAppDatabase(path: string) {
       CREATE TABLE IF NOT EXISTS mcp_oauth_logins (
         id TEXT PRIMARY KEY,
         server_id TEXT NOT NULL,
+        server_identity TEXT,
         state TEXT NOT NULL UNIQUE,
         status TEXT NOT NULL,
         redirect_url TEXT NOT NULL,
@@ -1367,6 +1368,7 @@ function initializeAppDatabase(path: string) {
     ensureColumn(database, 'mcp_oauth_tokens', 'code_verifier', 'TEXT');
     ensureColumn(database, 'mcp_oauth_logins', 'discovery_state_json', 'TEXT');
     ensureColumn(database, 'mcp_oauth_logins', 'code_verifier', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_logins', 'server_identity', 'TEXT');
     database
       .prepare(
         `
