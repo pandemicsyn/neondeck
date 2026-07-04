@@ -48,6 +48,33 @@ export function parseOptionalLimit(value: string | undefined) {
   return limit;
 }
 
+export function parseOptionalIntegerFlag(
+  name: string,
+  value: string | undefined,
+) {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (!/^-?\d+$/.test(trimmed)) {
+    throw new Error(`${name} must be an integer`);
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`${name} must be a safe integer`);
+  }
+  return parsed;
+}
+
+export function parseOptionalPositiveIntegerFlag(
+  name: string,
+  value: string | undefined,
+) {
+  const parsed = parseOptionalIntegerFlag(name, value);
+  if (parsed !== undefined && parsed < 1) {
+    throw new Error(`${name} must be an integer >= 1`);
+  }
+  return parsed;
+}
+
 export function parseCandidateStatus(value: string | undefined) {
   if (value === undefined) return undefined;
   if (

@@ -15,16 +15,21 @@ export function printActionResult(result: {
   message: string;
   changed?: boolean;
   errors?: string[];
+  warnings?: string[];
   requires?: string[];
 }) {
   if (jsonOutput) {
     console.log(JSON.stringify(result, null, 2));
+    if (!result.ok) process.exitCode = 1;
     return;
   }
 
   console.log(result.ok ? `✓ ${result.message}` : `✗ ${result.message}`);
   if (result.requires?.length)
     console.log(`requires: ${result.requires.join(', ')}`);
+  if (result.warnings?.length) {
+    for (const warning of result.warnings) console.log(`warning: ${warning}`);
+  }
   if (result.errors?.length) {
     for (const error of result.errors) console.log(`error: ${error}`);
   }

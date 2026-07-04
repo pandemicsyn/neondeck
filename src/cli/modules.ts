@@ -28,6 +28,12 @@ export async function learningOperatorModule() {
   ) as Promise<typeof import('../modules/learning')>;
 }
 
+export async function openModule() {
+  return import(new URL('../desktop/open.ts', import.meta.url).href) as Promise<
+    typeof import('../desktop/open')
+  >;
+}
+
 export async function memoryActionsModule() {
   return import(
     new URL('../modules/memory/index.ts', import.meta.url).href

@@ -14,6 +14,7 @@ export type DashboardConfig = {
     density?: DashboardDensity;
     textScale?: number;
   };
+  windows?: Record<string, DashboardWindowProfile>;
   statusline?: DashboardStatusline;
   layout: {
     mode?: DashboardLayoutMode;
@@ -21,6 +22,14 @@ export type DashboardConfig = {
     rows: number;
     regions: DashboardRegion[];
   };
+};
+
+export type DashboardWindowProfile = {
+  width?: number;
+  height?: number;
+  x?: number;
+  y?: number;
+  kiosk?: boolean;
 };
 
 export type DashboardStatusline = {

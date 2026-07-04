@@ -48,6 +48,13 @@
         }
       }
     },
+    "windows": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/windowProfile"
+      },
+      "description": "Named desktop window launch profiles used by `neondeck open <profile>`."
+    },
     "statusline": {
       "type": "object",
       "additionalProperties": true,
@@ -164,6 +171,35 @@
         },
         "config": {
           "type": "object"
+        }
+      }
+    },
+    "windowProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "dependentRequired": {
+        "width": ["height"],
+        "height": ["width"],
+        "x": ["y"],
+        "y": ["x"]
+      },
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "kiosk": {
+          "type": "boolean"
         }
       }
     }
