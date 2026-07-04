@@ -43,7 +43,7 @@
     "fix-lint": "ray lint --fix"
   },
   "dependencies": {
-    "@raycast/api": "^1.104.20"
+    "@raycast/api": "^1.104.21"
   },
   "overrides": {
     "esbuild": "0.28.1"
