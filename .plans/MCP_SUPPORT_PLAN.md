@@ -355,13 +355,9 @@ neondeck_mcp_login_start / logout(confirm)
 ```
 
 Tool _calls_ go through the adapted `mcp__<server>__<tool>` Flue tools, not through an action.
-<<<<<<< HEAD
 The approval resolver remains a service/API primitive for user-owned surfaces and is intentionally
 not registered as a display-assistant action, preventing the model from approving and retrying its
 own blocked MCP call.
-=======
-
-> > > > > > > origin/main
 
 Agent instruction (add to `display-assistant.ts`, one paragraph in the house style): use
 `neondeck_mcp_*` actions for MCP configuration instead of editing `mcp.json`; `mcp__*` tools are
@@ -411,14 +407,8 @@ Everything except OAuth and dashboard. Suggested commit order within the PR:
 4. Gate: policy/approvals/audit stores, `gate.ts` decorator, lookup tools,
    `mcpInstructionsSync()`, agent wiring.
 5. Adapters: routes (servers/tools/refresh/approvals/audit/gateway), CLI subcommands (`list/add/
-remove/enable/disable/tools/status/approvals`), `neondeck_mcp_server_*` +
-   <<<<<<< HEAD
-   safety-table entries (including the adapted-tool family entry), runtime-status check.
-   \=======
-   `neondeck_mcp_approval_resolve` actions, safety-table entries (including the adapted-tool
-   family entry), runtime-status check.
-
-> > > > > > > origin/main
+remove/enable/disable/tools/status/approvals`), `neondeck_mcp_server_*` + safety-table entries
+   (including the adapted-tool family entry), runtime-status check.
 
 Tests: unit tests against an in-process fixture MCP server covering the gate
 (deny/auto-approve/ask/hash-bound retry/expiry), config validation, and snapshot behavior when a

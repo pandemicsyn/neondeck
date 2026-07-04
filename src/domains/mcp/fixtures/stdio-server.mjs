@@ -25,6 +25,25 @@ server.registerTool(
   }),
 );
 
+if (process.env.NEONDECK_MCP_NULLABLE_TOOL === '1') {
+  server.registerTool(
+    'nullable',
+    {
+      description: 'Accept nullable text for Neondeck MCP tests.',
+      inputSchema: {
+        text: z.string().nullable(),
+      },
+      annotations: {
+        readOnlyHint: true,
+      },
+    },
+    async ({ text }) => ({
+      content: [{ type: 'text', text: `nullable:${text ?? 'null'}` }],
+      structuredContent: { echoed: text },
+    }),
+  );
+}
+
 if (process.env.NEONDECK_MCP_DUPLICATE_TOOLS === '1') {
   server.registerTool(
     'foo.bar',

@@ -67,7 +67,7 @@ installFlueObservationHandlers(paths);
 if (process.env.NEONDECK_DISABLE_SCHEDULER !== '1') {
   startSchedulerLoop(paths);
 }
-getMcpRegistry(paths).start();
+await getMcpRegistry(paths).start();
 
 app.use('/api/*', requireLocalApiAccess);
 

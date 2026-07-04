@@ -134,25 +134,28 @@ export function mcpSnapshotSync(paths = runtimePaths()) {
 export class McpRegistry {
   private readonly entries = new Map<string, RegistryEntry>();
   private unsubscribe: (() => void) | null = null;
+  private startPromise: Promise<void> | null = null;
 
   constructor(private readonly paths: RuntimePaths) {}
 
-  start() {
-    if (this.unsubscribe) return;
+  async start() {
+    if (this.unsubscribe) return this.startPromise ?? Promise.resolve();
     this.unsubscribe = subscribeConfigEvents((event) => {
       if (!event.files.includes(this.paths.mcp)) return;
       void this.refresh(refreshTargetFromConfigEvent(event)).catch((error) => {
         console.error('[neondeck] failed to refresh MCP registry', error);
       });
     });
-    void this.refresh().catch((error) => {
+    this.startPromise = this.refresh().catch((error) => {
       console.error('[neondeck] failed to initialize MCP registry', error);
     });
+    return this.startPromise;
   }
 
   async stop() {
     this.unsubscribe?.();
     this.unsubscribe = null;
+    this.startPromise = null;
     await Promise.all(
       [...this.entries.values()].map((entry) => entry.connection?.close()),
     );

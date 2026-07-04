@@ -68,6 +68,12 @@ export const mcpServerRemoveAction = defineAction({
   output: mcpActionResultSchema,
   async run({ input }) {
     const paths = runtimePaths();
+    const guard = await guardAgentMcpServerUserOwnedMutation(
+      input.id,
+      'mcp_server_remove',
+      paths,
+    );
+    if (guard) return guard;
     const result = await removeMcpServer(input, paths);
     if (result.ok) await getMcpRegistry(paths).refresh(input.id);
     return result;
@@ -96,6 +102,12 @@ export const mcpServerDisableAction = defineAction({
   output: mcpActionResultSchema,
   async run({ input }) {
     const paths = runtimePaths();
+    const guard = await guardAgentMcpServerUserOwnedMutation(
+      input.id,
+      'mcp_server_disable',
+      paths,
+    );
+    if (guard) return guard;
     const result = await setMcpServerEnabled(input, false, paths);
     if (result.ok) await getMcpRegistry(paths).refresh(input.id);
     return { ...result, action: 'mcp_server_disable' };
@@ -129,7 +141,14 @@ export const mcpLoginStartAction = defineAction({
   input: mcpLoginStartInputSchema,
   output: mcpActionResultSchema,
   async run({ input }) {
-    return startMcpOAuthLogin(input, runtimePaths());
+    const paths = runtimePaths();
+    const guard = await guardAgentMcpServerCredentialMutation(
+      input.id,
+      'mcp_login_start',
+      paths,
+    );
+    if (guard) return guard;
+    return startMcpOAuthLogin(input, paths);
   },
 });
 
@@ -141,6 +160,12 @@ export const mcpLogoutAction = defineAction({
   output: mcpActionResultSchema,
   async run({ input }) {
     const paths = runtimePaths();
+    const guard = await guardAgentMcpServerCredentialMutation(
+      input.id,
+      'mcp_logout',
+      paths,
+    );
+    if (guard) return guard;
     const result = await logoutMcpOAuthServer(input, paths);
     if (result.ok) await getMcpRegistry(paths).refresh(input.id);
     return result;
@@ -321,6 +346,56 @@ async function guardAgentMcpServerConnect(
     return blockedAgentMcpAction(
       'mcp_server_connect',
       'Connecting OAuth MCP servers with client-secret references is user-surface only because it forwards environment-backed secrets.',
+    );
+  }
+  return null;
+}
+
+async function guardAgentMcpServerUserOwnedMutation(
+  id: string,
+  action: string,
+  paths: ReturnType<typeof runtimePaths>,
+) {
+  const config = await readMcpConfig(paths);
+  const server = config.servers[id];
+  if (!server) return null;
+  if (server.transport === 'stdio') {
+    return blockedAgentMcpAction(
+      action,
+      'Stdio MCP servers can only be changed from a user-owned surface because they can spawn host processes.',
+    );
+  }
+  if (server.auth?.kind === 'header') {
+    return blockedAgentMcpAction(
+      action,
+      'Header-authenticated MCP servers can only be changed from a user-owned surface because they forward environment-backed secrets.',
+    );
+  }
+  if (server.auth?.kind === 'oauth' && server.auth.clientSecret) {
+    return blockedAgentMcpAction(
+      action,
+      'OAuth MCP servers with client-secret references can only be changed from a user-owned surface because they forward environment-backed secrets.',
+    );
+  }
+  return null;
+}
+
+async function guardAgentMcpServerCredentialMutation(
+  id: string,
+  action: string,
+  paths: ReturnType<typeof runtimePaths>,
+) {
+  const config = await readMcpConfig(paths);
+  const server = config.servers[id];
+  if (!server) return null;
+  if (
+    server.transport === 'http' &&
+    server.auth?.kind === 'oauth' &&
+    server.auth.clientSecret
+  ) {
+    return blockedAgentMcpAction(
+      action,
+      'OAuth MCP servers with client-secret references can only be authorized from a user-owned surface because they forward environment-backed secrets.',
     );
   }
   return null;

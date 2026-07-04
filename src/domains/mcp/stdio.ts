@@ -342,7 +342,8 @@ function jsonSchemaToValibot(schema: object): v.GenericSchema {
     );
   }
 
-  const type = Array.isArray(record.type) ? record.type[0] : record.type;
+  if (Array.isArray(record.type)) return v.unknown();
+  const type = record.type;
   if (type === 'string') return v.string();
   if (type === 'number') return v.number();
   if (type === 'integer') return v.pipe(v.number(), v.integer());

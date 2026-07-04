@@ -745,7 +745,7 @@ function expireOldApprovals(paths: RuntimePaths) {
         UPDATE mcp_tool_approvals
         SET status = 'expired',
             updated_at = ?
-        WHERE status = 'pending'
+        WHERE status IN ('pending', 'approved')
           AND expires_at <= ?;
       `,
       )

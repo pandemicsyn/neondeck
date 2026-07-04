@@ -16,8 +16,12 @@ import {
   readMcpOAuthStatus,
   readMcpConfig,
   mcpRegistryRefreshAction,
+  mcpLoginStartAction,
+  mcpLogoutAction,
   mcpServerAddAction,
+  mcpServerDisableAction,
   mcpServerEnableAction,
+  mcpServerRemoveAction,
   mcpServerUpdateAction,
   resolveMcpApprovalWithPaths,
   setMcpCatalogReplaceHookForTests,
@@ -157,6 +161,52 @@ describe('MCP support', () => {
       'approved',
       'ask',
     ]);
+  });
+
+  it('accepts MCP tool JSON Schema nullable unions through AJV validation', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const previous = process.env.NEONDECK_MCP_NULLABLE_TOOL;
+    process.env.NEONDECK_MCP_NULLABLE_TOOL = '1';
+    try {
+      await addMcpServer(
+        {
+          id: 'fixture',
+          server: {
+            transport: 'stdio',
+            command: process.execPath,
+            args: [fixturePath()],
+            env: {
+              NEONDECK_MCP_NULLABLE_TOOL: {
+                env: 'NEONDECK_MCP_NULLABLE_TOOL',
+              },
+            },
+            tools: {
+              autoApprove: ['nullable'],
+            },
+          },
+        },
+        paths,
+      );
+
+      const registry = getMcpRegistry(paths);
+      await registry.refresh('fixture');
+      const nullable = registry
+        .toolsSync()
+        .find((tool) => tool.name === 'mcp__fixture__nullable');
+      expect(nullable).toBeTruthy();
+      await expect(
+        nullable!.run({ input: { text: null } } as never),
+      ).resolves.toMatchObject({
+        ok: true,
+        status: 'ok',
+        content: expect.stringContaining('nullable:null'),
+      });
+    } finally {
+      if (previous === undefined) delete process.env.NEONDECK_MCP_NULLABLE_TOOL;
+      else process.env.NEONDECK_MCP_NULLABLE_TOOL = previous;
+    }
   });
 
   it('keeps existing MCP tools usable when reading status and tool catalogs', async () => {
@@ -689,6 +739,42 @@ describe('MCP support', () => {
         requires: ['user-owned-surface'],
       });
       await expect(
+        mcpServerDisableAction.run({
+          input: { id: 'remote' },
+        } as never),
+      ).resolves.toMatchObject({
+        ok: false,
+        changed: false,
+        requires: ['user-owned-surface'],
+      });
+      await expect(
+        mcpServerRemoveAction.run({
+          input: { id: 'remote', confirm: true },
+        } as never),
+      ).resolves.toMatchObject({
+        ok: false,
+        changed: false,
+        requires: ['user-owned-surface'],
+      });
+      await expect(
+        mcpLoginStartAction.run({
+          input: { id: 'remote' },
+        } as never),
+      ).resolves.toMatchObject({
+        ok: false,
+        changed: false,
+        requires: ['user-owned-surface'],
+      });
+      await expect(
+        mcpLogoutAction.run({
+          input: { id: 'remote', confirm: true },
+        } as never),
+      ).resolves.toMatchObject({
+        ok: false,
+        changed: false,
+        requires: ['user-owned-surface'],
+      });
+      await expect(
         mcpServerUpdateAction.run({
           input: { id: 'remote', server: {} },
         } as never),
@@ -755,6 +841,55 @@ describe('MCP support', () => {
         paths,
       ),
     ).resolves.toBeNull();
+    await expect(
+      listMcpApprovals(paths, { includeResolved: true }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: request!.id,
+          status: 'expired',
+        }),
+      ]),
+    );
+  });
+
+  it('expires approved MCP tool calls when their TTL elapses', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const request = await createMcpApprovalRequest(
+      {
+        serverId: 'remote',
+        toolName: 'echo',
+        adaptedName: 'mcp__remote__echo',
+        argumentsHash: 'abc123',
+        argumentsPreview: '{"text":"hello"}',
+      },
+      paths,
+    );
+    await resolveMcpApprovalWithPaths(
+      {
+        id: request!.id,
+        decision: 'approve',
+        approverSurface: 'test',
+      },
+      paths,
+    );
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `
+          UPDATE mcp_tool_approvals
+          SET expires_at = ?
+          WHERE id = ?;
+        `,
+        )
+        .run(new Date(Date.now() - 60_000).toISOString(), request!.id);
+    } finally {
+      database.close();
+    }
+
     await expect(
       listMcpApprovals(paths, { includeResolved: true }),
     ).resolves.toEqual(
