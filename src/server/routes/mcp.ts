@@ -90,7 +90,19 @@ export function createMcpRoutes(paths: RuntimePaths) {
 
   routes.post('/servers/:id/refresh', async (c) => {
     const id = c.req.param('id');
-    await getMcpRegistry(paths).refresh(id);
+    const refreshed = await getMcpRegistry(paths).refresh(id);
+    if (!refreshed) {
+      return c.json(
+        {
+          ok: false,
+          action: 'mcp_server_refresh',
+          changed: false,
+          message: `MCP server "${id}" was not found.`,
+          requires: ['id'],
+        },
+        404,
+      );
+    }
     return c.json({
       ok: true,
       action: 'mcp_server_refresh',

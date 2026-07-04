@@ -146,9 +146,11 @@ export class McpRegistry {
         console.error('[neondeck] failed to refresh MCP registry', error);
       });
     });
-    this.startPromise = this.refresh().catch((error) => {
-      console.error('[neondeck] failed to initialize MCP registry', error);
-    });
+    this.startPromise = this.refresh()
+      .then(() => undefined)
+      .catch((error) => {
+        console.error('[neondeck] failed to initialize MCP registry', error);
+      });
     return this.startPromise;
   }
 
@@ -207,6 +209,10 @@ export class McpRegistry {
   async refresh(serverId?: string) {
     const config = await readMcpConfig(this.paths);
     const configuredIds = new Set(Object.keys(config.servers));
+    const targetFound =
+      !serverId ||
+      Object.hasOwn(config.servers, serverId) ||
+      this.entries.has(serverId);
 
     for (const [id, entry] of this.entries) {
       if (configuredIds.has(id)) continue;
@@ -221,6 +227,7 @@ export class McpRegistry {
         .filter(([id]) => !serverId || id === serverId)
         .map(([id, server]) => this.refreshOne(id, server)),
     );
+    return targetFound;
   }
 
   private async refreshOne(id: string, server: McpServerConfig) {

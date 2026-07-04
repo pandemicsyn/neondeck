@@ -193,7 +193,16 @@ export const mcpRegistryRefreshAction = defineAction({
     }
     const guard = await guardAgentMcpServerConnect(input.id, paths);
     if (guard) return { ...guard, action: 'mcp_registry_refresh' };
-    await getMcpRegistry(paths).refresh(input.id);
+    const refreshed = await getMcpRegistry(paths).refresh(input.id);
+    if (!refreshed) {
+      return {
+        ok: false,
+        action: 'mcp_registry_refresh',
+        changed: false,
+        message: `MCP server "${input.id}" was not found.`,
+        requires: ['id'],
+      };
+    }
     return {
       ok: true,
       action: 'mcp_registry_refresh',

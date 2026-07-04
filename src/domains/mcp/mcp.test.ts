@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
+import { Hono } from 'hono';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   addMcpServer,
@@ -33,6 +34,7 @@ import {
   updateMcpServer,
 } from './index';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
+import { createMcpRoutes } from '../../server/routes/mcp';
 
 const tempRoots: string[] = [];
 
@@ -387,6 +389,45 @@ describe('MCP support', () => {
       expect(changedRefreshIds).toEqual(['second']);
     } finally {
       restoreRefreshHook();
+    }
+  });
+
+  it('returns not found for missing targeted MCP registry refreshes', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const previousHome = process.env.NEONDECK_HOME;
+    process.env.NEONDECK_HOME = home;
+
+    try {
+      await expect(getMcpRegistry(paths).refresh('missing')).resolves.toBe(false);
+      await expect(
+        mcpRegistryRefreshAction.run({
+          input: { id: 'missing' },
+        } as never),
+      ).resolves.toMatchObject({
+        ok: false,
+        action: 'mcp_registry_refresh',
+        changed: false,
+        message: 'MCP server "missing" was not found.',
+        requires: ['id'],
+      });
+
+      const app = new Hono().route('/api/mcp', createMcpRoutes(paths));
+      const response = await app.request(
+        'http://localhost/api/mcp/servers/missing/refresh',
+        { method: 'POST' },
+      );
+      const body = (await response.json()) as { ok: boolean; message: string };
+
+      expect(response.status).toBe(404);
+      expect(body).toMatchObject({
+        ok: false,
+        message: 'MCP server "missing" was not found.',
+      });
+    } finally {
+      if (previousHome === undefined) delete process.env.NEONDECK_HOME;
+      else process.env.NEONDECK_HOME = previousHome;
     }
   });
 
