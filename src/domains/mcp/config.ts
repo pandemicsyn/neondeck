@@ -147,6 +147,7 @@ export async function updateMcpServer(
     JSON.stringify(config.servers[parsed.output.id]) !== JSON.stringify(merged);
   if (changed) {
     const clearOAuth = mcpOAuthIdentityChanged(existing, merged);
+    const expireApprovals = mcpApprovalScopeChanged(existing, merged);
     await writeChangedConfig(
       paths,
       'mcp_server_update',
@@ -154,6 +155,9 @@ export async function updateMcpServer(
       config,
       next,
     );
+    if (expireApprovals) {
+      expireMcpServerApprovals(paths, parsed.output.id);
+    }
     if (clearOAuth) {
       deleteMcpOAuthState(paths, parsed.output.id);
     }
@@ -381,6 +385,50 @@ function deleteMcpOAuthState(paths: RuntimePaths, serverId: string) {
   }
 }
 
+function expireMcpServerApprovals(paths: RuntimePaths, serverId: string) {
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  const now = new Date().toISOString();
+  try {
+    database
+      .prepare(
+        `
+        UPDATE mcp_tool_approvals
+        SET status = 'expired',
+            updated_at = ?
+        WHERE server_id = ?
+          AND status IN ('pending', 'approved');
+      `,
+      )
+      .run(now, serverId);
+  } finally {
+    database.close();
+  }
+}
+
+function mcpApprovalScopeChanged(
+  before: McpServerConfig,
+  after: McpServerConfig,
+) {
+  if (before.transport !== after.transport) return true;
+  if (jsonChanged(before.tools, after.tools)) return true;
+  if (before.transport === 'http' && after.transport === 'http') {
+    return (
+      before.url !== after.url ||
+      before.sse !== after.sse ||
+      jsonChanged(before.auth, after.auth)
+    );
+  }
+  if (before.transport === 'stdio' && after.transport === 'stdio') {
+    return (
+      before.command !== after.command ||
+      jsonChanged(before.args, after.args) ||
+      before.cwd !== after.cwd ||
+      jsonChanged(before.env, after.env)
+    );
+  }
+  return false;
+}
+
 function mcpOAuthIdentityChanged(
   before: McpServerConfig,
   after: McpServerConfig,
@@ -397,6 +445,10 @@ function mcpOAuthIdentityChanged(
     before.auth.clientId !== after.auth.clientId ||
     before.auth.clientSecret?.env !== after.auth.clientSecret?.env
   );
+}
+
+function jsonChanged(before: unknown, after: unknown) {
+  return JSON.stringify(before ?? null) !== JSON.stringify(after ?? null);
 }
 
 function replaceOptionalField(

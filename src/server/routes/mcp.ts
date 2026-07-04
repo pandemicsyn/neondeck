@@ -216,7 +216,11 @@ function requestOrigin(c: Context) {
 function readIdFromResultData(data: unknown) {
   if (!isRecord(data)) return undefined;
   const id = data.id ?? data.serverId;
-  return typeof id === 'string' ? id : undefined;
+  if (typeof id === 'string') return id;
+  const server = data.server;
+  return isRecord(server) && typeof server.id === 'string'
+    ? server.id
+    : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

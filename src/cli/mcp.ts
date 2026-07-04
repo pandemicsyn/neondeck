@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import type { RuntimePaths } from '../runtime-home';
 import { mcpModule } from './modules';
 import {
   loadEnvForPaths,
@@ -37,6 +38,10 @@ type McpApprovalOptions = {
   deny?: boolean;
 };
 
+type McpRegistry = ReturnType<
+  Awaited<ReturnType<typeof mcpModule>>['getMcpRegistry']
+>;
+
 export function registerMcpCommands(program: Command) {
   const mcp = program.command('mcp').description('Manage MCP servers.');
 
@@ -47,10 +52,15 @@ export function registerMcpCommands(program: Command) {
       const { getMcpRegistry } = await mcpModule();
       const paths = await pathsFromOptions(program.opts<GlobalOptions>());
       loadEnvForPaths(paths);
-      const registry = getMcpRegistry(paths);
-      await registry.refresh();
-      const servers = await registry.status();
-      printMcpServers(servers);
+      await withTransientMcpRegistry(
+        paths,
+        getMcpRegistry,
+        async (registry) => {
+          await registry.refresh();
+          const servers = await registry.status();
+          printMcpServers(servers);
+        },
+      );
     });
 
   mcp
@@ -60,11 +70,16 @@ export function registerMcpCommands(program: Command) {
       const { getMcpRegistry } = await mcpModule();
       const paths = await pathsFromOptions(program.opts<GlobalOptions>());
       loadEnvForPaths(paths);
-      const registry = getMcpRegistry(paths);
-      await registry.refresh(id);
-      const servers = await registry.status();
-      printMcpServers(
-        id ? servers.filter((server) => server.id === id) : servers,
+      await withTransientMcpRegistry(
+        paths,
+        getMcpRegistry,
+        async (registry) => {
+          await registry.refresh(id);
+          const servers = await registry.status();
+          printMcpServers(
+            id ? servers.filter((server) => server.id === id) : servers,
+          );
+        },
       );
     });
 
@@ -114,8 +129,14 @@ export function registerMcpCommands(program: Command) {
       loadEnvForPaths(paths);
       const server = mcpServerFromAddOptions(options);
       const result = await addMcpServer({ id, server }, paths);
-      if (result.ok) await getMcpRegistry(paths).refresh(id);
-      printActionResult(result);
+      await withTransientMcpRegistry(
+        paths,
+        getMcpRegistry,
+        async (registry) => {
+          if (result.ok) await registry.refresh(id);
+          printActionResult(result);
+        },
+      );
     });
 
   mcp
@@ -130,8 +151,14 @@ export function registerMcpCommands(program: Command) {
         { id, confirm: options.confirm },
         paths,
       );
-      if (result.ok) await getMcpRegistry(paths).refresh();
-      printActionResult(result);
+      await withTransientMcpRegistry(
+        paths,
+        getMcpRegistry,
+        async (registry) => {
+          if (result.ok) await registry.refresh();
+          printActionResult(result);
+        },
+      );
     });
 
   mcp
@@ -142,8 +169,14 @@ export function registerMcpCommands(program: Command) {
       const paths = await pathsFromOptions(program.opts<GlobalOptions>());
       loadEnvForPaths(paths);
       const result = await setMcpServerEnabled({ id }, true, paths);
-      if (result.ok) await getMcpRegistry(paths).refresh(id);
-      printActionResult(result);
+      await withTransientMcpRegistry(
+        paths,
+        getMcpRegistry,
+        async (registry) => {
+          if (result.ok) await registry.refresh(id);
+          printActionResult(result);
+        },
+      );
     });
 
   mcp
@@ -154,8 +187,14 @@ export function registerMcpCommands(program: Command) {
       const paths = await pathsFromOptions(program.opts<GlobalOptions>());
       loadEnvForPaths(paths);
       const result = await setMcpServerEnabled({ id }, false, paths);
-      if (result.ok) await getMcpRegistry(paths).refresh(id);
-      printActionResult(result);
+      await withTransientMcpRegistry(
+        paths,
+        getMcpRegistry,
+        async (registry) => {
+          if (result.ok) await registry.refresh(id);
+          printActionResult(result);
+        },
+      );
     });
 
   mcp
@@ -196,8 +235,14 @@ export function registerMcpCommands(program: Command) {
         { id, confirm: options.confirm },
         paths,
       );
-      if (result.ok) await getMcpRegistry(paths).refresh(id);
-      printActionResult(result);
+      await withTransientMcpRegistry(
+        paths,
+        getMcpRegistry,
+        async (registry) => {
+          if (result.ok) await registry.refresh(id);
+          printActionResult(result);
+        },
+      );
     });
 
   mcp
@@ -254,6 +299,19 @@ export function registerMcpCommands(program: Command) {
       });
       printMcpAudit(audit);
     });
+}
+
+async function withTransientMcpRegistry<T>(
+  paths: RuntimePaths,
+  getMcpRegistry: (paths: RuntimePaths) => McpRegistry,
+  run: (registry: McpRegistry) => Promise<T>,
+) {
+  const registry = getMcpRegistry(paths);
+  try {
+    return await run(registry);
+  } finally {
+    await registry.stop();
+  }
 }
 
 function collectOption(value: string, previous: string[]) {

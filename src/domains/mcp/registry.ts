@@ -1,6 +1,9 @@
 import type { ToolDefinition } from '@flue/runtime';
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
-import { subscribeConfigEvents } from '../../config-events';
+import {
+  subscribeConfigEvents,
+  type ConfigChangeEvent,
+} from '../../config-events';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 import { runMcpToolThroughGate } from './gate';
 import { mcpServerEnabled, type McpServerConfig } from './schemas';
@@ -70,10 +73,17 @@ type McpRegistryPendingRefreshTestHookInput = {
   server: McpServerConfig;
 };
 
+type McpRegistryRefreshTestHookInput = {
+  serverId: string;
+  server: McpServerConfig;
+};
+
 let mcpRegistryPublishTestHook:
   ((input: McpRegistryPublishTestHookInput) => void) | null = null;
 let mcpRegistryPendingRefreshTestHook:
   ((input: McpRegistryPendingRefreshTestHookInput) => void) | null = null;
+let mcpRegistryRefreshTestHook:
+  ((input: McpRegistryRefreshTestHookInput) => void) | null = null;
 
 export function setMcpRegistryPublishHookForTests(
   hook: ((input: McpRegistryPublishTestHookInput) => void) | null,
@@ -92,6 +102,16 @@ export function setMcpRegistryPendingRefreshHookForTests(
   mcpRegistryPendingRefreshTestHook = hook;
   return () => {
     mcpRegistryPendingRefreshTestHook = previous;
+  };
+}
+
+export function setMcpRegistryRefreshHookForTests(
+  hook: ((input: McpRegistryRefreshTestHookInput) => void) | null,
+) {
+  const previous = mcpRegistryRefreshTestHook;
+  mcpRegistryRefreshTestHook = hook;
+  return () => {
+    mcpRegistryRefreshTestHook = previous;
   };
 }
 
@@ -121,7 +141,7 @@ export class McpRegistry {
     if (this.unsubscribe) return;
     this.unsubscribe = subscribeConfigEvents((event) => {
       if (!event.files.includes(this.paths.mcp)) return;
-      void this.refresh().catch((error) => {
+      void this.refresh(refreshTargetFromConfigEvent(event)).catch((error) => {
         console.error('[neondeck] failed to refresh MCP registry', error);
       });
     });
@@ -201,6 +221,7 @@ export class McpRegistry {
   }
 
   private async refreshOne(id: string, server: McpServerConfig) {
+    mcpRegistryRefreshTestHook?.({ serverId: id, server });
     const current = this.entry(id);
     current.refreshGeneration += 1;
     const generation = current.refreshGeneration;
@@ -362,6 +383,11 @@ export class McpRegistry {
     }
     await markMcpCatalogUnavailable(id, this.paths);
   }
+}
+
+function refreshTargetFromConfigEvent(event: ConfigChangeEvent) {
+  if (!event.target || event.target === 'all') return undefined;
+  return event.target;
 }
 
 async function cachedCatalog(serverId: string, paths: RuntimePaths) {

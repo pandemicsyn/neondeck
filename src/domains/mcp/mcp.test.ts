@@ -14,11 +14,15 @@ import {
   listMcpAudit,
   readMcpOAuthStatus,
   readMcpConfig,
+  mcpRegistryRefreshAction,
+  mcpServerAddAction,
+  mcpServerEnableAction,
   mcpServerUpdateAction,
   resolveMcpApprovalWithPaths,
   setMcpCatalogReplaceHookForTests,
   setMcpRegistryPendingRefreshHookForTests,
   setMcpRegistryPublishHookForTests,
+  setMcpRegistryRefreshHookForTests,
   startMcpOAuthLogin,
   type McpServerConfig,
   updateMcpServer,
@@ -272,6 +276,66 @@ describe('MCP support', () => {
       restorePublishHook();
       restorePendingRefreshHook();
       resumeCatalogReplace.resolve();
+    }
+  });
+
+  it('refreshes only the changed MCP server from config events', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await addMcpServer(
+      {
+        id: 'first',
+        server: {
+          transport: 'http',
+          url: 'https://mcp.example.test/mcp',
+          enabled: false,
+        },
+      },
+      paths,
+    );
+    await addMcpServer(
+      {
+        id: 'second',
+        server: {
+          transport: 'http',
+          url: 'https://mcp2.example.test/mcp',
+          enabled: false,
+        },
+      },
+      paths,
+    );
+
+    const initialIds = new Set(['first', 'second']);
+    const initialRefresh = deferred<void>();
+    const changedRefresh = deferred<void>();
+    const changedRefreshIds: string[] = [];
+    let observingChangedRefresh = true;
+    const restoreRefreshHook = setMcpRegistryRefreshHookForTests((input) => {
+      if (initialIds.delete(input.serverId)) {
+        if (initialIds.size === 0) initialRefresh.resolve();
+        return;
+      }
+      if (!observingChangedRefresh) return;
+      changedRefreshIds.push(input.serverId);
+      if (input.serverId === 'second') changedRefresh.resolve();
+    });
+    const registry = getMcpRegistry(paths);
+    try {
+      registry.start();
+      await initialRefresh.promise;
+
+      await updateMcpServer(
+        { id: 'second', server: { timeoutMs: 1234 } },
+        paths,
+      );
+      await changedRefresh.promise;
+      observingChangedRefresh = false;
+      await registry.refresh('second');
+
+      expect(changedRefreshIds).toEqual(['second']);
+    } finally {
+      restoreRefreshHook();
     }
   });
 
@@ -546,6 +610,151 @@ describe('MCP support', () => {
       if (previousHome === undefined) delete process.env.NEONDECK_HOME;
       else process.env.NEONDECK_HOME = previousHome;
     }
+  });
+
+  it('blocks model-owned MCP OAuth client-secret references', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+
+    const previousHome = process.env.NEONDECK_HOME;
+    process.env.NEONDECK_HOME = home;
+    try {
+      await expect(
+        mcpServerAddAction.run({
+          input: {
+            id: 'remote',
+            server: {
+              transport: 'http',
+              url: 'https://mcp.example.test/mcp',
+              auth: {
+                kind: 'oauth',
+                clientSecret: { env: 'MCP_CLIENT_SECRET' },
+              },
+            },
+          },
+        } as never),
+      ).resolves.toMatchObject({
+        ok: false,
+        changed: false,
+        requires: ['user-owned-surface'],
+      });
+      await expect(readMcpConfig(paths)).resolves.toEqual({ servers: {} });
+    } finally {
+      if (previousHome === undefined) delete process.env.NEONDECK_HOME;
+      else process.env.NEONDECK_HOME = previousHome;
+    }
+  });
+
+  it('blocks model-owned connects to existing OAuth client-secret MCP servers', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await addMcpServer(
+      {
+        id: 'remote',
+        server: {
+          transport: 'http',
+          url: 'https://mcp.example.test/mcp',
+          enabled: false,
+          auth: {
+            kind: 'oauth',
+            clientSecret: { env: 'MCP_CLIENT_SECRET' },
+          },
+        },
+      },
+      paths,
+    );
+
+    const previousHome = process.env.NEONDECK_HOME;
+    process.env.NEONDECK_HOME = home;
+    try {
+      await expect(
+        mcpRegistryRefreshAction.run({
+          input: { id: 'remote' },
+        } as never),
+      ).resolves.toMatchObject({
+        ok: false,
+        changed: false,
+        requires: ['user-owned-surface'],
+      });
+      await expect(
+        mcpServerEnableAction.run({
+          input: { id: 'remote' },
+        } as never),
+      ).resolves.toMatchObject({
+        ok: false,
+        changed: false,
+        requires: ['user-owned-surface'],
+      });
+    } finally {
+      if (previousHome === undefined) delete process.env.NEONDECK_HOME;
+      else process.env.NEONDECK_HOME = previousHome;
+    }
+  });
+
+  it('expires approved MCP tool calls when server approval scope changes', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await addMcpServer(
+      {
+        id: 'remote',
+        server: {
+          transport: 'http',
+          url: 'https://mcp.example.test/mcp',
+        },
+      },
+      paths,
+    );
+    const request = await createMcpApprovalRequest(
+      {
+        serverId: 'remote',
+        toolName: 'echo',
+        adaptedName: 'mcp__remote__echo',
+        argumentsHash: 'abc123',
+        argumentsPreview: '{"text":"hello"}',
+      },
+      paths,
+    );
+    await resolveMcpApprovalWithPaths(
+      {
+        id: request!.id,
+        decision: 'approve',
+        approverSurface: 'test',
+      },
+      paths,
+    );
+
+    await updateMcpServer(
+      {
+        id: 'remote',
+        server: { url: 'https://mcp2.example.test/mcp' },
+      },
+      paths,
+    );
+
+    await expect(
+      consumeUsableMcpApproval(
+        {
+          serverId: 'remote',
+          toolName: 'echo',
+          adaptedName: 'mcp__remote__echo',
+          argumentsHash: 'abc123',
+        },
+        paths,
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      listMcpApprovals(paths, { includeResolved: true }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: request!.id,
+          status: 'expired',
+        }),
+      ]),
+    );
   });
 
   it('clears stored MCP OAuth state when user-owned endpoint identity changes', async () => {

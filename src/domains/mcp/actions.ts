@@ -213,7 +213,7 @@ export const neondeckMcpActions = [
 function guardAgentMcpServerConfig(
   server: {
     transport: string;
-    auth?: { kind?: string };
+    auth?: { kind?: string; clientSecret?: unknown };
     tools?: { autoApprove?: string[] };
   },
   action: string,
@@ -228,6 +228,12 @@ function guardAgentMcpServerConfig(
     return blockedAgentMcpAction(
       action,
       'Header-authenticated MCP servers are user-surface only because they forward environment-backed secrets.',
+    );
+  }
+  if (server.auth?.kind === 'oauth' && server.auth.clientSecret !== undefined) {
+    return blockedAgentMcpAction(
+      action,
+      'OAuth MCP client-secret references are user-surface only because they forward environment-backed secrets.',
     );
   }
   if (server.tools?.autoApprove && server.tools.autoApprove.length > 0) {
@@ -299,6 +305,12 @@ async function guardAgentMcpServerConnect(
     return blockedAgentMcpAction(
       'mcp_server_connect',
       'Connecting header-authenticated MCP servers is user-surface only because it forwards environment-backed secrets.',
+    );
+  }
+  if (server.auth?.kind === 'oauth' && server.auth.clientSecret) {
+    return blockedAgentMcpAction(
+      'mcp_server_connect',
+      'Connecting OAuth MCP servers with client-secret references is user-surface only because it forwards environment-backed secrets.',
     );
   }
   return null;
