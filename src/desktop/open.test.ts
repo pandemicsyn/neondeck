@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   findChromiumBrowser,
+  resolveOpenPort,
   resolveWindowProfile,
+  serviceMatchesRuntimeHome,
   waitForHealth,
 } from './open';
+import type { ServiceStatus } from './service';
 
 describe('desktop open launcher', () => {
   it('merges window profiles with CLI overrides', () => {
@@ -51,6 +54,44 @@ describe('desktop open launcher', () => {
       name: 'Chromium',
       path: '/opt/bin/chromium',
     });
+  });
+
+  it('only adopts an installed service port for the same runtime home', () => {
+    const previousNeondeckPort = process.env.NEONDECK_PORT;
+    const previousPort = process.env.PORT;
+    delete process.env.NEONDECK_PORT;
+    delete process.env.PORT;
+    try {
+      const status: ServiceStatus = {
+        platform: 'linux',
+        supported: true,
+        installed: true,
+        running: true,
+        unitPath: '/home/tester/.config/systemd/user/neondeck.service',
+        logPath: '/home/tester/.config/neondeck/data/logs/server.log',
+        port: 4599,
+        health: { ok: true, url: 'http://127.0.0.1:4599/api/health' },
+        runtimeHome: '/home/tester/.config/neondeck',
+        warnings: [],
+      };
+
+      expect(
+        resolveOpenPort(undefined, status, '/home/tester/.config/neondeck'),
+      ).toBe(4599);
+      expect(resolveOpenPort(undefined, status, '/tmp/other-home')).toBe(3583);
+      expect(serviceMatchesRuntimeHome(status, '/tmp/other-home')).toBe(false);
+    } finally {
+      if (previousNeondeckPort === undefined) {
+        delete process.env.NEONDECK_PORT;
+      } else {
+        process.env.NEONDECK_PORT = previousNeondeckPort;
+      }
+      if (previousPort === undefined) {
+        delete process.env.PORT;
+      } else {
+        process.env.PORT = previousPort;
+      }
+    }
   });
 
   it('waits for health until a later probe succeeds', async () => {
