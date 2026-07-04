@@ -14,7 +14,6 @@ import {
   listMcpAudit,
   readMcpOAuthStatus,
   readMcpConfig,
-  removeMcpServer,
   resolveMcpApprovalWithPaths,
   setMcpCatalogReplaceHookForTests,
   startMcpOAuthLogin,
@@ -190,7 +189,7 @@ describe('MCP support', () => {
     });
   });
 
-  it('cleans stale MCP catalog writes from an in-flight refresh', async () => {
+  it('does not expose stale MCP tools when disabling during catalog refresh', async () => {
     const home = await tempDir();
     const paths = runtimePaths(home);
     await ensureRuntimeHome(paths);
@@ -226,13 +225,22 @@ describe('MCP support', () => {
     try {
       const staleRefresh = registry.refresh('fixture');
       await catalogReplaceStarted.promise;
-      await removeMcpServer({ id: 'fixture', confirm: true }, paths);
-      const removalRefresh = registry.refresh('fixture');
-      await removalRefresh;
+      await updateMcpServer(
+        { id: 'fixture', server: { enabled: false } },
+        paths,
+      );
+      const disabledRefresh = registry.refresh('fixture');
       resumeCatalogReplace.resolve();
-      await staleRefresh;
+      await Promise.all([staleRefresh, disabledRefresh]);
 
-      await expect(registry.status()).resolves.toEqual([]);
+      await expect(registry.status()).resolves.toMatchObject([
+        {
+          id: 'fixture',
+          enabled: false,
+          status: 'disabled',
+          toolCount: 0,
+        },
+      ]);
       expect(
         registry.toolsSync().some((tool) => tool.name === 'mcp__fixture__echo'),
       ).toBe(false);
