@@ -1,6 +1,7 @@
 import { configEventFromChange, publishConfigEvent } from './events';
 import { okResult, failResult, errorMessage } from './result';
 import type { ConfigActionResult, ConfigTarget } from './schemas';
+import { parseMcpConfig } from '../../domains/mcp/schemas';
 import {
   ensureRuntimeHome,
   parseAppConfig,
@@ -90,6 +91,10 @@ async function readTarget(target: ConfigTarget, paths: RuntimePaths) {
     return { repos: await readRuntimeJson(paths.repos, parseRepoRegistry) };
   }
 
+  if (target === 'mcp') {
+    return { mcp: await readRuntimeJson(paths.mcp, parseMcpConfig) };
+  }
+
   if (target === 'dashboard') {
     return {
       dashboard: await readRuntimeJson(paths.dashboard, parseDashboardConfig),
@@ -106,6 +111,7 @@ async function readTarget(target: ConfigTarget, paths: RuntimePaths) {
     config: publicAppConfig(
       await readRuntimeJson(paths.config, parseAppConfig),
     ),
+    mcp: await readRuntimeJson(paths.mcp, parseMcpConfig),
     repos: await readRuntimeJson(paths.repos, parseRepoRegistry),
     dashboard: await readRuntimeJson(paths.dashboard, parseDashboardConfig),
     schedules: await readRuntimeJson(paths.schedules, parseScheduleConfig),
@@ -114,10 +120,17 @@ async function readTarget(target: ConfigTarget, paths: RuntimePaths) {
 
 export function targetFiles(target: ConfigTarget, paths: RuntimePaths) {
   if (target === 'config') return [paths.config];
+  if (target === 'mcp') return [paths.mcp];
   if (target === 'repos') return [paths.repos];
   if (target === 'dashboard') return [paths.dashboard];
   if (target === 'schedules') return [paths.schedules];
-  return [paths.config, paths.repos, paths.dashboard, paths.schedules];
+  return [
+    paths.config,
+    paths.mcp,
+    paths.repos,
+    paths.dashboard,
+    paths.schedules,
+  ];
 }
 
 function publicAppConfig(config: AppConfig) {

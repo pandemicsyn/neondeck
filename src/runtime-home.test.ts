@@ -8,6 +8,7 @@ import {
   readAgentModelSelectionSync,
   resolveAgentModelSelection,
 } from './modules/runtime';
+import { parseMcpConfig } from './domains/mcp/schemas';
 import {
   ConfigValidationError,
   ensureRuntimeHome,
@@ -102,6 +103,9 @@ describe('runtime home', () => {
       readRuntimeJson(paths.schedules, parseScheduleConfig),
     ).resolves.toEqual({
       schedules: [],
+    });
+    await expect(readRuntimeJson(paths.mcp, parseMcpConfig)).resolves.toEqual({
+      servers: {},
     });
 
     expect(existsSync(paths.dashboard)).toBe(true);

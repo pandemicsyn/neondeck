@@ -20,6 +20,7 @@ export const integrationTestFiles = [
 export const sharedTestOptions = {
   testTimeout: 15_000,
   passWithNoTests: true,
+  setupFiles: ['./src/test-setup.ts'],
   env: {
     GIT_CONFIG_COUNT: '2',
     GIT_CONFIG_KEY_0: 'commit.gpgsign',

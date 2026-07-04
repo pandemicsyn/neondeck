@@ -6,6 +6,10 @@ export function setJsonOutput(enabled: boolean | undefined) {
   jsonOutput = enabled === true;
 }
 
+export function isJsonOutput() {
+  return jsonOutput;
+}
+
 export function printActionResult(result: {
   ok: boolean;
   message: string;

@@ -12,6 +12,11 @@ import { neondeckKiloActions } from '../modules/kilo';
 import { neondeckKiloResultActions } from '../modules/kilo/results';
 import { neondeckLearningOperatorActions } from '../modules/learning';
 import {
+  mcpAgentToolsSync,
+  mcpInstructionsSync,
+  neondeckMcpActions,
+} from '../domains/mcp';
+import {
   memoryInstructionsSync,
   neondeckMemoryActions,
 } from '../modules/memory';
@@ -48,9 +53,11 @@ export default defineAgent(() => {
     instructions: [
       soulInstructions(),
       memoryInstructionsSync(),
+      mcpInstructionsSync(),
       'You are the local neondeck companion-display assistant. Keep answers brief, operational, and easy to scan on a small dashboard. When asked about work, prefer concrete next actions.',
       'Your Flue sandbox is the default virtual workspace rooted at /workspace, not the host checkout. Use Neondeck tools and actions for host facts, config, GitHub, watches, schedules, and runtime state.',
       'For Neondeck configuration changes, use the provided neondeck_config_* actions. Do not directly edit runtime config files in conversation.',
+      'For MCP server configuration, use neondeck_mcp_server_* actions only for safe HTTP/OAuth changes. Stdio servers, header-auth servers, and MCP auto-approval policy are user-owned and must be configured through the CLI, local API, or direct runtime config; the dashboard may surface OAuth login/logout and approval decisions. MCP config stores secret environment-variable references only; OAuth tokens are runtime state and are never readable by the agent.',
       'For display assistant, utility, self-improvement, or subagent model changes, use neondeck_config_update_agent_models. Utility is a low-cost model role for bounded helper work such as titles, labels, short summaries, notifications, and compact classification; self-improvement is the background learning/curation model role. Neither is a user-facing persona. Explain that configured model strings must use already-registered providers and active sessions may need a new session or server restart.',
       'For provider configuration, use neondeck_config_read_providers and neondeck_config_update_provider. Provider config is allowlisted and stores environment variable references only; raw secrets, arbitrary base URLs, and arbitrary provider ids are not supported. Server restart is required for provider registration changes.',
       'For dashboard layout changes, use neondeck_config_apply_dashboard_preset for classic or cockpit layouts, or neondeck_config_update_dashboard_layout for a complete validated custom dashboard object. Do not freestyle-edit dashboard.json.',
@@ -84,7 +91,7 @@ export default defineAgent(() => {
       'When a user sends a slash command such as /repo-status, /review-queue, /explain-ci, /summarize-pr, /draft-pr-description, /prepare-pr, /review-local, /briefing, /reasoning, /memory, /watch-pr, /watch-release, or /dev-doctor, call neondeck_command_run and summarize its persisted workflow result.',
     ].join('\n\n'),
     skills: [neondeck, githubGh, ...runtimeSkillReferencesSync()],
-    tools: neondeckFactTools,
+    tools: [...neondeckFactTools, ...mcpAgentToolsSync()],
     subagents: neondeckSubagents(
       models.subagents,
       models.subagentThinkingLevels,
@@ -94,6 +101,7 @@ export default defineAgent(() => {
       ...neondeckConfigActions,
       executionPolicyCheckAction,
       ...neondeckExecutionActions,
+      ...neondeckMcpActions,
       ...neondeckExeDevCheckoutActions,
       ...neondeckPrEventActions,
       ...neondeckWatchActions,

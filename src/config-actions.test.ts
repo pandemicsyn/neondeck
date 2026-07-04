@@ -440,7 +440,13 @@ describe('config actions', () => {
       {
         action: 'config_reload',
         changed: false,
-        files: [paths.config, paths.repos, paths.dashboard, paths.schedules],
+        files: [
+          paths.config,
+          paths.mcp,
+          paths.repos,
+          paths.dashboard,
+          paths.schedules,
+        ],
         target: 'all',
       },
     ]);

@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { mcpConfigSchema, type McpConfig } from '../domains/mcp/schemas';
 
 function hasShellOperator(value: string) {
   return /(?:\n|&&|\|\||[;&|<>`]|\$\()/.test(value);
@@ -370,6 +371,7 @@ export type WorktreeCleanupConfig = v.InferOutput<
 export type AutopilotConfig = v.InferOutput<typeof autopilotConfigSchema>;
 export type KiloConfig = v.InferOutput<typeof kiloConfigSchema>;
 export type LocalApiConfig = v.InferOutput<typeof localApiConfigSchema>;
+export type { McpConfig };
 export type RepoConfig = v.InferOutput<typeof repoConfigSchema>;
 export type RepoRegistry = v.InferOutput<typeof repoRegistrySchema>;
 export type ScheduleEntry = v.InferOutput<typeof scheduleEntrySchema>;
@@ -390,6 +392,10 @@ export class ConfigValidationError extends Error {
 
 export function parseAppConfig(value: unknown, path: string): AppConfig {
   return parseSchema(appConfigSchema, value, path);
+}
+
+export function parseMcpConfig(value: unknown, path: string): McpConfig {
+  return parseSchema(mcpConfigSchema, value, path);
 }
 
 export function parseRepoRegistry(value: unknown, path: string): RepoRegistry {

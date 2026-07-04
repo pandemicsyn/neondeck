@@ -10,6 +10,7 @@ export * from './sessions';
 export * from './workflows';
 export * from './kilo';
 export * from './execution';
+export * from './mcp';
 export * from './scheduler';
 export * from './memory';
 export * from './learning';

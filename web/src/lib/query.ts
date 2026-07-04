@@ -17,6 +17,8 @@ export const queryKeys = {
   kiloTasks: ['kilo-tasks'] as const,
   learningState: ['learning-state'] as const,
   memories: ['memories'] as const,
+  mcpApprovals: ['mcp-approvals'] as const,
+  mcpServers: ['mcp-servers'] as const,
   neonSession: ['neon-session'] as const,
   chatSessions: ['chat-sessions'] as const,
   autopilotState: ['autopilot-state'] as const,

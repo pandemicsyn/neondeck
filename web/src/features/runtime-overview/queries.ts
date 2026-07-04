@@ -3,6 +3,8 @@ import type {
   ExecutionApprovalsResponse,
   KiloTasksResponse,
   MemoryResponse,
+  McpApprovalsResponse,
+  McpServersResponse,
   NotificationResponse,
   RepoEditEventsResponse,
   RepoHealthResponse,
@@ -26,6 +28,8 @@ type RuntimeSnapshotQueries = {
   memories: UseQueryResult<MemoryResponse>;
   notifications: UseQueryResult<NotificationResponse>;
   executionApprovals: UseQueryResult<ExecutionApprovalsResponse>;
+  mcpServers: UseQueryResult<McpServersResponse>;
+  mcpApprovals: UseQueryResult<McpApprovalsResponse>;
   safety: UseQueryResult<SafetyPolicy>;
   workflows: UseQueryResult<WorkflowObservability>;
   kiloTasks: UseQueryResult<KiloTasksResponse>;
@@ -45,6 +49,8 @@ export function runtimeSnapshotFromQueries(
     queryResultError(queries.memories),
     queryResultError(queries.notifications),
     queryResultError(queries.executionApprovals),
+    queryResultError(queries.mcpServers),
+    queryResultError(queries.mcpApprovals),
     queryResultError(queries.safety),
     queryResultError(queries.workflows),
     queryResultError(queries.kiloTasks),
@@ -91,6 +97,20 @@ export function runtimeSnapshotFromQueries(
       changed: false,
       approvals: [],
       fetchedAt: status.fetchedAt,
+    },
+    mcpServers: queries.mcpServers.data ?? {
+      ok: false,
+      action: 'mcp_servers_list',
+      changed: false,
+      message: 'MCP server status unavailable.',
+      servers: [],
+    },
+    mcpApprovals: queries.mcpApprovals.data ?? {
+      ok: false,
+      action: 'mcp_approvals_list',
+      changed: false,
+      message: 'MCP approvals unavailable.',
+      approvals: [],
     },
     safety: queries.safety.data ?? emptySafetyPolicy(status.fetchedAt),
     workflows: queries.workflows.data ?? emptyWorkflows(),
@@ -144,6 +164,8 @@ export async function invalidateRuntimeQueries(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: queryKeys.memories }),
     queryClient.invalidateQueries({ queryKey: queryKeys.notifications }),
     queryClient.invalidateQueries({ queryKey: queryKeys.executionApprovals }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.mcpServers }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.mcpApprovals }),
     queryClient.invalidateQueries({ queryKey: queryKeys.safetyPolicy }),
     queryClient.invalidateQueries({ queryKey: queryKeys.repoEditEvents }),
     queryClient.invalidateQueries({ queryKey: queryKeys.worktrees }),

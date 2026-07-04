@@ -10,6 +10,7 @@ export type RuntimePaths = {
   home: string;
   env: string;
   config: string;
+  mcp: string;
   repos: string;
   dashboard: string;
   dashboardSchema: string;
@@ -49,6 +50,7 @@ export function runtimePaths(home = resolveRuntimeHome()): RuntimePaths {
     home,
     env: join(home, '.env'),
     config: join(home, 'config.json'),
+    mcp: join(home, 'mcp.json'),
     repos: join(home, 'repos.json'),
     dashboard: join(home, 'dashboard.json'),
     dashboardSchema: join(home, 'dashboard.schema.json'),

@@ -4,6 +4,8 @@ import {
   getExecutionApprovals,
   getKiloTasks,
   getMemories,
+  getMcpApprovals,
+  getMcpServers,
   getNotifications,
   getRepoEditEvents,
   getRepoHealth,
@@ -49,6 +51,8 @@ export const RuntimeOverviewPlugin = {
       memoriesQuery,
       notificationsQuery,
       executionApprovalsQuery,
+      mcpServersQuery,
+      mcpApprovalsQuery,
       safetyQuery,
       workflowsQuery,
       kiloTasksQuery,
@@ -94,6 +98,16 @@ export const RuntimeOverviewPlugin = {
         {
           queryKey: queryKeys.executionApprovals,
           queryFn: () => getExecutionApprovals({ includeResolved: true }),
+          refetchInterval: 30_000,
+        },
+        {
+          queryKey: queryKeys.mcpServers,
+          queryFn: getMcpServers,
+          refetchInterval: 30_000,
+        },
+        {
+          queryKey: queryKeys.mcpApprovals,
+          queryFn: () => getMcpApprovals({ includeResolved: true }),
           refetchInterval: 30_000,
         },
         {
@@ -169,6 +183,8 @@ export const RuntimeOverviewPlugin = {
       memories: memoriesQuery,
       notifications: notificationsQuery,
       executionApprovals: executionApprovalsQuery,
+      mcpServers: mcpServersQuery,
+      mcpApprovals: mcpApprovalsQuery,
       safety: safetyQuery,
       workflows: workflowsQuery,
       kiloTasks: kiloTasksQuery,

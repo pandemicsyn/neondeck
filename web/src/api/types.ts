@@ -193,6 +193,7 @@ export type RuntimeStatus = {
   paths: {
     env: string;
     config: string;
+    mcp: string;
     repos: string;
     schedules: string;
     dashboard: string;
@@ -276,6 +277,9 @@ export type RuntimeStatus = {
     activeWorktrees: number;
     staleWorktreeLocks: number;
     worktreeCleanupFailures: number;
+    mcpServers: number;
+    mcpConnectedServers: number;
+    mcpNeedsLoginServers: number;
   };
   checks: RuntimeStatusCheck[];
   lastFlueErrors: Array<{
@@ -325,6 +329,73 @@ export type ExecutionApprovalsResponse = {
   changed: boolean;
   approvals: ExecutionApproval[];
   fetchedAt: string;
+};
+
+export type McpServerStatus =
+  | 'disabled'
+  | 'connected'
+  | 'connecting'
+  | 'disconnected'
+  | 'needs-login'
+  | 'error';
+
+export type McpServer = {
+  id: string;
+  transport: 'http' | 'stdio';
+  enabled: boolean;
+  status: McpServerStatus;
+  auth: {
+    kind: 'none' | 'header' | 'oauth';
+    authorized: boolean;
+    expiresAt: string | null;
+  };
+  toolCount: number;
+  message: string | null;
+  lastConnectedAt: string | null;
+  lastErrorAt: string | null;
+};
+
+export type McpServersResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  servers: McpServer[];
+};
+
+export type McpApproval = {
+  id: string;
+  serverId: string;
+  toolName: string;
+  adaptedName: string;
+  argumentsHash: string;
+  argumentsPreview: string;
+  status: 'pending' | 'approved' | 'denied' | 'used' | 'expired';
+  approverSurface: string | null;
+  createdAt: string;
+  expiresAt: string;
+  resolvedAt: string | null;
+  usedAt: string | null;
+  updatedAt: string;
+};
+
+export type McpApprovalsResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  approvals: McpApproval[];
+};
+
+export type McpLoginResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  authorizationUrl?: string | null;
+  loginId?: string;
+  login?: unknown;
+  requires?: string[];
 };
 
 export type RepoEditEvent = {

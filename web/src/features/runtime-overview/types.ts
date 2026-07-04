@@ -2,6 +2,8 @@ import type {
   ExecutionApprovalsResponse,
   KiloTasksResponse,
   MemoryRecord,
+  McpApprovalsResponse,
+  McpServersResponse,
   NotificationResponse,
   RepoConfig,
   RepoEditEventsResponse,
@@ -22,6 +24,7 @@ export type RuntimeOverviewConfig = {
   notificationLimit: number;
   workflowEventLimit: number;
   repoEditLimit: number;
+  mcpLimit: number;
 };
 
 export type RuntimeSnapshot = {
@@ -33,6 +36,8 @@ export type RuntimeSnapshot = {
   memories: MemoryRecord[];
   notifications: NotificationResponse;
   executionApprovals: ExecutionApprovalsResponse;
+  mcpServers: McpServersResponse;
+  mcpApprovals: McpApprovalsResponse;
   safety: SafetyPolicy;
   workflows: WorkflowObservability;
   kiloTasks: KiloTasksResponse;
@@ -58,4 +63,5 @@ export const runtimeOverviewDefaultConfig = {
   notificationLimit: 5,
   workflowEventLimit: 6,
   repoEditLimit: 5,
+  mcpLimit: 5,
 };

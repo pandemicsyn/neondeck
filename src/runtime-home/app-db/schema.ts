@@ -505,6 +505,82 @@ export const appDatabaseSchemaSql = `
         data_json TEXT,
         created_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS mcp_tool_catalog (
+        server_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        adapted_name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        input_schema_json TEXT,
+        output_schema_json TEXT,
+        annotations_json TEXT,
+        status TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(server_id, tool_name)
+      );
+
+      CREATE TABLE IF NOT EXISTS mcp_tool_approvals (
+        id TEXT PRIMARY KEY,
+        server_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        adapted_name TEXT NOT NULL,
+        arguments_hash TEXT NOT NULL,
+        arguments_preview TEXT NOT NULL,
+        status TEXT NOT NULL,
+        approver_surface TEXT,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        resolved_at TEXT,
+        used_at TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS mcp_tool_audit (
+        id TEXT PRIMARY KEY,
+        server_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        adapted_name TEXT NOT NULL,
+        arguments_hash TEXT NOT NULL,
+        decision TEXT NOT NULL,
+        approval_id TEXT,
+        duration_ms INTEGER,
+        ok INTEGER NOT NULL,
+        result_preview TEXT,
+        error TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS mcp_oauth_tokens (
+        server_id TEXT PRIMARY KEY,
+        server_identity TEXT,
+        access_token TEXT,
+        refresh_token TEXT,
+        token_type TEXT,
+        id_token TEXT,
+        expires_at TEXT,
+        scopes_json TEXT,
+        client_information_json TEXT,
+        discovery_state_json TEXT,
+        code_verifier TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS mcp_oauth_logins (
+        id TEXT PRIMARY KEY,
+        server_id TEXT NOT NULL,
+        server_identity TEXT,
+        state TEXT NOT NULL,
+        status TEXT NOT NULL,
+        redirect_url TEXT NOT NULL,
+        authorization_url TEXT,
+        discovery_state_json TEXT,
+        code_verifier TEXT,
+        error TEXT,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        completed_at TEXT,
+        updated_at TEXT NOT NULL
+      );
 `;
 
 export const appDatabaseIndexSql = `
@@ -614,4 +690,13 @@ export const appDatabaseIndexSql = `
 
       CREATE INDEX IF NOT EXISTS idx_kilo_result_events_task
         ON kilo_result_events(task_id, created_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_mcp_tool_catalog_status
+        ON mcp_tool_catalog(server_id, status, updated_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_mcp_tool_approvals_pending
+        ON mcp_tool_approvals(server_id, tool_name, adapted_name, arguments_hash, status, expires_at);
+
+      CREATE INDEX IF NOT EXISTS idx_mcp_tool_audit_created
+        ON mcp_tool_audit(created_at DESC);
 `;

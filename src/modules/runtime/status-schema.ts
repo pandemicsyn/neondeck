@@ -24,6 +24,7 @@ export const runtimeStatusSchema = v.looseObject({
   paths: v.object({
     env: v.string(),
     config: v.string(),
+    mcp: v.string(),
     repos: v.string(),
     schedules: v.string(),
     dashboard: v.string(),
@@ -120,6 +121,9 @@ export const runtimeStatusSchema = v.looseObject({
     activeWorktrees: v.number(),
     staleWorktreeLocks: v.number(),
     worktreeCleanupFailures: v.number(),
+    mcpServers: v.number(),
+    mcpConnectedServers: v.number(),
+    mcpNeedsLoginServers: v.number(),
   }),
   checks: v.array(
     v.object({

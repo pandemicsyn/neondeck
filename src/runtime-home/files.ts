@@ -15,6 +15,7 @@ import {
   ConfigValidationError,
   parseAppConfig,
   parseDashboardConfig,
+  parseMcpConfig,
   parseRepoRegistry,
   parseScheduleConfig,
 } from './schemas.ts';
@@ -37,6 +38,7 @@ export function readRuntimeJsonSync<T>(
 
 export async function validateRuntimeFiles(paths = runtimePaths()) {
   await readRuntimeJson(paths.config, parseAppConfig);
+  await readRuntimeJson(paths.mcp, parseMcpConfig);
   await readRuntimeJson(paths.repos, parseRepoRegistry);
   await readRuntimeJson(paths.dashboard, parseDashboardConfig);
   await readRuntimeJson(paths.schedules, parseScheduleConfig);
@@ -44,6 +46,7 @@ export async function validateRuntimeFiles(paths = runtimePaths()) {
 
 export function validateRuntimeFilesSync(paths = runtimePaths()) {
   readRuntimeJsonSync(paths.config, parseAppConfig);
+  readRuntimeJsonSync(paths.mcp, parseMcpConfig);
   readRuntimeJsonSync(paths.repos, parseRepoRegistry);
   readRuntimeJsonSync(paths.dashboard, parseDashboardConfig);
   readRuntimeJsonSync(paths.schedules, parseScheduleConfig);

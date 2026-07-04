@@ -28,6 +28,12 @@ export async function memoryActionsModule() {
   ) as Promise<typeof import('../modules/memory')>;
 }
 
+export async function mcpModule() {
+  return import(
+    new URL('../domains/mcp/index.ts', import.meta.url).href
+  ) as Promise<typeof import('../domains/mcp')>;
+}
+
 export async function modelDiscoveryModule() {
   return import(
     new URL('../modules/repos/index.ts', import.meta.url).href

@@ -21,6 +21,8 @@ import {
   JobRow,
   KiloTaskRow,
   MemoryRow,
+  McpApprovalRow,
+  McpServerRow,
   RepoEditEventRow,
   RepoRow,
   SkillIssues,
@@ -54,6 +56,10 @@ export function RuntimeView({
     0,
     5,
   );
+  const pendingMcpApprovals = snapshot.mcpApprovals.approvals.filter(
+    (approval) => approval.status === 'pending',
+  );
+  const recentMcpApprovals = snapshot.mcpApprovals.approvals.slice(0, 5);
   const activeKiloTasks = snapshot.kiloTasks.tasks.filter((task) =>
     [
       'running',
@@ -204,6 +210,50 @@ export function RuntimeView({
                 .map((entry) => (
                   <SafetyPolicyRow entry={entry} key={entry.id} />
                 ))}
+            </div>
+          </RuntimeSection>
+          <RuntimeSection
+            count={snapshot.mcpServers.servers.length}
+            title="MCP SERVERS"
+            tone={
+              snapshot.mcpServers.servers.some((server) =>
+                ['needs-login', 'error'].includes(server.status),
+              )
+                ? 'accent'
+                : 'primary'
+            }
+          >
+            <div className="space-y-1.5">
+              {snapshot.mcpServers.servers
+                .slice(0, config.mcpLimit)
+                .map((server) => (
+                  <McpServerRow
+                    key={server.id}
+                    onRefresh={onRefresh}
+                    server={server}
+                  />
+                ))}
+              {snapshot.mcpServers.servers.length === 0 ? (
+                <MiniEmpty label="No MCP servers configured." />
+              ) : null}
+            </div>
+          </RuntimeSection>
+          <RuntimeSection
+            count={pendingMcpApprovals.length}
+            title="MCP APPROVALS"
+            tone={pendingMcpApprovals.length > 0 ? 'accent' : 'violet'}
+          >
+            <div className="space-y-1.5">
+              {recentMcpApprovals.map((approval) => (
+                <McpApprovalRow
+                  approval={approval}
+                  key={approval.id}
+                  onRefresh={onRefresh}
+                />
+              ))}
+              {recentMcpApprovals.length === 0 ? (
+                <MiniEmpty label="No MCP approvals recorded." />
+              ) : null}
             </div>
           </RuntimeSection>
           <RuntimeSection

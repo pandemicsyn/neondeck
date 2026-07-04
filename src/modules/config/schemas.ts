@@ -4,7 +4,7 @@ import { thinkingLevelSchema } from '../../runtime-home';
 import { isRegisteredProvider } from '../repos';
 
 export type ConfigTarget =
-  'all' | 'config' | 'repos' | 'dashboard' | 'schedules';
+  'all' | 'config' | 'mcp' | 'repos' | 'dashboard' | 'schedules';
 
 export type ConfigActionResult = {
   ok: boolean;
@@ -19,7 +19,7 @@ export type ConfigActionResult = {
 };
 
 export const configTargetSchema = v.optional(
-  v.picklist(['all', 'config', 'repos', 'dashboard', 'schedules']),
+  v.picklist(['all', 'config', 'mcp', 'repos', 'dashboard', 'schedules']),
   'all',
 );
 

@@ -1,7 +1,13 @@
+import { useState } from 'react';
 import { SessionReferenceButton } from '../../../components/SessionReferenceButton';
 import { Badge } from '../../../components/ui';
-import type {
-  KiloTaskRecord,
+import {
+  logoutMcpServer,
+  resolveMcpApproval,
+  startMcpLogin,
+  type KiloTaskRecord,
+  type McpApproval,
+  type McpServer,
   MemoryRecord,
   RepoConfig,
   RepoEditEvent,
@@ -18,12 +24,182 @@ import type {
 import {
   formatInterval,
   kiloTaskStatusClass,
+  mcpApprovalClass,
+  mcpStatusClass,
   relativeTime,
   repoEditEventClass,
   repoHealthStatus,
   shortPath,
   worktreeStatusClass,
 } from '../lib/format';
+
+export function McpServerRow({
+  onRefresh,
+  server,
+}: {
+  onRefresh: () => void;
+  server: McpServer;
+}) {
+  const [busy, setBusy] = useState<'login' | 'logout' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function startLogin() {
+    setBusy('login');
+    setError(null);
+    try {
+      const result = await startMcpLogin(server.id);
+      if (result.authorizationUrl) {
+        window.open(result.authorizationUrl, '_blank', 'noopener,noreferrer');
+      }
+      onRefresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function logout() {
+    setBusy('logout');
+    setError(null);
+    try {
+      await logoutMcpServer(server.id);
+      onRefresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <article className="border border-line bg-soft px-2.5 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-ink">{server.id}</p>
+          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
+            {server.transport} · {server.auth.kind}
+            {server.auth.kind === 'oauth'
+              ? server.auth.authorized
+                ? ` · authorized${server.auth.expiresAt ? ` until ${relativeTime(server.auth.expiresAt)}` : ''}`
+                : ' · not authorized'
+              : ''}
+            {server.message ? ` · ${server.message}` : ''}
+          </p>
+        </div>
+        <Badge className={mcpStatusClass(server)}>{server.status}</Badge>
+      </div>
+      <div className="mt-1.5 flex items-center gap-1.5 font-mono text-[10px] text-muted">
+        <span className="min-w-0 flex-1 truncate">
+          {server.toolCount} tools
+          {server.lastConnectedAt
+            ? ` · connected ${relativeTime(server.lastConnectedAt)}`
+            : ''}
+          {server.lastErrorAt
+            ? ` · error ${relativeTime(server.lastErrorAt)}`
+            : ''}
+        </span>
+        {server.auth.kind === 'oauth' && !server.auth.authorized ? (
+          <button
+            className="shrink-0 border border-line px-1.5 py-0.5 text-muted disabled:opacity-50"
+            disabled={busy !== null}
+            onClick={() => void startLogin()}
+            type="button"
+          >
+            {busy === 'login' ? 'opening' : 'login'}
+          </button>
+        ) : null}
+        {server.auth.kind === 'oauth' && server.auth.authorized ? (
+          <button
+            className="shrink-0 border border-accent px-1.5 py-0.5 text-accent disabled:opacity-50"
+            disabled={busy !== null}
+            onClick={() => void logout()}
+            type="button"
+          >
+            {busy === 'logout' ? 'logging out' : 'logout'}
+          </button>
+        ) : null}
+      </div>
+      {error ? (
+        <p className="mt-1.5 line-clamp-2 text-[10.5px] leading-4 text-accent">
+          {error}
+        </p>
+      ) : null}
+    </article>
+  );
+}
+
+export function McpApprovalRow({
+  approval,
+  onRefresh,
+}: {
+  approval: McpApproval;
+  onRefresh: () => void;
+}) {
+  const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function resolve(decision: 'approve' | 'deny') {
+    setBusy(decision);
+    setError(null);
+    try {
+      await resolveMcpApproval(approval.id, decision);
+      onRefresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <article className="border border-line bg-soft px-2.5 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-ink">
+            {approval.adaptedName}
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
+            {approval.serverId} · {approval.toolName} ·{' '}
+            {approval.argumentsPreview}
+          </p>
+        </div>
+        <Badge className={mcpApprovalClass(approval)}>{approval.status}</Badge>
+      </div>
+      <div className="mt-1.5 flex items-center gap-1.5 font-mono text-[10px] text-muted">
+        <span className="min-w-0 flex-1 truncate">
+          {relativeTime(approval.updatedAt)} · expires{' '}
+          {relativeTime(approval.expiresAt)}
+        </span>
+        {approval.status === 'pending' ? (
+          <>
+            <button
+              className="shrink-0 border border-line px-1.5 py-0.5 text-muted disabled:opacity-50"
+              disabled={busy !== null}
+              onClick={() => void resolve('approve')}
+              type="button"
+            >
+              approve
+            </button>
+            <button
+              className="shrink-0 border border-accent px-1.5 py-0.5 text-accent disabled:opacity-50"
+              disabled={busy !== null}
+              onClick={() => void resolve('deny')}
+              type="button"
+            >
+              deny
+            </button>
+          </>
+        ) : null}
+      </div>
+      {error ? (
+        <p className="mt-1.5 line-clamp-2 text-[10.5px] leading-4 text-accent">
+          {error}
+        </p>
+      ) : null}
+    </article>
+  );
+}
 
 export function RepoEditEventRow({ event }: { event: RepoEditEvent }) {
   const paths = event.paths.length > 0 ? event.paths.join(', ') : 'no paths';

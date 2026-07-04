@@ -2,6 +2,7 @@ import { registerProvider } from '@flue/runtime';
 import { flue } from '@flue/runtime/routing';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
+import { getMcpRegistry } from '../domains/mcp';
 import { loadNeondeckEnv } from '../modules/runtime';
 import {
   providerRuntimeRegistrations,
@@ -33,6 +34,7 @@ import { createKiloRoutes } from './routes/kilo';
 import { createLearningRoutes } from './routes/learning';
 import { createMemoryRoutes } from './routes/memory';
 import { createMetricsRoutes } from './routes/metrics';
+import { createMcpRoutes } from './routes/mcp';
 import { createNotificationRoutes } from './routes/notifications';
 import { createRepoEditRoutes } from './routes/repo-edit';
 import { createReposRoutes } from './routes/repos';
@@ -65,6 +67,7 @@ installFlueObservationHandlers(paths);
 if (process.env.NEONDECK_DISABLE_SCHEDULER !== '1') {
   startSchedulerLoop(paths);
 }
+await getMcpRegistry(paths).start();
 
 app.use('/api/*', requireLocalApiAccess);
 
@@ -77,6 +80,7 @@ app.route('/api/execution', createExecutionRoutes(paths));
 app.route('/api', createSessionRoutes(paths));
 app.route('/api', createConfigRoutes(paths));
 app.route('/api/metrics', createMetricsRoutes());
+app.route('/api/mcp', createMcpRoutes(paths));
 app.route('/api/repos', createReposRoutes(paths));
 app.route('/api', createRepoEditRoutes(paths));
 app.route('/api', createWorktreeRoutes(paths));

@@ -2,6 +2,7 @@
 import { Command } from 'commander';
 import { runInit } from './onboarding';
 import { decideLearningCandidateCli } from './learning';
+import { registerMcpCommands } from './mcp';
 import {
   configActionsModule,
   devDoctorModule,
@@ -78,6 +79,8 @@ program
 const repo = program
   .command('repo')
   .description('Manage configured repositories.');
+
+registerMcpCommands(program);
 
 repo
   .command('add <path>')
