@@ -69,12 +69,14 @@ export type ServiceStatus = {
   nodePathExists?: boolean;
   serverEntry?: string;
   serverEntryExists?: boolean;
+  runtimeHome?: string;
   warnings: string[];
 };
 
 type InstalledServiceConfig = {
   nodePath?: string;
   serverEntry?: string;
+  runtimeHome?: string;
   port?: string;
   logPath?: string;
 };
@@ -100,7 +102,10 @@ export function servicePaths(
     };
   }
 
-  const configHome = options.xdgConfigHome ?? join(home, '.config');
+  const configHome =
+    options.xdgConfigHome ||
+    process.env.XDG_CONFIG_HOME ||
+    join(home, '.config');
   return {
     platform,
     unitPath: join(configHome, 'systemd', 'user', systemdUnitName),
@@ -458,6 +463,7 @@ export async function readServiceStatus(
     : { running: false };
   const nodePath = installedConfig.nodePath;
   const serverEntry = installedConfig.serverEntry;
+  const runtimeHome = installedConfig.runtimeHome;
 
   if (nodePath && !existsSync(nodePath)) {
     warnings.push(
@@ -466,6 +472,15 @@ export async function readServiceStatus(
   }
   if (serverEntry && !existsSync(serverEntry)) {
     warnings.push(`Embedded service entry no longer exists: ${serverEntry}.`);
+  }
+  if (installed && !runtimeHome) {
+    warnings.push(
+      'Embedded service runtime home is missing. Re-run neondeck service install before using service-backed open for isolated runtime homes.',
+    );
+  } else if (runtimeHome && runtimeHome !== paths.home) {
+    warnings.push(
+      `Embedded service runtime home is ${runtimeHome}, but current runtime home is ${paths.home}.`,
+    );
   }
 
   return {
@@ -482,6 +497,7 @@ export async function readServiceStatus(
     nodePathExists: nodePath ? existsSync(nodePath) : undefined,
     serverEntry,
     serverEntryExists: serverEntry ? existsSync(serverEntry) : undefined,
+    runtimeHome,
     warnings,
   };
 }
@@ -503,6 +519,7 @@ export function parseLaunchdPlist(source: string): InstalledServiceConfig {
   return {
     nodePath: programArgs[0],
     serverEntry: programArgs[1],
+    runtimeHome: env.NEONDECK_HOME,
     port: env.NEONDECK_PORT ?? env.PORT,
     logPath: extractLaunchdString(source, 'StandardOutPath'),
   };
@@ -529,10 +546,12 @@ export function parseSystemdUnit(source: string): InstalledServiceConfig {
     .find((line) => line.startsWith('StandardOutput=append:'))
     ?.slice('StandardOutput=append:'.length);
 
+  const envValues = Object.fromEntries(env);
   return {
     nodePath: args[0],
     serverEntry: args[1],
-    port: Object.fromEntries(env).NEONDECK_PORT ?? Object.fromEntries(env).PORT,
+    runtimeHome: envValues.NEONDECK_HOME,
+    port: envValues.NEONDECK_PORT ?? envValues.PORT,
     logPath: output,
   };
 }

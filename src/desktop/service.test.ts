@@ -34,6 +34,7 @@ describe('desktop service renderers', () => {
     expect(parseLaunchdPlist(plist)).toEqual({
       nodePath: definition.nodePath,
       serverEntry: definition.cliEntry,
+      runtimeHome: definition.runtimeHome,
       port: '3599',
       logPath: definition.logPath,
     });
@@ -54,6 +55,7 @@ describe('desktop service renderers', () => {
     expect(parseSystemdUnit(unit)).toEqual({
       nodePath: definition.nodePath,
       serverEntry: definition.cliEntry,
+      runtimeHome: definition.runtimeHome,
       port: '3599',
       logPath: definition.logPath,
     });
@@ -73,7 +75,27 @@ describe('desktop service renderers', () => {
       servicePaths(paths, {
         platform: 'linux',
         homeDirectory: '/home/tester',
+        xdgConfigHome: '/home/tester/.config',
       }).unitPath,
     ).toBe('/home/tester/.config/systemd/user/neondeck.service');
+  });
+
+  it('respects XDG_CONFIG_HOME for Linux user unit paths', () => {
+    const previous = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = '/home/tester/.xdg-config';
+    try {
+      expect(
+        servicePaths(runtimePaths('/tmp/neondeck-home'), {
+          platform: 'linux',
+          homeDirectory: '/home/tester',
+        }).unitPath,
+      ).toBe('/home/tester/.xdg-config/systemd/user/neondeck.service');
+    } finally {
+      if (previous === undefined) {
+        delete process.env.XDG_CONFIG_HOME;
+      } else {
+        process.env.XDG_CONFIG_HOME = previous;
+      }
+    }
   });
 });

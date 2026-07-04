@@ -55,6 +55,7 @@ export function printServiceResult(result: {
     nodePathExists?: boolean;
     serverEntry?: string;
     serverEntryExists?: boolean;
+    runtimeHome?: string;
     warnings: string[];
   };
   errors?: string[];
@@ -85,6 +86,7 @@ export function printServiceResult(result: {
     console.log(
       `entry     ${status.serverEntry ?? 'unknown'}${status.serverEntryExists === false ? ' (missing)' : ''}`,
     );
+    console.log(`home      ${status.runtimeHome ?? 'unknown'}`);
     console.log(`logs      ${status.logPath}`);
     for (const warning of status.warnings) console.log(`warning: ${warning}`);
   }

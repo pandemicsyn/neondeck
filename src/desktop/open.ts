@@ -83,7 +83,7 @@ export async function openDashboard(
   deps: OpenDependencies = {},
 ): Promise<OpenDashboardResult> {
   const serviceStatus = await readServiceStatus(options.paths);
-  const port = resolveOpenPort(options.port, serviceStatus);
+  const port = resolveOpenPort(options.port, serviceStatus, options.paths.home);
   const url = `http://127.0.0.1:${port}`;
   const warnings: string[] = [];
   const profiles = await readWindowProfiles(options.paths);
@@ -132,6 +132,33 @@ export async function openDashboard(
   }
 
   const initialHealth = await probeHealth(url, deps.fetch);
+  if (
+    initialHealth.ok &&
+    serviceRuntimeHomeMismatch(serviceStatus, options.paths.home) &&
+    serviceStatus.port === port
+  ) {
+    return {
+      ok: false,
+      action: 'dashboard_open',
+      changed: false,
+      message:
+        'Refusing to open a Neondeck service installed for another runtime home.',
+      url,
+      profile: options.profile,
+      geometry,
+      server: { wasRunning: true, startedBy: 'none' },
+      browser: { strategy: 'default-browser', geometryApplied: false },
+      warnings: [
+        ...warnings,
+        ...statusWarnings(serviceStatus),
+        serviceRuntimeHomeWarning(serviceStatus, options.paths.home),
+      ],
+      errors: [
+        `Service at ${url} is configured for ${serviceStatus.runtimeHome ?? 'an unknown runtime home'}, not ${options.paths.home}. Use a different --port, stop that service, or reinstall it for this runtime home.`,
+      ],
+    };
+  }
+
   let startedBy: OpenDashboardResult['server']['startedBy'] = initialHealth.ok
     ? 'already-running'
     : 'none';
@@ -141,6 +168,7 @@ export async function openDashboard(
       options.paths,
       port,
       serviceStatus,
+      options.paths.home,
       deps.spawn,
     );
     startedBy = started.startedBy;
@@ -362,10 +390,14 @@ async function startServerForOpen(
   paths: RuntimePaths,
   port: number,
   serviceStatus: ServiceStatus,
+  runtimeHome: string,
   spawnCommand?: CommandSpawner,
 ) {
   try {
-    if (serviceStatus.installed && serviceStatus.port === port) {
+    if (
+      serviceMatchesRuntimeHome(serviceStatus, runtimeHome) &&
+      serviceStatus.port === port
+    ) {
       const result = await startService(paths);
       return {
         ok: result.ok,
@@ -377,14 +409,18 @@ async function startServerForOpen(
     }
 
     await spawnDetachedServe(paths, port, spawnCommand);
-    const warnings =
-      serviceStatus.installed && serviceStatus.port !== port
-        ? [
-            `Installed service is configured for port ${serviceStatus.port}; started detached serve for requested port ${port}.`,
-          ]
-        : [
-            'Neondeck service is not installed; started a detached server for this login session.',
-          ];
+    const warnings = [...statusWarnings(serviceStatus)];
+    if (serviceRuntimeHomeMismatch(serviceStatus, runtimeHome)) {
+      warnings.push(serviceRuntimeHomeWarning(serviceStatus, runtimeHome));
+    } else if (serviceStatus.installed && serviceStatus.port !== port) {
+      warnings.push(
+        `Installed service is configured for port ${serviceStatus.port}; started detached serve for requested port ${port}.`,
+      );
+    } else {
+      warnings.push(
+        'Neondeck service is not installed; started a detached server for this login session.',
+      );
+    }
     return {
       ok: true,
       startedBy: 'detached-serve' as const,
@@ -505,20 +541,45 @@ function statusWarnings(status: ServiceStatus | undefined) {
   return status?.warnings ?? [];
 }
 
-function resolveOpenPort(
+export function resolveOpenPort(
   value: number | string | undefined,
   serviceStatus: ServiceStatus,
+  runtimeHome: string,
 ) {
   if (
     value === undefined &&
     process.env.NEONDECK_PORT === undefined &&
     process.env.PORT === undefined &&
-    serviceStatus.installed
+    serviceMatchesRuntimeHome(serviceStatus, runtimeHome)
   ) {
     return serviceStatus.port;
   }
 
   return resolveServerPort(value);
+}
+
+export function serviceMatchesRuntimeHome(
+  serviceStatus: ServiceStatus,
+  runtimeHome: string,
+) {
+  return serviceStatus.installed && serviceStatus.runtimeHome === runtimeHome;
+}
+
+function serviceRuntimeHomeMismatch(
+  serviceStatus: ServiceStatus,
+  runtimeHome: string,
+) {
+  return (
+    serviceStatus.installed &&
+    !serviceMatchesRuntimeHome(serviceStatus, runtimeHome)
+  );
+}
+
+function serviceRuntimeHomeWarning(
+  serviceStatus: ServiceStatus,
+  runtimeHome: string,
+) {
+  return `Installed service is configured for ${serviceStatus.runtimeHome ?? 'an unknown runtime home'}; using requested runtime home ${runtimeHome} instead.`;
 }
 
 function validateWindowProfile(profile: WindowProfile) {
