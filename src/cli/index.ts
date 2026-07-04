@@ -4,6 +4,7 @@ import { runInit } from './onboarding';
 import { decideLearningCandidateCli } from './learning';
 import { registerMcpCommands } from './mcp';
 import {
+  appDbModule,
   configActionsModule,
   devDoctorModule,
   learningOperatorModule,
@@ -26,6 +27,7 @@ import {
 } from './options';
 import {
   printActionResult,
+  printDbMigrationStatus,
   printLearningState,
   printRepoDiffResult,
   printRepoEditEventsResult,
@@ -166,6 +168,19 @@ program
     loadEnvForPaths(paths);
     const result = await listRepoEditEvents(paths);
     printRepoEditEventsResult(result);
+  });
+
+const db = program
+  .command('db')
+  .description('Inspect Neondeck app database state.');
+
+db.command('status')
+  .description('Read app database migration status.')
+  .action(async () => {
+    const { readAppDbMigrationStatus } = await appDbModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    const status = readAppDbMigrationStatus(paths.neondeckDatabase);
+    printDbMigrationStatus(status);
   });
 
 const learning = program

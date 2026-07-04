@@ -67,6 +67,14 @@ npm run test
 npm run test:integration
 npm run test:all
 npm run format:check
+npm run db:check
+```
+
+Database migration workflow:
+
+```sh
+npm run db:generate -- --name <migration_name>
+npm run db:check
 ```
 
 Full verification:

@@ -242,6 +242,37 @@ export function diffSummaryText(value: unknown) {
   return files > 0 ? `${files} files +${additions} -${deletions}` : '';
 }
 
+export function printDbMigrationStatus(status: {
+  ok: boolean;
+  databasePath: string;
+  applied: unknown[];
+  pending: string[];
+  unknown: unknown[];
+  changed: unknown[];
+  localHead: string | null;
+  journalHead: string | null;
+  lastBackup: string | null;
+  message: string;
+}) {
+  if (!status.ok) process.exitCode = 1;
+
+  if (jsonOutput) {
+    console.log(JSON.stringify(status, null, 2));
+    return;
+  }
+
+  console.log(status.ok ? 'db:current' : 'db:attention');
+  console.log(`database  ${status.databasePath}`);
+  console.log(`head      ${status.journalHead ?? '(none)'}`);
+  console.log(`shipped   ${status.localHead ?? '(none)'}`);
+  console.log(`applied   ${status.applied.length}`);
+  console.log(`pending   ${status.pending.length}`);
+  console.log(`unknown   ${status.unknown.length}`);
+  console.log(`changed   ${status.changed.length}`);
+  console.log(`backup    ${status.lastBackup ?? '(none)'}`);
+  console.log(`status    ${status.message}`);
+}
+
 export function objectField(value: unknown) {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)

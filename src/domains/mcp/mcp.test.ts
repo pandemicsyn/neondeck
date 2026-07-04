@@ -400,7 +400,9 @@ describe('MCP support', () => {
     process.env.NEONDECK_HOME = home;
 
     try {
-      await expect(getMcpRegistry(paths).refresh('missing')).resolves.toBe(false);
+      await expect(getMcpRegistry(paths).refresh('missing')).resolves.toBe(
+        false,
+      );
       await expect(
         mcpRegistryRefreshAction.run({
           input: { id: 'missing' },
@@ -660,10 +662,7 @@ describe('MCP support', () => {
     );
 
     await expect(
-      updateMcpServer(
-        { id: 'remote', server: { timeoutMs: '1000' } },
-        paths,
-      ),
+      updateMcpServer({ id: 'remote', server: { timeoutMs: '1000' } }, paths),
     ).resolves.toMatchObject({
       ok: false,
       action: 'mcp_server_update',

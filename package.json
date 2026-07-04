@@ -7,6 +7,13 @@
   "bin": {
     "neondeck": "src/cli/index.ts"
   },
+  "files": [
+    "src/",
+    "config/",
+    "SOUL.md",
+    "README.md",
+    "drizzle.config.ts"
+  ],
   "workspaces": [
     "docs"
   ],
@@ -15,7 +22,7 @@
     "build:dashboard": "npm run build:web && flue build --target node",
     "build:server": "flue build --target node",
     "build:web": "vite build --config web/vite.config.ts",
-    "check": "npm run lint && npm run check:layers && npm run typecheck && npm run test",
+    "check": "npm run lint && npm run check:layers && npm run db:check && npm run typecheck && npm run test",
     "check:layers": "node scripts/check-import-layers.mjs",
     "dev": "concurrently -n server,web -c blue,green \"flue dev --target node\" \"vite --config web/vite.config.ts --host 127.0.0.1\"",
     "format": "prettier --write .",
@@ -25,6 +32,8 @@
     "prepare": "git config core.hooksPath .githooks || true",
     "hooks:install": "git config core.hooksPath .githooks",
     "cli": "tsx src/cli/index.ts",
+    "db:check": "node scripts/check-db-migrations.mjs",
+    "db:generate": "drizzle-kit generate --output json --config drizzle.config.ts",
     "init": "tsx src/cli/index.ts init",
     "raycast:build": "npm --prefix raycast install && npm --prefix raycast run build",
     "raycast:install": "npm --prefix raycast install && npm --prefix raycast run dev",
@@ -37,6 +46,7 @@
     "smoke:autopilot": "node scripts/autopilot-smoke.mjs",
     "smoke:kilo": "node scripts/kilo-smoke.mjs",
     "smoke:learning": "vitest run --config vitest.integration.config.ts src/learning-workflow-smoke.test.ts",
+    "smoke:npm-pack": "node scripts/npm-pack-smoke.mjs",
     "start": "node dist/server.mjs",
     "test": "vitest run --config vitest.unit.config.ts",
     "test:all": "npm run test && npm run test:integration",
@@ -47,7 +57,7 @@
     "report:file-sizes": "node scripts/file-size-report.mjs",
     "typecheck": "npm run typecheck:app && npm run docs:check",
     "typecheck:app": "tsc --noEmit && tsc -p web/tsconfig.json --noEmit",
-    "verify": "npm run lint && npm run check:layers && npm run typecheck && npm run test:all && npm run format:check && npm run build",
+    "verify": "npm run lint && npm run check:layers && npm run db:check && npm run typecheck && npm run test:all && npm run smoke:npm-pack && npm run format:check && npm run build",
     "docs:build": "npm --workspace @neondeck/docs-site run build",
     "docs:check": "npm --workspace @neondeck/docs-site run check",
     "docs:deploy": "npm --workspace @neondeck/docs-site run deploy",
@@ -84,6 +94,7 @@
     "@tanstack/react-query": "^5.101.2",
     "ajv": "^8.20.0",
     "commander": "^15.0.0",
+    "drizzle-orm": "1.0.0-rc.4",
     "hono": "^4.12.27",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -91,6 +102,7 @@
     "remark-gfm": "^4.0.1",
     "ssh2": "^1.17.0",
     "systeminformation": "^5.31.11",
+    "tsx": "^4.23.0",
     "valibot": "^1.4.1"
   },
   "devDependencies": {
@@ -102,13 +114,13 @@
     "@types/ssh2": "^1.15.5",
     "@vitejs/plugin-react": "^6.0.3",
     "concurrently": "^10.0.3",
+    "drizzle-kit": "1.0.0-rc.4",
     "jsdom": "^29.1.1",
     "oxlint": "^1.71.0",
     "playwright": "^1.61.1",
     "prettier": "^3.9.0",
     "prettier-plugin-astro": "^0.14.1",
     "tailwindcss": "^4.3.2",
-    "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "vite": "^8.1.0",
     "vitest": "^4.1.9"

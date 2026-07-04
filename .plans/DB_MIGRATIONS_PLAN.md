@@ -38,24 +38,24 @@ devs, an auto-applying migrator at every database-open path for users.
   - `drizzle-orm/node-sqlite` exports `drizzle({ client })` accepting an existing `DatabaseSync`
     instance — it wraps the connection Neondeck already opens.
   - The node-sqlite `migrate(db, { migrationsFolder })` is **synchronous** (`migrateSync`
-    internally), so it works inside `ensureRuntimeHomeSync`. The sync-runner fallback below is
-    retained only as contingency.
-  - `drizzle-kit pull --init` is first-class baselining: it introspects an existing database,
-    writes the pulled schema as the initial migration, and records migration metadata in the
-    database. The runtime migrator has matching init awareness (`MigratorInitFailResponse` with
-    `databaseMigrations`/`localMigrations` exit codes). This is the dev-side bootstrap for our
-    baseline migration; runtime stamping of _user_ databases (who never run drizzle-kit) remains
-    our `migrate.ts` responsibility.
+    internally), but it wraps all pending migrations in a single transaction. Neondeck uses
+    Drizzle's parser/schema tooling and owns a tiny sync apply loop so the runtime can hold
+    `BEGIN IMMEDIATE`, create backups, and report each failing migration precisely.
+  - `drizzle-kit pull --init` is first-class baselining for simple SQLite databases, but RC4 cannot
+    introspect Neondeck's expression index on `memories(scope, key, COALESCE(repo_id, ''))`.
+    Baseline migration bootstrapping is therefore hand-authored from the current DDL, generated
+    from `schema.ts`, and verified by parity tests. Runtime stamping of _user_ databases (who
+    never run drizzle-kit) remains our `migrate.ts` responsibility.
   - `drizzle-kit migrate` performs **commutativity conflict checks** by default
     (`--ignore-conflicts` to skip) — parallel-branch migration conflicts are detected natively;
     our CI journal gate builds on this instead of reimplementing it.
   - drizzle-kit v1 is built for agent-driven use: `--output json` emits a machine-decodable
-    envelope and is guaranteed non-interactive; `--explain` is a dry run returning planned SQL; a
-    programmatic SDK (`drizzle-kit/api-sqlite`: `generate(...)` etc.) exposes the same
-    operations; and the package ships eight Agent Skills (`drizzle`, `drizzle-generate`,
-    `drizzle-migrations`, `drizzle-pull`, `drizzle-push`, `drizzle-output-modes`,
-    `drizzle-hints`, `drizzle-responses-and-errors`) under `node_modules/drizzle-kit/skills/`,
-    plus a `drizzle-kit mcp` server.
+    envelope and is guaranteed non-interactive; `--explain` is a dry run returning planned SQL.
+    RC4's sqlite SDK does **not** expose `generate(...)`, so Neondeck's drift gate shells out to
+    `drizzle-kit generate --output json --explain`. The package ships eight Agent Skills
+    (`drizzle`, `drizzle-generate`, `drizzle-migrations`, `drizzle-pull`, `drizzle-push`,
+    `drizzle-output-modes`, `drizzle-hints`, `drizzle-responses-and-errors`) under
+    `node_modules/drizzle-kit/skills/`, plus a `drizzle-kit mcp` server.
 - **Auto-apply already happens implicitly.** `ensureRuntimeHome`/`ensureRuntimeHomeSync` run
   `initializeAppDatabase` on server boot (`app.ts`, `db.ts` at module load) and CLI startup. The
   new migrator slots into the same choke point — there is exactly one place to wire it.
@@ -90,7 +90,7 @@ devs, an auto-applying migrator at every database-open path for users.
 src/db/
   schema.ts           # Drizzle table definitions — THE schema source of truth
   migrate.ts          # sync auto-apply: journal check, baseline stamp, backup, apply, guards
-  migrations/         # drizzle-kit output: NNNN_name.sql + meta/ journal (committed, published)
+  migrations/         # drizzle-kit v1 timestamp dirs: YYYYMMDDHHMMSS_name/{migration.sql,snapshot.json}
 drizzle.config.ts     # drizzle-kit config (dialect sqlite, schema + out paths)
 ```
 
@@ -104,11 +104,12 @@ maintenance, not schema — they stay as post-migrate code, unchanged.
 
 1. Edit `src/db/schema.ts`.
 2. `npm run db:generate` (wrapping `drizzle-kit generate --output json`) → emits
-   `NNNN_<name>.sql` + journal update. Commit both. `--explain` is the dry run.
-3. `npm run check` includes a drift gate — prefer the `drizzle-kit/api-sqlite` SDK
-   (`generate(...)` in explain mode) over shelling out: fail if the schema would produce a new
-   migration (schema.ts changed without a committed migration). `drizzle-kit check` plus the
-   native commutativity conflict check cover journal consistency across parallel branches.
+   `YYYYMMDDHHMMSS_<name>/migration.sql` plus `snapshot.json`. Commit both. `--explain` is the dry
+   run.
+3. `npm run check` includes a drift gate using
+   `drizzle-kit generate --output json --explain`: fail if the schema would produce a new migration
+   (schema.ts changed without a committed migration). `drizzle-kit check` plus the native
+   commutativity conflict check cover journal consistency across parallel branches.
 4. Applied migrations are immutable — fixing a mistake means a new migration, never an edit.
 5. Agent ergonomics: drizzle-kit ships Agent Skills for exactly this workflow. Register the
    relevant ones (`drizzle`, `drizzle-generate`, `drizzle-migrations`, `drizzle-pull`,
@@ -129,21 +130,24 @@ the DB:
    (the everyday path; must cost ~one query).
 3. Pending migrations → **back up first**: copy `neondeck.db` (+ `-wal`/`-shm` if present) to
    `data/backups/neondeck-<utc-ts>-pre-<NNNN>.db`, keep the newest 5, delete older.
-4. Apply pending migrations in order, each in its own transaction.
-5. On failure: roll back the failing migration, close, and exit with a message naming the
+4. Apply pending migrations in order inside the same `BEGIN IMMEDIATE` transaction so a failed
+   pending batch leaves the database untouched.
+5. On failure: roll back the pending batch, close, and exit with a message naming the active
    migration, the error, and the backup path. Never continue with a half-migrated schema.
 
 ### The baseline problem (existing installs)
 
 Existing databases have all the tables but no Drizzle journal. Solution — a stamped baseline:
 
-- Migration `0000_baseline.sql` is the complete current schema (bootstrap it with
-  `drizzle-kit pull --init` against a freshly created legacy DB — v1's first-class baselining,
-  which also records the migration metadata — then hand-verify the pulled schema).
+- Migration `YYYYMMDDHHMMSS_baseline/migration.sql` is the complete current schema, generated from
+  the hand-authored Drizzle `schema.ts` because `pull --init` cannot introspect Neondeck's
+  expression index. Verify it against a legacy-created v9 database with the parity test before
+  deleting the legacy DDL body.
 - `migrate.ts` pre-step: if `__drizzle_migrations` is missing **and** the DB already has the
   legacy schema (detect: `app_metadata` row `schema_version = '9'`, or presence of a sentinel
-  table), create the journal table and record `0000` as applied _without executing it_. Fresh
-  databases execute `0000` normally.
+  table), create the journal table and record the actual shipped baseline migration row from
+  `readMigrationFiles` (name, hash, created_at) as applied _without executing it_. Fresh databases
+  execute the baseline normally.
 - A legacy DB at `schema_version < 9` (predates the last hand-rolled rebuild) is not expected in
   the wild, but handle it honestly: run the retained legacy upgrade functions once to reach v9,
   then stamp. Delete that shim after one or two releases.
@@ -160,12 +164,12 @@ restore `data/backups/...`"). This check is the real replacement for `schema_ver
 
 ### Packaging
 
-Migration `.sql` files and the `meta/` journal must ship in the published npm package, and
-`migrate.ts` must resolve them relative to its own module URL (`import.meta.url`), never `cwd`.
-When publishing lands, `package.json` `files` includes `src/db/migrations/` (or the build step
-copies them into `dist/`); a smoke test in CI runs `npm pack` and boots the CLI from the packed
-tarball against a fresh temp home — that test is the one that actually proves the npm-install
-story.
+Migration directories containing `migration.sql` and `snapshot.json` must ship in the published npm
+package, and `migrate.ts` must resolve them relative to its own module URL (`import.meta.url`),
+never `cwd`. When publishing lands, `package.json` `files` includes `src/db/migrations/` (or the
+build step copies them into `dist/`); a smoke test in CI runs `npm pack` and boots the CLI from the
+packed tarball against a fresh temp home — that test is the one that actually proves the
+npm-install story.
 
 ### Surfacing
 
@@ -188,9 +192,26 @@ Commit order within the PR:
    driver, `drizzle({ client: DatabaseSync })`, sync `migrate()`, `pull --init` and commutativity
    checks existing, `--output json`/`--explain`/skills/MCP shipping.) Record findings by editing
    this section.
-2. `schema.ts` bootstrapped via introspection + `0000_baseline.sql` + **parity test**: create one
-   DB via legacy `initializeAppDatabase`, one via migrations; dump and compare normalized schema
-   (tables, columns, indexes) — must be identical.
+
+   Findings from `drizzle-orm@1.0.0-rc.4` / `drizzle-kit@1.0.0-rc.4`:
+   - The v1 runtime migration folder format is `YYYYMMDDHHMMSS_name/migration.sql` plus
+     sibling `snapshot.json`; `readMigrationFiles` rejects the older `meta/_journal.json`
+     layout.
+   - The journal table is
+     `__drizzle_migrations(id INTEGER PRIMARY KEY, hash text NOT NULL, created_at numeric, name text, applied_at TEXT)`.
+   - Drizzle's node-sqlite `migrate()` is synchronous, but wraps all pending migrations in one
+     transaction. Neondeck needs its own small sync apply loop so `BEGIN IMMEDIATE`, backup
+     creation, and failure reporting can run per pending migration.
+   - `drizzle-kit pull --init --output json` emits a machine-readable manifest for simple SQLite
+     databases, but this RC cannot introspect SQLite expression indexes such as
+     `idx_memories_scope_key_repo`; the baseline schema is therefore hand-authored from current
+     DDL and verified by parity tests.
+   - `drizzle-kit/api-sqlite` does not export `generate(...)` in this RC despite the bundled
+     skill text. Drift checks use `drizzle-kit generate --output json --explain`.
+
+2. `schema.ts` bootstrapped from the legacy DDL + timestamped baseline migration + **parity
+   test**: create one DB via legacy `initializeAppDatabase`, one via migrations; dump and compare
+   normalized schema (tables, columns, indexes, AUTOINCREMENT flags) — must be identical.
 3. `migrate.ts` (baseline stamp, backup + rotation, cross-process gate, downgrade guard) wired
    into `ensureRuntimeHome*`; legacy DDL body deleted; reconciles/seeds retained post-migrate.
 4. Drift + journal checks in `npm run check`; `db:generate` script; `neondeck db status`;

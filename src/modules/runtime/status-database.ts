@@ -1,11 +1,16 @@
 import { existsSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import type { RuntimePaths } from '../../runtime-home';
+import {
+  readAppDbMigrationStatus,
+  type AppDbMigrationStatus,
+} from '../../runtime-home/app-db/migrate';
 import type { RuntimeStatus } from './status-schema';
 
 type AppDatabaseSnapshot = {
   ok: boolean;
   message: string;
+  migrations: AppDbMigrationStatus;
   counts: {
     activeJobs: number;
     activeWatches: number;
@@ -21,8 +26,12 @@ type AppDatabaseSnapshot = {
 const flueFailureWindowMs = 24 * 60 * 60 * 1000;
 
 export function inspectAppDatabase(paths: RuntimePaths): AppDatabaseSnapshot {
+  const migrations = readAppDbMigrationStatus(paths.neondeckDatabase);
   if (!existsSync(paths.neondeckDatabase)) {
-    return emptyDatabaseSnapshot('Neondeck app database is missing.');
+    return emptyDatabaseSnapshot(
+      'Neondeck app database is missing.',
+      migrations,
+    );
   }
 
   const cutoff = new Date(Date.now() - flueFailureWindowMs).toISOString();
@@ -124,6 +133,7 @@ export function inspectAppDatabase(paths: RuntimePaths): AppDatabaseSnapshot {
     return {
       ok: true,
       message: 'Neondeck app database is readable.',
+      migrations,
       counts: {
         activeJobs,
         activeWatches,
@@ -138,6 +148,7 @@ export function inspectAppDatabase(paths: RuntimePaths): AppDatabaseSnapshot {
   } catch (error) {
     return emptyDatabaseSnapshot(
       `Neondeck app database could not be inspected: ${errorMessage(error)}.`,
+      migrations,
     );
   } finally {
     database.close();
@@ -164,10 +175,14 @@ export function inspectFlueDatabase(paths: RuntimePaths) {
   }
 }
 
-function emptyDatabaseSnapshot(message: string): AppDatabaseSnapshot {
+function emptyDatabaseSnapshot(
+  message: string,
+  migrations: AppDbMigrationStatus,
+): AppDatabaseSnapshot {
   return {
     ok: false,
     message,
+    migrations,
     counts: {
       activeJobs: 0,
       activeWatches: 0,

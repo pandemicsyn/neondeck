@@ -11,6 +11,7 @@ import {
 } from './modules/app-state';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import { readRuntimeStatus } from './modules/runtime';
+import { inspectAppDatabase } from './modules/runtime/status-database';
 
 const tempRoots: string[] = [];
 
@@ -74,7 +75,35 @@ describe('runtime status', () => {
           id: 'utility-model',
           ok: true,
         }),
+        expect.objectContaining({
+          id: 'app-db-migrations',
+          ok: true,
+          level: 'ready',
+        }),
       ]),
+    );
+  });
+
+  it('flags an app database with no migration journal', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database.exec('DROP TABLE __drizzle_migrations;');
+    } finally {
+      database.close();
+    }
+
+    const appDatabase = inspectAppDatabase(paths);
+
+    expect(appDatabase.ok).toBe(true);
+    expect(appDatabase.migrations).toMatchObject(
+      expect.objectContaining({
+        ok: false,
+        message:
+          'Legacy app database has not been stamped with Drizzle migrations yet.',
+      }),
     );
   });
 

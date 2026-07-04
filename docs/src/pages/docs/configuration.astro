@@ -36,12 +36,16 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     custom-skill/
       SKILL.md
   data/
+    backups/
     neondeck.db
     flue.db</code></pre>
         <p>
           <code>data/neondeck.db</code> stores app state: watches, scheduler jobs,
           notifications, memories, workflow summaries, config history, and execution
-          approvals. <code>data/flue.db</code> stores Flue runtime state.
+          approvals. <code>data/flue.db</code> stores Flue runtime state. Neondeck
+          app database migrations are shipped with the package and apply automatically
+          before the app opens <code>data/neondeck.db</code>. Pre-migration
+          backups are retained in <code>data/backups/</code>.
         </p>
 
         <h2>Secrets</h2>

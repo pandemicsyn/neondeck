@@ -47,6 +47,17 @@ npm run cli -- init --home .neondeck-test</code></pre>
           items that need attention.
         </p>
 
+        <h2>Database</h2>
+        <pre><code>npm run cli -- db status
+npm run cli -- --json db status</code></pre>
+        <p>
+          Database status reads the Neondeck app database migration journal,
+          shipped migration head, pending entries, unknown newer entries, hash
+          mismatches, and latest pre-migration backup path. There is no manual
+          migrate command; migrations apply automatically before app code opens
+          <code>data/neondeck.db</code>.
+        </p>
+
         <h2>Repositories</h2>
         <pre><code>npm run cli -- repo add ~/dev/neondeck \
   --github-owner pandemicsyn \

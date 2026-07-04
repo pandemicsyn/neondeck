@@ -63,6 +63,12 @@ export const entries: SafetyPolicyEntry[] = [
     'Reads local runtime status, credentials presence, counts, and recent failure summaries.',
   ),
   tool(
+    'neondeck_app_db_migrations_lookup',
+    'Read app DB migrations',
+    readOnly,
+    'Reads the Neondeck app database migration journal, pending migrations, hash mismatches, unknown newer migrations, and latest backup path.',
+  ),
+  tool(
     'neondeck_session_status_lookup',
     'Read active session state',
     readOnly,

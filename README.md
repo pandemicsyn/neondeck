@@ -34,6 +34,7 @@ The same CLI is the foundation for future command-and-control surfaces, includin
 
 ```sh
 npm run cli -- status
+npm run cli -- db status
 npm run cli -- repo add ~/dev/neondeck
 npm run cli -- watch-pr pandemicsyn/neondeck#123 --until prod
 npm run cli -- schedule --morning-briefing
@@ -67,7 +68,7 @@ XDG_CONFIG_HOME/neondeck
 ~/.config/neondeck
 ```
 
-The runtime home contains `.env`, `config.json`, `mcp.json`, `repos.json`, `dashboard.json`, `schedules.json`, `SOUL.md`, `skills/`, and separate `data/neondeck.db` and `data/flue.db` databases. `config.json` includes a generated `localApi.token` used by the local dashboard for guarded raw Flue run inspection. The repo-local `config/dashboard.json` and `SOUL.md` files are defaults for new homes; edit the runtime-home copies for local customization.
+The runtime home contains `.env`, `config.json`, `mcp.json`, `repos.json`, `dashboard.json`, `schedules.json`, `SOUL.md`, `skills/`, and separate `data/neondeck.db` and `data/flue.db` databases. Neondeck app database migrations are shipped with the package and auto-apply before app code touches `data/neondeck.db`; pre-migration backups are kept under `data/backups/`. `npm run cli -- db status` reads the migration journal, shipped head, pending entries, and latest backup path. `config.json` includes a generated `localApi.token` used by the local dashboard for guarded raw Flue run inspection. The repo-local `config/dashboard.json` and `SOUL.md` files are defaults for new homes; edit the runtime-home copies for local customization.
 
 You can initialize or validate the runtime home explicitly without starting the server:
 
