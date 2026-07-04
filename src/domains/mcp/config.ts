@@ -137,16 +137,27 @@ export async function updateMcpServer(
   replaceOptionalField(mergedRaw, parsed.output.server, 'auth');
   replaceOptionalField(mergedRaw, parsed.output.server, 'tools');
 
-  const merged = parseServerConfig(mergedRaw, paths);
-  const next = parseConfig(
-    {
-      servers: {
-        ...config.servers,
-        [parsed.output.id]: merged,
+  let merged: McpServerConfig;
+  let next: McpConfig;
+  try {
+    merged = parseServerConfig(mergedRaw, paths);
+    next = parseConfig(
+      {
+        servers: {
+          ...config.servers,
+          [parsed.output.id]: merged,
+        },
       },
-    },
-    paths,
-  );
+      paths,
+    );
+  } catch (error) {
+    return failedResult(
+      'mcp_server_update',
+      paths,
+      `Invalid MCP server update patch: ${errorMessage(error)}`,
+      ['server'],
+    );
+  }
   const changed =
     JSON.stringify(config.servers[parsed.output.id]) !== JSON.stringify(merged);
   if (changed) {

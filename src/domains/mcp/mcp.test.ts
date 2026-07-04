@@ -603,6 +603,64 @@ describe('MCP support', () => {
     expect(config.servers.remote).not.toHaveProperty('tools');
   });
 
+  it('returns typed errors for invalid MCP update patches', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await addMcpServer(
+      {
+        id: 'remote',
+        server: {
+          transport: 'http',
+          url: 'https://mcp.example.test/mcp',
+        },
+      },
+      paths,
+    );
+
+    await expect(
+      updateMcpServer(
+        { id: 'remote', server: { timeoutMs: '1000' } },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'mcp_server_update',
+      changed: false,
+      requires: ['server'],
+      message: expect.stringContaining('Invalid MCP server update patch'),
+    });
+    await expect(readMcpConfig(paths)).resolves.toMatchObject({
+      servers: {
+        remote: {
+          transport: 'http',
+          url: 'https://mcp.example.test/mcp',
+        },
+      },
+    });
+
+    const previousHome = process.env.NEONDECK_HOME;
+    process.env.NEONDECK_HOME = home;
+    try {
+      await expect(
+        mcpServerUpdateAction.run({
+          input: {
+            id: 'remote',
+            server: { timeoutMs: '1000' },
+          },
+        } as never),
+      ).resolves.toMatchObject({
+        ok: false,
+        action: 'mcp_server_update',
+        changed: false,
+        requires: ['server'],
+      });
+    } finally {
+      if (previousHome === undefined) delete process.env.NEONDECK_HOME;
+      else process.env.NEONDECK_HOME = previousHome;
+    }
+  });
+
   it('blocks model-owned MCP endpoint retargeting while allowing state updates', async () => {
     const home = await tempDir();
     const paths = runtimePaths(home);
