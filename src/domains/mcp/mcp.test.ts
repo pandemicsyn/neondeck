@@ -14,6 +14,7 @@ import {
   listMcpAudit,
   readMcpOAuthStatus,
   readMcpConfig,
+  mcpServerUpdateAction,
   resolveMcpApprovalWithPaths,
   setMcpCatalogReplaceHookForTests,
   setMcpRegistryPendingRefreshHookForTests,
@@ -435,6 +436,123 @@ describe('MCP support', () => {
       changed: false,
       message: expect.stringContaining('not configured for OAuth'),
     });
+  });
+
+  it('replaces and clears nested MCP auth and tools patches', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+
+    await addMcpServer(
+      {
+        id: 'remote',
+        server: {
+          transport: 'http',
+          url: 'https://mcp.example.test/mcp',
+          auth: { kind: 'oauth', clientId: 'old-client' },
+          tools: { autoApprove: ['echo'], deny: ['danger'] },
+        },
+      },
+      paths,
+    );
+
+    await expect(
+      updateMcpServer(
+        { id: 'remote', server: { auth: { kind: 'none' } } },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+    await expect(readMcpConfig(paths)).resolves.toMatchObject({
+      servers: {
+        remote: {
+          auth: { kind: 'none' },
+        },
+      },
+    });
+
+    await expect(
+      updateMcpServer(
+        { id: 'remote', server: { tools: { deny: ['blocked'] } } },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+    await expect(readMcpConfig(paths)).resolves.toMatchObject({
+      servers: {
+        remote: {
+          tools: { deny: ['blocked'] },
+        },
+      },
+    });
+
+    await expect(
+      updateMcpServer(
+        { id: 'remote', server: { auth: null, tools: null } },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+    const config = await readMcpConfig(paths);
+    expect(config.servers.remote).not.toHaveProperty('auth');
+    expect(config.servers.remote).not.toHaveProperty('tools');
+  });
+
+  it('blocks model-owned MCP endpoint retargeting while allowing state updates', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await addMcpServer(
+      {
+        id: 'remote',
+        server: {
+          transport: 'http',
+          url: 'https://mcp.example.test/mcp',
+          tools: { autoApprove: ['echo'] },
+        },
+      },
+      paths,
+    );
+
+    const previousHome = process.env.NEONDECK_HOME;
+    process.env.NEONDECK_HOME = home;
+    try {
+      await expect(
+        mcpServerUpdateAction.run({
+          input: {
+            id: 'remote',
+            server: { url: 'https://mcp2.example.test/mcp' },
+          },
+        } as never),
+      ).resolves.toMatchObject({
+        ok: false,
+        changed: false,
+        requires: ['user-owned-surface'],
+      });
+      await expect(readMcpConfig(paths)).resolves.toMatchObject({
+        servers: {
+          remote: {
+            url: 'https://mcp.example.test/mcp',
+          },
+        },
+      });
+
+      await expect(
+        mcpServerUpdateAction.run({
+          input: {
+            id: 'remote',
+            server: { enabled: false },
+          },
+        } as never),
+      ).resolves.toMatchObject({ ok: true, changed: true });
+      await expect(readMcpConfig(paths)).resolves.toMatchObject({
+        servers: {
+          remote: {
+            enabled: false,
+          },
+        },
+      });
+    } finally {
+      if (previousHome === undefined) delete process.env.NEONDECK_HOME;
+      else process.env.NEONDECK_HOME = previousHome;
+    }
   });
 
   it('clears stored MCP OAuth state when user-owned endpoint identity changes', async () => {

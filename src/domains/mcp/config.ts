@@ -130,18 +130,8 @@ export async function updateMcpServer(
     ...existing,
     ...parsed.output.server,
   };
-  const auth = mergeNested(
-    readRecordField(existing, 'auth'),
-    parsed.output.server.auth,
-  );
-  const tools = mergeNested(
-    readRecordField(existing, 'tools'),
-    parsed.output.server.tools,
-  );
-  if (auth === undefined) delete mergedRaw.auth;
-  else mergedRaw.auth = auth;
-  if (tools === undefined) delete mergedRaw.tools;
-  else mergedRaw.tools = tools;
+  replaceOptionalField(mergedRaw, parsed.output.server, 'auth');
+  replaceOptionalField(mergedRaw, parsed.output.server, 'tools');
 
   const merged = parseServerConfig(mergedRaw, paths);
   const next = parseConfig(
@@ -409,18 +399,18 @@ function mcpOAuthIdentityChanged(
   );
 }
 
-function mergeNested(existing: unknown, patch: unknown) {
-  if (!patch || typeof patch !== 'object' || Array.isArray(patch))
-    return patch ?? existing;
-  if (!existing || typeof existing !== 'object' || Array.isArray(existing))
-    return patch;
-  return { ...existing, ...patch };
-}
-
-function readRecordField(value: unknown, key: string) {
-  if (!value || typeof value !== 'object' || Array.isArray(value))
-    return undefined;
-  return (value as Record<string, unknown>)[key];
+function replaceOptionalField(
+  target: Record<string, unknown>,
+  patch: Record<string, unknown>,
+  key: string,
+) {
+  if (!Object.hasOwn(patch, key)) return;
+  const value = patch[key];
+  if (value === null || value === undefined) {
+    delete target[key];
+    return;
+  }
+  target[key] = value;
 }
 
 function okResult(

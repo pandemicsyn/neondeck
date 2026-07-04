@@ -22,4 +22,5 @@ export const integrationTestFiles = [
 export const sharedTestOptions = {
   testTimeout: 15_000,
   passWithNoTests: true,
+  setupFiles: ['./src/test-setup.ts'],
 };

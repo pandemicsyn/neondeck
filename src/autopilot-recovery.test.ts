@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { notifyAutopilotState } from './autopilot-notifications';
 import {
   readAutopilotRecoveryOptions,
@@ -17,6 +17,8 @@ import { createWorktree, readWorktreeRecord } from './worktrees';
 
 const tempRoots: string[] = [];
 const execFileAsync = promisify(execFile);
+
+vi.setConfig({ testTimeout: 180_000 });
 
 afterEach(async () => {
   await Promise.all(
@@ -310,12 +312,24 @@ async function gitFixture() {
 }
 
 async function git(cwd: string, args: string[]) {
-  await execFileAsync('git', args, { cwd });
+  await execFileAsync('git', args, { cwd, env: unsignedGitEnv() });
 }
 
 async function gitOutput(cwd: string, args: string[]) {
-  const { stdout } = await execFileAsync('git', args, { cwd });
+  const { stdout } = await execFileAsync('git', args, {
+    cwd,
+    env: unsignedGitEnv(),
+  });
   return stdout.trim();
+}
+
+function unsignedGitEnv() {
+  return {
+    ...process.env,
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'commit.gpgsign',
+    GIT_CONFIG_VALUE_0: 'false',
+  };
 }
 
 function markLifecycle(

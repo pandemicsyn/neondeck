@@ -247,28 +247,10 @@ async function guardAgentMcpServerUpdate(
   const config = await readMcpConfig(paths);
   const existing = config.servers[id];
   if (!existing) return null;
-  if (
-    existing.transport === 'stdio' ||
-    patch.transport === 'stdio' ||
-    (isRecord(patch.auth) && patch.auth.kind === 'header') ||
-    (isRecord(patch.tools) && Array.isArray(patch.tools.autoApprove))
-  ) {
+  if (existing.transport === 'stdio') {
     return blockedAgentMcpAction(
       'mcp_server_update',
-      'This MCP server update changes stdio, header-auth, or auto-approval policy and must be made from a user-owned surface.',
-    );
-  }
-  if (
-    existing.transport === 'http' &&
-    existing.auth?.kind === 'oauth' &&
-    (Object.hasOwn(patch, 'url') ||
-      Object.hasOwn(patch, 'sse') ||
-      Object.hasOwn(patch, 'auth') ||
-      patch.transport !== undefined)
-  ) {
-    return blockedAgentMcpAction(
-      'mcp_server_update',
-      'OAuth MCP server endpoint and client identity changes must be made from a user-owned surface because stored tokens are bound to that identity.',
+      'Stdio MCP servers can only be updated from a user-owned surface because they can spawn host processes.',
     );
   }
   if (existing.transport === 'http' && existing.auth?.kind === 'header') {
@@ -277,7 +259,27 @@ async function guardAgentMcpServerUpdate(
       'Header-authenticated MCP servers can only be updated from a user-owned surface.',
     );
   }
+  if (hasUserOwnedMcpUpdateField(patch)) {
+    return blockedAgentMcpAction(
+      'mcp_server_update',
+      'Endpoint, transport, auth, stdio process, and MCP trust-policy changes must be made from a user-owned surface so existing approvals and auto-approval policy cannot be retargeted by the model.',
+    );
+  }
   return null;
+}
+
+function hasUserOwnedMcpUpdateField(patch: Record<string, unknown>) {
+  return [
+    'transport',
+    'url',
+    'sse',
+    'auth',
+    'tools',
+    'command',
+    'args',
+    'cwd',
+    'env',
+  ].some((key) => Object.hasOwn(patch, key));
 }
 
 async function guardAgentMcpServerConnect(
@@ -310,8 +312,4 @@ function blockedAgentMcpAction(action: string, message: string) {
     message,
     requires: ['user-owned-surface'],
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }

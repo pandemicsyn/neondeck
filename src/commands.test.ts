@@ -731,6 +731,9 @@ async function tempGitRepo() {
   await execFileAsync('git', ['config', 'user.name', 'Neondeck Test'], {
     cwd: path,
   });
+  await execFileAsync('git', ['config', 'commit.gpgsign', 'false'], {
+    cwd: path,
+  });
   await writeFile(join(path, 'README.md'), '# test\n');
   await execFileAsync('git', ['add', 'README.md'], { cwd: path });
   await execFileAsync('git', ['commit', '-m', 'initial'], { cwd: path });

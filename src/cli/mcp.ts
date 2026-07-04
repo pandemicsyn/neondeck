@@ -47,7 +47,9 @@ export function registerMcpCommands(program: Command) {
       const { getMcpRegistry } = await mcpModule();
       const paths = await pathsFromOptions(program.opts<GlobalOptions>());
       loadEnvForPaths(paths);
-      const servers = await getMcpRegistry(paths).status();
+      const registry = getMcpRegistry(paths);
+      await registry.refresh();
+      const servers = await registry.status();
       printMcpServers(servers);
     });
 
@@ -58,7 +60,9 @@ export function registerMcpCommands(program: Command) {
       const { getMcpRegistry } = await mcpModule();
       const paths = await pathsFromOptions(program.opts<GlobalOptions>());
       loadEnvForPaths(paths);
-      const servers = await getMcpRegistry(paths).status();
+      const registry = getMcpRegistry(paths);
+      await registry.refresh(id);
+      const servers = await registry.status();
       printMcpServers(
         id ? servers.filter((server) => server.id === id) : servers,
       );

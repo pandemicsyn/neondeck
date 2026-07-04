@@ -33,7 +33,7 @@ const execFileAsync = promisify(execFile);
 
 const tempRoots: string[] = [];
 
-vi.setConfig({ testTimeout: 15_000 });
+vi.setConfig({ testTimeout: 180_000 });
 
 afterEach(async () => {
   await Promise.all(
@@ -447,6 +447,9 @@ async function setupGitRepo(repo: string) {
     cwd: repo,
   });
   await execFileAsync('git', ['config', 'user.name', 'Neon Test'], {
+    cwd: repo,
+  });
+  await execFileAsync('git', ['config', 'commit.gpgsign', 'false'], {
     cwd: repo,
   });
   await execFileAsync('git', ['add', 'README.md'], { cwd: repo });

@@ -2019,10 +2019,22 @@ function insertActiveWorkflowRun(
 }
 
 async function git(cwd: string, args: string[]) {
-  await execFileAsync('git', args, { cwd });
+  await execFileAsync('git', args, { cwd, env: unsignedGitEnv() });
 }
 
 async function gitOutput(cwd: string, args: string[]) {
-  const { stdout } = await execFileAsync('git', args, { cwd });
+  const { stdout } = await execFileAsync('git', args, {
+    cwd,
+    env: unsignedGitEnv(),
+  });
   return stdout;
+}
+
+function unsignedGitEnv() {
+  return {
+    ...process.env,
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'commit.gpgsign',
+    GIT_CONFIG_VALUE_0: 'false',
+  };
 }

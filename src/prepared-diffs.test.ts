@@ -370,5 +370,14 @@ function stringField(value: Record<string, unknown>, field: string) {
 }
 
 async function git(cwd: string, args: string[]) {
-  await execFileAsync('git', args, { cwd });
+  await execFileAsync('git', args, { cwd, env: unsignedGitEnv() });
+}
+
+function unsignedGitEnv() {
+  return {
+    ...process.env,
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'commit.gpgsign',
+    GIT_CONFIG_VALUE_0: 'false',
+  };
 }

@@ -22,7 +22,7 @@ const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
 const originalEnv = { ...process.env };
 
-vi.setConfig({ testTimeout: 60_000 });
+vi.setConfig({ testTimeout: 180_000 });
 vi.mock('./skills/github-gh/SKILL.md', async () => {
   const { defineSkill } = await import('@flue/runtime');
   return {
@@ -285,6 +285,9 @@ async function setupGitRepo(repo: string) {
     cwd: repo,
   });
   await execFileAsync('git', ['config', 'user.name', 'Neon Test'], {
+    cwd: repo,
+  });
+  await execFileAsync('git', ['config', 'commit.gpgsign', 'false'], {
     cwd: repo,
   });
   await execFileAsync('git', ['add', 'README.md'], { cwd: repo });

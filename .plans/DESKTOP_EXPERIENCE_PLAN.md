@@ -12,7 +12,7 @@ Neon is an always-ready agent, but today it feels like a dev server: you start i
 dashboard lives inside a general-purpose browser window. Two consequences hurt:
 
 - **No window identity.** Open the dashboard in Safari, resize it into a vertical sidebar, and
-  Safari now opens *all* new tabs/windows in that geometry — the dashboard shares the browser's
+  Safari now opens _all_ new tabs/windows in that geometry — the dashboard shares the browser's
   window management instead of owning its own.
 - **No lifecycle.** Nothing keeps the server running across logins/reboots, so "always-ready" is
   really "ready since you last remembered to start it".
@@ -126,12 +126,13 @@ for readiness (bounded); then open the dashboard:
 }
 ```
 
-  `neondeck open sidebar`, `neondeck open xeneon`, plain `neondeck open` uses the default browser
-  behavior/remembered PWA bounds. Flags override profile values. Profiles are user-edited config
-  in v1 (validated like all runtime files); a typed config action for chat-driven editing is a
-  later nicety, not in scope.
-- Note the interaction honestly in docs: geometry flags are a *launch-time* placement tool for
-  Chromium app-mode windows; an installed PWA instead *remembers* its own bounds. Sidebar users
+`neondeck open sidebar`, `neondeck open xeneon`, plain `neondeck open` uses the default browser
+behavior/remembered PWA bounds. Flags override profile values. Profiles are user-edited config
+in v1 (validated like all runtime files); a typed config action for chat-driven editing is a
+later nicety, not in scope.
+
+- Note the interaction honestly in docs: geometry flags are a _launch-time_ placement tool for
+  Chromium app-mode windows; an installed PWA instead _remembers_ its own bounds. Sidebar users
   will usually prefer the PWA; kiosk/Xeneon setups will prefer `open xeneon`.
 
 ## Delivery: one PR
