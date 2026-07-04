@@ -53,6 +53,8 @@ type RegistryEntry = {
   lastConnectedAt: string | null;
   lastErrorAt: string | null;
   refreshPromise: Promise<void> | null;
+  pendingServer: McpServerConfig | null;
+  refreshGeneration: number;
 };
 
 const registries = new Map<string, McpRegistry>();
@@ -149,6 +151,8 @@ export class McpRegistry {
 
     for (const [id, entry] of this.entries) {
       if (configuredIds.has(id)) continue;
+      entry.refreshGeneration += 1;
+      entry.pendingServer = null;
       await entry.connection?.close().catch(() => undefined);
       this.entries.delete(id);
     }
@@ -162,19 +166,36 @@ export class McpRegistry {
 
   private async refreshOne(id: string, server: McpServerConfig) {
     const current = this.entry(id);
-    if (current.refreshPromise) return current.refreshPromise;
+    current.refreshGeneration += 1;
+    const generation = current.refreshGeneration;
+    if (current.refreshPromise) {
+      current.pendingServer = server;
+      return current.refreshPromise;
+    }
 
-    current.refreshPromise = this.connectOne(id, server).finally(() => {
-      current.refreshPromise = null;
-    });
+    current.refreshPromise = this.connectOne(id, server, generation).finally(
+      async () => {
+        current.refreshPromise = null;
+        const pendingServer = current.pendingServer;
+        current.pendingServer = null;
+        if (pendingServer) await this.refreshOne(id, pendingServer);
+      },
+    );
     return current.refreshPromise;
   }
 
-  private async connectOne(id: string, server: McpServerConfig) {
+  private async connectOne(
+    id: string,
+    server: McpServerConfig,
+    generation: number,
+  ) {
     const entry = this.entry(id);
+    const isCurrent = () => entry.refreshGeneration === generation;
     if (!mcpServerEnabled(server)) {
-      await entry.connection?.close().catch(() => undefined);
-      entry.connection = null;
+      const previousConnection = entry.connection;
+      await previousConnection?.close().catch(() => undefined);
+      if (!isCurrent()) return;
+      if (entry.connection === previousConnection) entry.connection = null;
       entry.tools = [];
       entry.status = 'disabled';
       entry.message = 'MCP server is disabled.';
@@ -196,9 +217,12 @@ export class McpRegistry {
       server.auth?.kind === 'oauth' &&
       !(await hasMcpOAuthTokens(id, this.paths))
     ) {
-      await entry.connection?.close().catch(() => undefined);
-      entry.connection = null;
+      const previousConnection = entry.connection;
+      await previousConnection?.close().catch(() => undefined);
+      if (!isCurrent()) return;
+      if (entry.connection === previousConnection) entry.connection = null;
       entry.catalog = await cachedCatalog(id, this.paths);
+      if (!isCurrent()) return;
       entry.tools = disconnectedTools(id, entry.catalog);
       entry.status = 'needs-login';
       entry.message =
@@ -207,10 +231,14 @@ export class McpRegistry {
       return;
     }
 
+    if (!isCurrent()) return;
     entry.status = 'connecting';
     entry.message = 'Connecting MCP server.';
     try {
-      await entry.connection?.close().catch(() => undefined);
+      const previousConnection = entry.connection;
+      await previousConnection?.close().catch(() => undefined);
+      if (!isCurrent()) return;
+      if (entry.connection === previousConnection) entry.connection = null;
       const headers = resolveHeaderAuth(server);
       const connection = await connectSdkMcpServer({
         serverId: id,
@@ -219,6 +247,10 @@ export class McpRegistry {
         authProvider,
         gate: (input) => runMcpToolThroughGate(input, this.paths),
       });
+      if (!isCurrent()) {
+        await connection.close().catch(() => undefined);
+        return;
+      }
       const now = new Date().toISOString();
       const catalog = connection.catalog.map((tool) => ({
         ...tool,
@@ -234,9 +266,12 @@ export class McpRegistry {
       entry.lastConnectedAt = now;
       entry.lastErrorAt = null;
     } catch (error) {
+      if (!isCurrent()) return;
       const message = error instanceof Error ? error.message : String(error);
-      await entry.connection?.close().catch(() => undefined);
-      entry.connection = null;
+      const previousConnection = entry.connection;
+      await previousConnection?.close().catch(() => undefined);
+      if (!isCurrent()) return;
+      if (entry.connection === previousConnection) entry.connection = null;
       await markMcpCatalogUnavailable(id, this.paths);
       entry.catalog =
         entry.catalog.length > 0
@@ -265,6 +300,8 @@ export class McpRegistry {
       lastConnectedAt: null,
       lastErrorAt: null,
       refreshPromise: null,
+      pendingServer: null,
+      refreshGeneration: 0,
     };
     this.entries.set(id, entry);
     return entry;

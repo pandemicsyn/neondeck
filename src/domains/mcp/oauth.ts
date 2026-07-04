@@ -331,9 +331,9 @@ export async function readMcpOAuthStatus(
       ? state.serverIdentity === oauthServerIdentity(server)
       : false;
   return {
-    authorized: Boolean(
-      identityMatches && (state.accessToken || state.refreshToken),
-    ),
+    authorized:
+      identityMatches &&
+      Boolean(state.refreshToken || usableAccessToken(state)),
     expiresAt: state.expiresAt,
     scopes: state.scopes,
     updatedAt: state.updatedAt,
@@ -952,6 +952,12 @@ function emptyTokenState(): TokenState {
     codeVerifier: null,
     updatedAt: null,
   };
+}
+
+function usableAccessToken(state: TokenState) {
+  if (!state.accessToken) return false;
+  if (!state.expiresAt) return true;
+  return Date.parse(state.expiresAt) > Date.now();
 }
 
 type McpOAuthTokenRow = {

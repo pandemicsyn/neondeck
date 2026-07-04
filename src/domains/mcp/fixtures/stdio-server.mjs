@@ -67,5 +67,10 @@ if (process.env.NEONDECK_MCP_ONLY_ECHO !== '1') {
   );
 }
 
+const startDelayMs = Number(process.env.NEONDECK_MCP_START_DELAY_MS ?? 0);
+if (Number.isFinite(startDelayMs) && startDelayMs > 0) {
+  await new Promise((resolve) => setTimeout(resolve, startDelayMs));
+}
+
 const transport = new StdioServerTransport();
 await server.connect(transport);

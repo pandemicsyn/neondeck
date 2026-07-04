@@ -188,6 +188,64 @@ describe('MCP support', () => {
     });
   });
 
+  it('does not publish stale MCP tools from an in-flight refresh', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const previous = process.env.NEONDECK_MCP_START_DELAY_MS;
+    process.env.NEONDECK_MCP_START_DELAY_MS = '150';
+    try {
+      await addMcpServer(
+        {
+          id: 'fixture',
+          server: {
+            transport: 'stdio',
+            command: process.execPath,
+            args: [fixturePath()],
+            env: {
+              NEONDECK_MCP_START_DELAY_MS: {
+                env: 'NEONDECK_MCP_START_DELAY_MS',
+              },
+            },
+          },
+        },
+        paths,
+      );
+
+      const registry = getMcpRegistry(paths);
+      const firstRefresh = registry.refresh('fixture');
+      await updateMcpServer(
+        {
+          id: 'fixture',
+          server: {
+            enabled: false,
+          },
+        },
+        paths,
+      );
+      const secondRefresh = registry.refresh('fixture');
+      await Promise.all([firstRefresh, secondRefresh]);
+
+      await expect(registry.status()).resolves.toMatchObject([
+        {
+          id: 'fixture',
+          enabled: false,
+          status: 'disabled',
+          toolCount: 0,
+        },
+      ]);
+      expect(
+        registry.toolsSync().some((tool) => tool.name === 'mcp__fixture__echo'),
+      ).toBe(false);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.NEONDECK_MCP_START_DELAY_MS;
+      } else {
+        process.env.NEONDECK_MCP_START_DELAY_MS = previous;
+      }
+    }
+  });
+
   it('consumes approved MCP tool calls atomically', async () => {
     const home = await tempDir();
     const paths = runtimePaths(home);
@@ -247,6 +305,43 @@ describe('MCP support', () => {
       changed: false,
       approval: { id: request!.id, status: 'used' },
     });
+  });
+
+  it('rejects invalid MCP approval decisions without resolving the request', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const request = await createMcpApprovalRequest(
+      {
+        serverId: 'fixture',
+        toolName: 'echo',
+        adaptedName: 'mcp__fixture__echo',
+        argumentsHash: 'abc123',
+        argumentsPreview: '{"text":"hello"}',
+      },
+      paths,
+    );
+
+    await expect(
+      resolveMcpApprovalWithPaths(
+        {
+          id: request!.id,
+          decision: 'typo',
+          approverSurface: 'test',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      requires: ['id', 'decision'],
+    });
+    await expect(listMcpApprovals(paths)).resolves.toMatchObject([
+      {
+        id: request!.id,
+        status: 'pending',
+      },
+    ]);
   });
 
   it('rejects non-loopback MCP OAuth redirect URLs', async () => {
@@ -377,6 +472,62 @@ describe('MCP support', () => {
       },
       paths,
     );
+    await expect(readMcpOAuthStatus('remote', paths)).resolves.toMatchObject({
+      authorized: false,
+    });
+  });
+
+  it('does not authorize expired access-only MCP OAuth tokens', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+
+    await addMcpServer(
+      {
+        id: 'remote',
+        server: {
+          transport: 'http',
+          url: 'https://mcp.example.test/mcp',
+          auth: { kind: 'oauth' },
+        },
+      },
+      paths,
+    );
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `
+          INSERT INTO mcp_oauth_tokens (
+            server_id,
+            server_identity,
+            access_token,
+            refresh_token,
+            token_type,
+            id_token,
+            expires_at,
+            scopes_json,
+            client_information_json,
+            discovery_state_json,
+            code_verifier,
+            updated_at
+          )
+          VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, NULL, NULL, NULL, ?);
+        `,
+        )
+        .run(
+          'remote',
+          oauthServerIdentity('https://mcp.example.test/mcp'),
+          'expired-token',
+          'Bearer',
+          new Date(Date.now() - 60_000).toISOString(),
+          JSON.stringify(['read']),
+          new Date().toISOString(),
+        );
+    } finally {
+      database.close();
+    }
+
     await expect(readMcpOAuthStatus('remote', paths)).resolves.toMatchObject({
       authorized: false,
     });

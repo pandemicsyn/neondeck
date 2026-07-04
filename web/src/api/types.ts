@@ -371,7 +371,6 @@ export type McpApproval = {
   argumentsHash: string;
   argumentsPreview: string;
   status: 'pending' | 'approved' | 'denied' | 'used' | 'expired';
-  decision: string | null;
   approverSurface: string | null;
   createdAt: string;
   expiresAt: string;

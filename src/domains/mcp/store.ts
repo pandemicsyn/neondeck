@@ -5,7 +5,9 @@ import {
   runtimePaths,
   type RuntimePaths,
 } from '../../runtime-home';
+import * as v from 'valibot';
 import { stableJson, truncateText } from './format';
+import { mcpApprovalResolveInputSchema } from './schemas';
 
 export type McpToolCatalogRecord = {
   serverId: string;
@@ -415,26 +417,29 @@ export async function consumeMcpApproval(id: string, paths = runtimePaths()) {
   }
 }
 
-export async function resolveMcpApproval(rawInput: {
-  id: string;
-  decision: 'approve' | 'deny';
-  approverSurface?: string;
-}) {
+export async function resolveMcpApproval(rawInput: unknown) {
   const paths = runtimePaths();
   return resolveMcpApprovalWithPaths(rawInput, paths);
 }
 
 export async function resolveMcpApprovalWithPaths(
-  rawInput: {
-    id: string;
-    decision: 'approve' | 'deny';
-    approverSurface?: string;
-  },
+  rawInput: unknown,
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
+  const parsed = v.safeParse(mcpApprovalResolveInputSchema, rawInput);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      action: 'mcp_approval_resolve',
+      changed: false,
+      message: `Invalid MCP approval resolution input: ${v.summarize(parsed.issues)}`,
+      requires: ['id', 'decision'],
+    };
+  }
+  const input = parsed.output;
   expireOldApprovals(paths);
-  const nextStatus = rawInput.decision === 'approve' ? 'approved' : 'denied';
+  const nextStatus = input.decision === 'approve' ? 'approved' : 'denied';
   const now = new Date().toISOString();
   const database = new DatabaseSync(paths.neondeckDatabase);
   let transactionStarted = false;
@@ -443,7 +448,7 @@ export async function resolveMcpApprovalWithPaths(
     transactionStarted = true;
     const existingRow = database
       .prepare('SELECT * FROM mcp_tool_approvals WHERE id = ?;')
-      .get(rawInput.id) as McpApprovalRow | undefined;
+      .get(input.id) as McpApprovalRow | undefined;
     if (!existingRow) {
       database.exec('COMMIT;');
       transactionStarted = false;
@@ -451,7 +456,7 @@ export async function resolveMcpApprovalWithPaths(
         ok: false,
         action: 'mcp_approval_resolve',
         changed: false,
-        message: `MCP approval "${rawInput.id}" was not found.`,
+        message: `MCP approval "${input.id}" was not found.`,
         requires: ['id'],
       };
     }
@@ -464,7 +469,7 @@ export async function resolveMcpApprovalWithPaths(
         ok: false,
         action: 'mcp_approval_resolve',
         changed: false,
-        message: `MCP approval "${rawInput.id}" is already ${existing.status}.`,
+        message: `MCP approval "${input.id}" is already ${existing.status}.`,
         approval: existing,
       };
     }
@@ -481,18 +486,12 @@ export async function resolveMcpApprovalWithPaths(
           AND status = 'pending';
       `,
       )
-      .run(
-        nextStatus,
-        rawInput.approverSurface ?? 'unknown',
-        now,
-        now,
-        rawInput.id,
-      );
+      .run(nextStatus, input.approverSurface ?? 'unknown', now, now, input.id);
 
     if (result.changes !== 1) {
       const currentRow = database
         .prepare('SELECT * FROM mcp_tool_approvals WHERE id = ?;')
-        .get(rawInput.id) as McpApprovalRow | undefined;
+        .get(input.id) as McpApprovalRow | undefined;
       const current = currentRow ? readApprovalRow(currentRow) : null;
       database.exec('COMMIT;');
       transactionStarted = false;
@@ -501,8 +500,8 @@ export async function resolveMcpApprovalWithPaths(
         action: 'mcp_approval_resolve',
         changed: false,
         message: current
-          ? `MCP approval "${rawInput.id}" is already ${current.status}.`
-          : `MCP approval "${rawInput.id}" was not found.`,
+          ? `MCP approval "${input.id}" is already ${current.status}.`
+          : `MCP approval "${input.id}" was not found.`,
         ...(current ? { approval: current } : { requires: ['id'] }),
       };
     }
@@ -510,7 +509,7 @@ export async function resolveMcpApprovalWithPaths(
     const approval = readApprovalRow({
       ...existingRow,
       status: nextStatus,
-      approver_surface: rawInput.approverSurface ?? 'unknown',
+      approver_surface: input.approverSurface ?? 'unknown',
       resolved_at: now,
       updated_at: now,
     });
@@ -522,8 +521,8 @@ export async function resolveMcpApprovalWithPaths(
       changed: true,
       message:
         nextStatus === 'approved'
-          ? `Approved MCP tool call "${rawInput.id}". Retry the same tool call with the same arguments.`
-          : `Denied MCP tool call "${rawInput.id}".`,
+          ? `Approved MCP tool call "${input.id}". Retry the same tool call with the same arguments.`
+          : `Denied MCP tool call "${input.id}".`,
       approval,
     };
   } catch (error) {
