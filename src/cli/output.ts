@@ -31,6 +31,64 @@ export function printActionResult(result: {
   if (!result.ok) process.exitCode = 1;
 }
 
+export function printServiceResult(result: {
+  ok: boolean;
+  action?: string;
+  changed?: boolean;
+  message: string;
+  status?: {
+    platform: string;
+    supported: boolean;
+    installed: boolean;
+    running: boolean;
+    pid?: number;
+    unitPath: string;
+    logPath: string;
+    port: number;
+    health: { ok: boolean; url: string; status?: number; error?: string };
+    nodePath?: string;
+    nodePathExists?: boolean;
+    serverEntry?: string;
+    serverEntryExists?: boolean;
+    warnings: string[];
+  };
+  errors?: string[];
+}) {
+  if (jsonOutput) {
+    console.log(JSON.stringify(result, null, 2));
+    if (!result.ok) process.exitCode = 1;
+    return;
+  }
+
+  console.log(result.ok ? `✓ ${result.message}` : `✗ ${result.message}`);
+  const status = result.status;
+  if (status) {
+    console.log(`platform  ${status.platform}`);
+    console.log(
+      `unit      ${status.installed ? status.unitPath : 'not installed'}`,
+    );
+    console.log(
+      `running   ${status.running ? `yes${status.pid ? ` (pid ${status.pid})` : ''}` : 'no'}`,
+    );
+    console.log(`port      ${status.port}`);
+    console.log(
+      `health    ${status.health.ok ? `ok (${status.health.status ?? 200})` : `down (${status.health.error ?? status.health.status ?? 'unknown'})`}`,
+    );
+    console.log(
+      `node      ${status.nodePath ?? 'unknown'}${status.nodePathExists === false ? ' (missing)' : ''}`,
+    );
+    console.log(
+      `entry     ${status.serverEntry ?? 'unknown'}${status.serverEntryExists === false ? ' (missing)' : ''}`,
+    );
+    console.log(`logs      ${status.logPath}`);
+    for (const warning of status.warnings) console.log(`warning: ${warning}`);
+  }
+  if (result.errors?.length) {
+    for (const error of result.errors) console.log(`error: ${error}`);
+  }
+  if (!result.ok) process.exitCode = 1;
+}
+
 export function printLearningState(
   result: unknown,
   view: 'status' | 'reviews' | 'candidates' | 'events',

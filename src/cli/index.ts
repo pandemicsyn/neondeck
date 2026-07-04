@@ -14,6 +14,7 @@ import {
   runtimeStatusModule,
   schedulerModule,
   serverModule,
+  serviceModule,
   skillPatchesModule,
   watchActionsModule,
 } from './modules';
@@ -32,6 +33,7 @@ import {
   printLearningState,
   printRepoDiffResult,
   printRepoEditEventsResult,
+  printServiceResult,
   printStatus,
   setJsonOutput,
 } from './output';
@@ -39,6 +41,7 @@ import type {
   GlobalOptions,
   RepoAddOptions,
   ScheduleOptions,
+  ServiceInstallOptions,
   ServeOptions,
   WatchPrOptions,
 } from './types';
@@ -79,6 +82,76 @@ program
         console.log(`Neondeck server listening on ${url}`);
       },
     });
+  });
+
+const service = program
+  .command('service')
+  .description('Install and control the Neondeck login service.');
+
+service
+  .command('install')
+  .description('Install and start the Neondeck login service.')
+  .option('--port <port>', 'override the configured/default API port')
+  .action(async (options: ServiceInstallOptions) => {
+    const { ensureRuntimeHome } = await runtimeHomeModule();
+    const { installService } = await serviceModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    await ensureRuntimeHome(paths);
+    loadEnvForPaths(paths);
+    printServiceResult(await installService({ paths, port: options.port }));
+  });
+
+service
+  .command('uninstall')
+  .description('Stop and remove the Neondeck login service.')
+  .action(async () => {
+    const { uninstallService } = await serviceModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
+    printServiceResult(await uninstallService(paths));
+  });
+
+service
+  .command('status')
+  .description(
+    'Report service installation, process, health, and embedded paths.',
+  )
+  .action(async () => {
+    const { ensureRuntimeHome } = await runtimeHomeModule();
+    const { readServiceStatus } = await serviceModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    await ensureRuntimeHome(paths);
+    loadEnvForPaths(paths);
+    const status = await readServiceStatus(paths);
+    printServiceResult({
+      ok: true,
+      action: 'service_status',
+      changed: false,
+      message: status.installed
+        ? 'Read Neondeck service status.'
+        : 'Neondeck service is not installed.',
+      status,
+    });
+  });
+
+service
+  .command('start')
+  .description('Start the installed Neondeck login service.')
+  .action(async () => {
+    const { startService } = await serviceModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
+    printServiceResult(await startService(paths));
+  });
+
+service
+  .command('stop')
+  .description('Stop the installed Neondeck login service.')
+  .action(async () => {
+    const { stopService } = await serviceModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
+    printServiceResult(await stopService(paths));
   });
 
 program

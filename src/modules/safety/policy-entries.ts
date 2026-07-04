@@ -37,6 +37,18 @@ export const hostExecution = {
   audited: true,
 } satisfies Partial<SafetyPolicyEntry>;
 
+const cliHostExecution = {
+  ...hostExecution,
+  audited: false,
+  auditTarget: 'none',
+} satisfies Partial<SafetyPolicyEntry>;
+
+const cliDestructiveMutation = {
+  ...destructiveMutation,
+  audited: false,
+  auditTarget: 'none',
+} satisfies Partial<SafetyPolicyEntry>;
+
 export const entries: SafetyPolicyEntry[] = [
   tool(
     'neondeck_safety_policy_lookup',
@@ -283,6 +295,36 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget: 'execution_approvals',
     },
     'Creates or syncs a declared repo/worktree checkout on the existing exe.dev VM by routing each remote mkdir/git step through execution approvals.',
+  ),
+  cli(
+    'neondeck_service_install',
+    'Install login service',
+    cliHostExecution,
+    'User-invoked CLI command that writes a launchd/systemd user service and starts the local server. It is never model-callable.',
+  ),
+  cli(
+    'neondeck_service_uninstall',
+    'Uninstall login service',
+    cliDestructiveMutation,
+    'User-invoked CLI command that stops and removes only the Neondeck launchd/systemd service file. It does not delete runtime data and is never model-callable.',
+  ),
+  cli(
+    'neondeck_service_start',
+    'Start login service',
+    cliHostExecution,
+    'User-invoked CLI command that starts the installed launchd/systemd user service. It is never model-callable.',
+  ),
+  cli(
+    'neondeck_service_stop',
+    'Stop login service',
+    cliHostExecution,
+    'User-invoked CLI command that stops the installed launchd/systemd user service. It is never model-callable.',
+  ),
+  cli(
+    'neondeck_service_status',
+    'Read login service status',
+    readOnly,
+    'User-invoked CLI command that reads service installation, running state, health, and embedded paths. It is never model-callable.',
   ),
   action(
     'neondeck_config_read',
@@ -2099,6 +2141,15 @@ function route(
   notes: string,
 ) {
   return entry('route', id, title, policy, notes);
+}
+
+function cli(
+  id: string,
+  title: string,
+  policy: Partial<SafetyPolicyEntry>,
+  notes: string,
+) {
+  return entry('cli', id, title, policy, notes);
 }
 
 function entry(

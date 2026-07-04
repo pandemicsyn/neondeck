@@ -1175,7 +1175,7 @@ export type SafetyClass =
 
 export type SafetyPolicyEntry = {
   id: string;
-  primitive: 'tool' | 'action' | 'workflow' | 'route';
+  primitive: 'tool' | 'action' | 'workflow' | 'route' | 'cli';
   title: string;
   class: SafetyClass;
   unattended: boolean;
