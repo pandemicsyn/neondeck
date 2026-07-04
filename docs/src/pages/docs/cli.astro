@@ -58,6 +58,31 @@ npm run cli -- --json db status</code></pre>
           <code>data/neondeck.db</code>.
         </p>
 
+        <h2>Serve, service, and open</h2>
+        <pre><code>neondeck serve --port 3583
+neondeck service install
+neondeck service status
+neondeck service stop
+neondeck service start
+neondeck service uninstall
+neondeck open
+neondeck open sidebar
+neondeck open xeneon --kiosk</code></pre>
+        <p>
+          <code>serve</code> starts the production server in the foreground.
+          <code>service install</code> creates a login service on macOS launchd or
+          Linux systemd user units. Windows users should run
+          <code>neondeck serve</code> directly for now. Service status reports installation
+          state, running pid when available, health, port, log path, and stale embedded
+          Node or service entry paths.
+        </p>
+        <p>
+          <code>open</code> ensures the server is ready and opens the dashboard. Named
+          window profiles come from runtime-home <code>dashboard.json</code>
+          under <code>windows</code>. Width/height and x/y must be configured in
+          pairs; CLI flags override profile values for one launch.
+        </p>
+
         <h2>Repositories</h2>
         <pre><code>npm run cli -- repo add ~/dev/neondeck \
   --github-owner pandemicsyn \

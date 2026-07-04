@@ -37,6 +37,7 @@ rmSync(releaseRoot, { recursive: true, force: true });
 mkdirSync(packageRoot, { recursive: true });
 
 copy('dist', 'dist');
+copy('bin', 'bin');
 copy('src', 'src');
 copy('web/dist', 'web/dist');
 copy('config', 'config');
@@ -108,7 +109,8 @@ function writeReleaseNotes() {
 This archive contains the built Neondeck app only:
 
 - \`dist/\`: built Node/Flue server and runtime resources
-- \`src/\`: CLI source used by the \`neondeck\` command
+- \`bin/\`: package-local \`neondeck\` command shim
+- \`src/\`: CLI source used by the command shim
 - \`web/dist/\`: built local dashboard SPA
 - \`config/\`, \`SOUL.md\`, and \`.env.example\`: default runtime setup files
 

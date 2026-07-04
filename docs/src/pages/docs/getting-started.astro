@@ -97,6 +97,29 @@ GITHUB_LOGIN=...</code></pre>
           panel, or a sensor-panel style window on your primary monitor.
         </p>
 
+        <h2>Install the local app</h2>
+        <p>
+          After a production build or package install, use the service and open
+          commands for the always-ready app path.
+        </p>
+        <pre><code>neondeck service install
+neondeck open
+neondeck open sidebar</code></pre>
+        <p>
+          <code>neondeck service install</code> writes a macOS launchd agent or Linux
+          systemd user unit with absolute Node and Neondeck CLI entry paths. Re-run
+          it after changing Node versions. <code>neondeck open</code> probes
+          <code>/api/health</code>, starts the installed service when present,
+          or starts a detached <code>serve</code> process when no service exists,
+          then opens the dashboard.
+        </p>
+        <p>
+          For a persistent sidebar window, install the dashboard as a browser
+          app from <a href="/docs/dashboard/">the dashboard docs</a>. PWA
+          windows remember their own bounds; <code>neondeck open sidebar</code> is
+          a launch-time placement tool for Chromium app-mode windows.
+        </p>
+
         <h2 id="commands">Run Neon commands</h2>
         <p>
           Commands can be typed into the chat panel or invoked through the

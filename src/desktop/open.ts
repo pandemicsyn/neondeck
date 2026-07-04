@@ -8,7 +8,7 @@ import {
   type DashboardWindowProfile,
   type RuntimePaths,
 } from '../runtime-home';
-import { defaultServerPort, resolveServerPort } from '../server/serve';
+import { resolveServerPort } from '../server/serve';
 import { readServiceStatus, startService, type ServiceStatus } from './service';
 
 export type WindowProfile = DashboardWindowProfile;
@@ -441,16 +441,11 @@ async function spawnDetachedServe(
   port: number,
   spawnCommand: CommandSpawner = spawnDetached,
 ) {
-  const entry = fileURLToPath(new URL('../cli/index.ts', import.meta.url));
+  const entry = fileURLToPath(
+    new URL('../../bin/neondeck.mjs', import.meta.url),
+  );
   const packageRoot = fileURLToPath(new URL('../../', import.meta.url));
-  const args = [
-    '--import',
-    resolveTsxImportSpecifier(),
-    entry,
-    'serve',
-    '--port',
-    String(port),
-  ];
+  const args = [entry, 'serve', '--port', String(port)];
   await spawnCommand(process.execPath, args, {
     detached: true,
     cwd: packageRoot,
@@ -524,14 +519,6 @@ function resolveOpenPort(
   }
 
   return resolveServerPort(value);
-}
-
-function resolveTsxImportSpecifier() {
-  try {
-    return import.meta.resolve('tsx');
-  } catch {
-    return 'tsx';
-  }
 }
 
 function validateWindowProfile(profile: WindowProfile) {

@@ -5,7 +5,7 @@
   "homepage": "https://neondeck.dev",
   "private": true,
   "bin": {
-    "neondeck": "src/cli/index.ts"
+    "neondeck": "bin/neondeck.mjs"
   },
   "files": [
     "src/",

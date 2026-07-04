@@ -20,7 +20,7 @@ export type ServicePaths = {
 
 export type ServiceDefinitionOptions = {
   nodePath: string;
-  serverEntry: string;
+  cliEntry: string;
   runtimeHome: string;
   logPath: string;
   port: number;
@@ -34,7 +34,7 @@ export type ServiceInstallOptions = {
   homeDirectory?: string;
   uid?: number;
   nodePath?: string;
-  serverEntry?: string;
+  cliEntry?: string;
   workingDirectory?: string;
 };
 
@@ -124,7 +124,10 @@ export function renderLaunchdPlist(options: ServiceDefinitionOptions) {
   <key>ProgramArguments</key>
   <array>
     <string>${escapeXml(options.nodePath)}</string>
-    <string>${escapeXml(options.serverEntry)}</string>
+    <string>${escapeXml(options.cliEntry)}</string>
+    <string>serve</string>
+    <string>--port</string>
+    <string>${escapeXml(String(options.port))}</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
@@ -165,7 +168,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=${systemdQuote(options.nodePath)} ${systemdQuote(options.serverEntry)}
+ExecStart=${systemdQuote(options.nodePath)} ${systemdQuote(options.cliEntry)} serve --port ${systemdQuote(String(options.port))}
 Restart=on-failure
 ${options.workingDirectory ? `WorkingDirectory=${systemdQuote(options.workingDirectory)}\n` : ''}${environment
     .map(([key, value]) => `Environment=${systemdQuote(`${key}=${value}`)}`)
@@ -189,13 +192,13 @@ export async function installService(
     }
 
     const definition = serviceDefinitionOptions(options);
-    if (!existsSync(definition.serverEntry)) {
+    if (!existsSync(definition.cliEntry)) {
       return {
         ok: false,
         action: 'service_install',
         changed: false,
-        message: `Built server entry was not found at ${definition.serverEntry}. Run npm run build:server first.`,
-        files: [definition.serverEntry],
+        message: `Neondeck CLI entry was not found at ${definition.cliEntry}. Run npm install from the app package or reinstall the release archive.`,
+        files: [definition.cliEntry],
       };
     }
 
@@ -462,7 +465,7 @@ export async function readServiceStatus(
     );
   }
   if (serverEntry && !existsSync(serverEntry)) {
-    warnings.push(`Embedded server entry no longer exists: ${serverEntry}.`);
+    warnings.push(`Embedded service entry no longer exists: ${serverEntry}.`);
   }
 
   return {
@@ -534,12 +537,11 @@ export function parseSystemdUnit(source: string): InstalledServiceConfig {
   };
 }
 
-export function resolvePackagedServerEntry() {
-  if (process.env.NEONDECK_SERVER_ENTRY)
-    return process.env.NEONDECK_SERVER_ENTRY;
+export function resolvePackagedCliEntry() {
+  if (process.env.NEONDECK_CLI_ENTRY) return process.env.NEONDECK_CLI_ENTRY;
   const candidates = [
-    fileURLToPath(new URL('../../dist/server.mjs', import.meta.url)),
-    join(process.cwd(), 'dist', 'server.mjs'),
+    fileURLToPath(new URL('../../bin/neondeck.mjs', import.meta.url)),
+    join(process.cwd(), 'bin', 'neondeck.mjs'),
   ];
   return candidates.find((candidate) => existsSync(candidate)) ?? candidates[1];
 }
@@ -547,17 +549,17 @@ export function resolvePackagedServerEntry() {
 function serviceDefinitionOptions(
   options: ServiceInstallOptions,
 ): ServiceDefinitionOptions {
-  const serverEntry = options.serverEntry ?? resolvePackagedServerEntry();
+  const cliEntry = options.cliEntry ?? resolvePackagedCliEntry();
   return {
     nodePath: options.nodePath ?? process.execPath,
-    serverEntry,
+    cliEntry,
     runtimeHome: options.paths.home,
     logPath: servicePaths(options.paths, {
       platform: options.platform,
       homeDirectory: options.homeDirectory,
     }).logPath,
     port: resolveServerPort(options.port),
-    workingDirectory: options.workingDirectory ?? dirname(dirname(serverEntry)),
+    workingDirectory: options.workingDirectory ?? dirname(dirname(cliEntry)),
   };
 }
 
