@@ -2,8 +2,8 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { publishConfigEvent, type ConfigChangeEvent } from './config-events';
-import { createMemoryCandidate } from './memory-actions';
+import { publishConfigEvent, type ConfigChangeEvent } from './modules/config';
+import { createMemoryCandidate } from './modules/memory';
 
 const originalEnv = { ...process.env };
 let home: string;

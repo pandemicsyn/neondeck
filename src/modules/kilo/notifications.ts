@@ -6,7 +6,7 @@ import {
   resolveNotification,
   type NotificationLevel,
   type NotificationRecord,
-} from '../../app-state';
+} from '../app-state';
 import {
   ensureRuntimeHome,
   runtimePaths,

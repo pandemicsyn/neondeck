@@ -2,21 +2,65 @@
 import { defineTool } from '@flue/runtime';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
-import { listExecutionApprovals } from '../../execution-actions';
-import { flueRunInspectionUrl } from '../../local-api-auth';
-import { globalAutopilotPolicy, mergeAutopilotConcurrency, mergeAutopilotLimits, normalizeAutopilotMode, readRepoAutopilotConfig, type AutopilotConcurrencyPolicy, type AutopilotMode, type AutopilotModeAlias, type AutopilotPolicyLimits } from '../../autopilot-policy';
-import { ensureRuntimeHome, parseAppConfig, parseRepoRegistry, readRuntimeJson, runtimePaths, type RepoConfig, type RuntimePaths } from '../../runtime-home';
-import { listNotifications, type NotificationLevel } from '../../app-state';
-import { listPreparedDiffs, type PreparedDiffApprovalRecord, type PreparedDiffRecord, type PreparedDiffStatus } from '../../prepared-diffs';
-import { listPrWatchRecords, type PrWatch } from '../../watch-actions';
-import { listWorktrees, type WorktreeLifecycleStatus, type WorktreeRecord } from '../../worktrees';
-import { type AutopilotActivity, type AutopilotApproval, type AutopilotPolicyConfig, type AutopilotPreparedDiff, type AutopilotPriority, type AutopilotQueueItem, type AutopilotQueueStatus, type AutopilotRepoConfig, type AutopilotRunningCheck, type RepoAutopilotPolicy, type WatchAutopilotPolicy, type WorkflowRunRow, modeLabels } from './state-schemas';
+import { listExecutionApprovals } from '../execution';
+import { flueRunInspectionUrl } from '../runtime';
+import {
+  globalAutopilotPolicy,
+  mergeAutopilotConcurrency,
+  mergeAutopilotLimits,
+  normalizeAutopilotMode,
+  readRepoAutopilotConfig,
+  type AutopilotConcurrencyPolicy,
+  type AutopilotMode,
+  type AutopilotModeAlias,
+  type AutopilotPolicyLimits,
+} from '../autopilot-policy';
+import {
+  ensureRuntimeHome,
+  parseAppConfig,
+  parseRepoRegistry,
+  readRuntimeJson,
+  runtimePaths,
+  type RepoConfig,
+  type RuntimePaths,
+} from '../../runtime-home';
+import { listNotifications, type NotificationLevel } from '../app-state';
+import {
+  listPreparedDiffs,
+  type PreparedDiffApprovalRecord,
+  type PreparedDiffRecord,
+  type PreparedDiffStatus,
+} from '../prepared-diffs';
+import { listPrWatchRecords, type PrWatch } from '../watches';
+import {
+  listWorktrees,
+  type WorktreeLifecycleStatus,
+  type WorktreeRecord,
+} from '../worktrees';
+import {
+  type AutopilotActivity,
+  type AutopilotApproval,
+  type AutopilotPolicyConfig,
+  type AutopilotPreparedDiff,
+  type AutopilotPriority,
+  type AutopilotQueueItem,
+  type AutopilotQueueStatus,
+  type AutopilotRepoConfig,
+  type AutopilotRunningCheck,
+  type RepoAutopilotPolicy,
+  type WatchAutopilotPolicy,
+  type WorkflowRunRow,
+  modeLabels,
+} from './state-schemas';
 
 export function globalPolicy(appConfig: unknown): AutopilotPolicyConfig {
   return globalAutopilotPolicy(appConfig);
 }
 
-export function repoPolicy(repo: RepoConfig, appConfig: unknown): RepoAutopilotPolicy {
+export function repoPolicy(
+  repo: RepoConfig,
+  appConfig: unknown,
+): RepoAutopilotPolicy {
   const global = globalPolicy(appConfig);
   const repoAutopilot = readRepoAutopilot(repo);
   const mode = repoAutopilot?.mode
@@ -339,7 +383,10 @@ export function worktreeStatusToQueueStatus(
   return 'queued';
 }
 
-export function watchPriority(status: string, mode: AutopilotMode): AutopilotPriority {
+export function watchPriority(
+  status: string,
+  mode: AutopilotMode,
+): AutopilotPriority {
   if (status === 'attention-needed') return 'high';
   if (mode === 'autofix-push-when-safe') return 'normal';
   if (mode === 'notify-only') return 'low';

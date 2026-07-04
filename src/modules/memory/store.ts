@@ -9,7 +9,14 @@ import {
   resolveLearningConfig,
   type RuntimePaths,
 } from '../../runtime-home';
-import type { ActiveMemoryScope, MemoryCandidateRecord, MemoryEventRecord, MemoryMutationSource, MemoryRecord, MemoryScope } from './schemas';
+import type {
+  ActiveMemoryScope,
+  MemoryCandidateRecord,
+  MemoryEventRecord,
+  MemoryMutationSource,
+  MemoryRecord,
+  MemoryScope,
+} from './schemas';
 import {
   activeMemoryScopeSchema,
   allMemoryScopeSchema,

@@ -4,16 +4,65 @@ import { createWriteStream } from 'node:fs';
 import { mkdir, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import * as v from 'valibot';
-import { listKiloNotificationFacts, notifyKiloState, readKiloNotificationFacts, resolveKiloNotifications } from './notifications';
-import { attachProcessHandlers, kiloLockOwner, reconcilePersistedRunningTasks, releaseKiloTaskLock, releaseTaskLock, runningProcesses, terminalTaskIds } from './process';
-import { taskDiffSummary, taskWithDiff, taskWithRuntimeFacts } from './runtime-facts';
-import { eventsInputSchema, reconcileInputSchema, startInputSchema, summarizeInputSchema, taskIdInputSchema, tasksListInputSchema, type ResolvedKiloConfig, type WorkspaceResolution } from './schemas';
+import {
+  listKiloNotificationFacts,
+  notifyKiloState,
+  readKiloNotificationFacts,
+  resolveKiloNotifications,
+} from './notifications';
+import {
+  attachProcessHandlers,
+  kiloLockOwner,
+  reconcilePersistedRunningTasks,
+  releaseKiloTaskLock,
+  releaseTaskLock,
+  runningProcesses,
+  terminalTaskIds,
+} from './process';
+import {
+  taskDiffSummary,
+  taskWithDiff,
+  taskWithRuntimeFacts,
+} from './runtime-facts';
+import {
+  eventsInputSchema,
+  reconcileInputSchema,
+  startInputSchema,
+  summarizeInputSchema,
+  taskIdInputSchema,
+  tasksListInputSchema,
+  type ResolvedKiloConfig,
+  type WorkspaceResolution,
+} from './schemas';
 import { resolveSession, taskSessionTree } from './sessions';
-import { addKiloTaskEvent, countRunningKiloTasks, insertKiloTask, listKiloTaskEvents, listKiloTaskRows, markKiloTaskFinished, readKiloTaskWorktree, requireKiloTask, resolveKiloTaskForSessionInput, tryKiloTask, updateKiloTaskProcess, updateKiloTaskSummary, type KiloHandoffMode } from './store';
+import {
+  addKiloTaskEvent,
+  countRunningKiloTasks,
+  insertKiloTask,
+  listKiloTaskEvents,
+  listKiloTaskRows,
+  markKiloTaskFinished,
+  readKiloTaskWorktree,
+  requireKiloTask,
+  resolveKiloTaskForSessionInput,
+  tryKiloTask,
+  updateKiloTaskProcess,
+  updateKiloTaskSummary,
+  type KiloHandoffMode,
+} from './store';
 import { errorMessage, failResult, notFoundResult, parseInput } from './utils';
-import { type KiloConfig, type RepoConfig, type RuntimePaths, ensureRuntimeHome, parseAppConfig, parseRepoRegistry, readRuntimeJson, runtimePaths } from '../../runtime-home';
-import { repoFullName } from '../../repos';
-import { lockWorktree, readManagedWorktree } from '../../worktrees';
+import {
+  type KiloConfig,
+  type RepoConfig,
+  type RuntimePaths,
+  ensureRuntimeHome,
+  parseAppConfig,
+  parseRepoRegistry,
+  readRuntimeJson,
+  runtimePaths,
+} from '../../runtime-home';
+import { repoFullName } from '../repos';
+import { lockWorktree, readManagedWorktree } from '../worktrees';
 import { readKiloResultStateSummary } from './results';
 
 export async function startKiloTask(
@@ -145,9 +194,9 @@ export async function startKiloTask(
     const rawLog = rawLogPath
       ? createWriteStream(rawLogPath, { flags: 'a' })
       : undefined;
-    runningProcesses.set(id, { child, rawLog });
+    const completed = attachProcessHandlers(id, child, rawLog, paths);
+    runningProcesses.set(id, { child, rawLog, completed });
     updateKiloTaskProcess(id, child.pid ?? null, now, paths);
-    attachProcessHandlers(id, child, rawLog, paths);
     await notifyKiloState(
       {
         taskId: id,
@@ -574,7 +623,9 @@ function assertModeAllowed(
   }
 }
 
-export function resolveKiloConfig(config: KiloConfig | undefined): ResolvedKiloConfig {
+export function resolveKiloConfig(
+  config: KiloConfig | undefined,
+): ResolvedKiloConfig {
   return {
     enabled: config?.enabled ?? true,
     cliPath: config?.cliPath ?? 'kilo',

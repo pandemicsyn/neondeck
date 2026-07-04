@@ -2,13 +2,13 @@ import { Hono } from 'hono';
 import {
   listPrWatchEventWatermarks,
   refreshPrWatchEventState,
-} from '../../pr-event-state';
+} from '../../modules/pr-events';
 import type { RuntimePaths } from '../../runtime-home';
 import {
   addRefWatch,
   listPrWatches,
   listRefWatches,
-} from '../../watch-actions';
+} from '../../modules/watches';
 import { safeJsonBody, safeJsonObject } from '../http';
 
 export function createWatchRoutes(paths: RuntimePaths) {

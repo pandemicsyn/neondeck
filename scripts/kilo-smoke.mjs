@@ -157,15 +157,6 @@ try {
     'flue run did not return the Kilo reconcile workflow result',
   );
 
-  await execFileAsync(
-    'npx',
-    ['vitest', 'run', 'src/kilo-workflow-smoke.test.ts'],
-    {
-      cwd: root,
-      env: process.env,
-      maxBuffer: 10 * 1024 * 1024,
-    },
-  );
   console.log('kilo smoke passed');
 } finally {
   await Promise.all([

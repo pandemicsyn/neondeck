@@ -5,7 +5,7 @@ import {
 } from '@flue/runtime';
 import * as v from 'valibot';
 import displayAssistant from '../agents/display-assistant';
-import { summarizeKiloSession } from '../kilo-actions';
+import { summarizeKiloSession } from '../modules/kilo';
 
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 

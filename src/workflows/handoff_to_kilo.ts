@@ -1,6 +1,6 @@
 import { defineWorkflow, type WorkflowRunsHandler } from '@flue/runtime';
 import displayAssistant from '../agents/display-assistant';
-import { kiloTaskStartAction } from '../kilo-actions';
+import { kiloTaskStartAction } from '../modules/kilo';
 
 export const runs: WorkflowRunsHandler = async (_c, next) => next();
 

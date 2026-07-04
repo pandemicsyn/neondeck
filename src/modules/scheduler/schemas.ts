@@ -1,8 +1,13 @@
 import type { JsonValue } from '@flue/runtime';
-import type { NotificationLevel } from '../../app-state';
+import type { NotificationLevel } from '../app-state';
 import type { RuntimePaths } from '../../runtime-home';
-import { addPrWatch, refreshPrWatch, refreshRefWatch, type WatchActionResult } from '../watches';
-import { fetchCheckSummary } from '../../github';
+import {
+  addPrWatch,
+  refreshPrWatch,
+  refreshRefWatch,
+  type WatchActionResult,
+} from '../watches';
+import { fetchCheckSummary } from '../github';
 import * as v from 'valibot';
 
 export type SchedulerResult = {

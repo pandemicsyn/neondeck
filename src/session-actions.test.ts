@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
-import { updateAgentModels } from './config-actions';
-import { deleteMemory, rewriteMemory, upsertMemory } from './memory-actions';
+import { updateAgentModels } from './modules/config';
+import { deleteMemory, rewriteMemory, upsertMemory } from './modules/memory';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   archiveChatSession,
@@ -23,7 +23,7 @@ import {
   searchChatSessions,
   startNeonSession,
   switchChatSession,
-} from './session-actions';
+} from './modules/sessions';
 
 const tempRoots: string[] = [];
 

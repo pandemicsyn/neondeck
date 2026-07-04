@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createMemoryCandidate } from './memory-actions';
+import { createMemoryCandidate } from './modules/memory';
 import { runtimePaths } from './runtime-home';
 
 const execFileAsync = promisify(execFile);
@@ -81,13 +81,17 @@ async function tempHome() {
 }
 
 function runCli(home: string, args: string[]) {
-  return execFileAsync(tsxBin(), ['src/cli.ts', '--home', home, ...args], {
-    cwd: resolve('.'),
-    env: {
-      ...process.env,
-      NEONDECK_DISABLE_SCHEDULER: '1',
+  return execFileAsync(
+    tsxBin(),
+    ['src/cli/index.ts', '--home', home, ...args],
+    {
+      cwd: resolve('.'),
+      env: {
+        ...process.env,
+        NEONDECK_DISABLE_SCHEDULER: '1',
+      },
     },
-  });
+  );
 }
 
 function tsxBin() {

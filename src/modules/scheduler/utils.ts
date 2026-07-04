@@ -1,7 +1,7 @@
 import { failedAction } from '../../lib/action-result';
 import { asJsonValue } from '../../lib/action-result';
 import { parseInput as parseSharedInput } from '../../lib/valibot';
-import type { JobRecord } from '../../app-state';
+import type { JobRecord } from '../app-state';
 import type { SchedulerResult } from './schemas';
 import type * as v from 'valibot';
 
@@ -42,7 +42,9 @@ export function okResult(
   } as SchedulerResult;
 }
 
-export const failResult = failedAction<Pick<SchedulerResult, 'errors' | 'requires'>>;
+export const failResult = failedAction<
+  Pick<SchedulerResult, 'errors' | 'requires'>
+>;
 
 export function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);

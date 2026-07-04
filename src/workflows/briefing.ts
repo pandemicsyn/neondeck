@@ -1,7 +1,7 @@
 import { defineWorkflow, type WorkflowRunsHandler } from '@flue/runtime';
 import * as v from 'valibot';
 import displayAssistant from '../agents/display-assistant';
-import { runNeonCommand } from '../commands';
+import { runNeonCommand } from '../modules/commands';
 
 export const runs: WorkflowRunsHandler = async (_c, next) => next();
 

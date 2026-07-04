@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import {
   formatNotificationServerSentEvent,
   subscribeNotificationEvents,
-} from '../../notification-events';
+} from '../../modules/app-state';
 
 export function createNotificationEventRoutes() {
   const routes = new Hono();

@@ -2,17 +2,17 @@ import { registerProvider } from '@flue/runtime';
 import { flue } from '@flue/runtime/routing';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
-import { loadNeondeckEnv } from '../env';
+import { loadNeondeckEnv } from '../modules/runtime';
 import {
   providerRuntimeRegistrations,
   readProviderConfigSync,
-} from '../providers';
+} from '../modules/repos';
 import {
   ensureRuntimeHome,
   ensureRuntimeHomeSync,
   runtimePaths,
 } from '../runtime-home';
-import { startSchedulerLoop } from '../scheduler';
+import { startSchedulerLoop } from '../modules/scheduler';
 import { createConfigEventRoutes } from './events/config-stream';
 import { createNotificationEventRoutes } from './events/notification-stream';
 import { createSessionEventRoutes } from './events/session-stream';

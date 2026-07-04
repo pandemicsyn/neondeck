@@ -3,12 +3,27 @@ import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../lib/action-result';
 import { randomUUID } from 'node:crypto';
 import * as v from 'valibot';
-import { addNotification } from '../../app-state';
-import { buildPreparedDiffAuditSummary } from '../../autonomous-audit';
+import { addNotification } from '../app-state';
+import { buildPreparedDiffAuditSummary } from '../autonomous-audit';
 import { openDb } from '../../lib/sqlite';
 import { gitCurrentSha, gitDiff, type RepoDiffFile } from '../../repo-edit/git';
-import { type RuntimePaths, ensureRuntimeHome, runtimePaths } from '../../runtime-home';
-import { approvalRowSchema, listInputSchema, preparedDiffRecordSchema, preparedDiffRowSchema, worktreeRowSchema, type PreparedDiffActionResult, type PreparedDiffApprovalRecord, type PreparedDiffRecord, type PreparedDiffStatus, type WorktreeRecordLike } from './schemas';
+import {
+  type RuntimePaths,
+  ensureRuntimeHome,
+  runtimePaths,
+} from '../../runtime-home';
+import {
+  approvalRowSchema,
+  listInputSchema,
+  preparedDiffRecordSchema,
+  preparedDiffRowSchema,
+  worktreeRowSchema,
+  type PreparedDiffActionResult,
+  type PreparedDiffApprovalRecord,
+  type PreparedDiffRecord,
+  type PreparedDiffStatus,
+  type WorktreeRecordLike,
+} from './schemas';
 
 export function listPreparedDiffRecords(
   input: v.InferOutput<typeof listInputSchema>,
@@ -58,7 +73,10 @@ export function readPreparedDiffRecord(id: string, paths: RuntimePaths) {
   }
 }
 
-export function readPreparedDiffByWorktreeId(worktreeId: string, paths: RuntimePaths) {
+export function readPreparedDiffByWorktreeId(
+  worktreeId: string,
+  paths: RuntimePaths,
+) {
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
@@ -70,7 +88,10 @@ export function readPreparedDiffByWorktreeId(worktreeId: string, paths: RuntimeP
   }
 }
 
-export function upsertPreparedDiff(record: PreparedDiffRecord, paths: RuntimePaths) {
+export function upsertPreparedDiff(
+  record: PreparedDiffRecord,
+  paths: RuntimePaths,
+) {
   const database = openDb(paths.neondeckDatabase);
   try {
     database

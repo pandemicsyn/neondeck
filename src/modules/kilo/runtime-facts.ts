@@ -1,6 +1,6 @@
 import { type KiloNotificationFact } from './notifications';
 import { readKiloResultStateSummary } from './results';
-import { readGitDiffSummary } from '../../repos';
+import { readGitDiffSummary } from '../repos';
 import { type RuntimePaths } from '../../runtime-home';
 import { type KiloResultPlaceholder } from './schemas';
 import { type KiloTaskRecord, type KiloTaskStatus } from './store';

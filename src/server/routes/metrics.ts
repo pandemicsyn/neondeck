@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { readHostMetrics } from '../../metrics';
+import { readHostMetrics } from '../../modules/runtime';
 
 export function createMetricsRoutes() {
   const routes = new Hono();

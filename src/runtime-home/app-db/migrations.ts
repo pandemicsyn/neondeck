@@ -235,4 +235,3 @@ export function migrateMemoryEvents(database: DatabaseSync) {
     ALTER TABLE memory_events_v2 RENAME TO memory_events;
   `);
 }
-

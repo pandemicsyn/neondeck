@@ -3,15 +3,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
-import { listJobs, listNotifications } from './app-state';
+import { listJobs, listNotifications } from './modules/app-state';
 import {
   createScheduleBlueprint,
   runSchedulerTick,
   startSchedulerLoop,
   syncScheduledJobs,
-} from './scheduler';
+} from './modules/scheduler';
 import { type RuntimePaths, runtimePaths } from './runtime-home';
-import { addPrWatch, refreshPrWatch } from './watch-actions';
+import { addPrWatch, refreshPrWatch } from './modules/watches';
 
 const tempRoots: string[] = [];
 const originalEnv = { ...process.env };

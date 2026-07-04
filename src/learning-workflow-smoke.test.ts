@@ -2,15 +2,15 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { updateLearningConfig } from './config-actions';
+import { updateLearningConfig } from './modules/config';
 import {
   listLearningReviews,
   recordHandledPrEventAndMaybeQueueLearning,
-} from './learning-reviews';
-import { readLearningOperatorState } from './learning-operator';
-import { listMemories } from './memory-actions';
+} from './modules/learning/reviews';
+import { readLearningOperatorState } from './modules/learning';
+import { listMemories } from './modules/memory';
 import { runtimePaths } from './runtime-home';
-import { createChatSession } from './session-actions';
+import { createChatSession } from './modules/sessions';
 
 const tempRoots: string[] = [];
 const originalEnv = { ...process.env };

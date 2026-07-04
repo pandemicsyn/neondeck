@@ -4,14 +4,14 @@ import {
   requestExecutionApproval,
   resolveExecutionApproval,
   runApprovedExecution,
-} from '../../execution-actions';
-import { syncExeDevCheckout } from '../../exedev-checkouts';
+} from '../../modules/execution';
+import { syncExeDevCheckout } from '../../modules/execution';
 import {
   checkExecutionPolicy,
   readExecutionPolicy,
-} from '../../execution-policy';
+} from '../../modules/execution';
 import type { RuntimePaths } from '../../runtime-home';
-import { updateExecutionPolicy } from '../../config-actions';
+import { updateExecutionPolicy } from '../../modules/config';
 import { safeJsonBody } from '../http';
 
 export function createExecutionRoutes(paths: RuntimePaths) {

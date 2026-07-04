@@ -12,7 +12,8 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { listNotifications } from './app-state';
+import { listNotifications } from './modules/app-state';
+import { runningProcesses } from './modules/kilo/process';
 import {
   abortKiloTask,
   readKiloSessionMessages,
@@ -21,13 +22,13 @@ import {
   readKiloTaskStatus,
   searchKiloSessions,
   startKiloTask,
-} from './kilo-actions';
+} from './modules/kilo';
 import {
   ensureRuntimeHome,
   runtimePaths,
   type RuntimePaths,
 } from './runtime-home';
-import { createWorktree } from './worktrees';
+import { createWorktree } from './modules/worktrees';
 
 const execFileAsync = promisify(execFile);
 
@@ -36,6 +37,7 @@ const tempRoots: string[] = [];
 vi.setConfig({ testTimeout: 15_000 });
 
 afterEach(async () => {
+  await waitForTrackedKiloProcesses();
   await Promise.all(
     tempRoots
       .splice(0)
@@ -78,8 +80,9 @@ describe('Kilo handoff runner', () => {
     });
 
     const taskId = taskIdFrom(started);
-    const status = await waitForTask(taskId, 'succeeded', paths);
-    await waitForEvent(taskId, 'process.exit', paths);
+    await waitForTrackedKiloTask(taskId);
+    await waitForTask(taskId, 'succeeded', paths);
+    const status = await readKiloTaskStatus({ taskId }, paths);
     const sessions = await readKiloTaskSessions({ taskId }, paths);
     const events = await readKiloTaskEvents({ taskId }, paths);
     const notifications = await listNotifications(paths);
@@ -196,7 +199,7 @@ describe('Kilo handoff runner', () => {
       paths,
     );
     const taskId = taskIdFrom(started);
-    await waitForEvent(taskId, 'process.exit', paths);
+    await waitForTrackedKiloTask(taskId);
     const stale = await readKiloTaskStatus({ taskId: 'stale-task' }, paths);
 
     expect(started).toMatchObject({ ok: true, taskId: expect.any(String) });
@@ -223,6 +226,7 @@ describe('Kilo handoff runner', () => {
       paths,
     );
     const taskId = taskIdFrom(started);
+    await waitForTrackedKiloTask(taskId);
     await waitForTask(taskId, 'succeeded', paths);
 
     const messages = await readKiloSessionMessages(
@@ -335,8 +339,8 @@ describe('Kilo handoff runner', () => {
     await waitForRootSession(taskId, paths);
 
     const aborted = await abortKiloTask({ taskId }, paths);
+    await waitForTrackedKiloTask(taskId);
     const status = await waitForTask(taskId, 'cancelled', paths);
-    await waitForEvent(taskId, 'process.exit', paths);
 
     expect(aborted).toMatchObject({ ok: true, changed: true });
     expect(status).toMatchObject({
@@ -360,6 +364,7 @@ describe('Kilo handoff runner', () => {
       paths,
     );
     const taskId = taskIdFrom(started);
+    await waitForTrackedKiloTask(taskId);
     const status = await waitForTask(taskId, 'failed', paths);
 
     expect(status).toMatchObject({
@@ -593,29 +598,27 @@ async function waitForRootSession(taskId: string, paths: RuntimePaths) {
   throw new Error(`Timed out waiting for task ${taskId} root session.`);
 }
 
-async function waitForEvent(
-  taskId: string,
-  eventType: string,
-  paths: RuntimePaths,
-) {
-  for (let index = 0; index < 50; index++) {
-    const result = await readKiloTaskEvents({ taskId }, paths);
-    const events = 'events' in result ? result.events : [];
-    if (
-      Array.isArray(events) &&
-      events.some(
-        (event) =>
-          event &&
-          typeof event === 'object' &&
-          'eventType' in event &&
-          event.eventType === eventType,
-      )
-    ) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
+async function waitForTrackedKiloTask(taskId: string) {
+  await runningProcesses.get(taskId)?.completed;
+}
+
+async function waitForTrackedKiloProcesses() {
+  const processes = [...runningProcesses.values()];
+  if (processes.length === 0) return;
+  const completed = Promise.allSettled(
+    processes.map((process) => process.completed),
+  );
+  const timedOut = Symbol('timedOut');
+  const result = await Promise.race([
+    completed,
+    new Promise<typeof timedOut>((resolve) => {
+      setTimeout(() => resolve(timedOut), 2_500);
+    }),
+  ]);
+  if (result !== timedOut) return;
+  for (const process of processes) {
+    process.child.kill('SIGTERM');
   }
-  throw new Error(`Timed out waiting for task ${taskId} event ${eventType}.`);
 }
 
 function insertStaleRunningTask(

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { supportedCommands } from '../../commands';
+import { supportedCommands } from '../../modules/commands';
 
 export function createCommandRoutes() {
   const routes = new Hono();

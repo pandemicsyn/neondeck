@@ -7,7 +7,7 @@ import {
   readRuntimeJson,
   runtimePaths,
 } from '../runtime-home';
-import { readManagedWorktree } from '../worktrees';
+import { readManagedWorktree } from '../modules/worktrees';
 import type { RepoEditError } from './schemas';
 
 export type RepoPathIntent = 'read' | 'write' | 'delete' | 'move';

@@ -1,7 +1,7 @@
 import { type JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 import { thinkingLevelSchema } from '../../runtime-home';
-import { isRegisteredProvider } from '../../providers';
+import { isRegisteredProvider } from '../repos';
 
 export type ConfigTarget =
   'all' | 'config' | 'repos' | 'dashboard' | 'schedules';

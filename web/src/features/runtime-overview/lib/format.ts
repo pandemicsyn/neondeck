@@ -1,4 +1,15 @@
-import type { ExecutionApproval, KiloTaskRecord, NotificationRecord, RepoEditEvent, RepoHealth, RuntimeStatusCheck, SafetyPolicy, SafetyPolicyEntry, WorkflowObservability, WorktreeRecord } from '../../../api';
+import type {
+  ExecutionApproval,
+  KiloTaskRecord,
+  NotificationRecord,
+  RepoEditEvent,
+  RepoHealth,
+  RuntimeStatusCheck,
+  SafetyPolicy,
+  SafetyPolicyEntry,
+  WorkflowObservability,
+  WorktreeRecord,
+} from '../../../api';
 import type { SetupStep } from '../types';
 
 export function repoHealthStatus(health: RepoHealth | undefined) {

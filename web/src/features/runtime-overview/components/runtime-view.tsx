@@ -1,6 +1,11 @@
 import { Badge, ScrollArea } from '../../../components/ui';
 import type { RuntimeStatus } from '../../../api';
-import { RuntimeConfigControls, activeModelProviderIds, providerCredentialConfigured, providerStatusSummary } from './config-controls';
+import {
+  RuntimeConfigControls,
+  activeModelProviderIds,
+  providerCredentialConfigured,
+  providerStatusSummary,
+} from './config-controls';
 import { Metric, MiniEmpty, StatusPill } from './atoms';
 import {
   FirstRunSetup,

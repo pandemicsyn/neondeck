@@ -1,6 +1,6 @@
 import type { JsonValue } from '@flue/runtime';
-import type { WorkflowSummaryRecord } from '../../app-state';
-import type { fetchGitHubLogin, fetchPullRequestQueue } from '../../github';
+import type { WorkflowSummaryRecord } from '../app-state';
+import type { fetchGitHubLogin, fetchPullRequestQueue } from '../github';
 import * as v from 'valibot';
 
 export type NeonCommandName =

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   providerRuntimeRegistrations,
   resolveKilocodeProviderStatus,
-} from './providers';
+} from './modules/repos';
 
 describe('provider runtime registrations', () => {
   it('sets an explicit KiloCode gateway output-token budget', () => {

@@ -7,7 +7,7 @@ import { runtimePaths } from './runtime-home';
 import {
   readWorkflowObservability,
   recordFlueObservation,
-} from './workflow-observability';
+} from './modules/learning';
 
 const tempRoots: string[] = [];
 

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
-import { listWorkflowSummaries } from '../../app-state';
+import { listWorkflowSummaries } from '../../modules/app-state';
 import type { RuntimePaths } from '../../runtime-home';
-import { readWorkflowObservability } from '../../workflow-observability';
+import { readWorkflowObservability } from '../../modules/learning';
 
 export function createWorkflowRoutes(paths: RuntimePaths) {
   const routes = new Hono();

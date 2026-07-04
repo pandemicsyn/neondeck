@@ -5,7 +5,10 @@ import { resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { ensureRuntimeHome, runtimePaths } from '../../../runtime-home';
-import type { SkillPatchCandidateRecord, SkillPatchMutationSource } from './schemas';
+import type {
+  SkillPatchCandidateRecord,
+  SkillPatchMutationSource,
+} from './schemas';
 import {
   skillPatchDecideInputSchema,
   skillPatchListInputSchema,

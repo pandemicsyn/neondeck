@@ -1,7 +1,12 @@
 import { failedAction } from '../../lib/action-result';
 import { parseInput as parseSharedInput } from '../../lib/valibot';
 import { asJsonValue } from '../../lib/action-result';
-import type { PrWatch, RefWatch, WatchActionResult, WatchOutcome } from './schemas';
+import type {
+  PrWatch,
+  RefWatch,
+  WatchActionResult,
+  WatchOutcome,
+} from './schemas';
 import type * as v from 'valibot';
 
 export function parseActionInput<T>(
@@ -37,7 +42,9 @@ export function okResult(
   };
 }
 
-export const failResult = failedAction<Pick<WatchActionResult, 'errors' | 'requires'>>;
+export const failResult = failedAction<
+  Pick<WatchActionResult, 'errors' | 'requires'>
+>;
 
 export function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);

@@ -1,4 +1,7 @@
-export async function getJson<T>(url: string, options: { signal?: AbortSignal } = {}) {
+export async function getJson<T>(
+  url: string,
+  options: { signal?: AbortSignal } = {},
+) {
   const response = await fetch(url, { signal: options.signal });
   return readJsonResponse<T>(response, url);
 }

@@ -1,4 +1,5 @@
 export { fetchGitHubLogin } from './client';
+export { getGitHubCheckSummary, listGitHubPrQueue } from './actions';
 export {
   buildPullRequestQueries,
   clearGitHubPullRequestQueueCache,

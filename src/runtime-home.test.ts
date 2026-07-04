@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   readAgentModelSelectionSync,
   resolveAgentModelSelection,
-} from './agent-config';
+} from './modules/runtime';
 import {
   ConfigValidationError,
   ensureRuntimeHome,

@@ -52,7 +52,9 @@ export function reconcileActiveChatSession(database: DatabaseSync) {
     .run(fallback.id);
 }
 
-export function reconcileExistingNotificationDuplicates(database: DatabaseSync) {
+export function reconcileExistingNotificationDuplicates(
+  database: DatabaseSync,
+) {
   const now = new Date().toISOString();
   const groups = database
     .prepare(
@@ -179,4 +181,3 @@ export function reconcileActiveNeonSessions(database: DatabaseSync) {
     )
     .run(now, now, ...duplicates.map((session) => session.id));
 }
-

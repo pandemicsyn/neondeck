@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { listJobs } from './app-state';
+import { listJobs } from './modules/app-state';
 import {
   addRefWatch,
   addPrWatch,
@@ -13,9 +13,12 @@ import {
   refreshRefWatch,
   refreshPrWatch,
   removePrWatch,
-} from './watch-actions';
+} from './modules/watches';
 import { runtimePaths } from './runtime-home';
-import type { GitHubCheckSummary, GitHubPullRequestDetail } from './github';
+import type {
+  GitHubCheckSummary,
+  GitHubPullRequestDetail,
+} from './modules/github';
 
 const tempRoots: string[] = [];
 

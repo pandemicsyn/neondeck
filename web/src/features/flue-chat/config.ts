@@ -1,7 +1,13 @@
 import { nonEmptyString, plainConfigRecord } from '../../plugins/config';
-import { flueChatDefaultConfig, type FlueChatCommand, type FlueChatSession } from './types';
+import {
+  flueChatDefaultConfig,
+  type FlueChatCommand,
+  type FlueChatSession,
+} from './types';
 
-export function parseFlueChatConfig(config: Record<string, unknown> | undefined) {
+export function parseFlueChatConfig(
+  config: Record<string, unknown> | undefined,
+) {
   const source = plainConfigRecord(config);
   const issues: string[] = [];
 

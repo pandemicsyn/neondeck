@@ -8,8 +8,8 @@ import {
   requestExecutionApproval,
   resolveExecutionApproval,
   runApprovedExecution,
-} from './execution-actions';
-import { checkExecutionPolicy } from './execution-policy';
+} from './modules/execution';
+import { checkExecutionPolicy } from './modules/execution';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 
 const tempRoots: string[] = [];
