@@ -21,12 +21,8 @@ describe('server serve options', () => {
   });
 
   it('rejects invalid ports with a controlled message', () => {
-    expect(() => resolveServerPort('bogus')).toThrow(
-      'Port must be an integer',
-    );
-    expect(() => resolveServerPort('70000')).toThrow(
-      'Port must be an integer',
-    );
+    expect(() => resolveServerPort('bogus')).toThrow('Port must be an integer');
+    expect(() => resolveServerPort('70000')).toThrow('Port must be an integer');
   });
 });
 
