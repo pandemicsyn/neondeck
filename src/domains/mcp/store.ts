@@ -161,6 +161,21 @@ export async function markMcpCatalogUnavailable(
   }
 }
 
+export async function deleteMcpToolCatalog(
+  serverId: string,
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    database
+      .prepare('DELETE FROM mcp_tool_catalog WHERE server_id = ?;')
+      .run(serverId);
+  } finally {
+    database.close();
+  }
+}
+
 export async function listMcpToolCatalog(
   paths = runtimePaths(),
   options: { serverId?: string } = {},

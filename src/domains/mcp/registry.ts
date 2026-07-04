@@ -13,6 +13,7 @@ import {
 } from './oauth';
 import { connectSdkMcpServer, type McpSdkConnection } from './stdio';
 import {
+  deleteMcpToolCatalog,
   listMcpToolCatalog,
   markMcpCatalogUnavailable,
   replaceMcpToolCatalog,
@@ -258,6 +259,11 @@ export class McpRegistry {
         updatedAt: now,
       }));
       await replaceMcpToolCatalog(id, catalog, this.paths);
+      if (!isCurrent()) {
+        await connection.close().catch(() => undefined);
+        await this.clearStaleCatalog(id);
+        return;
+      }
       entry.connection = connection;
       entry.tools = connection.tools;
       entry.catalog = catalog;
@@ -305,6 +311,16 @@ export class McpRegistry {
     };
     this.entries.set(id, entry);
     return entry;
+  }
+
+  private async clearStaleCatalog(id: string) {
+    const config = await readMcpConfig(this.paths).catch(() => null);
+    const server = config?.servers[id];
+    if (!server) {
+      await deleteMcpToolCatalog(id, this.paths);
+      return;
+    }
+    await markMcpCatalogUnavailable(id, this.paths);
   }
 }
 
