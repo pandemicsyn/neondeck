@@ -33,6 +33,26 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           because it is meant to stay visible during real work.
         </p>
 
+        <h2>Install as an app</h2>
+        <p>
+          The production dashboard ships a web app manifest, so the browser can
+          install it as a standalone Neondeck window with its own dock icon and
+          remembered window bounds. This is the preferred sidebar setup because
+          resizing the dashboard no longer changes normal Safari or Chrome
+          windows.
+        </p>
+        <p>
+          In Safari, open the local dashboard and choose <strong>File</strong>
+          → <strong>Add to Dock</strong>. In Chrome or Edge, open the dashboard
+          and use the install button in the address bar, or choose
+          <strong>Install Neondeck</strong> from the browser menu.
+        </p>
+        <p>
+          The PWA does not include offline caching. If the local server is down,
+          start it with <code>neondeck open</code> or
+          <code>neondeck service start</code>.
+        </p>
+
         <h2>Plugins</h2>
         <p>
           Display panels are typed in-repo plugins selected by runtime{' '}

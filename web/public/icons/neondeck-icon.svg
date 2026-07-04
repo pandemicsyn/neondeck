@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Neondeck icon</title>
+  <desc id="desc">A neon dashboard mark with Miami tiger stripes and an angular N.</desc>
+  <defs>
+    <linearGradient id="chrome" x1="88" x2="424" y1="56" y2="456" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#11131d"/>
+      <stop offset="1" stop-color="#05060a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="116" x2="396" y1="384" y2="128" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff4fb8"/>
+      <stop offset="0.46" stop-color="#8b4dff"/>
+      <stop offset="1" stop-color="#69e6ff"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="frame">
+      <rect width="512" height="512" rx="112"/>
+    </clipPath>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#chrome)"/>
+  <g clip-path="url(#frame)">
+    <path d="M-38 392 392 -38h86L48 392z" fill="#00b7c7" opacity="0.95"/>
+    <path d="M40 552 552 40v92L132 552z" fill="#ff4fb8" opacity="0.92"/>
+    <path d="M-22 258 258 -22h44L22 258z" fill="#f7a441" opacity="0.9"/>
+    <path d="M224 552 552 224v58L282 552z" fill="#8b4dff" opacity="0.9"/>
+    <path d="M0 0h512v512H0z" fill="#05060a" opacity="0.58"/>
+  </g>
+  <rect x="72" y="72" width="368" height="368" rx="72" fill="#0a0b10" opacity="0.86"/>
+  <path
+    d="M146 372V140h70l84 116V140h66v232h-68l-86-118v118z"
+    fill="url(#accent)"
+    filter="url(#glow)"
+  />
+  <path d="M146 372V140h70l84 116V140h66v232h-68l-86-118v118z" fill="url(#accent)"/>
+  <path d="M164 350V162h40l112 154h28V162" fill="none" stroke="#d7f7ff" stroke-width="18" stroke-linejoin="round" opacity="0.9"/>
+</svg>

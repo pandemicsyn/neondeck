@@ -121,6 +121,11 @@ export async function createApp(options: CreateAppOptions = {}) {
 
   app.use('/assets/*', serveStatic({ root: staticRoot }));
   app.get(
+    '/manifest.webmanifest',
+    serveStatic({ root: staticRoot, path: 'manifest.webmanifest' }),
+  );
+  app.use('/icons/*', serveStatic({ root: staticRoot }));
+  app.get(
     '/favicon.svg',
     serveStatic({ root: staticRoot, path: 'favicon.svg' }),
   );
