@@ -70,6 +70,12 @@ export async function runtimeStatusModule() {
   ) as Promise<typeof import('../modules/runtime')>;
 }
 
+export async function serverModule() {
+  return import(new URL('../server/serve.ts', import.meta.url).href) as Promise<
+    typeof import('../server/serve')
+  >;
+}
+
 export async function schedulerModule() {
   return import(
     new URL('../modules/scheduler/index.ts', import.meta.url).href

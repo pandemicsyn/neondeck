@@ -13,6 +13,7 @@ import {
   runtimeHomeModule,
   runtimeStatusModule,
   schedulerModule,
+  serverModule,
   skillPatchesModule,
   watchActionsModule,
 } from './modules';
@@ -38,6 +39,7 @@ import type {
   GlobalOptions,
   RepoAddOptions,
   ScheduleOptions,
+  ServeOptions,
   WatchPrOptions,
 } from './types';
 
@@ -58,6 +60,25 @@ program
   .option('--home <path>', 'override runtime home for this run')
   .action(async (options: { home?: string }) => {
     await runInit({ home: options.home ?? program.opts<GlobalOptions>().home });
+  });
+
+program
+  .command('serve')
+  .description('Start the production Neondeck server in the foreground.')
+  .option('--port <port>', 'override the configured/default API port')
+  .action(async (options: ServeOptions) => {
+    const { ensureRuntimeHome } = await runtimeHomeModule();
+    const { startNeondeckServer } = await serverModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    await ensureRuntimeHome(paths);
+    loadEnvForPaths(paths, { overwrite: false });
+    await startNeondeckServer({
+      paths,
+      port: options.port,
+      onReady: ({ url }) => {
+        console.log(`Neondeck server listening on ${url}`);
+      },
+    });
   });
 
 program

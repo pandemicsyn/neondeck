@@ -37,6 +37,7 @@ rmSync(releaseRoot, { recursive: true, force: true });
 mkdirSync(packageRoot, { recursive: true });
 
 copy('dist', 'dist');
+copy('src', 'src');
 copy('web/dist', 'web/dist');
 copy('config', 'config');
 copy('config', 'dist/config');
@@ -86,6 +87,7 @@ function writeRuntimePackageJson() {
     private: true,
     type: packageJson.type,
     engines: packageJson.engines,
+    bin: packageJson.bin,
     scripts: {
       start: 'node dist/server.mjs',
     },
@@ -106,6 +108,7 @@ function writeReleaseNotes() {
 This archive contains the built Neondeck app only:
 
 - \`dist/\`: built Node/Flue server and runtime resources
+- \`src/\`: CLI source used by the \`neondeck\` command
 - \`web/dist/\`: built local dashboard SPA
 - \`config/\`, \`SOUL.md\`, and \`.env.example\`: default runtime setup files
 
@@ -115,6 +118,13 @@ Install production dependencies after unpacking:
 npm install --omit=dev
 cp .env.example .env
 npm start
+\`\`\`
+
+Or install the CLI from the unpacked archive:
+
+\`\`\`sh
+npm link
+neondeck serve
 \`\`\`
 
 The Astro marketing/docs site is intentionally not included in this app release.
