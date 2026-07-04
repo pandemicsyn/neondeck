@@ -46,6 +46,7 @@ const fallbackKilocodeOrganizationIdEnv = 'KILO_ORGANIZATION_ID';
 const defaultOpenAiApiKeyEnv = 'OPENAI_API_KEY';
 const defaultAnthropicApiKeyEnv = 'ANTHROPIC_API_KEY';
 const kilocodeGatewayBaseUrl = 'https://api.kilo.ai/api/gateway';
+const kilocodeGatewayMaxTokens = 16_384;
 
 export function readKilocodeProviderCredentials(
   env: NodeJS.ProcessEnv = process.env,
@@ -87,6 +88,7 @@ export function providerRuntimeRegistrations(
       registration: {
         api: 'openai-completions',
         baseUrl: kilocodeGatewayBaseUrl,
+        maxTokens: kilocodeGatewayMaxTokens,
         apiKey: env[kilocode.apiKeyEnv] ?? '',
         headers: organizationId
           ? { 'X-KiloCode-OrganizationId': organizationId }
