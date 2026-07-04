@@ -6,6 +6,7 @@ web/dist/
 .flue-vite/
 .playwright-mcp/
 .release/
+.codex/environments/
 .astro/
 design/
 research-repos/
