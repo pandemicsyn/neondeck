@@ -35,3 +35,13 @@ export type ServeOptions = {
 export type ServiceInstallOptions = {
   port?: string;
 };
+
+export type OpenOptions = {
+  port?: string;
+  width?: string;
+  height?: string;
+  x?: string;
+  y?: string;
+  kiosk?: boolean;
+  browser?: string;
+};

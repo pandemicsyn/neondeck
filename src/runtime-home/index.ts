@@ -47,6 +47,7 @@ export {
   type DashboardConfig,
   type DashboardRegion,
   type DashboardTab,
+  type DashboardWindowProfile,
   type ExecutionBackend,
   type ExecutionConfig,
   type ExecutionPreapprovedCommand,

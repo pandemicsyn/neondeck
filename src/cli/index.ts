@@ -8,6 +8,7 @@ import {
   configActionsModule,
   devDoctorModule,
   learningOperatorModule,
+  openModule,
   reposModule,
   repoEditModule,
   runtimeHomeModule,
@@ -23,7 +24,9 @@ import {
   parseCandidateStatus,
   parseCandidateTarget,
   parseOptionalIntervalSeconds,
+  parseOptionalIntegerFlag,
   parseOptionalLimit,
+  parseOptionalPositiveIntegerFlag,
   parseWatchTarget,
   pathsFromOptions,
 } from './options';
@@ -39,6 +42,7 @@ import {
 } from './output';
 import type {
   GlobalOptions,
+  OpenOptions,
   RepoAddOptions,
   ScheduleOptions,
   ServiceInstallOptions,
@@ -82,6 +86,38 @@ program
         console.log(`Neondeck server listening on ${url}`);
       },
     });
+  });
+
+program
+  .command('open [profile]')
+  .description('Ensure Neondeck is running and open the dashboard window.')
+  .option('--port <port>', 'override the configured/default API port')
+  .option('--width <pixels>', 'override Chromium app-mode window width')
+  .option('--height <pixels>', 'override Chromium app-mode window height')
+  .option('--x <pixels>', 'override Chromium app-mode window x position')
+  .option('--y <pixels>', 'override Chromium app-mode window y position')
+  .option('--kiosk', 'launch Chromium app-mode in kiosk mode')
+  .option('--browser <path>', 'use a specific Chromium-family executable')
+  .action(async (profile: string | undefined, options: OpenOptions) => {
+    const { ensureRuntimeHome } = await runtimeHomeModule();
+    const { openDashboard } = await openModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    await ensureRuntimeHome(paths);
+    loadEnvForPaths(paths);
+    const result = await openDashboard({
+      paths,
+      profile,
+      port: options.port,
+      browserPath: options.browser,
+      overrides: {
+        width: parseOptionalPositiveIntegerFlag('--width', options.width),
+        height: parseOptionalPositiveIntegerFlag('--height', options.height),
+        x: parseOptionalIntegerFlag('--x', options.x),
+        y: parseOptionalIntegerFlag('--y', options.y),
+        ...(options.kiosk ? { kiosk: true } : {}),
+      },
+    });
+    printActionResult(result);
   });
 
 const service = program

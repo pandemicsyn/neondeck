@@ -9,6 +9,19 @@
     "density": "comfortable"
   },
   "theme": "dark",
+  "windows": {
+    "sidebar": {
+      "width": 480,
+      "height": 1400,
+      "x": 0,
+      "y": 25
+    },
+    "xeneon": {
+      "kiosk": true,
+      "x": 3440,
+      "y": 0
+    }
+  },
   "statusline": {
     "position": "top",
     "pluginId": "host-metrics",

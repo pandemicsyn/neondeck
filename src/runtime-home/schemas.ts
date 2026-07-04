@@ -14,6 +14,23 @@ const dashboardTextScaleSchema = v.pipe(
   v.minValue(0.9),
   v.maxValue(1.75),
 );
+const dashboardWindowProfileSchema = v.pipe(
+  v.strictObject({
+    width: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+    height: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+    x: v.optional(v.pipe(v.number(), v.integer())),
+    y: v.optional(v.pipe(v.number(), v.integer())),
+    kiosk: v.optional(v.boolean()),
+  }),
+  v.check(
+    (value) => (value.width === undefined) === (value.height === undefined),
+    'Window profiles must set width and height together.',
+  ),
+  v.check(
+    (value) => (value.x === undefined) === (value.y === undefined),
+    'Window profiles must set x and y together.',
+  ),
+);
 const envVarNameSchema = v.pipe(
   v.string(),
   v.regex(/^[A-Z_][A-Z0-9_]*$/, 'Expected an environment variable name.'),
@@ -332,6 +349,9 @@ export const dashboardConfigSchema = v.looseObject({
       textScale: v.optional(dashboardTextScaleSchema),
     }),
   ),
+  windows: v.optional(
+    v.record(nonEmptyStringSchema, dashboardWindowProfileSchema),
+  ),
   statusline: v.optional(
     v.looseObject({
       position: v.picklist(['top', 'bottom']),
@@ -377,6 +397,9 @@ export type RepoRegistry = v.InferOutput<typeof repoRegistrySchema>;
 export type ScheduleEntry = v.InferOutput<typeof scheduleEntrySchema>;
 export type ScheduleConfig = v.InferOutput<typeof scheduleConfigSchema>;
 export type DashboardConfig = v.InferOutput<typeof dashboardConfigSchema>;
+export type DashboardWindowProfile = v.InferOutput<
+  typeof dashboardWindowProfileSchema
+>;
 export type DashboardRegion = v.InferOutput<typeof dashboardRegionSchema>;
 export type DashboardTab = v.InferOutput<typeof dashboardTabSchema>;
 
