@@ -144,8 +144,9 @@ Existing databases have all the tables but no Drizzle journal. Solution — a st
   deleting the legacy DDL body.
 - `migrate.ts` pre-step: if `__drizzle_migrations` is missing **and** the DB already has the
   legacy schema (detect: `app_metadata` row `schema_version = '9'`, or presence of a sentinel
-  table), create the journal table and record `0000` as applied _without executing it_. Fresh
-  databases execute `0000` normally.
+  table), create the journal table and record the actual shipped baseline migration row from
+  `readMigrationFiles` (name, hash, created_at) as applied _without executing it_. Fresh databases
+  execute the baseline normally.
 - A legacy DB at `schema_version < 9` (predates the last hand-rolled rebuild) is not expected in
   the wild, but handle it honestly: run the retained legacy upgrade functions once to reach v9,
   then stamp. Delete that shim after one or two releases.
@@ -207,9 +208,9 @@ Commit order within the PR:
    - `drizzle-kit/api-sqlite` does not export `generate(...)` in this RC despite the bundled
      skill text. Drift checks use `drizzle-kit generate --output json --explain`.
 
-2. `schema.ts` bootstrapped via introspection + `0000_baseline.sql` + **parity test**: create one
-   DB via legacy `initializeAppDatabase`, one via migrations; dump and compare normalized schema
-   (tables, columns, indexes) — must be identical.
+2. `schema.ts` bootstrapped from the legacy DDL + timestamped baseline migration + **parity
+   test**: create one DB via legacy `initializeAppDatabase`, one via migrations; dump and compare
+   normalized schema (tables, columns, indexes, AUTOINCREMENT flags) — must be identical.
 3. `migrate.ts` (baseline stamp, backup + rotation, cross-process gate, downgrade guard) wired
    into `ensureRuntimeHome*`; legacy DDL body deleted; reconciles/seeds retained post-migrate.
 4. Drift + journal checks in `npm run check`; `db:generate` script; `neondeck db status`;

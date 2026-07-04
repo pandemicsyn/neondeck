@@ -1,702 +1,898 @@
-export const appDatabaseSchemaSql = `
-      CREATE TABLE IF NOT EXISTS app_metadata (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS config_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        action TEXT NOT NULL,
-        file TEXT NOT NULL,
-        target TEXT,
-        before_json TEXT,
-        after_json TEXT,
-        changed_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS pr_watches (
-        id TEXT PRIMARY KEY,
-        repo_id TEXT NOT NULL,
-        repo_full_name TEXT NOT NULL,
-        github_owner TEXT NOT NULL,
-        github_name TEXT NOT NULL,
-        pr_number INTEGER NOT NULL,
-        desired_terminal_state TEXT NOT NULL,
-        status TEXT NOT NULL,
-        pr_state TEXT,
-        title TEXT,
-        url TEXT,
-        merge_commit_sha TEXT,
-        last_snapshot_json TEXT,
-        last_outcome TEXT,
-        last_checked_at TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        UNIQUE(repo_full_name, pr_number)
-      );
-
-      CREATE TABLE IF NOT EXISTS ref_watches (
-        id TEXT PRIMARY KEY,
-        repo_id TEXT NOT NULL,
-        repo_full_name TEXT NOT NULL,
-        github_owner TEXT NOT NULL,
-        github_name TEXT NOT NULL,
-        ref TEXT NOT NULL,
-        status TEXT NOT NULL,
-        title TEXT,
-        url TEXT,
-        last_snapshot_json TEXT,
-        last_outcome TEXT,
-        last_checked_at TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        UNIQUE(repo_full_name, ref)
-      );
-
-      CREATE TABLE IF NOT EXISTS pr_watch_event_watermarks (
-        watch_id TEXT NOT NULL,
-        category TEXT NOT NULL,
-        watermark_json TEXT NOT NULL,
-        source_updated_at TEXT,
-        checked_at TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        PRIMARY KEY(watch_id, category)
-      );
-
-      CREATE TABLE IF NOT EXISTS jobs (
-        id TEXT PRIMARY KEY,
-        type TEXT NOT NULL,
-        blueprint TEXT,
-        enabled INTEGER NOT NULL,
-        interval_seconds INTEGER NOT NULL,
-        config_json TEXT,
-        next_run_at TEXT,
-        last_run_at TEXT,
-        last_outcome TEXT,
-        last_message TEXT,
-        last_result_json TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS notifications (
-        id TEXT PRIMARY KEY,
-        level TEXT NOT NULL,
-        title TEXT NOT NULL,
-        message TEXT NOT NULL,
-        source TEXT,
-        source_id TEXT,
-        data_json TEXT,
-        read_at TEXT,
-        created_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS memories (
-        id TEXT PRIMARY KEY,
-        scope TEXT NOT NULL,
-        key TEXT NOT NULL,
-        value_json TEXT NOT NULL,
-        repo_id TEXT,
-        status TEXT NOT NULL DEFAULT 'active',
-        use_count INTEGER NOT NULL DEFAULT 0,
-        last_used_at TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS memory_events (
-        id TEXT PRIMARY KEY,
-        memory_id TEXT,
-        action TEXT NOT NULL,
-        actor TEXT NOT NULL,
-        reason TEXT,
-        before_json TEXT,
-        after_json TEXT,
-        created_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS learning_events (
-        id TEXT PRIMARY KEY,
-        type TEXT NOT NULL,
-        source TEXT NOT NULL,
-        source_id TEXT,
-        repo_id TEXT,
-        session_id TEXT,
-        pr_key TEXT,
-        data_json TEXT,
-        created_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS learning_reviews (
-        id TEXT PRIMARY KEY,
-        kind TEXT NOT NULL,
-        status TEXT NOT NULL,
-        model TEXT NOT NULL,
-        thinking_level TEXT NOT NULL,
-        trigger_json TEXT NOT NULL,
-        input_summary_json TEXT,
-        result_json TEXT,
-        error TEXT,
-        flue_run_id TEXT,
-        started_at TEXT NOT NULL,
-        completed_at TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS learning_candidates (
-        id TEXT PRIMARY KEY,
-        target TEXT NOT NULL,
-        status TEXT NOT NULL,
-        action TEXT,
-        scope TEXT,
-        key TEXT,
-        value_json TEXT,
-        skill_id TEXT,
-        patch_json TEXT,
-        repo_id TEXT,
-        reason TEXT,
-        review_id TEXT,
-        created_at TEXT NOT NULL,
-        decided_at TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS workflow_summaries (
-        id TEXT PRIMARY KEY,
-        workflow TEXT NOT NULL,
-        run_id TEXT,
-        status TEXT NOT NULL,
-        summary_json TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS workflow_events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        run_id TEXT,
-        workflow TEXT,
-        event_type TEXT NOT NULL,
-        event_index INTEGER,
-        level TEXT,
-        message TEXT NOT NULL,
-        name TEXT,
-        operation_kind TEXT,
-        operation_id TEXT,
-        duration_ms INTEGER,
-        is_error INTEGER NOT NULL DEFAULT 0,
-        summary_json TEXT,
-        created_at TEXT NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_workflow_events_run
-        ON workflow_events(run_id, event_index);
-
-      CREATE INDEX IF NOT EXISTS idx_workflow_events_created
-        ON workflow_events(created_at DESC);
-
-      CREATE TABLE IF NOT EXISTS workflow_run_observations (
-        run_id TEXT PRIMARY KEY,
-        workflow TEXT NOT NULL,
-        status TEXT NOT NULL,
-        started_at TEXT NOT NULL,
-        ended_at TEXT,
-        last_event_at TEXT NOT NULL,
-        last_message TEXT NOT NULL,
-        event_count INTEGER NOT NULL DEFAULT 0,
-        duration_ms INTEGER,
-        is_error INTEGER NOT NULL DEFAULT 0,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS neon_sessions (
-        id TEXT PRIMARY KEY,
-        label TEXT NOT NULL,
-        agent_name TEXT NOT NULL,
-        status TEXT NOT NULL,
-        reason TEXT,
-        created_at TEXT NOT NULL,
-        activated_at TEXT NOT NULL,
-        ended_at TEXT,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS chat_sessions (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        agent_name TEXT NOT NULL,
-        kind TEXT NOT NULL,
-        pinned INTEGER NOT NULL DEFAULT 0,
-        archived_at TEXT,
-        linked_repo_id TEXT,
-        linked_watch_id TEXT,
-        linked_task_id TEXT,
-        stale_reasons_json TEXT,
-        ui_metadata_json TEXT,
-        summary TEXT,
-        summary_generated_at TEXT,
-        summary_source TEXT,
-        summary_refresh_note TEXT,
-        context_loaded_at TEXT,
-        context_memory_ids_json TEXT,
-        learning_turn_count INTEGER NOT NULL DEFAULT 0,
-        last_learning_review_turn_count INTEGER NOT NULL DEFAULT 0,
-        last_learning_review_at TEXT,
-        last_learning_curation_turn_count INTEGER NOT NULL DEFAULT 0,
-        last_learning_curation_at TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        last_active_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS chat_session_surfaces (
-        surface TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS chat_session_audit (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        action TEXT NOT NULL,
-        session_id TEXT,
-        surface TEXT,
-        reason TEXT,
-        metadata_json TEXT,
-        created_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS execution_approvals (
-        id TEXT PRIMARY KEY,
-        command TEXT NOT NULL,
-        backend TEXT NOT NULL,
-        cwd TEXT,
-        context TEXT NOT NULL,
-        risk TEXT NOT NULL,
-        policy_decision TEXT NOT NULL,
-        status TEXT NOT NULL,
-        approval_decision TEXT,
-        approver_surface TEXT,
-        session_id TEXT,
-        request_context_json TEXT,
-        result_json TEXT,
-        exit_code INTEGER,
-        stdout_preview TEXT,
-        stderr_preview TEXT,
-        error TEXT,
-        created_at TEXT NOT NULL,
-        resolved_at TEXT,
-        executed_at TEXT,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS repo_edit_events (
-        id TEXT PRIMARY KEY,
-        repo_id TEXT NOT NULL,
-        session_id TEXT,
-        workflow_run_id TEXT,
-        actor_type TEXT NOT NULL,
-        actor_id TEXT,
-        action TEXT NOT NULL,
-        status TEXT NOT NULL,
-        reason TEXT,
-        paths_json TEXT NOT NULL,
-        input_hash TEXT,
-        diff_summary_json TEXT,
-        diff_patch TEXT,
-        error_json TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS repo_file_reads (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id TEXT,
-        repo_id TEXT NOT NULL,
-        worktree_id TEXT,
-        path TEXT NOT NULL,
-        mtime_ms REAL NOT NULL,
-        size INTEGER NOT NULL,
-        sha256 TEXT NOT NULL,
-        partial INTEGER NOT NULL DEFAULT 0,
-        read_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS worktrees (
-        id TEXT PRIMARY KEY,
-        repo_id TEXT NOT NULL,
-        repo_full_name TEXT NOT NULL,
-        github_owner TEXT NOT NULL,
-        github_name TEXT NOT NULL,
-        pr_number INTEGER,
-        base_ref TEXT NOT NULL,
-        head_owner TEXT,
-        head_name TEXT,
-        head_ref TEXT NOT NULL,
-        head_sha TEXT,
-        local_path TEXT NOT NULL UNIQUE,
-        storage_kind TEXT NOT NULL,
-        owning_workflow_run_id TEXT,
-        lifecycle_status TEXT NOT NULL,
-        last_synced_sha TEXT,
-        last_pushed_sha TEXT,
-        cleanup_policy_json TEXT,
-        direct_push_allowed INTEGER NOT NULL DEFAULT 0,
-        adopted INTEGER NOT NULL DEFAULT 0,
-        created_by TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS worktree_locks (
-        id TEXT PRIMARY KEY,
-        scope TEXT NOT NULL,
-        scope_key TEXT NOT NULL,
-        worktree_id TEXT,
-        repo_id TEXT NOT NULL,
-        pr_number INTEGER,
-        owner TEXT NOT NULL,
-        workflow_run_id TEXT,
-        expires_at TEXT NOT NULL,
-        released_at TEXT,
-        stale_recovered_at TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS worktree_events (
-        id TEXT PRIMARY KEY,
-        worktree_id TEXT NOT NULL,
-        repo_id TEXT NOT NULL,
-        event_type TEXT NOT NULL,
-        status TEXT NOT NULL,
-        message TEXT NOT NULL,
-        data_json TEXT,
-        created_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS worktree_cleanup_attempts (
-        id TEXT PRIMARY KEY,
-        worktree_id TEXT NOT NULL,
-        repo_id TEXT NOT NULL,
-        action TEXT NOT NULL,
-        outcome TEXT NOT NULL,
-        reason TEXT NOT NULL,
-        error TEXT,
-        deleted INTEGER NOT NULL DEFAULT 0,
-        attempted_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS prepared_diffs (
-        id TEXT PRIMARY KEY,
-        worktree_id TEXT NOT NULL UNIQUE,
-        repo_id TEXT NOT NULL,
-        repo_full_name TEXT NOT NULL,
-        pr_number INTEGER,
-        title TEXT NOT NULL,
-        source_worktree_path TEXT NOT NULL,
-        base_ref TEXT NOT NULL,
-        head_ref TEXT NOT NULL,
-        head_sha TEXT,
-        status TEXT NOT NULL,
-        push_approval_status TEXT NOT NULL,
-        verification_status TEXT NOT NULL,
-        summary_json TEXT,
-        created_by TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        abandoned_at TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS prepared_diff_approvals (
-        id TEXT PRIMARY KEY,
-        prepared_diff_id TEXT NOT NULL,
-        worktree_id TEXT NOT NULL,
-        approval_type TEXT NOT NULL,
-        status TEXT NOT NULL,
-        reason TEXT,
-        approver_surface TEXT,
-        requested_at TEXT NOT NULL,
-        resolved_at TEXT,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS kilo_tasks (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        prompt TEXT NOT NULL,
-        repo_id TEXT NOT NULL,
-        repo_full_name TEXT NOT NULL,
-        worktree_id TEXT,
-        lock_id TEXT,
-        cwd TEXT NOT NULL,
-        mode TEXT NOT NULL,
-        status TEXT NOT NULL,
-        explicit_user_request INTEGER NOT NULL,
-        auto_enabled INTEGER NOT NULL DEFAULT 0,
-        cli_path TEXT NOT NULL,
-        args_json TEXT NOT NULL,
-        pid INTEGER,
-        process_started_at TEXT,
-        root_session_id TEXT,
-        child_session_ids_json TEXT NOT NULL DEFAULT '[]',
-        raw_log_path TEXT,
-        summary TEXT,
-        exit_code INTEGER,
-        error TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        completed_at TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS kilo_task_events (
-        id TEXT PRIMARY KEY,
-        task_id TEXT NOT NULL,
-        event_index INTEGER NOT NULL,
-        event_type TEXT NOT NULL,
-        stream TEXT NOT NULL,
-        session_id TEXT,
-        child_session_id TEXT,
-        summary TEXT NOT NULL,
-        data_json TEXT,
-        created_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS kilo_session_audit (
-        id TEXT PRIMARY KEY,
-        task_id TEXT,
-        session_id TEXT,
-        child_session_id TEXT,
-        read_type TEXT NOT NULL,
-        requester_surface TEXT NOT NULL,
-        reason TEXT,
-        limit_count INTEGER,
-        offset_count INTEGER,
-        include_full_transcript INTEGER NOT NULL DEFAULT 0,
-        include_tool_output INTEGER NOT NULL DEFAULT 0,
-        include_diff INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS kilo_result_state (
-        task_id TEXT PRIMARY KEY,
-        prepared_diff_id TEXT,
-        classification TEXT NOT NULL,
-        verification_status TEXT NOT NULL,
-        promotion_status TEXT NOT NULL,
-        diff_fingerprint TEXT,
-        verified_diff_fingerprint TEXT,
-        review_summary_json TEXT,
-        diff_summary_json TEXT,
-        policy_json TEXT,
-        verification_json TEXT,
-        promotion_json TEXT,
-        pending_approvals_json TEXT NOT NULL DEFAULT '[]',
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        reviewed_at TEXT,
-        verified_at TEXT,
-        promoted_at TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS kilo_result_events (
-        id TEXT PRIMARY KEY,
-        task_id TEXT NOT NULL,
-        event_type TEXT NOT NULL,
-        summary TEXT NOT NULL,
-        data_json TEXT,
-        created_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS mcp_tool_catalog (
-        server_id TEXT NOT NULL,
-        tool_name TEXT NOT NULL,
-        adapted_name TEXT NOT NULL,
-        description TEXT NOT NULL,
-        input_schema_json TEXT,
-        output_schema_json TEXT,
-        annotations_json TEXT,
-        status TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        PRIMARY KEY(server_id, tool_name)
-      );
-
-      CREATE TABLE IF NOT EXISTS mcp_tool_approvals (
-        id TEXT PRIMARY KEY,
-        server_id TEXT NOT NULL,
-        tool_name TEXT NOT NULL,
-        adapted_name TEXT NOT NULL,
-        arguments_hash TEXT NOT NULL,
-        arguments_preview TEXT NOT NULL,
-        status TEXT NOT NULL,
-        approver_surface TEXT,
-        expires_at TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        resolved_at TEXT,
-        used_at TEXT,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS mcp_tool_audit (
-        id TEXT PRIMARY KEY,
-        server_id TEXT NOT NULL,
-        tool_name TEXT NOT NULL,
-        adapted_name TEXT NOT NULL,
-        arguments_hash TEXT NOT NULL,
-        decision TEXT NOT NULL,
-        approval_id TEXT,
-        duration_ms INTEGER,
-        ok INTEGER NOT NULL,
-        result_preview TEXT,
-        error TEXT,
-        created_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS mcp_oauth_tokens (
-        server_id TEXT PRIMARY KEY,
-        server_identity TEXT,
-        access_token TEXT,
-        refresh_token TEXT,
-        token_type TEXT,
-        id_token TEXT,
-        expires_at TEXT,
-        scopes_json TEXT,
-        client_information_json TEXT,
-        discovery_state_json TEXT,
-        code_verifier TEXT,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS mcp_oauth_logins (
-        id TEXT PRIMARY KEY,
-        server_id TEXT NOT NULL,
-        server_identity TEXT,
-        state TEXT NOT NULL,
-        status TEXT NOT NULL,
-        redirect_url TEXT NOT NULL,
-        authorization_url TEXT,
-        discovery_state_json TEXT,
-        code_verifier TEXT,
-        error TEXT,
-        created_at TEXT NOT NULL,
-        expires_at TEXT NOT NULL,
-        completed_at TEXT,
-        updated_at TEXT NOT NULL
-      );
-`;
-
-export const appDatabaseIndexSql = `
-      CREATE INDEX IF NOT EXISTS idx_notifications_source_unresolved
-        ON notifications(source, source_id, resolved_at);
-
-      CREATE INDEX IF NOT EXISTS idx_pr_watch_event_watermarks_watch
-        ON pr_watch_event_watermarks(watch_id, updated_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_notifications_attention
-        ON notifications(resolved_at, read_at, level, created_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_memory_events_changed
-        ON memory_events(created_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_memories_active_scope
-        ON memories(status, scope, updated_at DESC);
-
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_scope_key_repo
-        ON memories(scope, key, COALESCE(repo_id, ''));
-
-      CREATE INDEX IF NOT EXISTS idx_learning_events_type
-        ON learning_events(type, created_at DESC);
-
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_learning_pr_handled_source
-        ON learning_events(source_id)
-        WHERE type = 'pr_handled' AND source_id IS NOT NULL;
-
-      CREATE INDEX IF NOT EXISTS idx_learning_reviews_kind
-        ON learning_reviews(kind, status, started_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_learning_candidates_status
-        ON learning_candidates(target, status, created_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_execution_approvals_status
-        ON execution_approvals(status, updated_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_execution_approvals_updated
-        ON execution_approvals(updated_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_repo_edit_events_updated
-        ON repo_edit_events(updated_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_repo_edit_events_repo
-        ON repo_edit_events(repo_id, updated_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_repo_file_reads_lookup
-        ON repo_file_reads(session_id, repo_id, worktree_id, path, read_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_chat_sessions_recent
-        ON chat_sessions(archived_at, pinned DESC, last_active_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_chat_sessions_kind
-        ON chat_sessions(kind, archived_at, last_active_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_chat_session_audit_session
-        ON chat_session_audit(session_id, created_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_worktrees_repo
-        ON worktrees(repo_id, lifecycle_status, updated_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_worktrees_pr
-        ON worktrees(repo_id, pr_number, head_ref, lifecycle_status);
-
-      CREATE INDEX IF NOT EXISTS idx_worktree_locks_active
-        ON worktree_locks(scope_key, released_at, expires_at);
-
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_worktree_locks_one_active
-        ON worktree_locks(scope_key)
-        WHERE released_at IS NULL;
-
-      CREATE INDEX IF NOT EXISTS idx_worktree_events_worktree
-        ON worktree_events(worktree_id, created_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_worktree_cleanup_attempts_worktree
-        ON worktree_cleanup_attempts(worktree_id, attempted_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_prepared_diffs_status
-        ON prepared_diffs(status, updated_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_prepared_diffs_repo
-        ON prepared_diffs(repo_id, pr_number, updated_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_prepared_diff_approvals_pending
-        ON prepared_diff_approvals(status, updated_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_prepared_diff_approvals_diff
-        ON prepared_diff_approvals(prepared_diff_id, updated_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_kilo_tasks_status
-        ON kilo_tasks(status, updated_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_kilo_tasks_repo
-        ON kilo_tasks(repo_id, updated_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_kilo_tasks_session
-        ON kilo_tasks(root_session_id);
-
-      CREATE INDEX IF NOT EXISTS idx_kilo_task_events_task
-        ON kilo_task_events(task_id, event_index);
-
-      CREATE INDEX IF NOT EXISTS idx_kilo_session_audit_session
-        ON kilo_session_audit(session_id, created_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_kilo_result_state_updated
-        ON kilo_result_state(updated_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_kilo_result_events_task
-        ON kilo_result_events(task_id, created_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_mcp_tool_catalog_status
-        ON mcp_tool_catalog(server_id, status, updated_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_mcp_tool_approvals_pending
-        ON mcp_tool_approvals(server_id, tool_name, adapted_name, arguments_hash, status, expires_at);
-
-      CREATE INDEX IF NOT EXISTS idx_mcp_tool_audit_created
-        ON mcp_tool_audit(created_at DESC);
-`;
+import { sql } from 'drizzle-orm';
+import {
+  index,
+  integer,
+  primaryKey,
+  real,
+  sqliteTable,
+  text,
+  unique,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
+
+export const appMetadata = sqliteTable('app_metadata', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+export const configHistory = sqliteTable('config_history', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  action: text('action').notNull(),
+  file: text('file').notNull(),
+  target: text('target'),
+  beforeJson: text('before_json'),
+  afterJson: text('after_json'),
+  changedAt: text('changed_at').notNull(),
+});
+
+export const prWatches = sqliteTable(
+  'pr_watches',
+  {
+    id: text('id').primaryKey(),
+    repoId: text('repo_id').notNull(),
+    repoFullName: text('repo_full_name').notNull(),
+    githubOwner: text('github_owner').notNull(),
+    githubName: text('github_name').notNull(),
+    prNumber: integer('pr_number').notNull(),
+    desiredTerminalState: text('desired_terminal_state').notNull(),
+    status: text('status').notNull(),
+    prState: text('pr_state'),
+    title: text('title'),
+    url: text('url'),
+    mergeCommitSha: text('merge_commit_sha'),
+    lastSnapshotJson: text('last_snapshot_json'),
+    lastOutcome: text('last_outcome'),
+    lastCheckedAt: text('last_checked_at'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [unique().on(table.repoFullName, table.prNumber)],
+);
+
+export const refWatches = sqliteTable(
+  'ref_watches',
+  {
+    id: text('id').primaryKey(),
+    repoId: text('repo_id').notNull(),
+    repoFullName: text('repo_full_name').notNull(),
+    githubOwner: text('github_owner').notNull(),
+    githubName: text('github_name').notNull(),
+    ref: text('ref').notNull(),
+    status: text('status').notNull(),
+    title: text('title'),
+    url: text('url'),
+    lastSnapshotJson: text('last_snapshot_json'),
+    lastOutcome: text('last_outcome'),
+    lastCheckedAt: text('last_checked_at'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [unique().on(table.repoFullName, table.ref)],
+);
+
+export const prWatchEventWatermarks = sqliteTable(
+  'pr_watch_event_watermarks',
+  {
+    watchId: text('watch_id').notNull(),
+    category: text('category').notNull(),
+    watermarkJson: text('watermark_json').notNull(),
+    sourceUpdatedAt: text('source_updated_at'),
+    checkedAt: text('checked_at').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.watchId, table.category] }),
+    index('idx_pr_watch_event_watermarks_watch').on(
+      table.watchId,
+      sql`${table.updatedAt} DESC`,
+    ),
+  ],
+);
+
+export const jobs = sqliteTable('jobs', {
+  id: text('id').primaryKey(),
+  type: text('type').notNull(),
+  blueprint: text('blueprint'),
+  enabled: integer('enabled').notNull(),
+  intervalSeconds: integer('interval_seconds').notNull(),
+  configJson: text('config_json'),
+  nextRunAt: text('next_run_at'),
+  lastRunAt: text('last_run_at'),
+  lastOutcome: text('last_outcome'),
+  lastMessage: text('last_message'),
+  lastResultJson: text('last_result_json'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+export const notifications = sqliteTable(
+  'notifications',
+  {
+    id: text('id').primaryKey(),
+    level: text('level').notNull(),
+    title: text('title').notNull(),
+    message: text('message').notNull(),
+    source: text('source'),
+    sourceId: text('source_id'),
+    dataJson: text('data_json'),
+    readAt: text('read_at'),
+    createdAt: text('created_at').notNull(),
+    resolvedAt: text('resolved_at'),
+    updatedAt: text('updated_at'),
+    occurrenceCount: integer('occurrence_count').default(1).notNull(),
+  },
+  (table) => [
+    index('idx_notifications_source_unresolved').on(
+      table.source,
+      table.sourceId,
+      table.resolvedAt,
+    ),
+    index('idx_notifications_attention').on(
+      table.resolvedAt,
+      table.readAt,
+      table.level,
+      sql`${table.createdAt} DESC`,
+    ),
+  ],
+);
+
+export const memories = sqliteTable(
+  'memories',
+  {
+    id: text('id').primaryKey(),
+    scope: text('scope').notNull(),
+    key: text('key').notNull(),
+    valueJson: text('value_json').notNull(),
+    repoId: text('repo_id'),
+    status: text('status').default('active').notNull(),
+    useCount: integer('use_count').default(0).notNull(),
+    lastUsedAt: text('last_used_at'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_memories_active_scope').on(
+      table.status,
+      table.scope,
+      sql`${table.updatedAt} DESC`,
+    ),
+    uniqueIndex('idx_memories_scope_key_repo').on(
+      table.scope,
+      table.key,
+      sql`COALESCE(${table.repoId}, '')`,
+    ),
+  ],
+);
+
+export const memoryEvents = sqliteTable(
+  'memory_events',
+  {
+    id: text('id').primaryKey(),
+    memoryId: text('memory_id'),
+    action: text('action').notNull(),
+    actor: text('actor').notNull(),
+    reason: text('reason'),
+    beforeJson: text('before_json'),
+    afterJson: text('after_json'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_memory_events_changed').on(sql`${table.createdAt} DESC`),
+  ],
+);
+
+export const learningEvents = sqliteTable(
+  'learning_events',
+  {
+    id: text('id').primaryKey(),
+    type: text('type').notNull(),
+    source: text('source').notNull(),
+    sourceId: text('source_id'),
+    repoId: text('repo_id'),
+    sessionId: text('session_id'),
+    prKey: text('pr_key'),
+    dataJson: text('data_json'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_learning_events_type').on(
+      table.type,
+      sql`${table.createdAt} DESC`,
+    ),
+    uniqueIndex('idx_learning_pr_handled_source')
+      .on(table.sourceId)
+      .where(
+        sql`${table.type} = 'pr_handled' AND ${table.sourceId} IS NOT NULL`,
+      ),
+  ],
+);
+
+export const learningReviews = sqliteTable(
+  'learning_reviews',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind').notNull(),
+    status: text('status').notNull(),
+    model: text('model').notNull(),
+    thinkingLevel: text('thinking_level').notNull(),
+    triggerJson: text('trigger_json').notNull(),
+    inputSummaryJson: text('input_summary_json'),
+    resultJson: text('result_json'),
+    error: text('error'),
+    flueRunId: text('flue_run_id'),
+    startedAt: text('started_at').notNull(),
+    completedAt: text('completed_at'),
+  },
+  (table) => [
+    index('idx_learning_reviews_kind').on(
+      table.kind,
+      table.status,
+      sql`${table.startedAt} DESC`,
+    ),
+  ],
+);
+
+export const learningCandidates = sqliteTable(
+  'learning_candidates',
+  {
+    id: text('id').primaryKey(),
+    target: text('target').notNull(),
+    status: text('status').notNull(),
+    action: text('action'),
+    scope: text('scope'),
+    key: text('key'),
+    valueJson: text('value_json'),
+    skillId: text('skill_id'),
+    patchJson: text('patch_json'),
+    repoId: text('repo_id'),
+    reason: text('reason'),
+    reviewId: text('review_id'),
+    createdAt: text('created_at').notNull(),
+    decidedAt: text('decided_at'),
+  },
+  (table) => [
+    index('idx_learning_candidates_status').on(
+      table.target,
+      table.status,
+      sql`${table.createdAt} DESC`,
+    ),
+  ],
+);
+
+export const workflowSummaries = sqliteTable('workflow_summaries', {
+  id: text('id').primaryKey(),
+  workflow: text('workflow').notNull(),
+  runId: text('run_id'),
+  status: text('status').notNull(),
+  summaryJson: text('summary_json'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+export const workflowEvents = sqliteTable(
+  'workflow_events',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    runId: text('run_id'),
+    workflow: text('workflow'),
+    eventType: text('event_type').notNull(),
+    eventIndex: integer('event_index'),
+    level: text('level'),
+    message: text('message').notNull(),
+    name: text('name'),
+    operationKind: text('operation_kind'),
+    operationId: text('operation_id'),
+    durationMs: integer('duration_ms'),
+    isError: integer('is_error').default(0).notNull(),
+    summaryJson: text('summary_json'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_workflow_events_run').on(table.runId, table.eventIndex),
+    index('idx_workflow_events_created').on(sql`${table.createdAt} DESC`),
+  ],
+);
+
+export const workflowRunObservations = sqliteTable(
+  'workflow_run_observations',
+  {
+    runId: text('run_id').primaryKey(),
+    workflow: text('workflow').notNull(),
+    status: text('status').notNull(),
+    startedAt: text('started_at').notNull(),
+    endedAt: text('ended_at'),
+    lastEventAt: text('last_event_at').notNull(),
+    lastMessage: text('last_message').notNull(),
+    eventCount: integer('event_count').default(0).notNull(),
+    durationMs: integer('duration_ms'),
+    isError: integer('is_error').default(0).notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+);
+
+export const neonSessions = sqliteTable('neon_sessions', {
+  id: text('id').primaryKey(),
+  label: text('label').notNull(),
+  agentName: text('agent_name').notNull(),
+  status: text('status').notNull(),
+  reason: text('reason'),
+  createdAt: text('created_at').notNull(),
+  activatedAt: text('activated_at').notNull(),
+  endedAt: text('ended_at'),
+  updatedAt: text('updated_at').notNull(),
+});
+
+export const chatSessions = sqliteTable(
+  'chat_sessions',
+  {
+    id: text('id').primaryKey(),
+    title: text('title').notNull(),
+    agentName: text('agent_name').notNull(),
+    kind: text('kind').notNull(),
+    pinned: integer('pinned').default(0).notNull(),
+    archivedAt: text('archived_at'),
+    linkedRepoId: text('linked_repo_id'),
+    linkedWatchId: text('linked_watch_id'),
+    linkedTaskId: text('linked_task_id'),
+    staleReasonsJson: text('stale_reasons_json'),
+    uiMetadataJson: text('ui_metadata_json'),
+    summary: text('summary'),
+    summaryGeneratedAt: text('summary_generated_at'),
+    summarySource: text('summary_source'),
+    summaryRefreshNote: text('summary_refresh_note'),
+    contextLoadedAt: text('context_loaded_at'),
+    contextMemoryIdsJson: text('context_memory_ids_json'),
+    learningTurnCount: integer('learning_turn_count').default(0).notNull(),
+    lastLearningReviewTurnCount: integer('last_learning_review_turn_count')
+      .default(0)
+      .notNull(),
+    lastLearningReviewAt: text('last_learning_review_at'),
+    lastLearningCurationTurnCount: integer('last_learning_curation_turn_count')
+      .default(0)
+      .notNull(),
+    lastLearningCurationAt: text('last_learning_curation_at'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    lastActiveAt: text('last_active_at').notNull(),
+  },
+  (table) => [
+    index('idx_chat_sessions_recent').on(
+      table.archivedAt,
+      sql`${table.pinned} DESC`,
+      sql`${table.lastActiveAt} DESC`,
+    ),
+    index('idx_chat_sessions_kind').on(
+      table.kind,
+      table.archivedAt,
+      sql`${table.lastActiveAt} DESC`,
+    ),
+  ],
+);
+
+export const chatSessionSurfaces = sqliteTable('chat_session_surfaces', {
+  surface: text('surface').primaryKey(),
+  sessionId: text('session_id').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+export const chatSessionAudit = sqliteTable(
+  'chat_session_audit',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    action: text('action').notNull(),
+    sessionId: text('session_id'),
+    surface: text('surface'),
+    reason: text('reason'),
+    metadataJson: text('metadata_json'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_chat_session_audit_session').on(
+      table.sessionId,
+      sql`${table.createdAt} DESC`,
+    ),
+  ],
+);
+
+export const executionApprovals = sqliteTable(
+  'execution_approvals',
+  {
+    id: text('id').primaryKey(),
+    command: text('command').notNull(),
+    backend: text('backend').notNull(),
+    cwd: text('cwd'),
+    context: text('context').notNull(),
+    risk: text('risk').notNull(),
+    policyDecision: text('policy_decision').notNull(),
+    status: text('status').notNull(),
+    approvalDecision: text('approval_decision'),
+    approverSurface: text('approver_surface'),
+    sessionId: text('session_id'),
+    requestContextJson: text('request_context_json'),
+    resultJson: text('result_json'),
+    exitCode: integer('exit_code'),
+    stdoutPreview: text('stdout_preview'),
+    stderrPreview: text('stderr_preview'),
+    error: text('error'),
+    createdAt: text('created_at').notNull(),
+    resolvedAt: text('resolved_at'),
+    executedAt: text('executed_at'),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_execution_approvals_status').on(
+      table.status,
+      sql`${table.updatedAt} DESC`,
+    ),
+    index('idx_execution_approvals_updated').on(sql`${table.updatedAt} DESC`),
+  ],
+);
+
+export const repoEditEvents = sqliteTable(
+  'repo_edit_events',
+  {
+    id: text('id').primaryKey(),
+    repoId: text('repo_id').notNull(),
+    sessionId: text('session_id'),
+    workflowRunId: text('workflow_run_id'),
+    actorType: text('actor_type').notNull(),
+    actorId: text('actor_id'),
+    action: text('action').notNull(),
+    status: text('status').notNull(),
+    reason: text('reason'),
+    pathsJson: text('paths_json').notNull(),
+    inputHash: text('input_hash'),
+    diffSummaryJson: text('diff_summary_json'),
+    diffPatch: text('diff_patch'),
+    errorJson: text('error_json'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    worktreeId: text('worktree_id'),
+  },
+  (table) => [
+    index('idx_repo_edit_events_updated').on(sql`${table.updatedAt} DESC`),
+    index('idx_repo_edit_events_repo').on(
+      table.repoId,
+      sql`${table.updatedAt} DESC`,
+    ),
+  ],
+);
+
+export const repoFileReads = sqliteTable(
+  'repo_file_reads',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    sessionId: text('session_id'),
+    repoId: text('repo_id').notNull(),
+    worktreeId: text('worktree_id'),
+    path: text('path').notNull(),
+    mtimeMs: real('mtime_ms').notNull(),
+    size: integer('size').notNull(),
+    sha256: text('sha256').notNull(),
+    partial: integer('partial').default(0).notNull(),
+    readAt: text('read_at').notNull(),
+  },
+  (table) => [
+    index('idx_repo_file_reads_lookup').on(
+      table.sessionId,
+      table.repoId,
+      table.worktreeId,
+      table.path,
+      sql`${table.readAt} DESC`,
+    ),
+  ],
+);
+
+export const worktrees = sqliteTable(
+  'worktrees',
+  {
+    id: text('id').primaryKey(),
+    repoId: text('repo_id').notNull(),
+    repoFullName: text('repo_full_name').notNull(),
+    githubOwner: text('github_owner').notNull(),
+    githubName: text('github_name').notNull(),
+    prNumber: integer('pr_number'),
+    baseRef: text('base_ref').notNull(),
+    headOwner: text('head_owner'),
+    headName: text('head_name'),
+    headRef: text('head_ref').notNull(),
+    headSha: text('head_sha'),
+    localPath: text('local_path').notNull(),
+    storageKind: text('storage_kind').notNull(),
+    owningWorkflowRunId: text('owning_workflow_run_id'),
+    lifecycleStatus: text('lifecycle_status').notNull(),
+    lastSyncedSha: text('last_synced_sha'),
+    lastPushedSha: text('last_pushed_sha'),
+    cleanupPolicyJson: text('cleanup_policy_json'),
+    directPushAllowed: integer('direct_push_allowed').default(0).notNull(),
+    adopted: integer('adopted').default(0).notNull(),
+    createdBy: text('created_by').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    unique().on(table.localPath),
+    index('idx_worktrees_repo').on(
+      table.repoId,
+      table.lifecycleStatus,
+      sql`${table.updatedAt} DESC`,
+    ),
+    index('idx_worktrees_pr').on(
+      table.repoId,
+      table.prNumber,
+      table.headRef,
+      table.lifecycleStatus,
+    ),
+  ],
+);
+
+export const worktreeLocks = sqliteTable(
+  'worktree_locks',
+  {
+    id: text('id').primaryKey(),
+    scope: text('scope').notNull(),
+    scopeKey: text('scope_key').notNull(),
+    worktreeId: text('worktree_id'),
+    repoId: text('repo_id').notNull(),
+    prNumber: integer('pr_number'),
+    owner: text('owner').notNull(),
+    workflowRunId: text('workflow_run_id'),
+    expiresAt: text('expires_at').notNull(),
+    releasedAt: text('released_at'),
+    staleRecoveredAt: text('stale_recovered_at'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_worktree_locks_active').on(
+      table.scopeKey,
+      table.releasedAt,
+      table.expiresAt,
+    ),
+    uniqueIndex('idx_worktree_locks_one_active')
+      .on(table.scopeKey)
+      .where(sql`${table.releasedAt} IS NULL`),
+  ],
+);
+
+export const worktreeEvents = sqliteTable(
+  'worktree_events',
+  {
+    id: text('id').primaryKey(),
+    worktreeId: text('worktree_id').notNull(),
+    repoId: text('repo_id').notNull(),
+    eventType: text('event_type').notNull(),
+    status: text('status').notNull(),
+    message: text('message').notNull(),
+    dataJson: text('data_json'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_worktree_events_worktree').on(
+      table.worktreeId,
+      sql`${table.createdAt} DESC`,
+    ),
+  ],
+);
+
+export const worktreeCleanupAttempts = sqliteTable(
+  'worktree_cleanup_attempts',
+  {
+    id: text('id').primaryKey(),
+    worktreeId: text('worktree_id').notNull(),
+    repoId: text('repo_id').notNull(),
+    action: text('action').notNull(),
+    outcome: text('outcome').notNull(),
+    reason: text('reason').notNull(),
+    error: text('error'),
+    deleted: integer('deleted').default(0).notNull(),
+    attemptedAt: text('attempted_at').notNull(),
+  },
+  (table) => [
+    index('idx_worktree_cleanup_attempts_worktree').on(
+      table.worktreeId,
+      sql`${table.attemptedAt} DESC`,
+    ),
+  ],
+);
+
+export const preparedDiffs = sqliteTable(
+  'prepared_diffs',
+  {
+    id: text('id').primaryKey(),
+    worktreeId: text('worktree_id').notNull(),
+    repoId: text('repo_id').notNull(),
+    repoFullName: text('repo_full_name').notNull(),
+    prNumber: integer('pr_number'),
+    title: text('title').notNull(),
+    sourceWorktreePath: text('source_worktree_path').notNull(),
+    baseRef: text('base_ref').notNull(),
+    headRef: text('head_ref').notNull(),
+    headSha: text('head_sha'),
+    status: text('status').notNull(),
+    pushApprovalStatus: text('push_approval_status').notNull(),
+    verificationStatus: text('verification_status').notNull(),
+    summaryJson: text('summary_json'),
+    createdBy: text('created_by').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    abandonedAt: text('abandoned_at'),
+  },
+  (table) => [
+    unique().on(table.worktreeId),
+    index('idx_prepared_diffs_status').on(
+      table.status,
+      sql`${table.updatedAt} DESC`,
+    ),
+    index('idx_prepared_diffs_repo').on(
+      table.repoId,
+      table.prNumber,
+      sql`${table.updatedAt} DESC`,
+    ),
+  ],
+);
+
+export const preparedDiffApprovals = sqliteTable(
+  'prepared_diff_approvals',
+  {
+    id: text('id').primaryKey(),
+    preparedDiffId: text('prepared_diff_id').notNull(),
+    worktreeId: text('worktree_id').notNull(),
+    approvalType: text('approval_type').notNull(),
+    status: text('status').notNull(),
+    reason: text('reason'),
+    approverSurface: text('approver_surface'),
+    requestedAt: text('requested_at').notNull(),
+    resolvedAt: text('resolved_at'),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_prepared_diff_approvals_pending').on(
+      table.status,
+      sql`${table.updatedAt} DESC`,
+    ),
+    index('idx_prepared_diff_approvals_diff').on(
+      table.preparedDiffId,
+      sql`${table.updatedAt} DESC`,
+    ),
+  ],
+);
+
+export const kiloTasks = sqliteTable(
+  'kilo_tasks',
+  {
+    id: text('id').primaryKey(),
+    title: text('title').notNull(),
+    prompt: text('prompt').notNull(),
+    repoId: text('repo_id').notNull(),
+    repoFullName: text('repo_full_name').notNull(),
+    worktreeId: text('worktree_id'),
+    lockId: text('lock_id'),
+    cwd: text('cwd').notNull(),
+    mode: text('mode').notNull(),
+    status: text('status').notNull(),
+    explicitUserRequest: integer('explicit_user_request').notNull(),
+    autoEnabled: integer('auto_enabled').default(0).notNull(),
+    cliPath: text('cli_path').notNull(),
+    argsJson: text('args_json').notNull(),
+    pid: integer('pid'),
+    processStartedAt: text('process_started_at'),
+    rootSessionId: text('root_session_id'),
+    childSessionIdsJson: text('child_session_ids_json').default('[]').notNull(),
+    rawLogPath: text('raw_log_path'),
+    summary: text('summary'),
+    exitCode: integer('exit_code'),
+    error: text('error'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    completedAt: text('completed_at'),
+  },
+  (table) => [
+    index('idx_kilo_tasks_status').on(
+      table.status,
+      sql`${table.updatedAt} DESC`,
+    ),
+    index('idx_kilo_tasks_repo').on(table.repoId, sql`${table.updatedAt} DESC`),
+    index('idx_kilo_tasks_session').on(table.rootSessionId),
+  ],
+);
+
+export const kiloTaskEvents = sqliteTable(
+  'kilo_task_events',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id').notNull(),
+    eventIndex: integer('event_index').notNull(),
+    eventType: text('event_type').notNull(),
+    stream: text('stream').notNull(),
+    sessionId: text('session_id'),
+    childSessionId: text('child_session_id'),
+    summary: text('summary').notNull(),
+    dataJson: text('data_json'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_kilo_task_events_task').on(table.taskId, table.eventIndex),
+  ],
+);
+
+export const kiloSessionAudit = sqliteTable(
+  'kilo_session_audit',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id'),
+    sessionId: text('session_id'),
+    childSessionId: text('child_session_id'),
+    readType: text('read_type').notNull(),
+    requesterSurface: text('requester_surface').notNull(),
+    reason: text('reason'),
+    limitCount: integer('limit_count'),
+    offsetCount: integer('offset_count'),
+    includeFullTranscript: integer('include_full_transcript')
+      .default(0)
+      .notNull(),
+    includeToolOutput: integer('include_tool_output').default(0).notNull(),
+    includeDiff: integer('include_diff').default(0).notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_kilo_session_audit_session').on(
+      table.sessionId,
+      sql`${table.createdAt} DESC`,
+    ),
+  ],
+);
+
+export const kiloResultState = sqliteTable(
+  'kilo_result_state',
+  {
+    taskId: text('task_id').primaryKey(),
+    preparedDiffId: text('prepared_diff_id'),
+    classification: text('classification').notNull(),
+    verificationStatus: text('verification_status').notNull(),
+    promotionStatus: text('promotion_status').notNull(),
+    diffFingerprint: text('diff_fingerprint'),
+    verifiedDiffFingerprint: text('verified_diff_fingerprint'),
+    reviewSummaryJson: text('review_summary_json'),
+    diffSummaryJson: text('diff_summary_json'),
+    policyJson: text('policy_json'),
+    verificationJson: text('verification_json'),
+    promotionJson: text('promotion_json'),
+    pendingApprovalsJson: text('pending_approvals_json')
+      .default('[]')
+      .notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    reviewedAt: text('reviewed_at'),
+    verifiedAt: text('verified_at'),
+    promotedAt: text('promoted_at'),
+  },
+  (table) => [
+    index('idx_kilo_result_state_updated').on(sql`${table.updatedAt} DESC`),
+  ],
+);
+
+export const kiloResultEvents = sqliteTable(
+  'kilo_result_events',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id').notNull(),
+    eventType: text('event_type').notNull(),
+    summary: text('summary').notNull(),
+    dataJson: text('data_json'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_kilo_result_events_task').on(
+      table.taskId,
+      sql`${table.createdAt} DESC`,
+    ),
+  ],
+);
+
+export const mcpToolCatalog = sqliteTable(
+  'mcp_tool_catalog',
+  {
+    serverId: text('server_id').notNull(),
+    toolName: text('tool_name').notNull(),
+    adaptedName: text('adapted_name').notNull(),
+    description: text('description').notNull(),
+    inputSchemaJson: text('input_schema_json'),
+    outputSchemaJson: text('output_schema_json'),
+    annotationsJson: text('annotations_json'),
+    status: text('status').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.serverId, table.toolName] }),
+    index('idx_mcp_tool_catalog_status').on(
+      table.serverId,
+      table.status,
+      sql`${table.updatedAt} DESC`,
+    ),
+  ],
+);
+
+export const mcpToolApprovals = sqliteTable(
+  'mcp_tool_approvals',
+  {
+    id: text('id').primaryKey(),
+    serverId: text('server_id').notNull(),
+    toolName: text('tool_name').notNull(),
+    adaptedName: text('adapted_name').notNull(),
+    argumentsHash: text('arguments_hash').notNull(),
+    argumentsPreview: text('arguments_preview').notNull(),
+    status: text('status').notNull(),
+    approverSurface: text('approver_surface'),
+    expiresAt: text('expires_at').notNull(),
+    createdAt: text('created_at').notNull(),
+    resolvedAt: text('resolved_at'),
+    usedAt: text('used_at'),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_mcp_tool_approvals_pending').on(
+      table.serverId,
+      table.toolName,
+      table.adaptedName,
+      table.argumentsHash,
+      table.status,
+      table.expiresAt,
+    ),
+  ],
+);
+
+export const mcpToolAudit = sqliteTable(
+  'mcp_tool_audit',
+  {
+    id: text('id').primaryKey(),
+    serverId: text('server_id').notNull(),
+    toolName: text('tool_name').notNull(),
+    adaptedName: text('adapted_name').notNull(),
+    argumentsHash: text('arguments_hash').notNull(),
+    decision: text('decision').notNull(),
+    approvalId: text('approval_id'),
+    durationMs: integer('duration_ms'),
+    ok: integer('ok').notNull(),
+    resultPreview: text('result_preview'),
+    error: text('error'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_mcp_tool_audit_created').on(sql`${table.createdAt} DESC`),
+  ],
+);
+
+export const mcpOauthTokens = sqliteTable('mcp_oauth_tokens', {
+  serverId: text('server_id').primaryKey(),
+  serverIdentity: text('server_identity'),
+  accessToken: text('access_token'),
+  refreshToken: text('refresh_token'),
+  tokenType: text('token_type'),
+  idToken: text('id_token'),
+  expiresAt: text('expires_at'),
+  scopesJson: text('scopes_json'),
+  clientInformationJson: text('client_information_json'),
+  discoveryStateJson: text('discovery_state_json'),
+  codeVerifier: text('code_verifier'),
+  updatedAt: text('updated_at').notNull(),
+});
+
+export const mcpOauthLogins = sqliteTable('mcp_oauth_logins', {
+  id: text('id').primaryKey(),
+  serverId: text('server_id').notNull(),
+  serverIdentity: text('server_identity'),
+  state: text('state').notNull(),
+  status: text('status').notNull(),
+  redirectUrl: text('redirect_url').notNull(),
+  authorizationUrl: text('authorization_url'),
+  discoveryStateJson: text('discovery_state_json'),
+  codeVerifier: text('code_verifier'),
+  error: text('error'),
+  createdAt: text('created_at').notNull(),
+  expiresAt: text('expires_at').notNull(),
+  completedAt: text('completed_at'),
+  updatedAt: text('updated_at').notNull(),
+});

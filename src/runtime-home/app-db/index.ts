@@ -12,7 +12,7 @@ import {
   reconcileActiveWorktreeLocks,
   reconcileExistingNotificationDuplicates,
 } from './reconcile.ts';
-import { appDatabaseIndexSql, appDatabaseSchemaSql } from './schema.ts';
+import { appDatabaseIndexSql, appDatabaseSchemaSql } from './legacy-schema.ts';
 
 export function initializeAppDatabase(path: string) {
   const database = new DatabaseSync(path);
