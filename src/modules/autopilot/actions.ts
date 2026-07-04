@@ -1,7 +1,7 @@
 /* eslint-disable no-unused-vars */
 import { defineAction } from '@flue/runtime';
 import * as v from 'valibot';
-import { checkAutopilotPolicy } from '../../autopilot-policy';
+import { checkAutopilotPolicy } from '../autopilot-policy';
 import { asJsonValue } from './utils';
 import {
   commentPrAutofixResultInputSchema,

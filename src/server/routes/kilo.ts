@@ -13,13 +13,13 @@ import {
   readUnavailableSessionAdapter,
   searchKiloSessions,
   startKiloTask,
-} from '../../kilo-actions';
+} from '../../modules/kilo';
 import {
   listKiloResultStates,
   promoteKiloResult,
   reviewKiloResult,
   verifyKiloResult,
-} from '../../kilo-results';
+} from '../../modules/kilo/results';
 import type { RuntimePaths } from '../../runtime-home';
 import {
   kiloSessionQuery,

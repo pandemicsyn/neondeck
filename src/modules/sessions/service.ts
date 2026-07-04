@@ -4,13 +4,13 @@ import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { asJsonValue } from '../../lib/action-result';
 import { openDb } from '../../lib/sqlite';
-import { buildMemoryPromptSnapshotSync } from '../../memory-actions';
+import { buildMemoryPromptSnapshotSync } from '../memory';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
   runtimePaths,
 } from '../../runtime-home';
-import { suggestUtilitySessionTitle } from '../../utility-model';
+import { suggestUtilitySessionTitle } from '../runtime';
 import { failedSessionResult } from './utils';
 import { publishSessionEvent } from './events';
 import { readNeonSessionState } from './active-session';

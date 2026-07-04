@@ -2,7 +2,7 @@ import { type JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../../lib/action-result';
 import { randomUUID } from 'node:crypto';
 import * as v from 'valibot';
-import { checkAutopilotPolicy } from '../../../autopilot-policy';
+import { checkAutopilotPolicy } from '../../autopilot-policy';
 import { openDb } from '../../../lib/sqlite';
 import { type RuntimePaths } from '../../../runtime-home';
 import {

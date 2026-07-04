@@ -6,8 +6,8 @@ import {
   fetchPullRequestEventState,
   postPullRequestComment,
   type GitHubPullRequestEventState,
-} from '../../github';
-import { readRepoRegistrySnapshot, repoFullName } from '../../repos';
+} from '../github';
+import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
@@ -17,7 +17,7 @@ import {
   listPrWatchRecords,
   parseWatchPrReference,
   type PrWatch,
-} from '../../watch-actions';
+} from '../watches';
 import {
   prEventTargetInputSchema,
   type PrEventActionResult,

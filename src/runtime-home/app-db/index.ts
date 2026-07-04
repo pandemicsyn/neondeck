@@ -5,14 +5,14 @@ import {
   migrateLegacyNeonSessions,
   migrateMemoriesRepoIdentity,
   migrateMemoryEvents,
-} from './migrations';
+} from './migrations.ts';
 import {
   reconcileActiveChatSession,
   reconcileActiveNeonSessions,
   reconcileActiveWorktreeLocks,
   reconcileExistingNotificationDuplicates,
-} from './reconcile';
-import { appDatabaseIndexSql, appDatabaseSchemaSql } from './schema';
+} from './reconcile.ts';
+import { appDatabaseIndexSql, appDatabaseSchemaSql } from './schema.ts';
 
 export function initializeAppDatabase(path: string) {
   const database = new DatabaseSync(path);

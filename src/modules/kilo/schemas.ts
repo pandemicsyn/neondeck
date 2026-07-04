@@ -56,6 +56,7 @@ export type WorkspaceResolution = {
 export type RunningProcess = {
   child: ReturnType<typeof spawn>;
   rawLog?: WriteStream;
+  completed: Promise<void>;
 };
 
 export type ResolvedKiloConfig = {

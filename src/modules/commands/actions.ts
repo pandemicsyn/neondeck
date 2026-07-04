@@ -1,6 +1,6 @@
 import { defineAction } from '@flue/runtime';
 import * as v from 'valibot';
-import { listWorkflowSummaries } from '../../app-state';
+import { listWorkflowSummaries } from '../app-state';
 import { runNeonCommand } from './runner';
 import { supportedCommands } from './registry';
 import {

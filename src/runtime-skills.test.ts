@@ -7,7 +7,7 @@ import {
   listRuntimeSkills,
   loadRuntimeSkill,
   runtimeSkillReferencesSync,
-} from './runtime-skills';
+} from './modules/runtime';
 
 const tempRoots: string[] = [];
 

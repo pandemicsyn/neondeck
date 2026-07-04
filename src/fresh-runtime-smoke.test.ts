@@ -3,13 +3,13 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { listWorkflowSummaries } from './app-state';
-import { runNeonCommand } from './commands';
-import { updateAgentModels } from './config-actions';
-import { listMemories, upsertMemory } from './memory-actions';
+import { listWorkflowSummaries } from './modules/app-state';
+import { runNeonCommand } from './modules/commands';
+import { updateAgentModels } from './modules/config';
+import { listMemories, upsertMemory } from './modules/memory';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
-import { listRuntimeSkills } from './runtime-skills';
-import { readRuntimeStatus } from './runtime-status';
+import { listRuntimeSkills } from './modules/runtime';
+import { readRuntimeStatus } from './modules/runtime';
 
 const tempRoots: string[] = [];
 

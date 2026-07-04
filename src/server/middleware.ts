@@ -5,7 +5,7 @@ import {
   localApiTokenMatches,
   localApiTokenQueryParam,
   readLocalApiToken,
-} from '../local-api-auth';
+} from '../modules/runtime';
 import type { RuntimePaths } from '../runtime-home';
 
 const localHosts = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);

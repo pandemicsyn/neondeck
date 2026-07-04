@@ -62,24 +62,6 @@ export function executionApprovalClass(approval: ExecutionApproval) {
   return '';
 }
 
-export function mcpStatusClass(server: McpServer) {
-  if (server.status === 'connected') return 'border-primary text-primary';
-  if (server.status === 'needs-login') return 'border-violet text-violet';
-  if (server.status === 'error') return 'border-accent text-accent';
-  return '';
-}
-
-export function mcpApprovalClass(approval: McpApproval) {
-  if (approval.status === 'pending') return 'border-accent text-accent';
-  if (approval.status === 'approved' || approval.status === 'used') {
-    return 'border-primary text-primary';
-  }
-  if (approval.status === 'denied' || approval.status === 'expired') {
-    return 'border-violet text-violet';
-  }
-  return '';
-}
-
 export function repoEditEventClass(event: RepoEditEvent) {
   if (event.status === 'applied') return 'border-primary text-primary';
   if (event.status === 'failed' || event.status === 'blocked') {
@@ -108,6 +90,24 @@ export function kiloTaskStatusClass(status: KiloTaskRecord['status']) {
     return 'border-violet text-violet';
   }
   if (status === 'running') return 'border-primary text-primary';
+  return '';
+}
+
+export function mcpStatusClass(server: McpServer) {
+  if (server.status === 'connected') return 'border-primary text-primary';
+  if (server.status === 'needs-login' || server.status === 'error') {
+    return 'border-accent text-accent';
+  }
+  if (server.status === 'connecting') return 'border-violet text-violet';
+  return '';
+}
+
+export function mcpApprovalClass(approval: McpApproval) {
+  if (approval.status === 'pending') return 'border-accent text-accent';
+  if (approval.status === 'approved' || approval.status === 'used') {
+    return 'border-primary text-primary';
+  }
+  if (approval.status === 'expired') return 'border-violet text-violet';
   return '';
 }
 

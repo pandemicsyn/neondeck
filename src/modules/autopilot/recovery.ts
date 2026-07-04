@@ -7,7 +7,7 @@ import {
 import {
   type GitHubPullRequestEventState,
   fetchPullRequestEventState,
-} from '../../github';
+} from '../github';
 import {
   abandonPreparedDiff,
   ensurePreparedDiffForWorktree,
@@ -16,7 +16,7 @@ import {
   readPreparedDiffRecord,
   readPreparedDiffSummary,
   requestPreparedDiffRevision,
-} from '../../prepared-diffs';
+} from '../prepared-diffs';
 import { commentPrAutofixResult } from './comments';
 import { pushPrAutofix } from './push';
 import { verifyPrWorktree } from './worktree';
@@ -27,7 +27,7 @@ import {
   readWorktreeRecord,
   releaseWorktreeLock,
   syncWorktree,
-} from '../../worktrees';
+} from '../worktrees';
 
 type AutopilotRecoveryResult = {
   ok: boolean;

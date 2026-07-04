@@ -1,6 +1,6 @@
-import type { GitHubCheckSummary, GitHubPullRequestDetail } from '../../github';
-import { fetchCheckSummary, fetchPullRequestDetail } from '../../github';
-import { readRepoRegistrySnapshot } from '../../repos';
+import type { GitHubCheckSummary, GitHubPullRequestDetail } from '../github';
+import { fetchCheckSummary, fetchPullRequestDetail } from '../github';
+import { readRepoRegistrySnapshot } from '../repos';
 import type { RuntimePaths } from '../../runtime-home';
 import type {
   CheckFetcher,

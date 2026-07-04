@@ -5,20 +5,20 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { notifyAutopilotState } from './autopilot-notifications';
+import { notifyAutopilotState } from './modules/autopilot/notifications';
 import {
   readAutopilotRecoveryOptions,
   runAutopilotRecoveryAction,
-} from './autopilot-recovery';
-import { listNotifications } from './app-state';
-import { ensurePreparedDiffForWorktree } from './prepared-diffs';
+} from './modules/autopilot/recovery';
+import { listNotifications } from './modules/app-state';
+import { ensurePreparedDiffForWorktree } from './modules/prepared-diffs';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
-import { createWorktree, readWorktreeRecord } from './worktrees';
+import { createWorktree, readWorktreeRecord } from './modules/worktrees';
 
 const tempRoots: string[] = [];
 const execFileAsync = promisify(execFile);
 
-vi.setConfig({ testTimeout: 180_000 });
+vi.setConfig({ testTimeout: 60_000 });
 
 afterEach(async () => {
   await Promise.all(
@@ -262,7 +262,7 @@ describe('autopilot recovery and notifications', () => {
       lifecycleStatus: 'prepared-diff',
       headSha: currentHead,
     });
-  }, 45_000);
+  });
 });
 
 async function fixture() {
@@ -312,24 +312,12 @@ async function gitFixture() {
 }
 
 async function git(cwd: string, args: string[]) {
-  await execFileAsync('git', args, { cwd, env: unsignedGitEnv() });
+  await execFileAsync('git', args, { cwd });
 }
 
 async function gitOutput(cwd: string, args: string[]) {
-  const { stdout } = await execFileAsync('git', args, {
-    cwd,
-    env: unsignedGitEnv(),
-  });
+  const { stdout } = await execFileAsync('git', args, { cwd });
   return stdout.trim();
-}
-
-function unsignedGitEnv() {
-  return {
-    ...process.env,
-    GIT_CONFIG_COUNT: '1',
-    GIT_CONFIG_KEY_0: 'commit.gpgsign',
-    GIT_CONFIG_VALUE_0: 'false',
-  };
 }
 
 function markLifecycle(

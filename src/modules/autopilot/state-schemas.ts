@@ -2,8 +2,8 @@
 import { defineTool } from '@flue/runtime';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
-import { listExecutionApprovals } from '../../execution-actions';
-import { flueRunInspectionUrl } from '../../local-api-auth';
+import { listExecutionApprovals } from '../execution';
+import { flueRunInspectionUrl } from '../runtime';
 import {
   globalAutopilotPolicy,
   mergeAutopilotConcurrency,
@@ -14,7 +14,7 @@ import {
   type AutopilotMode,
   type AutopilotModeAlias,
   type AutopilotPolicyLimits,
-} from '../../autopilot-policy';
+} from '../autopilot-policy';
 import {
   ensureRuntimeHome,
   parseAppConfig,
@@ -24,19 +24,19 @@ import {
   type RepoConfig,
   type RuntimePaths,
 } from '../../runtime-home';
-import { listNotifications, type NotificationLevel } from '../../app-state';
+import { listNotifications, type NotificationLevel } from '../app-state';
 import {
   listPreparedDiffs,
   type PreparedDiffApprovalRecord,
   type PreparedDiffRecord,
   type PreparedDiffStatus,
-} from '../../prepared-diffs';
-import { listPrWatchRecords, type PrWatch } from '../../watch-actions';
+} from '../prepared-diffs';
+import { listPrWatchRecords, type PrWatch } from '../watches';
 import {
   listWorktrees,
   type WorktreeLifecycleStatus,
   type WorktreeRecord,
-} from '../../worktrees';
+} from '../worktrees';
 
 export type AutopilotQueueStatus =
   | 'watching'

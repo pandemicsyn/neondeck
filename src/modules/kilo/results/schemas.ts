@@ -1,6 +1,6 @@
 import { type JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
-import { type RepoDiffSummary } from '../../../repos';
+import { type RepoDiffSummary } from '../../repos';
 
 export type KiloResultClassification =
   'discard' | 'needs-review' | 'ready-to-verify' | 'ready-to-push';

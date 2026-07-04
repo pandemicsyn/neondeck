@@ -5,21 +5,21 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { listNotifications } from './app-state';
-import { approvePreparedDiffPush } from './prepared-diffs';
-import { readKiloTaskStatus } from './kilo-actions';
+import { listNotifications } from './modules/app-state';
+import { approvePreparedDiffPush } from './modules/prepared-diffs';
+import { readKiloTaskStatus } from './modules/kilo';
 import {
   listKiloResultStates,
   promoteKiloResult,
   reviewKiloResult,
   verifyKiloResult,
-} from './kilo-results';
+} from './modules/kilo/results';
 import {
   ensureRuntimeHome,
   runtimePaths,
   type RuntimePaths,
 } from './runtime-home';
-import { createWorktree } from './worktrees';
+import { createWorktree } from './modules/worktrees';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];

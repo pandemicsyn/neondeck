@@ -5,12 +5,12 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { listWorkflowSummaries } from './app-state';
+import { listWorkflowSummaries } from './modules/app-state';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   checkAutopilotConcurrency,
   checkAutopilotPolicy,
-} from './autopilot-policy';
+} from './modules/autopilot';
 import {
   fixPrCiFailure,
   fixPrReviewFeedback,
@@ -19,13 +19,13 @@ import {
   pushPrAutofix,
   triagePrEvent,
   verifyPrWorktree,
-} from './autopilot-workflows';
+} from './modules/autopilot';
 import {
   abandonPreparedDiff,
   approvePreparedDiffPush,
   ensurePreparedDiffForWorktree,
   readPreparedDiff,
-} from './prepared-diffs';
+} from './modules/prepared-diffs';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
@@ -1399,7 +1399,8 @@ describe('PR event autopilot', () => {
   });
 
   it('pushes an approved and verified prepared diff to the PR head branch', async () => {
-    const { paths, featureSha, remote } = await fixture();
+    const { paths, featureSha, remote } = await fixture({ remote: true });
+    const remotePath = requireRemote(remote);
     const prepared = await prepareReviewPreparedDiff(paths, featureSha);
     const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
     const preparedDiffId = stringPath(prepared, ['data', 'preparedDiff', 'id']);
@@ -1423,7 +1424,7 @@ describe('PR event autopilot', () => {
 
     const result = await pushPrAutofix({ preparedDiffId }, paths, {
       getBranchPermissions: pushAllowedPermissions,
-      pushGit: pushToFixtureOrigin(remote),
+      pushGit: pushToFixtureOrigin(remotePath),
     });
 
     expect(result).toMatchObject({
@@ -1437,7 +1438,7 @@ describe('PR event autopilot', () => {
         commentsDeferred: true,
       },
     });
-    const pushedSha = await gitOutput(remote, [
+    const pushedSha = await gitOutput(remotePath, [
       'rev-parse',
       'refs/heads/feature',
     ]);
@@ -1467,7 +1468,8 @@ describe('PR event autopilot', () => {
   });
 
   it('does not mark a prepared diff push-blocked before push approval', async () => {
-    const { paths, featureSha, remote } = await fixture();
+    const { paths, featureSha, remote } = await fixture({ remote: true });
+    const remotePath = requireRemote(remote);
     const prepared = await prepareReviewPreparedDiff(paths, featureSha);
     const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
     const preparedDiffId = stringPath(prepared, ['data', 'preparedDiff', 'id']);
@@ -1515,7 +1517,7 @@ describe('PR event autopilot', () => {
 
     const pushed = await pushPrAutofix({ preparedDiffId }, paths, {
       getBranchPermissions: pushAllowedPermissions,
-      pushGit: pushToFixtureOrigin(remote),
+      pushGit: pushToFixtureOrigin(remotePath),
     });
     expect(pushed).toMatchObject({
       ok: true,
@@ -1559,7 +1561,8 @@ describe('PR event autopilot', () => {
   });
 
   it('blocks push-back when GitHub branch permissions do not allow direct push', async () => {
-    const { paths, featureSha, remote } = await fixture();
+    const { paths, featureSha, remote } = await fixture({ remote: true });
+    const remotePath = requireRemote(remote);
     const prepared = await prepareReviewPreparedDiff(paths, featureSha);
     const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
     const preparedDiffId = stringPath(prepared, ['data', 'preparedDiff', 'id']);
@@ -1585,7 +1588,7 @@ describe('PR event autopilot', () => {
         worktree: { lifecycleStatus: 'prepared-diff' },
       },
     });
-    const remoteFeatureSha = await gitOutput(remote, [
+    const remoteFeatureSha = await gitOutput(remotePath, [
       'rev-parse',
       'refs/heads/feature',
     ]);
@@ -1593,7 +1596,8 @@ describe('PR event autopilot', () => {
   });
 
   it('blocks push-back when the approved and verified commit is no longer HEAD', async () => {
-    const { paths, featureSha, remote } = await fixture();
+    const { paths, featureSha, remote } = await fixture({ remote: true });
+    const remotePath = requireRemote(remote);
     const prepared = await prepareReviewPreparedDiff(paths, featureSha);
     const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
     const worktreePath = stringPath(prepared, [
@@ -1630,7 +1634,7 @@ describe('PR event autopilot', () => {
         worktree: { lifecycleStatus: 'prepared-diff' },
       },
     });
-    const remoteFeatureSha = await gitOutput(remote, [
+    const remoteFeatureSha = await gitOutput(remotePath, [
       'rev-parse',
       'refs/heads/feature',
     ]);
@@ -1651,11 +1655,13 @@ describe('PR event autopilot', () => {
   });
 });
 
-async function fixture() {
+async function fixture(options: { remote?: boolean } = {}) {
   const home = await mkdtemp(join(tmpdir(), 'neondeck-autopilot-home-'));
   const repo = await mkdtemp(join(tmpdir(), 'neondeck-autopilot-repo-'));
-  const remote = await mkdtemp(join(tmpdir(), 'neondeck-autopilot-remote-'));
-  tempRoots.push(home, repo, remote);
+  const remote = options.remote
+    ? await mkdtemp(join(tmpdir(), 'neondeck-autopilot-remote-'))
+    : null;
+  tempRoots.push(...[home, repo, remote].filter((path) => path !== null));
   const paths = runtimePaths(home);
 
   await git(repo, ['init', '-b', 'main']);
@@ -1670,9 +1676,11 @@ async function fixture() {
   await git(repo, ['commit', '-am', 'feature']);
   const featureSha = await gitOutput(repo, ['rev-parse', 'HEAD']);
   await git(repo, ['checkout', 'main']);
-  await git(remote, ['init', '--bare']);
-  await git(repo, ['remote', 'add', 'origin', remote]);
-  await git(repo, ['push', 'origin', 'main', 'feature']);
+  if (remote) {
+    await git(remote, ['init', '--bare']);
+    await git(repo, ['remote', 'add', 'origin', remote]);
+    await git(repo, ['push', 'origin', 'main', 'feature']);
+  }
 
   await mkdir(paths.home, { recursive: true });
   await writeFile(
@@ -1823,6 +1831,11 @@ function pushToFixtureOrigin(remote: string) {
       stdout: '',
     } as never;
   };
+}
+
+function requireRemote(remote: string | null) {
+  if (!remote) throw new Error('Expected fixture remote.');
+  return remote;
 }
 
 async function failUnexpectedBranchPermissions(): Promise<never> {

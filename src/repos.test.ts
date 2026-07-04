@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { readRepoRegistrySnapshot, repoFullName } from './repos';
+import { readRepoRegistrySnapshot, repoFullName } from './modules/repos';
 import { runtimePaths } from './runtime-home';
 
 const tempRoots: string[] = [];

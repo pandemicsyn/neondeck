@@ -1,13 +1,13 @@
 import { invoke, observe, type FlueObservation } from '@flue/runtime';
 import type { MiddlewareHandler } from 'hono';
-import { addNotification, setWorkflowSummaryRunId } from '../app-state';
+import { addNotification, setWorkflowSummaryRunId } from '../modules/app-state';
 import {
   attachLearningReviewRunId,
   recordConversationTurnAndMaybeQueueLearning,
   recordHandledPrFromWorkflowResult,
-} from '../learning-reviews';
+} from '../modules/learning/reviews';
 import type { RuntimePaths } from '../runtime-home';
-import { recordFlueObservation } from '../workflow-observability';
+import { recordFlueObservation } from '../modules/learning';
 import curateLearningStoreWorkflow from '../workflows/curate_learning_store';
 import reviewConversationForLearningWorkflow from '../workflows/review_conversation_for_learning';
 import reviewPrBatchForLearningWorkflow from '../workflows/review_pr_batch_for_learning';

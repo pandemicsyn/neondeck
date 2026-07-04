@@ -16,7 +16,7 @@ import {
   searchChatSessions,
   startNeonSession,
   switchChatSession,
-} from '../../session-actions';
+} from '../../modules/sessions';
 import { safeJsonBody, safeJsonObject } from '../http';
 
 export function createSessionRoutes(paths: RuntimePaths) {

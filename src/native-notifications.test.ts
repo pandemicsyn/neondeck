@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shouldDeliverNativeNotification } from './native-notifications';
+import { shouldDeliverNativeNotification } from './modules/app-state';
 
 describe('native notification delivery policy', () => {
   it('delivers only unresolved attention-worthy notifications by default', () => {

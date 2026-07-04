@@ -8,7 +8,7 @@ import {
   readWorktreeStatus,
   releaseWorktreeLock,
   syncWorktree,
-} from '../../worktrees';
+} from '../../modules/worktrees';
 import { safeJsonBody, safeJsonObject } from '../http';
 
 export function createWorktreeRoutes(paths: RuntimePaths) {

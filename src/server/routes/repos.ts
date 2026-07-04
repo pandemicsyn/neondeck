@@ -1,5 +1,8 @@
 import { Hono } from 'hono';
-import { readRepoHealthSnapshot, readRepoRegistrySnapshot } from '../../repos';
+import {
+  readRepoHealthSnapshot,
+  readRepoRegistrySnapshot,
+} from '../../modules/repos';
 import { ConfigValidationError, type RuntimePaths } from '../../runtime-home';
 
 export function createReposRoutes(paths: RuntimePaths) {

@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { upsertJob } from '../../app-state';
+import { upsertJob } from '../app-state';
 import type { RuntimePaths } from '../../runtime-home';
 import type {
   DesiredTerminalState,

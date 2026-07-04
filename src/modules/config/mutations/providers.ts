@@ -14,7 +14,7 @@ import {
   resolveAnthropicProviderStatus,
   resolveKilocodeProviderStatus,
   resolveOpenAiProviderStatus,
-} from '../../../providers';
+} from '../../repos';
 import { updateProviderInputSchema, type ConfigActionResult } from '../schemas';
 
 export async function readProviderConfig(

@@ -1,5 +1,5 @@
-import type { RepoRegistrySnapshot } from '../../repos';
-import { repoFullName } from '../../repos';
+import type { RepoRegistrySnapshot } from '../repos';
+import { repoFullName } from '../repos';
 import type {
   DesiredTerminalState,
   ResolvedPrReference,

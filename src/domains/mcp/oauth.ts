@@ -17,6 +17,10 @@ import {
 } from '../../runtime-home';
 import { readMcpConfig } from './config';
 import type { McpServerConfig } from './schemas';
+import {
+  expireMcpServerApprovals,
+  expireMcpServerApprovalsSync,
+} from './store';
 
 export type McpOAuthLoginStatus =
   'pending' | 'redirect' | 'authorized' | 'failed' | 'expired';
@@ -288,10 +292,12 @@ export async function logoutMcpOAuthServer(
   }
 
   const database = new DatabaseSync(paths.neondeckDatabase);
+  let changed = false;
   try {
     const result = database
       .prepare('DELETE FROM mcp_oauth_tokens WHERE server_id = ?;')
       .run(input.id);
+    changed = result.changes > 0;
     database
       .prepare(
         `
@@ -304,18 +310,18 @@ export async function logoutMcpOAuthServer(
       `,
       )
       .run(new Date().toISOString(), input.id);
-    return {
-      ok: true,
-      action: 'mcp_logout',
-      changed: result.changes > 0,
-      message:
-        result.changes > 0
-          ? `Removed OAuth tokens for MCP server "${input.id}".`
-          : `MCP server "${input.id}" did not have stored OAuth tokens.`,
-    };
   } finally {
     database.close();
   }
+  if (changed) await expireMcpServerApprovals(input.id, paths);
+  return {
+    ok: true,
+    action: 'mcp_logout',
+    changed,
+    message: changed
+      ? `Removed OAuth tokens for MCP server "${input.id}".`
+      : `MCP server "${input.id}" did not have stored OAuth tokens.`,
+  };
 }
 
 export async function readMcpOAuthStatus(
@@ -495,6 +501,7 @@ class NeondeckMcpOAuthProvider implements OAuthClientProvider {
           : null,
       scopes: tokens.scope ? tokens.scope.split(/\s+/).filter(Boolean) : [],
     });
+    expireMcpServerApprovalsSync(this.input.serverId, this.input.paths);
   }
 
   async redirectToAuthorization(authorizationUrl: URL) {
@@ -557,6 +564,7 @@ class NeondeckMcpOAuthProvider implements OAuthClientProvider {
   ) {
     if (scope === 'all') {
       clearTokenState(this.input.paths, this.input.serverId);
+      expireMcpServerApprovalsSync(this.input.serverId, this.input.paths);
       return;
     }
     const patch: Partial<TokenState> = {};
@@ -572,6 +580,9 @@ class NeondeckMcpOAuthProvider implements OAuthClientProvider {
     if (scope === 'verifier') patch.codeVerifier = null;
     if (scope === 'discovery') patch.discoveryState = null;
     writeTokenState(this.input.paths, this.input.serverId, patch);
+    if (scope === 'tokens') {
+      expireMcpServerApprovalsSync(this.input.serverId, this.input.paths);
+    }
   }
 
   private currentTokenState() {

@@ -1,4 +1,4 @@
-import { loadNeondeckEnv } from '../env';
+import { loadNeondeckEnv } from '../modules/runtime';
 import type { RuntimePaths } from '../runtime-home';
 import type { GlobalOptions } from './types';
 import { runtimeHomeModule } from './modules';

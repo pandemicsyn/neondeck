@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
-import { listGitHubPrQueue } from '../../github-actions';
+import { listGitHubPrQueue } from '../../modules/github';
 import {
   getGitHubPrBranchPermissions,
   getGitHubPrEventState,
   getGitHubPrRequestedChanges,
   getGitHubPrReviewThreads,
   postGitHubPrComment,
-} from '../../pr-event-state';
+} from '../../modules/pr-events';
 import type { RuntimePaths } from '../../runtime-home';
 import { safeJsonBody } from '../http';
 

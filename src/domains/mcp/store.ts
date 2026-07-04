@@ -454,6 +454,37 @@ export async function consumeMcpApproval(id: string, paths = runtimePaths()) {
   }
 }
 
+export async function expireMcpServerApprovals(
+  serverId: string,
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  expireMcpServerApprovalsSync(serverId, paths);
+}
+
+export function expireMcpServerApprovalsSync(
+  serverId: string,
+  paths = runtimePaths(),
+) {
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  const now = new Date().toISOString();
+  try {
+    database
+      .prepare(
+        `
+        UPDATE mcp_tool_approvals
+        SET status = 'expired',
+            updated_at = ?
+        WHERE server_id = ?
+          AND status IN ('pending', 'approved');
+      `,
+      )
+      .run(now, serverId);
+  } finally {
+    database.close();
+  }
+}
+
 export async function resolveMcpApproval(rawInput: unknown) {
   const paths = runtimePaths();
   return resolveMcpApprovalWithPaths(rawInput, paths);

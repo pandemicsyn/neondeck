@@ -1,7 +1,7 @@
 import { defineWorkflow, type WorkflowRunsHandler } from '@flue/runtime';
 import * as v from 'valibot';
 import displayAssistant from '../agents/display-assistant';
-import { createScheduleBlueprint } from '../scheduler';
+import { createScheduleBlueprint } from '../modules/scheduler';
 
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 

@@ -1,4 +1,4 @@
-export * from './audit';
+export * from '../autonomous-audit';
 export * from './observability';
 export * from './operator';
 export * from './reviews';

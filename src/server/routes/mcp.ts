@@ -51,15 +51,16 @@ export function createMcpRoutes(paths: RuntimePaths) {
 
   routes.delete('/servers/:id', async (c) => {
     const body = await safeJsonObject(c);
+    const id = c.req.param('id');
     const result = await removeMcpServer(
       {
         ...body,
-        id: c.req.param('id'),
+        id,
         confirm: body.confirm === true || c.req.query('confirm') === 'true',
       },
       paths,
     );
-    if (result.ok) await getMcpRegistry(paths).refresh();
+    if (result.ok) await getMcpRegistry(paths).refresh(id);
     return c.json(result, result.ok ? 200 : 400);
   });
 

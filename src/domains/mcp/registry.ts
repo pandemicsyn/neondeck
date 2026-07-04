@@ -3,7 +3,7 @@ import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import {
   subscribeConfigEvents,
   type ConfigChangeEvent,
-} from '../../config-events';
+} from '../../modules/config/events';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 import { runMcpToolThroughGate } from './gate';
 import { mcpServerEnabled, type McpServerConfig } from './schemas';

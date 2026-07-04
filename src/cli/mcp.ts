@@ -155,7 +155,7 @@ export function registerMcpCommands(program: Command) {
         paths,
         getMcpRegistry,
         async (registry) => {
-          if (result.ok) await registry.refresh();
+          if (result.ok) await registry.refresh(id);
           printActionResult(result);
         },
       );

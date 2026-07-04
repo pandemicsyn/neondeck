@@ -7,7 +7,7 @@ import {
   fetchPullRequestReviewThreads,
   fetchPullRequestQueue,
   postPullRequestComment,
-} from './github';
+} from './modules/github';
 import type { RepoConfig } from './runtime-home';
 
 const originalFetch = globalThis.fetch;

@@ -1,40 +1,40 @@
 import { defineAgent, type AgentRouteHandler } from '@flue/runtime';
-import { readAgentModelSelectionSync } from '../agent-config';
-import { neondeckAutopilotActions } from '../autopilot-workflows';
-import { neondeckAutopilotRecoveryActions } from '../autopilot-recovery';
-import { neondeckCommandActions } from '../commands';
-import { neondeckConfigActions } from '../config-actions';
-import { neondeckDevDoctorActions } from '../dev-doctor';
-import { neondeckExeDevCheckoutActions } from '../exedev-checkouts';
-import { neondeckExecutionActions } from '../execution-actions';
+import { readAgentModelSelectionSync } from '../modules/runtime';
+import { neondeckAutopilotActions } from '../modules/autopilot';
+import { neondeckAutopilotRecoveryActions } from '../modules/autopilot/recovery';
+import { neondeckCommandActions } from '../modules/commands';
+import { neondeckConfigActions } from '../modules/config';
+import { neondeckDevDoctorActions } from '../modules/runtime';
+import { neondeckExeDevCheckoutActions } from '../modules/execution';
+import { neondeckExecutionActions } from '../modules/execution';
+import { executionPolicyCheckAction } from '../modules/execution';
+import { neondeckKiloActions } from '../modules/kilo';
+import { neondeckKiloResultActions } from '../modules/kilo/results';
+import { neondeckLearningOperatorActions } from '../modules/learning';
 import {
   mcpAgentToolsSync,
   mcpInstructionsSync,
   neondeckMcpActions,
 } from '../domains/mcp';
-import { executionPolicyCheckAction } from '../execution-policy';
-import { neondeckKiloActions } from '../kilo-actions';
-import { neondeckKiloResultActions } from '../kilo-results';
-import { neondeckLearningOperatorActions } from '../learning-operator';
 import {
   memoryInstructionsSync,
   neondeckMemoryActions,
-} from '../memory-actions';
-import { neondeckPrEventActions } from '../pr-event-state';
-import { neondeckPreparedDiffActions } from '../prepared-diffs';
+} from '../modules/memory';
+import { neondeckPrEventActions } from '../modules/pr-events';
+import { neondeckPreparedDiffActions } from '../modules/prepared-diffs';
 import {
   neondeckRuntimeSkillActions,
   runtimeSkillReferencesSync,
-} from '../runtime-skills';
-import { neondeckSkillPatchActions } from '../skill-patches';
+} from '../modules/runtime';
+import { neondeckSkillPatchActions } from '../modules/learning/skill-patches';
 import { neondeckRepoEditActions } from '../repo-edit';
-import { neondeckSchedulerActions } from '../scheduler';
-import { neondeckSessionActions } from '../session-actions';
-import { soulInstructions } from '../soul';
-import { neondeckSubagents } from '../subagents';
-import { neondeckFactTools } from '../tools';
-import { neondeckWatchActions } from '../watch-actions';
-import { neondeckWorktreeActions } from '../worktrees';
+import { neondeckSchedulerActions } from '../modules/scheduler';
+import { neondeckSessionActions } from '../modules/sessions';
+import { soulInstructions } from '../modules/runtime';
+import { neondeckSubagents } from '../modules/runtime';
+import { neondeckFactTools } from './tools';
+import { neondeckWatchActions } from '../modules/watches';
+import { neondeckWorktreeActions } from '../modules/worktrees';
 import githubGh from '../skills/github-gh/SKILL.md' with { type: 'skill' };
 import neondeck from '../skills/neondeck/SKILL.md' with { type: 'skill' };
 

@@ -7,11 +7,11 @@ import {
   listNotifications,
   markNotificationRead,
   resolveNotification,
-} from './app-state';
+} from './modules/app-state';
 import {
   subscribeNotificationEvents,
   type NotificationEvent,
-} from './notification-events';
+} from './modules/app-state';
 import { runtimePaths } from './runtime-home';
 
 const tempRoots: string[] = [];

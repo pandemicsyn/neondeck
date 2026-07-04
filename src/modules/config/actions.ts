@@ -1,6 +1,6 @@
 import { defineAction } from '@flue/runtime';
 import * as v from 'valibot';
-import { executionPolicyUpdateSchema } from '../../execution-policy';
+import { executionPolicyUpdateSchema } from '../execution-policy';
 import { dashboardConfigSchema } from '../../runtime-home';
 import {
   addRepoInputSchema,

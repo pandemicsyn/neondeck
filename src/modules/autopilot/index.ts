@@ -29,8 +29,6 @@ export type {
   AutopilotRunningCheck,
   AutopilotActivity,
 } from './state-schemas';
-export * from './policy-schemas';
-export * from './policy-config';
-export * from './policy';
+export * from '../autopilot-policy';
 export * from './notifications';
 export * from './recovery';

@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import { checkAutopilotPolicy } from '../../../autopilot-policy';
+import { checkAutopilotPolicy } from '../../autopilot-policy';
 import { gitDiff } from '../../../repo-edit/git';
-import { type RepoDiffSummary } from '../../../repos';
+import { type RepoDiffSummary } from '../../repos';
 import { type RuntimePaths } from '../../../runtime-home';
-import { listWorktrees, type WorktreeRecord } from '../../../worktrees';
+import { listWorktrees, type WorktreeRecord } from '../../worktrees';
 import {
   type KiloResultActionResult,
   type KiloResultClassification,

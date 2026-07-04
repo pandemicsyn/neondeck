@@ -3,7 +3,7 @@ import { realpath } from 'node:fs/promises';
 import type * as v from 'valibot';
 import { invalidInputAction } from '../../lib/action-result';
 import { parseInput as parseActionInput } from '../../lib/valibot';
-import { ensurePreparedDiffForWorktree } from '../../prepared-diffs';
+import { ensurePreparedDiffForWorktree } from '../prepared-diffs';
 import {
   type RuntimePaths,
   ensureRuntimeHome,

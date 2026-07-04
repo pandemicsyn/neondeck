@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
-import { updateAgentModels, updateLearningConfig } from './config-actions';
+import { updateAgentModels, updateLearningConfig } from './modules/config';
 import {
   completeLearningReviewFromModelOutput,
   listLearningReviews,
@@ -16,23 +16,23 @@ import {
   recordHandledPrFromWorkflowResult,
   failLearningReview,
   startLearningReview,
-} from './learning-reviews';
-import { readLearningOperatorState } from './learning-operator';
+} from './modules/learning/reviews';
+import { readLearningOperatorState } from './modules/learning';
 import {
   createMemoryCandidate,
   decideMemoryCandidate,
   listMemories,
   listMemoryCandidates,
   upsertMemory,
-} from './memory-actions';
-import { createChatSession } from './session-actions';
+} from './modules/memory';
+import { createChatSession } from './modules/sessions';
 import {
   applySkillPatchCandidate,
   listSkillPatchCandidates,
   proposeSkillPatch,
   rejectSkillPatchCandidate,
   restoreSkillPatchCandidate,
-} from './skill-patches';
+} from './modules/learning/skill-patches';
 import { runtimePaths } from './runtime-home';
 
 const tempRoots: string[] = [];

@@ -1,6 +1,6 @@
 # Neondeck Modularization Refactor Plan
 
-Status: **active** — this document supersedes `.plans/CLEAN_ARCHITECTURE_PROPOSAL.md` (deleted; see git history).
+Status: **complete** — this document supersedes `.plans/CLEAN_ARCHITECTURE_PROPOSAL.md` (deleted; see git history).
 
 Snapshot date: 2026-07-03. If you are an implementation agent picking this up later, regenerate the
 inventory first (see "Regenerating The Inventory" below) and reconcile before starting a phase —
@@ -143,15 +143,22 @@ src/
     config/
     repos/                # existing repos.ts, providers.ts, model-discovery.ts fold in here
     safety/
+    app-state/
+    runtime/
+    autonomous-audit/
+    execution-policy/
     execution/
     memory/
     repo-edit/            # already exists; internal split only
+    prepared-diffs/
     kilo/
+    autopilot-policy/
+    worktree-verification/
     watches/
-    scheduler/
     autopilot/
     learning/
-    commands/
+    scheduler/            # adapter/orchestration layer because it admits Flue workflows
+    commands/             # slash-command adapter layer
   server/                 # layer 5: Hono adapters
     app.ts                # app assembly: middleware + mounting sub-routers + static serving
     middleware.ts         # local API auth, Flue run inspection token
@@ -213,16 +220,21 @@ Only create files that have real code to hold. `src/repo-edit/` is the reference
 ```text
 lib
   └── runtime-home
-        └── github, worktrees, sessions, repos, safety, memory, repo-edit      (leaf modules)
-              └── config, execution, kilo, watches, scheduler, prepared-diffs  (mid modules)
-                    └── autopilot, learning, commands                          (orchestration modules)
-                          └── server routes, workflows, agents, cli            (adapters)
+        └── github, worktrees, sessions, repos, safety, memory, repo-edit,
+            app-state, runtime, autonomous-audit, execution-policy,
+            prepared-diffs                                                     (leaf/data modules)
+              └── config, execution, kilo, watches, pr-events,
+                  autopilot-policy, worktree-verification                       (mid modules)
+                    └── autopilot, learning                                     (orchestration modules)
+                          └── scheduler, commands, server routes, workflows,
+                              agents, cli                                       (adapters)
 ```
 
-Known existing violation to resolve: `src/kilo-results.ts` imports `verifyPrWorktree` from
-`src/autopilot-workflows.ts` (a lower layer importing a higher one). Fix during Phase 8/9 by moving
-worktree verification into `modules/worktrees` (it is fundamentally a worktree operation) so both
-kilo and autopilot call down to it.
+Resolved violation: `src/kilo-results.ts` imported `verifyPrWorktree` from
+`src/autopilot-workflows.ts` (a lower layer importing a higher one). The final boundary is
+`modules/worktree-verification`, a mid-layer coordinator that calls down into worktrees, execution,
+prepared-diffs, and repos. Kilo calls that module directly; autopilot keeps its own orchestration
+wrapper.
 
 ### Compatibility shims
 
@@ -267,13 +279,13 @@ you land a phase.
 | 5     | `modules/worktrees` ⚙                                                 | done   |
 | 6     | `modules/sessions` + `modules/config` + `modules/repos`               | done   |
 | 7     | `modules/safety` + `modules/execution`                                | done   |
-| 8     | `modules/kilo` ⚙                                                      | todo   |
-| 9     | `modules/autopilot` ⚙                                                 | todo   |
-| 10    | `modules/learning` + `modules/memory` ⚙                               | todo   |
-| 11    | `modules/watches` + `modules/scheduler` + `modules/commands` + `cli/` | todo   |
-| 12    | Shim removal + import-direction lint                                  | todo   |
-| 13    | Frontend `web/src/api/` split                                         | todo   |
-| 14    | Frontend feature folders: runtime-overview, flue-chat                 | todo   |
+| 8     | `modules/kilo` ⚙                                                      | done   |
+| 9     | `modules/autopilot` ⚙                                                 | done   |
+| 10    | `modules/learning` + `modules/memory` ⚙                               | done   |
+| 11    | `modules/watches` + `modules/scheduler` + `modules/commands` + `cli/` | done   |
+| 12    | Shim removal + import-direction lint                                  | done   |
+| 13    | Frontend `web/src/api/` split                                         | done   |
+| 14    | Frontend feature folders: runtime-overview, flue-chat                 | done   |
 
 Phases 4–11 are mostly independent of each other once 1–3 land; agents can reorder or parallelize
 them if they coordinate on shims. 13–14 need 3 (route stability) but not the backend domain phases.
@@ -425,9 +437,11 @@ semantics diffs carefully — this domain guards autonomy safety.
 
 Status note (2026-07-03): implemented in `src/modules/worktrees/` with top-level
 `src/worktrees.ts` preserved as a compatibility re-export shim. The split keeps lock and cleanup
-semantics intact and moves git command execution through `lib/exec`. `verify.ts` is present as a
-documented placeholder; moving `verifyPrWorktree` mechanics is deferred to Phase 9 because the
-current verifier is still coupled to autopilot workflow orchestration and prepared-diff state.
+semantics intact and moves git command execution through `lib/exec`.
+
+Status note (2026-07-04): the Phase 12 completion removed the top-level shim. Worktree
+verification moved to `src/modules/worktree-verification/` rather than staying inside the leaf
+worktrees module because it coordinates execution approvals and prepared-diff verification state.
 
 ### Phase 6: `modules/sessions` + `modules/config` + `modules/repos`
 
@@ -519,6 +533,11 @@ Verification: `kilo-actions.test.ts`, `kilo-results.test.ts`, `kilo-workflow-smo
 (integration), unit + integration suites; manually review process-cleanup and running-task
 reconciliation diffs.
 
+Status note (2026-07-04): implemented in `src/modules/kilo/` and `src/modules/kilo/results/`.
+Kilo result verification now calls `modules/worktree-verification` instead of autopilot. Session
+lookup was split into `sessions.ts` plus adapter helpers in `sessions-adapters.ts` to keep the
+service under the file-size guide.
+
 ### Phase 9: `modules/autopilot` ⚙
 
 The big one. Consolidate `autopilot-workflows.ts` (4,184), `autopilot.ts`, `autopilot-policy.ts`,
@@ -558,6 +577,11 @@ Verification: `autopilot-workflows.test.ts` (2,028 lines — split it to mirror 
 `prepared-diffs.test.ts`, `autopilot-workflow-smoke.test.ts` (integration),
 `npm run smoke:autopilot` if a configured environment is available.
 
+Status note (2026-07-04): implemented in `src/modules/autopilot/` with prepared diffs promoted to
+the lower `src/modules/prepared-diffs/` module because Kilo, recovery, and routes also consume
+them. Autopilot policy was promoted to `src/modules/autopilot-policy/` so Kilo can reuse the same
+policy gate without importing autopilot orchestration.
+
 ### Phase 10: `modules/learning` + `modules/memory` ⚙
 
 Learning (`learning-reviews.ts`, `learning-operator.ts`, `skill-patches.ts`,
@@ -586,6 +610,10 @@ ids, and memory scopes have active/legacy semantics — preserve exactly.
 
 Verification: `learning-reviews.test.ts`, `memory-actions.test.ts`, `cli-learning.test.ts`,
 `workflow-observability.test.ts`, `npm run smoke:learning` (integration).
+
+Status note (2026-07-04): implemented in `src/modules/learning/` and `src/modules/memory/`.
+Prepared-diff audit summary formatting moved to `src/modules/autonomous-audit/` because
+prepared-diffs and autopilot both need it below the learning-operator layer.
 
 ### Phase 11: `modules/watches` + `modules/scheduler` + `modules/commands` + `cli/`
 
@@ -618,6 +646,11 @@ leave a `TODO(refactor)` and keep behavior identical.
 Verification: `commands.test.ts`, `watch-actions.test.ts`, `scheduler.test.ts`,
 `cli-learning.test.ts`; run `npm run cli -- --help` and `npm run cli -- doctor` manually.
 
+Status note (2026-07-04): implemented in `src/modules/watches/`, `src/modules/scheduler/`,
+`src/modules/commands/`, and `src/cli/`. Scheduler and commands are classified as adapter-layer
+modules in the import guard because scheduler admits Flue workflows and slash commands invoke
+adapter behavior.
+
 ### Phase 12: Shim removal + layering enforcement
 
 - Migrate all remaining imports off the top-level shims (`runtime-home.ts`, `github.ts`,
@@ -629,6 +662,11 @@ Verification: `commands.test.ts`, `watch-actions.test.ts`, `scheduler.test.ts`,
 - Re-run `npm run report:file-sizes` and update the inventory table above with results.
 
 Verification: `npm run verify` (full suite + format + build).
+
+Status note (2026-07-04): top-level production TypeScript files are now limited to `src/app.ts`,
+`src/db.ts`, and `src/setup.ts`. The import-direction guard is wired into `npm run check`, includes
+the new shared policy/verification modules, and no longer carries compatibility-shim bridge
+exceptions.
 
 ### Phase 13: Frontend API split
 
@@ -651,6 +689,10 @@ web/src/api/
 
 Verification: `web/src/api.test.ts` moves/splits with the code; `npm run typecheck`;
 `npm run build:web`; dashboard smoke in dev.
+
+Status note (2026-07-04): implemented as `web/src/api/` domain modules plus `web/src/api/index.ts`.
+The compatibility `web/src/api.ts` shim was removed; existing imports resolve to the directory
+index.
 
 ### Phase 14: Frontend feature folders
 
@@ -686,6 +728,10 @@ web/src/features/flue-chat/
 
 Verification: `npm run typecheck`, `npm run build:web`, component tests where they exist, manual
 dashboard pass (Playwright is available for a scripted smoke if the implementer prefers).
+
+Status note (2026-07-04): Runtime Overview and Flue Chat are implemented under
+`web/src/features/runtime-overview/` and `web/src/features/flue-chat/`. The plugin registry is kept
+stable through one-line plugin re-exports.
 
 ---
 

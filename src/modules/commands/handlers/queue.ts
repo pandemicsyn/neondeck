@@ -2,9 +2,9 @@ import type {
   GitHubPullRequestQueue,
   GitHubPullRequest,
   GitHubQueueIssue,
-} from '../../../github';
-import { fetchGitHubLogin, fetchPullRequestQueue } from '../../../github';
-import { readRepoRegistrySnapshot } from '../../../repos';
+} from '../../github';
+import { fetchGitHubLogin, fetchPullRequestQueue } from '../../github';
+import { readRepoRegistrySnapshot } from '../../repos';
 import { listPrWatchRecords } from '../../watches';
 import type { RuntimePaths } from '../../../runtime-home';
 import type {

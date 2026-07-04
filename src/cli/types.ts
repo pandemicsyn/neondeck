@@ -1,5 +1,5 @@
 export type RuntimeStatus = Awaited<
-  ReturnType<(typeof import('../runtime-status'))['readRuntimeStatus']>
+  ReturnType<(typeof import('../modules/runtime'))['readRuntimeStatus']>
 >;
 
 export type EnvMap = Map<string, string>;

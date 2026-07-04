@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
-import { listExecutionApprovals } from './execution-actions';
-import { syncExeDevCheckout } from './exedev-checkouts';
+import { listExecutionApprovals } from './modules/execution';
+import { syncExeDevCheckout } from './modules/execution';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 
 const tempRoots: string[] = [];

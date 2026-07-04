@@ -17,8 +17,8 @@ import {
   mergeMemories,
   rewriteMemory,
   upsertMemory,
-} from './memory-actions';
-import { updateLearningConfig } from './config-actions';
+} from './modules/memory';
+import { updateLearningConfig } from './modules/config';
 import { runtimePaths } from './runtime-home';
 
 const tempRoots: string[] = [];

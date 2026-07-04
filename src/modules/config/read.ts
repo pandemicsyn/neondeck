@@ -1,11 +1,11 @@
 import { configEventFromChange, publishConfigEvent } from './events';
 import { okResult, failResult, errorMessage } from './result';
 import type { ConfigActionResult, ConfigTarget } from './schemas';
+import { parseMcpConfig } from '../../domains/mcp/schemas';
 import {
   ensureRuntimeHome,
   parseAppConfig,
   parseDashboardConfig,
-  parseMcpConfig,
   parseRepoRegistry,
   parseScheduleConfig,
   readRuntimeJson,

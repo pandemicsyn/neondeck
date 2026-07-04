@@ -12,6 +12,7 @@ import {
   getMcpRegistry,
   listMcpApprovals,
   listMcpAudit,
+  logoutMcpOAuthServer,
   readMcpOAuthStatus,
   readMcpConfig,
   mcpRegistryRefreshAction,
@@ -687,6 +688,15 @@ describe('MCP support', () => {
         changed: false,
         requires: ['user-owned-surface'],
       });
+      await expect(
+        mcpServerUpdateAction.run({
+          input: { id: 'remote', server: {} },
+        } as never),
+      ).resolves.toMatchObject({
+        ok: false,
+        changed: false,
+        requires: ['user-owned-surface'],
+      });
     } finally {
       if (previousHome === undefined) delete process.env.NEONDECK_HOME;
       else process.env.NEONDECK_HOME = previousHome;
@@ -822,6 +832,211 @@ describe('MCP support', () => {
     await expect(readMcpOAuthStatus('remote', paths)).resolves.toMatchObject({
       authorized: false,
     });
+  });
+
+  it('expires approved MCP tool calls when OAuth tokens are removed', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+
+    await addMcpServer(
+      {
+        id: 'remote',
+        server: {
+          transport: 'http',
+          url: 'https://mcp.example.test/mcp',
+          auth: { kind: 'oauth' },
+        },
+      },
+      paths,
+    );
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `
+          INSERT INTO mcp_oauth_tokens (
+            server_id,
+            server_identity,
+            access_token,
+            refresh_token,
+            token_type,
+            id_token,
+            expires_at,
+            scopes_json,
+            client_information_json,
+            discovery_state_json,
+            code_verifier,
+            updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, NULL, NULL, NULL, ?);
+        `,
+        )
+        .run(
+          'remote',
+          oauthServerIdentity('https://mcp.example.test/mcp'),
+          'access-token',
+          'refresh-token',
+          'Bearer',
+          JSON.stringify(['read']),
+          new Date().toISOString(),
+        );
+    } finally {
+      database.close();
+    }
+    const request = await createMcpApprovalRequest(
+      {
+        serverId: 'remote',
+        toolName: 'echo',
+        adaptedName: 'mcp__remote__echo',
+        argumentsHash: 'abc123',
+        argumentsPreview: '{"text":"hello"}',
+      },
+      paths,
+    );
+    await resolveMcpApprovalWithPaths(
+      {
+        id: request!.id,
+        decision: 'approve',
+        approverSurface: 'test',
+      },
+      paths,
+    );
+
+    await expect(
+      logoutMcpOAuthServer({ id: 'remote', confirm: true }, paths),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+    await expect(
+      consumeUsableMcpApproval(
+        {
+          serverId: 'remote',
+          toolName: 'echo',
+          adaptedName: 'mcp__remote__echo',
+          argumentsHash: 'abc123',
+        },
+        paths,
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      listMcpApprovals(paths, { includeResolved: true }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: request!.id,
+          status: 'expired',
+        }),
+      ]),
+    );
+  });
+
+  it('expires approved MCP tool calls when OAuth tokens are replaced', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+
+    await addMcpServer(
+      {
+        id: 'remote',
+        server: {
+          transport: 'http',
+          url: 'https://mcp.example.test/mcp',
+          auth: { kind: 'oauth' },
+        },
+      },
+      paths,
+    );
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `
+          INSERT INTO mcp_oauth_tokens (
+            server_id,
+            server_identity,
+            access_token,
+            refresh_token,
+            token_type,
+            id_token,
+            expires_at,
+            scopes_json,
+            client_information_json,
+            discovery_state_json,
+            code_verifier,
+            updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, NULL, NULL, NULL, ?);
+        `,
+        )
+        .run(
+          'remote',
+          oauthServerIdentity('https://mcp.example.test/mcp'),
+          'old-access-token',
+          'old-refresh-token',
+          'Bearer',
+          JSON.stringify(['read']),
+          new Date().toISOString(),
+        );
+    } finally {
+      database.close();
+    }
+    const request = await createMcpApprovalRequest(
+      {
+        serverId: 'remote',
+        toolName: 'echo',
+        adaptedName: 'mcp__remote__echo',
+        argumentsHash: 'abc123',
+        argumentsPreview: '{"text":"hello"}',
+      },
+      paths,
+    );
+    await resolveMcpApprovalWithPaths(
+      {
+        id: request!.id,
+        decision: 'approve',
+        approverSurface: 'test',
+      },
+      paths,
+    );
+
+    const { createMcpOAuthProvider } = await import('./oauth');
+    const provider = createMcpOAuthProvider({
+      paths,
+      serverId: 'remote',
+      server: {
+        transport: 'http',
+        url: 'https://mcp.example.test/mcp',
+        auth: { kind: 'oauth' },
+      },
+      state: 'token-replacement-state',
+    });
+    provider.saveTokens({
+      access_token: 'new-access-token',
+      refresh_token: 'new-refresh-token',
+      token_type: 'Bearer',
+      scope: 'read write',
+    });
+
+    await expect(
+      consumeUsableMcpApproval(
+        {
+          serverId: 'remote',
+          toolName: 'echo',
+          adaptedName: 'mcp__remote__echo',
+          argumentsHash: 'abc123',
+        },
+        paths,
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      listMcpApprovals(paths, { includeResolved: true }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: request!.id,
+          status: 'expired',
+        }),
+      ]),
+    );
   });
 
   it('does not authorize expired access-only MCP OAuth tokens', async () => {

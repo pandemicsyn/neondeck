@@ -1,5 +1,5 @@
 import type { JsonValue } from '@flue/runtime';
-import type { GitHubCheckSummary, GitHubPullRequestDetail } from '../../github';
+import type { GitHubCheckSummary, GitHubPullRequestDetail } from '../github';
 import * as v from 'valibot';
 
 export type PrWatchStatus =

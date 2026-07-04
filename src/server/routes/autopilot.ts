@@ -7,11 +7,11 @@ import {
   pushPrAutofix,
   triagePrEvent,
   verifyPrWorktree,
-} from '../../autopilot-workflows';
+} from '../../modules/autopilot';
 import {
   readAutopilotRecoveryOptions,
   runAutopilotRecoveryAction,
-} from '../../autopilot-recovery';
+} from '../../modules/autopilot/recovery';
 import {
   abandonPreparedDiff,
   approvePreparedDiffPush,
@@ -22,7 +22,7 @@ import {
   readPreparedDiffSummary,
   requestPreparedDiffRevision,
   runPreparedDiffVerification,
-} from '../../prepared-diffs';
+} from '../../modules/prepared-diffs';
 import type { RuntimePaths } from '../../runtime-home';
 import {
   preparedDiffHttpStatus,

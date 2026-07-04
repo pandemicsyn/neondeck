@@ -9,8 +9,8 @@ import { cp, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { dirname } from 'node:path';
 
-import { generateLocalApiToken } from './defaults';
-import { runtimePaths } from './paths';
+import { generateLocalApiToken } from './defaults.ts';
+import { runtimePaths } from './paths.ts';
 import {
   ConfigValidationError,
   parseAppConfig,
@@ -18,7 +18,7 @@ import {
   parseMcpConfig,
   parseRepoRegistry,
   parseScheduleConfig,
-} from './schemas';
+} from './schemas.ts';
 
 export async function readRuntimeJson<T>(
   path: string,

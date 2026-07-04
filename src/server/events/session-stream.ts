@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import {
   formatChatSessionServerSentEvent,
   subscribeChatSessionEvents,
-} from '../../session-events';
+} from '../../modules/sessions';
 
 export function createSessionEventRoutes() {
   const routes = new Hono();

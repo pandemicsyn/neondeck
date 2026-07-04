@@ -1,8 +1,5 @@
 import type { JsonValue } from '@flue/runtime';
-import {
-  readChatSession,
-  type ChatSessionRecord,
-} from '../../../session-actions';
+import { readChatSession, type ChatSessionRecord } from '../../sessions';
 import { listMemories, type MemoryRecord } from '../../memory';
 import {
   parseAppConfig,

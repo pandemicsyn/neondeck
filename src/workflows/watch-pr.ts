@@ -1,6 +1,6 @@
 import { defineWorkflow, type WorkflowRunsHandler } from '@flue/runtime';
 import displayAssistant from '../agents/display-assistant';
-import { watchPrAddAction } from '../watch-actions';
+import { watchPrAddAction } from '../modules/watches';
 
 export const runs: WorkflowRunsHandler = async (_c, next) => next();
 

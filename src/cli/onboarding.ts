@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { readDotEnvFile, type EnvLoadResult } from '../env';
+import { readDotEnvFile, type EnvLoadResult } from '../modules/runtime';
 import type { RuntimePaths } from '../runtime-home';
 import type { EnvMap } from './types';
 import {

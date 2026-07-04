@@ -1,7 +1,7 @@
 import type { JsonValue } from '@flue/runtime';
 import { readFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
-import { listRuntimeSkills } from '../../../runtime-skills';
+import { listRuntimeSkills } from '../../runtime';
 import type { RuntimePaths } from '../../../runtime-home';
 import {
   latestPrRetrospectiveCheckpoint,

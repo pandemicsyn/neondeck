@@ -1,0 +1,488 @@
+import { assertWorktreeMutationAllowed } from '../modules/worktrees';
+import { ensureRuntimeHome, runtimePaths } from '../runtime-home';
+import { recordRepoEditEvent } from './audit';
+import { replaceContent } from './fuzzy-replace';
+import {
+  countDiffLines,
+  gitDiff,
+  gitStatus,
+  summarizeDiff,
+  unifiedDiff,
+} from './git';
+import { withPathLocks } from './locks';
+import { resolveRepoPath } from './path-safety';
+import {
+  defaultReadLimit,
+  failedResult,
+  repoDiffInputSchema,
+  repoReadInputSchema,
+  repoReplaceInputSchema,
+  repoSearchInputSchema,
+  repoStatusInputSchema,
+  repoWriteInputSchema,
+} from './schemas';
+import {
+  atomicWrite,
+  execRg,
+  failureResult,
+  fallbackSearch,
+  isStaleForInput,
+  lockKey,
+  normalizeOutputContent,
+  parseInput,
+  readTextFile,
+  recordReadStamp,
+  resolveSessionId,
+  safeGlobs,
+  staleResult,
+} from './support';
+
+export async function readRepoFile(rawInput: unknown, paths = runtimePaths()) {
+  const parsed = parseInput(repoReadInputSchema, rawInput, 'repo_file_read');
+  if (!parsed.ok) return parsed.result;
+
+  try {
+    const sessionId = await resolveSessionId(parsed.input.sessionId, paths);
+    const target = await resolveRepoPath(
+      {
+        repoId: parsed.input.repoId,
+        worktreeId: parsed.input.worktreeId,
+        path: parsed.input.path,
+        intent: 'read',
+      },
+      paths,
+    );
+    const file = await readTextFile(target);
+    const lines = file.content.split('\n');
+    const offset = parsed.input.offset ?? 0;
+    const limit = parsed.input.limit ?? defaultReadLimit;
+    const window = lines.slice(offset, offset + limit);
+    const content = parsed.input.includeLineNumbers
+      ? window.map((line, index) => `${offset + index + 1}: ${line}`).join('\n')
+      : window.join('\n');
+    const truncated = offset + limit < lines.length;
+
+    await recordReadStamp(
+      parsed.input.repoId,
+      parsed.input.worktreeId,
+      target.relativePath,
+      file.stamp,
+      sessionId,
+      paths,
+    );
+    await recordRepoEditEvent(
+      {
+        repoId: parsed.input.repoId,
+        worktreeId: parsed.input.worktreeId,
+        sessionId,
+        action: 'read',
+        status: 'applied',
+        paths: [target.relativePath],
+      },
+      paths,
+    );
+
+    return {
+      ok: true,
+      action: 'repo_file_read',
+      changed: false,
+      message: `Read ${target.relativePath}.`,
+      repoId: parsed.input.repoId,
+      worktreeId: parsed.input.worktreeId,
+      path: target.relativePath,
+      content,
+      startLine: offset + 1,
+      endLine: offset + window.length,
+      totalLines: lines.length,
+      truncated,
+      binary: false,
+      sizeBytes: file.stamp.size,
+      stamp: file.stamp,
+    };
+  } catch (error) {
+    return failureResult('repo_file_read', error, paths, rawInput);
+  }
+}
+
+export async function searchRepoFiles(
+  rawInput: unknown,
+  paths = runtimePaths(),
+) {
+  const parsed = parseInput(
+    repoSearchInputSchema,
+    rawInput,
+    'repo_file_search',
+  );
+  if (!parsed.ok) return parsed.result;
+
+  try {
+    const sessionId = await resolveSessionId(undefined, paths);
+    const root = await resolveRepoPath(
+      {
+        repoId: parsed.input.repoId,
+        worktreeId: parsed.input.worktreeId,
+        path: '.',
+        intent: 'read',
+      },
+      paths,
+    ).then((value) => value.repoRoot);
+    const maxResults = parsed.input.maxResults ?? 50;
+    const args = [
+      '--line-number',
+      '--no-heading',
+      '--color',
+      'never',
+      '--max-count',
+      String(maxResults),
+      parsed.input.query,
+      ...safeGlobs(parsed.input.globs).flatMap((glob) => ['--glob', glob]),
+    ];
+    const output = await execRg(root, args).catch((error) => {
+      if (error && typeof error === 'object' && 'stdout' in error) {
+        return String((error as { stdout?: unknown }).stdout ?? '');
+      }
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        (error as { code?: unknown }).code === 'ENOENT'
+      ) {
+        return fallbackSearch(root, parsed.input.query, maxResults);
+      }
+      throw error;
+    });
+    const results = output
+      .split('\n')
+      .filter(Boolean)
+      .slice(0, maxResults)
+      .map((line) => {
+        const [path = '', lineNumber = '0', ...rest] = line.split(':');
+        return {
+          path,
+          line: Number(lineNumber),
+          preview: rest.join(':').slice(0, 500),
+        };
+      });
+
+    await recordRepoEditEvent(
+      {
+        repoId: parsed.input.repoId,
+        worktreeId: parsed.input.worktreeId,
+        sessionId,
+        action: 'search',
+        status: 'applied',
+        paths: [],
+        reason: parsed.input.query,
+      },
+      paths,
+    );
+
+    return {
+      ok: true,
+      action: 'repo_file_search',
+      changed: false,
+      message: `Found ${results.length} matches.`,
+      repoId: parsed.input.repoId,
+      worktreeId: parsed.input.worktreeId,
+      results,
+      truncated: results.length >= maxResults,
+    };
+  } catch (error) {
+    return failureResult('repo_file_search', error, paths, rawInput);
+  }
+}
+
+export async function writeRepoFile(rawInput: unknown, paths = runtimePaths()) {
+  const parsed = parseInput(repoWriteInputSchema, rawInput, 'repo_file_write');
+  if (!parsed.ok) return parsed.result;
+  const input = parsed.input;
+
+  try {
+    await ensureRuntimeHome(paths);
+    assertWorktreeMutationAllowed(
+      {
+        repoId: input.repoId,
+        worktreeId: input.worktreeId,
+        lockId: input.worktreeLockId,
+      },
+      paths,
+    );
+    const target = await resolveRepoPath(
+      {
+        repoId: input.repoId,
+        worktreeId: input.worktreeId,
+        path: input.path,
+        intent: 'write',
+        createParentDirectories: input.createParentDirectories,
+      },
+      paths,
+    );
+
+    return await withPathLocks(
+      [lockKey(input.repoId, input.worktreeId, target.relativePath)],
+      async () => {
+        const sessionId = await resolveSessionId(input.sessionId, paths);
+        const before = target.exists ? await readTextFile(target) : undefined;
+        const stale = before
+          ? await isStaleForInput(
+              input.expectedStamp,
+              before.stamp,
+              input.repoId,
+              input.worktreeId,
+              target.relativePath,
+              sessionId,
+              paths,
+            )
+          : false;
+        if (stale) {
+          return staleResult(
+            'repo_file_write',
+            input.repoId,
+            target.relativePath,
+          );
+        }
+        const nextContent = normalizeOutputContent(input.content, before);
+        const diff = await unifiedDiff(
+          target.repoRoot,
+          target.relativePath,
+          before?.content ?? '',
+          nextContent,
+        );
+        const lineCounts = countDiffLines(diff);
+        const diffSummary = summarizeDiff([lineCounts]);
+        if (!input.dryRun) {
+          await atomicWrite(target.fullPath, nextContent);
+        }
+        const event = await recordRepoEditEvent(
+          {
+            repoId: input.repoId,
+            worktreeId: input.worktreeId,
+            sessionId,
+            action: 'write',
+            status: input.dryRun ? 'preview' : 'applied',
+            reason: input.reason,
+            paths: [target.relativePath],
+            diffSummary,
+            diffPatch: diff,
+          },
+          paths,
+        );
+        return {
+          ok: true,
+          action: 'repo_file_write',
+          changed: !input.dryRun,
+          message: input.dryRun
+            ? `Previewed write to ${target.relativePath}.`
+            : `Wrote ${target.relativePath}.`,
+          repoId: input.repoId,
+          worktreeId: input.worktreeId,
+          path: target.relativePath,
+          dryRun: Boolean(input.dryRun),
+          sensitive: target.sensitive,
+          generatedLike: target.generatedLike,
+          diff,
+          diffSummary,
+          eventId: event.id,
+        };
+      },
+    );
+  } catch (error) {
+    return failureResult('repo_file_write', error, paths, rawInput);
+  }
+}
+
+export async function replaceRepoFile(
+  rawInput: unknown,
+  paths = runtimePaths(),
+) {
+  const parsed = parseInput(
+    repoReplaceInputSchema,
+    rawInput,
+    'repo_file_replace',
+  );
+  if (!parsed.ok) return parsed.result;
+  const input = parsed.input;
+
+  try {
+    await ensureRuntimeHome(paths);
+    assertWorktreeMutationAllowed(
+      {
+        repoId: input.repoId,
+        worktreeId: input.worktreeId,
+        lockId: input.worktreeLockId,
+      },
+      paths,
+    );
+    const target = await resolveRepoPath(
+      {
+        repoId: input.repoId,
+        worktreeId: input.worktreeId,
+        path: input.path,
+        intent: 'write',
+      },
+      paths,
+    );
+
+    return await withPathLocks(
+      [lockKey(input.repoId, input.worktreeId, target.relativePath)],
+      async () => {
+        const sessionId = await resolveSessionId(input.sessionId, paths);
+        const before = await readTextFile(target);
+        if (
+          await isStaleForInput(
+            input.expectedStamp,
+            before.stamp,
+            input.repoId,
+            input.worktreeId,
+            target.relativePath,
+            sessionId,
+            paths,
+          )
+        ) {
+          return staleResult(
+            'repo_file_replace',
+            input.repoId,
+            target.relativePath,
+          );
+        }
+        const replaced = replaceContent(before.content, input);
+        if (!replaced.ok) {
+          await recordRepoEditEvent(
+            {
+              repoId: input.repoId,
+              worktreeId: input.worktreeId,
+              sessionId,
+              action: 'replace',
+              status: 'failed',
+              reason: input.reason,
+              paths: [target.relativePath],
+              error: {
+                code: replaced.code,
+                message: replaced.message,
+                candidates: replaced.candidates,
+              },
+            },
+            paths,
+          );
+          return failedResult('repo_file_replace', replaced.message, {
+            code: replaced.code,
+            message: replaced.message,
+            path: target.relativePath,
+            details: { candidates: replaced.candidates },
+          });
+        }
+        const nextContent = normalizeOutputContent(replaced.content, before);
+        const diff = await unifiedDiff(
+          target.repoRoot,
+          target.relativePath,
+          before.content,
+          nextContent,
+        );
+        const diffSummary = summarizeDiff([countDiffLines(diff)]);
+        if (!input.dryRun) {
+          await atomicWrite(target.fullPath, nextContent);
+        }
+        const event = await recordRepoEditEvent(
+          {
+            repoId: input.repoId,
+            worktreeId: input.worktreeId,
+            sessionId,
+            action: 'replace',
+            status: input.dryRun ? 'preview' : 'applied',
+            reason: input.reason,
+            paths: [target.relativePath],
+            diffSummary,
+            diffPatch: diff,
+          },
+          paths,
+        );
+        return {
+          ok: true,
+          action: 'repo_file_replace',
+          changed: !input.dryRun,
+          message: input.dryRun
+            ? `Previewed replacement in ${target.relativePath}.`
+            : `Replaced ${replaced.replacements} occurrence(s) in ${target.relativePath}.`,
+          repoId: input.repoId,
+          worktreeId: input.worktreeId,
+          path: target.relativePath,
+          matched: replaced.matched,
+          replacements: replaced.replacements,
+          dryRun: Boolean(input.dryRun),
+          sensitive: target.sensitive,
+          generatedLike: target.generatedLike,
+          diff,
+          diffSummary,
+          eventId: event.id,
+        };
+      },
+    );
+  } catch (error) {
+    return failureResult('repo_file_replace', error, paths, rawInput);
+  }
+}
+
+export async function readRepoDiff(rawInput: unknown, paths = runtimePaths()) {
+  const parsed = parseInput(repoDiffInputSchema, rawInput, 'repo_diff');
+  if (!parsed.ok) return parsed.result;
+  try {
+    const root = await resolveRepoPath(
+      {
+        repoId: parsed.input.repoId,
+        worktreeId: parsed.input.worktreeId,
+        path: '.',
+        intent: 'read',
+      },
+      paths,
+    );
+    const result = await gitDiff(root.repoRoot, parsed.input);
+    return {
+      ok: true,
+      action: 'repo_diff',
+      changed: false,
+      message: `Read diff for ${parsed.input.repoId}.`,
+      repoId: parsed.input.repoId,
+      worktreeId: parsed.input.worktreeId,
+      base: result.base,
+      files: result.files,
+      diffSummary: result.summary,
+    };
+  } catch (error) {
+    return failureResult('repo_diff', error, paths, rawInput);
+  }
+}
+
+export async function readRepoCheckoutStatus(
+  rawInput: unknown,
+  paths = runtimePaths(),
+) {
+  const parsed = parseInput(
+    repoStatusInputSchema,
+    rawInput,
+    'repo_checkout_status',
+  );
+  if (!parsed.ok) return parsed.result;
+  try {
+    const root = await resolveRepoPath(
+      {
+        repoId: parsed.input.repoId,
+        worktreeId: parsed.input.worktreeId,
+        path: '.',
+        intent: 'read',
+      },
+      paths,
+    );
+    const status = await gitStatus(root.repoRoot);
+    return {
+      ok: true,
+      action: 'repo_checkout_status',
+      changed: false,
+      message: `Read checkout status for ${parsed.input.repoId}.`,
+      repoId: parsed.input.repoId,
+      worktreeId: parsed.input.worktreeId,
+      ...status,
+    };
+  } catch (error) {
+    return failureResult('repo_checkout_status', error, paths, rawInput);
+  }
+}

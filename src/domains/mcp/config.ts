@@ -3,7 +3,10 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
-import { configEventFromChange, publishConfigEvent } from '../../config-events';
+import {
+  configEventFromChange,
+  publishConfigEvent,
+} from '../../modules/config/events';
 import {
   ensureRuntimeHome,
   readRuntimeJson,
@@ -23,6 +26,7 @@ import {
   type McpConfig,
   type McpServerConfig,
 } from './schemas';
+import { expireMcpServerApprovals } from './store';
 
 export type McpConfigActionResult = {
   ok: boolean;
@@ -156,7 +160,7 @@ export async function updateMcpServer(
       next,
     );
     if (expireApprovals) {
-      expireMcpServerApprovals(paths, parsed.output.id);
+      await expireMcpServerApprovals(parsed.output.id, paths);
     }
     if (clearOAuth) {
       deleteMcpOAuthState(paths, parsed.output.id);
@@ -380,26 +384,6 @@ function deleteMcpOAuthState(paths: RuntimePaths, serverId: string) {
       `,
       )
       .run(new Date().toISOString(), serverId);
-  } finally {
-    database.close();
-  }
-}
-
-function expireMcpServerApprovals(paths: RuntimePaths, serverId: string) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
-  const now = new Date().toISOString();
-  try {
-    database
-      .prepare(
-        `
-        UPDATE mcp_tool_approvals
-        SET status = 'expired',
-            updated_at = ?
-        WHERE server_id = ?
-          AND status IN ('pending', 'approved');
-      `,
-      )
-      .run(now, serverId);
   } finally {
     database.close();
   }

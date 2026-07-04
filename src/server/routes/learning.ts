@@ -4,16 +4,16 @@ import * as v from 'valibot';
 import {
   decideMemoryCandidate,
   listMemoryCandidates,
-} from '../../memory-actions';
-import { listLearningReviews } from '../../learning-reviews';
-import { readLearningOperatorState } from '../../learning-operator';
+} from '../../modules/memory';
+import { listLearningReviews } from '../../modules/learning/reviews';
+import { readLearningOperatorState } from '../../modules/learning';
 import type { RuntimePaths } from '../../runtime-home';
 import {
   applySkillPatchCandidate,
   listSkillPatchCandidates,
   rejectSkillPatchCandidate,
-} from '../../skill-patches';
-import { readChatSession } from '../../session-actions';
+} from '../../modules/learning/skill-patches';
+import { readChatSession } from '../../modules/sessions';
 import curateLearningStoreWorkflow from '../../workflows/curate_learning_store';
 import reviewConversationForLearningWorkflow from '../../workflows/review_conversation_for_learning';
 import reviewPrBatchForLearningWorkflow from '../../workflows/review_pr_batch_for_learning';

@@ -12,7 +12,7 @@ import {
   readRuntimeJson,
   runtimePaths,
 } from '../../../runtime-home';
-import { readWorktreeRecord, type WorktreeRecord } from '../../../worktrees';
+import { readWorktreeRecord, type WorktreeRecord } from '../../worktrees';
 
 export type ExeDevTargetInput = {
   repoId?: string;

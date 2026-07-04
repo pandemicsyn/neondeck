@@ -1,9 +1,8 @@
 import { asJsonValue } from '../../../lib/action-result';
-import { checkAutopilotPolicy } from '../../../autopilot-policy';
-import { verifyPrWorktree } from '../../../autopilot-workflows';
+import { checkAutopilotPolicy } from '../../autopilot-policy';
 import { notifyKiloState, resolveKiloNotifications } from '../notifications';
-import { getGitHubPrBranchPermissions } from '../../../pr-event-state';
-import { ensurePreparedDiffForWorktree } from '../../../prepared-diffs';
+import { getGitHubPrBranchPermissions } from '../../pr-events';
+import { ensurePreparedDiffForWorktree } from '../../prepared-diffs';
 import {
   ensureRuntimeHome,
   runtimePaths,
@@ -11,7 +10,6 @@ import {
 } from '../../../runtime-home';
 import {
   assertReviewableTask,
-  assertVerificationGate,
   classifyReview,
   diffFingerprintForTask,
   findTaskWorktree,
@@ -38,12 +36,11 @@ import {
   promoteInputSchema,
   stateListInputSchema,
   taskIdInputSchema,
-  verifyInputSchema,
   type KiloResultActionResult,
-  type KiloResultClassification,
   type KiloResultState,
-  type KiloVerificationStatus,
 } from './schemas';
+
+export { verifyKiloResult } from './verify';
 
 export async function reviewKiloResult(
   rawInput: unknown,
@@ -191,194 +188,6 @@ export async function reviewKiloResult(
       preparedDiff: preparedDiffForState,
       policy,
     }),
-  };
-}
-
-export async function verifyKiloResult(
-  rawInput: unknown,
-  paths: RuntimePaths = runtimePaths(),
-): Promise<KiloResultActionResult> {
-  const parsed = parseInput(verifyInputSchema, rawInput, 'kilo_result_verify');
-  if (!parsed.ok) return parsed.result;
-  await ensureRuntimeHome(paths);
-  const task = readKiloTask(parsed.input.taskId, paths);
-  if (!task) return notFound('kilo_result_verify', parsed.input.taskId);
-  const reviewAdmission = assertReviewableTask(task, 'kilo_result_verify');
-  if (!reviewAdmission.ok) return reviewAdmission.result;
-  const stateBefore = readKiloResultState(task.id, paths);
-  const reviewGate = await assertVerificationGate(task, stateBefore, paths);
-  if (!reviewGate.ok) {
-    const state = upsertKiloResultState(
-      task.id,
-      {
-        verificationStatus: 'blocked',
-        verification: { reason: reviewGate.message },
-      },
-      paths,
-    );
-    await notifyKiloState(
-      {
-        taskId: task.id,
-        state: reviewGate.requires.includes('approval')
-          ? 'waiting-approval'
-          : 'failed',
-        title: 'Kilo verification blocked',
-        message: reviewGate.message,
-        repoId: task.repoId,
-        repoFullName: task.repoFullName,
-        worktreeId: task.worktreeId,
-        workflow: 'verify_kilo_result',
-        data: { requires: reviewGate.requires },
-      },
-      paths,
-    );
-    return {
-      ok: false,
-      action: 'kilo_result_verify',
-      changed: true,
-      message: reviewGate.message,
-      task,
-      resultState: state,
-      requires: reviewGate.requires,
-    };
-  }
-  if (!task.worktreeId) {
-    const state = upsertKiloResultState(
-      task.id,
-      {
-        verificationStatus: 'blocked',
-        verification: {
-          reason: 'Kilo verification requires a managed worktree.',
-        },
-      },
-      paths,
-    );
-    await notifyKiloState(
-      {
-        taskId: task.id,
-        state: 'failed',
-        title: 'Kilo verification blocked',
-        message: 'Kilo verification requires a managed worktree.',
-        repoId: task.repoId,
-        repoFullName: task.repoFullName,
-        worktreeId: task.worktreeId,
-        workflow: 'verify_kilo_result',
-        data: { requires: ['worktreeId'] },
-      },
-      paths,
-    );
-    return {
-      ok: false,
-      action: 'kilo_result_verify',
-      changed: true,
-      message: 'Kilo verification requires a managed worktree.',
-      task,
-      resultState: state,
-      requires: ['worktreeId'],
-    };
-  }
-
-  upsertKiloResultState(
-    task.id,
-    {
-      verificationStatus: 'running',
-      verification: { startedAt: new Date().toISOString() },
-    },
-    paths,
-  );
-  insertKiloResultEvent(
-    task.id,
-    'verification.started',
-    'Started Kilo result verification through the autopilot verifier.',
-    { worktreeId: task.worktreeId, checks: parsed.input.checks ?? null },
-    paths,
-  );
-
-  const result = await verifyPrWorktree(
-    {
-      worktreeId: task.worktreeId,
-      checks: parsed.input.checks,
-      backend: parsed.input.backend,
-      context: parsed.input.context,
-      lock: parsed.input.lock,
-      timeoutMs: parsed.input.timeoutMs,
-      maxOutputBytes: parsed.input.maxOutputBytes,
-    },
-    paths,
-  );
-  const blocked = Array.isArray(result.requires) && result.requires.length > 0;
-  const verificationStatus: KiloVerificationStatus = result.ok
-    ? 'passed'
-    : blocked
-      ? 'blocked'
-      : 'failed';
-  const policy = task.worktreeId
-    ? await checkAutopilotPolicy(
-        { worktreeId: task.worktreeId, pushDestination: 'pull-request-head' },
-        paths,
-      )
-    : null;
-  const nextClassification: KiloResultClassification =
-    result.ok && policy?.mode === 'autofix-push-when-safe'
-      ? 'ready-to-push'
-      : 'needs-review';
-  const state = upsertKiloResultState(
-    task.id,
-    {
-      classification: nextClassification,
-      verificationStatus,
-      verification: result,
-      verifiedDiffFingerprint: result.ok ? reviewGate.fingerprint : null,
-      verifiedAt: new Date().toISOString(),
-    },
-    paths,
-  );
-  updateKiloTaskStatus(task.id, nextClassification, paths);
-  insertKiloResultEvent(
-    task.id,
-    `verification.${verificationStatus}`,
-    result.message,
-    result,
-    paths,
-  );
-  await notifyKiloState(
-    {
-      taskId: task.id,
-      state:
-        verificationStatus === 'passed'
-          ? 'verified'
-          : verificationStatus === 'blocked' &&
-              Array.isArray(result.requires) &&
-              result.requires.includes('approval')
-            ? 'waiting-approval'
-            : 'failed',
-      title:
-        verificationStatus === 'passed'
-          ? undefined
-          : 'Kilo verification needs attention',
-      message: result.ok ? 'Kilo result verification passed.' : result.message,
-      repoId: task.repoId,
-      repoFullName: task.repoFullName,
-      worktreeId: task.worktreeId,
-      workflow: 'verify_kilo_result',
-      pendingApprovals: Array.isArray(result.requires)
-        ? result.requires.map((item) => ({ type: item }))
-        : [],
-      data: { verificationStatus, result },
-    },
-    paths,
-  );
-
-  return {
-    ok: result.ok,
-    action: 'kilo_result_verify',
-    changed: true,
-    message: result.ok ? 'Kilo result verification passed.' : result.message,
-    task: readKiloTask(task.id, paths) ?? task,
-    resultState: state,
-    data: asJsonValue({ verification: result }),
-    ...(result.requires ? { requires: result.requires } : {}),
-    ...(result.errors ? { errors: result.errors } : {}),
   };
 }
 

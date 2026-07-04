@@ -5,8 +5,8 @@ import {
   updateJobRun,
   upsertJob,
   type JobRecord,
-} from '../../app-state';
-import { addSchedule } from '../../config-actions';
+} from '../app-state';
+import { addSchedule } from '../config';
 import {
   ensureRuntimeHome,
   parseScheduleConfig,

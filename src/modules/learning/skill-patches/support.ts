@@ -10,10 +10,7 @@ import {
   resolveLearningConfig,
   type RuntimePaths,
 } from '../../../runtime-home';
-import {
-  listRuntimeSkills,
-  type RuntimeSkillMetadata,
-} from '../../../runtime-skills';
+import { listRuntimeSkills, type RuntimeSkillMetadata } from '../../runtime';
 import type {
   SkillPatchCandidateRecord,
   SkillPatchMutationSource,

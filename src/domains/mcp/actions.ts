@@ -69,7 +69,7 @@ export const mcpServerRemoveAction = defineAction({
   async run({ input }) {
     const paths = runtimePaths();
     const result = await removeMcpServer(input, paths);
-    if (result.ok) await getMcpRegistry(paths).refresh();
+    if (result.ok) await getMcpRegistry(paths).refresh(input.id);
     return result;
   },
 });
@@ -263,6 +263,16 @@ async function guardAgentMcpServerUpdate(
     return blockedAgentMcpAction(
       'mcp_server_update',
       'Header-authenticated MCP servers can only be updated from a user-owned surface.',
+    );
+  }
+  if (
+    existing.transport === 'http' &&
+    existing.auth?.kind === 'oauth' &&
+    existing.auth.clientSecret
+  ) {
+    return blockedAgentMcpAction(
+      'mcp_server_update',
+      'OAuth MCP servers with client-secret references can only be updated from a user-owned surface.',
     );
   }
   if (hasUserOwnedMcpUpdateField(patch)) {

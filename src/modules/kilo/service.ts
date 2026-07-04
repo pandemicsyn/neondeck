@@ -61,8 +61,8 @@ import {
   readRuntimeJson,
   runtimePaths,
 } from '../../runtime-home';
-import { repoFullName } from '../../repos';
-import { lockWorktree, readManagedWorktree } from '../../worktrees';
+import { repoFullName } from '../repos';
+import { lockWorktree, readManagedWorktree } from '../worktrees';
 import { readKiloResultStateSummary } from './results';
 
 export async function startKiloTask(
@@ -194,9 +194,9 @@ export async function startKiloTask(
     const rawLog = rawLogPath
       ? createWriteStream(rawLogPath, { flags: 'a' })
       : undefined;
-    runningProcesses.set(id, { child, rawLog });
+    const completed = attachProcessHandlers(id, child, rawLog, paths);
+    runningProcesses.set(id, { child, rawLog, completed });
     updateKiloTaskProcess(id, child.pid ?? null, now, paths);
-    attachProcessHandlers(id, child, rawLog, paths);
     await notifyKiloState(
       {
         taskId: id,

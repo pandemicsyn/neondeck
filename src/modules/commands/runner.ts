@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { addWorkflowSummary } from '../../app-state';
+import { addWorkflowSummary } from '../app-state';
 import {
   ensureRuntimeHome,
   runtimePaths,

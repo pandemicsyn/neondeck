@@ -1,7 +1,7 @@
 import type { JsonValue } from '@flue/runtime';
-import { type JobRecord, type NotificationLevel } from '../../app-state';
-import { fetchCheckSummary, type GitHubCheckSummary } from '../../github';
-import { readRepoRegistrySnapshot, repoFullName } from '../../repos';
+import { type JobRecord, type NotificationLevel } from '../app-state';
+import { fetchCheckSummary, type GitHubCheckSummary } from '../github';
+import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import type { RuntimePaths } from '../../runtime-home';
 import {
   listPrWatchRecords,

@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { updateWorktreePolicy } from './config-actions';
+import { updateWorktreePolicy } from './modules/config';
 import { listRepoEditEvents, readRepoFile, writeRepoFile } from './repo-edit';
 import { runtimePaths } from './runtime-home';
 import {
@@ -25,7 +25,7 @@ import {
   readWorktreeStatus,
   releaseWorktreeLock,
   syncWorktree,
-} from './worktrees';
+} from './modules/worktrees';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];

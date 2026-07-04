@@ -3,7 +3,7 @@ import {
   formatConfigServerSentEvent,
   replayConfigEventsAfter,
   subscribeConfigEvents,
-} from '../../config-events';
+} from '../../modules/config';
 
 const configEventHeartbeatMs = 10_000;
 const configEventStreamMaxAgeMs = 20_000;

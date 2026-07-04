@@ -1,12 +1,21 @@
-import { type RuntimePaths, runtimePaths } from '../../runtime-home';
-import { readExecutionPolicySync } from '../../execution-policy';
+import { executionPolicyFromConfig } from '../execution-policy';
+import {
+  type RuntimePaths,
+  ensureRuntimeHomeSync,
+  parseAppConfig,
+  readRuntimeJsonSync,
+  runtimePaths,
+} from '../../runtime-home';
 import { entries } from './policy-entries';
 import { type SafetyPolicy, type SafetyPolicyEntry } from './schemas';
 
 export function readSafetyPolicy(
   paths: RuntimePaths = runtimePaths(),
 ): SafetyPolicy {
-  const execution = readExecutionPolicySync(paths);
+  ensureRuntimeHomeSync(paths);
+  const execution = executionPolicyFromConfig(
+    readRuntimeJsonSync(paths.config, parseAppConfig),
+  );
   return {
     ok: true,
     action: 'safety_policy_read',

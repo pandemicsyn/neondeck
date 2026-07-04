@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
-import { readAutopilotState } from './autopilot';
+import { readAutopilotState } from './modules/autopilot/state';
 import {
   ensureRuntimeHome,
   runtimePaths,

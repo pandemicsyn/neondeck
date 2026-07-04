@@ -13,25 +13,25 @@ import {
   fetchCheckSummary,
   fetchFailingCheckFacts,
   fetchPullRequestDetail,
-} from '../../github';
+} from '../github';
 import {
   checkAutopilotConcurrency,
   checkAutopilotPolicy,
   pathDeniedByAutopilotPolicy,
   repoAutopilotPolicy,
   withAutopilotLocalExecutionSlot,
-} from '../../autopilot-policy';
-import { addWorkflowSummary, updateWorkflowSummary } from '../../app-state';
+} from '../autopilot-policy';
+import { addWorkflowSummary, updateWorkflowSummary } from '../app-state';
 import {
   notifyAutopilotState,
   recoveryActionsForPreparedDiff,
-} from '../../autopilot-notifications';
-import { buildPreparedDiffAuditSummary } from '../../autonomous-audit';
-import { runApprovedExecution } from '../../execution-actions';
+} from './notifications';
+import { buildPreparedDiffAuditSummary } from '../autonomous-audit';
+import { runApprovedExecution } from '../execution';
 import {
   getGitHubPrBranchPermissions,
   postGitHubPrComment,
-} from '../../pr-event-state';
+} from '../pr-events';
 import {
   ensurePreparedDiffForWorktree,
   markPreparedDiffPushBlocked,
@@ -41,8 +41,8 @@ import {
   readPreparedDiffRecord,
   recordPreparedDiffVerification,
   type PreparedDiffRecord,
-} from '../../prepared-diffs';
-import { readRepoRegistrySnapshot, repoFullName } from '../../repos';
+} from '../prepared-diffs';
+import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import {
   gitCurrentSha,
   gitCommitAll,
@@ -77,7 +77,7 @@ import {
   releaseWorktreeLock,
   syncWorktree,
   type WorktreeRecord,
-} from '../../worktrees';
+} from '../worktrees';
 import { AutopilotActionResult } from './schemas';
 import { asJsonValue, objectField, stringField } from './utils';
 
