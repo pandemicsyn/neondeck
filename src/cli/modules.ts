@@ -16,6 +16,12 @@ export async function devDoctorModule() {
   ) as Promise<typeof import('../modules/runtime')>;
 }
 
+export async function appDbModule() {
+  return import(
+    new URL('../runtime-home/app-db/migrate.ts', import.meta.url).href
+  ) as Promise<typeof import('../runtime-home/app-db/migrate')>;
+}
+
 export async function learningOperatorModule() {
   return import(
     new URL('../modules/learning/index.ts', import.meta.url).href

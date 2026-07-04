@@ -130,8 +130,9 @@ the DB:
    (the everyday path; must cost ~one query).
 3. Pending migrations → **back up first**: copy `neondeck.db` (+ `-wal`/`-shm` if present) to
    `data/backups/neondeck-<utc-ts>-pre-<NNNN>.db`, keep the newest 5, delete older.
-4. Apply pending migrations in order, each in its own transaction.
-5. On failure: roll back the failing migration, close, and exit with a message naming the
+4. Apply pending migrations in order inside the same `BEGIN IMMEDIATE` transaction so a failed
+   pending batch leaves the database untouched.
+5. On failure: roll back the pending batch, close, and exit with a message naming the active
    migration, the error, and the backup path. Never continue with a half-migrated schema.
 
 ### The baseline problem (existing installs)

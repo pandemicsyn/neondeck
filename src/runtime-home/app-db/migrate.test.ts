@@ -17,6 +17,7 @@ import {
   appDbMigrationsFolder,
   applyAppDbMigrations,
   readAppDbMigrationFiles,
+  readAppDbMigrationStatus,
 } from './migrate.ts';
 import { initializeLegacyAppDatabase } from './legacy-test-support.ts';
 
@@ -169,6 +170,96 @@ describe('app database migrator', () => {
 
     expect(() => applyAppDbMigrations(databasePath)).toThrow(
       /created by a newer package/i,
+    );
+  });
+
+  it('reports current, pending, changed, and unknown migration status', async () => {
+    const root = await tempDir();
+    const databasePath = join(root, 'neondeck.db');
+    const migrationsFolder = await copyMigrations(root);
+    const baseline = readAppDbMigrationFiles()[0];
+    applyAppDbMigrations(databasePath);
+
+    expect(readAppDbMigrationStatus(databasePath)).toMatchObject({
+      ok: true,
+      pending: [],
+      unknown: [],
+      changed: [],
+      localHead: baseline.name,
+      journalHead: baseline.name,
+      message: 'App database migration journal is current.',
+    });
+
+    await writeMigration(
+      migrationsFolder,
+      '20990101000000_add_marker',
+      'CREATE TABLE migration_marker (id TEXT PRIMARY KEY);',
+    );
+
+    expect(
+      readAppDbMigrationStatus(databasePath, { migrationsFolder }),
+    ).toMatchObject({
+      ok: false,
+      pending: ['20990101000000_add_marker'],
+      unknown: [],
+      changed: [],
+      localHead: '20990101000000_add_marker',
+      journalHead: baseline.name,
+      message: 'Database has pending migrations: 20990101000000_add_marker.',
+    });
+
+    const database = new DatabaseSync(databasePath);
+    try {
+      database
+        .prepare(
+          `
+          UPDATE __drizzle_migrations
+          SET hash = 'changed-hash'
+          WHERE name = ?;
+        `,
+        )
+        .run(baseline.name);
+      database
+        .prepare(
+          `
+          INSERT INTO __drizzle_migrations (hash, created_at, name, applied_at)
+          VALUES ('future-hash', 4070908800000, '20990101000000_future', datetime('now'));
+        `,
+        )
+        .run();
+    } finally {
+      database.close();
+    }
+
+    const drift = readAppDbMigrationStatus(databasePath, { migrationsFolder });
+    expect(drift.ok).toBe(false);
+    expect(drift.unknown.map((row) => row.name)).toEqual([
+      '20990101000000_future',
+    ]);
+    expect(drift.changed.map((row) => row.name)).toEqual([baseline.name]);
+    expect(drift.message).toBe(
+      'Database contains unknown migrations: 20990101000000_future.',
+    );
+  });
+
+  it('returns structured status when an existing database path cannot be opened', async () => {
+    const root = await tempDir();
+    const databasePath = join(root, 'neondeck.db');
+    await mkdir(databasePath);
+
+    const status = readAppDbMigrationStatus(databasePath);
+
+    expect(status).toMatchObject({
+      ok: false,
+      databasePath,
+      applied: [],
+      pending: [],
+      unknown: [],
+      changed: [],
+      journalHead: null,
+    });
+    expect(status.message).toContain(
+      'App database migration status could not be inspected:',
     );
   });
 

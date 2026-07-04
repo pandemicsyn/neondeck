@@ -38,6 +38,20 @@ export type ApplyAppDbMigrationsResult = {
   stampedBaseline: boolean;
 };
 
+export type AppDbMigrationStatus = {
+  ok: boolean;
+  databasePath: string;
+  migrationsFolder: string;
+  applied: AppDbMigrationRecord[];
+  pending: string[];
+  unknown: AppDbMigrationRecord[];
+  changed: AppDbMigrationRecord[];
+  localHead: string | null;
+  journalHead: string | null;
+  lastBackup: string | null;
+  message: string;
+};
+
 export class AppDbMigrationError extends Error {
   constructor(
     message: string,
@@ -55,6 +69,111 @@ export class AppDbMigrationError extends Error {
 
 export function appDbMigrationsFolder() {
   return defaultMigrationsFolder;
+}
+
+export function readAppDbMigrationStatus(
+  databasePath: string,
+  options: { migrationsFolder?: string } = {},
+): AppDbMigrationStatus {
+  const migrationsFolder = options.migrationsFolder ?? defaultMigrationsFolder;
+  const migrations = readAppDbMigrationFiles(migrationsFolder);
+  const localByName = new Map(
+    migrations.map((migration) => [migration.name, migration]),
+  );
+  const localHead = migrations.at(-1)?.name ?? null;
+  const lastBackup = latestBackupPath(dirname(databasePath));
+
+  if (!existsSync(databasePath)) {
+    return {
+      ok: false,
+      databasePath,
+      migrationsFolder,
+      applied: [],
+      pending: migrations.map((migration) => migration.name),
+      unknown: [],
+      changed: [],
+      localHead,
+      journalHead: null,
+      lastBackup,
+      message: 'Neondeck app database is missing.',
+    };
+  }
+
+  let database: DatabaseSync | undefined;
+  try {
+    database = new DatabaseSync(databasePath, { readOnly: true });
+    if (!tableExists(database, drizzleMigrationsTable)) {
+      const legacy = readLegacyDatabaseState(database);
+      const message = legacy.legacy
+        ? 'Legacy app database has not been stamped with Drizzle migrations yet.'
+        : 'App database has no Drizzle migration journal.';
+      return {
+        ok: false,
+        databasePath,
+        migrationsFolder,
+        applied: [],
+        pending: migrations.map((migration) => migration.name),
+        unknown: [],
+        changed: [],
+        localHead,
+        journalHead: null,
+        lastBackup,
+        message,
+      };
+    }
+
+    const applied = readJournal(database);
+    const unknown = applied.filter(
+      (row) => !row.name || !localByName.has(row.name),
+    );
+    const changed = applied.filter((row) => {
+      const local = row.name ? localByName.get(row.name) : undefined;
+      return Boolean(local && local.hash !== row.hash);
+    });
+    const appliedNames = new Set(
+      applied
+        .map((row) => row.name)
+        .filter((name): name is string => typeof name === 'string'),
+    );
+    const pending = migrations
+      .filter((migration) => !appliedNames.has(migration.name))
+      .map((migration) => migration.name);
+    const journalHead = applied.at(-1)?.name ?? null;
+    const ok =
+      pending.length === 0 && unknown.length === 0 && changed.length === 0;
+
+    return {
+      ok,
+      databasePath,
+      migrationsFolder,
+      applied,
+      pending,
+      unknown,
+      changed,
+      localHead,
+      journalHead,
+      lastBackup,
+      message: ok
+        ? 'App database migration journal is current.'
+        : migrationStatusMessage({ pending, unknown, changed }),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      databasePath,
+      migrationsFolder,
+      applied: [],
+      pending: [],
+      unknown: [],
+      changed: [],
+      localHead,
+      journalHead: null,
+      lastBackup,
+      message: `App database migration status could not be inspected: ${errorMessage(error)}.`,
+    };
+  } finally {
+    database?.close();
+  }
 }
 
 export function applyAppDbMigrations(
@@ -531,6 +650,40 @@ function rotateBackups(backupsDir: string) {
     rmSync(`${backup.path}-wal`, { force: true });
     rmSync(`${backup.path}-shm`, { force: true });
   }
+}
+
+function latestBackupPath(dataDir: string) {
+  const backupsDir = join(dataDir, 'backups');
+  if (!existsSync(backupsDir)) return null;
+  const latest = readdirSync(backupsDir)
+    .filter((name) => /^neondeck-.+\.db$/.test(name))
+    .map((name) => {
+      const path = join(backupsDir, name);
+      return { path, name, mtimeMs: statSync(path).mtimeMs };
+    })
+    .sort((a, b) => b.mtimeMs - a.mtimeMs || b.name.localeCompare(a.name))[0];
+  return latest?.path ?? null;
+}
+
+function migrationStatusMessage(input: {
+  pending: string[];
+  unknown: AppDbMigrationRecord[];
+  changed: AppDbMigrationRecord[];
+}) {
+  if (input.unknown.length > 0) {
+    return `Database contains unknown migrations: ${input.unknown
+      .map((row) => row.name ?? '(unnamed)')
+      .join(', ')}.`;
+  }
+  if (input.changed.length > 0) {
+    return `Database contains migrations with hash mismatches: ${input.changed
+      .map((row) => row.name ?? '(unnamed)')
+      .join(', ')}.`;
+  }
+  if (input.pending.length > 0) {
+    return `Database has pending migrations: ${input.pending.join(', ')}.`;
+  }
+  return 'App database migration journal is not current.';
 }
 
 function copyIfExists(from: string, to: string) {

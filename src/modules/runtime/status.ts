@@ -244,6 +244,13 @@ export async function readRuntimeStatus(
         : 'MCP config could not be read.',
     ),
     check(
+      'app-db-migrations',
+      'App database migrations',
+      appDatabase.migrations.ok,
+      'attention',
+      appDatabase.migrations.message,
+    ),
+    check(
       'app-db',
       'App database',
       appDatabase.ok,
