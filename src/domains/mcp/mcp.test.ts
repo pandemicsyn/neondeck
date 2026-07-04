@@ -20,6 +20,7 @@ import {
   setMcpRegistryPendingRefreshHookForTests,
   setMcpRegistryPublishHookForTests,
   startMcpOAuthLogin,
+  type McpServerConfig,
   updateMcpServer,
 } from './index';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
@@ -462,13 +463,9 @@ describe('MCP support', () => {
         paths,
       ),
     ).resolves.toMatchObject({ ok: true, changed: true });
-    await expect(readMcpConfig(paths)).resolves.toMatchObject({
-      servers: {
-        remote: {
-          auth: { kind: 'none' },
-        },
-      },
-    });
+    let config = await readMcpConfig(paths);
+    let server = expectHttpServer(config.servers.remote);
+    expect(server.auth).toEqual({ kind: 'none' });
 
     await expect(
       updateMcpServer(
@@ -476,13 +473,9 @@ describe('MCP support', () => {
         paths,
       ),
     ).resolves.toMatchObject({ ok: true, changed: true });
-    await expect(readMcpConfig(paths)).resolves.toMatchObject({
-      servers: {
-        remote: {
-          tools: { deny: ['blocked'] },
-        },
-      },
-    });
+    config = await readMcpConfig(paths);
+    server = expectHttpServer(config.servers.remote);
+    expect(server.tools).toEqual({ deny: ['blocked'] });
 
     await expect(
       updateMcpServer(
@@ -490,7 +483,7 @@ describe('MCP support', () => {
         paths,
       ),
     ).resolves.toMatchObject({ ok: true, changed: true });
-    const config = await readMcpConfig(paths);
+    config = await readMcpConfig(paths);
     expect(config.servers.remote).not.toHaveProperty('auth');
     expect(config.servers.remote).not.toHaveProperty('tools');
   });
@@ -1008,6 +1001,12 @@ function oauthServerIdentity(url: string) {
     clientId: null,
     clientSecretEnv: null,
   });
+}
+
+function expectHttpServer(server: McpServerConfig) {
+  expect(server.transport).toBe('http');
+  if (server.transport !== 'http') throw new Error('Expected HTTP MCP server.');
+  return server;
 }
 
 async function tempDir() {
