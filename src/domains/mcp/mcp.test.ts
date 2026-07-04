@@ -193,7 +193,7 @@ describe('MCP support', () => {
     const paths = runtimePaths(home);
     await ensureRuntimeHome(paths);
     const previous = process.env.NEONDECK_MCP_START_DELAY_MS;
-    process.env.NEONDECK_MCP_START_DELAY_MS = '150';
+    process.env.NEONDECK_MCP_START_DELAY_MS = '0';
     try {
       await addMcpServer(
         {
@@ -213,6 +213,14 @@ describe('MCP support', () => {
       );
 
       const registry = getMcpRegistry(paths);
+      await registry.refresh('fixture');
+      await expect(registry.listTools('fixture')).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ status: 'available', toolName: 'echo' }),
+        ]),
+      );
+
+      process.env.NEONDECK_MCP_START_DELAY_MS = '150';
       const firstRefresh = registry.refresh('fixture');
       await updateMcpServer(
         {
@@ -237,6 +245,11 @@ describe('MCP support', () => {
       expect(
         registry.toolsSync().some((tool) => tool.name === 'mcp__fixture__echo'),
       ).toBe(false);
+      await expect(registry.listTools('fixture')).resolves.not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ status: 'available' }),
+        ]),
+      );
     } finally {
       if (previous === undefined) {
         delete process.env.NEONDECK_MCP_START_DELAY_MS;
