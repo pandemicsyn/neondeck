@@ -2,15 +2,19 @@ import { defineAction } from '@flue/runtime';
 import * as v from 'valibot';
 import {
   addMcpServer,
+  readMcpConfig,
   removeMcpServer,
   setMcpServerEnabled,
   updateMcpServer,
 } from './config';
+import { logoutMcpOAuthServer, startMcpOAuthLogin } from './oauth';
 import { getMcpRegistry } from './registry';
 import {
   mcpActionResultSchema,
   mcpApprovalResolveInputSchema,
   mcpEmptyInputSchema,
+  mcpLoginStartInputSchema,
+  mcpLogoutInputSchema,
   mcpServerAddInputSchema,
   mcpServerIdInputSchema,
   mcpServerIdSchema,
@@ -28,6 +32,8 @@ export const mcpServerAddAction = defineAction({
   output: mcpActionResultSchema,
   async run({ input }) {
     const paths = runtimePaths();
+    const guard = guardAgentMcpServerConfig(input.server, 'mcp_server_add');
+    if (guard) return guard;
     const result = await addMcpServer(input, paths);
     if (result.ok) await getMcpRegistry(paths).refresh(input.id);
     return result;
@@ -42,6 +48,12 @@ export const mcpServerUpdateAction = defineAction({
   output: mcpActionResultSchema,
   async run({ input }) {
     const paths = runtimePaths();
+    const guard = await guardAgentMcpServerUpdate(
+      input.id,
+      input.server,
+      paths,
+    );
+    if (guard) return guard;
     const result = await updateMcpServer(input, paths);
     if (result.ok) await getMcpRegistry(paths).refresh(input.id);
     return result;
@@ -69,6 +81,8 @@ export const mcpServerEnableAction = defineAction({
   output: mcpActionResultSchema,
   async run({ input }) {
     const paths = runtimePaths();
+    const guard = await guardAgentMcpServerConnect(input.id, paths);
+    if (guard) return guard;
     const result = await setMcpServerEnabled(input, true, paths);
     if (result.ok) await getMcpRegistry(paths).refresh(input.id);
     return { ...result, action: 'mcp_server_enable' };
@@ -108,6 +122,31 @@ export const mcpApprovalResolveAction = defineAction({
   },
 });
 
+export const mcpLoginStartAction = defineAction({
+  name: 'neondeck_mcp_login_start',
+  description:
+    'Start OAuth login for one configured MCP server and return a user-facing authorization URL.',
+  input: mcpLoginStartInputSchema,
+  output: mcpActionResultSchema,
+  async run({ input }) {
+    return startMcpOAuthLogin(input, runtimePaths());
+  },
+});
+
+export const mcpLogoutAction = defineAction({
+  name: 'neondeck_mcp_logout',
+  description:
+    'Remove stored OAuth tokens for one MCP server. Requires confirm=true.',
+  input: mcpLogoutInputSchema,
+  output: mcpActionResultSchema,
+  async run({ input }) {
+    const paths = runtimePaths();
+    const result = await logoutMcpOAuthServer(input, paths);
+    if (result.ok) await getMcpRegistry(paths).refresh(input.id);
+    return result;
+  },
+});
+
 export const mcpRegistryRefreshAction = defineAction({
   name: 'neondeck_mcp_registry_refresh',
   description: 'Refresh MCP server connections and cached tool catalogs.',
@@ -117,6 +156,18 @@ export const mcpRegistryRefreshAction = defineAction({
   output: mcpActionResultSchema,
   async run({ input }) {
     const paths = runtimePaths();
+    if (!input.id) {
+      return {
+        ok: false,
+        action: 'mcp_registry_refresh',
+        changed: false,
+        message:
+          'Model-callable MCP refresh requires a single safe HTTP/OAuth server id. Use the dashboard or CLI for full registry refresh.',
+        requires: ['id'],
+      };
+    }
+    const guard = await guardAgentMcpServerConnect(input.id, paths);
+    if (guard) return { ...guard, action: 'mcp_registry_refresh' };
     await getMcpRegistry(paths).refresh(input.id);
     return {
       ok: true,
@@ -153,7 +204,101 @@ export const neondeckMcpActions = [
   mcpServerRemoveAction,
   mcpServerEnableAction,
   mcpServerDisableAction,
-  mcpApprovalResolveAction,
+  mcpLoginStartAction,
+  mcpLogoutAction,
   mcpRegistryRefreshAction,
   mcpStatusAction,
 ];
+
+function guardAgentMcpServerConfig(
+  server: {
+    transport: string;
+    auth?: { kind?: string };
+    tools?: { autoApprove?: string[] };
+  },
+  action: string,
+) {
+  if (server.transport === 'stdio') {
+    return blockedAgentMcpAction(
+      action,
+      'Adding or connecting stdio MCP servers is user-surface only because it can spawn host processes.',
+    );
+  }
+  if (server.auth?.kind === 'header') {
+    return blockedAgentMcpAction(
+      action,
+      'Header-authenticated MCP servers are user-surface only because they forward environment-backed secrets.',
+    );
+  }
+  if (server.tools?.autoApprove && server.tools.autoApprove.length > 0) {
+    return blockedAgentMcpAction(
+      action,
+      'MCP tool auto-approval can only be configured from the dashboard, CLI, or direct config edit.',
+    );
+  }
+  return null;
+}
+
+async function guardAgentMcpServerUpdate(
+  id: string,
+  patch: Record<string, unknown>,
+  paths: ReturnType<typeof runtimePaths>,
+) {
+  const config = await readMcpConfig(paths);
+  const existing = config.servers[id];
+  if (!existing) return null;
+  if (
+    existing.transport === 'stdio' ||
+    patch.transport === 'stdio' ||
+    (isRecord(patch.auth) && patch.auth.kind === 'header') ||
+    (isRecord(patch.tools) && Array.isArray(patch.tools.autoApprove))
+  ) {
+    return blockedAgentMcpAction(
+      'mcp_server_update',
+      'This MCP server update changes stdio, header-auth, or auto-approval policy and must be made from a user-owned surface.',
+    );
+  }
+  if (existing.transport === 'http' && existing.auth?.kind === 'header') {
+    return blockedAgentMcpAction(
+      'mcp_server_update',
+      'Header-authenticated MCP servers can only be updated from a user-owned surface.',
+    );
+  }
+  return null;
+}
+
+async function guardAgentMcpServerConnect(
+  id: string,
+  paths: ReturnType<typeof runtimePaths>,
+) {
+  const config = await readMcpConfig(paths);
+  const server = config.servers[id];
+  if (!server) return null;
+  if (server.transport === 'stdio') {
+    return blockedAgentMcpAction(
+      'mcp_server_connect',
+      'Connecting stdio MCP servers is user-surface only because it can spawn host processes.',
+    );
+  }
+  if (server.auth?.kind === 'header') {
+    return blockedAgentMcpAction(
+      'mcp_server_connect',
+      'Connecting header-authenticated MCP servers is user-surface only because it forwards environment-backed secrets.',
+    );
+  }
+  return null;
+}
+
+function blockedAgentMcpAction(action: string, message: string) {
+  return {
+    ok: false,
+    action,
+    changed: false,
+    message,
+    requires: ['user-owned-surface'],
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}

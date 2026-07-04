@@ -1,0 +1,132 @@
+---
+import DocsNav from '../../components/DocsNav.astro';
+import SiteFooter from '../../components/SiteFooter.astro';
+import SiteNav from '../../components/SiteNav.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="MCP servers · neondeck"
+  description="Configure remote and local MCP servers in neondeck with OAuth, approvals, and dashboard visibility."
+>
+  <div class="site-shell">
+    <SiteNav />
+    <main class="container docs-layout">
+      <DocsNav />
+      <article class="docs-prose">
+        <h1>MCP servers</h1>
+        <p>
+          neondeck reads MCP server config from runtime-home
+          <code>mcp.json</code>. Connected tools are registered with Flue as
+          <code>mcp__&lt;server&gt;__&lt;tool&gt;</code> and appear in new Neon sessions
+          after the registry refreshes.
+        </p>
+
+        <h2>Configuration</h2>
+        <pre><code>&#123;
+  "servers": &#123;
+    "linear": &#123;
+      "transport": "http",
+      "url": "https://mcp.linear.app/mcp",
+      "auth": &#123; "kind": "oauth" &#125;
+    &#125;,
+    "local-tools": &#123;
+      "transport": "stdio",
+      "command": "node",
+      "args": ["/absolute/path/to/server.mjs"],
+      "tools": &#123;
+        "deny": ["dangerous_tool"]
+      &#125;
+    &#125;
+  &#125;
+&#125;</code></pre>
+        <p>
+          HTTP servers must use <code>https://</code> except loopback development
+          hosts. Raw secrets are rejected. Header auth uses environment-variable references,
+          and OAuth tokens are stored only in
+          <code>data/neondeck.db</code>.
+        </p>
+        <pre><code>&#123;
+  "servers": &#123;
+    "internal": &#123;
+      "transport": "http",
+      "url": "https://mcp.example.com/mcp",
+      "auth": &#123;
+        "kind": "header",
+        "headers": &#123;
+          "Authorization": &#123; "env": "INTERNAL_MCP_AUTHORIZATION" &#125;
+        &#125;
+      &#125;
+    &#125;
+  &#125;
+&#125;</code></pre>
+
+        <h2>Approval policy</h2>
+        <p>
+          MCP tools default to per-call approval. Exact tool names can be denied
+          or auto-approved per server:
+        </p>
+        <pre><code>&#123;
+  "tools": &#123;
+    "autoApprove": ["search"],
+    "deny": ["delete_project"]
+  &#125;
+&#125;</code></pre>
+        <p>
+          Pending approvals are single-use and bound to the exact argument hash.
+          Resolve them from Runtime Overview, the local API, or the CLI, then
+          retry the same tool call with unchanged arguments.
+        </p>
+
+        <h2>OAuth</h2>
+        <p>
+          OAuth servers start in <code>needs-login</code> until a user completes a
+          state-bound loopback authorization flow. The callback exchanges the authorization
+          code through the MCP SDK provider and stores client registration, PKCE verifier,
+          discovery state, and tokens in SQLite.
+        </p>
+        <pre><code>neondeck mcp add linear --url https://mcp.linear.app/mcp --oauth
+neondeck mcp login linear
+neondeck mcp logout linear --confirm</code></pre>
+        <p>
+          The dashboard Runtime Overview panel shows configured MCP servers,
+          OAuth login/logout controls, tool counts, connection errors, and
+          pending MCP approvals.
+        </p>
+
+        <h2>CLI and API</h2>
+        <pre><code>neondeck mcp list
+neondeck mcp status [id]
+neondeck mcp add &lt;id&gt; --url ... | --command ...
+neondeck mcp enable &lt;id&gt;
+neondeck mcp disable &lt;id&gt;
+neondeck mcp tools &lt;id&gt;
+neondeck mcp approvals [--resolve &lt;id&gt; --approve|--deny]
+neondeck mcp audit</code></pre>
+        <pre><code>GET    /api/mcp/servers
+POST   /api/mcp/servers
+PATCH  /api/mcp/servers/:id
+DELETE /api/mcp/servers/:id
+GET    /api/mcp/servers/:id/tools
+POST   /api/mcp/servers/:id/refresh
+POST   /api/mcp/servers/:id/login
+GET    /api/mcp/logins/:id
+GET    /api/mcp/oauth/callback
+POST   /api/mcp/servers/:id/logout
+GET    /api/mcp/approvals
+POST   /api/mcp/approvals/:id/resolve
+GET    /api/mcp/audit</code></pre>
+
+        <h2>Agent boundary</h2>
+        <p>
+          Neon can use safe typed actions for HTTP/OAuth server setup and OAuth
+          login starts. Stdio servers, header-authenticated servers, and
+          auto-approval policy are user-owned surfaces because they can spawn
+          host processes or forward environment-backed secrets. Configure those
+          through the CLI, local API, or direct <code>mcp.json</code> edits.
+        </p>
+      </article>
+    </main>
+    <SiteFooter />
+  </div>
+</BaseLayout>

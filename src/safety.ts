@@ -374,7 +374,7 @@ const entries: SafetyPolicyEntry[] = [
     'neondeck_mcp_registry_refresh',
     'Refresh MCP registry',
     readOnly,
-    'Reconnects enabled MCP servers and refreshes cached tool catalogs without mutating config.',
+    'Reconnects one safe HTTP/OAuth MCP server from the model action surface. Full refresh is available from user-owned API/CLI surfaces.',
   ),
   action(
     'neondeck_mcp_status',
@@ -383,13 +383,31 @@ const entries: SafetyPolicyEntry[] = [
     'Reads MCP server connection status and tool counts through an action surface.',
   ),
   action(
+    'neondeck_mcp_login_start',
+    'Start MCP OAuth login',
+    {
+      ...safeMutation,
+      auditTarget: 'mcp_oauth_logins/mcp_oauth_tokens',
+    },
+    'Creates a state-bound OAuth login record and returns a user-facing authorization URL.',
+  ),
+  action(
+    'neondeck_mcp_logout',
+    'Remove MCP OAuth tokens',
+    {
+      ...destructiveMutation,
+      auditTarget: 'mcp_oauth_tokens',
+    },
+    'Requires confirm=true before deleting stored OAuth tokens for one MCP server.',
+  ),
+  action(
     'neondeck_mcp_approval_resolve',
     'Resolve MCP approval',
     {
       ...destructiveMutation,
       auditTarget: 'mcp_tool_approvals',
     },
-    'Approves or denies one pending third-party MCP tool call; approvals are single-use and argument-hash-bound.',
+    'User-owned approval resolver for local API and CLI surfaces. This action is not registered on the display assistant to prevent self-approval.',
   ),
   action(
     'neondeck_mcp_server_remove',
@@ -1657,6 +1675,39 @@ const entries: SafetyPolicyEntry[] = [
     'Refresh MCP server API',
     readOnly,
     'Reconnects one enabled MCP server and refreshes cached tool catalogs.',
+  ),
+  route(
+    '/api/mcp/servers/:id/login',
+    'Start MCP OAuth login API',
+    {
+      ...safeMutation,
+      auditTarget: 'mcp_oauth_logins/mcp_oauth_tokens',
+    },
+    'Starts a state-bound OAuth login and returns the authorization URL.',
+  ),
+  route(
+    '/api/mcp/logins/:id',
+    'MCP OAuth login API',
+    readOnly,
+    'Reads one pending or completed MCP OAuth login record without exposing tokens.',
+  ),
+  route(
+    '/api/mcp/oauth/callback',
+    'MCP OAuth callback API',
+    {
+      ...safeMutation,
+      auditTarget: 'mcp_oauth_logins/mcp_oauth_tokens',
+    },
+    'Validates OAuth state, exchanges the authorization code, stores tokens in SQLite, and never writes tokens to config.',
+  ),
+  route(
+    '/api/mcp/servers/:id/logout',
+    'MCP OAuth logout API',
+    {
+      ...destructiveMutation,
+      auditTarget: 'mcp_oauth_tokens',
+    },
+    'Requires confirmation before deleting stored OAuth tokens for one MCP server.',
   ),
   route(
     '/api/mcp/approvals',

@@ -353,6 +353,9 @@ function deleteMcpServerState(paths: RuntimePaths, serverId: string) {
     database
       .prepare('DELETE FROM mcp_oauth_tokens WHERE server_id = ?;')
       .run(serverId);
+    database
+      .prepare('DELETE FROM mcp_oauth_logins WHERE server_id = ?;')
+      .run(serverId);
   } finally {
     database.close();
   }

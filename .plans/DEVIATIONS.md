@@ -22,6 +22,13 @@ Use this format:
 - Reason: The installed Flue beta.9 remote MCP adapter stores execution in an internal prepared-tool adapter. A normal `ToolDefinition.run` wrapper either preserves that internal adapter and bypasses Neondeck's approval gate, or drops it and leaves the returned MCP tool's `run()` throwing. The direct SDK adapter mirrors Flue's `mcp__<server>__<tool>` naming and result formatting while letting Neondeck enforce approval before execution.
 - Follow-up: Revisit the registry adapter when Flue exposes a public MCP tool-call interception hook, stdio support, or a wrappable MCP adapter that preserves gating semantics.
 
+## 2026-07-04 - MCP OAuth And Agent Safety Boundary
+
+- Roadmap item: MCP Support Plan / PR 2 OAuth + dashboard surfacing
+- Decision: Implemented OAuth storage/login/callback/logout, Runtime Overview MCP server and approval UI, docs, CLI/API routes, and review hardening. Narrowed model-callable MCP actions so Neon cannot add/connect stdio servers, configure header-authenticated servers, set auto-approval policy, or resolve MCP tool-call approvals itself. Server mutation remains available from user-owned CLI, API, and direct config surfaces; dashboard surfaces OAuth login/logout and approval decisions.
+- Reason: Stdio MCP config can spawn host processes, header auth can forward environment-backed secrets, auto-approval changes safety policy, and model-callable approval resolution would let the same agent approve and retry its own third-party tool call. Keeping these behind user-owned surfaces preserves the plan's deterministic runtime while avoiding a self-approval or execution-policy bypass.
+- Follow-up: If Neondeck later adds signed user-intent tokens for chat-mediated approvals, reintroduce chat approval resolution with a non-model authorization proof. Revisit native Flue MCP schema adaptation when Flue exposes public JSON Schema or interception hooks.
+
 ## 2026-06-27 - Neondeck Home And Runtime State
 
 - Roadmap item: Phase 1 / Neondeck home and runtime state

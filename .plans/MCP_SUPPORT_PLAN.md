@@ -12,8 +12,9 @@ able to configure MCP servers three ways, all converging on the same config file
 
 1. **CLI**: `neondeck mcp add/remove/login/...`
 2. **Manual config**: editing `mcp.json` in the Neondeck home directory.
-3. **In chat**: asking Neon, which uses typed `neondeck_mcp_*` Flue actions (the same
-   self-configuration pattern as `neondeck_config_*`).
+3. **In chat**: asking Neon, which uses typed `neondeck_mcp_*` Flue actions for safe
+   HTTP/OAuth server state. Stdio servers, header-authenticated servers, auto-approval policy, and
+   approval resolution stay on user-owned CLI/API/config/dashboard surfaces.
 
 Both transports must be supported:
 
@@ -248,8 +249,7 @@ Third-party tools are untrusted code with untrusted output. The gate checks ever
 3. Everything else → **ask**: the call returns `{ ok: false, status: 'approval-required',
 approvalId, summary }` including the tool name and an arguments preview, and records a pending
    approval bound to `(server, tool, argumentsHash)`. The user resolves it via dashboard, CLI
-   (`neondeck mcp approvals`), or by telling Neon (resolution is itself a destructive-class action
-   requiring `confirm: true`). The agent then simply **retries the same tool call with the same
+   (`neondeck mcp approvals`), or local API. The agent then simply **retries the same tool call with the same
    arguments** — the gate matches the approved row by arguments hash and allows it. No approval
    token pollutes the adapted tool's input schema.
 4. Approvals are single-use, hash-bound, and expire (default 15 minutes). Changed arguments mean a
@@ -352,10 +352,12 @@ config events on change):
 ```text
 neondeck_mcp_server_add / update / remove(confirm) / enable / disable
 neondeck_mcp_login_start / logout(confirm)
-neondeck_mcp_approval_resolve(confirm)       # user-instructed approval only
 ```
 
 Tool _calls_ go through the adapted `mcp__<server>__<tool>` Flue tools, not through an action.
+The approval resolver remains a service/API primitive for user-owned surfaces and is intentionally
+not registered as a display-assistant action, preventing the model from approving and retrying its
+own blocked MCP call.
 
 Agent instruction (add to `display-assistant.ts`, one paragraph in the house style): use
 `neondeck_mcp_*` actions for MCP configuration instead of editing `mcp.json`; `mcp__*` tools are
@@ -406,8 +408,7 @@ Everything except OAuth and dashboard. Suggested commit order within the PR:
    `mcpInstructionsSync()`, agent wiring.
 5. Adapters: routes (servers/tools/refresh/approvals/audit/gateway), CLI subcommands (`list/add/
 remove/enable/disable/tools/status/approvals`), `neondeck_mcp_server_*` +
-   `neondeck_mcp_approval_resolve` actions, safety-table entries (including the adapted-tool
-   family entry), runtime-status check.
+   safety-table entries (including the adapted-tool family entry), runtime-status check.
 
 Tests: unit tests against an in-process fixture MCP server covering the gate
 (deny/auto-approve/ask/hash-bound retry/expiry), config validation, and snapshot behavior when a
@@ -430,6 +431,16 @@ state mismatch, expired login, refresh failure → `needs-login`; a token-redact
 no token material appears in any action/tool/route output; dashboard section smoke via existing
 web test patterns.
 
+Implementation note (2026-07-04): PR 2 landed OAuth storage/login/callback/logout, Runtime
+Overview MCP server and approval controls, CLI/API/docs coverage, and review-hardening fixes from
+the first commit. Model-callable MCP actions are intentionally narrower than the draft plan: Neon
+cannot add/connect stdio servers, configure header-authenticated servers, set `tools.autoApprove`,
+or resolve MCP tool approvals itself. Server mutation remains a user-owned CLI/API/config operation;
+dashboard owns OAuth login/logout and approval decisions.
+Focused unit coverage was added for non-refreshing status/tool reads, atomic approval consumption,
+duplicate adapted tool names, and stale catalog replacement. Full OAuth fixture coverage remains a
+follow-up candidate.
+
 If PR 1 grows past comfortable review size, the sanctioned split point is after commit 3
 (config + registry + transports with tests, no agent surface yet) — not a return to more PRs.
 
@@ -450,24 +461,25 @@ If PR 1 grows past comfortable review size, the sanctioned split point is after 
   configurable, registered OAuth clients may need re-registration on port change. Store the
   redirect URI used at registration time and re-register when it no longer matches.
 - **Approval fatigue.** If ask-by-default proves too noisy for read-only-ish servers, the relief
-  valve is the user editing `autoApprove` (optionally via a chat action with confirm) — not
+  valve is the user editing `autoApprove` through user-owned config/CLI/API surfaces — not
   loosening the default. Revisit with real usage data.
 - **Open question — approvals unification.** MCP approvals mirror execution approvals; unifying
   them into one approvals domain is attractive but couples this feature to a refactor of execution
   state. Decision: keep separate in v1, note unification as a REFACTOR_PLAN follow-up candidate.
 - **Open question — offline CLI writes.** Whether `neondeck mcp add` should write config directly
-  when the server is down (see CLI section). Default answer: require the server; revisit if it
-  annoys in practice.
+  when the server is down (see CLI section). Implemented answer: CLI writes config directly through
+  the same domain services and OAuth pending-login records are DB-backed so the running server can
+  receive the callback.
 
 ## Definition of Done
 
-- A user can add a local stdio server and a remote OAuth server via any of: `neondeck mcp add` +
-  `login`, editing `mcp.json` by hand (validated on load, hot-applied via config events), or
-  asking Neon in chat — and all three paths produce identical config and identical runtime state.
+- A user can add a local stdio server and a remote OAuth server with `neondeck mcp add` + `login`,
+  editing `mcp.json` by hand (validated on load, hot-applied via config events), or safe HTTP/OAuth
+  chat actions where allowed. Stdio, header-auth, and auto-approval changes remain user-owned.
 - MCP tools appear to the agent as ordinary Flue tools (`mcp__<server>__<tool>`, adapted by
-  Flue's own `connectMcpServer`); Neon calls them directly, and unapproved calls stop at a visible
-  approval the user can resolve from dashboard, CLI, or chat, after which the identical retried
-  call succeeds.
+  Neondeck's SDK-backed adapter until Flue exposes a public wrappable MCP interception hook). Neon
+  calls them directly, and unapproved calls stop at a visible approval the user can resolve from
+  dashboard, CLI, or local API, after which the identical retried call succeeds.
 - OAuth tokens live only in the app DB; no token material appears in config files, action outputs,
   logs, or chat.
 - Disabled/removed servers disconnect immediately (`close()` called); stdio children never

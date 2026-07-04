@@ -60,6 +60,7 @@ export function hashMcpArguments(value: unknown) {
 }
 
 export async function replaceMcpToolCatalog(
+  serverId: string,
   records: McpToolCatalogRecord[],
   paths = runtimePaths(),
 ) {
@@ -104,6 +105,32 @@ export async function replaceMcpToolCatalog(
         item.status,
         item.updatedAt || now,
       );
+    }
+    if (records.length === 0) {
+      database
+        .prepare(
+          `
+          UPDATE mcp_tool_catalog
+          SET status = 'unavailable',
+              updated_at = ?
+          WHERE server_id = ?;
+        `,
+        )
+        .run(now, serverId);
+    } else {
+      const toolNames = records.map((item) => item.toolName);
+      const placeholders = toolNames.map(() => '?').join(', ');
+      database
+        .prepare(
+          `
+          UPDATE mcp_tool_catalog
+          SET status = 'unavailable',
+              updated_at = ?
+          WHERE server_id = ?
+            AND tool_name NOT IN (${placeholders});
+        `,
+        )
+        .run(now, serverId, ...toolNames);
     }
   } finally {
     database.close();
@@ -203,6 +230,80 @@ export async function findUsableMcpApproval(
         new Date().toISOString(),
       ) as McpApprovalRow | undefined;
     return row ? readApprovalRow(row) : null;
+  } finally {
+    database.close();
+  }
+}
+
+export async function consumeUsableMcpApproval(
+  input: {
+    serverId: string;
+    toolName: string;
+    adaptedName: string;
+    argumentsHash: string;
+  },
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  expireOldApprovals(paths);
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  const now = new Date().toISOString();
+  let transactionStarted = false;
+  try {
+    database.exec('BEGIN IMMEDIATE;');
+    transactionStarted = true;
+    const row = database
+      .prepare(
+        `
+        SELECT *
+        FROM mcp_tool_approvals
+        WHERE server_id = ?
+          AND tool_name = ?
+          AND adapted_name = ?
+          AND arguments_hash = ?
+          AND status = 'approved'
+          AND expires_at > ?
+        ORDER BY resolved_at ASC
+        LIMIT 1;
+      `,
+      )
+      .get(
+        input.serverId,
+        input.toolName,
+        input.adaptedName,
+        input.argumentsHash,
+        now,
+      ) as McpApprovalRow | undefined;
+    if (!row) {
+      database.exec('COMMIT;');
+      return null;
+    }
+
+    const result = database
+      .prepare(
+        `
+        UPDATE mcp_tool_approvals
+        SET status = 'used',
+            used_at = ?,
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'approved';
+      `,
+      )
+      .run(now, now, row.id);
+    database.exec('COMMIT;');
+    transactionStarted = false;
+    return result.changes === 1
+      ? readApprovalRow({
+          ...row,
+          status: 'used',
+          used_at: now,
+          updated_at: now,
+        })
+      : null;
+  } catch (error) {
+    if (transactionStarted) database.exec('ROLLBACK;');
+    throw error;
   } finally {
     database.close();
   }

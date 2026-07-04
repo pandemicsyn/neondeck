@@ -54,12 +54,16 @@ import {
 } from './execution-actions';
 import {
   addMcpServer,
+  completeMcpOAuthCallback,
   getMcpRegistry,
   listMcpApprovals,
   listMcpAudit,
+  logoutMcpOAuthServer,
+  readPublicMcpOAuthLogin,
   removeMcpServer,
   resolveMcpApprovalWithPaths,
   setMcpServerEnabled,
+  startMcpOAuthLogin,
   updateMcpServer,
 } from './domains/mcp';
 import { syncExeDevCheckout } from './exedev-checkouts';
@@ -612,6 +616,75 @@ app.post('/api/mcp/servers/:id/refresh', async (c) => {
     changed: false,
     message: `Refreshed MCP server "${c.req.param('id')}".`,
   });
+});
+
+app.post('/api/mcp/servers/:id/login', async (c) => {
+  const body = await safeJsonObject(c);
+  const redirectUrl =
+    typeof body.redirectUrl === 'string'
+      ? body.redirectUrl
+      : `${requestOrigin(c)}/api/mcp/oauth/callback`;
+  const result = await startMcpOAuthLogin(
+    { id: c.req.param('id'), redirectUrl },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.get('/api/mcp/logins/:id', async (c) => {
+  const login = await readPublicMcpOAuthLogin(c.req.param('id'), paths);
+  if (!login) {
+    return c.json(
+      {
+        ok: false,
+        action: 'mcp_login_read',
+        changed: false,
+        message: 'MCP OAuth login was not found.',
+      },
+      404,
+    );
+  }
+  return c.json({
+    ok: true,
+    action: 'mcp_login_read',
+    changed: false,
+    message: `Read MCP OAuth login "${login.id}".`,
+    login,
+  });
+});
+
+app.get('/api/mcp/oauth/callback', async (c) => {
+  const result = await completeMcpOAuthCallback(
+    {
+      state: c.req.query('state'),
+      code: c.req.query('code'),
+      error: c.req.query('error'),
+    },
+    paths,
+  );
+  const login = isRecord(result.login) ? result.login : null;
+  const serverId =
+    login && typeof login.serverId === 'string' ? login.serverId : undefined;
+  if (result.ok && serverId) {
+    await getMcpRegistry(paths).refresh(serverId);
+  }
+  return c.html(
+    oauthCallbackHtml(result.ok, result.message),
+    result.ok ? 200 : 400,
+  );
+});
+
+app.post('/api/mcp/servers/:id/logout', async (c) => {
+  const body = await safeJsonObject(c);
+  const result = await logoutMcpOAuthServer(
+    {
+      id: c.req.param('id'),
+      confirm: body.confirm === true,
+    },
+    paths,
+  );
+  if (result.ok) await getMcpRegistry(paths).refresh(c.req.param('id'));
+  return c.json(result, result.ok ? 200 : 400);
 });
 
 app.get('/api/mcp/approvals', async (c) => {
@@ -2135,6 +2208,11 @@ function hostName(host: string | undefined) {
   return lower.split(':')[0];
 }
 
+function requestOrigin(c: Context) {
+  const requestUrl = new URL(c.req.url);
+  return requestUrl.origin;
+}
+
 function isSafeMethod(method: string) {
   return method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
 }
@@ -2163,6 +2241,70 @@ function isAllowedBrowserOrigin(request: Request) {
   if (referer) return isLocalUrl(referer);
 
   return true;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function oauthCallbackHtml(ok: boolean, message: string) {
+  const title = ok ? 'MCP login complete' : 'MCP login failed';
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(title)}</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #0a0b10;
+        color: #d7f7ff;
+        font: 14px/1.5 system-ui, sans-serif;
+      }
+      main {
+        max-width: 36rem;
+        border: 1px solid #ffffff1f;
+        padding: 24px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        color: ${ok ? '#69e6ff' : '#ff4fb8'};
+        font: 600 16px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      p {
+        margin: 0;
+        color: #d7f7ffb3;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>${escapeHtml(title)}</h1>
+      <p>${escapeHtml(message)}</p>
+    </main>
+  </body>
+</html>`;
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case '&':
+        return '&amp;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '"':
+        return '&quot;';
+      default:
+        return '&#39;';
+    }
+  });
 }
 
 function isLocalUrl(value: string) {

@@ -25,21 +25,47 @@ server.registerTool(
   }),
 );
 
-server.registerTool(
-  'danger',
-  {
-    description: 'Denied test tool.',
-    inputSchema: {
-      text: z.string(),
+if (process.env.NEONDECK_MCP_DUPLICATE_TOOLS === '1') {
+  server.registerTool(
+    'foo.bar',
+    {
+      description: 'Duplicate adapted-name fixture.',
+      inputSchema: {},
     },
-    annotations: {
-      destructiveHint: true,
+    async () => ({
+      content: [{ type: 'text', text: 'foo.bar' }],
+    }),
+  );
+
+  server.registerTool(
+    'foo/bar',
+    {
+      description: 'Duplicate adapted-name fixture.',
+      inputSchema: {},
     },
-  },
-  async ({ text }) => ({
-    content: [{ type: 'text', text: `danger:${text}` }],
-  }),
-);
+    async () => ({
+      content: [{ type: 'text', text: 'foo/bar' }],
+    }),
+  );
+}
+
+if (process.env.NEONDECK_MCP_ONLY_ECHO !== '1') {
+  server.registerTool(
+    'danger',
+    {
+      description: 'Denied test tool.',
+      inputSchema: {
+        text: z.string(),
+      },
+      annotations: {
+        destructiveHint: true,
+      },
+    },
+    async ({ text }) => ({
+      content: [{ type: 'text', text: `danger:${text}` }],
+    }),
+  );
+}
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

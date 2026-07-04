@@ -486,6 +486,37 @@ mcp
   });
 
 mcp
+  .command('login <id>')
+  .description('Start OAuth login for one MCP server.')
+  .option('--redirect-url <url>', 'OAuth redirect URL for the running server')
+  .action(async (id: string, options: { redirectUrl?: string }) => {
+    const { startMcpOAuthLogin } = await mcpModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
+    const result = await startMcpOAuthLogin(
+      { id, redirectUrl: options.redirectUrl },
+      paths,
+    );
+    printMcpLoginResult(result);
+  });
+
+mcp
+  .command('logout <id>')
+  .description('Remove stored OAuth tokens for one MCP server.')
+  .option('--confirm', 'confirm logout')
+  .action(async (id: string, options: { confirm?: boolean }) => {
+    const { getMcpRegistry, logoutMcpOAuthServer } = await mcpModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
+    const result = await logoutMcpOAuthServer(
+      { id, confirm: options.confirm },
+      paths,
+    );
+    if (result.ok) await getMcpRegistry(paths).refresh(id);
+    printActionResult(result);
+  });
+
+mcp
   .command('approvals')
   .description('List or resolve MCP tool-call approvals.')
   .option('--include-resolved', 'include resolved approval rows')
@@ -1911,6 +1942,30 @@ function printMcpTools(tools: unknown[]) {
     const description = stringField(tool, 'description');
     if (description) console.log(`  ${description.slice(0, 160)}`);
   }
+}
+
+function printMcpLoginResult(result: {
+  ok: boolean;
+  message: string;
+  authorizationUrl?: string | null;
+  loginId?: string;
+  login?: unknown;
+  requires?: string[];
+}) {
+  if (program.opts<GlobalOptions>().json || !result.ok) {
+    printActionResult(result);
+    return;
+  }
+
+  console.log(`✓ ${result.message}`);
+  const authorizationUrl = result.authorizationUrl;
+  if (authorizationUrl) {
+    console.log(`authorizationUrl: ${authorizationUrl}`);
+    console.log(
+      'Open that URL in a browser, then keep the Neondeck server running for the callback.',
+    );
+  }
+  if (result.loginId) console.log(`loginId: ${result.loginId}`);
 }
 
 function printMcpApprovals(approvals: unknown[]) {

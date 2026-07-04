@@ -121,6 +121,16 @@ export const mcpApprovalResolveInputSchema = v.object({
   confirm: v.optional(v.boolean()),
 });
 
+export const mcpLoginStartInputSchema = v.object({
+  id: mcpServerIdSchema,
+  redirectUrl: v.optional(nonEmptyStringSchema),
+});
+
+export const mcpLogoutInputSchema = v.object({
+  id: mcpServerIdSchema,
+  confirm: v.optional(v.boolean()),
+});
+
 export const mcpListAuditInputSchema = v.object({
   serverId: v.optional(mcpServerIdSchema),
   limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),

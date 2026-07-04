@@ -924,6 +924,7 @@ Backend extension points:
 - slash commands
 - scheduled jobs
 - repo adapters
+- MCP servers
 - notification emitters
 - skills
 

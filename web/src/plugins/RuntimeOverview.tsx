@@ -15,6 +15,8 @@ import {
   getMemories,
   getNotifications,
   getExecutionApprovals,
+  getMcpApprovals,
+  getMcpServers,
   getRepoEditEvents,
   getWorktrees,
   getWorkflowObservability,
@@ -23,10 +25,17 @@ import {
   markNotificationRead,
   resolveNotification,
   resolveExecutionApproval,
+  resolveMcpApproval,
+  logoutMcpServer,
+  startMcpLogin,
   updateAgentModels,
   updateProvider,
   type ExecutionApproval,
   type ExecutionApprovalsResponse,
+  type McpApproval,
+  type McpApprovalsResponse,
+  type McpServer,
+  type McpServersResponse,
   type MemoryRecord,
   type NotificationRecord,
   type NotificationResponse,
@@ -70,6 +79,7 @@ type RuntimeOverviewConfig = {
   notificationLimit: number;
   workflowEventLimit: number;
   repoEditLimit: number;
+  mcpLimit: number;
 };
 
 type RuntimeSnapshot = {
@@ -81,6 +91,8 @@ type RuntimeSnapshot = {
   memories: MemoryRecord[];
   notifications: NotificationResponse;
   executionApprovals: ExecutionApprovalsResponse;
+  mcpServers: McpServersResponse;
+  mcpApprovals: McpApprovalsResponse;
   safety: SafetyPolicy;
   workflows: WorkflowObservability;
   kiloTasks: KiloTasksResponse;
@@ -106,6 +118,7 @@ const runtimeOverviewDefaultConfig = {
   notificationLimit: 5,
   workflowEventLimit: 6,
   repoEditLimit: 5,
+  mcpLimit: 5,
 };
 
 export const RuntimeOverviewPlugin = {
@@ -126,6 +139,8 @@ export const RuntimeOverviewPlugin = {
       memoriesQuery,
       notificationsQuery,
       executionApprovalsQuery,
+      mcpServersQuery,
+      mcpApprovalsQuery,
       safetyQuery,
       workflowsQuery,
       kiloTasksQuery,
@@ -171,6 +186,16 @@ export const RuntimeOverviewPlugin = {
         {
           queryKey: queryKeys.executionApprovals,
           queryFn: () => getExecutionApprovals({ includeResolved: true }),
+          refetchInterval: 30_000,
+        },
+        {
+          queryKey: queryKeys.mcpServers,
+          queryFn: getMcpServers,
+          refetchInterval: 30_000,
+        },
+        {
+          queryKey: queryKeys.mcpApprovals,
+          queryFn: () => getMcpApprovals({ includeResolved: true }),
           refetchInterval: 30_000,
         },
         {
@@ -246,6 +271,8 @@ export const RuntimeOverviewPlugin = {
       memories: memoriesQuery,
       notifications: notificationsQuery,
       executionApprovals: executionApprovalsQuery,
+      mcpServers: mcpServersQuery,
+      mcpApprovals: mcpApprovalsQuery,
       safety: safetyQuery,
       workflows: workflowsQuery,
       kiloTasks: kiloTasksQuery,
@@ -275,6 +302,8 @@ type RuntimeSnapshotQueries = {
   memories: UseQueryResult<MemoryResponse>;
   notifications: UseQueryResult<NotificationResponse>;
   executionApprovals: UseQueryResult<ExecutionApprovalsResponse>;
+  mcpServers: UseQueryResult<McpServersResponse>;
+  mcpApprovals: UseQueryResult<McpApprovalsResponse>;
   safety: UseQueryResult<SafetyPolicy>;
   workflows: UseQueryResult<WorkflowObservability>;
   kiloTasks: UseQueryResult<KiloTasksResponse>;
@@ -294,6 +323,8 @@ function runtimeSnapshotFromQueries(
     queryResultError(queries.memories),
     queryResultError(queries.notifications),
     queryResultError(queries.executionApprovals),
+    queryResultError(queries.mcpServers),
+    queryResultError(queries.mcpApprovals),
     queryResultError(queries.safety),
     queryResultError(queries.workflows),
     queryResultError(queries.kiloTasks),
@@ -340,6 +371,20 @@ function runtimeSnapshotFromQueries(
       changed: false,
       approvals: [],
       fetchedAt: status.fetchedAt,
+    },
+    mcpServers: queries.mcpServers.data ?? {
+      ok: false,
+      action: 'mcp_servers_list',
+      changed: false,
+      message: 'MCP server status unavailable.',
+      servers: [],
+    },
+    mcpApprovals: queries.mcpApprovals.data ?? {
+      ok: false,
+      action: 'mcp_approvals_list',
+      changed: false,
+      message: 'MCP approvals unavailable.',
+      approvals: [],
     },
     safety: queries.safety.data ?? emptySafetyPolicy(status.fetchedAt),
     workflows: queries.workflows.data ?? emptyWorkflows(),
@@ -393,6 +438,8 @@ async function invalidateRuntimeQueries(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: queryKeys.memories }),
     queryClient.invalidateQueries({ queryKey: queryKeys.notifications }),
     queryClient.invalidateQueries({ queryKey: queryKeys.executionApprovals }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.mcpServers }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.mcpApprovals }),
     queryClient.invalidateQueries({ queryKey: queryKeys.safetyPolicy }),
     queryClient.invalidateQueries({ queryKey: queryKeys.repoEditEvents }),
     queryClient.invalidateQueries({ queryKey: queryKeys.worktrees }),
@@ -420,6 +467,10 @@ function RuntimeView({
     0,
     5,
   );
+  const pendingMcpApprovals = snapshot.mcpApprovals.approvals.filter(
+    (approval) => approval.status === 'pending',
+  );
+  const recentMcpApprovals = snapshot.mcpApprovals.approvals.slice(0, 5);
   const activeKiloTasks = snapshot.kiloTasks.tasks.filter((task) =>
     [
       'running',
@@ -570,6 +621,50 @@ function RuntimeView({
                 .map((entry) => (
                   <SafetyPolicyRow entry={entry} key={entry.id} />
                 ))}
+            </div>
+          </RuntimeSection>
+          <RuntimeSection
+            count={snapshot.mcpServers.servers.length}
+            title="MCP SERVERS"
+            tone={
+              snapshot.mcpServers.servers.some((server) =>
+                ['needs-login', 'error'].includes(server.status),
+              )
+                ? 'accent'
+                : 'primary'
+            }
+          >
+            <div className="space-y-1.5">
+              {snapshot.mcpServers.servers
+                .slice(0, config.mcpLimit)
+                .map((server) => (
+                  <McpServerRow
+                    key={server.id}
+                    onRefresh={onRefresh}
+                    server={server}
+                  />
+                ))}
+              {snapshot.mcpServers.servers.length === 0 ? (
+                <MiniEmpty label="No MCP servers configured." />
+              ) : null}
+            </div>
+          </RuntimeSection>
+          <RuntimeSection
+            count={pendingMcpApprovals.length}
+            title="MCP APPROVALS"
+            tone={pendingMcpApprovals.length > 0 ? 'accent' : 'violet'}
+          >
+            <div className="space-y-1.5">
+              {recentMcpApprovals.map((approval) => (
+                <McpApprovalRow
+                  approval={approval}
+                  key={approval.id}
+                  onRefresh={onRefresh}
+                />
+              ))}
+              {recentMcpApprovals.length === 0 ? (
+                <MiniEmpty label="No MCP approvals recorded." />
+              ) : null}
             </div>
           </RuntimeSection>
           <RuntimeSection
@@ -1765,6 +1860,174 @@ function ExecutionApprovalRow({
   );
 }
 
+function McpServerRow({
+  onRefresh,
+  server,
+}: {
+  onRefresh: () => void;
+  server: McpServer;
+}) {
+  const [busy, setBusy] = useState<'login' | 'logout' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function startLogin() {
+    setBusy('login');
+    setError(null);
+    try {
+      const result = await startMcpLogin(server.id);
+      if (result.authorizationUrl) {
+        window.open(result.authorizationUrl, '_blank', 'noopener,noreferrer');
+      }
+      onRefresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function logout() {
+    setBusy('logout');
+    setError(null);
+    try {
+      await logoutMcpServer(server.id);
+      onRefresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <article className="border border-line bg-soft px-2.5 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-ink">{server.id}</p>
+          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
+            {server.transport} · {server.auth.kind}
+            {server.auth.kind === 'oauth'
+              ? server.auth.authorized
+                ? ` · authorized${server.auth.expiresAt ? ` until ${relativeTime(server.auth.expiresAt)}` : ''}`
+                : ' · not authorized'
+              : ''}
+            {server.message ? ` · ${server.message}` : ''}
+          </p>
+        </div>
+        <Badge className={mcpStatusClass(server)}>{server.status}</Badge>
+      </div>
+      <div className="mt-1.5 flex items-center gap-1.5 font-mono text-[10px] text-muted">
+        <span className="min-w-0 flex-1 truncate">
+          {server.toolCount} tools
+          {server.lastConnectedAt
+            ? ` · connected ${relativeTime(server.lastConnectedAt)}`
+            : ''}
+          {server.lastErrorAt
+            ? ` · error ${relativeTime(server.lastErrorAt)}`
+            : ''}
+        </span>
+        {server.auth.kind === 'oauth' && !server.auth.authorized ? (
+          <button
+            className="shrink-0 border border-line px-1.5 py-0.5 text-muted disabled:opacity-50"
+            disabled={busy !== null}
+            onClick={() => void startLogin()}
+            type="button"
+          >
+            {busy === 'login' ? 'opening' : 'login'}
+          </button>
+        ) : null}
+        {server.auth.kind === 'oauth' && server.auth.authorized ? (
+          <button
+            className="shrink-0 border border-accent px-1.5 py-0.5 text-accent disabled:opacity-50"
+            disabled={busy !== null}
+            onClick={() => void logout()}
+            type="button"
+          >
+            {busy === 'logout' ? 'logging out' : 'logout'}
+          </button>
+        ) : null}
+      </div>
+      {error ? (
+        <p className="mt-1.5 line-clamp-2 text-[10.5px] leading-4 text-accent">
+          {error}
+        </p>
+      ) : null}
+    </article>
+  );
+}
+
+function McpApprovalRow({
+  approval,
+  onRefresh,
+}: {
+  approval: McpApproval;
+  onRefresh: () => void;
+}) {
+  const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function resolve(decision: 'approve' | 'deny') {
+    setBusy(decision);
+    setError(null);
+    try {
+      await resolveMcpApproval(approval.id, decision);
+      onRefresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <article className="border border-line bg-soft px-2.5 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-ink">
+            {approval.adaptedName}
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
+            {approval.serverId} · {approval.toolName} ·{' '}
+            {approval.argumentsPreview}
+          </p>
+        </div>
+        <Badge className={mcpApprovalClass(approval)}>{approval.status}</Badge>
+      </div>
+      <div className="mt-1.5 flex items-center gap-1.5 font-mono text-[10px] text-muted">
+        <span className="min-w-0 flex-1 truncate">
+          {relativeTime(approval.updatedAt)} · expires{' '}
+          {relativeTime(approval.expiresAt)}
+        </span>
+        {approval.status === 'pending' ? (
+          <>
+            <button
+              className="shrink-0 border border-line px-1.5 py-0.5 text-muted disabled:opacity-50"
+              disabled={busy !== null}
+              onClick={() => void resolve('approve')}
+              type="button"
+            >
+              approve
+            </button>
+            <button
+              className="shrink-0 border border-accent px-1.5 py-0.5 text-accent disabled:opacity-50"
+              disabled={busy !== null}
+              onClick={() => void resolve('deny')}
+              type="button"
+            >
+              deny
+            </button>
+          </>
+        ) : null}
+      </div>
+      {error ? (
+        <p className="mt-1.5 line-clamp-2 text-[10.5px] leading-4 text-accent">
+          {error}
+        </p>
+      ) : null}
+    </article>
+  );
+}
+
 function RepoEditEventRow({ event }: { event: RepoEditEvent }) {
   const paths = event.paths.length > 0 ? event.paths.join(', ') : 'no paths';
   return (
@@ -2279,6 +2542,24 @@ function executionApprovalClass(approval: ExecutionApproval) {
   if (approval.status === 'executed') return 'border-primary text-primary';
   if (approval.status === 'failed' || approval.status === 'blocked') {
     return 'border-accent text-accent';
+  }
+  return '';
+}
+
+function mcpStatusClass(server: McpServer) {
+  if (server.status === 'connected') return 'border-primary text-primary';
+  if (server.status === 'needs-login') return 'border-violet text-violet';
+  if (server.status === 'error') return 'border-accent text-accent';
+  return '';
+}
+
+function mcpApprovalClass(approval: McpApproval) {
+  if (approval.status === 'pending') return 'border-accent text-accent';
+  if (approval.status === 'approved' || approval.status === 'used') {
+    return 'border-primary text-primary';
+  }
+  if (approval.status === 'denied' || approval.status === 'expired') {
+    return 'border-violet text-violet';
   }
   return '';
 }

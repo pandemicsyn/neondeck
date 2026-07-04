@@ -76,6 +76,20 @@ npm run cli -- schedule --review-queue-digest</code></pre>
           creates known schedule blueprints and lists configured jobs.
         </p>
 
+        <h2>MCP servers</h2>
+        <pre><code>npm run cli -- mcp list
+npm run cli -- mcp add linear --url https://mcp.linear.app/mcp --oauth
+npm run cli -- mcp login linear
+npm run cli -- mcp tools linear
+npm run cli -- mcp approvals
+npm run cli -- mcp approvals --resolve &lt;id&gt; --approve
+npm run cli -- mcp logout linear --confirm</code></pre>
+        <p>
+          MCP config lives in runtime-home <code>mcp.json</code>. Stdio servers,
+          header-authenticated servers, and auto-approval policy should be
+          managed from user-owned CLI, local API, or config surfaces.
+        </p>
+
         <h2>Learning</h2>
         <pre><code>npm run cli -- learning status
 npm run cli -- learning reviews

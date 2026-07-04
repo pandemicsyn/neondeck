@@ -1,4 +1,5 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -9,6 +10,7 @@ import {
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 import { defineTool, type ToolDefinition } from '@flue/runtime';
+import Ajv, { type ValidateFunction } from 'ajv';
 import * as v from 'valibot';
 import { adaptedMcpToolName } from './format';
 import type { McpServerConfig } from './schemas';
@@ -65,6 +67,7 @@ export async function connectSdkMcpServer(input: {
   serverId: string;
   server: McpServerConfig;
   headers?: Record<string, string>;
+  authProvider?: OAuthClientProvider;
   gate: McpToolGate;
 }): Promise<McpSdkConnection> {
   const client = new Client({
@@ -72,22 +75,27 @@ export async function connectSdkMcpServer(input: {
     version: '1.0.0',
   });
   const requestOptions = requestOptionsForServer(input.server);
-  const transport = createTransport(input.server, input.headers);
+  const transport = createTransport(
+    input.server,
+    input.headers,
+    input.authProvider,
+  );
 
   try {
     await client.connect(transport);
-    const tools = await listAllTools(client, requestOptions);
-    const adapted = tools
-      .filter((tool) => tool.execution?.taskSupport !== 'required')
-      .map((tool) =>
-        createMcpToolDefinition({
-          serverId: input.serverId,
-          tool,
-          requestOptions,
-          client,
-          gate: input.gate,
-        }),
-      );
+    const tools = (await listAllTools(client, requestOptions)).filter(
+      (tool) => tool.execution?.taskSupport !== 'required',
+    );
+    assertUniqueAdaptedNames(input.serverId, tools);
+    const adapted = tools.map((tool) =>
+      createMcpToolDefinition({
+        serverId: input.serverId,
+        tool,
+        requestOptions,
+        client,
+        gate: input.gate,
+      }),
+    );
     return {
       serverId: input.serverId,
       tools: adapted.map((item) => item.tool),
@@ -103,6 +111,7 @@ export async function connectSdkMcpServer(input: {
 function createTransport(
   server: McpServerConfig,
   headers: Record<string, string> | undefined,
+  authProvider: OAuthClientProvider | undefined,
 ) {
   if (server.transport === 'stdio') {
     return new StdioClientTransport({
@@ -117,9 +126,9 @@ function createTransport(
   const requestInit = headers ? { headers } : undefined;
   const url = new URL(server.url);
   if (server.sse) {
-    return new SSEClientTransport(url, { requestInit });
+    return new SSEClientTransport(url, { requestInit, authProvider });
   }
-  return new StreamableHTTPClientTransport(url, { requestInit });
+  return new StreamableHTTPClientTransport(url, { requestInit, authProvider });
 }
 
 function resolveStdioEnv(server: McpServerConfig) {
@@ -160,7 +169,14 @@ function createMcpToolDefinition(input: {
 }) {
   const adaptedName = adaptedMcpToolName(input.serverId, input.tool.name);
   const description = createToolDescription(input.serverId, input.tool);
-  const inputSchema = inputSchemaToValibot(input.tool.inputSchema);
+  const inputValidator = compileJsonSchema(input.tool.inputSchema);
+  const outputValidator = input.tool.outputSchema
+    ? compileJsonSchema(input.tool.outputSchema)
+    : null;
+  const inputSchema = inputSchemaToValibot(
+    input.tool.inputSchema,
+    inputValidator,
+  );
   const output = v.looseObject({
     ok: v.boolean(),
     status: v.string(),
@@ -174,6 +190,11 @@ function createMcpToolDefinition(input: {
     input: inputSchema,
     output,
     async run(context) {
+      assertJsonSchema(
+        inputValidator,
+        context.input,
+        `Input for MCP tool "${input.tool.name}"`,
+      );
       return input.gate({
         serverId: input.serverId,
         toolName: input.tool.name,
@@ -197,6 +218,18 @@ function createMcpToolDefinition(input: {
           const text = formatMcpResult(result);
           if (result.isError) {
             throw new Error(text);
+          }
+          if (outputValidator) {
+            if (result.structuredContent === undefined) {
+              throw new Error(
+                `MCP tool "${input.tool.name}" returned no structuredContent for its declared output schema.`,
+              );
+            }
+            assertJsonSchema(
+              outputValidator,
+              result.structuredContent,
+              `Structured output for MCP tool "${input.tool.name}"`,
+            );
           }
           return {
             text,
@@ -239,7 +272,43 @@ function createToolDescription(serverName: string, tool: Tool) {
   return parts.join(' ');
 }
 
-function inputSchemaToValibot(schema: Tool['inputSchema']) {
+const ajv = new Ajv({ allErrors: true, strict: false });
+
+function assertUniqueAdaptedNames(serverId: string, tools: Tool[]) {
+  const seen = new Map<string, string>();
+  for (const tool of tools) {
+    const adaptedName = adaptedMcpToolName(serverId, tool.name);
+    const existing = seen.get(adaptedName);
+    if (existing) {
+      throw new Error(
+        `MCP server "${serverId}" exposes duplicate adapted tool name "${adaptedName}" for "${existing}" and "${tool.name}".`,
+      );
+    }
+    seen.set(adaptedName, tool.name);
+  }
+}
+
+function compileJsonSchema(schema: object): ValidateFunction {
+  return ajv.compile(schema);
+}
+
+function assertJsonSchema(
+  validate: ValidateFunction,
+  value: unknown,
+  label: string,
+) {
+  if (validate(value)) return;
+  const detail =
+    validate.errors
+      ?.map((error) => `${error.instancePath || '/'} ${error.message}`)
+      .join('; ') || 'unknown schema mismatch';
+  throw new Error(`${label} does not match declared JSON Schema: ${detail}`);
+}
+
+function inputSchemaToValibot(
+  schema: Tool['inputSchema'],
+  validate: ValidateFunction,
+) {
   const properties = schema.properties ?? {};
   const required = new Set(schema.required ?? []);
   const entries: Record<string, v.GenericSchema> = {};
@@ -249,7 +318,13 @@ function inputSchemaToValibot(schema: Tool['inputSchema']) {
     entries[key] = required.has(key) ? property : v.optional(property);
   }
 
-  return v.looseObject(entries);
+  return v.pipe(
+    v.looseObject(entries),
+    v.check(
+      (value) => validate(value),
+      'Input did not match the MCP tool JSON Schema.',
+    ),
+  );
 }
 
 function jsonSchemaToValibot(schema: object): v.GenericSchema {

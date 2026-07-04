@@ -67,7 +67,7 @@ XDG_CONFIG_HOME/neondeck
 ~/.config/neondeck
 ```
 
-The runtime home contains `.env`, `config.json`, `repos.json`, `dashboard.json`, `schedules.json`, `SOUL.md`, `skills/`, and separate `data/neondeck.db` and `data/flue.db` databases. `config.json` includes a generated `localApi.token` used by the local dashboard for guarded raw Flue run inspection. The repo-local `config/dashboard.json` and `SOUL.md` files are defaults for new homes; edit the runtime-home copies for local customization.
+The runtime home contains `.env`, `config.json`, `mcp.json`, `repos.json`, `dashboard.json`, `schedules.json`, `SOUL.md`, `skills/`, and separate `data/neondeck.db` and `data/flue.db` databases. `config.json` includes a generated `localApi.token` used by the local dashboard for guarded raw Flue run inspection. The repo-local `config/dashboard.json` and `SOUL.md` files are defaults for new homes; edit the runtime-home copies for local customization.
 
 You can initialize or validate the runtime home explicitly without starting the server:
 
@@ -181,6 +181,63 @@ Preapproved commands must be single commands without shell operators such as `&&
 
 Trusted-local execution runs on your machine and is best for local git/dev commands you already trust. `exe.dev` is the isolated sandbox option; enable it explicitly by adding `"exe.dev"` to `enabledBackends` after `EXE_VM_HOST` points at an existing VM and SSH auth is configured.
 
+## MCP servers
+
+Neondeck can register local stdio and remote HTTP MCP servers from runtime-home `mcp.json`. MCP tools are exposed to Neon as Flue tools named `mcp__<server>__<tool>`, but each third-party tool result is treated as untrusted data and gated by exact per-server policy. Tools default to ask; `tools.autoApprove` and `tools.deny` are exact original MCP tool names.
+
+```json
+{
+  "servers": {
+    "linear": {
+      "transport": "http",
+      "url": "https://mcp.linear.app/mcp",
+      "auth": { "kind": "oauth" }
+    },
+    "local-tools": {
+      "transport": "stdio",
+      "command": "node",
+      "args": ["/absolute/path/to/server.mjs"],
+      "tools": {
+        "deny": ["dangerous_tool"]
+      }
+    }
+  }
+}
+```
+
+Secrets are never stored directly in `mcp.json`. Header-authenticated servers use environment-variable references, and OAuth access/refresh tokens are stored only in `data/neondeck.db`.
+
+```json
+{
+  "servers": {
+    "internal": {
+      "transport": "http",
+      "url": "https://mcp.example.com/mcp",
+      "auth": {
+        "kind": "header",
+        "headers": {
+          "Authorization": { "env": "INTERNAL_MCP_AUTHORIZATION" }
+        }
+      }
+    }
+  }
+}
+```
+
+Manage servers with the CLI, local API, direct `mcp.json` edits, or safe HTTP/OAuth chat actions:
+
+```sh
+neondeck mcp list
+neondeck mcp add linear --url https://mcp.linear.app/mcp --oauth
+neondeck mcp login linear
+neondeck mcp tools linear
+neondeck mcp approvals
+neondeck mcp approvals --resolve <id> --approve
+neondeck mcp logout linear --confirm
+```
+
+Stdio servers, header-authenticated servers, and MCP auto-approval policy are user-owned surfaces because they can spawn host processes or forward environment-backed secrets. Configure those through the CLI, local API, or `mcp.json`, not through model-callable actions. Pending MCP tool approvals and OAuth login/logout appear in Runtime Overview.
+
 Use `neondeck_exedev_checkout_sync` to clone or sync a configured repo or Neondeck-managed worktree on the existing VM. If a sync step needs approval, approve the returned execution request and retry with `approvals[blockedStep]` set to that approval id. Then call `neondeck_execution_run` with `repoId` or `worktreeId` so the remote cwd resolves to that checkout. Env forwarding is opt-in per global/repo/checkout config. Enabled sources can include repo-relative `.env` files, literal config `vars`, and explicitly mapped host env variables. Neondeck does not filter forwarded variable names by heuristic; execution audit metadata records which sources and keys were used, not the values.
 
 Autopilot PR work uses managed worktrees as the isolation boundary. Prepared diffs remain backed by the retained source worktree, and push-back is allowed only after prepared-diff approval, passed verification, autopilot policy, clean committed state, and GitHub branch permission checks all pass. The local API exposes `/api/autopilot/state`, `/api/prepared-diffs`, `/api/prepared-diffs/:id/recovery`, and `/api/prepared-diffs/:id/recovery/run` for dashboard/TUI-style inspection and bounded recovery. Recovery can inspect the retained worktree, retry after a new PR commit by rebasing/resyncing the clean worktree, retry verification, retry push, retry the result comment, request revision, abandon with confirmation, clean up the worktree through cleanup policy with confirmation, or surface manual follow-up; each option dispatches to the same typed backend services used by Flue actions.
@@ -231,7 +288,7 @@ curl -X POST 'http://127.0.0.1:5173/api/flue/workflows/command-run?wait=result' 
   -d '{"input":{"command":"/briefing"}}'
 ```
 
-Supported commands include `/repo-status`, `/review-queue`, `/briefing`, `/reasoning [level]`, `/dev-doctor`, `/watch-pr <ref>`, and `/watch-release <repo>`. A `/reasoning` command shows the current display-assistant reasoning level; `/reasoning high` changes it to a level supported by the selected model and starts a fresh Neon session. A `/watch-pr` command creates a persistent PR watch, polls for merge/check changes, and shows it in the active watches panel. `/watch-release` tracks default-branch GitHub checks until green; `/watch-pr ... until prod` waits for the source PR to merge, then tracks the source PR merge SHA until checks are green. `/dev-doctor` checks local repo health, package scripts, Node version, env keys, dev ports, API health, and runtime databases. Runtime home, repository, scheduler job, and skill state are shown in the runtime overview panel. Results are stored in `workflow_summaries` and exposed at `/api/workflows/summaries`.
+Supported commands include `/repo-status`, `/review-queue`, `/briefing`, `/reasoning [level]`, `/dev-doctor`, `/watch-pr <ref>`, and `/watch-release <repo>`. A `/reasoning` command shows the current display-assistant reasoning level; `/reasoning high` changes it to a level supported by the selected model and starts a fresh Neon session. A `/watch-pr` command creates a persistent PR watch, polls for merge/check changes, and shows it in the active watches panel. `/watch-release` tracks default-branch GitHub checks until green; `/watch-pr ... until prod` waits for the source PR to merge, then tracks the source PR merge SHA until checks are green. `/dev-doctor` checks local repo health, package scripts, Node version, env keys, dev ports, API health, and runtime databases. Runtime home, repository, MCP servers/approvals, scheduler job, and skill state are shown in the runtime overview panel. Results are stored in `workflow_summaries` and exposed at `/api/workflows/summaries`.
 
 Dashboard PR, watch, repo, briefing, Kilo, and autopilot rows include session affordances that create or open linked chat sessions. The chat panel also has a compact reference control for the active session; it refreshes summary metadata and records cross-session context use without forcing side-by-side chat.
 

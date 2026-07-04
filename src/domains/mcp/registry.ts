@@ -1,9 +1,16 @@
 import type { ToolDefinition } from '@flue/runtime';
+import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import { subscribeConfigEvents } from '../../config-events';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 import { runMcpToolThroughGate } from './gate';
 import { mcpServerEnabled, type McpServerConfig } from './schemas';
 import { readMcpConfig } from './config';
+import {
+  createMcpOAuthProvider,
+  hasMcpOAuthTokens,
+  readMcpOAuthStatus,
+  type McpOAuthStatus,
+} from './oauth';
 import { connectSdkMcpServer, type McpSdkConnection } from './stdio';
 import {
   listMcpToolCatalog,
@@ -25,6 +32,12 @@ export type McpServerSnapshot = {
   transport: 'http' | 'stdio';
   enabled: boolean;
   status: McpServerStatus;
+  auth: {
+    kind: 'none' | 'header' | 'oauth';
+    authorized: boolean;
+    expiresAt: string | null;
+    scopes: string[];
+  };
   toolCount: number;
   message: string;
   lastConnectedAt: string | null;
@@ -104,27 +117,29 @@ export class McpRegistry {
   }
 
   async status() {
-    await this.refresh();
     const config = await readMcpConfig(this.paths);
-    return Object.entries(config.servers).map(([id, server]) => {
-      const entry = this.entries.get(id);
-      return {
-        id,
-        transport: server.transport,
-        enabled: mcpServerEnabled(server),
-        status:
-          entry?.status ??
-          (mcpServerEnabled(server) ? 'disconnected' : 'disabled'),
-        toolCount: entry?.tools.length ?? 0,
-        message: entry?.message ?? 'MCP server has not been refreshed.',
-        lastConnectedAt: entry?.lastConnectedAt ?? null,
-        lastErrorAt: entry?.lastErrorAt ?? null,
-      } satisfies McpServerSnapshot;
-    });
+    return Promise.all(
+      Object.entries(config.servers).map(async ([id, server]) => {
+        const entry = this.entries.get(id);
+        const auth = await snapshotAuthStatus(id, server, this.paths);
+        return {
+          id,
+          transport: server.transport,
+          enabled: mcpServerEnabled(server),
+          auth,
+          status:
+            entry?.status ??
+            (mcpServerEnabled(server) ? 'disconnected' : 'disabled'),
+          toolCount: entry?.tools.length ?? 0,
+          message: entry?.message ?? 'MCP server has not been refreshed.',
+          lastConnectedAt: entry?.lastConnectedAt ?? null,
+          lastErrorAt: entry?.lastErrorAt ?? null,
+        } satisfies McpServerSnapshot;
+      }),
+    );
   }
 
   async listTools(serverId?: string) {
-    await this.refresh();
     return listMcpToolCatalog(this.paths, { serverId });
   }
 
@@ -167,7 +182,20 @@ export class McpRegistry {
       return;
     }
 
-    if (server.transport === 'http' && server.auth?.kind === 'oauth') {
+    const authProvider =
+      server.transport === 'http' && server.auth?.kind === 'oauth'
+        ? createMcpOAuthProvider({
+            paths: this.paths,
+            serverId: id,
+            server,
+          })
+        : undefined;
+
+    if (
+      server.transport === 'http' &&
+      server.auth?.kind === 'oauth' &&
+      !(await hasMcpOAuthTokens(id, this.paths))
+    ) {
       await entry.connection?.close().catch(() => undefined);
       entry.connection = null;
       entry.tools = [];
@@ -187,6 +215,7 @@ export class McpRegistry {
         serverId: id,
         server,
         headers,
+        authProvider,
         gate: (input) => runMcpToolThroughGate(input, this.paths),
       });
       const now = new Date().toISOString();
@@ -195,7 +224,7 @@ export class McpRegistry {
         status: 'available' as const,
         updatedAt: now,
       }));
-      await replaceMcpToolCatalog(catalog, this.paths);
+      await replaceMcpToolCatalog(id, catalog, this.paths);
       entry.connection = connection;
       entry.tools = connection.tools;
       entry.catalog = catalog;
@@ -208,8 +237,12 @@ export class McpRegistry {
       await entry.connection?.close().catch(() => undefined);
       entry.connection = null;
       entry.tools = disconnectedTools(id, entry.catalog);
-      entry.status = 'error';
-      entry.message = message;
+      entry.status =
+        error instanceof UnauthorizedError ? 'needs-login' : 'error';
+      entry.message =
+        error instanceof UnauthorizedError
+          ? 'OAuth login is required before connecting this MCP server.'
+          : message;
       entry.lastErrorAt = new Date().toISOString();
       await markMcpCatalogUnavailable(id, this.paths);
     }
@@ -242,6 +275,31 @@ function resolveHeaderAuth(server: McpServerConfig) {
     if (value !== undefined) headers[name] = value;
   }
   return headers;
+}
+
+async function snapshotAuthStatus(
+  serverId: string,
+  server: McpServerConfig,
+  paths: RuntimePaths,
+): Promise<McpServerSnapshot['auth']> {
+  if (server.transport === 'stdio') {
+    return { kind: 'none', authorized: true, expiresAt: null, scopes: [] };
+  }
+  if (server.auth?.kind === 'oauth') {
+    const status: McpOAuthStatus = await readMcpOAuthStatus(serverId, paths);
+    return {
+      kind: 'oauth',
+      authorized: status.authorized,
+      expiresAt: status.expiresAt,
+      scopes: status.scopes,
+    };
+  }
+  return {
+    kind: server.auth?.kind ?? 'none',
+    authorized: true,
+    expiresAt: null,
+    scopes: [],
+  };
 }
 
 function disconnectedTools(serverId: string, catalog: McpToolCatalogRecord[]) {

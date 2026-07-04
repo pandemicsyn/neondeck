@@ -146,6 +146,7 @@ export type RuntimeStatus = {
   paths: {
     env: string;
     config: string;
+    mcp: string;
     repos: string;
     schedules: string;
     dashboard: string;
@@ -278,6 +279,73 @@ export type ExecutionApprovalsResponse = {
   changed: boolean;
   approvals: ExecutionApproval[];
   fetchedAt: string;
+};
+
+export type McpServerStatus =
+  | 'disabled'
+  | 'connected'
+  | 'connecting'
+  | 'disconnected'
+  | 'needs-login'
+  | 'error';
+
+export type McpServer = {
+  id: string;
+  transport: 'http' | 'stdio';
+  enabled: boolean;
+  status: McpServerStatus;
+  auth: {
+    kind: 'none' | 'header' | 'oauth';
+    authorized: boolean;
+    expiresAt: string | null;
+    scopes: string[];
+  };
+  toolCount: number;
+  message: string;
+  lastConnectedAt: string | null;
+  lastErrorAt: string | null;
+};
+
+export type McpServersResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  servers: McpServer[];
+};
+
+export type McpApproval = {
+  id: string;
+  serverId: string;
+  toolName: string;
+  adaptedName: string;
+  argumentsHash: string;
+  argumentsPreview: string;
+  status: 'pending' | 'approved' | 'denied' | 'used' | 'expired';
+  approverSurface: string | null;
+  expiresAt: string;
+  createdAt: string;
+  resolvedAt: string | null;
+  usedAt: string | null;
+  updatedAt: string;
+};
+
+export type McpApprovalsResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  approvals: McpApproval[];
+};
+
+export type McpLoginResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  authorizationUrl?: string | null;
+  loginId?: string;
+  authorized?: boolean;
 };
 
 export type RepoEditEvent = {
@@ -1456,6 +1524,45 @@ export async function getExecutionApprovals(
   return getJson<ExecutionApprovalsResponse>(
     `/api/execution/approvals${query}`,
   );
+}
+
+export async function getMcpServers() {
+  return getJson<McpServersResponse>('/api/mcp/servers');
+}
+
+export async function getMcpApprovals(
+  input: { includeResolved?: boolean } = {},
+) {
+  const query = input.includeResolved ? '?includeResolved=1' : '';
+  return getJson<McpApprovalsResponse>(`/api/mcp/approvals${query}`);
+}
+
+export async function startMcpLogin(id: string) {
+  return postJson<McpLoginResponse>(`/api/mcp/servers/${id}/login`, {});
+}
+
+export async function logoutMcpServer(id: string) {
+  return postJson<{
+    ok: boolean;
+    action: string;
+    changed: boolean;
+    message: string;
+  }>(`/api/mcp/servers/${id}/logout`, { confirm: true });
+}
+
+export async function resolveMcpApproval(
+  id: string,
+  decision: 'approve' | 'deny',
+) {
+  return postJson<{
+    ok: boolean;
+    action: string;
+    changed: boolean;
+    message: string;
+  }>(`/api/mcp/approvals/${id}/resolve`, {
+    decision,
+    approverSurface: 'dashboard',
+  });
 }
 
 export async function resolveExecutionApproval(

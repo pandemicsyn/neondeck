@@ -4,9 +4,8 @@ import { stableJson, truncateText } from './format';
 import { decideMcpToolPolicy } from './policy';
 import { readMcpConfig } from './config';
 import {
-  consumeMcpApproval,
+  consumeUsableMcpApproval,
   createMcpApprovalRequest,
-  findUsableMcpApproval,
   hashMcpArguments,
   insertMcpAudit,
 } from './store';
@@ -63,7 +62,7 @@ export async function runMcpToolThroughGate(
 
   let approvalId: string | null = null;
   if (policy === 'ask') {
-    const approval = await findUsableMcpApproval(
+    const approval = await consumeUsableMcpApproval(
       {
         serverId: input.serverId,
         toolName: input.toolName,
@@ -112,7 +111,6 @@ export async function runMcpToolThroughGate(
       };
     }
     approvalId = approval.id;
-    await consumeMcpApproval(approval.id, paths);
   }
 
   try {
