@@ -95,7 +95,7 @@ describe('Drizzle v1 package behavior', () => {
         migrate(drizzle({ client: database }), {
           migrationsFolder: migrations,
         }),
-      ).toThrow();
+      ).toThrow(/Failed query/i);
       expect(
         database
           .prepare(

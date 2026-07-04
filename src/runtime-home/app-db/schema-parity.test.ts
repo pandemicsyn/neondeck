@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/node-sqlite';
 import { migrate } from 'drizzle-orm/node-sqlite/migrator';
 import { afterEach, describe, expect, it } from 'vitest';
-import { initializeAppDatabase } from './index.ts';
+import { initializeLegacyAppDatabase } from './legacy-test-support.ts';
 
 const migrationsFolder = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -28,7 +28,7 @@ describe('app database schema parity', () => {
     const legacyPath = join(root, 'legacy.db');
     const migratedPath = join(root, 'migrated.db');
 
-    initializeAppDatabase(legacyPath);
+    initializeLegacyAppDatabase(legacyPath);
     applyBaselineMigration(migratedPath);
 
     const legacy = new DatabaseSync(legacyPath, { readOnly: true });

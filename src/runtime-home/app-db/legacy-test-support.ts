@@ -505,6 +505,82 @@ export const appDatabaseSchemaSql = `
         data_json TEXT,
         created_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS mcp_tool_catalog (
+        server_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        adapted_name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        input_schema_json TEXT,
+        output_schema_json TEXT,
+        annotations_json TEXT,
+        status TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(server_id, tool_name)
+      );
+
+      CREATE TABLE IF NOT EXISTS mcp_tool_approvals (
+        id TEXT PRIMARY KEY,
+        server_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        adapted_name TEXT NOT NULL,
+        arguments_hash TEXT NOT NULL,
+        arguments_preview TEXT NOT NULL,
+        status TEXT NOT NULL,
+        approver_surface TEXT,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        resolved_at TEXT,
+        used_at TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS mcp_tool_audit (
+        id TEXT PRIMARY KEY,
+        server_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        adapted_name TEXT NOT NULL,
+        arguments_hash TEXT NOT NULL,
+        decision TEXT NOT NULL,
+        approval_id TEXT,
+        duration_ms INTEGER,
+        ok INTEGER NOT NULL,
+        result_preview TEXT,
+        error TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS mcp_oauth_tokens (
+        server_id TEXT PRIMARY KEY,
+        server_identity TEXT,
+        access_token TEXT,
+        refresh_token TEXT,
+        token_type TEXT,
+        id_token TEXT,
+        expires_at TEXT,
+        scopes_json TEXT,
+        client_information_json TEXT,
+        discovery_state_json TEXT,
+        code_verifier TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS mcp_oauth_logins (
+        id TEXT PRIMARY KEY,
+        server_id TEXT NOT NULL,
+        server_identity TEXT,
+        state TEXT NOT NULL,
+        status TEXT NOT NULL,
+        redirect_url TEXT NOT NULL,
+        authorization_url TEXT,
+        discovery_state_json TEXT,
+        code_verifier TEXT,
+        error TEXT,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        completed_at TEXT,
+        updated_at TEXT NOT NULL
+      );
 `;
 
 export const appDatabaseIndexSql = `
@@ -614,4 +690,196 @@ export const appDatabaseIndexSql = `
 
       CREATE INDEX IF NOT EXISTS idx_kilo_result_events_task
         ON kilo_result_events(task_id, created_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_mcp_tool_catalog_status
+        ON mcp_tool_catalog(server_id, status, updated_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_mcp_tool_approvals_pending
+        ON mcp_tool_approvals(server_id, tool_name, adapted_name, arguments_hash, status, expires_at);
+
+      CREATE INDEX IF NOT EXISTS idx_mcp_tool_audit_created
+        ON mcp_tool_audit(created_at DESC);
 `;
+
+import { DatabaseSync } from 'node:sqlite';
+import {
+  ensureColumn,
+  migrateLegacyNeonSessions,
+  migrateMemoriesRepoIdentity,
+  migrateMemoryEvents,
+} from './migrations.ts';
+import {
+  reconcileActiveChatSession,
+  reconcileActiveNeonSessions,
+  reconcileActiveWorktreeLocks,
+  reconcileExistingNotificationDuplicates,
+} from './reconcile.ts';
+
+export function initializeLegacyAppDatabase(path: string) {
+  const database = new DatabaseSync(path);
+
+  try {
+    database.exec(appDatabaseSchemaSql);
+
+    ensureColumn(database, 'repo_edit_events', 'worktree_id', 'TEXT');
+    ensureColumn(database, 'repo_file_reads', 'worktree_id', 'TEXT');
+    ensureColumn(database, 'kilo_tasks', 'lock_id', 'TEXT');
+    ensureColumn(database, 'kilo_result_state', 'diff_fingerprint', 'TEXT');
+    ensureColumn(
+      database,
+      'kilo_result_state',
+      'verified_diff_fingerprint',
+      'TEXT',
+    );
+    ensureColumn(database, 'notifications', 'resolved_at', 'TEXT');
+    ensureColumn(database, 'notifications', 'updated_at', 'TEXT');
+    ensureColumn(
+      database,
+      'notifications',
+      'occurrence_count',
+      'INTEGER NOT NULL DEFAULT 1',
+    );
+    ensureColumn(database, 'chat_sessions', 'context_loaded_at', 'TEXT');
+    ensureColumn(database, 'chat_sessions', 'summary_generated_at', 'TEXT');
+    ensureColumn(database, 'chat_sessions', 'summary_source', 'TEXT');
+    ensureColumn(database, 'chat_sessions', 'summary_refresh_note', 'TEXT');
+    ensureColumn(database, 'chat_sessions', 'context_memory_ids_json', 'TEXT');
+    ensureColumn(
+      database,
+      'chat_sessions',
+      'learning_turn_count',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+    ensureColumn(
+      database,
+      'chat_sessions',
+      'last_learning_review_turn_count',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+    ensureColumn(database, 'chat_sessions', 'last_learning_review_at', 'TEXT');
+    ensureColumn(
+      database,
+      'chat_sessions',
+      'last_learning_curation_turn_count',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+    ensureColumn(
+      database,
+      'chat_sessions',
+      'last_learning_curation_at',
+      'TEXT',
+    );
+    ensureColumn(database, 'memories', 'repo_id', 'TEXT');
+    ensureColumn(
+      database,
+      'memories',
+      'status',
+      "TEXT NOT NULL DEFAULT 'active'",
+    );
+    ensureColumn(
+      database,
+      'memories',
+      'use_count',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+    ensureColumn(database, 'memories', 'last_used_at', 'TEXT');
+    migrateMemoriesRepoIdentity(database);
+    migrateMemoryEvents(database);
+    ensureColumn(database, 'learning_candidates', 'action', 'TEXT');
+    ensureColumn(database, 'learning_reviews', 'flue_run_id', 'TEXT');
+    ensureColumn(database, 'mcp_tool_catalog', 'annotations_json', 'TEXT');
+    ensureColumn(database, 'mcp_tool_audit', 'decision', 'TEXT');
+    ensureColumn(database, 'mcp_tool_audit', 'ok', 'INTEGER');
+    ensureColumn(database, 'mcp_tool_audit', 'result_preview', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_tokens', 'server_identity', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_tokens', 'access_token', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_tokens', 'refresh_token', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_tokens', 'token_type', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_tokens', 'id_token', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_tokens', 'expires_at', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_tokens', 'scopes_json', 'TEXT');
+    ensureColumn(
+      database,
+      'mcp_oauth_tokens',
+      'client_information_json',
+      'TEXT',
+    );
+    ensureColumn(database, 'mcp_oauth_tokens', 'discovery_state_json', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_tokens', 'code_verifier', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_tokens', 'updated_at', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_logins', 'server_identity', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_logins', 'state', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_logins', 'status', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_logins', 'redirect_url', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_logins', 'authorization_url', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_logins', 'discovery_state_json', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_logins', 'code_verifier', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_logins', 'error', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_logins', 'created_at', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_logins', 'expires_at', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_logins', 'completed_at', 'TEXT');
+    ensureColumn(database, 'mcp_oauth_logins', 'updated_at', 'TEXT');
+    database
+      .prepare(
+        `
+        UPDATE notifications
+        SET updated_at = created_at
+        WHERE updated_at IS NULL;
+      `,
+      )
+      .run();
+    reconcileActiveWorktreeLocks(database);
+    database.exec(appDatabaseIndexSql);
+    reconcileExistingNotificationDuplicates(database);
+    reconcileActiveNeonSessions(database);
+
+    database
+      .prepare(
+        `
+        INSERT INTO neon_sessions (
+          id,
+          label,
+          agent_name,
+          status,
+          reason,
+          created_at,
+          activated_at,
+          updated_at
+        )
+        SELECT
+          'neondeck-main',
+          'Primary',
+          'display-assistant',
+          'active',
+          'initial-session',
+          datetime('now'),
+          datetime('now'),
+          datetime('now')
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM neon_sessions
+          WHERE agent_name = 'display-assistant'
+            AND status = 'active'
+        );
+      `,
+      )
+      .run();
+
+    migrateLegacyNeonSessions(database);
+    reconcileActiveChatSession(database);
+
+    database
+      .prepare(
+        `
+        INSERT INTO app_metadata (key, value, updated_at)
+        VALUES ('schema_version', '9', datetime('now'))
+        ON CONFLICT(key) DO UPDATE SET
+          value = excluded.value,
+          updated_at = excluded.updated_at;
+      `,
+      )
+      .run();
+  } finally {
+    database.close();
+  }
+}
