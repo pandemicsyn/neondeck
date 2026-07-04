@@ -1,0 +1,344 @@
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
+import {
+  CallToolResultSchema,
+  type CallToolResult,
+  type Tool,
+} from '@modelcontextprotocol/sdk/types.js';
+import { defineTool, type ToolDefinition } from '@flue/runtime';
+import * as v from 'valibot';
+import { adaptedMcpToolName } from './format';
+import type { McpServerConfig } from './schemas';
+
+export type McpSdkConnection = {
+  serverId: string;
+  tools: ToolDefinition[];
+  catalog: McpSdkToolCatalog[];
+  close(): Promise<void>;
+};
+
+export type McpSdkToolCatalog = {
+  serverId: string;
+  toolName: string;
+  adaptedName: string;
+  description: string;
+  inputSchema: unknown;
+  outputSchema: unknown;
+  annotations: unknown;
+};
+
+export type McpToolDelegate = (context: {
+  input: Record<string, unknown>;
+  signal?: AbortSignal;
+}) => Promise<McpToolDelegateResult>;
+
+export type McpToolDelegateResult = {
+  text: string;
+  structuredContent?: Record<string, unknown>;
+  raw: CallToolResult;
+};
+
+export type McpToolEnvelope = {
+  ok: boolean;
+  status: string;
+  server: string;
+  tool: string;
+  untrusted: boolean;
+  [key: string]: unknown;
+};
+
+export type McpToolGate = (input: {
+  serverId: string;
+  toolName: string;
+  adaptedName: string;
+  run: McpToolDelegate;
+  context: {
+    input: Record<string, unknown>;
+    signal?: AbortSignal;
+  };
+}) => Promise<McpToolEnvelope>;
+
+export async function connectSdkMcpServer(input: {
+  serverId: string;
+  server: McpServerConfig;
+  headers?: Record<string, string>;
+  gate: McpToolGate;
+}): Promise<McpSdkConnection> {
+  const client = new Client({
+    name: 'neondeck',
+    version: '1.0.0',
+  });
+  const requestOptions = requestOptionsForServer(input.server);
+  const transport = createTransport(input.server, input.headers);
+
+  try {
+    await client.connect(transport);
+    const tools = await listAllTools(client, requestOptions);
+    const adapted = tools
+      .filter((tool) => tool.execution?.taskSupport !== 'required')
+      .map((tool) =>
+        createMcpToolDefinition({
+          serverId: input.serverId,
+          tool,
+          requestOptions,
+          client,
+          gate: input.gate,
+        }),
+      );
+    return {
+      serverId: input.serverId,
+      tools: adapted.map((item) => item.tool),
+      catalog: adapted.map((item) => item.catalog),
+      close: () => client.close(),
+    };
+  } catch (error) {
+    await client.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+function createTransport(
+  server: McpServerConfig,
+  headers: Record<string, string> | undefined,
+) {
+  if (server.transport === 'stdio') {
+    return new StdioClientTransport({
+      command: server.command,
+      args: server.args ?? [],
+      cwd: server.cwd,
+      env: resolveStdioEnv(server),
+      stderr: 'pipe',
+    });
+  }
+
+  const requestInit = headers ? { headers } : undefined;
+  const url = new URL(server.url);
+  if (server.sse) {
+    return new SSEClientTransport(url, { requestInit });
+  }
+  return new StreamableHTTPClientTransport(url, { requestInit });
+}
+
+function resolveStdioEnv(server: McpServerConfig) {
+  if (server.transport !== 'stdio' || !server.env) return undefined;
+  const env: Record<string, string> = {};
+  for (const [target, ref] of Object.entries(server.env)) {
+    const value = process.env[ref.env];
+    if (value !== undefined) env[target] = value;
+  }
+  return env;
+}
+
+async function listAllTools(client: Client, requestOptions: RequestOptions) {
+  let page = await client.listTools(undefined, requestOptions);
+  const tools = [...page.tools];
+  const seenCursors = new Set<string>();
+
+  while (page.nextCursor !== undefined) {
+    if (seenCursors.has(page.nextCursor)) {
+      throw new Error(
+        `MCP server repeated tools/list cursor ${JSON.stringify(page.nextCursor)}.`,
+      );
+    }
+    seenCursors.add(page.nextCursor);
+    page = await client.listTools({ cursor: page.nextCursor }, requestOptions);
+    tools.push(...page.tools);
+  }
+
+  return tools;
+}
+
+function createMcpToolDefinition(input: {
+  serverId: string;
+  tool: Tool;
+  requestOptions: RequestOptions;
+  client: Client;
+  gate: McpToolGate;
+}) {
+  const adaptedName = adaptedMcpToolName(input.serverId, input.tool.name);
+  const description = createToolDescription(input.serverId, input.tool);
+  const inputSchema = inputSchemaToValibot(input.tool.inputSchema);
+  const output = v.looseObject({
+    ok: v.boolean(),
+    status: v.string(),
+    server: v.string(),
+    tool: v.string(),
+    untrusted: v.boolean(),
+  });
+  const tool = defineTool({
+    name: adaptedName,
+    description,
+    input: inputSchema,
+    output,
+    async run(context) {
+      return input.gate({
+        serverId: input.serverId,
+        toolName: input.tool.name,
+        adaptedName,
+        context: {
+          input: context.input,
+          signal: context.signal,
+        },
+        run: async ({ input: args, signal }) => {
+          const result = (await input.client.callTool(
+            {
+              name: input.tool.name,
+              arguments: args,
+            },
+            CallToolResultSchema,
+            {
+              ...input.requestOptions,
+              signal,
+            },
+          )) as CallToolResult;
+          const text = formatMcpResult(result);
+          if (result.isError) {
+            throw new Error(text);
+          }
+          return {
+            text,
+            structuredContent: isRecord(result.structuredContent)
+              ? result.structuredContent
+              : undefined,
+            raw: result,
+          };
+        },
+      });
+    },
+  });
+
+  return {
+    tool,
+    catalog: {
+      serverId: input.serverId,
+      toolName: input.tool.name,
+      adaptedName,
+      description,
+      inputSchema: input.tool.inputSchema,
+      outputSchema: input.tool.outputSchema,
+      annotations: input.tool.annotations ?? null,
+    },
+  };
+}
+
+function requestOptionsForServer(server: McpServerConfig): RequestOptions {
+  return {
+    timeout: server.timeoutMs,
+  };
+}
+
+function createToolDescription(serverName: string, tool: Tool) {
+  const originalName = tool.name;
+  const title = tool.title ?? tool.annotations?.title;
+  const parts = [`MCP tool "${originalName}" from server "${serverName}".`];
+  if (title && title !== originalName) parts.push(`Title: ${title}.`);
+  if (tool.description) parts.push(tool.description);
+  return parts.join(' ');
+}
+
+function inputSchemaToValibot(schema: Tool['inputSchema']) {
+  const properties = schema.properties ?? {};
+  const required = new Set(schema.required ?? []);
+  const entries: Record<string, v.GenericSchema> = {};
+
+  for (const [key, value] of Object.entries(properties)) {
+    const property = jsonSchemaToValibot(value);
+    entries[key] = required.has(key) ? property : v.optional(property);
+  }
+
+  return v.looseObject(entries);
+}
+
+function jsonSchemaToValibot(schema: object): v.GenericSchema {
+  const record = schema as Record<string, unknown>;
+  const enumValues = Array.isArray(record.enum) ? record.enum : undefined;
+  if (enumValues?.length) {
+    return v.pipe(
+      v.unknown(),
+      v.check(
+        (value) => enumValues.includes(value),
+        `Expected one of: ${enumValues.map(String).join(', ')}`,
+      ),
+    );
+  }
+
+  const type = Array.isArray(record.type) ? record.type[0] : record.type;
+  if (type === 'string') return v.string();
+  if (type === 'number') return v.number();
+  if (type === 'integer') return v.pipe(v.number(), v.integer());
+  if (type === 'boolean') return v.boolean();
+  if (type === 'array') {
+    const itemSchema =
+      record.items && typeof record.items === 'object'
+        ? jsonSchemaToValibot(record.items)
+        : v.unknown();
+    return v.array(itemSchema);
+  }
+  if (type === 'object' || record.properties) {
+    const properties =
+      record.properties && typeof record.properties === 'object'
+        ? (record.properties as Record<string, object>)
+        : {};
+    const required = new Set(
+      Array.isArray(record.required) ? record.required.map(String) : [],
+    );
+    const entries: Record<string, v.GenericSchema> = {};
+    for (const [key, value] of Object.entries(properties)) {
+      const property = jsonSchemaToValibot(value);
+      entries[key] = required.has(key) ? property : v.optional(property);
+    }
+    return v.looseObject(entries);
+  }
+
+  return v.unknown();
+}
+
+function formatMcpResult(result: CallToolResult) {
+  const parts: string[] = [];
+  if (result.structuredContent !== undefined) {
+    parts.push(
+      `Structured content:\n${JSON.stringify(result.structuredContent, null, 2)}`,
+    );
+  }
+
+  for (const item of result.content ?? []) {
+    if (item.type === 'text') {
+      parts.push(item.text);
+      continue;
+    }
+    if (item.type === 'image') {
+      parts.push(`[Image: ${item.mimeType}, ${item.data.length} base64 chars]`);
+      continue;
+    }
+    if (item.type === 'audio') {
+      parts.push(`[Audio: ${item.mimeType}, ${item.data.length} base64 chars]`);
+      continue;
+    }
+    if (item.type === 'resource') {
+      const resource = item.resource;
+      if ('text' in resource) {
+        parts.push(`[Resource: ${resource.uri}]\n${resource.text}`);
+      } else {
+        parts.push(
+          `[Resource: ${resource.uri}, ${resource.blob.length} base64 chars]`,
+        );
+      }
+      continue;
+    }
+    if (item.type === 'resource_link') {
+      const description = item.description ? ` - ${item.description}` : '';
+      parts.push(`[Resource link: ${item.name} (${item.uri})${description}]`);
+      continue;
+    }
+    parts.push(JSON.stringify(item));
+  }
+
+  return parts.filter(Boolean).join('\n\n') || '(MCP tool returned no content)';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}

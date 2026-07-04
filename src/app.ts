@@ -52,6 +52,16 @@ import {
   resolveExecutionApproval,
   runApprovedExecution,
 } from './execution-actions';
+import {
+  addMcpServer,
+  getMcpRegistry,
+  listMcpApprovals,
+  listMcpAudit,
+  removeMcpServer,
+  resolveMcpApprovalWithPaths,
+  setMcpServerEnabled,
+  updateMcpServer,
+} from './domains/mcp';
 import { syncExeDevCheckout } from './exedev-checkouts';
 import { checkExecutionPolicy, readExecutionPolicy } from './execution-policy';
 import { loadNeondeckEnv } from './env';
@@ -359,6 +369,7 @@ observe((event) => {
 if (process.env.NEONDECK_DISABLE_SCHEDULER !== '1') {
   startSchedulerLoop(paths);
 }
+getMcpRegistry(paths).start();
 
 app.use('/api/*', requireLocalApiAccess);
 
@@ -519,6 +530,125 @@ app.get('/api/events/sessions', () => {
 
 app.get('/api/safety/policy', (c) => {
   return c.json(readSafetyPolicy(paths));
+});
+
+app.get('/api/mcp/servers', async (c) => {
+  return c.json({
+    ok: true,
+    action: 'mcp_servers_list',
+    changed: false,
+    message: 'Read MCP server statuses.',
+    servers: await getMcpRegistry(paths).status(),
+  });
+});
+
+app.post('/api/mcp/servers', async (c) => {
+  const result = await addMcpServer(await safeJsonBody(c), paths);
+  if (result.ok) {
+    const id = readIdFromResultData(result.data);
+    await getMcpRegistry(paths).refresh(id);
+  }
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.patch('/api/mcp/servers/:id', async (c) => {
+  const result = await updateMcpServer(
+    { ...(await safeJsonObject(c)), id: c.req.param('id') },
+    paths,
+  );
+  if (result.ok) await getMcpRegistry(paths).refresh(c.req.param('id'));
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.delete('/api/mcp/servers/:id', async (c) => {
+  const body = await safeJsonObject(c);
+  const result = await removeMcpServer(
+    {
+      ...body,
+      id: c.req.param('id'),
+      confirm: body.confirm === true || c.req.query('confirm') === 'true',
+    },
+    paths,
+  );
+  if (result.ok) await getMcpRegistry(paths).refresh();
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/mcp/servers/:id/enable', async (c) => {
+  const result = await setMcpServerEnabled(
+    { id: c.req.param('id') },
+    true,
+    paths,
+  );
+  if (result.ok) await getMcpRegistry(paths).refresh(c.req.param('id'));
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.post('/api/mcp/servers/:id/disable', async (c) => {
+  const result = await setMcpServerEnabled(
+    { id: c.req.param('id') },
+    false,
+    paths,
+  );
+  if (result.ok) await getMcpRegistry(paths).refresh(c.req.param('id'));
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.get('/api/mcp/servers/:id/tools', async (c) => {
+  return c.json({
+    ok: true,
+    action: 'mcp_tools_list',
+    changed: false,
+    message: 'Read cached MCP tools.',
+    tools: await getMcpRegistry(paths).listTools(c.req.param('id')),
+  });
+});
+
+app.post('/api/mcp/servers/:id/refresh', async (c) => {
+  await getMcpRegistry(paths).refresh(c.req.param('id'));
+  return c.json({
+    ok: true,
+    action: 'mcp_server_refresh',
+    changed: false,
+    message: `Refreshed MCP server "${c.req.param('id')}".`,
+  });
+});
+
+app.get('/api/mcp/approvals', async (c) => {
+  return c.json({
+    ok: true,
+    action: 'mcp_approvals_list',
+    changed: false,
+    message: 'Read MCP approvals.',
+    approvals: await listMcpApprovals(paths, {
+      includeResolved: c.req.query('includeResolved') === '1',
+    }),
+  });
+});
+
+app.post('/api/mcp/approvals/:id/resolve', async (c) => {
+  const result = await resolveMcpApprovalWithPaths(
+    { ...(await safeJsonObject(c)), id: c.req.param('id') } as {
+      id: string;
+      decision: 'approve' | 'deny';
+      approverSurface?: string;
+    },
+    paths,
+  );
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.get('/api/mcp/audit', async (c) => {
+  return c.json({
+    ok: true,
+    action: 'mcp_audit_list',
+    changed: false,
+    message: 'Read MCP audit rows.',
+    audit: await listMcpAudit(paths, {
+      serverId: c.req.query('serverId') || undefined,
+      limit: queryNumber(c.req.query('limit')),
+    }),
+  });
 });
 
 app.get('/api/execution/policy', async (c) => {
@@ -2142,6 +2272,14 @@ function queryNumber(value: string | undefined) {
   if (!value) return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function readIdFromResultData(data: unknown) {
+  if (!data || typeof data !== 'object') return undefined;
+  const server = (data as { server?: unknown }).server;
+  if (!server || typeof server !== 'object') return undefined;
+  const id = (server as { id?: unknown }).id;
+  return typeof id === 'string' ? id : undefined;
 }
 
 function queryBoolean(value: string | undefined) {

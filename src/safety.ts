@@ -295,6 +295,111 @@ const entries: SafetyPolicyEntry[] = [
     },
     'Runs one approved local command or one approved exe.dev sandbox command, records bounded redacted output, and never bypasses hardline denies.',
   ),
+  tool(
+    'mcp__<server>__<tool>',
+    'Call external MCP tool family',
+    {
+      ...hostExecution,
+      auditTarget: 'mcp_tool_approvals/mcp_tool_audit',
+    },
+    'Dynamic third-party MCP tools are untrusted external tool calls. Per-call confirmation is delegated to the MCP approval gate; deny and auto-approve lists are exact-match per server.',
+  ),
+  tool(
+    'neondeck_mcp_servers_lookup',
+    'Read MCP servers',
+    readOnly,
+    'Reads configured MCP servers with live connection status.',
+  ),
+  tool(
+    'neondeck_mcp_tools_lookup',
+    'Read MCP tool catalog',
+    readOnly,
+    'Reads cached MCP tool catalogs without invoking third-party tools.',
+  ),
+  tool(
+    'neondeck_mcp_status_lookup',
+    'Read MCP status',
+    readOnly,
+    'Reads MCP registry status and enabled server health.',
+  ),
+  tool(
+    'neondeck_mcp_approvals_lookup',
+    'Read MCP approvals',
+    readOnly,
+    'Reads pending MCP tool-call approvals.',
+  ),
+  tool(
+    'neondeck_mcp_audit_lookup',
+    'Read MCP audit',
+    readOnly,
+    'Reads recent MCP tool-call audit rows.',
+  ),
+  action(
+    'neondeck_mcp_server_add',
+    'Add MCP server',
+    {
+      ...safeMutation,
+      auditTarget: 'config_history',
+    },
+    'Adds a strict mcp.json server entry using environment-variable references for secrets.',
+  ),
+  action(
+    'neondeck_mcp_server_update',
+    'Update MCP server',
+    {
+      ...safeMutation,
+      auditTarget: 'config_history',
+    },
+    'Updates a strict mcp.json server entry and refreshes the registry.',
+  ),
+  action(
+    'neondeck_mcp_server_enable',
+    'Enable MCP server',
+    {
+      ...safeMutation,
+      auditTarget: 'config_history',
+    },
+    'Enables a configured MCP server and refreshes its connection.',
+  ),
+  action(
+    'neondeck_mcp_server_disable',
+    'Disable MCP server',
+    {
+      ...safeMutation,
+      auditTarget: 'config_history',
+    },
+    'Disables a configured MCP server and closes its connection.',
+  ),
+  action(
+    'neondeck_mcp_registry_refresh',
+    'Refresh MCP registry',
+    readOnly,
+    'Reconnects enabled MCP servers and refreshes cached tool catalogs without mutating config.',
+  ),
+  action(
+    'neondeck_mcp_status',
+    'Read MCP status action',
+    readOnly,
+    'Reads MCP server connection status and tool counts through an action surface.',
+  ),
+  action(
+    'neondeck_mcp_approval_resolve',
+    'Resolve MCP approval',
+    {
+      ...destructiveMutation,
+      auditTarget: 'mcp_tool_approvals',
+    },
+    'Approves or denies one pending third-party MCP tool call; approvals are single-use and argument-hash-bound.',
+  ),
+  action(
+    'neondeck_mcp_server_remove',
+    'Remove MCP server',
+    {
+      ...destructiveMutation,
+      auditTarget: 'config_history/mcp_tool_approvals/mcp_oauth_tokens',
+    },
+    'Requires confirm=true before removing an MCP server and cached MCP runtime state.',
+  ),
   action(
     'neondeck_exedev_checkout_sync',
     'Sync exe.dev checkout',
@@ -1504,6 +1609,75 @@ const entries: SafetyPolicyEntry[] = [
       auditTarget: 'execution_approvals/config_history',
     },
     'Approves or denies a pending execution request. allow-always also updates preapproved command config.',
+  ),
+  route(
+    '/api/mcp/servers',
+    'MCP servers API',
+    {
+      ...safeMutation,
+      auditTarget: 'config_history',
+    },
+    'GET reads MCP server status; POST adds a strict mcp.json server entry.',
+  ),
+  route(
+    '/api/mcp/servers/:id',
+    'MCP server mutation API',
+    {
+      ...destructiveMutation,
+      auditTarget: 'config_history/mcp_tool_approvals/mcp_oauth_tokens',
+    },
+    'PATCH updates one MCP server; DELETE requires confirmation before removing server config and cached MCP state.',
+  ),
+  route(
+    '/api/mcp/servers/:id/enable',
+    'Enable MCP server API',
+    {
+      ...safeMutation,
+      auditTarget: 'config_history',
+    },
+    'Enables one configured MCP server and refreshes the registry.',
+  ),
+  route(
+    '/api/mcp/servers/:id/disable',
+    'Disable MCP server API',
+    {
+      ...safeMutation,
+      auditTarget: 'config_history',
+    },
+    'Disables one configured MCP server and closes its connection.',
+  ),
+  route(
+    '/api/mcp/servers/:id/tools',
+    'MCP tool catalog API',
+    readOnly,
+    'Reads cached MCP tool catalogs without invoking third-party tools.',
+  ),
+  route(
+    '/api/mcp/servers/:id/refresh',
+    'Refresh MCP server API',
+    readOnly,
+    'Reconnects one enabled MCP server and refreshes cached tool catalogs.',
+  ),
+  route(
+    '/api/mcp/approvals',
+    'MCP approvals API',
+    readOnly,
+    'Lists pending or resolved MCP tool-call approvals.',
+  ),
+  route(
+    '/api/mcp/approvals/:id/resolve',
+    'Resolve MCP approval API',
+    {
+      ...destructiveMutation,
+      auditTarget: 'mcp_tool_approvals',
+    },
+    'Approves or denies one pending third-party MCP tool call by exact approval id.',
+  ),
+  route(
+    '/api/mcp/audit',
+    'MCP audit API',
+    readOnly,
+    'Reads recent MCP tool-call audit rows.',
   ),
   route(
     '/api/execution/run',

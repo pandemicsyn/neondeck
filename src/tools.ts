@@ -11,6 +11,7 @@ import { neondeckKiloTools } from './kilo-actions';
 import { neondeckKiloResultTools } from './kilo-results';
 import { neondeckLearningOperatorTools } from './learning-operator';
 import { listMemories } from './memory-actions';
+import { neondeckMcpTools } from './domains/mcp';
 import { neondeckPrEventTools } from './pr-event-state';
 import { neondeckPreparedDiffTools } from './prepared-diffs';
 import { neondeckRepoEditTools } from './repo-edit';
@@ -305,6 +306,7 @@ export const neondeckFactTools = [
   runtimeSkillsLookupTool,
   runtimeSkillLoadTool,
   memoryLookupTool,
+  ...neondeckMcpTools,
   ...neondeckLearningOperatorTools,
   autopilotStateLookupTool,
   ...neondeckAutopilotRecoveryTools,

@@ -27,6 +27,7 @@ import {
   ensureRuntimeHome,
   parseAppConfig,
   parseDashboardConfig,
+  parseMcpConfig,
   dashboardConfigSchema,
   parseRepoRegistry,
   parseScheduleConfig,
@@ -52,7 +53,8 @@ import { configEventFromChange, publishConfigEvent } from './config-events';
 
 const execFileAsync = promisify(execFile);
 
-type ConfigTarget = 'all' | 'config' | 'repos' | 'dashboard' | 'schedules';
+type ConfigTarget =
+  'all' | 'config' | 'mcp' | 'repos' | 'dashboard' | 'schedules';
 
 type ConfigActionResult = {
   ok: boolean;
@@ -67,7 +69,7 @@ type ConfigActionResult = {
 };
 
 const configTargetSchema = v.optional(
-  v.picklist(['all', 'config', 'repos', 'dashboard', 'schedules']),
+  v.picklist(['all', 'config', 'mcp', 'repos', 'dashboard', 'schedules']),
   'all',
 );
 
@@ -1791,6 +1793,10 @@ async function readTarget(target: ConfigTarget, paths: RuntimePaths) {
     return { repos: await readRuntimeJson(paths.repos, parseRepoRegistry) };
   }
 
+  if (target === 'mcp') {
+    return { mcp: await readRuntimeJson(paths.mcp, parseMcpConfig) };
+  }
+
   if (target === 'dashboard') {
     return {
       dashboard: await readRuntimeJson(paths.dashboard, parseDashboardConfig),
@@ -1807,6 +1813,7 @@ async function readTarget(target: ConfigTarget, paths: RuntimePaths) {
     config: publicAppConfig(
       await readRuntimeJson(paths.config, parseAppConfig),
     ),
+    mcp: await readRuntimeJson(paths.mcp, parseMcpConfig),
     repos: await readRuntimeJson(paths.repos, parseRepoRegistry),
     dashboard: await readRuntimeJson(paths.dashboard, parseDashboardConfig),
     schedules: await readRuntimeJson(paths.schedules, parseScheduleConfig),
@@ -1815,10 +1822,17 @@ async function readTarget(target: ConfigTarget, paths: RuntimePaths) {
 
 function targetFiles(target: ConfigTarget, paths: RuntimePaths) {
   if (target === 'config') return [paths.config];
+  if (target === 'mcp') return [paths.mcp];
   if (target === 'repos') return [paths.repos];
   if (target === 'dashboard') return [paths.dashboard];
   if (target === 'schedules') return [paths.schedules];
-  return [paths.config, paths.repos, paths.dashboard, paths.schedules];
+  return [
+    paths.config,
+    paths.mcp,
+    paths.repos,
+    paths.dashboard,
+    paths.schedules,
+  ];
 }
 
 function publicAppConfig(config: AppConfig) {

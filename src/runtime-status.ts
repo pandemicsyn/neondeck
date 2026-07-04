@@ -12,12 +12,15 @@ import {
 import {
   type RuntimePaths,
   parseAppConfig,
+  parseMcpConfig,
   parseRepoRegistry,
   parseScheduleConfig,
   readRuntimeJson,
   runtimePaths,
 } from './runtime-home';
 import { executionPolicyFromConfig } from './execution-policy';
+import { mcpSnapshotSync } from './domains/mcp';
+import { mcpServerEnabled } from './domains/mcp/schemas';
 import { listRuntimeSkills } from './runtime-skills';
 import { readNeonSessionState } from './session-actions';
 
@@ -47,6 +50,7 @@ export const runtimeStatusSchema = v.looseObject({
   paths: v.object({
     env: v.string(),
     config: v.string(),
+    mcp: v.string(),
     repos: v.string(),
     schedules: v.string(),
     dashboard: v.string(),
@@ -143,6 +147,9 @@ export const runtimeStatusSchema = v.looseObject({
     activeWorktrees: v.number(),
     staleWorktreeLocks: v.number(),
     worktreeCleanupFailures: v.number(),
+    mcpServers: v.number(),
+    mcpConnectedServers: v.number(),
+    mcpNeedsLoginServers: v.number(),
   }),
   checks: v.array(
     v.object({
@@ -189,13 +196,16 @@ export async function readRuntimeStatus(
   paths: RuntimePaths = runtimePaths(),
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<RuntimeStatus> {
-  const [config, repos, schedules, skills, session] = await Promise.all([
-    safeRead(() => readRuntimeJson(paths.config, parseAppConfig)),
-    safeRead(() => readRuntimeJson(paths.repos, parseRepoRegistry)),
-    safeRead(() => readRuntimeJson(paths.schedules, parseScheduleConfig)),
-    safeRead(() => listRuntimeSkills(paths)),
-    safeRead(() => readNeonSessionState(paths)),
-  ]);
+  const [config, mcpConfig, repos, schedules, skills, session] =
+    await Promise.all([
+      safeRead(() => readRuntimeJson(paths.config, parseAppConfig)),
+      safeRead(() => readRuntimeJson(paths.mcp, parseMcpConfig)),
+      safeRead(() => readRuntimeJson(paths.repos, parseRepoRegistry)),
+      safeRead(() => readRuntimeJson(paths.schedules, parseScheduleConfig)),
+      safeRead(() => listRuntimeSkills(paths)),
+      safeRead(() => readNeonSessionState(paths)),
+    ]);
+  const mcpServers = mcpStatusFromConfig(paths, mcpConfig);
   const appDatabase = inspectAppDatabase(paths);
   const flueDatabase = inspectFlueDatabase(paths);
   const models = resolveAgentModelSelection(
@@ -242,6 +252,7 @@ export async function readRuntimeStatus(
   );
   const checks = [
     configCheck('config', 'Runtime config', paths.config, config),
+    configCheck('mcp-config', 'MCP config', paths.mcp, mcpConfig),
     configCheck('repos-config', 'Repo config', paths.repos, repos),
     configCheck(
       'schedules-config',
@@ -380,6 +391,23 @@ export async function readRuntimeStatus(
         : `${appDatabase.counts.staleWorktreeLocks} stale worktree lock${appDatabase.counts.staleWorktreeLocks === 1 ? '' : 's'} need recovery.`,
     ),
     check(
+      'mcp-servers',
+      'MCP servers',
+      mcpConfig.ok &&
+        mcpServers.every(
+          (server) =>
+            !server.enabled ||
+            server.status === 'connected' ||
+            server.status === 'disabled',
+        ),
+      'attention',
+      mcpConfig.ok
+        ? mcpServers.length === 0
+          ? 'No MCP servers are configured.'
+          : `${mcpServers.filter((server) => server.status === 'connected').length}/${mcpServers.length} MCP servers connected; ${mcpServers.filter((server) => server.status === 'needs-login').length} need login.`
+        : 'MCP config could not be read.',
+    ),
+    check(
       'app-db',
       'App database',
       appDatabase.ok,
@@ -404,6 +432,7 @@ export async function readRuntimeStatus(
     paths: {
       env: paths.env,
       config: paths.config,
+      mcp: paths.mcp,
       repos: paths.repos,
       schedules: paths.schedules,
       dashboard: paths.dashboard,
@@ -503,6 +532,13 @@ export async function readRuntimeStatus(
       activeWorktrees: appDatabase.counts.activeWorktrees,
       staleWorktreeLocks: appDatabase.counts.staleWorktreeLocks,
       worktreeCleanupFailures: appDatabase.counts.worktreeCleanupFailures,
+      mcpServers: mcpServers.length,
+      mcpConnectedServers: mcpServers.filter(
+        (server) => server.status === 'connected',
+      ).length,
+      mcpNeedsLoginServers: mcpServers.filter(
+        (server) => server.status === 'needs-login',
+      ).length,
     },
     checks,
     lastFlueErrors: appDatabase.errors,
@@ -547,6 +583,30 @@ function check(
     level: ok ? 'ready' : level,
     message,
   };
+}
+
+function mcpStatusFromConfig(
+  paths: RuntimePaths,
+  config: SafeResult<ReturnType<typeof parseMcpConfig>>,
+) {
+  if (!config.ok) return [];
+  const snapshot = new Map(
+    mcpSnapshotSync(paths).map((item) => [item.id, item]),
+  );
+  return Object.entries(config.value.servers).map(([id, server]) => {
+    const cached = snapshot.get(id);
+    const enabled = mcpServerEnabled(server);
+    const fallbackStatus = !enabled
+      ? 'disabled'
+      : server.transport === 'http' && server.auth?.kind === 'oauth'
+        ? 'needs-login'
+        : 'disconnected';
+    return {
+      id,
+      enabled,
+      status: cached?.status ?? fallbackStatus,
+    };
+  });
 }
 
 function statusFromChecks(checks: RuntimeStatusCheck[]): RuntimeStatusLevel {

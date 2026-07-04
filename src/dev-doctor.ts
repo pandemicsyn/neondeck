@@ -126,8 +126,8 @@ export const neondeckDevDoctorActions = [devDoctorRunAction];
 export async function runDevDoctor(
   paths: RuntimePaths = runtimePaths(),
 ): Promise<DevDoctorResult> {
-  await ensureRuntimeHome(paths);
   const databases = databaseCheck(paths);
+  await ensureRuntimeHome(paths);
   const [repos, localEnv, rootPackage, ports, appConfig] = await Promise.all([
     readRepoHealthSnapshot(paths),
     readEnvFiles(paths),

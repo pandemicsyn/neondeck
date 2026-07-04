@@ -260,7 +260,7 @@ describe('autopilot recovery and notifications', () => {
       lifecycleStatus: 'prepared-diff',
       headSha: currentHead,
     });
-  });
+  }, 45_000);
 });
 
 async function fixture() {

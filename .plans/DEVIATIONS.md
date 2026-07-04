@@ -15,6 +15,13 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-07-04 - MCP Support Core
+
+- Roadmap item: MCP Support Plan / PR 1 MCP core
+- Decision: Implemented the core MCP config, registry, gated tool, CLI, chat/action, route, status, safety, and fixture-test surface in one commit-sized slice, but used a direct SDK-backed adapter for executable MCP tools instead of wrapping Flue beta.9's `connectMcpServer` tool definitions.
+- Reason: The installed Flue beta.9 remote MCP adapter stores execution in an internal prepared-tool adapter. A normal `ToolDefinition.run` wrapper either preserves that internal adapter and bypasses Neondeck's approval gate, or drops it and leaves the returned MCP tool's `run()` throwing. The direct SDK adapter mirrors Flue's `mcp__<server>__<tool>` naming and result formatting while letting Neondeck enforce approval before execution.
+- Follow-up: Revisit the registry adapter when Flue exposes a public MCP tool-call interception hook, stdio support, or a wrappable MCP adapter that preserves gating semantics.
+
 ## 2026-06-27 - Neondeck Home And Runtime State
 
 - Roadmap item: Phase 1 / Neondeck home and runtime state

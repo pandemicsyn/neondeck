@@ -13,6 +13,7 @@ import {
   ensureRuntimeHome,
   parseAppConfig,
   parseDashboardConfig,
+  parseMcpConfig,
   parseRepoRegistry,
   parseScheduleConfig,
   resolveLearningConfig,
@@ -102,6 +103,9 @@ describe('runtime home', () => {
       readRuntimeJson(paths.schedules, parseScheduleConfig),
     ).resolves.toEqual({
       schedules: [],
+    });
+    await expect(readRuntimeJson(paths.mcp, parseMcpConfig)).resolves.toEqual({
+      servers: {},
     });
 
     expect(existsSync(paths.dashboard)).toBe(true);
