@@ -1,0 +1,28 @@
+{
+  "name": "Neondeck",
+  "short_name": "Neondeck",
+  "description": "Local developer cockpit and companion-display dashboard.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a0b10",
+  "theme_color": "#ff4fb8",
+  "icons": [
+    {
+      "src": "/icons/neondeck-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/neondeck-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/neondeck-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
