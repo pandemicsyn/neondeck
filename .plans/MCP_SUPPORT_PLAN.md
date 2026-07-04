@@ -92,11 +92,11 @@ against the installed package before coding.
 
 ## Architecture
 
-New domain module, following the REFACTOR_PLAN convention (create `src/domains/` if this lands
+New runtime module, following the REFACTOR_PLAN convention (create `src/modules/` if this lands
 before the refactor phases — new code adopts the target layout from day one):
 
 ```text
-src/domains/mcp/
+src/modules/mcp/
   index.ts          # public surface
   schemas.ts        # config + status + action input/output schemas (Valibot)
   config.ts         # read/write mcp.json via runtime-home helpers; mutation services
@@ -413,7 +413,7 @@ remove/enable/disable/tools/status/approvals`), `neondeck_mcp_server_*` +
 Tests: unit tests against an in-process fixture MCP server covering the gate
 (deny/auto-approve/ask/hash-bound retry/expiry), config validation, and snapshot behavior when a
 server is down; integration tests spawning a real stdio fixture (a ~30-line MCP server in
-`src/domains/mcp/fixtures/`) and a Hono-hosted HTTP fixture — call an adapted tool end-to-end
+`src/modules/mcp/fixtures/`) and a Hono-hosted HTTP fixture — call an adapted tool end-to-end
 through the gate, assert approval flow and audit rows; child-process cleanup test.
 
 ### PR 2 — OAuth + dashboard surfacing

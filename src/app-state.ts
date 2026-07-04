@@ -1,6 +1,7 @@
 import { type JsonValue } from '@flue/runtime';
+import { asJsonValue } from './lib/action-result';
 import { randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
+import { openDb } from './lib/sqlite';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
@@ -64,7 +65,7 @@ export async function listNotifications(
   options: { includeResolved?: boolean } = {},
 ) {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     return database
@@ -113,7 +114,7 @@ export async function addNotification(
     createdAt: now,
     updatedAt: now,
   };
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     const existing =
@@ -233,7 +234,7 @@ export async function addNotification(
 export async function markNotificationRead(id: string, paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     const result = database
@@ -266,7 +267,7 @@ export async function markNotificationRead(id: string, paths = runtimePaths()) {
 export async function resolveNotification(id: string, paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     const result = database
@@ -298,7 +299,7 @@ export async function resolveNotification(id: string, paths = runtimePaths()) {
 
 export async function listJobs(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     return database
@@ -346,7 +347,7 @@ export async function upsertJob(
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     database
@@ -406,7 +407,7 @@ export async function disableStaleScheduleJobs(
 ) {
   await ensureRuntimeHome(paths);
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     if (activeJobIds.length === 0) {
@@ -440,7 +441,7 @@ export async function disableStaleScheduleJobs(
 
 export async function deleteJob(id: string, paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     database.prepare('DELETE FROM jobs WHERE id = ?;').run(id);
@@ -482,7 +483,7 @@ export async function updateJobRun(
   await ensureRuntimeHome(paths);
   const now = new Date().toISOString();
   const result = input.result === undefined ? null : asJsonValue(input.result);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     database
@@ -535,7 +536,7 @@ export async function addWorkflowSummary(
     createdAt: now,
     updatedAt: now,
   };
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     database
@@ -576,7 +577,7 @@ export async function setWorkflowSummaryRunId(
 ) {
   await ensureRuntimeHome(paths);
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     database
@@ -603,7 +604,7 @@ export async function updateWorkflowSummary(
 ) {
   await ensureRuntimeHome(paths);
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     database
@@ -636,7 +637,7 @@ export async function updateWorkflowSummary(
 
 export async function listWorkflowSummaries(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     return database
@@ -656,7 +657,7 @@ export async function listWorkflowSummaries(paths = runtimePaths()) {
 }
 
 function readJob(paths: RuntimePaths, id: string): JobRecord | undefined {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     const row = database.prepare('SELECT * FROM jobs WHERE id = ?;').get(id);
@@ -734,8 +735,4 @@ function readJobRow(row: unknown): JobRecord {
     createdAt: String(record.created_at),
     updatedAt: String(record.updated_at),
   };
-}
-
-function asJsonValue(value: unknown): JsonValue {
-  return JSON.parse(JSON.stringify(value)) as JsonValue;
 }

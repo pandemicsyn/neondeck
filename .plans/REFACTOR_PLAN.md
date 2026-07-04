@@ -65,43 +65,53 @@ top-level modules plus a handful of directories.
 
 ### Oversized backend files
 
-| File                         | Lines | What's inside                                                                                                                                                                   |
-| ---------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| File | Lines | What's inside |
+| --- | --- | --- |
 | `src/autopilot-workflows.ts` | 4,184 | 8 Flue action defs + 7 large workflow use-case functions (triage, worktree prep/verify, CI fix, review feedback, push, comment) + GitHub fact gathering + fixtures + formatting |
-| `src/kilo-actions.ts`        | 2,564 | 13 action defs + task lifecycle services + session discovery (CLI/SDK/disk) + transcript reading + diff summaries                                                               |
-| `src/learning-reviews.ts`    | 2,422 | Review record types/schemas, agent profile + coordinator, review preparation for 3 review kinds, completion/failure transitions, event recording, SQLite store                  |
-| `src/app.ts`                 | 2,190 | Hono app with **141 inline routes** + auth middleware + SSE endpoints + static serving                                                                                          |
-| `src/config-actions.ts`      | 2,067 | 37 exports: config read/validate/reload + repo/schedule/model/provider/dashboard/execution/worktree mutations + discovery                                                       |
-| `src/session-actions.ts`     | 2,059 | 38 exports: session store, active-session selection, summaries/titles, references, events                                                                                       |
-| `src/worktrees.ts`           | 2,042 | Worktree create/sync/status/cleanup, locks, git subprocess calls, path/slug policy, SQLite store                                                                                |
-| `src/memory-actions.ts`      | 2,013 | 12 action defs + memory CRUD/merge/rewrite/archive + candidates + events + SQLite store                                                                                         |
-| `src/safety.ts`              | 2,010 | ~1,800 lines of **declarative policy entries** (lines 105–1900) + types + lookup tool + summary logic                                                                           |
-| `src/runtime-home.ts`        | 1,965 | 63 exports; **fan-in of 44 non-test modules** — paths, config schemas, defaults, bootstrap, app-DB DDL/migrations, validation                                                   |
-| `src/github.ts`              | 1,838 | REST/GraphQL client mechanics + queue search + PR details + checks + reviews + comments + response schemas                                                                      |
-| `src/cli.ts`                 | 1,825 | Commander program: all subcommands, onboarding wizard, env writing, printers — zero exports, one file                                                                           |
-| `src/commands.ts`            | 1,790 | Slash-command registry + parser + all handlers + summaries                                                                                                                      |
-| `src/watch-actions.ts`       | 1,572 | PR/release watch actions, watch state store, polling logic                                                                                                                      |
-| `src/repo-edit/index.ts`     | 1,566 | Service + store + event plumbing for repo edits (folder already exists; file needs internal split)                                                                              |
-| `src/prepared-diffs.ts`      | 1,546 | Prepared-diff store, apply/verify logic, formatting                                                                                                                             |
-| `src/kilo-results.ts`        | 1,436 | Kilo result promotion/verification/review services (imports `verifyPrWorktree` from autopilot — layering violation to fix)                                                      |
-| `src/execution-actions.ts`   | 1,429 | Execution policy actions, approvals, run orchestration across backends                                                                                                          |
-| `src/scheduler.ts`           | 1,301 | Job store, tick loop, schedule evaluation, job execution dispatch                                                                                                               |
-| `src/autopilot.ts`           | 1,091 | Autopilot state machine / orchestration entry                                                                                                                                   |
-| `src/skill-patches.ts`       | 1,070 | Learning skill-patch proposals, application, restore, audit                                                                                                                     |
-| `src/pr-event-state.ts`      | 1,040 | PR event dedupe/state store                                                                                                                                                     |
-| `src/autopilot-policy.ts`    | 970   | Autopilot gate policy                                                                                                                                                           |
-| `src/runtime-status.ts`      | 802   | Runtime readiness checks                                                                                                                                                        |
-| `src/runtime-skills.ts`      | 795   | Skill discovery/validation                                                                                                                                                      |
+| `src/kilo-actions.ts` | 2,564 | 13 action defs + task lifecycle services + session discovery (CLI/SDK/disk) + transcript reading + diff summaries |
+| `src/learning-reviews.ts` | 2,422 | Review record types/schemas, agent profile + coordinator, review preparation for 3 review kinds, completion/failure transitions, event recording, SQLite store |
+| `src/app.ts` | 2,190 | Hono app with **141 inline routes** + auth middleware + SSE endpoints + static serving |
+| `src/config-actions.ts` | 2,067 | 37 exports: config read/validate/reload + repo/schedule/model/provider/dashboard/execution/worktree mutations + discovery |
+| `src/session-actions.ts` | 2,059 | 38 exports: session store, active-session selection, summaries/titles, references, events |
+| `src/worktrees.ts` | 2,042 | Worktree create/sync/status/cleanup, locks, git subprocess calls, path/slug policy, SQLite store |
+| `src/memory-actions.ts` | 2,013 | 12 action defs + memory CRUD/merge/rewrite/archive + candidates + events + SQLite store |
+| `src/safety.ts` | 2,010 | ~1,800 lines of **declarative policy entries** (lines 105–1900) + types + lookup tool + summary logic |
+| `src/runtime-home.ts` | 1,965 | 63 exports; **fan-in of 44 non-test modules** — paths, config schemas, defaults, bootstrap, app-DB DDL/migrations, validation |
+| `src/github.ts` | 1,838 | REST/GraphQL client mechanics + queue search + PR details + checks + reviews + comments + response schemas |
+| `src/cli.ts` | 1,825 | Commander program: all subcommands, onboarding wizard, env writing, printers — zero exports, one file |
+| `src/commands.ts` | 1,790 | Slash-command registry + parser + all handlers + summaries |
+| `src/watch-actions.ts` | 1,572 | PR/release watch actions, watch state store, polling logic |
+| `src/repo-edit/index.ts` | 1,566 | Service + store + event plumbing for repo edits (folder already exists; file needs internal split) |
+| `src/prepared-diffs.ts` | 1,546 | Prepared-diff store, apply/verify logic, formatting |
+| `src/kilo-results.ts` | 1,436 | Kilo result promotion/verification/review services (imports `verifyPrWorktree` from autopilot — layering violation to fix) |
+| `src/execution-actions.ts` | 1,429 | Execution policy actions, approvals, run orchestration across backends |
+| `src/scheduler.ts` | 1,301 | Job store, tick loop, schedule evaluation, job execution dispatch |
+| `src/autopilot.ts` | 1,091 | Autopilot state machine / orchestration entry |
+| `src/skill-patches.ts` | 1,070 | Learning skill-patch proposals, application, restore, audit |
+| `src/pr-event-state.ts` | 1,040 | PR event dedupe/state store |
+| `src/autopilot-policy.ts` | 970 | Autopilot gate policy |
+| `src/runtime-status.ts` | 802 | Runtime readiness checks |
+| `src/runtime-skills.ts` | 795 | Skill discovery/validation |
+| `src/app-state.ts` | 741 | App notification/state/event store helpers |
+| `src/kilo-task-store.ts` | 689 | Kilo task SQLite store |
+| `src/sandboxes/exedev.ts` | 676 | exe.dev sandbox adapter |
+| `src/repo-edit/git.ts` | 669 | Repo-edit git subprocess helpers |
+| `src/workflow-observability.ts` | 611 | Workflow run/event observability store |
+| `src/autopilot-recovery.ts` | 601 | Autopilot recovery actions and summaries |
+| `src/dev-doctor.ts` | 532 | Runtime diagnostic checks |
+| `src/execution-policy.ts` | 488 | Execution policy evaluation |
+| `src/learning-operator.ts` | 404 | Learning operator dashboard state |
 
 ### Oversized frontend files
 
-| File                                        | Lines | What's inside                                                                                                                                                                                                                  |
-| ------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `web/src/plugins/RuntimeOverview.tsx`       | 2,542 | 30 components in one file: runtime view, config controls/forms, first-run setup, readiness, notifications, safety, approvals, repo edits, Kilo tasks, worktrees, workflows, repos, jobs, skills, memories + formatting helpers |
-| `web/src/api.ts`                            | 1,710 | 130 exports: hand-maintained response types + fetch helpers + EventSource parsing + every endpoint function for every domain                                                                                                   |
-| `web/src/plugins/FlueChat.tsx`              | 1,104 | Chat shell, session select, message rendering, event part formatting, command typeahead, command result summary                                                                                                                |
-| `web/src/plugins/AutopilotPanel.tsx`        | 556   | Borderline; revisit after the feature-folder pattern exists                                                                                                                                                                    |
-| `web/src/plugins/LearningOperatorPanel.tsx` | 513   | Same                                                                                                                                                                                                                           |
+| File | Lines | What's inside |
+| --- | --- | --- |
+| `web/src/plugins/RuntimeOverview.tsx` | 2,542 | 30 components in one file: runtime view, config controls/forms, first-run setup, readiness, notifications, safety, approvals, repo edits, Kilo tasks, worktrees, workflows, repos, jobs, skills, memories + formatting helpers |
+| `web/src/api.ts` | 1,710 | 130 exports: hand-maintained response types + fetch helpers + EventSource parsing + every endpoint function for every domain |
+| `web/src/plugins/FlueChat.tsx` | 1,104 | Chat shell, session select, message rendering, event part formatting, command typeahead, command result summary |
+| `web/src/plugins/AutopilotPanel.tsx` | 556 | Borderline; revisit after the feature-folder pattern exists |
+| `web/src/App.tsx` | 518 | Dashboard shell, plugin layout, and shared app state wiring |
+| `web/src/plugins/LearningOperatorPanel.tsx` | 513 | Same |
 
 ### Duplicated low-level patterns (measured)
 
@@ -126,7 +136,7 @@ src/
     valibot.ts            # parseInput and shared mini-schemas (nullable string, ISO date, JSON column)
     json.ts
   runtime-home/           # layer 1: paths + config schemas + app DB (fan-in 44 — everything sits on this)
-  domains/                # layers 2–4, see dependency direction below
+  modules/                # layers 2–4, see dependency direction below
     github/
     worktrees/
     sessions/
@@ -145,7 +155,7 @@ src/
   server/                 # layer 5: Hono adapters
     app.ts                # app assembly: middleware + mounting sub-routers + static serving
     middleware.ts         # local API auth, Flue run inspection token
-    routes/               # one sub-router per domain (sessions.ts, kilo.ts, autopilot.ts, ...)
+    routes/               # one sub-router per module (sessions.ts, kilo.ts, autopilot.ts, ...)
     events/               # SSE endpoints (config, notifications, sessions)
   cli/                    # layer 5: Commander adapters
     index.ts              # program assembly (bin target)
@@ -155,14 +165,14 @@ src/
   workflows/              # unchanged thin Flue workflow defs (imports update only)
   agents/                 # unchanged
   skills/                 # unchanged
-  sandboxes/              # unchanged (exedev adapter; consumed by domains/execution)
+  sandboxes/              # unchanged (exedev adapter; consumed by modules/execution)
 
 web/src/
   api/                    # layer split of api.ts
     http.ts               # getJson/postJson, content-type fallback, empty-body, abort, auth header
     events.ts             # EventSource creation + guarded parsing
-    types.ts              # cross-domain response types (until generated from backend contracts)
-    <domain>.ts           # runtime.ts, sessions.ts, kilo.ts, autopilot.ts, learning.ts, memory.ts, ...
+    types.ts              # cross-module response types (until generated from backend contracts)
+    <module>.ts           # runtime.ts, sessions.ts, kilo.ts, autopilot.ts, learning.ts, memory.ts, ...
   features/               # feature folders backing the plugin registry
     runtime-overview/
     flue-chat/
@@ -172,14 +182,14 @@ web/src/
   lib/
 ```
 
-### Domain module convention
+### Module Convention
 
 ```text
-src/domains/<domain>/
-  index.ts        # the domain's public surface; other domains import ONLY from here
+src/modules/<module>/
+  index.ts        # the module's public surface; other modules import ONLY from here
   actions.ts      # Flue defineAction/defineTool declarations — parse input, call service, map errors
   schemas.ts      # Valibot schemas + v.InferOutput types for anything crossing a boundary
-  service.ts      # use cases / orchestration (may be several files for big domains)
+  service.ts      # use cases / orchestration (may be several files for big modules)
   store.ts        # SQLite SQL + row mapping (may be several files)
   policy.ts       # domain policy / classification, when it exists
   format.ts       # summaries, prompt fragments, UI-facing strings, when they exist
@@ -203,15 +213,15 @@ Only create files that have real code to hold. `src/repo-edit/` is the reference
 ```text
 lib
   └── runtime-home
-        └── github, worktrees, sessions, repos, safety, memory, repo-edit      (leaf domains)
-              └── config, execution, kilo, watches, scheduler, prepared-diffs  (mid domains)
-                    └── autopilot, learning, commands                          (orchestration domains)
+        └── github, worktrees, sessions, repos, safety, memory, repo-edit      (leaf modules)
+              └── config, execution, kilo, watches, scheduler, prepared-diffs  (mid modules)
+                    └── autopilot, learning, commands                          (orchestration modules)
                           └── server routes, workflows, agents, cli            (adapters)
 ```
 
 Known existing violation to resolve: `src/kilo-results.ts` imports `verifyPrWorktree` from
 `src/autopilot-workflows.ts` (a lower layer importing a higher one). Fix during Phase 8/9 by moving
-worktree verification into `domains/worktrees` (it is fundamentally a worktree operation) so both
+worktree verification into `modules/worktrees` (it is fundamentally a worktree operation) so both
 kilo and autopilot call down to it.
 
 ### Compatibility shims
@@ -220,7 +230,7 @@ Every extraction keeps the old top-level file as a re-export shim until all impo
 
 ```ts
 // src/worktrees.ts (during migration)
-export * from './domains/worktrees';
+export * from './modules/worktrees';
 ```
 
 Shim rules:
@@ -247,23 +257,23 @@ Each phase = one PR. Every phase ends with `npm run check` green; phases marked 
 `npm run test:integration` (worktree/kilo/autopilot/learning suites). Update the status column when
 you land a phase.
 
-| Phase | Scope                                                                 | Status |
-| ----- | --------------------------------------------------------------------- | ------ |
-| 0     | Guardrails: size report script, inventory check                       | todo   |
-| 1     | `src/lib/` shared utilities                                           | todo   |
-| 2     | `runtime-home` split ⚙                                                | todo   |
-| 3     | `server/` route split of `app.ts`                                     | todo   |
-| 4     | `domains/github`                                                      | todo   |
-| 5     | `domains/worktrees` ⚙                                                 | todo   |
-| 6     | `domains/sessions` + `domains/config` + `domains/repos`               | todo   |
-| 7     | `domains/safety` + `domains/execution`                                | todo   |
-| 8     | `domains/kilo` ⚙                                                      | todo   |
-| 9     | `domains/autopilot` ⚙                                                 | todo   |
-| 10    | `domains/learning` + `domains/memory` ⚙                               | todo   |
-| 11    | `domains/watches` + `domains/scheduler` + `domains/commands` + `cli/` | todo   |
-| 12    | Shim removal + import-direction lint                                  | todo   |
-| 13    | Frontend `web/src/api/` split                                         | todo   |
-| 14    | Frontend feature folders: runtime-overview, flue-chat                 | todo   |
+| Phase | Scope | Status |
+| --- | --- | --- |
+| 0 | Guardrails: size report script, inventory check | done |
+| 1 | `src/lib/` shared utilities | done |
+| 2 | `runtime-home` split ⚙ | done |
+| 3 | `server/` route split of `app.ts` | done |
+| 4 | `modules/github` | done |
+| 5 | `modules/worktrees` ⚙ | done |
+| 6 | `modules/sessions` + `modules/config` + `modules/repos` | done |
+| 7 | `modules/safety` + `modules/execution` | done |
+| 8 | `modules/kilo` ⚙ | todo |
+| 9 | `modules/autopilot` ⚙ | todo |
+| 10 | `modules/learning` + `modules/memory` ⚙ | todo |
+| 11 | `modules/watches` + `modules/scheduler` + `modules/commands` + `cli/` | todo |
+| 12 | Shim removal + import-direction lint | todo |
+| 13 | Frontend `web/src/api/` split | todo |
+| 14 | Frontend feature folders: runtime-overview, flue-chat | todo |
 
 Phases 4–11 are mostly independent of each other once 1–3 land; agents can reorder or parallelize
 them if they coordinate on shims. 13–14 need 3 (route stability) but not the backend domain phases.
@@ -292,11 +302,17 @@ Deliverables:
 - `src/lib/exec.ts` — `execFile` wrapper with timeout/abort/error normalization.
 - `src/lib/valibot.ts` — the shared `parseInput` helper.
 - Migrate the duplicated helpers in the 21 action files, 24 DB files, 7 `parseInput` files, and 8
-  `execFile` wrappers _only where the local copy is behaviorally identical_. If a local variant
+  `execFile` wrappers *only where the local copy is behaviorally identical*. If a local variant
   differs, leave it and note it in the PR description rather than papering over the difference.
 
 Verification: unit tests for each lib module; full unit suite; spot-check a few action outputs
 against `main` via existing tests.
+
+Status note (2026-07-03): shared utilities are introduced with unit coverage. Low-risk exact
+call sites were migrated for JSON conversion, common failed/invalid action results, Valibot parse
+wrappers, selected git subprocess calls, and app-state DB opens. Remaining local helpers are
+intentional variants for now because they differ in JSON semantics, error/result shape, property
+order, or domain-specific failure handling; revisit them during the owning domain split.
 
 ### Phase 2: `runtime-home` split ⚙
 
@@ -330,6 +346,11 @@ boot (`npm run dev` smoke) after this split, not just tests.
 Verification: `runtime-home.test.ts` (split alongside), unit suite, integration suite,
 `fresh-runtime-smoke.test.ts`.
 
+Status note (2026-07-03): implemented as `schemas.ts` instead of `schemas/` because the complete
+schema surface is 475 lines after extraction and splitting it further would add cross-schema import
+churn without reducing an oversized module. Revisit if schema-only growth pushes this file over the
+700-line review guide.
+
 ### Phase 3: Server route split
 
 `src/app.ts` (2,190 lines, 141 inline routes) becomes an assembly file.
@@ -355,12 +376,19 @@ Flue build config references it (check `flue.config.ts` before moving the entry 
 
 Verification: `app-routes.test.ts`, unit suite, `npm run dev` boots, dashboard loads.
 
-### Phase 4: `domains/github`
+Status note (2026-07-03): implemented as a `src/app.ts` Flue/build entry shim over
+`src/server/app.ts`. API middleware, Flue run inspection auth, SSE streams, route groups, Flue
+learning hooks, and static serving are split under `src/server/**` without moving domain logic.
+Verified with `src/app-routes.test.ts`, `npm run check`, `npm run build:server`, and an API mount
+smoke for representative route roots. A fresh temporary `NEONDECK_HOME` `npm run dev` boot brought
+up Vite and Flue; `http://127.0.0.1:5173/` returned dashboard HTML and `/api/health` returned 200.
+
+### Phase 4: `modules/github`
 
 Split `src/github.ts` + `src/github-actions.ts`:
 
 ```text
-src/domains/github/
+src/modules/github/
   index.ts client.ts schemas.ts queue.ts pull-requests.ts checks.ts reviews.ts
   comments.ts errors.ts actions.ts
 ```
@@ -372,12 +400,17 @@ src/domains/github/
 
 Verification: `github.test.ts` fixture-based parsing tests move with the code; unit suite.
 
-### Phase 5: `domains/worktrees` ⚙
+Status note (2026-07-03): implemented in `src/modules/github/` with top-level `src/github.ts` and
+`src/github-actions.ts` preserved as compatibility re-export shims. Existing GitHub tests remain at
+the top level and exercise the shimmed public surface; no consumers were migrated off the shims in
+this phase.
+
+### Phase 5: `modules/worktrees` ⚙
 
 Split `src/worktrees.ts`:
 
 ```text
-src/domains/worktrees/
+src/modules/worktrees/
   index.ts actions.ts schemas.ts service.ts store.ts locks.ts cleanup.ts git.ts paths.ts verify.ts
 ```
 
@@ -390,19 +423,25 @@ src/domains/worktrees/
 Verification: `worktrees.test.ts`, unit + integration suites; review lock uniqueness and cleanup
 semantics diffs carefully — this domain guards autonomy safety.
 
-### Phase 6: `domains/sessions` + `domains/config` + `domains/repos`
+Status note (2026-07-03): implemented in `src/modules/worktrees/` with top-level
+`src/worktrees.ts` preserved as a compatibility re-export shim. The split keeps lock and cleanup
+semantics intact and moves git command execution through `lib/exec`. `verify.ts` is present as a
+documented placeholder; moving `verifyPrWorktree` mechanics is deferred to Phase 9 because the
+current verifier is still coupled to autopilot workflow orchestration and prepared-diff state.
+
+### Phase 6: `modules/sessions` + `modules/config` + `modules/repos`
 
 Sessions (`session-actions.ts`, `session-events.ts`):
 
 ```text
-src/domains/sessions/
+src/modules/sessions/
   index.ts actions.ts schemas.ts service.ts store.ts active-session.ts summaries.ts references.ts events.ts
 ```
 
 Config (`config-actions.ts`, `config-events.ts`):
 
 ```text
-src/domains/config/
+src/modules/config/
   index.ts actions.ts schemas.ts files.ts history.ts mutations/   # repos, schedules, models, providers, dashboard, execution, worktrees
   discovery.ts events.ts
 ```
@@ -410,7 +449,7 @@ src/domains/config/
 Repos (`repos.ts`, `providers.ts`, `model-discovery.ts`):
 
 ```text
-src/domains/repos/
+src/modules/repos/
   index.ts registry.ts providers.ts model-discovery.ts
 ```
 
@@ -419,13 +458,18 @@ These three can be three commits in one PR or three PRs — implementer's choice
 Verification: `session-actions.test.ts`, `config-actions.test.ts`, `providers.test.ts`,
 `repos.test.ts`; unit suite.
 
-### Phase 7: `domains/safety` + `domains/execution`
+Status note (2026-07-03): implemented in `src/modules/repos/`, `src/modules/config/`, and
+`src/modules/sessions/` with top-level compatibility shims preserving the old public export
+surfaces. Repos, config, and sessions were reviewed as separate slices and landed as separate
+commits in this PR.
+
+### Phase 7: `modules/safety` + `modules/execution`
 
 Safety (`safety.ts`): the ~1,800-line policy table is legitimate declarative data — keep it as data,
 separate from logic:
 
 ```text
-src/domains/safety/
+src/modules/safety/
   index.ts
   policy-entries.ts   # the giant entries table + tool/action/workflow/route/entry builder helpers (size-exempt)
   schemas.ts          # SafetyClass/SafetyPolicyEntry types + safetyPolicySchema
@@ -437,7 +481,7 @@ Execution (`execution-actions.ts`, `execution-policy.ts`, `exedev-checkouts.ts`,
 `exedev-context.ts`; `src/sandboxes/exedev.ts` stays where it is as the backend adapter):
 
 ```text
-src/domains/execution/
+src/modules/execution/
   index.ts actions.ts schemas.ts policy.ts approvals.ts run.ts
   exedev/ (checkouts.ts context.ts)
 ```
@@ -448,12 +492,17 @@ file moves over any restructuring of logic.
 Verification: `safety.test.ts`, `execution-policy.test.ts`, `execution-actions.test.ts`,
 `exedev-*.test.ts`; unit suite.
 
-### Phase 8: `domains/kilo` ⚙
+Status note (2026-07-03): implemented in `src/modules/safety/` and
+`src/modules/execution/` with top-level compatibility shims preserving old imports. The large
+safety policy table remains declarative in `policy-entries.ts`; execution policy, approvals, run
+logic, and exe.dev context/checkout helpers were moved without consumer migration.
+
+### Phase 8: `modules/kilo` ⚙
 
 Consolidate `kilo-actions.ts`, `kilo-task-store.ts`, `kilo-results.ts`, `kilo-notifications.ts`:
 
 ```text
-src/domains/kilo/
+src/modules/kilo/
   index.ts actions.ts tools.ts schemas.ts service.ts store.ts        # store.ts absorbs kilo-task-store.ts
   process-supervisor.ts                                              # spawned processes, streams, running-task maps
   sessions/ (index.ts cli-adapter.ts sdk-adapter.ts disk-adapter.ts transcripts.ts)
@@ -461,7 +510,7 @@ src/domains/kilo/
   handoff.ts notifications.ts diff.ts
 ```
 
-- `results/verify.ts` calls `domains/worktrees` verification (Phase 5), not autopilot.
+- `results/verify.ts` calls `modules/worktrees` verification (Phase 5), not autopilot.
 - Existing thin workflows (`handoff_to_kilo.ts`, `promote_kilo_result.ts`, `reconcile_kilo_task.ts`,
   `review_kilo_result.ts`, `verify_kilo_result.ts`, `summarize_kilo_session.ts`) only get import
   updates.
@@ -470,13 +519,13 @@ Verification: `kilo-actions.test.ts`, `kilo-results.test.ts`, `kilo-workflow-smo
 (integration), unit + integration suites; manually review process-cleanup and running-task
 reconciliation diffs.
 
-### Phase 9: `domains/autopilot` ⚙
+### Phase 9: `modules/autopilot` ⚙
 
 The big one. Consolidate `autopilot-workflows.ts` (4,184), `autopilot.ts`, `autopilot-policy.ts`,
 `autopilot-recovery.ts`, `autopilot-notifications.ts`, `pr-event-state.ts`, `prepared-diffs.ts`:
 
 ```text
-src/domains/autopilot/
+src/modules/autopilot/
   index.ts
   actions.ts          # the 8 defineAction declarations + neondeckAutopilotActions
   schemas.ts
@@ -501,7 +550,7 @@ apiece), then actions, then the satellite files. `src/autopilot-workflows.ts` sh
 importers (workflows/, agents/, app, kilo-results, recovery) working until Phase 12.
 
 Prepared diffs note: if `prepared-diffs.ts` turns out to have non-autopilot consumers (check
-imports at implementation time — currently 9), promote it to a mid-layer `domains/prepared-diffs/`
+imports at implementation time — currently 9), promote it to a mid-layer `modules/prepared-diffs/`
 instead of nesting it under autopilot.
 
 Verification: `autopilot-workflows.test.ts` (2,028 lines — split it to mirror the source split),
@@ -509,13 +558,13 @@ Verification: `autopilot-workflows.test.ts` (2,028 lines — split it to mirror 
 `prepared-diffs.test.ts`, `autopilot-workflow-smoke.test.ts` (integration),
 `npm run smoke:autopilot` if a configured environment is available.
 
-### Phase 10: `domains/learning` + `domains/memory` ⚙
+### Phase 10: `modules/learning` + `modules/memory` ⚙
 
 Learning (`learning-reviews.ts`, `learning-operator.ts`, `skill-patches.ts`,
 `workflow-observability.ts`, `autonomous-audit.ts`):
 
 ```text
-src/domains/learning/
+src/modules/learning/
   index.ts schemas.ts
   reviews/ (prepare.ts complete.ts store.ts events.ts)   # from learning-reviews.ts
   agents.ts                                              # learningReviewerProfile + coordinator
@@ -528,7 +577,7 @@ src/domains/learning/
 Memory (`memory-actions.ts`):
 
 ```text
-src/domains/memory/
+src/modules/memory/
   index.ts actions.ts schemas.ts service.ts store.ts candidates.ts events.ts
 ```
 
@@ -538,7 +587,7 @@ ids, and memory scopes have active/legacy semantics — preserve exactly.
 Verification: `learning-reviews.test.ts`, `memory-actions.test.ts`, `cli-learning.test.ts`,
 `workflow-observability.test.ts`, `npm run smoke:learning` (integration).
 
-### Phase 11: `domains/watches` + `domains/scheduler` + `domains/commands` + `cli/`
+### Phase 11: `modules/watches` + `modules/scheduler` + `modules/commands` + `cli/`
 
 Watches (`watch-actions.ts`): `index.ts actions.ts schemas.ts service.ts store.ts polling.ts`.
 
@@ -548,7 +597,7 @@ semantics from `.plans/SCHEDULER_TICK_CONCURRENCY_PLAN.md` intact.
 Commands (`commands.ts`):
 
 ```text
-src/domains/commands/
+src/modules/commands/
   index.ts actions.ts registry.ts parser.ts summaries.ts
   handlers/ (briefing.ts review-queue.ts watch.ts schedule.ts model.ts memory.ts doctor.ts session.ts ...)
 ```
@@ -563,7 +612,7 @@ src/cli/
 ```
 
 CLI handlers must call domain services — anything in `cli.ts` today that duplicates a service
-belongs in the domain, but _move_ it in this phase only if it is a literal duplicate; otherwise
+belongs in the domain, but *move* it in this phase only if it is a literal duplicate; otherwise
 leave a `TODO(refactor)` and keep behavior identical.
 
 Verification: `commands.test.ts`, `watch-actions.test.ts`, `scheduler.test.ts`,
@@ -692,7 +741,7 @@ grep -rln "DatabaseSync" src --include='*.ts' | grep -v test | wc -l
   documented as size-exempt (declarative data/schemas).
 - `src/` top level contains only entry points (`app.ts` re-export if Flue needs it, `db.ts`,
   `setup.ts`), directories, and no multi-thousand-line modules.
-- Flue actions, routes, workflows, CLI, and commands are all adapters over `src/domains/*`
+- Flue actions, routes, workflows, CLI, and commands are all adapters over `src/modules/*`
   services, and the import-direction check passes.
 - `web/src/api.ts` is gone; API modules are domain-scoped with guarded parsing on high-risk
   responses.

@@ -5,7 +5,7 @@
   "homepage": "https://neondeck.dev",
   "private": true,
   "bin": {
-    "neondeck": "src/cli.ts"
+    "neondeck": "src/cli/index.ts"
   },
   "workspaces": [
     "docs"
@@ -15,7 +15,8 @@
     "build:dashboard": "npm run build:web && flue build --target node",
     "build:server": "flue build --target node",
     "build:web": "vite build --config web/vite.config.ts",
-    "check": "npm run lint && npm run typecheck && npm run test",
+    "check": "npm run lint && npm run check:layers && npm run typecheck && npm run test",
+    "check:layers": "node scripts/check-import-layers.mjs",
     "dev": "concurrently -n server,web -c blue,green \"flue dev --target node\" \"vite --config web/vite.config.ts --host 127.0.0.1\"",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -23,8 +24,8 @@
     "lint:fix": "npm run lint -- --fix",
     "prepare": "git config core.hooksPath .githooks || true",
     "hooks:install": "git config core.hooksPath .githooks",
-    "cli": "tsx src/cli.ts",
-    "init": "tsx src/cli.ts init",
+    "cli": "tsx src/cli/index.ts",
+    "init": "tsx src/cli/index.ts init",
     "raycast:build": "npm --prefix raycast install && npm --prefix raycast run build",
     "raycast:install": "npm --prefix raycast install && npm --prefix raycast run dev",
     "raycast:lint": "npm --prefix raycast run lint",
@@ -42,9 +43,10 @@
     "test:watch": "vitest --config vitest.unit.config.ts",
     "package:app": "node scripts/package-app-release.mjs",
     "release:app": "npm run build:dashboard && npm run package:app",
+    "report:file-sizes": "node scripts/file-size-report.mjs",
     "typecheck": "npm run typecheck:app && npm run docs:check",
     "typecheck:app": "tsc --noEmit && tsc -p web/tsconfig.json --noEmit",
-    "verify": "npm run lint && npm run typecheck && npm run test:all && npm run format:check && npm run build",
+    "verify": "npm run lint && npm run check:layers && npm run typecheck && npm run test:all && npm run format:check && npm run build",
     "docs:build": "npm --workspace @neondeck/docs-site run build",
     "docs:check": "npm --workspace @neondeck/docs-site run check",
     "docs:deploy": "npm --workspace @neondeck/docs-site run deploy",
