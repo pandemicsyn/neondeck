@@ -8,7 +8,7 @@ to `.plans/REFACTOR_PLAN.md` and `.plans/MCP_SUPPORT_PLAN.md`, whose conventions
 ## Purpose
 
 Neon is an always-ready operator: chat plus managed flows (PR watching, autopilot, briefings).
-Today its *brain* (config, SQLite, GitHub API, sessions, scheduler) and its *workspace* (checkouts,
+Today its _brain_ (config, SQLite, GitHub API, sessions, scheduler) and its _workspace_ (checkouts,
 worktrees, edits, command execution) are both on the host. This plan separates those concerns and
 makes the workspace location a config switch:
 
@@ -28,7 +28,7 @@ schedulers, watchers, and session state are not workspace concerns and do not mo
 
 - **Flue's sandbox flag moves only the model's built-in workspace.** `sandbox: exedev(...)` on an
   agent routes the model-facing bash/file tools and `harness.fs` to the VM. It does not and cannot
-  route Flue *actions* — they are application code in the Node server process. Since Neondeck
+  route Flue _actions_ — they are application code in the Node server process. Since Neondeck
   deliberately routes real work through typed actions, workspace mode is mostly an
   application-layer change, with the Flue sandbox flag as one (cheap) ingredient.
 - **The host coupling is narrow and funneled.** Verified call paths:
@@ -38,7 +38,7 @@ schedulers, watchers, and session state are not workspace concerns and do not mo
     `spawn` (`git.ts`), path safety via `realpath`/`lstat` (`path-safety.ts`).
   - `src/repos.ts`, `src/dev-doctor.ts`: host git/fs reads for status.
   - `src/kilo-actions.ts`: spawns the Kilo CLI on the host with streaming (`spawn`) — the one
-    consumer that is *not* a thin exec seam.
+    consumer that is _not_ a thin exec seam.
 - **The exe.dev plumbing already exists.** `src/sandboxes/exedev.ts` implements Flue's
   `SandboxApi` over SSH/SFTP (with Neondeck's disposal fix); `execution.exeDev` config already
   carries `vmHostEnv`, `sshKeyEnv`, `apiTokenEnv`, `lifecycle`, `remoteRoot`, env forwarding, and
@@ -48,7 +48,7 @@ schedulers, watchers, and session state are not workspace concerns and do not mo
   direct remote equivalents — path safety does not need to be weakened remotely.
 - **Flue never disposes sandbox session envs.** Any long-lived SSH usage must be owned and reaped
   by Neondeck (the existing `disposeExeDevSessionEnv` pattern, generalized).
-- **Trust posture:** execution policy gates *which commands run*, not *where* — it already brokers
+- **Trust posture:** execution policy gates _which commands run_, not _where_ — it already brokers
   exe.dev commands today. Approvals, audit, prepared diffs, autopilot policy, and push gates all
   survive this change untouched in semantics.
 
@@ -86,18 +86,26 @@ export interface WorkspaceApi {
   readFile(path: string): Promise<string>;
   readFileBuffer(path: string): Promise<Uint8Array>;
   writeFile(path: string, content: string | Uint8Array): Promise<void>;
-  stat(path: string): Promise<WorkspaceStat>;        // includes isSymbolicLink
+  stat(path: string): Promise<WorkspaceStat>; // includes isSymbolicLink
   lstat(path: string): Promise<WorkspaceStat>;
   realpath(path: string): Promise<string>;
   readdir(path: string): Promise<string[]>;
   exists(path: string): Promise<boolean>;
   mkdir(path: string, options?: { recursive?: boolean }): Promise<void>;
-  rm(path: string, options?: { recursive?: boolean; force?: boolean }): Promise<void>;
+  rm(
+    path: string,
+    options?: { recursive?: boolean; force?: boolean },
+  ): Promise<void>;
   /** Arg-vector exec — no shell string assembly at call sites. */
   execFile(
     command: string,
     args: string[],
-    options?: { cwd?: string; env?: Record<string, string>; timeoutMs?: number; maxBuffer?: number },
+    options?: {
+      cwd?: string;
+      env?: Record<string, string>;
+      timeoutMs?: number;
+      maxBuffer?: number;
+    },
   ): Promise<{ stdout: string; stderr: string; exitCode: number }>;
 }
 ```
@@ -179,18 +187,18 @@ itself.
 
 ### Service migration map
 
-| Service | Change |
-| --- | --- |
-| `worktrees.ts` | Route the single `git()` helper and all fs ops through `WorkspaceApi`; add `location` to records; root resolution per mode |
-| `repo-edit/` | `index.ts` fs ops, `git.ts` exec, `path-safety.ts` realpath/lstat → `WorkspaceApi`; patch-apply drops stdin `spawn` for temp-file `git apply` |
-| `execution-actions.ts` | `exe.dev` backend uses the shared supervisor connection; in `exe.dev` mode, `local` backend requests are policy-denied with a mode explanation |
-| `exedev-checkouts.ts` | Unchanged flow, faster (shared connection); becomes the required first step per repo in `exe.dev` mode |
-| `repos.ts` / `dev-doctor.ts` | Repo status facts via `WorkspaceApi` in `exe.dev` mode (or clearly labeled `host-only` where a check is inherently local) |
-| `autopilot-workflows.ts` / `prepared-diffs.ts` | No semantic change: they operate on worktrees through the worktree/repo-edit/execution services; verify they never touch `node:fs` directly on worktree paths (fix any strays found) |
-| `kilo-actions.ts` | Typed `kilo-requires-host-workspace` error in `exe.dev` mode (v1) |
-| `agents/display-assistant.ts` | `sandbox: exedev(vmHost, …)` with `cwd` at `remoteRoot` when mode is `exe.dev` (initializer already reads config sync; VM host resolution must not throw at definition time — fall back to virtual sandbox + readiness warning if unresolvable) |
-| `runtime-status.ts` | New checks: VM reachable, toolchain (`git`, `gh`, auth), checkout sync state per configured repo, active workspace mode |
-| `safety.ts` | Entries for the new workspace action/CLI/route; no class changes elsewhere (locations, not permissions, changed) |
+| Service                                        | Change                                                                                                                                                                                                                                          |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `worktrees.ts`                                 | Route the single `git()` helper and all fs ops through `WorkspaceApi`; add `location` to records; root resolution per mode                                                                                                                      |
+| `repo-edit/`                                   | `index.ts` fs ops, `git.ts` exec, `path-safety.ts` realpath/lstat → `WorkspaceApi`; patch-apply drops stdin `spawn` for temp-file `git apply`                                                                                                   |
+| `execution-actions.ts`                         | `exe.dev` backend uses the shared supervisor connection; in `exe.dev` mode, `local` backend requests are policy-denied with a mode explanation                                                                                                  |
+| `exedev-checkouts.ts`                          | Unchanged flow, faster (shared connection); becomes the required first step per repo in `exe.dev` mode                                                                                                                                          |
+| `repos.ts` / `dev-doctor.ts`                   | Repo status facts via `WorkspaceApi` in `exe.dev` mode (or clearly labeled `host-only` where a check is inherently local)                                                                                                                       |
+| `autopilot-workflows.ts` / `prepared-diffs.ts` | No semantic change: they operate on worktrees through the worktree/repo-edit/execution services; verify they never touch `node:fs` directly on worktree paths (fix any strays found)                                                            |
+| `kilo-actions.ts`                              | Typed `kilo-requires-host-workspace` error in `exe.dev` mode (v1)                                                                                                                                                                               |
+| `agents/display-assistant.ts`                  | `sandbox: exedev(vmHost, …)` with `cwd` at `remoteRoot` when mode is `exe.dev` (initializer already reads config sync; VM host resolution must not throw at definition time — fall back to virtual sandbox + readiness warning if unresolvable) |
+| `runtime-status.ts`                            | New checks: VM reachable, toolchain (`git`, `gh`, auth), checkout sync state per configured repo, active workspace mode                                                                                                                         |
+| `safety.ts`                                    | Entries for the new workspace action/CLI/route; no class changes elsewhere (locations, not permissions, changed)                                                                                                                                |
 
 ### Agent-facing behavior
 
@@ -248,7 +256,7 @@ migrated) — not more PRs.
   confirm-gated mode switch warns when active worktrees/locks/running workflows exist and lists
   them.
 - **VM as credential holder.** Push-back from the VM means repo credentials live there. This is
-  the same trust decision as running Kilo or CI on any remote machine, but it must be *explicit*:
+  the same trust decision as running Kilo or CI on any remote machine, but it must be _explicit_:
   documented, surfaced in readiness ("gh authenticated as X"), never automated by Neondeck.
 - **Flue sandbox connection lifetime.** Covered by the idle-timeout mitigation above; verify no
   connection-per-message behavior in real chat before shipping PR 2.
