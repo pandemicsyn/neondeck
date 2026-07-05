@@ -37,7 +37,8 @@ export async function createApprovalResolutionNudge(
   },
   paths: RuntimePaths = runtimePaths(),
 ) {
-  if (!input.sessionId) {
+  const sessionId = nonEmpty(input.sessionId);
+  if (!sessionId) {
     return { ok: true as const, skipped: true as const };
   }
 
@@ -51,7 +52,7 @@ export async function createApprovalResolutionNudge(
   const dispatchReceipt = shouldDispatch
     ? await approvalNudgeDispatch({
         agent: 'display-assistant',
-        id: input.sessionId,
+        id: sessionId,
         input: message,
       }).catch((error) => {
         errors.push(error instanceof Error ? error.message : String(error));
@@ -60,7 +61,7 @@ export async function createApprovalResolutionNudge(
     : null;
   const created = await createChatSessionCommandEvent(
     {
-      sessionId: input.sessionId,
+      sessionId,
       input: message,
       reason: `${input.family}_approval_${input.decision}`,
     },
@@ -75,7 +76,7 @@ export async function createApprovalResolutionNudge(
       shouldDispatch && !dispatchReceipt ? 'failed' : 'completed';
     await updateChatSessionCommandEvent(
       {
-        sessionId: input.sessionId,
+        sessionId,
         eventId: created.event.id,
         status: eventStatus,
         completedAt: new Date().toISOString(),
@@ -120,7 +121,7 @@ export async function createApprovalResolutionNudge(
       sourceId: `${input.family}-approval:${input.approvalId}:resolved`,
       data: {
         approvalId: input.approvalId,
-        sessionId: input.sessionId,
+        sessionId,
         decision: input.decision,
         dispatchAttempted: shouldDispatch,
         dispatchAccepted,
@@ -137,4 +138,9 @@ export async function createApprovalResolutionNudge(
     skipped: false as const,
     errors,
   };
+}
+
+function nonEmpty(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }

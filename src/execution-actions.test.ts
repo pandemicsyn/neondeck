@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   listExecutionApprovals,
@@ -270,6 +271,58 @@ describe('execution actions', () => {
         }),
       ],
     });
+  });
+
+  it('skips direct execution approval nudge dispatch for legacy whitespace session ids', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const request = await requestExecutionApproval(
+      { command: 'node --version', cwd: paths.home },
+      paths,
+    );
+    const approvalId = readApprovalId(request);
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `
+          UPDATE execution_approvals
+          SET session_id = '   '
+          WHERE id = ?;
+        `,
+        )
+        .run(approvalId);
+    } finally {
+      database.close();
+    }
+
+    let dispatched = false;
+    const restoreDispatch = setApprovalNudgeDispatchForTests(async () => {
+      dispatched = true;
+      return {
+        dispatchId: 'unexpected-dispatch',
+        acceptedAt: new Date().toISOString(),
+      };
+    });
+
+    try {
+      await expect(
+        resolveExecutionApproval(
+          { id: approvalId, decision: 'allow-session' },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        ok: true,
+        approval: {
+          id: approvalId,
+          sessionId: null,
+          status: 'approved',
+        },
+      });
+    } finally {
+      restoreDispatch();
+    }
+    expect(dispatched).toBe(false);
   });
 
   it('links execution approval requests to the current Flue session when sessionId is omitted', async () => {

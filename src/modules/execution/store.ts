@@ -271,7 +271,10 @@ export function readExecutionApprovalRow(
       typeof record.approver_surface === 'string'
         ? record.approver_surface
         : null,
-    sessionId: typeof record.session_id === 'string' ? record.session_id : null,
+    sessionId:
+      typeof record.session_id === 'string'
+        ? (nonEmpty(record.session_id) ?? null)
+        : null,
     requestContext:
       typeof record.request_context_json === 'string'
         ? (JSON.parse(record.request_context_json) as JsonValue)
@@ -309,4 +312,9 @@ export function approvalMatches(
     (approval.cwd ?? undefined) === cwd &&
     approvalExecutionScopeKey(approval) === executionScopeKey(expectedScope)
   );
+}
+
+function nonEmpty(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }
