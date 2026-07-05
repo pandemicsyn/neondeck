@@ -2,7 +2,7 @@ import { PatchDiff, WorkerPoolContextProvider } from '@pierre/diffs/react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Badge, MiniEmpty } from '../../components/ui';
 import { cn } from '../../lib/cn';
-import { patchFilePaths, patchHasContent } from './helpers';
+import { diffFileCountLabel, patchFilePaths, patchHasContent } from './helpers';
 import {
   neondeckDiffOptions,
   neondeckDiffUnsafeCss,
@@ -54,9 +54,9 @@ export function UnifiedPatchView({
           <p className={cn('diff-viewer-title', toneClass(tone))}>{title}</p>
           {detail ? <p className="diff-viewer-detail">{detail}</p> : null}
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
           {meta}
-          <Badge>{fileCount || 1} files</Badge>
+          <Badge>{diffFileCountLabel(fileCount || 1)}</Badge>
         </div>
       </header>
       <DiffWorkerProvider>

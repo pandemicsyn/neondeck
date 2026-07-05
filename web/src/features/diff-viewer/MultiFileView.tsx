@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Badge, MiniEmpty } from '../../components/ui';
 import { cn } from '../../lib/cn';
 import {
@@ -37,6 +37,7 @@ export function MultiFileView({
   title,
   tone = 'primary',
 }: MultiFileViewProps) {
+  const selectId = useId();
   const [uncontrolledPath, setUncontrolledPath] = useState<string | null>(
     () => firstRenderablePath(files) ?? null,
   );
@@ -75,12 +76,12 @@ export function MultiFileView({
       </aside>
       <div className="diff-file-column">
         <div className="diff-file-selector">
-          <label className="sr-only" htmlFor="diff-file-select">
+          <label className="sr-only" htmlFor={selectId}>
             Changed file
           </label>
           <select
-            className="w-full border border-line bg-field px-2 py-1 font-mono text-[10px] text-ink outline-none focus:ring-1 focus:ring-primary"
-            id="diff-file-select"
+            className="w-full border border-line bg-field px-2 py-1 font-mono text-[10px] text-ink outline-none transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
+            id={selectId}
             onChange={(event) => selectPath(event.currentTarget.value)}
             value={selectedFile?.path ?? ''}
           >

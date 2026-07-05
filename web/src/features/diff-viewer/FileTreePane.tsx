@@ -1,8 +1,15 @@
 import { FileTree, useFileTree } from '@pierre/trees/react';
 import { useEffect, useMemo } from 'react';
-import type { GitStatusEntry } from '@pierre/trees';
+import {
+  prepareFileTreeInput,
+  type FileTreeInitialExpansion,
+  type FileTreePreparedInput,
+  type GitStatusEntry,
+} from '@pierre/trees';
 import { diffStatsLabel } from './helpers';
 import type { DiffFilePatch } from './types';
+
+const expandedTreeFileLimit = 120;
 
 type FileTreePaneProps = {
   files: DiffFilePatch[];
@@ -23,7 +30,10 @@ export function FileTreePane({
         .filter((entry): entry is GitStatusEntry => Boolean(entry)),
     [files],
   );
-  const treeKey = paths.join('\0');
+  const preparedInput = useMemo(() => prepareFileTreeInput(paths), [paths]);
+  const initialExpansion: FileTreeInitialExpansion =
+    paths.length > expandedTreeFileLimit ? 'closed' : 'open';
+  const treeKey = useMemo(() => fileTreeModelKey(paths), [paths]);
 
   if (paths.length === 0) return null;
 
@@ -31,9 +41,11 @@ export function FileTreePane({
     <FileTreePaneModel
       files={files}
       gitStatus={gitStatus}
+      initialExpansion={initialExpansion}
       key={treeKey}
       onSelectPath={onSelectPath}
       paths={paths}
+      preparedInput={preparedInput}
       selectedPath={selectedPath}
     />
   );
@@ -42,18 +54,22 @@ export function FileTreePane({
 function FileTreePaneModel({
   files,
   gitStatus,
+  initialExpansion,
   onSelectPath,
   paths,
+  preparedInput,
   selectedPath,
 }: FileTreePaneProps & {
   gitStatus: GitStatusEntry[];
+  initialExpansion: FileTreeInitialExpansion;
   paths: string[];
+  preparedInput: FileTreePreparedInput;
 }) {
   const filePathSet = useMemo(() => new Set(paths), [paths]);
   const { model } = useFileTree({
     flattenEmptyDirectories: true,
     gitStatus,
-    initialExpansion: 'open',
+    initialExpansion,
     initialSelectedPaths: selectedPath ? [selectedPath] : [],
     itemHeight: 24,
     onSelectionChange(selectedPaths) {
@@ -62,7 +78,7 @@ function FileTreePaneModel({
         .find((path) => filePathSet.has(path));
       if (nextPath) onSelectPath(nextPath);
     },
-    paths,
+    preparedInput,
     search: true,
     searchBlurBehavior: 'retain',
     unsafeCSS: treeUnsafeCss,
@@ -97,11 +113,13 @@ function FileTreePaneModel({
 function TreeHeader({ files }: { files: DiffFilePatch[] }) {
   const additions = files.reduce((sum, file) => sum + (file.additions ?? 0), 0);
   const deletions = files.reduce((sum, file) => sum + (file.deletions ?? 0), 0);
+  const largeSet = files.length > expandedTreeFileLimit;
   return (
     <div className="flex items-center justify-between gap-2 border-b border-line px-2 py-1.5 font-mono text-[10px] text-muted">
       <span>files</span>
       <span className="text-primary">
         +{additions} -{deletions}
+        {largeSet ? <span className="text-muted"> - large set</span> : null}
       </span>
     </div>
   );
@@ -148,4 +166,15 @@ export function fileTreeSummary(files: DiffFilePatch[]) {
   if (files.length === 0) return 'No files';
   const first = files[0];
   return `${files.length} files · ${first ? diffStatsLabel(first) : ''}`;
+}
+
+function fileTreeModelKey(paths: string[]) {
+  let hash = 2166136261;
+  for (const path of paths) {
+    for (let index = 0; index < path.length; index += 1) {
+      hash ^= path.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+  }
+  return `${paths.length}:${hash >>> 0}`;
 }
