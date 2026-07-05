@@ -236,6 +236,7 @@ export const autopilotConcurrencySchema = v.looseObject({
 export const autopilotConfigSchema = v.looseObject({
   defaultMode: v.optional(autopilotModeSchema),
   mode: v.optional(autopilotModeSchema),
+  pushOnApproval: v.optional(v.picklist(['push', 'verify-then-push', 'off'])),
   limits: v.optional(autopilotPolicyLimitsSchema),
   concurrency: v.optional(autopilotConcurrencySchema),
 });

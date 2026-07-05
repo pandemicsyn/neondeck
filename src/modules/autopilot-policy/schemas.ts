@@ -165,6 +165,9 @@ export const appAutopilotSchema = v.looseObject({
     v.looseObject({
       defaultMode: v.optional(modeSchema),
       mode: v.optional(modeSchema),
+      pushOnApproval: v.optional(
+        v.picklist(['push', 'verify-then-push', 'off']),
+      ),
       limits: v.optional(autopilotPolicyLimitsSchema),
       concurrency: v.optional(autopilotConcurrencySchema),
     }),
