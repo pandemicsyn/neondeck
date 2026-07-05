@@ -190,6 +190,39 @@ the lazy pr-review/diff-viewer chunks); manual end-to-end against a real test PR
 comments on both sides → reload deck → draft intact → push a new commit to the PR → staleness
 flow → submit Request changes) recorded in the PR description.
 
+## Follow-ups: PR-files performance (recorded 2026-07-04, not part of this PR)
+
+The implemented viewing path fetches `pulls/:number/files` from the GitHub API per view, with
+client-side (React Query) caching only, and honestly flags the API's gaps (`binary`/`truncated`
+patches render a placeholder). Two sized follow-ups, in priority order:
+
+1. **Server-side PR-files cache (small — do soon).** Cache the files response in the app DB keyed
+   by `(repo, number, headSha)`. The key includes the head SHA, so entries are immutable — no
+   invalidation, just retention pruning alongside other audit-ish rows. Kills the
+   refetch-per-deck-reload API burn (watchers already spend the rate budget) and makes revisits
+   instant. Also benefits the review composer, which re-reads files during staleness checks.
+2. **Local-checkout diff provider (larger — adopt when omitted patches or hunk expansion
+   actually bite).** For registry repos, the server fetches the PR head into an **ephemeral
+   ref** (`git fetch origin pull/<n>/head:<temp>` — never touches the working tree; classify as
+   the read-only fact path like repo-status) and produces the diff locally with
+   **three-dot/merge-base semantics** so it matches GitHub's rendered view. Benefits: full
+   patches regardless of size (fixes `truncated` placeholders), no 3,000-file API cap, real file
+   contents enabling `@pierre/diffs` hunk expansion and contents-based `FileDiff` rendering.
+   Same endpoint, provider selected server-side; the GitHub API remains the universal fallback
+   (repo not checked out, fetch failure, detached environments).
+
+   Cautions for the implementer: (a) merge-base correctness is the trap — a two-dot diff shows
+   upstream drift as PR changes; test against a real PR with a stale branch; (b) ephemeral-ref
+   hygiene (create under a reserved namespace, always clean up, tolerate concurrent views);
+   (c) route filesystem/git access through the `WorkspaceApi` seam from
+   `.plans/EXEDEV_WORKSPACE_MODE_PLAN.md` so "local checkout" transparently means the VM checkout
+   in exe.dev workspace mode; (d) the diff must feed the same sanitized response schema — the
+   frontend must not know which provider answered.
+
+Trigger discipline: ship (1) on its own; hold (2) until truncated-patch placeholders or the lack
+of context expansion is a felt problem in real use — it's real machinery (ref hygiene, fallback
+paths) that should be pulled by need, not pushed.
+
 ## Risks
 
 - **Anchor mapping is the correctness core.** Side/line translation bugs post comments on wrong
