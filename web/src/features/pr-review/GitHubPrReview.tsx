@@ -35,6 +35,7 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
     () => threadsForPath(unresolvedThreads, activePath),
     [activePath, unresolvedThreads],
   );
+  const fileStats = useMemo(() => reviewFileStats(files), [files]);
 
   useEffect(() => {
     if (activePath && files.some((file) => file.path === activePath)) return;
@@ -73,6 +74,12 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
             {unresolvedThreads.length}/{reviewThreads.length} threads
           </Badge>
           {summary ? <Badge>{summaryLabel(summary)}</Badge> : null}
+          {fileStats.truncated > 0 ? (
+            <Badge>{fileStats.truncated} truncated</Badge>
+          ) : null}
+          {fileStats.binary > 0 ? (
+            <Badge>{fileStats.binary} binary</Badge>
+          ) : null}
         </div>
       </header>
       {threadsQuery.error ? (
@@ -123,7 +130,7 @@ function annotationFromThread(
     metadata: {
       id: thread.id,
       title: `${thread.comments.length} review comment${thread.comments.length === 1 ? '' : 's'}`,
-      body: comment?.body ?? 'Review thread',
+      body: reviewCommentPreview(comment?.body ?? 'Review thread'),
       authorLogin: comment?.authorLogin ?? null,
       url: comment?.url ?? null,
       isResolved: thread.isResolved,
@@ -202,7 +209,10 @@ function ReviewThreadPanel({
 }) {
   if (isLoading) {
     return (
-      <p className="border-x border-b border-line bg-field px-2 py-1 font-mono text-[10px] text-muted">
+      <p
+        aria-live="polite"
+        className="border-x border-b border-line bg-field px-2 py-1 font-mono text-[10px] text-muted"
+      >
         Loading review threads...
       </p>
     );
@@ -243,11 +253,11 @@ function ReviewThreadPanel({
                 </span>
               </div>
               <p className="line-clamp-3 text-[11px] leading-4 text-ink">
-                {comment?.body ?? 'Review thread'}
+                {reviewCommentPreview(comment?.body ?? 'Review thread')}
               </p>
               {comment?.url ? (
                 <a
-                  className="mt-1 inline-flex font-mono text-[10px] text-primary hover:text-primary-strong"
+                  className="mt-1 inline-flex font-mono text-[10px] text-primary hover:text-primary-strong focus:outline-none focus:ring-1 focus:ring-primary"
                   href={comment.url}
                   rel="noreferrer"
                   target="_blank"
@@ -271,6 +281,25 @@ function prDetail(pr: GitHubPullRequest, summary: DiffSummary | undefined) {
 
 function summaryLabel(summary: DiffSummary) {
   return `+${summary.additions} -${summary.deletions}`;
+}
+
+function reviewFileStats(files: DiffFilePatch[]) {
+  return {
+    binary: files.filter((file) => file.binary).length,
+    truncated: files.filter((file) => file.truncated).length,
+  };
+}
+
+function reviewCommentPreview(value: string) {
+  const preview = value
+    .split(/\n\s*Useful\? React with/i)[0]
+    .replace(/!\[[^\]]*]\([^)]+\)/g, '')
+    .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
+    .replace(/<\/?[^>]+>/g, '')
+    .replace(/[*_`>#]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return preview || 'Review thread';
 }
 
 function checkLabel(pr: GitHubPullRequest) {

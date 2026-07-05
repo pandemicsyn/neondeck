@@ -1,6 +1,6 @@
 import { useFlueClient } from '@flue/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useId, useState } from 'react';
 import {
   getGitHubPullRequests,
   getRepoRegistry,
@@ -126,6 +126,7 @@ function PrRow({
   repoId: string | undefined;
 }) {
   const [showReview, setShowReview] = useState(false);
+  const reviewPanelId = useId();
 
   return (
     <li key={item.url} className="pr-row px-3.5 py-2 last:border-b-0">
@@ -160,6 +161,8 @@ function PrRow({
         <div className="mt-1.5 flex justify-end gap-1.5 font-mono text-[10px]">
           <Button
             className="min-h-[28px] shrink-0 border-line bg-transparent px-2 py-1 text-[10px] text-muted"
+            aria-controls={showReview ? reviewPanelId : undefined}
+            aria-expanded={showReview}
             onClick={() => setShowReview((value) => !value)}
             type="button"
           >
@@ -184,7 +187,7 @@ function PrRow({
           />
           <WatchPrButton item={item} />
           <a
-            className="inline-flex min-h-[28px] shrink-0 items-center border border-line px-2 py-1 text-muted hover:border-primary hover:text-primary"
+            className="inline-flex min-h-[28px] shrink-0 items-center border border-line px-2 py-1 text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
             href={item.url}
             rel="noreferrer"
             target="_blank"
@@ -193,7 +196,7 @@ function PrRow({
           </a>
         </div>
         {showReview ? (
-          <div className="mt-2">
+          <div className="mt-2" id={reviewPanelId}>
             <Suspense fallback={<MiniEmpty label="Loading PR review." />}>
               <GitHubPrReview pr={item} />
             </Suspense>
