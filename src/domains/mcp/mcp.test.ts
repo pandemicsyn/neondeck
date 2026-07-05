@@ -38,6 +38,7 @@ import { createMcpRoutes } from '../../server/routes/mcp';
 import {
   createChatSession,
   listChatSessionCommandEvents,
+  setApprovalNudgeDispatchForTests,
   type ChatSessionRecord,
 } from '../../modules/sessions';
 
@@ -88,6 +89,8 @@ describe('MCP support', () => {
     const home = await tempDir();
     const paths = runtimePaths(home);
     await ensureRuntimeHome(paths);
+    const session = await createChatSession({ title: 'MCP gate' }, paths);
+    const sessionId = (session as { session: ChatSessionRecord }).session.id;
 
     const fixture = fileURLToPath(
       new URL('./fixtures/stdio-server.mjs', import.meta.url),
@@ -128,16 +131,32 @@ describe('MCP support', () => {
 
     const approvals = await listMcpApprovals(paths);
     expect(approvals).toHaveLength(1);
-    await expect(
-      resolveMcpApprovalWithPaths(
-        {
-          id: approvals[0].id,
-          decision: 'approve',
-          approverSurface: 'test',
-        },
-        paths,
-      ),
-    ).resolves.toMatchObject({ ok: true, changed: true });
+    expect(approvals[0]).toMatchObject({ sessionId });
+    const restoreDispatch = setApprovalNudgeDispatchForTests(async (input) => {
+      expect(input).toMatchObject({
+        agent: 'display-assistant',
+        id: sessionId,
+      });
+      expect(input.input).toContain(`approval ${approvals[0].id} approved`);
+      return {
+        dispatchId: 'dispatch-mcp-gate-approval',
+        acceptedAt: new Date().toISOString(),
+      };
+    });
+    try {
+      await expect(
+        resolveMcpApprovalWithPaths(
+          {
+            id: approvals[0].id,
+            decision: 'approve',
+            approverSurface: 'test',
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({ ok: true, changed: true });
+    } finally {
+      restoreDispatch();
+    }
 
     const second = await echo!.run({
       input: { text: 'hello' },
@@ -455,14 +474,29 @@ describe('MCP support', () => {
       },
       paths,
     );
-    await resolveMcpApprovalWithPaths(
-      {
-        id: request!.id,
-        decision: 'approve',
-        approverSurface: 'test',
-      },
-      paths,
-    );
+    const restoreDispatch = setApprovalNudgeDispatchForTests(async (input) => {
+      expect(input).toMatchObject({
+        agent: 'display-assistant',
+        id: sessionId,
+      });
+      expect(input.input).toContain(`approval ${request!.id} approved`);
+      return {
+        dispatchId: 'dispatch-mcp-approval',
+        acceptedAt: new Date().toISOString(),
+      };
+    });
+    try {
+      await resolveMcpApprovalWithPaths(
+        {
+          id: request!.id,
+          decision: 'approve',
+          approverSurface: 'test',
+        },
+        paths,
+      );
+    } finally {
+      restoreDispatch();
+    }
     await expect(
       listChatSessionCommandEvents({ sessionId }, paths),
     ).resolves.toMatchObject({

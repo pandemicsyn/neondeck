@@ -1,3 +1,4 @@
+import { dispatch, type DispatchReceipt } from '@flue/runtime';
 import { addNotification } from '../app-state';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 import {
@@ -6,6 +7,24 @@ import {
 } from './service';
 
 export type ApprovalNudgeDecision = 'approved' | 'denied';
+type ApprovalNudgeDispatch = (input: {
+  agent: 'display-assistant';
+  id: string;
+  input: string;
+}) => Promise<DispatchReceipt>;
+
+let approvalNudgeDispatch: ApprovalNudgeDispatch = (input) =>
+  dispatch(input) as Promise<DispatchReceipt>;
+
+export function setApprovalNudgeDispatchForTests(
+  dispatchFn: ApprovalNudgeDispatch,
+) {
+  const previous = approvalNudgeDispatch;
+  approvalNudgeDispatch = dispatchFn;
+  return () => {
+    approvalNudgeDispatch = previous;
+  };
+}
 
 export async function createApprovalResolutionNudge(
   input: {
@@ -28,6 +47,14 @@ export async function createApprovalResolutionNudge(
       ? `${label} approval ${input.approvalId} approved for ${input.subject}. ${input.retryInstruction}`
       : `${label} approval ${input.approvalId} denied for ${input.subject}. Do not retry unless the user changes the decision.`;
   const errors: string[] = [];
+  const dispatchReceipt = await approvalNudgeDispatch({
+    agent: 'display-assistant',
+    id: input.sessionId,
+    input: message,
+  }).catch((error) => {
+    errors.push(error instanceof Error ? error.message : String(error));
+    return null;
+  });
   const created = await createChatSessionCommandEvent(
     {
       sessionId: input.sessionId,
@@ -41,19 +68,23 @@ export async function createApprovalResolutionNudge(
   });
 
   if (created?.ok && 'event' in created && created.event) {
+    const eventStatus = dispatchReceipt ? 'completed' : 'failed';
     await updateChatSessionCommandEvent(
       {
         sessionId: input.sessionId,
         eventId: created.event.id,
-        status: 'completed',
+        status: eventStatus,
         completedAt: new Date().toISOString(),
         reason: `${input.family}_approval_${input.decision}`,
         result: {
-          ok: true,
-          command: 'dev-doctor',
+          ok: Boolean(dispatchReceipt),
+          command: 'approval-nudge',
           input: message,
-          status: 'completed',
-          message,
+          status: dispatchReceipt ? 'completed' : 'failed',
+          message: dispatchReceipt
+            ? `${message} Flue accepted the answer for delivery.`
+            : `${message} Flue dispatch did not accept the answer; use the approval row to retry manually.`,
+          dispatchReceipt,
         },
       },
       paths,

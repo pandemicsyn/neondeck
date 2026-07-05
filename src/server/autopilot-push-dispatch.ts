@@ -62,46 +62,21 @@ async function dispatchApprovedPreparedDiffPush(
       ? verifyThenPushDispatch(preparedDiff)
       : pushDispatch(preparedDiff);
   const invokeWorkflow = dependencies.invokeWorkflow ?? invokeAutopilotWorkflow;
+  const approvalId = approval.approvals?.[0]?.id ?? null;
+  let receipt: WorkflowReceipt;
   try {
     process.env.NEONDECK_HOME = paths.home;
-    const receipt = await invokeWorkflow(dispatch.workflow, dispatch.input);
-    const workflowSummary = await addWorkflowSummary(
-      {
-        workflow: dispatch.workflow.replaceAll('-', '_'),
-        runId: receipt.runId,
-        status: 'pending',
-        summary: {
-          event: 'prepared_diff_push_approval_dispatch',
-          mode,
-          approvalId: approval.approvals?.[0]?.id ?? null,
-          preparedDiffId: preparedDiff.id,
-          worktreeId: preparedDiff.worktreeId,
-          repoId: preparedDiff.repoId,
-          repoFullName: preparedDiff.repoFullName,
-          prNumber: preparedDiff.prNumber,
-          workflow: dispatch.workflow,
-          input: dispatch.input,
-          dispatchedAt: new Date().toISOString(),
-        },
-      },
-      paths,
-    );
-
-    return withDispatchData(
-      approval,
-      {
-        mode,
-        status: 'dispatched',
-        workflow: dispatch.workflow,
-        runId: receipt.runId,
-        workflowSummaryId: workflowSummary.id,
-        message: dispatch.message,
-      },
-      dispatch.message,
-    );
+    receipt = await invokeWorkflow(dispatch.workflow, dispatch.input);
   } catch (error) {
     const message = errorMessage(error);
-    await recordDispatchFailure(preparedDiff, mode, dispatch, message, paths);
+    await recordDispatchFailure(
+      preparedDiff,
+      mode,
+      dispatch,
+      approvalId,
+      message,
+      paths,
+    );
     return {
       ...withDispatchData(
         approval,
@@ -117,6 +92,64 @@ async function dispatchApprovedPreparedDiffPush(
       errors: [message],
     };
   }
+
+  const workflowSummary = await addWorkflowSummary(
+    {
+      workflow: dispatch.workflow.replaceAll('-', '_'),
+      runId: receipt.runId,
+      status: 'pending',
+      summary: {
+        event: 'prepared_diff_push_approval_dispatch',
+        mode,
+        approvalId,
+        preparedDiffId: preparedDiff.id,
+        worktreeId: preparedDiff.worktreeId,
+        repoId: preparedDiff.repoId,
+        repoFullName: preparedDiff.repoFullName,
+        prNumber: preparedDiff.prNumber,
+        workflow: dispatch.workflow,
+        input: dispatch.input,
+        dispatchedAt: new Date().toISOString(),
+      },
+    },
+    paths,
+  ).catch(async (error) => {
+    const message = errorMessage(error);
+    await recordDispatchSummaryFailure(
+      preparedDiff,
+      mode,
+      dispatch,
+      approvalId,
+      receipt.runId,
+      message,
+      paths,
+    );
+    return null;
+  });
+
+  const summaryFailedMessage = workflowSummary
+    ? undefined
+    : ' Workflow summary recording failed; the workflow was still admitted.';
+  return {
+    ...withDispatchData(
+      approval,
+      {
+        mode,
+        status: 'dispatched',
+        workflow: dispatch.workflow,
+        runId: receipt.runId,
+        workflowSummaryId: workflowSummary?.id ?? null,
+        message: `${dispatch.message}${summaryFailedMessage ?? ''}`,
+      },
+      `${dispatch.message}${summaryFailedMessage ?? ''}`,
+    ),
+    ...(workflowSummary
+      ? {}
+      : {
+          requires: ['workflowSummary'],
+          errors: [summaryFailedMessage!.trim()],
+        }),
+  };
 }
 
 function pushDispatch(preparedDiff: PreparedDiffRecord) {
@@ -165,6 +198,7 @@ async function recordDispatchFailure(
   preparedDiff: PreparedDiffRecord,
   mode: PushOnApprovalMode,
   dispatch: DispatchPlan,
+  approvalId: string | null,
   error: string,
   paths: RuntimePaths,
 ) {
@@ -175,6 +209,7 @@ async function recordDispatchFailure(
       summary: {
         event: 'prepared_diff_push_approval_dispatch',
         mode,
+        approvalId,
         preparedDiffId: preparedDiff.id,
         worktreeId: preparedDiff.worktreeId,
         repoId: preparedDiff.repoId,
@@ -196,9 +231,40 @@ async function recordDispatchFailure(
       source: 'autopilot',
       sourceId: `prepared-diff:${preparedDiff.id}:push-dispatch-failed`,
       data: {
+        approvalId,
         preparedDiffId: preparedDiff.id,
         worktreeId: preparedDiff.worktreeId,
         workflow: dispatch.workflow,
+        error,
+      },
+    },
+    paths,
+  ).catch(() => undefined);
+}
+
+async function recordDispatchSummaryFailure(
+  preparedDiff: PreparedDiffRecord,
+  mode: PushOnApprovalMode,
+  dispatch: DispatchPlan,
+  approvalId: string | null,
+  runId: string,
+  error: string,
+  paths: RuntimePaths,
+) {
+  await addNotification(
+    {
+      level: 'attention',
+      title: 'Push dispatch audit failed',
+      message: `Prepared diff ${preparedDiff.id} dispatched ${dispatch.workflow} (${runId}), but workflow summary recording failed: ${error}`,
+      source: 'autopilot',
+      sourceId: `prepared-diff:${preparedDiff.id}:push-dispatch-summary-failed:${runId}`,
+      data: {
+        mode,
+        approvalId,
+        preparedDiffId: preparedDiff.id,
+        worktreeId: preparedDiff.worktreeId,
+        workflow: dispatch.workflow,
+        runId,
         error,
       },
     },

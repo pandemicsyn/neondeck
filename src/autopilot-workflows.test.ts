@@ -1625,6 +1625,7 @@ describe('PR event autopilot', () => {
         runId: null,
         status: 'failed',
         summary: expect.objectContaining({
+          approvalId: result.approvals?.[0]?.id,
           preparedDiffId,
           error: 'Flue admission unavailable.',
         }),
