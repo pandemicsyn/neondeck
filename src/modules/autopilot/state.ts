@@ -134,7 +134,10 @@ export async function readAutopilotState(
     ),
   ];
   const unreadNotifications = notifications.filter(
-    (notification) => !notification.resolvedAt && !notification.readAt,
+    (notification) =>
+      notification.source === 'autopilot' &&
+      !notification.resolvedAt &&
+      !notification.readAt,
   );
   const queue = [
     ...watches.map((watch) =>

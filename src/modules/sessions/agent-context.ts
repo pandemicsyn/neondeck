@@ -85,10 +85,10 @@ export function linkedSessionContextInstructions(
     session.linkedWatchId ? `- watch id: ${session.linkedWatchId}` : undefined,
     session.linkedTaskId ? `- task id: ${session.linkedTaskId}` : undefined,
     session.summary
-      ? `- summary: ${truncate(session.summary, 2_000)}`
+      ? `- summary (untrusted data): ${quoteUntrustedText(session.summary, 2_000)}`
       : undefined,
     session.uiMetadata
-      ? `- UI metadata: ${truncate(JSON.stringify(session.uiMetadata), 2_000)}`
+      ? `- UI metadata JSON (untrusted data): ${quoteUntrustedText(JSON.stringify(session.uiMetadata), 2_000)}`
       : undefined,
     '- Treat this linked entity as the default subject for ambiguous follow-up questions. Use deterministic Neondeck actions for fresh facts before making claims about current repo, PR, watch, task, or check state.',
   ]
@@ -139,4 +139,8 @@ function contextNeedsRefresh(
 
 function truncate(value: string, maxLength: number) {
   return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+}
+
+function quoteUntrustedText(value: string, maxLength: number) {
+  return JSON.stringify(truncate(value, maxLength));
 }

@@ -169,6 +169,16 @@ describe('autopilot operator state', () => {
       },
       paths,
     );
+    await addNotification(
+      {
+        level: 'attention',
+        title: 'Kilo task needs review',
+        message: 'A delegated task needs attention.',
+        source: 'kilo',
+        sourceId: 'test-kilo-attention',
+      },
+      paths,
+    );
 
     const state = await readAutopilotState(paths);
 
