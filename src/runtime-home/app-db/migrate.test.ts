@@ -60,7 +60,7 @@ describe('app database migrator', () => {
     const databasePath = join(root, 'neondeck.db');
     const migrations = readAppDbMigrationFiles();
     const [baseline] = migrations;
-    initializeLegacyAppDatabase(databasePath);
+    initializePrePendingMigrationAppDatabase(databasePath);
 
     const result = applyAppDbMigrations(databasePath, {
       now: new Date('2026-07-04T12:00:00Z'),
@@ -80,6 +80,8 @@ describe('app database migrator', () => {
       expect(indexExists(stamped, 'idx_memories_scope_key_repo')).toBe(true);
       expect(indexExists(stamped, 'idx_memories_active_scope')).toBe(true);
       expect(indexExists(stamped, 'idx_memory_events_changed')).toBe(true);
+      expect(tableExists(stamped, 'pr_review_drafts')).toBe(true);
+      expect(tableExists(stamped, 'github_pr_file_cache')).toBe(true);
     } finally {
       stamped.close();
     }
@@ -88,7 +90,7 @@ describe('app database migrator', () => {
   it('repairs indexes after pre-v9 legacy table rebuild shims before stamping', async () => {
     const root = await tempDir();
     const databasePath = join(root, 'neondeck.db');
-    initializeLegacyAppDatabase(databasePath);
+    initializePrePendingMigrationAppDatabase(databasePath);
     const database = new DatabaseSync(databasePath);
     try {
       database.exec(`
@@ -104,6 +106,11 @@ describe('app database migrator', () => {
     const result = applyAppDbMigrations(databasePath);
 
     expect(result.stampedBaseline).toBe(true);
+    expect(result.applied).toEqual(
+      readAppDbMigrationFiles()
+        .slice(1)
+        .map((migration) => migration.name),
+    );
     const stamped = new DatabaseSync(databasePath, { readOnly: true });
     try {
       expect(indexExists(stamped, 'idx_memories_scope_key_repo')).toBe(true);
@@ -118,7 +125,7 @@ describe('app database migrator', () => {
     const root = await tempDir();
     const databasePath = join(root, 'neondeck.db');
     const migrations = readAppDbMigrationFiles();
-    initializeLegacyAppDatabase(databasePath);
+    initializePrePendingMigrationAppDatabase(databasePath);
     const database = new DatabaseSync(databasePath);
     try {
       database.exec(`
@@ -356,6 +363,21 @@ async function tempDir() {
   const path = await mkdtemp(join(tmpdir(), 'neondeck-migrate-'));
   tempRoots.push(path);
   return path;
+}
+
+function initializePrePendingMigrationAppDatabase(path: string) {
+  initializeLegacyAppDatabase(path);
+  const database = new DatabaseSync(path);
+  try {
+    database.exec(`
+      DROP TABLE IF EXISTS github_pr_file_cache;
+      DROP TABLE IF EXISTS pr_review_draft_comments;
+      DROP TABLE IF EXISTS pr_review_drafts;
+      DROP TABLE IF EXISTS chat_session_command_events;
+    `);
+  } finally {
+    database.close();
+  }
 }
 
 async function copyMigrations(root: string) {

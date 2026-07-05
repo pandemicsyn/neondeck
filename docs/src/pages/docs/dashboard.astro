@@ -73,9 +73,13 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           diffs, skill patches, Kilo tasks, repo-edit events, and GitHub PR rows
           can open a syntax-highlighted file diff view with a searchable file
           tree on wide layouts and a compact file selector on narrow layouts.
-          GitHub PR review threads are read-only in this surface; comment,
-          approval, and push actions continue to go through the existing typed
-          workflow controls.
+          GitHub PRs can also be reviewed from this view: select lines to draft
+          inline review comments, reply to or resolve existing review threads,
+          and submit one review with Comment, Approve, or Request changes. Draft
+          comments survive reloads and stale anchors are skipped until the human
+          re-anchors them. These review actions are dashboard-only controls;
+          Neon does not get a model-callable action or tool for submitting PR
+          reviews, verdicts, thread replies, or thread resolution.
         </p>
         <p>
           Work rows can open linked chat sessions without a side-by-side chat

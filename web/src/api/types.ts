@@ -165,7 +165,102 @@ export type GitHubPullRequestReviewThread = {
   line: number | null;
   originalLine?: number | null;
   diffSide?: string | null;
+  pullRequestRepo?: string | null;
+  pullRequestNumber?: number | null;
   comments: GitHubPullRequestReviewThreadComment[];
+};
+
+export type GitHubPrReviewVerdict = 'comment' | 'approve' | 'request-changes';
+
+export type GitHubPrReviewDraftComment = {
+  id: string;
+  draftId: string;
+  path: string;
+  side: 'RIGHT' | 'LEFT';
+  line: number;
+  startLine: number | null;
+  startSide: 'RIGHT' | 'LEFT' | null;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GitHubPrReviewDraft = {
+  id: string;
+  repo: string;
+  prNumber: number;
+  headSha: string;
+  verdict: GitHubPrReviewVerdict | null;
+  body: string | null;
+  status: 'draft' | 'submitted' | 'discarded';
+  createdAt: string;
+  updatedAt: string;
+  submittedAt: string | null;
+  comments: GitHubPrReviewDraftComment[];
+};
+
+export type GitHubSubmittedPullRequestReview = {
+  id: number;
+  nodeId: string | null;
+  state: string;
+  authorLogin: string | null;
+  submittedAt: string | null;
+  commitId: string | null;
+  url: string | null;
+  body: string | null;
+};
+
+export type GitHubPrReviewDraftResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  data?: {
+    target?: {
+      repoFullName: string;
+      owner: string;
+      repo: string;
+      number: number;
+      watchId?: string | null;
+    };
+    draft: GitHubPrReviewDraft | null;
+  };
+  requires?: string[];
+  errors?: string[];
+};
+
+export type GitHubPrReviewSubmitResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  data?: {
+    code?: string;
+    failingCommentIds?: string[];
+    target?: {
+      repoFullName: string;
+      owner: string;
+      repo: string;
+      number: number;
+      watchId?: string | null;
+    };
+    draft?: GitHubPrReviewDraft;
+    review?: GitHubSubmittedPullRequestReview;
+  };
+  requires?: string[];
+  errors?: string[];
+};
+
+export type GitHubPrThreadMutationResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  data?: {
+    thread?: GitHubPullRequestReviewThread;
+  };
+  requires?: string[];
+  errors?: string[];
 };
 
 export type GitHubPrReviewThreadsResponse = {

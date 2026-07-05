@@ -768,6 +768,60 @@ export const entries: SafetyPolicyEntry[] = [
     'Local API route for fetching read-only PR file patches with the server-side GitHub token.',
   ),
   route(
+    '/api/github/prs/:owner/:repo/:number/review-draft',
+    'Manage PR review draft API',
+    {
+      ...safeMutation,
+      auditTarget: 'pr_review_drafts/pr_review_draft_comments',
+    },
+    'User-surface-only local API for reading, saving, and discarding durable PR review drafts. This route is not registered as a model-callable action or tool.',
+  ),
+  route(
+    '/api/github/prs/:owner/:repo/:number/review-draft/comments',
+    'Create PR review draft comment API',
+    {
+      ...safeMutation,
+      auditTarget: 'pr_review_drafts/pr_review_draft_comments',
+    },
+    'User-surface-only local API for saving inline PR review draft comments in app DB only.',
+  ),
+  route(
+    '/api/github/prs/:owner/:repo/:number/review-draft/comments/:id',
+    'Update PR review draft comment API',
+    {
+      ...safeMutation,
+      auditTarget: 'pr_review_drafts/pr_review_draft_comments',
+    },
+    'User-surface-only local API for editing or deleting app-DB PR review draft comments.',
+  ),
+  route(
+    '/api/github/prs/:owner/:repo/:number/reviews',
+    'Submit PR review API',
+    {
+      ...safeMutation,
+      auditTarget: 'workflow_summaries/GitHub',
+    },
+    'User-surface-only local API for submitting a human-authored GitHub PR review with inline comments and a verdict. Neon has no action or tool path to this route.',
+  ),
+  route(
+    '/api/github/prs/:owner/:repo/:number/review-threads/:threadId/reply',
+    'Reply to PR review thread API',
+    unauditedSafeMutation,
+    'User-surface-only local API for posting an immediate human-authored reply to an existing GitHub review thread after verifying it belongs to the route PR. Thread replies are visible on GitHub and are not individually audited.',
+  ),
+  route(
+    '/api/github/prs/:owner/:repo/:number/review-threads/:threadId/resolve',
+    'Resolve PR review thread API',
+    unauditedSafeMutation,
+    'User-surface-only local API for resolving an existing GitHub review thread after verifying it belongs to the route PR. Resolution is user-owned and not model-callable.',
+  ),
+  route(
+    '/api/github/prs/:owner/:repo/:number/review-threads/:threadId/unresolve',
+    'Unresolve PR review thread API',
+    unauditedSafeMutation,
+    'User-surface-only local API for unresolving an existing GitHub review thread after verifying it belongs to the route PR. Resolution is user-owned and not model-callable.',
+  ),
+  route(
     '/api/github/prs/comment',
     'Post PR comment API',
     unauditedSafeMutation,

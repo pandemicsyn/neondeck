@@ -271,6 +271,71 @@ export const workflowSummaries = sqliteTable('workflow_summaries', {
   updatedAt: text('updated_at').notNull(),
 });
 
+export const prReviewDrafts = sqliteTable(
+  'pr_review_drafts',
+  {
+    id: text('id').primaryKey(),
+    repo: text('repo').notNull(),
+    prNumber: integer('pr_number').notNull(),
+    headSha: text('head_sha').notNull(),
+    verdict: text('verdict'),
+    body: text('body'),
+    status: text('status').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    submittedAt: text('submitted_at'),
+  },
+  (table) => [
+    uniqueIndex('idx_pr_review_drafts_live')
+      .on(table.repo, table.prNumber)
+      .where(sql`${table.status} = 'draft'`),
+    index('idx_pr_review_drafts_pr').on(
+      table.repo,
+      table.prNumber,
+      sql`${table.updatedAt} DESC`,
+    ),
+  ],
+);
+
+export const prReviewDraftComments = sqliteTable(
+  'pr_review_draft_comments',
+  {
+    id: text('id').primaryKey(),
+    draftId: text('draft_id')
+      .notNull()
+      .references(() => prReviewDrafts.id),
+    path: text('path').notNull(),
+    side: text('side').notNull(),
+    line: integer('line').notNull(),
+    startLine: integer('start_line'),
+    startSide: text('start_side'),
+    body: text('body').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_pr_review_draft_comments_draft').on(
+      table.draftId,
+      sql`${table.createdAt} ASC`,
+    ),
+  ],
+);
+
+export const githubPrFileCache = sqliteTable(
+  'github_pr_file_cache',
+  {
+    repo: text('repo').notNull(),
+    prNumber: integer('pr_number').notNull(),
+    headSha: text('head_sha').notNull(),
+    payload: text('payload').notNull(),
+    byteSize: integer('byte_size').notNull(),
+    fetchedAt: text('fetched_at').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.repo, table.prNumber, table.headSha] }),
+  ],
+);
+
 export const workflowEvents = sqliteTable(
   'workflow_events',
   {

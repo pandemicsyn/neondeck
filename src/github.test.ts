@@ -1,5 +1,9 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  addPrReviewDraftComment,
   buildPullRequestQueries,
   clearGitHubPullRequestQueueCache,
   fetchFailingCheckFacts,
@@ -8,15 +12,31 @@ import {
   fetchPullRequestReviewThreads,
   fetchPullRequestQueue,
   postPullRequestComment,
+  readLivePrReviewDraft,
+  deletePrReviewDraftComment,
+  replyToPullRequestReviewThread,
+  resolvePullRequestReviewThread,
+  submitPullRequestReview,
+  unresolvePullRequestReviewThread,
+  updatePrReviewDraftComment,
+  upsertPrReviewDraft,
 } from './modules/github';
+import { listWorkflowSummaries } from './modules/app-state/workflow-summaries';
 import type { RepoConfig } from './runtime-home';
+import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 
 const originalFetch = globalThis.fetch;
+const tempRoots: string[] = [];
 
-afterEach(() => {
+afterEach(async () => {
   globalThis.fetch = originalFetch;
   clearGitHubPullRequestQueueCache();
   vi.restoreAllMocks();
+  await Promise.all(
+    tempRoots
+      .splice(0)
+      .map((path) => rm(path, { recursive: true, force: true })),
+  );
 });
 
 describe('github foundation', () => {
@@ -738,6 +758,383 @@ describe('github foundation', () => {
     expect(fetchedUrls[1]).toContain('page=2');
   });
 
+  it('persists one live PR review draft and edits draft comments', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+
+    const first = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head123',
+      body: ' First pass ',
+    });
+    const second = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head456',
+      verdict: 'request-changes',
+      body: 'Needs changes',
+    });
+
+    expect(second.id).toBe(first.id);
+    expect(second).toMatchObject({
+      headSha: 'head456',
+      verdict: 'request-changes',
+      body: 'Needs changes',
+      comments: [],
+    });
+
+    const withComment = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: second.id,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 12,
+      body: ' Add a null guard. ',
+    });
+    const commentId = withComment.comments[0]?.id;
+    expect(commentId).toEqual(expect.any(String));
+    expect(withComment.comments[0]).toMatchObject({
+      body: 'Add a null guard.',
+      side: 'RIGHT',
+      line: 12,
+    });
+
+    const updated = updatePrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      commentId: commentId ?? '',
+      body: 'Prefer an early return.',
+    });
+    expect(updated.comments[0]).toMatchObject({
+      id: commentId,
+      body: 'Prefer an early return.',
+    });
+
+    const deleted = deletePrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      commentId: commentId ?? '',
+    });
+    expect(deleted.comments).toEqual([]);
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 123,
+      })?.id,
+    ).toBe(first.id);
+  });
+
+  it('submits review drafts with modern GitHub line anchors and writes an audit row', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const draft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head123',
+      verdict: 'request-changes',
+      body: ' Please address these. ',
+    });
+    let saved = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 12,
+      body: 'Right side comment.',
+    });
+    saved = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      path: 'src/app.ts',
+      side: 'LEFT',
+      line: 4,
+      body: 'Left side comment.',
+    });
+    saved = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      path: 'src/renamed.ts',
+      side: 'RIGHT',
+      line: 22,
+      startLine: 20,
+      startSide: 'RIGHT',
+      body: 'Range on renamed path.',
+    });
+    const right = saved.comments.find(
+      (comment) => comment.body === 'Right side comment.',
+    );
+    const range = saved.comments.find(
+      (comment) => comment.body === 'Range on renamed path.',
+    );
+    expect(right?.id).toEqual(expect.any(String));
+    expect(range?.id).toEqual(expect.any(String));
+
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    globalThis.fetch = vi.fn<typeof fetch>(async (input, init) => {
+      requests.push({ url: String(input), init });
+      return jsonResponse({
+        id: 9001,
+        node_id: 'review-node-9001',
+        state: 'CHANGES_REQUESTED',
+        user: { login: 'neon' },
+        submitted_at: '2026-07-05T14:00:00Z',
+        commit_id: 'head123',
+        html_url:
+          'https://github.com/pandemicsyn/neondeck/pull/123#pullrequestreview-9001',
+        body: 'Please address these.',
+      });
+    });
+
+    const result = await submitPullRequestReview({
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+      databasePath: paths.neondeckDatabase,
+      paths,
+      draftId: draft.id,
+      headSha: 'head123',
+      commentIds: [right?.id ?? '', range?.id ?? ''],
+    });
+
+    expect(result.draft).toMatchObject({
+      id: draft.id,
+      status: 'submitted',
+      submittedAt: expect.any(String),
+    });
+    expect(result.review).toMatchObject({
+      id: 9001,
+      state: 'CHANGES_REQUESTED',
+      body: 'Please address these.',
+    });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      url: 'https://api.github.com/repos/pandemicsyn/neondeck/pulls/123/reviews',
+      init: { method: 'POST' },
+    });
+    const payload = JSON.parse(String(requests[0]?.init?.body)) as Record<
+      string,
+      unknown
+    >;
+    expect(payload).toEqual({
+      commit_id: 'head123',
+      event: 'REQUEST_CHANGES',
+      body: 'Please address these.',
+      comments: [
+        {
+          path: 'src/app.ts',
+          side: 'RIGHT',
+          line: 12,
+          body: 'Right side comment.',
+        },
+        {
+          path: 'src/renamed.ts',
+          side: 'RIGHT',
+          line: 22,
+          start_line: 20,
+          start_side: 'RIGHT',
+          body: 'Range on renamed path.',
+        },
+      ],
+    });
+    expect(JSON.stringify(payload)).not.toContain('position');
+
+    await expect(listWorkflowSummaries(paths)).resolves.toEqual([
+      expect.objectContaining({
+        workflow: 'github_pr_review',
+        status: 'submitted',
+        summary: expect.objectContaining({
+          repo: 'pandemicsyn/neondeck',
+          prNumber: 123,
+          verdict: 'request-changes',
+          commentCount: 2,
+          skippedCommentCount: 1,
+          reviewUrl:
+            'https://github.com/pandemicsyn/neondeck/pull/123#pullrequestreview-9001',
+          headSha: 'head123',
+        }),
+      }),
+    ]);
+  });
+
+  it('rejects stale review drafts before posting to GitHub', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const draft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head123',
+      verdict: 'request-changes',
+      body: 'Body',
+    });
+    const withComment = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 12,
+      body: 'Comment.',
+    });
+    globalThis.fetch = vi.fn<typeof fetch>();
+
+    await expect(
+      submitPullRequestReview({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+        databasePath: paths.neondeckDatabase,
+        paths,
+        draftId: draft.id,
+        headSha: 'head456',
+      }),
+    ).rejects.toMatchObject({
+      failure: {
+        code: 'stale-draft',
+        failingCommentIds: [withComment.comments[0]?.id],
+      },
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('keeps failed GitHub review submissions as live drafts with failing comment ids', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const draft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head123',
+      verdict: 'comment',
+      body: 'Body',
+    });
+    const withComment = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 12,
+      body: 'Comment.',
+    });
+    const commentId = withComment.comments[0]?.id;
+    globalThis.fetch = vi.fn<typeof fetch>(async () =>
+      jsonResponse({ message: 'Validation failed' }, 422),
+    );
+
+    await expect(
+      submitPullRequestReview({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+        databasePath: paths.neondeckDatabase,
+        paths,
+        draftId: draft.id,
+        headSha: 'head123',
+      }),
+    ).rejects.toMatchObject({
+      failure: {
+        code: 'github-review-submit-failed',
+        failingCommentIds: [commentId],
+      },
+    });
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 123,
+      }),
+    ).toMatchObject({ id: draft.id, status: 'draft' });
+  });
+
+  it('replies to and resolves review threads through GitHub GraphQL', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    globalThis.fetch = vi.fn<typeof fetch>(async (_input, init) => {
+      const body =
+        typeof init?.body === 'string'
+          ? (JSON.parse(init.body) as Record<string, unknown>)
+          : {};
+      bodies.push(body);
+      const query = String(body.query ?? '');
+      if (query.includes('addPullRequestReviewThreadReply')) {
+        return jsonResponse({
+          data: { addPullRequestReviewThreadReply: { comment: { id: 'c2' } } },
+        });
+      }
+      if (query.includes('unresolveReviewThread')) {
+        return jsonResponse({
+          data: { unresolveReviewThread: { thread: { id: 'thread-1' } } },
+        });
+      }
+      if (query.includes('resolveReviewThread')) {
+        return jsonResponse({
+          data: { resolveReviewThread: { thread: { id: 'thread-1' } } },
+        });
+      }
+      return jsonResponse({
+        data: {
+          node: {
+            id: 'thread-1',
+            isResolved: true,
+            isOutdated: false,
+            path: 'src/app.ts',
+            line: 12,
+            originalLine: null,
+            diffSide: 'RIGHT',
+            comments: {
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes: [reviewThreadComment('comment-1', 1)],
+            },
+          },
+        },
+      });
+    });
+
+    await expect(
+      replyToPullRequestReviewThread({
+        token: 'token',
+        threadId: 'thread-1',
+        body: 'Thanks, fixed.',
+      }),
+    ).resolves.toMatchObject({
+      id: 'thread-1',
+      isResolved: true,
+      comments: [expect.objectContaining({ body: 'Comment 1' })],
+    });
+    await expect(
+      resolvePullRequestReviewThread({
+        token: 'token',
+        threadId: 'thread-1',
+      }),
+    ).resolves.toMatchObject({ id: 'thread-1', isResolved: true });
+    await expect(
+      unresolvePullRequestReviewThread({
+        token: 'token',
+        threadId: 'thread-1',
+      }),
+    ).resolves.toMatchObject({ id: 'thread-1', isResolved: true });
+
+    expect(
+      bodies
+        .map((body) => String(body.query ?? ''))
+        .filter((query) =>
+          query.includes('query NeondeckPullRequestReviewThread'),
+        ),
+    ).toHaveLength(3);
+    expect(bodies[0]).toMatchObject({
+      variables: { threadId: 'thread-1', body: 'Thanks, fixed.' },
+    });
+    expect(String(bodies[0]?.query)).toContain(
+      'addPullRequestReviewThreadReply',
+    );
+    expect(String(bodies[2]?.query)).toContain('resolveReviewThread');
+    expect(String(bodies[4]?.query)).toContain('unresolveReviewThread');
+  });
+
   it('posts PR comments through the GitHub issue-comments endpoint', async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     globalThis.fetch = vi.fn<typeof fetch>(async (input, init) => {
@@ -815,6 +1212,12 @@ function jsonResponse(
     status,
     headers: { 'Content-Type': 'application/json', ...headers },
   });
+}
+
+async function tempHome() {
+  const home = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
+  tempRoots.push(home);
+  return home;
 }
 
 function reviewThreadComment(id: string, databaseId: number) {
