@@ -5,6 +5,7 @@ import * as v from 'valibot';
 import {
   fetchPullRequestEventState,
   fetchPullRequestFiles,
+  fetchPullRequestReviewThread,
   replyToPullRequestReviewThread,
   resolvePullRequestReviewThread,
   submitPullRequestReview,
@@ -64,6 +65,13 @@ export type PullRequestTarget = {
 export type PrEventStateDependencies = {
   fetchPullRequestEventState?: typeof fetchPullRequestEventState;
   fetchPullRequestFiles?: typeof fetchPullRequestFiles;
+  fetchPullRequestHeadSha?: (options: {
+    token: string;
+    owner: string;
+    repo: string;
+    number: number;
+  }) => Promise<string | null | undefined>;
+  fetchPullRequestReviewThread?: typeof fetchPullRequestReviewThread;
   postPullRequestComment?: typeof postPullRequestComment;
   submitPullRequestReview?: typeof submitPullRequestReview;
   replyToPullRequestReviewThread?: typeof replyToPullRequestReviewThread;
@@ -88,6 +96,13 @@ export const prEventTargetInputSchema = v.object({
   ref: v.optional(nonEmptyStringSchema),
   repo: v.optional(nonEmptyStringSchema),
   prNumber: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+});
+export const prFilesInputSchema = v.object({
+  watchId: v.optional(nonEmptyStringSchema),
+  ref: v.optional(nonEmptyStringSchema),
+  repo: v.optional(nonEmptyStringSchema),
+  prNumber: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+  headSha: v.optional(v.nullable(nonEmptyStringSchema)),
 });
 export const prWatchEventWatermarkListInputSchema = v.object({
   watchId: v.optional(nonEmptyStringSchema),

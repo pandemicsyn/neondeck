@@ -321,6 +321,21 @@ export const prReviewDraftComments = sqliteTable(
   ],
 );
 
+export const githubPrFileCache = sqliteTable(
+  'github_pr_file_cache',
+  {
+    repo: text('repo').notNull(),
+    prNumber: integer('pr_number').notNull(),
+    headSha: text('head_sha').notNull(),
+    payload: text('payload').notNull(),
+    byteSize: integer('byte_size').notNull(),
+    fetchedAt: text('fetched_at').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.repo, table.prNumber, table.headSha] }),
+  ],
+);
+
 export const workflowEvents = sqliteTable(
   'workflow_events',
   {

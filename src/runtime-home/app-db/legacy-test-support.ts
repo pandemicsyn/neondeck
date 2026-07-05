@@ -198,6 +198,16 @@ export const appDatabaseSchemaSql = `
         FOREIGN KEY(draft_id) REFERENCES pr_review_drafts(id)
       );
 
+      CREATE TABLE IF NOT EXISTS github_pr_file_cache (
+        repo TEXT NOT NULL,
+        pr_number INTEGER NOT NULL,
+        head_sha TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        byte_size INTEGER NOT NULL,
+        fetched_at TEXT NOT NULL,
+        PRIMARY KEY(repo, pr_number, head_sha)
+      );
+
       CREATE TABLE IF NOT EXISTS workflow_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         run_id TEXT,

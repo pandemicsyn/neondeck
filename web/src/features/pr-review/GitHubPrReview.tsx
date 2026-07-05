@@ -95,6 +95,16 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
     [activePath, reviewThreads],
   );
   const fileStats = useMemo(() => reviewFileStats(files), [files]);
+  const isDraftMutationPending =
+    mutations.saveDraft.isPending ||
+    mutations.addComment.isPending ||
+    mutations.updateComment.isPending ||
+    mutations.deleteComment.isPending ||
+    mutations.submitReview.isPending ||
+    mutations.discardDraft.isPending;
+  const isThreadMutationPending =
+    mutations.replyToThread.isPending ||
+    mutations.setThreadResolution.isPending;
   const reviewBarStatusMessage =
     mutationErrorMessage(
       mutations.submitReview.error ??
@@ -158,40 +168,57 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
     event.preventDefault();
     if (!composer || composerBody.trim().length === 0) return;
     setStatusMessage(null);
-    const nextDraft = await ensureDraft();
-    await mutations.addComment.mutateAsync({
-      repo: pr.repo,
-      number: pr.number,
-      draftId: nextDraft.id,
-      path: composer.path,
-      ...commentInputFromSelection(composer.selection),
-      body: composerBody,
-    });
-    setComposer(null);
-    setComposerBody('');
-    setStatusMessage('Draft comment saved.');
+    try {
+      const nextDraft = await ensureDraft();
+      await mutations.addComment.mutateAsync({
+        repo: pr.repo,
+        number: pr.number,
+        draftId: nextDraft.id,
+        path: composer.path,
+        ...commentInputFromSelection(composer.selection),
+        body: composerBody,
+      });
+      setComposer(null);
+      setComposerBody('');
+      setStatusMessage('Draft comment saved.');
+    } catch {
+      // React Query owns the visible error state.
+    }
   };
   const submitEdit = async (event: FormEvent) => {
     event.preventDefault();
     if (!editingCommentId || editingBody.trim().length === 0) return;
     setStatusMessage(null);
-    await mutations.updateComment.mutateAsync({
-      repo: pr.repo,
-      number: pr.number,
-      id: editingCommentId,
-      body: editingBody,
-    });
-    setEditingCommentId(null);
-    setEditingBody('');
+    try {
+      await mutations.updateComment.mutateAsync({
+        repo: pr.repo,
+        number: pr.number,
+        id: editingCommentId,
+        body: editingBody,
+      });
+      setEditingCommentId(null);
+      setEditingBody('');
+    } catch {
+      // React Query owns the visible error state.
+    }
   };
   const submitReply = async (threadId: string, event: FormEvent) => {
     event.preventDefault();
     if (replyBody.trim().length === 0) return;
     setStatusMessage(null);
-    await mutations.replyToThread.mutateAsync({ threadId, text: replyBody });
-    setReplyingThreadId(null);
-    setReplyBody('');
-    setStatusMessage('Thread reply posted.');
+    try {
+      await mutations.replyToThread.mutateAsync({
+        repo: pr.repo,
+        number: pr.number,
+        threadId,
+        text: replyBody,
+      });
+      setReplyingThreadId(null);
+      setReplyBody('');
+      setStatusMessage('Thread reply posted.');
+    } catch {
+      // React Query owns the visible error state.
+    }
   };
   const renderAnnotation = (annotation: DiffReviewAnnotation) => {
     const metadata = annotation.metadata;
@@ -220,7 +247,9 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
               }
               type="submit"
             >
-              Save
+              {mutations.addComment.isPending || mutations.saveDraft.isPending
+                ? 'Saving'
+                : 'Save'}
             </button>
             <button
               onClick={() => {
@@ -245,12 +274,14 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
           data-neondeck-review-annotation=""
         >
           <div data-neondeck-review-annotation-title="">
-            <span>{metadata.isStale ? 'stale draft' : 'draft'}</span>
-            <span>{metadata.title}</span>
+            <span>
+              {metadata.isStale ? 'stale draft' : 'draft'} · {metadata.title}
+            </span>
           </div>
           {isEditing ? (
             <form className="pr-review-composer" onSubmit={submitEdit}>
               <textarea
+                aria-label="Edit draft review comment"
                 onChange={(event) => setEditingBody(event.currentTarget.value)}
                 value={editingBody}
               />
@@ -262,7 +293,7 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
                   }
                   type="submit"
                 >
-                  Save
+                  {mutations.updateComment.isPending ? 'Saving' : 'Save'}
                 </button>
                 <button
                   onClick={() => {
@@ -300,7 +331,7 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
                   }}
                   type="button"
                 >
-                  Delete
+                  {mutations.deleteComment.isPending ? 'Deleting' : 'Delete'}
                 </button>
               </div>
             </>
@@ -311,13 +342,15 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
 
     const thread = reviewThreads.find((item) => item.id === metadata.id);
     const isReplying = replyingThreadId === metadata.id;
+    const threadAuthorLabel = metadata.authorLogin
+      ? `@${metadata.authorLogin}`
+      : 'review';
     return (
       <div data-neondeck-review-annotation="">
         <div data-neondeck-review-annotation-title="">
           <span>
-            {metadata.authorLogin ? `@${metadata.authorLogin}` : 'review'}
+            {threadAuthorLabel} · {metadata.title}
           </span>
-          <span>{metadata.title}</span>
         </div>
         <p>{metadata.body}</p>
         {isReplying ? (
@@ -326,6 +359,7 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
             onSubmit={(event) => submitReply(metadata.id, event)}
           >
             <textarea
+              aria-label="Reply to this thread"
               onChange={(event) => setReplyBody(event.currentTarget.value)}
               placeholder="Reply to this thread"
               value={replyBody}
@@ -338,7 +372,7 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
                 }
                 type="submit"
               >
-                Reply
+                {mutations.replyToThread.isPending ? 'Replying' : 'Reply'}
               </button>
               <button
                 onClick={() => {
@@ -368,13 +402,19 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
                 onClick={() => {
                   setStatusMessage(null);
                   mutations.setThreadResolution.mutate({
+                    repo: pr.repo,
+                    number: pr.number,
                     threadId: thread.id,
                     resolved: !thread.isResolved,
                   });
                 }}
                 type="button"
               >
-                {thread.isResolved ? 'Unresolve' : 'Resolve'}
+                {mutations.setThreadResolution.isPending
+                  ? 'Updating'
+                  : thread.isResolved
+                    ? 'Unresolve'
+                    : 'Resolve'}
               </button>
             ) : null}
             {metadata.url ? (
@@ -390,21 +430,25 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
   const submitReview = async () => {
     if (!currentHeadSha) return;
     setStatusMessage(null);
-    const savedDraft =
-      !draft ||
-      draft.body !== reviewBody ||
-      draft.verdict !== verdict ||
-      draft.headSha !== currentHeadSha
-        ? await saveDraft({ body: reviewBody, verdict })
-        : draft;
-    await mutations.submitReview.mutateAsync({
-      repo: pr.repo,
-      number: pr.number,
-      draftId: savedDraft.id,
-      headSha: currentHeadSha,
-      commentIds: cleanCommentIds,
-    });
-    setStatusMessage('Review submitted.');
+    try {
+      const savedDraft =
+        !draft ||
+        draft.body !== reviewBody ||
+        draft.verdict !== verdict ||
+        draft.headSha !== currentHeadSha
+          ? await saveDraft({ body: reviewBody, verdict })
+          : draft;
+      await mutations.submitReview.mutateAsync({
+        repo: pr.repo,
+        number: pr.number,
+        draftId: savedDraft.id,
+        headSha: currentHeadSha,
+        commentIds: cleanCommentIds,
+      });
+      setStatusMessage('Review submitted.');
+    } catch {
+      // React Query owns the visible error state.
+    }
   };
 
   return (
@@ -475,14 +519,11 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
       <ReviewBar
         cleanCommentCount={cleanCommentIds.length}
         draft={draft}
-        isBusy={
-          mutations.saveDraft.isPending ||
-          mutations.submitReview.isPending ||
-          mutations.discardDraft.isPending
-        }
+        isBusy={isDraftMutationPending || isThreadMutationPending}
+        isHeadAvailable={currentHeadSha.length > 0}
         onBodyBlur={() => {
           if (reviewBody.trim().length > 0 || draft) {
-            void saveDraft({ body: reviewBody });
+            void saveDraft({ body: reviewBody }).catch(() => undefined);
           }
         }}
         onBodyChange={setReviewBody}
@@ -497,8 +538,9 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
         onSubmit={submitReview}
         onVerdictChange={(next) => {
           setVerdict(next);
-          void saveDraft({ verdict: next });
+          void saveDraft({ verdict: next }).catch(() => undefined);
         }}
+        isSubmitting={mutations.submitReview.isPending}
         reviewBody={reviewBody}
         staleCommentCount={staleCommentIds.size}
         statusMessage={reviewBarStatusMessage}
@@ -665,6 +707,8 @@ function ReviewBar({
   cleanCommentCount,
   draft,
   isBusy,
+  isHeadAvailable,
+  isSubmitting,
   onBodyBlur,
   onBodyChange,
   onDiscard,
@@ -678,6 +722,8 @@ function ReviewBar({
   cleanCommentCount: number;
   draft: GitHubPrReviewDraft | null;
   isBusy: boolean;
+  isHeadAvailable: boolean;
+  isSubmitting: boolean;
   onBodyBlur: () => void;
   onBodyChange: (value: string) => void;
   onDiscard: () => void;
@@ -690,14 +736,14 @@ function ReviewBar({
 }) {
   const hasBody = reviewBody.trim().length > 0;
   const canSubmit =
-    !isBusy && (verdict === 'approve' || cleanCommentCount > 0 || hasBody);
+    isHeadAvailable &&
+    !isBusy &&
+    (verdict === 'approve' || cleanCommentCount > 0 || hasBody);
 
   return (
-    <aside className="pr-review-bar">
+    <aside aria-busy={isBusy} className="pr-review-bar">
       <div className="pr-review-bar-main">
-        <button className="pr-review-count" type="button">
-          {cleanCommentCount} pending
-        </button>
+        <span className="pr-review-count">{cleanCommentCount} pending</span>
         {staleCommentCount > 0 ? (
           <span className="pr-review-stale-count">
             {staleCommentCount} stale skipped
@@ -708,6 +754,7 @@ function ReviewBar({
           {(['comment', 'approve', 'request-changes'] as const).map((item) => (
             <button
               aria-pressed={verdict === item}
+              disabled={!isHeadAvailable || isBusy}
               key={item}
               onClick={() => onVerdictChange(item)}
               type="button"
@@ -722,20 +769,27 @@ function ReviewBar({
       </label>
       <textarea
         id="pr-review-summary-body"
+        disabled={!isHeadAvailable}
         onBlur={onBodyBlur}
         onChange={(event) => onBodyChange(event.currentTarget.value)}
-        placeholder="Review summary"
+        placeholder={
+          isHeadAvailable ? 'Review summary' : 'PR head SHA unavailable'
+        }
         value={reviewBody}
       />
       <div className="pr-review-bar-actions">
         <button disabled={!canSubmit} onClick={onSubmit} type="button">
-          Submit
+          {isSubmitting ? 'Submitting' : 'Submit'}
         </button>
         <button disabled={!draft || isBusy} onClick={onDiscard} type="button">
           Discard
         </button>
       </div>
-      {statusMessage ? <p>{statusMessage}</p> : null}
+      {statusMessage ? (
+        <p aria-live="polite" className="pr-review-bar-status">
+          {statusMessage}
+        </p>
+      ) : null}
     </aside>
   );
 }

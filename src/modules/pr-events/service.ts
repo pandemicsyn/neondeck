@@ -8,6 +8,8 @@ import {
   discardPrReviewDraft,
   fetchPullRequestEventState,
   fetchPullRequestFiles,
+  fetchPullRequestFilesWithCache,
+  fetchPullRequestReviewThread,
   GitHubPrReviewSubmitError,
   postPullRequestComment,
   readLivePrReviewDraft,
@@ -20,6 +22,7 @@ import {
   updatePrReviewDraftComment,
   upsertPrReviewDraft,
   type GitHubPullRequestEventState,
+  type GitHubPullRequestReviewThread,
 } from '../github';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import {
@@ -35,6 +38,7 @@ import {
 import {
   prCommentInputSchema,
   prEventTargetInputSchema,
+  prFilesInputSchema,
   prReviewDraftCommentInputSchema,
   prReviewDraftCommentUpdateInputSchema,
   prReviewDraftInputSchema,
@@ -126,12 +130,12 @@ export async function getGitHubPrReviewThreads(
 }
 
 export async function getGitHubPrFiles(
-  input: v.InferInput<typeof prEventTargetInputSchema>,
+  input: v.InferInput<typeof prFilesInputSchema>,
   paths: RuntimePaths = runtimePaths(),
   dependencies: PrEventStateDependencies = {},
 ): Promise<PrEventActionResult> {
   await ensureRuntimeHome(paths);
-  const parsed = v.safeParse(prEventTargetInputSchema, input);
+  const parsed = v.safeParse(prFilesInputSchema, input);
   if (!parsed.success) {
     return failResult('github_pr_files_get', 'Invalid PR files input.', {
       errors: [v.summarize(parsed.issues)],
@@ -150,7 +154,12 @@ export async function getGitHubPrFiles(
   }
 
   const resolved = await resolvePullRequestTarget(
-    parsed.output,
+    {
+      watchId: parsed.output.watchId,
+      ref: parsed.output.ref,
+      repo: parsed.output.repo,
+      prNumber: parsed.output.prNumber,
+    },
     paths,
     'github_pr_files_get',
   );
@@ -158,11 +167,15 @@ export async function getGitHubPrFiles(
 
   try {
     const fetcher = dependencies.fetchPullRequestFiles ?? fetchPullRequestFiles;
-    const diff = await fetcher({
+    const diff = await fetchPullRequestFilesWithCache({
       token,
       owner: resolved.target.owner,
       repo: resolved.target.repo,
       number: resolved.target.number,
+      headSha: parsed.output.headSha ?? null,
+      databasePath: paths.neondeckDatabase,
+      fetcher,
+      fetchHeadSha: dependencies.fetchPullRequestHeadSha,
     });
 
     return okResult(
@@ -594,32 +607,48 @@ function draftMatchesTarget(
 }
 
 export async function postGitHubPrThreadReply(
+  targetInput: v.InferInput<typeof prEventTargetInputSchema>,
   threadId: string,
   input: v.InferInput<typeof prReviewThreadReplyInputSchema>,
   paths: RuntimePaths = runtimePaths(),
   dependencies: PrEventStateDependencies = {},
 ): Promise<PrEventActionResult> {
   await ensureRuntimeHome(paths);
+  const action = 'github_pr_thread_reply_post';
+  const parsedTarget = v.safeParse(prEventTargetInputSchema, targetInput);
   const parsed = v.safeParse(prReviewThreadReplyInputSchema, input);
-  if (!threadId || !parsed.success) {
-    return failResult(
-      'github_pr_thread_reply_post',
-      'Invalid review thread reply input.',
-      {
-        errors: parsed.success ? undefined : [v.summarize(parsed.issues)],
-        requires: !threadId ? ['threadId'] : undefined,
-      },
-    );
+  if (!threadId || !parsedTarget.success || !parsed.success) {
+    return failResult(action, 'Invalid review thread reply input.', {
+      errors: [
+        ...(!parsedTarget.success ? [v.summarize(parsedTarget.issues)] : []),
+        ...(!parsed.success ? [v.summarize(parsed.issues)] : []),
+      ],
+      requires: !threadId ? ['threadId'] : undefined,
+    });
   }
 
   const token = dependencies.token ?? process.env.GITHUB_TOKEN;
   if (!token) {
-    return failResult(
-      'github_pr_thread_reply_post',
-      'GITHUB_TOKEN is not configured.',
-      { requires: ['GITHUB_TOKEN'] },
-    );
+    return failResult(action, 'GITHUB_TOKEN is not configured.', {
+      requires: ['GITHUB_TOKEN'],
+    });
   }
+
+  const resolved = await resolvePullRequestTarget(
+    parsedTarget.output,
+    paths,
+    action,
+  );
+  if (!resolved.ok) return resolved.result;
+
+  const verified = await verifyReviewThreadTarget({
+    action,
+    token,
+    threadId,
+    target: resolved.target,
+    dependencies,
+  });
+  if (!verified.ok) return verified.result;
 
   try {
     const replier =
@@ -630,52 +659,66 @@ export async function postGitHubPrThreadReply(
       threadId,
       body: parsed.output.text,
     });
-    return okResult(
-      'github_pr_thread_reply_post',
-      true,
-      'Posted review thread reply.',
-      { thread: thread as unknown as JsonValue },
-    );
+    return okResult(action, true, 'Posted review thread reply.', {
+      thread: thread as unknown as JsonValue,
+    });
   } catch (error) {
-    return failResult(
-      'github_pr_thread_reply_post',
-      'Could not post review thread reply.',
-      { errors: [errorMessage(error)] },
-    );
+    return failResult(action, 'Could not post review thread reply.', {
+      errors: [errorMessage(error)],
+    });
   }
 }
 
 export async function postGitHubPrThreadResolution(
+  targetInput: v.InferInput<typeof prEventTargetInputSchema>,
   threadId: string,
   resolved: boolean,
   paths: RuntimePaths = runtimePaths(),
   dependencies: PrEventStateDependencies = {},
 ): Promise<PrEventActionResult> {
   await ensureRuntimeHome(paths);
-  if (!threadId) {
+  const action = resolved
+    ? 'github_pr_thread_resolve_post'
+    : 'github_pr_thread_unresolve_post';
+  const parsedTarget = v.safeParse(prEventTargetInputSchema, targetInput);
+  if (!threadId || !parsedTarget.success) {
     return failResult(
-      resolved
-        ? 'github_pr_thread_resolve_post'
-        : 'github_pr_thread_unresolve_post',
-      'Review thread id is required.',
-      { requires: ['threadId'] },
+      action,
+      !threadId
+        ? 'Review thread id is required.'
+        : 'Invalid review thread target input.',
+      {
+        errors: parsedTarget.success
+          ? undefined
+          : [v.summarize(parsedTarget.issues)],
+        requires: !threadId ? ['threadId'] : undefined,
+      },
     );
   }
 
   const token = dependencies.token ?? process.env.GITHUB_TOKEN;
   if (!token) {
-    return failResult(
-      resolved
-        ? 'github_pr_thread_resolve_post'
-        : 'github_pr_thread_unresolve_post',
-      'GITHUB_TOKEN is not configured.',
-      { requires: ['GITHUB_TOKEN'] },
-    );
+    return failResult(action, 'GITHUB_TOKEN is not configured.', {
+      requires: ['GITHUB_TOKEN'],
+    });
   }
 
-  const action = resolved
-    ? 'github_pr_thread_resolve_post'
-    : 'github_pr_thread_unresolve_post';
+  const target = await resolvePullRequestTarget(
+    parsedTarget.output,
+    paths,
+    action,
+  );
+  if (!target.ok) return target.result;
+
+  const verified = await verifyReviewThreadTarget({
+    action,
+    token,
+    threadId,
+    target: target.target,
+    dependencies,
+  });
+  if (!verified.ok) return verified.result;
+
   try {
     const mutator = resolved
       ? (dependencies.resolvePullRequestReviewThread ??
@@ -698,6 +741,58 @@ export async function postGitHubPrThreadResolution(
       { errors: [errorMessage(error)] },
     );
   }
+}
+
+async function verifyReviewThreadTarget(options: {
+  action: string;
+  token: string;
+  threadId: string;
+  target: PullRequestTarget;
+  dependencies: PrEventStateDependencies;
+}): Promise<
+  | { ok: true; thread: GitHubPullRequestReviewThread }
+  | { ok: false; result: PrEventActionResult }
+> {
+  try {
+    const fetcher =
+      options.dependencies.fetchPullRequestReviewThread ??
+      fetchPullRequestReviewThread;
+    const thread = await fetcher({
+      token: options.token,
+      threadId: options.threadId,
+    });
+    if (!reviewThreadBelongsToTarget(thread, options.target)) {
+      return {
+        ok: false,
+        result: failResult(
+          options.action,
+          'Review thread does not belong to this pull request.',
+          { requires: ['threadId'] },
+        ),
+      };
+    }
+    return { ok: true, thread };
+  } catch (error) {
+    return {
+      ok: false,
+      result: failResult(
+        options.action,
+        'Could not verify review thread target.',
+        { errors: [errorMessage(error)] },
+      ),
+    };
+  }
+}
+
+function reviewThreadBelongsToTarget(
+  thread: GitHubPullRequestReviewThread,
+  target: PullRequestTarget,
+) {
+  return (
+    thread.pullRequestRepo?.toLowerCase() ===
+      target.repoFullName.toLowerCase() &&
+    thread.pullRequestNumber === target.number
+  );
 }
 
 export async function getGitHubPrRequestedChanges(

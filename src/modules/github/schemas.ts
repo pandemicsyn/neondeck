@@ -110,6 +110,24 @@ export type GitHubPullRequestFile = {
   message: string | null;
 };
 
+export const githubPullRequestFileSchema = v.object({
+  path: v.string(),
+  previousPath: v.nullable(v.string()),
+  status: v.string(),
+  additions: v.number(),
+  deletions: v.number(),
+  changes: v.number(),
+  binary: v.boolean(),
+  generatedLike: v.boolean(),
+  patch: v.nullable(v.string()),
+  truncated: v.boolean(),
+  sha: v.nullable(v.string()),
+  htmlUrl: v.nullable(v.string()),
+  rawUrl: v.nullable(v.string()),
+  contentsUrl: v.nullable(v.string()),
+  message: v.nullable(v.string()),
+});
+
 export type GitHubPullRequestFiles = {
   repo: string;
   number: number;
@@ -153,6 +171,8 @@ export type GitHubPullRequestReviewThread = {
   line: number | null;
   originalLine?: number | null;
   diffSide?: string | null;
+  pullRequestRepo?: string | null;
+  pullRequestNumber?: number | null;
   comments: GitHubPullRequestReviewThreadComment[];
 };
 
@@ -506,6 +526,13 @@ export type GitHubReviewThreadCommentGraphqlNode = v.InferOutput<
   typeof githubReviewThreadCommentGraphqlNodeSchema
 >;
 
+const githubReviewThreadPullRequestGraphqlSchema = v.object({
+  number: v.number(),
+  repository: v.object({
+    nameWithOwner: v.string(),
+  }),
+});
+
 export const githubReviewThreadsGraphqlResponseSchema = v.object({
   data: v.object({
     repository: v.nullable(
@@ -527,6 +554,9 @@ export const githubReviewThreadsGraphqlResponseSchema = v.object({
                     line: v.optional(v.nullable(v.number())),
                     originalLine: v.optional(v.nullable(v.number())),
                     diffSide: v.optional(v.string()),
+                    pullRequest: v.optional(
+                      v.nullable(githubReviewThreadPullRequestGraphqlSchema),
+                    ),
                     comments: v.object({
                       pageInfo: v.object({
                         hasNextPage: v.boolean(),
@@ -585,6 +615,9 @@ export const githubReviewThreadNodeGraphqlResponseSchema = v.object({
         line: v.optional(v.nullable(v.number())),
         originalLine: v.optional(v.nullable(v.number())),
         diffSide: v.optional(v.string()),
+        pullRequest: v.optional(
+          v.nullable(githubReviewThreadPullRequestGraphqlSchema),
+        ),
         comments: v.object({
           pageInfo: v.object({
             hasNextPage: v.boolean(),
@@ -621,6 +654,12 @@ export const pullRequestReviewThreadsQuery = `
             line
             originalLine
             diffSide
+            pullRequest {
+              number
+              repository {
+                nameWithOwner
+              }
+            }
             comments(first: 100) {
               pageInfo {
                 hasNextPage
@@ -696,6 +735,12 @@ export const pullRequestReviewThreadNodeQuery = `
         line
         originalLine
         diffSide
+        pullRequest {
+          number
+          repository {
+            nameWithOwner
+          }
+        }
         comments(first: 100) {
           pageInfo {
             hasNextPage

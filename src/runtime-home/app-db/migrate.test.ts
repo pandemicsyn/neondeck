@@ -81,6 +81,7 @@ describe('app database migrator', () => {
       expect(indexExists(stamped, 'idx_memories_active_scope')).toBe(true);
       expect(indexExists(stamped, 'idx_memory_events_changed')).toBe(true);
       expect(tableExists(stamped, 'pr_review_drafts')).toBe(true);
+      expect(tableExists(stamped, 'github_pr_file_cache')).toBe(true);
     } finally {
       stamped.close();
     }
@@ -369,6 +370,7 @@ function initializePrePrReviewAppDatabase(path: string) {
   const database = new DatabaseSync(path);
   try {
     database.exec(`
+      DROP TABLE github_pr_file_cache;
       DROP TABLE pr_review_draft_comments;
       DROP TABLE pr_review_drafts;
     `);

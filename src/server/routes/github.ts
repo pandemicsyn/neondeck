@@ -63,8 +63,9 @@ export function createGitHubRoutes(paths: RuntimePaths) {
       );
     }
 
+    const headSha = c.req.query('head')?.trim() || undefined;
     const result = await getGitHubPrFiles(
-      { repo: `${owner}/${repo}`, prNumber: number },
+      { repo: `${owner}/${repo}`, prNumber: number, headSha },
       paths,
     );
     return c.json(result, result.ok ? 200 : 400);
@@ -178,32 +179,64 @@ export function createGitHubRoutes(paths: RuntimePaths) {
     return c.json(result, result.ok ? 200 : 400);
   });
 
-  routes.post('/pr-threads/:threadId/reply', async (c) => {
-    const result = await postGitHubPrThreadReply(
-      c.req.param('threadId'),
-      (await safeJsonBody(c)) as Parameters<typeof postGitHubPrThreadReply>[1],
-      paths,
-    );
-    return c.json(result, result.ok ? 200 : 400);
-  });
+  routes.post(
+    '/prs/:owner/:repo/:number/review-threads/:threadId/reply',
+    async (c) => {
+      const target = prTargetFromParams(
+        c.req.param('owner'),
+        c.req.param('repo'),
+        c.req.param('number'),
+      );
+      if (!target.ok) return c.json(target.result, 400);
+      const result = await postGitHubPrThreadReply(
+        target.input,
+        c.req.param('threadId'),
+        (await safeJsonBody(c)) as Parameters<
+          typeof postGitHubPrThreadReply
+        >[2],
+        paths,
+      );
+      return c.json(result, result.ok ? 200 : 400);
+    },
+  );
 
-  routes.post('/pr-threads/:threadId/resolve', async (c) => {
-    const result = await postGitHubPrThreadResolution(
-      c.req.param('threadId'),
-      true,
-      paths,
-    );
-    return c.json(result, result.ok ? 200 : 400);
-  });
+  routes.post(
+    '/prs/:owner/:repo/:number/review-threads/:threadId/resolve',
+    async (c) => {
+      const target = prTargetFromParams(
+        c.req.param('owner'),
+        c.req.param('repo'),
+        c.req.param('number'),
+      );
+      if (!target.ok) return c.json(target.result, 400);
+      const result = await postGitHubPrThreadResolution(
+        target.input,
+        c.req.param('threadId'),
+        true,
+        paths,
+      );
+      return c.json(result, result.ok ? 200 : 400);
+    },
+  );
 
-  routes.post('/pr-threads/:threadId/unresolve', async (c) => {
-    const result = await postGitHubPrThreadResolution(
-      c.req.param('threadId'),
-      false,
-      paths,
-    );
-    return c.json(result, result.ok ? 200 : 400);
-  });
+  routes.post(
+    '/prs/:owner/:repo/:number/review-threads/:threadId/unresolve',
+    async (c) => {
+      const target = prTargetFromParams(
+        c.req.param('owner'),
+        c.req.param('repo'),
+        c.req.param('number'),
+      );
+      if (!target.ok) return c.json(target.result, 400);
+      const result = await postGitHubPrThreadResolution(
+        target.input,
+        c.req.param('threadId'),
+        false,
+        paths,
+      );
+      return c.json(result, result.ok ? 200 : 400);
+    },
+  );
 
   routes.post('/prs/event-state', async (c) => {
     const result = await getGitHubPrEventState(

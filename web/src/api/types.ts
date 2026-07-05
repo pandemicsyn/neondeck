@@ -165,6 +165,8 @@ export type GitHubPullRequestReviewThread = {
   line: number | null;
   originalLine?: number | null;
   diffSide?: string | null;
+  pullRequestRepo?: string | null;
+  pullRequestNumber?: number | null;
   comments: GitHubPullRequestReviewThreadComment[];
 };
 

@@ -11,6 +11,7 @@ export {
   fetchPullRequestEventState,
   fetchPullRequestFiles,
 } from './pull-requests';
+export { fetchPullRequestFilesWithCache } from './pr-file-cache';
 export {
   fetchCheckRunDetails,
   fetchCheckSuites,
@@ -42,6 +43,7 @@ export type {
   GitHubPrReviewVerdict,
 } from './reviews';
 export {
+  fetchPullRequestReviewThread,
   fetchPullRequestReviewThreads,
   postPullRequestComment,
 } from './comments';
