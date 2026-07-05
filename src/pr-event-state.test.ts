@@ -10,10 +10,14 @@ import {
   getGitHubPrBranchPermissions,
   getGitHubPrRequestedChanges,
   getGitHubPrReviewThreads,
+  deleteGitHubPrReviewDraftComment,
   listPrWatchEventWatermarks,
   neondeckPrEventActions,
   neondeckPrEventTools,
+  patchGitHubPrReviewDraftComment,
+  postGitHubPrReviewDraftComment,
   postGitHubPrComment,
+  putGitHubPrReviewDraft,
   refreshPrWatchEventState,
 } from './modules/pr-events';
 import { runtimePaths } from './runtime-home';
@@ -400,6 +404,88 @@ describe('PR event state watermarks', () => {
         'Repository "external/private-repo" is not configured for PR comments.',
     });
     expect(posted).toBe(false);
+  });
+
+  it('keeps PR review draft comment mutations scoped to the route PR', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    const draftResult = await putGitHubPrReviewDraft(
+      { repo: 'neondeck', prNumber: 123 },
+      {
+        headSha: 'head123',
+        verdict: 'comment',
+        body: 'Review body',
+      },
+      paths,
+    );
+    const draft = (
+      draftResult.data as
+        | { draft?: { id?: string; comments?: Array<{ id?: string }> } }
+        | undefined
+    )?.draft;
+    expect(draft?.id).toEqual(expect.any(String));
+
+    await expect(
+      postGitHubPrReviewDraftComment(
+        { repo: 'neondeck', prNumber: 124 },
+        {
+          draftId: draft?.id ?? '',
+          path: 'src/app.ts',
+          side: 'RIGHT',
+          line: 12,
+          body: 'Wrong PR.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'github_pr_review_draft_comment_post',
+      message: 'Review draft does not belong to this pull request.',
+    });
+
+    const commentResult = await postGitHubPrReviewDraftComment(
+      { repo: 'neondeck', prNumber: 123 },
+      {
+        draftId: draft?.id ?? '',
+        path: 'src/app.ts',
+        side: 'RIGHT',
+        line: 12,
+        body: 'Right PR.',
+      },
+      paths,
+    );
+    const commentId = (
+      commentResult.data as
+        { draft?: { comments?: Array<{ id?: string }> } } | undefined
+    )?.draft?.comments?.[0]?.id;
+    expect(commentId).toEqual(expect.any(String));
+
+    await expect(
+      patchGitHubPrReviewDraftComment(
+        { repo: 'neondeck', prNumber: 124 },
+        commentId ?? '',
+        { body: 'Wrong PR edit.' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'github_pr_review_draft_comment_patch',
+      message: 'Review draft comment does not belong to this pull request.',
+    });
+
+    await expect(
+      deleteGitHubPrReviewDraftComment(
+        { repo: 'neondeck', prNumber: 124 },
+        commentId ?? '',
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'github_pr_review_draft_comment_delete',
+      message: 'Review draft comment does not belong to this pull request.',
+    });
   });
 
   it('validates inputs and reports missing credentials before fetching', async () => {

@@ -171,6 +171,33 @@ export const appDatabaseSchemaSql = `
         updated_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS pr_review_drafts (
+        id TEXT PRIMARY KEY,
+        repo TEXT NOT NULL,
+        pr_number INTEGER NOT NULL,
+        head_sha TEXT NOT NULL,
+        verdict TEXT,
+        body TEXT,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        submitted_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS pr_review_draft_comments (
+        id TEXT PRIMARY KEY,
+        draft_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        side TEXT NOT NULL,
+        line INTEGER NOT NULL,
+        start_line INTEGER,
+        start_side TEXT,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(draft_id) REFERENCES pr_review_drafts(id)
+      );
+
       CREATE TABLE IF NOT EXISTS workflow_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         run_id TEXT,
@@ -608,6 +635,16 @@ export const appDatabaseIndexSql = `
       CREATE UNIQUE INDEX IF NOT EXISTS idx_learning_pr_handled_source
         ON learning_events(source_id)
         WHERE type = 'pr_handled' AND source_id IS NOT NULL;
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_review_drafts_live
+        ON pr_review_drafts(repo, pr_number)
+        WHERE status = 'draft';
+
+      CREATE INDEX IF NOT EXISTS idx_pr_review_drafts_pr
+        ON pr_review_drafts(repo, pr_number, updated_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_pr_review_draft_comments_draft
+        ON pr_review_draft_comments(draft_id, created_at ASC);
 
       CREATE INDEX IF NOT EXISTS idx_learning_reviews_kind
         ON learning_reviews(kind, status, started_at DESC);

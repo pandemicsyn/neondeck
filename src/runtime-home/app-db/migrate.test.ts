@@ -35,19 +35,21 @@ describe('app database migrator', () => {
   it('applies the baseline migration for a fresh database', async () => {
     const root = await tempDir();
     const databasePath = join(root, 'neondeck.db');
-    const baseline = readAppDbMigrationFiles()[0];
+    const migrations = readAppDbMigrationFiles();
 
     const result = applyAppDbMigrations(databasePath);
 
     expect(result).toMatchObject({
-      applied: [baseline.name],
+      applied: migrations.map((migration) => migration.name),
       backupPath: null,
       stampedBaseline: false,
     });
     const database = new DatabaseSync(databasePath, { readOnly: true });
     try {
       expect(tableExists(database, 'notifications')).toBe(true);
-      expect(readJournalNames(database)).toEqual([baseline.name]);
+      expect(readJournalNames(database)).toEqual(
+        migrations.map((migration) => migration.name),
+      );
     } finally {
       database.close();
     }
@@ -56,25 +58,29 @@ describe('app database migrator', () => {
   it('stamps an existing v9 database without executing the baseline over it', async () => {
     const root = await tempDir();
     const databasePath = join(root, 'neondeck.db');
-    const baseline = readAppDbMigrationFiles()[0];
-    initializeLegacyAppDatabase(databasePath);
+    const migrations = readAppDbMigrationFiles();
+    const baseline = migrations[0];
+    initializePrePrReviewAppDatabase(databasePath);
 
     const result = applyAppDbMigrations(databasePath, {
       now: new Date('2026-07-04T12:00:00Z'),
     });
 
     expect(result).toMatchObject({
-      applied: [],
+      applied: migrations.slice(1).map((migration) => migration.name),
       stampedBaseline: true,
     });
     expect(result.backupPath).toContain(`pre-${baseline.name}.db`);
     expect(existsSync(result.backupPath ?? '')).toBe(true);
     const stamped = new DatabaseSync(databasePath, { readOnly: true });
     try {
-      expect(readJournalNames(stamped)).toEqual([baseline.name]);
+      expect(readJournalNames(stamped)).toEqual(
+        migrations.map((migration) => migration.name),
+      );
       expect(indexExists(stamped, 'idx_memories_scope_key_repo')).toBe(true);
       expect(indexExists(stamped, 'idx_memories_active_scope')).toBe(true);
       expect(indexExists(stamped, 'idx_memory_events_changed')).toBe(true);
+      expect(tableExists(stamped, 'pr_review_drafts')).toBe(true);
     } finally {
       stamped.close();
     }
@@ -83,7 +89,7 @@ describe('app database migrator', () => {
   it('repairs indexes after pre-v9 legacy table rebuild shims before stamping', async () => {
     const root = await tempDir();
     const databasePath = join(root, 'neondeck.db');
-    initializeLegacyAppDatabase(databasePath);
+    initializePrePrReviewAppDatabase(databasePath);
     const database = new DatabaseSync(databasePath);
     try {
       database.exec(`
@@ -99,6 +105,11 @@ describe('app database migrator', () => {
     const result = applyAppDbMigrations(databasePath);
 
     expect(result.stampedBaseline).toBe(true);
+    expect(result.applied).toEqual(
+      readAppDbMigrationFiles()
+        .slice(1)
+        .map((migration) => migration.name),
+    );
     const stamped = new DatabaseSync(databasePath, { readOnly: true });
     try {
       expect(indexExists(stamped, 'idx_memories_scope_key_repo')).toBe(true);
@@ -112,8 +123,8 @@ describe('app database migrator', () => {
   it('repairs legacy v9 databases that predate MCP tables before stamping', async () => {
     const root = await tempDir();
     const databasePath = join(root, 'neondeck.db');
-    const baseline = readAppDbMigrationFiles()[0];
-    initializeLegacyAppDatabase(databasePath);
+    const migrations = readAppDbMigrationFiles();
+    initializePrePrReviewAppDatabase(databasePath);
     const database = new DatabaseSync(databasePath);
     try {
       database.exec(`
@@ -131,12 +142,14 @@ describe('app database migrator', () => {
     const result = applyAppDbMigrations(databasePath);
 
     expect(result).toMatchObject({
-      applied: [],
+      applied: migrations.slice(1).map((migration) => migration.name),
       stampedBaseline: true,
     });
     const stamped = new DatabaseSync(databasePath, { readOnly: true });
     try {
-      expect(readJournalNames(stamped)).toEqual([baseline.name]);
+      expect(readJournalNames(stamped)).toEqual(
+        migrations.map((migration) => migration.name),
+      );
       expect(tableExists(stamped, 'mcp_tool_catalog')).toBe(true);
       expect(tableExists(stamped, 'mcp_tool_approvals')).toBe(true);
       expect(tableExists(stamped, 'mcp_tool_audit')).toBe(true);
@@ -177,7 +190,9 @@ describe('app database migrator', () => {
     const root = await tempDir();
     const databasePath = join(root, 'neondeck.db');
     const migrationsFolder = await copyMigrations(root);
-    const baseline = readAppDbMigrationFiles()[0];
+    const migrations = readAppDbMigrationFiles();
+    const baseline = migrations[0];
+    const head = migrations[migrations.length - 1];
     applyAppDbMigrations(databasePath);
 
     expect(readAppDbMigrationStatus(databasePath)).toMatchObject({
@@ -185,8 +200,8 @@ describe('app database migrator', () => {
       pending: [],
       unknown: [],
       changed: [],
-      localHead: baseline.name,
-      journalHead: baseline.name,
+      localHead: head.name,
+      journalHead: head.name,
       message: 'App database migration journal is current.',
     });
 
@@ -204,7 +219,7 @@ describe('app database migrator', () => {
       unknown: [],
       changed: [],
       localHead: '20990101000000_add_marker',
-      journalHead: baseline.name,
+      journalHead: head.name,
       message: 'Database has pending migrations: 20990101000000_add_marker.',
     });
 
@@ -347,6 +362,19 @@ async function tempDir() {
   const path = await mkdtemp(join(tmpdir(), 'neondeck-migrate-'));
   tempRoots.push(path);
   return path;
+}
+
+function initializePrePrReviewAppDatabase(path: string) {
+  initializeLegacyAppDatabase(path);
+  const database = new DatabaseSync(path);
+  try {
+    database.exec(`
+      DROP TABLE pr_review_draft_comments;
+      DROP TABLE pr_review_drafts;
+    `);
+  } finally {
+    database.close();
+  }
 }
 
 async function copyMigrations(root: string) {

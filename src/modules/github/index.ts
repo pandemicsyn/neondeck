@@ -17,7 +17,30 @@ export {
   fetchCheckSummary,
   fetchFailingCheckFacts,
 } from './checks';
-export { fetchPullRequestReviews } from './reviews';
+export {
+  addPrReviewDraftComment,
+  deletePrReviewDraftComment,
+  discardPrReviewDraft,
+  fetchPullRequestReviews,
+  readLivePrReviewDraft,
+  readPrReviewDraft,
+  readPrReviewDraftForComment,
+  replyToPullRequestReviewThread,
+  resolvePullRequestReviewThread,
+  submitPullRequestReview,
+  unresolvePullRequestReviewThread,
+  updatePrReviewDraftComment,
+  upsertPrReviewDraft,
+  GitHubPrReviewSubmitError,
+} from './reviews';
+export type {
+  GitHubPrReviewDraft,
+  GitHubPrReviewDraftComment,
+  GitHubPrReviewDraftCommentSide,
+  GitHubPrReviewDraftStatus,
+  GitHubPrReviewSubmitFailure,
+  GitHubPrReviewVerdict,
+} from './reviews';
 export {
   fetchPullRequestReviewThreads,
   postPullRequestComment,

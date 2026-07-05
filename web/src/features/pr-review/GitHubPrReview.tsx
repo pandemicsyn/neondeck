@@ -1,24 +1,61 @@
-import { useEffect, useMemo, useState } from 'react';
+import type { SelectedLineRange } from '@pierre/diffs/react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import {
+  ApiError,
+  type DiffSummary,
+  type GitHubPrReviewDraft,
+  type GitHubPrReviewDraftComment,
+  type GitHubPrReviewVerdict,
+  type GitHubPullRequest,
+  type GitHubPullRequestReviewThread,
+} from '../../api';
 import type {
-  DiffSummary,
-  GitHubPullRequest,
-  GitHubPullRequestReviewThread,
+  GitHubPrReviewDraftResponse,
+  GitHubPrReviewSubmitResponse,
+  GitHubPrThreadMutationResponse,
 } from '../../api';
 import { Badge, MiniEmpty } from '../../components/ui';
 import { queryErrorMessage } from '../../lib/query';
 import { firstRenderablePath, patchHasContent } from '../diff-viewer/helpers';
 import { MultiFileView } from '../diff-viewer/MultiFileView';
 import type { DiffFilePatch, DiffReviewAnnotation } from '../diff-viewer/types';
-import { useGitHubPrReviewThreads, useGitHubPullRequestFiles } from './queries';
+import {
+  useGitHubPrReviewDraft,
+  useGitHubPrReviewMutations,
+  useGitHubPrReviewThreads,
+  useGitHubPullRequestFiles,
+} from './queries';
+import {
+  commentInputFromSelection,
+  patchAnchorIndexesByPath,
+  staleDraftCommentIds,
+} from './review-helpers';
+
+type ComposerState = {
+  path: string;
+  selection: SelectedLineRange;
+  annotation: DiffReviewAnnotation;
+};
 
 export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
   const filesQuery = useGitHubPullRequestFiles(pr);
   const threadsQuery = useGitHubPrReviewThreads(pr);
+  const draftQuery = useGitHubPrReviewDraft(pr);
+  const mutations = useGitHubPrReviewMutations(pr);
   const files = useMemo(
     () => (filesQuery.data?.files ?? []) as DiffFilePatch[],
     [filesQuery.data?.files],
   );
   const [activePath, setActivePath] = useState<string | null>(null);
+  const [composer, setComposer] = useState<ComposerState | null>(null);
+  const [composerBody, setComposerBody] = useState('');
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingBody, setEditingBody] = useState('');
+  const [replyingThreadId, setReplyingThreadId] = useState<string | null>(null);
+  const [replyBody, setReplyBody] = useState('');
+  const [reviewBody, setReviewBody] = useState('');
+  const [verdict, setVerdict] = useState<GitHubPrReviewVerdict>('comment');
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const reviewThreads = useMemo(
     () => threadsQuery.data?.reviewThreads ?? [],
     [threadsQuery.data?.reviewThreads],
@@ -27,20 +64,58 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
     () => threadsQuery.data?.unresolvedReviewThreads ?? [],
     [threadsQuery.data?.unresolvedReviewThreads],
   );
+  const draft = draftQuery.data ?? null;
+  const currentHeadSha = pr.headSha ?? '';
+  const patchIndexesByPath = useMemo(
+    () => patchAnchorIndexesByPath(files),
+    [files],
+  );
+  const staleCommentIds = useMemo(
+    () => staleDraftCommentIds(draft, patchIndexesByPath),
+    [draft, patchIndexesByPath],
+  );
+  const cleanCommentIds = useMemo(
+    () =>
+      draft?.comments
+        .filter((comment) => !staleCommentIds.has(comment.id))
+        .map((comment) => comment.id) ?? [],
+    [draft, staleCommentIds],
+  );
   const annotationsByPath = useMemo(
-    () => annotationsFromThreads(unresolvedThreads),
-    [unresolvedThreads],
+    () =>
+      mergeAnnotations(
+        annotationsFromThreads(reviewThreads),
+        annotationsFromDraft(draft, staleCommentIds),
+        annotationsFromComposer(composer),
+      ),
+    [composer, draft, reviewThreads, staleCommentIds],
   );
   const selectedThreads = useMemo(
-    () => threadsForPath(unresolvedThreads, activePath),
-    [activePath, unresolvedThreads],
+    () => threadsForPath(reviewThreads, activePath),
+    [activePath, reviewThreads],
   );
   const fileStats = useMemo(() => reviewFileStats(files), [files]);
+  const reviewBarStatusMessage =
+    mutationErrorMessage(
+      mutations.submitReview.error ??
+        mutations.saveDraft.error ??
+        mutations.addComment.error ??
+        mutations.updateComment.error ??
+        mutations.deleteComment.error ??
+        mutations.discardDraft.error ??
+        mutations.replyToThread.error ??
+        mutations.setThreadResolution.error,
+    ) ?? statusMessage;
 
   useEffect(() => {
     if (activePath && files.some((file) => file.path === activePath)) return;
     setActivePath(firstRenderablePath(files) ?? null);
   }, [activePath, files]);
+
+  useEffect(() => {
+    setReviewBody(draft?.body ?? '');
+    setVerdict(draft?.verdict ?? 'comment');
+  }, [draft?.body, draft?.verdict]);
 
   if (filesQuery.isLoading) {
     return <MiniEmpty label="Loading PR files." />;
@@ -55,6 +130,282 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
   }
 
   const summary = filesQuery.data?.diffSummary;
+  const saveDraft = async (
+    next: Partial<{
+      body: string | null;
+      verdict: GitHubPrReviewVerdict | null;
+    }> = {},
+  ) => {
+    setStatusMessage(null);
+    if (!currentHeadSha) throw new Error('PR head SHA is unavailable.');
+    return mutations.saveDraft.mutateAsync({
+      repo: pr.repo,
+      number: pr.number,
+      headSha: currentHeadSha,
+      ...('verdict' in next ? { verdict: next.verdict } : {}),
+      ...('body' in next ? { body: next.body } : {}),
+    });
+  };
+  const ensureDraft = async () => draft ?? (await saveDraft());
+  const onSelectionChange = (selection: SelectedLineRange | null) => {
+    if (!selection || !activePath) return;
+    const annotation = annotationFromSelection(selection);
+    setComposer({ path: activePath, selection, annotation });
+    setComposerBody('');
+    setStatusMessage(null);
+  };
+  const submitComposer = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!composer || composerBody.trim().length === 0) return;
+    setStatusMessage(null);
+    const nextDraft = await ensureDraft();
+    await mutations.addComment.mutateAsync({
+      repo: pr.repo,
+      number: pr.number,
+      draftId: nextDraft.id,
+      path: composer.path,
+      ...commentInputFromSelection(composer.selection),
+      body: composerBody,
+    });
+    setComposer(null);
+    setComposerBody('');
+    setStatusMessage('Draft comment saved.');
+  };
+  const submitEdit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!editingCommentId || editingBody.trim().length === 0) return;
+    setStatusMessage(null);
+    await mutations.updateComment.mutateAsync({
+      repo: pr.repo,
+      number: pr.number,
+      id: editingCommentId,
+      body: editingBody,
+    });
+    setEditingCommentId(null);
+    setEditingBody('');
+  };
+  const submitReply = async (threadId: string, event: FormEvent) => {
+    event.preventDefault();
+    if (replyBody.trim().length === 0) return;
+    setStatusMessage(null);
+    await mutations.replyToThread.mutateAsync({ threadId, text: replyBody });
+    setReplyingThreadId(null);
+    setReplyBody('');
+    setStatusMessage('Thread reply posted.');
+  };
+  const renderAnnotation = (annotation: DiffReviewAnnotation) => {
+    const metadata = annotation.metadata;
+    if (metadata.kind === 'composer') {
+      return (
+        <form
+          className="pr-review-composer"
+          data-neondeck-review-annotation=""
+          onSubmit={submitComposer}
+        >
+          <label className="sr-only" htmlFor="pr-review-new-comment">
+            Draft review comment
+          </label>
+          <textarea
+            id="pr-review-new-comment"
+            onChange={(event) => setComposerBody(event.currentTarget.value)}
+            placeholder="Draft an inline review comment"
+            value={composerBody}
+          />
+          <div className="pr-review-composer-actions">
+            <button
+              disabled={
+                composerBody.trim().length === 0 ||
+                mutations.addComment.isPending ||
+                mutations.saveDraft.isPending
+              }
+              type="submit"
+            >
+              Save
+            </button>
+            <button
+              onClick={() => {
+                setComposer(null);
+                setComposerBody('');
+              }}
+              type="button"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      );
+    }
+
+    if (metadata.kind === 'draft') {
+      const comment = draft?.comments.find((item) => item.id === metadata.id);
+      const isEditing = editingCommentId === metadata.id;
+      return (
+        <div
+          className={metadata.isStale ? 'pr-review-draft-stale' : undefined}
+          data-neondeck-review-annotation=""
+        >
+          <div data-neondeck-review-annotation-title="">
+            <span>{metadata.isStale ? 'stale draft' : 'draft'}</span>
+            <span>{metadata.title}</span>
+          </div>
+          {isEditing ? (
+            <form className="pr-review-composer" onSubmit={submitEdit}>
+              <textarea
+                onChange={(event) => setEditingBody(event.currentTarget.value)}
+                value={editingBody}
+              />
+              <div className="pr-review-composer-actions">
+                <button
+                  disabled={
+                    editingBody.trim().length === 0 ||
+                    mutations.updateComment.isPending
+                  }
+                  type="submit"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingCommentId(null);
+                    setEditingBody('');
+                  }}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ) : (
+            <>
+              <p>{metadata.body}</p>
+              <div className="pr-review-inline-actions">
+                <button
+                  onClick={() => {
+                    setEditingCommentId(metadata.id);
+                    setEditingBody(comment?.body ?? metadata.body);
+                  }}
+                  type="button"
+                >
+                  Edit
+                </button>
+                <button
+                  disabled={mutations.deleteComment.isPending}
+                  onClick={() => {
+                    setStatusMessage(null);
+                    mutations.deleteComment.mutate({
+                      repo: pr.repo,
+                      number: pr.number,
+                      id: metadata.id,
+                    });
+                  }}
+                  type="button"
+                >
+                  Delete
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      );
+    }
+
+    const thread = reviewThreads.find((item) => item.id === metadata.id);
+    const isReplying = replyingThreadId === metadata.id;
+    return (
+      <div data-neondeck-review-annotation="">
+        <div data-neondeck-review-annotation-title="">
+          <span>
+            {metadata.authorLogin ? `@${metadata.authorLogin}` : 'review'}
+          </span>
+          <span>{metadata.title}</span>
+        </div>
+        <p>{metadata.body}</p>
+        {isReplying ? (
+          <form
+            className="pr-review-composer"
+            onSubmit={(event) => submitReply(metadata.id, event)}
+          >
+            <textarea
+              onChange={(event) => setReplyBody(event.currentTarget.value)}
+              placeholder="Reply to this thread"
+              value={replyBody}
+            />
+            <div className="pr-review-composer-actions">
+              <button
+                disabled={
+                  replyBody.trim().length === 0 ||
+                  mutations.replyToThread.isPending
+                }
+                type="submit"
+              >
+                Reply
+              </button>
+              <button
+                onClick={() => {
+                  setReplyingThreadId(null);
+                  setReplyBody('');
+                }}
+                type="button"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="pr-review-inline-actions">
+            <button
+              onClick={() => {
+                setReplyingThreadId(metadata.id);
+                setReplyBody('');
+              }}
+              type="button"
+            >
+              Reply
+            </button>
+            {thread ? (
+              <button
+                disabled={mutations.setThreadResolution.isPending}
+                onClick={() => {
+                  setStatusMessage(null);
+                  mutations.setThreadResolution.mutate({
+                    threadId: thread.id,
+                    resolved: !thread.isResolved,
+                  });
+                }}
+                type="button"
+              >
+                {thread.isResolved ? 'Unresolve' : 'Resolve'}
+              </button>
+            ) : null}
+            {metadata.url ? (
+              <a href={metadata.url} rel="noreferrer" target="_blank">
+                open thread
+              </a>
+            ) : null}
+          </div>
+        )}
+      </div>
+    );
+  };
+  const submitReview = async () => {
+    if (!currentHeadSha) return;
+    setStatusMessage(null);
+    const savedDraft =
+      !draft ||
+      draft.body !== reviewBody ||
+      draft.verdict !== verdict ||
+      draft.headSha !== currentHeadSha
+        ? await saveDraft({ body: reviewBody, verdict })
+        : draft;
+    await mutations.submitReview.mutateAsync({
+      repo: pr.repo,
+      number: pr.number,
+      draftId: savedDraft.id,
+      headSha: currentHeadSha,
+      commentIds: cleanCommentIds,
+    });
+    setStatusMessage('Review submitted.');
+  };
 
   return (
     <section className="pr-review-shell">
@@ -87,6 +438,18 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
           label={`Review threads unavailable: ${queryErrorMessage(threadsQuery.error)}`}
         />
       ) : null}
+      {draftQuery.error ? (
+        <MiniEmpty
+          label={`Review draft unavailable: ${queryErrorMessage(draftQuery.error)}`}
+        />
+      ) : null}
+      {draft && draft.headSha !== currentHeadSha ? (
+        <div className="pr-review-stale-banner">
+          PR updated since your draft. {staleCommentIds.size} comment
+          {staleCommentIds.size === 1 ? '' : 's'} need re-anchoring or will be
+          skipped on submit.
+        </div>
+      ) : null}
       <MultiFileView
         activePath={activePath}
         annotationsByPath={annotationsByPath}
@@ -100,10 +463,46 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
             threads={selectedThreads}
           />
         }
+        onSelectedLinesChange={onSelectionChange}
         onActivePathChange={setActivePath}
-        renderAnnotation={renderReviewAnnotation}
+        renderAnnotation={renderAnnotation}
+        selectedLines={
+          composer?.path === activePath ? composer.selection : null
+        }
         title={pr.title}
         tone="primary"
+      />
+      <ReviewBar
+        cleanCommentCount={cleanCommentIds.length}
+        draft={draft}
+        isBusy={
+          mutations.saveDraft.isPending ||
+          mutations.submitReview.isPending ||
+          mutations.discardDraft.isPending
+        }
+        onBodyBlur={() => {
+          if (reviewBody.trim().length > 0 || draft) {
+            void saveDraft({ body: reviewBody });
+          }
+        }}
+        onBodyChange={setReviewBody}
+        onDiscard={() => {
+          if (!draft) return;
+          setStatusMessage(null);
+          const confirmed = window.confirm('Discard this PR review draft?');
+          if (confirmed) {
+            mutations.discardDraft.mutate({ repo: pr.repo, number: pr.number });
+          }
+        }}
+        onSubmit={submitReview}
+        onVerdictChange={(next) => {
+          setVerdict(next);
+          void saveDraft({ verdict: next });
+        }}
+        reviewBody={reviewBody}
+        staleCommentCount={staleCommentIds.size}
+        statusMessage={reviewBarStatusMessage}
+        verdict={verdict}
       />
     </section>
   );
@@ -129,6 +528,7 @@ function annotationFromThread(
     ...anchor,
     metadata: {
       id: thread.id,
+      kind: 'thread',
       title: `${thread.comments.length} review comment${thread.comments.length === 1 ? '' : 's'}`,
       body: reviewCommentPreview(comment?.body ?? 'Review thread'),
       authorLogin: comment?.authorLogin ?? null,
@@ -137,6 +537,89 @@ function annotationFromThread(
       isOutdated: thread.isOutdated,
     },
   };
+}
+
+function annotationsFromDraft(
+  draft: GitHubPrReviewDraft | null,
+  staleCommentIds: Set<string>,
+) {
+  const annotations: Record<string, DiffReviewAnnotation[]> = {};
+  for (const comment of draft?.comments ?? []) {
+    const annotation = annotationFromDraftComment(
+      comment,
+      staleCommentIds.has(comment.id),
+    );
+    annotations[comment.path] = [
+      ...(annotations[comment.path] ?? []),
+      annotation,
+    ];
+  }
+  return annotations;
+}
+
+function annotationsFromComposer(composer: ComposerState | null) {
+  if (!composer) return {};
+  return { [composer.path]: [composer.annotation] };
+}
+
+function annotationFromDraftComment(
+  comment: GitHubPrReviewDraftComment,
+  isStale: boolean,
+): DiffReviewAnnotation {
+  return {
+    side: comment.side === 'LEFT' ? 'deletions' : 'additions',
+    lineNumber: comment.line,
+    metadata: {
+      id: comment.id,
+      kind: 'draft',
+      title: commentAnchorLabel(comment),
+      body: reviewCommentPreview(comment.body),
+      isStale,
+    },
+  };
+}
+
+function mergeAnnotations(
+  ...groups: Array<Record<string, DiffReviewAnnotation[]> | null | undefined>
+) {
+  const merged: Record<string, DiffReviewAnnotation[]> = {};
+  for (const group of groups) {
+    for (const [path, annotations] of Object.entries(group ?? {})) {
+      merged[path] = [...(merged[path] ?? []), ...annotations];
+    }
+  }
+  return merged;
+}
+
+function annotationFromSelection(
+  selection: SelectedLineRange,
+): DiffReviewAnnotation {
+  const input = commentInputFromSelection(selection);
+  return {
+    side: input.side === 'LEFT' ? 'deletions' : 'additions',
+    lineNumber: input.line,
+    metadata: {
+      id: 'composer',
+      kind: 'composer',
+      title: selectionLabel(selection),
+      body: '',
+    },
+  };
+}
+
+function selectionLabel(selection: SelectedLineRange) {
+  const input = commentInputFromSelection(selection);
+  if (input.startLine) {
+    return `${input.startSide} L${input.startLine} -> ${input.side} L${input.line}`;
+  }
+  return `${input.side} L${input.line}`;
+}
+
+function commentAnchorLabel(comment: GitHubPrReviewDraftComment) {
+  if (comment.startLine) {
+    return `${comment.startSide ?? comment.side} L${comment.startLine} -> ${comment.side} L${comment.line}`;
+  }
+  return `${comment.side} L${comment.line}`;
 }
 
 function threadAnchor(thread: GitHubPullRequestReviewThread) {
@@ -178,24 +661,115 @@ function positiveLine(value: number | null | undefined) {
   return typeof value === 'number' && value > 0 ? value : null;
 }
 
-function renderReviewAnnotation(annotation: DiffReviewAnnotation) {
-  const metadata = annotation.metadata;
+function ReviewBar({
+  cleanCommentCount,
+  draft,
+  isBusy,
+  onBodyBlur,
+  onBodyChange,
+  onDiscard,
+  onSubmit,
+  onVerdictChange,
+  reviewBody,
+  staleCommentCount,
+  statusMessage,
+  verdict,
+}: {
+  cleanCommentCount: number;
+  draft: GitHubPrReviewDraft | null;
+  isBusy: boolean;
+  onBodyBlur: () => void;
+  onBodyChange: (value: string) => void;
+  onDiscard: () => void;
+  onSubmit: () => void;
+  onVerdictChange: (value: GitHubPrReviewVerdict) => void;
+  reviewBody: string;
+  staleCommentCount: number;
+  statusMessage: string | null;
+  verdict: GitHubPrReviewVerdict;
+}) {
+  const hasBody = reviewBody.trim().length > 0;
+  const canSubmit =
+    !isBusy && (verdict === 'approve' || cleanCommentCount > 0 || hasBody);
+
   return (
-    <div data-neondeck-review-annotation="">
-      <div data-neondeck-review-annotation-title="">
-        <span>
-          {metadata.authorLogin ? `@${metadata.authorLogin}` : 'review'}
-        </span>
-        <span>{metadata.title}</span>
+    <aside className="pr-review-bar">
+      <div className="pr-review-bar-main">
+        <button className="pr-review-count" type="button">
+          {cleanCommentCount} pending
+        </button>
+        {staleCommentCount > 0 ? (
+          <span className="pr-review-stale-count">
+            {staleCommentCount} stale skipped
+          </span>
+        ) : null}
+        <fieldset className="pr-review-verdicts">
+          <legend className="sr-only">Review verdict</legend>
+          {(['comment', 'approve', 'request-changes'] as const).map((item) => (
+            <button
+              aria-pressed={verdict === item}
+              key={item}
+              onClick={() => onVerdictChange(item)}
+              type="button"
+            >
+              {verdictLabel(item)}
+            </button>
+          ))}
+        </fieldset>
       </div>
-      <p>{metadata.body}</p>
-      {metadata.url ? (
-        <a href={metadata.url} rel="noreferrer" target="_blank">
-          open thread
-        </a>
-      ) : null}
-    </div>
+      <label className="sr-only" htmlFor="pr-review-summary-body">
+        Review summary
+      </label>
+      <textarea
+        id="pr-review-summary-body"
+        onBlur={onBodyBlur}
+        onChange={(event) => onBodyChange(event.currentTarget.value)}
+        placeholder="Review summary"
+        value={reviewBody}
+      />
+      <div className="pr-review-bar-actions">
+        <button disabled={!canSubmit} onClick={onSubmit} type="button">
+          Submit
+        </button>
+        <button disabled={!draft || isBusy} onClick={onDiscard} type="button">
+          Discard
+        </button>
+      </div>
+      {statusMessage ? <p>{statusMessage}</p> : null}
+    </aside>
   );
+}
+
+function verdictLabel(value: GitHubPrReviewVerdict) {
+  if (value === 'approve') return 'Approve';
+  if (value === 'request-changes') return 'Request changes';
+  return 'Comment';
+}
+
+function mutationErrorMessage(error: unknown) {
+  if (error instanceof ApiError) {
+    const data = error.data as
+      | GitHubPrReviewDraftResponse
+      | GitHubPrReviewSubmitResponse
+      | GitHubPrThreadMutationResponse
+      | undefined;
+    const details = [
+      ...(data?.errors ?? []),
+      ...(data?.requires?.length
+        ? [`Requires: ${data.requires.join(', ')}`]
+        : []),
+      ...(data?.data &&
+      'failingCommentIds' in data.data &&
+      Array.isArray(data.data.failingCommentIds) &&
+      data.data.failingCommentIds.length > 0
+        ? [`Failing comments: ${data.data.failingCommentIds.join(', ')}`]
+        : []),
+    ];
+    return details.length > 0
+      ? `${error.message} ${details.join(' ')}`
+      : error.message;
+  }
+  return error ? queryErrorMessage(error) : null;
 }
 
 function ReviewThreadPanel({
@@ -221,7 +795,7 @@ function ReviewThreadPanel({
   if (!activePath || threads.length === 0) {
     return (
       <p className="border-x border-b border-line bg-field px-2 py-1 font-mono text-[10px] text-muted">
-        No unresolved review threads for this file.
+        No review threads for this file.
       </p>
     );
   }
@@ -230,7 +804,10 @@ function ReviewThreadPanel({
     <div className="border-x border-b border-line bg-field">
       <div className="flex items-center justify-between border-b border-line px-2 py-1 font-mono text-[10px] text-muted">
         <span>review threads</span>
-        <span className="text-primary">{threads.length} unresolved</span>
+        <span className="text-primary">
+          {threads.filter((thread) => !thread.isResolved).length}/
+          {threads.length} unresolved
+        </span>
       </div>
       <ul className="max-h-40 overflow-auto">
         {threads.map((thread) => {

@@ -1,4 +1,5 @@
 import { useEffect, useId, useState, type ReactNode } from 'react';
+import type { SelectedLineRange } from '@pierre/diffs/react';
 import { Badge, MiniEmpty } from '../../components/ui';
 import { cn } from '../../lib/cn';
 import {
@@ -29,6 +30,8 @@ type MultiFileViewProps = {
   className?: string;
   annotationsByPath?: Record<string, DiffReviewAnnotation[] | undefined>;
   renderAnnotation?: (annotation: DiffReviewAnnotation) => ReactNode;
+  selectedLines?: SelectedLineRange | null;
+  onSelectedLinesChange?: (selection: SelectedLineRange | null) => void;
   footer?: ReactNode;
 };
 
@@ -43,6 +46,8 @@ export function MultiFileView({
   patchError,
   annotationsByPath,
   renderAnnotation,
+  selectedLines,
+  onSelectedLinesChange,
   footer,
   title,
   tone = 'primary',
@@ -120,6 +125,8 @@ export function MultiFileView({
           }
           patch={patchHasContent(patch) ? patch : null}
           renderAnnotation={renderAnnotation}
+          selectedLines={selectedLines}
+          onSelectedLinesChange={onSelectedLinesChange}
           title={title}
           tone={tone}
         />

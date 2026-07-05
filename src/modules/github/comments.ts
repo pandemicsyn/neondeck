@@ -2,8 +2,10 @@ import * as v from 'valibot';
 import { encodePathSegment, githubFetch, githubGraphqlFetch } from './client';
 import {
   githubIssueCommentApiResponseSchema,
+  githubReviewThreadNodeGraphqlResponseSchema,
   githubReviewThreadCommentsGraphqlResponseSchema,
   githubReviewThreadsGraphqlResponseSchema,
+  pullRequestReviewThreadNodeQuery,
   pullRequestReviewThreadsQuery,
   reviewThreadCommentsQuery,
 } from './schemas';
@@ -70,22 +72,7 @@ export async function fetchPullRequestReviewThreads(options: {
     const pullRequest = parsed.data.repository?.pullRequest;
     if (!pullRequest) break;
     for (const thread of pullRequest.reviewThreads.nodes ?? []) {
-      const comments = await fetchAllReviewThreadComments(
-        options.token,
-        thread,
-      );
-      threads.push({
-        id: thread.id,
-        isResolved: thread.isResolved,
-        isOutdated: thread.isOutdated,
-        path: thread.path ?? null,
-        line: thread.line ?? null,
-        originalLine: thread.originalLine ?? null,
-        diffSide: thread.diffSide ?? null,
-        comments: comments.map((comment) =>
-          normalizeReviewThreadComment(comment, thread),
-        ),
-      });
+      threads.push(await normalizeReviewThread(options.token, thread));
     }
 
     if (!pullRequest.reviewThreads.pageInfo.hasNextPage) break;
@@ -94,6 +81,44 @@ export async function fetchPullRequestReviewThreads(options: {
   }
 
   return threads;
+}
+
+export async function fetchPullRequestReviewThread(options: {
+  token: string;
+  threadId: string;
+}): Promise<GitHubPullRequestReviewThread> {
+  const data = await githubGraphqlFetch(
+    options.token,
+    pullRequestReviewThreadNodeQuery,
+    { threadId: options.threadId },
+  );
+  const parsed = v.parse(githubReviewThreadNodeGraphqlResponseSchema, data);
+  const thread = parsed.data.node;
+  if (!thread) {
+    throw new Error(
+      `GitHub review thread "${options.threadId}" was not found.`,
+    );
+  }
+  return normalizeReviewThread(options.token, thread);
+}
+
+async function normalizeReviewThread(
+  token: string,
+  thread: GitHubReviewThreadGraphqlNode,
+): Promise<GitHubPullRequestReviewThread> {
+  const comments = await fetchAllReviewThreadComments(token, thread);
+  return {
+    id: thread.id,
+    isResolved: thread.isResolved,
+    isOutdated: thread.isOutdated,
+    path: thread.path ?? null,
+    line: thread.line ?? null,
+    originalLine: thread.originalLine ?? null,
+    diffSide: thread.diffSide ?? null,
+    comments: comments.map((comment) =>
+      normalizeReviewThreadComment(comment, thread),
+    ),
+  };
 }
 
 async function fetchAllReviewThreadComments(

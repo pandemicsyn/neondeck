@@ -1,4 +1,8 @@
-import { PatchDiff, WorkerPoolContextProvider } from '@pierre/diffs/react';
+import {
+  PatchDiff,
+  WorkerPoolContextProvider,
+  type SelectedLineRange,
+} from '@pierre/diffs/react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Badge, MiniEmpty } from '../../components/ui';
 import { cn } from '../../lib/cn';
@@ -24,6 +28,8 @@ type UnifiedPatchViewProps = {
   className?: string;
   lineAnnotations?: DiffReviewAnnotation[];
   renderAnnotation?: (annotation: DiffReviewAnnotation) => ReactNode;
+  selectedLines?: SelectedLineRange | null;
+  onSelectedLinesChange?: (selection: SelectedLineRange | null) => void;
 };
 
 export function DiffWorkerProvider({ children }: { children: ReactNode }) {
@@ -46,6 +52,8 @@ export function UnifiedPatchView({
   className,
   lineAnnotations,
   renderAnnotation,
+  selectedLines,
+  onSelectedLinesChange,
 }: UnifiedPatchViewProps) {
   const themeType = useResolvedDiffTheme();
 
@@ -73,10 +81,14 @@ export function UnifiedPatchView({
           lineAnnotations={lineAnnotations}
           options={{
             ...neondeckDiffOptions(themeType),
+            controlledSelection: selectedLines !== undefined,
+            enableLineSelection: Boolean(onSelectedLinesChange),
+            onLineSelectionEnd: onSelectedLinesChange,
             unsafeCSS: neondeckDiffUnsafeCss,
           }}
           patch={patch ?? ''}
           renderAnnotation={renderAnnotation}
+          selectedLines={selectedLines}
         />
       </DiffWorkerProvider>
     </section>
