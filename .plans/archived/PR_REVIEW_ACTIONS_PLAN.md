@@ -2,7 +2,7 @@
 
 Status: **active** — full specification for reviewing PRs *from* the deck: inline comments, thread
 replies, thread resolution, and submitted reviews with a verdict (Comment / Approve / Request
-changes). Written 2026-07-04 against the implemented viewing stack from `.plans/DIFF_UI_PLAN.md`
+changes). Written 2026-07-04 against the implemented viewing stack from `.plans/archived/DIFF_UI_PLAN.md`
 (its PR 1 and PR 2 are on main); this doc supersedes that plan's "review actions are v2" note.
 
 ## Purpose

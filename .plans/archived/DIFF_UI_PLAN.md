@@ -60,7 +60,7 @@ dashboard, consistent with the "no framework re-housing" decision.
   wanted, that is a separate decision (and probably a separate tool).
 - **PR review actions moved to their own spec.** Viewing shipped first as planned; the full
   review capability (inline comments, thread reply/resolve, human-only verdicts) is specified in
-  `.plans/PR_REVIEW_ACTIONS_PLAN.md`.
+  `.plans/archived/PR_REVIEW_ACTIONS_PLAN.md`.
 - **No replacement of existing summary rows.** Compact rows stay (they're right for the deck's
   glanceable posture); diff views open from them.
 - **No self-hosted Shiki grammar zoo.** Start with the bundled languages; trim via Vite config
