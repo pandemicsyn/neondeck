@@ -1047,15 +1047,18 @@ function githubErrorDataMentionsComment(
   data: unknown,
   comment: GitHubPrReviewDraftComment,
 ) {
-  const needles = [
-    comment.path,
+  const lineNeedles = [
     `line ${comment.line}`,
     `line:${comment.line}`,
+    `line: ${comment.line}`,
     `"line":${comment.line}`,
   ];
   return githubErrorItems(data).some((item) => {
     const text = JSON.stringify(item);
-    return needles.every((needle) => text.includes(needle));
+    return (
+      text.includes(comment.path) &&
+      lineNeedles.some((needle) => text.includes(needle))
+    );
   });
 }
 

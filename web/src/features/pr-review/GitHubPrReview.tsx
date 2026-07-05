@@ -592,8 +592,11 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
     setStatusMessage(`Showing draft comment on ${next.path} L${next.line}.`);
   };
   const openPopout = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('prReviewRepo', pr.repo);
+    url.searchParams.set('prReviewNumber', String(pr.number));
     window.open(
-      window.location.href,
+      url.toString(),
       `neondeck-pr-review-${pr.number}`,
       'popup,width=1280,height=900,noopener,noreferrer',
     );

@@ -1201,6 +1201,74 @@ describe('github foundation', () => {
     ).toMatchObject({ id: draft.id, status: 'draft' });
   });
 
+  it('maps GitHub review validation errors by path and line when no comment index is returned', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const draft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head123',
+      verdict: 'comment',
+      body: 'Body',
+    });
+    let withComment = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 12,
+      body: 'Good comment.',
+    });
+    withComment = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 99,
+      body: 'Bad comment.',
+    });
+    const failingCommentId = withComment.comments.find(
+      (comment) => comment.body === 'Bad comment.',
+    )?.id;
+    globalThis.fetch = vi.fn<typeof fetch>(async () =>
+      jsonResponse(
+        {
+          message: 'Validation failed',
+          errors: [
+            {
+              resource: 'PullRequestReviewComment',
+              path: 'src/app.ts',
+              line: 99,
+              code: 'invalid',
+              message: 'line must have a valid diff anchor',
+            },
+          ],
+        },
+        422,
+      ),
+    );
+
+    await expect(
+      submitPullRequestReview({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+        databasePath: paths.neondeckDatabase,
+        paths,
+        draftId: draft.id,
+        headSha: 'head123',
+        fetchHeadSha: async () => 'head123',
+      }),
+    ).rejects.toMatchObject({
+      failure: {
+        code: 'github-review-submit-failed',
+        failingCommentIds: [failingCommentId],
+      },
+    });
+  });
+
   it('does not classify generic GitHub validation text as insufficient scope', async () => {
     const paths = runtimePaths(await tempHome());
     await ensureRuntimeHome(paths);
