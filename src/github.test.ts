@@ -1255,6 +1255,46 @@ describe('github foundation', () => {
     });
   });
 
+  it('maps GitHub review submission 403s to insufficient scope failures', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const draft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head123',
+      verdict: 'comment',
+      body: 'Body',
+    });
+    globalThis.fetch = vi.fn<typeof fetch>(async () =>
+      jsonResponse(
+        {
+          message: 'Resource not accessible by integration',
+        },
+        403,
+      ),
+    );
+
+    await expect(
+      submitPullRequestReview({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+        databasePath: paths.neondeckDatabase,
+        paths,
+        draftId: draft.id,
+        headSha: 'head123',
+        fetchHeadSha: async () => 'head123',
+      }),
+    ).rejects.toMatchObject({
+      failure: {
+        code: 'insufficient-scope',
+        requires: ['pull_requests:write'],
+      },
+    });
+  });
+
   it('replies to and resolves review threads through GitHub GraphQL', async () => {
     const bodies: Array<Record<string, unknown>> = [];
     globalThis.fetch = vi.fn<typeof fetch>(async (_input, init) => {

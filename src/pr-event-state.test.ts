@@ -10,6 +10,7 @@ import type {
 import {
   getGitHubPrBranchPermissions,
   getGitHubPrRequestedChanges,
+  getGitHubPrReviewDraft,
   getGitHubPrReviewThreads,
   deleteGitHubPrReviewDraftComment,
   listPrWatchEventWatermarks,
@@ -749,6 +750,45 @@ describe('PR event state watermarks', () => {
         draft: {
           verdict: 'request-changes',
           body: 'Edited body',
+        },
+      },
+    });
+  });
+
+  it('coalesces parallel review draft PUTs into one live draft', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    const results = await Promise.all(
+      Array.from({ length: 6 }, (_value, index) =>
+        putGitHubPrReviewDraft(
+          { repo: 'neondeck', prNumber: 123 },
+          {
+            headSha: 'head123',
+            body: `Body ${index}`,
+          },
+          paths,
+        ),
+      ),
+    );
+
+    const draftIds = results.map((result) => {
+      expect(result.ok).toBe(true);
+      const draft = (result.data as { draft?: { id?: string } } | undefined)
+        ?.draft;
+      expect(draft?.id).toEqual(expect.any(String));
+      return draft?.id;
+    });
+    expect(new Set(draftIds).size).toBe(1);
+    await expect(
+      getGitHubPrReviewDraft({ repo: 'neondeck', prNumber: 123 }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        draft: {
+          id: draftIds[0],
+          headSha: 'head123',
         },
       },
     });

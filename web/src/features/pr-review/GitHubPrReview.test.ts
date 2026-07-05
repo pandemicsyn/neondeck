@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest';
 import type { GitHubPrReviewDraft } from '../../api';
 import {
   buildPatchAnchorIndex,
+  commentAnchorExists,
   commentInputFromSelection,
   staleDraftCommentIds,
 } from './review-helpers';
+import capturedReviewPatch from './fixtures/captured-review.patch?raw';
 
 describe('GitHubPrReview helpers', () => {
   it('maps Pierre same-side selections to GitHub review comment anchors', () => {
@@ -58,23 +60,36 @@ describe('GitHubPrReview helpers', () => {
     });
   });
 
-  it('normalizes reversed cross-side selections with captured patch order', () => {
-    const index = buildPatchAnchorIndex(
-      [
-        'diff --git a/src/review.ts b/src/review.ts',
-        'index 4f74247..9a9f5fd 100644',
-        '--- a/src/review.ts',
-        '+++ b/src/review.ts',
-        '@@ -20,8 +20,9 @@ export function review() {',
-        '   const state = readState();',
-        '-  const body = state.body;',
-        '-  return body.trim();',
-        '+  const body = state.body ?? "";',
-        '+  const trimmed = body.trim();',
-        '+  return trimmed;',
-        ' }',
-      ].join('\n'),
+  it('maps the addressing matrix from a captured real patch', () => {
+    const reviewIndex = buildPatchAnchorIndex(
+      capturedFilePatch('src/review.ts'),
     );
+    const renamedIndex = buildPatchAnchorIndex(
+      capturedFilePatch('src/new-name.ts'),
+    );
+
+    expect(
+      commentInputFromSelection(
+        selection({ side: 'deletions', line: 3 }),
+        reviewIndex,
+      ),
+    ).toEqual({
+      side: 'LEFT',
+      line: 3,
+      startLine: null,
+      startSide: null,
+    });
+    expect(
+      commentInputFromSelection(
+        selection({ side: 'additions', line: 5 }),
+        reviewIndex,
+      ),
+    ).toEqual({
+      side: 'RIGHT',
+      line: 5,
+      startLine: null,
+      startSide: null,
+    });
 
     expect(
       commentInputFromSelection(
@@ -82,16 +97,50 @@ describe('GitHubPrReview helpers', () => {
           side: 'additions',
           endSide: 'deletions',
           start: 22,
-          end: 21,
+          end: 20,
         } as SelectedLineRange,
-        index,
+        reviewIndex,
       ),
     ).toEqual({
       side: 'RIGHT',
       line: 22,
-      startLine: 21,
+      startLine: 20,
       startSide: 'LEFT',
     });
+    expect(
+      commentInputFromSelection(
+        selection({ side: 'additions', line: 1 }),
+        renamedIndex,
+      ),
+    ).toEqual({
+      side: 'RIGHT',
+      line: 1,
+      startLine: null,
+      startSide: null,
+    });
+    expect(
+      commentAnchorExists(reviewIndex, {
+        side: 'RIGHT',
+        line: 22,
+        startLine: 20,
+        startSide: 'LEFT',
+      }),
+    ).toBe(true);
+    expect(
+      staleDraftCommentIds(
+        draftWithComments([
+          {
+            id: 'renamed',
+            path: 'src/new-name.ts',
+            side: 'RIGHT',
+            line: 1,
+            startLine: null,
+            startSide: null,
+          },
+        ]),
+        new Map([['src/new-name.ts', renamedIndex]]),
+      ),
+    ).toEqual(new Set());
   });
 
   it('marks stale ranges when endpoints no longer share an ordered hunk', () => {
@@ -171,6 +220,22 @@ function selection(input: { side: 'additions' | 'deletions'; line: number }) {
     start: input.line,
     end: input.line,
   } as SelectedLineRange;
+}
+
+function capturedFilePatch(path: string) {
+  const sections = capturedReviewPatch
+    .split(/^diff --git /m)
+    .filter(Boolean)
+    .map((section) => `diff --git ${section}`);
+  const section = sections.find((item) =>
+    item.startsWith(`diff --git a/${path} b/${path}\n`),
+  );
+  if (section) return section;
+  const renamedSection = sections.find((item) =>
+    item.startsWith(`diff --git a/src/old-name.ts b/${path}\n`),
+  );
+  if (renamedSection) return renamedSection;
+  throw new Error(`Missing captured patch for ${path}.`);
 }
 
 function draftWithComments(

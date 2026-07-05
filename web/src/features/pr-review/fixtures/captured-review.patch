@@ -1,0 +1,40 @@
+diff --git a/src/old-name.ts b/src/new-name.ts
+similarity index 51%
+rename from src/old-name.ts
+rename to src/new-name.ts
+index 857b44d..0e88f04 100644
+--- a/src/old-name.ts
++++ b/src/new-name.ts
+@@ -1,5 +1,5 @@
+-export const renamedValue = 1;
++export const renamedValue = 2;
+ export function renamedLabel() {
+   const stable = "same";
+-  return `old:${stable}`;
++  return `new:${stable}`;
+ }
+diff --git a/src/review.ts b/src/review.ts
+index 1a865e2..d6dbdf6 100644
+--- a/src/review.ts
++++ b/src/review.ts
+@@ -1,7 +1,8 @@
+ export function review(state: { body?: string; approved: boolean }) {
+   const prefix = state.approved ? "ok" : "no";
+-  const body = state.body;
+-  return `${prefix}:${body.trim()}`;
++  const body = state.body ?? "";
++  const trimmed = body.trim();
++  return `${prefix}:${trimmed}`;
+ }
+ 
+ export const filler01 = 1;
+@@ -17,7 +18,8 @@ export const filler10 = 10;
+ 
+ export function summarize(items: string[]) {
+   const count = items.length;
+-  return `${count} items`;
++  const noun = count === 1 ? "item" : "items";
++  return `${count} ${noun}`;
+ }
+ 
+ export function footer() {
