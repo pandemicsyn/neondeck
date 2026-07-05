@@ -136,6 +136,7 @@ describe('autopilot operator state', () => {
       worktreeId: 'wt-43',
       prNumber: 43,
       localPath: join(paths.worktrees, 'pandemicsyn-neondeck-pr-43'),
+      verificationStatus: 'failed',
     });
     insertExecutionApproval(paths, {
       id: 'approval-1',
@@ -399,6 +400,7 @@ function insertPreparedDiff(
     worktreeId: string;
     prNumber: number;
     localPath: string;
+    verificationStatus?: string;
   },
 ) {
   const now = new Date().toISOString();
@@ -443,7 +445,7 @@ function insertPreparedDiff(
         'abc123',
         'prepared',
         'pending',
-        'not-run',
+        input.verificationStatus ?? 'not-run',
         null,
         'test',
         now,

@@ -62,7 +62,6 @@ import {
 import {
   readActiveAutopilotRuns,
   readRecentAutopilotWorkflowEvents,
-  readRecentFailedAutopilotChecks,
   readRecentWorktreeEvents,
 } from './state-store';
 
@@ -113,7 +112,6 @@ export async function readAutopilotState(
   );
   const worktrees = worktreeSnapshot.worktrees;
   const workflowRuns = readActiveAutopilotRuns(paths);
-  const failedChecks = readRecentFailedAutopilotChecks(paths);
   const runningChecks = workflowRuns
     .filter((run) => isCheckWorkflow(run.workflow))
     .map((run) =>
@@ -121,6 +119,9 @@ export async function readAutopilotState(
     );
   const preparedDiffs = (preparedDiffSnapshot.preparedDiffs ?? []).map(
     preparedDiffFromRecord,
+  );
+  const failedChecks = preparedDiffs.filter(
+    (diff) => diff.verificationStatus === 'failed',
   );
   const pendingApprovals = [
     ...approvals.approvals

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type KeyboardEvent,
@@ -63,10 +64,12 @@ export function FlueChatSessionView({
   const [input, setInput] = useState('');
   const [commandEvents, setCommandEvents] = useState<CommandEvent[]>([]);
   const [runningCommand, setRunningCommand] = useState<string>();
+  const [commandSubmitting, setCommandSubmitting] = useState(false);
   const [activeCommandIndex, setActiveCommandIndex] = useState(0);
   const [dismissedCommandInput, setDismissedCommandInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [submitError, setSubmitError] = useState<string>();
+  const commandSubmitLockRef = useRef(false);
   const queryClient = useQueryClient();
   const flue = useFlueClient();
   const agent = useFlueAgent({
@@ -100,6 +103,7 @@ export function FlueChatSessionView({
     visibleCommands[Math.min(activeCommandIndex, visibleCommands.length - 1)];
   const historyInputBlocked =
     pendingHistoryRefresh || Boolean(historyRefreshError);
+  const commandBusy = commandSubmitting || Boolean(runningCommand);
   const inputPlaceholder = !session
     ? 'Resolving active session...'
     : historyRefreshError
@@ -173,7 +177,8 @@ export function FlueChatSessionView({
   async function submit(event: FormEvent) {
     event.preventDefault();
     const message = input.trim();
-    if (!message || sendingMessage || runningCommand) return;
+    if (!message || sendingMessage || commandBusy || commandSubmitLockRef.current)
+      return;
 
     setSubmitError(undefined);
 
@@ -184,6 +189,8 @@ export function FlueChatSessionView({
 
     if (message.startsWith('/')) {
       let createdEvent: CommandEvent | undefined;
+      commandSubmitLockRef.current = true;
+      setCommandSubmitting(true);
       try {
         const created = await createChatSessionCommandEvent(session.id, {
           input: message,
@@ -268,6 +275,9 @@ export function FlueChatSessionView({
           queryKey: queryKeys.chatSessionCommandEvents(session.id),
         });
         setSubmitError(errorMessage(error));
+      } finally {
+        commandSubmitLockRef.current = false;
+        setCommandSubmitting(false);
       }
       return;
     }
@@ -305,7 +315,7 @@ export function FlueChatSessionView({
   }
 
   async function askAboutCommand(event: CommandEvent) {
-    if (!session || sendingMessage || runningCommand || historyInputBlocked) {
+    if (!session || sendingMessage || commandBusy || historyInputBlocked) {
       return;
     }
     const summaryId = event.result?.workflowSummary?.id;
@@ -532,7 +542,7 @@ export function FlueChatSessionView({
               !session ||
               historyInputBlocked ||
               sendingMessage ||
-              !!runningCommand
+              commandBusy
             }
             value={input}
           />
@@ -543,6 +553,8 @@ export function FlueChatSessionView({
                 ? 'Loading history'
                 : runningCommand
                   ? 'Running'
+                  : commandSubmitting
+                    ? 'Starting'
                   : sendingMessage
                     ? 'Sending'
                     : '/ commands | Enter send'}
@@ -554,7 +566,7 @@ export function FlueChatSessionView({
               historyInputBlocked ||
               !input.trim() ||
               sendingMessage ||
-              !!runningCommand
+              commandBusy
             }
             type="submit"
           >

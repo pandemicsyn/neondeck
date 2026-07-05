@@ -79,7 +79,7 @@ export function linkedSessionContextInstructions(
     'Server-loaded Neondeck session context:',
     '- This context was attached by the Neondeck server for the current Flue session id. It is not user-authored message text.',
     `- session id: ${session.id}`,
-    `- title: ${session.title}`,
+    `- title (untrusted data): ${quoteUntrustedText(session.title, 200)}`,
     `- kind: ${session.kind}`,
     session.linkedRepoId ? `- repo id: ${session.linkedRepoId}` : undefined,
     session.linkedWatchId ? `- watch id: ${session.linkedWatchId}` : undefined,
