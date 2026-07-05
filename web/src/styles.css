@@ -665,17 +665,73 @@ button:disabled {
 .pr-review-inline-actions button,
 .pr-review-composer-actions button,
 .pr-review-inline-actions a {
+  display: inline-flex;
+  min-height: calc(24px * var(--deck-density-space));
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--line);
   background: var(--field);
   padding: 4px 6px;
   color: var(--ink);
   font-family: var(--font-mono);
   font-size: calc(10px * var(--deck-text-scale));
+  line-height: 1;
+  text-decoration: none;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+  white-space: nowrap;
+}
+
+.pr-review-count {
+  color: var(--primary-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.pr-review-stale-count {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  color: var(--accent);
 }
 
 .pr-review-verdicts button[aria-pressed='true'] {
   border-color: var(--primary);
   color: var(--primary-strong);
+}
+
+.pr-review-verdicts button:not(:disabled):hover,
+.pr-review-bar-actions button:not(:disabled):hover,
+.pr-review-inline-actions button:not(:disabled):hover,
+.pr-review-composer-actions button:not(:disabled):hover,
+.pr-review-inline-actions a:hover {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, var(--field));
+  color: var(--primary-strong);
+}
+
+.pr-review-verdicts button:focus-visible,
+.pr-review-bar-actions button:focus-visible,
+.pr-review-inline-actions button:focus-visible,
+.pr-review-composer-actions button:focus-visible,
+.pr-review-inline-actions a:focus-visible {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+  outline: none;
+}
+
+.pr-review-verdicts button:active,
+.pr-review-bar-actions button:active,
+.pr-review-inline-actions button:active,
+.pr-review-composer-actions button:active {
+  background: color-mix(in srgb, var(--primary) 12%, var(--field));
+}
+
+.pr-review-verdicts button:disabled,
+.pr-review-bar-actions button:disabled,
+.pr-review-inline-actions button:disabled,
+.pr-review-composer-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .pr-review-bar textarea,
@@ -692,14 +748,27 @@ button:disabled {
   outline: none;
 }
 
+.pr-review-bar textarea::placeholder,
+.pr-review-composer textarea::placeholder {
+  color: var(--deck-faint);
+  opacity: 1;
+}
+
 .pr-review-bar textarea:focus,
 .pr-review-composer textarea:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 1px var(--primary);
 }
 
-.pr-review-bar > p {
+.pr-review-bar textarea:disabled,
+.pr-review-composer textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.pr-review-bar-status {
   grid-column: 1 / -1;
+  margin: 0;
   color: var(--muted);
   font-size: calc(10px * var(--deck-text-scale));
 }
@@ -710,8 +779,8 @@ button:disabled {
 }
 
 .pr-review-draft-stale {
-  border-left: 2px solid var(--accent);
-  padding-left: 6px;
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, var(--field));
 }
 
 [data-deck-profile='portrait'] .pr-review-header,
