@@ -3,10 +3,26 @@ import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import {
+  addPrReviewDraftComment,
+  deletePrReviewDraftComment,
+  discardPrReviewDraft,
   fetchPullRequestEventState,
   fetchPullRequestFiles,
+  fetchPullRequestFilesWithCache,
+  fetchPullRequestReviewThread,
+  GitHubPrReviewSubmitError,
   postPullRequestComment,
+  readLivePrReviewDraft,
+  readPrReviewDraft,
+  readPrReviewDraftForComment,
+  replyToPullRequestReviewThread,
+  resolvePullRequestReviewThread,
+  submitPullRequestReview,
+  unresolvePullRequestReviewThread,
+  updatePrReviewDraftComment,
+  upsertPrReviewDraft,
   type GitHubPullRequestEventState,
+  type GitHubPullRequestReviewThread,
 } from '../github';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import {
@@ -22,9 +38,16 @@ import {
 import {
   prCommentInputSchema,
   prEventTargetInputSchema,
+  prFilesInputSchema,
+  prReviewDraftCommentInputSchema,
+  prReviewDraftCommentUpdateInputSchema,
+  prReviewDraftInputSchema,
+  prReviewSubmitInputSchema,
+  prReviewThreadReplyInputSchema,
   prWatchEventWatermarkListInputSchema,
   type PrEventActionResult,
   type PrEventStateDependencies,
+  type PullRequestTarget,
 } from './schemas';
 import {
   fetchEventState,
@@ -107,12 +130,12 @@ export async function getGitHubPrReviewThreads(
 }
 
 export async function getGitHubPrFiles(
-  input: v.InferInput<typeof prEventTargetInputSchema>,
+  input: v.InferInput<typeof prFilesInputSchema>,
   paths: RuntimePaths = runtimePaths(),
   dependencies: PrEventStateDependencies = {},
 ): Promise<PrEventActionResult> {
   await ensureRuntimeHome(paths);
-  const parsed = v.safeParse(prEventTargetInputSchema, input);
+  const parsed = v.safeParse(prFilesInputSchema, input);
   if (!parsed.success) {
     return failResult('github_pr_files_get', 'Invalid PR files input.', {
       errors: [v.summarize(parsed.issues)],
@@ -131,7 +154,12 @@ export async function getGitHubPrFiles(
   }
 
   const resolved = await resolvePullRequestTarget(
-    parsed.output,
+    {
+      watchId: parsed.output.watchId,
+      ref: parsed.output.ref,
+      repo: parsed.output.repo,
+      prNumber: parsed.output.prNumber,
+    },
     paths,
     'github_pr_files_get',
   );
@@ -139,11 +167,15 @@ export async function getGitHubPrFiles(
 
   try {
     const fetcher = dependencies.fetchPullRequestFiles ?? fetchPullRequestFiles;
-    const diff = await fetcher({
+    const diff = await fetchPullRequestFilesWithCache({
       token,
       owner: resolved.target.owner,
       repo: resolved.target.repo,
       number: resolved.target.number,
+      headSha: parsed.output.headSha ?? null,
+      databasePath: paths.neondeckDatabase,
+      fetcher,
+      fetchHeadSha: dependencies.fetchPullRequestHeadSha,
     });
 
     return okResult(
@@ -166,6 +198,601 @@ export async function getGitHubPrFiles(
       },
     );
   }
+}
+
+export async function getGitHubPrReviewDraft(
+  input: v.InferInput<typeof prEventTargetInputSchema>,
+  paths: RuntimePaths = runtimePaths(),
+): Promise<PrEventActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsed = v.safeParse(prEventTargetInputSchema, input);
+  if (!parsed.success) {
+    return failResult('github_pr_review_draft_get', 'Invalid PR draft input.', {
+      errors: [v.summarize(parsed.issues)],
+    });
+  }
+
+  const resolved = await resolvePullRequestTarget(
+    parsed.output,
+    paths,
+    'github_pr_review_draft_get',
+  );
+  if (!resolved.ok) return resolved.result;
+
+  const draft = readLivePrReviewDraft({
+    databasePath: paths.neondeckDatabase,
+    repo: resolved.target.repoFullName,
+    prNumber: resolved.target.number,
+  });
+
+  return okResult(
+    'github_pr_review_draft_get',
+    false,
+    draft
+      ? `Fetched review draft for ${resolved.target.repoFullName}#${resolved.target.number}.`
+      : `No review draft for ${resolved.target.repoFullName}#${resolved.target.number}.`,
+    {
+      target: eventTargetJson(resolved.target),
+      draft: draft as unknown as JsonValue,
+    },
+  );
+}
+
+export async function putGitHubPrReviewDraft(
+  targetInput: v.InferInput<typeof prEventTargetInputSchema>,
+  draftInput: v.InferInput<typeof prReviewDraftInputSchema>,
+  paths: RuntimePaths = runtimePaths(),
+): Promise<PrEventActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsedTarget = v.safeParse(prEventTargetInputSchema, targetInput);
+  const parsedDraft = v.safeParse(prReviewDraftInputSchema, draftInput);
+  if (!parsedTarget.success || !parsedDraft.success) {
+    return failResult('github_pr_review_draft_put', 'Invalid PR draft input.', {
+      errors: [
+        ...(!parsedTarget.success ? [v.summarize(parsedTarget.issues)] : []),
+        ...(!parsedDraft.success ? [v.summarize(parsedDraft.issues)] : []),
+      ],
+    });
+  }
+
+  const resolved = await resolvePullRequestTarget(
+    parsedTarget.output,
+    paths,
+    'github_pr_review_draft_put',
+  );
+  if (!resolved.ok) return resolved.result;
+
+  const draftUpdate: Parameters<typeof upsertPrReviewDraft>[0] = {
+    databasePath: paths.neondeckDatabase,
+    repo: resolved.target.repoFullName,
+    prNumber: resolved.target.number,
+    headSha: parsedDraft.output.headSha,
+  };
+  if ('verdict' in parsedDraft.output) {
+    draftUpdate.verdict = parsedDraft.output.verdict ?? null;
+  }
+  if ('body' in parsedDraft.output) {
+    draftUpdate.body = parsedDraft.output.body ?? null;
+  }
+  const draft = upsertPrReviewDraft(draftUpdate);
+
+  return okResult(
+    'github_pr_review_draft_put',
+    true,
+    `Saved review draft for ${resolved.target.repoFullName}#${resolved.target.number}.`,
+    {
+      target: eventTargetJson(resolved.target),
+      draft: draft as unknown as JsonValue,
+    },
+  );
+}
+
+export async function postGitHubPrReviewDraftComment(
+  targetInput: v.InferInput<typeof prEventTargetInputSchema>,
+  input: v.InferInput<typeof prReviewDraftCommentInputSchema>,
+  paths: RuntimePaths = runtimePaths(),
+): Promise<PrEventActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsedTarget = v.safeParse(prEventTargetInputSchema, targetInput);
+  const parsed = v.safeParse(prReviewDraftCommentInputSchema, input);
+  if (!parsedTarget.success || !parsed.success) {
+    return failResult(
+      'github_pr_review_draft_comment_post',
+      'Invalid PR draft comment input.',
+      {
+        errors: [
+          ...(!parsedTarget.success ? [v.summarize(parsedTarget.issues)] : []),
+          ...(!parsed.success ? [v.summarize(parsed.issues)] : []),
+        ],
+      },
+    );
+  }
+
+  const resolved = await resolvePullRequestTarget(
+    parsedTarget.output,
+    paths,
+    'github_pr_review_draft_comment_post',
+  );
+  if (!resolved.ok) return resolved.result;
+
+  const draft = readPrReviewDraft({
+    databasePath: paths.neondeckDatabase,
+    draftId: parsed.output.draftId,
+  });
+  if (!draftMatchesTarget(draft, resolved.target)) {
+    return failResult(
+      'github_pr_review_draft_comment_post',
+      'Review draft does not belong to this pull request.',
+      { requires: ['draftId'] },
+    );
+  }
+
+  try {
+    const draft = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: parsed.output.draftId,
+      path: parsed.output.path,
+      side: parsed.output.side,
+      line: parsed.output.line,
+      startLine: parsed.output.startLine ?? null,
+      startSide: parsed.output.startSide ?? null,
+      body: parsed.output.body,
+    });
+    return okResult(
+      'github_pr_review_draft_comment_post',
+      true,
+      'Saved PR review draft comment.',
+      { draft: draft as unknown as JsonValue },
+    );
+  } catch (error) {
+    return failResult(
+      'github_pr_review_draft_comment_post',
+      'Could not save PR review draft comment.',
+      { errors: [errorMessage(error)] },
+    );
+  }
+}
+
+export async function patchGitHubPrReviewDraftComment(
+  targetInput: v.InferInput<typeof prEventTargetInputSchema>,
+  commentId: string,
+  input: v.InferInput<typeof prReviewDraftCommentUpdateInputSchema>,
+  paths: RuntimePaths = runtimePaths(),
+): Promise<PrEventActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsedTarget = v.safeParse(prEventTargetInputSchema, targetInput);
+  const parsed = v.safeParse(prReviewDraftCommentUpdateInputSchema, input);
+  if (!commentId || !parsedTarget.success || !parsed.success) {
+    return failResult(
+      'github_pr_review_draft_comment_patch',
+      'Invalid PR draft comment update input.',
+      {
+        errors: [
+          ...(!parsedTarget.success ? [v.summarize(parsedTarget.issues)] : []),
+          ...(!parsed.success ? [v.summarize(parsed.issues)] : []),
+        ],
+        requires: !commentId ? ['commentId'] : undefined,
+      },
+    );
+  }
+
+  const resolved = await resolvePullRequestTarget(
+    parsedTarget.output,
+    paths,
+    'github_pr_review_draft_comment_patch',
+  );
+  if (!resolved.ok) return resolved.result;
+
+  const draft = readPrReviewDraftForComment({
+    databasePath: paths.neondeckDatabase,
+    commentId,
+  });
+  if (!draftMatchesTarget(draft, resolved.target)) {
+    return failResult(
+      'github_pr_review_draft_comment_patch',
+      'Review draft comment does not belong to this pull request.',
+      { requires: ['commentId'] },
+    );
+  }
+
+  try {
+    const draft = updatePrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      commentId,
+      body: parsed.output.body,
+    });
+    return okResult(
+      'github_pr_review_draft_comment_patch',
+      true,
+      'Updated PR review draft comment.',
+      { draft: draft as unknown as JsonValue },
+    );
+  } catch (error) {
+    return failResult(
+      'github_pr_review_draft_comment_patch',
+      'Could not update PR review draft comment.',
+      { errors: [errorMessage(error)] },
+    );
+  }
+}
+
+export async function deleteGitHubPrReviewDraftComment(
+  targetInput: v.InferInput<typeof prEventTargetInputSchema>,
+  commentId: string,
+  paths: RuntimePaths = runtimePaths(),
+): Promise<PrEventActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsedTarget = v.safeParse(prEventTargetInputSchema, targetInput);
+  if (!commentId || !parsedTarget.success) {
+    return failResult(
+      'github_pr_review_draft_comment_delete',
+      'Invalid PR draft comment delete input.',
+      {
+        errors: parsedTarget.success
+          ? undefined
+          : [v.summarize(parsedTarget.issues)],
+        requires: !commentId ? ['commentId'] : undefined,
+      },
+    );
+  }
+
+  const resolved = await resolvePullRequestTarget(
+    parsedTarget.output,
+    paths,
+    'github_pr_review_draft_comment_delete',
+  );
+  if (!resolved.ok) return resolved.result;
+
+  const draft = readPrReviewDraftForComment({
+    databasePath: paths.neondeckDatabase,
+    commentId,
+  });
+  if (!draftMatchesTarget(draft, resolved.target)) {
+    return failResult(
+      'github_pr_review_draft_comment_delete',
+      'Review draft comment does not belong to this pull request.',
+      { requires: ['commentId'] },
+    );
+  }
+
+  try {
+    const draft = deletePrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      commentId,
+    });
+    return okResult(
+      'github_pr_review_draft_comment_delete',
+      true,
+      'Deleted PR review draft comment.',
+      { draft: draft as unknown as JsonValue },
+    );
+  } catch (error) {
+    return failResult(
+      'github_pr_review_draft_comment_delete',
+      'Could not delete PR review draft comment.',
+      { errors: [errorMessage(error)] },
+    );
+  }
+}
+
+export async function deleteGitHubPrReviewDraft(
+  input: v.InferInput<typeof prEventTargetInputSchema>,
+  paths: RuntimePaths = runtimePaths(),
+): Promise<PrEventActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsed = v.safeParse(prEventTargetInputSchema, input);
+  if (!parsed.success) {
+    return failResult(
+      'github_pr_review_draft_delete',
+      'Invalid PR draft delete input.',
+      { errors: [v.summarize(parsed.issues)] },
+    );
+  }
+
+  const resolved = await resolvePullRequestTarget(
+    parsed.output,
+    paths,
+    'github_pr_review_draft_delete',
+  );
+  if (!resolved.ok) return resolved.result;
+
+  const draft = discardPrReviewDraft({
+    databasePath: paths.neondeckDatabase,
+    repo: resolved.target.repoFullName,
+    prNumber: resolved.target.number,
+  });
+  return okResult(
+    'github_pr_review_draft_delete',
+    draft !== null,
+    draft
+      ? `Discarded review draft for ${resolved.target.repoFullName}#${resolved.target.number}.`
+      : `No review draft for ${resolved.target.repoFullName}#${resolved.target.number}.`,
+    {
+      target: eventTargetJson(resolved.target),
+      draft: draft as unknown as JsonValue,
+    },
+  );
+}
+
+export async function postGitHubPrReview(
+  targetInput: v.InferInput<typeof prEventTargetInputSchema>,
+  reviewInput: v.InferInput<typeof prReviewSubmitInputSchema>,
+  paths: RuntimePaths = runtimePaths(),
+  dependencies: PrEventStateDependencies = {},
+): Promise<PrEventActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsedTarget = v.safeParse(prEventTargetInputSchema, targetInput);
+  const parsedReview = v.safeParse(prReviewSubmitInputSchema, reviewInput);
+  if (!parsedTarget.success || !parsedReview.success) {
+    return failResult('github_pr_review_post', 'Invalid PR review input.', {
+      errors: [
+        ...(!parsedTarget.success ? [v.summarize(parsedTarget.issues)] : []),
+        ...(!parsedReview.success ? [v.summarize(parsedReview.issues)] : []),
+      ],
+    });
+  }
+
+  const token = dependencies.token ?? process.env.GITHUB_TOKEN;
+  if (!token) {
+    return failResult(
+      'github_pr_review_post',
+      'GITHUB_TOKEN is not configured.',
+      {
+        requires: ['GITHUB_TOKEN'],
+      },
+    );
+  }
+
+  const resolved = await resolvePullRequestTarget(
+    parsedTarget.output,
+    paths,
+    'github_pr_review_post',
+  );
+  if (!resolved.ok) return resolved.result;
+
+  try {
+    const submitter =
+      dependencies.submitPullRequestReview ?? submitPullRequestReview;
+    const result = await submitter({
+      token,
+      owner: resolved.target.owner,
+      repo: resolved.target.repo,
+      number: resolved.target.number,
+      databasePath: paths.neondeckDatabase,
+      paths,
+      draftId: parsedReview.output.draftId,
+      headSha: parsedReview.output.headSha,
+      commentIds: parsedReview.output.commentIds,
+    });
+    return okResult(
+      'github_pr_review_post',
+      true,
+      `Submitted PR review for ${resolved.target.repoFullName}#${resolved.target.number}.`,
+      {
+        target: eventTargetJson(resolved.target),
+        draft: result.draft as unknown as JsonValue,
+        review: result.review as unknown as JsonValue,
+      },
+    );
+  } catch (error) {
+    if (error instanceof GitHubPrReviewSubmitError) {
+      return {
+        ok: false,
+        action: 'github_pr_review_post',
+        changed: false,
+        message: error.failure.message,
+        data: {
+          code: error.failure.code,
+          failingCommentIds: error.failure.failingCommentIds ?? [],
+        },
+        ...(error.failure.requires ? { requires: error.failure.requires } : {}),
+      };
+    }
+    return failResult('github_pr_review_post', 'Could not submit PR review.', {
+      errors: [errorMessage(error)],
+    });
+  }
+}
+
+function draftMatchesTarget(
+  draft: {
+    repo: string;
+    prNumber: number;
+  } | null,
+  target: PullRequestTarget,
+) {
+  return (
+    draft?.repo === target.repoFullName && draft.prNumber === target.number
+  );
+}
+
+export async function postGitHubPrThreadReply(
+  targetInput: v.InferInput<typeof prEventTargetInputSchema>,
+  threadId: string,
+  input: v.InferInput<typeof prReviewThreadReplyInputSchema>,
+  paths: RuntimePaths = runtimePaths(),
+  dependencies: PrEventStateDependencies = {},
+): Promise<PrEventActionResult> {
+  await ensureRuntimeHome(paths);
+  const action = 'github_pr_thread_reply_post';
+  const parsedTarget = v.safeParse(prEventTargetInputSchema, targetInput);
+  const parsed = v.safeParse(prReviewThreadReplyInputSchema, input);
+  if (!threadId || !parsedTarget.success || !parsed.success) {
+    return failResult(action, 'Invalid review thread reply input.', {
+      errors: [
+        ...(!parsedTarget.success ? [v.summarize(parsedTarget.issues)] : []),
+        ...(!parsed.success ? [v.summarize(parsed.issues)] : []),
+      ],
+      requires: !threadId ? ['threadId'] : undefined,
+    });
+  }
+
+  const token = dependencies.token ?? process.env.GITHUB_TOKEN;
+  if (!token) {
+    return failResult(action, 'GITHUB_TOKEN is not configured.', {
+      requires: ['GITHUB_TOKEN'],
+    });
+  }
+
+  const resolved = await resolvePullRequestTarget(
+    parsedTarget.output,
+    paths,
+    action,
+  );
+  if (!resolved.ok) return resolved.result;
+
+  const verified = await verifyReviewThreadTarget({
+    action,
+    token,
+    threadId,
+    target: resolved.target,
+    dependencies,
+  });
+  if (!verified.ok) return verified.result;
+
+  try {
+    const replier =
+      dependencies.replyToPullRequestReviewThread ??
+      replyToPullRequestReviewThread;
+    const thread = await replier({
+      token,
+      threadId,
+      body: parsed.output.text,
+    });
+    return okResult(action, true, 'Posted review thread reply.', {
+      thread: thread as unknown as JsonValue,
+    });
+  } catch (error) {
+    return failResult(action, 'Could not post review thread reply.', {
+      errors: [errorMessage(error)],
+    });
+  }
+}
+
+export async function postGitHubPrThreadResolution(
+  targetInput: v.InferInput<typeof prEventTargetInputSchema>,
+  threadId: string,
+  resolved: boolean,
+  paths: RuntimePaths = runtimePaths(),
+  dependencies: PrEventStateDependencies = {},
+): Promise<PrEventActionResult> {
+  await ensureRuntimeHome(paths);
+  const action = resolved
+    ? 'github_pr_thread_resolve_post'
+    : 'github_pr_thread_unresolve_post';
+  const parsedTarget = v.safeParse(prEventTargetInputSchema, targetInput);
+  if (!threadId || !parsedTarget.success) {
+    return failResult(
+      action,
+      !threadId
+        ? 'Review thread id is required.'
+        : 'Invalid review thread target input.',
+      {
+        errors: parsedTarget.success
+          ? undefined
+          : [v.summarize(parsedTarget.issues)],
+        requires: !threadId ? ['threadId'] : undefined,
+      },
+    );
+  }
+
+  const token = dependencies.token ?? process.env.GITHUB_TOKEN;
+  if (!token) {
+    return failResult(action, 'GITHUB_TOKEN is not configured.', {
+      requires: ['GITHUB_TOKEN'],
+    });
+  }
+
+  const target = await resolvePullRequestTarget(
+    parsedTarget.output,
+    paths,
+    action,
+  );
+  if (!target.ok) return target.result;
+
+  const verified = await verifyReviewThreadTarget({
+    action,
+    token,
+    threadId,
+    target: target.target,
+    dependencies,
+  });
+  if (!verified.ok) return verified.result;
+
+  try {
+    const mutator = resolved
+      ? (dependencies.resolvePullRequestReviewThread ??
+        resolvePullRequestReviewThread)
+      : (dependencies.unresolvePullRequestReviewThread ??
+        unresolvePullRequestReviewThread);
+    const thread = await mutator({ token, threadId });
+    return okResult(
+      action,
+      true,
+      resolved ? 'Resolved review thread.' : 'Unresolved review thread.',
+      { thread: thread as unknown as JsonValue },
+    );
+  } catch (error) {
+    return failResult(
+      action,
+      resolved
+        ? 'Could not resolve review thread.'
+        : 'Could not unresolve review thread.',
+      { errors: [errorMessage(error)] },
+    );
+  }
+}
+
+async function verifyReviewThreadTarget(options: {
+  action: string;
+  token: string;
+  threadId: string;
+  target: PullRequestTarget;
+  dependencies: PrEventStateDependencies;
+}): Promise<
+  | { ok: true; thread: GitHubPullRequestReviewThread }
+  | { ok: false; result: PrEventActionResult }
+> {
+  try {
+    const fetcher =
+      options.dependencies.fetchPullRequestReviewThread ??
+      fetchPullRequestReviewThread;
+    const thread = await fetcher({
+      token: options.token,
+      threadId: options.threadId,
+    });
+    if (!reviewThreadBelongsToTarget(thread, options.target)) {
+      return {
+        ok: false,
+        result: failResult(
+          options.action,
+          'Review thread does not belong to this pull request.',
+          { requires: ['threadId'] },
+        ),
+      };
+    }
+    return { ok: true, thread };
+  } catch (error) {
+    return {
+      ok: false,
+      result: failResult(
+        options.action,
+        'Could not verify review thread target.',
+        { errors: [errorMessage(error)] },
+      ),
+    };
+  }
+}
+
+function reviewThreadBelongsToTarget(
+  thread: GitHubPullRequestReviewThread,
+  target: PullRequestTarget,
+) {
+  return (
+    thread.pullRequestRepo?.toLowerCase() ===
+      target.repoFullName.toLowerCase() &&
+    thread.pullRequestNumber === target.number
+  );
 }
 
 export async function getGitHubPrRequestedChanges(

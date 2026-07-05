@@ -9,12 +9,14 @@ export type DiffViewTone = 'primary' | 'violet' | 'accent';
 
 export type DiffReviewAnnotationMetadata = {
   id: string;
+  kind?: 'thread' | 'draft' | 'composer';
   title: string;
   body: string;
   authorLogin?: string | null;
   url?: string | null;
   isResolved?: boolean;
   isOutdated?: boolean;
+  isStale?: boolean;
 };
 
 export type DiffReviewAnnotation = {

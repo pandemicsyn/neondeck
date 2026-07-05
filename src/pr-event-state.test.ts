@@ -5,15 +5,22 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type {
   GitHubPullRequestDetail,
   GitHubPullRequestEventState,
+  GitHubPullRequestReviewThread,
 } from './modules/github';
 import {
   getGitHubPrBranchPermissions,
   getGitHubPrRequestedChanges,
   getGitHubPrReviewThreads,
+  deleteGitHubPrReviewDraftComment,
   listPrWatchEventWatermarks,
   neondeckPrEventActions,
   neondeckPrEventTools,
+  patchGitHubPrReviewDraftComment,
+  postGitHubPrReviewDraftComment,
   postGitHubPrComment,
+  postGitHubPrThreadReply,
+  postGitHubPrThreadResolution,
+  putGitHubPrReviewDraft,
   refreshPrWatchEventState,
 } from './modules/pr-events';
 import { runtimePaths } from './runtime-home';
@@ -402,6 +409,262 @@ describe('PR event state watermarks', () => {
     expect(posted).toBe(false);
   });
 
+  it('keeps PR review draft comment mutations scoped to the route PR', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    const draftResult = await putGitHubPrReviewDraft(
+      { repo: 'neondeck', prNumber: 123 },
+      {
+        headSha: 'head123',
+        verdict: 'comment',
+        body: 'Review body',
+      },
+      paths,
+    );
+    const draft = (
+      draftResult.data as
+        | { draft?: { id?: string; comments?: Array<{ id?: string }> } }
+        | undefined
+    )?.draft;
+    expect(draft?.id).toEqual(expect.any(String));
+
+    await expect(
+      postGitHubPrReviewDraftComment(
+        { repo: 'neondeck', prNumber: 124 },
+        {
+          draftId: draft?.id ?? '',
+          path: 'src/app.ts',
+          side: 'RIGHT',
+          line: 12,
+          body: 'Wrong PR.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'github_pr_review_draft_comment_post',
+      message: 'Review draft does not belong to this pull request.',
+    });
+
+    const commentResult = await postGitHubPrReviewDraftComment(
+      { repo: 'neondeck', prNumber: 123 },
+      {
+        draftId: draft?.id ?? '',
+        path: 'src/app.ts',
+        side: 'RIGHT',
+        line: 12,
+        body: 'Right PR.',
+      },
+      paths,
+    );
+    const commentId = (
+      commentResult.data as
+        { draft?: { comments?: Array<{ id?: string }> } } | undefined
+    )?.draft?.comments?.[0]?.id;
+    expect(commentId).toEqual(expect.any(String));
+
+    await expect(
+      patchGitHubPrReviewDraftComment(
+        { repo: 'neondeck', prNumber: 124 },
+        commentId ?? '',
+        { body: 'Wrong PR edit.' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'github_pr_review_draft_comment_patch',
+      message: 'Review draft comment does not belong to this pull request.',
+    });
+
+    await expect(
+      deleteGitHubPrReviewDraftComment(
+        { repo: 'neondeck', prNumber: 124 },
+        commentId ?? '',
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'github_pr_review_draft_comment_delete',
+      message: 'Review draft comment does not belong to this pull request.',
+    });
+  });
+
+  it('keeps live PR review thread mutations scoped to the route PR', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    const mismatchCalls: string[] = [];
+
+    await expect(
+      postGitHubPrThreadReply(
+        { repo: 'neondeck', prNumber: 123 },
+        'thread-1',
+        { text: 'Thanks, fixed.' },
+        paths,
+        {
+          fetchPullRequestReviewThread: async (input) => {
+            mismatchCalls.push(`fetch:${input.threadId}`);
+            return reviewThread({ pullRequestNumber: 124 });
+          },
+          replyToPullRequestReviewThread: async (input) => {
+            mismatchCalls.push(`reply:${input.threadId}`);
+            return reviewThread();
+          },
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'github_pr_thread_reply_post',
+      message: 'Review thread does not belong to this pull request.',
+    });
+    expect(mismatchCalls).toEqual(['fetch:thread-1']);
+
+    const replyCalls: string[] = [];
+    await expect(
+      postGitHubPrThreadReply(
+        { repo: 'neondeck', prNumber: 123 },
+        'thread-1',
+        { text: 'Thanks, fixed.' },
+        paths,
+        {
+          fetchPullRequestReviewThread: async (input) => {
+            replyCalls.push(`fetch:${input.threadId}`);
+            return reviewThread();
+          },
+          replyToPullRequestReviewThread: async (input) => {
+            replyCalls.push(`reply:${input.threadId}`);
+            return reviewThread({
+              comments: [
+                {
+                  id: 'comment-2',
+                  databaseId: 112,
+                  authorLogin: 'neon',
+                  body: input.body,
+                  url: null,
+                  path: 'src/app.ts',
+                  line: 12,
+                  originalLine: 12,
+                  diffHunk: '@@',
+                  reviewId: 9002,
+                  createdAt: '2026-06-30T20:10:00Z',
+                  updatedAt: '2026-06-30T20:10:00Z',
+                },
+              ],
+            });
+          },
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'github_pr_thread_reply_post',
+      data: {
+        thread: {
+          id: 'thread-1',
+          pullRequestRepo: 'pandemicsyn/neondeck',
+          pullRequestNumber: 123,
+        },
+      },
+    });
+    expect(replyCalls).toEqual(['fetch:thread-1', 'reply:thread-1']);
+
+    const resolveCalls: string[] = [];
+    await expect(
+      postGitHubPrThreadResolution(
+        { repo: 'neondeck', prNumber: 123 },
+        'thread-1',
+        true,
+        paths,
+        {
+          fetchPullRequestReviewThread: async (input) => {
+            resolveCalls.push(`fetch:${input.threadId}`);
+            return reviewThread();
+          },
+          resolvePullRequestReviewThread: async (input) => {
+            resolveCalls.push(`resolve:${input.threadId}`);
+            return reviewThread({ isResolved: true });
+          },
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'github_pr_thread_resolve_post',
+      data: {
+        thread: {
+          id: 'thread-1',
+          isResolved: true,
+        },
+      },
+    });
+    expect(resolveCalls).toEqual(['fetch:thread-1', 'resolve:thread-1']);
+  });
+
+  it('preserves omitted review draft fields on partial saves', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await expect(
+      putGitHubPrReviewDraft(
+        { repo: 'neondeck', prNumber: 123 },
+        {
+          headSha: 'head123',
+          verdict: 'comment',
+          body: 'Initial body',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        draft: {
+          verdict: 'comment',
+          body: 'Initial body',
+        },
+      },
+    });
+
+    await expect(
+      putGitHubPrReviewDraft(
+        { repo: 'neondeck', prNumber: 123 },
+        {
+          headSha: 'head123',
+          body: 'Edited body',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        draft: {
+          verdict: 'comment',
+          body: 'Edited body',
+        },
+      },
+    });
+
+    await expect(
+      putGitHubPrReviewDraft(
+        { repo: 'neondeck', prNumber: 123 },
+        {
+          headSha: 'head123',
+          verdict: 'request-changes',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        draft: {
+          verdict: 'request-changes',
+          body: 'Edited body',
+        },
+      },
+    });
+  });
+
   it('validates inputs and reports missing credentials before fetching', async () => {
     delete process.env.GITHUB_TOKEN;
     const home = await tempHome();
@@ -624,6 +887,24 @@ function prEventState(
     },
     isOutOfDate: false,
     fetchedAt: '2026-06-30T20:10:00Z',
+    ...overrides,
+  };
+}
+
+function reviewThread(
+  overrides: Partial<GitHubPullRequestReviewThread> = {},
+): GitHubPullRequestReviewThread {
+  return {
+    id: 'thread-1',
+    isResolved: false,
+    isOutdated: false,
+    path: 'src/app.ts',
+    line: 12,
+    originalLine: 12,
+    diffSide: 'RIGHT',
+    pullRequestRepo: 'pandemicsyn/neondeck',
+    pullRequestNumber: 123,
+    comments: [],
     ...overrides,
   };
 }

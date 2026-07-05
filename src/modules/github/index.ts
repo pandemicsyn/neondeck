@@ -11,14 +11,39 @@ export {
   fetchPullRequestEventState,
   fetchPullRequestFiles,
 } from './pull-requests';
+export { fetchPullRequestFilesWithCache } from './pr-file-cache';
 export {
   fetchCheckRunDetails,
   fetchCheckSuites,
   fetchCheckSummary,
   fetchFailingCheckFacts,
 } from './checks';
-export { fetchPullRequestReviews } from './reviews';
 export {
+  addPrReviewDraftComment,
+  deletePrReviewDraftComment,
+  discardPrReviewDraft,
+  fetchPullRequestReviews,
+  readLivePrReviewDraft,
+  readPrReviewDraft,
+  readPrReviewDraftForComment,
+  replyToPullRequestReviewThread,
+  resolvePullRequestReviewThread,
+  submitPullRequestReview,
+  unresolvePullRequestReviewThread,
+  updatePrReviewDraftComment,
+  upsertPrReviewDraft,
+  GitHubPrReviewSubmitError,
+} from './reviews';
+export type {
+  GitHubPrReviewDraft,
+  GitHubPrReviewDraftComment,
+  GitHubPrReviewDraftCommentSide,
+  GitHubPrReviewDraftStatus,
+  GitHubPrReviewSubmitFailure,
+  GitHubPrReviewVerdict,
+} from './reviews';
+export {
+  fetchPullRequestReviewThread,
   fetchPullRequestReviewThreads,
   postPullRequestComment,
 } from './comments';

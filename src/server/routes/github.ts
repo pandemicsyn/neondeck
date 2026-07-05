@@ -4,9 +4,18 @@ import {
   getGitHubPrBranchPermissions,
   getGitHubPrEventState,
   getGitHubPrFiles,
+  getGitHubPrReviewDraft,
   getGitHubPrRequestedChanges,
   getGitHubPrReviewThreads,
+  deleteGitHubPrReviewDraft,
+  deleteGitHubPrReviewDraftComment,
+  patchGitHubPrReviewDraftComment,
   postGitHubPrComment,
+  postGitHubPrReview,
+  postGitHubPrReviewDraftComment,
+  postGitHubPrThreadReply,
+  postGitHubPrThreadResolution,
+  putGitHubPrReviewDraft,
 } from '../../modules/pr-events';
 import type { RuntimePaths } from '../../runtime-home';
 import { safeJsonBody } from '../http';
@@ -54,12 +63,180 @@ export function createGitHubRoutes(paths: RuntimePaths) {
       );
     }
 
+    const headSha = c.req.query('head')?.trim() || undefined;
     const result = await getGitHubPrFiles(
-      { repo: `${owner}/${repo}`, prNumber: number },
+      { repo: `${owner}/${repo}`, prNumber: number, headSha },
       paths,
     );
     return c.json(result, result.ok ? 200 : 400);
   });
+
+  routes.get('/prs/:owner/:repo/:number/review-draft', async (c) => {
+    const target = prTargetFromParams(
+      c.req.param('owner'),
+      c.req.param('repo'),
+      c.req.param('number'),
+    );
+    if (!target.ok) return c.json(target.result, 400);
+    const result = await getGitHubPrReviewDraft(target.input, paths);
+    return c.json(result, result.ok ? 200 : 400);
+  });
+
+  routes.put('/prs/:owner/:repo/:number/review-draft', async (c) => {
+    const target = prTargetFromParams(
+      c.req.param('owner'),
+      c.req.param('repo'),
+      c.req.param('number'),
+    );
+    if (!target.ok) return c.json(target.result, 400);
+    const result = await putGitHubPrReviewDraft(
+      target.input,
+      (await safeJsonBody(c)) as Parameters<typeof putGitHubPrReviewDraft>[1],
+      paths,
+    );
+    return c.json(result, result.ok ? 200 : 400);
+  });
+
+  routes.post('/prs/:owner/:repo/:number/review-draft/comments', async (c) => {
+    const target = prTargetFromParams(
+      c.req.param('owner'),
+      c.req.param('repo'),
+      c.req.param('number'),
+    );
+    if (!target.ok) return c.json(target.result, 400);
+    const result = await postGitHubPrReviewDraftComment(
+      target.input,
+      (await safeJsonBody(c)) as Parameters<
+        typeof postGitHubPrReviewDraftComment
+      >[1],
+      paths,
+    );
+    return c.json(result, result.ok ? 200 : 400);
+  });
+
+  routes.patch(
+    '/prs/:owner/:repo/:number/review-draft/comments/:id',
+    async (c) => {
+      const target = prTargetFromParams(
+        c.req.param('owner'),
+        c.req.param('repo'),
+        c.req.param('number'),
+      );
+      if (!target.ok) return c.json(target.result, 400);
+      const result = await patchGitHubPrReviewDraftComment(
+        target.input,
+        c.req.param('id'),
+        (await safeJsonBody(c)) as Parameters<
+          typeof patchGitHubPrReviewDraftComment
+        >[2],
+        paths,
+      );
+      return c.json(result, result.ok ? 200 : 400);
+    },
+  );
+
+  routes.delete(
+    '/prs/:owner/:repo/:number/review-draft/comments/:id',
+    async (c) => {
+      const target = prTargetFromParams(
+        c.req.param('owner'),
+        c.req.param('repo'),
+        c.req.param('number'),
+      );
+      if (!target.ok) return c.json(target.result, 400);
+      const result = await deleteGitHubPrReviewDraftComment(
+        target.input,
+        c.req.param('id'),
+        paths,
+      );
+      return c.json(result, result.ok ? 200 : 400);
+    },
+  );
+
+  routes.delete('/prs/:owner/:repo/:number/review-draft', async (c) => {
+    const target = prTargetFromParams(
+      c.req.param('owner'),
+      c.req.param('repo'),
+      c.req.param('number'),
+    );
+    if (!target.ok) return c.json(target.result, 400);
+    const result = await deleteGitHubPrReviewDraft(target.input, paths);
+    return c.json(result, result.ok ? 200 : 400);
+  });
+
+  routes.post('/prs/:owner/:repo/:number/reviews', async (c) => {
+    const target = prTargetFromParams(
+      c.req.param('owner'),
+      c.req.param('repo'),
+      c.req.param('number'),
+    );
+    if (!target.ok) return c.json(target.result, 400);
+    const result = await postGitHubPrReview(
+      target.input,
+      (await safeJsonBody(c)) as Parameters<typeof postGitHubPrReview>[1],
+      paths,
+    );
+    return c.json(result, result.ok ? 200 : 400);
+  });
+
+  routes.post(
+    '/prs/:owner/:repo/:number/review-threads/:threadId/reply',
+    async (c) => {
+      const target = prTargetFromParams(
+        c.req.param('owner'),
+        c.req.param('repo'),
+        c.req.param('number'),
+      );
+      if (!target.ok) return c.json(target.result, 400);
+      const result = await postGitHubPrThreadReply(
+        target.input,
+        c.req.param('threadId'),
+        (await safeJsonBody(c)) as Parameters<
+          typeof postGitHubPrThreadReply
+        >[2],
+        paths,
+      );
+      return c.json(result, result.ok ? 200 : 400);
+    },
+  );
+
+  routes.post(
+    '/prs/:owner/:repo/:number/review-threads/:threadId/resolve',
+    async (c) => {
+      const target = prTargetFromParams(
+        c.req.param('owner'),
+        c.req.param('repo'),
+        c.req.param('number'),
+      );
+      if (!target.ok) return c.json(target.result, 400);
+      const result = await postGitHubPrThreadResolution(
+        target.input,
+        c.req.param('threadId'),
+        true,
+        paths,
+      );
+      return c.json(result, result.ok ? 200 : 400);
+    },
+  );
+
+  routes.post(
+    '/prs/:owner/:repo/:number/review-threads/:threadId/unresolve',
+    async (c) => {
+      const target = prTargetFromParams(
+        c.req.param('owner'),
+        c.req.param('repo'),
+        c.req.param('number'),
+      );
+      if (!target.ok) return c.json(target.result, 400);
+      const result = await postGitHubPrThreadResolution(
+        target.input,
+        c.req.param('threadId'),
+        false,
+        paths,
+      );
+      return c.json(result, result.ok ? 200 : 400);
+    },
+  );
 
   routes.post('/prs/event-state', async (c) => {
     const result = await getGitHubPrEventState(
@@ -106,4 +283,25 @@ export function createGitHubRoutes(paths: RuntimePaths) {
   });
 
   return routes;
+}
+
+function prTargetFromParams(owner: string, repo: string, numberText: string) {
+  const number = Number(numberText);
+  if (!Number.isInteger(number) || number <= 0) {
+    return {
+      ok: false as const,
+      result: {
+        ok: false,
+        action: 'github_pr_review_target',
+        changed: false,
+        message: 'Invalid PR number.',
+        requires: ['prNumber'],
+      },
+    };
+  }
+
+  return {
+    ok: true as const,
+    input: { repo: `${owner}/${repo}`, prNumber: number },
+  };
 }

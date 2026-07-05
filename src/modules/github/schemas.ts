@@ -110,6 +110,24 @@ export type GitHubPullRequestFile = {
   message: string | null;
 };
 
+export const githubPullRequestFileSchema = v.object({
+  path: v.string(),
+  previousPath: v.nullable(v.string()),
+  status: v.string(),
+  additions: v.number(),
+  deletions: v.number(),
+  changes: v.number(),
+  binary: v.boolean(),
+  generatedLike: v.boolean(),
+  patch: v.nullable(v.string()),
+  truncated: v.boolean(),
+  sha: v.nullable(v.string()),
+  htmlUrl: v.nullable(v.string()),
+  rawUrl: v.nullable(v.string()),
+  contentsUrl: v.nullable(v.string()),
+  message: v.nullable(v.string()),
+});
+
 export type GitHubPullRequestFiles = {
   repo: string;
   number: number;
@@ -135,6 +153,10 @@ export type GitHubPullRequestReview = {
   url: string | null;
 };
 
+export type GitHubSubmittedPullRequestReview = GitHubPullRequestReview & {
+  body: string | null;
+};
+
 export type GitHubPullRequestRequestedChangesState = {
   active: GitHubPullRequestReview[];
   latestByReviewer: GitHubPullRequestReview[];
@@ -149,6 +171,8 @@ export type GitHubPullRequestReviewThread = {
   line: number | null;
   originalLine?: number | null;
   diffSide?: string | null;
+  pullRequestRepo?: string | null;
+  pullRequestNumber?: number | null;
   comments: GitHubPullRequestReviewThreadComment[];
 };
 
@@ -442,10 +466,14 @@ export const githubPullRequestReviewApiItemSchema = v.object({
   submitted_at: v.optional(v.nullable(v.string())),
   commit_id: v.optional(v.nullable(v.string())),
   html_url: v.optional(v.nullable(v.string())),
+  body: v.optional(v.nullable(v.string())),
 });
 export type GitHubPullRequestReviewApiItem = v.InferOutput<
   typeof githubPullRequestReviewApiItemSchema
 >;
+
+export const githubPullRequestReviewCreatedApiResponseSchema =
+  githubPullRequestReviewApiItemSchema;
 
 export const githubRepositoryApiResponseSchema = v.object({
   full_name: v.string(),
@@ -498,6 +526,13 @@ export type GitHubReviewThreadCommentGraphqlNode = v.InferOutput<
   typeof githubReviewThreadCommentGraphqlNodeSchema
 >;
 
+const githubReviewThreadPullRequestGraphqlSchema = v.object({
+  number: v.number(),
+  repository: v.object({
+    nameWithOwner: v.string(),
+  }),
+});
+
 export const githubReviewThreadsGraphqlResponseSchema = v.object({
   data: v.object({
     repository: v.nullable(
@@ -519,6 +554,9 @@ export const githubReviewThreadsGraphqlResponseSchema = v.object({
                     line: v.optional(v.nullable(v.number())),
                     originalLine: v.optional(v.nullable(v.number())),
                     diffSide: v.optional(v.string()),
+                    pullRequest: v.optional(
+                      v.nullable(githubReviewThreadPullRequestGraphqlSchema),
+                    ),
                     comments: v.object({
                       pageInfo: v.object({
                         hasNextPage: v.boolean(),
@@ -566,6 +604,39 @@ export const githubReviewThreadCommentsGraphqlResponseSchema = v.object({
   }),
 });
 
+export const githubReviewThreadNodeGraphqlResponseSchema = v.object({
+  data: v.object({
+    node: v.nullable(
+      v.object({
+        id: v.string(),
+        isResolved: v.boolean(),
+        isOutdated: v.boolean(),
+        path: v.optional(v.nullable(v.string())),
+        line: v.optional(v.nullable(v.number())),
+        originalLine: v.optional(v.nullable(v.number())),
+        diffSide: v.optional(v.string()),
+        pullRequest: v.optional(
+          v.nullable(githubReviewThreadPullRequestGraphqlSchema),
+        ),
+        comments: v.object({
+          pageInfo: v.object({
+            hasNextPage: v.boolean(),
+            endCursor: v.nullable(v.string()),
+          }),
+          nodes: v.optional(
+            v.array(githubReviewThreadCommentGraphqlNodeSchema),
+          ),
+        }),
+      }),
+    ),
+  }),
+});
+export type GitHubReviewThreadNodeGraphqlNode = NonNullable<
+  v.InferOutput<
+    typeof githubReviewThreadNodeGraphqlResponseSchema
+  >['data']['node']
+>;
+
 export const pullRequestReviewThreadsQuery = `
   query NeondeckPullRequestReviewThreads($owner: String!, $name: String!, $number: Int!, $after: String) {
     repository(owner: $owner, name: $name) {
@@ -583,6 +654,12 @@ export const pullRequestReviewThreadsQuery = `
             line
             originalLine
             diffSide
+            pullRequest {
+              number
+              repository {
+                nameWithOwner
+              }
+            }
             comments(first: 100) {
               pageInfo {
                 hasNextPage
@@ -619,6 +696,52 @@ export const reviewThreadCommentsQuery = `
     node(id: $threadId) {
       ... on PullRequestReviewThread {
         comments(first: 100, after: $after) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            id
+            databaseId
+            body
+            url
+            author {
+              login
+            }
+            createdAt
+            updatedAt
+            path
+            line
+            originalLine
+            diffHunk
+            pullRequestReview {
+              databaseId
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const pullRequestReviewThreadNodeQuery = `
+  query NeondeckPullRequestReviewThread($threadId: ID!) {
+    node(id: $threadId) {
+      ... on PullRequestReviewThread {
+        id
+        isResolved
+        isOutdated
+        path
+        line
+        originalLine
+        diffSide
+        pullRequest {
+          number
+          repository {
+            nameWithOwner
+          }
+        }
+        comments(first: 100) {
           pageInfo {
             hasNextPage
             endCursor

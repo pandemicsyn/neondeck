@@ -13,6 +13,7 @@ import {
   prCommentInputSchema,
   prEventOutputSchema,
   prEventTargetInputSchema,
+  prFilesInputSchema,
   prWatchEventWatermarkListInputSchema,
 } from './schemas';
 
@@ -42,7 +43,7 @@ export const githubPrFilesGetAction = defineAction({
   name: 'neondeck_github_pr_files_get',
   description:
     'Fetch read-only GitHub PR file diffs and per-file patch metadata.',
-  input: prEventTargetInputSchema,
+  input: prFilesInputSchema,
   output: prEventOutputSchema,
   async run({ input }) {
     return getGitHubPrFiles(input);

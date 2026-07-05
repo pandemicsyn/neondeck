@@ -1,4 +1,5 @@
 export * from './types';
+export { ApiError } from './http';
 export * from './config';
 export * from './github';
 export * from './repos';

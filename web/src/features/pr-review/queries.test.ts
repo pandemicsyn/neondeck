@@ -17,6 +17,9 @@ describe('prReviewQueryKeys', () => {
     expect(prReviewQueryKeys.reviewThreads(pr)).not.toEqual(
       prReviewQueryKeys.reviewThreads(updated),
     );
+    expect(prReviewQueryKeys.draft(pr)).toEqual(
+      prReviewQueryKeys.draft(updated),
+    );
   });
 });
 

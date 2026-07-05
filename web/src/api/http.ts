@@ -1,3 +1,15 @@
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly url: string,
+    readonly data: unknown,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 export async function getJson<T>(
   url: string,
   options: { signal?: AbortSignal } = {},
@@ -15,6 +27,45 @@ export async function postJson<T>(
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
+    signal: options.signal,
+  });
+  return readJsonResponse<T>(response, url);
+}
+
+export async function putJson<T>(
+  url: string,
+  body: unknown,
+  options: { signal?: AbortSignal } = {},
+) {
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: options.signal,
+  });
+  return readJsonResponse<T>(response, url);
+}
+
+export async function patchJson<T>(
+  url: string,
+  body: unknown,
+  options: { signal?: AbortSignal } = {},
+) {
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: options.signal,
+  });
+  return readJsonResponse<T>(response, url);
+}
+
+export async function deleteJson<T>(
+  url: string,
+  options: { signal?: AbortSignal } = {},
+) {
+  const response = await fetch(url, {
+    method: 'DELETE',
     signal: options.signal,
   });
   return readJsonResponse<T>(response, url);
@@ -46,7 +97,7 @@ async function readJsonResponse<T>(response: Response, url: string) {
       readErrorMessage(data) ??
       readTextErrorMessage(text) ??
       `Request failed with ${response.status}`;
-    throw new Error(message);
+    throw new ApiError(message, response.status, url, data);
   }
 
   return data as T;
