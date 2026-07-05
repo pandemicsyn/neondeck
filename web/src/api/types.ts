@@ -110,6 +110,26 @@ export type GitHubPullRequestResponse = {
   error?: string;
 };
 
+export type ReportRecord = {
+  id: string;
+  kind: string;
+  title: string;
+  repoId: string | null;
+  sourceRef: string | null;
+  htmlPath: string;
+  summary: unknown | null;
+  createdBy: string;
+  createdAt: string;
+};
+
+export type ReportsResponse = {
+  ok: boolean;
+  action: 'reports_list';
+  items: ReportRecord[];
+  fetchedAt?: string;
+  message?: string;
+};
+
 export type GitHubPullRequestFile = Omit<RepoDiffFile, 'patch'> & {
   patch?: string | null;
   previousPath?: string | null;

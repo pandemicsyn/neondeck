@@ -7,6 +7,7 @@ import { GitHubPrListPlugin } from './GitHubPrList';
 import { HostMetricsPlugin } from './HostMetrics';
 import { LearningOperatorPanelPlugin } from './LearningOperatorPanel';
 import { MemoryPanelPlugin } from './MemoryPanel';
+import { ReportsPanelPlugin } from './ReportsPanel';
 import { RuntimeOverviewPlugin } from './RuntimeOverview';
 import { SubagentSummaryPlugin } from './SubagentSummary';
 import { WorkflowObservabilityPanelPlugin } from './WorkflowObservabilityPanel';
@@ -16,6 +17,7 @@ export const plugins = [
   GitHubPrListPlugin,
   ActiveWatchesPlugin,
   AutopilotPanelPlugin,
+  ReportsPanelPlugin,
   RuntimeOverviewPlugin,
   BriefingPanelPlugin,
   MemoryPanelPlugin,

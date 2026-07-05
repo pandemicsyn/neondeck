@@ -271,6 +271,31 @@ export const workflowSummaries = sqliteTable('workflow_summaries', {
   updatedAt: text('updated_at').notNull(),
 });
 
+export const reports = sqliteTable(
+  'reports',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind').notNull(),
+    title: text('title').notNull(),
+    repoId: text('repo_id'),
+    sourceRef: text('source_ref'),
+    htmlPath: text('html_path').notNull(),
+    summaryJson: text('summary_json'),
+    createdBy: text('created_by').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_reports_kind_created').on(
+      table.kind,
+      sql`${table.createdAt} DESC`,
+    ),
+    index('idx_reports_repo_created').on(
+      table.repoId,
+      sql`${table.createdAt} DESC`,
+    ),
+  ],
+);
+
 export const prReviewDrafts = sqliteTable(
   'pr_review_drafts',
   {

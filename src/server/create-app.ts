@@ -41,6 +41,10 @@ import { createMetricsRoutes } from './routes/metrics';
 import { createMcpRoutes } from './routes/mcp';
 import { createNotificationRoutes } from './routes/notifications';
 import { createRepoEditRoutes } from './routes/repo-edit';
+import {
+  createReportApiRoutes,
+  createReportFileRoutes,
+} from './routes/reports';
 import { createReposRoutes } from './routes/repos';
 import { createRuntimeRoutes } from './routes/runtime';
 import { createSafetyRoutes } from './routes/safety';
@@ -86,6 +90,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   await getMcpRegistry(paths).start();
 
   app.use('/api/*', requireLocalApiAccess);
+  app.use('/reports/*', requireLocalApiAccess);
 
   app.route('/api', createRuntimeRoutes(paths));
   app.route('/api/events', createConfigEventRoutes());
@@ -109,6 +114,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api/learning', createLearningRoutes(paths));
   app.route('/api/skills', createSkillRoutes(paths));
   app.route('/api/commands', createCommandRoutes());
+  app.route('/api', createReportApiRoutes(paths));
   app.route('/api/workflows', createWorkflowRoutes(paths));
   app.route('/api/github', createGitHubRoutes(paths));
 
@@ -121,6 +127,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.use('/api/flue/runs', requireRunInspection);
   app.use('/api/flue/runs/*', requireRunInspection);
   app.route('/api/flue', flue());
+  app.route('/reports', createReportFileRoutes(paths));
 
   app.use('/assets/*', serveStatic({ root: staticRoot }));
   app.get(
