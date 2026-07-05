@@ -104,7 +104,19 @@ export type AutopilotPreparedDiff = {
   verificationStatus: string;
   sourceOfTruth: 'worktree';
   summary: string;
+  revisionRun: AutopilotPreparedDiffRevisionRun | null;
   updatedAt: string;
+};
+
+export type AutopilotPreparedDiffRevisionRun = {
+  kiloTaskId: string | null;
+  reason: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  outcome: string | null;
+  status: string | null;
+  title: string | null;
+  cwd: string | null;
 };
 
 export type AutopilotApproval = {
@@ -305,6 +317,7 @@ export const preparedDiffSchema = v.object({
     'prepared',
     'verification-requested',
     'revision-requested',
+    'revision-in-progress',
     'push-approved',
     'push-blocked',
     'pushed',
@@ -314,6 +327,18 @@ export const preparedDiffSchema = v.object({
   verificationStatus: v.string(),
   sourceOfTruth: v.literal('worktree'),
   summary: v.string(),
+  revisionRun: v.nullable(
+    v.object({
+      kiloTaskId: v.nullable(v.string()),
+      reason: v.nullable(v.string()),
+      startedAt: v.nullable(v.string()),
+      completedAt: v.nullable(v.string()),
+      outcome: v.nullable(v.string()),
+      status: v.nullable(v.string()),
+      title: v.nullable(v.string()),
+      cwd: v.nullable(v.string()),
+    }),
+  ),
   updatedAt: v.string(),
 });
 export const approvalSchema = v.object({

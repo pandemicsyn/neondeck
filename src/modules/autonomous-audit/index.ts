@@ -96,6 +96,8 @@ function statusFromPreparedDiff(status: PreparedDiffRecord['status']) {
     case 'push-blocked':
     case 'revision-requested':
       return 'blocked';
+    case 'revision-in-progress':
+      return 'revision-in-progress';
     case 'verification-requested':
       return 'verification-requested';
     case 'push-approved':

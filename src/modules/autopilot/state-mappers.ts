@@ -32,6 +32,7 @@ import {
   type PreparedDiffStatus,
 } from '../prepared-diffs';
 import { listPrWatchRecords, type PrWatch } from '../watches';
+import { tryKiloTask } from '../kilo';
 import {
   listWorktrees,
   type WorktreeLifecycleStatus,
@@ -227,6 +228,7 @@ export function queueItemFromApproval(
 
 export function preparedDiffFromRecord(
   record: PreparedDiffRecord,
+  paths: RuntimePaths,
 ): AutopilotPreparedDiff {
   return {
     id: record.id,
@@ -241,6 +243,7 @@ export function preparedDiffFromRecord(
     verificationStatus: record.verificationStatus,
     sourceOfTruth: 'worktree',
     summary: preparedDiffSummary(record),
+    revisionRun: revisionRunFromPreparedDiff(record, paths),
     updatedAt: record.updatedAt,
   };
 }
@@ -251,11 +254,16 @@ export function queueItemFromPreparedDiff(
 ): AutopilotQueueItem {
   const waitingApproval =
     record.pushApprovalStatus === 'pending' && record.status === 'prepared';
+  const runningRevision = record.status === 'revision-in-progress';
   return {
     id: `prepared-diff:${record.id}`,
     source: 'worktree',
-    status: waitingApproval ? 'waiting-approval' : 'prepared',
-    priority: waitingApproval ? 'high' : 'normal',
+    status: runningRevision
+      ? 'running'
+      : waitingApproval
+        ? 'waiting-approval'
+        : 'prepared',
+    priority: waitingApproval || runningRevision ? 'high' : 'normal',
     repoId: record.repoId,
     repoFullName: record.repoFullName,
     prNumber: record.prNumber,
@@ -265,6 +273,8 @@ export function queueItemFromPreparedDiff(
     nextStep:
       record.status === 'revision-requested'
         ? 'Revise the prepared worktree diff.'
+        : record.status === 'revision-in-progress'
+          ? 'Wait for the revision Kilo task to finish.'
         : 'Review, verify, approve push, request revision, or abandon.',
     worktreeId: record.worktreeId,
     runId: null,
@@ -340,10 +350,44 @@ export function preparedDiffSummary(record: PreparedDiffRecord) {
   if (record.status === 'revision-requested') {
     return 'Operator requested a revision to the prepared worktree diff.';
   }
+  if (record.status === 'revision-in-progress') {
+    return 'Revision run is active; a Kilo task is editing the retained worktree.';
+  }
   if (record.status === 'abandoned') {
     return 'Prepared diff was abandoned; source worktree is retained for cleanup policy.';
   }
   return 'Prepared diff is recorded in app state; source worktree is the file-level source of truth.';
+}
+
+function revisionRunFromPreparedDiff(
+  record: PreparedDiffRecord,
+  paths: RuntimePaths,
+) {
+  const summary = objectField(record.summary);
+  const revisionRun = objectField(summary.revisionRun);
+  const kiloTaskId = stringField(revisionRun.kiloTaskId);
+  const task = kiloTaskId ? tryKiloTask(kiloTaskId, paths) : undefined;
+  if (!kiloTaskId && Object.keys(revisionRun).length === 0) return null;
+  return {
+    kiloTaskId: kiloTaskId ?? null,
+    reason: stringField(revisionRun.reason) ?? stringField(summary.revisionReason) ?? null,
+    startedAt: stringField(revisionRun.startedAt) ?? null,
+    completedAt: stringField(revisionRun.completedAt) ?? null,
+    outcome: stringField(revisionRun.outcome) ?? null,
+    status: task?.status ?? stringField(revisionRun.status) ?? null,
+    title: task?.title ?? stringField(revisionRun.title) ?? null,
+    cwd: task?.cwd ?? stringField(revisionRun.cwd) ?? null,
+  };
+}
+
+function objectField(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function stringField(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
 export function runningCheckFromWorkflow(

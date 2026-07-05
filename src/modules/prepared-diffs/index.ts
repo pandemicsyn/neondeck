@@ -41,4 +41,9 @@ export {
 export {
   readApprovalRecord as readPreparedDiffApprovalRecord,
   readPreparedDiffRecord,
+  readPreparedDiffByWorktreeId,
+  assertTransition,
+  mergeSummary,
+  updatePreparedDiffState,
 } from './store';
+export { runRevisionInputSchema } from './schemas';

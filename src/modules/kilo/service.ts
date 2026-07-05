@@ -64,6 +64,7 @@ import {
 import { repoFullName } from '../repos';
 import { lockWorktree, readManagedWorktree } from '../worktrees';
 import { readKiloResultStateSummary } from './results';
+import { reconcilePreparedDiffRevisionResult } from './revision-reconcile';
 
 export async function startKiloTask(
   rawInput: unknown,
@@ -374,6 +375,10 @@ export async function abortKiloTask(
     paths,
   );
   await releaseTaskLock(task, 'cancelled', paths);
+  await reconcilePreparedDiffRevisionResult(
+    { task: requireKiloTask(task.id, paths), status: 'cancelled' },
+    paths,
+  );
   addKiloTaskEvent(
     task.id,
     {

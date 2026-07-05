@@ -1887,9 +1887,18 @@ export const entries: SafetyPolicyEntry[] = [
     'Prepared diff revision API',
     {
       ...safeMutation,
-      auditTarget: 'prepared_diffs/prepared_diff_approvals',
+      auditTarget: 'prepared_diffs/prepared_diff_approvals/kilo_tasks',
     },
-    'Records a revision request while retaining the source worktree.',
+    'User-surface route that records a revision request and may dispatch a bounded Kilo revision run for the retained source worktree.',
+  ),
+  route(
+    '/api/prepared-diffs/:id/run-revision',
+    'Prepared diff run revision API',
+    {
+      ...safeMutation,
+      auditTarget: 'prepared_diffs/kilo_tasks',
+    },
+    'User-surface route that starts a bounded Kilo revision run from an already recorded revision request without adding a model-callable action.',
   ),
   route(
     '/api/prepared-diffs/:id/approve-push',

@@ -118,7 +118,7 @@ export async function readAutopilotState(
       runningCheckFromWorkflow(run, worktrees, appConfig.localApi?.token),
     );
   const preparedDiffs = (preparedDiffSnapshot.preparedDiffs ?? []).map(
-    preparedDiffFromRecord,
+    (record) => preparedDiffFromRecord(record, paths),
   );
   const failedChecks = preparedDiffs.filter(
     (diff) => diff.verificationStatus === 'failed',

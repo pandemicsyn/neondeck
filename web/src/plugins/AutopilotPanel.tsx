@@ -14,6 +14,7 @@ import {
   type AutopilotRepoPolicy,
   type AutopilotState,
   type AutopilotWatchPolicy,
+  type KiloTaskRecord,
 } from '../api';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
 import {
@@ -30,6 +31,11 @@ import { parsePositiveIntegerConfig } from './config';
 const PreparedDiffReview = lazy(() =>
   import('../features/diff-viewer/surfaces').then((module) => ({
     default: module.PreparedDiffReview,
+  })),
+);
+const KiloTaskDiffReview = lazy(() =>
+  import('../features/diff-viewer/surfaces').then((module) => ({
+    default: module.KiloTaskDiffReview,
   })),
 );
 
@@ -326,6 +332,8 @@ function QueueRow({ item }: { item: AutopilotQueueItem }) {
 
 function PreparedDiffRow({ diff }: { diff: AutopilotPreparedDiff }) {
   const [isInspecting, setIsInspecting] = useState(false);
+  const [isViewingRevisionDiff, setIsViewingRevisionDiff] = useState(false);
+  const revisionTask = revisionRunTask(diff);
 
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
@@ -341,6 +349,31 @@ function PreparedDiffRow({ diff }: { diff: AutopilotPreparedDiff }) {
       <p className="mt-1 truncate font-mono text-[10px] text-muted">
         {diff.localPath}
       </p>
+      {diff.revisionRun ? (
+        <div className="mt-1.5 border border-line bg-field px-2 py-1.5 font-mono text-[10px] leading-4 text-muted">
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate">
+              revision {diff.revisionRun.status ?? diff.revisionRun.outcome ?? 'queued'}
+            </span>
+            {revisionTask ? (
+              <Button
+                className="min-h-[22px] bg-transparent px-1.5 py-0 text-[10px]"
+                onClick={() =>
+                  setIsViewingRevisionDiff((current) => !current)
+                }
+                type="button"
+              >
+                {isViewingRevisionDiff ? 'hide task diff' : 'view task diff'}
+              </Button>
+            ) : null}
+          </div>
+          {diff.revisionRun.reason ? (
+            <p className="mt-0.5 line-clamp-2 whitespace-pre-wrap">
+              {diff.revisionRun.reason}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <div className="mt-1.5 flex justify-end gap-1.5 font-mono text-[10px]">
         <Button
           className="min-h-[24px] px-2 py-0 font-mono text-[10px]"
@@ -373,6 +406,13 @@ function PreparedDiffRow({ diff }: { diff: AutopilotPreparedDiff }) {
           </Suspense>
         </div>
       ) : null}
+      {isViewingRevisionDiff && revisionTask ? (
+        <div className="mt-2">
+          <Suspense fallback={<MiniEmpty label="Loading Kilo diff viewer." />}>
+            <KiloTaskDiffReview task={revisionTask} />
+          </Suspense>
+        </div>
+      ) : null}
       <PreparedDiffRecoveryControls preparedDiffId={diff.id} />
     </article>
   );
@@ -384,6 +424,8 @@ function PreparedDiffRecoveryControls({
   preparedDiffId: string;
 }) {
   const [confirmAction, setConfirmAction] = useState<AutopilotRecoveryOption>();
+  const [revisionAction, setRevisionAction] =
+    useState<AutopilotRecoveryOption>();
   const queryClient = useQueryClient();
   const { data } = useQuery({
     queryKey: ['autopilot-recovery-options', preparedDiffId],
@@ -416,6 +458,10 @@ function PreparedDiffRecoveryControls({
           onClick={() => {
             if (option.id === 'cleanup-worktree') {
               setConfirmAction(option);
+              return;
+            }
+            if (option.id === 'request-revision' || option.id === 'run-revision') {
+              setRevisionAction(option);
               return;
             }
             mutation.mutate({ preparedDiffId, recoveryAction: option.id });
@@ -468,6 +514,27 @@ function PreparedDiffRecoveryControls({
           </div>
         </div>
       ) : null}
+      {revisionAction ? (
+        <RevisionComposer
+          actionLabel={recoveryButtonLabel(revisionAction.id)}
+          isPending={mutation.isPending}
+          onCancel={() => setRevisionAction(undefined)}
+          onConfirm={(input) => {
+            mutation.mutate({
+              preparedDiffId,
+              recoveryAction: revisionAction.id,
+              reason: input.reason || undefined,
+              runRevisionNow:
+                revisionAction.id === 'request-revision'
+                  ? input.runRevisionNow
+                  : undefined,
+            });
+            setRevisionAction(undefined);
+          }}
+          requireReason={revisionAction.id === 'request-revision'}
+          showRunNow={revisionAction.id === 'request-revision'}
+        />
+      ) : null}
     </div>
   );
 }
@@ -480,6 +547,8 @@ function visibleRecoveryAction(id: AutopilotRecoveryActionId) {
     'retry-verify',
     'retry-push',
     'retry-comment',
+    'request-revision',
+    'run-revision',
     'cleanup-worktree',
   ].includes(id);
 }
@@ -491,6 +560,8 @@ function recoveryButtonLabel(id: AutopilotRecoveryActionId) {
   if (id === 'retry-verify') return 'verify';
   if (id === 'retry-push') return 'push';
   if (id === 'retry-comment') return 'comment';
+  if (id === 'request-revision') return 'revise';
+  if (id === 'run-revision') return 'run revision';
   if (id === 'cleanup-worktree') return 'cleanup';
   return id;
 }
@@ -503,12 +574,20 @@ function ApprovalRow({
   preparedDiff?: AutopilotPreparedDiff;
 }) {
   const queryClient = useQueryClient();
+  const [isComposingRevision, setIsComposingRevision] = useState(false);
   const [isInspecting, setIsInspecting] = useState(
     approval.source === 'prepared-diff' && Boolean(preparedDiff),
   );
   const mutation = useMutation({
-    mutationFn: (decision: 'approve' | 'deny') =>
-      resolveAutopilotApproval(approval.id, decision),
+    mutationFn: (input: {
+      decision: 'approve' | 'deny';
+      reason?: string;
+      runRevisionNow?: boolean;
+    }) =>
+      resolveAutopilotApproval(approval.id, input.decision, {
+        reason: input.reason,
+        runRevisionNow: input.runRevisionNow,
+      }),
     onSuccess() {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.autopilotState,
@@ -547,7 +626,7 @@ function ApprovalRow({
           <Button
             className="min-h-[28px] border-primary bg-transparent px-2 py-1 text-[10px] text-primary"
             disabled={mutation.isPending}
-            onClick={() => mutation.mutate('approve')}
+            onClick={() => mutation.mutate({ decision: 'approve' })}
             type="button"
           >
             approve
@@ -555,7 +634,13 @@ function ApprovalRow({
           <Button
             className="min-h-[28px] border-accent bg-transparent px-2 py-1 text-[10px] text-accent"
             disabled={mutation.isPending}
-            onClick={() => mutation.mutate('deny')}
+            onClick={() => {
+              if (approval.source === 'prepared-diff') {
+                setIsComposingRevision(true);
+                return;
+              }
+              mutation.mutate({ decision: 'deny' });
+            }}
             type="button"
           >
             {approval.source === 'prepared-diff' ? 'revise' : 'deny'}
@@ -566,6 +651,28 @@ function ApprovalRow({
         <p className="mt-1 text-[10px] leading-4 text-accent">
           {queryErrorMessage(mutation.error)}
         </p>
+      ) : null}
+      {mutation.data ? (
+        <p className="mt-1 text-[10px] leading-4 text-muted">
+          {mutation.data.message}
+        </p>
+      ) : null}
+      {isComposingRevision ? (
+        <RevisionComposer
+          actionLabel="revise"
+          isPending={mutation.isPending}
+          onCancel={() => setIsComposingRevision(false)}
+          onConfirm={(input) => {
+            mutation.mutate({
+              decision: 'deny',
+              reason: input.reason || undefined,
+              runRevisionNow: input.runRevisionNow,
+            });
+            setIsComposingRevision(false);
+          }}
+          requireReason
+          showRunNow
+        />
       ) : null}
       {preparedDiff && isInspecting ? (
         <div className="mt-2">
@@ -581,6 +688,99 @@ function ApprovalRow({
       ) : null}
     </article>
   );
+}
+
+function RevisionComposer({
+  actionLabel,
+  isPending,
+  onCancel,
+  onConfirm,
+  requireReason,
+  showRunNow,
+}: {
+  actionLabel: string;
+  isPending: boolean;
+  onCancel: () => void;
+  onConfirm: (input: { reason: string; runRevisionNow: boolean }) => void;
+  requireReason: boolean;
+  showRunNow: boolean;
+}) {
+  const [reason, setReason] = useState('');
+  const [runRevisionNow, setRunRevisionNow] = useState(true);
+  const reasonRequired = requireReason && (!showRunNow || runRevisionNow);
+  const disabled = isPending || (reasonRequired && !reason.trim());
+
+  return (
+    <div className="mt-2 border border-accent/50 bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
+      <textarea
+        className="min-h-[64px] w-full resize-y border border-line bg-panel px-2 py-1.5 text-[11px] leading-4 text-ink outline-none focus:border-accent"
+        onChange={(event) => setReason(event.target.value)}
+        placeholder="Revision note"
+        value={reason}
+      />
+      {showRunNow ? (
+        <label className="mt-1.5 flex items-center gap-1.5">
+          <input
+            checked={runRevisionNow}
+            className="accent-[var(--color-accent)]"
+            onChange={(event) => setRunRevisionNow(event.target.checked)}
+            type="checkbox"
+          />
+          <span>run revision now</span>
+        </label>
+      ) : null}
+      <div className="mt-1.5 flex justify-end gap-1.5">
+        <Button
+          className="min-h-[24px] border-accent bg-transparent px-1.5 py-0 text-[10px] text-accent"
+          disabled={disabled}
+          onClick={() => onConfirm({ reason: reason.trim(), runRevisionNow })}
+          type="button"
+        >
+          {actionLabel}
+        </Button>
+        <Button
+          className="min-h-[24px] bg-transparent px-1.5 py-0 text-[10px]"
+          disabled={isPending}
+          onClick={onCancel}
+          type="button"
+        >
+          cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function revisionRunTask(diff: AutopilotPreparedDiff): KiloTaskRecord | null {
+  const run = diff.revisionRun;
+  if (!run?.kiloTaskId) return null;
+  return {
+    id: run.kiloTaskId,
+    title: run.title ?? `Revision ${diff.title}`,
+    prompt: '',
+    repoId: diff.repoId,
+    repoFullName: diff.repoFullName,
+    worktreeId: diff.worktreeId,
+    lockId: null,
+    cwd: run.cwd ?? diff.localPath,
+    mode: 'draft-fix',
+    status: (run.status ?? 'running') as KiloTaskRecord['status'],
+    explicitUserRequest: true,
+    autoEnabled: true,
+    cliPath: 'kilo',
+    args: [],
+    pid: null,
+    processStartedAt: null,
+    rootSessionId: null,
+    childSessionIds: [],
+    rawLogPath: null,
+    summary: run.reason,
+    exitCode: null,
+    error: null,
+    createdAt: run.startedAt ?? diff.updatedAt,
+    updatedAt: diff.updatedAt,
+    completedAt: run.completedAt,
+  };
 }
 
 function PolicyBlock({

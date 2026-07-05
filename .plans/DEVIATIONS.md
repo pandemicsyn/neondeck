@@ -15,6 +15,13 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-07-05 - Close Decision Loops Run Revision
+
+- Roadmap item: Close Decision Loops Plan / PR 1 run revision
+- Decision: Implemented the revision-run orchestration in `src/modules/autopilot/revision-run.ts` and the Kilo terminal reconcile hook in `src/modules/kilo/revision-reconcile.ts` instead of placing the whole service under `src/modules/prepared-diffs/revision-run.ts`.
+- Reason: The repo import-layer check keeps `prepared-diffs` at backend layer 2 and forbids it from depending upward on Kilo. Autopilot is the correct orchestration layer for the human-triggered dispatch; Kilo owns terminal task observations; prepared-diffs remains the lower-level state surface.
+- Follow-up: None.
+
 ## 2026-07-04 - MCP Support Core
 
 - Roadmap item: MCP Support Plan / PR 1 MCP core

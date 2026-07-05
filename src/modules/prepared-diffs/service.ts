@@ -513,6 +513,7 @@ export async function abandonPreparedDiff(
       'prepared',
       'verification-requested',
       'revision-requested',
+      'revision-in-progress',
       'push-approved',
       'push-blocked',
     ],

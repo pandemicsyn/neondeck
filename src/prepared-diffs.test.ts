@@ -15,6 +15,9 @@ import {
   requestPreparedDiffRevision,
   runPreparedDiffVerification,
 } from './modules/prepared-diffs';
+import { runPreparedDiffRevision } from './modules/autopilot';
+import { reconcilePreparedDiffRevisionResult } from './modules/kilo';
+import type { KiloTaskRecord } from './modules/kilo';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   createWorktree,
@@ -268,6 +271,164 @@ describe('prepared diff lifecycle', () => {
       ],
     });
   });
+
+  it('starts a Kilo revision run with the operator note and prepared-diff context', async () => {
+    const { paths } = await fixture();
+    const prepared = await preparedFixture(paths);
+    await requestPreparedDiffRevision(
+      {
+        preparedDiffId: prepared.id,
+        reason: 'Keep the helper pure and add a regression test.',
+        approverSurface: 'test',
+      },
+      paths,
+    );
+    const startInputs: unknown[] = [];
+    const fakeStart = vi.fn<(input: unknown) => Promise<unknown>>(
+      async (input) => {
+      startInputs.push(input);
+      return {
+        ok: true,
+        action: 'kilo_task_start',
+        changed: true,
+        message: 'Started fake Kilo task.',
+        taskId: 'kilo-revision-1',
+        task: {
+          id: 'kilo-revision-1',
+          status: 'running',
+          title: 'Revise prepared diff',
+          cwd: prepared.sourceWorktreePath,
+        },
+      };
+      },
+    );
+
+    const started = await runPreparedDiffRevision(
+      {
+        preparedDiffId: prepared.id,
+        approverSurface: 'test',
+      },
+      paths,
+      { startKiloTask: fakeStart as never },
+    );
+    const duplicate = await runPreparedDiffRevision(
+      { preparedDiffId: prepared.id },
+      paths,
+      { startKiloTask: fakeStart as never },
+    );
+
+    expect(started).toMatchObject({
+      ok: true,
+      preparedDiff: {
+        status: 'revision-in-progress',
+        summary: {
+          revisionReason: 'Keep the helper pure and add a regression test.',
+          revisionRun: {
+            kiloTaskId: 'kilo-revision-1',
+            reason: 'Keep the helper pure and add a regression test.',
+            outcome: 'started',
+          },
+        },
+      },
+      data: { kiloTaskId: 'kilo-revision-1' },
+    });
+    expect(duplicate).toMatchObject({
+      ok: false,
+      error: { code: 'INVALID_TRANSITION' },
+    });
+    expect(startInputs).toHaveLength(1);
+    expect(startInputs[0]).toMatchObject({
+      worktreeId: prepared.worktreeId,
+      mode: 'draft-fix',
+      allowAuto: true,
+      confirmAuto: true,
+      explicitUserRequest: true,
+    });
+    const prompt = stringField(
+      startInputs[0] as Record<string, unknown>,
+      'prompt',
+    );
+    expect(prompt).toContain('Keep the helper pure and add a regression test.');
+    expect(prompt).toContain('pandemicsyn/sample#7');
+    expect(prompt).toContain('src/app.ts');
+    expect(prompt).toContain('Never push branches');
+  });
+
+  it('re-enters review after a successful revision run and restores request state after failure', async () => {
+    const { paths } = await fixture();
+    const prepared = await preparedFixture(paths);
+    await requestPreparedDiffRevision(
+      {
+        preparedDiffId: prepared.id,
+        reason: 'Use the smaller adapter.',
+        approverSurface: 'test',
+      },
+      paths,
+    );
+    const started = await runPreparedDiffRevision(
+      { preparedDiffId: prepared.id },
+      paths,
+      { startKiloTask: fakeRevisionStarter(prepared, 'kilo-revision-ok') },
+    );
+
+    const completed = await reconcilePreparedDiffRevisionResult(
+      {
+        task: kiloRevisionTask(prepared, 'kilo-revision-ok', 'succeeded'),
+        status: 'succeeded',
+        diff: { ok: true, fileCount: 1 },
+      },
+      paths,
+    );
+
+    expect(completed).toMatchObject({
+      id: prepared.id,
+      status: 'prepared',
+      pushApprovalStatus: 'pending',
+      verificationStatus: 'not-run',
+      summary: {
+        revisionRun: {
+          kiloTaskId: 'kilo-revision-ok',
+          outcome: 'completed',
+        },
+      },
+    });
+    expect(started.preparedDiff?.status).toBe('revision-in-progress');
+
+    await requestPreparedDiffRevision(
+      {
+        preparedDiffId: prepared.id,
+        reason: 'Try a different revision.',
+        approverSurface: 'test',
+      },
+      paths,
+    );
+    await runPreparedDiffRevision(
+      { preparedDiffId: prepared.id },
+      paths,
+      { startKiloTask: fakeRevisionStarter(prepared, 'kilo-revision-failed') },
+    );
+    const failed = await reconcilePreparedDiffRevisionResult(
+      {
+        task: kiloRevisionTask(prepared, 'kilo-revision-failed', 'failed'),
+        status: 'failed',
+        error: 'Kilo failed.',
+      },
+      paths,
+    );
+
+    expect(failed).toMatchObject({
+      id: prepared.id,
+      status: 'revision-requested',
+      pushApprovalStatus: 'rejected',
+      summary: {
+        revisionRun: {
+          kiloTaskId: 'kilo-revision-failed',
+          outcome: 'failed',
+          error: 'Kilo failed.',
+        },
+      },
+    });
+  });
 });
 
 async function fixture() {
@@ -351,6 +512,60 @@ function worktreeLikeFromPrepared(
     headRef: prepared.headRef,
     headSha: prepared.headSha,
     lifecycleStatus: 'prepared-diff',
+  };
+}
+
+function fakeRevisionStarter(
+  prepared: Awaited<ReturnType<typeof preparedFixture>>,
+  taskId: string,
+) {
+  return vi.fn<() => Promise<unknown>>(async () => ({
+    ok: true,
+    action: 'kilo_task_start',
+    changed: true,
+    message: 'Started fake Kilo task.',
+    taskId,
+    task: {
+      id: taskId,
+      status: 'running',
+      title: 'Revision fixture',
+      cwd: prepared.sourceWorktreePath,
+    },
+  })) as never;
+}
+
+function kiloRevisionTask(
+  prepared: Awaited<ReturnType<typeof preparedFixture>>,
+  taskId: string,
+  status: KiloTaskRecord['status'],
+): KiloTaskRecord {
+  const now = new Date().toISOString();
+  return {
+    id: taskId,
+    title: 'Revision fixture',
+    prompt: 'Revise the prepared diff.',
+    repoId: prepared.repoId,
+    repoFullName: prepared.repoFullName,
+    worktreeId: prepared.worktreeId,
+    lockId: null,
+    cwd: prepared.sourceWorktreePath,
+    mode: 'draft-fix',
+    status,
+    explicitUserRequest: true,
+    autoEnabled: true,
+    cliPath: 'kilo',
+    args: [],
+    pid: null,
+    processStartedAt: null,
+    rootSessionId: null,
+    childSessionIds: [],
+    rawLogPath: null,
+    summary: null,
+    exitCode: status === 'succeeded' ? 0 : 1,
+    error: status === 'succeeded' ? null : 'Kilo failed.',
+    createdAt: now,
+    updatedAt: now,
+    completedAt: now,
   };
 }
 

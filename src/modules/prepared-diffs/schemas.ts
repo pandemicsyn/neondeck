@@ -17,6 +17,7 @@ export type PreparedDiffStatus =
   | 'prepared'
   | 'verification-requested'
   | 'revision-requested'
+  | 'revision-in-progress'
   | 'push-approved'
   | 'push-blocked'
   | 'pushed'
@@ -115,6 +116,7 @@ export const preparedDiffStatusSchema = v.picklist([
   'prepared',
   'verification-requested',
   'revision-requested',
+  'revision-in-progress',
   'push-approved',
   'push-blocked',
   'pushed',
@@ -183,7 +185,12 @@ export const approvePushInputSchema = v.object({
 });
 export const requestRevisionInputSchema = v.object({
   preparedDiffId: nonEmptyStringSchema,
-  reason: nonEmptyStringSchema,
+  reason: v.optional(v.string()),
+  approverSurface: v.optional(nonEmptyStringSchema),
+});
+export const runRevisionInputSchema = v.object({
+  preparedDiffId: nonEmptyStringSchema,
+  reason: v.optional(v.string()),
   approverSurface: v.optional(nonEmptyStringSchema),
 });
 export const abandonInputSchema = v.object({

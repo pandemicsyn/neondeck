@@ -5,6 +5,7 @@ import {
   fixPrReviewFeedback,
   preparePrWorktree,
   pushPrAutofix,
+  runPreparedDiffRevision,
   triagePrEvent,
   verifyPrWorktree,
 } from '../../modules/autopilot';
@@ -119,12 +120,9 @@ export function createAutopilotRoutes(paths: RuntimePaths) {
             },
             paths,
           )
-        : await requestPreparedDiffRevision(
-            {
-              preparedDiffId: approval.preparedDiffId,
-              reason: 'Denied from dashboard Autopilot panel.',
-              approverSurface: 'dashboard',
-            },
+        : await resolvePreparedDiffRevisionFromRoute(
+            approval.preparedDiffId,
+            input,
             paths,
           );
     return c.json(result, preparedDiffHttpStatus(result));
@@ -179,7 +177,30 @@ export function createAutopilotRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/prepared-diffs/:id/request-revision', async (c) => {
-    const result = await requestPreparedDiffRevision(
+    const body = await safeJsonObject(c);
+    const requested = await requestPreparedDiffRevision(
+      { ...body, preparedDiffId: c.req.param('id') },
+      paths,
+    );
+    const result =
+      requested.ok && body.runNow === true
+        ? await runPreparedDiffRevision(
+            {
+              preparedDiffId: c.req.param('id'),
+              reason: typeof body.reason === 'string' ? body.reason : undefined,
+              approverSurface:
+                typeof body.approverSurface === 'string'
+                  ? body.approverSurface
+                  : 'dashboard',
+            },
+            paths,
+          )
+        : requested;
+    return c.json(result, preparedDiffHttpStatus(result));
+  });
+
+  routes.post('/prepared-diffs/:id/run-revision', async (c) => {
+    const result = await runPreparedDiffRevision(
       { ...(await safeJsonObject(c)), preparedDiffId: c.req.param('id') },
       paths,
     );
@@ -253,4 +274,44 @@ export function createAutopilotRoutes(paths: RuntimePaths) {
 
 function approvalNotFound(message: string | undefined) {
   return Boolean(message?.includes('was not found'));
+}
+
+async function resolvePreparedDiffRevisionFromRoute(
+  preparedDiffId: string,
+  input: Record<string, unknown>,
+  paths: RuntimePaths,
+) {
+  const reason = typeof input.reason === 'string' ? input.reason : undefined;
+  const runRevisionNow = input.runRevisionNow !== false;
+  if (runRevisionNow && !reason?.trim()) {
+    return {
+      ok: false,
+      action: 'prepared_diff_request_revision',
+      changed: false,
+      message: 'Running a prepared-diff revision requires a revision note.',
+      requires: ['reason'],
+      errors: ['reason is required.'],
+    };
+  }
+  const requested = await requestPreparedDiffRevision(
+    {
+      preparedDiffId,
+      reason,
+      approverSurface: 'dashboard',
+    },
+    paths,
+  );
+  if (!requested.ok || !runRevisionNow) return requested;
+  const run = await runPreparedDiffRevision(
+    {
+      preparedDiffId,
+      reason,
+      approverSurface: 'dashboard',
+    },
+    paths,
+  );
+  return {
+    ...run,
+    data: { request: requested, run },
+  };
 }
