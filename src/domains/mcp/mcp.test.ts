@@ -304,6 +304,65 @@ describe('MCP support', () => {
         }),
       ]),
     );
+
+    const legacyWhitespace = await createMcpApprovalRequest(
+      {
+        serverId: 'fixture',
+        toolName: 'echo',
+        adaptedName: 'mcp__fixture__echo',
+        argumentsHash: hashMcpArguments({ text: 'legacy-whitespace' }),
+        argumentsPreview: '{"text":"legacy-whitespace"}',
+      },
+      paths,
+    );
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `
+          UPDATE mcp_tool_approvals
+          SET session_id = '   '
+          WHERE id = ?;
+        `,
+        )
+        .run(legacyWhitespace!.id);
+    } finally {
+      database.close();
+    }
+
+    const third = await runWithFlueExecutionContextForTests(
+      { agentName: 'display-assistant', instanceId: sessionId },
+      () =>
+        runMcpToolThroughGate(
+          {
+            serverId: 'fixture',
+            toolName: 'echo',
+            adaptedName: 'mcp__fixture__echo',
+            context: {
+              input: { text: 'legacy-whitespace' },
+              sessionId: ' ',
+            },
+            run: async () => {
+              throw new Error('unexpected MCP execution before approval');
+            },
+          },
+          paths,
+        ),
+    );
+    expect(third).toMatchObject({
+      ok: false,
+      status: 'approval-required',
+      approvalId: legacyWhitespace!.id,
+    });
+    approvals = await listMcpApprovals(paths);
+    expect(approvals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: legacyWhitespace!.id,
+          sessionId,
+        }),
+      ]),
+    );
   });
 
   it('accepts MCP tool JSON Schema nullable unions through AJV validation', async () => {
