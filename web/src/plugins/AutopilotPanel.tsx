@@ -353,14 +353,13 @@ function PreparedDiffRow({ diff }: { diff: AutopilotPreparedDiff }) {
         <div className="mt-1.5 border border-line bg-field px-2 py-1.5 font-mono text-[10px] leading-4 text-muted">
           <div className="flex items-center justify-between gap-2">
             <span className="truncate">
-              revision {diff.revisionRun.status ?? diff.revisionRun.outcome ?? 'queued'}
+              revision{' '}
+              {diff.revisionRun.status ?? diff.revisionRun.outcome ?? 'queued'}
             </span>
             {revisionTask ? (
               <Button
                 className="min-h-[22px] bg-transparent px-1.5 py-0 text-[10px]"
-                onClick={() =>
-                  setIsViewingRevisionDiff((current) => !current)
-                }
+                onClick={() => setIsViewingRevisionDiff((current) => !current)}
                 type="button"
               >
                 {isViewingRevisionDiff ? 'hide task diff' : 'view task diff'}
@@ -413,16 +412,17 @@ function PreparedDiffRow({ diff }: { diff: AutopilotPreparedDiff }) {
           </Suspense>
         </div>
       ) : null}
-      <PreparedDiffRecoveryControls preparedDiffId={diff.id} />
+      <PreparedDiffRecoveryControls diff={diff} />
     </article>
   );
 }
 
 function PreparedDiffRecoveryControls({
-  preparedDiffId,
+  diff,
 }: {
-  preparedDiffId: string;
+  diff: AutopilotPreparedDiff;
 }) {
+  const preparedDiffId = diff.id;
   const [confirmAction, setConfirmAction] = useState<AutopilotRecoveryOption>();
   const [revisionAction, setRevisionAction] =
     useState<AutopilotRecoveryOption>();
@@ -460,7 +460,10 @@ function PreparedDiffRecoveryControls({
               setConfirmAction(option);
               return;
             }
-            if (option.id === 'request-revision' || option.id === 'run-revision') {
+            if (
+              option.id === 'request-revision' ||
+              option.id === 'run-revision'
+            ) {
               setRevisionAction(option);
               return;
             }
@@ -517,6 +520,11 @@ function PreparedDiffRecoveryControls({
       {revisionAction ? (
         <RevisionComposer
           actionLabel={recoveryButtonLabel(revisionAction.id)}
+          defaultReason={
+            revisionAction.id === 'run-revision'
+              ? (diff.revisionRun?.reason ?? '')
+              : ''
+          }
           isPending={mutation.isPending}
           onCancel={() => setRevisionAction(undefined)}
           onConfirm={(input) => {
@@ -531,7 +539,10 @@ function PreparedDiffRecoveryControls({
             });
             setRevisionAction(undefined);
           }}
-          requireReason={revisionAction.id === 'request-revision'}
+          requireReason={
+            revisionAction.id === 'request-revision' ||
+            !diff.revisionRun?.reason
+          }
           showRunNow={revisionAction.id === 'request-revision'}
         />
       ) : null}
@@ -692,6 +703,7 @@ function ApprovalRow({
 
 function RevisionComposer({
   actionLabel,
+  defaultReason = '',
   isPending,
   onCancel,
   onConfirm,
@@ -699,13 +711,14 @@ function RevisionComposer({
   showRunNow,
 }: {
   actionLabel: string;
+  defaultReason?: string;
   isPending: boolean;
   onCancel: () => void;
   onConfirm: (input: { reason: string; runRevisionNow: boolean }) => void;
   requireReason: boolean;
   showRunNow: boolean;
 }) {
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState(defaultReason);
   const [runRevisionNow, setRunRevisionNow] = useState(true);
   const reasonRequired = requireReason && (!showRunNow || runRevisionNow);
   const disabled = isPending || (reasonRequired && !reason.trim());

@@ -2,6 +2,7 @@ import { addNotification, addWorkflowSummary } from '../app-state';
 import { readWorktreeRecord } from '../worktrees';
 import type { KiloTaskRecord, KiloTaskStatus } from './store';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
+import { gitCurrentSha } from '../../repo-edit/git';
 import {
   ensurePreparedDiffForWorktree,
   mergeSummary,
@@ -29,12 +30,22 @@ export async function reconcilePreparedDiffRevisionResult(
   if (!current) return null;
   const revisionRun = revisionRunField(current.summary);
   if (revisionRun.kiloTaskId !== input.task.id) return null;
+  if (current.status === 'abandoned') return null;
 
   const completedAt = new Date().toISOString();
+  const currentHeadSha = await gitCurrentSha(current.sourceWorktreePath).catch(
+    () => null,
+  );
+  const hasWorkingTreeDiff =
+    input.diff?.ok === true && input.diff.fileCount > 0;
+  const hasCommittedRevision = Boolean(
+    currentHeadSha &&
+    revisionRun.startedHeadSha &&
+    currentHeadSha !== revisionRun.startedHeadSha,
+  );
   if (
-    input.status === 'succeeded' &&
-    input.diff?.ok === true &&
-    input.diff.fileCount > 0
+    isCompletedRevisionStatus(input.status, hasCommittedRevision) &&
+    (hasWorkingTreeDiff || hasCommittedRevision)
   ) {
     const worktree = readWorktreeRecord(current.worktreeId, paths);
     const prepared = await ensurePreparedDiffForWorktree(worktree, paths, {
@@ -46,7 +57,8 @@ export async function reconcilePreparedDiffRevisionResult(
           status: input.status,
           outcome: 'completed',
           completedAt,
-          changedFiles: input.diff.fileCount,
+          changedFiles: input.diff?.fileCount ?? 0,
+          completedHeadSha: currentHeadSha,
         },
       }),
     });
@@ -68,7 +80,8 @@ export async function reconcilePreparedDiffRevisionResult(
       {
         level: 'ready',
         title: 'Revision run finished',
-        message: 'Revision run finished; a new prepared diff is awaiting review.',
+        message:
+          'Revision run finished; a new prepared diff is awaiting review.',
         source: 'autopilot',
         sourceId: `prepared-diff:${prepared.id}:revision-run:completed`,
         data: {
@@ -147,8 +160,20 @@ function revisionRunField(summary: unknown) {
     kiloTaskId: stringField(run.kiloTaskId),
     reason: stringField(run.reason) ?? stringField(top.revisionReason),
     startedAt: stringField(run.startedAt),
+    startedHeadSha: stringField(run.startedHeadSha),
     approverSurface: stringField(run.approverSurface),
   };
+}
+
+function isCompletedRevisionStatus(
+  status: KiloTaskStatus,
+  hasCommittedRevision: boolean,
+) {
+  return (
+    status === 'succeeded' ||
+    status === 'needs-review' ||
+    (status === 'unknown' && hasCommittedRevision)
+  );
 }
 
 function objectField(value: unknown): Record<string, unknown> {

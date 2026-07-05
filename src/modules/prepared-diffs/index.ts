@@ -46,4 +46,4 @@ export {
   mergeSummary,
   updatePreparedDiffState,
 } from './store';
-export { runRevisionInputSchema } from './schemas';
+export { abandonInputSchema, runRevisionInputSchema } from './schemas';

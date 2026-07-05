@@ -275,7 +275,7 @@ export function queueItemFromPreparedDiff(
         ? 'Revise the prepared worktree diff.'
         : record.status === 'revision-in-progress'
           ? 'Wait for the revision Kilo task to finish.'
-        : 'Review, verify, approve push, request revision, or abandon.',
+          : 'Review, verify, approve push, request revision, or abandon.',
     worktreeId: record.worktreeId,
     runId: null,
     updatedAt: record.updatedAt,
@@ -366,11 +366,15 @@ function revisionRunFromPreparedDiff(
   const summary = objectField(record.summary);
   const revisionRun = objectField(summary.revisionRun);
   const kiloTaskId = stringField(revisionRun.kiloTaskId);
+  const reason =
+    stringField(revisionRun.reason) ?? stringField(summary.revisionReason);
   const task = kiloTaskId ? tryKiloTask(kiloTaskId, paths) : undefined;
-  if (!kiloTaskId && Object.keys(revisionRun).length === 0) return null;
+  if (!kiloTaskId && !reason && Object.keys(revisionRun).length === 0) {
+    return null;
+  }
   return {
     kiloTaskId: kiloTaskId ?? null,
-    reason: stringField(revisionRun.reason) ?? stringField(summary.revisionReason) ?? null,
+    reason: reason ?? null,
     startedAt: stringField(revisionRun.startedAt) ?? null,
     completedAt: stringField(revisionRun.completedAt) ?? null,
     outcome: stringField(revisionRun.outcome) ?? null,
