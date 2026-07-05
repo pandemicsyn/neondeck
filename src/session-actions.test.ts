@@ -9,6 +9,7 @@ import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   archiveChatSession,
   type ChatSessionRecord,
+  createApprovalResolutionNudge,
   createChatSessionCommandEvent,
   createChatSession,
   linkChatSessionContext,
@@ -753,6 +754,28 @@ describe('session actions', () => {
           workflowSummaryId: 'summary-1',
         }),
       ],
+    });
+  });
+
+  it('skips approval nudges when no requesting session is linked', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+
+    await expect(
+      createApprovalResolutionNudge(
+        {
+          family: 'execution',
+          sessionId: null,
+          approvalId: 'approval-1',
+          decision: 'approved',
+          subject: 'node --version',
+          retryInstruction: 'Retry with approvalId approval-1.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      skipped: true,
     });
   });
 

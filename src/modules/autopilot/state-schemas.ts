@@ -423,10 +423,14 @@ export const autopilotWorkflowNames = new Set([
   'fix-pr-ci-failure',
   'verify-pr-worktree',
   'push-pr-autofix',
+  'verify-then-push-pr-autofix',
   'comment-pr-autofix-result',
   'cleanup-autopilot-worktree',
 ]);
-export const checkWorkflowNames = new Set(['verify-pr-worktree']);
+export const checkWorkflowNames = new Set([
+  'verify-pr-worktree',
+  'verify-then-push-pr-autofix',
+]);
 
 export function normalizeWorkflowName(workflow: string) {
   return workflow.replaceAll('_', '-');

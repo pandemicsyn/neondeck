@@ -1479,6 +1479,16 @@ export const entries: SafetyPolicyEntry[] = [
     'Runs configured checks for an isolated PR worktree through the execution approval policy before any push-back workflow is allowed.',
   ),
   workflow(
+    'verify-then-push-pr-autofix',
+    'Run PR autofix verify then push workflow',
+    {
+      ...destructiveMutation,
+      auditTarget:
+        'execution_approvals/prepared_diffs/worktrees/worktree_events/notifications/workflow_events',
+    },
+    'Runs configured checks for an approved prepared diff and then delegates to the bounded push workflow. Execution approvals, push policy, branch permissions, and clean-worktree gates remain authoritative.',
+  ),
+  workflow(
     'push-pr-autofix',
     'Run PR autofix push workflow',
     {
@@ -1905,9 +1915,10 @@ export const entries: SafetyPolicyEntry[] = [
     'Prepared diff push approval API',
     {
       ...destructiveMutation,
-      auditTarget: 'prepared_diffs/prepared_diff_approvals',
+      auditTarget:
+        'prepared_diffs/prepared_diff_approvals/workflow_summaries/notifications',
     },
-    'Requires confirmation and records push-back approval without pushing.',
+    'Requires confirmation, records push-back approval, and admits the configured push or verify-then-push workflow. Push policy, verification, branch permission, execution approval, and clean-worktree gates still run inside the delegated workflow.',
   ),
   route(
     '/api/prepared-diffs/:id/abandon',

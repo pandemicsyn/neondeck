@@ -23,6 +23,7 @@ import {
   approvalMatches,
   findSessionApproval,
   insertApproval,
+  markApprovalUsed,
   readApproval,
   updateApprovalResult,
 } from './store';
@@ -504,6 +505,7 @@ async function authorizeExecution(
     }
 
     if (approved.approvalDecision === 'allow-session') {
+      markApprovalUsed(paths, approved.id);
       return {
         ok: true,
         approval: insertApproval(paths, {
@@ -522,7 +524,7 @@ async function authorizeExecution(
       };
     }
 
-    return { ok: true, approval: approved };
+    return { ok: true, approval: markApprovalUsed(paths, approved.id) };
   }
   if (input.approvalId && approved) {
     return {

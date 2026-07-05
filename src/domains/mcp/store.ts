@@ -8,6 +8,7 @@ import {
 import * as v from 'valibot';
 import { stableJson, truncateText } from './format';
 import { mcpApprovalResolveInputSchema } from './schemas';
+import { createApprovalResolutionNudge } from '../../modules/sessions';
 
 export type McpToolCatalogRecord = {
   serverId: string;
@@ -33,6 +34,7 @@ export type McpApprovalRecord = {
   argumentsPreview: string;
   status: McpApprovalStatus;
   approverSurface: string | null;
+  sessionId: string | null;
   expiresAt: string;
   createdAt: string;
   resolvedAt: string | null;
@@ -355,6 +357,7 @@ export async function createMcpApprovalRequest(
     adaptedName: string;
     argumentsHash: string;
     argumentsPreview: string;
+    sessionId?: string | null;
     ttlMs?: number;
   },
   paths = runtimePaths(),
@@ -391,7 +394,26 @@ export async function createMcpApprovalRequest(
         input.argumentsHash,
         nowIso,
       ) as McpApprovalRow | undefined;
-    if (existing) return readApprovalRow(existing);
+    if (existing) {
+      if (input.sessionId && !existing.session_id) {
+        database
+          .prepare(
+            `
+            UPDATE mcp_tool_approvals
+            SET session_id = ?,
+                updated_at = ?
+            WHERE id = ?;
+          `,
+          )
+          .run(input.sessionId, nowIso, existing.id);
+        return readApprovalRow({
+          ...existing,
+          session_id: input.sessionId,
+          updated_at: nowIso,
+        });
+      }
+      return readApprovalRow(existing);
+    }
 
     const id = randomUUID();
     database
@@ -406,13 +428,14 @@ export async function createMcpApprovalRequest(
           arguments_preview,
           status,
           approver_surface,
+          session_id,
           expires_at,
           created_at,
           resolved_at,
           used_at,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?, NULL, NULL, ?);
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?, ?, NULL, NULL, ?);
       `,
       )
       .run(
@@ -422,6 +445,7 @@ export async function createMcpApprovalRequest(
         input.adaptedName,
         input.argumentsHash,
         truncateText(input.argumentsPreview, 4000),
+        input.sessionId ?? null,
         expiresAt,
         nowIso,
         nowIso,
@@ -583,6 +607,18 @@ export async function resolveMcpApprovalWithPaths(
     });
     database.exec('COMMIT;');
     transactionStarted = false;
+    await createApprovalResolutionNudge(
+      {
+        family: 'mcp',
+        sessionId: approval.sessionId,
+        approvalId: approval.id,
+        decision: nextStatus === 'approved' ? 'approved' : 'denied',
+        subject: `${approval.serverId}/${approval.adaptedName}`,
+        retryInstruction:
+          'Retry the same MCP tool call with the same arguments.',
+      },
+      paths,
+    );
     return {
       ok: true,
       action: 'mcp_approval_resolve',
@@ -780,6 +816,7 @@ type McpApprovalRow = {
   created_at: string;
   resolved_at: string | null;
   used_at: string | null;
+  session_id?: string | null;
   updated_at: string;
 };
 
@@ -822,6 +859,7 @@ function readApprovalRow(row: McpApprovalRow): McpApprovalRecord {
     argumentsPreview: row.arguments_preview,
     status: row.status,
     approverSurface: row.approver_surface,
+    sessionId: row.session_id ?? null,
     expiresAt: row.expires_at,
     createdAt: row.created_at,
     resolvedAt: row.resolved_at,

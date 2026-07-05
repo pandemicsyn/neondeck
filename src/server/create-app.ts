@@ -58,6 +58,7 @@ export type CreateAppOptions = {
 
 export async function createApp(options: CreateAppOptions = {}) {
   const paths = options.paths ?? runtimePaths();
+  process.env.NEONDECK_HOME = paths.home;
   ensureRuntimeHomeSync(paths);
   loadNeondeckEnv(paths);
   const providerConfig = readProviderConfigSync(paths);

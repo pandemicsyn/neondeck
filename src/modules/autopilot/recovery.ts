@@ -363,16 +363,6 @@ export async function runAutopilotRecoveryAction(
         requires: ['reason'],
       };
     }
-    if (!input.reason?.trim()) {
-      return {
-        ok: false,
-        action: 'autopilot_recovery_run',
-        changed: false,
-        message: 'Requesting a prepared-diff revision requires a reason.',
-        preparedDiffId: preparedDiff.id,
-        requires: ['reason'],
-      };
-    }
     const result = await requestPreparedDiffRevision(
       {
         preparedDiffId: preparedDiff.id,

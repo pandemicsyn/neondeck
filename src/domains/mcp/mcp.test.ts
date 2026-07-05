@@ -35,6 +35,11 @@ import {
 } from './index';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import { createMcpRoutes } from '../../server/routes/mcp';
+import {
+  createChatSession,
+  listChatSessionCommandEvents,
+  type ChatSessionRecord,
+} from '../../modules/sessions';
 
 const tempRoots: string[] = [];
 
@@ -437,6 +442,8 @@ describe('MCP support', () => {
     const home = await tempDir();
     const paths = runtimePaths(home);
     await ensureRuntimeHome(paths);
+    const session = await createChatSession({ title: 'MCP approval' }, paths);
+    const sessionId = (session as { session: ChatSessionRecord }).session.id;
     const request = await createMcpApprovalRequest(
       {
         serverId: 'fixture',
@@ -444,6 +451,7 @@ describe('MCP support', () => {
         adaptedName: 'mcp__fixture__echo',
         argumentsHash: 'abc123',
         argumentsPreview: '{"text":"hello"}',
+        sessionId,
       },
       paths,
     );
@@ -455,6 +463,16 @@ describe('MCP support', () => {
       },
       paths,
     );
+    await expect(
+      listChatSessionCommandEvents({ sessionId }, paths),
+    ).resolves.toMatchObject({
+      events: expect.arrayContaining([
+        expect.objectContaining({
+          status: 'completed',
+          input: expect.stringContaining(`approval ${request!.id} approved`),
+        }),
+      ]),
+    });
 
     await expect(
       consumeUsableMcpApproval(
@@ -467,6 +485,18 @@ describe('MCP support', () => {
         paths,
       ),
     ).resolves.toMatchObject({ id: request!.id, status: 'used' });
+    await expect(
+      listMcpApprovals(paths, { includeResolved: true }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: request!.id,
+          sessionId,
+          status: 'used',
+          usedAt: expect.any(String),
+        }),
+      ]),
+    );
     await expect(
       consumeUsableMcpApproval(
         {

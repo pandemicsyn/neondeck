@@ -494,6 +494,7 @@ export type ExecutionApproval = {
   error: string | null;
   createdAt: string;
   resolvedAt: string | null;
+  usedAt: string | null;
   executedAt: string | null;
   updatedAt: string;
 };
@@ -547,6 +548,7 @@ export type McpApproval = {
   argumentsPreview: string;
   status: 'pending' | 'approved' | 'denied' | 'used' | 'expired';
   approverSurface: string | null;
+  sessionId: string | null;
   createdAt: string;
   expiresAt: string;
   resolvedAt: string | null;
@@ -1076,7 +1078,7 @@ export type AutopilotApprovalResolveResponse =
         pushApprovalDispatch?: {
           mode?: 'push' | 'verify-then-push' | 'off';
           status?: 'dispatched' | 'off';
-          workflow?: 'push-pr-autofix' | 'verify-pr-worktree';
+          workflow?: 'push-pr-autofix' | 'verify-then-push-pr-autofix';
           runId?: string;
           workflowSummaryId?: string;
           message?: string;

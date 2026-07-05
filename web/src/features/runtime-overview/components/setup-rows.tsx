@@ -300,7 +300,9 @@ export function ExecutionApprovalRow({
       </div>
       <div className="mt-1.5 flex items-center gap-1.5 font-mono text-[10px] text-muted">
         <span className="min-w-0 flex-1 truncate">
-          {relativeTime(approval.updatedAt)}
+          {approval.status === 'approved' && !approval.usedAt
+            ? `approved ${relativeTime(approval.resolvedAt ?? approval.updatedAt)} · not yet used`
+            : relativeTime(approval.updatedAt)}
           {approval.exitCode !== null ? ` · exit ${approval.exitCode}` : ''}
         </span>
         {approval.status === 'pending' ? (

@@ -10,6 +10,11 @@ import {
   runApprovedExecution,
 } from './modules/execution';
 import { checkExecutionPolicy } from './modules/execution';
+import {
+  createChatSession,
+  listChatSessionCommandEvents,
+  type ChatSessionRecord,
+} from './modules/sessions';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 
 const tempRoots: string[] = [];
@@ -63,12 +68,14 @@ describe('execution actions', () => {
   it('requires approval for non-preapproved interactive commands and reuses session approvals', async () => {
     const paths = runtimePaths(await tempDir());
     await ensureRuntimeHome(paths);
+    const session = await createChatSession({ title: 'Execution' }, paths);
+    const sessionId = (session as { session: ChatSessionRecord }).session.id;
 
     const request = await requestExecutionApproval(
       {
         command: 'node --version',
         cwd: paths.home,
-        sessionId: 'session-1',
+        sessionId,
       },
       paths,
     );
@@ -88,13 +95,23 @@ describe('execution actions', () => {
       ok: true,
       approval: { status: 'approved', approvalDecision: 'allow-session' },
     });
+    await expect(
+      listChatSessionCommandEvents({ sessionId }, paths),
+    ).resolves.toMatchObject({
+      events: [
+        expect.objectContaining({
+          status: 'completed',
+          input: expect.stringContaining(`approval ${approvalId} approved`),
+        }),
+      ],
+    });
 
     await expect(
       runApprovedExecution(
         {
           command: 'node --version',
           cwd: paths.home,
-          sessionId: 'session-1',
+          sessionId,
         },
         paths,
       ),
@@ -106,6 +123,18 @@ describe('execution actions', () => {
         approverSurface: expect.stringContaining('session:'),
       },
     });
+    const approvals = await listExecutionApprovals(paths, {
+      includeResolved: true,
+    });
+    expect(approvals.approvals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: approvalId,
+          status: 'approved',
+          usedAt: expect.any(String),
+        }),
+      ]),
+    );
   });
 
   it('can promote an approval into a preapproved command', async () => {

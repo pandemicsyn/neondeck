@@ -1529,7 +1529,7 @@ describe('PR event autopilot', () => {
     });
   });
 
-  it('dispatches verification after push approval by default and records the linkage', async () => {
+  it('dispatches verify-then-push after push approval by default and records the linkage', async () => {
     const { paths, featureSha } = await fixture();
     const prepared = await prepareReviewPreparedDiff(paths, featureSha);
     const preparedDiffId = stringPath(prepared, ['data', 'preparedDiff', 'id']);
@@ -1548,7 +1548,7 @@ describe('PR event autopilot', () => {
       {
         async invokeWorkflow(workflow, input) {
           calls.push({ workflow, input });
-          return { runId: 'run-verify-after-approval' };
+          return { runId: 'run-verify-then-push-after-approval' };
         },
       },
     );
@@ -1557,34 +1557,76 @@ describe('PR event autopilot', () => {
       ok: true,
       preparedDiff: { status: 'push-approved' },
       data: {
-        dispatchedPushRunId: 'run-verify-after-approval',
+        dispatchedPushRunId: 'run-verify-then-push-after-approval',
         pushApprovalDispatch: {
           mode: 'verify-then-push',
           status: 'dispatched',
-          workflow: 'verify-pr-worktree',
-          runId: 'run-verify-after-approval',
+          workflow: 'verify-then-push-pr-autofix',
+          runId: 'run-verify-then-push-after-approval',
         },
       },
     });
     expect(calls).toEqual([
       {
-        workflow: 'verify-pr-worktree',
+        workflow: 'verify-then-push-pr-autofix',
         input: {
+          preparedDiffId,
           worktreeId,
-          lockOwner: 'approval_verify_pr_worktree',
         },
       },
     ]);
     await expect(listWorkflowSummaries(paths)).resolves.toEqual([
       expect.objectContaining({
-        workflow: 'verify_pr_worktree',
-        runId: 'run-verify-after-approval',
+        workflow: 'verify_then_push_pr_autofix',
+        runId: 'run-verify-then-push-after-approval',
         status: 'pending',
         summary: expect.objectContaining({
           event: 'prepared_diff_push_approval_dispatch',
           approvalId: result.approvals?.[0]?.id,
           preparedDiffId,
           worktreeId,
+        }),
+      }),
+    ]);
+  });
+
+  it('returns an explicit dispatch failure after recording push approval', async () => {
+    const { paths, featureSha } = await fixture();
+    const prepared = await prepareReviewPreparedDiff(paths, featureSha);
+    const preparedDiffId = stringPath(prepared, ['data', 'preparedDiff', 'id']);
+
+    const result = await approvePreparedDiffPushWithDispatch(
+      { preparedDiffId, confirm: true },
+      paths,
+      {
+        async invokeWorkflow() {
+          throw new Error('Flue admission unavailable.');
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      preparedDiff: { status: 'push-approved' },
+      requires: ['workflowDispatch'],
+      errors: ['Flue admission unavailable.'],
+      data: {
+        dispatchedPushRunId: null,
+        pushApprovalDispatch: {
+          mode: 'verify-then-push',
+          status: 'dispatch-failed',
+          workflow: 'verify-then-push-pr-autofix',
+        },
+      },
+    });
+    await expect(listWorkflowSummaries(paths)).resolves.toEqual([
+      expect.objectContaining({
+        workflow: 'verify_then_push_pr_autofix',
+        runId: null,
+        status: 'failed',
+        summary: expect.objectContaining({
+          preparedDiffId,
+          error: 'Flue admission unavailable.',
         }),
       }),
     ]);
