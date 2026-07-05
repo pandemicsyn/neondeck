@@ -61,7 +61,10 @@ export function normalizeReviewBody(value: string | null | undefined) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-export function reviewCommentPreview(value: string, fallback = 'Review thread') {
+export function reviewCommentPreview(
+  value: string,
+  fallback = 'Review thread',
+) {
   const preview = value
     .split(/\n\s*Useful\? React with/i)[0]
     .replace(/```[\s\S]*?```/g, (block) =>

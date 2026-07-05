@@ -2,9 +2,7 @@
   "version": "7",
   "dialect": "sqlite",
   "id": "0132bbd0-ecf2-4e4f-998f-38f052034a51",
-  "prevIds": [
-    "97e2ae1a-2b48-4254-b5a5-8f84d350c4e9"
-  ],
+  "prevIds": ["97e2ae1a-2b48-4254-b5a5-8f84d350c4e9"],
   "ddl": [
     {
       "name": "app_metadata",
@@ -5061,13 +5059,9 @@
       "table": "worktrees"
     },
     {
-      "columns": [
-        "draft_id"
-      ],
+      "columns": ["draft_id"],
       "tableTo": "pr_review_drafts",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "nameExplicit": false,
@@ -5076,373 +5070,287 @@
       "table": "pr_review_draft_comments"
     },
     {
-      "columns": [
-        "repo",
-        "pr_number",
-        "head_sha"
-      ],
+      "columns": ["repo", "pr_number", "head_sha"],
       "nameExplicit": false,
       "name": "github_pr_file_cache_pk",
       "entityType": "pks",
       "table": "github_pr_file_cache"
     },
     {
-      "columns": [
-        "server_id",
-        "tool_name"
-      ],
+      "columns": ["server_id", "tool_name"],
       "nameExplicit": false,
       "name": "mcp_tool_catalog_pk",
       "entityType": "pks",
       "table": "mcp_tool_catalog"
     },
     {
-      "columns": [
-        "watch_id",
-        "category"
-      ],
+      "columns": ["watch_id", "category"],
       "nameExplicit": false,
       "name": "pr_watch_event_watermarks_pk",
       "entityType": "pks",
       "table": "pr_watch_event_watermarks"
     },
     {
-      "columns": [
-        "key"
-      ],
+      "columns": ["key"],
       "nameExplicit": false,
       "name": "app_metadata_pk",
       "table": "app_metadata",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "chat_session_audit_pk",
       "table": "chat_session_audit",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "surface"
-      ],
+      "columns": ["surface"],
       "nameExplicit": false,
       "name": "chat_session_surfaces_pk",
       "table": "chat_session_surfaces",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "chat_sessions_pk",
       "table": "chat_sessions",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "config_history_pk",
       "table": "config_history",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "execution_approvals_pk",
       "table": "execution_approvals",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "jobs_pk",
       "table": "jobs",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "kilo_result_events_pk",
       "table": "kilo_result_events",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "task_id"
-      ],
+      "columns": ["task_id"],
       "nameExplicit": false,
       "name": "kilo_result_state_pk",
       "table": "kilo_result_state",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "kilo_session_audit_pk",
       "table": "kilo_session_audit",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "kilo_task_events_pk",
       "table": "kilo_task_events",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "kilo_tasks_pk",
       "table": "kilo_tasks",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "learning_candidates_pk",
       "table": "learning_candidates",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "learning_events_pk",
       "table": "learning_events",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "learning_reviews_pk",
       "table": "learning_reviews",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "mcp_oauth_logins_pk",
       "table": "mcp_oauth_logins",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "server_id"
-      ],
+      "columns": ["server_id"],
       "nameExplicit": false,
       "name": "mcp_oauth_tokens_pk",
       "table": "mcp_oauth_tokens",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "mcp_tool_approvals_pk",
       "table": "mcp_tool_approvals",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "mcp_tool_audit_pk",
       "table": "mcp_tool_audit",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "memories_pk",
       "table": "memories",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "memory_events_pk",
       "table": "memory_events",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "neon_sessions_pk",
       "table": "neon_sessions",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "notifications_pk",
       "table": "notifications",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "pr_review_draft_comments_pk",
       "table": "pr_review_draft_comments",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "pr_review_drafts_pk",
       "table": "pr_review_drafts",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "pr_watches_pk",
       "table": "pr_watches",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "prepared_diff_approvals_pk",
       "table": "prepared_diff_approvals",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "prepared_diffs_pk",
       "table": "prepared_diffs",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "ref_watches_pk",
       "table": "ref_watches",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "repo_edit_events_pk",
       "table": "repo_edit_events",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "repo_file_reads_pk",
       "table": "repo_file_reads",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "workflow_events_pk",
       "table": "workflow_events",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "run_id"
-      ],
+      "columns": ["run_id"],
       "nameExplicit": false,
       "name": "workflow_run_observations_pk",
       "table": "workflow_run_observations",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "workflow_summaries_pk",
       "table": "workflow_summaries",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "worktree_cleanup_attempts_pk",
       "table": "worktree_cleanup_attempts",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "worktree_events_pk",
       "table": "worktree_events",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "worktree_locks_pk",
       "table": "worktree_locks",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "worktrees_pk",
       "table": "worktrees",
@@ -6279,38 +6187,28 @@
       "table": "worktrees"
     },
     {
-      "columns": [
-        "repo_full_name",
-        "pr_number"
-      ],
+      "columns": ["repo_full_name", "pr_number"],
       "nameExplicit": false,
       "name": "pr_watches_repo_full_name_pr_number_unique",
       "entityType": "uniques",
       "table": "pr_watches"
     },
     {
-      "columns": [
-        "worktree_id"
-      ],
+      "columns": ["worktree_id"],
       "nameExplicit": false,
       "name": "prepared_diffs_worktree_id_unique",
       "entityType": "uniques",
       "table": "prepared_diffs"
     },
     {
-      "columns": [
-        "repo_full_name",
-        "ref"
-      ],
+      "columns": ["repo_full_name", "ref"],
       "nameExplicit": false,
       "name": "ref_watches_repo_full_name_ref_unique",
       "entityType": "uniques",
       "table": "ref_watches"
     },
     {
-      "columns": [
-        "local_path"
-      ],
+      "columns": ["local_path"],
       "nameExplicit": false,
       "name": "worktrees_local_path_unique",
       "entityType": "uniques",

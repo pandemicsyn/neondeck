@@ -1,13 +1,13 @@
 # PR Review Actions Plan (full deck review: comments, threads, verdicts)
 
-Status: **active** — full specification for reviewing PRs *from* the deck: inline comments, thread
+Status: **active** — full specification for reviewing PRs _from_ the deck: inline comments, thread
 replies, thread resolution, and submitted reviews with a verdict (Comment / Approve / Request
 changes). Written 2026-07-04 against the implemented viewing stack from `.plans/archived/DIFF_UI_PLAN.md`
 (its PR 1 and PR 2 are on main); this doc supersedes that plan's "review actions are v2" note.
 
 ## Purpose
 
-The deck can now *see* PRs — file tree, syntax-highlighted patches, review threads rendered
+The deck can now _see_ PRs — file tree, syntax-highlighted patches, review threads rendered
 inline. The remaining gap is acting on what you see: today a review still ends with a tab switch
 to github.com. This plan completes the loop so a PR from the queue can be reviewed end-to-end on
 the deck: select lines → draft comments → reply/resolve threads → submit one review with a
@@ -222,8 +222,8 @@ which provider answered.**
   - `head` present + row exists → serve `payload` (no GitHub traffic);
   - `head` present + miss → fetch from GitHub, store under the **client-supplied** sha, serve;
   - `head` absent → bypass the cache entirely (current behavior).
-  Entries are immutable by construction (sha-keyed); a wrong/stale client sha merely creates an
-  extra row that nothing reads again — harmless, pruned later.
+    Entries are immutable by construction (sha-keyed); a wrong/stale client sha merely creates an
+    extra row that nothing reads again — harmless, pruned later.
 - **Pruning** on write: keep the newest 3 rows per `(repo, pr_number)` and delete rows older
   than 30 days; both bounds constant, no config.
 - **Skip caching** error responses and empty-files results — only cache `ok: true` payloads.
@@ -231,6 +231,7 @@ which provider answered.**
   prune keeps 3/PR; `head`-absent bypass; payload round-trips byte-identical.
 
 ### Follow-up 2 — local-checkout diff provider (larger; adopt when `truncated`
+
 placeholders or missing hunk expansion actually bite)
 
 - **Module**: `src/modules/github/local-pr-diff.ts`. Resolve the repo through
@@ -253,6 +254,7 @@ placeholders or missing hunk expansion actually bite)
   Diffing from the **merge-base** (three-dot semantics) is mandatory — diffing from the base tip
   shows upstream drift as PR changes. `baseRef` comes from the PR detail the queue already
   fetches. `refs/pull/<n>/head` exists on GitHub remotes for fork PRs too.
+
 - **Mapping to the response shape**: `--name-status` → `status`/`previousPath` (R→`renamed` with
   both paths), `--numstat` → `additions`/`deletions` (`-` values mean binary → `binary: true`,
   `patch: null`, same message as today), per-file diff text → `patch`; `truncated` is always
@@ -261,7 +263,7 @@ placeholders or missing hunk expansion actually bite)
   degrade to `truncated: true` with a "diff too large to render" message, keeping the shape's
   meaning.
 - **Provider selection** inside `getGitHubPrFiles`: config knob `github.prDiffSource:
-  'auto' | 'api' | 'local'` (default `auto` = local when the repo is registered and its path
+'auto' | 'api' | 'local'` (default `auto` = local when the repo is registered and its path
   exists, else API). Any local failure (fetch error, merge-base failure, timeout) logs the reason
   and falls back to the API within the same request — the route never 500s because a checkout
   was cold. Record the provider used in the server log line only, not the response.

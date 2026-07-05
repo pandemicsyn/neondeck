@@ -287,7 +287,12 @@ function capturedFilePatch(path: string) {
 }
 
 function apiError(data: unknown) {
-  return new ApiError('Review submit failed.', 422, '/api/github/reviews', data);
+  return new ApiError(
+    'Review submit failed.',
+    422,
+    '/api/github/reviews',
+    data,
+  );
 }
 
 function draftWithComments(
