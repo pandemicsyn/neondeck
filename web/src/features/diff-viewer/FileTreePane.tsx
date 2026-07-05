@@ -160,6 +160,20 @@ const treeUnsafeCss = `
   button[data-type='item'] {
     border-radius: 0;
   }
+  input {
+    border-radius: 0;
+    border-color: var(--trees-border-color-override);
+    background: var(--trees-bg-muted-override);
+    color: var(--trees-fg-override);
+    font-family: var(--trees-font-family-override);
+  }
+  input::placeholder {
+    color: var(--trees-fg-muted-override);
+  }
+  input:focus {
+    outline: 1px solid var(--trees-selected-bg-override);
+    outline-offset: 0;
+  }
 `;
 
 export function fileTreeSummary(files: DiffFilePatch[]) {
