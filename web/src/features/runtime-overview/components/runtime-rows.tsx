@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { SessionReferenceButton } from '../../../components/SessionReferenceButton';
-import { Badge } from '../../../components/ui';
+import { Badge, Button, MiniEmpty } from '../../../components/ui';
 import {
   logoutMcpServer,
   resolveMcpApproval,
@@ -32,6 +32,18 @@ import {
   shortPath,
   worktreeStatusClass,
 } from '../lib/format';
+
+const KiloTaskDiffReview = lazy(() =>
+  import('../../diff-viewer/surfaces').then((module) => ({
+    default: module.KiloTaskDiffReview,
+  })),
+);
+
+const RepoEditEventDiffReview = lazy(() =>
+  import('../../diff-viewer/surfaces').then((module) => ({
+    default: module.RepoEditEventDiffReview,
+  })),
+);
 
 export function McpServerRow({
   onRefresh,
@@ -202,7 +214,10 @@ export function McpApprovalRow({
 }
 
 export function RepoEditEventRow({ event }: { event: RepoEditEvent }) {
+  const [isViewingDiff, setIsViewingDiff] = useState(false);
   const paths = event.paths.length > 0 ? event.paths.join(', ') : 'no paths';
+  const canViewDiff = event.diffPatch || event.paths.length > 0;
+
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
       <div className="flex items-start justify-between gap-2">
@@ -221,13 +236,32 @@ export function RepoEditEventRow({ event }: { event: RepoEditEvent }) {
         <span className="truncate">
           {event.sessionId ? `session ${event.sessionId}` : event.actorType}
         </span>
-        <span className="shrink-0">{relativeTime(event.updatedAt)}</span>
+        <span className="flex shrink-0 items-center gap-1.5">
+          {canViewDiff ? (
+            <Button
+              className="min-h-[24px] px-2 py-0 font-mono text-[10px]"
+              onClick={() => setIsViewingDiff((current) => !current)}
+              type="button"
+            >
+              {isViewingDiff ? 'hide diff' : 'view diff'}
+            </Button>
+          ) : null}
+          {relativeTime(event.updatedAt)}
+        </span>
       </div>
+      {isViewingDiff ? (
+        <div className="mt-1.5">
+          <Suspense fallback={<MiniEmpty label="Loading diff viewer." />}>
+            <RepoEditEventDiffReview event={event} />
+          </Suspense>
+        </div>
+      ) : null}
     </article>
   );
 }
 
 export function KiloTaskRow({ task }: { task: KiloTaskRecord }) {
+  const [isViewingDiff, setIsViewingDiff] = useState(false);
   const changed =
     task.diff && task.diff.ok
       ? `${task.diff.fileCount} files +${task.diff.additions} -${task.diff.deletions}`
@@ -282,9 +316,23 @@ export function KiloTaskRow({ task }: { task: KiloTaskRecord }) {
               status: task.status,
             }}
           />
+          <Button
+            className="min-h-[24px] px-2 py-0 font-mono text-[10px]"
+            onClick={() => setIsViewingDiff((current) => !current)}
+            type="button"
+          >
+            {isViewingDiff ? 'hide diff' : 'view diff'}
+          </Button>
           {relativeTime(task.updatedAt)}
         </span>
       </div>
+      {isViewingDiff ? (
+        <div className="mt-1.5">
+          <Suspense fallback={<MiniEmpty label="Loading diff viewer." />}>
+            <KiloTaskDiffReview task={task} />
+          </Suspense>
+        </div>
+      ) : null}
       <div className="mt-1.5 grid grid-cols-2 gap-1.5 font-mono text-[10px] text-muted">
         <div className="border border-line bg-field px-2 py-1">
           verify {task.verificationState ?? 'not-run'}

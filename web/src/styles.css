@@ -519,6 +519,113 @@ button:disabled {
   margin-bottom: 0;
 }
 
+.diff-viewer-shell {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  background: var(--field);
+}
+
+.diff-viewer-header {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--deck-chrome) 82%, transparent);
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+}
+
+.diff-viewer-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(10.5px * var(--deck-text-scale));
+}
+
+.diff-viewer-detail {
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: calc(10px * var(--deck-text-scale));
+}
+
+.diff-patch {
+  display: block;
+  min-height: 160px;
+  max-height: min(58vh, 520px);
+  overflow: auto;
+  background: var(--field);
+  font-family: var(--font-mono);
+}
+
+.diff-multi-file {
+  display: grid;
+  min-height: 220px;
+  max-height: min(68vh, 620px);
+  grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.diff-tree-pane {
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--line);
+  background: var(--field);
+}
+
+.diff-tree-host {
+  height: 100%;
+  min-height: 0;
+}
+
+.diff-file-column {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.diff-file-selector {
+  display: none;
+  border-bottom: 1px solid var(--line);
+  background: var(--field);
+  padding: 6px;
+}
+
+.diff-file-column > .diff-viewer-shell {
+  border: 0;
+}
+
+[data-deck-profile='portrait'] .diff-multi-file,
+[data-deck-profile='compact'] .diff-multi-file {
+  display: flex;
+  max-height: none;
+  flex-direction: column;
+}
+
+[data-deck-profile='portrait'] .diff-tree-pane,
+[data-deck-profile='compact'] .diff-tree-pane {
+  display: none;
+}
+
+[data-deck-profile='portrait'] .diff-file-selector,
+[data-deck-profile='compact'] .diff-file-selector {
+  display: block;
+}
+
+[data-deck-profile='portrait'] .diff-patch,
+[data-deck-profile='compact'] .diff-patch {
+  min-height: 180px;
+  max-height: 44vh;
+}
+
 .chat-markdown p,
 .chat-markdown ul,
 .chat-markdown ol,
