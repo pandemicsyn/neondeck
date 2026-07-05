@@ -104,6 +104,10 @@ export async function createApprovalResolutionNudge(
   }
 
   const dispatchAccepted = Boolean(dispatchReceipt);
+  const notificationMessage =
+    shouldDispatch && !dispatchAccepted
+      ? `${label} approval ${input.approvalId} approved for ${input.subject}. Flue dispatch did not accept the answer; the decision was recorded in this session command log.`
+      : message;
   await addNotification(
     {
       level: shouldDispatch
@@ -116,7 +120,7 @@ export async function createApprovalResolutionNudge(
           ? `${label} approval answered`
           : `${label} approval delivery failed`
         : `${label} approval denied`,
-      message,
+      message: notificationMessage,
       source: input.family,
       sourceId: `${input.family}-approval:${input.approvalId}:resolved`,
       data: {

@@ -43,6 +43,7 @@ import {
   setApprovalNudgeDispatchForTests,
   type ChatSessionRecord,
 } from '../../modules/sessions';
+import { listNotifications } from '../../modules/app-state';
 import { runWithFlueExecutionContextForTests } from '../../modules/flue/execution-context';
 
 const tempRoots: string[] = [];
@@ -814,6 +815,24 @@ describe('MCP support', () => {
     } finally {
       restoreDispatch();
     }
+    await expect(listNotifications(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: 'MCP tool approval delivery failed',
+          message: expect.stringContaining(
+            'the decision was recorded in this session command log',
+          ),
+        }),
+      ]),
+    );
+    await expect(listNotifications(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: 'MCP tool approval delivery failed',
+          message: expect.not.stringContaining('Retry the MCP tool call'),
+        }),
+      ]),
+    );
   });
 
   it('skips direct MCP approval nudge dispatch for legacy whitespace session ids', async () => {

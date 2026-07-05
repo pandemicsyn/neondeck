@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
+import { listNotifications } from './modules/app-state';
 import {
   listExecutionApprovals,
   neondeckExecutionActions,
@@ -226,6 +227,24 @@ describe('execution actions', () => {
     } finally {
       restoreDispatch();
     }
+    await expect(listNotifications(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: 'Execution approval delivery failed',
+          message: expect.stringContaining(
+            'the decision was recorded in this session command log',
+          ),
+        }),
+      ]),
+    );
+    await expect(listNotifications(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: 'Execution approval delivery failed',
+          message: expect.not.stringContaining('Retry with approvalId'),
+        }),
+      ]),
+    );
   });
 
   it('records denied execution approval nudges without dispatching a Flue turn', async () => {
