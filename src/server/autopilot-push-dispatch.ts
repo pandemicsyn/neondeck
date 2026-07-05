@@ -1,6 +1,6 @@
 import { invoke, type WorkflowDefinition } from '@flue/runtime';
 import { asJsonValue } from '../lib/action-result';
-import { addWorkflowSummary } from '../modules/app-state';
+import { addNotification, addWorkflowSummary } from '../modules/app-state';
 import {
   approvePreparedDiffPush,
   type PreparedDiffActionResult,
@@ -14,7 +14,7 @@ import {
 } from '../runtime-home';
 
 type PushOnApprovalMode = 'push' | 'verify-then-push' | 'off';
-type DispatchWorkflowName = 'push-pr-autofix' | 'verify-pr-worktree';
+type DispatchWorkflowName = 'push-pr-autofix' | 'verify-then-push-pr-autofix';
 type WorkflowReceipt = { runId: string };
 
 type ApprovalDispatchDependencies = {
@@ -23,6 +23,8 @@ type ApprovalDispatchDependencies = {
     input: Record<string, unknown>,
   ) => Promise<WorkflowReceipt>;
 };
+type DispatchPlan =
+  ReturnType<typeof pushDispatch> | ReturnType<typeof verifyThenPushDispatch>;
 
 export async function approvePreparedDiffPushWithDispatch(
   rawInput: unknown,
@@ -57,44 +59,64 @@ async function dispatchApprovedPreparedDiffPush(
 
   const dispatch =
     mode === 'verify-then-push' && preparedDiff.verificationStatus !== 'passed'
-      ? verifyDispatch(preparedDiff)
+      ? verifyThenPushDispatch(preparedDiff)
       : pushDispatch(preparedDiff);
   const invokeWorkflow = dependencies.invokeWorkflow ?? invokeAutopilotWorkflow;
-  const receipt = await invokeWorkflow(dispatch.workflow, dispatch.input);
-  const workflowSummary = await addWorkflowSummary(
-    {
-      workflow: dispatch.workflow.replaceAll('-', '_'),
-      runId: receipt.runId,
-      status: 'pending',
-      summary: {
-        event: 'prepared_diff_push_approval_dispatch',
-        mode,
-        approvalId: approval.approvals?.[0]?.id ?? null,
-        preparedDiffId: preparedDiff.id,
-        worktreeId: preparedDiff.worktreeId,
-        repoId: preparedDiff.repoId,
-        repoFullName: preparedDiff.repoFullName,
-        prNumber: preparedDiff.prNumber,
-        workflow: dispatch.workflow,
-        input: dispatch.input,
-        dispatchedAt: new Date().toISOString(),
+  try {
+    process.env.NEONDECK_HOME = paths.home;
+    const receipt = await invokeWorkflow(dispatch.workflow, dispatch.input);
+    const workflowSummary = await addWorkflowSummary(
+      {
+        workflow: dispatch.workflow.replaceAll('-', '_'),
+        runId: receipt.runId,
+        status: 'pending',
+        summary: {
+          event: 'prepared_diff_push_approval_dispatch',
+          mode,
+          approvalId: approval.approvals?.[0]?.id ?? null,
+          preparedDiffId: preparedDiff.id,
+          worktreeId: preparedDiff.worktreeId,
+          repoId: preparedDiff.repoId,
+          repoFullName: preparedDiff.repoFullName,
+          prNumber: preparedDiff.prNumber,
+          workflow: dispatch.workflow,
+          input: dispatch.input,
+          dispatchedAt: new Date().toISOString(),
+        },
       },
-    },
-    paths,
-  );
+      paths,
+    );
 
-  return withDispatchData(
-    approval,
-    {
-      mode,
-      status: 'dispatched',
-      workflow: dispatch.workflow,
-      runId: receipt.runId,
-      workflowSummaryId: workflowSummary.id,
-      message: dispatch.message,
-    },
-    dispatch.message,
-  );
+    return withDispatchData(
+      approval,
+      {
+        mode,
+        status: 'dispatched',
+        workflow: dispatch.workflow,
+        runId: receipt.runId,
+        workflowSummaryId: workflowSummary.id,
+        message: dispatch.message,
+      },
+      dispatch.message,
+    );
+  } catch (error) {
+    const message = errorMessage(error);
+    await recordDispatchFailure(preparedDiff, mode, dispatch, message, paths);
+    return {
+      ...withDispatchData(
+        approval,
+        {
+          mode,
+          status: 'dispatch-failed',
+          workflow: dispatch.workflow,
+          message,
+        },
+        `Recorded prepared diff push approval, but workflow dispatch failed: ${message}`,
+      ),
+      requires: ['workflowDispatch'],
+      errors: [message],
+    };
+  }
 }
 
 function pushDispatch(preparedDiff: PreparedDiffRecord) {
@@ -108,14 +130,14 @@ function pushDispatch(preparedDiff: PreparedDiffRecord) {
   };
 }
 
-function verifyDispatch(preparedDiff: PreparedDiffRecord) {
+function verifyThenPushDispatch(preparedDiff: PreparedDiffRecord) {
   return {
-    workflow: 'verify-pr-worktree' as const,
+    workflow: 'verify-then-push-pr-autofix' as const,
     input: {
+      preparedDiffId: preparedDiff.id,
       worktreeId: preparedDiff.worktreeId,
-      lockOwner: 'approval_verify_pr_worktree',
     },
-    message: `Approved prepared diff ${preparedDiff.id}; push is waiting on verification and verify-pr-worktree was dispatched.`,
+    message: `Approved prepared diff ${preparedDiff.id}; dispatched verify-then-push-pr-autofix workflow.`,
   };
 }
 
@@ -135,8 +157,53 @@ async function invokeAutopilotWorkflow(
     const module = await import('../workflows/push-pr-autofix');
     return invokeWorkflow(module.default, { input });
   }
-  const module = await import('../workflows/verify-pr-worktree');
+  const module = await import('../workflows/verify-then-push-pr-autofix');
   return invokeWorkflow(module.default, { input });
+}
+
+async function recordDispatchFailure(
+  preparedDiff: PreparedDiffRecord,
+  mode: PushOnApprovalMode,
+  dispatch: DispatchPlan,
+  error: string,
+  paths: RuntimePaths,
+) {
+  await addWorkflowSummary(
+    {
+      workflow: dispatch.workflow.replaceAll('-', '_'),
+      status: 'failed',
+      summary: {
+        event: 'prepared_diff_push_approval_dispatch',
+        mode,
+        preparedDiffId: preparedDiff.id,
+        worktreeId: preparedDiff.worktreeId,
+        repoId: preparedDiff.repoId,
+        repoFullName: preparedDiff.repoFullName,
+        prNumber: preparedDiff.prNumber,
+        workflow: dispatch.workflow,
+        input: dispatch.input,
+        error,
+        dispatchedAt: new Date().toISOString(),
+      },
+    },
+    paths,
+  ).catch(() => undefined);
+  await addNotification(
+    {
+      level: 'attention',
+      title: 'Push dispatch failed',
+      message: `Prepared diff ${preparedDiff.id} was approved, but workflow dispatch failed: ${error}`,
+      source: 'autopilot',
+      sourceId: `prepared-diff:${preparedDiff.id}:push-dispatch-failed`,
+      data: {
+        preparedDiffId: preparedDiff.id,
+        worktreeId: preparedDiff.worktreeId,
+        workflow: dispatch.workflow,
+        error,
+      },
+    },
+    paths,
+  ).catch(() => undefined);
 }
 
 async function invokeWorkflow(
@@ -144,6 +211,10 @@ async function invokeWorkflow(
   request: { input: Record<string, unknown> },
 ) {
   return invoke(workflow, request);
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function withDispatchData(

@@ -19,6 +19,7 @@ export type McpGateInput = {
   context: {
     input: Record<string, unknown>;
     signal?: AbortSignal;
+    sessionId?: string;
   };
 };
 
@@ -79,6 +80,7 @@ export async function runMcpToolThroughGate(
           adaptedName: input.adaptedName,
           argumentsHash,
           argumentsPreview,
+          sessionId: input.context.sessionId,
         },
         paths,
       );

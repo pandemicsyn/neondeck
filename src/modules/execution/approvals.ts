@@ -16,6 +16,7 @@ import {
   readApproval,
   readExecutionApprovalRow,
 } from './store';
+import { createApprovalResolutionNudge } from '../sessions';
 import {
   requestApprovalInputSchema,
   resolveApprovalInputSchema,
@@ -217,6 +218,19 @@ export async function resolveExecutionApproval(
   }
 
   const approval = readApproval(paths, existing.id);
+  if (approval) {
+    await createApprovalResolutionNudge(
+      {
+        family: 'execution',
+        sessionId: approval.sessionId,
+        approvalId: approval.id,
+        decision: nextStatus === 'approved' ? 'approved' : 'denied',
+        subject: approval.command,
+        retryInstruction: `Retry the command with approvalId ${approval.id}.`,
+      },
+      paths,
+    );
+  }
   return {
     ok: true,
     action: 'execution_resolve_approval',

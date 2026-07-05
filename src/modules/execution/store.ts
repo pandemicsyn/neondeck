@@ -217,6 +217,30 @@ export function updateApprovalResult(
   return record;
 }
 
+export function markApprovalUsed(paths: RuntimePaths, id: string) {
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+
+  try {
+    database
+      .prepare(
+        `
+        UPDATE execution_approvals
+        SET used_at = COALESCE(used_at, ?),
+            updated_at = ?
+        WHERE id = ?;
+      `,
+      )
+      .run(now, now, id);
+  } finally {
+    database.close();
+  }
+
+  const record = readApproval(paths, id);
+  if (!record) throw new Error(`Execution approval ${id} was not found.`);
+  return record;
+}
+
 export function readExecutionApprovalRow(
   row: unknown,
 ): ExecutionApprovalRecord {
@@ -256,6 +280,7 @@ export function readExecutionApprovalRow(
     createdAt: String(record.created_at),
     resolvedAt:
       typeof record.resolved_at === 'string' ? record.resolved_at : null,
+    usedAt: typeof record.used_at === 'string' ? record.used_at : null,
     executedAt:
       typeof record.executed_at === 'string' ? record.executed_at : null,
     updatedAt: String(record.updated_at),

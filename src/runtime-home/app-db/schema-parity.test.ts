@@ -3,8 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { drizzle } from 'drizzle-orm/node-sqlite';
-import { migrate } from 'drizzle-orm/node-sqlite/migrator';
+import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { afterEach, describe, expect, it } from 'vitest';
 import { initializeLegacyAppDatabase } from './legacy-test-support.ts';
 
@@ -23,7 +22,7 @@ afterEach(async () => {
 });
 
 describe('app database schema parity', () => {
-  it('matches the legacy v9 initializer and the Drizzle baseline migration', async () => {
+  it('matches the legacy v9 initializer and the pre-current Drizzle migration chain', async () => {
     const root = await tempDir();
     const legacyPath = join(root, 'legacy.db');
     const migratedPath = join(root, 'migrated.db');
@@ -45,7 +44,12 @@ describe('app database schema parity', () => {
 function applyBaselineMigration(path: string) {
   const database = new DatabaseSync(path);
   try {
-    migrate(drizzle({ client: database }), { migrationsFolder });
+    for (const migration of readMigrationFiles({ migrationsFolder })) {
+      if (migration.name.endsWith('_approval_nudges')) break;
+      for (const statement of migration.sql) {
+        if (statement.trim()) database.exec(statement);
+      }
+    }
   } finally {
     database.close();
   }

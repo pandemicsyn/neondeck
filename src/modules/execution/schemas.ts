@@ -34,6 +34,7 @@ export type ExecutionApprovalRecord = {
   error: string | null;
   createdAt: string;
   resolvedAt: string | null;
+  usedAt: string | null;
   executedAt: string | null;
   updatedAt: string;
 };

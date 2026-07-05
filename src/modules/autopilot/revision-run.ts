@@ -155,7 +155,56 @@ export async function runPreparedDiffRevision(
   if (!latestTransition.ok) {
     if (taskId) {
       const aborter = dependencies.abortKiloTask ?? abortKiloTask;
-      await aborter({ taskId }, paths).catch(() => undefined);
+      const aborted = await aborter({ taskId }, paths).catch((error) => ({
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+      }));
+      if (!aborted.ok) {
+        await addWorkflowSummary(
+          {
+            workflow: 'prepared_diff_revision_run',
+            runId: taskId,
+            status: 'failed',
+            summary: {
+              preparedDiffId: current.id,
+              kiloTaskId: taskId,
+              reason,
+              outcome: 'abort-failed-after-stale-transition',
+              currentStatus: current.status,
+              error: aborted.message,
+            },
+          },
+          paths,
+        );
+        return {
+          ok: false,
+          action: 'prepared_diff_run_revision',
+          changed: true,
+          message: `Started Kilo revision task ${taskId}, but the prepared diff no longer accepts a revision run and abort failed: ${aborted.message}`,
+          preparedDiff: current,
+          requires: ['revisionRunAbort'],
+          errors: [aborted.message],
+          error: {
+            code: 'REVISION_RUN_ABORT_FAILED',
+            message: aborted.message,
+          },
+        };
+      }
+      await addWorkflowSummary(
+        {
+          workflow: 'prepared_diff_revision_run',
+          runId: taskId,
+          status: 'aborted',
+          summary: {
+            preparedDiffId: current.id,
+            kiloTaskId: taskId,
+            reason,
+            outcome: 'aborted-after-stale-transition',
+            currentStatus: current.status,
+          },
+        },
+        paths,
+      );
     }
     return latestTransition.result;
   }
