@@ -656,6 +656,14 @@ describe('github foundation', () => {
       return jsonResponse(
         [
           {
+            sha: 'sha-large',
+            filename: 'docs/large.md',
+            status: 'modified',
+            additions: 1200,
+            deletions: 10,
+            changes: 1210,
+          },
+          {
             sha: 'sha-a',
             filename: 'src/app.ts',
             status: 'modified',
@@ -684,12 +692,19 @@ describe('github foundation', () => {
       repo: 'pandemicsyn/neondeck',
       number: 123,
       diffSummary: {
-        files: 2,
-        additions: 5,
-        deletions: 1,
+        files: 3,
+        additions: 1205,
+        deletions: 11,
         binaryFiles: 1,
       },
       files: expect.arrayContaining([
+        expect.objectContaining({
+          path: 'docs/large.md',
+          patch: null,
+          binary: false,
+          truncated: true,
+          message: expect.stringContaining('diff is too large'),
+        }),
         expect.objectContaining({
           path: 'src/app.ts',
           patch: expect.stringContaining(
@@ -713,7 +728,8 @@ describe('github foundation', () => {
           path: 'assets/logo.png',
           patch: null,
           binary: true,
-          message: expect.stringContaining('GitHub did not include a patch'),
+          truncated: false,
+          message: expect.stringContaining('binary file'),
         }),
       ]),
     });

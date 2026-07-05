@@ -102,6 +102,7 @@ export type GitHubPullRequestFile = {
   binary: boolean;
   generatedLike: boolean;
   patch: string | null;
+  truncated: boolean;
   sha: string | null;
   htmlUrl: string | null;
   rawUrl: string | null;

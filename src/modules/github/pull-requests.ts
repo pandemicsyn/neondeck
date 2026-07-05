@@ -251,6 +251,8 @@ function normalizePullRequestFile(
   file: GitHubPullRequestFileApiItem,
 ): GitHubPullRequestFile {
   const patch = file.patch ? unifiedPatchFromGitHubFile(file) : null;
+  const binary = patch === null && isLikelyBinaryPullRequestFile(file);
+  const truncated = patch === null && !binary;
   return {
     path: file.filename,
     previousPath: file.previous_filename ?? null,
@@ -258,18 +260,26 @@ function normalizePullRequestFile(
     additions: file.additions,
     deletions: file.deletions,
     changes: file.changes,
-    binary: patch === null,
+    binary,
     generatedLike: false,
     patch,
+    truncated,
     sha: file.sha ?? null,
     htmlUrl: file.blob_url ?? null,
     rawUrl: file.raw_url ?? null,
     contentsUrl: file.contents_url ?? null,
-    message:
-      patch === null
-        ? 'GitHub did not include a patch for this file. It may be binary or too large.'
-        : null,
+    message: patch === null ? missingPatchMessage(binary) : null,
   };
+}
+
+function isLikelyBinaryPullRequestFile(file: GitHubPullRequestFileApiItem) {
+  return file.additions === 0 && file.deletions === 0 && file.changes === 0;
+}
+
+function missingPatchMessage(binary: boolean) {
+  return binary
+    ? 'GitHub did not include a patch for this binary file.'
+    : 'GitHub omitted the text patch for this file, likely because the diff is too large.';
 }
 
 function unifiedPatchFromGitHubFile(file: GitHubPullRequestFileApiItem) {
@@ -313,6 +323,6 @@ function summarizePullRequestFiles(
     files: files.length,
     additions: files.reduce((sum, file) => sum + file.additions, 0),
     deletions: files.reduce((sum, file) => sum + file.deletions, 0),
-    binaryFiles: files.filter((file) => file.patch === null).length,
+    binaryFiles: files.filter((file) => file.binary).length,
   };
 }
