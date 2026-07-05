@@ -58,7 +58,9 @@ export function buildPatchAnchorIndex(patch: string | null | undefined) {
   let newLine = 0;
   let hunk = -1;
   let position = 0;
-  for (const line of (patch ?? '').split('\n')) {
+  const lines = (patch ?? '').split('\n');
+  if (lines.at(-1) === '') lines.pop();
+  for (const line of lines) {
     const header = line.match(/^@@ -(?<old>\d+)(?:,\d+)? \+(?<next>\d+)/);
     if (header?.groups) {
       oldLine = Number(header.groups.old);

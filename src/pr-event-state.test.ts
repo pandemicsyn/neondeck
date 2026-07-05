@@ -488,6 +488,70 @@ describe('PR event state watermarks', () => {
     });
   });
 
+  it('preserves omitted review draft fields on partial saves', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await expect(
+      putGitHubPrReviewDraft(
+        { repo: 'neondeck', prNumber: 123 },
+        {
+          headSha: 'head123',
+          verdict: 'comment',
+          body: 'Initial body',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        draft: {
+          verdict: 'comment',
+          body: 'Initial body',
+        },
+      },
+    });
+
+    await expect(
+      putGitHubPrReviewDraft(
+        { repo: 'neondeck', prNumber: 123 },
+        {
+          headSha: 'head123',
+          body: 'Edited body',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        draft: {
+          verdict: 'comment',
+          body: 'Edited body',
+        },
+      },
+    });
+
+    await expect(
+      putGitHubPrReviewDraft(
+        { repo: 'neondeck', prNumber: 123 },
+        {
+          headSha: 'head123',
+          verdict: 'request-changes',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        draft: {
+          verdict: 'request-changes',
+          body: 'Edited body',
+        },
+      },
+    });
+  });
+
   it('validates inputs and reports missing credentials before fetching', async () => {
     delete process.env.GITHUB_TOKEN;
     const home = await tempHome();

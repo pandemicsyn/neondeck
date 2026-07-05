@@ -249,14 +249,19 @@ export async function putGitHubPrReviewDraft(
   );
   if (!resolved.ok) return resolved.result;
 
-  const draft = upsertPrReviewDraft({
+  const draftUpdate: Parameters<typeof upsertPrReviewDraft>[0] = {
     databasePath: paths.neondeckDatabase,
     repo: resolved.target.repoFullName,
     prNumber: resolved.target.number,
     headSha: parsedDraft.output.headSha,
-    verdict: parsedDraft.output.verdict ?? null,
-    body: parsedDraft.output.body ?? null,
-  });
+  };
+  if ('verdict' in parsedDraft.output) {
+    draftUpdate.verdict = parsedDraft.output.verdict ?? null;
+  }
+  if ('body' in parsedDraft.output) {
+    draftUpdate.body = parsedDraft.output.body ?? null;
+  }
+  const draft = upsertPrReviewDraft(draftUpdate);
 
   return okResult(
     'github_pr_review_draft_put',

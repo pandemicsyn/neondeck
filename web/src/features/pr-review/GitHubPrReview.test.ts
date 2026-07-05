@@ -110,6 +110,23 @@ describe('GitHubPrReview helpers', () => {
       new Set(['cross-hunk', 'reversed']),
     );
   });
+
+  it('does not index a phantom context line from a trailing patch newline', () => {
+    const index = buildPatchAnchorIndex(
+      [
+        'diff --git a/src/app.ts b/src/app.ts',
+        '--- a/src/app.ts',
+        '+++ b/src/app.ts',
+        '@@ -1,1 +1,1 @@',
+        ' line 1',
+        '',
+      ].join('\n'),
+    );
+
+    expect(index.has('RIGHT:1')).toBe(true);
+    expect(index.has('RIGHT:2')).toBe(false);
+    expect(index.has('LEFT:2')).toBe(false);
+  });
 });
 
 function selection(input: { side: 'additions' | 'deletions'; line: number }) {
