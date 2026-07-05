@@ -1077,7 +1077,7 @@ export type AutopilotApprovalResolveResponse =
       data?: {
         pushApprovalDispatch?: {
           mode?: 'push' | 'verify-then-push' | 'off';
-          status?: 'dispatched' | 'off';
+          status?: 'dispatched' | 'off' | 'dispatch-failed';
           workflow?: 'push-pr-autofix' | 'verify-then-push-pr-autofix';
           runId?: string;
           workflowSummaryId?: string;

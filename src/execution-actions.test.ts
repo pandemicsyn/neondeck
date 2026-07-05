@@ -13,6 +13,7 @@ import { checkExecutionPolicy } from './modules/execution';
 import {
   createChatSession,
   listChatSessionCommandEvents,
+  setApprovalNudgeDispatchForTests,
   type ChatSessionRecord,
 } from './modules/sessions';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
@@ -86,15 +87,30 @@ describe('execution actions', () => {
 
     const approvalId = readApprovalId(request);
     expect(approvalId).toBeTruthy();
-    await expect(
-      resolveExecutionApproval(
-        { id: approvalId, decision: 'allow-session' },
-        paths,
-      ),
-    ).resolves.toMatchObject({
-      ok: true,
-      approval: { status: 'approved', approvalDecision: 'allow-session' },
+    const restoreDispatch = setApprovalNudgeDispatchForTests(async (input) => {
+      expect(input).toMatchObject({
+        agent: 'display-assistant',
+        id: sessionId,
+      });
+      expect(input.input).toContain(`approval ${approvalId} approved`);
+      return {
+        dispatchId: 'dispatch-execution-approval',
+        acceptedAt: new Date().toISOString(),
+      };
     });
+    try {
+      await expect(
+        resolveExecutionApproval(
+          { id: approvalId, decision: 'allow-session' },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        ok: true,
+        approval: { status: 'approved', approvalDecision: 'allow-session' },
+      });
+    } finally {
+      restoreDispatch();
+    }
     await expect(
       listChatSessionCommandEvents({ sessionId }, paths),
     ).resolves.toMatchObject({
@@ -135,6 +151,45 @@ describe('execution actions', () => {
         }),
       ]),
     );
+  });
+
+  it('does not reuse a one-shot execution approval after it is claimed', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const request = await requestExecutionApproval(
+      { command: 'node --version', cwd: paths.home },
+      paths,
+    );
+    const approvalId = readApprovalId(request);
+
+    await expect(
+      resolveExecutionApproval(
+        { id: approvalId, decision: 'allow-once' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      approval: { status: 'approved', approvalDecision: 'allow-once' },
+    });
+    await expect(
+      runApprovedExecution(
+        { command: 'node --version', cwd: paths.home, approvalId },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      approval: { status: 'executed', usedAt: expect.any(String) },
+    });
+    await expect(
+      runApprovedExecution(
+        { command: 'node --version', cwd: paths.home, approvalId },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['approval'],
+      approval: { id: approvalId, usedAt: expect.any(String) },
+    });
   });
 
   it('can promote an approval into a preapproved command', async () => {

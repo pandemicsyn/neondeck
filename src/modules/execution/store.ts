@@ -217,27 +217,36 @@ export function updateApprovalResult(
   return record;
 }
 
-export function markApprovalUsed(paths: RuntimePaths, id: string) {
+export function markApprovalUsed(
+  paths: RuntimePaths,
+  id: string,
+  options: { allowAlreadyUsed?: boolean } = {},
+) {
   const now = new Date().toISOString();
+  const allowAlreadyUsed = options.allowAlreadyUsed ?? true;
   const database = openDb(paths.neondeckDatabase);
+  let changes = 0;
 
   try {
-    database
+    const result = database
       .prepare(
         `
         UPDATE execution_approvals
         SET used_at = COALESCE(used_at, ?),
             updated_at = ?
-        WHERE id = ?;
+        WHERE id = ?
+          AND (? = 1 OR used_at IS NULL);
       `,
       )
-      .run(now, now, id);
+      .run(now, now, id, allowAlreadyUsed ? 1 : 0);
+    changes = Number(result.changes);
   } finally {
     database.close();
   }
 
   const record = readApproval(paths, id);
   if (!record) throw new Error(`Execution approval ${id} was not found.`);
+  if (changes !== 1) return undefined;
   return record;
 }
 

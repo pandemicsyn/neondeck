@@ -505,7 +505,7 @@ async function authorizeExecution(
     }
 
     if (approved.approvalDecision === 'allow-session') {
-      markApprovalUsed(paths, approved.id);
+      markApprovalUsed(paths, approved.id, { allowAlreadyUsed: true });
       return {
         ok: true,
         approval: insertApproval(paths, {
@@ -524,7 +524,21 @@ async function authorizeExecution(
       };
     }
 
-    return { ok: true, approval: markApprovalUsed(paths, approved.id) };
+    const claimed = markApprovalUsed(paths, approved.id, {
+      allowAlreadyUsed: false,
+    });
+    if (!claimed) {
+      return {
+        ok: false,
+        action: 'execution_run',
+        changed: false,
+        message: `Execution approval "${approved.id}" was already used.`,
+        requires: ['approval'],
+        policyCheck,
+        approval: approved,
+      };
+    }
+    return { ok: true, approval: claimed };
   }
   if (input.approvalId && approved) {
     return {
