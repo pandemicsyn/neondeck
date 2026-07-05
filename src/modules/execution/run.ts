@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { promisify } from 'node:util';
 import * as v from 'valibot';
 import { disposeExeDevSessionEnv, exedev } from '../../sandboxes/exedev';
+import { currentFlueExecutionContext } from '../flue/execution-context';
 import {
   ensureRuntimeHome,
   parseAppConfig,
@@ -61,7 +62,11 @@ export async function runApprovedExecution(
     );
   }
 
-  const input = parsed.output;
+  const input = {
+    ...parsed.output,
+    sessionId:
+      parsed.output.sessionId ?? currentFlueExecutionContext()?.instanceId,
+  };
   const policyCheck = await checkExecutionPolicy(
     {
       command: input.command,

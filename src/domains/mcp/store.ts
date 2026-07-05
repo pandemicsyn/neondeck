@@ -607,7 +607,7 @@ export async function resolveMcpApprovalWithPaths(
     });
     database.exec('COMMIT;');
     transactionStarted = false;
-    await createApprovalResolutionNudge(
+    const nudge = await createApprovalResolutionNudge(
       {
         family: 'mcp',
         sessionId: approval.sessionId,
@@ -619,6 +619,7 @@ export async function resolveMcpApprovalWithPaths(
       },
       paths,
     );
+    const nudgeErrors = nudge.ok ? [] : nudge.errors;
     return {
       ok: true,
       action: 'mcp_approval_resolve',
@@ -628,6 +629,9 @@ export async function resolveMcpApprovalWithPaths(
           ? `Approved MCP tool call "${input.id}". Retry the same tool call with the same arguments.`
           : `Denied MCP tool call "${input.id}".`,
       approval,
+      ...(nudgeErrors.length > 0
+        ? { requires: ['approvalNudge'], errors: nudgeErrors }
+        : {}),
     };
   } catch (error) {
     if (transactionStarted) database.exec('ROLLBACK;');

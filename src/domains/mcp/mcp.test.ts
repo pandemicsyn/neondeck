@@ -41,6 +41,7 @@ import {
   setApprovalNudgeDispatchForTests,
   type ChatSessionRecord,
 } from '../../modules/sessions';
+import { runWithFlueExecutionContextForTests } from '../../modules/flue/execution-context';
 
 const tempRoots: string[] = [];
 
@@ -89,8 +90,18 @@ describe('MCP support', () => {
     const home = await tempDir();
     const paths = runtimePaths(home);
     await ensureRuntimeHome(paths);
-    const session = await createChatSession({ title: 'MCP gate' }, paths);
-    const sessionId = (session as { session: ChatSessionRecord }).session.id;
+    const requester = await createChatSession(
+      { title: 'MCP requester', activate: false },
+      paths,
+    );
+    const sessionId = (requester as { session: ChatSessionRecord }).session.id;
+    const active = await createChatSession(
+      { title: 'Active dashboard' },
+      paths,
+    );
+    expect((active as { session: ChatSessionRecord }).session.id).not.toBe(
+      sessionId,
+    );
 
     const fixture = fileURLToPath(
       new URL('./fixtures/stdio-server.mjs', import.meta.url),
@@ -119,9 +130,13 @@ describe('MCP support', () => {
       .find((tool) => tool.name === 'mcp__fixture__echo');
     expect(echo).toBeTruthy();
 
-    const first = await echo!.run({
-      input: { text: 'hello' },
-    } as never);
+    const first = await runWithFlueExecutionContextForTests(
+      { agentName: 'display-assistant', instanceId: sessionId },
+      () =>
+        echo!.run({
+          input: { text: 'hello' },
+        } as never),
+    );
     expect(first).toMatchObject({
       ok: false,
       status: 'approval-required',
@@ -593,6 +608,51 @@ describe('MCP support', () => {
         status: 'pending',
       },
     ]);
+  });
+
+  it('surfaces MCP approval nudge delivery failures after resolving approval', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const session = await createChatSession(
+      { title: 'MCP failed nudge' },
+      paths,
+    );
+    const sessionId = (session as { session: ChatSessionRecord }).session.id;
+    const request = await createMcpApprovalRequest(
+      {
+        serverId: 'fixture',
+        toolName: 'echo',
+        adaptedName: 'mcp__fixture__echo',
+        argumentsHash: 'abc123',
+        argumentsPreview: '{"text":"hello"}',
+        sessionId,
+      },
+      paths,
+    );
+    const restoreDispatch = setApprovalNudgeDispatchForTests(async () => {
+      throw new Error('dispatch queue unavailable');
+    });
+
+    try {
+      await expect(
+        resolveMcpApprovalWithPaths(
+          {
+            id: request!.id,
+            decision: 'approve',
+            approverSurface: 'test',
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        ok: true,
+        approval: { status: 'approved' },
+        requires: ['approvalNudge'],
+        errors: ['dispatch queue unavailable'],
+      });
+    } finally {
+      restoreDispatch();
+    }
   });
 
   it('rejects non-loopback MCP OAuth redirect URLs', async () => {

@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { getMcpRegistry } from '../domains/mcp';
+import { installFlueExecutionContextTracker } from '../modules/flue/execution-context';
 import { loadNeondeckEnv } from '../modules/runtime';
 import {
   providerRuntimeRegistrations,
@@ -73,6 +74,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   const staticRoot = options.staticRoot ?? resolveStaticRoot();
 
   await ensureRuntimeHome(paths);
+  installFlueExecutionContextTracker();
   installFlueObservationHandlers(paths);
 
   if (
