@@ -169,11 +169,14 @@ export async function postGitHubPrReview(input: {
 }
 
 export async function postGitHubPrThreadReply(input: {
+  repo: string;
+  number: number;
   threadId: string;
   text: string;
 }) {
+  const [owner, name] = parseRepo(input.repo);
   const response = await postJson<GitHubPrThreadMutationResponse>(
-    `/api/github/pr-threads/${encodeURIComponent(input.threadId)}/reply`,
+    `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/review-threads/${encodeURIComponent(input.threadId)}/reply`,
     { text: input.text },
   );
   if (!response.data?.thread) throw new Error(response.message);
@@ -181,11 +184,14 @@ export async function postGitHubPrThreadReply(input: {
 }
 
 export async function postGitHubPrThreadResolution(input: {
+  repo: string;
+  number: number;
   threadId: string;
   resolved: boolean;
 }) {
+  const [owner, name] = parseRepo(input.repo);
   const response = await postJson<GitHubPrThreadMutationResponse>(
-    `/api/github/pr-threads/${encodeURIComponent(input.threadId)}/${input.resolved ? 'resolve' : 'unresolve'}`,
+    `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/review-threads/${encodeURIComponent(input.threadId)}/${input.resolved ? 'resolve' : 'unresolve'}`,
     {},
   );
   if (!response.data?.thread) throw new Error(response.message);

@@ -115,6 +115,8 @@ async function normalizeReviewThread(
     line: thread.line ?? null,
     originalLine: thread.originalLine ?? null,
     diffSide: thread.diffSide ?? null,
+    pullRequestRepo: thread.pullRequest?.repository.nameWithOwner ?? null,
+    pullRequestNumber: thread.pullRequest?.number ?? null,
     comments: comments.map((comment) =>
       normalizeReviewThreadComment(comment, thread),
     ),

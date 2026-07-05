@@ -188,7 +188,12 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
     event.preventDefault();
     if (replyBody.trim().length === 0) return;
     setStatusMessage(null);
-    await mutations.replyToThread.mutateAsync({ threadId, text: replyBody });
+    await mutations.replyToThread.mutateAsync({
+      repo: pr.repo,
+      number: pr.number,
+      threadId,
+      text: replyBody,
+    });
     setReplyingThreadId(null);
     setReplyBody('');
     setStatusMessage('Thread reply posted.');
@@ -368,6 +373,8 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
                 onClick={() => {
                   setStatusMessage(null);
                   mutations.setThreadResolution.mutate({
+                    repo: pr.repo,
+                    number: pr.number,
                     threadId: thread.id,
                     resolved: !thread.isResolved,
                   });

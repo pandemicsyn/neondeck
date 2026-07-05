@@ -43,6 +43,7 @@ export type {
   GitHubPrReviewVerdict,
 } from './reviews';
 export {
+  fetchPullRequestReviewThread,
   fetchPullRequestReviewThreads,
   postPullRequestComment,
 } from './comments';

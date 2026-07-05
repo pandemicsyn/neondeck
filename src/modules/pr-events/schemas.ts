@@ -5,6 +5,7 @@ import * as v from 'valibot';
 import {
   fetchPullRequestEventState,
   fetchPullRequestFiles,
+  fetchPullRequestReviewThread,
   replyToPullRequestReviewThread,
   resolvePullRequestReviewThread,
   submitPullRequestReview,
@@ -70,6 +71,7 @@ export type PrEventStateDependencies = {
     repo: string;
     number: number;
   }) => Promise<string | null | undefined>;
+  fetchPullRequestReviewThread?: typeof fetchPullRequestReviewThread;
   postPullRequestComment?: typeof postPullRequestComment;
   submitPullRequestReview?: typeof submitPullRequestReview;
   replyToPullRequestReviewThread?: typeof replyToPullRequestReviewThread;
