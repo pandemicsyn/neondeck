@@ -8,10 +8,12 @@ import {
   refreshPrWatch,
   refreshRefWatch,
   removePrWatch,
+  setPrWatchPolling,
 } from './service';
 import {
   watchActionOutputSchema,
   watchPrAddInputSchema,
+  watchPrPollingInputSchema,
   watchPrRefreshInputSchema,
   watchPrRemoveInputSchema,
   watchRefAddInputSchema,
@@ -46,6 +48,16 @@ export const watchPrRemoveAction = defineAction({
   output: watchActionOutputSchema,
   async run({ input }) {
     return removePrWatch(input);
+  },
+});
+
+export const watchPrPollingAction = defineAction({
+  name: 'neondeck_watch_pr_polling',
+  description: 'Pause or resume scheduler polling for a persistent PR watch.',
+  input: watchPrPollingInputSchema,
+  output: watchActionOutputSchema,
+  async run({ input }) {
+    return setPrWatchPolling(input);
   },
 });
 
@@ -95,6 +107,7 @@ export const watchRefRefreshAction = defineAction({
 export const neondeckWatchActions = [
   watchPrAddAction,
   watchPrRemoveAction,
+  watchPrPollingAction,
   watchPrRefreshAction,
   watchRefAddAction,
   watchRefListAction,

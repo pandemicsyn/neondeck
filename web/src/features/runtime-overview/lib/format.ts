@@ -283,14 +283,7 @@ export function formatInterval(seconds: number) {
   return `${Math.round(seconds / 86_400)}d`;
 }
 
-export function relativeTime(value: string) {
-  const delta = Date.now() - Date.parse(value);
-  const minutes = Math.max(1, Math.round(delta / 60_000));
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
+export { relativeTime } from '../../../lib/format';
 
 export function emptySafetyPolicy(fetchedAt: string): SafetyPolicy {
   return {

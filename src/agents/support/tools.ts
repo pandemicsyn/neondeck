@@ -3,37 +3,37 @@ import * as v from 'valibot';
 import {
   autopilotStateLookupTool,
   neondeckAutopilotRecoveryTools,
-} from '../modules/autopilot';
-import { listWorkflowSummaries } from '../modules/app-state';
-import { supportedCommands } from '../modules/commands';
-import { executionPolicyLookupTool } from '../modules/execution';
-import { getGitHubCheckSummary, listGitHubPrQueue } from '../modules/github';
-import { neondeckKiloTools } from '../modules/kilo';
-import { neondeckKiloResultTools } from '../modules/kilo/results';
-import { neondeckLearningOperatorTools } from '../modules/learning';
-import { listMemories } from '../modules/memory';
-import { neondeckMcpTools } from '../domains/mcp';
-import { neondeckPrEventTools } from '../modules/pr-events';
-import { neondeckPreparedDiffTools } from '../modules/prepared-diffs';
-import { neondeckRepoEditTools } from '../repo-edit';
+} from '../../modules/autopilot';
+import { listWorkflowSummaries } from '../../modules/app-state';
+import { supportedCommands } from '../../modules/commands';
+import { executionPolicyLookupTool } from '../../modules/execution';
+import { getGitHubCheckSummary, listGitHubPrQueue } from '../../modules/github';
+import { neondeckKiloTools } from '../../modules/kilo';
+import { neondeckKiloResultTools } from '../../modules/kilo/results';
+import { neondeckLearningOperatorTools } from '../../modules/learning';
+import { listMemories } from '../../modules/memory';
+import { neondeckMcpTools } from '../../domains/mcp';
+import { neondeckPrEventTools } from '../../modules/pr-events';
+import { neondeckPreparedDiffTools } from '../../modules/prepared-diffs';
+import { neondeckRepoEditTools } from '../../repo-edit';
 import {
   listRepoStatus,
   listRuntimeSkills,
   loadRuntimeSkill,
   readRuntimeStatus,
   runtimeStatusSchema,
-} from '../modules/runtime';
-import { safetyPolicyLookupTool } from '../modules/safety';
-import { listSchedulerJobs } from '../modules/scheduler';
+} from '../../modules/runtime';
+import { safetyPolicyLookupTool } from '../../modules/safety';
+import { listSchedulerJobs } from '../../modules/scheduler';
 import {
   listChatSessions,
   readChatSession,
   readChatSessionMessages,
   readNeonSessionState,
   searchChatSessions,
-} from '../modules/sessions';
-import { listPrWatches, listRefWatches } from '../modules/watches';
-import { neondeckWorktreeTools } from '../modules/worktrees';
+} from '../../modules/sessions';
+import { listPrWatches, listRefWatches } from '../../modules/watches';
+import { neondeckWorktreeTools } from '../../modules/worktrees';
 
 const emptyInputSchema = v.object({});
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));

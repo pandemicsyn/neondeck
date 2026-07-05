@@ -160,6 +160,35 @@ export async function deleteJob(id: string, paths = runtimePaths()) {
   }
 }
 
+export async function setJobEnabled(
+  id: string,
+  enabled: boolean,
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const existing = readJob(paths, id);
+  if (!existing) return undefined;
+
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+
+  try {
+    database
+      .prepare(
+        `
+        UPDATE jobs
+        SET enabled = ?, updated_at = ?
+        WHERE id = ?;
+      `,
+      )
+      .run(enabled ? 1 : 0, now, id);
+  } finally {
+    database.close();
+  }
+
+  return readJob(paths, id);
+}
+
 export async function deleteJobsByConfigField(
   field: string,
   value: string,

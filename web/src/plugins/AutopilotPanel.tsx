@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   getAutopilotState,
   getAutopilotRecoveryOptions,
+  resolveAutopilotApproval,
   runAutopilotRecovery,
   type AutopilotActivity,
   type AutopilotApproval,
@@ -14,7 +15,7 @@ import {
   type AutopilotState,
   type AutopilotWatchPolicy,
 } from '../api';
-import { EmptyState } from '../App';
+import { EmptyState } from '../components/ui';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
 import { Badge, Button, ScrollArea } from '../components/ui';
 import { queryErrorMessage, queryKeys } from '../lib/query';
@@ -319,6 +320,7 @@ function PreparedDiffRecoveryControls({
 }: {
   preparedDiffId: string;
 }) {
+  const [confirmAction, setConfirmAction] = useState<AutopilotRecoveryOption>();
   const queryClient = useQueryClient();
   const { data } = useQuery({
     queryKey: ['autopilot-recovery-options', preparedDiffId],
@@ -349,8 +351,11 @@ function PreparedDiffRecoveryControls({
           disabled={mutation.isPending}
           key={option.id}
           onClick={() => {
-            const input = recoveryInputForClick(preparedDiffId, option);
-            if (input) mutation.mutate(input);
+            if (option.id === 'cleanup-worktree') {
+              setConfirmAction(option);
+              return;
+            }
+            mutation.mutate({ preparedDiffId, recoveryAction: option.id });
           }}
           title={option.description}
           type="button"
@@ -367,6 +372,38 @@ function PreparedDiffRecoveryControls({
         <p className="basis-full text-[10px] leading-4 text-accent">
           {queryErrorMessage(mutation.error)}
         </p>
+      ) : null}
+      {confirmAction ? (
+        <div className="basis-full border border-accent/50 bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-accent">Clean up this worktree?</span>
+            <span className="flex gap-1.5">
+              <Button
+                className="min-h-[24px] border-accent bg-transparent px-1.5 py-0 text-[10px] text-accent"
+                disabled={mutation.isPending}
+                onClick={() => {
+                  mutation.mutate({
+                    preparedDiffId,
+                    recoveryAction: confirmAction.id,
+                    confirm: true,
+                  });
+                  setConfirmAction(undefined);
+                }}
+                type="button"
+              >
+                confirm
+              </Button>
+              <Button
+                className="min-h-[24px] bg-transparent px-1.5 py-0 text-[10px]"
+                disabled={mutation.isPending}
+                onClick={() => setConfirmAction(undefined)}
+                type="button"
+              >
+                cancel
+              </Button>
+            </span>
+          </div>
+        </div>
       ) : null}
     </div>
   );
@@ -395,24 +432,21 @@ function recoveryButtonLabel(id: AutopilotRecoveryActionId) {
   return id;
 }
 
-function recoveryInputForClick(
-  preparedDiffId: string,
-  option: AutopilotRecoveryOption,
-) {
-  if (option.id === 'cleanup-worktree') {
-    if (
-      !window.confirm(
-        'Clean up this prepared-diff worktree if policy, locks, and dirty-state checks allow it?',
-      )
-    ) {
-      return null;
-    }
-    return { preparedDiffId, recoveryAction: option.id, confirm: true };
-  }
-  return { preparedDiffId, recoveryAction: option.id };
-}
-
 function ApprovalRow({ approval }: { approval: AutopilotApproval }) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (decision: 'approve' | 'deny') =>
+      resolveAutopilotApproval(approval.id, decision),
+    onSuccess() {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.autopilotState,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.executionApprovals,
+      });
+    },
+  });
+
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
       <div className="flex items-center justify-between gap-2">
@@ -426,6 +460,32 @@ function ApprovalRow({ approval }: { approval: AutopilotApproval }) {
       <p className="mt-1 line-clamp-1 font-mono text-[10px] text-muted">
         {approval.command}
       </p>
+      <div className="mt-2 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
+        <span>{approval.source}</span>
+        <span className="flex gap-1.5">
+          <Button
+            className="min-h-[28px] border-primary bg-transparent px-2 py-1 text-[10px] text-primary"
+            disabled={mutation.isPending}
+            onClick={() => mutation.mutate('approve')}
+            type="button"
+          >
+            approve
+          </Button>
+          <Button
+            className="min-h-[28px] border-accent bg-transparent px-2 py-1 text-[10px] text-accent"
+            disabled={mutation.isPending}
+            onClick={() => mutation.mutate('deny')}
+            type="button"
+          >
+            {approval.source === 'prepared-diff' ? 'revise' : 'deny'}
+          </Button>
+        </span>
+      </div>
+      {mutation.error ? (
+        <p className="mt-1 text-[10px] leading-4 text-accent">
+          {queryErrorMessage(mutation.error)}
+        </p>
+      ) : null}
     </article>
   );
 }

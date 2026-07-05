@@ -129,6 +129,13 @@ button:disabled {
   cursor: not-allowed;
 }
 
+@media (pointer: coarse) {
+  .dashboard-grid :where(button, a, input, textarea, select):not(.sr-only) {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}
+
 @keyframes nd-blink {
   0%,
   49% {

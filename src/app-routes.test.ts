@@ -143,6 +143,18 @@ describe('app API safety routes', () => {
     expect(diffResponse.status).toBe(400);
   });
 
+  it('routes ref-watch creation before dynamic watch removal', async () => {
+    const response = await app.request('http://localhost/api/watches/ref', {
+      method: 'POST',
+      headers: { host: 'localhost', 'content-type': 'application/json' },
+      body: '{}',
+    });
+    const body = (await response.json()) as { action: string };
+
+    expect(response.status).toBe(400);
+    expect(body.action).toMatch(/^watch_ref_/);
+  });
+
   it('serves config events as a local server-sent event stream', async () => {
     const response = await app.request('http://localhost/api/events/config', {
       headers: { host: 'localhost' },

@@ -1,4 +1,9 @@
-import { deleteJob, deleteJobsByConfigField } from '../app-state';
+import {
+  deleteJob,
+  deleteJobsByConfigField,
+  listJobs,
+  setJobEnabled,
+} from '../app-state';
 import { readRepoRegistrySnapshot } from '../repos';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import type {
@@ -13,6 +18,7 @@ import type {
 import type * as v from 'valibot';
 import {
   watchPrAddInputSchema,
+  watchPrPollingInputSchema,
   watchPrRefreshInputSchema,
   watchPrRemoveInputSchema,
   watchRefAddInputSchema,
@@ -122,8 +128,17 @@ export async function listPrWatches(
   paths = runtimePaths(),
 ): Promise<WatchActionResult> {
   await ensureRuntimeHome(paths);
+  const jobs = new Map((await listJobs(paths)).map((job) => [job.id, job]));
   return okResult('watch_pr_list', false, undefined, 'Listed PR watches.', {
-    watches: readWatches(paths),
+    watches: readWatches(paths).map((watch) => {
+      const job = jobs.get(watchPollingJobId(watch.id));
+      return {
+        ...watch,
+        nextRunAt: job?.nextRunAt ?? null,
+        pollingEnabled: job?.enabled ?? false,
+        pollIntervalSeconds: job?.intervalSeconds ?? null,
+      };
+    }),
   });
 }
 
@@ -317,6 +332,53 @@ export async function removePrWatch(
     `Removed watch "${idResult.id}".`,
     {
       watch,
+    },
+  );
+}
+
+export async function setPrWatchPolling(
+  input: v.InferInput<typeof watchPrPollingInputSchema>,
+  paths = runtimePaths(),
+): Promise<WatchActionResult> {
+  await ensureRuntimeHome(paths);
+  const action = input.enabled ? 'watch_pr_resume' : 'watch_pr_pause';
+  const parsed = parseActionInput(watchPrPollingInputSchema, input, action);
+  if (!parsed.ok) return parsed.result;
+
+  const idResult = await resolveWatchId(parsed.input, paths, action);
+  if (!idResult.ok) return idResult.result;
+
+  const watch = readWatch(paths, idResult.id);
+  if (!watch) {
+    return failResult(action, `Watch "${idResult.id}" does not exist.`);
+  }
+
+  const job = await setJobEnabled(
+    watchPollingJobId(idResult.id),
+    parsed.input.enabled,
+    paths,
+  );
+  if (!job) {
+    return failResult(
+      action,
+      `Polling job for watch "${idResult.id}" does not exist.`,
+    );
+  }
+
+  return okResult(
+    action,
+    true,
+    'updated',
+    parsed.input.enabled
+      ? `Resumed polling for "${idResult.id}".`
+      : `Paused polling for "${idResult.id}".`,
+    {
+      watch: {
+        ...watch,
+        nextRunAt: job.nextRunAt,
+        pollingEnabled: job.enabled,
+        pollIntervalSeconds: job.intervalSeconds,
+      },
     },
   );
 }

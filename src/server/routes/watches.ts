@@ -5,9 +5,12 @@ import {
 } from '../../modules/pr-events';
 import type { RuntimePaths } from '../../runtime-home';
 import {
+  addPrWatch,
   addRefWatch,
   listPrWatches,
   listRefWatches,
+  removePrWatch,
+  setPrWatchPolling,
 } from '../../modules/watches';
 import { safeJsonBody, safeJsonObject } from '../http';
 
@@ -16,6 +19,12 @@ export function createWatchRoutes(paths: RuntimePaths) {
 
   routes.get('/watches', async (c) => {
     return c.json(await listPrWatches(paths));
+  });
+
+  routes.post('/watches', async (c) => {
+    const input = (await safeJsonBody(c)) as Parameters<typeof addPrWatch>[0];
+    const result = await addPrWatch(input, paths);
+    return c.json(result, result.ok ? 200 : 400);
   });
 
   routes.get('/watches/events/watermarks', async (c) => {
@@ -48,6 +57,23 @@ export function createWatchRoutes(paths: RuntimePaths) {
   routes.post('/watches/ref', async (c) => {
     const input = (await safeJsonBody(c)) as Parameters<typeof addRefWatch>[0];
     const result = await addRefWatch(input, paths);
+    return c.json(result, result.ok ? 200 : 400);
+  });
+
+  routes.post('/watches/:id/polling', async (c) => {
+    const input = {
+      ...(await safeJsonObject(c)),
+      id: c.req.param('id'),
+    } as Parameters<typeof setPrWatchPolling>[0];
+    const result = await setPrWatchPolling(input, paths);
+    return c.json(result, result.ok ? 200 : 400);
+  });
+
+  routes.post('/watches/:id', async (c) => {
+    const result = await removePrWatch(
+      { ...(await safeJsonObject(c)), id: c.req.param('id') },
+      paths,
+    );
     return c.json(result, result.ok ? 200 : 400);
   });
 

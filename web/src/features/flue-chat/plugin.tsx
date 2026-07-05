@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import {
   archiveChatSession,
   createChatSession,
@@ -34,6 +35,10 @@ export const FlueChatPlugin = {
         : flueChatDefaultConfig.sessions)[0] ??
       flueChatDefaultConfig.sessions[0];
     const queryClient = useQueryClient();
+    const [renameDraft, setRenameDraft] = useState('');
+    const [renaming, setRenaming] = useState(false);
+    const [referenceDismissed, setReferenceDismissed] = useState(false);
+    const [referenceDraft, setReferenceDraft] = useState<string>();
     const {
       data: sessionState,
       error: sessionError,
@@ -141,7 +146,13 @@ export const FlueChatPlugin = {
         if (!result.ok) throw new Error(result.message);
         return result;
       },
-      onSuccess() {
+      onSuccess(result) {
+        setReferenceDismissed(false);
+        const summary =
+          result.session?.summary ?? 'Prepared cross-session reference.';
+        setReferenceDraft(
+          `Use this prepared session reference as context:\n\n${summary}\n\nMy question: `,
+        );
         void queryClient.invalidateQueries({
           queryKey: queryKeys.chatSessions,
         });
@@ -152,11 +163,15 @@ export const FlueChatPlugin = {
       sessions.find(
         (session) => session.id === sessionState?.activeSessionId,
       ) ?? sessionState?.activeChatSession;
+    const activeRecordId = activeRecord?.id;
+    const activeRecordTitle = activeRecord?.title;
     const activeSession = sessionState
       ? {
           id: sessionState.activeSessionId,
           label: activeRecord?.title ?? sessionState.activeSession.label,
-          placeholder: fallbackSession.placeholder,
+          placeholder:
+            linkedContextPlaceholder(activeRecord) ??
+            fallbackSession.placeholder,
         }
       : undefined;
 
@@ -172,13 +187,14 @@ export const FlueChatPlugin = {
 
     function renameActiveSession() {
       if (!activeRecord) return;
-      const title = window.prompt('Session title', activeRecord.title)?.trim();
+      const title = renameDraft.trim();
       if (!title || title === activeRecord.title) return;
       sessionMetadataMutation.mutate({
         action: 'rename',
         session: activeRecord,
         title,
       });
+      setRenaming(false);
     }
 
     useConfigEvents(() => {
@@ -186,12 +202,31 @@ export const FlueChatPlugin = {
       void refreshSessionIndex();
     });
 
+    useEffect(() => {
+      if (!activeRecordTitle) return;
+      setRenameDraft(activeRecordTitle);
+      setRenaming(false);
+    }, [activeRecordId, activeRecordTitle]);
+
+    useEffect(() => {
+      if (!referenceMutation.data?.session || referenceDismissed) return;
+      const timeout = window.setTimeout(
+        () => setReferenceDismissed(true),
+        8_000,
+      );
+      return () => window.clearTimeout(timeout);
+    }, [referenceDismissed, referenceMutation.data?.session]);
+
+    const showReferenceNotice = Boolean(
+      referenceMutation.data?.session && !referenceDismissed,
+    );
+
     return (
       <div className="flex h-full min-h-0 flex-col">
         <header className="panel-header flex h-8 items-center justify-between border-b border-line px-4 font-mono text-[11px] tracking-[0.14em]">
           <span className="flex items-center gap-2 text-primary">
             <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />
-            FLUE AGENT · triage.ts
+            FLUE AGENT · {config.agentName}
           </span>
           <div className="flex min-w-0 items-center gap-2">
             <SessionSelect
@@ -203,10 +238,10 @@ export const FlueChatPlugin = {
             <Button
               className="h-5 border-transparent bg-transparent px-1.5 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
               disabled={!activeRecord || sessionMetadataMutation.isPending}
-              onClick={renameActiveSession}
+              onClick={() => setRenaming((value) => !value)}
               type="button"
             >
-              Rename
+              {renaming ? 'Cancel' : 'Rename'}
             </Button>
             <Button
               className="h-5 border-transparent bg-transparent px-1.5 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
@@ -278,16 +313,53 @@ export const FlueChatPlugin = {
             )}
           </div>
         ) : null}
-        {referenceMutation.data?.session ? (
-          <div className="border-b border-line bg-soft px-4 py-1.5 text-[11px] text-muted">
-            Reference ready · {referenceMutation.data.session.id} ·{' '}
-            {referenceMutation.data.session.summary ??
-              'summary metadata refreshed'}
+        {renaming && activeRecord ? (
+          <form
+            className="flex items-center gap-2 border-b border-line bg-field px-4 py-1.5 font-mono text-[10.5px]"
+            onSubmit={(event) => {
+              event.preventDefault();
+              renameActiveSession();
+            }}
+          >
+            <span className="text-muted">title</span>
+            <input
+              className="min-w-0 flex-1 border border-line bg-panel px-2 py-1 text-ink outline-none focus:border-primary"
+              disabled={sessionMetadataMutation.isPending}
+              onChange={(event) => setRenameDraft(event.target.value)}
+              value={renameDraft}
+            />
+            <Button
+              className="min-h-[28px] px-2 py-1 text-[10px]"
+              disabled={sessionMetadataMutation.isPending}
+              type="submit"
+            >
+              Save
+            </Button>
+          </form>
+        ) : null}
+        {activeRecord ? <LinkedContextStrip session={activeRecord} /> : null}
+        {showReferenceNotice && referenceMutation.data?.session ? (
+          <div className="flex items-center justify-between gap-3 border-b border-line bg-soft px-4 py-1.5 text-[11px] text-muted">
+            <span className="min-w-0 truncate">
+              Reference ready · {referenceMutation.data.session.id} ·{' '}
+              {referenceMutation.data.session.summary ??
+                'summary metadata refreshed'}
+            </span>
+            <Button
+              className="min-h-[24px] border-transparent bg-transparent px-1.5 py-0 font-mono text-[10px] text-muted"
+              onClick={() => setReferenceDismissed(true)}
+              type="button"
+            >
+              Dismiss
+            </Button>
           </div>
         ) : null}
         <FlueChatSessionView
+          activeRecord={activeRecord}
           agentName={config.agentName}
           quickCommands={config.quickCommands}
+          referenceDraft={referenceDraft}
+          onReferenceDraftConsumed={() => setReferenceDraft(undefined)}
           session={activeSession}
           sessionState={sessionState}
         />
@@ -295,3 +367,68 @@ export const FlueChatPlugin = {
     );
   },
 } satisfies DisplayPlugin<FlueChatConfig>;
+
+function LinkedContextStrip({ session }: { session: ChatSessionRecord }) {
+  const label = linkedContextLabel(session);
+  if (!label) return null;
+
+  const url = linkedContextUrl(session);
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-line bg-soft px-4 py-1.5 font-mono text-[10.5px] text-muted">
+      <span className="min-w-0 truncate">
+        linked: <span className="text-primary">{label}</span>
+      </span>
+      {url ? (
+        <a
+          className="shrink-0 text-primary hover:text-primary-strong"
+          href={url}
+          rel="noreferrer"
+          target="_blank"
+        >
+          open
+        </a>
+      ) : null}
+    </div>
+  );
+}
+
+function linkedContextPlaceholder(session: ChatSessionRecord | undefined) {
+  if (!session) return undefined;
+  const label = linkedContextLabel(session);
+  if (!label) return undefined;
+  return `Ask about ${label}...`;
+}
+
+function linkedContextLabel(session: ChatSessionRecord) {
+  const metadata = objectMetadata(session.uiMetadata);
+  if (metadata?.source === 'github-pr' && typeof metadata.repo === 'string') {
+    return `${metadata.repo}#${metadata.prNumber}`;
+  }
+  if (
+    metadata?.source === 'pr-watch' &&
+    typeof metadata.repoFullName === 'string'
+  ) {
+    return `${metadata.repoFullName}#${metadata.prNumber} watch`;
+  }
+  if (
+    typeof metadata?.repoFullName === 'string' &&
+    typeof metadata.prNumber === 'number'
+  ) {
+    return `${metadata.repoFullName}#${metadata.prNumber}`;
+  }
+  if (session.linkedTaskId) return session.linkedTaskId;
+  if (session.linkedWatchId) return session.linkedWatchId;
+  if (session.linkedRepoId) return session.linkedRepoId;
+  return undefined;
+}
+
+function linkedContextUrl(session: ChatSessionRecord) {
+  const metadata = objectMetadata(session.uiMetadata);
+  return typeof metadata?.url === 'string' ? metadata.url : undefined;
+}
+
+function objectMetadata(value: unknown) {
+  return value && typeof value === 'object'
+    ? (value as Record<string, unknown>)
+    : undefined;
+}

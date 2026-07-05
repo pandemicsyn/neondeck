@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { getHostMetrics } from '../api';
-import { EmptyState } from '../App';
+import { getHostMetrics, getRuntimeStatus } from '../api';
+import { EmptyState } from '../components/ui';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 
@@ -20,6 +20,11 @@ export const HostMetricsPlugin = {
       queryKey: queryKeys.hostMetrics,
       queryFn: getHostMetrics,
       refetchInterval: 1_000,
+    });
+    const { data: runtimeStatus } = useQuery({
+      queryKey: queryKeys.runtimeStatus,
+      queryFn: getRuntimeStatus,
+      refetchInterval: 5_000,
     });
 
     useEffect(() => {
@@ -71,7 +76,9 @@ export const HostMetricsPlugin = {
         <div className="brand-segment px-3.5">
           <span className="brand-mark" />
           <span>neondeck</span>
-          <span className="text-[11px] font-normal text-muted">v0.4.1</span>
+          <span className="text-[11px] font-normal text-muted">
+            v{import.meta.env.VITE_NEONDECK_VERSION}
+          </span>
         </div>
         <StatusDivider />
         <StatusSegment
@@ -104,9 +111,18 @@ export const HostMetricsPlugin = {
           value={`↓${formatNetwork(metrics.network.downBytesPerSecond)} ↑${formatNetwork(metrics.network.upBytesPerSecond)}`}
         />
         <StatusDivider />
-        <span className="flex items-center gap-1.5 px-3 text-primary">
-          <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_var(--primary)] [animation:nd-pulse_2.4s_ease-in-out_infinite]" />
-          flue:online
+        <span
+          className={`flex items-center gap-1.5 px-3 ${
+            runtimeStatus?.ok ? 'text-primary' : 'text-accent'
+          }`}
+        >
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              runtimeStatus?.ok ? 'bg-primary' : 'bg-accent'
+            } shadow-[0_0_8px_currentColor] [animation:nd-pulse_2.4s_ease-in-out_infinite]`}
+          />
+          {runtimeStatus?.service ?? 'runtime'}:
+          {runtimeStatus?.status ?? 'unknown'}
         </span>
         <p className="ml-auto px-3.5 text-ink tabular-nums">
           {clockParts(now).hourMinute}

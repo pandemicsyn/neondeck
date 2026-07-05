@@ -5,8 +5,8 @@ Scope: `web/src` dashboard plugins, flue-chat feature, session-reference flow, a
 server-side session/agent plumbing they depend on (`src/modules/sessions`,
 `src/agents/display-assistant.ts`).
 
-The headline question that prompted this review — *"does the session button in the
-GitHub PR view actually seed the agent's context with useful info?"* — has a clear
+The headline question that prompted this review — _"does the session button in the
+GitHub PR view actually seed the agent's context with useful info?"_ — has a clear
 answer: **no, not today.** It stores useful metadata in Neondeck's session index, but
 nothing carries that metadata into the agent's prompt or transcript. Details in §1.
 
@@ -36,7 +36,7 @@ What happens today when you click `session` on a PR row:
    instructions. Nothing reads the session row's `summary`, `uiMetadata`, or
    linked ids. The agent starts blind.
 
-The stored metadata *is* reachable — `neondeck_session_status` returns the full
+The stored metadata _is_ reachable — `neondeck_session_status` returns the full
 active `ChatSessionRecord` including summary and links — but neither the agent
 instructions nor `src/skills/neondeck/SKILL.md` tells the agent to consult the
 active session's linked context before answering, so in practice it never does.
@@ -62,7 +62,7 @@ Plan (pick one primary mechanism, plus the UI affordance):
   is the session title in a 22ch dropdown.
 
 Acceptance: click `session` on a PR row, type "summarize the state of this PR",
-and the agent answers about *that* PR without the user naming it.
+and the agent answers about _that_ PR without the user naming it.
 
 ### 2. The chat "Ref" button produces a reference no one receives
 
@@ -73,12 +73,13 @@ Where: `web/src/features/flue-chat/plugin.tsx:127-149`, server
 reference object whose own message says "Prepared cross-session reference…" —
 but the result is only rendered as a dashboard banner ("Reference ready · id ·
 summary"). It is never delivered to the agent, so the mechanic is a dead end:
-the user sees a summary *they* could read, and the agent that was supposed to
+the user sees a summary _they_ could read, and the agent that was supposed to
 consume it never does. The banner also never dismisses (`referenceMutation.data`
 persists until the component unmounts).
 
 Plan: decide what "Ref" means and finish it.
-- If it means "give the *current* conversation this session's context": compose
+
+- If it means "give the _current_ conversation this session's context": compose
   the returned summary into the next `sendMessage` (visible, editable preamble),
   or have the server inject it like §1a.
 - If it's agent-only tooling (the agent already has
@@ -94,7 +95,7 @@ The Autopilot panel's "Approvals" section renders pending approvals —
 execution approvals flagged as autopilot **and** prepared-diff push approvals —
 as read-only rows. There are no approve/deny controls:
 
-- Execution approvals *are* resolvable from the dashboard, but only via
+- Execution approvals _are_ resolvable from the dashboard, but only via
   `ExecutionApprovalRow` buried ~10 sections deep in the RuntimeOverview scroll
   (`setup-rows.tsx:259`). Same entity, two panels, only one actionable.
 - Prepared-diff approvals have **no web API at all** — `web/src/api/` has
@@ -105,13 +106,14 @@ For an autopilot whose global mode is literally "approval required", the
 approve/deny loop is the core mechanic and the dashboard can't complete it.
 
 Plan:
+
 - Add approve/deny actions to `ApprovalRow` in the Autopilot panel; reuse
   `resolveExecutionApproval` for execution-backed rows.
 - Add a `/api/autopilot/approvals/:id/resolve` route + client function for
   prepared-diff approvals (dispatching to the existing prepared-diff approval
   service), with `approverSurface: 'dashboard'` audit parity.
-- Consider a "needs attention" rollup (pending approvals + unread notifications
-  + failed checks) surfaced in the statusline or a compact banner, so approval
+- Consider a "needs attention" rollup (pending approvals, unread notifications,
+  and failed checks) surfaced in the statusline or a compact banner, so approval
   requests don't rely on the user scrolling the runtime panel.
 
 ### 4. Slash commands bypass the agent and evaporate
@@ -128,10 +130,11 @@ the transcript records nothing). Consequences:
   `/` message before the agent sees it.
 - There is no durable record in the conversation that a command ran, so a
   follow-up question ("why did that fail?") lands in a transcript that doesn't
-  contain the command or its result. The agent *can* find it via
+  contain the command or its result. The agent _can_ find it via
   `neondeck_workflow_summaries_lookup`, but only if it thinks to look.
 
 Plan:
+
 - Keep the fast deterministic path, but persist it: record command invocations
   and results as transcript entries (or a session-scoped command log rendered
   inline in message order rather than a single replaceable block).
@@ -169,6 +172,7 @@ divergent copies of this helper.
 or open a linked session, but you cannot pause, stop, or delete a watch, and the
 GitHub PR list has no "watch this PR" affordance even though the `watch-pr`
 workflow exists. Plan:
+
 - `watch` button on PR rows → invoke the existing `watch-pr` workflow.
 - stop/pause control on watch rows (with the existing confirmation policy).
 - Show `lastCheckedAt`/next-poll info on watch rows; currently there is no
@@ -280,13 +284,13 @@ with a retry.
 
 ## Suggested sequencing
 
-| Phase | Items | Rationale |
-|-------|-------|-----------|
-| 1 | §1 (context seeding) + §1c chip, §6 | The flagship mechanic every panel already feeds; timestamp fix is trivial and adjacent. |
-| 2 | §3 (approvals), §4 (command persistence) | Completes the two operator loops the dashboard currently drops on the floor. |
-| 3 | §2, §7, §8, §9 | Finish or remove the half-built affordances around sessions and watches. |
-| 4 | §5, §10, §11, §14 | Honesty/polish pass: no fake status, no native dialogs, working skeletons, live theme. |
-| 5 | §12, §13, §15–§18 | Consolidation and structural cleanups; best done after phases 1–3 settle the shared helpers they'd touch. |
+| Phase | Items                                    | Rationale                                                                                                 |
+| ----- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| 1     | §1 (context seeding) + §1c chip, §6      | The flagship mechanic every panel already feeds; timestamp fix is trivial and adjacent.                   |
+| 2     | §3 (approvals), §4 (command persistence) | Completes the two operator loops the dashboard currently drops on the floor.                              |
+| 3     | §2, §7, §8, §9                           | Finish or remove the half-built affordances around sessions and watches.                                  |
+| 4     | §5, §10, §11, §14                        | Honesty/polish pass: no fake status, no native dialogs, working skeletons, live theme.                    |
+| 5     | §12, §13, §15–§18                        | Consolidation and structural cleanups; best done after phases 1–3 settle the shared helpers they'd touch. |
 
 Each phase is independently shippable; none require schema migrations except
 §3's prepared-diff approval route (API-only) and §1a if `contextLoadedAt`

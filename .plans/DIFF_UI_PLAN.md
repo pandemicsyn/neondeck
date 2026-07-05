@@ -8,9 +8,9 @@ follows the `.plans/` conventions.
 
 ## Purpose
 
-Neon constantly *produces and reasons about diffs* — prepared autopilot fixes, Kilo task results,
+Neon constantly _produces and reasons about diffs_ — prepared autopilot fixes, Kilo task results,
 repo-edit changes, skill patches, PR review feedback — but the dashboard renders none of them as
-diffs. The AutopilotPanel shows prepared-diff *summary rows* only; PR review happens by leaving the
+diffs. The AutopilotPanel shows prepared-diff _summary rows_ only; PR review happens by leaving the
 deck for github.com; skill-patch candidates are approved from text. The human approval loop is the
 product's trust backbone, and it currently runs blind.
 
@@ -49,18 +49,18 @@ dashboard, consistent with the "no framework re-housing" decision.
   ultrawide/wide/portrait/compact arrangements — diff surfaces must degrade to the portrait
   sidebar and compact profiles; panels refresh via `/api/events/config` and React Query.
 - **Trust posture**: viewing is read-only; the only mutations reachable from these surfaces are
-  the *existing* approval endpoints (prepared-diff approvals, learning candidate
+  the _existing_ approval endpoints (prepared-diff approvals, learning candidate
   approve/reject) — no new mutation paths.
 
 ## Non-Goals
 
 - **Not a text editor.** `@pierre/diffs` renders and annotates; it does not edit. "Edits" here
-  means *reviewing agent-made edits* (prepared diffs, skill patches, repo-edit results) with real
+  means _reviewing agent-made edits_ (prepared diffs, skill patches, repo-edit results) with real
   diff UI — the editing loop stays chat + typed actions. If a hand-editing surface is ever
   wanted, that is a separate decision (and probably a separate tool).
 - **No PR review actions on GitHub in v1** (approve/request-changes/inline comments from the
-  deck). Viewing first; the annotation framework makes comment *display* easy and comment
-  *authoring* a natural v2 once viewing proves out.
+  deck). Viewing first; the annotation framework makes comment _display_ easy and comment
+  _authoring_ a natural v2 once viewing proves out.
 - **No replacement of existing summary rows.** Compact rows stay (they're right for the deck's
   glanceable posture); diff views open from them.
 - **No self-hosted Shiki grammar zoo.** Start with the bundled languages; trim via Vite config
@@ -105,7 +105,7 @@ Decisions baked in:
 
 AutopilotPanel's `PreparedDiffRow` gains an expand/inspect affordance opening a review view:
 changed files (existing `/files` endpoint) in `FileTreePane`, per-file `PatchDiff` (existing
-`/files/diff` endpoint), and the *existing* prepared-diff approval/recovery actions placed next to
+`/files/diff` endpoint), and the _existing_ prepared-diff approval/recovery actions placed next to
 the diff they gate. Badges for verification status ride the file header slots. This turns
 "approve a summary sentence" into "approve what you can see" — the single biggest trust upgrade
 available in the UI.
@@ -157,7 +157,7 @@ available in the UI.
 2. `web/src/features/pr-review/` view from GitHubPrList, with review-thread annotations
    (read-only) and checks header.
 3. Docs: dashboard page section ("Reviewing diffs and PRs on the deck"); agent instruction is
-   *not* changed (these are human surfaces; Neon's PR facts still come from its actions).
+   _not_ changed (these are human surfaces; Neon's PR facts still come from its actions).
 
 Verification per PR: `npm run check`, `npm run build:web` with the lazy-chunk check, manual deck
 pass on wide + portrait profiles, and for PR 2 the github fixture tests.
