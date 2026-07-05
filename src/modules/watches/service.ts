@@ -3,6 +3,7 @@ import {
   deleteJobsByConfigField,
   listJobs,
   setJobEnabled,
+  setJobsEnabledByConfigField,
 } from '../app-state';
 import { readRepoRegistrySnapshot } from '../repos';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
@@ -364,6 +365,12 @@ export async function setPrWatchPolling(
       `Polling job for watch "${idResult.id}" does not exist.`,
     );
   }
+  await setJobsEnabledByConfigField(
+    'sourceWatchId',
+    idResult.id,
+    parsed.input.enabled,
+    paths,
+  );
 
   return okResult(
     action,
