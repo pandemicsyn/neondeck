@@ -9,6 +9,7 @@ export {
   fetchPullRequestCommits,
   fetchPullRequestDetail,
   fetchPullRequestEventState,
+  fetchPullRequestFiles,
 } from './pull-requests';
 export {
   fetchCheckRunDetails,
@@ -28,11 +29,14 @@ export type {
   GitHubCheckSuiteDetail,
   GitHubCheckSummary,
   GitHubFailingCheckFact,
+  GitHubDiffSummary,
   GitHubPullRequest,
   GitHubPullRequestComment,
   GitHubPullRequestCommit,
   GitHubPullRequestDetail,
   GitHubPullRequestEventState,
+  GitHubPullRequestFile,
+  GitHubPullRequestFiles,
   GitHubPullRequestQueue,
   GitHubPullRequestRequestedChangesState,
   GitHubPullRequestReview,

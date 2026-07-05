@@ -4,6 +4,7 @@ import {
   clearGitHubPullRequestQueueCache,
   fetchFailingCheckFacts,
   fetchCheckSummary,
+  fetchPullRequestFiles,
   fetchPullRequestReviewThreads,
   fetchPullRequestQueue,
   postPullRequestComment,
@@ -593,6 +594,8 @@ describe('github foundation', () => {
                     isOutdated: false,
                     path: 'src/app.ts',
                     line: 12,
+                    originalLine: null,
+                    diffSide: 'RIGHT',
                     comments: {
                       pageInfo: { hasNextPage: true, endCursor: 'cursor-100' },
                       nodes: [reviewThreadComment('comment-1', 1)],
@@ -616,6 +619,7 @@ describe('github foundation', () => {
     ).resolves.toEqual([
       expect.objectContaining({
         id: 'thread-1',
+        diffSide: 'RIGHT',
         comments: [
           expect.objectContaining({ databaseId: 1 }),
           expect.objectContaining({ databaseId: 101 }),
@@ -623,6 +627,115 @@ describe('github foundation', () => {
       }),
     ]);
     expect(fetchedBodies).toHaveLength(2);
+  });
+
+  it('paginates PR files and records missing patches', async () => {
+    const fetchedUrls: string[] = [];
+    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      fetchedUrls.push(url);
+      if (url.includes('page=2')) {
+        return jsonResponse([
+          {
+            sha: 'sha-b',
+            filename: 'assets/logo.png',
+            status: 'modified',
+            additions: 0,
+            deletions: 0,
+            changes: 0,
+            blob_url:
+              'https://github.com/pandemicsyn/neondeck/blob/head/assets/logo.png',
+            raw_url:
+              'https://raw.githubusercontent.com/pandemicsyn/neondeck/head/assets/logo.png',
+            contents_url:
+              'https://api.github.com/repos/pandemicsyn/neondeck/contents/assets/logo.png',
+          },
+        ]);
+      }
+
+      return jsonResponse(
+        [
+          {
+            sha: 'sha-large',
+            filename: 'docs/large.md',
+            status: 'modified',
+            additions: 1200,
+            deletions: 10,
+            changes: 1210,
+          },
+          {
+            sha: 'sha-a',
+            filename: 'src/app.ts',
+            status: 'modified',
+            additions: 5,
+            deletions: 1,
+            changes: 6,
+            patch:
+              '@@ -1,3 +1,7 @@\n-old\n+new\n+added\n+added\n+added\n+added',
+          },
+        ],
+        200,
+        {
+          Link: '<https://api.github.com/repos/pandemicsyn/neondeck/pulls/123/files?per_page=100&page=2>; rel="next"',
+        },
+      );
+    });
+
+    await expect(
+      fetchPullRequestFiles({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+      }),
+    ).resolves.toMatchObject({
+      repo: 'pandemicsyn/neondeck',
+      number: 123,
+      diffSummary: {
+        files: 3,
+        additions: 1205,
+        deletions: 11,
+        binaryFiles: 1,
+      },
+      files: expect.arrayContaining([
+        expect.objectContaining({
+          path: 'docs/large.md',
+          patch: null,
+          binary: false,
+          truncated: true,
+          message: expect.stringContaining('diff is too large'),
+        }),
+        expect.objectContaining({
+          path: 'src/app.ts',
+          patch: expect.stringContaining(
+            'diff --git a/src/app.ts b/src/app.ts',
+          ),
+        }),
+        expect.objectContaining({
+          path: 'src/app.ts',
+          patch: expect.stringContaining('--- a/src/app.ts'),
+        }),
+        expect.objectContaining({
+          path: 'src/app.ts',
+          patch: expect.stringContaining('+++ b/src/app.ts'),
+        }),
+        expect.objectContaining({
+          path: 'src/app.ts',
+          patch: expect.stringContaining('+new'),
+          binary: false,
+        }),
+        expect.objectContaining({
+          path: 'assets/logo.png',
+          patch: null,
+          binary: true,
+          truncated: false,
+          message: expect.stringContaining('binary file'),
+        }),
+      ]),
+    });
+    expect(fetchedUrls).toHaveLength(2);
+    expect(fetchedUrls[0]).toContain('/pulls/123/files?per_page=100');
+    expect(fetchedUrls[1]).toContain('page=2');
   });
 
   it('posts PR comments through the GitHub issue-comments endpoint', async () => {

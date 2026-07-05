@@ -9,7 +9,11 @@ import {
   type ResolvedDiffTheme,
 } from './theme';
 import { diffHighlighterOptions, diffWorkerPoolOptions } from './worker';
-import type { DiffViewTone } from './types';
+import type {
+  DiffReviewAnnotation,
+  DiffReviewAnnotationMetadata,
+  DiffViewTone,
+} from './types';
 
 type UnifiedPatchViewProps = {
   patch: string | null | undefined;
@@ -18,6 +22,8 @@ type UnifiedPatchViewProps = {
   tone?: DiffViewTone;
   meta?: ReactNode;
   className?: string;
+  lineAnnotations?: DiffReviewAnnotation[];
+  renderAnnotation?: (annotation: DiffReviewAnnotation) => ReactNode;
 };
 
 export function DiffWorkerProvider({ children }: { children: ReactNode }) {
@@ -38,6 +44,8 @@ export function UnifiedPatchView({
   tone = 'primary',
   meta,
   className,
+  lineAnnotations,
+  renderAnnotation,
 }: UnifiedPatchViewProps) {
   const themeType = useResolvedDiffTheme();
 
@@ -60,13 +68,15 @@ export function UnifiedPatchView({
         </div>
       </header>
       <DiffWorkerProvider>
-        <PatchDiff
+        <PatchDiff<DiffReviewAnnotationMetadata>
           className="diff-patch"
+          lineAnnotations={lineAnnotations}
           options={{
             ...neondeckDiffOptions(themeType),
             unsafeCSS: neondeckDiffUnsafeCss,
           }}
           patch={patch ?? ''}
+          renderAnnotation={renderAnnotation}
         />
       </DiffWorkerProvider>
     </section>

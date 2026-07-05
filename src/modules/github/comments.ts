@@ -80,6 +80,8 @@ export async function fetchPullRequestReviewThreads(options: {
         isOutdated: thread.isOutdated,
         path: thread.path ?? null,
         line: thread.line ?? null,
+        originalLine: thread.originalLine ?? null,
+        diffSide: thread.diffSide ?? null,
         comments: comments.map((comment) =>
           normalizeReviewThreadComment(comment, thread),
         ),

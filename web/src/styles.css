@@ -603,6 +603,34 @@ button:disabled {
   border: 0;
 }
 
+.pr-review-shell {
+  display: grid;
+  min-height: 0;
+  gap: 8px;
+}
+
+.pr-review-header {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  background: var(--field);
+  padding: 8px 10px;
+}
+
+[data-deck-profile='portrait'] .pr-review-header,
+[data-deck-profile='compact'] .pr-review-header {
+  flex-direction: column;
+  gap: 6px;
+}
+
+[data-deck-profile='portrait'] .pr-review-header > div:last-child,
+[data-deck-profile='compact'] .pr-review-header > div:last-child {
+  justify-content: flex-start;
+}
+
 [data-deck-profile='portrait'] .diff-multi-file,
 [data-deck-profile='compact'] .diff-multi-file {
   display: flex;

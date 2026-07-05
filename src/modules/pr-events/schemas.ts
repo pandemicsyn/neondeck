@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import {
   fetchPullRequestEventState,
+  fetchPullRequestFiles,
   postPullRequestComment,
   type GitHubPullRequestEventState,
 } from '../github';
@@ -58,6 +59,7 @@ export type PullRequestTarget = {
 
 export type PrEventStateDependencies = {
   fetchPullRequestEventState?: typeof fetchPullRequestEventState;
+  fetchPullRequestFiles?: typeof fetchPullRequestFiles;
   postPullRequestComment?: typeof postPullRequestComment;
   token?: string;
 };

@@ -7,6 +7,7 @@ export type {
 } from './schemas';
 export {
   githubPrEventStateGetAction,
+  githubPrFilesGetAction,
   githubPrReviewThreadsGetAction,
   githubPrRequestedChangesGetAction,
   githubPrBranchPermissionsGetAction,
@@ -22,6 +23,7 @@ export {
 } from './actions';
 export {
   getGitHubPrEventState,
+  getGitHubPrFiles,
   getGitHubPrReviewThreads,
   getGitHubPrRequestedChanges,
   getGitHubPrBranchPermissions,

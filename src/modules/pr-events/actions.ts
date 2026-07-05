@@ -2,6 +2,7 @@ import { defineAction, defineTool } from '@flue/runtime';
 import {
   getGitHubPrBranchPermissions,
   getGitHubPrEventState,
+  getGitHubPrFiles,
   getGitHubPrRequestedChanges,
   getGitHubPrReviewThreads,
   listPrWatchEventWatermarks,
@@ -34,6 +35,17 @@ export const githubPrReviewThreadsGetAction = defineAction({
   output: prEventOutputSchema,
   async run({ input }) {
     return getGitHubPrReviewThreads(input);
+  },
+});
+
+export const githubPrFilesGetAction = defineAction({
+  name: 'neondeck_github_pr_files_get',
+  description:
+    'Fetch read-only GitHub PR file diffs and per-file patch metadata.',
+  input: prEventTargetInputSchema,
+  output: prEventOutputSchema,
+  async run({ input }) {
+    return getGitHubPrFiles(input);
   },
 });
 
@@ -137,6 +149,7 @@ export const prWatchEventWatermarksLookupTool = defineTool({
 export const neondeckPrEventActions = [
   githubPrEventStateGetAction,
   githubPrReviewThreadsGetAction,
+  githubPrFilesGetAction,
   githubPrRequestedChangesGetAction,
   githubPrBranchPermissionsGetAction,
   prCommentAction,

@@ -130,7 +130,7 @@ function gitStatusEntry(file: DiffFilePatch): GitStatusEntry | null {
   if (status === 'a' || status === 'added') {
     return { path: file.path, status: 'added' };
   }
-  if (status === 'd' || status === 'deleted') {
+  if (status === 'd' || status === 'deleted' || status === 'removed') {
     return { path: file.path, status: 'deleted' };
   }
   if (status === 'r' || status === 'renamed') {

@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import {
   fetchPullRequestEventState,
+  fetchPullRequestFiles,
   postPullRequestComment,
   type GitHubPullRequestEventState,
 } from '../github';
@@ -103,6 +104,68 @@ export async function getGitHubPrReviewThreads(
         unresolvedReviewComments as unknown as JsonValue,
     },
   );
+}
+
+export async function getGitHubPrFiles(
+  input: v.InferInput<typeof prEventTargetInputSchema>,
+  paths: RuntimePaths = runtimePaths(),
+  dependencies: PrEventStateDependencies = {},
+): Promise<PrEventActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsed = v.safeParse(prEventTargetInputSchema, input);
+  if (!parsed.success) {
+    return failResult('github_pr_files_get', 'Invalid PR files input.', {
+      errors: [v.summarize(parsed.issues)],
+    });
+  }
+
+  const token = dependencies.token ?? process.env.GITHUB_TOKEN;
+  if (!token) {
+    return failResult(
+      'github_pr_files_get',
+      'GITHUB_TOKEN is not configured.',
+      {
+        requires: ['GITHUB_TOKEN'],
+      },
+    );
+  }
+
+  const resolved = await resolvePullRequestTarget(
+    parsed.output,
+    paths,
+    'github_pr_files_get',
+  );
+  if (!resolved.ok) return resolved.result;
+
+  try {
+    const fetcher = dependencies.fetchPullRequestFiles ?? fetchPullRequestFiles;
+    const diff = await fetcher({
+      token,
+      owner: resolved.target.owner,
+      repo: resolved.target.repo,
+      number: resolved.target.number,
+    });
+
+    return okResult(
+      'github_pr_files_get',
+      false,
+      `Fetched ${diff.files.length} PR file diff(s) for ${resolved.target.repoFullName}#${resolved.target.number}.`,
+      {
+        target: eventTargetJson(resolved.target),
+        files: diff.files as unknown as JsonValue,
+        diffSummary: diff.diffSummary as unknown as JsonValue,
+        fetchedAt: diff.fetchedAt,
+      },
+    );
+  } catch (error) {
+    return failResult(
+      'github_pr_files_get',
+      'Could not fetch GitHub PR files.',
+      {
+        errors: [errorMessage(error)],
+      },
+    );
+  }
 }
 
 export async function getGitHubPrRequestedChanges(

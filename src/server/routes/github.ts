@@ -3,6 +3,7 @@ import { listGitHubPrQueue } from '../../modules/github';
 import {
   getGitHubPrBranchPermissions,
   getGitHubPrEventState,
+  getGitHubPrFiles,
   getGitHubPrRequestedChanges,
   getGitHubPrReviewThreads,
   postGitHubPrComment,
@@ -34,6 +35,30 @@ export function createGitHubRoutes(paths: RuntimePaths) {
       },
       result.requires?.includes('GITHUB_TOKEN') ? 503 : 502,
     );
+  });
+
+  routes.get('/prs/:owner/:repo/:number/files', async (c) => {
+    const owner = c.req.param('owner');
+    const repo = c.req.param('repo');
+    const number = Number(c.req.param('number'));
+    if (!Number.isInteger(number) || number <= 0) {
+      return c.json(
+        {
+          ok: false,
+          action: 'github_pr_files_get',
+          changed: false,
+          message: 'Invalid PR number.',
+          requires: ['prNumber'],
+        },
+        400,
+      );
+    }
+
+    const result = await getGitHubPrFiles(
+      { repo: `${owner}/${repo}`, prNumber: number },
+      paths,
+    );
+    return c.json(result, result.ok ? 200 : 400);
   });
 
   routes.post('/prs/event-state', async (c) => {

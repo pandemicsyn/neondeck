@@ -92,6 +92,39 @@ export type GitHubPullRequestCommit = {
   committedAt: string | null;
 };
 
+export type GitHubPullRequestFile = {
+  path: string;
+  previousPath: string | null;
+  status: string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  binary: boolean;
+  generatedLike: boolean;
+  patch: string | null;
+  truncated: boolean;
+  sha: string | null;
+  htmlUrl: string | null;
+  rawUrl: string | null;
+  contentsUrl: string | null;
+  message: string | null;
+};
+
+export type GitHubPullRequestFiles = {
+  repo: string;
+  number: number;
+  files: GitHubPullRequestFile[];
+  diffSummary: GitHubDiffSummary;
+  fetchedAt: string;
+};
+
+export type GitHubDiffSummary = {
+  files: number;
+  additions: number;
+  deletions: number;
+  binaryFiles: number;
+};
+
 export type GitHubPullRequestReview = {
   id: number;
   nodeId: string | null;
@@ -114,6 +147,8 @@ export type GitHubPullRequestReviewThread = {
   isOutdated: boolean;
   path: string | null;
   line: number | null;
+  originalLine?: number | null;
+  diffSide?: string | null;
   comments: GitHubPullRequestReviewThreadComment[];
 };
 
@@ -382,6 +417,23 @@ export type GitHubPullRequestCommitApiItem = v.InferOutput<
   typeof githubPullRequestCommitApiItemSchema
 >;
 
+export const githubPullRequestFileApiItemSchema = v.object({
+  sha: v.optional(v.nullable(v.string())),
+  filename: v.string(),
+  status: v.string(),
+  additions: v.number(),
+  deletions: v.number(),
+  changes: v.number(),
+  patch: v.optional(v.nullable(v.string())),
+  previous_filename: v.optional(v.nullable(v.string())),
+  blob_url: v.optional(v.nullable(v.string())),
+  raw_url: v.optional(v.nullable(v.string())),
+  contents_url: v.optional(v.nullable(v.string())),
+});
+export type GitHubPullRequestFileApiItem = v.InferOutput<
+  typeof githubPullRequestFileApiItemSchema
+>;
+
 export const githubPullRequestReviewApiItemSchema = v.object({
   id: v.number(),
   node_id: v.optional(v.string()),
@@ -465,6 +517,8 @@ export const githubReviewThreadsGraphqlResponseSchema = v.object({
                     isOutdated: v.boolean(),
                     path: v.optional(v.nullable(v.string())),
                     line: v.optional(v.nullable(v.number())),
+                    originalLine: v.optional(v.nullable(v.number())),
+                    diffSide: v.optional(v.string()),
                     comments: v.object({
                       pageInfo: v.object({
                         hasNextPage: v.boolean(),
@@ -527,6 +581,8 @@ export const pullRequestReviewThreadsQuery = `
             isOutdated
             path
             line
+            originalLine
+            diffSide
             comments(first: 100) {
               pageInfo {
                 hasNextPage

@@ -1,12 +1,19 @@
 import { useFlueClient } from '@flue/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { lazy, Suspense, useId, useState } from 'react';
 import {
   getGitHubPullRequests,
   getRepoRegistry,
   type GitHubPullRequest,
 } from '../api';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
-import { Badge, EmptyState, Button, ScrollArea } from '../components/ui';
+import {
+  Badge,
+  EmptyState,
+  Button,
+  MiniEmpty,
+  ScrollArea,
+} from '../components/ui';
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
 import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
@@ -20,6 +27,12 @@ type GitHubPrListConfig = {
 const githubPrListDefaultConfig = {
   limit: 12,
 };
+
+const GitHubPrReview = lazy(() =>
+  import('../features/pr-review/GitHubPrReview').then((module) => ({
+    default: module.GitHubPrReview,
+  })),
+);
 
 export const GitHubPrListPlugin = {
   id: 'github-pr-list',
@@ -112,6 +125,9 @@ function PrRow({
   item: GitHubPullRequest;
   repoId: string | undefined;
 }) {
+  const [showReview, setShowReview] = useState(false);
+  const reviewPanelId = useId();
+
   return (
     <li key={item.url} className="pr-row px-3.5 py-2 last:border-b-0">
       <div className="group">
@@ -143,6 +159,15 @@ function PrRow({
           </div>
         ) : null}
         <div className="mt-1.5 flex justify-end gap-1.5 font-mono text-[10px]">
+          <Button
+            className="min-h-[28px] shrink-0 border-line bg-transparent px-2 py-1 text-[10px] text-muted"
+            aria-controls={showReview ? reviewPanelId : undefined}
+            aria-expanded={showReview}
+            onClick={() => setShowReview((value) => !value)}
+            type="button"
+          >
+            {showReview ? 'hide diff' : 'review'}
+          </Button>
           <SessionReferenceButton
             kind="task"
             label="session"
@@ -162,7 +187,7 @@ function PrRow({
           />
           <WatchPrButton item={item} />
           <a
-            className="inline-flex min-h-[28px] shrink-0 items-center border border-line px-2 py-1 text-muted hover:border-primary hover:text-primary"
+            className="inline-flex min-h-[28px] shrink-0 items-center border border-line px-2 py-1 text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
             href={item.url}
             rel="noreferrer"
             target="_blank"
@@ -170,6 +195,13 @@ function PrRow({
             open
           </a>
         </div>
+        {showReview ? (
+          <div className="mt-2" id={reviewPanelId}>
+            <Suspense fallback={<MiniEmpty label="Loading PR review." />}>
+              <GitHubPrReview pr={item} />
+            </Suspense>
+          </div>
+        ) : null}
       </div>
     </li>
   );
