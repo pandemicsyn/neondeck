@@ -1,6 +1,7 @@
 import type { DiffFilePatch } from './types';
 
 const diffGitHeader = /^diff --git a\/(.+?) b\/(.+)$/gm;
+const plainUnifiedHeader = /^---\s+(.+)\n\+\+\+\s+(.+)\n@@/gm;
 
 export function patchHasContent(patch: string | null | undefined) {
   return Boolean(patch && patch.trim().length > 0);
@@ -12,6 +13,12 @@ export function patchFilePaths(patch: string | null | undefined) {
   for (const match of patch.matchAll(diffGitHeader)) {
     const path = match[2] ?? match[1];
     if (path) paths.push(path);
+  }
+  if (paths.length === 0) {
+    for (const match of patch.matchAll(plainUnifiedHeader)) {
+      const path = pathFromUnifiedHeaders(match[1], match[2]);
+      if (path) paths.push(path);
+    }
   }
   return [...new Set(paths)];
 }
@@ -31,6 +38,28 @@ export function splitUnifiedPatchFiles(
 
   const matches = [...source.matchAll(diffGitHeader)];
   if (matches.length === 0) {
+    const plainMatches = [...source.matchAll(plainUnifiedHeader)];
+    if (plainMatches.length > 0) {
+      return plainMatches.map((match, index) => {
+        const start = match.index ?? 0;
+        const next = plainMatches[index + 1];
+        const end = next?.index ?? source.length;
+        const originalPatch = source.slice(start, end).trimEnd();
+        const path = pathFromUnifiedHeaders(match[1], match[2]) ?? 'patch.diff';
+        const filePatch = normalizePlainUnifiedPatch(originalPatch, path);
+        return {
+          additions: countPatchLines(filePatch, '+'),
+          binary: false,
+          deletions: countPatchLines(filePatch, '-'),
+          generatedLike: false,
+          path,
+          status: patchStatus(filePatch),
+          patch: `${filePatch}\n`,
+          truncated: false,
+        };
+      });
+    }
+
     return [
       {
         additions: countPatchLines(source, '+'),
@@ -97,6 +126,36 @@ function countPatchLines(patch: string, marker: '+' | '-') {
 function patchStatus(patch: string) {
   if (/^new file mode /m.test(patch)) return 'A';
   if (/^deleted file mode /m.test(patch)) return 'D';
+  if (/^---\s+\/dev\/null$/m.test(patch)) return 'A';
+  if (/^\+\+\+\s+\/dev\/null$/m.test(patch)) return 'D';
   if (/^rename from /m.test(patch)) return 'R';
   return 'M';
+}
+
+function normalizePlainUnifiedPatch(patch: string, path: string) {
+  if (diffGitHeader.test(patch)) {
+    diffGitHeader.lastIndex = 0;
+    return patch;
+  }
+  diffGitHeader.lastIndex = 0;
+  return [`diff --git a/${path} b/${path}`, patch].join('\n');
+}
+
+function pathFromUnifiedHeaders(
+  oldPath: string | undefined,
+  newPath: string | undefined,
+) {
+  return (
+    normalizeUnifiedHeaderPath(newPath, 'b/') ??
+    normalizeUnifiedHeaderPath(oldPath, 'a/')
+  );
+}
+
+function normalizeUnifiedHeaderPath(
+  value: string | undefined,
+  prefix: 'a/' | 'b/',
+) {
+  const path = value?.trimEnd().split('\t')[0];
+  if (!path || path === '/dev/null') return null;
+  return path.startsWith(prefix) ? path.slice(prefix.length) : path;
 }

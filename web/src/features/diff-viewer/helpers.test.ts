@@ -66,6 +66,44 @@ describe('diff viewer patch helpers', () => {
     ]);
   });
 
+  it('splits legacy plain unified repo-edit patches into Pierre-ready files', () => {
+    const patch = [
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@',
+      '-old',
+      '+new',
+      '',
+      '--- a/src/b.ts',
+      '+++ b/src/b.ts',
+      '@@',
+      '-before',
+      '+after',
+      '+extra',
+      '',
+    ].join('\n');
+
+    const files = splitUnifiedPatchFiles(patch);
+
+    expect(patchFilePaths(patch)).toEqual(['src/a.ts', 'src/b.ts']);
+    expect(files).toMatchObject([
+      {
+        additions: 1,
+        deletions: 1,
+        path: 'src/a.ts',
+        status: 'M',
+      },
+      {
+        additions: 2,
+        deletions: 1,
+        path: 'src/b.ts',
+        status: 'M',
+      },
+    ]);
+    expect(files[0]?.patch).toMatch(/^diff --git a\/src\/a\.ts b\/src\/a\.ts/);
+    expect(files[1]?.patch).toMatch(/^diff --git a\/src\/b\.ts b\/src\/b\.ts/);
+  });
+
   it('handles large patches without scanning line-by-line manually', () => {
     const body = Array.from({ length: 5000 }, (_, index) => `+line ${index}`);
     const patch = [
