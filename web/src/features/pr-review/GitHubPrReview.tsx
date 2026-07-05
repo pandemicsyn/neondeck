@@ -28,6 +28,7 @@ import {
 import {
   commentAnchorExists,
   commentInputFromSelection,
+  failingCommentIdsFromError,
   patchAnchorIndexesByPath,
   staleDraftCommentIds,
   type PatchAnchorIndex,
@@ -221,6 +222,7 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
     setStatusMessage(null);
     try {
       await saveDraft({ reanchorHeadSha: true });
+      setSubmitFailedCommentIds(new Set());
       setStatusMessage('Draft head updated to the current PR revision.');
     } catch {
       // React Query owns the visible error state.
@@ -1046,13 +1048,6 @@ function mutationErrorMessage(
       : error.message;
   }
   return error ? queryErrorMessage(error) : null;
-}
-
-function failingCommentIdsFromError(error: unknown) {
-  if (!(error instanceof ApiError)) return [];
-  const data = error.data as GitHubPrReviewSubmitResponse | undefined;
-  const ids = data?.data?.failingCommentIds;
-  return Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : [];
 }
 
 function failingCommentLabels(

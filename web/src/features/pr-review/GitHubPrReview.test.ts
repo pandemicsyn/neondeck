@@ -1,10 +1,11 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
 import { describe, expect, it } from 'vitest';
-import type { GitHubPrReviewDraft } from '../../api';
+import { ApiError, type GitHubPrReviewDraft } from '../../api';
 import {
   buildPatchAnchorIndex,
   commentAnchorExists,
   commentInputFromSelection,
+  failingCommentIdsFromError,
   staleDraftCommentIds,
 } from './review-helpers';
 import capturedReviewPatch from './fixtures/captured-review.patch?raw';
@@ -212,6 +213,32 @@ describe('GitHubPrReview helpers', () => {
     expect(index.has('RIGHT:2')).toBe(false);
     expect(index.has('LEFT:2')).toBe(false);
   });
+
+  it('does not treat stale-head submit failures as failed inline comments', () => {
+    expect(
+      failingCommentIdsFromError(
+        apiError({
+          data: {
+            code: 'stale-draft',
+            failingCommentIds: ['comment-1', 'comment-2'],
+          },
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('reads failed inline comment ids from GitHub review submit failures', () => {
+    expect(
+      failingCommentIdsFromError(
+        apiError({
+          data: {
+            code: 'github-review-submit-failed',
+            failingCommentIds: ['comment-1', 'comment-2'],
+          },
+        }),
+      ),
+    ).toEqual(['comment-1', 'comment-2']);
+  });
 });
 
 function selection(input: { side: 'additions' | 'deletions'; line: number }) {
@@ -236,6 +263,10 @@ function capturedFilePatch(path: string) {
   );
   if (renamedSection) return renamedSection;
   throw new Error(`Missing captured patch for ${path}.`);
+}
+
+function apiError(data: unknown) {
+  return new ApiError('Review submit failed.', 422, '/api/github/reviews', data);
 }
 
 function draftWithComments(

@@ -1,7 +1,9 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
-import type {
-  GitHubPrReviewDraft,
-  GitHubPrReviewDraftComment,
+import {
+  ApiError,
+  type GitHubPrReviewDraft,
+  type GitHubPrReviewDraftComment,
+  type GitHubPrReviewSubmitResponse,
 } from '../../api';
 import { patchHasContent } from '../diff-viewer/helpers';
 import type { DiffFilePatch } from '../diff-viewer/types';
@@ -44,6 +46,14 @@ export function staleDraftCommentIds(
     }
   }
   return stale;
+}
+
+export function failingCommentIdsFromError(error: unknown) {
+  if (!(error instanceof ApiError)) return [];
+  const data = error.data as GitHubPrReviewSubmitResponse | undefined;
+  if (data?.data?.code !== 'github-review-submit-failed') return [];
+  const ids = data.data.failingCommentIds;
+  return Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : [];
 }
 
 export function patchAnchorIndexesByPath(files: DiffFilePatch[]) {
