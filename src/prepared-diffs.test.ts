@@ -359,6 +359,65 @@ describe('prepared diff lifecycle', () => {
     expect(prompt).toContain('Never push branches');
   });
 
+  it('does not clobber an admitted revision run when a duplicate start loses the Kilo lock', async () => {
+    const { paths } = await fixture();
+    const prepared = await preparedFixture(paths);
+    const reason = 'Keep the admitted run linked.';
+    await requestPreparedDiffRevision(
+      {
+        preparedDiffId: prepared.id,
+        reason,
+        approverSurface: 'test',
+      },
+      paths,
+    );
+    const fakeStart = vi.fn<() => Promise<unknown>>(async () => {
+      setPreparedDiffRevisionInProgress(paths.neondeckDatabase, prepared, {
+        taskId: 'kilo-revision-live',
+        reason,
+      });
+      return {
+        ok: false,
+        action: 'kilo_task_start',
+        changed: false,
+        message: 'Kilo handoff concurrency limit reached (1).',
+      };
+    });
+
+    const result = await runPreparedDiffRevision(
+      { preparedDiffId: prepared.id },
+      paths,
+      { startKiloTask: fakeStart as never },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      changed: false,
+      preparedDiff: {
+        status: 'revision-in-progress',
+        summary: {
+          revisionRun: {
+            kiloTaskId: 'kilo-revision-live',
+            reason,
+          },
+        },
+      },
+    });
+    await expect(listPreparedDiffs({}, paths)).resolves.toMatchObject({
+      preparedDiffs: [
+        expect.objectContaining({
+          id: prepared.id,
+          status: 'revision-in-progress',
+          summary: expect.objectContaining({
+            revisionRun: expect.objectContaining({
+              kiloTaskId: 'kilo-revision-live',
+            }),
+          }),
+        }),
+      ],
+    });
+  });
+
   it('re-enters review after a successful revision run and restores request state after failure', async () => {
     const { paths } = await fixture();
     const prepared = await preparedFixture(paths);
@@ -534,6 +593,46 @@ describe('prepared diff lifecycle', () => {
     ).resolves.toMatchObject({
       id: prepared.id,
       status: 'abandoned',
+    });
+  });
+
+  it('does not abandon a revision task that still needs reconciliation', async () => {
+    const { paths } = await fixture();
+    const prepared = await preparedFixture(paths);
+    await requestPreparedDiffRevision(
+      {
+        preparedDiffId: prepared.id,
+        reason: 'Reconcile before abandoning.',
+        approverSurface: 'test',
+      },
+      paths,
+    );
+    await runPreparedDiffRevision({ preparedDiffId: prepared.id }, paths, {
+      startKiloTask: fakeRevisionStarter(prepared, 'kilo-revision-reconcile'),
+    });
+    insertKiloTaskRow(paths.neondeckDatabase, prepared, {
+      taskId: 'kilo-revision-reconcile',
+      status: 'needs-reconcile',
+    });
+
+    await expect(
+      abandonPreparedDiffWithRevisionAbort(
+        { preparedDiffId: prepared.id, confirm: true, reason: 'Stop.' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      preparedDiff: { status: 'revision-in-progress' },
+      requires: ['revisionRunReconcile'],
+      error: { code: 'REVISION_RUN_NEEDS_RECONCILE' },
+    });
+    await expect(listPreparedDiffs({}, paths)).resolves.toMatchObject({
+      preparedDiffs: [
+        expect.objectContaining({
+          id: prepared.id,
+          status: 'revision-in-progress',
+        }),
+      ],
     });
   });
 });
@@ -712,6 +811,50 @@ function insertKiloTaskRow(
   } finally {
     database.close();
   }
+}
+
+function setPreparedDiffRevisionInProgress(
+  databasePath: string,
+  prepared: Awaited<ReturnType<typeof preparedFixture>>,
+  input: { taskId: string; reason: string },
+) {
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(databasePath);
+  const summary = {
+    ...plainObject(prepared.summary),
+    revisionReason: input.reason,
+    revisionRun: {
+      kiloTaskId: input.taskId,
+      reason: input.reason,
+      startedAt: now,
+      startedHeadSha: prepared.headSha ?? 'revision-start',
+      outcome: 'started',
+      status: 'running',
+      title: 'Revision fixture',
+      cwd: prepared.sourceWorktreePath,
+    },
+  };
+  try {
+    database
+      .prepare(
+        `
+        UPDATE prepared_diffs
+        SET status = 'revision-in-progress',
+            summary_json = ?,
+            updated_at = ?
+        WHERE id = ?;
+      `,
+      )
+      .run(JSON.stringify(summary), now, prepared.id);
+  } finally {
+    database.close();
+  }
+}
+
+function plainObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function objectField(value: unknown, field: string): Record<string, unknown> {

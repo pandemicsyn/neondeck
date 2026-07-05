@@ -22,7 +22,10 @@ type AbortKiloTask = typeof abortKiloTask;
 export async function runPreparedDiffRevision(
   rawInput: unknown,
   paths: RuntimePaths = runtimePaths(),
-  dependencies: { startKiloTask?: StartKiloTask } = {},
+  dependencies: {
+    startKiloTask?: StartKiloTask;
+    abortKiloTask?: AbortKiloTask;
+  } = {},
 ): Promise<PreparedDiffActionResult> {
   const parsed = parseInput(
     runRevisionInputSchema,
@@ -65,33 +68,14 @@ export async function runPreparedDiffRevision(
   const startedHeadSha = await gitCurrentSha(loaded.sourceWorktreePath).catch(
     () => null,
   );
-  const startedAt = new Date().toISOString();
-  const starting = updatePreparedDiffState(
-    loaded.id,
-    {
-      status: 'revision-in-progress',
-      summary: mergeSummary(loaded.summary, {
-        revisionReason: reason,
-        revisionRun: {
-          kiloTaskId: null,
-          reason,
-          approverSurface: parsed.input.approverSurface ?? null,
-          startedAt,
-          startedHeadSha,
-          outcome: 'started',
-        },
-      }),
-    },
-    paths,
-  );
-
-  const prompt = await revisionPrompt(starting, reason);
+  const prompt = await revisionPrompt(loaded, reason);
   const starter = dependencies.startKiloTask ?? startKiloTask;
+  const startedAt = new Date().toISOString();
   const taskResult = await starter(
     {
-      title: `Revise prepared diff ${starting.repoFullName}#${starting.prNumber ?? starting.id}`,
+      title: `Revise prepared diff ${loaded.repoFullName}#${loaded.prNumber ?? loaded.id}`,
       prompt,
-      worktreeId: starting.worktreeId,
+      worktreeId: loaded.worktreeId,
       mode: 'draft-fix',
       allowAuto: true,
       confirmAuto: true,
@@ -101,11 +85,23 @@ export async function runPreparedDiffRevision(
   );
 
   if (!taskResult.ok) {
+    const current = readPreparedDiffRecord(loaded.id, paths) ?? loaded;
+    if (current.status !== 'revision-requested') {
+      return {
+        ok: false,
+        action: 'prepared_diff_run_revision',
+        changed: false,
+        message: taskResult.message,
+        preparedDiff: current,
+        error: { code: 'KILO_START_FAILED', message: taskResult.message },
+        errors: [taskResult.message],
+      };
+    }
     const failed = updatePreparedDiffState(
-      starting.id,
+      current.id,
       {
         status: 'revision-requested',
-        summary: mergeSummary(starting.summary, {
+        summary: mergeSummary(current.summary, {
           revisionRun: {
             kiloTaskId: null,
             reason,
@@ -149,11 +145,25 @@ export async function runPreparedDiffRevision(
     task?: Record<string, unknown>;
   };
   const taskId = stringField(taskData.taskId) ?? stringField(taskData.task?.id);
+  const current = readPreparedDiffRecord(loaded.id, paths) ?? loaded;
+  const latestTransition = assertTransition(
+    current,
+    'prepared_diff_run_revision',
+    'run-revision',
+    ['revision-requested'],
+  );
+  if (!latestTransition.ok) {
+    if (taskId) {
+      const aborter = dependencies.abortKiloTask ?? abortKiloTask;
+      await aborter({ taskId }, paths).catch(() => undefined);
+    }
+    return latestTransition.result;
+  }
   const running = updatePreparedDiffState(
-    starting.id,
+    current.id,
     {
       status: 'revision-in-progress',
-      summary: mergeSummary(starting.summary, {
+      summary: mergeSummary(current.summary, {
         revisionReason: reason,
         revisionRun: {
           kiloTaskId: taskId ?? null,
@@ -164,7 +174,7 @@ export async function runPreparedDiffRevision(
           outcome: 'started',
           status: stringField(taskData.task?.status) ?? 'running',
           title: stringField(taskData.task?.title) ?? null,
-          cwd: stringField(taskData.task?.cwd) ?? starting.sourceWorktreePath,
+          cwd: stringField(taskData.task?.cwd) ?? current.sourceWorktreePath,
         },
       }),
     },
@@ -248,6 +258,23 @@ export async function abandonPreparedDiffWithRevisionAbort(
         error: { code: 'REVISION_RUN_ABORT_FAILED', message: aborted.message },
       };
     }
+  }
+  if (task?.status === 'needs-reconcile') {
+    return {
+      ok: false,
+      action: 'prepared_diff_abandon',
+      changed: false,
+      message:
+        'Revision run needs reconciliation before this prepared diff can be abandoned.',
+      preparedDiff: loaded,
+      requires: ['revisionRunReconcile'],
+      errors: ['revision run must be reconciled before abandon.'],
+      error: {
+        code: 'REVISION_RUN_NEEDS_RECONCILE',
+        message:
+          'Revision run needs reconciliation before this prepared diff can be abandoned.',
+      },
+    };
   }
 
   return abandonPreparedDiff(rawInput, paths, { revisionRunAborted: true });

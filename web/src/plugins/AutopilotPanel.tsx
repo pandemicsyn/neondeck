@@ -526,6 +526,7 @@ function PreparedDiffRecoveryControls({
               : ''
           }
           isPending={mutation.isPending}
+          key={`${revisionAction.id}:${diff.revisionRun?.reason ?? ''}`}
           onCancel={() => setRevisionAction(undefined)}
           onConfirm={(input) => {
             mutation.mutate({
@@ -543,6 +544,7 @@ function PreparedDiffRecoveryControls({
             revisionAction.id === 'request-revision' ||
             !diff.revisionRun?.reason
           }
+          requireReasonWhenDeferred={revisionAction.id === 'request-revision'}
           showRunNow={revisionAction.id === 'request-revision'}
         />
       ) : null}
@@ -708,6 +710,7 @@ function RevisionComposer({
   onCancel,
   onConfirm,
   requireReason,
+  requireReasonWhenDeferred = false,
   showRunNow,
 }: {
   actionLabel: string;
@@ -716,11 +719,14 @@ function RevisionComposer({
   onCancel: () => void;
   onConfirm: (input: { reason: string; runRevisionNow: boolean }) => void;
   requireReason: boolean;
+  requireReasonWhenDeferred?: boolean;
   showRunNow: boolean;
 }) {
   const [reason, setReason] = useState(defaultReason);
   const [runRevisionNow, setRunRevisionNow] = useState(true);
-  const reasonRequired = requireReason && (!showRunNow || runRevisionNow);
+  const reasonRequired =
+    requireReason &&
+    (!showRunNow || runRevisionNow || requireReasonWhenDeferred);
   const disabled = isPending || (reasonRequired && !reason.trim());
 
   return (
