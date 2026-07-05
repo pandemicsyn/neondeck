@@ -396,7 +396,7 @@ export async function createMcpApprovalRequest(
         nowIso,
       ) as McpApprovalRow | undefined;
     if (existing) {
-      if (sessionId && !existing.session_id) {
+      if (sessionId && !nonEmpty(existing.session_id)) {
         database
           .prepare(
             `
