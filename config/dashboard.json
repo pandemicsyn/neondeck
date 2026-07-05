@@ -69,6 +69,15 @@
               "checkLimit": 4,
               "activityLimit": 8
             }
+          },
+          {
+            "id": "reports",
+            "title": "REPORTS",
+            "pluginId": "reports-panel",
+            "config": {
+              "limit": 12,
+              "refreshSeconds": 60
+            }
           }
         ]
       },

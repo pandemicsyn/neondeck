@@ -27,6 +27,7 @@ export const queryKeys = {
   prWatches: ['pr-watches'] as const,
   repoHealth: ['repo-health'] as const,
   repoEditEvents: ['repo-edit-events'] as const,
+  reports: ['reports'] as const,
   repoRegistry: ['repo-registry'] as const,
   runtimeStatus: ['runtime-status'] as const,
   runtimeSkills: ['runtime-skills'] as const,

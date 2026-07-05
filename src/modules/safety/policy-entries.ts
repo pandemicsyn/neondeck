@@ -1599,6 +1599,18 @@ export const entries: SafetyPolicyEntry[] = [
     'Runs the Kilo promotion admission layer and explicitly avoids commit, push, or PR comment mutation.',
   ),
   route(
+    '/api/reports',
+    'Reports list API',
+    readOnly,
+    'Lists local, self-contained Neondeck report artifacts for dashboard display.',
+  ),
+  route(
+    '/reports/:id',
+    'Report artifact route',
+    readOnly,
+    'Serves one local HTML report artifact by durable report id behind local-access checks.',
+  ),
+  route(
     '/api/runtime/status',
     'Runtime status API',
     readOnly,
