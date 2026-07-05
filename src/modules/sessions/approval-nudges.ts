@@ -104,9 +104,15 @@ export async function createApprovalResolutionNudge(
   }
 
   const dispatchAccepted = Boolean(dispatchReceipt);
+  const commandEventRecorded = Boolean(
+    created?.ok && 'event' in created && created.event,
+  );
+  const dispatchFailureDetail = commandEventRecorded
+    ? 'Flue dispatch did not accept the answer; the decision was recorded in this session command log.'
+    : 'Flue dispatch did not accept the answer, and the decision could not be recorded in the session command log.';
   const notificationMessage =
     shouldDispatch && !dispatchAccepted
-      ? `${label} approval ${input.approvalId} approved for ${input.subject}. Flue dispatch did not accept the answer; the decision was recorded in this session command log.`
+      ? `${label} approval ${input.approvalId} approved for ${input.subject}. ${dispatchFailureDetail}`
       : message;
   await addNotification(
     {
