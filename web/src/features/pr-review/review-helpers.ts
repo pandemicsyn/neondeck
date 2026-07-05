@@ -89,7 +89,7 @@ export function buildPatchAnchorIndex(patch: string | null | undefined) {
       oldLine += 1;
       continue;
     }
-    if (line.startsWith(' ') || line === '') {
+    if (line.startsWith(' ')) {
       anchors.set(patchAnchorKey('LEFT', oldLine), { hunk, position });
       anchors.set(patchAnchorKey('RIGHT', newLine), { hunk, position });
       oldLine += 1;
