@@ -29,7 +29,9 @@ import {
   commentAnchorExists,
   commentInputFromSelection,
   failingCommentIdsFromError,
+  normalizeReviewBody,
   patchAnchorIndexesByPath,
+  reviewCommentPreview,
   staleDraftCommentIds,
   type PatchAnchorIndex,
 } from './review-helpers';
@@ -193,13 +195,14 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
       verdict: GitHubPrReviewVerdict | null;
       reanchorHeadSha: boolean;
     }> = {},
+    headSha = currentHeadSha,
   ) => {
     setStatusMessage(null);
-    if (!currentHeadSha) throw new Error('PR head SHA is unavailable.');
+    if (!headSha) throw new Error('PR head SHA is unavailable.');
     return mutations.saveDraft.mutateAsync({
       repo: pr.repo,
       number: pr.number,
-      headSha: currentHeadSha,
+      headSha,
       ...('verdict' in next ? { verdict: next.verdict } : {}),
       ...('body' in next ? { body: next.body } : {}),
       ...(next.reanchorHeadSha ? { reanchorHeadSha: true } : {}),
@@ -221,7 +224,12 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
     if (!draft) return;
     setStatusMessage(null);
     try {
-      await saveDraft({ reanchorHeadSha: true });
+      const refreshedHeadSha = await mutations
+        .refetchPullRequestHeadSha()
+        .catch(() => null);
+      const nextHeadSha = refreshedHeadSha ?? currentHeadSha;
+      await saveDraft({ reanchorHeadSha: true }, nextHeadSha);
+      await mutations.invalidateReviewSources();
       setSubmitFailedCommentIds(new Set());
       setStatusMessage('Draft head updated to the current PR revision.');
     } catch {
@@ -560,9 +568,10 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
     if (!currentHeadSha) return;
     setStatusMessage(null);
     try {
+      const normalizedBody = normalizeReviewBody(reviewBody);
       const savedDraft =
-        !draft || draft.body !== reviewBody || draft.verdict !== verdict
-          ? await saveDraft({ body: reviewBody, verdict })
+        !draft || draft.body !== normalizedBody || draft.verdict !== verdict
+          ? await saveDraft({ body: normalizedBody, verdict })
           : draft;
       await mutations.submitReview.mutateAsync({
         repo: pr.repo,
@@ -600,7 +609,7 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
     window.open(
       url.toString(),
       `neondeck-pr-review-${pr.number}`,
-      'popup,width=1280,height=900,noopener,noreferrer',
+      'popup,width=1280,height=900',
     );
   };
 
@@ -716,10 +725,13 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
         isHeadAvailable={currentHeadSha.length > 0}
         onBodyBlur={() => {
           setIsReviewBodyFocused(false);
-          if (reviewBody.trim().length > 0 || draft) {
-            void saveDraft({ body: reviewBody })
+          const normalizedBody = normalizeReviewBody(reviewBody);
+          if ((draft?.body ?? null) !== normalizedBody) {
+            void saveDraft({ body: normalizedBody })
               .then(() => setHasPendingReviewBodyEdit(false))
               .catch(() => undefined);
+          } else {
+            setHasPendingReviewBodyEdit(false);
           }
         }}
         onBodyChange={(value) => {
@@ -1205,18 +1217,6 @@ function reviewFileStats(files: DiffFilePatch[]) {
     binary: files.filter((file) => file.binary).length,
     truncated: files.filter((file) => file.truncated).length,
   };
-}
-
-function reviewCommentPreview(value: string) {
-  const preview = value
-    .split(/\n\s*Useful\? React with/i)[0]
-    .replace(/!\[[^\]]*]\([^)]+\)/g, '')
-    .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
-    .replace(/<\/?[^>]+>/g, '')
-    .replace(/[*_`>#]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return preview || 'Review thread';
 }
 
 function checkLabel(pr: GitHubPullRequest) {

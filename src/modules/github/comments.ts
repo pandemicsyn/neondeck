@@ -76,6 +76,12 @@ export async function fetchPullRequestReviewThreads(options: {
     }
 
     if (!pullRequest.reviewThreads.pageInfo.hasNextPage) break;
+    if (page === 4) {
+      console.warn(
+        `[neondeck] GitHub review thread fetch reached the page cap for ${options.owner}/${options.repo}#${options.number}; results may be truncated.`,
+      );
+      break;
+    }
     cursor = pullRequest.reviewThreads.pageInfo.endCursor ?? null;
     if (!cursor) break;
   }

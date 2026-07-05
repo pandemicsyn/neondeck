@@ -56,6 +56,34 @@ export function failingCommentIdsFromError(error: unknown) {
   return Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : [];
 }
 
+export function normalizeReviewBody(value: string | null | undefined) {
+  const trimmed = value?.trim() ?? '';
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+export function reviewCommentPreview(value: string, fallback = 'Review thread') {
+  const preview = value
+    .split(/\n\s*Useful\? React with/i)[0]
+    .replace(/```[\s\S]*?```/g, (block) =>
+      block.replace(/```[\w-]*\n?/g, '').replace(/```/g, ''),
+    )
+    .replace(/!\[[^\]]*]\([^)]+\)/g, '')
+    .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
+    .replace(/<\/?[^>]+>/g, '')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\s*>+\s?/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^\s*\d+[.)]\s+/gm, '')
+    .replace(/~~([^~]+)~~/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/[*_`>#]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return preview || fallback;
+}
+
 export function patchAnchorIndexesByPath(files: DiffFilePatch[]) {
   return new Map(
     files.map((file) => [file.path, buildPatchAnchorIndex(file.patch)]),

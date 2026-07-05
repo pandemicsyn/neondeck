@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   deleteGitHubPrReviewDraft,
   deleteGitHubPrReviewDraftComment,
+  getGitHubPullRequests,
   getGitHubPrReviewDraft,
   getGitHubPrReviewThreads,
   getGitHubPullRequestFiles,
@@ -14,6 +15,7 @@ import {
   type GitHubPullRequest,
   type GitHubPullRequestReviewThread,
 } from '../../api';
+import { queryKeys } from '../../lib/query';
 
 type ReviewThreadsQueryData = Awaited<
   ReturnType<typeof getGitHubPrReviewThreads>
@@ -86,6 +88,26 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
       (current) => upsertReviewThread(current, thread),
     );
   };
+  const refetchPullRequestHeadSha = async () => {
+    const queue = await queryClient.fetchQuery({
+      queryKey: queryKeys.githubPrs,
+      queryFn: getGitHubPullRequests,
+    });
+    return (
+      queue.items.find(
+        (item) => item.repo === pr.repo && item.number === pr.number,
+      )?.headSha ?? null
+    );
+  };
+  const invalidateReviewSources = () =>
+    Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ['pr-review', 'files', pr.repo, pr.number],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ['pr-review', 'review-threads', pr.repo, pr.number],
+      }),
+    ]);
 
   return {
     saveDraft: useMutation({
@@ -123,6 +145,8 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
       mutationFn: postGitHubPrThreadResolution,
       onSuccess: updateThreadCache,
     }),
+    refetchPullRequestHeadSha,
+    invalidateReviewSources,
   };
 }
 

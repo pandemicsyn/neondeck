@@ -649,6 +649,57 @@ describe('github foundation', () => {
     expect(fetchedBodies).toHaveLength(2);
   });
 
+  it('logs when review thread pagination reaches the page cap', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let page = 0;
+    globalThis.fetch = vi.fn<typeof fetch>(async () => {
+      page += 1;
+      return jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: {
+                  hasNextPage: true,
+                  endCursor: `cursor-${page}`,
+                },
+                nodes: [
+                  {
+                    id: `thread-${page}`,
+                    isResolved: false,
+                    isOutdated: false,
+                    path: 'src/app.ts',
+                    line: page,
+                    originalLine: null,
+                    diffSide: 'RIGHT',
+                    comments: {
+                      pageInfo: { hasNextPage: false, endCursor: null },
+                      nodes: [reviewThreadComment(`comment-${page}`, page)],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+    });
+
+    await expect(
+      fetchPullRequestReviewThreads({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+      }),
+    ).resolves.toHaveLength(5);
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(5);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('review thread fetch reached the page cap'),
+    );
+  });
+
   it('paginates PR files and records missing patches', async () => {
     const fetchedUrls: string[] = [];
     globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
@@ -856,6 +907,35 @@ describe('github foundation', () => {
         body: 'Invalid reversed range.',
       }),
     ).toThrow(/range start/i);
+
+    const leftToRightRange = updatePrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      commentId: commentId ?? '',
+      side: 'RIGHT',
+      line: 10,
+      startLine: 8,
+      startSide: 'LEFT',
+      body: 'Valid cross-side range.',
+    });
+    expect(leftToRightRange.comments[0]).toMatchObject({
+      side: 'RIGHT',
+      line: 10,
+      startLine: 8,
+      startSide: 'LEFT',
+      body: 'Valid cross-side range.',
+    });
+
+    expect(() =>
+      updatePrReviewDraftComment({
+        databasePath: paths.neondeckDatabase,
+        commentId: commentId ?? '',
+        side: 'LEFT',
+        line: 8,
+        startLine: 10,
+        startSide: 'RIGHT',
+        body: 'Invalid cross-side range.',
+      }),
+    ).toThrow(/cross-side range/i);
 
     const deleted = deletePrReviewDraftComment({
       databasePath: paths.neondeckDatabase,

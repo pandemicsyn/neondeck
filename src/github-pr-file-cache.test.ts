@@ -243,6 +243,38 @@ describe('GitHub PR file cache', () => {
     expect(headFetcher).toHaveBeenCalledTimes(2);
     expect(readCacheRows(paths.neondeckDatabase)).toEqual([]);
   });
+
+  it('logs and skips caching when head verification fails', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const fetched = prFiles(
+      [prFile({ path: 'src/unverified.ts' })],
+      '2026-07-05T14:00:00.000Z',
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      fetchPullRequestFilesWithCache({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+        headSha: 'head123',
+        databasePath: paths.neondeckDatabase,
+        fetcher: async () => fetched,
+        fetchHeadSha: async () => {
+          throw new Error('GitHub timeout');
+        },
+      }),
+    ).resolves.toEqual(fetched);
+
+    expect(readCacheRows(paths.neondeckDatabase)).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Skipping GitHub PR file cache write because head verification failed',
+      ),
+    );
+  });
 });
 
 async function tempHome() {
