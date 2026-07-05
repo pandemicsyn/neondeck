@@ -36,9 +36,18 @@ export default defineWorkflow({
         requires: ['preparedDiffId'],
       } satisfies AutopilotActionResult;
     }
+    if (preparedDiff.worktreeId !== input.worktreeId) {
+      return {
+        ok: false,
+        action: 'autopilot_verify_then_push_pr_autofix',
+        changed: false,
+        message: `Prepared diff "${input.preparedDiffId}" is linked to worktree "${preparedDiff.worktreeId}", not "${input.worktreeId}".`,
+        requires: ['worktreeId'],
+      } satisfies AutopilotActionResult;
+    }
 
     const verification = await verifyPrWorktree({
-      worktreeId: input.worktreeId,
+      worktreeId: preparedDiff.worktreeId,
       lockOwner: 'approval_verify_then_push_verify',
     });
     if (!verification.ok) {

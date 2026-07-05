@@ -1633,6 +1633,45 @@ describe('PR event autopilot', () => {
     ]);
   });
 
+  it('rejects verify-then-push workflow worktree mismatches', async () => {
+    const { paths, featureSha } = await fixture();
+    const prepared = await prepareReviewPreparedDiff(paths, featureSha);
+    const preparedDiffId = stringPath(prepared, ['data', 'preparedDiff', 'id']);
+    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
+    const previousHome = process.env.NEONDECK_HOME;
+    process.env.NEONDECK_HOME = paths.home;
+    vi.doMock('./agents/display-assistant', async () => {
+      const { defineAgent } = await import('@flue/runtime');
+      return {
+        default: defineAgent(() => ({
+          instructions: 'test display assistant',
+        })),
+      };
+    });
+
+    try {
+      const { default: verifyThenPushPrAutofixWorkflow } =
+        await import('./workflows/verify-then-push-pr-autofix');
+      await expect(
+        runWorkflowAction(verifyThenPushPrAutofixWorkflow, {
+          preparedDiffId,
+          worktreeId: `${worktreeId}-other`,
+        }),
+      ).resolves.toMatchObject({
+        ok: false,
+        action: 'autopilot_verify_then_push_pr_autofix',
+        changed: false,
+        requires: ['worktreeId'],
+        message: expect.stringContaining('is linked to worktree'),
+      });
+    } finally {
+      vi.doUnmock('./agents/display-assistant');
+      vi.resetModules();
+      if (previousHome === undefined) delete process.env.NEONDECK_HOME;
+      else process.env.NEONDECK_HOME = previousHome;
+    }
+  });
+
   it('can dispatch push immediately or leave approval record-only from config', async () => {
     const pushFixture = await fixture();
     await writeAutopilotConfig(pushFixture.paths, { pushOnApproval: 'push' });
@@ -2208,6 +2247,15 @@ function stringPath(value: unknown, path: string[]) {
     throw new Error(`Expected string at ${path.join('.')}`);
   }
   return current;
+}
+
+async function runWorkflowAction(workflow: unknown, input: unknown) {
+  const runnable = workflow as {
+    action: {
+      run(context: { input: unknown }): unknown;
+    };
+  };
+  return Promise.resolve(runnable.action.run({ input }));
 }
 
 function insertActiveWorkflowRun(

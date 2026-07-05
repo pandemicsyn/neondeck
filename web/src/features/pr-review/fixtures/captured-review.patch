@@ -26,15 +26,15 @@ index 1a865e2..d6dbdf6 100644
 +  const trimmed = body.trim();
 +  return `${prefix}:${trimmed}`;
  }
- 
+ export const spacer00 = 0;
  export const filler01 = 1;
 @@ -17,7 +18,8 @@ export const filler10 = 10;
- 
+ export const spacer11 = 11;
  export function summarize(items: string[]) {
    const count = items.length;
 -  return `${count} items`;
 +  const noun = count === 1 ? "item" : "items";
 +  return `${count} ${noun}`;
  }
- 
+ export const spacer20 = 20;
  export function footer() {
