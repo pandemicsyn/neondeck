@@ -37,10 +37,17 @@ describe('GitHub PR file cache', () => {
       }),
     ];
     const fetched = prFiles(files, '2026-07-05T14:00:00.000Z');
+    const callOrder: string[] = [];
     const missFetcher = vi.fn<() => Promise<GitHubPullRequestFiles>>(
-      async () => fetched,
+      async () => {
+        callOrder.push('files');
+        return fetched;
+      },
     );
-    const headFetcher = vi.fn<() => Promise<string>>(async () => 'head123');
+    const headFetcher = vi.fn<() => Promise<string>>(async () => {
+      callOrder.push('head');
+      return 'head123';
+    });
 
     const miss = await fetchPullRequestFilesWithCache({
       token: 'token',
@@ -56,6 +63,7 @@ describe('GitHub PR file cache', () => {
 
     expect(missFetcher).toHaveBeenCalledTimes(1);
     expect(headFetcher).toHaveBeenCalledTimes(1);
+    expect(callOrder).toEqual(['files', 'head']);
     expect(miss).toEqual(fetched);
     const rows = readCacheRows(paths.neondeckDatabase);
     expect(rows).toHaveLength(1);

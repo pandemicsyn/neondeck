@@ -61,10 +61,8 @@ export async function fetchPullRequestFilesWithCache(options: {
     repo: options.repo,
     number: options.number,
   };
-  const [diff, currentHeadSha] = await Promise.all([
-    fetcher(request),
-    fetchHeadSha(request).catch(() => null),
-  ]);
+  const diff = await fetcher(request);
+  const currentHeadSha = await fetchHeadSha(request).catch(() => null);
   if (diff.files.length > 0 && currentHeadSha === headSha) {
     writeCachedPullRequestFiles({
       databasePath: options.databasePath,
