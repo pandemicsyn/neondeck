@@ -9,8 +9,10 @@ import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   archiveChatSession,
   type ChatSessionRecord,
+  createChatSessionCommandEvent,
   createChatSession,
   linkChatSessionContext,
+  listChatSessionCommandEvents,
   listChatSessions,
   pinChatSession,
   readChatSession,
@@ -21,8 +23,10 @@ import {
   refreshChatSessionSummary,
   restoreChatSession,
   searchChatSessions,
+  sessionContextInstructionsForAgentSync,
   startNeonSession,
   switchChatSession,
+  updateChatSessionCommandEvent,
 } from './modules/sessions';
 
 const tempRoots: string[] = [];
@@ -604,6 +608,146 @@ describe('session actions', () => {
           }),
         ],
       },
+    });
+  });
+
+  it('loads linked session context into server-side agent instructions', async () => {
+    const paths = runtimePaths(await tempDir());
+    const created = await createChatSession(
+      {
+        title: 'PR 42',
+        linkedRepoId: 'neondeck',
+        summary: 'PR 42 fixes the dashboard chat affordance.',
+        summarySource: 'metadata',
+        uiMetadata: { prNumber: 42, branch: 'agent/ui-fix' },
+      },
+      paths,
+    );
+    const sessionId = (created as { session: ChatSessionRecord }).session.id;
+    const firstContextLoadedAt = (created as { session: ChatSessionRecord })
+      .session.contextLoadedAt;
+    await sleep(5);
+    await linkChatSessionContext(
+      {
+        id: sessionId,
+        summary: 'PR 42 fixes chat context and command history.',
+        summarySource: 'metadata',
+        uiMetadata: {
+          prNumber: 42,
+          branch: 'agent/ui-fix',
+          status: 'needs-review',
+        },
+      },
+      paths,
+    );
+
+    const instructions = sessionContextInstructionsForAgentSync(
+      sessionId,
+      paths,
+    );
+    const refreshed = await readChatSession({ id: sessionId }, paths);
+
+    expect(instructions).toContain('Server-loaded Neondeck session context');
+    expect(instructions).toContain('repo id: neondeck');
+    expect(instructions).toContain('PR 42 fixes chat context');
+    expect(instructions).toContain('"branch":"agent/ui-fix"');
+    expect(
+      Date.parse(
+        (refreshed as { session: ChatSessionRecord }).session.contextLoadedAt,
+      ),
+    ).toBeGreaterThan(Date.parse(firstContextLoadedAt));
+
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      const row = database
+        .prepare(
+          `
+          SELECT action
+          FROM chat_session_audit
+          WHERE session_id = ?
+            AND action = 'context_injected'
+          LIMIT 1;
+        `,
+        )
+        .get(sessionId);
+      expect(row).toBeTruthy();
+    } finally {
+      database.close();
+    }
+  });
+
+  it('persists slash command events in the session store', async () => {
+    const paths = runtimePaths(await tempDir());
+    const created = await createChatSession({ title: 'Commands' }, paths);
+    const sessionId = (created as { session: ChatSessionRecord }).session.id;
+
+    const event = await createChatSessionCommandEvent(
+      {
+        sessionId,
+        input: '/repo-status neondeck',
+      },
+      paths,
+    );
+    expect(event).toMatchObject({
+      ok: true,
+      event: {
+        input: '/repo-status neondeck',
+        status: 'running',
+        result: null,
+      },
+    });
+    const eventId = (event as { event: { id: string; createdAt: string } })
+      .event.id;
+
+    await expect(
+      updateChatSessionCommandEvent(
+        {
+          sessionId,
+          eventId,
+          status: 'completed',
+          flueRunId: 'run-1',
+          result: {
+            ok: true,
+            command: 'repo-status',
+            input: '/repo-status neondeck',
+            status: 'completed',
+            message: 'Repository is clean.',
+            workflowSummary: {
+              id: 'summary-1',
+              workflow: 'command-run',
+              status: 'completed',
+              createdAt: '2026-07-05T12:00:00.000Z',
+            },
+          },
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      event: {
+        id: eventId,
+        status: 'completed',
+        flueRunId: 'run-1',
+        workflowSummaryId: 'summary-1',
+        result: expect.objectContaining({
+          message: 'Repository is clean.',
+        }),
+      },
+    });
+
+    await expect(
+      listChatSessionCommandEvents({ sessionId }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      events: [
+        expect.objectContaining({
+          id: eventId,
+          input: '/repo-status neondeck',
+          status: 'completed',
+          flueRunId: 'run-1',
+          workflowSummaryId: 'summary-1',
+        }),
+      ],
     });
   });
 

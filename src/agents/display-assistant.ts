@@ -29,7 +29,10 @@ import {
 import { neondeckSkillPatchActions } from '../modules/learning/skill-patches';
 import { neondeckRepoEditActions } from '../repo-edit';
 import { neondeckSchedulerActions } from '../modules/scheduler';
-import { neondeckSessionActions } from '../modules/sessions';
+import {
+  neondeckSessionActions,
+  sessionContextInstructionsForAgentSync,
+} from '../modules/sessions';
 import { soulInstructions } from '../modules/runtime';
 import { neondeckSubagents } from '../modules/runtime';
 import { neondeckFactTools } from './support/tools';
@@ -43,8 +46,9 @@ export const description =
 
 export const route: AgentRouteHandler = async (_c, next) => next();
 
-export default defineAgent(() => {
+export default defineAgent(({ id }) => {
   const models = readAgentModelSelectionSync();
+  const sessionContext = sessionContextInstructionsForAgentSync(id);
 
   return {
     model: models.displayAssistant,
@@ -54,6 +58,7 @@ export default defineAgent(() => {
       soulInstructions(),
       memoryInstructionsSync(),
       mcpInstructionsSync(),
+      sessionContext,
       'You are the local neondeck companion-display assistant. Keep answers brief, operational, and easy to scan on a small dashboard. When asked about work, prefer concrete next actions.',
       'Your Flue sandbox is the default virtual workspace rooted at /workspace, not the host checkout. Use Neondeck tools and actions for host facts, config, GitHub, watches, schedules, and runtime state.',
       'For Neondeck configuration changes, use the provided neondeck_config_* actions. Do not directly edit runtime config files in conversation.',
@@ -90,7 +95,9 @@ export default defineAgent(() => {
       'For follow-up questions about prior command runs, use neondeck_workflow_summaries_lookup instead of relying only on chat transcript.',
       'Delegate focused research to subagents when it will improve accuracy, but gather deterministic command/action facts first and pass those facts into the subagent request. Use repo_researcher for repo context, ci_investigator for checks and validation, and release_reviewer for release/watch readiness. Do not ask subagents to discover host tools or run raw bash for GitHub or CI data.',
       'When a user sends a slash command such as /repo-status, /review-queue, /explain-ci, /summarize-pr, /draft-pr-description, /prepare-pr, /review-local, /briefing, /reasoning, /memory, /watch-pr, /watch-release, or /dev-doctor, call neondeck_command_run and summarize its persisted workflow result.',
-    ].join('\n\n'),
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
     skills: [neondeck, githubGh, ...runtimeSkillReferencesSync()],
     tools: [...neondeckFactTools, ...mcpAgentToolsSync()],
     subagents: neondeckSubagents(

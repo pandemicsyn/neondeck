@@ -24,6 +24,7 @@ export type ChatSessionSummarySource =
   'manual' | 'metadata' | 'agent' | 'transcript-summary';
 
 export type ChatSessionSummaryStatus = 'missing' | 'fresh' | 'stale';
+export type ChatSessionCommandEventStatus = 'running' | 'completed' | 'failed';
 
 export type NeonSessionStaleReason = {
   type: 'config' | 'memory' | 'model' | 'provider' | 'repo' | 'skill' | 'soul';
@@ -54,6 +55,19 @@ export type ChatSessionRecord = {
   createdAt: string;
   updatedAt: string;
   lastActiveAt: string;
+};
+
+export type ChatSessionCommandEvent = {
+  id: string;
+  sessionId: string;
+  input: string;
+  status: ChatSessionCommandEventStatus;
+  result: JsonValue | null;
+  flueRunId: string | null;
+  workflowSummaryId: string | null;
+  createdAt: string;
+  completedAt: string | null;
+  updatedAt: string;
 };
 
 export type NeonSessionRecord = {
@@ -217,6 +231,34 @@ export const sessionReferenceInputSchema = v.object({
   surface: v.optional(surfaceSchema),
   includeRawTranscript: v.optional(v.boolean()),
   explicitUserRequest: v.optional(v.boolean()),
+});
+export const commandEventStatusSchema = v.picklist([
+  'running',
+  'completed',
+  'failed',
+]);
+export const sessionCommandEventListInputSchema = v.object({
+  sessionId: nonEmptyStringSchema,
+  limit: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100)),
+  ),
+});
+export const sessionCommandEventCreateInputSchema = v.object({
+  sessionId: nonEmptyStringSchema,
+  input: v.pipe(v.string(), v.minLength(1), v.maxLength(2_000)),
+  reason: v.optional(v.pipe(v.string(), v.maxLength(200))),
+});
+export const sessionCommandEventUpdateInputSchema = v.object({
+  sessionId: nonEmptyStringSchema,
+  eventId: nonEmptyStringSchema,
+  status: commandEventStatusSchema,
+  result: v.optional(v.nullable(jsonValueSchema)),
+  flueRunId: v.optional(v.nullable(v.pipe(v.string(), v.maxLength(200)))),
+  workflowSummaryId: v.optional(
+    v.nullable(v.pipe(v.string(), v.maxLength(200))),
+  ),
+  completedAt: v.optional(v.nullable(nonEmptyStringSchema)),
+  reason: v.optional(v.pipe(v.string(), v.maxLength(200))),
 });
 export const legacySessionStartInputSchema = v.object({
   label: v.optional(titleSchema),

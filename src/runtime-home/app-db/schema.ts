@@ -396,6 +396,28 @@ export const chatSessionAudit = sqliteTable(
   ],
 );
 
+export const chatSessionCommandEvents = sqliteTable(
+  'chat_session_command_events',
+  {
+    id: text('id').primaryKey(),
+    sessionId: text('session_id').notNull(),
+    input: text('input').notNull(),
+    status: text('status').notNull(),
+    resultJson: text('result_json'),
+    flueRunId: text('flue_run_id'),
+    workflowSummaryId: text('workflow_summary_id'),
+    createdAt: text('created_at').notNull(),
+    completedAt: text('completed_at'),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_chat_session_command_events_session').on(
+      table.sessionId,
+      sql`${table.createdAt} DESC`,
+    ),
+  ],
+);
+
 export const executionApprovals = sqliteTable(
   'execution_approvals',
   {

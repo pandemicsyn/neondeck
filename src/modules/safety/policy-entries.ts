@@ -1931,6 +1931,15 @@ export const entries: SafetyPolicyEntry[] = [
     'Audits a request for Flue-owned messages without copying transcripts into app state.',
   ),
   route(
+    '/api/sessions/:id/command-events',
+    'Chat session command event API',
+    {
+      ...safeMutation,
+      auditTarget: 'chat_session_command_events/chat_session_audit',
+    },
+    'GET lists durable slash-command transcript entries; POST records or updates command event rows for the session UI.',
+  ),
+  route(
     '/api/sessions/:id/summary/refresh',
     'Chat session summary refresh API',
     {

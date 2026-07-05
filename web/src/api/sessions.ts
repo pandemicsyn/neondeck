@@ -1,8 +1,11 @@
 import type {
   ChatSessionKind,
+  ChatSessionCommandEventListResponse,
+  ChatSessionCommandEventMutationResponse,
   NeonSessionState,
   ChatSessionListResponse,
   ChatSessionMutationResponse,
+  NeonCommandResult,
 } from './types';
 import { getJson, postJson } from './http';
 
@@ -115,4 +118,38 @@ export async function restoreChatSession(id: string) {
     surface: 'dashboard',
     reason: 'dashboard-session-switcher',
   });
+}
+
+export async function getChatSessionCommandEvents(id: string) {
+  return getJson<ChatSessionCommandEventListResponse>(
+    `/api/sessions/${id}/command-events`,
+  );
+}
+
+export async function createChatSessionCommandEvent(
+  id: string,
+  input: { input: string; reason?: string },
+) {
+  return postJson<ChatSessionCommandEventMutationResponse>(
+    `/api/sessions/${id}/command-events`,
+    input,
+  );
+}
+
+export async function updateChatSessionCommandEvent(
+  id: string,
+  eventId: string,
+  input: {
+    status: 'running' | 'completed' | 'failed';
+    result?: NeonCommandResult | null;
+    flueRunId?: string | null;
+    workflowSummaryId?: string | null;
+    completedAt?: string | null;
+    reason?: string;
+  },
+) {
+  return postJson<ChatSessionCommandEventMutationResponse>(
+    `/api/sessions/${id}/command-events/${eventId}`,
+    input,
+  );
 }

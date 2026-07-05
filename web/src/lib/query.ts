@@ -21,6 +21,8 @@ export const queryKeys = {
   mcpServers: ['mcp-servers'] as const,
   neonSession: ['neon-session'] as const,
   chatSessions: ['chat-sessions'] as const,
+  chatSessionCommandEvents: (sessionId: string | undefined) =>
+    ['chat-session-command-events', sessionId ?? 'none'] as const,
   autopilotState: ['autopilot-state'] as const,
   prWatches: ['pr-watches'] as const,
   repoHealth: ['repo-health'] as const,

@@ -9,7 +9,7 @@ export function CommandResultSummary({
   event: {
     input: string;
     status: 'running' | 'completed' | 'failed';
-    result?: (NeonCommandResult & { flueRunId?: string }) | undefined;
+    result?: (NeonCommandResult & { flueRunId?: string }) | null;
   };
   onAsk?: () => void;
 }) {

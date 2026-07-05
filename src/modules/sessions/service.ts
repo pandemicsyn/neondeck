@@ -16,7 +16,9 @@ import { publishSessionEvent } from './events';
 import { readNeonSessionState } from './active-session';
 import {
   findChatSession,
+  findChatSessionCommandEvent,
   findLinkedChatSession,
+  listChatSessionCommandEventRows,
   markLoadedMemoriesUsed,
   readActiveSessionId,
   readChatSessionInternal,
@@ -26,12 +28,16 @@ import {
 import {
   legacySessionStartInputSchema,
   sessionArchiveInputSchema,
+  sessionCommandEventCreateInputSchema,
+  sessionCommandEventListInputSchema,
+  sessionCommandEventUpdateInputSchema,
   sessionCreateInputSchema,
   sessionLinkContextInputSchema,
   sessionPinInputSchema,
   sessionRenameInputSchema,
   sessionSwitchInputSchema,
   type ChatSessionKind,
+  type ChatSessionCommandEvent,
   type ChatSessionRecord,
 } from './schemas';
 import type { ChatSessionEventAction } from './events';
@@ -553,6 +559,235 @@ export async function linkChatSessionContext(
   );
 }
 
+export async function listChatSessionCommandEvents(
+  input: v.InferInput<typeof sessionCommandEventListInputSchema>,
+  paths: RuntimePaths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const parsed = v.safeParse(sessionCommandEventListInputSchema, input);
+  if (!parsed.success) {
+    return failedSessionResult(
+      'session_command_events_list',
+      v.summarize(parsed.issues),
+    );
+  }
+
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const session = findChatSession(database, parsed.output.sessionId);
+    if (!session) {
+      return failedSessionResult(
+        'session_command_events_list',
+        `Session ${parsed.output.sessionId} was not found.`,
+      );
+    }
+
+    return {
+      ok: true,
+      action: 'session_command_events_list',
+      changed: false,
+      events: listChatSessionCommandEventRows(
+        database,
+        parsed.output.sessionId,
+        parsed.output.limit ?? 30,
+      ),
+      fetchedAt: new Date().toISOString(),
+    };
+  } finally {
+    database.close();
+  }
+}
+
+export async function createChatSessionCommandEvent(
+  input: v.InferInput<typeof sessionCommandEventCreateInputSchema>,
+  paths: RuntimePaths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const parsed = v.safeParse(sessionCommandEventCreateInputSchema, input);
+  if (!parsed.success) {
+    return failedSessionResult(
+      'session_command_event_create',
+      v.summarize(parsed.issues),
+    );
+  }
+
+  const now = new Date().toISOString();
+  const id = `command:${compactTimestamp(now)}:${randomUUID().slice(0, 8)}`;
+  const database = openDb(paths.neondeckDatabase);
+  let event: ChatSessionCommandEvent | undefined;
+
+  try {
+    database.exec('BEGIN;');
+    const session = findChatSession(database, parsed.output.sessionId);
+    if (!session) {
+      database.exec('ROLLBACK;');
+      return failedSessionResult(
+        'session_command_event_create',
+        `Session ${parsed.output.sessionId} was not found.`,
+      );
+    }
+
+    database
+      .prepare(
+        `
+        INSERT INTO chat_session_command_events (
+          id,
+          session_id,
+          input,
+          status,
+          result_json,
+          flue_run_id,
+          workflow_summary_id,
+          created_at,
+          completed_at,
+          updated_at
+        )
+        VALUES (?, ?, ?, 'running', NULL, NULL, NULL, ?, NULL, ?);
+      `,
+      )
+      .run(id, parsed.output.sessionId, parsed.output.input, now, now);
+    database
+      .prepare(
+        `
+        UPDATE chat_sessions
+        SET last_active_at = ?, updated_at = ?
+        WHERE id = ?;
+      `,
+      )
+      .run(now, now, parsed.output.sessionId);
+    recordSessionAudit(database, {
+      action: 'command_event_create',
+      sessionId: parsed.output.sessionId,
+      reason: parsed.output.reason ?? null,
+      metadata: { eventId: id, input: parsed.output.input },
+    });
+    event = findChatSessionCommandEvent(database, id);
+    database.exec('COMMIT;');
+  } catch (error) {
+    database.exec('ROLLBACK;');
+    throw error;
+  } finally {
+    database.close();
+  }
+
+  return {
+    ok: true,
+    action: 'session_command_event_create',
+    changed: true,
+    message: `Recorded command ${parsed.output.input} for this session.`,
+    event,
+  };
+}
+
+export async function updateChatSessionCommandEvent(
+  input: v.InferInput<typeof sessionCommandEventUpdateInputSchema>,
+  paths: RuntimePaths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const parsed = v.safeParse(sessionCommandEventUpdateInputSchema, input);
+  if (!parsed.success) {
+    return failedSessionResult(
+      'session_command_event_update',
+      v.summarize(parsed.issues),
+    );
+  }
+
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+  let event: ChatSessionCommandEvent | undefined;
+
+  try {
+    database.exec('BEGIN;');
+    const existing = findChatSessionCommandEvent(
+      database,
+      parsed.output.eventId,
+    );
+    if (!existing || existing.sessionId !== parsed.output.sessionId) {
+      database.exec('ROLLBACK;');
+      return failedSessionResult(
+        'session_command_event_update',
+        `Command event ${parsed.output.eventId} was not found for this session.`,
+      );
+    }
+
+    const nextResult = owns(parsed.output, 'result')
+      ? (parsed.output.result ?? null)
+      : existing.result;
+    const nextFlueRunId = owns(parsed.output, 'flueRunId')
+      ? (parsed.output.flueRunId ?? null)
+      : existing.flueRunId;
+    const nextWorkflowSummaryId =
+      parsed.output.workflowSummaryId ??
+      workflowSummaryIdFromResult(nextResult) ??
+      existing.workflowSummaryId;
+    const nextCompletedAt =
+      parsed.output.status === 'running'
+        ? null
+        : (parsed.output.completedAt ?? existing.completedAt ?? now);
+
+    database
+      .prepare(
+        `
+        UPDATE chat_session_command_events
+        SET
+          status = ?,
+          result_json = ?,
+          flue_run_id = ?,
+          workflow_summary_id = ?,
+          completed_at = ?,
+          updated_at = ?
+        WHERE id = ?
+          AND session_id = ?;
+      `,
+      )
+      .run(
+        parsed.output.status,
+        nextResult === null ? null : JSON.stringify(asJsonValue(nextResult)),
+        nextFlueRunId,
+        nextWorkflowSummaryId,
+        nextCompletedAt,
+        now,
+        parsed.output.eventId,
+        parsed.output.sessionId,
+      );
+    database
+      .prepare(
+        `
+        UPDATE chat_sessions
+        SET last_active_at = ?, updated_at = ?
+        WHERE id = ?;
+      `,
+      )
+      .run(now, now, parsed.output.sessionId);
+    recordSessionAudit(database, {
+      action: 'command_event_update',
+      sessionId: parsed.output.sessionId,
+      reason: parsed.output.reason ?? null,
+      metadata: {
+        eventId: parsed.output.eventId,
+        status: parsed.output.status,
+        flueRunId: nextFlueRunId,
+        workflowSummaryId: nextWorkflowSummaryId,
+      },
+    });
+    event = findChatSessionCommandEvent(database, parsed.output.eventId);
+    database.exec('COMMIT;');
+  } catch (error) {
+    database.exec('ROLLBACK;');
+    throw error;
+  } finally {
+    database.close();
+  }
+
+  return {
+    ok: true,
+    action: 'session_command_event_update',
+    changed: true,
+    message: `Updated command event ${parsed.output.eventId}.`,
+    event,
+  };
+}
+
 function updateOneSession<TInput extends { id: string; reason?: string }>(
   input: TInput,
   paths: RuntimePaths,
@@ -621,6 +856,25 @@ function sessionUiMetadata(
   }
 
   return asJsonValue({ legacyReason: reason });
+}
+
+function owns<T extends object, K extends PropertyKey>(
+  value: T,
+  key: K,
+): value is T & Record<K, unknown> {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function workflowSummaryIdFromResult(result: unknown) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    return null;
+  }
+  const summary = (result as Record<string, unknown>).workflowSummary;
+  if (!summary || typeof summary !== 'object' || Array.isArray(summary)) {
+    return null;
+  }
+  const id = (summary as Record<string, unknown>).id;
+  return typeof id === 'string' ? id : null;
 }
 
 function compactTimestamp(value: string) {

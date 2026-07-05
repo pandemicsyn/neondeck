@@ -38,6 +38,7 @@ import {
   type WorktreeRecord,
 } from '../worktrees';
 import {
+  isCheckWorkflow,
   isAutopilotWorkflow,
   type AutopilotActivity,
   type WorkflowEventRow,
@@ -61,6 +62,29 @@ export function readActiveAutopilotRuns(paths: RuntimePaths) {
       .all()
       .map(readWorkflowRunRow)
       .filter((row) => isAutopilotWorkflow(row.workflow));
+  } finally {
+    database.close();
+  }
+}
+
+export function readRecentFailedAutopilotChecks(paths: RuntimePaths) {
+  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  try {
+    return database
+      .prepare(
+        `
+        SELECT run_id, workflow, status, started_at, last_event_at, last_message
+        FROM workflow_run_observations
+        WHERE is_error = 1
+          AND status != 'active'
+        ORDER BY last_event_at DESC
+        LIMIT 20;
+      `,
+      )
+      .all()
+      .map(readWorkflowRunRow)
+      .filter((row) => isAutopilotWorkflow(row.workflow))
+      .filter((row) => isCheckWorkflow(row.workflow));
   } finally {
     database.close();
   }

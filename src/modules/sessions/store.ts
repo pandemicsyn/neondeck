@@ -7,6 +7,7 @@ import { type RuntimePaths, ensureRuntimeHome } from '../../runtime-home';
 import {
   persistedJsonValueSchema,
   persistedStaleReasonsSchema,
+  type ChatSessionCommandEvent,
   type ChatSessionKind,
   type ChatSessionRecord,
   type ChatSessionSummarySource,
@@ -107,6 +108,42 @@ export function findChatSession(database: DatabaseSync, id: string) {
     )
     .get(id);
   return row ? readChatSessionRow(row, database) : undefined;
+}
+
+export function findChatSessionCommandEvent(
+  database: DatabaseSync,
+  id: string,
+) {
+  const row = database
+    .prepare(
+      `
+      SELECT *
+      FROM chat_session_command_events
+      WHERE id = ?;
+    `,
+    )
+    .get(id);
+  return row ? readChatSessionCommandEventRow(row) : undefined;
+}
+
+export function listChatSessionCommandEventRows(
+  database: DatabaseSync,
+  sessionId: string,
+  limit = 30,
+) {
+  return database
+    .prepare(
+      `
+      SELECT *
+      FROM chat_session_command_events
+      WHERE session_id = ?
+      ORDER BY created_at DESC, id DESC
+      LIMIT ?;
+    `,
+    )
+    .all(sessionId, limit)
+    .map(readChatSessionCommandEventRow)
+    .reverse();
 }
 
 export function findLinkedChatSession(
@@ -234,6 +271,32 @@ export function readChatSessionRow(
     createdAt: String(record.created_at),
     updatedAt: String(record.updated_at),
     lastActiveAt,
+  };
+}
+
+export function readChatSessionCommandEventRow(
+  row: unknown,
+): ChatSessionCommandEvent {
+  const record = row as Record<string, unknown>;
+  return {
+    id: String(record.id),
+    sessionId: String(record.session_id),
+    input: String(record.input),
+    status:
+      record.status === 'completed' || record.status === 'failed'
+        ? record.status
+        : 'running',
+    result: parsePersistedJsonValue(record.result_json),
+    flueRunId:
+      typeof record.flue_run_id === 'string' ? record.flue_run_id : null,
+    workflowSummaryId:
+      typeof record.workflow_summary_id === 'string'
+        ? record.workflow_summary_id
+        : null,
+    createdAt: String(record.created_at),
+    completedAt:
+      typeof record.completed_at === 'string' ? record.completed_at : null,
+    updatedAt: String(record.updated_at),
   };
 }
 

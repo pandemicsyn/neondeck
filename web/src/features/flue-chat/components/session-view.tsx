@@ -1,5 +1,5 @@
 import { useFlueAgent, useFlueClient } from '@flue/react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   useEffect,
   useMemo,
@@ -8,9 +8,15 @@ import {
   type KeyboardEvent,
 } from 'react';
 import type {
+  ChatSessionCommandEvent,
   ChatSessionRecord,
   NeonCommandResult,
   NeonSessionState,
+} from '../../../api';
+import {
+  createChatSessionCommandEvent,
+  getChatSessionCommandEvents,
+  updateChatSessionCommandEvent,
 } from '../../../api';
 import {
   Badge,
@@ -39,7 +45,6 @@ import type {
 } from '../types';
 
 export function FlueChatSessionView({
-  activeRecord,
   agentName,
   onReferenceDraftConsumed,
   quickCommands,
@@ -102,6 +107,11 @@ export function FlueChatSessionView({
       : pendingHistoryRefresh
         ? 'Loading session history...'
         : session.placeholder;
+  const commandEventsQuery = useQuery({
+    queryKey: queryKeys.chatSessionCommandEvents(session?.id),
+    queryFn: () => getChatSessionCommandEvents(session?.id ?? ''),
+    enabled: Boolean(session?.id),
+  });
 
   useEffect(() => {
     setActiveCommandIndex(0);
@@ -111,13 +121,12 @@ export function FlueChatSessionView({
     setCanonicalMessages(undefined);
     setPendingHistoryRefresh(Boolean(session?.id));
     setHistoryRefreshError(undefined);
-    setCommandEvents(loadCommandEvents(session?.id));
+    setCommandEvents([]);
   }, [agentName, session?.id]);
 
   useEffect(() => {
-    if (!session?.id) return;
-    saveCommandEvents(session.id, commandEvents);
-  }, [commandEvents, session?.id]);
+    setCommandEvents(commandEventsQuery.data?.events ?? []);
+  }, [commandEventsQuery.data?.events]);
 
   useEffect(() => {
     if (!referenceDraft) return;
@@ -168,23 +177,62 @@ export function FlueChatSessionView({
 
     setSubmitError(undefined);
 
+    if (!session) {
+      setSubmitError('Active session is still resolving.');
+      return;
+    }
+
     if (message.startsWith('/')) {
-      const eventId = `command:${Date.now()}:${Math.random()
-        .toString(36)
-        .slice(2)}`;
-      appendCommandEvent({
-        id: eventId,
-        input: message,
-        status: 'running',
-        createdAt: new Date().toISOString(),
-      });
+      let createdEvent: CommandEvent | undefined;
       try {
-        const result = await runCommand(message);
-        updateCommandEvent(eventId, {
-          status: result.ok ? 'completed' : 'failed',
-          result,
-          completedAt: new Date().toISOString(),
+        const created = await createChatSessionCommandEvent(session.id, {
+          input: message,
+          reason: 'dashboard-slash-command',
         });
+        if (!created.event) {
+          setSubmitError('Command transcript row was not created.');
+          return;
+        }
+        createdEvent = created.event;
+        appendCommandEvent(createdEvent);
+
+        const result = await runCommand(message);
+        const completedAt = new Date().toISOString();
+        const status = result.ok ? 'completed' : 'failed';
+        updateCommandEvent(createdEvent.id, {
+          status,
+          result,
+          flueRunId: result.flueRunId ?? null,
+          workflowSummaryId: result.workflowSummary?.id ?? null,
+          completedAt,
+        });
+
+        try {
+          const updated = await updateChatSessionCommandEvent(
+            session.id,
+            createdEvent.id,
+            {
+              status,
+              result,
+              flueRunId: result.flueRunId ?? null,
+              workflowSummaryId: result.workflowSummary?.id ?? null,
+              completedAt,
+              reason: 'dashboard-slash-command-complete',
+            },
+          );
+          if (updated.event)
+            updateCommandEvent(updated.event.id, updated.event);
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.chatSessionCommandEvents(session.id),
+          });
+        } catch (persistError) {
+          setSubmitError(
+            `Command finished but transcript update failed: ${errorMessage(
+              persistError,
+            )}`,
+          );
+        }
+
         if (result.ok && result.command === 'reasoning') {
           await queryClient.invalidateQueries({
             queryKey: queryKeys.neonSession,
@@ -192,17 +240,35 @@ export function FlueChatSessionView({
         }
         setInput('');
       } catch (error) {
-        updateCommandEvent(eventId, {
+        if (!createdEvent) {
+          setSubmitError(errorMessage(error));
+          return;
+        }
+
+        const failedResult = commandFailureResult(message, error);
+        const completedAt = new Date().toISOString();
+        updateCommandEvent(createdEvent.id, {
           status: 'failed',
-          result: commandFailureResult(message, error),
-          completedAt: new Date().toISOString(),
+          result: failedResult,
+          completedAt,
+        });
+        await updateChatSessionCommandEvent(session.id, createdEvent.id, {
+          status: 'failed',
+          result: failedResult,
+          completedAt,
+          reason: 'dashboard-slash-command-failed',
+        }).catch((persistError) => {
+          setSubmitError(
+            `Command failed and transcript update failed: ${errorMessage(
+              persistError,
+            )}`,
+          );
+        });
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.chatSessionCommandEvents(session.id),
         });
         setSubmitError(errorMessage(error));
       }
-      return;
-    }
-    if (!session) {
-      setSubmitError('Active session is still resolving.');
       return;
     }
     if (historyInputBlocked) {
@@ -215,20 +281,9 @@ export function FlueChatSessionView({
     }
 
     setSendingMessage(true);
-    const commandContextEvents = commandEventsForAgentContext(commandEvents);
     try {
       setCanonicalMessages(undefined);
-      await agent.sendMessage(
-        messageWithSessionContext(
-          message,
-          activeRecord,
-          messages,
-          commandContextEvents,
-        ),
-      );
-      markCommandEventsContextSent(
-        commandContextEvents.map((event) => event.id),
-      );
+      await agent.sendMessage(message);
       setPendingHistoryRefresh(true);
       setInput('');
     } catch (error) {
@@ -249,24 +304,12 @@ export function FlueChatSessionView({
     );
   }
 
-  function markCommandEventsContextSent(ids: string[]) {
-    if (ids.length === 0) return;
-    const sentAt = new Date().toISOString();
-    setCommandEvents((events) =>
-      events.map((event) =>
-        ids.includes(event.id)
-          ? { ...event, agentContextSentAt: sentAt }
-          : event,
-      ),
-    );
-  }
-
   async function askAboutCommand(event: CommandEvent) {
     if (!session || sendingMessage || runningCommand || historyInputBlocked) {
       return;
     }
     const summaryId = event.result?.workflowSummary?.id;
-    const runId = event.result?.flueRunId;
+    const runId = event.result?.flueRunId ?? event.flueRunId;
     const message = [
       `Explain the result of command ${event.input}.`,
       summaryId ? `Workflow summary id: ${summaryId}.` : undefined,
@@ -280,10 +323,7 @@ export function FlueChatSessionView({
     setSendingMessage(true);
     try {
       setCanonicalMessages(undefined);
-      await agent.sendMessage(
-        messageWithSessionContext(message, activeRecord, messages, []),
-      );
-      markCommandEventsContextSent([event.id]);
+      await agent.sendMessage(message);
       setPendingHistoryRefresh(true);
     } catch (error) {
       setPendingHistoryRefresh(false);
@@ -394,6 +434,12 @@ export function FlueChatSessionView({
                 </Button>
               </div>
               <p className="mt-1 line-clamp-2">{historyRefreshError}</p>
+            </div>
+          ) : null}
+          {commandEventsQuery.error ? (
+            <div className="border border-accent/60 bg-soft px-2.5 py-2 font-mono text-[10.5px] leading-4 text-accent">
+              COMMAND HISTORY UNAVAILABLE ·{' '}
+              {errorMessage(commandEventsQuery.error)}
             </div>
           ) : null}
           {messages.length > 0 ? (
@@ -522,53 +568,7 @@ export function FlueChatSessionView({
 
 type CommandRunResult = NeonCommandResult & { flueRunId?: string };
 
-type CommandEvent = {
-  id: string;
-  input: string;
-  status: 'running' | 'completed' | 'failed';
-  result?: CommandRunResult;
-  createdAt: string;
-  completedAt?: string;
-  agentContextSentAt?: string;
-};
-
-function commandStorageKey(sessionId: string) {
-  return `neondeck:chat-command-events:${sessionId}`;
-}
-
-function loadCommandEvents(sessionId: string | undefined): CommandEvent[] {
-  if (!sessionId || typeof window === 'undefined') return [];
-  try {
-    const raw = window.localStorage.getItem(commandStorageKey(sessionId));
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed)
-      ? parsed.filter(isCommandEvent).slice(-30)
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveCommandEvents(sessionId: string, events: CommandEvent[]) {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(
-    commandStorageKey(sessionId),
-    JSON.stringify(events.slice(-30)),
-  );
-}
-
-function isCommandEvent(value: unknown): value is CommandEvent {
-  if (!value || typeof value !== 'object') return false;
-  const event = value as Partial<CommandEvent>;
-  return (
-    typeof event.id === 'string' &&
-    typeof event.input === 'string' &&
-    (event.status === 'running' ||
-      event.status === 'completed' ||
-      event.status === 'failed') &&
-    typeof event.createdAt === 'string'
-  );
-}
+type CommandEvent = ChatSessionCommandEvent;
 
 function commandFailureResult(
   command: string,
@@ -606,95 +606,7 @@ function commandNameFromInput(command: string): NeonCommandResult['command'] {
     : 'dev-doctor';
 }
 
-function messageWithSessionContext(
-  message: string,
-  session: ChatSessionRecord | undefined,
-  messages: unknown[],
-  commandEvents: CommandEvent[],
-) {
-  const sections: string[][] = [];
-  if (session && messages.length === 0 && hasLinkedContext(session)) {
-    sections.push(
-      [
-        'Linked Neondeck session context:',
-        `- kind: ${session.kind}`,
-        session.linkedRepoId ? `- repo id: ${session.linkedRepoId}` : undefined,
-        session.linkedWatchId
-          ? `- watch id: ${session.linkedWatchId}`
-          : undefined,
-        session.linkedTaskId ? `- task id: ${session.linkedTaskId}` : undefined,
-        session.summary ? `- summary: ${session.summary}` : undefined,
-        session.uiMetadata
-          ? `- UI metadata: ${truncate(JSON.stringify(session.uiMetadata), 1_000)}`
-          : undefined,
-      ].filter((line): line is string => line !== undefined),
-    );
-  }
-
-  const commandContext = commandEventsForAgentContext(commandEvents);
-  if (commandContext.length > 0) {
-    sections.push([
-      'Recent Neondeck slash command results not yet in agent context:',
-      ...commandContext.flatMap(commandEventContextLines),
-    ]);
-  }
-
-  if (sections.length === 0) {
-    return message;
-  }
-
-  return [
-    ...sections.flatMap((section, index) =>
-      index === 0 ? section : ['', ...section],
-    ),
-    '',
-    'User message:',
-    message,
-  ].join('\n');
-}
-
-function hasLinkedContext(session: ChatSessionRecord) {
-  return Boolean(
-    session.linkedRepoId ||
-    session.linkedWatchId ||
-    session.linkedTaskId ||
-    session.summary ||
-    session.uiMetadata,
-  );
-}
-
 function isMissingHistoryError(error: unknown) {
   const message = errorMessage(error).toLowerCase();
   return message.includes('404') && message.includes('stream_not_found');
-}
-
-function commandEventsForAgentContext(events: CommandEvent[]) {
-  return events
-    .filter(
-      (event) =>
-        !event.agentContextSentAt &&
-        event.result &&
-        (event.status === 'completed' || event.status === 'failed'),
-    )
-    .slice(-5);
-}
-
-function commandEventContextLines(event: CommandEvent) {
-  const result = event.result;
-  return [
-    `- command: ${event.input}`,
-    `  status: ${event.status}${result?.ok === false ? ' (not ok)' : ''}`,
-    result?.message ? `  message: ${truncate(result.message, 500)}` : undefined,
-    result?.workflowSummary?.id
-      ? `  workflow summary id: ${result.workflowSummary.id}`
-      : undefined,
-    result?.flueRunId ? `  Flue run id: ${result.flueRunId}` : undefined,
-    result?.errors?.length
-      ? `  errors: ${truncate(result.errors.join('; '), 500)}`
-      : undefined,
-  ].filter((line): line is string => line !== undefined);
-}
-
-function truncate(value: string, maxLength: number) {
-  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
 }

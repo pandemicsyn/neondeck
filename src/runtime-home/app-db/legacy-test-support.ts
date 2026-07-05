@@ -264,6 +264,19 @@ export const appDatabaseSchemaSql = `
         created_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS chat_session_command_events (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        input TEXT NOT NULL,
+        status TEXT NOT NULL,
+        result_json TEXT,
+        flue_run_id TEXT,
+        workflow_summary_id TEXT,
+        created_at TEXT NOT NULL,
+        completed_at TEXT,
+        updated_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS execution_approvals (
         id TEXT PRIMARY KEY,
         command TEXT NOT NULL,
@@ -638,6 +651,9 @@ export const appDatabaseIndexSql = `
 
       CREATE INDEX IF NOT EXISTS idx_chat_session_audit_session
         ON chat_session_audit(session_id, created_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_chat_session_command_events_session
+        ON chat_session_command_events(session_id, created_at DESC);
 
       CREATE INDEX IF NOT EXISTS idx_worktrees_repo
         ON worktrees(repo_id, lifecycle_status, updated_at DESC);

@@ -62,6 +62,7 @@ import {
 import {
   readActiveAutopilotRuns,
   readRecentAutopilotWorkflowEvents,
+  readRecentFailedAutopilotChecks,
   readRecentWorktreeEvents,
 } from './state-store';
 
@@ -112,6 +113,7 @@ export async function readAutopilotState(
   );
   const worktrees = worktreeSnapshot.worktrees;
   const workflowRuns = readActiveAutopilotRuns(paths);
+  const failedChecks = readRecentFailedAutopilotChecks(paths);
   const runningChecks = workflowRuns
     .filter((run) => isCheckWorkflow(run.workflow))
     .map((run) =>
@@ -131,6 +133,9 @@ export async function readAutopilotState(
       ),
     ),
   ];
+  const unreadNotifications = notifications.filter(
+    (notification) => !notification.resolvedAt && !notification.readAt,
+  );
   const queue = [
     ...watches.map((watch) =>
       queueItemFromWatch(
@@ -188,6 +193,8 @@ export async function readAutopilotState(
       preparedDiffs: preparedDiffs.length,
       pendingApprovals: pendingApprovals.length,
       runningChecks: runningChecks.length,
+      unreadNotifications: unreadNotifications.length,
+      failedChecks: failedChecks.length,
       recentActivity: recentActivity.length,
       placeholderAdapters: [
         'Queue entries are derived from watches, worktrees, approvals, and Flue observations until Phase 19 workflow admission tables land.',
