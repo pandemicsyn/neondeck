@@ -58,6 +58,42 @@ describe('GitHubPrReview helpers', () => {
     });
   });
 
+  it('normalizes reversed cross-side selections with captured patch order', () => {
+    const index = buildPatchAnchorIndex(
+      [
+        'diff --git a/src/review.ts b/src/review.ts',
+        'index 4f74247..9a9f5fd 100644',
+        '--- a/src/review.ts',
+        '+++ b/src/review.ts',
+        '@@ -20,8 +20,9 @@ export function review() {',
+        '   const state = readState();',
+        '-  const body = state.body;',
+        '-  return body.trim();',
+        '+  const body = state.body ?? "";',
+        '+  const trimmed = body.trim();',
+        '+  return trimmed;',
+        ' }',
+      ].join('\n'),
+    );
+
+    expect(
+      commentInputFromSelection(
+        {
+          side: 'additions',
+          endSide: 'deletions',
+          start: 22,
+          end: 21,
+        } as SelectedLineRange,
+        index,
+      ),
+    ).toEqual({
+      side: 'RIGHT',
+      line: 22,
+      startLine: 21,
+      startSide: 'LEFT',
+    });
+  });
+
   it('marks stale ranges when endpoints no longer share an ordered hunk', () => {
     const draft = draftWithComments([
       {

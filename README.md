@@ -303,6 +303,8 @@ Supported commands include `/repo-status`, `/review-queue`, `/briefing`, `/reaso
 
 Dashboard PR, watch, repo, briefing, Kilo, and autopilot rows include session affordances that create or open linked chat sessions. The chat panel also has a compact reference control for the active session; it refreshes summary metadata and records cross-session context use without forcing side-by-side chat.
 
+GitHub PR review rows support inline draft comments, thread replies/resolution, and one-review submit from the dashboard. Compact deck layouts keep the review controls tight; use the PR review pop-out button or `neondeck open` when a full review needs a wider window.
+
 Dashboard panels subscribe to `/api/events/config` for local config action and reload events, so model/provider/repo/schedule/dashboard changes refresh affected surfaces without a browser reload.
 
 Dashboard layout is configured by `dashboard.json` and validated by `dashboard.schema.json`. The statusline is a single top or bottom strip; main regions are tab stacks. Neon can apply known layouts through `neondeck_config_apply_dashboard_preset` (`classic` or `cockpit`) or replace the full validated layout through `neondeck_config_update_dashboard_layout`.

@@ -141,6 +141,13 @@ export const prReviewDraftCommentInputSchema = v.object({
 });
 export const prReviewDraftCommentUpdateInputSchema = v.object({
   body: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(65_536)),
+  path: v.optional(nonEmptyStringSchema),
+  side: v.optional(v.picklist(['RIGHT', 'LEFT'])),
+  line: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+  startLine: v.optional(
+    v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1))),
+  ),
+  startSide: v.optional(v.nullable(v.picklist(['RIGHT', 'LEFT']))),
 });
 export const prReviewSubmitInputSchema = v.object({
   draftId: nonEmptyStringSchema,

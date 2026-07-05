@@ -20,7 +20,7 @@ import {
   useRepoDiff,
 } from './queries';
 import type { DiffFilePatch } from './types';
-import { UnifiedPatchView } from './DiffViewer';
+import { DiffWorkerProvider, UnifiedPatchView } from './DiffViewer';
 
 export function PreparedDiffReview({ diff }: { diff: AutopilotPreparedDiff }) {
   const filesQuery = usePreparedDiffFiles(diff.id);
@@ -100,12 +100,14 @@ export function SkillPatchDiffReview({
   }
 
   return (
-    <UnifiedPatchView
-      detail="Learning candidate patch"
-      patch={patch}
-      title={title}
-      tone="violet"
-    />
+    <DiffWorkerProvider>
+      <UnifiedPatchView
+        detail="Learning candidate patch"
+        patch={patch}
+        title={title}
+        tone="violet"
+      />
+    </DiffWorkerProvider>
   );
 }
 
@@ -173,13 +175,15 @@ export function RepoEditEventDiffReview({ event }: { event: RepoEditEvent }) {
     }
 
     return (
-      <UnifiedPatchView
-        detail={event.reason ?? event.action}
-        meta={<Badge>{event.status}</Badge>}
-        patch={event.diffPatch}
-        title={`${event.repoId} - ${event.action}`}
-        tone={event.status === 'failed' ? 'accent' : 'primary'}
-      />
+      <DiffWorkerProvider>
+        <UnifiedPatchView
+          detail={event.reason ?? event.action}
+          meta={<Badge>{event.status}</Badge>}
+          patch={event.diffPatch}
+          title={`${event.repoId} - ${event.action}`}
+          tone={event.status === 'failed' ? 'accent' : 'primary'}
+        />
+      </DiffWorkerProvider>
     );
   }
 

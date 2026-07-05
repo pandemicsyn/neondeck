@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { GitHubPullRequest } from '../../api';
-import { prReviewQueryKeys } from './queries';
+import type {
+  GitHubPullRequest,
+  GitHubPullRequestReviewThread,
+} from '../../api';
+import { prReviewQueryKeys, upsertReviewThread } from './queries';
 
 describe('prReviewQueryKeys', () => {
   it('includes PR revision fields in files and review thread keys', () => {
@@ -20,6 +23,25 @@ describe('prReviewQueryKeys', () => {
     expect(prReviewQueryKeys.draft(pr)).toEqual(
       prReviewQueryKeys.draft(updated),
     );
+  });
+
+  it('splices returned review threads into cached thread data', () => {
+    const existing = reviewThread({ id: 'thread-1', isResolved: false });
+    const other = reviewThread({ id: 'thread-2', isResolved: false });
+    const updated = reviewThread({ id: 'thread-1', isResolved: true });
+
+    expect(
+      upsertReviewThread(
+        {
+          reviewThreads: [existing, other],
+          unresolvedReviewThreads: [existing, other],
+        },
+        updated,
+      ),
+    ).toEqual({
+      reviewThreads: [updated, other],
+      unresolvedReviewThreads: [other],
+    });
   });
 });
 
@@ -42,5 +64,22 @@ function pullRequest(): GitHubPullRequest {
     headSha: 'head-1',
     baseRef: 'agent/diff-ui-pr1',
     checks: null,
+  };
+}
+
+function reviewThread(
+  input: Pick<GitHubPullRequestReviewThread, 'id' | 'isResolved'>,
+): GitHubPullRequestReviewThread {
+  return {
+    id: input.id,
+    isResolved: input.isResolved,
+    isOutdated: false,
+    path: 'src/app.ts',
+    line: 12,
+    originalLine: null,
+    diffSide: 'RIGHT',
+    pullRequestRepo: 'pandemicsyn/neondeck',
+    pullRequestNumber: 66,
+    comments: [],
   };
 }

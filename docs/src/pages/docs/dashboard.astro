@@ -77,9 +77,11 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           inline review comments, reply to or resolve existing review threads,
           and submit one review with Comment, Approve, or Request changes. Draft
           comments survive reloads and stale anchors are skipped until the human
-          re-anchors them. These review actions are dashboard-only controls;
-          Neon does not get a model-callable action or tool for submitting PR
-          reviews, verdicts, thread replies, or thread resolution.
+          re-anchors them. Compact layouts keep the deck glanceable; use the
+          review pop-out control or <code>neondeck open</code> when a full PR review
+          needs the wider controls. These review actions are dashboard-only controls;
+          Neon does not get a model-callable action or tool for submitting PR reviews,
+          verdicts, thread replies, or thread resolution.
         </p>
         <p>
           Work rows can open linked chat sessions without a side-by-side chat

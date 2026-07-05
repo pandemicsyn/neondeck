@@ -780,7 +780,7 @@ describe('github foundation', () => {
 
     expect(second.id).toBe(first.id);
     expect(second).toMatchObject({
-      headSha: 'head456',
+      headSha: 'head123',
       verdict: 'request-changes',
       body: 'Needs changes',
       comments: [],
@@ -811,6 +811,38 @@ describe('github foundation', () => {
       id: commentId,
       body: 'Prefer an early return.',
     });
+
+    const reanchored = updatePrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      commentId: commentId ?? '',
+      path: 'src/next.ts',
+      side: 'LEFT',
+      line: 8,
+      startLine: 6,
+      startSide: 'LEFT',
+      body: 'Move this note to the deleted range.',
+    });
+    expect(reanchored.comments[0]).toMatchObject({
+      id: commentId,
+      path: 'src/next.ts',
+      side: 'LEFT',
+      line: 8,
+      startLine: 6,
+      startSide: 'LEFT',
+      body: 'Move this note to the deleted range.',
+    });
+
+    expect(() =>
+      updatePrReviewDraftComment({
+        databasePath: paths.neondeckDatabase,
+        commentId: commentId ?? '',
+        side: 'LEFT',
+        line: 6,
+        startLine: 8,
+        startSide: 'LEFT',
+        body: 'Invalid reversed range.',
+      }),
+    ).toThrow(/range start/i);
 
     const deleted = deletePrReviewDraftComment({
       databasePath: paths.neondeckDatabase,
@@ -898,6 +930,7 @@ describe('github foundation', () => {
       draftId: draft.id,
       headSha: 'head123',
       commentIds: [right?.id ?? '', range?.id ?? ''],
+      fetchHeadSha: async () => 'head123',
     });
 
     expect(result.draft).toMatchObject({
@@ -991,6 +1024,7 @@ describe('github foundation', () => {
         paths,
         draftId: draft.id,
         headSha: 'head456',
+        fetchHeadSha: async () => 'head456',
       }),
     ).rejects.toMatchObject({
       failure: {
@@ -1001,7 +1035,81 @@ describe('github foundation', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('keeps failed GitHub review submissions as live drafts with failing comment ids', async () => {
+  it('keeps failed GitHub review submissions as live drafts with precise failing comment ids', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const draft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head123',
+      verdict: 'comment',
+      body: 'Body',
+    });
+    let withComment = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 12,
+      body: 'Good comment.',
+    });
+    withComment = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 99,
+      body: 'Bad comment.',
+    });
+    const failingCommentId = withComment.comments.find(
+      (comment) => comment.body === 'Bad comment.',
+    )?.id;
+    globalThis.fetch = vi.fn<typeof fetch>(async () =>
+      jsonResponse(
+        {
+          message: 'Validation failed',
+          errors: [
+            {
+              resource: 'PullRequestReviewComment',
+              field: 'comments[1].line',
+              code: 'invalid',
+              message: 'line must have a valid diff anchor',
+            },
+          ],
+        },
+        422,
+      ),
+    );
+
+    await expect(
+      submitPullRequestReview({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+        databasePath: paths.neondeckDatabase,
+        paths,
+        draftId: draft.id,
+        headSha: 'head123',
+        fetchHeadSha: async () => 'head123',
+      }),
+    ).rejects.toMatchObject({
+      failure: {
+        code: 'github-review-submit-failed',
+        failingCommentIds: [failingCommentId],
+      },
+    });
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 123,
+      }),
+    ).toMatchObject({ id: draft.id, status: 'draft' });
+  });
+
+  it('does not classify generic GitHub validation text as insufficient scope', async () => {
     const paths = runtimePaths(await tempHome());
     await ensureRuntimeHome(paths);
     const draft = upsertPrReviewDraft({
@@ -1020,9 +1128,19 @@ describe('github foundation', () => {
       line: 12,
       body: 'Comment.',
     });
-    const commentId = withComment.comments[0]?.id;
     globalThis.fetch = vi.fn<typeof fetch>(async () =>
-      jsonResponse({ message: 'Validation failed' }, 422),
+      jsonResponse(
+        {
+          message: 'Validation failed',
+          errors: [
+            {
+              message: 'comments must have valid line anchors',
+              field: 'comments[0].line',
+            },
+          ],
+        },
+        422,
+      ),
     );
 
     await expect(
@@ -1035,20 +1153,14 @@ describe('github foundation', () => {
         paths,
         draftId: draft.id,
         headSha: 'head123',
+        fetchHeadSha: async () => 'head123',
       }),
     ).rejects.toMatchObject({
       failure: {
         code: 'github-review-submit-failed',
-        failingCommentIds: [commentId],
+        failingCommentIds: [withComment.comments[0]?.id],
       },
     });
-    expect(
-      readLivePrReviewDraft({
-        databasePath: paths.neondeckDatabase,
-        repo: 'pandemicsyn/neondeck',
-        prNumber: 123,
-      }),
-    ).toMatchObject({ id: draft.id, status: 'draft' });
   });
 
   it('replies to and resolves review threads through GitHub GraphQL', async () => {

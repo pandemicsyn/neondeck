@@ -1,5 +1,5 @@
-import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
+import { openDb } from '../../lib/sqlite';
 import {
   fetchPullRequestDetail,
   fetchPullRequestFiles,
@@ -94,7 +94,7 @@ function readCachedPullRequestFiles(options: {
   number: number;
   headSha: string;
 }): GitHubPullRequestFiles | null {
-  const database = new DatabaseSync(options.databasePath);
+  const database = openDb(options.databasePath);
   try {
     const row = database
       .prepare(
@@ -138,7 +138,7 @@ function writeCachedPullRequestFiles(options: {
   now: Date;
 }) {
   const payload = JSON.stringify(options.files);
-  const database = new DatabaseSync(options.databasePath);
+  const database = openDb(options.databasePath);
   try {
     database
       .prepare(
@@ -182,7 +182,7 @@ function parseCachedFiles(payload: string): GitHubPullRequestFile[] | null {
 }
 
 function deleteCachedPullRequestFiles(
-  database: DatabaseSync,
+  database: ReturnType<typeof openDb>,
   options: { repo: string; number: number; headSha: string },
 ) {
   database
@@ -198,7 +198,7 @@ function deleteCachedPullRequestFiles(
 }
 
 function prunePullRequestFileCache(
-  database: DatabaseSync,
+  database: ReturnType<typeof openDb>,
   repo: string,
   number: number,
   now: Date,

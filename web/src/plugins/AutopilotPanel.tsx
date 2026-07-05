@@ -144,7 +144,17 @@ function AutopilotView({
               title="Approvals"
             >
               {approvals.map((approval) => (
-                <ApprovalRow approval={approval} key={approval.id} />
+                <ApprovalRow
+                  approval={approval}
+                  key={approval.id}
+                  preparedDiff={
+                    approval.preparedDiffId
+                      ? state.preparedDiffs.find(
+                          (diff) => diff.id === approval.preparedDiffId,
+                        )
+                      : undefined
+                  }
+                />
               ))}
             </PanelSection>
           </section>
@@ -485,8 +495,17 @@ function recoveryButtonLabel(id: AutopilotRecoveryActionId) {
   return id;
 }
 
-function ApprovalRow({ approval }: { approval: AutopilotApproval }) {
+function ApprovalRow({
+  approval,
+  preparedDiff,
+}: {
+  approval: AutopilotApproval;
+  preparedDiff?: AutopilotPreparedDiff;
+}) {
   const queryClient = useQueryClient();
+  const [isInspecting, setIsInspecting] = useState(
+    approval.source === 'prepared-diff' && Boolean(preparedDiff),
+  );
   const mutation = useMutation({
     mutationFn: (decision: 'approve' | 'deny') =>
       resolveAutopilotApproval(approval.id, decision),
@@ -516,6 +535,15 @@ function ApprovalRow({ approval }: { approval: AutopilotApproval }) {
       <div className="mt-2 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
         <span>{approval.source}</span>
         <span className="flex gap-1.5">
+          {preparedDiff ? (
+            <Button
+              className="min-h-[28px] bg-transparent px-2 py-1 text-[10px]"
+              onClick={() => setIsInspecting((current) => !current)}
+              type="button"
+            >
+              {isInspecting ? 'hide diff' : 'inspect diff'}
+            </Button>
+          ) : null}
           <Button
             className="min-h-[28px] border-primary bg-transparent px-2 py-1 text-[10px] text-primary"
             disabled={mutation.isPending}
@@ -537,6 +565,18 @@ function ApprovalRow({ approval }: { approval: AutopilotApproval }) {
       {mutation.error ? (
         <p className="mt-1 text-[10px] leading-4 text-accent">
           {queryErrorMessage(mutation.error)}
+        </p>
+      ) : null}
+      {preparedDiff && isInspecting ? (
+        <div className="mt-2">
+          <Suspense fallback={<MiniEmpty label="Loading diff viewer." />}>
+            <PreparedDiffReview diff={preparedDiff} />
+          </Suspense>
+        </div>
+      ) : approval.source === 'prepared-diff' ? (
+        <p className="mt-2 border border-line bg-field px-2 py-1.5 text-[10px] leading-4 text-muted">
+          Prepared diff {approval.preparedDiffId ?? 'unknown'} is no longer in
+          the retained diff list.
         </p>
       ) : null}
     </article>

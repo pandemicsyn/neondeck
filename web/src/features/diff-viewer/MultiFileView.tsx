@@ -10,7 +10,7 @@ import {
   patchHasContent,
 } from './helpers';
 import { FileTreePane } from './FileTreePane';
-import { UnifiedPatchView } from './DiffViewer';
+import { DiffWorkerProvider, UnifiedPatchView } from './DiffViewer';
 import type {
   DiffFilePatch,
   DiffReviewAnnotation,
@@ -107,29 +107,31 @@ export function MultiFileView({
             ))}
           </select>
         </div>
-        <UnifiedPatchView
-          className="min-h-0 flex-1"
-          detail={detail ?? selectedFile?.path}
-          lineAnnotations={
-            selectedFile ? annotationsByPath?.[selectedFile.path] : undefined
-          }
-          meta={
-            selectedFile ? (
-              <>
-                <Badge>{selectedFile.status}</Badge>
-                <Badge>{diffStatsLabel(selectedFile)}</Badge>
-              </>
-            ) : (
-              <Badge>{diffFileCountLabel(files.length)}</Badge>
-            )
-          }
-          patch={patchHasContent(patch) ? patch : null}
-          renderAnnotation={renderAnnotation}
-          selectedLines={selectedLines}
-          onSelectedLinesChange={onSelectedLinesChange}
-          title={title}
-          tone={tone}
-        />
+        <DiffWorkerProvider>
+          <UnifiedPatchView
+            className="min-h-0 flex-1"
+            detail={detail ?? selectedFile?.path}
+            lineAnnotations={
+              selectedFile ? annotationsByPath?.[selectedFile.path] : undefined
+            }
+            meta={
+              selectedFile ? (
+                <>
+                  <Badge>{selectedFile.status}</Badge>
+                  <Badge>{diffStatsLabel(selectedFile)}</Badge>
+                </>
+              ) : (
+                <Badge>{diffFileCountLabel(files.length)}</Badge>
+              )
+            }
+            patch={patchHasContent(patch) ? patch : null}
+            renderAnnotation={renderAnnotation}
+            selectedLines={selectedLines}
+            onSelectedLinesChange={onSelectedLinesChange}
+            title={title}
+            tone={tone}
+          />
+        </DiffWorkerProvider>
         {isLoadingPatch ? (
           <p className="border-x border-b border-line bg-field px-2 py-1 font-mono text-[10px] text-muted">
             Loading patch...
