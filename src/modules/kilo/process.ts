@@ -145,9 +145,7 @@ export function attachProcessHandlers(
       }
       const current = tryKiloTask(taskId, paths);
       markKiloTaskFinished(taskId, status, code, error, paths);
-      let observedDiff:
-        | Awaited<ReturnType<typeof taskDiffSummary>>
-        | undefined;
+      let observedDiff: Awaited<ReturnType<typeof taskDiffSummary>> | undefined;
       addKiloTaskEvent(
         taskId,
         {

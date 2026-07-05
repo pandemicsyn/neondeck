@@ -27,13 +27,13 @@ coverage. Verified by reading the full diff:
 4. **Selection ordering** — `orderSelectionEndpoints` orders cross-side endpoints by patch
    anchor position (same hunk) with a same-side numeric fallback; both composer open and save
    validate `commentAnchorExists` and refuse invalid ranges; backend
-   `assertValidReviewCommentAnchor` rejects same-side inverted ranges on create *and* update.
+   `assertValidReviewCommentAnchor` rejects same-side inverted ranges on create _and_ update.
 5. **Failing-comment attribution** — server parses GitHub's 422 `errors[]` for `comments[N]`
    indexes, falls back to path+line matching, then to all ids
    (`failingReviewCommentIdsFromGitHubError`); UI renders failures as `path L#` labels, tracks
    `submitFailedCommentIds`, and excludes them from the next submit.
 6. **Live-head validation at submit** — `submitPullRequestReview` fetches the PR's current
-   head (injectable `fetchHeadSha`) and requires *both* the draft's and the client's sha to
+   head (injectable `fetchHeadSha`) and requires _both_ the draft's and the client's sha to
    match it; `commit_id` is the verified live head. The server stale check now has real teeth.
 7. **Approvals next to the diff** — `ApprovalRow` receives the matching prepared diff, renders
    `PreparedDiffReview` inline (auto-expanded for `prepared-diff` approvals) with approve/deny
@@ -69,7 +69,7 @@ Carried over from finding 15 or observed in the fix diff. None affect correctnes
 happy path; fold into any future touch of these files.
 
 - **Stale deck vs. stale draft are indistinguishable in the error.** "Update draft head"
-  anchors to the deck-cached `pr.headSha`; if the *queue* is behind GitHub, submit still fails
+  anchors to the deck-cached `pr.headSha`; if the _queue_ is behind GitHub, submit still fails
   `stale-draft` (correct, fail-safe) but the message doesn't tell the user the deck itself
   needs to refresh, and the banner button can't fix it. Consider triggering a queue/files
   refetch from `refreshDraftHead` or distinguishing the two cases in the submit error.

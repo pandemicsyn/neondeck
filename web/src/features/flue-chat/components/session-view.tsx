@@ -177,7 +177,12 @@ export function FlueChatSessionView({
   async function submit(event: FormEvent) {
     event.preventDefault();
     const message = input.trim();
-    if (!message || sendingMessage || commandBusy || commandSubmitLockRef.current)
+    if (
+      !message ||
+      sendingMessage ||
+      commandBusy ||
+      commandSubmitLockRef.current
+    )
       return;
 
     setSubmitError(undefined);
@@ -539,10 +544,7 @@ export function FlueChatSessionView({
             placeholder={inputPlaceholder}
             rows={1}
             disabled={
-              !session ||
-              historyInputBlocked ||
-              sendingMessage ||
-              commandBusy
+              !session || historyInputBlocked || sendingMessage || commandBusy
             }
             value={input}
           />
@@ -555,9 +557,9 @@ export function FlueChatSessionView({
                   ? 'Running'
                   : commandSubmitting
                     ? 'Starting'
-                  : sendingMessage
-                    ? 'Sending'
-                    : '/ commands | Enter send'}
+                    : sendingMessage
+                      ? 'Sending'
+                      : '/ commands | Enter send'}
           </Kbd>
           <Button
             className="sr-only"
