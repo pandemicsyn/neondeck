@@ -3,6 +3,8 @@ import type {
   AutopilotRecoveryActionId,
   AutopilotRecoveryResponse,
   AutopilotApprovalResolveResponse,
+  PreparedDiffFileDiffResponse,
+  PreparedDiffFilesResponse,
 } from './types';
 import { getJson, postJson } from './http';
 
@@ -13,6 +15,26 @@ export async function getAutopilotState() {
 export async function getAutopilotRecoveryOptions(preparedDiffId: string) {
   return getJson<AutopilotRecoveryResponse>(
     `/api/prepared-diffs/${encodeURIComponent(preparedDiffId)}/recovery`,
+  );
+}
+
+export async function getPreparedDiffFiles(preparedDiffId: string) {
+  return getJson<PreparedDiffFilesResponse>(
+    `/api/prepared-diffs/${encodeURIComponent(preparedDiffId)}/files`,
+  );
+}
+
+export async function getPreparedDiffFileDiff(input: {
+  preparedDiffId: string;
+  path: string;
+  maxPatchBytes?: number;
+}) {
+  const params = new URLSearchParams({ path: input.path });
+  if (input.maxPatchBytes) {
+    params.set('maxPatchBytes', String(input.maxPatchBytes));
+  }
+  return getJson<PreparedDiffFileDiffResponse>(
+    `/api/prepared-diffs/${encodeURIComponent(input.preparedDiffId)}/files/diff?${params.toString()}`,
   );
 }
 

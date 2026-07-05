@@ -436,6 +436,67 @@ export type RepoEditEventsResponse = {
   fetchedAt: string;
 };
 
+export type DiffSummary = {
+  files: number;
+  additions: number;
+  deletions: number;
+  binaryFiles: number;
+};
+
+export type RepoDiffFile = {
+  path: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  binary?: boolean;
+  generatedLike?: boolean;
+  patch?: string;
+  truncated?: boolean;
+};
+
+export type PreparedDiffFilesResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  files?: RepoDiffFile[];
+  diffSummary?: DiffSummary;
+  errors?: string[];
+};
+
+export type PreparedDiffFileDiffResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  file?: RepoDiffFile | null;
+  diff?: string;
+  diffSummary?: DiffSummary;
+  errors?: string[];
+};
+
+export type RepoDiffResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  repoId?: string;
+  worktreeId?: string | null;
+  base?: string;
+  files?: RepoDiffFile[];
+  diffSummary?: DiffSummary;
+  errors?: string[];
+};
+
+export type KiloTaskDiffResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  diff?: KiloTaskRecord['diff'];
+  errors?: string[];
+};
+
 export type WorktreeRecord = {
   id: string;
   repoId: string;

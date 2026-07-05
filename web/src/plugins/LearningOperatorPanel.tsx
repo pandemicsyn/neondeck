@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import {
   decideLearningCandidate,
   getLearningOperatorState,
@@ -23,6 +23,12 @@ import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 import { parsePositiveIntegerConfig } from './config';
+
+const SkillPatchDiffReview = lazy(() =>
+  import('../features/diff-viewer/surfaces').then((module) => ({
+    default: module.SkillPatchDiffReview,
+  })),
+);
 
 type LearningOperatorConfig = {
   limit: number;
@@ -300,6 +306,7 @@ function ReviewRow({ review }: { review: LearningReviewRecord }) {
 }
 
 function CandidateRow({ candidate }: { candidate: LearningCandidate }) {
+  const [isViewingDiff, setIsViewingDiff] = useState(false);
   const queryClient = useQueryClient();
   const decide = useMutation({
     mutationFn: (decision: 'approve' | 'reject') =>
@@ -339,9 +346,25 @@ function CandidateRow({ candidate }: { candidate: LearningCandidate }) {
         </Badge>
       </div>
       {patch?.diff ? (
-        <pre className="mt-1.5 max-h-20 overflow-auto border border-line bg-field p-1.5 font-mono text-[9.5px] leading-3 text-muted">
-          {patch.diff}
-        </pre>
+        <div className="mt-1.5">
+          <Button
+            className="h-6 px-2 py-0 font-mono text-[10px]"
+            onClick={() => setIsViewingDiff((current) => !current)}
+            type="button"
+          >
+            {isViewingDiff ? 'hide diff' : 'view diff'}
+          </Button>
+          {isViewingDiff ? (
+            <div className="mt-1.5">
+              <Suspense fallback={<MiniEmpty label="Loading diff viewer." />}>
+                <SkillPatchDiffReview
+                  patch={patch.diff}
+                  title={candidate.skillId ?? candidate.key ?? candidate.id}
+                />
+              </Suspense>
+            </div>
+          ) : null}
+        </div>
       ) : null}
       <div className="mt-1.5 flex items-center gap-1.5 font-mono text-[10px] text-muted">
         <span className="min-w-0 flex-1 truncate">

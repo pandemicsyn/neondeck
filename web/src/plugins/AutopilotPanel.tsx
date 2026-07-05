@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
+import { lazy, Suspense, useState, type ReactNode } from 'react';
 import {
   getAutopilotState,
   getAutopilotRecoveryOptions,
@@ -15,12 +15,23 @@ import {
   type AutopilotState,
   type AutopilotWatchPolicy,
 } from '../api';
-import { EmptyState } from '../components/ui';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
-import { Badge, Button, ScrollArea } from '../components/ui';
+import {
+  Badge,
+  Button,
+  EmptyState,
+  MiniEmpty,
+  ScrollArea,
+} from '../components/ui';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 import { parsePositiveIntegerConfig } from './config';
+
+const PreparedDiffReview = lazy(() =>
+  import('../features/diff-viewer/surfaces').then((module) => ({
+    default: module.PreparedDiffReview,
+  })),
+);
 
 type AutopilotPanelConfig = {
   queueLimit: number;
@@ -278,6 +289,8 @@ function QueueRow({ item }: { item: AutopilotQueueItem }) {
 }
 
 function PreparedDiffRow({ diff }: { diff: AutopilotPreparedDiff }) {
+  const [isInspecting, setIsInspecting] = useState(false);
+
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
       <div className="flex items-center justify-between gap-2">
@@ -292,7 +305,14 @@ function PreparedDiffRow({ diff }: { diff: AutopilotPreparedDiff }) {
       <p className="mt-1 truncate font-mono text-[10px] text-muted">
         {diff.localPath}
       </p>
-      <div className="mt-1.5 flex justify-end font-mono text-[10px]">
+      <div className="mt-1.5 flex justify-end gap-1.5 font-mono text-[10px]">
+        <Button
+          className="min-h-[24px] px-2 py-0 font-mono text-[10px]"
+          onClick={() => setIsInspecting((current) => !current)}
+          type="button"
+        >
+          {isInspecting ? 'hide diff' : 'inspect diff'}
+        </Button>
         <SessionReferenceButton
           kind="task"
           label="session"
@@ -310,6 +330,13 @@ function PreparedDiffRow({ diff }: { diff: AutopilotPreparedDiff }) {
           }}
         />
       </div>
+      {isInspecting ? (
+        <div className="mt-2">
+          <Suspense fallback={<MiniEmpty label="Loading diff viewer." />}>
+            <PreparedDiffReview diff={diff} />
+          </Suspense>
+        </div>
+      ) : null}
       <PreparedDiffRecoveryControls preparedDiffId={diff.id} />
     </article>
   );
