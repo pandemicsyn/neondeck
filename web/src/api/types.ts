@@ -1072,6 +1072,18 @@ export type AutopilotApprovalResolveResponse =
       changed: boolean;
       message: string;
       approval?: ExecutionApproval;
+      data?: {
+        pushApprovalDispatch?: {
+          mode?: 'push' | 'verify-then-push' | 'off';
+          status?: 'dispatched' | 'off';
+          workflow?: 'push-pr-autofix' | 'verify-pr-worktree';
+          runId?: string;
+          workflowSummaryId?: string;
+          message?: string;
+        };
+        dispatchedPushRunId?: string | null;
+        workflowSummaryId?: string | null;
+      };
       requires?: string[];
       errors?: string[];
     };

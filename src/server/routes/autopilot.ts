@@ -15,7 +15,6 @@ import {
   runAutopilotRecoveryAction,
 } from '../../modules/autopilot/recovery';
 import {
-  approvePreparedDiffPush,
   listPreparedDiffs,
   openPreparedDiffWorktree,
   readPreparedDiffChangedFiles,
@@ -27,6 +26,7 @@ import {
 } from '../../modules/prepared-diffs';
 import { resolveExecutionApproval } from '../../modules/execution';
 import type { RuntimePaths } from '../../runtime-home';
+import { approvePreparedDiffPushWithDispatch } from '../autopilot-push-dispatch';
 import {
   preparedDiffHttpStatus,
   queryBoolean,
@@ -111,7 +111,7 @@ export function createAutopilotRoutes(paths: RuntimePaths) {
 
     const result =
       decision === 'approve'
-        ? await approvePreparedDiffPush(
+        ? await approvePreparedDiffPushWithDispatch(
             {
               preparedDiffId: approval.preparedDiffId,
               confirm: true,
@@ -169,7 +169,7 @@ export function createAutopilotRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/prepared-diffs/:id/approve-push', async (c) => {
-    const result = await approvePreparedDiffPush(
+    const result = await approvePreparedDiffPushWithDispatch(
       { ...(await safeJsonObject(c)), preparedDiffId: c.req.param('id') },
       paths,
     );

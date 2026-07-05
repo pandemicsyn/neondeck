@@ -26,6 +26,7 @@ import {
   ensurePreparedDiffForWorktree,
   readPreparedDiff,
 } from './modules/prepared-diffs';
+import { approvePreparedDiffPushWithDispatch } from './server/autopilot-push-dispatch';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
@@ -1528,6 +1529,152 @@ describe('PR event autopilot', () => {
     });
   });
 
+  it('dispatches verification after push approval by default and records the linkage', async () => {
+    const { paths, featureSha } = await fixture();
+    const prepared = await prepareReviewPreparedDiff(paths, featureSha);
+    const preparedDiffId = stringPath(prepared, ['data', 'preparedDiff', 'id']);
+    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
+    const calls: Array<{ workflow: string; input: Record<string, unknown> }> =
+      [];
+
+    const result = await approvePreparedDiffPushWithDispatch(
+      {
+        preparedDiffId,
+        reason: 'Ship it.',
+        confirm: true,
+        approverSurface: 'test',
+      },
+      paths,
+      {
+        async invokeWorkflow(workflow, input) {
+          calls.push({ workflow, input });
+          return { runId: 'run-verify-after-approval' };
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      preparedDiff: { status: 'push-approved' },
+      data: {
+        dispatchedPushRunId: 'run-verify-after-approval',
+        pushApprovalDispatch: {
+          mode: 'verify-then-push',
+          status: 'dispatched',
+          workflow: 'verify-pr-worktree',
+          runId: 'run-verify-after-approval',
+        },
+      },
+    });
+    expect(calls).toEqual([
+      {
+        workflow: 'verify-pr-worktree',
+        input: {
+          worktreeId,
+          lockOwner: 'approval_verify_pr_worktree',
+        },
+      },
+    ]);
+    await expect(listWorkflowSummaries(paths)).resolves.toEqual([
+      expect.objectContaining({
+        workflow: 'verify_pr_worktree',
+        runId: 'run-verify-after-approval',
+        status: 'pending',
+        summary: expect.objectContaining({
+          event: 'prepared_diff_push_approval_dispatch',
+          approvalId: result.approvals?.[0]?.id,
+          preparedDiffId,
+          worktreeId,
+        }),
+      }),
+    ]);
+  });
+
+  it('can dispatch push immediately or leave approval record-only from config', async () => {
+    const pushFixture = await fixture();
+    await writeAutopilotConfig(pushFixture.paths, { pushOnApproval: 'push' });
+    const pushPrepared = await prepareReviewPreparedDiff(
+      pushFixture.paths,
+      pushFixture.featureSha,
+    );
+    const pushPreparedDiffId = stringPath(pushPrepared, [
+      'data',
+      'preparedDiff',
+      'id',
+    ]);
+    const pushCalls: Array<{
+      workflow: string;
+      input: Record<string, unknown>;
+    }> = [];
+
+    const pushed = await approvePreparedDiffPushWithDispatch(
+      { preparedDiffId: pushPreparedDiffId, confirm: true },
+      pushFixture.paths,
+      {
+        async invokeWorkflow(workflow, input) {
+          pushCalls.push({ workflow, input });
+          return { runId: 'run-push-after-approval' };
+        },
+      },
+    );
+
+    expect(pushed).toMatchObject({
+      ok: true,
+      data: {
+        dispatchedPushRunId: 'run-push-after-approval',
+        pushApprovalDispatch: {
+          mode: 'push',
+          status: 'dispatched',
+          workflow: 'push-pr-autofix',
+        },
+      },
+    });
+    expect(pushCalls).toEqual([
+      {
+        workflow: 'push-pr-autofix',
+        input: {
+          preparedDiffId: pushPreparedDiffId,
+          lockOwner: 'approval_push_pr_autofix',
+        },
+      },
+    ]);
+
+    const offFixture = await fixture();
+    await writeAutopilotConfig(offFixture.paths, { pushOnApproval: 'off' });
+    const offPrepared = await prepareReviewPreparedDiff(
+      offFixture.paths,
+      offFixture.featureSha,
+    );
+    const offPreparedDiffId = stringPath(offPrepared, [
+      'data',
+      'preparedDiff',
+      'id',
+    ]);
+
+    const off = await approvePreparedDiffPushWithDispatch(
+      { preparedDiffId: offPreparedDiffId, confirm: true },
+      offFixture.paths,
+      {
+        async invokeWorkflow() {
+          throw new Error('push dispatch should be disabled');
+        },
+      },
+    );
+
+    expect(off).toMatchObject({
+      ok: true,
+      preparedDiff: { status: 'push-approved' },
+      data: {
+        dispatchedPushRunId: null,
+        pushApprovalDispatch: {
+          mode: 'off',
+          status: 'off',
+        },
+      },
+    });
+    await expect(listWorkflowSummaries(offFixture.paths)).resolves.toEqual([]);
+  });
+
   it('does not rewrite abandoned prepared diffs on duplicate push calls', async () => {
     const { paths, featureSha } = await fixture();
     const prepared = await prepareReviewPreparedDiff(paths, featureSha);
@@ -1811,6 +1958,26 @@ async function pushAllowedPermissions() {
 
 async function pushDeniedPermissions() {
   return branchPermissionResult(false);
+}
+
+async function writeAutopilotConfig(
+  paths: ReturnType<typeof runtimePaths>,
+  autopilot: Record<string, unknown>,
+) {
+  await writeFile(
+    paths.config,
+    `${JSON.stringify(
+      {
+        version: 1,
+        autopilot: {
+          defaultMode: 'autofix-with-approval',
+          ...autopilot,
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
 }
 
 function pushToFixtureOrigin(remote: string) {
