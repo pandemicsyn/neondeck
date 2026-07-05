@@ -370,6 +370,7 @@ export async function createMcpApprovalRequest(
   const expiresAt = new Date(
     now.getTime() + (input.ttlMs ?? defaultApprovalTtlMs),
   ).toISOString();
+  const sessionId = nonEmpty(input.sessionId);
 
   try {
     const existing = database
@@ -395,7 +396,7 @@ export async function createMcpApprovalRequest(
         nowIso,
       ) as McpApprovalRow | undefined;
     if (existing) {
-      if (input.sessionId && !existing.session_id) {
+      if (sessionId && !existing.session_id) {
         database
           .prepare(
             `
@@ -405,10 +406,10 @@ export async function createMcpApprovalRequest(
             WHERE id = ?;
           `,
           )
-          .run(input.sessionId, nowIso, existing.id);
+          .run(sessionId, nowIso, existing.id);
         return readApprovalRow({
           ...existing,
-          session_id: input.sessionId,
+          session_id: sessionId,
           updated_at: nowIso,
         });
       }
@@ -445,7 +446,7 @@ export async function createMcpApprovalRequest(
         input.adaptedName,
         input.argumentsHash,
         truncateText(input.argumentsPreview, 4000),
-        input.sessionId ?? null,
+        sessionId ?? null,
         expiresAt,
         nowIso,
         nowIso,
@@ -896,4 +897,9 @@ function parseJson(value: string | null) {
   } catch {
     return null;
   }
+}
+
+function nonEmpty(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }

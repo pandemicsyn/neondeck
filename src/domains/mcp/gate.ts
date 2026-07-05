@@ -65,7 +65,8 @@ export async function runMcpToolThroughGate(
   let approvalId: string | null = null;
   if (policy === 'ask') {
     const sessionId =
-      input.context.sessionId ?? currentFlueExecutionContext()?.instanceId;
+      nonEmpty(input.context.sessionId) ??
+      currentFlueExecutionContext()?.instanceId;
     const approval = await consumeUsableMcpApproval(
       {
         serverId: input.serverId,
@@ -170,6 +171,11 @@ export async function runMcpToolThroughGate(
       message,
     };
   }
+}
+
+function nonEmpty(value: string | undefined) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 function elapsed(startedAt: number) {

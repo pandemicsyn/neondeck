@@ -11,6 +11,7 @@ import {
   consumeUsableMcpApproval,
   createMcpApprovalRequest,
   getMcpRegistry,
+  hashMcpArguments,
   listMcpApprovals,
   listMcpAudit,
   logoutMcpOAuthServer,
@@ -25,6 +26,7 @@ import {
   mcpServerRemoveAction,
   mcpServerUpdateAction,
   resolveMcpApprovalWithPaths,
+  runMcpToolThroughGate,
   setMcpCatalogReplaceHookForTests,
   setMcpRegistryPendingRefreshHookForTests,
   setMcpRegistryPublishHookForTests,
@@ -202,6 +204,106 @@ describe('MCP support', () => {
       'approved',
       'ask',
     ]);
+  });
+
+  it('normalizes blank MCP session ids before creating or updating approvals', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const session = await createChatSession(
+      { title: 'MCP blank session' },
+      paths,
+    );
+    const sessionId = (session as { session: ChatSessionRecord }).session.id;
+    await expect(
+      addMcpServer(
+        {
+          id: 'fixture',
+          server: {
+            transport: 'stdio',
+            command: process.execPath,
+          },
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+
+    const first = await runWithFlueExecutionContextForTests(
+      { agentName: 'display-assistant', instanceId: sessionId },
+      () =>
+        runMcpToolThroughGate(
+          {
+            serverId: 'fixture',
+            toolName: 'echo',
+            adaptedName: 'mcp__fixture__echo',
+            context: {
+              input: { text: 'new' },
+              sessionId: '   ',
+            },
+            run: async () => {
+              throw new Error('unexpected MCP execution before approval');
+            },
+          },
+          paths,
+        ),
+    );
+    expect(first).toMatchObject({
+      ok: false,
+      status: 'approval-required',
+    });
+    let approvals = await listMcpApprovals(paths);
+    expect(approvals).toEqual([
+      expect.objectContaining({
+        id: first.approvalId,
+        sessionId,
+      }),
+    ]);
+
+    const existing = await createMcpApprovalRequest(
+      {
+        serverId: 'fixture',
+        toolName: 'echo',
+        adaptedName: 'mcp__fixture__echo',
+        argumentsHash: hashMcpArguments({ text: 'existing' }),
+        argumentsPreview: '{"text":"existing"}',
+      },
+      paths,
+    );
+    expect(existing).toMatchObject({ sessionId: null });
+
+    const second = await runWithFlueExecutionContextForTests(
+      { agentName: 'display-assistant', instanceId: sessionId },
+      () =>
+        runMcpToolThroughGate(
+          {
+            serverId: 'fixture',
+            toolName: 'echo',
+            adaptedName: 'mcp__fixture__echo',
+            context: {
+              input: { text: 'existing' },
+              sessionId: '',
+            },
+            run: async () => {
+              throw new Error('unexpected MCP execution before approval');
+            },
+          },
+          paths,
+        ),
+    );
+    expect(second).toMatchObject({
+      ok: false,
+      status: 'approval-required',
+      approvalId: existing!.id,
+    });
+    approvals = await listMcpApprovals(paths);
+    expect(approvals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: existing!.id,
+          sessionId,
+        }),
+      ]),
+    );
   });
 
   it('accepts MCP tool JSON Schema nullable unions through AJV validation', async () => {
