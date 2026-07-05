@@ -18,7 +18,7 @@ import {
   getWorktrees,
   openNotificationEventStream,
 } from '../../api';
-import { EmptyState } from '../../App';
+import { EmptyState } from '../../components/ui';
 import { useConfigEvents } from '../../lib/config-events';
 import { queryErrorMessage, queryKeys } from '../../lib/query';
 import type { DisplayPlugin } from '../../types';

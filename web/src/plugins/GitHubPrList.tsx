@@ -1,13 +1,14 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useFlueClient } from '@flue/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getGitHubPullRequests,
   getRepoRegistry,
   type GitHubPullRequest,
 } from '../api';
-import { EmptyState } from '../App';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
-import { Badge, ScrollArea } from '../components/ui';
+import { Badge, EmptyState, Button, ScrollArea } from '../components/ui';
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
+import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 import { parsePositiveIntegerConfig } from './config';
@@ -90,70 +91,11 @@ export const GitHubPrListPlugin = {
           <ScrollArea className="flex-1">
             <ul>
               {items.map((item) => (
-                <li
+                <PrRow
+                  item={item}
                   key={item.url}
-                  className="pr-row px-3.5 py-2 last:border-b-0"
-                >
-                  <div className="group">
-                    <div className="mb-1 flex items-center justify-between gap-3 font-mono text-[10.5px] text-muted">
-                      <span className="truncate">{item.repo}</span>
-                      <span className="shrink-0">
-                        #{item.number} · {relativeTime(item.updatedAt)}
-                      </span>
-                    </div>
-                    <p className="line-clamp-2 text-[13px] font-medium leading-[1.35] text-ink group-hover:text-primary-strong">
-                      {item.title}
-                    </p>
-                    <div className="mt-1.5 flex items-center gap-2.5 font-mono text-[10px] text-primary">
-                      <span className={checkClass(item)}>
-                        ● {checkLabel(item)}
-                      </span>
-                      <span className="text-violet">
-                        ◆ {relationLabel(item)}
-                      </span>
-                      {item.stale ? (
-                        <span className="text-accent">◇ stale</span>
-                      ) : null}
-                      {item.draft || item.labels.includes('draft') ? (
-                        <span className="text-muted">△ draft</span>
-                      ) : null}
-                    </div>
-                    {item.labels.length > 0 ? (
-                      <div className="mt-1.5 flex flex-wrap gap-1">
-                        {item.labels.slice(0, 3).map((label) => (
-                          <Badge key={label}>{label}</Badge>
-                        ))}
-                      </div>
-                    ) : null}
-                    <div className="mt-1.5 flex justify-end gap-1.5 font-mono text-[10px]">
-                      <SessionReferenceButton
-                        kind="repo"
-                        label="session"
-                        linkedRepoId={repoIds.get(item.repo) ?? null}
-                        linkedTaskId={`github-pr:${item.repo}#${item.number}`}
-                        summary={`${item.repo}#${item.number}: ${item.title}. ${checkLabel(item)}; relation ${relationLabel(item)}.`}
-                        title={`PR ${item.repo}#${item.number}`}
-                        uiMetadata={{
-                          source: 'github-pr',
-                          repo: item.repo,
-                          prNumber: item.number,
-                          url: item.url,
-                          state: item.state,
-                          checks: item.checks?.status ?? null,
-                          relations: item.relations,
-                        }}
-                      />
-                      <a
-                        className="shrink-0 border border-line px-1.5 py-0.5 text-muted hover:border-primary hover:text-primary"
-                        href={item.url}
-                        rel="noreferrer"
-                        target="_blank"
-                      >
-                        open
-                      </a>
-                    </div>
-                  </div>
-                </li>
+                  repoId={repoIds.get(item.repo)}
+                />
               ))}
             </ul>
           </ScrollArea>
@@ -163,24 +105,142 @@ export const GitHubPrListPlugin = {
   },
 } satisfies DisplayPlugin<GitHubPrListConfig>;
 
+function PrRow({
+  item,
+  repoId,
+}: {
+  item: GitHubPullRequest;
+  repoId: string | undefined;
+}) {
+  return (
+    <li key={item.url} className="pr-row px-3.5 py-2 last:border-b-0">
+      <div className="group">
+        <div className="mb-1 flex items-center justify-between gap-3 font-mono text-[10.5px] text-muted">
+          <span className="truncate">{item.repo}</span>
+          <span className="shrink-0">
+            #{item.number} · {relativeTime(item.updatedAt)}
+          </span>
+        </div>
+        <p className="line-clamp-2 text-[13px] font-medium leading-[1.35] text-ink group-hover:text-primary-strong">
+          {item.title}
+        </p>
+        <div className="mt-1.5 flex items-center gap-2.5 font-mono text-[10px] text-primary">
+          <span className={checkClass(item)}>● {checkLabel(item)}</span>
+          <span className="text-violet">◆ {relationLabel(item)}</span>
+          {item.stale ? <span className="text-accent">◇ stale</span> : null}
+          {item.draft || item.labels.includes('draft') ? (
+            <span className="text-muted">△ draft</span>
+          ) : null}
+          {!repoId ? (
+            <span className="text-muted">◇ repo unregistered</span>
+          ) : null}
+        </div>
+        {item.labels.length > 0 ? (
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {item.labels.slice(0, 3).map((label) => (
+              <Badge key={label}>{label}</Badge>
+            ))}
+          </div>
+        ) : null}
+        <div className="mt-1.5 flex justify-end gap-1.5 font-mono text-[10px]">
+          <SessionReferenceButton
+            kind="task"
+            label="session"
+            linkedRepoId={repoId ?? null}
+            linkedTaskId={`github-pr:${item.repo}#${item.number}`}
+            summary={`${item.repo}#${item.number}: ${item.title}. ${checkLabel(item)}; relation ${relationLabel(item)}.`}
+            title={`PR ${item.repo}#${item.number}`}
+            uiMetadata={{
+              source: 'github-pr',
+              repo: item.repo,
+              prNumber: item.number,
+              url: item.url,
+              state: item.state,
+              checks: item.checks?.status ?? null,
+              relations: item.relations,
+            }}
+          />
+          <WatchPrButton item={item} />
+          <a
+            className="inline-flex min-h-[28px] shrink-0 items-center border border-line px-2 py-1 text-muted hover:border-primary hover:text-primary"
+            href={item.url}
+            rel="noreferrer"
+            target="_blank"
+          >
+            open
+          </a>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+function WatchPrButton({ item }: { item: GitHubPullRequest }) {
+  const flue = useFlueClient();
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const run = await flue.workflows.invoke('watch-pr', {
+        input: {
+          ref: `${item.repo}#${item.number}`,
+          desiredTerminalState: 'checks',
+        },
+        wait: 'result',
+      });
+      const result = {
+        ...(run.result as WatchPrWorkflowResult),
+        flueRunId: run.runId,
+      };
+      if (!result.ok) throw new Error(result.message);
+      return result;
+    },
+    onSuccess() {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.workflowObservability,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.autopilotState,
+      });
+    },
+  });
+
+  return (
+    <Button
+      className="min-h-[28px] shrink-0 border-line bg-transparent px-2 py-1 text-[10px] text-muted"
+      disabled={mutation.isPending}
+      onClick={() => mutation.mutate()}
+      title={
+        mutation.error
+          ? queryErrorMessage(mutation.error)
+          : mutation.data
+            ? `${mutation.data.message} · run ${mutation.data.flueRunId}`
+            : 'Watch this PR until checks are green'
+      }
+      type="button"
+    >
+      {mutation.isPending ? 'watching' : mutation.data ? 'watched' : 'watch'}
+    </Button>
+  );
+}
+
+type WatchPrWorkflowResult = {
+  ok: boolean;
+  message: string;
+  flueRunId?: string;
+};
+
 function PrSkeleton() {
   return (
     <div className="space-y-2 p-3">
       {Array.from({ length: 8 }).map((_, index) => (
         <div key={index} className="border border-line bg-soft p-2">
-          <div className="h-3 w-4/5 rounded-sm bg-soft" />
-          <div className="mt-2 h-2 w-3/5 rounded-sm bg-soft" />
+          <div className="h-3 w-4/5 bg-line" />
+          <div className="mt-2 h-2 w-3/5 bg-line" />
         </div>
       ))}
     </div>
   );
-}
-
-function relativeTime(value: string) {
-  const delta = Date.now() - Date.parse(value);
-  const hours = Math.max(1, Math.round(delta / 3_600_000));
-  if (hours < 24) return `${hours}h`;
-  return `${Math.round(hours / 24)}d`;
 }
 
 function checkLabel(item: GitHubPullRequest) {

@@ -1,8 +1,15 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getPrWatches, type PrWatch } from '../api';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import {
+  getPrWatches,
+  removePrWatch,
+  setPrWatchPolling,
+  type PrWatch,
+} from '../api';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
 import { Badge, Button, ScrollArea } from '../components/ui';
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
+import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 import { parsePositiveIntegerConfig } from './config';
@@ -77,6 +84,34 @@ export const ActiveWatchesPlugin = {
 } satisfies DisplayPlugin<ActiveWatchesConfig>;
 
 function WatchRow({ watch }: { watch: PrWatch }) {
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const queryClient = useQueryClient();
+  const removeMutation = useMutation({
+    mutationFn: () => removePrWatch(watch.id),
+    onSuccess() {
+      setConfirmingRemove(false);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.autopilotState,
+      });
+    },
+  });
+  const pollingEnabled = watch.pollingEnabled !== false;
+  const pollingMutation = useMutation({
+    mutationFn: () => setPrWatchPolling(watch.id, !pollingEnabled),
+    onSuccess() {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
+    },
+  });
+  const checkedLabel = watch.lastCheckedAt
+    ? `checked ${relativeTime(watch.lastCheckedAt)}`
+    : 'not checked';
+  const nextPollLabel = !pollingEnabled
+    ? 'polling paused'
+    : watch.nextRunAt
+      ? `next ${relativeTime(watch.nextRunAt)}`
+      : 'next poll pending';
+
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
       <div className="flex items-start justify-between gap-2">
@@ -91,7 +126,9 @@ function WatchRow({ watch }: { watch: PrWatch }) {
         <Badge className={statusClass(watch.status)}>{watch.status}</Badge>
       </div>
       <div className="mt-2 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
-        <span>until {watch.desiredTerminalState}</span>
+        <span className="min-w-0 truncate">
+          until {watch.desiredTerminalState} · {checkedLabel} · {nextPollLabel}
+        </span>
         <span className="flex shrink-0 gap-1.5">
           <SessionReferenceButton
             kind="watch"
@@ -111,7 +148,7 @@ function WatchRow({ watch }: { watch: PrWatch }) {
           />
           {watch.url ? (
             <Button
-              className="h-5 border-line bg-transparent px-1.5 py-0 text-[10px] text-muted"
+              className="min-h-[28px] border-line bg-transparent px-2 py-1 text-[10px] text-muted"
               onClick={() =>
                 window.open(
                   watch.url ?? undefined,
@@ -124,8 +161,65 @@ function WatchRow({ watch }: { watch: PrWatch }) {
               open
             </Button>
           ) : null}
+          <Button
+            className="min-h-[28px] border-line bg-transparent px-2 py-1 text-[10px] text-muted"
+            disabled={pollingMutation.isPending}
+            onClick={() => pollingMutation.mutate()}
+            title={
+              pollingMutation.error
+                ? queryErrorMessage(pollingMutation.error)
+                : undefined
+            }
+            type="button"
+          >
+            {pollingMutation.isPending
+              ? pollingEnabled
+                ? 'pausing'
+                : 'resuming'
+              : pollingEnabled
+                ? 'pause'
+                : 'resume'}
+          </Button>
+          <Button
+            className="min-h-[28px] border-line bg-transparent px-2 py-1 text-[10px] text-muted hover:border-accent hover:text-accent"
+            disabled={removeMutation.isPending || pollingMutation.isPending}
+            onClick={() => setConfirmingRemove(true)}
+            type="button"
+          >
+            stop
+          </Button>
         </span>
       </div>
+      {confirmingRemove ? (
+        <div className="mt-2 border border-accent/50 bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-accent">Remove this watch?</span>
+            <span className="flex gap-1.5">
+              <Button
+                className="min-h-[28px] border-accent bg-transparent px-2 py-1 text-[10px] text-accent"
+                disabled={removeMutation.isPending}
+                onClick={() => removeMutation.mutate()}
+                type="button"
+              >
+                confirm
+              </Button>
+              <Button
+                className="min-h-[28px] bg-transparent px-2 py-1 text-[10px] text-muted"
+                disabled={removeMutation.isPending}
+                onClick={() => setConfirmingRemove(false)}
+                type="button"
+              >
+                cancel
+              </Button>
+            </span>
+          </div>
+          {removeMutation.error ? (
+            <p className="mt-1 text-accent">
+              {queryErrorMessage(removeMutation.error)}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -144,8 +238,8 @@ function WatchState({ title, detail }: { title: string; detail: string }) {
 
 function statusClass(status: string) {
   if (status === 'green') return 'border-primary text-primary';
-  if (status === 'attention-needed' || status === 'closed') {
-    return 'border-accent text-accent';
-  }
+  if (status === 'attention-needed') return 'border-accent text-accent';
+  if (status === 'closed' || status === 'merged')
+    return 'border-line text-muted';
   return '';
 }

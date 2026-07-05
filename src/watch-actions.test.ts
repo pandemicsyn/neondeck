@@ -13,6 +13,7 @@ import {
   refreshRefWatch,
   refreshPrWatch,
   removePrWatch,
+  setPrWatchPolling,
 } from './modules/watches';
 import { runtimePaths } from './runtime-home';
 import type {
@@ -330,6 +331,52 @@ describe('PR watch actions', () => {
             source: 'watch-pr-until-prod',
             sourceWatchId: 'pandemicsyn/neondeck#123',
           }),
+        }),
+      ]),
+    );
+  });
+
+  it('pauses and resumes linked release watch jobs for until prod PR watches', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await addPrWatch({ ref: 'neondeck#123 until prod' }, paths, async () =>
+      prDetail({ state: 'open', updatedAt: '2026-06-27T20:00:00Z' }),
+    );
+
+    await setPrWatchPolling(
+      { id: 'pandemicsyn/neondeck#123', enabled: false },
+      paths,
+    );
+
+    await expect(listJobs(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'watch:pandemicsyn/neondeck#123',
+          enabled: false,
+        }),
+        expect.objectContaining({
+          id: 'release:neondeck',
+          enabled: false,
+        }),
+      ]),
+    );
+
+    await setPrWatchPolling(
+      { id: 'pandemicsyn/neondeck#123', enabled: true },
+      paths,
+    );
+
+    await expect(listJobs(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'watch:pandemicsyn/neondeck#123',
+          enabled: true,
+        }),
+        expect.objectContaining({
+          id: 'release:neondeck',
+          enabled: true,
         }),
       ]),
     );

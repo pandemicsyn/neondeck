@@ -11,8 +11,15 @@ import {
   type LearningOperatorState,
   type LearningReviewRecord,
 } from '../api';
-import { EmptyState } from '../App';
-import { Badge, Button, ScrollArea } from '../components/ui';
+import {
+  Badge,
+  Button,
+  EmptyState,
+  Metric,
+  MiniEmpty,
+  ScrollArea,
+} from '../components/ui';
+import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 import { parsePositiveIntegerConfig } from './config';
@@ -429,25 +436,6 @@ function LearningActions() {
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="border border-line bg-soft px-2 py-1">
-      <p className="truncate text-[9.5px] uppercase tracking-[0.12em]">
-        {label}
-      </p>
-      <p className="mt-0.5 text-[13px] text-ink">{value}</p>
-    </div>
-  );
-}
-
-function MiniEmpty({ label }: { label: string }) {
-  return (
-    <div className="border border-line bg-soft px-2.5 py-2 font-mono text-[10px] text-muted">
-      {label}
-    </div>
-  );
-}
-
 function tabClass(active: boolean) {
   return active
     ? 'border border-primary bg-soft px-1.5 py-1 font-mono text-[10px] text-primary'
@@ -499,15 +487,4 @@ function valuePreview(value: unknown) {
 
 function countTotal(counts: Record<string, number>) {
   return Object.values(counts).reduce((total, value) => total + value, 0);
-}
-
-function relativeTime(value: string) {
-  const deltaMs = Date.now() - Date.parse(value);
-  if (!Number.isFinite(deltaMs)) return value;
-  const minutes = Math.max(0, Math.floor(deltaMs / 60_000));
-  if (minutes < 1) return 'now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
 }

@@ -109,6 +109,9 @@ export type AutopilotPreparedDiff = {
 
 export type AutopilotApproval = {
   id: string;
+  source: 'execution' | 'prepared-diff';
+  preparedDiffId: string | null;
+  approvalType: 'push' | 'revision' | 'abandon' | 'verification' | null;
   repoId: string | null;
   repoFullName: string | null;
   prNumber: number | null;
@@ -313,6 +316,11 @@ export const preparedDiffSchema = v.object({
 });
 export const approvalSchema = v.object({
   id: v.string(),
+  source: v.picklist(['execution', 'prepared-diff']),
+  preparedDiffId: v.nullable(v.string()),
+  approvalType: v.nullable(
+    v.picklist(['push', 'revision', 'abandon', 'verification']),
+  ),
   repoId: v.nullable(v.string()),
   repoFullName: v.nullable(v.string()),
   prNumber: v.nullable(v.number()),

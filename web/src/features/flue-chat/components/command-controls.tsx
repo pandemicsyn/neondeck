@@ -1,31 +1,49 @@
 import type { NeonCommandResult } from '../../../api';
-import { Badge } from '../../../components/ui';
+import { Badge, Button } from '../../../components/ui';
 import type { FlueChatCommand } from '../types';
 
 export function CommandResultSummary({
-  latest,
-  runningCommand,
+  event,
+  onAsk,
 }: {
-  latest: NeonCommandResult | undefined;
-  runningCommand: string | undefined;
+  event: {
+    input: string;
+    status: 'running' | 'completed' | 'failed';
+    result?: (NeonCommandResult & { flueRunId?: string }) | undefined;
+  };
+  onAsk?: () => void;
 }) {
-  if (!latest && !runningCommand) return null;
-
+  const failed = event.result?.ok === false || event.status === 'failed';
   return (
     <section className="border border-line bg-soft px-3 py-2 font-mono text-[10.5px] leading-4">
       <div className="flex items-center justify-between gap-3">
         <span
           className={
-            latest?.ok === false || !latest
+            failed
               ? 'min-w-0 truncate text-accent'
               : 'min-w-0 truncate text-primary'
           }
         >
-          {runningCommand ?? latest?.input}
+          {event.input}
         </span>
-        <Badge>{runningCommand ? 'running' : latest?.status}</Badge>
+        <Badge>{event.status}</Badge>
       </div>
-      {latest ? <p className="mt-1 text-muted">{latest.message}</p> : null}
+      {event.result ? (
+        <div className="mt-1 flex items-start justify-between gap-3 text-muted">
+          <p className="min-w-0">{event.result.message}</p>
+          {onAsk ? (
+            <Button
+              className="min-h-[24px] shrink-0 bg-transparent px-1.5 py-0 text-[10px]"
+              onClick={onAsk}
+              type="button"
+            >
+              ask Neon
+            </Button>
+          ) : null}
+        </div>
+      ) : (
+        <p className="mt-1 text-muted">Command workflow is running.</p>
+      )}
     </section>
   );
 }

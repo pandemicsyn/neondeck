@@ -2,6 +2,7 @@ import type {
   AutopilotState,
   AutopilotRecoveryActionId,
   AutopilotRecoveryResponse,
+  AutopilotApprovalResolveResponse,
 } from './types';
 import { getJson, postJson } from './http';
 
@@ -30,5 +31,18 @@ export async function runAutopilotRecovery(input: {
   return postJson<AutopilotRecoveryResponse>(
     `/api/prepared-diffs/${encodeURIComponent(preparedDiffId)}/recovery/run`,
     body,
+  );
+}
+
+export async function resolveAutopilotApproval(
+  id: string,
+  decision: 'approve' | 'deny',
+) {
+  return postJson<AutopilotApprovalResolveResponse>(
+    `/api/autopilot/approvals/${encodeURIComponent(id)}/resolve`,
+    {
+      decision,
+      approverSurface: 'dashboard',
+    },
   );
 }

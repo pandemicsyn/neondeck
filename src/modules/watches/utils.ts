@@ -27,8 +27,8 @@ export function okResult(
   outcome: WatchOutcome | undefined,
   message: string,
   data: {
-    watch?: PrWatch | RefWatch;
-    watches?: Array<PrWatch | RefWatch>;
+    watch?: PrWatch | RefWatch | Record<string, unknown>;
+    watches?: Array<PrWatch | RefWatch | Record<string, unknown>>;
   } = {},
 ): WatchActionResult {
   return {

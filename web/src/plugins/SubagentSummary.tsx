@@ -7,9 +7,9 @@ import {
   type WorkflowEventRecord,
   type WorkflowObservability,
 } from '../api';
-import { EmptyState } from '../App';
-import { Badge, ScrollArea } from '../components/ui';
+import { Badge, EmptyState, MiniEmpty, ScrollArea } from '../components/ui';
 import { useConfigEvents } from '../lib/config-events';
+import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 import { parsePositiveIntegerConfig } from './config';
@@ -174,12 +174,21 @@ function EventRow({ event }: { event: WorkflowEventRecord }) {
   );
 }
 
-function subagentEvents(events: WorkflowEventRecord[]) {
+export function subagentEvents(events: WorkflowEventRecord[]) {
   return events.filter((event) => {
+    const structured = [event.operationKind, event.name]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    const structuredMatch =
+      structured.includes('subagent') ||
+      structured.includes('repo_researcher') ||
+      structured.includes('ci_investigator') ||
+      structured.includes('release_reviewer');
+    if (structuredMatch) return true;
+
     const haystack = [
-      event.name,
       event.message,
-      event.operationKind,
       event.operationId,
       JSON.stringify(event.summary ?? {}),
     ]
@@ -195,23 +204,4 @@ function subagentEvents(events: WorkflowEventRecord[]) {
       haystack.includes('delegat')
     );
   });
-}
-
-function MiniEmpty({ label }: { label: string }) {
-  return (
-    <div className="border border-line bg-soft px-2.5 py-2 font-mono text-[10px] text-muted">
-      {label}
-    </div>
-  );
-}
-
-function relativeTime(value: string) {
-  const delta = Date.now() - Date.parse(value);
-  if (!Number.isFinite(delta) || delta < 0) return 'now';
-  const minutes = Math.floor(delta / 60_000);
-  if (minutes < 1) return 'now';
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
 }

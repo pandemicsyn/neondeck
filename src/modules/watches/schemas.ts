@@ -122,6 +122,12 @@ export const watchPrRemoveInputSchema = v.object({
   confirm: v.optional(v.boolean()),
 });
 
+export const watchPrPollingInputSchema = v.object({
+  id: v.optional(nonEmptyStringSchema),
+  ref: v.optional(nonEmptyStringSchema),
+  enabled: v.boolean(),
+});
+
 export const watchPrRefreshInputSchema = v.object({
   id: v.optional(nonEmptyStringSchema),
   ref: v.optional(nonEmptyStringSchema),

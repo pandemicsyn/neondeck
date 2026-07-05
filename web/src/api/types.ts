@@ -709,6 +709,8 @@ export type AutopilotPreparedDiff = {
   localPath: string;
   title: string;
   status: string;
+  pushApprovalStatus: string;
+  verificationStatus: string;
   sourceOfTruth: 'worktree';
   summary: string;
   updatedAt: string;
@@ -716,6 +718,9 @@ export type AutopilotPreparedDiff = {
 
 export type AutopilotApproval = {
   id: string;
+  source: 'execution' | 'prepared-diff';
+  preparedDiffId: string | null;
+  approvalType: 'push' | 'revision' | 'abandon' | 'verification' | null;
   repoId: string | null;
   repoFullName: string | null;
   prNumber: number | null;
@@ -818,6 +823,18 @@ export type AutopilotRecoveryResponse = {
   requires?: string[];
   errors?: string[];
 };
+
+export type AutopilotApprovalResolveResponse =
+  | AutopilotRecoveryResponse
+  | {
+      ok: boolean;
+      action: string;
+      changed: boolean;
+      message: string;
+      approval?: ExecutionApproval;
+      requires?: string[];
+      errors?: string[];
+    };
 
 export type ConfigActionResult = {
   ok: boolean;
@@ -1008,7 +1025,7 @@ export type SchedulerJob = {
   enabled: boolean;
   intervalSeconds: number;
   config: unknown;
-  nextRunAt: string | null;
+  nextRunAt?: string | null;
   lastRunAt: string | null;
   lastOutcome: string | null;
   lastMessage: string | null;
@@ -1285,6 +1302,9 @@ export type PrWatch = {
   url: string | null;
   mergeCommitSha: string | null;
   lastCheckedAt: string | null;
+  nextRunAt?: string | null;
+  pollingEnabled?: boolean;
+  pollIntervalSeconds?: number | null;
   updatedAt: string;
 };
 
@@ -1294,6 +1314,17 @@ export type PrWatchResponse = {
   changed: boolean;
   message: string;
   watches: PrWatch[];
+};
+
+export type PrWatchMutationResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  watch?: PrWatch;
+  watches?: PrWatch[];
+  requires?: string[];
+  errors?: string[];
 };
 
 export type HostMetrics = {

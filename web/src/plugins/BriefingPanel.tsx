@@ -1,9 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { getWorkflowSummaries, type WorkflowSummary } from '../api';
-import { EmptyState } from '../App';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
-import { Badge, ScrollArea } from '../components/ui';
+import {
+  Badge,
+  EmptyState,
+  Metric,
+  MiniEmpty,
+  ScrollArea,
+} from '../components/ui';
+import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 import { parsePositiveIntegerConfig } from './config';
@@ -95,14 +101,20 @@ function BriefingView({
       <ScrollArea className="flex-1">
         <div className="space-y-2.5 p-3">
           <div className="grid grid-cols-3 gap-1.5 font-mono text-[10px] text-muted">
-            <Metric label="repos" value={data.repos} />
-            <Metric label="prs" value={data.reviewQueue} />
-            <Metric label="alerts" value={data.notifications} />
+            <Metric label="repos" value={metricValue(data.repos)} />
+            <Metric label="prs" value={metricValue(data.reviewQueue)} />
+            <Metric label="alerts" value={metricValue(data.notifications)} />
           </div>
           <div className="grid grid-cols-2 gap-1.5 font-mono text-[10px] text-muted">
-            <Metric label="watches" value={data.watches} />
-            <Metric label="jobs" value={data.jobs} />
+            <Metric label="watches" value={metricValue(data.watches)} />
+            <Metric label="jobs" value={metricValue(data.jobs)} />
           </div>
+          {data.partial ? (
+            <p className="border border-line bg-soft px-2.5 py-2 text-[10.5px] leading-4 text-muted">
+              Briefing summary is missing some expected fields; showing partial
+              data instead of filling missing values with zero.
+            </p>
+          ) : null}
           <section>
             <div className="mb-1.5 flex items-center justify-between font-mono text-[10px] tracking-[0.12em]">
               <span className="text-accent">TOP ACTIONS</span>
@@ -140,12 +152,20 @@ function BriefingView({
 
 function readBriefing(summary: unknown) {
   const data = readRecord(readRecord(summary).data);
+  const repos = readNumber(readRecord(data.repos).count);
+  const reviewQueue = readNumber(readRecord(data.reviewQueue).count);
+  const watches = readNumber(readRecord(data.watches).active);
+  const jobs = readNumber(readRecord(data.jobs).active);
+  const notifications = readNumber(readRecord(data.notifications).unread);
   return {
-    repos: readNumber(readRecord(data.repos).count),
-    reviewQueue: readNumber(readRecord(data.reviewQueue).count),
-    watches: readNumber(readRecord(data.watches).active),
-    jobs: readNumber(readRecord(data.jobs).active),
-    notifications: readNumber(readRecord(data.notifications).unread),
+    repos,
+    reviewQueue,
+    watches,
+    jobs,
+    notifications,
+    partial: [repos, reviewQueue, watches, jobs, notifications].some(
+      (value) => value === null,
+    ),
     topActions: readArray(data.topActions).map(readAction),
   };
 }
@@ -166,7 +186,7 @@ function briefingSummaryText(data: ReturnType<typeof readBriefing>) {
     .slice(0, 3)
     .map((action) => action.title)
     .join('; ');
-  return `Briefing summary: ${data.repos} repos, ${data.reviewQueue} PRs, ${data.watches} watches, ${data.notifications} alerts. Top actions: ${top || 'none'}.`;
+  return `Briefing summary: ${summaryValue(data.repos)} repos, ${summaryValue(data.reviewQueue)} PRs, ${summaryValue(data.watches)} watches, ${summaryValue(data.notifications)} alerts. Top actions: ${top || 'none'}.`;
 }
 
 function readRecord(value: unknown): Record<string, unknown> {
@@ -180,37 +200,17 @@ function readArray(value: unknown): unknown[] {
 }
 
 function readNumber(value: unknown) {
-  return typeof value === 'number' ? value : 0;
+  return typeof value === 'number' ? value : null;
 }
 
 function readString(value: unknown) {
   return typeof value === 'string' ? value : undefined;
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="border border-line bg-field px-2 py-1">
-      <span className="text-primary">{value}</span>
-      <span className="ml-1">{label}</span>
-    </div>
-  );
+function metricValue(value: number | null) {
+  return value === null ? 'n/a' : value;
 }
 
-function MiniEmpty({ label }: { label: string }) {
-  return (
-    <div className="border border-line bg-soft px-2.5 py-2 font-mono text-[10px] text-muted">
-      {label}
-    </div>
-  );
-}
-
-function relativeTime(value: string) {
-  const delta = Date.now() - Date.parse(value);
-  if (!Number.isFinite(delta) || delta < 0) return 'now';
-  const minutes = Math.floor(delta / 60_000);
-  if (minutes < 1) return 'now';
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
+function summaryValue(value: number | null) {
+  return value === null ? 'unknown' : String(value);
 }

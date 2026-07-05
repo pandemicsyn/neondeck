@@ -6,8 +6,13 @@ import {
   type MemoryRecord,
   type MemoryScope,
 } from '../api';
-import { EmptyState } from '../App';
-import { Badge, Button, ScrollArea } from '../components/ui';
+import {
+  Badge,
+  Button,
+  EmptyState,
+  MiniEmpty,
+  ScrollArea,
+} from '../components/ui';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 import { parsePositiveIntegerConfig } from './config';
@@ -211,12 +216,4 @@ function scopeClass(scope: MemoryScope) {
   if (scope === 'project') return 'border-primary text-primary';
   if (scope === 'watch') return 'border-accent text-accent';
   return '';
-}
-
-function MiniEmpty({ label }: { label: string }) {
-  return (
-    <div className="border border-line bg-soft px-2.5 py-2 font-mono text-[10px] text-muted">
-      {label}
-    </div>
-  );
 }

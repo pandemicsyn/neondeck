@@ -283,6 +283,9 @@ export function approvalFromExecution(
   );
   return {
     id: approval.id,
+    source: 'execution',
+    preparedDiffId: null,
+    approvalType: null,
     repoId: worktree?.repoId ?? null,
     repoFullName: worktree?.repoFullName ?? null,
     prNumber: worktree?.prNumber ?? null,
@@ -307,6 +310,9 @@ export function approvalFromPreparedDiff(
   );
   return {
     id: approval.id,
+    source: 'prepared-diff',
+    preparedDiffId: approval.preparedDiffId,
+    approvalType: approval.approvalType,
     repoId: preparedDiff?.repoId ?? null,
     repoFullName: preparedDiff?.repoFullName ?? null,
     prNumber: preparedDiff?.prNumber ?? null,

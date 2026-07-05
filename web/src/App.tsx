@@ -6,7 +6,7 @@ import {
   openChatSessionEventStream,
   openConfigEventStream,
 } from './api';
-import { Card } from './components/ui';
+import { BootState, Card, EmptyState } from './components/ui';
 import {
   configEventTouchesFile,
   dispatchConfigChangeEvent,
@@ -62,8 +62,14 @@ export function App() {
 
   useEffect(() => {
     if (!config) return;
-    const resolved = resolveTheme(config.theme);
-    document.documentElement.dataset.theme = resolved;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const applyTheme = () => {
+      document.documentElement.dataset.theme = resolveTheme(config.theme);
+    };
+    applyTheme();
+    if (config.theme !== 'system') return;
+    media.addEventListener('change', applyTheme);
+    return () => media.removeEventListener('change', applyTheme);
   }, [config]);
 
   if (error) {
@@ -244,6 +250,7 @@ function DashboardPanel({
 }) {
   const initialTabId = region.defaultTab ?? region.tabs[0]?.id ?? '';
   const [activeTabId, setActiveTabId] = useState(initialTabId);
+  const [focusPulse, setFocusPulse] = useState(false);
   const defaultTabRef = useRef({ regionId: region.id, tabId: initialTabId });
   const activeTab =
     region.tabs.find((tab) => tab.id === activeTabId) ?? region.tabs[0];
@@ -269,6 +276,24 @@ function DashboardPanel({
     if (region.tabs.some((tab) => tab.id === activeTabId)) return;
     setActiveTabId(initialTabId);
   }, [activeTabId, initialTabId, region.id, region.tabs]);
+
+  useEffect(() => {
+    function handleFocusChat(event: Event) {
+      const detail = (event as CustomEvent<{ pluginId?: string }>).detail;
+      const targetPluginId = detail?.pluginId ?? 'flue-chat';
+      const tab = region.tabs.find(
+        (entry) => entry.pluginId === targetPluginId,
+      );
+      if (!tab) return;
+      setActiveTabId(tab.id);
+      setFocusPulse(true);
+      window.setTimeout(() => setFocusPulse(false), 900);
+    }
+
+    window.addEventListener('neondeck:focus-chat', handleFocusChat);
+    return () =>
+      window.removeEventListener('neondeck:focus-chat', handleFocusChat);
+  }, [region.tabs]);
 
   // In column mode an error frame must stay visible, not be capped under the
   // data band's max-height. Promote the failing region to the agent role so it
@@ -318,6 +343,7 @@ function DashboardPanel({
   return (
     <PanelFrame
       regionRole={role}
+      highlight={focusPulse}
       style={style}
       title={region.title}
       variant={region.id}
@@ -383,12 +409,14 @@ function RegionTabs({
 
 function PanelFrame({
   children,
+  highlight = false,
   regionRole,
   style,
   title,
   variant,
 }: {
   children: React.ReactNode;
+  highlight?: boolean;
   regionRole: RegionRole;
   style: React.CSSProperties;
   title: string;
@@ -397,7 +425,9 @@ function PanelFrame({
   if (variant === 'statusline') {
     return (
       <Card
-        className="panel panel-status min-h-0 overflow-hidden border-x-0 border-t-0"
+        className={`panel panel-status min-h-0 overflow-hidden border-x-0 border-t-0 ${
+          highlight ? 'ring-1 ring-primary' : ''
+        }`}
         data-region-role={regionRole}
         style={style}
       >
@@ -408,7 +438,9 @@ function PanelFrame({
 
   return (
     <Card
-      className={`panel panel-${variant} min-h-0 overflow-hidden border-y-0 border-l-0`}
+      className={`panel panel-${variant} min-h-0 overflow-hidden border-y-0 border-l-0 ${
+        highlight ? 'ring-1 ring-primary' : ''
+      }`}
       data-region-role={regionRole}
       style={style}
     >
@@ -416,33 +448,6 @@ function PanelFrame({
         {children}
       </div>
     </Card>
-  );
-}
-
-export function EmptyState({
-  title,
-  detail,
-}: {
-  title: string;
-  detail: string;
-}) {
-  return (
-    <div className="flex h-full min-h-0 flex-col items-center justify-center gap-2 px-4 text-center">
-      <div className="miami-accent h-1 w-12" />
-      <p className="text-[13px] font-semibold text-ink">{title}</p>
-      <p className="max-w-[34ch] text-xs leading-5 text-muted">{detail}</p>
-    </div>
-  );
-}
-
-function BootState({ title, detail }: { title: string; detail: string }) {
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-bg text-ink">
-      <section className="border border-line bg-panel px-5 py-4">
-        <h1 className="text-base font-semibold">{title}</h1>
-        <p className="mt-1 text-sm text-muted">{detail}</p>
-      </section>
-    </main>
   );
 }
 

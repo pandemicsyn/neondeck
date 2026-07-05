@@ -160,6 +160,51 @@ export async function deleteJob(id: string, paths = runtimePaths()) {
   }
 }
 
+export async function setJobEnabled(
+  id: string,
+  enabled: boolean,
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const existing = readJob(paths, id);
+  if (!existing) return undefined;
+
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+
+  try {
+    database
+      .prepare(
+        `
+        UPDATE jobs
+        SET enabled = ?, updated_at = ?
+        WHERE id = ?;
+      `,
+      )
+      .run(enabled ? 1 : 0, now, id);
+  } finally {
+    database.close();
+  }
+
+  return readJob(paths, id);
+}
+
+export async function setJobsEnabledByConfigField(
+  field: string,
+  value: string,
+  enabled: boolean,
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const jobs = await listJobs(paths);
+  const updated = await Promise.all(
+    jobs
+      .filter((job) => jobConfigFieldEquals(job, field, value))
+      .map((job) => setJobEnabled(job.id, enabled, paths)),
+  );
+  return updated.filter((job): job is JobRecord => Boolean(job));
+}
+
 export async function deleteJobsByConfigField(
   field: string,
   value: string,
@@ -169,13 +214,7 @@ export async function deleteJobsByConfigField(
   const jobs = await listJobs(paths);
   await Promise.all(
     jobs
-      .filter(
-        (job) =>
-          job.config &&
-          typeof job.config === 'object' &&
-          !Array.isArray(job.config) &&
-          (job.config as Record<string, unknown>)[field] === value,
-      )
+      .filter((job) => jobConfigFieldEquals(job, field, value))
       .map((job) => deleteJob(job.id, paths)),
   );
 }
@@ -233,6 +272,15 @@ function readJob(paths: RuntimePaths, id: string): JobRecord | undefined {
   } finally {
     database.close();
   }
+}
+
+function jobConfigFieldEquals(job: JobRecord, field: string, value: string) {
+  return (
+    job.config &&
+    typeof job.config === 'object' &&
+    !Array.isArray(job.config) &&
+    (job.config as Record<string, unknown>)[field] === value
+  );
 }
 
 function readJobRow(row: unknown): JobRecord {

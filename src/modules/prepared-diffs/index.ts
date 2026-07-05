@@ -38,4 +38,7 @@ export {
   openPreparedDiffWorktree,
   runPreparedDiffVerification,
 } from './service';
-export { readPreparedDiffRecord } from './store';
+export {
+  readApprovalRecord as readPreparedDiffApprovalRecord,
+  readPreparedDiffRecord,
+} from './store';

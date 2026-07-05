@@ -5,7 +5,14 @@ import {
   type WorkflowEventRecord,
   type WorkflowObservability,
 } from '../api';
-import { Badge, ScrollArea } from '../components/ui';
+import {
+  Badge,
+  EmptyState,
+  Metric,
+  MiniEmpty,
+  ScrollArea,
+} from '../components/ui';
+import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 import { parsePositiveIntegerConfig } from './config';
@@ -66,7 +73,7 @@ export const WorkflowObservabilityPanelPlugin = {
 
     if (isLoading) {
       return (
-        <PanelEmptyState
+        <EmptyState
           title="Workflows loading"
           detail="Reading recent Flue observations."
         />
@@ -75,7 +82,7 @@ export const WorkflowObservabilityPanelPlugin = {
 
     if (error) {
       return (
-        <PanelEmptyState
+        <EmptyState
           title="Workflows unavailable"
           detail={queryErrorMessage(error)}
         />
@@ -83,9 +90,7 @@ export const WorkflowObservabilityPanelPlugin = {
     }
 
     if (!workflows) {
-      return (
-        <PanelEmptyState title="Workflows unavailable" detail="No data." />
-      );
+      return <EmptyState title="Workflows unavailable" detail="No data." />;
     }
 
     return (
@@ -302,42 +307,4 @@ function workflowCounts(workflows: WorkflowObservability) {
       workflows.recentOperations.length,
     events: workflows.recentEvents.length,
   };
-}
-
-function Metric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="border border-line bg-field px-2 py-1">
-      <p className="truncate text-muted">{label}</p>
-      <p className="mt-0.5 text-[12px] text-ink">{value}</p>
-    </div>
-  );
-}
-
-function MiniEmpty({ label }: { label: string }) {
-  return (
-    <div className="border border-line bg-soft px-2.5 py-2 font-mono text-[10px] text-muted">
-      {label}
-    </div>
-  );
-}
-
-function PanelEmptyState({ title, detail }: { title: string; detail: string }) {
-  return (
-    <div className="flex h-full min-h-0 flex-col items-center justify-center gap-2 px-4 text-center">
-      <div className="miami-accent h-1 w-12" />
-      <p className="text-[13px] font-semibold text-ink">{title}</p>
-      <p className="max-w-[34ch] text-xs leading-5 text-muted">{detail}</p>
-    </div>
-  );
-}
-
-function relativeTime(value: string) {
-  const delta = Date.now() - Date.parse(value);
-  if (!Number.isFinite(delta) || delta < 0) return 'now';
-  const minutes = Math.floor(delta / 60_000);
-  if (minutes < 1) return 'now';
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
 }

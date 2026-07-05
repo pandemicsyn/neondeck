@@ -19,10 +19,12 @@ import {
   openPreparedDiffWorktree,
   readPreparedDiffChangedFiles,
   readPreparedDiffFileDiff,
+  readPreparedDiffApprovalRecord,
   readPreparedDiffSummary,
   requestPreparedDiffRevision,
   runPreparedDiffVerification,
 } from '../../modules/prepared-diffs';
+import { resolveExecutionApproval } from '../../modules/execution';
 import type { RuntimePaths } from '../../runtime-home';
 import {
   preparedDiffHttpStatus,
@@ -62,6 +64,70 @@ export function createAutopilotRoutes(paths: RuntimePaths) {
     const result = await commentPrAutofixResult(await safeJsonBody(c), paths);
     recordHandledPrApiResult(paths, 'api:comment_pr_autofix_result', result);
     return c.json(result, result.ok ? 200 : 400);
+  });
+
+  routes.post('/autopilot/approvals/:id/resolve', async (c) => {
+    const input = await safeJsonObject(c);
+    const decision = input.decision;
+    if (decision !== 'approve' && decision !== 'deny') {
+      return c.json(
+        {
+          ok: false,
+          action: 'autopilot_approval_resolve',
+          changed: false,
+          message: 'Decision must be approve or deny.',
+          errors: ['decision is required.'],
+        },
+        400,
+      );
+    }
+
+    const executionResult = await resolveExecutionApproval(
+      {
+        id: c.req.param('id'),
+        decision: decision === 'approve' ? 'allow-once' : 'deny',
+        approverSurface: 'dashboard',
+      },
+      paths,
+    );
+    if (executionResult.ok || !approvalNotFound(executionResult.message)) {
+      return c.json(executionResult, executionResult.ok ? 200 : 400);
+    }
+
+    const approval = readPreparedDiffApprovalRecord(c.req.param('id'), paths);
+    if (!approval) {
+      return c.json(
+        {
+          ok: false,
+          action: 'autopilot_approval_resolve',
+          changed: false,
+          message: `Autopilot approval "${c.req.param('id')}" was not found.`,
+          errors: ['approval not found.'],
+        },
+        404,
+      );
+    }
+
+    const result =
+      decision === 'approve'
+        ? await approvePreparedDiffPush(
+            {
+              preparedDiffId: approval.preparedDiffId,
+              confirm: true,
+              reason: 'Approved from dashboard Autopilot panel.',
+              approverSurface: 'dashboard',
+            },
+            paths,
+          )
+        : await requestPreparedDiffRevision(
+            {
+              preparedDiffId: approval.preparedDiffId,
+              reason: 'Denied from dashboard Autopilot panel.',
+              approverSurface: 'dashboard',
+            },
+            paths,
+          );
+    return c.json(result, preparedDiffHttpStatus(result));
   });
 
   routes.get('/prepared-diffs', async (c) => {
@@ -183,4 +249,8 @@ export function createAutopilotRoutes(paths: RuntimePaths) {
   });
 
   return routes;
+}
+
+function approvalNotFound(message: string | undefined) {
+  return Boolean(message?.includes('was not found'));
 }
