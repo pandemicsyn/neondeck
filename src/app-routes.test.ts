@@ -516,11 +516,30 @@ describe('app API safety routes', () => {
     const token = process.env.GITHUB_TOKEN;
     const previousFetch = globalThis.fetch;
     process.env.GITHUB_TOKEN = 'server-token';
-    globalThis.fetch = vi.fn<typeof fetch>(async (input, init) => {
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
       expect(init?.headers).toMatchObject({
         Authorization: 'Bearer server-token',
       });
       const url = String(input);
+      if (
+        url === 'https://api.github.com/repos/pandemicsyn/neondeck/pulls/123'
+      ) {
+        return new Response(
+          JSON.stringify({
+            number: 123,
+            title: 'PR 123',
+            html_url: 'https://github.com/pandemicsyn/neondeck/pull/123',
+            state: 'open',
+            draft: false,
+            merged: false,
+            merge_commit_sha: null,
+            updated_at: '2026-07-05T14:00:00Z',
+            head: { sha: 'head123' },
+            base: { ref: 'main' },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
       expect(url).toContain(
         'https://api.github.com/repos/pandemicsyn/neondeck/pulls/123/files',
       );
@@ -539,17 +558,26 @@ describe('app API safety routes', () => {
         { status: 200, headers: { 'content-type': 'application/json' } },
       );
     });
+    globalThis.fetch = fetchMock;
     try {
       const response = await app.request(
-        'http://localhost/api/github/prs/pandemicsyn/neondeck/123/files',
+        'http://localhost/api/github/prs/pandemicsyn/neondeck/123/files?head=head123',
         { headers: { host: 'localhost' } },
       );
       const body = (await response.json()) as {
         ok: boolean;
         data?: { files?: Array<{ path?: string; patch?: string | null }> };
       };
+      const cachedResponse = await app.request(
+        'http://localhost/api/github/prs/pandemicsyn/neondeck/123/files?head=head123',
+        { headers: { host: 'localhost' } },
+      );
+      const cachedBody = (await cachedResponse.json()) as typeof body;
 
       expect(response.status).toBe(200);
+      expect(cachedResponse.status).toBe(200);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(cachedBody).toEqual(body);
       expect(body).toMatchObject({
         ok: true,
         data: {

@@ -8,6 +8,7 @@ import {
   discardPrReviewDraft,
   fetchPullRequestEventState,
   fetchPullRequestFiles,
+  fetchPullRequestFilesWithCache,
   GitHubPrReviewSubmitError,
   postPullRequestComment,
   readLivePrReviewDraft,
@@ -35,6 +36,7 @@ import {
 import {
   prCommentInputSchema,
   prEventTargetInputSchema,
+  prFilesInputSchema,
   prReviewDraftCommentInputSchema,
   prReviewDraftCommentUpdateInputSchema,
   prReviewDraftInputSchema,
@@ -126,12 +128,12 @@ export async function getGitHubPrReviewThreads(
 }
 
 export async function getGitHubPrFiles(
-  input: v.InferInput<typeof prEventTargetInputSchema>,
+  input: v.InferInput<typeof prFilesInputSchema>,
   paths: RuntimePaths = runtimePaths(),
   dependencies: PrEventStateDependencies = {},
 ): Promise<PrEventActionResult> {
   await ensureRuntimeHome(paths);
-  const parsed = v.safeParse(prEventTargetInputSchema, input);
+  const parsed = v.safeParse(prFilesInputSchema, input);
   if (!parsed.success) {
     return failResult('github_pr_files_get', 'Invalid PR files input.', {
       errors: [v.summarize(parsed.issues)],
@@ -150,7 +152,12 @@ export async function getGitHubPrFiles(
   }
 
   const resolved = await resolvePullRequestTarget(
-    parsed.output,
+    {
+      watchId: parsed.output.watchId,
+      ref: parsed.output.ref,
+      repo: parsed.output.repo,
+      prNumber: parsed.output.prNumber,
+    },
     paths,
     'github_pr_files_get',
   );
@@ -158,11 +165,15 @@ export async function getGitHubPrFiles(
 
   try {
     const fetcher = dependencies.fetchPullRequestFiles ?? fetchPullRequestFiles;
-    const diff = await fetcher({
+    const diff = await fetchPullRequestFilesWithCache({
       token,
       owner: resolved.target.owner,
       repo: resolved.target.repo,
       number: resolved.target.number,
+      headSha: parsed.output.headSha ?? null,
+      databasePath: paths.neondeckDatabase,
+      fetcher,
+      fetchHeadSha: dependencies.fetchPullRequestHeadSha,
     });
 
     return okResult(

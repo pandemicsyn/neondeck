@@ -11,6 +11,7 @@ export {
   fetchPullRequestEventState,
   fetchPullRequestFiles,
 } from './pull-requests';
+export { fetchPullRequestFilesWithCache } from './pr-file-cache';
 export {
   fetchCheckRunDetails,
   fetchCheckSuites,

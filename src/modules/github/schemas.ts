@@ -110,6 +110,24 @@ export type GitHubPullRequestFile = {
   message: string | null;
 };
 
+export const githubPullRequestFileSchema = v.object({
+  path: v.string(),
+  previousPath: v.nullable(v.string()),
+  status: v.string(),
+  additions: v.number(),
+  deletions: v.number(),
+  changes: v.number(),
+  binary: v.boolean(),
+  generatedLike: v.boolean(),
+  patch: v.nullable(v.string()),
+  truncated: v.boolean(),
+  sha: v.nullable(v.string()),
+  htmlUrl: v.nullable(v.string()),
+  rawUrl: v.nullable(v.string()),
+  contentsUrl: v.nullable(v.string()),
+  message: v.nullable(v.string()),
+});
+
 export type GitHubPullRequestFiles = {
   repo: string;
   number: number;

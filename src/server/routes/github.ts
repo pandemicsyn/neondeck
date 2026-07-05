@@ -63,8 +63,9 @@ export function createGitHubRoutes(paths: RuntimePaths) {
       );
     }
 
+    const headSha = c.req.query('head')?.trim() || undefined;
     const result = await getGitHubPrFiles(
-      { repo: `${owner}/${repo}`, prNumber: number },
+      { repo: `${owner}/${repo}`, prNumber: number, headSha },
       paths,
     );
     return c.json(result, result.ok ? 200 : 400);

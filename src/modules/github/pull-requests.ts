@@ -316,7 +316,7 @@ function isDeletedFileStatus(status: string) {
   return status === 'removed' || status === 'deleted';
 }
 
-function summarizePullRequestFiles(
+export function summarizePullRequestFiles(
   files: GitHubPullRequestFile[],
 ): GitHubDiffSummary {
   return {
