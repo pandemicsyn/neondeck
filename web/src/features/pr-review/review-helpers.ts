@@ -1,7 +1,9 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
-import type {
-  GitHubPrReviewDraft,
-  GitHubPrReviewDraftComment,
+import {
+  ApiError,
+  type GitHubPrReviewDraft,
+  type GitHubPrReviewDraftComment,
+  type GitHubPrReviewSubmitResponse,
 } from '../../api';
 import { patchHasContent } from '../diff-viewer/helpers';
 import type { DiffFilePatch } from '../diff-viewer/types';
@@ -9,23 +11,24 @@ import type { DiffFilePatch } from '../diff-viewer/types';
 type PierreDiffSide = 'additions' | 'deletions';
 type PatchAnchor = { hunk: number; position: number };
 export type PatchAnchorIndex = Map<string, PatchAnchor>;
+export type GitHubReviewCommentInput = ReturnType<
+  typeof commentInputFromSelection
+>;
 
-export function commentInputFromSelection(selection: SelectedLineRange) {
-  const startPierreSide = normalizePierreSide(selection.side);
-  const endPierreSide = normalizePierreSide(
-    selection.endSide ?? selection.side,
-  );
-  const isReverseSameSide =
-    startPierreSide === endPierreSide && selection.start > selection.end;
-  const startLine = isReverseSameSide ? selection.end : selection.start;
-  const endLine = isReverseSameSide ? selection.start : selection.end;
-  const side = endPierreSide === 'deletions' ? 'LEFT' : 'RIGHT';
-  const startSide = startPierreSide === 'deletions' ? 'LEFT' : 'RIGHT';
-  const isRange = startLine !== endLine || startPierreSide !== endPierreSide;
+export function commentInputFromSelection(
+  selection: SelectedLineRange,
+  index?: PatchAnchorIndex,
+) {
+  const ordered = orderSelectionEndpoints(selection, index);
+  const side = ordered.endSide === 'deletions' ? 'LEFT' : 'RIGHT';
+  const startSide = ordered.startSide === 'deletions' ? 'LEFT' : 'RIGHT';
+  const isRange =
+    ordered.startLine !== ordered.endLine ||
+    ordered.startSide !== ordered.endSide;
   return {
     side,
-    line: endLine,
-    startLine: isRange ? startLine : null,
+    line: ordered.endLine,
+    startLine: isRange ? ordered.startLine : null,
     startSide: isRange ? startSide : null,
   } as const;
 }
@@ -38,11 +41,19 @@ export function staleDraftCommentIds(
   if (!draft) return stale;
   for (const comment of draft.comments) {
     const index = patchIndexesByPath.get(comment.path);
-    if (!index || !patchAnchorExists(index, comment)) {
+    if (!index || !commentAnchorExists(index, comment)) {
       stale.add(comment.id);
     }
   }
   return stale;
+}
+
+export function failingCommentIdsFromError(error: unknown) {
+  if (!(error instanceof ApiError)) return [];
+  const data = error.data as GitHubPrReviewSubmitResponse | undefined;
+  if (data?.data?.code !== 'github-review-submit-failed') return [];
+  const ids = data.data.failingCommentIds;
+  return Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : [];
 }
 
 export function patchAnchorIndexesByPath(files: DiffFilePatch[]) {
@@ -99,9 +110,12 @@ export function buildPatchAnchorIndex(patch: string | null | undefined) {
   return anchors;
 }
 
-function patchAnchorExists(
+export function commentAnchorExists(
   index: PatchAnchorIndex,
-  comment: GitHubPrReviewDraftComment,
+  comment: Pick<
+    GitHubPrReviewDraftComment,
+    'side' | 'line' | 'startLine' | 'startSide'
+  >,
 ) {
   const endAnchor = index.get(patchAnchorKey(comment.side, comment.line));
   if (!endAnchor) return false;
@@ -114,6 +128,44 @@ function patchAnchorExists(
     startAnchor.hunk === endAnchor.hunk &&
     startAnchor.position <= endAnchor.position
   );
+}
+
+function orderSelectionEndpoints(
+  selection: SelectedLineRange,
+  index: PatchAnchorIndex | undefined,
+) {
+  const first = {
+    side: normalizePierreSide(selection.side),
+    line: selection.start,
+  };
+  const second = {
+    side: normalizePierreSide(selection.endSide ?? selection.side),
+    line: selection.end,
+  };
+
+  const firstGitHubSide = first.side === 'deletions' ? 'LEFT' : 'RIGHT';
+  const secondGitHubSide = second.side === 'deletions' ? 'LEFT' : 'RIGHT';
+  const firstAnchor = index?.get(patchAnchorKey(firstGitHubSide, first.line));
+  const secondAnchor = index?.get(
+    patchAnchorKey(secondGitHubSide, second.line),
+  );
+  const isReverseByPatch =
+    firstAnchor &&
+    secondAnchor &&
+    firstAnchor.hunk === secondAnchor.hunk &&
+    firstAnchor.position > secondAnchor.position;
+  const isReverseSameSide =
+    first.side === second.side && first.line > second.line;
+  const isReverse = Boolean(isReverseByPatch || isReverseSameSide);
+
+  const start = isReverse ? second : first;
+  const end = isReverse ? first : second;
+  return {
+    startSide: start.side,
+    startLine: start.line,
+    endSide: end.side,
+    endLine: end.line,
+  };
 }
 
 function patchAnchorKey(

@@ -10,6 +10,7 @@ import type {
 import {
   getGitHubPrBranchPermissions,
   getGitHubPrRequestedChanges,
+  getGitHubPrReviewDraft,
   getGitHubPrReviewThreads,
   deleteGitHubPrReviewDraftComment,
   listPrWatchEventWatermarks,
@@ -17,6 +18,7 @@ import {
   neondeckPrEventTools,
   patchGitHubPrReviewDraftComment,
   postGitHubPrReviewDraftComment,
+  postGitHubPrReview,
   postGitHubPrComment,
   postGitHubPrThreadReply,
   postGitHubPrThreadResolution,
@@ -479,6 +481,39 @@ describe('PR event state watermarks', () => {
     });
 
     await expect(
+      patchGitHubPrReviewDraftComment(
+        { repo: 'neondeck', prNumber: 123 },
+        commentId ?? '',
+        {
+          path: 'src/next.ts',
+          side: 'LEFT',
+          line: 8,
+          startLine: 6,
+          startSide: 'LEFT',
+          body: 'Moved to a valid deleted range.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'github_pr_review_draft_comment_patch',
+      data: {
+        draft: {
+          comments: [
+            expect.objectContaining({
+              id: commentId,
+              path: 'src/next.ts',
+              side: 'LEFT',
+              line: 8,
+              startLine: 6,
+              startSide: 'LEFT',
+            }),
+          ],
+        },
+      },
+    });
+
+    await expect(
       deleteGitHubPrReviewDraftComment(
         { repo: 'neondeck', prNumber: 124 },
         commentId ?? '',
@@ -489,6 +524,61 @@ describe('PR event state watermarks', () => {
       action: 'github_pr_review_draft_comment_delete',
       message: 'Review draft comment does not belong to this pull request.',
     });
+  });
+
+  it('keeps outward PR review mutations scoped to configured repos', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    let submitted = false;
+    let replied = false;
+
+    await expect(
+      postGitHubPrReview(
+        { repo: 'external/private-repo', prNumber: 5 },
+        { draftId: 'draft-1', headSha: 'head123' },
+        paths,
+        {
+          submitPullRequestReview: async () => {
+            submitted = true;
+            throw new Error('should not submit');
+          },
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'github_pr_review_post',
+      requires: ['repo'],
+      message:
+        'Repository "external/private-repo" is not configured for PR reviews.',
+    });
+
+    await expect(
+      postGitHubPrThreadReply(
+        { repo: 'external/private-repo', prNumber: 5 },
+        'thread-1',
+        { text: 'Thanks.' },
+        paths,
+        {
+          fetchPullRequestReviewThread: async () => {
+            throw new Error('should not verify');
+          },
+          replyToPullRequestReviewThread: async () => {
+            replied = true;
+            throw new Error('should not reply');
+          },
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'github_pr_thread_reply_post',
+      requires: ['repo'],
+      message:
+        'Repository "external/private-repo" is not configured for review thread replies.',
+    });
+    expect(submitted).toBe(false);
+    expect(replied).toBe(false);
   });
 
   it('keeps live PR review thread mutations scoped to the route PR', async () => {
@@ -660,6 +750,45 @@ describe('PR event state watermarks', () => {
         draft: {
           verdict: 'request-changes',
           body: 'Edited body',
+        },
+      },
+    });
+  });
+
+  it('coalesces parallel review draft PUTs into one live draft', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    const results = await Promise.all(
+      Array.from({ length: 6 }, (_value, index) =>
+        putGitHubPrReviewDraft(
+          { repo: 'neondeck', prNumber: 123 },
+          {
+            headSha: 'head123',
+            body: `Body ${index}`,
+          },
+          paths,
+        ),
+      ),
+    );
+
+    const draftIds = results.map((result) => {
+      expect(result.ok).toBe(true);
+      const draft = (result.data as { draft?: { id?: string } } | undefined)
+        ?.draft;
+      expect(draft?.id).toEqual(expect.any(String));
+      return draft?.id;
+    });
+    expect(new Set(draftIds).size).toBe(1);
+    await expect(
+      getGitHubPrReviewDraft({ repo: 'neondeck', prNumber: 123 }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        draft: {
+          id: draftIds[0],
+          headSha: 'head123',
         },
       },
     });

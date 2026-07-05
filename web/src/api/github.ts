@@ -64,15 +64,18 @@ export async function putGitHubPrReviewDraft(input: {
   headSha: string;
   verdict?: GitHubPrReviewVerdict | null;
   body?: string | null;
+  reanchorHeadSha?: boolean;
 }) {
   const [owner, name] = parseRepo(input.repo);
   const body: {
     headSha: string;
     verdict?: GitHubPrReviewVerdict | null;
     body?: string | null;
+    reanchorHeadSha?: boolean;
   } = { headSha: input.headSha };
   if ('verdict' in input) body.verdict = input.verdict ?? null;
   if ('body' in input) body.body = input.body ?? null;
+  if (input.reanchorHeadSha) body.reanchorHeadSha = true;
   const response = await putJson<GitHubPrReviewDraftResponse>(
     `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/review-draft`,
     body,
@@ -114,11 +117,29 @@ export async function patchGitHubPrReviewDraftComment(input: {
   number: number;
   id: string;
   body: string;
+  path?: string;
+  side?: 'RIGHT' | 'LEFT';
+  line?: number;
+  startLine?: number | null;
+  startSide?: 'RIGHT' | 'LEFT' | null;
 }) {
   const [owner, name] = parseRepo(input.repo);
+  const body: {
+    body: string;
+    path?: string;
+    side?: 'RIGHT' | 'LEFT';
+    line?: number;
+    startLine?: number | null;
+    startSide?: 'RIGHT' | 'LEFT' | null;
+  } = { body: input.body };
+  if ('path' in input) body.path = input.path;
+  if ('side' in input) body.side = input.side;
+  if ('line' in input) body.line = input.line;
+  if ('startLine' in input) body.startLine = input.startLine ?? null;
+  if ('startSide' in input) body.startSide = input.startSide ?? null;
   const response = await patchJson<GitHubPrReviewDraftResponse>(
     `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/review-draft/comments/${encodeURIComponent(input.id)}`,
-    { body: input.body },
+    body,
   );
   if (!response.data?.draft) throw new Error(response.message);
   return response.data.draft;

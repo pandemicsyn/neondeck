@@ -67,6 +67,7 @@ export const GitHubPrListPlugin = {
     });
 
     const login = data?.login ? `@${data.login}` : '@you';
+    const reviewTarget = readReviewPopoutTarget();
     const items = data ? data.items.slice(0, config.limit) : [];
     const repoIds = new Map(
       (registry?.repos ?? []).map((repo) => [
@@ -105,6 +106,10 @@ export const GitHubPrListPlugin = {
             <ul>
               {items.map((item) => (
                 <PrRow
+                  initialShowReview={
+                    reviewTarget?.repo === item.repo &&
+                    reviewTarget.number === item.number
+                  }
                   item={item}
                   key={item.url}
                   repoId={repoIds.get(item.repo)}
@@ -119,13 +124,15 @@ export const GitHubPrListPlugin = {
 } satisfies DisplayPlugin<GitHubPrListConfig>;
 
 function PrRow({
+  initialShowReview,
   item,
   repoId,
 }: {
+  initialShowReview?: boolean;
   item: GitHubPullRequest;
   repoId: string | undefined;
 }) {
-  const [showReview, setShowReview] = useState(false);
+  const [showReview, setShowReview] = useState(Boolean(initialShowReview));
   const reviewPanelId = useId();
 
   return (
@@ -205,6 +212,15 @@ function PrRow({
       </div>
     </li>
   );
+}
+
+function readReviewPopoutTarget() {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  const repo = params.get('prReviewRepo')?.trim();
+  const number = Number(params.get('prReviewNumber'));
+  if (!repo || !Number.isInteger(number) || number < 1) return null;
+  return { repo, number };
 }
 
 function WatchPrButton({ item }: { item: GitHubPullRequest }) {

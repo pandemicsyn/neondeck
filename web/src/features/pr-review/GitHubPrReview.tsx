@@ -26,9 +26,12 @@ import {
   useGitHubPullRequestFiles,
 } from './queries';
 import {
+  commentAnchorExists,
   commentInputFromSelection,
+  failingCommentIdsFromError,
   patchAnchorIndexesByPath,
   staleDraftCommentIds,
+  type PatchAnchorIndex,
 } from './review-helpers';
 
 type ComposerState = {
@@ -54,7 +57,17 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
   const [replyingThreadId, setReplyingThreadId] = useState<string | null>(null);
   const [replyBody, setReplyBody] = useState('');
   const [reviewBody, setReviewBody] = useState('');
+  const [isReviewBodyFocused, setIsReviewBodyFocused] = useState(false);
+  const [hasPendingReviewBodyEdit, setHasPendingReviewBodyEdit] =
+    useState(false);
+  const [seededDraftId, setSeededDraftId] = useState<string | null>(null);
   const [verdict, setVerdict] = useState<GitHubPrReviewVerdict>('comment');
+  const [reanchoringCommentId, setReanchoringCommentId] = useState<
+    string | null
+  >(null);
+  const [submitFailedCommentIds, setSubmitFailedCommentIds] = useState<
+    Set<string>
+  >(() => new Set());
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const reviewThreads = useMemo(
     () => threadsQuery.data?.reviewThreads ?? [],
@@ -74,21 +87,31 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
     () => staleDraftCommentIds(draft, patchIndexesByPath),
     [draft, patchIndexesByPath],
   );
+  const blockedCommentIds = useMemo(
+    () => new Set([...staleCommentIds, ...submitFailedCommentIds]),
+    [staleCommentIds, submitFailedCommentIds],
+  );
   const cleanCommentIds = useMemo(
     () =>
       draft?.comments
-        .filter((comment) => !staleCommentIds.has(comment.id))
+        .filter((comment) => !blockedCommentIds.has(comment.id))
         .map((comment) => comment.id) ?? [],
-    [draft, staleCommentIds],
+    [blockedCommentIds, draft],
+  );
+  const staleDraftComments = useMemo(
+    () =>
+      draft?.comments.filter((comment) => blockedCommentIds.has(comment.id)) ??
+      [],
+    [blockedCommentIds, draft],
   );
   const annotationsByPath = useMemo(
     () =>
       mergeAnnotations(
         annotationsFromThreads(reviewThreads),
-        annotationsFromDraft(draft, staleCommentIds),
+        annotationsFromDraft(draft, blockedCommentIds),
         annotationsFromComposer(composer),
       ),
-    [composer, draft, reviewThreads, staleCommentIds],
+    [blockedCommentIds, composer, draft, reviewThreads],
   );
   const selectedThreads = useMemo(
     () => threadsForPath(reviewThreads, activePath),
@@ -115,6 +138,7 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
         mutations.discardDraft.error ??
         mutations.replyToThread.error ??
         mutations.setThreadResolution.error,
+      draft,
     ) ?? statusMessage;
 
   useEffect(() => {
@@ -123,9 +147,32 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
   }, [activePath, files]);
 
   useEffect(() => {
-    setReviewBody(draft?.body ?? '');
+    const nextDraftId = draft?.id ?? null;
+    if (seededDraftId !== nextDraftId) {
+      setReviewBody(draft?.body ?? '');
+      setSeededDraftId(nextDraftId);
+      setHasPendingReviewBodyEdit(false);
+    } else if (!isReviewBodyFocused && !hasPendingReviewBodyEdit) {
+      setReviewBody(draft?.body ?? '');
+    }
     setVerdict(draft?.verdict ?? 'comment');
-  }, [draft?.body, draft?.verdict]);
+  }, [
+    draft?.body,
+    draft?.id,
+    draft?.verdict,
+    hasPendingReviewBodyEdit,
+    isReviewBodyFocused,
+    seededDraftId,
+  ]);
+
+  useEffect(() => {
+    setSubmitFailedCommentIds((current) => {
+      if (current.size === 0) return current;
+      const liveIds = new Set(draft?.comments.map((comment) => comment.id));
+      const next = new Set([...current].filter((id) => liveIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [draft?.comments]);
 
   if (filesQuery.isLoading) {
     return <MiniEmpty label="Loading PR files." />;
@@ -144,6 +191,7 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
     next: Partial<{
       body: string | null;
       verdict: GitHubPrReviewVerdict | null;
+      reanchorHeadSha: boolean;
     }> = {},
   ) => {
     setStatusMessage(null);
@@ -154,12 +202,71 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
       headSha: currentHeadSha,
       ...('verdict' in next ? { verdict: next.verdict } : {}),
       ...('body' in next ? { body: next.body } : {}),
+      ...(next.reanchorHeadSha ? { reanchorHeadSha: true } : {}),
     });
   };
   const ensureDraft = async () => draft ?? (await saveDraft());
+  const beginReanchorComment = (commentId: string, path: string | null) => {
+    setComposer(null);
+    setComposerBody('');
+    setReanchoringCommentId(commentId);
+    if (path && files.some((file) => file.path === path)) {
+      setActivePath(path);
+    } else if (!activePath) {
+      setActivePath(firstRenderablePath(files) ?? null);
+    }
+    setStatusMessage('Select a new diff line to re-anchor the draft comment.');
+  };
+  const refreshDraftHead = async () => {
+    if (!draft) return;
+    setStatusMessage(null);
+    try {
+      await saveDraft({ reanchorHeadSha: true });
+      setSubmitFailedCommentIds(new Set());
+      setStatusMessage('Draft head updated to the current PR revision.');
+    } catch {
+      // React Query owns the visible error state.
+    }
+  };
   const onSelectionChange = (selection: SelectedLineRange | null) => {
     if (!selection || !activePath) return;
-    const annotation = annotationFromSelection(selection);
+    const index = patchIndexesByPath.get(activePath);
+    const input = commentInputFromSelection(selection, index);
+    if (index && !commentAnchorExists(index, input)) {
+      setStatusMessage('Selected range is not valid for the current patch.');
+      return;
+    }
+    if (reanchoringCommentId) {
+      const comment = draft?.comments.find(
+        (item) => item.id === reanchoringCommentId,
+      );
+      if (!comment) {
+        setReanchoringCommentId(null);
+        return;
+      }
+      setStatusMessage(null);
+      mutations.updateComment
+        .mutateAsync({
+          repo: pr.repo,
+          number: pr.number,
+          id: reanchoringCommentId,
+          path: activePath,
+          ...input,
+          body: comment.body,
+        })
+        .then(() => {
+          setSubmitFailedCommentIds((current) => {
+            const next = new Set(current);
+            next.delete(reanchoringCommentId);
+            return next;
+          });
+          setReanchoringCommentId(null);
+          setStatusMessage('Draft comment re-anchored.');
+        })
+        .catch(() => undefined);
+      return;
+    }
+    const annotation = annotationFromSelection(selection, index);
     setComposer({ path: activePath, selection, annotation });
     setComposerBody('');
     setStatusMessage(null);
@@ -170,12 +277,18 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
     setStatusMessage(null);
     try {
       const nextDraft = await ensureDraft();
+      const index = patchIndexesByPath.get(composer.path);
+      const input = commentInputFromSelection(composer.selection, index);
+      if (index && !commentAnchorExists(index, input)) {
+        setStatusMessage('Selected range is not valid for the current patch.');
+        return;
+      }
       await mutations.addComment.mutateAsync({
         repo: pr.repo,
         number: pr.number,
         draftId: nextDraft.id,
         path: composer.path,
-        ...commentInputFromSelection(composer.selection),
+        ...input,
         body: composerBody,
       });
       setComposer(null);
@@ -305,6 +418,11 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
                   Cancel
                 </button>
               </div>
+              {reanchoringCommentId === metadata.id ? (
+                <p className="pr-review-inline-hint">
+                  Select a new diff line to re-anchor this comment.
+                </p>
+              ) : null}
             </form>
           ) : (
             <>
@@ -333,6 +451,17 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
                 >
                   {mutations.deleteComment.isPending ? 'Deleting' : 'Delete'}
                 </button>
+                {metadata.isStale ? (
+                  <button
+                    disabled={mutations.updateComment.isPending}
+                    onClick={() =>
+                      beginReanchorComment(metadata.id, comment?.path ?? null)
+                    }
+                    type="button"
+                  >
+                    Re-anchor
+                  </button>
+                ) : null}
               </div>
             </>
           )}
@@ -432,10 +561,7 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
     setStatusMessage(null);
     try {
       const savedDraft =
-        !draft ||
-        draft.body !== reviewBody ||
-        draft.verdict !== verdict ||
-        draft.headSha !== currentHeadSha
+        !draft || draft.body !== reviewBody || draft.verdict !== verdict
           ? await saveDraft({ body: reviewBody, verdict })
           : draft;
       await mutations.submitReview.mutateAsync({
@@ -445,10 +571,37 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
         headSha: currentHeadSha,
         commentIds: cleanCommentIds,
       });
+      setSubmitFailedCommentIds(new Set());
       setStatusMessage('Review submitted.');
-    } catch {
+    } catch (error) {
+      const failingIds = failingCommentIdsFromError(error);
+      if (failingIds.length > 0) {
+        setSubmitFailedCommentIds(new Set(failingIds));
+      }
       // React Query owns the visible error state.
     }
+  };
+  const focusNextPendingComment = () => {
+    const comments =
+      draft?.comments.filter((comment) => !blockedCommentIds.has(comment.id)) ??
+      [];
+    if (comments.length === 0) return;
+    const currentIndex = comments.findIndex(
+      (comment) => comment.path === activePath,
+    );
+    const next = comments[(currentIndex + 1) % comments.length] ?? comments[0];
+    setActivePath(next.path);
+    setStatusMessage(`Showing draft comment on ${next.path} L${next.line}.`);
+  };
+  const openPopout = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('prReviewRepo', pr.repo);
+    url.searchParams.set('prReviewNumber', String(pr.number));
+    window.open(
+      url.toString(),
+      `neondeck-pr-review-${pr.number}`,
+      'popup,width=1280,height=900,noopener,noreferrer',
+    );
   };
 
   return (
@@ -475,8 +628,22 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
           {fileStats.binary > 0 ? (
             <Badge>{fileStats.binary} binary</Badge>
           ) : null}
+          <button
+            className="pr-review-popout-button"
+            onClick={openPopout}
+            title="Open this review in a separate window"
+            type="button"
+          >
+            pop out
+          </button>
         </div>
       </header>
+      {reanchoringCommentId ? (
+        <div className="pr-review-stale-banner">
+          Re-anchor mode is active. Select the new diff line or range for this
+          draft comment.
+        </div>
+      ) : null}
       {threadsQuery.error ? (
         <MiniEmpty
           label={`Review threads unavailable: ${queryErrorMessage(threadsQuery.error)}`}
@@ -489,9 +656,18 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
       ) : null}
       {draft && draft.headSha !== currentHeadSha ? (
         <div className="pr-review-stale-banner">
-          PR updated since your draft. {staleCommentIds.size} comment
-          {staleCommentIds.size === 1 ? '' : 's'} need re-anchoring or will be
-          skipped on submit.
+          <span>
+            PR updated since your draft. {staleCommentIds.size} comment
+            {staleCommentIds.size === 1 ? '' : 's'} need re-anchoring or will be
+            skipped on submit.
+          </span>
+          <button
+            disabled={mutations.saveDraft.isPending}
+            onClick={refreshDraftHead}
+            type="button"
+          >
+            Update draft head
+          </button>
         </div>
       ) : null}
       <MultiFileView
@@ -501,11 +677,28 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
         emptyLabel="No PR file patches available."
         files={files}
         footer={
-          <ReviewThreadPanel
-            activePath={activePath}
-            isLoading={threadsQuery.isLoading}
-            threads={selectedThreads}
-          />
+          <>
+            <ReviewThreadPanel
+              activePath={activePath}
+              isLoading={threadsQuery.isLoading}
+              threads={selectedThreads}
+            />
+            <StaleDraftCommentPanel
+              comments={staleDraftComments}
+              isDeleting={mutations.deleteComment.isPending}
+              onDelete={(commentId) => {
+                setStatusMessage(null);
+                mutations.deleteComment.mutate({
+                  repo: pr.repo,
+                  number: pr.number,
+                  id: commentId,
+                });
+              }}
+              onReanchor={(comment) =>
+                beginReanchorComment(comment.id, comment.path)
+              }
+            />
+          </>
         }
         onSelectedLinesChange={onSelectionChange}
         onActivePathChange={setActivePath}
@@ -522,11 +715,18 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
         isBusy={isDraftMutationPending || isThreadMutationPending}
         isHeadAvailable={currentHeadSha.length > 0}
         onBodyBlur={() => {
+          setIsReviewBodyFocused(false);
           if (reviewBody.trim().length > 0 || draft) {
-            void saveDraft({ body: reviewBody }).catch(() => undefined);
+            void saveDraft({ body: reviewBody })
+              .then(() => setHasPendingReviewBodyEdit(false))
+              .catch(() => undefined);
           }
         }}
-        onBodyChange={setReviewBody}
+        onBodyChange={(value) => {
+          setReviewBody(value);
+          setHasPendingReviewBodyEdit(true);
+        }}
+        onBodyFocus={() => setIsReviewBodyFocused(true)}
         onDiscard={() => {
           if (!draft) return;
           setStatusMessage(null);
@@ -536,13 +736,14 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
           }
         }}
         onSubmit={submitReview}
+        onPendingCountClick={focusNextPendingComment}
         onVerdictChange={(next) => {
           setVerdict(next);
           void saveDraft({ verdict: next }).catch(() => undefined);
         }}
         isSubmitting={mutations.submitReview.isPending}
         reviewBody={reviewBody}
-        staleCommentCount={staleCommentIds.size}
+        staleCommentCount={blockedCommentIds.size}
         statusMessage={reviewBarStatusMessage}
         verdict={verdict}
       />
@@ -556,6 +757,7 @@ function annotationsFromThreads(threads: GitHubPullRequestReviewThread[]) {
     const path = threadPath(thread);
     if (!path) continue;
     const annotation = annotationFromThread(thread);
+    if (annotation.lineNumber < 1) continue;
     annotations[path] = [...(annotations[path] ?? []), annotation];
   }
   return annotations;
@@ -635,22 +837,26 @@ function mergeAnnotations(
 
 function annotationFromSelection(
   selection: SelectedLineRange,
+  index?: PatchAnchorIndex,
 ): DiffReviewAnnotation {
-  const input = commentInputFromSelection(selection);
+  const input = commentInputFromSelection(selection, index);
   return {
     side: input.side === 'LEFT' ? 'deletions' : 'additions',
     lineNumber: input.line,
     metadata: {
       id: 'composer',
       kind: 'composer',
-      title: selectionLabel(selection),
+      title: selectionLabel(selection, index),
       body: '',
     },
   };
 }
 
-function selectionLabel(selection: SelectedLineRange) {
-  const input = commentInputFromSelection(selection);
+function selectionLabel(
+  selection: SelectedLineRange,
+  index?: Parameters<typeof commentInputFromSelection>[1],
+) {
+  const input = commentInputFromSelection(selection, index);
   if (input.startLine) {
     return `${input.startSide} L${input.startLine} -> ${input.side} L${input.line}`;
   }
@@ -711,7 +917,9 @@ function ReviewBar({
   isSubmitting,
   onBodyBlur,
   onBodyChange,
+  onBodyFocus,
   onDiscard,
+  onPendingCountClick,
   onSubmit,
   onVerdictChange,
   reviewBody,
@@ -726,7 +934,9 @@ function ReviewBar({
   isSubmitting: boolean;
   onBodyBlur: () => void;
   onBodyChange: (value: string) => void;
+  onBodyFocus: () => void;
   onDiscard: () => void;
+  onPendingCountClick: () => void;
   onSubmit: () => void;
   onVerdictChange: (value: GitHubPrReviewVerdict) => void;
   reviewBody: string;
@@ -743,7 +953,15 @@ function ReviewBar({
   return (
     <aside aria-busy={isBusy} className="pr-review-bar">
       <div className="pr-review-bar-main">
-        <span className="pr-review-count">{cleanCommentCount} pending</span>
+        <button
+          className="pr-review-count"
+          disabled={cleanCommentCount === 0}
+          onClick={onPendingCountClick}
+          title="Cycle through pending draft comments"
+          type="button"
+        >
+          {cleanCommentCount} pending
+        </button>
         {staleCommentCount > 0 ? (
           <span className="pr-review-stale-count">
             {staleCommentCount} stale skipped
@@ -772,6 +990,7 @@ function ReviewBar({
         disabled={!isHeadAvailable}
         onBlur={onBodyBlur}
         onChange={(event) => onBodyChange(event.currentTarget.value)}
+        onFocus={onBodyFocus}
         placeholder={
           isHeadAvailable ? 'Review summary' : 'PR head SHA unavailable'
         }
@@ -800,7 +1019,10 @@ function verdictLabel(value: GitHubPrReviewVerdict) {
   return 'Comment';
 }
 
-function mutationErrorMessage(error: unknown) {
+function mutationErrorMessage(
+  error: unknown,
+  draft: GitHubPrReviewDraft | null,
+) {
   if (error instanceof ApiError) {
     const data = error.data as
       | GitHubPrReviewDraftResponse
@@ -816,7 +1038,9 @@ function mutationErrorMessage(error: unknown) {
       'failingCommentIds' in data.data &&
       Array.isArray(data.data.failingCommentIds) &&
       data.data.failingCommentIds.length > 0
-        ? [`Failing comments: ${data.data.failingCommentIds.join(', ')}`]
+        ? [
+            `Failing comments: ${failingCommentLabels(data.data.failingCommentIds, draft).join(', ')}`,
+          ]
         : []),
     ];
     return details.length > 0
@@ -824,6 +1048,17 @@ function mutationErrorMessage(error: unknown) {
       : error.message;
   }
   return error ? queryErrorMessage(error) : null;
+}
+
+function failingCommentLabels(
+  ids: string[],
+  draft: GitHubPrReviewDraft | null,
+) {
+  return ids.map((id) => {
+    const comment = draft?.comments.find((item) => item.id === id);
+    if (!comment) return id.slice(0, 8);
+    return `${comment.path} ${commentAnchorLabel(comment)}`;
+  });
 }
 
 function ReviewThreadPanel({
@@ -899,6 +1134,57 @@ function ReviewThreadPanel({
             </li>
           );
         })}
+      </ul>
+    </div>
+  );
+}
+
+function StaleDraftCommentPanel({
+  comments,
+  isDeleting,
+  onDelete,
+  onReanchor,
+}: {
+  comments: GitHubPrReviewDraftComment[];
+  isDeleting: boolean;
+  onDelete: (commentId: string) => void;
+  onReanchor: (comment: GitHubPrReviewDraftComment) => void;
+}) {
+  if (comments.length === 0) return null;
+
+  return (
+    <div className="border-x border-b border-line bg-field">
+      <div className="flex items-center justify-between border-b border-line px-2 py-1 font-mono text-[10px] text-muted">
+        <span>stale draft comments</span>
+        <span className="text-accent">{comments.length} skipped</span>
+      </div>
+      <ul className="max-h-40 overflow-auto">
+        {comments.map((comment) => (
+          <li
+            className="border-b border-line px-2 py-2 last:border-b-0"
+            key={comment.id}
+          >
+            <div className="mb-1 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
+              <span className="min-w-0 truncate">{comment.path}</span>
+              <span className="shrink-0">{commentAnchorLabel(comment)}</span>
+            </div>
+            <p className="line-clamp-2 text-[11px] leading-4 text-ink">
+              {reviewCommentPreview(comment.body)}
+            </p>
+            <div className="pr-review-inline-actions mt-1.5">
+              <button onClick={() => onReanchor(comment)} type="button">
+                Re-anchor
+              </button>
+              <button
+                disabled={isDeleting}
+                onClick={() => onDelete(comment.id)}
+                type="button"
+              >
+                {isDeleting ? 'Deleting' : 'Delete'}
+              </button>
+            </div>
+          </li>
+        ))}
       </ul>
     </div>
   );

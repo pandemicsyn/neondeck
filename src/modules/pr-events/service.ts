@@ -274,7 +274,19 @@ export async function putGitHubPrReviewDraft(
   if ('body' in parsedDraft.output) {
     draftUpdate.body = parsedDraft.output.body ?? null;
   }
-  const draft = upsertPrReviewDraft(draftUpdate);
+  if (parsedDraft.output.reanchorHeadSha) {
+    draftUpdate.reanchorHeadSha = true;
+  }
+  let draft: ReturnType<typeof upsertPrReviewDraft>;
+  try {
+    draft = upsertPrReviewDraft(draftUpdate);
+  } catch (error) {
+    return failResult(
+      'github_pr_review_draft_put',
+      'Could not save review draft.',
+      { errors: [errorMessage(error)] },
+    );
+  }
 
   return okResult(
     'github_pr_review_draft_put',
@@ -400,6 +412,15 @@ export async function patchGitHubPrReviewDraftComment(
       databasePath: paths.neondeckDatabase,
       commentId,
       body: parsed.output.body,
+      ...('path' in parsed.output ? { path: parsed.output.path } : {}),
+      ...('side' in parsed.output ? { side: parsed.output.side } : {}),
+      ...('line' in parsed.output ? { line: parsed.output.line } : {}),
+      ...('startLine' in parsed.output
+        ? { startLine: parsed.output.startLine ?? null }
+        : {}),
+      ...('startSide' in parsed.output
+        ? { startSide: parsed.output.startSide ?? null }
+        : {}),
     });
     return okResult(
       'github_pr_review_draft_comment_patch',
@@ -549,6 +570,13 @@ export async function postGitHubPrReview(
     'github_pr_review_post',
   );
   if (!resolved.ok) return resolved.result;
+  if (!(await isConfiguredRepoTarget(resolved.target, paths))) {
+    return failResult(
+      'github_pr_review_post',
+      `Repository "${resolved.target.repoFullName}" is not configured for PR reviews.`,
+      { requires: ['repo'] },
+    );
+  }
 
   try {
     const submitter =
@@ -563,6 +591,7 @@ export async function postGitHubPrReview(
       draftId: parsedReview.output.draftId,
       headSha: parsedReview.output.headSha,
       commentIds: parsedReview.output.commentIds,
+      fetchHeadSha: dependencies.fetchPullRequestHeadSha,
     });
     return okResult(
       'github_pr_review_post',
@@ -640,6 +669,13 @@ export async function postGitHubPrThreadReply(
     action,
   );
   if (!resolved.ok) return resolved.result;
+  if (!(await isConfiguredRepoTarget(resolved.target, paths))) {
+    return failResult(
+      action,
+      `Repository "${resolved.target.repoFullName}" is not configured for review thread replies.`,
+      { requires: ['repo'] },
+    );
+  }
 
   const verified = await verifyReviewThreadTarget({
     action,
@@ -709,6 +745,13 @@ export async function postGitHubPrThreadResolution(
     action,
   );
   if (!target.ok) return target.result;
+  if (!(await isConfiguredRepoTarget(target.target, paths))) {
+    return failResult(
+      action,
+      `Repository "${target.target.repoFullName}" is not configured for review thread resolution.`,
+      { requires: ['repo'] },
+    );
+  }
 
   const verified = await verifyReviewThreadTarget({
     action,

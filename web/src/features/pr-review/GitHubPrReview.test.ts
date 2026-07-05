@@ -1,11 +1,14 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
 import { describe, expect, it } from 'vitest';
-import type { GitHubPrReviewDraft } from '../../api';
+import { ApiError, type GitHubPrReviewDraft } from '../../api';
 import {
   buildPatchAnchorIndex,
+  commentAnchorExists,
   commentInputFromSelection,
+  failingCommentIdsFromError,
   staleDraftCommentIds,
 } from './review-helpers';
+import capturedReviewPatch from './fixtures/captured-review.patch?raw';
 
 describe('GitHubPrReview helpers', () => {
   it('maps Pierre same-side selections to GitHub review comment anchors', () => {
@@ -56,6 +59,89 @@ describe('GitHubPrReview helpers', () => {
       startLine: 4,
       startSide: 'LEFT',
     });
+  });
+
+  it('maps the addressing matrix from a captured real patch', () => {
+    const reviewIndex = buildPatchAnchorIndex(
+      capturedFilePatch('src/review.ts'),
+    );
+    const renamedIndex = buildPatchAnchorIndex(
+      capturedFilePatch('src/new-name.ts'),
+    );
+
+    expect(
+      commentInputFromSelection(
+        selection({ side: 'deletions', line: 3 }),
+        reviewIndex,
+      ),
+    ).toEqual({
+      side: 'LEFT',
+      line: 3,
+      startLine: null,
+      startSide: null,
+    });
+    expect(
+      commentInputFromSelection(
+        selection({ side: 'additions', line: 5 }),
+        reviewIndex,
+      ),
+    ).toEqual({
+      side: 'RIGHT',
+      line: 5,
+      startLine: null,
+      startSide: null,
+    });
+
+    expect(
+      commentInputFromSelection(
+        {
+          side: 'additions',
+          endSide: 'deletions',
+          start: 22,
+          end: 20,
+        } as SelectedLineRange,
+        reviewIndex,
+      ),
+    ).toEqual({
+      side: 'RIGHT',
+      line: 22,
+      startLine: 20,
+      startSide: 'LEFT',
+    });
+    expect(
+      commentInputFromSelection(
+        selection({ side: 'additions', line: 1 }),
+        renamedIndex,
+      ),
+    ).toEqual({
+      side: 'RIGHT',
+      line: 1,
+      startLine: null,
+      startSide: null,
+    });
+    expect(
+      commentAnchorExists(reviewIndex, {
+        side: 'RIGHT',
+        line: 22,
+        startLine: 20,
+        startSide: 'LEFT',
+      }),
+    ).toBe(true);
+    expect(
+      staleDraftCommentIds(
+        draftWithComments([
+          {
+            id: 'renamed',
+            path: 'src/new-name.ts',
+            side: 'RIGHT',
+            line: 1,
+            startLine: null,
+            startSide: null,
+          },
+        ]),
+        new Map([['src/new-name.ts', renamedIndex]]),
+      ),
+    ).toEqual(new Set());
   });
 
   it('marks stale ranges when endpoints no longer share an ordered hunk', () => {
@@ -127,6 +213,32 @@ describe('GitHubPrReview helpers', () => {
     expect(index.has('RIGHT:2')).toBe(false);
     expect(index.has('LEFT:2')).toBe(false);
   });
+
+  it('does not treat stale-head submit failures as failed inline comments', () => {
+    expect(
+      failingCommentIdsFromError(
+        apiError({
+          data: {
+            code: 'stale-draft',
+            failingCommentIds: ['comment-1', 'comment-2'],
+          },
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('reads failed inline comment ids from GitHub review submit failures', () => {
+    expect(
+      failingCommentIdsFromError(
+        apiError({
+          data: {
+            code: 'github-review-submit-failed',
+            failingCommentIds: ['comment-1', 'comment-2'],
+          },
+        }),
+      ),
+    ).toEqual(['comment-1', 'comment-2']);
+  });
 });
 
 function selection(input: { side: 'additions' | 'deletions'; line: number }) {
@@ -135,6 +247,26 @@ function selection(input: { side: 'additions' | 'deletions'; line: number }) {
     start: input.line,
     end: input.line,
   } as SelectedLineRange;
+}
+
+function capturedFilePatch(path: string) {
+  const sections = capturedReviewPatch
+    .split(/^diff --git /m)
+    .filter(Boolean)
+    .map((section) => `diff --git ${section}`);
+  const section = sections.find((item) =>
+    item.startsWith(`diff --git a/${path} b/${path}\n`),
+  );
+  if (section) return section;
+  const renamedSection = sections.find((item) =>
+    item.startsWith(`diff --git a/src/old-name.ts b/${path}\n`),
+  );
+  if (renamedSection) return renamedSection;
+  throw new Error(`Missing captured patch for ${path}.`);
+}
+
+function apiError(data: unknown) {
+  return new ApiError('Review submit failed.', 422, '/api/github/reviews', data);
 }
 
 function draftWithComments(

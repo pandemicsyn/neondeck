@@ -1,6 +1,6 @@
 import * as v from 'valibot';
 import { githubGraphqlBaseResponseSchema } from './schemas';
-import { githubErrorMessage, isRequestTimeout } from './errors';
+import { GitHubApiError, githubErrorMessage, isRequestTimeout } from './errors';
 
 const githubRequestTimeoutMs = 15_000;
 
@@ -68,10 +68,28 @@ export async function githubFetch(
   }
 
   if (!response.ok) {
-    throw new Error(githubErrorMessage(response));
+    const data = await readGitHubErrorData(response);
+    throw new GitHubApiError(
+      response.status,
+      data,
+      githubErrorMessage(response, data),
+    );
   }
 
   return response;
+}
+
+async function readGitHubErrorData(response: Response) {
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.toLowerCase().includes('json')) {
+    return null;
+  }
+
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
 }
 
 export function encodePathSegment(value: string) {

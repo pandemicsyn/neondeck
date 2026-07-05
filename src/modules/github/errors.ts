@@ -1,4 +1,15 @@
-export function githubErrorMessage(response: Response) {
+export class GitHubApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly data: unknown,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'GitHubApiError';
+  }
+}
+
+export function githubErrorMessage(response: Response, data?: unknown) {
   const rateLimitRemaining = response.headers.get('x-ratelimit-remaining');
   const rateLimitReset = response.headers.get('x-ratelimit-reset');
   const retryAfter = response.headers.get('retry-after');
@@ -15,7 +26,8 @@ export function githubErrorMessage(response: Response) {
     return `GitHub request was rate limited with ${response.status}.${retryAt}`;
   }
 
-  return `GitHub request failed with ${response.status}`;
+  const detail = githubResponseDetail(data);
+  return `GitHub request failed with ${response.status}${detail ? `: ${detail}` : ''}`;
 }
 
 export function errorMessage(error: unknown) {
@@ -27,4 +39,12 @@ export function isRequestTimeout(error: unknown) {
     error instanceof Error &&
     (error.name === 'TimeoutError' || error.name === 'AbortError')
   );
+}
+
+function githubResponseDetail(data: unknown) {
+  if (!data || typeof data !== 'object') return null;
+  if ('message' in data && typeof data.message === 'string') {
+    return data.message;
+  }
+  return null;
 }

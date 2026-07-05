@@ -12,7 +12,12 @@ import {
   postGitHubPrThreadResolution,
   putGitHubPrReviewDraft,
   type GitHubPullRequest,
+  type GitHubPullRequestReviewThread,
 } from '../../api';
+
+type ReviewThreadsQueryData = Awaited<
+  ReturnType<typeof getGitHubPrReviewThreads>
+>;
 
 export const prReviewQueryKeys = {
   files: (pr: GitHubPullRequest) =>
@@ -75,6 +80,12 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
     queryClient.invalidateQueries({
       queryKey: prReviewQueryKeys.reviewThreads(pr),
     });
+  const updateThreadCache = (thread: GitHubPullRequestReviewThread) => {
+    queryClient.setQueryData<ReviewThreadsQueryData>(
+      prReviewQueryKeys.reviewThreads(pr),
+      (current) => upsertReviewThread(current, thread),
+    );
+  };
 
   return {
     saveDraft: useMutation({
@@ -106,11 +117,31 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
     }),
     replyToThread: useMutation({
       mutationFn: postGitHubPrThreadReply,
-      onSuccess: invalidateThreads,
+      onSuccess: updateThreadCache,
     }),
     setThreadResolution: useMutation({
       mutationFn: postGitHubPrThreadResolution,
-      onSuccess: invalidateThreads,
+      onSuccess: updateThreadCache,
     }),
   };
+}
+
+export function upsertReviewThread(
+  current: ReviewThreadsQueryData | undefined,
+  thread: GitHubPullRequestReviewThread,
+): ReviewThreadsQueryData {
+  const reviewThreads = upsertThread(current?.reviewThreads ?? [], thread);
+  return {
+    reviewThreads,
+    unresolvedReviewThreads: reviewThreads.filter((item) => !item.isResolved),
+  };
+}
+
+function upsertThread(
+  threads: GitHubPullRequestReviewThread[],
+  thread: GitHubPullRequestReviewThread,
+) {
+  const index = threads.findIndex((item) => item.id === thread.id);
+  if (index < 0) return [...threads, thread];
+  return threads.map((item) => (item.id === thread.id ? thread : item));
 }

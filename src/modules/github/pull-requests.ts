@@ -251,8 +251,10 @@ function normalizePullRequestFile(
   file: GitHubPullRequestFileApiItem,
 ): GitHubPullRequestFile {
   const patch = file.patch ? unifiedPatchFromGitHubFile(file) : null;
-  const binary = patch === null && isLikelyBinaryPullRequestFile(file);
-  const truncated = patch === null && !binary;
+  const renameOnly = patch === null && isRenameOnlyPullRequestFile(file);
+  const binary =
+    patch === null && !renameOnly && isLikelyBinaryPullRequestFile(file);
+  const truncated = patch === null && !binary && !renameOnly;
   return {
     path: file.filename,
     previousPath: file.previous_filename ?? null,
@@ -268,16 +270,33 @@ function normalizePullRequestFile(
     htmlUrl: file.blob_url ?? null,
     rawUrl: file.raw_url ?? null,
     contentsUrl: file.contents_url ?? null,
-    message: patch === null ? missingPatchMessage(binary) : null,
+    message:
+      patch === null ? missingPatchMessage(file, { binary, renameOnly }) : null,
   };
+}
+
+function isRenameOnlyPullRequestFile(file: GitHubPullRequestFileApiItem) {
+  return (
+    file.status === 'renamed' &&
+    Boolean(file.previous_filename) &&
+    file.additions === 0 &&
+    file.deletions === 0 &&
+    file.changes === 0
+  );
 }
 
 function isLikelyBinaryPullRequestFile(file: GitHubPullRequestFileApiItem) {
   return file.additions === 0 && file.deletions === 0 && file.changes === 0;
 }
 
-function missingPatchMessage(binary: boolean) {
-  return binary
+function missingPatchMessage(
+  file: GitHubPullRequestFileApiItem,
+  options: { binary: boolean; renameOnly: boolean },
+) {
+  if (options.renameOnly) {
+    return `File was renamed from ${file.previous_filename ?? 'its previous path'} with no content changes.`;
+  }
+  return options.binary
     ? 'GitHub did not include a patch for this binary file.'
     : 'GitHub omitted the text patch for this file, likely because the diff is too large.';
 }

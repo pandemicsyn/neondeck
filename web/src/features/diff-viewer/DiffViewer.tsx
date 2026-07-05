@@ -75,22 +75,20 @@ export function UnifiedPatchView({
           <Badge>{diffFileCountLabel(fileCount || 1)}</Badge>
         </div>
       </header>
-      <DiffWorkerProvider>
-        <PatchDiff<DiffReviewAnnotationMetadata>
-          className="diff-patch"
-          lineAnnotations={lineAnnotations}
-          options={{
-            ...neondeckDiffOptions(themeType),
-            controlledSelection: selectedLines !== undefined,
-            enableLineSelection: Boolean(onSelectedLinesChange),
-            onLineSelectionEnd: onSelectedLinesChange,
-            unsafeCSS: neondeckDiffUnsafeCss,
-          }}
-          patch={patch ?? ''}
-          renderAnnotation={renderAnnotation}
-          selectedLines={selectedLines}
-        />
-      </DiffWorkerProvider>
+      <PatchDiff<DiffReviewAnnotationMetadata>
+        className="diff-patch"
+        lineAnnotations={lineAnnotations}
+        options={{
+          ...neondeckDiffOptions(themeType),
+          controlledSelection: selectedLines !== undefined,
+          enableLineSelection: Boolean(onSelectedLinesChange),
+          onLineSelectionEnd: onSelectedLinesChange,
+          unsafeCSS: neondeckDiffUnsafeCss,
+        }}
+        patch={patch ?? ''}
+        renderAnnotation={renderAnnotation}
+        selectedLines={selectedLines}
+      />
     </section>
   );
 }

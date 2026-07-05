@@ -620,12 +620,69 @@ button:disabled {
   padding: 8px 10px;
 }
 
+.pr-review-popout-button {
+  display: inline-flex;
+  min-height: calc(24px * var(--deck-density-space));
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 4px 6px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--deck-text-scale));
+  line-height: 1;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+  white-space: nowrap;
+}
+
+.pr-review-popout-button:not(:disabled):hover,
+.pr-review-popout-button:focus-visible {
+  border-color: var(--primary);
+  color: var(--primary-strong);
+  outline: none;
+}
+
 .pr-review-stale-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   border: 1px solid var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, var(--field));
   padding: 7px 9px;
   color: var(--ink);
   font-size: calc(11px * var(--deck-text-scale));
+}
+
+.pr-review-stale-banner button {
+  display: inline-flex;
+  min-height: calc(24px * var(--deck-density-space));
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 46%, var(--line));
+  background: var(--field);
+  padding: 4px 6px;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--deck-text-scale));
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.pr-review-stale-banner button:not(:disabled):hover,
+.pr-review-stale-banner button:focus-visible {
+  border-color: var(--primary);
+  color: var(--primary-strong);
+  outline: none;
+}
+
+.pr-review-stale-banner button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .pr-review-bar {
@@ -699,6 +756,7 @@ button:disabled {
   color: var(--primary-strong);
 }
 
+.pr-review-count:not(:disabled):hover,
 .pr-review-verdicts button:not(:disabled):hover,
 .pr-review-bar-actions button:not(:disabled):hover,
 .pr-review-inline-actions button:not(:disabled):hover,
@@ -709,6 +767,7 @@ button:disabled {
   color: var(--primary-strong);
 }
 
+.pr-review-count:focus-visible,
 .pr-review-verdicts button:focus-visible,
 .pr-review-bar-actions button:focus-visible,
 .pr-review-inline-actions button:focus-visible,
@@ -719,6 +778,7 @@ button:disabled {
   outline: none;
 }
 
+.pr-review-count:active,
 .pr-review-verdicts button:active,
 .pr-review-bar-actions button:active,
 .pr-review-inline-actions button:active,
@@ -726,6 +786,7 @@ button:disabled {
   background: color-mix(in srgb, var(--primary) 12%, var(--field));
 }
 
+.pr-review-count:disabled,
 .pr-review-verdicts button:disabled,
 .pr-review-bar-actions button:disabled,
 .pr-review-inline-actions button:disabled,
@@ -776,6 +837,13 @@ button:disabled {
 .pr-review-composer {
   display: grid;
   gap: 6px;
+}
+
+.pr-review-inline-hint {
+  margin: 0;
+  color: var(--accent);
+  font-size: calc(10px * var(--deck-text-scale));
+  line-height: 1.35;
 }
 
 .pr-review-draft-stale {
