@@ -6,6 +6,8 @@ import {
   commentAnchorExists,
   commentInputFromSelection,
   failingCommentIdsFromError,
+  normalizeReviewBody,
+  reviewCommentPreview,
   staleDraftCommentIds,
 } from './review-helpers';
 import capturedReviewPatch from './fixtures/captured-review.patch?raw';
@@ -238,6 +240,25 @@ describe('GitHubPrReview helpers', () => {
         }),
       ),
     ).toEqual(['comment-1', 'comment-2']);
+  });
+
+  it('normalizes blank review bodies to null before draft comparisons', () => {
+    expect(normalizeReviewBody('  \n ')).toBeNull();
+    expect(normalizeReviewBody(null)).toBeNull();
+    expect(normalizeReviewBody(' Looks good. ')).toBe('Looks good.');
+  });
+
+  it('renders markdown draft comment bodies as plain annotation previews', () => {
+    expect(
+      reviewCommentPreview(
+        [
+          '## Suggested change',
+          '',
+          '- Use `safeValue` here',
+          '- Keep **fallbacks** explicit',
+        ].join('\n'),
+      ),
+    ).toBe('Suggested change Use safeValue here Keep fallbacks explicit');
   });
 });
 

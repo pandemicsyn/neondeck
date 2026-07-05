@@ -994,6 +994,9 @@ function assertValidReviewCommentAnchor(options: {
   if (startSide === options.side && options.startLine > options.line) {
     throw new Error('Review comment range start must not follow the end line.');
   }
+  if (startSide === 'RIGHT' && options.side === 'LEFT') {
+    throw new Error('Review comment cross-side range must start on LEFT.');
+  }
 }
 
 function normalizeNullableBody(value: string | null | undefined) {

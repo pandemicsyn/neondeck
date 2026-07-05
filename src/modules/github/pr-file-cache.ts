@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 import { openDb } from '../../lib/sqlite';
+import { errorMessage } from './errors';
 import {
   fetchPullRequestDetail,
   fetchPullRequestFiles,
@@ -62,7 +63,14 @@ export async function fetchPullRequestFilesWithCache(options: {
     number: options.number,
   };
   const diff = await fetcher(request);
-  const currentHeadSha = await fetchHeadSha(request).catch(() => null);
+  let currentHeadSha: string | null | undefined = null;
+  try {
+    currentHeadSha = await fetchHeadSha(request);
+  } catch (error) {
+    console.warn(
+      `[neondeck] Skipping GitHub PR file cache write because head verification failed for ${repoFullName}#${options.number}: ${errorMessage(error)}`,
+    );
+  }
   if (diff.files.length > 0 && currentHeadSha === headSha) {
     writeCachedPullRequestFiles({
       databasePath: options.databasePath,
