@@ -204,6 +204,7 @@ export function upsertPrReviewDraft(options: {
   headSha: string;
   verdict?: GitHubPrReviewVerdict | null;
   body?: string | null;
+  reanchorHeadSha?: boolean;
 }): GitHubPrReviewDraft {
   const database = openDb(options.databasePath);
   const now = new Date().toISOString();
@@ -744,8 +745,10 @@ function updateExistingReviewDraft(
   database: ReturnType<typeof openDb>,
   row: unknown,
   options: {
+    headSha?: string;
     verdict?: GitHubPrReviewVerdict | null;
     body?: string | null;
+    reanchorHeadSha?: boolean;
   },
   updatedAt: string,
 ) {
@@ -758,13 +761,22 @@ function updateExistingReviewDraft(
     .prepare(
       `
       UPDATE pr_review_drafts
-      SET verdict = ?,
+      SET head_sha = ?,
+          verdict = ?,
           body = ?,
           updated_at = ?
       WHERE id = ?;
     `,
     )
-    .run(nextVerdict, nextBody, updatedAt, draft.id);
+    .run(
+      options.reanchorHeadSha
+        ? (options.headSha ?? draft.headSha)
+        : draft.headSha,
+      nextVerdict,
+      nextBody,
+      updatedAt,
+      draft.id,
+    );
   return readDraftWithCommentsById(database, draft.id);
 }
 

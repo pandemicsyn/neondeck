@@ -97,6 +97,12 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
         .map((comment) => comment.id) ?? [],
     [blockedCommentIds, draft],
   );
+  const staleDraftComments = useMemo(
+    () =>
+      draft?.comments.filter((comment) => blockedCommentIds.has(comment.id)) ??
+      [],
+    [blockedCommentIds, draft],
+  );
   const annotationsByPath = useMemo(
     () =>
       mergeAnnotations(
@@ -184,6 +190,7 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
     next: Partial<{
       body: string | null;
       verdict: GitHubPrReviewVerdict | null;
+      reanchorHeadSha: boolean;
     }> = {},
   ) => {
     setStatusMessage(null);
@@ -194,9 +201,31 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
       headSha: currentHeadSha,
       ...('verdict' in next ? { verdict: next.verdict } : {}),
       ...('body' in next ? { body: next.body } : {}),
+      ...(next.reanchorHeadSha ? { reanchorHeadSha: true } : {}),
     });
   };
   const ensureDraft = async () => draft ?? (await saveDraft());
+  const beginReanchorComment = (commentId: string, path: string | null) => {
+    setComposer(null);
+    setComposerBody('');
+    setReanchoringCommentId(commentId);
+    if (path && files.some((file) => file.path === path)) {
+      setActivePath(path);
+    } else if (!activePath) {
+      setActivePath(firstRenderablePath(files) ?? null);
+    }
+    setStatusMessage('Select a new diff line to re-anchor the draft comment.');
+  };
+  const refreshDraftHead = async () => {
+    if (!draft) return;
+    setStatusMessage(null);
+    try {
+      await saveDraft({ reanchorHeadSha: true });
+      setStatusMessage('Draft head updated to the current PR revision.');
+    } catch {
+      // React Query owns the visible error state.
+    }
+  };
   const onSelectionChange = (selection: SelectedLineRange | null) => {
     if (!selection || !activePath) return;
     const index = patchIndexesByPath.get(activePath);
@@ -423,14 +452,9 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
                 {metadata.isStale ? (
                   <button
                     disabled={mutations.updateComment.isPending}
-                    onClick={() => {
-                      setComposer(null);
-                      setComposerBody('');
-                      setReanchoringCommentId(metadata.id);
-                      setStatusMessage(
-                        'Select a new diff line to re-anchor the draft comment.',
-                      );
-                    }}
+                    onClick={() =>
+                      beginReanchorComment(metadata.id, comment?.path ?? null)
+                    }
                     type="button"
                   >
                     Re-anchor
@@ -627,9 +651,18 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
       ) : null}
       {draft && draft.headSha !== currentHeadSha ? (
         <div className="pr-review-stale-banner">
-          PR updated since your draft. {staleCommentIds.size} comment
-          {staleCommentIds.size === 1 ? '' : 's'} need re-anchoring or will be
-          skipped on submit.
+          <span>
+            PR updated since your draft. {staleCommentIds.size} comment
+            {staleCommentIds.size === 1 ? '' : 's'} need re-anchoring or will be
+            skipped on submit.
+          </span>
+          <button
+            disabled={mutations.saveDraft.isPending}
+            onClick={refreshDraftHead}
+            type="button"
+          >
+            Update draft head
+          </button>
         </div>
       ) : null}
       <MultiFileView
@@ -639,11 +672,28 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
         emptyLabel="No PR file patches available."
         files={files}
         footer={
-          <ReviewThreadPanel
-            activePath={activePath}
-            isLoading={threadsQuery.isLoading}
-            threads={selectedThreads}
-          />
+          <>
+            <ReviewThreadPanel
+              activePath={activePath}
+              isLoading={threadsQuery.isLoading}
+              threads={selectedThreads}
+            />
+            <StaleDraftCommentPanel
+              comments={staleDraftComments}
+              isDeleting={mutations.deleteComment.isPending}
+              onDelete={(commentId) => {
+                setStatusMessage(null);
+                mutations.deleteComment.mutate({
+                  repo: pr.repo,
+                  number: pr.number,
+                  id: commentId,
+                });
+              }}
+              onReanchor={(comment) =>
+                beginReanchorComment(comment.id, comment.path)
+              }
+            />
+          </>
         }
         onSelectedLinesChange={onSelectionChange}
         onActivePathChange={setActivePath}
@@ -1086,6 +1136,57 @@ function ReviewThreadPanel({
             </li>
           );
         })}
+      </ul>
+    </div>
+  );
+}
+
+function StaleDraftCommentPanel({
+  comments,
+  isDeleting,
+  onDelete,
+  onReanchor,
+}: {
+  comments: GitHubPrReviewDraftComment[];
+  isDeleting: boolean;
+  onDelete: (commentId: string) => void;
+  onReanchor: (comment: GitHubPrReviewDraftComment) => void;
+}) {
+  if (comments.length === 0) return null;
+
+  return (
+    <div className="border-x border-b border-line bg-field">
+      <div className="flex items-center justify-between border-b border-line px-2 py-1 font-mono text-[10px] text-muted">
+        <span>stale draft comments</span>
+        <span className="text-accent">{comments.length} skipped</span>
+      </div>
+      <ul className="max-h-40 overflow-auto">
+        {comments.map((comment) => (
+          <li
+            className="border-b border-line px-2 py-2 last:border-b-0"
+            key={comment.id}
+          >
+            <div className="mb-1 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
+              <span className="min-w-0 truncate">{comment.path}</span>
+              <span className="shrink-0">{commentAnchorLabel(comment)}</span>
+            </div>
+            <p className="line-clamp-2 text-[11px] leading-4 text-ink">
+              {reviewCommentPreview(comment.body)}
+            </p>
+            <div className="pr-review-inline-actions mt-1.5">
+              <button onClick={() => onReanchor(comment)} type="button">
+                Re-anchor
+              </button>
+              <button
+                disabled={isDeleting}
+                onClick={() => onDelete(comment.id)}
+                type="button"
+              >
+                {isDeleting ? 'Deleting' : 'Delete'}
+              </button>
+            </div>
+          </li>
+        ))}
       </ul>
     </div>
   );

@@ -274,6 +274,9 @@ export async function putGitHubPrReviewDraft(
   if ('body' in parsedDraft.output) {
     draftUpdate.body = parsedDraft.output.body ?? null;
   }
+  if (parsedDraft.output.reanchorHeadSha) {
+    draftUpdate.reanchorHeadSha = true;
+  }
   let draft: ReturnType<typeof upsertPrReviewDraft>;
   try {
     draft = upsertPrReviewDraft(draftUpdate);

@@ -64,15 +64,18 @@ export async function putGitHubPrReviewDraft(input: {
   headSha: string;
   verdict?: GitHubPrReviewVerdict | null;
   body?: string | null;
+  reanchorHeadSha?: boolean;
 }) {
   const [owner, name] = parseRepo(input.repo);
   const body: {
     headSha: string;
     verdict?: GitHubPrReviewVerdict | null;
     body?: string | null;
+    reanchorHeadSha?: boolean;
   } = { headSha: input.headSha };
   if ('verdict' in input) body.verdict = input.verdict ?? null;
   if ('body' in input) body.body = input.body ?? null;
+  if (input.reanchorHeadSha) body.reanchorHeadSha = true;
   const response = await putJson<GitHubPrReviewDraftResponse>(
     `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/review-draft`,
     body,

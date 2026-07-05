@@ -127,6 +127,7 @@ export const prReviewDraftInputSchema = v.object({
   headSha: nonEmptyStringSchema,
   verdict: v.optional(v.nullable(prReviewVerdictSchema)),
   body: v.optional(v.nullable(v.string())),
+  reanchorHeadSha: v.optional(v.boolean()),
 });
 export const prReviewDraftCommentInputSchema = v.object({
   draftId: nonEmptyStringSchema,
