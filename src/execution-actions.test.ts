@@ -227,23 +227,65 @@ describe('execution actions', () => {
     } finally {
       restoreDispatch();
     }
-    await expect(listNotifications(paths)).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          title: 'Execution approval delivery failed',
-          message: expect.stringContaining(
-            'the decision was recorded in this session command log',
-          ),
-        }),
-      ]),
+    const notifications = await listNotifications(paths);
+    const failedNotification = notifications.find(
+      (notification) =>
+        notification.title === 'Execution approval delivery failed',
     );
-    await expect(listNotifications(paths)).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          title: 'Execution approval delivery failed',
-          message: expect.not.stringContaining('Retry with approvalId'),
-        }),
-      ]),
+    expect(failedNotification).toMatchObject({
+      message: expect.stringContaining(
+        'the decision was recorded in this session command log',
+      ),
+    });
+    expect(failedNotification?.message).not.toContain('Retry with approvalId');
+  });
+
+  it('does not claim failed approval delivery was command-logged when the session is stale', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const request = await requestExecutionApproval(
+      {
+        command: 'node --version',
+        cwd: paths.home,
+        sessionId: 'missing-session',
+      },
+      paths,
+    );
+    const approvalId = readApprovalId(request);
+    const restoreDispatch = setApprovalNudgeDispatchForTests(async () => {
+      throw new Error('dispatch queue unavailable');
+    });
+
+    try {
+      await expect(
+        resolveExecutionApproval(
+          { id: approvalId, decision: 'allow-session' },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        ok: true,
+        approval: { status: 'approved' },
+        requires: ['approvalNudge'],
+        errors: expect.arrayContaining([
+          'dispatch queue unavailable',
+          'Session missing-session was not found.',
+        ]),
+      });
+    } finally {
+      restoreDispatch();
+    }
+    const notifications = await listNotifications(paths);
+    const failedNotification = notifications.find(
+      (notification) =>
+        notification.title === 'Execution approval delivery failed',
+    );
+    expect(failedNotification).toMatchObject({
+      message: expect.stringContaining(
+        'could not be recorded in the session command log',
+      ),
+    });
+    expect(failedNotification?.message).not.toContain(
+      'recorded in this session command log',
     );
   });
 

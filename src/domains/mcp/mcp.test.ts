@@ -815,23 +815,18 @@ describe('MCP support', () => {
     } finally {
       restoreDispatch();
     }
-    await expect(listNotifications(paths)).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          title: 'MCP tool approval delivery failed',
-          message: expect.stringContaining(
-            'the decision was recorded in this session command log',
-          ),
-        }),
-      ]),
+    const notifications = await listNotifications(paths);
+    const failedNotification = notifications.find(
+      (notification) =>
+        notification.title === 'MCP tool approval delivery failed',
     );
-    await expect(listNotifications(paths)).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          title: 'MCP tool approval delivery failed',
-          message: expect.not.stringContaining('Retry the MCP tool call'),
-        }),
-      ]),
+    expect(failedNotification).toMatchObject({
+      message: expect.stringContaining(
+        'the decision was recorded in this session command log',
+      ),
+    });
+    expect(failedNotification?.message).not.toContain(
+      'Retry the MCP tool call',
     );
   });
 
