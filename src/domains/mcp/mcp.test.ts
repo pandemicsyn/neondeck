@@ -655,6 +655,62 @@ describe('MCP support', () => {
     }
   });
 
+  it('records denied MCP approval nudges without dispatching a Flue turn', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const session = await createChatSession({ title: 'MCP denied' }, paths);
+    const sessionId = (session as { session: ChatSessionRecord }).session.id;
+    const request = await createMcpApprovalRequest(
+      {
+        serverId: 'fixture',
+        toolName: 'echo',
+        adaptedName: 'mcp__fixture__echo',
+        argumentsHash: 'abc123',
+        argumentsPreview: '{"text":"hello"}',
+        sessionId,
+      },
+      paths,
+    );
+    let dispatched = false;
+    const restoreDispatch = setApprovalNudgeDispatchForTests(async () => {
+      dispatched = true;
+      return {
+        dispatchId: 'unexpected-dispatch',
+        acceptedAt: new Date().toISOString(),
+      };
+    });
+
+    try {
+      await expect(
+        resolveMcpApprovalWithPaths(
+          {
+            id: request!.id,
+            decision: 'deny',
+            approverSurface: 'test',
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        ok: true,
+        approval: { status: 'denied' },
+      });
+    } finally {
+      restoreDispatch();
+    }
+    expect(dispatched).toBe(false);
+    await expect(
+      listChatSessionCommandEvents({ sessionId }, paths),
+    ).resolves.toMatchObject({
+      events: expect.arrayContaining([
+        expect.objectContaining({
+          status: 'completed',
+          input: expect.stringContaining(`approval ${request!.id} denied`),
+        }),
+      ]),
+    });
+  });
+
   it('rejects non-loopback MCP OAuth redirect URLs', async () => {
     const home = await tempDir();
     const paths = runtimePaths(home);

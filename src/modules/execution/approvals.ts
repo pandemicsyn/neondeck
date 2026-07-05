@@ -74,7 +74,8 @@ export async function requestExecutionApproval(
   const input = {
     ...parsed.output,
     sessionId:
-      parsed.output.sessionId ?? currentFlueExecutionContext()?.instanceId,
+      nonEmpty(parsed.output.sessionId) ??
+      currentFlueExecutionContext()?.instanceId,
   };
   const policyCheck = await checkExecutionPolicy(
     {
@@ -251,6 +252,11 @@ export async function resolveExecutionApproval(
       ? { requires: ['approvalNudge'], errors: nudgeErrors }
       : {}),
   };
+}
+
+function nonEmpty(value: string | undefined) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 async function addAlwaysPreapproval(
