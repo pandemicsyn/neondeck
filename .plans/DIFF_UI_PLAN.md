@@ -58,9 +58,9 @@ dashboard, consistent with the "no framework re-housing" decision.
   means _reviewing agent-made edits_ (prepared diffs, skill patches, repo-edit results) with real
   diff UI — the editing loop stays chat + typed actions. If a hand-editing surface is ever
   wanted, that is a separate decision (and probably a separate tool).
-- **No PR review actions on GitHub in v1** (approve/request-changes/inline comments from the
-  deck). Viewing first; the annotation framework makes comment _display_ easy and comment
-  _authoring_ a natural v2 once viewing proves out.
+- **PR review actions moved to their own spec.** Viewing shipped first as planned; the full
+  review capability (inline comments, thread reply/resolve, human-only verdicts) is specified in
+  `.plans/PR_REVIEW_ACTIONS_PLAN.md`.
 - **No replacement of existing summary rows.** Compact rows stay (they're right for the deck's
   glanceable posture); diff views open from them.
 - **No self-hosted Shiki grammar zoo.** Start with the bundled languages; trim via Vite config
