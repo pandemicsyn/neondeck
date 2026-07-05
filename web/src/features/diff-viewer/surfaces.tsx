@@ -8,9 +8,7 @@ import type {
 import { Badge, MiniEmpty } from '../../components/ui';
 import { queryErrorMessage } from '../../lib/query';
 import {
-  diffFileCountLabel,
   firstRenderablePath,
-  patchFilePaths,
   patchHasContent,
   splitUnifiedPatchFiles,
 } from './helpers';
@@ -156,18 +154,10 @@ export function KiloTaskDiffReview({ task }: { task: KiloTaskRecord }) {
 
 export function RepoEditEventDiffReview({ event }: { event: RepoEditEvent }) {
   const hasStoredPatch = patchHasContent(event.diffPatch);
-  const paths =
-    event.paths.length > 0 ? event.paths : patchFilePaths(event.diffPatch);
   const storedFiles = useMemo(
     () => splitUnifiedPatchFiles(event.diffPatch),
     [event.diffPatch],
   );
-  const repoDiffQuery = useRepoDiff({
-    enabled: !hasStoredPatch && paths.length > 0,
-    paths,
-    repoId: event.repoId,
-    worktreeId: event.worktreeId,
-  });
 
   if (hasStoredPatch) {
     if (storedFiles.length > 1) {
@@ -193,26 +183,8 @@ export function RepoEditEventDiffReview({ event }: { event: RepoEditEvent }) {
     );
   }
 
-  if (repoDiffQuery.isLoading) {
-    return <MiniEmpty label="Loading repo-edit diff." />;
-  }
-
-  if (repoDiffQuery.error) {
-    return (
-      <MiniEmpty
-        label={`Repo-edit diff unavailable: ${queryErrorMessage(repoDiffQuery.error)}`}
-      />
-    );
-  }
-
   return (
-    <MultiFileView
-      detail={event.reason ?? diffFileCountLabel(paths.length)}
-      emptyLabel="No repo-edit patch available."
-      files={repoDiffQuery.data?.files ?? []}
-      title={`${event.repoId} - ${event.action}`}
-      tone={event.status === 'failed' ? 'accent' : 'primary'}
-    />
+    <MiniEmpty label="No captured repo-edit patch is available for this historical event." />
   );
 }
 
