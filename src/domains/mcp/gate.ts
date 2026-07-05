@@ -1,6 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
-import { readNeonSessionState } from '../../modules/sessions/active-session';
+import { currentFlueExecutionContext } from '../../modules/flue/execution-context';
 import { stableJson, truncateText } from './format';
 import { decideMcpToolPolicy } from './policy';
 import { readMcpConfig } from './config';
@@ -65,7 +65,7 @@ export async function runMcpToolThroughGate(
   let approvalId: string | null = null;
   if (policy === 'ask') {
     const sessionId =
-      input.context.sessionId ?? (await readMcpRequesterSessionId(paths));
+      input.context.sessionId ?? currentFlueExecutionContext()?.instanceId;
     const approval = await consumeUsableMcpApproval(
       {
         serverId: input.serverId,
@@ -170,12 +170,6 @@ export async function runMcpToolThroughGate(
       message,
     };
   }
-}
-
-async function readMcpRequesterSessionId(paths: RuntimePaths) {
-  return readNeonSessionState(paths)
-    .then((state) => state.activeSessionId)
-    .catch(() => undefined);
 }
 
 function elapsed(startedAt: number) {

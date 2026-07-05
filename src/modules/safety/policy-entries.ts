@@ -643,9 +643,10 @@ export const entries: SafetyPolicyEntry[] = [
     'Resolve MCP approval',
     {
       ...destructiveMutation,
-      auditTarget: 'mcp_tool_approvals',
+      auditTarget:
+        'mcp_tool_approvals/chat_session_command_events/notifications',
     },
-    'User-owned approval resolver for local API and CLI surfaces. This action is not registered on the display assistant to prevent self-approval.',
+    'User-owned approval resolver for local API and CLI surfaces. It records the decision and nudges the requesting display-assistant session when linked. This action is not registered on the display assistant to prevent self-approval.',
   ),
   action(
     'neondeck_mcp_server_remove',
@@ -1683,9 +1684,10 @@ export const entries: SafetyPolicyEntry[] = [
     'Execution approval resolution API',
     {
       ...safeMutation,
-      auditTarget: 'execution_approvals/config_history',
+      auditTarget:
+        'execution_approvals/config_history/chat_session_command_events/notifications',
     },
-    'Approves or denies a pending execution request. allow-always also updates preapproved command config.',
+    'Approves or denies a pending execution request and nudges the requesting display-assistant session when linked. allow-always also updates preapproved command config.',
   ),
   route(
     '/api/execution/run',
@@ -1797,9 +1799,10 @@ export const entries: SafetyPolicyEntry[] = [
     'Resolve MCP approval API',
     {
       ...destructiveMutation,
-      auditTarget: 'mcp_tool_approvals',
+      auditTarget:
+        'mcp_tool_approvals/chat_session_command_events/notifications',
     },
-    'Approves or denies one pending third-party MCP tool call by exact approval id.',
+    'Approves or denies one pending third-party MCP tool call by exact approval id and nudges the requesting display-assistant session when linked.',
   ),
   route(
     '/api/mcp/audit',

@@ -1080,7 +1080,7 @@ export type AutopilotApprovalResolveResponse =
           status?: 'dispatched' | 'off' | 'dispatch-failed';
           workflow?: 'push-pr-autofix' | 'verify-then-push-pr-autofix';
           runId?: string;
-          workflowSummaryId?: string;
+          workflowSummaryId?: string | null;
           message?: string;
         };
         dispatchedPushRunId?: string | null;

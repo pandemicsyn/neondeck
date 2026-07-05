@@ -16,6 +16,7 @@ import {
   setApprovalNudgeDispatchForTests,
   type ChatSessionRecord,
 } from './modules/sessions';
+import { runWithFlueExecutionContextForTests } from './modules/flue/execution-context';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 
 const tempRoots: string[] = [];
@@ -189,6 +190,71 @@ describe('execution actions', () => {
       ok: false,
       requires: ['approval'],
       approval: { id: approvalId, usedAt: expect.any(String) },
+    });
+  });
+
+  it('surfaces approval nudge delivery failures after resolving execution approval', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const session = await createChatSession(
+      { title: 'Execution failed nudge' },
+      paths,
+    );
+    const sessionId = (session as { session: ChatSessionRecord }).session.id;
+    const request = await requestExecutionApproval(
+      { command: 'node --version', cwd: paths.home, sessionId },
+      paths,
+    );
+    const approvalId = readApprovalId(request);
+    const restoreDispatch = setApprovalNudgeDispatchForTests(async () => {
+      throw new Error('dispatch queue unavailable');
+    });
+
+    try {
+      await expect(
+        resolveExecutionApproval(
+          { id: approvalId, decision: 'allow-session' },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        ok: true,
+        approval: { status: 'approved' },
+        requires: ['approvalNudge'],
+        errors: ['dispatch queue unavailable'],
+      });
+    } finally {
+      restoreDispatch();
+    }
+  });
+
+  it('links execution approval requests to the current Flue session when sessionId is omitted', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const requester = await createChatSession(
+      { title: 'Execution requester', activate: false },
+      paths,
+    );
+    const sessionId = (requester as { session: ChatSessionRecord }).session.id;
+    const active = await createChatSession(
+      { title: 'Active dashboard' },
+      paths,
+    );
+    expect((active as { session: ChatSessionRecord }).session.id).not.toBe(
+      sessionId,
+    );
+
+    const request = await runWithFlueExecutionContextForTests(
+      { agentName: 'display-assistant', instanceId: sessionId },
+      () =>
+        requestExecutionApproval(
+          { command: 'node --version', cwd: paths.home },
+          paths,
+        ),
+    );
+
+    expect(request).toMatchObject({
+      ok: true,
+      approval: { status: 'pending', sessionId },
     });
   });
 

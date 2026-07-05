@@ -1,6 +1,7 @@
 import { asJsonValue } from '../../lib/action-result';
 import { openDb } from '../../lib/sqlite';
 import { updateExecutionPolicy } from '../config';
+import { currentFlueExecutionContext } from '../flue/execution-context';
 import {
   ensureRuntimeHome,
   parseAppConfig,
@@ -70,7 +71,11 @@ export async function requestExecutionApproval(
     );
   }
 
-  const input = parsed.output;
+  const input = {
+    ...parsed.output,
+    sessionId:
+      parsed.output.sessionId ?? currentFlueExecutionContext()?.instanceId,
+  };
   const policyCheck = await checkExecutionPolicy(
     {
       command: input.command,
@@ -218,8 +223,9 @@ export async function resolveExecutionApproval(
   }
 
   const approval = readApproval(paths, existing.id);
+  let nudgeErrors: string[] = [];
   if (approval) {
-    await createApprovalResolutionNudge(
+    const nudge = await createApprovalResolutionNudge(
       {
         family: 'execution',
         sessionId: approval.sessionId,
@@ -230,6 +236,7 @@ export async function resolveExecutionApproval(
       },
       paths,
     );
+    if (!nudge.ok) nudgeErrors = nudge.errors;
   }
   return {
     ok: true,
@@ -240,6 +247,9 @@ export async function resolveExecutionApproval(
         ? 'Denied execution approval.'
         : `Approved execution ${input.decision.replace('-', ' ')}.`,
     approval,
+    ...(nudgeErrors.length > 0
+      ? { requires: ['approvalNudge'], errors: nudgeErrors }
+      : {}),
   };
 }
 

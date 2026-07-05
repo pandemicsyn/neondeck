@@ -95,13 +95,19 @@ export async function createApprovalResolutionNudge(
     errors.push(created.message);
   }
 
+  const dispatchAccepted = Boolean(dispatchReceipt);
   await addNotification(
     {
-      level: input.decision === 'approved' ? 'ready' : 'info',
-      title:
-        input.decision === 'approved'
+      level: dispatchAccepted
+        ? input.decision === 'approved'
+          ? 'ready'
+          : 'info'
+        : 'attention',
+      title: dispatchAccepted
+        ? input.decision === 'approved'
           ? `${label} approval answered`
-          : `${label} approval denied`,
+          : `${label} approval denied`
+        : `${label} approval delivery failed`,
       message,
       source: input.family,
       sourceId: `${input.family}-approval:${input.approvalId}:resolved`,
@@ -109,6 +115,8 @@ export async function createApprovalResolutionNudge(
         approvalId: input.approvalId,
         sessionId: input.sessionId,
         decision: input.decision,
+        dispatchAccepted,
+        dispatchReceipt,
       },
     },
     paths,
