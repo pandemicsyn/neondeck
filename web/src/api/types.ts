@@ -940,6 +940,16 @@ export type AutopilotPreparedDiff = {
   verificationStatus: string;
   sourceOfTruth: 'worktree';
   summary: string;
+  revisionRun: {
+    kiloTaskId: string | null;
+    reason: string | null;
+    startedAt: string | null;
+    completedAt: string | null;
+    outcome: string | null;
+    status: string | null;
+    title: string | null;
+    cwd: string | null;
+  } | null;
   updatedAt: string;
 };
 
@@ -1026,6 +1036,7 @@ export type AutopilotRecoveryActionId =
   | 'retry-push'
   | 'retry-comment'
   | 'request-revision'
+  | 'run-revision'
   | 'cleanup-worktree'
   | 'abandon'
   | 'manual-follow-up';

@@ -31,6 +31,7 @@ import {
 } from './utils';
 import { type RuntimePaths } from '../../runtime-home';
 import { releaseWorktreeLock } from '../worktrees';
+import { reconcilePreparedDiffRevisionResult } from './revision-reconcile';
 
 const execFileAsync = promisify(execFile);
 export const runningProcesses = new Map<string, RunningProcess>();
@@ -88,6 +89,14 @@ export function attachProcessHandlers(
       if (!task) return;
       markKiloTaskFinished(taskId, 'failed', null, errorMessage(error), paths);
       await releaseTaskLock(task, 'failed', paths);
+      await reconcilePreparedDiffRevisionResult(
+        {
+          task,
+          status: 'failed',
+          error: errorMessage(error),
+        },
+        paths,
+      );
       addKiloTaskEvent(
         taskId,
         {
@@ -136,6 +145,9 @@ export function attachProcessHandlers(
       }
       const current = tryKiloTask(taskId, paths);
       markKiloTaskFinished(taskId, status, code, error, paths);
+      let observedDiff:
+        | Awaited<ReturnType<typeof taskDiffSummary>>
+        | undefined;
       addKiloTaskEvent(
         taskId,
         {
@@ -152,6 +164,7 @@ export function attachProcessHandlers(
         await resolveKiloNotifications(taskId, ['started', 'progress'], paths);
       } else if (status === 'succeeded') {
         const diff = await taskDiffSummary(current ?? task);
+        observedDiff = diff;
         if (diff.ok && diff.fileCount > 0) {
           await notifyKiloState(
             {
@@ -205,6 +218,15 @@ export function attachProcessHandlers(
         );
       }
       await releaseTaskLock(task, status, paths);
+      await reconcilePreparedDiffRevisionResult(
+        {
+          task: tryKiloTask(taskId, paths) ?? current ?? task,
+          status,
+          diff: observedDiff,
+          error,
+        },
+        paths,
+      );
     })().finally(cleanup);
   });
   return completed;
@@ -383,7 +405,17 @@ export async function reconcilePersistedRunningTasks(
       },
       paths,
     );
-    if (!processAlive) await releaseTaskLock(task, status, paths);
+    if (!processAlive) {
+      await releaseTaskLock(task, status, paths);
+      await reconcilePreparedDiffRevisionResult(
+        {
+          task: tryKiloTask(task.id, paths) ?? task,
+          status,
+          diff,
+        },
+        paths,
+      );
+    }
   }
 }
 

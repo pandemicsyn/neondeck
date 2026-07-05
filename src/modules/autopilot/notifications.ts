@@ -23,6 +23,7 @@ export type AutopilotRecoveryActionId =
   | 'retry-push'
   | 'retry-comment'
   | 'request-revision'
+  | 'run-revision'
   | 'cleanup-worktree'
   | 'abandon'
   | 'manual-follow-up';
@@ -72,6 +73,7 @@ const notificationInputSchema = v.object({
           'retry-push',
           'retry-comment',
           'request-revision',
+          'run-revision',
           'cleanup-worktree',
           'abandon',
           'manual-follow-up',
@@ -155,12 +157,23 @@ export function recoveryActionsForPreparedDiff(
   }
 
   if (!['abandoned', 'pushed'].includes(preparedDiff.status)) {
-    if (preparedDiff.status !== 'revision-requested') {
+    if (
+      preparedDiff.status !== 'revision-requested' &&
+      preparedDiff.status !== 'revision-in-progress'
+    ) {
       actions.push({
         id: 'request-revision',
         label: 'Request revision',
         description:
           'Record an operator revision request while retaining the worktree.',
+      });
+    }
+    if (preparedDiff.status === 'revision-requested') {
+      actions.push({
+        id: 'run-revision',
+        label: 'Run revision',
+        description:
+          'Start a bounded Kilo task from the retained revision note.',
       });
     }
     actions.push({

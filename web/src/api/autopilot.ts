@@ -42,6 +42,7 @@ export async function runAutopilotRecovery(input: {
   preparedDiffId: string;
   recoveryAction: AutopilotRecoveryActionId;
   reason?: string;
+  runRevisionNow?: boolean;
   confirm?: boolean;
   checks?: string[];
   headRef?: string;
@@ -59,12 +60,14 @@ export async function runAutopilotRecovery(input: {
 export async function resolveAutopilotApproval(
   id: string,
   decision: 'approve' | 'deny',
+  input: { reason?: string; runRevisionNow?: boolean } = {},
 ) {
   return postJson<AutopilotApprovalResolveResponse>(
     `/api/autopilot/approvals/${encodeURIComponent(id)}/resolve`,
     {
       decision,
       approverSurface: 'dashboard',
+      ...input,
     },
   );
 }

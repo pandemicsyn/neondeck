@@ -113,6 +113,7 @@ describe('autopilot recovery and notifications', () => {
         preparedDiffId: 'pd-recovery',
         recoveryAction: 'request-revision',
         reason: 'Tighten the implementation.',
+        runRevisionNow: false,
       },
       paths,
     );
@@ -185,6 +186,26 @@ describe('autopilot recovery and notifications', () => {
         action: 'prepared_diff_abandon',
         preparedDiff: { status: 'abandoned' },
       },
+    });
+  });
+
+  it('surfaces run-revision recovery for recorded revision requests', async () => {
+    const paths = await fixture();
+    insertPreparedDiff(paths.neondeckDatabase, {
+      id: 'pd-revision',
+      status: 'revision-requested',
+      pushApprovalStatus: 'rejected',
+      verificationStatus: 'not-run',
+    });
+
+    await expect(
+      readAutopilotRecoveryOptions({ preparedDiffId: 'pd-revision' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      options: expect.arrayContaining([
+        expect.objectContaining({ id: 'run-revision' }),
+        expect.objectContaining({ id: 'abandon' }),
+      ]),
     });
   });
 

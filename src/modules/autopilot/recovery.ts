@@ -17,6 +17,7 @@ import {
   readPreparedDiffSummary,
   requestPreparedDiffRevision,
 } from '../prepared-diffs';
+import { runPreparedDiffRevision } from './revision-run';
 import { commentPrAutofixResult } from './comments';
 import { pushPrAutofix } from './push';
 import { verifyPrWorktree } from './worktree';
@@ -70,6 +71,7 @@ const recoveryActionSchema = v.picklist([
   'retry-push',
   'retry-comment',
   'request-revision',
+  'run-revision',
   'cleanup-worktree',
   'abandon',
   'manual-follow-up',
@@ -81,6 +83,7 @@ const recoveryRunInputSchema = v.object({
   preparedDiffId: nonEmptyStringSchema,
   recoveryAction: recoveryActionSchema,
   reason: v.optional(v.string()),
+  runRevisionNow: v.optional(v.boolean()),
   confirm: v.optional(v.boolean()),
   checks: v.optional(v.array(nonEmptyStringSchema)),
   headRef: v.optional(nonEmptyStringSchema),
@@ -340,17 +343,43 @@ export async function runAutopilotRecoveryAction(
   }
 
   if (input.recoveryAction === 'request-revision') {
-    if (!input.reason?.trim()) {
+    if (input.runRevisionNow !== false && !input.reason?.trim()) {
       return {
         ok: false,
         action: 'autopilot_recovery_run',
         changed: false,
-        message: 'Requesting a prepared-diff revision requires a reason.',
+        message: 'Running a prepared-diff revision requires a reason.',
         preparedDiffId: preparedDiff.id,
         requires: ['reason'],
       };
     }
     const result = await requestPreparedDiffRevision(
+      {
+        preparedDiffId: preparedDiff.id,
+        reason: input.reason,
+        approverSurface: input.approverSurface ?? 'autopilot-recovery',
+      },
+      paths,
+    );
+    if (!result.ok || input.runRevisionNow === false) {
+      return wrapRecoveryResult(input.recoveryAction, preparedDiff.id, result);
+    }
+    const run = await runPreparedDiffRevision(
+      {
+        preparedDiffId: preparedDiff.id,
+        reason: input.reason,
+        approverSurface: input.approverSurface ?? 'autopilot-recovery',
+      },
+      paths,
+    );
+    return {
+      ...wrapRecoveryResult(input.recoveryAction, preparedDiff.id, run),
+      result: { request: result, run },
+    };
+  }
+
+  if (input.recoveryAction === 'run-revision') {
+    const result = await runPreparedDiffRevision(
       {
         preparedDiffId: preparedDiff.id,
         reason: input.reason,
