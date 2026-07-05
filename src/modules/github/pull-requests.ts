@@ -9,14 +9,19 @@ import {
 import {
   githubPullRequestApiResponseSchema,
   githubPullRequestCommitApiItemSchema,
+  githubPullRequestFileApiItemSchema,
   githubRepositoryApiResponseSchema,
 } from './schemas';
 import type {
   GitHubBranchPushPermissions,
+  GitHubDiffSummary,
   GitHubPullRequestCommit,
   GitHubPullRequestCommitApiItem,
   GitHubPullRequestDetail,
   GitHubPullRequestEventState,
+  GitHubPullRequestFile,
+  GitHubPullRequestFileApiItem,
+  GitHubPullRequestFiles,
 } from './schemas';
 
 export async function fetchPullRequestDetail(options: {
@@ -154,6 +159,35 @@ export async function fetchPullRequestCommits(options: {
   }));
 }
 
+export async function fetchPullRequestFiles(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+}): Promise<GitHubPullRequestFiles> {
+  const files: GitHubPullRequestFile[] = [];
+  let nextUrl: string | undefined =
+    `https://api.github.com/repos/${encodePathSegment(options.owner)}/${encodePathSegment(options.repo)}/pulls/${options.number}/files?per_page=100`;
+
+  while (nextUrl) {
+    const response = await githubFetch(options.token, nextUrl);
+    const data = v.parse(
+      v.array(githubPullRequestFileApiItemSchema),
+      await response.json(),
+    );
+    files.push(...data.map(normalizePullRequestFile));
+    nextUrl = nextLink(response.headers.get('link'));
+  }
+
+  return {
+    repo: `${options.owner}/${options.repo}`,
+    number: options.number,
+    files,
+    diffSummary: summarizePullRequestFiles(files),
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
 async function fetchBranchPushPermissions(options: {
   token: string;
   owner: string;
@@ -211,4 +245,74 @@ async function fetchRepositoryPermissions(token: string, fullName: string) {
 
 function isOutOfDateMergeState(value: string | null | undefined) {
   return value === 'behind' || value === 'dirty' || value === 'blocked';
+}
+
+function normalizePullRequestFile(
+  file: GitHubPullRequestFileApiItem,
+): GitHubPullRequestFile {
+  const patch = file.patch ? unifiedPatchFromGitHubFile(file) : null;
+  return {
+    path: file.filename,
+    previousPath: file.previous_filename ?? null,
+    status: file.status,
+    additions: file.additions,
+    deletions: file.deletions,
+    changes: file.changes,
+    binary: patch === null,
+    generatedLike: false,
+    patch,
+    sha: file.sha ?? null,
+    htmlUrl: file.blob_url ?? null,
+    rawUrl: file.raw_url ?? null,
+    contentsUrl: file.contents_url ?? null,
+    message:
+      patch === null
+        ? 'GitHub did not include a patch for this file. It may be binary or too large.'
+        : null,
+  };
+}
+
+function unifiedPatchFromGitHubFile(file: GitHubPullRequestFileApiItem) {
+  const previousPath = file.previous_filename ?? file.filename;
+  const currentPath = file.filename;
+  const deleted = isDeletedFileStatus(file.status);
+  const added = isAddedFileStatus(file.status);
+  const header = [`diff --git a/${previousPath} b/${currentPath}`];
+
+  if (added) {
+    header.push('new file mode 100644');
+  } else if (deleted) {
+    header.push('deleted file mode 100644');
+  } else if (
+    file.previous_filename &&
+    file.previous_filename !== file.filename
+  ) {
+    header.push(`rename from ${file.previous_filename}`);
+    header.push(`rename to ${file.filename}`);
+  }
+
+  header.push(added ? '--- /dev/null' : `--- a/${previousPath}`);
+  header.push(deleted ? '+++ /dev/null' : `+++ b/${currentPath}`);
+  header.push(file.patch?.trimEnd() ?? '');
+
+  return `${header.join('\n')}\n`;
+}
+
+function isAddedFileStatus(status: string) {
+  return status === 'added' || status === 'new';
+}
+
+function isDeletedFileStatus(status: string) {
+  return status === 'removed' || status === 'deleted';
+}
+
+function summarizePullRequestFiles(
+  files: GitHubPullRequestFile[],
+): GitHubDiffSummary {
+  return {
+    files: files.length,
+    additions: files.reduce((sum, file) => sum + file.additions, 0),
+    deletions: files.reduce((sum, file) => sum + file.deletions, 0),
+    binaryFiles: files.filter((file) => file.patch === null).length,
+  };
 }

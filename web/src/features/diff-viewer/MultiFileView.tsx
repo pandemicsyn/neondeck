@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { Badge, MiniEmpty } from '../../components/ui';
 import { cn } from '../../lib/cn';
 import {
@@ -10,7 +10,11 @@ import {
 } from './helpers';
 import { FileTreePane } from './FileTreePane';
 import { UnifiedPatchView } from './DiffViewer';
-import type { DiffFilePatch, DiffViewTone } from './types';
+import type {
+  DiffFilePatch,
+  DiffReviewAnnotation,
+  DiffViewTone,
+} from './types';
 
 type MultiFileViewProps = {
   files: DiffFilePatch[];
@@ -23,6 +27,9 @@ type MultiFileViewProps = {
   patchError?: string | null;
   emptyLabel?: string;
   className?: string;
+  annotationsByPath?: Record<string, DiffReviewAnnotation[] | undefined>;
+  renderAnnotation?: (annotation: DiffReviewAnnotation) => ReactNode;
+  footer?: ReactNode;
 };
 
 export function MultiFileView({
@@ -34,6 +41,9 @@ export function MultiFileView({
   isLoadingPatch = false,
   onActivePathChange,
   patchError,
+  annotationsByPath,
+  renderAnnotation,
+  footer,
   title,
   tone = 'primary',
 }: MultiFileViewProps) {
@@ -95,6 +105,9 @@ export function MultiFileView({
         <UnifiedPatchView
           className="min-h-0 flex-1"
           detail={detail ?? selectedFile?.path}
+          lineAnnotations={
+            selectedFile ? annotationsByPath?.[selectedFile.path] : undefined
+          }
           meta={
             selectedFile ? (
               <>
@@ -106,6 +119,7 @@ export function MultiFileView({
             )
           }
           patch={patchHasContent(patch) ? patch : null}
+          renderAnnotation={renderAnnotation}
           title={title}
           tone={tone}
         />
@@ -124,6 +138,7 @@ export function MultiFileView({
             {status}
           </p>
         ) : null}
+        {footer}
       </div>
     </section>
   );

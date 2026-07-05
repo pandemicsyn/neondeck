@@ -512,6 +512,67 @@ describe('app API safety routes', () => {
     }
   });
 
+  it('serves PR file diffs over the local GitHub API route without browser tokens', async () => {
+    const token = process.env.GITHUB_TOKEN;
+    const previousFetch = globalThis.fetch;
+    process.env.GITHUB_TOKEN = 'server-token';
+    globalThis.fetch = vi.fn<typeof fetch>(async (input, init) => {
+      expect(init?.headers).toMatchObject({
+        Authorization: 'Bearer server-token',
+      });
+      const url = String(input);
+      expect(url).toContain(
+        'https://api.github.com/repos/pandemicsyn/neondeck/pulls/123/files',
+      );
+      return new Response(
+        JSON.stringify([
+          {
+            sha: 'sha-a',
+            filename: 'src/app.ts',
+            status: 'modified',
+            additions: 2,
+            deletions: 1,
+            changes: 3,
+            patch: '@@ -1 +1 @@\n-old\n+new\n+another',
+          },
+        ]),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+    try {
+      const response = await app.request(
+        'http://localhost/api/github/prs/pandemicsyn/neondeck/123/files',
+        { headers: { host: 'localhost' } },
+      );
+      const body = (await response.json()) as {
+        ok: boolean;
+        data?: { files?: Array<{ path?: string; patch?: string | null }> };
+      };
+
+      expect(response.status).toBe(200);
+      expect(body).toMatchObject({
+        ok: true,
+        data: {
+          files: [
+            {
+              path: 'src/app.ts',
+              patch: expect.stringContaining(
+                'diff --git a/src/app.ts b/src/app.ts',
+              ),
+            },
+          ],
+        },
+      });
+    } finally {
+      globalThis.fetch = previousFetch;
+      if (token === undefined) {
+        delete process.env.GITHUB_TOKEN;
+      } else {
+        process.env.GITHUB_TOKEN = token;
+      }
+    }
+  });
+
   it('serves PR event autopilot triage over the local API', async () => {
     const response = await app.request(
       'http://localhost/api/autopilot/triage-pr-event',

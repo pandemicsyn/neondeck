@@ -110,6 +110,77 @@ export type GitHubPullRequestResponse = {
   error?: string;
 };
 
+export type GitHubPullRequestFile = Omit<RepoDiffFile, 'patch'> & {
+  patch?: string | null;
+  previousPath?: string | null;
+  changes: number;
+  sha?: string | null;
+  htmlUrl?: string | null;
+  rawUrl?: string | null;
+  contentsUrl?: string | null;
+  message?: string | null;
+};
+
+export type GitHubPullRequestFilesResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  data?: {
+    target?: {
+      repoFullName: string;
+      owner: string;
+      repo: string;
+      number: number;
+      watchId?: string | null;
+    };
+    files: GitHubPullRequestFile[];
+    diffSummary: DiffSummary;
+    fetchedAt: string;
+  };
+  requires?: string[];
+  errors?: string[];
+};
+
+export type GitHubPullRequestReviewThreadComment = {
+  id: string;
+  databaseId: number | null;
+  authorLogin: string | null;
+  body: string;
+  url: string | null;
+  path: string | null;
+  line: number | null;
+  originalLine: number | null;
+  diffHunk: string | null;
+  reviewId: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GitHubPullRequestReviewThread = {
+  id: string;
+  isResolved: boolean;
+  isOutdated: boolean;
+  path: string | null;
+  line: number | null;
+  originalLine?: number | null;
+  diffSide?: string | null;
+  comments: GitHubPullRequestReviewThreadComment[];
+};
+
+export type GitHubPrReviewThreadsResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  data?: {
+    reviewThreads?: GitHubPullRequestReviewThread[];
+    unresolvedReviewThreads?: GitHubPullRequestReviewThread[];
+  };
+  requires?: string[];
+  errors?: string[];
+};
+
 export type RepoConfig = {
   id: string;
   github: {

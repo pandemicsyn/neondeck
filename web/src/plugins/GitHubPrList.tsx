@@ -1,12 +1,19 @@
 import { useFlueClient } from '@flue/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { lazy, Suspense, useState } from 'react';
 import {
   getGitHubPullRequests,
   getRepoRegistry,
   type GitHubPullRequest,
 } from '../api';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
-import { Badge, EmptyState, Button, ScrollArea } from '../components/ui';
+import {
+  Badge,
+  EmptyState,
+  Button,
+  MiniEmpty,
+  ScrollArea,
+} from '../components/ui';
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
 import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
@@ -20,6 +27,12 @@ type GitHubPrListConfig = {
 const githubPrListDefaultConfig = {
   limit: 12,
 };
+
+const GitHubPrReview = lazy(() =>
+  import('../features/pr-review/GitHubPrReview').then((module) => ({
+    default: module.GitHubPrReview,
+  })),
+);
 
 export const GitHubPrListPlugin = {
   id: 'github-pr-list',
@@ -112,6 +125,8 @@ function PrRow({
   item: GitHubPullRequest;
   repoId: string | undefined;
 }) {
+  const [showReview, setShowReview] = useState(false);
+
   return (
     <li key={item.url} className="pr-row px-3.5 py-2 last:border-b-0">
       <div className="group">
@@ -143,6 +158,13 @@ function PrRow({
           </div>
         ) : null}
         <div className="mt-1.5 flex justify-end gap-1.5 font-mono text-[10px]">
+          <Button
+            className="min-h-[28px] shrink-0 border-line bg-transparent px-2 py-1 text-[10px] text-muted"
+            onClick={() => setShowReview((value) => !value)}
+            type="button"
+          >
+            {showReview ? 'hide diff' : 'review'}
+          </Button>
           <SessionReferenceButton
             kind="task"
             label="session"
@@ -170,6 +192,13 @@ function PrRow({
             open
           </a>
         </div>
+        {showReview ? (
+          <div className="mt-2">
+            <Suspense fallback={<MiniEmpty label="Loading PR review." />}>
+              <GitHubPrReview pr={item} />
+            </Suspense>
+          </div>
+        ) : null}
       </div>
     </li>
   );

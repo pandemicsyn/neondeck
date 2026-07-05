@@ -723,6 +723,12 @@ export const entries: SafetyPolicyEntry[] = [
     'Fetches read-only GitHub PR review thread and unresolved comment facts.',
   ),
   action(
+    'neondeck_github_pr_files_get',
+    'Fetch PR file diffs',
+    readOnly,
+    'Fetches read-only GitHub PR file patches and per-file diff metadata.',
+  ),
+  action(
     'neondeck_github_pr_requested_changes_get',
     'Fetch requested changes',
     readOnly,
@@ -754,6 +760,12 @@ export const entries: SafetyPolicyEntry[] = [
     'List PR event watermarks',
     readOnly,
     'Lists persisted PR watch event watermarks.',
+  ),
+  route(
+    '/api/github/prs/:owner/:repo/:number/files',
+    'Fetch PR file diffs API',
+    readOnly,
+    'Local API route for fetching read-only PR file patches with the server-side GitHub token.',
   ),
   route(
     '/api/github/prs/comment',
