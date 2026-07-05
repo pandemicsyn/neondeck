@@ -816,6 +816,68 @@ describe('MCP support', () => {
     }
   });
 
+  it('skips direct MCP approval nudge dispatch for legacy whitespace session ids', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const request = await createMcpApprovalRequest(
+      {
+        serverId: 'fixture',
+        toolName: 'echo',
+        adaptedName: 'mcp__fixture__echo',
+        argumentsHash: 'abc123',
+        argumentsPreview: '{"text":"hello"}',
+      },
+      paths,
+    );
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `
+          UPDATE mcp_tool_approvals
+          SET session_id = '   '
+          WHERE id = ?;
+        `,
+        )
+        .run(request!.id);
+    } finally {
+      database.close();
+    }
+
+    let dispatched = false;
+    const restoreDispatch = setApprovalNudgeDispatchForTests(async () => {
+      dispatched = true;
+      return {
+        dispatchId: 'unexpected-dispatch',
+        acceptedAt: new Date().toISOString(),
+      };
+    });
+
+    try {
+      await expect(
+        resolveMcpApprovalWithPaths(
+          {
+            id: request!.id,
+            decision: 'approve',
+            approverSurface: 'test',
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        ok: true,
+        approval: {
+          id: request!.id,
+          sessionId: null,
+          status: 'approved',
+        },
+      });
+    } finally {
+      restoreDispatch();
+    }
+    expect(dispatched).toBe(false);
+  });
+
   it('records denied MCP approval nudges without dispatching a Flue turn', async () => {
     const home = await tempDir();
     const paths = runtimePaths(home);

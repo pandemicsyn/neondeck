@@ -864,7 +864,7 @@ function readApprovalRow(row: McpApprovalRow): McpApprovalRecord {
     argumentsPreview: row.arguments_preview,
     status: row.status,
     approverSurface: row.approver_surface,
-    sessionId: row.session_id ?? null,
+    sessionId: nonEmpty(row.session_id) ?? null,
     expiresAt: row.expires_at,
     createdAt: row.created_at,
     resolvedAt: row.resolved_at,
