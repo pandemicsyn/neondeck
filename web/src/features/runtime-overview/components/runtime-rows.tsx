@@ -155,7 +155,14 @@ export function McpApprovalRow({
     setBusy(decision);
     setError(null);
     try {
-      await resolveMcpApproval(approval.id, decision);
+      const result = await resolveMcpApproval(approval.id, decision);
+      if (result.requires?.includes('approvalNudge')) {
+        setError(
+          `Approval resolved, but requester notification failed: ${
+            result.errors?.join('; ') ?? 'unknown error'
+          }`,
+        );
+      }
       onRefresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));

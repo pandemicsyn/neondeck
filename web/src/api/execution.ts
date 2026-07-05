@@ -20,6 +20,8 @@ export async function resolveExecutionApproval(
     changed: boolean;
     message: string;
     approval?: ExecutionApproval;
+    requires?: string[];
+    errors?: string[];
   }>(`/api/execution/approvals/${id}/resolve`, {
     decision,
     approverSurface: 'dashboard',

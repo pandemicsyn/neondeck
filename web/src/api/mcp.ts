@@ -1,4 +1,5 @@
 import type {
+  McpApproval,
   McpApprovalsResponse,
   McpLoginResponse,
   McpServersResponse,
@@ -38,6 +39,9 @@ export async function resolveMcpApproval(
     action: string;
     changed: boolean;
     message: string;
+    approval?: McpApproval;
+    requires?: string[];
+    errors?: string[];
   }>(`/api/mcp/approvals/${id}/resolve`, {
     decision,
     approverSurface: 'dashboard',

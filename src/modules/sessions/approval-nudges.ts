@@ -47,14 +47,17 @@ export async function createApprovalResolutionNudge(
       ? `${label} approval ${input.approvalId} approved for ${input.subject}. ${input.retryInstruction}`
       : `${label} approval ${input.approvalId} denied for ${input.subject}. Do not retry unless the user changes the decision.`;
   const errors: string[] = [];
-  const dispatchReceipt = await approvalNudgeDispatch({
-    agent: 'display-assistant',
-    id: input.sessionId,
-    input: message,
-  }).catch((error) => {
-    errors.push(error instanceof Error ? error.message : String(error));
-    return null;
-  });
+  const shouldDispatch = input.decision === 'approved';
+  const dispatchReceipt = shouldDispatch
+    ? await approvalNudgeDispatch({
+        agent: 'display-assistant',
+        id: input.sessionId,
+        input: message,
+      }).catch((error) => {
+        errors.push(error instanceof Error ? error.message : String(error));
+        return null;
+      })
+    : null;
   const created = await createChatSessionCommandEvent(
     {
       sessionId: input.sessionId,
@@ -68,7 +71,8 @@ export async function createApprovalResolutionNudge(
   });
 
   if (created?.ok && 'event' in created && created.event) {
-    const eventStatus = dispatchReceipt ? 'completed' : 'failed';
+    const eventStatus =
+      shouldDispatch && !dispatchReceipt ? 'failed' : 'completed';
     await updateChatSessionCommandEvent(
       {
         sessionId: input.sessionId,
@@ -77,13 +81,16 @@ export async function createApprovalResolutionNudge(
         completedAt: new Date().toISOString(),
         reason: `${input.family}_approval_${input.decision}`,
         result: {
-          ok: Boolean(dispatchReceipt),
+          ok: !shouldDispatch || Boolean(dispatchReceipt),
           command: 'approval-nudge',
           input: message,
-          status: dispatchReceipt ? 'completed' : 'failed',
-          message: dispatchReceipt
-            ? `${message} Flue accepted the answer for delivery.`
-            : `${message} Flue dispatch did not accept the answer; use the approval row to retry manually.`,
+          status: eventStatus,
+          message: shouldDispatch
+            ? dispatchReceipt
+              ? `${message} Flue accepted the answer for delivery.`
+              : `${message} Flue dispatch did not accept the answer; use the approval row to retry manually.`
+            : message,
+          dispatchAttempted: shouldDispatch,
           dispatchReceipt,
         },
       },
@@ -98,16 +105,16 @@ export async function createApprovalResolutionNudge(
   const dispatchAccepted = Boolean(dispatchReceipt);
   await addNotification(
     {
-      level: dispatchAccepted
-        ? input.decision === 'approved'
+      level: shouldDispatch
+        ? dispatchAccepted
           ? 'ready'
-          : 'info'
-        : 'attention',
-      title: dispatchAccepted
-        ? input.decision === 'approved'
+          : 'attention'
+        : 'info',
+      title: shouldDispatch
+        ? dispatchAccepted
           ? `${label} approval answered`
-          : `${label} approval denied`
-        : `${label} approval delivery failed`,
+          : `${label} approval delivery failed`
+        : `${label} approval denied`,
       message,
       source: input.family,
       sourceId: `${input.family}-approval:${input.approvalId}:resolved`,
@@ -115,6 +122,7 @@ export async function createApprovalResolutionNudge(
         approvalId: input.approvalId,
         sessionId: input.sessionId,
         decision: input.decision,
+        dispatchAttempted: shouldDispatch,
         dispatchAccepted,
         dispatchReceipt,
       },

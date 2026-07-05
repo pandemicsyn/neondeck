@@ -227,6 +227,51 @@ describe('execution actions', () => {
     }
   });
 
+  it('records denied execution approval nudges without dispatching a Flue turn', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const session = await createChatSession(
+      { title: 'Execution denied' },
+      paths,
+    );
+    const sessionId = (session as { session: ChatSessionRecord }).session.id;
+    const request = await requestExecutionApproval(
+      { command: 'node --version', cwd: paths.home, sessionId },
+      paths,
+    );
+    const approvalId = readApprovalId(request);
+    let dispatched = false;
+    const restoreDispatch = setApprovalNudgeDispatchForTests(async () => {
+      dispatched = true;
+      return {
+        dispatchId: 'unexpected-dispatch',
+        acceptedAt: new Date().toISOString(),
+      };
+    });
+
+    try {
+      await expect(
+        resolveExecutionApproval({ id: approvalId, decision: 'deny' }, paths),
+      ).resolves.toMatchObject({
+        ok: true,
+        approval: { status: 'denied' },
+      });
+    } finally {
+      restoreDispatch();
+    }
+    expect(dispatched).toBe(false);
+    await expect(
+      listChatSessionCommandEvents({ sessionId }, paths),
+    ).resolves.toMatchObject({
+      events: [
+        expect.objectContaining({
+          status: 'completed',
+          input: expect.stringContaining(`approval ${approvalId} denied`),
+        }),
+      ],
+    });
+  });
+
   it('links execution approval requests to the current Flue session when sessionId is omitted', async () => {
     const paths = runtimePaths(await tempDir());
     await ensureRuntimeHome(paths);
@@ -247,7 +292,7 @@ describe('execution actions', () => {
       { agentName: 'display-assistant', instanceId: sessionId },
       () =>
         requestExecutionApproval(
-          { command: 'node --version', cwd: paths.home },
+          { command: 'node --version', cwd: paths.home, sessionId: '   ' },
           paths,
         ),
     );

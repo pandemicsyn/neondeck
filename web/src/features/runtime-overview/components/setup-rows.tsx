@@ -272,7 +272,14 @@ export function ExecutionApprovalRow({
     setBusy(decision);
     setError(null);
     try {
-      await resolveExecutionApproval(approval.id, decision);
+      const result = await resolveExecutionApproval(approval.id, decision);
+      if (result.requires?.includes('approvalNudge')) {
+        setError(
+          `Approval resolved, but requester notification failed: ${
+            result.errors?.join('; ') ?? 'unknown error'
+          }`,
+        );
+      }
       onRefresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
