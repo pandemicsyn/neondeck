@@ -7,9 +7,23 @@ import {
 
 export const prReviewQueryKeys = {
   files: (pr: GitHubPullRequest) =>
-    ['pr-review', 'files', pr.repo, pr.number] as const,
+    [
+      'pr-review',
+      'files',
+      pr.repo,
+      pr.number,
+      pr.headSha,
+      pr.updatedAt,
+    ] as const,
   reviewThreads: (pr: GitHubPullRequest) =>
-    ['pr-review', 'review-threads', pr.repo, pr.number] as const,
+    [
+      'pr-review',
+      'review-threads',
+      pr.repo,
+      pr.number,
+      pr.headSha,
+      pr.updatedAt,
+    ] as const,
 };
 
 export function useGitHubPullRequestFiles(pr: GitHubPullRequest) {
