@@ -89,7 +89,7 @@ export async function createApprovalResolutionNudge(
           message: shouldDispatch
             ? dispatchReceipt
               ? `${message} Flue accepted the answer for delivery.`
-              : `${message} Flue dispatch did not accept the answer; use the approval row to retry manually.`
+              : `${message} Flue dispatch did not accept the answer; the decision was recorded in this session command log.`
             : message,
           dispatchAttempted: shouldDispatch,
           dispatchReceipt,

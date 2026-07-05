@@ -65,8 +65,11 @@ async function dispatchApprovedPreparedDiffPush(
   const approvalId = approval.approvals?.[0]?.id ?? null;
   let receipt: WorkflowReceipt;
   try {
-    process.env.NEONDECK_HOME = paths.home;
-    receipt = await invokeWorkflow(dispatch.workflow, dispatch.input);
+    receipt = await invokeWorkflowForRuntimeHome(
+      paths,
+      dispatch,
+      invokeWorkflow,
+    );
   } catch (error) {
     const message = errorMessage(error);
     await recordDispatchFailure(
@@ -180,6 +183,18 @@ async function readPushOnApprovalMode(
   const config = await readRuntimeJson(paths.config, parseAppConfig);
   const value = config.autopilot?.pushOnApproval;
   return value === 'push' || value === 'off' ? value : 'verify-then-push';
+}
+
+async function invokeWorkflowForRuntimeHome(
+  paths: RuntimePaths,
+  dispatch: DispatchPlan,
+  invokeWorkflow: NonNullable<ApprovalDispatchDependencies['invokeWorkflow']>,
+) {
+  // Flue workflows still call runtimePaths() from the process environment after
+  // admission, so keep NEONDECK_HOME aligned with this app instance instead of
+  // restoring it immediately after the dynamic import/invoke boundary.
+  process.env.NEONDECK_HOME = paths.home;
+  return invokeWorkflow(dispatch.workflow, dispatch.input);
 }
 
 async function invokeAutopilotWorkflow(

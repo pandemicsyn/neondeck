@@ -64,7 +64,25 @@ export async function runPreparedDiffRevision(
     };
   }
 
-  readWorktreeRecord(loaded.worktreeId, paths);
+  try {
+    readWorktreeRecord(loaded.worktreeId, paths);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false,
+      action: 'prepared_diff_run_revision',
+      changed: false,
+      message,
+      preparedDiff: loaded,
+      requires: ['worktreeId'],
+      errors: [message],
+      error: {
+        code: errorCode(error),
+        message,
+      },
+    };
+  }
+
   const startedHeadSha = await gitCurrentSha(loaded.sourceWorktreePath).catch(
     () => null,
   );
@@ -407,6 +425,12 @@ function stringField(value: unknown) {
 
 function nonEmpty(value: unknown) {
   return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function errorCode(error: unknown) {
+  return error && typeof error === 'object' && 'code' in error
+    ? String((error as { code: unknown }).code)
+    : 'WORKTREE_ERROR';
 }
 
 function failure(action: string, message: string, code: string) {

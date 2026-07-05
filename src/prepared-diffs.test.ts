@@ -359,6 +359,47 @@ describe('prepared diff lifecycle', () => {
     expect(prompt).toContain('Never push branches');
   });
 
+  it('returns a typed revision failure when the prepared worktree is missing', async () => {
+    const { paths } = await fixture();
+    const prepared = await preparedFixture(paths);
+    await requestPreparedDiffRevision(
+      {
+        preparedDiffId: prepared.id,
+        reason: 'Try a smaller adapter.',
+        approverSurface: 'test',
+      },
+      paths,
+    );
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare('DELETE FROM worktrees WHERE id = ?;')
+        .run(prepared.worktreeId);
+    } finally {
+      database.close();
+    }
+    const fakeStart = vi.fn<() => Promise<unknown>>(async () => ({
+      ok: true,
+      action: 'kilo_task_start',
+      changed: true,
+      message: 'Started fake Kilo task.',
+      taskId: 'unexpected-task',
+    }));
+
+    await expect(
+      runPreparedDiffRevision({ preparedDiffId: prepared.id }, paths, {
+        startKiloTask: fakeStart as never,
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      preparedDiff: { id: prepared.id, status: 'revision-requested' },
+      requires: ['worktreeId'],
+      error: { code: 'WORKTREE_NOT_FOUND' },
+    });
+    expect(fakeStart).not.toHaveBeenCalled();
+  });
+
   it('does not clobber an admitted revision run when a duplicate start loses the Kilo lock', async () => {
     const { paths } = await fixture();
     const prepared = await preparedFixture(paths);
