@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { readAutopilotState } from './modules/autopilot/state';
+import { addNotification } from './modules/app-state';
 import {
   ensureRuntimeHome,
   runtimePaths,
@@ -135,6 +136,7 @@ describe('autopilot operator state', () => {
       worktreeId: 'wt-43',
       prNumber: 43,
       localPath: join(paths.worktrees, 'pandemicsyn-neondeck-pr-43'),
+      verificationStatus: 'failed',
     });
     insertExecutionApproval(paths, {
       id: 'approval-1',
@@ -146,11 +148,38 @@ describe('autopilot operator state', () => {
       workflow: 'verify-pr-worktree',
       message: 'Running npm run check.',
     });
+    insertWorkflowRun(paths, {
+      runId: 'run-verify-failed',
+      workflow: 'verify-pr-worktree',
+      message: 'npm run check failed.',
+      status: 'failed',
+      isError: true,
+    });
     insertWorktreeEvent(paths, {
       id: 'event-1',
       worktreeId: 'wt-43',
       message: 'Prepared diff retained for review.',
     });
+    await addNotification(
+      {
+        level: 'attention',
+        title: 'Autopilot needs review',
+        message: 'A prepared diff needs attention.',
+        source: 'autopilot',
+        sourceId: 'test-attention',
+      },
+      paths,
+    );
+    await addNotification(
+      {
+        level: 'attention',
+        title: 'Kilo task needs review',
+        message: 'A delegated task needs attention.',
+        source: 'kilo',
+        sourceId: 'test-kilo-attention',
+      },
+      paths,
+    );
 
     const state = await readAutopilotState(paths);
 
@@ -159,6 +188,8 @@ describe('autopilot operator state', () => {
       preparedDiffs: 1,
       pendingApprovals: 1,
       runningChecks: 1,
+      unreadNotifications: 1,
+      failedChecks: 1,
     });
     expect(state.preparedDiffs[0]).toMatchObject({
       worktreeId: 'wt-43',
@@ -369,6 +400,7 @@ function insertPreparedDiff(
     worktreeId: string;
     prNumber: number;
     localPath: string;
+    verificationStatus?: string;
   },
 ) {
   const now = new Date().toISOString();
@@ -413,7 +445,7 @@ function insertPreparedDiff(
         'abc123',
         'prepared',
         'pending',
-        'not-run',
+        input.verificationStatus ?? 'not-run',
         null,
         'test',
         now,
@@ -491,7 +523,13 @@ function insertExecutionApproval(
 
 function insertWorkflowRun(
   paths: RuntimePaths,
-  input: { runId: string; workflow: string; message: string },
+  input: {
+    runId: string;
+    workflow: string;
+    message: string;
+    status?: string;
+    isError?: boolean;
+  },
 ) {
   const now = new Date().toISOString();
   const database = new DatabaseSync(paths.neondeckDatabase);
@@ -518,14 +556,14 @@ function insertWorkflowRun(
       .run(
         input.runId,
         input.workflow,
-        'active',
+        input.status ?? 'active',
         now,
-        null,
+        input.status && input.status !== 'active' ? now : null,
         now,
         input.message,
         1,
         null,
-        0,
+        input.isError ? 1 : 0,
         now,
       );
   } finally {

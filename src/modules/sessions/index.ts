@@ -1,5 +1,6 @@
 export * from './actions';
 export * from './active-session';
+export * from './agent-context';
 export * from './events';
 export * from './queries';
 export * from './references';

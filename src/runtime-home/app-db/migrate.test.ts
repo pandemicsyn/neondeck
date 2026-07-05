@@ -59,8 +59,8 @@ describe('app database migrator', () => {
     const root = await tempDir();
     const databasePath = join(root, 'neondeck.db');
     const migrations = readAppDbMigrationFiles();
-    const baseline = migrations[0];
-    initializePrePrReviewAppDatabase(databasePath);
+    const [baseline] = migrations;
+    initializePrePendingMigrationAppDatabase(databasePath);
 
     const result = applyAppDbMigrations(databasePath, {
       now: new Date('2026-07-04T12:00:00Z'),
@@ -90,7 +90,7 @@ describe('app database migrator', () => {
   it('repairs indexes after pre-v9 legacy table rebuild shims before stamping', async () => {
     const root = await tempDir();
     const databasePath = join(root, 'neondeck.db');
-    initializePrePrReviewAppDatabase(databasePath);
+    initializePrePendingMigrationAppDatabase(databasePath);
     const database = new DatabaseSync(databasePath);
     try {
       database.exec(`
@@ -125,7 +125,7 @@ describe('app database migrator', () => {
     const root = await tempDir();
     const databasePath = join(root, 'neondeck.db');
     const migrations = readAppDbMigrationFiles();
-    initializePrePrReviewAppDatabase(databasePath);
+    initializePrePendingMigrationAppDatabase(databasePath);
     const database = new DatabaseSync(databasePath);
     try {
       database.exec(`
@@ -192,8 +192,8 @@ describe('app database migrator', () => {
     const databasePath = join(root, 'neondeck.db');
     const migrationsFolder = await copyMigrations(root);
     const migrations = readAppDbMigrationFiles();
-    const baseline = migrations[0];
-    const head = migrations[migrations.length - 1];
+    const [baseline] = migrations;
+    const head = migrations.at(-1) ?? baseline;
     applyAppDbMigrations(databasePath);
 
     expect(readAppDbMigrationStatus(databasePath)).toMatchObject({
@@ -365,14 +365,15 @@ async function tempDir() {
   return path;
 }
 
-function initializePrePrReviewAppDatabase(path: string) {
+function initializePrePendingMigrationAppDatabase(path: string) {
   initializeLegacyAppDatabase(path);
   const database = new DatabaseSync(path);
   try {
     database.exec(`
-      DROP TABLE github_pr_file_cache;
-      DROP TABLE pr_review_draft_comments;
-      DROP TABLE pr_review_drafts;
+      DROP TABLE IF EXISTS github_pr_file_cache;
+      DROP TABLE IF EXISTS pr_review_draft_comments;
+      DROP TABLE IF EXISTS pr_review_drafts;
+      DROP TABLE IF EXISTS chat_session_command_events;
     `);
   } finally {
     database.close();

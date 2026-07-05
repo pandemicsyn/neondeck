@@ -3,7 +3,9 @@ import type { RuntimePaths } from '../../runtime-home';
 import {
   archiveChatSession,
   createChatSession,
+  createChatSessionCommandEvent,
   linkChatSessionContext,
+  listChatSessionCommandEvents,
   listChatSessions,
   pinChatSession,
   readChatSession,
@@ -16,6 +18,7 @@ import {
   searchChatSessions,
   startNeonSession,
   switchChatSession,
+  updateChatSessionCommandEvent,
 } from '../../modules/sessions';
 import { safeJsonBody, safeJsonObject } from '../http';
 
@@ -90,6 +93,41 @@ export function createSessionRoutes(paths: RuntimePaths) {
       paths,
     );
     return c.json(result, result.ok ? 200 : 'requires' in result ? 400 : 404);
+  });
+
+  routes.get('/sessions/:id/command-events', async (c) => {
+    const rawLimit = Number(c.req.query('limit'));
+    const result = await listChatSessionCommandEvents(
+      {
+        sessionId: c.req.param('id'),
+        limit: Number.isFinite(rawLimit) ? rawLimit : undefined,
+      },
+      paths,
+    );
+    return c.json(result, result.ok ? 200 : 404);
+  });
+
+  routes.post('/sessions/:id/command-events', async (c) => {
+    const result = await createChatSessionCommandEvent(
+      {
+        ...(await safeJsonObject(c)),
+        sessionId: c.req.param('id'),
+      } as Parameters<typeof createChatSessionCommandEvent>[0],
+      paths,
+    );
+    return c.json(result, result.ok ? 200 : 400);
+  });
+
+  routes.post('/sessions/:id/command-events/:eventId', async (c) => {
+    const result = await updateChatSessionCommandEvent(
+      {
+        ...(await safeJsonObject(c)),
+        sessionId: c.req.param('id'),
+        eventId: c.req.param('eventId'),
+      } as Parameters<typeof updateChatSessionCommandEvent>[0],
+      paths,
+    );
+    return c.json(result, result.ok ? 200 : 400);
   });
 
   routes.post('/sessions/:id/summary/refresh', async (c) => {

@@ -120,6 +120,9 @@ export async function readAutopilotState(
   const preparedDiffs = (preparedDiffSnapshot.preparedDiffs ?? []).map(
     preparedDiffFromRecord,
   );
+  const failedChecks = preparedDiffs.filter(
+    (diff) => diff.verificationStatus === 'failed',
+  );
   const pendingApprovals = [
     ...approvals.approvals
       .filter(isAutopilotApproval)
@@ -131,6 +134,12 @@ export async function readAutopilotState(
       ),
     ),
   ];
+  const unreadNotifications = notifications.filter(
+    (notification) =>
+      notification.source === 'autopilot' &&
+      !notification.resolvedAt &&
+      !notification.readAt,
+  );
   const queue = [
     ...watches.map((watch) =>
       queueItemFromWatch(
@@ -188,6 +197,8 @@ export async function readAutopilotState(
       preparedDiffs: preparedDiffs.length,
       pendingApprovals: pendingApprovals.length,
       runningChecks: runningChecks.length,
+      unreadNotifications: unreadNotifications.length,
+      failedChecks: failedChecks.length,
       recentActivity: recentActivity.length,
       placeholderAdapters: [
         'Queue entries are derived from watches, worktrees, approvals, and Flue observations until Phase 19 workflow admission tables land.',

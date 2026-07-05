@@ -115,6 +115,7 @@ function AutopilotView({
           <Badge>{state.summary.queuedItems} queue</Badge>
         </div>
       </header>
+      <NeedsAttentionBanner state={state} />
       <ScrollArea className="flex-1">
         <div className="grid gap-2 p-3 xl:grid-cols-[1.15fr_0.85fr]">
           <section className="space-y-2">
@@ -188,6 +189,31 @@ function AutopilotView({
           </section>
         </div>
       </ScrollArea>
+    </div>
+  );
+}
+
+function NeedsAttentionBanner({ state }: { state: AutopilotState }) {
+  const items = [
+    ['approvals', state.summary.pendingApprovals],
+    ['unread', state.summary.unreadNotifications],
+    ['failed checks', state.summary.failedChecks],
+  ] as const;
+  const total = items.reduce((sum, [, value]) => sum + value, 0);
+  if (total === 0) return null;
+
+  return (
+    <div className="flex min-h-8 items-center justify-between gap-3 border-b border-accent/50 bg-soft px-3 font-mono text-[10px] leading-4 text-muted">
+      <span className="text-accent">NEEDS ATTENTION</span>
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1">
+        {items
+          .filter(([, value]) => value > 0)
+          .map(([label, value]) => (
+            <span className="whitespace-nowrap" key={label}>
+              {value} {label}
+            </span>
+          ))}
+      </div>
     </div>
   );
 }

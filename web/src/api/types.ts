@@ -996,6 +996,8 @@ export type AutopilotState = {
     preparedDiffs: number;
     pendingApprovals: number;
     runningChecks: number;
+    unreadNotifications: number;
+    failedChecks: number;
     recentActivity: number;
     placeholderAdapters: string[];
   };
@@ -1136,6 +1138,7 @@ export type ChatSessionRecord = {
   summaryRefreshNote: string | null;
   summaryStatus: 'missing' | 'fresh' | 'stale';
   contextLoadedAt: string;
+  contextMemoryIds: string[];
   createdAt: string;
   updatedAt: string;
   lastActiveAt: string;
@@ -1179,6 +1182,39 @@ export type ChatSessionMutationResponse = {
   session?: ChatSessionRecord;
   state?: NeonSessionState;
   reference?: unknown;
+  errors?: string[];
+  requires?: string[];
+};
+
+export type ChatSessionCommandEvent = {
+  id: string;
+  sessionId: string;
+  input: string;
+  status: 'running' | 'completed' | 'failed';
+  result: NeonCommandResult | null;
+  flueRunId: string | null;
+  workflowSummaryId: string | null;
+  createdAt: string;
+  completedAt: string | null;
+  updatedAt: string;
+};
+
+export type ChatSessionCommandEventListResponse = {
+  ok: boolean;
+  action: 'session_command_events_list';
+  changed: false;
+  events: ChatSessionCommandEvent[];
+  fetchedAt: string;
+  errors?: string[];
+  requires?: string[];
+};
+
+export type ChatSessionCommandEventMutationResponse = {
+  ok: boolean;
+  action: 'session_command_event_create' | 'session_command_event_update';
+  changed: boolean;
+  message: string;
+  event?: ChatSessionCommandEvent;
   errors?: string[];
   requires?: string[];
 };

@@ -160,6 +160,8 @@ export type AutopilotState = {
     preparedDiffs: number;
     pendingApprovals: number;
     runningChecks: number;
+    unreadNotifications: number;
+    failedChecks: number;
     recentActivity: number;
     placeholderAdapters: string[];
   };
@@ -367,6 +369,8 @@ export const autopilotStateSchema = v.object({
     preparedDiffs: v.number(),
     pendingApprovals: v.number(),
     runningChecks: v.number(),
+    unreadNotifications: v.number(),
+    failedChecks: v.number(),
     recentActivity: v.number(),
     placeholderAdapters: v.array(v.string()),
   }),
