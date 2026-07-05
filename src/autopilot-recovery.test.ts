@@ -209,6 +209,50 @@ describe('autopilot recovery and notifications', () => {
     });
   });
 
+  it('does not dispatch revision runs from the model-callable recovery action', async () => {
+    const paths = await fixture();
+    insertPreparedDiff(paths.neondeckDatabase, {
+      id: 'pd-revision-model',
+      status: 'revision-requested',
+      pushApprovalStatus: 'rejected',
+      verificationStatus: 'not-run',
+    });
+
+    await expect(
+      runAutopilotRecoveryAction(
+        {
+          preparedDiffId: 'pd-revision-model',
+          recoveryAction: 'run-revision',
+          reason: 'Run from model.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['userSurfaceDispatch'],
+    });
+    insertPreparedDiff(paths.neondeckDatabase, {
+      id: 'pd-request-model',
+      status: 'prepared',
+      pushApprovalStatus: 'pending',
+      verificationStatus: 'not-run',
+    });
+    await expect(
+      runAutopilotRecoveryAction(
+        {
+          preparedDiffId: 'pd-request-model',
+          recoveryAction: 'request-revision',
+          reason: 'Run from model.',
+          runRevisionNow: true,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['userSurfaceDispatch'],
+    });
+  });
+
   it('rebases a prepared diff against current PR head and preserves prepared-diff lifecycle', async () => {
     const { paths, repo } = await gitFixture();
     const created = await createWorktree(

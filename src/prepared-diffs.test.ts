@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -15,7 +16,10 @@ import {
   requestPreparedDiffRevision,
   runPreparedDiffVerification,
 } from './modules/prepared-diffs';
-import { runPreparedDiffRevision } from './modules/autopilot';
+import {
+  abandonPreparedDiffWithRevisionAbort,
+  runPreparedDiffRevision,
+} from './modules/autopilot';
 import { reconcilePreparedDiffRevisionResult } from './modules/kilo';
 import type { KiloTaskRecord } from './modules/kilo';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
@@ -286,20 +290,20 @@ describe('prepared diff lifecycle', () => {
     const startInputs: unknown[] = [];
     const fakeStart = vi.fn<(input: unknown) => Promise<unknown>>(
       async (input) => {
-      startInputs.push(input);
-      return {
-        ok: true,
-        action: 'kilo_task_start',
-        changed: true,
-        message: 'Started fake Kilo task.',
-        taskId: 'kilo-revision-1',
-        task: {
-          id: 'kilo-revision-1',
-          status: 'running',
-          title: 'Revise prepared diff',
-          cwd: prepared.sourceWorktreePath,
-        },
-      };
+        startInputs.push(input);
+        return {
+          ok: true,
+          action: 'kilo_task_start',
+          changed: true,
+          message: 'Started fake Kilo task.',
+          taskId: 'kilo-revision-1',
+          task: {
+            id: 'kilo-revision-1',
+            status: 'running',
+            title: 'Revise prepared diff',
+            cwd: prepared.sourceWorktreePath,
+          },
+        };
       },
     );
 
@@ -327,6 +331,7 @@ describe('prepared diff lifecycle', () => {
             kiloTaskId: 'kilo-revision-1',
             reason: 'Keep the helper pure and add a regression test.',
             outcome: 'started',
+            startedHeadSha: expect.any(String),
           },
         },
       },
@@ -402,11 +407,9 @@ describe('prepared diff lifecycle', () => {
       },
       paths,
     );
-    await runPreparedDiffRevision(
-      { preparedDiffId: prepared.id },
-      paths,
-      { startKiloTask: fakeRevisionStarter(prepared, 'kilo-revision-failed') },
-    );
+    await runPreparedDiffRevision({ preparedDiffId: prepared.id }, paths, {
+      startKiloTask: fakeRevisionStarter(prepared, 'kilo-revision-failed'),
+    });
     const failed = await reconcilePreparedDiffRevisionResult(
       {
         task: kiloRevisionTask(prepared, 'kilo-revision-failed', 'failed'),
@@ -427,6 +430,110 @@ describe('prepared diff lifecycle', () => {
           error: 'Kilo failed.',
         },
       },
+    });
+  });
+
+  it('treats committed and restart-recovered revision output as completed', async () => {
+    const { paths } = await fixture();
+    const prepared = await preparedFixture(paths);
+    await requestPreparedDiffRevision(
+      {
+        preparedDiffId: prepared.id,
+        reason: 'Commit the revision locally.',
+        approverSurface: 'test',
+      },
+      paths,
+    );
+    await runPreparedDiffRevision({ preparedDiffId: prepared.id }, paths, {
+      startKiloTask: fakeRevisionStarter(prepared, 'kilo-revision-commit'),
+    });
+    await writeFile(
+      join(prepared.sourceWorktreePath, 'src/app.ts'),
+      'export const value = 3;\n',
+    );
+    await git(prepared.sourceWorktreePath, ['add', '-A']);
+    await git(prepared.sourceWorktreePath, ['commit', '-m', 'revision commit']);
+
+    const completed = await reconcilePreparedDiffRevisionResult(
+      {
+        task: kiloRevisionTask(prepared, 'kilo-revision-commit', 'unknown'),
+        status: 'unknown',
+        diff: { ok: true, fileCount: 0 },
+      },
+      paths,
+    );
+
+    expect(completed).toMatchObject({
+      id: prepared.id,
+      status: 'prepared',
+      summary: {
+        revisionRun: {
+          kiloTaskId: 'kilo-revision-commit',
+          outcome: 'completed',
+          changedFiles: 0,
+          completedHeadSha: expect.any(String),
+        },
+      },
+    });
+  });
+
+  it('requires aborting an in-progress revision before abandon and supports user-surface abort', async () => {
+    const { paths } = await fixture();
+    const prepared = await preparedFixture(paths);
+    await requestPreparedDiffRevision(
+      {
+        preparedDiffId: prepared.id,
+        reason: 'Stop this run.',
+        approverSurface: 'test',
+      },
+      paths,
+    );
+    await runPreparedDiffRevision({ preparedDiffId: prepared.id }, paths, {
+      startKiloTask: fakeRevisionStarter(prepared, 'kilo-revision-abandon'),
+    });
+    insertKiloTaskRow(paths.neondeckDatabase, prepared, {
+      taskId: 'kilo-revision-abandon',
+      status: 'running',
+    });
+
+    await expect(
+      abandonPreparedDiff(
+        { preparedDiffId: prepared.id, confirm: true, reason: 'Stop.' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['revisionRunAbort'],
+    });
+
+    const fakeAbort = vi.fn<() => Promise<unknown>>(async () => ({
+      ok: true,
+      action: 'kilo_task_abort',
+      changed: true,
+      message: 'Stopped fake Kilo task.',
+    }));
+    await expect(
+      abandonPreparedDiffWithRevisionAbort(
+        { preparedDiffId: prepared.id, confirm: true, reason: 'Stop.' },
+        paths,
+        { abortKiloTask: fakeAbort as never },
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      preparedDiff: { status: 'abandoned' },
+    });
+    expect(fakeAbort).toHaveBeenCalledWith(
+      { taskId: 'kilo-revision-abandon' },
+      paths,
+    );
+    await expect(
+      ensurePreparedDiffForWorktree(worktreeLikeFromPrepared(prepared), paths, {
+        createdBy: 'kilo:kilo-revision-abandon',
+        resetDecisionState: true,
+      }),
+    ).resolves.toMatchObject({
+      id: prepared.id,
+      status: 'abandoned',
     });
   });
 });
@@ -567,6 +674,44 @@ function kiloRevisionTask(
     updatedAt: now,
     completedAt: now,
   };
+}
+
+function insertKiloTaskRow(
+  databasePath: string,
+  prepared: Awaited<ReturnType<typeof preparedFixture>>,
+  input: { taskId: string; status: KiloTaskRecord['status'] },
+) {
+  const now = new Date().toISOString();
+  const database = new DatabaseSync(databasePath);
+  try {
+    database
+      .prepare(
+        `
+        INSERT INTO kilo_tasks (
+          id, title, prompt, repo_id, repo_full_name, worktree_id, lock_id, cwd,
+          mode, status, explicit_user_request, auto_enabled, cli_path,
+          args_json, pid, process_started_at, root_session_id,
+          child_session_ids_json, raw_log_path, summary, exit_code, error,
+          created_at, updated_at, completed_at
+        )
+        VALUES (?, 'Revision fixture', 'Revise.', ?, ?, ?, NULL, ?,
+          'draft-fix', ?, 1, 1, 'kilo', '[]', NULL, NULL, NULL, '[]',
+          NULL, NULL, NULL, NULL, ?, ?, NULL);
+      `,
+      )
+      .run(
+        input.taskId,
+        prepared.repoId,
+        prepared.repoFullName,
+        prepared.worktreeId,
+        prepared.sourceWorktreePath,
+        input.status,
+        now,
+        now,
+      );
+  } finally {
+    database.close();
+  }
 }
 
 function objectField(value: unknown, field: string): Record<string, unknown> {

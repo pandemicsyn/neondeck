@@ -3,6 +3,7 @@ import {
   commentPrAutofixResult,
   fixPrCiFailure,
   fixPrReviewFeedback,
+  abandonPreparedDiffWithRevisionAbort,
   preparePrWorktree,
   pushPrAutofix,
   runPreparedDiffRevision,
@@ -14,7 +15,6 @@ import {
   runAutopilotRecoveryAction,
 } from '../../modules/autopilot/recovery';
 import {
-  abandonPreparedDiff,
   approvePreparedDiffPush,
   listPreparedDiffs,
   openPreparedDiffWorktree,
@@ -183,7 +183,7 @@ export function createAutopilotRoutes(paths: RuntimePaths) {
       paths,
     );
     const result =
-      requested.ok && body.runNow === true
+      requested.ok && (body.runRevisionNow === true || body.runNow === true)
         ? await runPreparedDiffRevision(
             {
               preparedDiffId: c.req.param('id'),
@@ -208,7 +208,7 @@ export function createAutopilotRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/prepared-diffs/:id/abandon', async (c) => {
-    const result = await abandonPreparedDiff(
+    const result = await abandonPreparedDiffWithRevisionAbort(
       { ...(await safeJsonObject(c)), preparedDiffId: c.req.param('id') },
       paths,
     );
@@ -243,6 +243,7 @@ export function createAutopilotRoutes(paths: RuntimePaths) {
     const result = await runAutopilotRecoveryAction(
       { ...(await safeJsonObject(c)), preparedDiffId: c.req.param('id') },
       paths,
+      { allowRevisionDispatch: true },
     );
     recordHandledPrApiResult(paths, 'api:autopilot_recovery', result);
     return c.json(result, preparedDiffHttpStatus(result));

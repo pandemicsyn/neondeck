@@ -17,7 +17,10 @@ export {
 export { triagePrEvent } from './triage';
 export { preparePrWorktree, verifyPrWorktree } from './worktree';
 export { pushPrAutofix } from './push';
-export { runPreparedDiffRevision } from './revision-run';
+export {
+  abandonPreparedDiffWithRevisionAbort,
+  runPreparedDiffRevision,
+} from './revision-run';
 export { fixPrCiFailure } from './ci-fix';
 export { fixPrReviewFeedback } from './review-feedback';
 export { commentPrAutofixResult } from './comments';

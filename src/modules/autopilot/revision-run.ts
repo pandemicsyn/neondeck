@@ -1,11 +1,13 @@
 import * as v from 'valibot';
 import { addNotification, addWorkflowSummary } from '../app-state';
-import { startKiloTask } from '../kilo';
+import { abortKiloTask, startKiloTask, tryKiloTask } from '../kilo';
 import { readWorktreeRecord } from '../worktrees';
-import { gitDiff } from '../../repo-edit/git';
+import { gitCurrentSha, gitDiff } from '../../repo-edit/git';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 import { asJsonValue } from '../../lib/action-result';
 import {
+  abandonPreparedDiff,
+  abandonInputSchema,
   assertTransition,
   mergeSummary,
   runRevisionInputSchema,
@@ -15,6 +17,7 @@ import {
 } from '../prepared-diffs';
 
 type StartKiloTask = typeof startKiloTask;
+type AbortKiloTask = typeof abortKiloTask;
 
 export async function runPreparedDiffRevision(
   rawInput: unknown,
@@ -59,6 +62,9 @@ export async function runPreparedDiffRevision(
   }
 
   readWorktreeRecord(loaded.worktreeId, paths);
+  const startedHeadSha = await gitCurrentSha(loaded.sourceWorktreePath).catch(
+    () => null,
+  );
   const startedAt = new Date().toISOString();
   const starting = updatePreparedDiffState(
     loaded.id,
@@ -71,6 +77,7 @@ export async function runPreparedDiffRevision(
           reason,
           approverSurface: parsed.input.approverSurface ?? null,
           startedAt,
+          startedHeadSha,
           outcome: 'started',
         },
       }),
@@ -104,6 +111,7 @@ export async function runPreparedDiffRevision(
             reason,
             approverSurface: parsed.input.approverSurface ?? null,
             startedAt,
+            startedHeadSha,
             outcome: 'failed',
             error: taskResult.message,
           },
@@ -152,6 +160,7 @@ export async function runPreparedDiffRevision(
           reason,
           approverSurface: parsed.input.approverSurface ?? null,
           startedAt,
+          startedHeadSha,
           outcome: 'started',
           status: stringField(taskData.task?.status) ?? 'running',
           title: stringField(taskData.task?.title) ?? null,
@@ -199,6 +208,49 @@ export async function runPreparedDiffRevision(
     preparedDiff: running,
     data: asJsonValue({ kiloTaskId: taskId ?? null }),
   };
+}
+
+export async function abandonPreparedDiffWithRevisionAbort(
+  rawInput: unknown,
+  paths: RuntimePaths = runtimePaths(),
+  dependencies: { abortKiloTask?: AbortKiloTask } = {},
+): Promise<PreparedDiffActionResult> {
+  const parsed = parseInput(
+    abandonInputSchema,
+    rawInput,
+    'prepared_diff_abandon',
+  );
+  if (!parsed.ok) return parsed.result;
+  const loaded = readPreparedDiffRecord(parsed.input.preparedDiffId, paths);
+  if (loaded?.status !== 'revision-in-progress') {
+    return abandonPreparedDiff(rawInput, paths);
+  }
+  if (parsed.input.confirm !== true) {
+    return abandonPreparedDiff(rawInput, paths);
+  }
+
+  const kiloTaskId = stringField(
+    objectField(objectField(loaded.summary).revisionRun).kiloTaskId,
+  );
+  const task = kiloTaskId ? tryKiloTask(kiloTaskId, paths) : undefined;
+  if (task?.status === 'running') {
+    const aborter = dependencies.abortKiloTask ?? abortKiloTask;
+    const aborted = await aborter({ taskId: task.id }, paths);
+    if (!aborted.ok) {
+      return {
+        ok: false,
+        action: 'prepared_diff_abandon',
+        changed: false,
+        message: `Revision run must be stopped before abandoning: ${aborted.message}`,
+        preparedDiff: loaded,
+        requires: ['revisionRunAbort'],
+        errors: [aborted.message],
+        error: { code: 'REVISION_RUN_ABORT_FAILED', message: aborted.message },
+      };
+    }
+  }
+
+  return abandonPreparedDiff(rawInput, paths, { revisionRunAborted: true });
 }
 
 async function revisionPrompt(
@@ -259,7 +311,11 @@ function parseInput<T>(
   const message = parsed.issues.map((issue) => issue.message).join('; ');
   return {
     ok: false,
-    result: failure(action, `Invalid prepared-diff input: ${message}`, 'INVALID_INPUT'),
+    result: failure(
+      action,
+      `Invalid prepared-diff input: ${message}`,
+      'INVALID_INPUT',
+    ),
   };
 }
 

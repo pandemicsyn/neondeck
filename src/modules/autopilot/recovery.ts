@@ -17,7 +17,10 @@ import {
   readPreparedDiffSummary,
   requestPreparedDiffRevision,
 } from '../prepared-diffs';
-import { runPreparedDiffRevision } from './revision-run';
+import {
+  abandonPreparedDiffWithRevisionAbort,
+  runPreparedDiffRevision,
+} from './revision-run';
 import { commentPrAutofixResult } from './comments';
 import { pushPrAutofix } from './push';
 import { verifyPrWorktree } from './worktree';
@@ -60,6 +63,7 @@ type AutopilotRecoveryOption = {
 type AutopilotRecoveryDependencies = {
   fetchPullRequestEventState?: typeof fetchPullRequestEventState;
   token?: string;
+  allowRevisionDispatch?: boolean;
 };
 
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
@@ -343,12 +347,28 @@ export async function runAutopilotRecoveryAction(
   }
 
   if (input.recoveryAction === 'request-revision') {
-    if (input.runRevisionNow !== false && !input.reason?.trim()) {
+    const runRevisionNow = dependencies.allowRevisionDispatch
+      ? input.runRevisionNow !== false
+      : input.runRevisionNow === true;
+    if (runRevisionNow && !dependencies.allowRevisionDispatch) {
+      return revisionDispatchRequiresUserSurface(preparedDiff.id);
+    }
+    if (runRevisionNow && !input.reason?.trim()) {
       return {
         ok: false,
         action: 'autopilot_recovery_run',
         changed: false,
         message: 'Running a prepared-diff revision requires a reason.',
+        preparedDiffId: preparedDiff.id,
+        requires: ['reason'],
+      };
+    }
+    if (!input.reason?.trim()) {
+      return {
+        ok: false,
+        action: 'autopilot_recovery_run',
+        changed: false,
+        message: 'Requesting a prepared-diff revision requires a reason.',
         preparedDiffId: preparedDiff.id,
         requires: ['reason'],
       };
@@ -361,7 +381,7 @@ export async function runAutopilotRecoveryAction(
       },
       paths,
     );
-    if (!result.ok || input.runRevisionNow === false) {
+    if (!result.ok || !runRevisionNow) {
       return wrapRecoveryResult(input.recoveryAction, preparedDiff.id, result);
     }
     const run = await runPreparedDiffRevision(
@@ -379,6 +399,9 @@ export async function runAutopilotRecoveryAction(
   }
 
   if (input.recoveryAction === 'run-revision') {
+    if (!dependencies.allowRevisionDispatch) {
+      return revisionDispatchRequiresUserSurface(preparedDiff.id);
+    }
     const result = await runPreparedDiffRevision(
       {
         preparedDiffId: preparedDiff.id,
@@ -415,7 +438,10 @@ export async function runAutopilotRecoveryAction(
   }
 
   if (input.recoveryAction === 'abandon') {
-    const result = await abandonPreparedDiff(
+    const abandoner = dependencies.allowRevisionDispatch
+      ? abandonPreparedDiffWithRevisionAbort
+      : abandonPreparedDiff;
+    const result = await abandoner(
       {
         preparedDiffId: preparedDiff.id,
         reason: input.reason,
@@ -440,6 +466,18 @@ export async function runAutopilotRecoveryAction(
       status: preparedDiff.status,
       summary: preparedDiff.summary,
     },
+  };
+}
+
+function revisionDispatchRequiresUserSurface(preparedDiffId: string) {
+  return {
+    ok: false,
+    action: 'autopilot_recovery_run',
+    changed: false,
+    message:
+      'Starting a prepared-diff revision run is only available from a user-owned dashboard/API surface.',
+    preparedDiffId,
+    requires: ['userSurfaceDispatch'],
   };
 }
 

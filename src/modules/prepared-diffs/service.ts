@@ -58,6 +58,14 @@ export async function ensurePreparedDiffForWorktree(
   const shouldResetDecisionState = Boolean(
     existing && input.resetDecisionState,
   );
+  if (
+    existing?.status === 'abandoned' &&
+    shouldResetDecisionState &&
+    shouldKeepAbandonedRevision(existing.summary, input.createdBy)
+  ) {
+    updateWorktreeLifecycle(existing.worktreeId, 'cleanup-pending', paths);
+    return existing;
+  }
   if (existing && shouldResetDecisionState) {
     supersedeApprovals(
       existing.id,
@@ -482,6 +490,7 @@ export async function requestPreparedDiffRevision(
 export async function abandonPreparedDiff(
   rawInput: unknown,
   paths: RuntimePaths = runtimePaths(),
+  dependencies: { revisionRunAborted?: boolean } = {},
 ): Promise<PreparedDiffActionResult> {
   const parsed = parseInput(
     abandonInputSchema,
@@ -519,6 +528,26 @@ export async function abandonPreparedDiff(
     ],
   );
   if (!transition.ok) return transition.result;
+  if (
+    loaded.record.status === 'revision-in-progress' &&
+    dependencies.revisionRunAborted !== true
+  ) {
+    return {
+      ok: false,
+      action: 'prepared_diff_abandon',
+      changed: false,
+      message:
+        'Abandoning a running prepared-diff revision requires stopping the revision run first.',
+      preparedDiff: loaded.record,
+      requires: ['revisionRunAbort'],
+      errors: ['revision run must be stopped before abandon.'],
+      error: {
+        code: 'REVISION_RUN_IN_PROGRESS',
+        message:
+          'Abandoning a running prepared-diff revision requires stopping the revision run first.',
+      },
+    };
+  }
   const updated = updatePreparedDiffState(
     loaded.record.id,
     {
@@ -697,4 +726,24 @@ function failure(action: string, message: string, code: string) {
     errors: [message],
     error: { code, message },
   };
+}
+
+function shouldKeepAbandonedRevision(
+  summary: unknown,
+  createdBy: string | undefined,
+) {
+  if (!createdBy?.startsWith('kilo:')) return false;
+  const taskId = createdBy.slice('kilo:'.length);
+  const run = objectField(objectField(summary).revisionRun);
+  return stringField(run.kiloTaskId) === taskId;
+}
+
+function objectField(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function stringField(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value : undefined;
 }
