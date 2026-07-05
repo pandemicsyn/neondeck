@@ -192,36 +192,98 @@ flow → submit Request changes) recorded in the PR description.
 
 ## Follow-ups: PR-files performance (recorded 2026-07-04, not part of this PR)
 
-The implemented viewing path fetches `pulls/:number/files` from the GitHub API per view, with
-client-side (React Query) caching only, and honestly flags the API's gaps (`binary`/`truncated`
-patches render a placeholder). Two sized follow-ups, in priority order:
+The implemented viewing path (`GET /prs/:owner/:repo/:number/files` →
+`getGitHubPrFiles({ repo, prNumber }, paths)` in `src/modules/github/pull-requests.ts`) fetches
+`pulls/:number/files` from the GitHub API per view, with client-side (React Query) caching only,
+and honestly flags the API's gaps: the sanitized per-file shape is
+`{ path, previousPath, status, additions, deletions, binary, patch, truncated, message }`, where
+`truncated: true` + a message renders a placeholder instead of a diff. Two sized follow-ups, in
+priority order. **Both must preserve that response shape exactly — the frontend never learns
+which provider answered.**
 
-1. **Server-side PR-files cache (small — do soon).** Cache the files response in the app DB keyed
-   by `(repo, number, headSha)`. The key includes the head SHA, so entries are immutable — no
-   invalidation, just retention pruning alongside other audit-ish rows. Kills the
-   refetch-per-deck-reload API burn (watchers already spend the rate budget) and makes revisits
-   instant. Also benefits the review composer, which re-reads files during staleness checks.
-2. **Local-checkout diff provider (larger — adopt when omitted patches or hunk expansion
-   actually bite).** For registry repos, the server fetches the PR head into an **ephemeral
-   ref** (`git fetch origin pull/<n>/head:<temp>` — never touches the working tree; classify as
-   the read-only fact path like repo-status) and produces the diff locally with
-   **three-dot/merge-base semantics** so it matches GitHub's rendered view. Benefits: full
-   patches regardless of size (fixes `truncated` placeholders), no 3,000-file API cap, real file
-   contents enabling `@pierre/diffs` hunk expansion and contents-based `FileDiff` rendering.
-   Same endpoint, provider selected server-side; the GitHub API remains the universal fallback
-   (repo not checked out, fetch failure, detached environments).
+### Follow-up 1 — server-side PR-files cache (small; ship on its own)
 
-   Cautions for the implementer: (a) merge-base correctness is the trap — a two-dot diff shows
-   upstream drift as PR changes; test against a real PR with a stale branch; (b) ephemeral-ref
-   hygiene (create under a reserved namespace, always clean up, tolerate concurrent views);
-   (c) route filesystem/git access through the `WorkspaceApi` seam from
-   `.plans/EXEDEV_WORKSPACE_MODE_PLAN.md` so "local checkout" transparently means the VM checkout
-   in exe.dev workspace mode; (d) the diff must feed the same sanitized response schema — the
-   frontend must not know which provider answered.
+- **Table** (add to `src/runtime-home/app-db/schema.ts`, migration via `db:generate`):
 
-Trigger discipline: ship (1) on its own; hold (2) until truncated-patch placeholders or the lack
-of context expansion is a felt problem in real use — it's real machinery (ref hygiene, fallback
-paths) that should be pulled by need, not pushed.
+  ```text
+  github_pr_file_cache
+    repo        TEXT NOT NULL           -- owner/name
+    pr_number   INTEGER NOT NULL
+    head_sha    TEXT NOT NULL
+    payload     TEXT NOT NULL           -- JSON: the exact sanitized files array served today
+    byte_size   INTEGER NOT NULL
+    fetched_at  TEXT NOT NULL
+    PRIMARY KEY (repo, pr_number, head_sha)
+  ```
+
+- **Key source**: the frontend already holds `headSha` (it's in `prReviewQueryKeys`). Thread it
+  as an optional `?head=<sha>` query param on the existing route. Cache logic lives in a small
+  `src/modules/github/pr-file-cache.ts` read-through wrapped around `getGitHubPrFiles`:
+  - `head` present + row exists → serve `payload` (no GitHub traffic);
+  - `head` present + miss → fetch from GitHub, store under the **client-supplied** sha, serve;
+  - `head` absent → bypass the cache entirely (current behavior).
+  Entries are immutable by construction (sha-keyed); a wrong/stale client sha merely creates an
+  extra row that nothing reads again — harmless, pruned later.
+- **Pruning** on write: keep the newest 3 rows per `(repo, pr_number)` and delete rows older
+  than 30 days; both bounds constant, no config.
+- **Skip caching** error responses and empty-files results — only cache `ok: true` payloads.
+- **Tests**: hit path does zero GitHub calls (assert via injected fetch); miss stores + serves;
+  prune keeps 3/PR; `head`-absent bypass; payload round-trips byte-identical.
+
+### Follow-up 2 — local-checkout diff provider (larger; adopt when `truncated`
+placeholders or missing hunk expansion actually bite)
+
+- **Module**: `src/modules/github/local-pr-diff.ts`. Resolve the repo through
+  `readRepoRegistrySnapshot` (`src/modules/repos/registry.ts`) by matching
+  `repo.github.owner/name`; require `repo.path` to exist. Subprocess calls go through
+  `src/lib/exec.ts` with explicit `timeoutMs` and `maxBuffer`, following the read-only git fact
+  precedent of `readGitRepoStatus`/`readGitDiffSummary` (no execution-approval flow — nothing
+  mutates the working tree).
+- **Git sequence** (all against `repo.path`, never the working tree):
+
+  ```sh
+  git fetch --no-tags origin "+refs/pull/<n>/head:refs/neondeck/pr/<n>" "+<baseRef>:refs/neondeck/base/<n>"
+  git merge-base refs/neondeck/base/<n> refs/neondeck/pr/<n>          # → MB
+  git diff --name-status -M -z MB refs/neondeck/pr/<n>                # file list (+ renames)
+  git diff -M --numstat -z MB refs/neondeck/pr/<n>                    # additions/deletions
+  git diff -M MB refs/neondeck/pr/<n> -- <path>                       # per-file patch, on demand
+  git update-ref -d refs/neondeck/pr/<n>; git update-ref -d refs/neondeck/base/<n>
+  ```
+
+  Diffing from the **merge-base** (three-dot semantics) is mandatory — diffing from the base tip
+  shows upstream drift as PR changes. `baseRef` comes from the PR detail the queue already
+  fetches. `refs/pull/<n>/head` exists on GitHub remotes for fork PRs too.
+- **Mapping to the response shape**: `--name-status` → `status`/`previousPath` (R→`renamed` with
+  both paths), `--numstat` → `additions`/`deletions` (`-` values mean binary → `binary: true`,
+  `patch: null`, same message as today), per-file diff text → `patch`; `truncated` is always
+  `false` from this provider. Enforce a per-file patch byte cap (reuse the API path's cap if one
+  exists; otherwise 1 MiB) so a generated-file diff can't balloon the response — over-cap files
+  degrade to `truncated: true` with a "diff too large to render" message, keeping the shape's
+  meaning.
+- **Provider selection** inside `getGitHubPrFiles`: config knob `github.prDiffSource:
+  'auto' | 'api' | 'local'` (default `auto` = local when the repo is registered and its path
+  exists, else API). Any local failure (fetch error, merge-base failure, timeout) logs the reason
+  and falls back to the API within the same request — the route never 500s because a checkout
+  was cold. Record the provider used in the server log line only, not the response.
+- **Concurrency + hygiene**: single-flight per `(repo, prNumber)` (concurrent views share one
+  fetch); refs live only under `refs/neondeck/`, deleted in `finally`; a startup sweep deletes
+  any leftover `refs/neondeck/pr/*` from crashed runs.
+- **Seam caution**: when `.plans/EXEDEV_WORKSPACE_MODE_PLAN.md` lands its `WorkspaceApi`, this
+  module's exec/path access must ride it so "local checkout" transparently means the VM checkout
+  in exe.dev workspace mode. Until then, host-only is correct (there is no `WorkspaceApi` in the
+  tree today — verified 2026-07-04).
+- **Tests**: fixture repo built in a temp dir (real `git init` + commits) covering: clean PR
+  diff equals GitHub-style three-dot output; **stale-base PR** (base advanced after branch) shows
+  only PR changes; rename with edits; binary file; over-cap file degrades to `truncated`;
+  fallback path when the ref fetch fails; ref cleanup after success, failure, and simulated
+  crash (startup sweep).
+- **Interaction with Follow-up 1**: the cache sits in front of both providers unchanged — it
+  keys on the sha, not the source. Land the cache first; the local provider then only ever runs
+  on cold shas.
+
+Trigger discipline: ship Follow-up 1 on its own; hold Follow-up 2 until truncated-patch
+placeholders or the lack of context expansion is a felt problem in real use — it's real machinery
+(ref hygiene, fallback paths) that should be pulled by need, not pushed.
 
 ## Risks
 
