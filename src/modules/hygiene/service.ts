@@ -2,6 +2,7 @@ import { openDb } from '../../lib/sqlite';
 import { runBoundedGit, runBoundedGitLines } from '../../lib/git';
 import { renderReportHtml } from '../../lib/report-html';
 import type { JobExecutionResult, JobRecord } from '../app-state';
+import { loadMemoryBackgroundContextSync } from '../memory';
 import { listPreparedDiffs } from '../prepared-diffs';
 import { writeReport } from '../reports';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
@@ -70,10 +71,14 @@ async function runHygieneJobInner(
     ...watchItems,
     ...todoItems,
   ];
+  const memoryContext = loadMemoryBackgroundContextSync(paths, {
+    repoId: repos.length === 1 ? (repos[0]?.id ?? null) : null,
+  });
   const result = {
     repoCount: repos.length,
     itemCount: items.length,
     counts: countKinds(items),
+    memoryIds: memoryContext.memoryIds,
     checkedAt: new Date().toISOString(),
   };
 
@@ -97,6 +102,7 @@ async function runHygieneJobInner(
         eyebrow: 'HYGIENE',
         summary: `${items.length} local hygiene item${items.length === 1 ? '' : 's'} need review.`,
         sections: [
+          memoryReportSection(memoryContext),
           {
             title: 'Summary',
             items: Object.entries(result.counts).map(([kind, count]) => ({
@@ -133,6 +139,20 @@ async function runHygieneJobInner(
           reportUrl: `/reports/${report.id}`,
           counts: result.counts,
         },
+      },
+    ],
+  };
+}
+
+function memoryReportSection(
+  context: ReturnType<typeof loadMemoryBackgroundContextSync>,
+) {
+  return {
+    title: 'Memory Context',
+    items: [
+      {
+        label: 'structured memory',
+        value: context.text,
       },
     ],
   };

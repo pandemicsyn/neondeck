@@ -16,6 +16,7 @@ import {
   type JobExecutionResult,
   type NotificationLevel,
 } from '../app-state';
+import { loadMemoryBackgroundContextSync } from '../memory';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import { writeReport } from '../reports';
 import {
@@ -1093,6 +1094,9 @@ async function composeRoutinePrompt(
   }
   if (routine.scopeCwd)
     scopeLines.push(`Working directory: ${routine.scopeCwd}`);
+  const memoryContext = loadMemoryBackgroundContextSync(paths, {
+    repoId: routine.scopeRepoId ?? null,
+  });
   const skillText = loadedSkills
     .map((skill) => `## Skill: ${skill.title} (${skill.id})\n${skill.body}`)
     .join('\n\n');
@@ -1103,6 +1107,7 @@ async function composeRoutinePrompt(
     `Trigger: ${trigger}`,
     'Do not wait for user input. If an action requires approval, request/queue it, summarize the pending approval, and continue with the rest of the task.',
     scopeLines.length ? `Scope:\n${scopeLines.join('\n')}` : null,
+    memoryContext.text,
     skillText ? `Loaded runtime skills:\n\n${skillText}` : null,
     `Task:\n${routine.prompt}`,
   ]

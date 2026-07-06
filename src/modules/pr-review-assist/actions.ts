@@ -4,7 +4,11 @@ import {
   prReviewAssistOutputSchema,
   reviewAssistStructuredOutputSchema,
 } from './schemas';
-import { reviewPrForHuman, type ReviewAssistFacts } from './service';
+import {
+  reviewPrForHuman,
+  type ReviewAssistFacts,
+  type ReviewAssistPromptContext,
+} from './service';
 
 export const reviewPrForHumanAction = defineAction({
   name: 'neondeck_pr_review_for_human',
@@ -14,12 +18,12 @@ export const reviewPrForHumanAction = defineAction({
   output: prReviewAssistOutputSchema,
   async run({ harness, input, log }) {
     const result = await reviewPrForHuman(input, undefined, {
-      reviewer: async (facts) => {
+      reviewer: async (facts, context) => {
         const session = await harness.session();
         const response = await session.skill('neon-pr-review', {
           args: {
             task: 'Review the pull request facts and return only the requested structured review output.',
-            facts: reviewFactsForPrompt(facts),
+            facts: reviewFactsForPrompt(facts, context),
           },
           result: reviewAssistStructuredOutputSchema,
           signal: AbortSignal.timeout(180_000),
@@ -41,12 +45,25 @@ export const reviewPrForHumanAction = defineAction({
   },
 });
 
-export function reviewFactsForPrompt(facts: ReviewAssistFacts) {
+export function reviewFactsForPrompt(
+  facts: ReviewAssistFacts,
+  context?: Pick<ReviewAssistPromptContext, 'memoryContext'>,
+) {
   return {
     target: {
       repoFullName: facts.target.repoFullName,
       number: facts.target.number,
     },
+    ...(context?.memoryContext
+      ? {
+          backgroundContext: {
+            structuredMemory: context.memoryContext.text,
+            memoryIds: context.memoryContext.memoryIds,
+            usage:
+              'Treat structuredMemory as durable background guidance, not current PR evidence. Fetched PR facts and workflow bounds win on conflict.',
+          },
+        }
+      : {}),
     pullRequest: {
       title: facts.state.title,
       body: truncate(facts.state.body ?? '', 20_000),

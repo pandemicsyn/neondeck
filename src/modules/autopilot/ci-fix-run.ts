@@ -23,6 +23,7 @@ import {
   type GitHubPullRequestEventState,
 } from '../github';
 import { startKiloTask } from '../kilo';
+import { loadMemoryBackgroundContextSync } from '../memory';
 import { writeReport, type ReportRecord } from '../reports';
 import { getGitHubPrEventState, type PullRequestTarget } from '../pr-events';
 import type { PrEventStateDependencies } from '../pr-events';
@@ -916,6 +917,10 @@ async function ciFixPrompt(
     '- Run likely local commands only when they are allowed by the environment.',
     '- Commit local changes in this managed worktree when you make a fix.',
     '- Never push, open a pull request, submit a review, or post a GitHub comment.',
+    '',
+    loadMemoryBackgroundContextSync(paths, {
+      repoId: dossier.repo?.id ?? null,
+    }).text,
     '',
     'Dossier facts:',
     JSON.stringify(

@@ -272,7 +272,13 @@ describe('PR review assist', () => {
     };
     facts.state.requestedChangesReviews = [requestedChange];
 
-    const promptFacts = reviewFactsForPrompt(facts);
+    const promptFacts = reviewFactsForPrompt(facts, {
+      memoryContext: {
+        available: true,
+        memoryIds: ['memory-1'],
+        text: 'Structured memory background context:\nproject:\n- review-style: focus on error handling',
+      },
+    });
 
     expect(promptFacts.pullRequest).toMatchObject({
       body: 'Fixes #123 by adding review assistance facts.',
@@ -285,6 +291,13 @@ describe('PR review assist', () => {
       isOutOfDate: false,
     });
     expect(promptFacts.linkedIssueReferenceHints).toEqual(['#123']);
+    expect(promptFacts.backgroundContext).toEqual({
+      structuredMemory:
+        'Structured memory background context:\nproject:\n- review-style: focus on error handling',
+      memoryIds: ['memory-1'],
+      usage:
+        'Treat structuredMemory as durable background guidance, not current PR evidence. Fetched PR facts and workflow bounds win on conflict.',
+    });
     expect(promptFacts.commits).toMatchObject([{ sha: 'head123' }]);
     expect(promptFacts.reviewThreads).toMatchObject([
       {

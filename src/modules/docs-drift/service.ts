@@ -14,6 +14,7 @@ import { renderReportHtml } from '../../lib/report-html';
 import { parseInput, nonEmptyStringSchema } from '../../lib/valibot';
 import type { JobRecord } from '../app-state';
 import { recordDocsDriftFixTaskBoundary, startKiloTask } from '../kilo';
+import { loadMemoryBackgroundContextSync } from '../memory';
 import { loadRuntimeSkill } from '../runtime';
 import { readReport, writeReport, type ReportRecord } from '../reports';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
@@ -467,6 +468,8 @@ async function docsFixPrompt(
     '- Keep documentation edits minimal and fact-backed by the drift hits.',
     '- Commit local changes in this managed worktree when you make a fix.',
     '- Never push, open a pull request, post comments, submit reviews, or mutate external systems.',
+    '',
+    loadMemoryBackgroundContextSync(paths, { repoId: summary.repo }).text,
     '',
     'Drift facts:',
     JSON.stringify(

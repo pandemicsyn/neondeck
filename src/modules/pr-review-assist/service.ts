@@ -17,6 +17,10 @@ import { getGitHubPrEventState, getGitHubPrFiles } from '../pr-events';
 import type { PrEventStateDependencies, PullRequestTarget } from '../pr-events';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import { writeReport } from '../reports';
+import {
+  loadMemoryBackgroundContextSync,
+  type MemoryBackgroundContext,
+} from '../memory';
 import { renderReportHtml } from '../../lib/report-html';
 import {
   type RuntimePaths,
@@ -43,12 +47,20 @@ export type ReviewAssistFacts = {
   diffSummary: GitHubDiffSummary;
 };
 
+export type ReviewAssistPromptContext = {
+  repoId: string | null;
+  memoryContext: MemoryBackgroundContext;
+};
+
 export type ReviewAssistDependencies = {
   fetchFacts?: (
     input: v.InferOutput<typeof prReviewAssistInputSchema>,
     paths: RuntimePaths,
   ) => Promise<ReviewAssistFacts>;
-  reviewer?: (facts: ReviewAssistFacts) => Promise<unknown> | unknown;
+  reviewer?: (
+    facts: ReviewAssistFacts,
+    context: ReviewAssistPromptContext,
+  ) => Promise<unknown> | unknown;
   prEventDependencies?: PrEventStateDependencies;
 };
 
@@ -80,8 +92,15 @@ export async function reviewPrForHuman(
   const factsResult = await readReviewFacts(parsed.output, paths, dependencies);
   if (!factsResult.ok) return factsResult.result;
 
+  const facts = factsResult.facts;
+  const repoId = await repoIdForFullName(facts.target.repoFullName, paths);
+  const promptContext = {
+    repoId,
+    memoryContext: loadMemoryBackgroundContextSync(paths, { repoId }),
+  };
   const rawOutput = await (dependencies.reviewer ?? deterministicReviewPass)(
-    factsResult.facts,
+    facts,
+    promptContext,
   );
   const reviewed = v.safeParse(reviewAssistStructuredOutputSchema, rawOutput);
   if (!reviewed.success) {
@@ -90,8 +109,6 @@ export async function reviewPrForHuman(
     });
   }
 
-  const facts = factsResult.facts;
-  const repoId = await repoIdForFullName(facts.target.repoFullName, paths);
   const seedResult = await seedDraftComments(
     facts,
     reviewed.output,
@@ -236,6 +253,7 @@ async function readReviewFacts(
 
 function deterministicReviewPass(
   facts: ReviewAssistFacts,
+  _context?: ReviewAssistPromptContext,
 ): ReviewAssistStructuredOutput {
   const changeMap = facts.files.map((file) => ({
     path: file.path,
