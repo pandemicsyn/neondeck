@@ -293,14 +293,7 @@ function scheduleReviewCompletionRefresh(
       queryKey: prReviewQueryKeys.draft(item),
     });
   };
-  let activeFollowUpCount = 0;
   const scheduleActiveFollowUp = () => {
-    if (activeFollowUpCount >= reviewCompletionActiveFollowUpLimit) {
-      refresh();
-      done = true;
-      return;
-    }
-    activeFollowUpCount += 1;
     window.setTimeout(
       () => void observe(true),
       reviewCompletionActiveFollowUpDelay,
@@ -346,7 +339,6 @@ function scheduleReviewCompletionRefresh(
 
 const reviewCompletionPollDelays = [15_000, 45_000, 90_000, 150_000, 210_000];
 const reviewCompletionActiveFollowUpDelay = 60_000;
-const reviewCompletionActiveFollowUpLimit = 20;
 
 export function reviewWorkflowCompletionState(
   workflows: WorkflowObservability,
