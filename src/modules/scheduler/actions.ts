@@ -13,7 +13,7 @@ import {
 export const scheduleBlueprintCreateAction = defineAction({
   name: 'neondeck_schedule_blueprint_create',
   description:
-    'Create a blueprint-backed automation for morning briefing, watch PR, release watch, or review queue digest.',
+    'Create a blueprint-backed automation for morning briefing, watch PR, release watch, review queue digest, docs drift, issue triage, or hygiene.',
   input: createBlueprintInputSchema,
   output: schedulerActionOutputSchema,
   async run({ input }) {

@@ -7,7 +7,11 @@ import {
 import { listWorkflowSummaries } from '../../modules/app-state';
 import { supportedCommands } from '../../modules/commands';
 import { executionPolicyLookupTool } from '../../modules/execution';
-import { getGitHubCheckSummary, listGitHubPrQueue } from '../../modules/github';
+import {
+  getGitHubCheckSummary,
+  listGitHubIssues,
+  listGitHubPrQueue,
+} from '../../modules/github';
 import { neondeckKiloTools } from '../../modules/kilo';
 import { neondeckKiloResultTools } from '../../modules/kilo/results';
 import { neondeckLearningOperatorTools } from '../../modules/learning';
@@ -40,6 +44,11 @@ const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 const checkSummaryInputSchema = v.object({
   repo: nonEmptyStringSchema,
   ref: v.optional(nonEmptyStringSchema),
+});
+const githubIssuesInputSchema = v.object({
+  repo: nonEmptyStringSchema,
+  since: v.optional(nonEmptyStringSchema),
+  limit: v.optional(v.number()),
 });
 const skillLoadInputSchema = v.object({
   id: nonEmptyStringSchema,
@@ -221,6 +230,17 @@ export const githubCheckSummaryLookupTool = defineTool({
   },
 });
 
+export const githubIssuesLookupTool = defineTool({
+  name: 'neondeck_github_issues_lookup',
+  description:
+    'Fetch open GitHub issues for a configured repository without mutating GitHub.',
+  input: githubIssuesInputSchema,
+  output: toolOutputSchema,
+  async run({ input }) {
+    return listGitHubIssues(input);
+  },
+});
+
 export const schedulerJobsLookupTool = defineTool({
   name: 'neondeck_scheduler_jobs_lookup',
   description: 'List durable Neondeck scheduler jobs and last run state.',
@@ -306,6 +326,7 @@ export const neondeckFactTools = [
   repoStatusLookupTool,
   githubPrQueueLookupTool,
   githubCheckSummaryLookupTool,
+  githubIssuesLookupTool,
   schedulerJobsLookupTool,
   prWatchesLookupTool,
   refWatchesLookupTool,

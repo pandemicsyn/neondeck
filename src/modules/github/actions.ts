@@ -3,6 +3,7 @@ import * as v from 'valibot';
 import { failedAction } from '../../lib/action-result';
 import { fetchCheckSummary } from './checks';
 import { fetchGitHubLogin } from './client';
+import { fetchGitHubIssues } from './issues';
 import { fetchPullRequestQueue } from './queue';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import { type RuntimePaths, runtimePaths } from '../../runtime-home';
@@ -21,6 +22,7 @@ type GitHubActionDependencies = {
   fetchGitHubLogin?: typeof fetchGitHubLogin;
   fetchPullRequestQueue?: typeof fetchPullRequestQueue;
   fetchCheckSummary?: typeof fetchCheckSummary;
+  fetchGitHubIssues?: typeof fetchGitHubIssues;
 };
 
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
@@ -28,6 +30,13 @@ const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 const checkSummaryInputSchema = v.object({
   repo: nonEmptyStringSchema,
   ref: v.optional(nonEmptyStringSchema),
+});
+const issuesInputSchema = v.object({
+  repo: nonEmptyStringSchema,
+  since: v.optional(nonEmptyStringSchema),
+  limit: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(200)),
+  ),
 });
 
 export async function listGitHubPrQueue(
@@ -138,6 +147,63 @@ export async function getGitHubCheckSummary(
       'Could not fetch GitHub check summary.',
       { errors: [errorMessage(error)] },
     );
+  }
+}
+
+export async function listGitHubIssues(
+  input: v.InferInput<typeof issuesInputSchema>,
+  paths: RuntimePaths = runtimePaths(),
+  dependencies: GitHubActionDependencies = {},
+): Promise<GitHubActionResult> {
+  const parsed = v.safeParse(issuesInputSchema, input);
+  if (!parsed.success) {
+    return failResult('github_issues_list', 'Invalid issues input.', {
+      errors: [v.summarize(parsed.issues)],
+    });
+  }
+
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    return failResult('github_issues_list', 'GITHUB_TOKEN is not configured.', {
+      requires: ['GITHUB_TOKEN'],
+    });
+  }
+
+  try {
+    const registry = await readRepoRegistrySnapshot(paths);
+    const repo = registry.repos.find(
+      (item) =>
+        item.id === parsed.output.repo ||
+        item.github.name === parsed.output.repo ||
+        repoFullName(item).toLowerCase() === parsed.output.repo.toLowerCase(),
+    );
+    if (!repo) {
+      return failResult(
+        'github_issues_list',
+        `Repository "${parsed.output.repo}" is not configured.`,
+        { requires: ['repo'] },
+      );
+    }
+    const issues = await (dependencies.fetchGitHubIssues ?? fetchGitHubIssues)({
+      token,
+      owner: repo.github.owner,
+      repo: repo.github.name,
+      since: parsed.output.since,
+      limit: parsed.output.limit,
+    });
+    return okResult(
+      'github_issues_list',
+      `Fetched ${issues.items.length} GitHub issues.`,
+      {
+        repo: repo.id,
+        repoFullName: repoFullName(repo),
+        issues: issues as unknown as JsonValue,
+      },
+    );
+  } catch (error) {
+    return failResult('github_issues_list', 'Could not fetch GitHub issues.', {
+      errors: [errorMessage(error)],
+    });
   }
 }
 

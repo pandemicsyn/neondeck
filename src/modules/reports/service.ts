@@ -299,7 +299,7 @@ function normalizeReportKind(value: string) {
 
 function isNodeErrorCode(error: unknown, code: string) {
   return (
-    Boolean(error) &&
+    error !== null &&
     typeof error === 'object' &&
     'code' in error &&
     (error as { code?: unknown }).code === code

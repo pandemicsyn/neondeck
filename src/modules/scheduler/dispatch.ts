@@ -1,6 +1,9 @@
 import type { JsonValue } from '@flue/runtime';
 import { type JobRecord, type NotificationLevel } from '../app-state';
 import { fetchCheckSummary, type GitHubCheckSummary } from '../github';
+import { runDocsDriftJob } from '../docs-drift';
+import { runIssueTriageJob } from '../issue-triage';
+import { runHygieneJob } from '../hygiene';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import type { RuntimePaths } from '../../runtime-home';
 import {
@@ -74,6 +77,18 @@ export async function executeJob(
         },
       ],
     };
+  }
+
+  if (job.type === 'docs-drift') {
+    return runDocsDriftJob(job, paths);
+  }
+
+  if (job.type === 'issue-triage') {
+    return runIssueTriageJob(job, paths);
+  }
+
+  if (job.type === 'hygiene') {
+    return runHygieneJob(job, paths);
   }
 
   if (job.type === 'release-watch') {
@@ -503,6 +518,9 @@ export function defaultIntervalSeconds(type: BlueprintKind | string) {
   if (type === 'watch-pr') return 300;
   if (type === 'release-watch') return 900;
   if (type === 'review-queue-digest') return 3_600;
+  if (type === 'docs-drift') return 604_800;
+  if (type === 'issue-triage') return 86_400;
+  if (type === 'hygiene') return 604_800;
   return 86_400;
 }
 

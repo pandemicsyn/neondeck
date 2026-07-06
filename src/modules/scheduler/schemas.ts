@@ -24,7 +24,13 @@ export type SchedulerResult = {
 };
 
 export type BlueprintKind =
-  'morning-briefing' | 'watch-pr' | 'release-watch' | 'review-queue-digest';
+  | 'morning-briefing'
+  | 'watch-pr'
+  | 'release-watch'
+  | 'review-queue-digest'
+  | 'docs-drift'
+  | 'issue-triage'
+  | 'hygiene';
 
 export type JobExecutionResult = {
   outcome: 'silent' | 'updated' | 'recorded' | 'failed';
@@ -80,6 +86,9 @@ export const blueprintSchema = v.picklist([
   'watch-pr',
   'release-watch',
   'review-queue-digest',
+  'docs-drift',
+  'issue-triage',
+  'hygiene',
 ]);
 export const createBlueprintInputSchema = v.object({
   blueprint: blueprintSchema,

@@ -141,6 +141,12 @@ export const entries: SafetyPolicyEntry[] = [
     'Fetches GitHub check summary facts for a configured repository ref.',
   ),
   tool(
+    'neondeck_github_issues_lookup',
+    'Read GitHub issues',
+    readOnly,
+    'Fetches open GitHub issue facts for a configured repository without posting comments or changing labels.',
+  ),
+  tool(
     'neondeck_pr_review_comments_lookup',
     'Read PR review comments',
     readOnly,

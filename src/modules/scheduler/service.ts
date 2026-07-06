@@ -71,8 +71,22 @@ export async function createScheduleBlueprint(
     );
   }
 
+  if (
+    (input.blueprint === 'docs-drift' || input.blueprint === 'issue-triage') &&
+    !input.repo
+  ) {
+    return failResult(
+      'schedule_blueprint_create',
+      `The ${input.blueprint} blueprint requires a repo.`,
+      { requires: ['repo'] },
+    );
+  }
+
   const releaseRepo =
-    input.blueprint === 'release-watch' && input.repo
+    (input.blueprint === 'release-watch' ||
+      input.blueprint === 'docs-drift' ||
+      input.blueprint === 'issue-triage') &&
+    input.repo
       ? await resolveReleaseWatchRepo(input.repo, paths)
       : undefined;
   if (releaseRepo && !releaseRepo.ok) return releaseRepo.result;

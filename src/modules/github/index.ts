@@ -1,5 +1,11 @@
 export { fetchGitHubLogin } from './client';
-export { getGitHubCheckSummary, listGitHubPrQueue } from './actions';
+export {
+  getGitHubCheckSummary,
+  listGitHubIssues,
+  listGitHubPrQueue,
+} from './actions';
+export { fetchGitHubIssues } from './issues';
+export type { GitHubIssue } from './issues';
 export {
   buildPullRequestQueries,
   clearGitHubPullRequestQueueCache,
