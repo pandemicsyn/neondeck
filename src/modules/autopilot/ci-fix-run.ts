@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as v from 'valibot';
 import { asJsonValue } from '../../lib/action-result';
 import { renderReportHtml } from '../../lib/report-html';
@@ -29,9 +29,13 @@ import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import { lockWorktree, releaseWorktreeLock } from '../worktrees';
 import { preparePrWorktree } from './worktree';
 import { identifyLikelyCommands } from './github-facts';
+import { errorMessage } from './utils';
 
 const nonEmptyStringSchema = v.pipe(v.string(), v.trim(), v.minLength(1));
 const positiveIntegerSchema = v.pipe(v.number(), v.integer(), v.minValue(1));
+const neonCiFixSkillPath = fileURLToPath(
+  new URL('../../skills/neon-ci-fix/SKILL.md', import.meta.url),
+);
 
 export const ciFixRunInputSchema = v.object({
   ref: v.optional(nonEmptyStringSchema),
@@ -121,7 +125,9 @@ export async function runCiFix(
     paths,
     dependencies,
   );
-  if (!dossierResult.ok) return dossierResult.result;
+  if (!dossierResult.ok) {
+    return preDossierFailure(parsed.input, dossierResult.result, paths);
+  }
   const dossier = dossierResult.dossier;
   const report = await writeCiFixDossierReport(
     dossier,
@@ -305,12 +311,11 @@ export async function runCiFix(
     const startedHeadSha =
       stringField(preparedWorktree.headSha) ?? dossier.state.headSha;
 
-    const prompt = await ciFixPrompt(dossier, report, paths);
+    const prompt = await ciFixPrompt(dossier, report);
     const kiloTaskId = `ci-fix-${randomUUID()}`;
     const workflowSummary = await addWorkflowSummary(
       {
         workflow: 'ci_fix_run',
-        runId: kiloTaskId,
         status: 'running',
         summary: {
           type: 'ci_fix_run',
@@ -461,7 +466,23 @@ export async function readCiFixDossier(
   | { ok: false; result: ReturnType<typeof failure> }
 > {
   if (dependencies.readDossier) {
-    return { ok: true, dossier: await dependencies.readDossier(input, paths) };
+    try {
+      return {
+        ok: true,
+        dossier: await dependencies.readDossier(input, paths),
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        result: failure(
+          `Could not prepare CI fix dossier: ${errorMessage(error)}.`,
+          {
+            errors: [errorMessage(error)],
+            requires: ['ciFixDossier'],
+          },
+        ),
+      };
+    }
   }
 
   const stateResult = await getGitHubPrEventState(
@@ -501,15 +522,35 @@ export async function readCiFixDossier(
       }),
     };
   }
-  const failingChecks = await (
-    dependencies.fetchFailingCheckFacts ?? fetchFailingCheckFacts
-  )({
-    token,
-    owner: target.owner,
-    repo: target.repo,
-    ref: state.headSha,
-    maxLogBytes: input.maxLogBytes ?? 64 * 1024,
-  });
+  let failingChecks: GitHubFailingCheckFact[];
+  try {
+    failingChecks = await (
+      dependencies.fetchFailingCheckFacts ?? fetchFailingCheckFacts
+    )({
+      token,
+      owner: target.owner,
+      repo: target.repo,
+      ref: state.headSha,
+      maxLogBytes: input.maxLogBytes ?? 64 * 1024,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      result: failure(
+        `Could not fetch failing GitHub check facts for ${target.repoFullName}#${target.number}: ${errorMessage(error)}.`,
+        {
+          errors: [errorMessage(error)],
+          requires: ['github-check-facts'],
+          data: {
+            workflow: 'fix-pr-ci',
+            repo: target.repoFullName,
+            prNumber: target.number,
+            headSha: state.headSha,
+          },
+        },
+      ),
+    };
+  }
   const registry = await readRepoRegistrySnapshot(paths);
   const repo =
     registry.repos.find(
@@ -702,19 +743,12 @@ function parseCiFixInput(
   return { ok: true, input: parsed.output };
 }
 
-async function ciFixPrompt(
-  dossier: CiFixDossier,
-  report: ReportRecord,
-  paths: RuntimePaths,
-) {
-  const skill = await readFile(
-    join(paths.skills, 'neon-ci-fix', 'SKILL.md'),
-    'utf8',
-  ).catch(() => '');
+async function ciFixPrompt(dossier: CiFixDossier, report: ReportRecord) {
+  const skill = await readFile(neonCiFixSkillPath, 'utf8').catch(() => '');
   return [
     skill.trim()
-      ? `Runtime skill neon-ci-fix:\n${skill.trim()}`
-      : 'Runtime skill neon-ci-fix was unavailable; follow the task bounds below.',
+      ? `Built-in skill neon-ci-fix:\n${skill.trim()}`
+      : 'Built-in skill neon-ci-fix was unavailable; follow the task bounds below.',
     '',
     `Task: fix the failing CI checks for ${sourceRef(dossier)}.`,
     `Report: /reports/${report.id}`,
@@ -928,7 +962,6 @@ async function addTerminalCiFixSummary(
   return addWorkflowSummary(
     {
       workflow: 'ci_fix_run',
-      runId: `ci-fix-${randomUUID()}`,
       status: input.status,
       summary: {
         type: 'ci_fix_run',
@@ -955,6 +988,66 @@ async function addTerminalCiFixSummary(
     },
     paths,
   );
+}
+
+async function preDossierFailure(
+  input: v.InferOutput<typeof ciFixRunInputSchema>,
+  result: ReturnType<typeof failure>,
+  paths: RuntimePaths,
+) {
+  const sourceId = input.ref ?? input.repo ?? 'unknown';
+  await addNotification(
+    {
+      level: 'attention',
+      title: 'CI fix failed',
+      message: result.message,
+      source: 'fix-pr-ci',
+      sourceId,
+      data: {
+        workflow: 'fix-pr-ci',
+        input: ciFixInputSummary(input),
+        requires: 'requires' in result ? result.requires : undefined,
+        errors: 'errors' in result ? result.errors : undefined,
+      },
+    },
+    paths,
+  );
+  const workflowSummary = await addWorkflowSummary(
+    {
+      workflow: 'ci_fix_run',
+      status: 'failed',
+      summary: {
+        type: 'ci_fix_run',
+        outcome: 'dossier-failed',
+        input: ciFixInputSummary(input),
+        message: result.message,
+        requires: 'requires' in result ? (result.requires ?? []) : [],
+        errors: 'errors' in result ? (result.errors ?? []) : [],
+        completedAt: new Date().toISOString(),
+      },
+    },
+    paths,
+  );
+
+  return failure(result.message, {
+    requires: 'requires' in result ? result.requires : undefined,
+    errors: 'errors' in result ? result.errors : undefined,
+    data: {
+      workflow: 'fix-pr-ci',
+      outcome: 'dossier-failed',
+      input: ciFixInputSummary(input),
+    },
+    workflowSummary,
+  });
+}
+
+function ciFixInputSummary(input: v.InferOutput<typeof ciFixRunInputSchema>) {
+  return {
+    ref: input.ref ?? null,
+    repo: input.repo ?? null,
+    prNumber: input.prNumber ?? null,
+    reportOnly: input.reportOnly ?? false,
+  };
 }
 
 function lowerLevelFailure(

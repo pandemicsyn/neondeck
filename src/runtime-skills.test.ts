@@ -39,13 +39,23 @@ describe('runtime skills', () => {
           source: 'built-in',
           status: 'active',
         }),
+        expect.objectContaining({
+          id: 'neon-pr-review',
+          source: 'built-in',
+          status: 'active',
+        }),
+        expect.objectContaining({
+          id: 'neon-ci-fix',
+          source: 'built-in',
+          status: 'active',
+        }),
       ]),
     );
     expect(inventory.duplicates).toEqual([]);
 
     expect(
       runtimeSkillReferencesSync(paths).map((skill) => skill.name),
-    ).toEqual(['neon-ci-fix', 'neon-pr-review']);
+    ).toEqual([]);
   });
 
   it('discovers user and external skills while ignoring broken folders', async () => {
@@ -181,7 +191,7 @@ describe('runtime skills', () => {
     );
     expect(
       runtimeSkillReferencesSync(paths).map((skill) => skill.name),
-    ).toEqual(['neon-ci-fix', 'neon-pr-review']);
+    ).toEqual([]);
   });
 
   it('ignores user skills that try to replace the built-in Neondeck skill', async () => {
@@ -208,7 +218,7 @@ describe('runtime skills', () => {
       expect.arrayContaining([
         expect.objectContaining({
           reason:
-            'Skill id "neondeck" is reserved for the built-in application Flue skill.',
+            'Skill id "neondeck" is reserved for a built-in application Flue skill.',
         }),
       ]),
     );

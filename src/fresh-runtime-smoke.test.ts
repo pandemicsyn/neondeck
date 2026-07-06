@@ -64,7 +64,7 @@ describe('fresh runtime smoke test', () => {
         expect.objectContaining({
           id: 'neon-pr-review',
           status: 'active',
-          source: 'user',
+          source: 'built-in',
         }),
       ]),
     );
