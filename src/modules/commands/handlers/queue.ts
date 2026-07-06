@@ -135,7 +135,8 @@ export async function fixCiCommand(
   }
 
   const ref = `${selected.item.repo}#${selected.item.number}`;
-  const invokeWorkflow = dependencies.invokeFixCiWorkflow ?? invokeFixCiWorkflow;
+  const invokeWorkflow =
+    dependencies.invokeFixCiWorkflow ?? invokeFixCiWorkflow;
   const { runId } = await invokeWorkflow({ ref });
   return completedCommand(
     command.name,
@@ -194,8 +195,7 @@ export async function explainCiCommand(
   const explanation = ciExplanation(pr);
   if (options.report) {
     const writer =
-      dependencies.createCiFailureDossierReport ??
-      createCiFailureDossierReport;
+      dependencies.createCiFailureDossierReport ?? createCiFailureDossierReport;
     const report = await writer(
       { ref: `${pr.repo}#${pr.number}`, reportOnly: true },
       paths,

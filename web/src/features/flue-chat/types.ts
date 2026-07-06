@@ -53,6 +53,11 @@ export const defaultCommandCatalog: FlueChatCommand[] = [
     description: 'explain a failing check or PR ref',
   },
   {
+    label: 'Fix CI',
+    command: '/fix-ci',
+    description: 'queue a bounded local fix for failing PR checks',
+  },
+  {
     label: 'PR',
     command: '/summarize-pr',
     description: 'summarize a pull request',

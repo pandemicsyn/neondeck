@@ -74,37 +74,33 @@ describe('CI fix run', () => {
     await writeRepoRegistry(paths.repos);
     let startedKilo = false;
 
-    const result = await fixPrCiRun(
-      { ref: 'pandemicsyn/neondeck#10' },
-      paths,
-      {
-        ...testDependencies(),
-        preparePrWorktree: async () =>
-          ({
-            ok: true,
-            action: 'autopilot_prepare_pr_worktree',
-            changed: true,
-            message: 'prepared',
-            data: {
-              worktree: {
-                id: 'worktree-1',
-                headSha: 'abc123',
-              },
+    const result = await fixPrCiRun({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+      ...testDependencies(),
+      preparePrWorktree: async () =>
+        ({
+          ok: true,
+          action: 'autopilot_prepare_pr_worktree',
+          changed: true,
+          message: 'prepared',
+          data: {
+            worktree: {
+              id: 'worktree-1',
+              headSha: 'abc123',
             },
-          }) as never,
-        lockWorktree: async () =>
-          ({
-            ok: false,
-            action: 'worktree_lock',
-            changed: false,
-            message: 'Lock is already held by ci-fix-run.',
-          }) as never,
-        startKiloTask: async () => {
-          startedKilo = true;
-          throw new Error('should not start Kilo');
-        },
+          },
+        }) as never,
+      lockWorktree: async () =>
+        ({
+          ok: false,
+          action: 'worktree_lock',
+          changed: false,
+          message: 'Lock is already held by ci-fix-run.',
+        }) as never,
+      startKiloTask: async () => {
+        startedKilo = true;
+        throw new Error('should not start Kilo');
       },
-    );
+    });
 
     expect(result).toMatchObject({
       ok: false,
@@ -288,7 +284,8 @@ function failingChecks(): GitHubFailingCheckFact[] {
       conclusion: 'failure',
       url: 'https://api.github.com/check-runs/42',
       htmlUrl: 'https://github.com/pandemicsyn/neondeck/actions/runs/42',
-      detailsUrl: 'https://github.com/pandemicsyn/neondeck/actions/runs/42/job/1',
+      detailsUrl:
+        'https://github.com/pandemicsyn/neondeck/actions/runs/42/job/1',
       startedAt: '2026-07-05T20:01:00.000Z',
       completedAt: '2026-07-05T20:02:00.000Z',
       outputTitle: 'Tests failed',

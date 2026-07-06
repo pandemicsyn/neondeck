@@ -4,10 +4,7 @@ import {
   findWorkflowSummaryByKiloTaskId,
   updateWorkflowSummary,
 } from '../app-state';
-import {
-  ensurePreparedDiffForWorktree,
-  mergeSummary,
-} from '../prepared-diffs';
+import { ensurePreparedDiffForWorktree, mergeSummary } from '../prepared-diffs';
 import { releaseWorktreeLock, readWorktreeRecord } from '../worktrees';
 import type { KiloTaskRecord, KiloTaskStatus } from './store';
 import { gitCurrentSha } from '../../repo-edit/git';
@@ -41,7 +38,8 @@ export async function reconcileCiFixRunForKiloTask(
     stringField(summaryData.pr) ??
     `${stringField(summaryData.repoFullName) ?? input.task.repoFullName}#${numberField(summaryData.prNumber) ?? 'worktree'}`;
   const ciFixLockId = stringField(summaryData.ciFixLockId);
-  const worktreeId = input.task.worktreeId ?? stringField(summaryData.worktreeId);
+  const worktreeId =
+    input.task.worktreeId ?? stringField(summaryData.worktreeId);
   const completedAt = new Date().toISOString();
 
   try {

@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type {
-  GitHubPullRequest,
-  WorkflowObservability,
-} from '../api';
+import type { GitHubPullRequest, WorkflowObservability } from '../api';
 import {
   isCiFixCandidate,
   reviewWorkflowCompletionState,
