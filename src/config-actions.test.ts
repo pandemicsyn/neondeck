@@ -475,7 +475,10 @@ describe('config actions', () => {
       pluginId: 'host-metrics',
     });
     expect(dashboard.layout.regions).toHaveLength(2);
-    expect(dashboard.layout.regions[0].tabs).toHaveLength(1);
+    expect(dashboard.layout.regions[0].tabs.map((tab) => tab.id)).toEqual([
+      'github',
+      'reports',
+    ]);
     expect(dashboard.layout.regions[1]).toMatchObject({
       id: 'neon',
       defaultTab: 'chat',
@@ -531,6 +534,11 @@ describe('config actions', () => {
       paths.dashboard,
     );
     expect(dashboard.statusline?.position).toBe('bottom');
+    expect(dashboard.layout.regions[0].tabs.map((tab) => tab.id)).toEqual([
+      'github',
+      'watches',
+      'reports',
+    ]);
     expect(dashboard.layout.regions[1].tabs.map((tab) => tab.id)).toEqual([
       'chat',
       'briefing',
