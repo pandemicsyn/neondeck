@@ -214,9 +214,12 @@ function revisionLoopHealth(
     const id = stringField(summary.preparedDiffId);
     if (
       id &&
-      ['failed', 'aborted', 'abort-failed-after-stale-transition'].includes(
-        stringField(summary.outcome) ?? '',
-      )
+      [
+        'failed',
+        'aborted',
+        'aborted-after-stale-transition',
+        'abort-failed-after-stale-transition',
+      ].includes(stringField(summary.outcome) ?? '')
     ) {
       ids.add(id);
     }

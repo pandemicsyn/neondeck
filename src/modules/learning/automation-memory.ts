@@ -36,14 +36,17 @@ export async function loadAutomationLearningMemoryContext(
   } = {},
 ): Promise<AutomationLearningMemoryContext> {
   const repoId = options.repoId ?? null;
-  if (!repoId) return emptyAutomationLearningMemoryContext('no-repo-scope');
+  const includeGlobal = options.includeGlobal ?? true;
+  if (!repoId && !includeGlobal) {
+    return emptyAutomationLearningMemoryContext('no-repo-scope');
+  }
 
   try {
     const selected = selectAutomationLearningMemories(
       await listActiveLearningMemories(paths),
       {
         repoId,
-        includeGlobal: options.includeGlobal ?? true,
+        includeGlobal,
         maxCount: options.maxCount ?? automationLearningMemoryLimits.maxCount,
         maxBytes: options.maxBytes ?? automationLearningMemoryLimits.maxBytes,
       },
@@ -89,7 +92,7 @@ export async function loadAutomationLearningMemoryContext(
 function selectAutomationLearningMemories(
   memories: MemoryRecord[],
   options: {
-    repoId: string;
+    repoId: string | null;
     includeGlobal: boolean;
     maxCount: number;
     maxBytes: number;
@@ -131,17 +134,25 @@ function selectAutomationLearningMemories(
 
 function matchesAutomationScope(
   memory: MemoryRecord,
-  options: { repoId: string; includeGlobal: boolean },
+  options: { repoId: string | null; includeGlobal: boolean },
 ) {
-  if (memory.scope === 'project') return memory.repoId === options.repoId;
+  if (memory.scope === 'project') {
+    return options.repoId !== null && memory.repoId === options.repoId;
+  }
   return (
     options.includeGlobal &&
     (memory.scope === 'user' || memory.scope === 'local')
   );
 }
 
-function memoryRank(memory: MemoryRecord, options: { repoId: string }) {
-  if (memory.scope === 'project' && memory.repoId === options.repoId) return 0;
+function memoryRank(memory: MemoryRecord, options: { repoId: string | null }) {
+  if (
+    options.repoId !== null &&
+    memory.scope === 'project' &&
+    memory.repoId === options.repoId
+  ) {
+    return 0;
+  }
   if (memory.scope === 'local') return 1;
   if (memory.scope === 'user') return 2;
   return 3;

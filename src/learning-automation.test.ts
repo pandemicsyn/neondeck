@@ -86,6 +86,35 @@ describe('learning automation context', () => {
     );
   });
 
+  it('keeps global learning memories when no repo scope is configured', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const local = await upsertMemory(
+      { scope: 'local', key: 'review-tone', value: 'Keep review notes terse.' },
+      paths,
+    );
+    await upsertMemory(
+      {
+        scope: 'project',
+        repoId: 'other',
+        key: 'other-repo',
+        value: 'Other repo guidance.',
+      },
+      paths,
+    );
+
+    const globalOnly = await loadAutomationLearningMemoryContext(paths, {
+      repoId: null,
+      includeGlobal: true,
+    });
+
+    expect(globalOnly.memoryIds).toEqual([
+      (local as { memory: { id: string } }).memory.id,
+    ]);
+    expect(globalOnly.text).toContain('Keep review notes terse');
+    expect(globalOnly.text).not.toContain('Other repo guidance');
+  });
+
   it('computes automation health rates from fixture rows', async () => {
     const paths = runtimePaths(await tempHome());
     await ensureRuntimeHome(paths);
@@ -156,12 +185,12 @@ describe('learning automation context', () => {
       survivalRate: 0.5,
     });
     expect(health.revisionLoop).toMatchObject({
-      runs: 2,
+      runs: 3,
       approved: 1,
       reRevised: 1,
-      approvalRate: 0.5,
-      reRevisionRate: 0.5,
-      failedOrAborted: 1,
+      approvalRate: 0.3333,
+      reRevisionRate: 0.3333,
+      failedOrAborted: 2,
     });
     expect(health.routines).toMatchObject({
       runs: 2,
@@ -341,9 +370,15 @@ function seedReviewAssistRows(databasePath: string, now: string) {
 function seedRevisionRows(databasePath: string, now: string) {
   const database = openDb(databasePath);
   try {
-    for (const [id, status, pushApprovalStatus] of [
-      ['pd-approved', 'push-approved', 'approved'],
-      ['pd-revised', 'revision-requested', 'rejected'],
+    for (const [id, status, pushApprovalStatus, outcome] of [
+      ['pd-approved', 'push-approved', 'approved', 'completed'],
+      ['pd-revised', 'revision-requested', 'rejected', 'failed'],
+      [
+        'pd-stale-aborted',
+        'prepared',
+        'pending',
+        'aborted-after-stale-transition',
+      ],
     ] as const) {
       database
         .prepare(
@@ -372,10 +407,10 @@ function seedRevisionRows(databasePath: string, now: string) {
         .run(
           `summary-${id}`,
           `run-${id}`,
-          id === 'pd-approved' ? 'completed' : 'failed',
+          outcome === 'completed' ? 'completed' : 'failed',
           JSON.stringify({
             preparedDiffId: id,
-            outcome: id === 'pd-approved' ? 'completed' : 'failed',
+            outcome,
           }),
           now,
           now,
