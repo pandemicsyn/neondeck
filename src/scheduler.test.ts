@@ -443,6 +443,45 @@ describe('scheduler', () => {
     });
   });
 
+  it('creates busywork report blueprint schedules with defaults', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await expect(
+      createScheduleBlueprint(
+        { blueprint: 'docs-drift', repo: 'neondeck' },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, outcome: 'created' });
+    await expect(
+      createScheduleBlueprint(
+        { blueprint: 'issue-triage', repo: 'neondeck' },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, outcome: 'created' });
+    await expect(
+      createScheduleBlueprint({ blueprint: 'hygiene' }, paths),
+    ).resolves.toMatchObject({ ok: true, outcome: 'created' });
+
+    await expect(listJobs(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'docs-drift',
+          intervalSeconds: 604_800,
+        }),
+        expect.objectContaining({
+          type: 'issue-triage',
+          intervalSeconds: 86_400,
+        }),
+        expect.objectContaining({
+          type: 'hygiene',
+          intervalSeconds: 604_800,
+        }),
+      ]),
+    );
+  });
+
   it('rejects release-watch blueprints for unknown repos', async () => {
     const home = await tempHome();
     const paths = runtimePaths(home);

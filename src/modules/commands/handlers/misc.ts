@@ -7,6 +7,7 @@ import { readRepoRegistrySnapshot } from '../../repos';
 import { createScheduleBlueprint } from '../../scheduler';
 import { startNeonSession } from '../../sessions';
 import { addPrWatch, listPrWatchRecords } from '../../watches';
+import { readHygieneSummary } from '../../hygiene';
 import type { RuntimePaths } from '../../../runtime-home';
 import type {
   NeonCommandResult,
@@ -29,13 +30,15 @@ export async function briefingCommand(
   paths: RuntimePaths,
   dependencies: CommandDependencies,
 ): Promise<NeonCommandResult> {
-  const [registry, watches, jobs, notifications, queue] = await Promise.all([
-    readRepoRegistrySnapshot(paths),
-    listPrWatchRecords(paths),
-    listJobs(paths),
-    listNotifications(paths),
-    readReviewQueue(paths, dependencies),
-  ]);
+  const [registry, watches, jobs, notifications, queue, hygiene] =
+    await Promise.all([
+      readRepoRegistrySnapshot(paths),
+      listPrWatchRecords(paths),
+      listJobs(paths),
+      listNotifications(paths),
+      readReviewQueue(paths, dependencies),
+      readHygieneSummary(paths),
+    ]);
   const unreadNotifications = notifications.filter(
     (notification) => !notification.readAt,
   );
@@ -54,6 +57,22 @@ export async function briefingCommand(
       title: notification.title,
       level: notification.level,
     })),
+    ...(hygiene.worktreeCleanupCandidates > 0
+      ? [
+          {
+            title: 'Review worktree cleanup candidates',
+            count: hygiene.worktreeCleanupCandidates,
+          },
+        ]
+      : []),
+    ...(hygiene.stalledPreparedDiffs > 0
+      ? [
+          {
+            title: 'Review stalled prepared diffs',
+            count: hygiene.stalledPreparedDiffs,
+          },
+        ]
+      : []),
   ].slice(0, 3);
 
   return completedCommand(command.name, command.raw, 'Prepared briefing.', {
@@ -86,6 +105,7 @@ export async function briefingCommand(
     notifications: {
       unread: unreadNotifications.length,
     },
+    hygiene,
     topActions,
   });
 }
