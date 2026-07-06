@@ -44,6 +44,7 @@ const maxConsecutiveFailures = 3;
 const staleRoutineRunMs = 6 * 60 * 60 * 1000;
 const maxRoutineOutputLength = 20_000;
 const maxRoutineSummaryLength = 240;
+const routineSchedulerStateKey = 'routines.scheduler.state';
 const isoTimestampPattern =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 
@@ -114,6 +115,10 @@ export type RoutineRunRecord = {
   updatedAt: string;
 };
 
+export type RoutineListItem = RoutineRecord & {
+  lastRun: RoutineRunRecord | null;
+};
+
 export const routineCreateInputSchema = v.object({
   name: v.pipe(v.string(), v.minLength(1), v.maxLength(maxNameLength)),
   prompt: v.pipe(v.string(), v.minLength(1), v.maxLength(maxPromptLength)),
@@ -147,6 +152,7 @@ export async function readRoutineConfig(paths = runtimePaths()) {
     changed: false,
     message: 'Read routine configuration.',
     routines: resolveRoutinesConfig(config),
+    scheduler: readRoutineSchedulerState(paths),
     guardrails: {
       maxAgentCreatedEnabledRoutines,
       minIntervalSeconds,
@@ -160,21 +166,29 @@ export async function listRoutines(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase);
   try {
+    const routines = database
+      .prepare(
+        `
+          SELECT *
+          FROM routines
+          ORDER BY enabled DESC, next_run_at ASC, updated_at DESC;
+        `,
+      )
+      .all()
+      .map(readRoutineRow);
+    const latestRuns = latestRoutineRuns(
+      database,
+      routines.map((item) => item.id),
+    );
     return {
       ok: true,
       action: 'routines_list',
       changed: false,
       message: 'Listed routines.',
-      routines: database
-        .prepare(
-          `
-          SELECT *
-          FROM routines
-          ORDER BY enabled DESC, next_run_at ASC, updated_at DESC;
-        `,
-        )
-        .all()
-        .map(readRoutineRow),
+      routines: routines.map((routine) => ({
+        ...routine,
+        lastRun: latestRuns.get(routine.id) ?? null,
+      })) satisfies RoutineListItem[],
     };
   } finally {
     database.close();
@@ -689,7 +703,9 @@ export async function runDueRoutines(
   limit = maxRoutineRunsPerTick,
 ): Promise<JobExecutionResult> {
   await ensureRuntimeHome(paths);
-  if (!(await routinesEnabled(paths))) {
+  const enabled = await routinesEnabled(paths);
+  recordRoutineSchedulerTick(paths, now, enabled);
+  if (!enabled) {
     return {
       outcome: 'silent',
       message: 'Routines are disabled by runtime config.',
@@ -2298,6 +2314,87 @@ function listRoutineRuns(
       )
       .all(routineId, limit)
       .map(readRoutineRunRow);
+  } finally {
+    database.close();
+  }
+}
+
+function latestRoutineRuns(
+  database: ReturnType<typeof openDb>,
+  routineIds: string[],
+) {
+  const latest = new Map<string, RoutineRunRecord>();
+  if (routineIds.length === 0) return latest;
+  const placeholders = routineIds.map(() => '?').join(', ');
+  const runs = database
+    .prepare(
+      `
+      SELECT routine_runs.*
+      FROM routine_runs
+      INNER JOIN (
+        SELECT routine_id, MAX(created_at) AS created_at
+        FROM routine_runs
+        WHERE routine_id IN (${placeholders})
+        GROUP BY routine_id
+      ) latest
+        ON latest.routine_id = routine_runs.routine_id
+       AND latest.created_at = routine_runs.created_at
+      ORDER BY routine_runs.routine_id ASC, routine_runs.created_at DESC;
+    `,
+    )
+    .all(...routineIds)
+    .map(readRoutineRunRow);
+  for (const run of runs) {
+    if (!latest.has(run.routineId)) latest.set(run.routineId, run);
+  }
+  return latest;
+}
+
+function recordRoutineSchedulerTick(
+  paths: RuntimePaths,
+  now: Date,
+  enabled: boolean,
+) {
+  const updatedAt = now.toISOString();
+  const value = asJsonValue({
+    lastTickAt: updatedAt,
+    enabled,
+  });
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        INSERT INTO app_metadata (key, value, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+          value = excluded.value,
+          updated_at = excluded.updated_at;
+      `,
+      )
+      .run(routineSchedulerStateKey, JSON.stringify(value), updatedAt);
+  } finally {
+    database.close();
+  }
+}
+
+function readRoutineSchedulerState(paths: RuntimePaths) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const row = database
+      .prepare('SELECT value, updated_at FROM app_metadata WHERE key = ?;')
+      .get(routineSchedulerStateKey) as
+      { value?: unknown; updated_at?: unknown } | undefined;
+    const value = parseJson(row?.value);
+    const record =
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+    return {
+      lastTickAt: stringOrNull(record.lastTickAt),
+      enabled: typeof record.enabled === 'boolean' ? record.enabled : null,
+      updatedAt: stringOrNull(row?.updated_at),
+    };
   } finally {
     database.close();
   }

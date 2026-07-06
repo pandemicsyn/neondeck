@@ -1158,6 +1158,12 @@ describe('routines', () => {
         outcome: 'silent',
         result: { disabled: true, runCount: 0 },
       });
+      await expect(readRoutineConfig(paths)).resolves.toMatchObject({
+        scheduler: {
+          lastTickAt: '2026-07-06T09:00:00.000Z',
+          enabled: false,
+        },
+      });
       await expect(
         runRoutineNow(created.routine.id, paths),
       ).resolves.toMatchObject({
