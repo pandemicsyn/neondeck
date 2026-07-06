@@ -178,29 +178,8 @@ export async function runCiFix(
     );
   }
 
-  const lock = await (dependencies.lockWorktree ?? lockWorktree)(
-    {
-      repoId: dossier.repo.id,
-      prNumber: dossier.target.number,
-      scope: 'pr',
-      owner: 'ci-fix-run',
-      ttlSeconds: 86_400,
-    },
-    paths,
-  );
-  if (!lock.ok || !('lock' in lock)) {
-    await notifyCiFixAttention(dossier, report, lock.message, paths);
-    return failure(lock.message, {
-      requires: ['worktreeLock'],
-      data: {
-        report: reportLink(report),
-        dossier: dossierSummary(dossier),
-        lock,
-      },
-    });
-  }
-
   let releaseStatus: 'ready' | 'failed' | null = 'ready';
+  let lock: Awaited<ReturnType<typeof lockWorktree>> | null = null;
   try {
     const prepared = await (
       dependencies.preparePrWorktree ?? preparePrWorktree
@@ -240,6 +219,29 @@ export async function runCiFix(
     }
     const startedHeadSha =
       stringField(preparedWorktree.headSha) ?? dossier.state.headSha;
+
+    lock = await (dependencies.lockWorktree ?? lockWorktree)(
+      {
+        repoId: dossier.repo.id,
+        prNumber: dossier.target.number,
+        scope: 'pr',
+        owner: 'ci-fix-run',
+        ttlSeconds: 86_400,
+      },
+      paths,
+    );
+    if (!lock.ok || !('lock' in lock)) {
+      releaseStatus = null;
+      await notifyCiFixAttention(dossier, report, lock.message, paths);
+      return failure(lock.message, {
+        requires: ['worktreeLock'],
+        data: {
+          report: reportLink(report),
+          dossier: dossierSummary(dossier),
+          lock,
+        },
+      });
+    }
 
     const prompt = await ciFixPrompt(dossier, report, paths);
     const kiloTaskId = `ci-fix-${randomUUID()}`;
@@ -353,7 +355,7 @@ export async function runCiFix(
       workflowSummary: updatedWorkflowSummary ?? workflowSummary,
     };
   } finally {
-    if (releaseStatus) {
+    if (releaseStatus && lock?.ok && 'lock' in lock) {
       await (dependencies.releaseWorktreeLock ?? releaseWorktreeLock)(
         {
           lockId: lock.lock.id,

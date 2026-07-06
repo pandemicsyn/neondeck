@@ -24,7 +24,11 @@ import { reconcileCiFixRunForKiloTask } from './modules/kilo';
 import { taskDiffSummary } from './modules/kilo/runtime-facts';
 import { releaseTaskLock } from './modules/kilo/process';
 import type { KiloTaskRecord } from './modules/kilo';
-import { createWorktree, lockWorktree } from './modules/worktrees';
+import {
+  createWorktree,
+  lockWorktree,
+  releaseWorktreeLock,
+} from './modules/worktrees';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 
 const execFileAsync = promisify(execFile);
@@ -132,11 +136,30 @@ describe('CI fix run', () => {
     const paths = runtimePaths(home);
     await writeRepoRegistry(paths.repos);
     let observedTaskId: string | null = null;
+    let prepareSawNoCiLock = false;
 
     const result = await fixPrCiRun({ ref: 'pandemicsyn/neondeck#10' }, paths, {
       ...testDependencies(),
-      preparePrWorktree: async () =>
-        ({
+      preparePrWorktree: async () => {
+        const probeLock = await lockWorktree(
+          {
+            repoId: 'neondeck',
+            prNumber: 10,
+            scope: 'pr',
+            owner: 'prepare-probe',
+            ttlSeconds: 30,
+          },
+          paths,
+        );
+        if (!probeLock.ok || !('lock' in probeLock)) {
+          throw new Error('prepare saw pre-existing CI PR lock');
+        }
+        prepareSawNoCiLock = true;
+        await releaseWorktreeLock(
+          { lockId: probeLock.lock.id, owner: 'prepare-probe' },
+          paths,
+        );
+        return {
           ok: true,
           action: 'autopilot_prepare_pr_worktree',
           changed: true,
@@ -147,7 +170,8 @@ describe('CI fix run', () => {
               headSha: 'prepared-head-sha',
             },
           },
-        }) as never,
+        } as never;
+      },
       lockWorktree: async () =>
         ({
           ok: true,
@@ -203,6 +227,7 @@ describe('CI fix run', () => {
         summary: expect.objectContaining({ outcome: 'kilo-started' }),
       },
     });
+    expect(prepareSawNoCiLock).toBe(true);
   });
 
   it('stops after the dossier when current failing check facts are empty', async () => {
