@@ -78,6 +78,15 @@
               "limit": 12,
               "refreshSeconds": 60
             }
+          },
+          {
+            "id": "routines",
+            "title": "ROUTINES",
+            "pluginId": "routines-panel",
+            "config": {
+              "limit": 8,
+              "refreshSeconds": 30
+            }
           }
         ]
       },

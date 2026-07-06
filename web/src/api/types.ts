@@ -1597,6 +1597,131 @@ export type RuntimeSkillsResponse = {
   loadedAt: string;
 };
 
+export type RoutineScheduleKind = 'interval' | 'once' | 'cron';
+export type RoutineDelivery = 'notification' | 'report' | 'session';
+export type RoutineRunStatus = 'queued' | 'completed' | 'failed';
+
+export type RoutineRecord = {
+  id: string;
+  name: string;
+  prompt: string;
+  scheduleKind: RoutineScheduleKind;
+  schedule: string;
+  skills: string[];
+  scopeRepoId: string | null;
+  scopeCwd: string | null;
+  delivery: RoutineDelivery;
+  sessionId: string | null;
+  repeatLimit: number | null;
+  runCount: number;
+  consecutiveFailures: number;
+  runningRunId: string | null;
+  enabled: boolean;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+};
+
+export type RoutineRunRecord = {
+  id: string;
+  routineId: string;
+  status: RoutineRunStatus;
+  outcome: 'recorded' | 'failed';
+  message: string;
+  reportId: string | null;
+  sessionId: string | null;
+  commandEventId: string | null;
+  dispatchId: string | null;
+  summary: unknown;
+  error: string | null;
+  startedAt: string;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RoutineListItem = RoutineRecord & {
+  lastRun: RoutineRunRecord | null;
+};
+
+export type RoutineCreateInput = {
+  name: string;
+  prompt: string;
+  scheduleKind: RoutineScheduleKind;
+  schedule: string;
+  skills?: string[];
+  scopeRepoId?: string | null;
+  scopeCwd?: string | null;
+  delivery?: RoutineDelivery;
+  sessionId?: string | null;
+  repeatLimit?: number | null;
+};
+
+export type RoutineUpdateInput = Partial<RoutineCreateInput>;
+
+export type RoutineListResponse = {
+  ok: boolean;
+  action: 'routines_list';
+  changed: boolean;
+  message: string;
+  routines: RoutineListItem[];
+};
+
+export type RoutineReadResponse = {
+  ok: boolean;
+  action: 'routine_read';
+  changed: boolean;
+  message: string;
+  routine: RoutineRecord;
+  runs: RoutineRunRecord[];
+};
+
+export type RoutineMutationResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  routine?: RoutineRecord | null;
+  run?: RoutineRunRecord | null;
+  requires?: string[];
+  errors?: string[];
+};
+
+export type RoutineConfigResponse = {
+  ok: boolean;
+  action: 'routine_config_read';
+  changed: boolean;
+  message: string;
+  routines: {
+    enabled: boolean;
+  };
+  scheduler: {
+    lastTickAt: string | null;
+    enabled: boolean | null;
+    updatedAt: string | null;
+  };
+  guardrails: {
+    maxAgentCreatedEnabledRoutines: number;
+    minIntervalSeconds: number;
+    maxConcurrentRuns: number;
+    maxConsecutiveFailures: number;
+  };
+};
+
+export type RoutineConfigUpdateResponse = {
+  ok: boolean;
+  action: 'config_update_routines';
+  changed: boolean;
+  message: string;
+  home: string;
+  files: string[];
+  data?: unknown;
+  requires?: string[];
+  errors?: string[];
+};
+
 export type NeonCommandResult = {
   ok: boolean;
   command: string;
