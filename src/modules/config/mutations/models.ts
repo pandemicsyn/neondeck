@@ -5,6 +5,7 @@ import { writeJson } from '../files';
 import {
   type AgentModelConfig,
   type AppConfig,
+  type HandoffConfig,
   type LearningConfig,
   type WorktreeCleanupConfig,
   ensureRuntimeHome,
@@ -14,6 +15,7 @@ import {
 } from '../../../runtime-home';
 import {
   updateAgentModelsInputSchema,
+  updateHandoffConfigInputSchema,
   updateLearningConfigInputSchema,
   updateSkillRootsInputSchema,
   updateWorktreePolicyInputSchema,
@@ -189,6 +191,60 @@ export async function updateLearningConfig(
   });
 }
 
+export async function updateHandoffConfig(
+  rawInput: v.InferInput<typeof updateHandoffConfigInputSchema>,
+  paths = runtimePaths(),
+): Promise<ConfigActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsed = parseActionInput(
+    updateHandoffConfigInputSchema,
+    rawInput,
+    'config_update_handoff',
+    paths,
+    [paths.config],
+  );
+  if (!parsed.ok) return parsed.result;
+
+  if (!hasHandoffConfigUpdate(parsed.input)) {
+    return failResult('config_update_handoff', paths, [paths.config], {
+      message: 'At least one handoff config value is required.',
+      requires: ['handoff'],
+    });
+  }
+
+  const config = await readRuntimeJson(paths.config, parseAppConfig);
+  const nextHandoff = mergeHandoffConfig(config.handoff, parsed.input);
+  const next = parseAppConfig(
+    {
+      ...config,
+      handoff: nextHandoff,
+    },
+    paths.config,
+  );
+  const changed =
+    JSON.stringify(config.handoff ?? {}) !== JSON.stringify(next.handoff ?? {});
+
+  if (changed) {
+    await writeJson(paths.config, next);
+    recordConfigChange(paths, {
+      action: 'config_update_handoff',
+      file: paths.config,
+      target: 'handoff',
+      before: config,
+      after: next,
+    });
+  }
+
+  return okResult('config_update_handoff', changed, paths, [paths.config], {
+    message: changed
+      ? 'Updated external agent handoff configuration.'
+      : 'External agent handoff configuration already matched the requested values.',
+    data: {
+      handoff: next.handoff,
+    },
+  });
+}
+
 export async function updateWorktreePolicy(
   rawInput: v.InferInput<typeof updateWorktreePolicyInputSchema>,
   paths = runtimePaths(),
@@ -299,6 +355,12 @@ function hasLearningConfigUpdate(
   return Object.values(input).some((value) => value !== undefined);
 }
 
+function hasHandoffConfigUpdate(
+  input: v.InferOutput<typeof updateHandoffConfigInputSchema>,
+) {
+  return Object.values(input).some((value) => value !== undefined);
+}
+
 function hasWorktreePolicyUpdate(
   input: Omit<v.InferOutput<typeof updateWorktreePolicyInputSchema>, 'confirm'>,
 ) {
@@ -388,6 +450,16 @@ function mergeLearningConfig(
   current: AppConfig['learning'] | undefined,
   input: v.InferOutput<typeof updateLearningConfigInputSchema>,
 ): LearningConfig {
+  return {
+    ...current,
+    ...input,
+  };
+}
+
+function mergeHandoffConfig(
+  current: AppConfig['handoff'] | undefined,
+  input: v.InferOutput<typeof updateHandoffConfigInputSchema>,
+): HandoffConfig {
   return {
     ...current,
     ...input,

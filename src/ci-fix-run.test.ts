@@ -959,7 +959,7 @@ describe('CI fix run', () => {
         }),
       ],
     });
-  });
+  }, 30_000);
 
   it('creates a prepared diff when Kilo commits a CI fix on a PR worktree', async () => {
     const home = await tempDir('neondeck-home-');

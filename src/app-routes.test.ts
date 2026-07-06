@@ -155,6 +155,54 @@ describe('app API safety routes', () => {
     expect(body.action).toMatch(/^watch_ref_/);
   });
 
+  it('requires attribution on handoff API requests', async () => {
+    const response = await app.request(
+      'http://localhost/api/handoff/register-pr',
+      {
+        method: 'POST',
+        headers: { host: 'localhost', 'content-type': 'application/json' },
+        body: JSON.stringify({ ref: 'neondeck#123' }),
+      },
+    );
+    const body = (await response.json()) as {
+      ok: boolean;
+      requires?: string[];
+    };
+
+    expect(response.status).toBe(400);
+    expect(body).toMatchObject({
+      ok: false,
+      requires: ['source'],
+    });
+  });
+
+  it('creates attributed handoff notes over the local API', async () => {
+    const response = await app.request('http://localhost/api/handoff/note', {
+      method: 'POST',
+      headers: { host: 'localhost', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        source: 'codex',
+        text: 'Local handoff note.',
+        level: 'ready',
+      }),
+    });
+    const body = (await response.json()) as {
+      ok: boolean;
+      action: string;
+      notification?: { source?: string; message?: string };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      ok: true,
+      action: 'handoff_note_create',
+      notification: {
+        source: 'external:codex',
+        message: 'Local handoff note.',
+      },
+    });
+  });
+
   it('serves config events as a local server-sent event stream', async () => {
     const response = await app.request('http://localhost/api/events/config', {
       headers: { host: 'localhost' },

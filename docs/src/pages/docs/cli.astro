@@ -97,10 +97,32 @@ npm run cli -- repo list</code></pre>
         <h2>Watches</h2>
         <pre><code>npm run cli -- watch-pr pandemicsyn/neondeck#521
 npm run cli -- watch-pr pandemicsyn/neondeck#521 --until prod
-npm run cli -- watch-pr https://github.com/pandemicsyn/neondeck/pull/521</code></pre>
+npm run cli -- watch-pr https://github.com/pandemicsyn/neondeck/pull/521
+npm run cli -- watch-release neondeck</code></pre>
         <p>
           PR watches persist in SQLite and poll GitHub for merge/check changes.
           <code>--until prod</code> links the source PR to a release watch after merge.
+        </p>
+
+        <h2>External agent handoff</h2>
+        <pre><code>neondeck register-pr pandemicsyn/neondeck#521 \
+  --from codex \
+  --note "adds retry logic" \
+  --json
+
+neondeck note "Finished local cleanup without a PR." \
+  --from claude-code \
+  --repo neondeck \
+  --level ready \
+  --json</code></pre>
+        <p>
+          Handoff commands let same-host tools such as Claude Code, Codex, Kilo,
+          and git hooks register work with Neon. They create attributed PR
+          watches, notifications, and release watches; they do not grant
+          execution, approval, push, provider, or remote ingest powers.
+          <code>register-pr --review</code> is default-off per command and also respects
+          <code>handoff.allowExternalReviewQueue</code> in runtime-home
+          <code>config.json</code>.
         </p>
 
         <h2>Schedules</h2>

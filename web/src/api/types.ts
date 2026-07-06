@@ -1754,6 +1754,7 @@ export type PrWatch = {
   url: string | null;
   mergeCommitSha: string | null;
   lastCheckedAt: string | null;
+  createdBy: string | null;
   nextRunAt?: string | null;
   pollingEnabled?: boolean;
   pollIntervalSeconds?: number | null;

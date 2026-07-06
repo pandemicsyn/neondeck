@@ -15,6 +15,8 @@ export type WatchActionResult = {
   action: string;
   changed: boolean;
   outcome?: WatchOutcome;
+  id?: string;
+  deckUrl?: string;
   message: string;
   watch?: JsonValue;
   watches?: JsonValue[];
@@ -38,6 +40,7 @@ export type PrWatch = {
   lastSnapshot: PrWatchSnapshot | null;
   lastOutcome: WatchOutcome | null;
   lastCheckedAt: string | null;
+  createdBy: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -114,6 +117,7 @@ export const watchPrAddInputSchema = v.object({
   ref: nonEmptyStringSchema,
   desiredTerminalState: desiredTerminalStateSchema,
   intervalSeconds: v.optional(v.pipe(v.number(), v.integer(), v.minValue(60))),
+  createdBy: v.optional(nonEmptyStringSchema),
 });
 
 export const watchPrRemoveInputSchema = v.object({

@@ -111,6 +111,7 @@ function WatchRow({ watch }: { watch: PrWatch }) {
     : watch.nextRunAt
       ? `next ${relativeTime(watch.nextRunAt)}`
       : 'next poll pending';
+  const sourceLabel = watch.createdBy ? ` · ${watch.createdBy}` : '';
 
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
@@ -128,6 +129,7 @@ function WatchRow({ watch }: { watch: PrWatch }) {
       <div className="mt-2 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
         <span className="min-w-0 truncate">
           until {watch.desiredTerminalState} · {checkedLabel} · {nextPollLabel}
+          {sourceLabel}
         </span>
         <span className="flex shrink-0 gap-1.5">
           <SessionReferenceButton

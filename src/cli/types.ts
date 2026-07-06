@@ -20,6 +20,27 @@ export type RepoAddOptions = {
 export type WatchPrOptions = {
   until?: string;
   interval?: string;
+  from?: string;
+};
+
+export type WatchReleaseOptions = {
+  sourcePr?: string;
+  interval?: string;
+  from?: string;
+};
+
+export type HandoffNoteOptions = {
+  repo?: string;
+  pr?: string;
+  level?: string;
+  from?: string;
+};
+
+export type RegisterPrOptions = {
+  review?: boolean;
+  watch?: boolean;
+  note?: string;
+  from?: string;
 };
 
 export type ScheduleOptions = {

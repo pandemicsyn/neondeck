@@ -44,6 +44,7 @@ export const prWatches = sqliteTable(
     lastSnapshotJson: text('last_snapshot_json'),
     lastOutcome: text('last_outcome'),
     lastCheckedAt: text('last_checked_at'),
+    createdBy: text('created_by'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },

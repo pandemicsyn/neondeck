@@ -93,6 +93,8 @@ The built-in Neondeck guidance is an application-owned Flue skill at `src/skills
 
 Chat sessions are indexed in `data/neondeck.db` while Flue remains the owner of `display-assistant/:id` transcripts. Neondeck stores titles, linked repo/watch/task metadata, compact summaries, stale-context badges, and audit records so agents and dashboard rows can reference other sessions without reading raw transcript pages by default. Raw transcript access is audited and requires an explicit user request.
 
+External local agents can hand work to Neon without gaining execution or approval powers. After pushing a PR, a tool such as Claude Code, Codex, Kilo, or a git hook can run `neondeck register-pr owner/repo#123 --from codex --note "adds retry logic" --json`; significant non-PR work can use `neondeck note "..." --from codex --repo neondeck --level ready --json`. The localhost-only `/api/handoff/*` mirror requires a `source` field for curl-based local hooks. Handoff creates attributed watches, notifications, and release watches; `register-pr --review` can queue the bounded PR review workflow only when `handoff.allowExternalReviewQueue` in runtime-home `config.json` permits it. Handoff does not execute commands, approve work, push, submit GitHub reviews, or mutate provider settings. The external-agent skill lives at `skills/neondeck-handoff/SKILL.md`; copy that folder into a local agent skill root such as `~/.claude/skills/` when you want another agent to register work automatically.
+
 Agent, utility, and subagent models are configurable in runtime-home `config.json`. Environment variables remain a fallback, but checked-in defaults should live in config:
 
 ```json

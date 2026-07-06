@@ -102,6 +102,10 @@ export const routinesConfigSchema = v.looseObject({
   enabled: v.optional(v.boolean()),
 });
 
+export const handoffConfigSchema = v.looseObject({
+  allowExternalReviewQueue: v.optional(v.boolean()),
+});
+
 export const providerConfigSchema = v.strictObject({
   kilocode: v.optional(
     v.strictObject({
@@ -288,6 +292,7 @@ export const appConfigSchema = v.looseObject({
   kilo: v.optional(kiloConfigSchema),
   learning: v.optional(learningConfigSchema),
   routines: v.optional(routinesConfigSchema),
+  handoff: v.optional(handoffConfigSchema),
 });
 
 export const repoConfigSchema = v.looseObject({
@@ -378,6 +383,7 @@ export type AgentModelConfig = v.InferOutput<typeof agentModelConfigSchema>;
 export type LearningConfig = v.InferOutput<typeof learningConfigSchema>;
 export type ResolvedLearningConfig = Required<LearningConfig>;
 export type RoutinesConfig = v.InferOutput<typeof routinesConfigSchema>;
+export type HandoffConfig = v.InferOutput<typeof handoffConfigSchema>;
 export type ResolvedRoutinesConfig = Required<RoutinesConfig>;
 export type ProviderConfig = v.InferOutput<typeof providerConfigSchema>;
 export type ThinkingLevel = v.InferOutput<typeof thinkingLevelSchema>;

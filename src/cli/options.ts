@@ -22,6 +22,14 @@ export function parseWatchTarget(value: string | undefined) {
   throw new Error('--until must be checks, merged, or prod');
 }
 
+export function parseHandoffNoteLevel(value: string | undefined) {
+  if (value === undefined) return undefined;
+  if (value === 'info' || value === 'ready' || value === 'attention') {
+    return value;
+  }
+  throw new Error('--level must be info, ready, or attention');
+}
+
 export function parseOptionalIntervalSeconds(value: string | undefined) {
   if (value === undefined) return undefined;
   const trimmed = value.trim();

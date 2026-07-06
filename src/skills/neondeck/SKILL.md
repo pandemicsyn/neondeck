@@ -24,7 +24,7 @@ Configuration and mutable runtime state live in the configured Neondeck runtime 
 - `data/neondeck.db`: neondeck app state.
 - `data/flue.db`: Flue runtime state.
 
-`config.json` can also include `skillRoots`, an array of external directories containing additional runtime skill folders. It can also include `worktrees.defaultStorage`, `worktrees.cleanup` policy, and `kilo` handoff settings such as `enabled`, `cliPath`, `defaultModel`, `defaultAgent`, `defaultMode`, `autoPolicy`, `explicitHandoffOnly`, `concurrency`, `rawLogRetentionDays`, and per-repo allow/deny entries. Update worktree policy through `neondeck_config_update_worktree_policy`, not direct file edits.
+`config.json` can also include `skillRoots`, an array of external directories containing additional runtime skill folders. It can also include `handoff.allowExternalReviewQueue`, `worktrees.defaultStorage`, `worktrees.cleanup` policy, and `kilo` handoff settings such as `enabled`, `cliPath`, `defaultModel`, `defaultAgent`, `defaultMode`, `autoPolicy`, `explicitHandoffOnly`, `concurrency`, `rawLogRetentionDays`, and per-repo allow/deny entries. Update handoff policy through `neondeck_config_update_handoff` and worktree policy through `neondeck_config_update_worktree_policy`, not direct file edits.
 
 ## Mutation Rules
 
@@ -53,6 +53,8 @@ Use provider config actions for provider setup. Read provider config with `neond
 Use dashboard layout actions for display configuration. Read current layout with `neondeck_config_read` using target `dashboard`. Apply common layouts with `neondeck_config_apply_dashboard_preset`: `classic` keeps GitHub/work on the left third and Neon chat on the right two-thirds; `cockpit` keeps that geometry but adds Watches, Briefing, Memory, Runtime, Workflows, and Subagents as tabs. Use `neondeck_config_update_dashboard_layout` only when a user asks for a custom layout and provide a full validated `dashboard.json` object. Dashboard config has an optional `statusline` with `position` `top` or `bottom`; main `layout.regions` are tab stacks with `tabs[]`. Do not edit `dashboard.json` directly in conversation.
 
 Use typed watch actions for PR watches. Add, list, remove, and refresh PR watches through `neondeck_watch_pr_*` actions. Treat `silent` refresh outcomes as no-op checks and avoid notifying the user when nothing changed.
+
+Use the `neondeck-handoff` skill when explaining how other local agents should hand work to Neon. External agents should use CLI commands such as `neondeck register-pr <owner/repo#number> --from <agent-name> --note "<summary>" --json`, `neondeck note`, or `neondeck watch-release`, or the localhost-only `/api/handoff/*` mirror with a required `source` field. These surfaces create attributed watches, notes, release watches, and optionally queue bounded PR review assistance when `handoff.allowExternalReviewQueue` allows it. They do not execute commands, approve work, push, submit reviews, or mutate providers.
 
 Use `neondeck_autopilot_state_lookup` when answering questions about autonomous PR work, repo/watch autopilot policy, prepared diffs, pending push approvals, running autopilot checks, or why Neon did or did not act. This lookup is read-only operator state. It composes current watches, prepared-diff records, worktrees, approvals, Flue workflow observations, notifications, and config-backed policy. Do not invent queue admissions, pushes, comments, or fixes that are not present in that state.
 

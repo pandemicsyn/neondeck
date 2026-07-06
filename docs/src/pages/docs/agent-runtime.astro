@@ -84,6 +84,29 @@ watch-release</code></pre>
           summarize or act on.
         </p>
 
+        <h2>External agent handoff</h2>
+        <p>
+          Same-host agents and local hooks can hand work to Neon through the CLI
+          or the localhost-only <code>/api/handoff/*</code> mirror. Handoff verbs
+          are additive: they create attributed PR watches, notifications, release
+          watches, and optionally queue the bounded PR review workflow when
+          <code>handoff.allowExternalReviewQueue</code> allows it. They do not execute
+          commands, approve work, push branches, submit GitHub reviews, or mutate
+          provider settings.
+        </p>
+        <pre><code>neondeck register-pr owner/repo#123 --from codex --note "adds retry logic" --json
+
+curl -sS -X POST http://127.0.0.1:3583/api/handoff/register-pr \
+  -H 'content-type: application/json' \
+  --data '&#123;"source":"codex","ref":"owner/repo#123","note":"adds retry logic"&#125;'</code></pre>
+        <p>
+          The repository ships an Agent Skills-compatible
+          <code>skills/neondeck-handoff/SKILL.md</code>. Copy that skill folder
+          into another agent's local skill root, such as
+          <code>~/.claude/skills/</code>, or reference it from repo-level agent
+          guidance so those agents register PRs after pushes.
+        </p>
+
         <h2>Observability</h2>
         <p>
           neondeck records Flue observations, failed runs, workflow summaries,

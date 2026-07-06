@@ -784,6 +784,15 @@ export const entries: SafetyPolicyEntry[] = [
     'Updates an existing schedule entry and can disable a schedule.',
   ),
   action(
+    'neondeck_config_update_handoff',
+    'Update handoff config',
+    {
+      ...safeMutation,
+      auditTarget: 'config_history',
+    },
+    'Updates external agent handoff policy, including whether external registrations can queue bounded PR review assistance.',
+  ),
+  action(
     'neondeck_schedule_blueprint_create',
     'Create schedule blueprint',
     {
@@ -2299,6 +2308,15 @@ export const entries: SafetyPolicyEntry[] = [
         'kilo_tasks/kilo_task_events/kilo_result_state/kilo_result_events',
     },
     'Starts, reads, searches, cancels, reviews, verifies, and records promotion admission for explicit Kilo handoff tasks through app-owned SQLite state.',
+  ),
+  route(
+    '/api/handoff/*',
+    'External agent handoff API',
+    {
+      ...safeMutation,
+      auditTarget: 'pr_watches/jobs/notifications/workflow_summaries',
+    },
+    'Localhost-only registration surface for external agents to create attributed watches, notes, release watches, and optionally queue bounded PR review assistance when config allows it. It does not execute commands, approve work, push, or mutate remote providers.',
   ),
   route(
     '/api/memories',
