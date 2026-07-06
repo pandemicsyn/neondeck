@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkflowObservability } from '../api';
-import { reviewWorkflowCompletionState } from './GitHubPrList';
+import {
+  reviewWorkflowCompletionState,
+  reviewWorkflowRefreshDecision,
+} from './GitHubPrList';
 
 describe('GitHubPrList review workflow state', () => {
   it('refreshes when an admitted review run reaches terminal observability', () => {
@@ -62,6 +65,50 @@ describe('GitHubPrList review workflow state', () => {
       terminal: false,
       sawActiveRun: true,
       shouldRefresh: false,
+    });
+  });
+
+  it('does not use fallback refresh while the admitted review run is active', () => {
+    expect(
+      reviewWorkflowRefreshDecision(
+        workflowObservability({
+          activeRuns: [
+            {
+              runId: 'run-review',
+              workflow: 'review-pr-for-human',
+              startedAt: '2026-07-05T20:00:00.000Z',
+              lastEventAt: '2026-07-05T20:00:10.000Z',
+              lastMessage: 'Running review.',
+              eventCount: 2,
+              runUrl: '/api/flue/runs/run-review',
+            },
+          ],
+        }),
+        'run-review',
+        true,
+        true,
+      ),
+    ).toEqual({
+      terminal: false,
+      sawActiveRun: true,
+      shouldRefresh: false,
+      done: false,
+    });
+  });
+
+  it('uses fallback refresh when the admitted run was never observed', () => {
+    expect(
+      reviewWorkflowRefreshDecision(
+        workflowObservability(),
+        'run-review',
+        false,
+        true,
+      ),
+    ).toEqual({
+      terminal: false,
+      sawActiveRun: false,
+      shouldRefresh: true,
+      done: true,
     });
   });
 });

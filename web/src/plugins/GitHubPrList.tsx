@@ -293,6 +293,19 @@ function scheduleReviewCompletionRefresh(
       queryKey: prReviewQueryKeys.draft(item),
     });
   };
+  let activeFollowUpCount = 0;
+  const scheduleActiveFollowUp = () => {
+    if (activeFollowUpCount >= reviewCompletionActiveFollowUpLimit) {
+      refresh();
+      done = true;
+      return;
+    }
+    activeFollowUpCount += 1;
+    window.setTimeout(
+      () => void observe(true),
+      reviewCompletionActiveFollowUpDelay,
+    );
+  };
   const observe = async (forceRefresh: boolean) => {
     if (done) return;
     try {
@@ -301,19 +314,26 @@ function scheduleReviewCompletionRefresh(
         queryFn: getWorkflowObservability,
         staleTime: 0,
       });
-      const state = reviewWorkflowCompletionState(
+      const state = reviewWorkflowRefreshDecision(
         workflows,
         runId,
         sawActiveRun,
+        forceRefresh,
       );
       sawActiveRun = state.sawActiveRun;
-      if (state.shouldRefresh || forceRefresh) refresh();
-      if (state.terminal || state.shouldRefresh || forceRefresh) done = true;
+      if (state.shouldRefresh) refresh();
+      if (state.done) {
+        done = true;
+        return;
+      }
+      if (forceRefresh && state.sawActiveRun) scheduleActiveFollowUp();
     } catch {
-      if (forceRefresh) {
+      if (forceRefresh && !sawActiveRun) {
         refresh();
         done = true;
+        return;
       }
+      if (forceRefresh) scheduleActiveFollowUp();
     }
   };
   for (const delay of reviewCompletionPollDelays) {
@@ -325,6 +345,8 @@ function scheduleReviewCompletionRefresh(
 }
 
 const reviewCompletionPollDelays = [15_000, 45_000, 90_000, 150_000, 210_000];
+const reviewCompletionActiveFollowUpDelay = 60_000;
+const reviewCompletionActiveFollowUpLimit = 20;
 
 export function reviewWorkflowCompletionState(
   workflows: WorkflowObservability,
@@ -341,6 +363,21 @@ export function reviewWorkflowCompletionState(
     terminal,
     sawActiveRun: sawActiveRun || active,
     shouldRefresh: terminal || (sawActiveRun && !active),
+  };
+}
+
+export function reviewWorkflowRefreshDecision(
+  workflows: WorkflowObservability,
+  runId: string,
+  sawActiveRun: boolean,
+  forceRefresh: boolean,
+) {
+  const state = reviewWorkflowCompletionState(workflows, runId, sawActiveRun);
+  const shouldFallbackRefresh = forceRefresh && !state.sawActiveRun;
+  return {
+    ...state,
+    shouldRefresh: state.shouldRefresh || shouldFallbackRefresh,
+    done: state.terminal || state.shouldRefresh || shouldFallbackRefresh,
   };
 }
 
