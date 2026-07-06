@@ -206,9 +206,8 @@ export async function runCiFix(
       });
     }
 
-    const worktreeId = stringField(
-      objectField(objectField(prepared.data).worktree).id,
-    );
+    const preparedWorktree = objectField(objectField(prepared.data).worktree);
+    const worktreeId = stringField(preparedWorktree.id);
     if (!worktreeId) {
       releaseStatus = 'failed';
       const message = 'PR worktree preparation did not return a worktree id.';
@@ -221,6 +220,8 @@ export async function runCiFix(
         },
       });
     }
+    const startedHeadSha =
+      stringField(preparedWorktree.headSha) ?? dossier.state.headSha;
 
     const prompt = await ciFixPrompt(dossier, report, paths);
     const kilo = await (dependencies.startKiloTask ?? startKiloTask)(
@@ -254,7 +255,8 @@ export async function runCiFix(
           repoId: dossier.repo.id,
           repoFullName: dossier.target.repoFullName,
           prNumber: dossier.target.number,
-          headSha: dossier.state.headSha,
+          headSha: startedHeadSha,
+          dossierHeadSha: dossier.state.headSha,
           failedCheckCount: dossier.failingChecks.length,
           checks: dossier.failingChecks.map((check) => ({
             id: check.id,

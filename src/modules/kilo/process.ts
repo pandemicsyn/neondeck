@@ -32,7 +32,10 @@ import {
 import { type RuntimePaths } from '../../runtime-home';
 import { releaseWorktreeLock } from '../worktrees';
 import { reconcilePreparedDiffRevisionResult } from './revision-reconcile';
-import { reconcileCiFixRunForKiloTask } from './ci-fix-run-reconcile';
+import {
+  ciFixRunWorktreeReleaseStatusForKiloTask,
+  reconcileCiFixRunForKiloTask,
+} from './ci-fix-run-reconcile';
 
 const execFileAsync = promisify(execFile);
 export const runningProcesses = new Map<string, RunningProcess>();
@@ -450,12 +453,17 @@ export async function releaseTaskLock(
   diff?: KiloTaskDiff | null,
 ) {
   if (!task?.lockId) return;
+  const ciFixFinalStatus = await ciFixRunWorktreeReleaseStatusForKiloTask(
+    { task, status, diff },
+    paths,
+  );
   await releaseKiloTaskLock(
     task.lockId,
     kiloLockOwner(task.id),
     status,
     paths,
     diff,
+    ciFixFinalStatus,
   );
 }
 
@@ -465,12 +473,15 @@ export async function releaseKiloTaskLock(
   status: KiloTaskStatus,
   paths: RuntimePaths,
   diff?: KiloTaskDiff | null,
+  finalStatus?: Awaited<
+    ReturnType<typeof ciFixRunWorktreeReleaseStatusForKiloTask>
+  >,
 ) {
   await releaseWorktreeLock(
     {
       lockId,
       ...(owner ? { owner } : {}),
-      finalStatus: worktreeStatusForKiloStatus(status, diff),
+      finalStatus: finalStatus ?? worktreeStatusForKiloStatus(status, diff),
     },
     paths,
   );

@@ -6,7 +6,11 @@ import {
 } from '../app-state';
 import { ensurePreparedDiffForWorktree, mergeSummary } from '../prepared-diffs';
 import { readGitDiffSummary } from '../repos';
-import { releaseWorktreeLock, readWorktreeRecord } from '../worktrees';
+import {
+  releaseWorktreeLock,
+  readWorktreeRecord,
+  type WorktreeLifecycleStatus,
+} from '../worktrees';
 import type { KiloTaskRecord, KiloTaskStatus } from './store';
 import { gitCurrentSha } from '../../repo-edit/git';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
@@ -18,13 +22,37 @@ type CiFixTaskDiff = {
   error?: string;
 };
 
+type CiFixKiloCompletionInput = {
+  task: KiloTaskRecord;
+  status: KiloTaskStatus;
+  diff?: CiFixTaskDiff | null;
+  error?: string | null;
+};
+
+export async function ciFixRunWorktreeReleaseStatusForKiloTask(
+  input: CiFixKiloCompletionInput,
+  paths: RuntimePaths = runtimePaths(),
+): Promise<WorktreeLifecycleStatus | null> {
+  const summary = await findWorkflowSummaryByKiloTaskId(
+    'ci_fix_run',
+    input.task.id,
+    paths,
+  );
+  if (!summary || summary.status !== 'running') return null;
+  const facts = await ciFixCompletionFacts(input, objectField(summary.summary));
+  if (
+    isPreparedDiffStatus(input.status) &&
+    facts.hasReviewableFix &&
+    facts.worktreeId
+  ) {
+    return 'prepared-diff';
+  }
+  if (input.status === 'failed') return 'failed';
+  return 'ready';
+}
+
 export async function reconcileCiFixRunForKiloTask(
-  input: {
-    task: KiloTaskRecord;
-    status: KiloTaskStatus;
-    diff?: CiFixTaskDiff | null;
-    error?: string | null;
-  },
+  input: CiFixKiloCompletionInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const summary = await findWorkflowSummaryByKiloTaskId(
@@ -40,35 +68,16 @@ export async function reconcileCiFixRunForKiloTask(
     stringField(summaryData.pr) ??
     `${stringField(summaryData.repoFullName) ?? input.task.repoFullName}#${numberField(summaryData.prNumber) ?? 'worktree'}`;
   const ciFixLockId = stringField(summaryData.ciFixLockId);
-  const worktreeId =
-    input.task.worktreeId ?? stringField(summaryData.worktreeId);
-  const startedHeadSha = stringField(summaryData.headSha);
   const completedAt = new Date().toISOString();
 
   try {
-    const currentHeadSha = await gitCurrentSha(input.task.cwd).catch(
-      () => null,
-    );
-    const workingTreeDiff = await readGitDiffSummary({
-      path: input.task.cwd,
-      github: splitRepoFullName(input.task.repoFullName),
-      defaultBranch: 'HEAD',
-    });
-    const hasWorkingTreeDiff =
-      workingTreeDiff.ok === true && workingTreeDiff.fileCount > 0;
-    const hasCommittedFix = Boolean(
-      currentHeadSha &&
-        startedHeadSha &&
-        currentHeadSha !== startedHeadSha,
-    );
-    const hasReviewableFix =
-      hasCommittedFix ||
-      hasWorkingTreeDiff ||
-      (!startedHeadSha && input.diff?.ok === true && input.diff.fileCount > 0);
-    const changedFiles = hasWorkingTreeDiff
-      ? workingTreeDiff.fileCount
-      : (input.diff?.fileCount ?? 0);
-    if (isPreparedDiffStatus(input.status) && hasReviewableFix && worktreeId) {
+    const facts = await ciFixCompletionFacts(input, summaryData);
+    const { currentHeadSha, changedFiles, worktreeId } = facts;
+    if (
+      isPreparedDiffStatus(input.status) &&
+      facts.hasReviewableFix &&
+      worktreeId
+    ) {
       const worktree = readWorktreeRecord(worktreeId, paths);
       const preparedDiff = await ensurePreparedDiffForWorktree(
         worktree,
@@ -182,7 +191,7 @@ export async function reconcileCiFixRunForKiloTask(
           reportId,
           reportUrl: reportId ? `/reports/${reportId}` : null,
           kiloTaskId: input.task.id,
-          worktreeId,
+          worktreeId: facts.worktreeId,
         },
       },
       paths,
@@ -218,13 +227,47 @@ export async function reconcileCiFixRunForKiloTask(
           reportId,
           reportUrl: reportId ? `/reports/${reportId}` : null,
           kiloTaskId: input.task.id,
-          worktreeId,
+          worktreeId:
+            input.task.worktreeId ?? stringField(summaryData.worktreeId),
         },
       },
       paths,
     ).catch(() => undefined);
   }
   return null;
+}
+
+async function ciFixCompletionFacts(
+  input: CiFixKiloCompletionInput,
+  summaryData: Record<string, unknown>,
+) {
+  const worktreeId =
+    input.task.worktreeId ?? stringField(summaryData.worktreeId);
+  const startedHeadSha = stringField(summaryData.headSha);
+  const currentHeadSha = await gitCurrentSha(input.task.cwd).catch(() => null);
+  const workingTreeDiff = await readGitDiffSummary({
+    path: input.task.cwd,
+    github: splitRepoFullName(input.task.repoFullName),
+    defaultBranch: 'HEAD',
+  });
+  const hasWorkingTreeDiff =
+    workingTreeDiff.ok === true && workingTreeDiff.fileCount > 0;
+  const hasCommittedFix = Boolean(
+    currentHeadSha && startedHeadSha && currentHeadSha !== startedHeadSha,
+  );
+  const hasReviewableFix =
+    hasCommittedFix ||
+    hasWorkingTreeDiff ||
+    (!startedHeadSha && input.diff?.ok === true && input.diff.fileCount > 0);
+  const changedFiles = hasWorkingTreeDiff
+    ? workingTreeDiff.fileCount
+    : (input.diff?.fileCount ?? 0);
+  return {
+    currentHeadSha,
+    changedFiles,
+    hasReviewableFix,
+    worktreeId,
+  };
 }
 
 function isPreparedDiffStatus(status: KiloTaskStatus) {
