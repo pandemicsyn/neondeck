@@ -5,6 +5,7 @@ export * from './mutations/execution';
 export * from './mutations/models';
 export * from './mutations/providers';
 export * from './mutations/repos';
+export * from './mutations/routines';
 export * from './mutations/schedules';
 export * from './read';
 export * from './schemas';

@@ -1,11 +1,16 @@
 import { randomBytes } from 'node:crypto';
 
-import type { AppConfig, ResolvedLearningConfig } from './schemas.ts';
+import type {
+  AppConfig,
+  ResolvedLearningConfig,
+  ResolvedRoutinesConfig,
+} from './schemas.ts';
 
 export function defaultAppConfig(): AppConfig {
   return {
     version: 1,
     localApi: { token: generateLocalApiToken() },
+    routines: { enabled: true },
   };
 }
 
@@ -35,5 +40,14 @@ export function resolveLearningConfig(
     userMemoryBudgetChars: learning.userMemoryBudgetChars ?? 1000,
     localMemoryBudgetChars: learning.localMemoryBudgetChars ?? 1000,
     projectMemoryBudgetChars: learning.projectMemoryBudgetChars ?? 1500,
+  };
+}
+
+export function resolveRoutinesConfig(
+  config?: Pick<AppConfig, 'routines'>,
+): ResolvedRoutinesConfig {
+  const routines = config?.routines ?? {};
+  return {
+    enabled: routines.enabled ?? true,
   };
 }

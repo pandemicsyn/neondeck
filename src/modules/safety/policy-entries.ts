@@ -381,6 +381,24 @@ export const entries: SafetyPolicyEntry[] = [
     'Lists durable scheduler jobs and last run state.',
   ),
   action(
+    'neondeck_routine_list',
+    'List routines',
+    readOnly,
+    'Lists durable routine records and schedule state.',
+  ),
+  action(
+    'neondeck_routine_read',
+    'Read routine',
+    readOnly,
+    'Reads one routine and recent local run history.',
+  ),
+  action(
+    'neondeck_routine_config_read',
+    'Read routine config',
+    readOnly,
+    'Reads resolved routine configuration and guardrail constants.',
+  ),
+  action(
     'neondeck_skills_list',
     'List runtime skills',
     readOnly,
@@ -552,6 +570,70 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget: 'config_history',
     },
     'Updates learning, memory write, and memory curation policy without running reviews or mutating memory.',
+  ),
+  action(
+    'neondeck_config_update_routines',
+    'Update routines config',
+    {
+      ...safeMutation,
+      auditTarget: 'config_history',
+    },
+    'Updates the global routines kill switch without changing individual routine records.',
+  ),
+  action(
+    'neondeck_routine_create',
+    'Create routine',
+    {
+      ...safeMutation,
+      auditTarget: 'routines/routine_events/notifications',
+    },
+    'Creates an enabled local routine schedule from the current agent session, subject to cap and minimum interval guardrails.',
+  ),
+  action(
+    'neondeck_routine_update',
+    'Update routine',
+    {
+      ...safeMutation,
+      auditTarget: 'routines/routine_events',
+    },
+    'Updates routine metadata, prompt, schedule, skills, scope, or delivery without executing it.',
+  ),
+  action(
+    'neondeck_routine_run',
+    'Run routine now',
+    {
+      ...safeMutation,
+      auditTarget:
+        'routines/routine_runs/routine_events/chat_sessions/chat_session_command_events/reports/notifications',
+    },
+    'Admits one routine display-assistant session turn and records local run state without bypassing approval-gated actions.',
+  ),
+  action(
+    'neondeck_routine_pause',
+    'Pause routine',
+    {
+      ...safeMutation,
+      auditTarget: 'routines/routine_events',
+    },
+    'Pauses a routine schedule without deleting run history.',
+  ),
+  action(
+    'neondeck_routine_resume',
+    'Resume routine',
+    {
+      ...safeMutation,
+      auditTarget: 'routines/routine_events',
+    },
+    'Resumes a paused routine without running it immediately.',
+  ),
+  action(
+    'neondeck_routine_delete',
+    'Delete routine',
+    {
+      ...destructiveMutation,
+      auditTarget: 'routine_events/routines/routine_runs',
+    },
+    'Deletes a routine and local run history only after confirm=true and only when no run is active.',
   ),
   action(
     'neondeck_config_update_provider',
@@ -1674,6 +1756,15 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget: 'routines/routine_events/notifications',
     },
     'GET lists durable routine records; POST creates a local routine schedule without executing it.',
+  ),
+  route(
+    '/api/routines/config',
+    'Routine config API',
+    {
+      ...safeMutation,
+      auditTarget: 'config_history',
+    },
+    'GET reads resolved routine config; POST updates the global routines kill switch.',
   ),
   route(
     '/api/routines/:id',

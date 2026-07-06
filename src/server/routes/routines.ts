@@ -4,10 +4,12 @@ import {
   deleteRoutine,
   listRoutines,
   readRoutine,
+  readRoutineConfig,
   runRoutineNow,
   setRoutineEnabled,
   updateRoutine,
 } from '../../modules/routines';
+import { updateRoutinesConfig } from '../../modules/config';
 import type { RuntimePaths } from '../../runtime-home';
 import { safeJsonObject } from '../http';
 
@@ -29,6 +31,15 @@ export function createRoutineRoutes(paths: RuntimePaths) {
       },
       paths,
     );
+    return c.json(result, result.ok ? 200 : 400);
+  });
+
+  routes.get('/routines/config', async (c) => {
+    return c.json(await readRoutineConfig(paths));
+  });
+
+  routes.post('/routines/config', async (c) => {
+    const result = await updateRoutinesConfig(await safeJsonObject(c), paths);
     return c.json(result, result.ok ? 200 : 400);
   });
 

@@ -1,4 +1,8 @@
-export { generateLocalApiToken, resolveLearningConfig } from './defaults.ts';
+export {
+  generateLocalApiToken,
+  resolveLearningConfig,
+  resolveRoutinesConfig,
+} from './defaults.ts';
 export { ensureRuntimeHome, ensureRuntimeHomeSync } from './bootstrap.ts';
 export {
   readRuntimeJson,
@@ -36,6 +40,7 @@ export {
   providerConfigSchema,
   repoConfigSchema,
   repoRegistrySchema,
+  routinesConfigSchema,
   scheduleConfigSchema,
   scheduleEntrySchema,
   thinkingLevelSchema,
@@ -60,6 +65,8 @@ export {
   type RepoConfig,
   type RepoRegistry,
   type ResolvedLearningConfig,
+  type ResolvedRoutinesConfig,
+  type RoutinesConfig,
   type ScheduleConfig,
   type ScheduleEntry,
   type ThinkingLevel,
