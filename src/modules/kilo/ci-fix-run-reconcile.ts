@@ -5,10 +5,12 @@ import {
   updateWorkflowSummary,
 } from '../app-state';
 import { ensurePreparedDiffForWorktree, mergeSummary } from '../prepared-diffs';
+import { readGitDiffSummary } from '../repos';
 import { releaseWorktreeLock, readWorktreeRecord } from '../worktrees';
 import type { KiloTaskRecord, KiloTaskStatus } from './store';
 import { gitCurrentSha } from '../../repo-edit/git';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
+import { splitRepoFullName } from './utils';
 
 type CiFixTaskDiff = {
   ok: boolean;
@@ -40,14 +42,33 @@ export async function reconcileCiFixRunForKiloTask(
   const ciFixLockId = stringField(summaryData.ciFixLockId);
   const worktreeId =
     input.task.worktreeId ?? stringField(summaryData.worktreeId);
+  const startedHeadSha = stringField(summaryData.headSha);
   const completedAt = new Date().toISOString();
 
   try {
     const currentHeadSha = await gitCurrentSha(input.task.cwd).catch(
       () => null,
     );
-    const hasDiff = input.diff?.ok === true && input.diff.fileCount > 0;
-    if (isPreparedDiffStatus(input.status) && hasDiff && worktreeId) {
+    const workingTreeDiff = await readGitDiffSummary({
+      path: input.task.cwd,
+      github: splitRepoFullName(input.task.repoFullName),
+      defaultBranch: 'HEAD',
+    });
+    const hasWorkingTreeDiff =
+      workingTreeDiff.ok === true && workingTreeDiff.fileCount > 0;
+    const hasCommittedFix = Boolean(
+      currentHeadSha &&
+        startedHeadSha &&
+        currentHeadSha !== startedHeadSha,
+    );
+    const hasReviewableFix =
+      hasCommittedFix ||
+      hasWorkingTreeDiff ||
+      (!startedHeadSha && input.diff?.ok === true && input.diff.fileCount > 0);
+    const changedFiles = hasWorkingTreeDiff
+      ? workingTreeDiff.fileCount
+      : (input.diff?.fileCount ?? 0);
+    if (isPreparedDiffStatus(input.status) && hasReviewableFix && worktreeId) {
       const worktree = readWorktreeRecord(worktreeId, paths);
       const preparedDiff = await ensurePreparedDiffForWorktree(
         worktree,
@@ -60,7 +81,7 @@ export async function reconcileCiFixRunForKiloTask(
             outcome: 'prepared-diff',
             completedAt,
             completedHeadSha: currentHeadSha,
-            changedFiles: input.diff?.fileCount ?? 0,
+            changedFiles,
             kiloStatus: input.status,
           }),
         },
@@ -80,7 +101,7 @@ export async function reconcileCiFixRunForKiloTask(
         preparedDiffId: preparedDiff.id,
         completedAt,
         completedHeadSha: currentHeadSha,
-        changedFiles: input.diff?.fileCount ?? 0,
+        changedFiles,
         kiloStatus: input.status,
       });
       await updateWorkflowSummary(

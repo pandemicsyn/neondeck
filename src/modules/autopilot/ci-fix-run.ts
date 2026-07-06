@@ -528,13 +528,16 @@ export async function writeCiFixDossierReport(
           },
           {
             title: 'Run History',
-            items: [
-              {
-                label: 'prior related runs',
-                value:
-                  'Not typed separately by the current GitHub helpers; this dossier includes current failing check runs and recent PR commits.',
-              },
-            ],
+            items:
+              checkRunHistory(dossier).length > 0
+                ? checkRunHistory(dossier)
+                : [
+                    {
+                      label: 'check runs',
+                      value:
+                        'No check-run history was present in the fetched PR or failing-check facts.',
+                    },
+                  ],
           },
         ],
       }),
@@ -699,6 +702,30 @@ function suspectFiles(dossier: CiFixDossier) {
 
 function recentCommits(dossier: CiFixDossier) {
   return dossier.state.commits.slice(-8);
+}
+
+function checkRunHistory(dossier: CiFixDossier) {
+  const seen = new Set<number>();
+  const runs = [...dossier.failingChecks, ...dossier.state.checkRuns].filter(
+    (run) => {
+      if (seen.has(run.id)) return false;
+      seen.add(run.id);
+      return true;
+    },
+  );
+  return runs.slice(0, 20).map((run) => ({
+    label: `${run.name} #${run.id}`,
+    value: [
+      `head: ${run.headSha}`,
+      `status: ${run.status}`,
+      `conclusion: ${run.conclusion ?? 'unknown'}`,
+      run.startedAt ? `started: ${run.startedAt}` : null,
+      run.completedAt ? `completed: ${run.completedAt}` : null,
+      run.htmlUrl ? `url: ${run.htmlUrl}` : run.detailsUrl,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  }));
 }
 
 function sourceRef(dossier: CiFixDossier) {

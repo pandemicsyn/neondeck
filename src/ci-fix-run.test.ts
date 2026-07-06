@@ -1,6 +1,8 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   addWorkflowSummary,
@@ -19,9 +21,12 @@ import type {
   GitHubPullRequestEventState,
 } from './modules/github';
 import { reconcileCiFixRunForKiloTask } from './modules/kilo';
+import { taskDiffSummary } from './modules/kilo/runtime-facts';
 import type { KiloTaskRecord } from './modules/kilo';
+import { createWorktree } from './modules/worktrees';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 
+const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
 
 afterEach(async () => {
@@ -64,6 +69,7 @@ describe('CI fix run', () => {
     expect(html?.html).toContain('CI Failure Dossier');
     expect(html?.html).toContain('npm run test');
     expect(html?.html).toContain('src/failing.test.ts');
+    expect(html?.html).toContain('npm run test #42');
     expect(html?.html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(html?.html).not.toContain('<script>alert(1)</script>');
   });
@@ -171,6 +177,163 @@ describe('CI fix run', () => {
       ]),
     );
   });
+
+  it('does not treat an unchanged PR branch diff as a CI fix', async () => {
+    const home = await tempDir('neondeck-home-');
+    const repo = await tempGitRepo();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await writeRepoRegistry(paths.repos, repo);
+    await writeFile(
+      join(repo, 'src/failing.test.ts'),
+      'export const fixed = false;\nexport const prChange = true;\n',
+    );
+    await git(repo, ['add', '-A']);
+    await git(repo, ['commit', '-m', 'feature change']);
+    const created = await createWorktree(
+      {
+        repoId: 'neondeck',
+        prNumber: 10,
+        baseRef: 'main',
+        headRef: 'feature',
+      },
+      paths,
+    );
+    if (!created.ok || !('worktree' in created)) {
+      throw new Error(created.message);
+    }
+    const worktree = created.worktree;
+    const startedHeadSha = await git(worktree.localPath, ['rev-parse', 'HEAD']);
+    await addWorkflowSummary(
+      {
+        workflow: 'ci_fix_run',
+        runId: 'kilo-task-unchanged-pr',
+        status: 'running',
+        summary: {
+          outcome: 'kilo-started',
+          pr: 'pandemicsyn/neondeck#10',
+          headSha: startedHeadSha.trim(),
+          kiloTaskId: 'kilo-task-unchanged-pr',
+          worktreeId: worktree.id,
+          reportId: 'report-1',
+        },
+      },
+      paths,
+    );
+    const task = kiloTask({
+      id: 'kilo-task-unchanged-pr',
+      cwd: worktree.localPath,
+      worktreeId: worktree.id,
+    });
+    const diff = await taskDiffSummary(task, paths);
+    expect(diff).toMatchObject({
+      ok: true,
+      fileCount: 1,
+    });
+
+    await reconcileCiFixRunForKiloTask(
+      {
+        task,
+        status: 'succeeded',
+        diff,
+      },
+      paths,
+    );
+
+    await expect(listPreparedDiffs({}, paths)).resolves.toMatchObject({
+      preparedDiffs: [],
+    });
+    await expect(listWorkflowSummaries(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          workflow: 'ci_fix_run',
+          status: 'completed',
+          summary: expect.objectContaining({ outcome: 'no-op' }),
+        }),
+      ]),
+    );
+  });
+
+  it('creates a prepared diff when Kilo commits a CI fix on a PR worktree', async () => {
+    const home = await tempDir('neondeck-home-');
+    const repo = await tempGitRepo();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await writeRepoRegistry(paths.repos, repo);
+    const created = await createWorktree(
+      {
+        repoId: 'neondeck',
+        prNumber: 10,
+        baseRef: 'main',
+        headRef: 'feature',
+      },
+      paths,
+    );
+    if (!created.ok || !('worktree' in created)) {
+      throw new Error(created.message);
+    }
+    const worktree = created.worktree;
+    const startedHeadSha = await git(worktree.localPath, ['rev-parse', 'HEAD']);
+    await writeFile(
+      join(worktree.localPath, 'src/failing.test.ts'),
+      'export const fixed = true;\n',
+    );
+    await git(worktree.localPath, ['add', '-A']);
+    await git(worktree.localPath, ['commit', '-m', 'fix ci']);
+    await addWorkflowSummary(
+      {
+        workflow: 'ci_fix_run',
+        runId: 'kilo-task-commit',
+        status: 'running',
+        summary: {
+          outcome: 'kilo-started',
+          pr: 'pandemicsyn/neondeck#10',
+          headSha: startedHeadSha.trim(),
+          kiloTaskId: 'kilo-task-commit',
+          worktreeId: worktree.id,
+          reportId: 'report-1',
+        },
+      },
+      paths,
+    );
+    const task = kiloTask({
+      id: 'kilo-task-commit',
+      cwd: worktree.localPath,
+      worktreeId: worktree.id,
+    });
+
+    const diff = await taskDiffSummary(task, paths);
+    expect(diff).toMatchObject({
+      ok: true,
+      fileCount: expect.any(Number),
+    });
+    await reconcileCiFixRunForKiloTask(
+      {
+        task,
+        status: 'succeeded',
+        diff,
+      },
+      paths,
+    );
+
+    await expect(listPreparedDiffs({}, paths)).resolves.toMatchObject({
+      preparedDiffs: [
+        expect.objectContaining({
+          worktreeId: worktree.id,
+          status: 'prepared',
+        }),
+      ],
+    });
+    await expect(listWorkflowSummaries(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          workflow: 'ci_fix_run',
+          status: 'completed',
+          summary: expect.objectContaining({ outcome: 'prepared-diff' }),
+        }),
+      ]),
+    );
+  });
 });
 
 async function tempDir(prefix: string) {
@@ -179,7 +342,7 @@ async function tempDir(prefix: string) {
   return path;
 }
 
-async function writeRepoRegistry(path: string) {
+async function writeRepoRegistry(path: string, repoPath = '/tmp/neondeck') {
   await writeFile(
     path,
     `${JSON.stringify({
@@ -187,13 +350,35 @@ async function writeRepoRegistry(path: string) {
         {
           id: 'neondeck',
           github: { owner: 'pandemicsyn', name: 'neondeck' },
-          path: '/tmp/neondeck',
+          path: repoPath,
           defaultBranch: 'main',
           packageScripts: { test: 'vitest' },
         },
       ],
     })}\n`,
   );
+}
+
+async function tempGitRepo() {
+  const repo = await tempDir('ci-fix-repo-');
+  await git(repo, ['init', '-q']);
+  await git(repo, ['config', 'user.email', 'neondeck@example.test']);
+  await git(repo, ['config', 'user.name', 'Neondeck Test']);
+  await git(repo, ['branch', '-M', 'main']);
+  await mkdir(join(repo, 'src'), { recursive: true });
+  await writeFile(
+    join(repo, 'src/failing.test.ts'),
+    'export const fixed = false;\n',
+  );
+  await git(repo, ['add', '-A']);
+  await git(repo, ['commit', '-m', 'initial']);
+  await git(repo, ['checkout', '-b', 'feature']);
+  return repo;
+}
+
+async function git(cwd: string, args: string[]) {
+  const { stdout } = await execFileAsync('git', args, { cwd });
+  return stdout.trim();
 }
 
 function testDependencies() {

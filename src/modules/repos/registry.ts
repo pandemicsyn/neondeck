@@ -168,9 +168,10 @@ export async function readGitDiffSummary(repo: {
   defaultBranch: string;
 }): Promise<RepoDiffSummary> {
   try {
+    const baseRef = repo.defaultBranch.trim() || 'HEAD';
     const [nameStatus, numstat] = await Promise.all([
-      git(repo.path, ['diff', '--name-status', 'HEAD']),
-      git(repo.path, ['diff', '--numstat', 'HEAD']),
+      git(repo.path, ['diff', '--name-status', baseRef, '--']),
+      git(repo.path, ['diff', '--numstat', baseRef, '--']),
     ]);
     const statuses = new Map(
       nameStatus
@@ -203,7 +204,7 @@ export async function readGitDiffSummary(repo: {
       ok: true,
       repo: repoFullName(repo),
       path: repo.path,
-      baseRef: repo.defaultBranch,
+      baseRef,
       files: files.map((file) => ({
         path: file.path,
         status: file.status,
@@ -220,7 +221,7 @@ export async function readGitDiffSummary(repo: {
       ok: false,
       repo: repoFullName(repo),
       path: repo.path,
-      baseRef: repo.defaultBranch,
+      baseRef: repo.defaultBranch.trim() || 'HEAD',
       files: [],
       fileCount: 0,
       additions: 0,
