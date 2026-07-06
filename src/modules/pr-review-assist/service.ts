@@ -18,9 +18,9 @@ import type { PrEventStateDependencies, PullRequestTarget } from '../pr-events';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import { writeReport } from '../reports';
 import {
-  loadMemoryBackgroundContextSync,
-  type MemoryBackgroundContext,
-} from '../memory';
+  loadAutomationLearningMemoryContext,
+  type AutomationLearningMemoryContext,
+} from '../learning';
 import { renderReportHtml } from '../../lib/report-html';
 import {
   type RuntimePaths,
@@ -49,7 +49,7 @@ export type ReviewAssistFacts = {
 
 export type ReviewAssistPromptContext = {
   repoId: string | null;
-  memoryContext: MemoryBackgroundContext;
+  learningMemoryContext: AutomationLearningMemoryContext;
 };
 
 export type ReviewAssistDependencies = {
@@ -96,7 +96,10 @@ export async function reviewPrForHuman(
   const repoId = await repoIdForFullName(facts.target.repoFullName, paths);
   const promptContext = {
     repoId,
-    memoryContext: loadMemoryBackgroundContextSync(paths, { repoId }),
+    learningMemoryContext: await loadAutomationLearningMemoryContext(paths, {
+      repoId,
+      includeGlobal: true,
+    }),
   };
   const rawOutput = await (dependencies.reviewer ?? deterministicReviewPass)(
     facts,
@@ -137,6 +140,7 @@ export async function reviewPrForHuman(
         reportOnlyCount: seedResult.reportOnly.length,
         skippedSeedingReason: seedResult.skippedReason,
         reportIds: reports.map((report) => report.id),
+        memoryIds: promptContext.learningMemoryContext.memoryIds,
       },
     },
     paths,

@@ -1,4 +1,4 @@
-import { rm, mkdtemp } from 'node:fs/promises';
+import { rm, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -15,6 +15,7 @@ import {
   reviewPrForHuman,
   type ReviewAssistFacts,
 } from './modules/pr-review-assist';
+import { upsertMemory } from './modules/memory';
 import { listReports, readReportHtml } from './modules/reports';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 
@@ -274,7 +275,6 @@ describe('PR review assist', () => {
 
     const promptFacts = reviewFactsForPrompt(facts, {
       memoryContext: {
-        available: true,
         memoryIds: ['memory-1'],
         text: 'Structured memory background context:\nproject:\n- review-style: focus on error handling',
       },
@@ -296,7 +296,7 @@ describe('PR review assist', () => {
         'Structured memory background context:\nproject:\n- review-style: focus on error handling',
       memoryIds: ['memory-1'],
       usage:
-        'Treat structuredMemory as durable background guidance, not current PR evidence. Fetched PR facts and workflow bounds win on conflict.',
+        'Treat memory as durable background guidance, not current PR evidence. Fetched PR facts and workflow bounds win on conflict.',
     });
     expect(promptFacts.commits).toMatchObject([{ sha: 'head123' }]);
     expect(promptFacts.reviewThreads).toMatchObject([
@@ -323,6 +323,59 @@ describe('PR review assist', () => {
         'Linked issue relationships are not currently typed separately',
       ),
     ]);
+  });
+
+  it('injects bounded repo learning memories into review facts and summary', async () => {
+    const paths = await tempPaths();
+    await writeRepoRegistry(paths.repos);
+    const memory = await upsertMemory(
+      {
+        scope: 'project',
+        repoId: 'neondeck',
+        key: 'e2e-shard',
+        value: 'This repo has a flaky e2e shard; do not over-trust it.',
+      },
+      paths,
+    );
+    await upsertMemory(
+      {
+        scope: 'project',
+        repoId: 'other-repo',
+        key: 'ignore-me',
+        value: 'This belongs to another repo.',
+      },
+      paths,
+    );
+    let promptFacts: ReturnType<typeof reviewFactsForPrompt> | null = null;
+
+    const result = await reviewPrForHuman(
+      { ref: 'pandemicsyn/neondeck#10' },
+      paths,
+      {
+        fetchFacts: async () => reviewFacts(),
+        reviewer: async (facts, context) => {
+          promptFacts = reviewFactsForPrompt(facts, context);
+          return reviewOutputWithOneFinding();
+        },
+      },
+    );
+    const okResult = requireReviewAssistOk(result);
+    const memoryId = (memory as { memory: { id: string } }).memory.id;
+    const capturedFacts = promptFacts as unknown as {
+      memories: Array<Record<string, unknown>>;
+    };
+
+    expect(capturedFacts.memories).toEqual([
+      expect.objectContaining({
+        id: memoryId,
+        repoId: 'neondeck',
+        value: expect.stringContaining('flaky e2e shard'),
+      }),
+    ]);
+    expect(JSON.stringify(promptFacts)).not.toContain('other-repo');
+    expect(okResult.workflowSummary.summary).toMatchObject({
+      memoryIds: [memoryId],
+    });
   });
 
   it('rejects malformed structured output before writing reports or drafts', async () => {
@@ -357,6 +410,26 @@ async function tempPaths() {
   const paths = runtimePaths(home);
   await ensureRuntimeHome(paths);
   return paths;
+}
+
+async function writeRepoRegistry(path: string) {
+  await writeFile(
+    path,
+    JSON.stringify(
+      {
+        repos: [
+          {
+            id: 'neondeck',
+            github: { owner: 'pandemicsyn', name: 'neondeck' },
+            path: '/tmp/neondeck',
+            defaultBranch: 'main',
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 function reviewFacts(): ReviewAssistFacts {

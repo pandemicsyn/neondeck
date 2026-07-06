@@ -47,23 +47,24 @@ export const reviewPrForHumanAction = defineAction({
 
 export function reviewFactsForPrompt(
   facts: ReviewAssistFacts,
-  context?: Pick<ReviewAssistPromptContext, 'memoryContext'>,
+  context?: ReviewFactsPromptContext,
 ) {
+  const backgroundContext = reviewBackgroundContext(context);
   return {
     target: {
       repoFullName: facts.target.repoFullName,
       number: facts.target.number,
     },
-    ...(context?.memoryContext
-      ? {
-          backgroundContext: {
-            structuredMemory: context.memoryContext.text,
-            memoryIds: context.memoryContext.memoryIds,
-            usage:
-              'Treat structuredMemory as durable background guidance, not current PR evidence. Fetched PR facts and workflow bounds win on conflict.',
-          },
-        }
-      : {}),
+    ...(backgroundContext ? { backgroundContext } : {}),
+    memories: (context?.learningMemoryContext?.memories ?? []).map(
+      (memory) => ({
+        id: memory.id,
+        scope: memory.scope,
+        key: memory.key,
+        repoId: memory.repoId,
+        value: memory.value,
+      }),
+    ),
     pullRequest: {
       title: facts.state.title,
       body: truncate(facts.state.body ?? '', 20_000),
@@ -150,6 +151,35 @@ export function reviewFactsForPrompt(
     limitations: [
       'Linked issue relationships are not currently typed separately in GitHubPullRequestEventState; linkedIssueReferenceHints are extracted from PR title/body text only.',
     ],
+  };
+}
+
+type ReviewFactsPromptContext = Partial<
+  Pick<ReviewAssistPromptContext, 'learningMemoryContext'>
+> & {
+  memoryContext?: {
+    text: string;
+    memoryIds: string[];
+  };
+};
+
+function reviewBackgroundContext(context?: ReviewFactsPromptContext) {
+  if (!context?.memoryContext && !context?.learningMemoryContext) return null;
+  return {
+    ...(context.memoryContext
+      ? {
+          structuredMemory: context.memoryContext.text,
+          memoryIds: context.memoryContext.memoryIds,
+        }
+      : {}),
+    ...(context.learningMemoryContext
+      ? {
+          learningMemories: context.learningMemoryContext.text,
+          learningMemoryIds: context.learningMemoryContext.memoryIds,
+        }
+      : {}),
+    usage:
+      'Treat memory as durable background guidance, not current PR evidence. Fetched PR facts and workflow bounds win on conflict.',
   };
 }
 

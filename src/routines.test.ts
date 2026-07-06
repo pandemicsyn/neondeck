@@ -25,6 +25,7 @@ import { openDb } from './lib/sqlite';
 import { listReports, readReportHtml } from './modules/reports';
 import { runWithFlueExecutionContextForTests } from './modules/flue/execution-context';
 import { updateRoutinesConfig } from './modules/config';
+import { upsertMemory } from './modules/memory';
 
 const tempRoots: string[] = [];
 
@@ -282,6 +283,72 @@ describe('routines', () => {
       }
       expect(events.events[0].input.length).toBeLessThanOrEqual(2_000);
       expect(events.events[0].input).toContain('full prompt was dispatched');
+    } finally {
+      restoreDispatch();
+    }
+  });
+
+  it('injects only repo-scoped learning memories into scoped routine prompts', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const repoPath = join(paths.home, 'repo');
+    await mkdir(repoPath, { recursive: true });
+    await writeRepoRegistry(paths.repos, repoPath);
+    const scopedMemory = await upsertMemory(
+      {
+        scope: 'project',
+        repoId: 'repo',
+        key: 'routine-check',
+        value: 'Run the repo-specific smoke shard.',
+      },
+      paths,
+    );
+    await upsertMemory(
+      { scope: 'local', key: 'global-routine', value: 'Global local memory' },
+      paths,
+    );
+    await upsertMemory(
+      {
+        scope: 'project',
+        repoId: 'other',
+        key: 'other-routine',
+        value: 'Other repo memory',
+      },
+      paths,
+    );
+    const dispatches: Array<{ id: string; input: string }> = [];
+    const restoreDispatch = setRoutineDispatchForTests(async (input) => {
+      dispatches.push({ id: input.id, input: input.input });
+      return { dispatchId: 'repo-memory-dispatch' } as never;
+    });
+    const created = await createRoutine(
+      {
+        name: 'Repo memory run',
+        prompt: 'Use scoped context.',
+        scheduleKind: 'interval',
+        schedule: '900',
+        scopeRepoId: 'repo',
+        delivery: 'report',
+        createdBy: 'test',
+      },
+      paths,
+    );
+    try {
+      expect(created.ok).toBe(true);
+      if (!created.ok || !('routine' in created)) {
+        throw new Error(created.message);
+      }
+      const run = await runRoutineNow(created.routine.id, paths);
+      expect(run.ok).toBe(true);
+      if (!run.ok || !('run' in run) || !run.run) throw new Error(run.message);
+      const memoryId = (scopedMemory as { memory: { id: string } }).memory.id;
+
+      expect(dispatches[0]?.input).toContain(
+        'Run the repo-specific smoke shard',
+      );
+      expect(dispatches[0]?.input).not.toContain('Global local memory');
+      expect(dispatches[0]?.input).not.toContain('Other repo memory');
+      expect(run.run.summary).toMatchObject({ memoryIds: [memoryId] });
     } finally {
       restoreDispatch();
     }

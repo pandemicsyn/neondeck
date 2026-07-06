@@ -19,7 +19,7 @@ The flywheel is more wired than folklore suggests. Confirmed on main:
 - **Corrections apply**: skill patches (propose/apply/reject/restore) cover the built-in +
   user skills; the workflow-host agents prefer the runtime (patched) skill over the compiled
   copy (`runtimeSkillReferenceByIdSync(...) ?? compiled`).
-- **Broken link**: approved *memories* never reach the new automation — zero memory
+- **Broken link**: approved _memories_ never reach the new automation — zero memory
   references in the pr-review-assist fact builder, `ci-fix-run.ts`, docs-drift staging, or
   `composeRoutinePrompt`. Retrospective → memory → **dead end** for busywork runs.
 - **Missing gauge**: no aggregate health numbers anywhere (seed survival rate, routine
@@ -42,7 +42,7 @@ reusing the retrospectives' existing reader (`listActiveLearningMemories`,
 Rules: cap count + bytes (constants, e.g. 8 memories / 4 KiB), label the block as background
 context (matching how recalled memories are treated elsewhere), and record the included
 memory ids in the run's workflow summary so retrospectives can later judge whether a memory
-*helped* — that closes the measurement side of the same loop. Tests: composer snapshots with
+_helped_ — that closes the measurement side of the same loop. Tests: composer snapshots with
 and without memories; cap enforcement; memory ids on the summary.
 
 ## Change 2 — Automation-health aggregates (the gauge)
@@ -97,7 +97,7 @@ These all name the missing runtime capability; nothing to do here.
 
 - **Skill-patch rollback** (Phase 22 follow-up). `restore` exists on candidates
   (`/patches/:id/restore`) — verify its semantics: if it only re-proposes a rejected
-  candidate rather than reverting an *applied* patch, add the explicit rollback action
+  candidate rather than reverting an _applied_ patch, add the explicit rollback action
   (before/after content is already retained, so it's an audited write of the stored
   `before`). With Change 1 increasing how much behavior flows through patched skills, "undo a
   bad patch in one click" stops being optional.

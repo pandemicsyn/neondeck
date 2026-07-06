@@ -18,6 +18,16 @@ const learningSkillSnippetIds = [
   'neon-issue-triage',
 ];
 
+type LearningSkillSnippetEvidence = {
+  handledEvents?: HandledPrEventRecord[];
+  workflowSummaries?: unknown[];
+  preparedDiffs?: unknown[];
+  verificationResults?: unknown[];
+  notifications?: unknown[];
+  kiloResults?: unknown[];
+  automationHealth?: unknown;
+};
+
 export function listHandledPrEventsForReview(
   input: { repoId?: string; limit: number; sinceLastReview: boolean },
   paths: RuntimePaths,
@@ -84,15 +94,19 @@ export async function listPrLearningMemories(
   });
 }
 
-export async function readLearningSkillSnippets(paths: RuntimePaths) {
+export async function readLearningSkillSnippets(
+  paths: RuntimePaths,
+  evidence: LearningSkillSnippetEvidence = {},
+) {
   const inventory = await listRuntimeSkills(paths);
   const activeById = new Map(
     inventory.skills
       .filter((skill) => skill.status === 'active')
       .map((skill) => [skill.id, skill]),
   );
+  const snippetIds = relevantLearningSkillSnippetIds(evidence);
   return Promise.all(
-    learningSkillSnippetIds.flatMap((id) => {
+    snippetIds.flatMap((id) => {
       const skill = activeById.get(id);
       return skill
         ? [
@@ -106,6 +120,54 @@ export async function readLearningSkillSnippets(paths: RuntimePaths) {
         : [];
     }),
   );
+}
+
+export function relevantLearningSkillSnippetIds(
+  evidence: LearningSkillSnippetEvidence = {},
+) {
+  const ids = new Set<string>(['neondeck']);
+  const text = evidenceText(evidence);
+  if (
+    /\b(neon-pr-review|review-pr-for-human|pr_review_assist|review-pr|github_pr_review)\b/i.test(
+      text,
+    )
+  ) {
+    ids.add('neon-pr-review');
+  }
+  if (
+    /\b(neon-ci-fix|ci_fix_run|fix-pr-ci|ci-failure|failing check)\b/i.test(
+      text,
+    )
+  ) {
+    ids.add('neon-ci-fix');
+  }
+  if (/\b(neon-docs-fix|docs_drift|docs-drift|docs drift)\b/i.test(text)) {
+    ids.add('neon-docs-fix');
+  }
+  if (/\b(neon-issue-triage|issue-triage|issue triage)\b/i.test(text)) {
+    ids.add('neon-issue-triage');
+  }
+  return learningSkillSnippetIds.filter((id) => ids.has(id));
+}
+
+function evidenceText(evidence: LearningSkillSnippetEvidence) {
+  const handled = evidence.handledEvents ?? [];
+  return [
+    ...handled.map((event) =>
+      [
+        event.source,
+        event.sourceId,
+        event.prKey,
+        JSON.stringify(event.data),
+      ].join(' '),
+    ),
+    JSON.stringify(evidence.workflowSummaries ?? []),
+    JSON.stringify(evidence.preparedDiffs ?? []),
+    JSON.stringify(evidence.verificationResults ?? []),
+    JSON.stringify(evidence.notifications ?? []),
+    JSON.stringify(evidence.kiloResults ?? []),
+    JSON.stringify(evidence.automationHealth ?? {}),
+  ].join('\n');
 }
 
 export function listRelatedWorkflowSummaries(
