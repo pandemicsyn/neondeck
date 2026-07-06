@@ -347,6 +347,41 @@ export const prReviewDraftComments = sqliteTable(
   ],
 );
 
+export const prReviewNeonSeededComments = sqliteTable(
+  'pr_review_neon_seeded_comments',
+  {
+    commentId: text('comment_id').primaryKey(),
+    draftId: text('draft_id')
+      .notNull()
+      .references(() => prReviewDrafts.id),
+    repo: text('repo').notNull(),
+    prNumber: integer('pr_number').notNull(),
+    headSha: text('head_sha').notNull(),
+    path: text('path').notNull(),
+    side: text('side').notNull(),
+    line: integer('line').notNull(),
+    startLine: integer('start_line'),
+    startSide: text('start_side'),
+    severity: text('severity').notNull(),
+    summary: text('summary').notNull(),
+    source: text('source').notNull(),
+    outcome: text('outcome'),
+    outcomeAt: text('outcome_at'),
+    seededAt: text('seeded_at').notNull(),
+  },
+  (table) => [
+    index('idx_pr_review_neon_seeded_comments_draft').on(
+      table.draftId,
+      sql`${table.seededAt} ASC`,
+    ),
+    index('idx_pr_review_neon_seeded_comments_pr').on(
+      table.repo,
+      table.prNumber,
+      sql`${table.seededAt} ASC`,
+    ),
+  ],
+);
+
 export const githubPrFileCache = sqliteTable(
   'github_pr_file_cache',
   {

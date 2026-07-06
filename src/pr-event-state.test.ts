@@ -450,6 +450,26 @@ describe('PR event state watermarks', () => {
       message: 'Review draft does not belong to this pull request.',
     });
 
+    await expect(
+      postGitHubPrReviewDraftComment(
+        { repo: 'neondeck', prNumber: 123 },
+        {
+          draftId: draft?.id ?? '',
+          path: 'src/app.ts',
+          side: 'RIGHT',
+          line: 99,
+          body: 'Invalid anchor.',
+        },
+        paths,
+        anchorValidationDependencies(),
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'github_pr_review_draft_comment_post',
+      requires: ['validAnchor'],
+      message: 'Review draft comment anchor is not present in the PR patch.',
+    });
+
     const commentResult = await postGitHubPrReviewDraftComment(
       { repo: 'neondeck', prNumber: 123 },
       {
@@ -460,6 +480,7 @@ describe('PR event state watermarks', () => {
         body: 'Right PR.',
       },
       paths,
+      anchorValidationDependencies(),
     );
     const commentId = (
       commentResult.data as
@@ -493,6 +514,7 @@ describe('PR event state watermarks', () => {
           body: 'Moved to a valid deleted range.',
         },
         paths,
+        anchorValidationDependencies(),
       ),
     ).resolves.toMatchObject({
       ok: true,
@@ -854,6 +876,7 @@ function prDetail(
   return {
     number: 123,
     title: 'Test PR',
+    body: 'Fixes #42 by updating the event state.',
     repo: 'pandemicsyn/neondeck',
     url: 'https://github.com/pandemicsyn/neondeck/pull/123',
     state: 'open',
@@ -879,6 +902,7 @@ function prEventState(
     number: 123,
     url: 'https://github.com/pandemicsyn/neondeck/pull/123',
     title: 'Test PR',
+    body: 'Fixes #42 by updating the event state.',
     state: 'open',
     draft: false,
     merged: false,
@@ -1035,5 +1059,58 @@ function reviewThread(
     pullRequestNumber: 123,
     comments: [],
     ...overrides,
+  };
+}
+
+function anchorValidationDependencies() {
+  return {
+    token: 'token',
+    fetchPullRequestFiles: async () => ({
+      repo: 'pandemicsyn/neondeck',
+      number: 123,
+      files: [
+        {
+          path: 'src/app.ts',
+          previousPath: null,
+          status: 'modified',
+          additions: 0,
+          deletions: 0,
+          changes: 0,
+          binary: false,
+          generatedLike: false,
+          patch: ['@@ -12,1 +12,1 @@', ' unchanged'].join('\n'),
+          truncated: false,
+          sha: null,
+          htmlUrl: null,
+          rawUrl: null,
+          contentsUrl: null,
+          message: null,
+        },
+        {
+          path: 'src/next.ts',
+          previousPath: null,
+          status: 'modified',
+          additions: 0,
+          deletions: 3,
+          changes: 3,
+          binary: false,
+          generatedLike: false,
+          patch: ['@@ -6,3 +6,0 @@', '-old6', '-old7', '-old8'].join('\n'),
+          truncated: false,
+          sha: null,
+          htmlUrl: null,
+          rawUrl: null,
+          contentsUrl: null,
+          message: null,
+        },
+      ],
+      diffSummary: {
+        files: 2,
+        additions: 0,
+        deletions: 3,
+        binaryFiles: 0,
+      },
+      fetchedAt: '2026-06-30T20:11:00Z',
+    }),
   };
 }

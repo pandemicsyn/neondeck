@@ -234,29 +234,17 @@ function NeonReviewButton({ item }: { item: GitHubPullRequest }) {
         input: {
           ref: `${item.repo}#${item.number}`,
         },
-        wait: 'result',
       });
-      const result = {
-        ...(run.result as ReviewPrWorkflowResult),
-        flueRunId: run.runId,
-      };
-      if (!result.ok) throw new Error(result.message);
-      return result;
+      return run satisfies ReviewPrWorkflowAdmission;
     },
     onSuccess() {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.reports });
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.notifications,
-      });
       void queryClient.invalidateQueries({
         queryKey: queryKeys.workflowObservability,
       });
       void queryClient.invalidateQueries({
         queryKey: queryKeys.workflowSummaries,
       });
-      void queryClient.invalidateQueries({
-        queryKey: prReviewQueryKeys.draft(item),
-      });
+      scheduleReviewCompletionRefresh(queryClient, item);
     },
   });
 
@@ -269,18 +257,39 @@ function NeonReviewButton({ item }: { item: GitHubPullRequest }) {
         mutation.error
           ? queryErrorMessage(mutation.error)
           : mutation.data
-            ? `${mutation.data.message} · run ${mutation.data.flueRunId}`
+            ? `Queued review workflow run ${mutation.data.runId}. Reports and local drafts will refresh when the run completes.`
             : 'Prepare local reports and Neon-origin draft comments through the review workflow'
       }
       type="button"
     >
       {mutation.isPending
-        ? 'reviewing'
+        ? 'queuing'
         : mutation.data
-          ? 'reviewed'
+          ? 'queued'
           : 'neon review'}
     </Button>
   );
+}
+
+function scheduleReviewCompletionRefresh(
+  queryClient: ReturnType<typeof useQueryClient>,
+  item: GitHubPullRequest,
+) {
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.reports });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.workflowObservability,
+    });
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.workflowSummaries,
+    });
+    void queryClient.invalidateQueries({
+      queryKey: prReviewQueryKeys.draft(item),
+    });
+  };
+  window.setTimeout(refresh, 15_000);
+  window.setTimeout(refresh, 60_000);
 }
 
 function WatchPrButton({ item }: { item: GitHubPullRequest }) {
@@ -338,10 +347,8 @@ type WatchPrWorkflowResult = {
   flueRunId?: string;
 };
 
-type ReviewPrWorkflowResult = {
-  ok: boolean;
-  message: string;
-  flueRunId?: string;
+type ReviewPrWorkflowAdmission = {
+  runId: string;
 };
 
 function PrSkeleton() {

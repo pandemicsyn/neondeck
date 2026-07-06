@@ -42,6 +42,7 @@ export async function fetchPullRequestDetail(options: {
   return {
     number: data.number,
     title: data.title,
+    body: data.body ?? null,
     repo: `${options.owner}/${options.repo}`,
     url: data.html_url,
     state: data.state,
@@ -107,6 +108,7 @@ export async function fetchPullRequestEventState(options: {
     number: detail.number,
     url: detail.url,
     title: detail.title,
+    body: detail.body ?? null,
     state: detail.state,
     draft: detail.draft ?? false,
     merged: detail.merged,

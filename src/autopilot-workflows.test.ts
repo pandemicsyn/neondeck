@@ -2128,6 +2128,7 @@ function reviewEventState(featureSha: string) {
     number: 7,
     url: 'https://github.com/example/sample/pull/7',
     title: 'Update feature',
+    body: 'Fixes #7 by updating the feature.',
     state: 'open',
     draft: false,
     merged: false,
