@@ -13,6 +13,7 @@ import {
   fetchPullRequestQueue,
   postPullRequestComment,
   readLivePrReviewDraft,
+  recordPrReviewNeonSeed,
   deletePrReviewDraftComment,
   replyToPullRequestReviewThread,
   resolvePullRequestReviewThread,
@@ -1002,6 +1003,23 @@ describe('github foundation', () => {
     expect(right?.id).toEqual(expect.any(String));
     expect(left?.id).toEqual(expect.any(String));
     expect(range?.id).toEqual(expect.any(String));
+    if (!left || !range) throw new Error('Expected seeded Neon comments.');
+    recordPrReviewNeonSeed({
+      databasePath: paths.neondeckDatabase,
+      draft: saved,
+      comment: left,
+      severity: 'minor',
+      summary: 'Left side seeded finding.',
+      source: 'test',
+    });
+    recordPrReviewNeonSeed({
+      databasePath: paths.neondeckDatabase,
+      draft: saved,
+      comment: range,
+      severity: 'major',
+      summary: 'Range seeded finding.',
+      source: 'test',
+    });
 
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     globalThis.fetch = vi.fn<typeof fetch>(async (input, init) => {
@@ -1085,16 +1103,129 @@ describe('github foundation', () => {
           commentCount: 2,
           skippedCommentCount: 1,
           neonDraftOutcome: {
+            seededNeonCommentCount: 2,
             survivingNeonCommentCount: 2,
             submittedNeonCommentCount: 1,
             skippedNeonCommentCount: 1,
+            deletedNeonCommentCount: 0,
+            skippedOrDeletedNeonCommentCount: 1,
             editedSubmittedNeonCommentCount: 0,
             submittedNeonCommentIds: [range?.id],
             skippedNeonCommentIds: [left?.id],
+            deletedNeonCommentIds: [],
+            bySeverity: {
+              major: {
+                seeded: 1,
+                submitted: 1,
+                skipped: 0,
+                deleted: 0,
+                editedSubmitted: 0,
+              },
+              minor: {
+                seeded: 1,
+                submitted: 0,
+                skipped: 1,
+                deleted: 0,
+                editedSubmitted: 0,
+              },
+            },
           },
           reviewUrl:
             'https://github.com/pandemicsyn/neondeck/pull/123#pullrequestreview-9001',
           headSha: 'head123',
+        }),
+      }),
+    ]);
+  });
+
+  it('accounts for deleted Neon seeded comments when submitting a review', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const draft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head123',
+      verdict: 'comment',
+      body: 'Submitting body only.',
+    });
+    const withComment = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 12,
+      body: 'Seeded issue.',
+      origin: 'neon',
+    });
+    const seeded = withComment.comments[0];
+    expect(seeded?.id).toEqual(expect.any(String));
+    if (!seeded) throw new Error('Expected seeded comment.');
+    recordPrReviewNeonSeed({
+      databasePath: paths.neondeckDatabase,
+      draft: withComment,
+      comment: seeded,
+      severity: 'major',
+      summary: 'Seeded issue summary.',
+      source: 'test',
+    });
+    deletePrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      commentId: seeded.id,
+    });
+
+    globalThis.fetch = vi.fn<typeof fetch>(async () =>
+      jsonResponse({
+        id: 9002,
+        node_id: 'review-node-9002',
+        state: 'COMMENTED',
+        user: { login: 'neon' },
+        submitted_at: '2026-07-05T15:00:00Z',
+        commit_id: 'head123',
+        html_url:
+          'https://github.com/pandemicsyn/neondeck/pull/123#pullrequestreview-9002',
+        body: 'Submitting body only.',
+      }),
+    );
+
+    await submitPullRequestReview({
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+      databasePath: paths.neondeckDatabase,
+      paths,
+      draftId: draft.id,
+      headSha: 'head123',
+      fetchHeadSha: async () => 'head123',
+    });
+
+    await expect(listWorkflowSummaries(paths)).resolves.toEqual([
+      expect.objectContaining({
+        workflow: 'github_pr_review',
+        summary: expect.objectContaining({
+          commentCount: 0,
+          neonDraftOutcome: {
+            seededNeonCommentCount: 1,
+            survivingNeonCommentCount: 0,
+            submittedNeonCommentCount: 0,
+            skippedNeonCommentCount: 0,
+            deletedNeonCommentCount: 1,
+            skippedOrDeletedNeonCommentCount: 1,
+            editedSubmittedNeonCommentCount: 0,
+            submittedNeonCommentIds: [],
+            skippedNeonCommentIds: [],
+            deletedNeonCommentIds: [seeded.id],
+            bySeverity: {
+              major: {
+                seeded: 1,
+                submitted: 0,
+                skipped: 0,
+                deleted: 1,
+                editedSubmitted: 0,
+              },
+            },
+          },
         }),
       }),
     ]);

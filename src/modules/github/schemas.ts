@@ -55,6 +55,7 @@ export type PullRequestSearchResult = {
 export type GitHubPullRequestDetail = {
   number: number;
   title: string;
+  body?: string | null;
   repo: string;
   url: string;
   state: string;
@@ -266,6 +267,7 @@ export type GitHubPullRequestEventState = {
   number: number;
   url: string;
   title: string;
+  body: string | null;
   state: string;
   draft: boolean;
   merged: boolean;
@@ -311,6 +313,7 @@ export const githubSearchIssuesApiResponseSchema = v.object({
 export const githubPullRequestApiResponseSchema = v.object({
   number: v.number(),
   title: v.string(),
+  body: v.optional(v.nullable(v.string())),
   html_url: v.string(),
   state: v.string(),
   draft: v.optional(v.boolean()),

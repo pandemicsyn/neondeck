@@ -26,6 +26,7 @@ export {
   readLivePrReviewDraft,
   readPrReviewDraft,
   readPrReviewDraftForComment,
+  recordPrReviewNeonSeed,
   replyToPullRequestReviewThread,
   resolvePullRequestReviewThread,
   submitPullRequestReview,

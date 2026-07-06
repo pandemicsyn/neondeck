@@ -11,6 +11,7 @@ import {
   type GitHubPullRequestFile,
 } from './modules/github';
 import {
+  reviewFactsForPrompt,
   reviewPrForHuman,
   type ReviewAssistFacts,
 } from './modules/pr-review-assist';
@@ -184,6 +185,99 @@ describe('PR review assist', () => {
     });
   });
 
+  it('includes typed PR context and explicit limitations in review prompt facts', () => {
+    const facts = reviewFacts();
+    facts.state.commits = [
+      {
+        sha: 'head123',
+        url: 'https://github.com/pandemicsyn/neondeck/commit/head123',
+        authorLogin: 'pandemicsyn',
+        committedAt: '2026-07-05T11:00:00.000Z',
+      },
+    ];
+    facts.state.reviewThreads = [
+      {
+        id: 'thread-1',
+        isResolved: false,
+        isOutdated: false,
+        path: 'src/app.ts',
+        line: 2,
+        originalLine: 2,
+        diffSide: 'RIGHT',
+        comments: [
+          {
+            id: 'comment-1',
+            databaseId: 1001,
+            authorLogin: 'reviewer',
+            body: 'Please handle this review case.',
+            url: 'https://github.com/pandemicsyn/neondeck/pull/10#discussion_r1001',
+            path: 'src/app.ts',
+            line: 2,
+            originalLine: 2,
+            diffHunk: '@@ -1,2 +1,3 @@',
+            reviewId: 9001,
+            createdAt: '2026-07-05T11:05:00.000Z',
+            updatedAt: '2026-07-05T11:05:00.000Z',
+          },
+        ],
+      },
+    ];
+    const requestedChange = {
+      id: 9001,
+      nodeId: 'PRR_9001',
+      state: 'CHANGES_REQUESTED',
+      authorLogin: 'reviewer',
+      submittedAt: '2026-07-05T11:06:00.000Z',
+      commitId: 'head123',
+      url: 'https://github.com/pandemicsyn/neondeck/pull/10#pullrequestreview-9001',
+    };
+    facts.state.requestedChangesState = {
+      active: [requestedChange],
+      latestByReviewer: [requestedChange],
+      history: [requestedChange],
+    };
+    facts.state.requestedChangesReviews = [requestedChange];
+
+    const promptFacts = reviewFactsForPrompt(facts);
+
+    expect(promptFacts.pullRequest).toMatchObject({
+      body: 'Fixes #123 by adding review assistance facts.',
+      baseSha: 'base123',
+      draft: false,
+      merged: false,
+      mergeable: true,
+      mergeableState: 'clean',
+      maintainerCanModify: true,
+      isOutOfDate: false,
+    });
+    expect(promptFacts.linkedIssueReferenceHints).toEqual(['#123']);
+    expect(promptFacts.commits).toMatchObject([{ sha: 'head123' }]);
+    expect(promptFacts.reviewThreads).toMatchObject([
+      {
+        id: 'thread-1',
+        isResolved: false,
+        comments: [
+          {
+            id: 'comment-1',
+            body: 'Please handle this review case.',
+            diffHunk: '@@ -1,2 +1,3 @@',
+          },
+        ],
+      },
+    ]);
+    expect(promptFacts.requestedChangesState.active).toEqual([requestedChange]);
+    expect(promptFacts.requestedChangesReviews).toEqual([requestedChange]);
+    expect(promptFacts.branchPermissions).toMatchObject({
+      canLikelyPush: true,
+      maintainerCanModify: true,
+    });
+    expect(promptFacts.limitations).toEqual([
+      expect.stringContaining(
+        'Linked issue relationships are not currently typed separately',
+      ),
+    ]);
+  });
+
   it('rejects malformed structured output before writing reports or drafts', async () => {
     const paths = await tempPaths();
     const result = await reviewPrForHuman(
@@ -224,6 +318,7 @@ function reviewFacts(): ReviewAssistFacts {
     number: 10,
     url: 'https://github.com/pandemicsyn/neondeck/pull/10',
     title: 'Add review assist',
+    body: 'Fixes #123 by adding review assistance facts.',
     state: 'open',
     draft: false,
     merged: false,

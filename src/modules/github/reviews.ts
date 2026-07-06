@@ -46,6 +46,30 @@ export type GitHubPrReviewDraftComment = {
   updatedAt: string;
 };
 
+export type GitHubPrReviewNeonSeedSeverity =
+  'critical' | 'major' | 'minor' | 'nit';
+
+export type GitHubPrReviewNeonSeedOutcome = 'submitted' | 'skipped' | 'deleted';
+
+export type GitHubPrReviewNeonSeededComment = {
+  commentId: string;
+  draftId: string;
+  repo: string;
+  prNumber: number;
+  headSha: string;
+  path: string;
+  side: GitHubPrReviewDraftCommentSide;
+  line: number;
+  startLine: number | null;
+  startSide: GitHubPrReviewDraftCommentSide | null;
+  severity: GitHubPrReviewNeonSeedSeverity;
+  summary: string;
+  source: string;
+  outcome: GitHubPrReviewNeonSeedOutcome | null;
+  outcomeAt: string | null;
+  seededAt: string;
+};
+
 export type GitHubPrReviewDraft = {
   id: string;
   repo: string;
@@ -86,6 +110,17 @@ const reviewVerdictSchema = v.picklist([
 ]);
 const reviewCommentSideSchema = v.picklist(['RIGHT', 'LEFT']);
 const reviewCommentOriginSchema = v.picklist(['human', 'neon']);
+const reviewNeonSeedSeveritySchema = v.picklist([
+  'critical',
+  'major',
+  'minor',
+  'nit',
+]);
+const reviewNeonSeedOutcomeSchema = v.picklist([
+  'submitted',
+  'skipped',
+  'deleted',
+]);
 const draftStatusSchema = v.picklist(['draft', 'submitted', 'discarded']);
 
 const draftRowSchema = v.object({
@@ -113,6 +148,25 @@ const draftCommentRowSchema = v.object({
   origin: reviewCommentOriginSchema,
   created_at: v.string(),
   updated_at: v.string(),
+});
+
+const neonSeedRowSchema = v.object({
+  comment_id: v.string(),
+  draft_id: v.string(),
+  repo: v.string(),
+  pr_number: v.number(),
+  head_sha: v.string(),
+  path: v.string(),
+  side: reviewCommentSideSchema,
+  line: v.number(),
+  start_line: v.nullable(v.number()),
+  start_side: v.nullable(reviewCommentSideSchema),
+  severity: reviewNeonSeedSeveritySchema,
+  summary: v.string(),
+  source: v.string(),
+  outcome: v.nullable(reviewNeonSeedOutcomeSchema),
+  outcome_at: v.nullable(v.string()),
+  seeded_at: v.string(),
 });
 
 const replyReviewThreadMutation = `
@@ -482,6 +536,61 @@ export function deletePrReviewDraftComment(options: {
   }
 }
 
+export function recordPrReviewNeonSeed(options: {
+  databasePath: string;
+  draft: GitHubPrReviewDraft;
+  comment: GitHubPrReviewDraftComment;
+  severity: GitHubPrReviewNeonSeedSeverity;
+  summary: string;
+  source: string;
+}): GitHubPrReviewNeonSeededComment {
+  const database = openDb(options.databasePath);
+  const now = new Date().toISOString();
+  try {
+    database
+      .prepare(
+        `
+        INSERT OR IGNORE INTO pr_review_neon_seeded_comments (
+          comment_id,
+          draft_id,
+          repo,
+          pr_number,
+          head_sha,
+          path,
+          side,
+          line,
+          start_line,
+          start_side,
+          severity,
+          summary,
+          source,
+          seeded_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      `,
+      )
+      .run(
+        options.comment.id,
+        options.draft.id,
+        options.draft.repo,
+        options.draft.prNumber,
+        options.draft.headSha,
+        options.comment.path,
+        options.comment.side,
+        options.comment.line,
+        options.comment.startLine,
+        options.comment.startSide,
+        options.severity,
+        truncateSeedSummary(options.summary),
+        options.source,
+        now,
+      );
+    return readNeonSeedByCommentId(database, options.comment.id);
+  } finally {
+    database.close();
+  }
+}
+
 export async function submitPullRequestReview(options: {
   token: string;
   owner: string;
@@ -591,8 +700,12 @@ export async function submitPullRequestReview(options: {
     });
   }
 
+  const neonDraftOutcome = markNeonDraftSeedOutcomes(
+    options.databasePath,
+    draft,
+    comments,
+  );
   const submitted = markDraftSubmitted(options.databasePath, draft.id);
-  const neonDraftOutcome = summarizeNeonDraftOutcome(draft, comments);
   await addWorkflowSummary(
     {
       workflow: 'github_pr_review',
@@ -615,31 +728,178 @@ export async function submitPullRequestReview(options: {
   return { draft: submitted, review };
 }
 
-function summarizeNeonDraftOutcome(
+function markNeonDraftSeedOutcomes(
+  databasePath: string,
   draft: GitHubPrReviewDraft,
   submittedComments: GitHubPrReviewDraftComment[],
 ) {
-  const submittedIds = new Set(submittedComments.map((comment) => comment.id));
-  const survivingNeonComments = draft.comments.filter(
-    (comment) => comment.origin === 'neon',
+  const database = openDb(databasePath);
+  try {
+    return summarizeAndPersistNeonDraftOutcome(
+      database,
+      draft,
+      submittedComments,
+    );
+  } finally {
+    database.close();
+  }
+}
+
+function summarizeAndPersistNeonDraftOutcome(
+  database: ReturnType<typeof openDb>,
+  draft: GitHubPrReviewDraft,
+  submittedComments: GitHubPrReviewDraftComment[],
+) {
+  const seeds = readNeonSeedsForDraft(database, draft.id);
+  const survivingCommentsById = new Map(
+    draft.comments.map((comment) => [comment.id, comment]),
   );
-  const submittedNeonComments = survivingNeonComments.filter((comment) =>
-    submittedIds.has(comment.id),
+  const submittedCommentsById = new Map(
+    submittedComments.map((comment) => [comment.id, comment]),
   );
-  const skippedNeonComments = survivingNeonComments.filter(
-    (comment) => !submittedIds.has(comment.id),
-  );
+  const now = new Date().toISOString();
+  const submittedSeeds = [];
+  const skippedSeeds = [];
+  const deletedSeeds = [];
+  const severityCounts: Record<
+    string,
+    {
+      seeded: number;
+      submitted: number;
+      skipped: number;
+      deleted: number;
+      editedSubmitted: number;
+    }
+  > = {};
+
+  for (const seed of seeds) {
+    const severity = severityCounts[seed.severity] ?? {
+      seeded: 0,
+      submitted: 0,
+      skipped: 0,
+      deleted: 0,
+      editedSubmitted: 0,
+    };
+    severity.seeded += 1;
+    severityCounts[seed.severity] = severity;
+
+    const submittedComment = submittedCommentsById.get(seed.commentId);
+    const outcome: GitHubPrReviewNeonSeedOutcome = submittedComment
+      ? 'submitted'
+      : survivingCommentsById.has(seed.commentId)
+        ? 'skipped'
+        : 'deleted';
+    database
+      .prepare(
+        `
+        UPDATE pr_review_neon_seeded_comments
+        SET outcome = ?,
+            outcome_at = ?
+        WHERE comment_id = ?;
+      `,
+      )
+      .run(outcome, now, seed.commentId);
+
+    if (outcome === 'submitted') {
+      if (!submittedComment) continue;
+      submittedSeeds.push(seed);
+      severity.submitted += 1;
+      if (submittedComment.updatedAt !== submittedComment.createdAt) {
+        severity.editedSubmitted += 1;
+      }
+      continue;
+    }
+    if (outcome === 'skipped') {
+      skippedSeeds.push(seed);
+      severity.skipped += 1;
+      continue;
+    }
+    deletedSeeds.push(seed);
+    severity.deleted += 1;
+  }
+
+  const editedSubmitted = submittedSeeds.filter((seed) => {
+    const comment = submittedCommentsById.get(seed.commentId);
+    return Boolean(comment && comment.updatedAt !== comment.createdAt);
+  });
 
   return {
-    survivingNeonCommentCount: survivingNeonComments.length,
-    submittedNeonCommentCount: submittedNeonComments.length,
-    skippedNeonCommentCount: skippedNeonComments.length,
-    editedSubmittedNeonCommentCount: submittedNeonComments.filter(
-      (comment) => comment.updatedAt !== comment.createdAt,
+    seededNeonCommentCount: seeds.length,
+    survivingNeonCommentCount: seeds.filter((seed) =>
+      survivingCommentsById.has(seed.commentId),
     ).length,
-    submittedNeonCommentIds: submittedNeonComments.map((comment) => comment.id),
-    skippedNeonCommentIds: skippedNeonComments.map((comment) => comment.id),
+    submittedNeonCommentCount: submittedSeeds.length,
+    skippedNeonCommentCount: skippedSeeds.length,
+    deletedNeonCommentCount: deletedSeeds.length,
+    skippedOrDeletedNeonCommentCount: skippedSeeds.length + deletedSeeds.length,
+    editedSubmittedNeonCommentCount: editedSubmitted.length,
+    submittedNeonCommentIds: submittedSeeds.map((seed) => seed.commentId),
+    skippedNeonCommentIds: skippedSeeds.map((seed) => seed.commentId),
+    deletedNeonCommentIds: deletedSeeds.map((seed) => seed.commentId),
+    bySeverity: severityCounts,
   };
+}
+
+function readNeonSeedByCommentId(
+  database: ReturnType<typeof openDb>,
+  commentId: string,
+) {
+  const row = database
+    .prepare(
+      `
+      SELECT *
+      FROM pr_review_neon_seeded_comments
+      WHERE comment_id = ?
+      LIMIT 1;
+    `,
+    )
+    .get(commentId);
+  if (!row) throw new Error('Neon review seed ledger row was not recorded.');
+  return readNeonSeedRow(row);
+}
+
+function readNeonSeedsForDraft(
+  database: ReturnType<typeof openDb>,
+  draftId: string,
+) {
+  return database
+    .prepare(
+      `
+      SELECT *
+      FROM pr_review_neon_seeded_comments
+      WHERE draft_id = ?
+      ORDER BY seeded_at ASC;
+    `,
+    )
+    .all(draftId)
+    .map(readNeonSeedRow);
+}
+
+function readNeonSeedRow(row: unknown): GitHubPrReviewNeonSeededComment {
+  const parsed = v.parse(neonSeedRowSchema, row);
+  return {
+    commentId: parsed.comment_id,
+    draftId: parsed.draft_id,
+    repo: parsed.repo,
+    prNumber: parsed.pr_number,
+    headSha: parsed.head_sha,
+    path: parsed.path,
+    side: parsed.side,
+    line: parsed.line,
+    startLine: parsed.start_line,
+    startSide: parsed.start_side,
+    severity: parsed.severity,
+    summary: parsed.summary,
+    source: parsed.source,
+    outcome: parsed.outcome,
+    outcomeAt: parsed.outcome_at,
+    seededAt: parsed.seeded_at,
+  };
+}
+
+function truncateSeedSummary(value: string) {
+  const trimmed = value.trim();
+  return trimmed.length > 1_000 ? `${trimmed.slice(0, 1_000)}...` : trimmed;
 }
 
 export async function replyToPullRequestReviewThread(options: {

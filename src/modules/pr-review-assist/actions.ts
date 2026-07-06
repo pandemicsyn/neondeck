@@ -41,7 +41,7 @@ export const reviewPrForHumanAction = defineAction({
   },
 });
 
-function reviewFactsForPrompt(facts: ReviewAssistFacts) {
+export function reviewFactsForPrompt(facts: ReviewAssistFacts) {
   return {
     target: {
       repoFullName: facts.target.repoFullName,
@@ -49,21 +49,74 @@ function reviewFactsForPrompt(facts: ReviewAssistFacts) {
     },
     pullRequest: {
       title: facts.state.title,
+      body: truncate(facts.state.body ?? '', 20_000),
       state: facts.state.state,
       url: facts.state.url,
       baseRef: facts.state.baseRef,
+      baseSha: facts.state.baseSha,
       headRef: facts.state.headRef,
       headSha: facts.state.headSha,
+      draft: facts.state.draft,
+      merged: facts.state.merged,
+      mergeCommitSha: facts.state.mergeCommitSha,
+      mergeable: facts.state.mergeable,
       mergeableState: facts.state.mergeableState,
+      maintainerCanModify: facts.state.maintainerCanModify,
       isOutOfDate: facts.state.isOutOfDate,
     },
+    linkedIssueReferenceHints: issueReferenceHints(
+      `${facts.state.title}\n${facts.state.body ?? ''}`,
+    ),
     diffSummary: facts.diffSummary,
-    checks: facts.state.checkRuns.map((check) => ({
-      name: check.name,
-      status: check.status,
-      conclusion: check.conclusion,
-      htmlUrl: check.htmlUrl,
+    checks: {
+      suites: facts.state.checkSuites.map((suite) => ({
+        id: suite.id,
+        status: suite.status,
+        conclusion: suite.conclusion,
+        appSlug: suite.appSlug,
+        htmlUrl: suite.htmlUrl,
+      })),
+      runs: facts.state.checkRuns.map((check) => ({
+        id: check.id,
+        name: check.name,
+        status: check.status,
+        conclusion: check.conclusion,
+        htmlUrl: check.htmlUrl,
+      })),
+    },
+    commits: facts.state.commits.map((commit) => ({
+      sha: commit.sha,
+      url: commit.url,
+      authorLogin: commit.authorLogin,
+      committedAt: commit.committedAt,
     })),
+    reviewThreads: facts.state.reviewThreads.map((thread) => ({
+      id: thread.id,
+      isResolved: thread.isResolved,
+      isOutdated: thread.isOutdated,
+      path: thread.path,
+      line: thread.line,
+      originalLine: thread.originalLine ?? null,
+      diffSide: thread.diffSide ?? null,
+      comments: thread.comments.map((comment) => ({
+        id: comment.id,
+        authorLogin: comment.authorLogin,
+        body: truncate(comment.body, 4_000),
+        path: comment.path,
+        line: comment.line,
+        originalLine: comment.originalLine,
+        diffHunk: truncate(comment.diffHunk ?? '', 4_000),
+        createdAt: comment.createdAt,
+        updatedAt: comment.updatedAt,
+      })),
+    })),
+    requestedChangesState: {
+      active: facts.state.requestedChangesState.active,
+      latestByReviewer: facts.state.requestedChangesState.latestByReviewer,
+      history: facts.state.requestedChangesState.history,
+    },
+    requestedChangesReviews: facts.state.requestedChangesReviews,
+    branchPermissions: facts.state.branchPermissions,
     files: facts.files.map((file) => ({
       path: file.path,
       previousPath: file.previousPath,
@@ -77,10 +130,23 @@ function reviewFactsForPrompt(facts: ReviewAssistFacts) {
       patch: truncate(file.patch ?? '', 12_000),
       message: file.message,
     })),
+    limitations: [
+      'Linked issue relationships are not currently typed separately in GitHubPullRequestEventState; linkedIssueReferenceHints are extracted from PR title/body text only.',
+    ],
   };
 }
 
 function truncate(value: string, maxLength: number) {
   if (value.length <= maxLength) return value;
   return `${value.slice(0, maxLength)}\n[truncated]`;
+}
+
+function issueReferenceHints(value: string) {
+  const matches = new Set<string>();
+  const pattern =
+    /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+((?:[\w.-]+\/[\w.-]+)?#\d+)/gi;
+  for (const match of value.matchAll(pattern)) {
+    if (typeof match[1] === 'string') matches.add(match[1]);
+  }
+  return [...matches].slice(0, 20);
 }

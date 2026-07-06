@@ -21,6 +21,8 @@ import {
   unresolvePullRequestReviewThread,
   updatePrReviewDraftComment,
   upsertPrReviewDraft,
+  type GitHubPrReviewDraft,
+  type GitHubPrReviewDraftComment,
   type GitHubPullRequestEventState,
   type GitHubPullRequestReviewThread,
 } from '../github';
@@ -54,6 +56,10 @@ import {
   isConfiguredRepoTarget,
   resolvePullRequestTarget,
 } from './target';
+import {
+  buildPatchAnchorIndex,
+  commentAnchorExists,
+} from '../../../shared/patch-anchors';
 import {
   readWatermarks,
   upsertWatermarks,
@@ -303,6 +309,7 @@ export async function postGitHubPrReviewDraftComment(
   targetInput: v.InferInput<typeof prEventTargetInputSchema>,
   input: v.InferInput<typeof prReviewDraftCommentInputSchema>,
   paths: RuntimePaths = runtimePaths(),
+  dependencies: PrEventStateDependencies = {},
 ): Promise<PrEventActionResult> {
   await ensureRuntimeHome(paths);
   const parsedTarget = v.safeParse(prEventTargetInputSchema, targetInput);
@@ -331,13 +338,29 @@ export async function postGitHubPrReviewDraftComment(
     databasePath: paths.neondeckDatabase,
     draftId: parsed.output.draftId,
   });
-  if (!draftMatchesTarget(draft, resolved.target)) {
+  if (!draft || !draftMatchesTarget(draft, resolved.target)) {
     return failResult(
       'github_pr_review_draft_comment_post',
       'Review draft does not belong to this pull request.',
       { requires: ['draftId'] },
     );
   }
+
+  const invalidAnchor = await validateDraftCommentAnchor(
+    'github_pr_review_draft_comment_post',
+    resolved.target,
+    draft,
+    {
+      path: parsed.output.path,
+      side: parsed.output.side,
+      line: parsed.output.line,
+      startLine: parsed.output.startLine ?? null,
+      startSide: parsed.output.startSide ?? null,
+    },
+    paths,
+    dependencies,
+  );
+  if (invalidAnchor) return invalidAnchor;
 
   try {
     const draft = addPrReviewDraftComment({
@@ -370,6 +393,7 @@ export async function patchGitHubPrReviewDraftComment(
   commentId: string,
   input: v.InferInput<typeof prReviewDraftCommentUpdateInputSchema>,
   paths: RuntimePaths = runtimePaths(),
+  dependencies: PrEventStateDependencies = {},
 ): Promise<PrEventActionResult> {
   await ensureRuntimeHome(paths);
   const parsedTarget = v.safeParse(prEventTargetInputSchema, targetInput);
@@ -399,13 +423,44 @@ export async function patchGitHubPrReviewDraftComment(
     databasePath: paths.neondeckDatabase,
     commentId,
   });
-  if (!draftMatchesTarget(draft, resolved.target)) {
+  if (!draft || !draftMatchesTarget(draft, resolved.target)) {
     return failResult(
       'github_pr_review_draft_comment_patch',
       'Review draft comment does not belong to this pull request.',
       { requires: ['commentId'] },
     );
   }
+
+  const existing = draft.comments.find((comment) => comment.id === commentId);
+  if (!existing) {
+    return failResult(
+      'github_pr_review_draft_comment_patch',
+      'Review draft comment was not found.',
+      { requires: ['commentId'] },
+    );
+  }
+  const nextAnchor = {
+    path: parsed.output.path ?? existing.path,
+    side: parsed.output.side ?? existing.side,
+    line: parsed.output.line ?? existing.line,
+    startLine:
+      'startLine' in parsed.output
+        ? (parsed.output.startLine ?? null)
+        : existing.startLine,
+    startSide:
+      'startSide' in parsed.output
+        ? (parsed.output.startSide ?? null)
+        : existing.startSide,
+  };
+  const invalidAnchor = await validateDraftCommentAnchor(
+    'github_pr_review_draft_comment_patch',
+    resolved.target,
+    draft,
+    nextAnchor,
+    paths,
+    dependencies,
+  );
+  if (invalidAnchor) return invalidAnchor;
 
   try {
     const draft = updatePrReviewDraftComment({
@@ -633,6 +688,62 @@ function draftMatchesTarget(
   return (
     draft?.repo === target.repoFullName && draft.prNumber === target.number
   );
+}
+
+async function validateDraftCommentAnchor(
+  action: string,
+  target: PullRequestTarget,
+  draft: GitHubPrReviewDraft,
+  anchor: {
+    path: string;
+    side: GitHubPrReviewDraftComment['side'];
+    line: number;
+    startLine: number | null;
+    startSide: GitHubPrReviewDraftComment['startSide'];
+  },
+  paths: RuntimePaths,
+  dependencies: PrEventStateDependencies,
+): Promise<PrEventActionResult | null> {
+  const token = dependencies.token ?? process.env.GITHUB_TOKEN;
+  if (!token) {
+    return failResult(action, 'GITHUB_TOKEN is required to validate anchors.', {
+      requires: ['GITHUB_TOKEN'],
+    });
+  }
+
+  try {
+    const diff = await fetchPullRequestFilesWithCache({
+      token,
+      owner: target.owner,
+      repo: target.repo,
+      number: target.number,
+      headSha: draft.headSha,
+      databasePath: paths.neondeckDatabase,
+      fetcher: dependencies.fetchPullRequestFiles ?? fetchPullRequestFiles,
+      fetchHeadSha: dependencies.fetchPullRequestHeadSha,
+    });
+    const file = diff.files.find((item) => item.path === anchor.path);
+    if (
+      !file ||
+      !commentAnchorExists(buildPatchAnchorIndex(file.patch), {
+        side: anchor.side,
+        line: anchor.line,
+        startLine: anchor.startLine,
+        startSide: anchor.startSide,
+      })
+    ) {
+      return failResult(
+        action,
+        'Review draft comment anchor is not present in the PR patch.',
+        { requires: ['validAnchor'] },
+      );
+    }
+    return null;
+  } catch (error) {
+    return failResult(action, 'Could not validate PR review draft anchor.', {
+      errors: [errorMessage(error)],
+    });
+  }
 }
 
 export async function postGitHubPrThreadReply(

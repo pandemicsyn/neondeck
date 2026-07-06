@@ -4,6 +4,7 @@ import {
   addPrReviewDraftComment,
   deletePrReviewDraftComment,
   readLivePrReviewDraft,
+  recordPrReviewNeonSeed,
   upsertPrReviewDraft,
   type GitHubDiffSummary,
   type GitHubPrReviewDraft,
@@ -347,6 +348,14 @@ async function seedDraftComments(
       );
       if (added) {
         addedIds.push(added.id);
+        recordPrReviewNeonSeed({
+          databasePath: paths.neondeckDatabase,
+          draft,
+          comment: added,
+          severity: item.finding.severity,
+          summary: item.finding.summary,
+          source: 'review-pr-for-human',
+        });
         seeded.push({ ...item, commentId: added.id });
       }
     }
