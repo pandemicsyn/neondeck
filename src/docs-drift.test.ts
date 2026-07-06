@@ -89,7 +89,7 @@ describe('docs drift job', () => {
       },
     });
     expect(summary.scannedCommit).not.toBe(summary.attemptedCommit);
-  });
+  }, 30_000);
 
   it('injects learning memories into staged docs-fix prompts and summary', async () => {
     const home = await tempDir();

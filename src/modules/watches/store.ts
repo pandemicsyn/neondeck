@@ -34,10 +34,11 @@ export function insertWatch(paths: RuntimePaths, watch: PrWatch) {
           last_snapshot_json,
           last_outcome,
           last_checked_at,
+          created_by,
           created_at,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `,
       )
       .run(...watchParams(watch));
@@ -365,6 +366,7 @@ export function watchParams(watch: PrWatch) {
     watch.lastSnapshot ? JSON.stringify(watch.lastSnapshot) : null,
     watch.lastOutcome,
     watch.lastCheckedAt,
+    watch.createdBy,
     watch.createdAt,
     watch.updatedAt,
   ];
@@ -436,6 +438,8 @@ export function readWatchRow(row: unknown): PrWatch {
       typeof record.last_checked_at === 'string'
         ? String(record.last_checked_at)
         : null,
+    createdBy:
+      typeof record.created_by === 'string' ? String(record.created_by) : null,
     createdAt: String(record.created_at),
     updatedAt: String(record.updated_at),
   };

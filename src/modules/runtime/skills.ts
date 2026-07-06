@@ -77,6 +77,9 @@ const sensitiveSkillResourceNames = new Set([
 ]);
 const applicationSkillPaths = [
   fileURLToPath(new URL('../../skills/neondeck/SKILL.md', import.meta.url)),
+  fileURLToPath(
+    new URL('../../skills/neondeck-handoff/SKILL.md', import.meta.url),
+  ),
   fileURLToPath(new URL('../../skills/github-gh/SKILL.md', import.meta.url)),
 ];
 const reservedBuiltInSkillIds = new Set(

@@ -10,6 +10,12 @@ export async function githubModule() {
   ) as Promise<typeof import('../modules/github')>;
 }
 
+export async function handoffModule() {
+  return import(
+    new URL('../modules/handoff/index.ts', import.meta.url).href
+  ) as Promise<typeof import('../modules/handoff')>;
+}
+
 export async function devDoctorModule() {
   return import(
     new URL('../modules/runtime/index.ts', import.meta.url).href

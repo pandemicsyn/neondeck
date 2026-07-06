@@ -122,6 +122,7 @@ describe('PR watch actions', () => {
         id: 'pandemicsyn/neondeck#123',
         status: 'watching',
         prState: 'open',
+        createdBy: null,
       },
     });
 
@@ -165,6 +166,119 @@ describe('PR watch actions', () => {
     await expect(listJobs(paths)).resolves.not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: 'watch:pandemicsyn/neondeck#123' }),
+      ]),
+    );
+  });
+
+  it('returns an existing PR watch as an idempotent no-op with attribution preserved', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await expect(
+      addPrWatch(
+        { ref: 'neondeck#123', createdBy: 'external:codex' },
+        paths,
+        async () => prDetail(),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'created',
+      watch: {
+        id: 'pandemicsyn/neondeck#123',
+        createdBy: 'external:codex',
+      },
+    });
+
+    await expect(
+      addPrWatch(
+        { ref: 'neondeck#123', createdBy: 'external:claude-code' },
+        paths,
+        async () => {
+          throw new Error('duplicate registrations must not fetch');
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      outcome: 'silent',
+      watch: {
+        id: 'pandemicsyn/neondeck#123',
+        createdBy: 'external:codex',
+      },
+    });
+  });
+
+  it('updates existing PR watch targets and polling intervals without refetching', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await expect(
+      addPrWatch(
+        { ref: 'neondeck#123' },
+        paths,
+        async () => prDetail(),
+        async () => checkSummary('pending'),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'created',
+      watch: {
+        id: 'pandemicsyn/neondeck#123',
+        desiredTerminalState: 'checks',
+      },
+    });
+
+    await expect(
+      addPrWatch(
+        {
+          ref: 'neondeck#123',
+          desiredTerminalState: 'prod',
+          intervalSeconds: 120,
+        },
+        paths,
+        async () => {
+          throw new Error('existing watch updates must not fetch');
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'updated',
+      watch: {
+        id: 'pandemicsyn/neondeck#123',
+        desiredTerminalState: 'prod',
+        status: 'watching',
+        lastOutcome: 'updated',
+      },
+    });
+
+    await expect(listPrWatches(paths)).resolves.toMatchObject({
+      watches: [
+        {
+          id: 'pandemicsyn/neondeck#123',
+          desiredTerminalState: 'prod',
+          pollIntervalSeconds: 120,
+        },
+      ],
+    });
+    await expect(listJobs(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'watch:pandemicsyn/neondeck#123',
+          intervalSeconds: 120,
+        }),
+        expect.objectContaining({
+          id: 'release:neondeck',
+          type: 'release-watch',
+          config: expect.objectContaining({
+            source: 'watch-pr-until-prod',
+            sourceWatchId: 'pandemicsyn/neondeck#123',
+          }),
+        }),
       ]),
     );
   });

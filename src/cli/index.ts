@@ -7,6 +7,7 @@ import {
   appDbModule,
   configActionsModule,
   devDoctorModule,
+  handoffModule,
   learningOperatorModule,
   openModule,
   reposModule,
@@ -17,12 +18,12 @@ import {
   serverModule,
   serviceModule,
   skillPatchesModule,
-  watchActionsModule,
 } from './modules';
 import {
   loadEnvForPaths,
   parseCandidateStatus,
   parseCandidateTarget,
+  parseHandoffNoteLevel,
   parseOptionalIntervalSeconds,
   parseOptionalIntegerFlag,
   parseOptionalLimit,
@@ -42,11 +43,14 @@ import {
 } from './output';
 import type {
   GlobalOptions,
+  HandoffNoteOptions,
   OpenOptions,
+  RegisterPrOptions,
   RepoAddOptions,
   ScheduleOptions,
   ServiceInstallOptions,
   ServeOptions,
+  WatchReleaseOptions,
   WatchPrOptions,
 } from './types';
 
@@ -444,21 +448,105 @@ program
     'checks',
   )
   .option('--interval <seconds>', 'poll interval in seconds')
+  .option('--from <agent>', 'external agent attribution')
   .action(async (ref: string, options: WatchPrOptions) => {
-    const { addPrWatch } = await watchActionsModule();
+    const { registerHandoffWatchPr, normalizeHandoffSource } =
+      await handoffModule();
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
     loadEnvForPaths(paths);
     const desiredTerminalState = parseWatchTarget(options.until);
     const intervalSeconds = parseOptionalIntervalSeconds(options.interval);
-    const result = await addPrWatch(
+    const result = await registerHandoffWatchPr(
       {
         ref,
         desiredTerminalState,
         ...(intervalSeconds !== undefined ? { intervalSeconds } : {}),
+        source: normalizeHandoffSource(options.from),
       },
       paths,
     );
     printActionResult(result);
+  });
+
+program
+  .command('watch-release <repo>')
+  .description('Create a release watch for a configured repository.')
+  .option('--source-pr <ref>', 'link release watching to a source PR')
+  .option('--interval <seconds>', 'poll interval in seconds')
+  .option('--from <agent>', 'external agent attribution')
+  .action(async (repo: string, options: WatchReleaseOptions) => {
+    const { registerHandoffReleaseWatch, normalizeHandoffSource } =
+      await handoffModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
+    const intervalSeconds = parseOptionalIntervalSeconds(options.interval);
+    printActionResult(
+      await registerHandoffReleaseWatch(
+        {
+          repo,
+          source: normalizeHandoffSource(options.from),
+          ...(options.sourcePr ? { sourcePr: options.sourcePr } : {}),
+          ...(intervalSeconds !== undefined ? { intervalSeconds } : {}),
+        },
+        paths,
+      ),
+    );
+  });
+
+program
+  .command('note <text...>')
+  .description(
+    'Leave a bounded attributed note on the Neondeck notification stream.',
+  )
+  .option('--repo <ref>', 'configured repo id, name, or owner/name')
+  .option('--pr <ref>', 'linked PR reference')
+  .option('--level <level>', 'note level: info, ready, or attention', 'info')
+  .option('--from <agent>', 'external agent attribution')
+  .action(async (text: string[], options: HandoffNoteOptions) => {
+    const { createHandoffNote, normalizeHandoffSource } = await handoffModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
+    printActionResult(
+      await createHandoffNote(
+        {
+          text: text.join(' '),
+          source: normalizeHandoffSource(options.from),
+          ...(options.repo ? { repo: options.repo } : {}),
+          ...(options.pr ? { pr: options.pr } : {}),
+          ...(options.level
+            ? { level: parseHandoffNoteLevel(options.level) }
+            : {}),
+        },
+        paths,
+      ),
+    );
+  });
+
+program
+  .command('register-pr <ref>')
+  .description(
+    'Register a PR handoff with Neon by watching it, noting it, and optionally queueing review.',
+  )
+  .option('--from <agent>', 'external agent attribution')
+  .option('--note <text>', 'one-line handoff note')
+  .option('--review', 'queue bounded PR review assistance')
+  .option('--no-watch', 'skip creating or confirming the PR watch')
+  .action(async (ref: string, options: RegisterPrOptions) => {
+    const { registerHandoffPr, normalizeHandoffSource } = await handoffModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
+    printActionResult(
+      await registerHandoffPr(
+        {
+          ref,
+          source: normalizeHandoffSource(options.from),
+          watch: options.watch,
+          ...(options.review ? { review: true } : {}),
+          ...(options.note ? { note: options.note } : {}),
+        },
+        paths,
+      ),
+    );
   });
 
 program

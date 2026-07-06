@@ -33,6 +33,7 @@ import { createCommandRoutes } from './routes/commands';
 import { createConfigRoutes } from './routes/config';
 import { createExecutionRoutes } from './routes/execution';
 import { createGitHubRoutes } from './routes/github';
+import { createHandoffRoutes } from './routes/handoff';
 import { createKiloRoutes } from './routes/kilo';
 import { createLearningRoutes } from './routes/learning';
 import { createMemoryRoutes } from './routes/memory';
@@ -108,6 +109,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api', createWorktreeRoutes(paths));
   app.route('/api/kilo', createKiloRoutes(paths));
   app.route('/api', createAutopilotRoutes(paths));
+  app.route('/api', createHandoffRoutes(paths));
   app.route('/api', createWatchRoutes(paths));
   app.route('/api', createSchedulerRoutes(paths));
   app.route('/api', createRoutineRoutes(paths));

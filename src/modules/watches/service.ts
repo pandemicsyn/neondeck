@@ -47,6 +47,7 @@ import {
   readWatches,
   updateRefWatch,
   updateWatch,
+  releasePollingJobId,
   upsertRefWatchPollingJob,
   upsertReleasePollingJob,
   upsertWatchPollingJob,
@@ -75,7 +76,68 @@ export async function addPrWatch(
 
   const existing = readWatch(paths, resolved.reference.id);
   if (existing) {
-    return failResult('watch_pr_add', `Watch "${existing.id}" already exists.`);
+    const jobs = await listJobs(paths);
+    const job = jobs.find((item) => item.id === watchPollingJobId(existing.id));
+    const desiredTerminalStateChanged =
+      existing.desiredTerminalState !== resolved.reference.desiredTerminalState;
+    const intervalChanged =
+      parsed.input.intervalSeconds !== undefined &&
+      job?.intervalSeconds !== parsed.input.intervalSeconds;
+    const missingPollingJob = !job;
+    if (
+      !desiredTerminalStateChanged &&
+      !intervalChanged &&
+      !missingPollingJob
+    ) {
+      return okResult(
+        'watch_pr_add',
+        false,
+        'silent',
+        `Watch "${existing.id}" already exists.`,
+        {
+          watch: existing,
+        },
+      );
+    }
+
+    const watch: PrWatch = desiredTerminalStateChanged
+      ? {
+          ...existing,
+          desiredTerminalState: resolved.reference.desiredTerminalState,
+          status: existing.lastSnapshot
+            ? statusFromSnapshot(
+                existing.lastSnapshot,
+                resolved.reference.desiredTerminalState,
+              )
+            : existing.status,
+          lastOutcome: 'updated',
+          updatedAt: new Date().toISOString(),
+        }
+      : existing;
+
+    if (desiredTerminalStateChanged) {
+      updateWatch(paths, watch);
+    }
+    await upsertWatchPollingJob(
+      watch,
+      paths,
+      parsed.input.intervalSeconds ?? job?.intervalSeconds,
+    );
+    if (watch.desiredTerminalState === 'prod') {
+      await upsertReleasePollingJob(watch, paths);
+    } else if (existing.desiredTerminalState === 'prod') {
+      await deleteJob(releasePollingJobId(watch.repoId), paths);
+    }
+
+    return okResult(
+      'watch_pr_add',
+      true,
+      'updated',
+      `Updated watch "${watch.id}".`,
+      {
+        watch,
+      },
+    );
   }
 
   const detail = await fetchWatchDetail(
@@ -110,6 +172,7 @@ export async function addPrWatch(
     lastSnapshot: snapshot,
     lastOutcome: 'created',
     lastCheckedAt: now,
+    createdBy: parsed.input.createdBy ?? null,
     createdAt: now,
     updatedAt: now,
   };

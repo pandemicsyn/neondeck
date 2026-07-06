@@ -1,0 +1,1 @@
+ALTER TABLE `pr_watches` ADD `created_by` text;

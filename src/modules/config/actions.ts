@@ -11,6 +11,7 @@ import {
   removeRepoInputSchema,
   scheduleInputSchema,
   updateAgentModelsInputSchema,
+  updateHandoffConfigInputSchema,
   updateLearningConfigInputSchema,
   updateProviderInputSchema,
   updateRepoInputSchema,
@@ -27,6 +28,7 @@ import {
 import { updateExecutionPolicy } from './mutations/execution';
 import {
   updateAgentModels,
+  updateHandoffConfig,
   updateLearningConfig,
   updateSkillRoots,
   updateWorktreePolicy,
@@ -110,6 +112,17 @@ export const updateLearningConfigAction = defineAction({
   output: configActionOutputSchema,
   async run({ input }) {
     return updateLearningConfig(input);
+  },
+});
+
+export const updateHandoffConfigAction = defineAction({
+  name: 'neondeck_config_update_handoff',
+  description:
+    'Update external agent handoff policy in runtime config.json, including whether external registrations may queue PR review assistance.',
+  input: updateHandoffConfigInputSchema,
+  output: configActionOutputSchema,
+  async run({ input }) {
+    return updateHandoffConfig(input);
   },
 });
 
@@ -266,6 +279,7 @@ export const neondeckConfigActions = [
   updateAgentModelsAction,
   updateSkillRootsAction,
   updateLearningConfigAction,
+  updateHandoffConfigAction,
   updateRoutinesConfigAction,
   updateWorktreePolicyAction,
   readProvidersAction,

@@ -143,6 +143,9 @@ export const updateLearningConfigInputSchema = v.strictObject({
 export const updateRoutinesConfigInputSchema = v.strictObject({
   enabled: v.optional(v.boolean()),
 });
+export const updateHandoffConfigInputSchema = v.strictObject({
+  allowExternalReviewQueue: v.optional(v.boolean()),
+});
 export const updateSkillRootsInputSchema = v.object({
   skillRoots: v.array(nonEmptyStringSchema),
 });
