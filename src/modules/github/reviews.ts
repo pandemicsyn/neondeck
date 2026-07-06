@@ -591,6 +591,29 @@ export function recordPrReviewNeonSeed(options: {
   }
 }
 
+export function deletePrReviewNeonSeedsForComments(options: {
+  databasePath: string;
+  commentIds: string[];
+}) {
+  const commentIds = [...new Set(options.commentIds.filter(Boolean))];
+  if (commentIds.length === 0) return 0;
+  const database = openDb(options.databasePath);
+  try {
+    const placeholders = commentIds.map(() => '?').join(', ');
+    const result = database
+      .prepare(
+        `
+        DELETE FROM pr_review_neon_seeded_comments
+        WHERE comment_id IN (${placeholders});
+      `,
+      )
+      .run(...commentIds);
+    return Number(result.changes);
+  } finally {
+    database.close();
+  }
+}
+
 export async function submitPullRequestReview(options: {
   token: string;
   owner: string;

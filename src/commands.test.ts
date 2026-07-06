@@ -125,6 +125,7 @@ describe('Neon commands', () => {
       },
       workflowSummary: {
         workflow: 'command:review-pr',
+        runId: 'review-run-1',
         status: 'completed',
       },
     });

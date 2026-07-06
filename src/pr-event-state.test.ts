@@ -9,6 +9,7 @@ import type {
 } from './modules/github';
 import {
   getGitHubPrBranchPermissions,
+  getGitHubPrFiles,
   getGitHubPrRequestedChanges,
   getGitHubPrReviewDraft,
   getGitHubPrReviewThreads,
@@ -409,6 +410,108 @@ describe('PR event state watermarks', () => {
         'Repository "external/private-repo" is not configured for PR comments.',
     });
     expect(posted).toBe(false);
+  });
+
+  it('validates draft comment anchors from cached PR files without a token', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    const cachedFiles = anchorValidationDependencies();
+    await expect(
+      getGitHubPrFiles(
+        { repo: 'neondeck', prNumber: 123, headSha: 'head123' },
+        paths,
+        {
+          ...cachedFiles,
+          fetchPullRequestHeadSha: async () => 'head123',
+        },
+      ),
+    ).resolves.toMatchObject({ ok: true });
+
+    const draftResult = await putGitHubPrReviewDraft(
+      { repo: 'neondeck', prNumber: 123 },
+      {
+        headSha: 'head123',
+        verdict: 'comment',
+        body: 'Review body',
+      },
+      paths,
+    );
+    const draft = (
+      draftResult.data as
+        | { draft?: { id?: string; comments?: Array<{ id?: string }> } }
+        | undefined
+    )?.draft;
+    expect(draft?.id).toEqual(expect.any(String));
+
+    delete process.env.GITHUB_TOKEN;
+    const unexpectedNetwork = {
+      fetchPullRequestFiles: async () => {
+        throw new Error('Expected cached PR file facts.');
+      },
+      fetchPullRequestHeadSha: async () => {
+        throw new Error('Expected cached PR file facts.');
+      },
+    };
+
+    await expect(
+      postGitHubPrReviewDraftComment(
+        { repo: 'neondeck', prNumber: 123 },
+        {
+          draftId: draft?.id ?? '',
+          path: 'src/app.ts',
+          side: 'RIGHT',
+          line: 99,
+          body: 'Invalid cached anchor.',
+        },
+        paths,
+        unexpectedNetwork,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'github_pr_review_draft_comment_post',
+      requires: ['validAnchor'],
+    });
+
+    const commentResult = await postGitHubPrReviewDraftComment(
+      { repo: 'neondeck', prNumber: 123 },
+      {
+        draftId: draft?.id ?? '',
+        path: 'src/app.ts',
+        side: 'RIGHT',
+        line: 12,
+        body: 'Valid cached anchor.',
+      },
+      paths,
+      unexpectedNetwork,
+    );
+    expect(commentResult).toMatchObject({ ok: true });
+    const commentId = (
+      commentResult.data as
+        { draft?: { comments?: Array<{ id?: string }> } } | undefined
+    )?.draft?.comments?.[0]?.id;
+    expect(commentId).toEqual(expect.any(String));
+
+    await expect(
+      patchGitHubPrReviewDraftComment(
+        { repo: 'neondeck', prNumber: 123 },
+        commentId ?? '',
+        {
+          path: 'src/next.ts',
+          side: 'LEFT',
+          line: 8,
+          startLine: 6,
+          startSide: 'LEFT',
+          body: 'Moved using cached patch facts.',
+        },
+        paths,
+        unexpectedNetwork,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'github_pr_review_draft_comment_patch',
+    });
   });
 
   it('keeps PR review draft comment mutations scoped to the route PR', async () => {

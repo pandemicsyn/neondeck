@@ -13,6 +13,7 @@ import {
   GitHubPrReviewSubmitError,
   postPullRequestComment,
   readLivePrReviewDraft,
+  readCachedPullRequestFiles,
   readPrReviewDraft,
   readPrReviewDraftForComment,
   replyToPullRequestReviewThread,
@@ -704,24 +705,36 @@ async function validateDraftCommentAnchor(
   paths: RuntimePaths,
   dependencies: PrEventStateDependencies,
 ): Promise<PrEventActionResult | null> {
-  const token = dependencies.token ?? process.env.GITHUB_TOKEN;
-  if (!token) {
-    return failResult(action, 'GITHUB_TOKEN is required to validate anchors.', {
-      requires: ['GITHUB_TOKEN'],
-    });
-  }
-
   try {
-    const diff = await fetchPullRequestFilesWithCache({
-      token,
-      owner: target.owner,
-      repo: target.repo,
+    const cached = readCachedPullRequestFiles({
+      databasePath: paths.neondeckDatabase,
+      repo: target.repoFullName,
       number: target.number,
       headSha: draft.headSha,
-      databasePath: paths.neondeckDatabase,
-      fetcher: dependencies.fetchPullRequestFiles ?? fetchPullRequestFiles,
-      fetchHeadSha: dependencies.fetchPullRequestHeadSha,
     });
+    const token = dependencies.token ?? process.env.GITHUB_TOKEN;
+    if (!cached && !token) {
+      return failResult(
+        action,
+        'GITHUB_TOKEN is required to validate anchors.',
+        {
+          requires: ['GITHUB_TOKEN'],
+        },
+      );
+    }
+
+    const diff =
+      cached ??
+      (await fetchPullRequestFilesWithCache({
+        token: token!,
+        owner: target.owner,
+        repo: target.repo,
+        number: target.number,
+        headSha: draft.headSha,
+        databasePath: paths.neondeckDatabase,
+        fetcher: dependencies.fetchPullRequestFiles ?? fetchPullRequestFiles,
+        fetchHeadSha: dependencies.fetchPullRequestHeadSha,
+      }));
     const file = diff.files.find((item) => item.path === anchor.path);
     if (
       !file ||
