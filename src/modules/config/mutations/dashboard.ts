@@ -306,6 +306,7 @@ function chatTab() {
         { label: 'Queue', command: '/review-queue' },
         { label: 'Review PR', command: '/review-pr' },
         { label: 'CI', command: '/explain-ci' },
+        { label: 'Fix CI', command: '/fix-ci' },
         { label: 'PR', command: '/summarize-pr' },
         { label: 'Draft', command: '/draft-pr-description' },
         { label: 'Prep', command: '/prepare-pr' },

@@ -25,11 +25,7 @@ import { preparePrWorktree } from './worktree';
 import { identifyLikelyCommands } from './github-facts';
 
 const nonEmptyStringSchema = v.pipe(v.string(), v.trim(), v.minLength(1));
-const positiveIntegerSchema = v.pipe(
-  v.number(),
-  v.integer(),
-  v.minValue(1),
-);
+const positiveIntegerSchema = v.pipe(v.number(), v.integer(), v.minValue(1));
 
 export const ciFixRunInputSchema = v.object({
   ref: v.optional(nonEmptyStringSchema),
@@ -188,7 +184,9 @@ export async function runCiFix(
 
   let releaseStatus: 'ready' | 'failed' | null = 'ready';
   try {
-    const prepared = await (dependencies.preparePrWorktree ?? preparePrWorktree)(
+    const prepared = await (
+      dependencies.preparePrWorktree ?? preparePrWorktree
+    )(
       {
         repoId: dossier.repo.id,
         prNumber: dossier.target.number,
@@ -545,7 +543,9 @@ export async function writeCiFixDossierReport(
   );
 }
 
-function parseCiFixInput(rawInput: CiFixRunInput):
+function parseCiFixInput(
+  rawInput: CiFixRunInput,
+):
   | { ok: true; input: v.InferOutput<typeof ciFixRunInputSchema> }
   | { ok: false; result: ReturnType<typeof failure> } {
   const parsed = v.safeParse(ciFixRunInputSchema, rawInput);
@@ -635,7 +635,9 @@ function checkReportValue(check: GitHubFailingCheckFact) {
     `status: ${check.status}`,
     `conclusion: ${check.conclusion ?? 'unknown'}`,
     check.outputTitle ? `title: ${check.outputTitle}` : null,
-    check.outputSummary ? `summary: ${truncate(check.outputSummary, 2_000)}` : null,
+    check.outputSummary
+      ? `summary: ${truncate(check.outputSummary, 2_000)}`
+      : null,
     check.outputText ? `output: ${truncate(check.outputText, 4_000)}` : null,
     check.annotations.length
       ? `annotations:\n${check.annotations

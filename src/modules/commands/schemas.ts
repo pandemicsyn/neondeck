@@ -1,10 +1,7 @@
 import type { JsonValue } from '@flue/runtime';
 import type { WorkflowSummaryRecord } from '../app-state';
 import type { fetchGitHubLogin, fetchPullRequestQueue } from '../github';
-import type {
-  CiFixRunInput,
-  createCiFailureDossierReport,
-} from '../autopilot';
+import type { CiFixRunInput, createCiFailureDossierReport } from '../autopilot';
 import type { PrReviewAssistInput } from '../pr-review-assist';
 import * as v from 'valibot';
 

@@ -603,6 +603,7 @@ function commandNameFromInput(command: string): NeonCommandResult['command'] {
   const supported: NeonCommandResult['command'][] = [
     'repo-status',
     'review-queue',
+    'fix-ci',
     'explain-ci',
     'summarize-pr',
     'draft-pr-description',
