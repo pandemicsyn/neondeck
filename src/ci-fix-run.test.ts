@@ -22,8 +22,9 @@ import type {
 } from './modules/github';
 import { reconcileCiFixRunForKiloTask } from './modules/kilo';
 import { taskDiffSummary } from './modules/kilo/runtime-facts';
+import { releaseTaskLock } from './modules/kilo/process';
 import type { KiloTaskRecord } from './modules/kilo';
-import { createWorktree } from './modules/worktrees';
+import { createWorktree, lockWorktree } from './modules/worktrees';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 
 const execFileAsync = promisify(execFile);
@@ -220,15 +221,25 @@ describe('CI fix run', () => {
       },
       paths,
     );
+    const lock = await lockKiloWorktree(
+      worktree.id,
+      'kilo-task-unchanged-pr',
+      paths,
+    );
     const task = kiloTask({
       id: 'kilo-task-unchanged-pr',
       cwd: worktree.localPath,
       worktreeId: worktree.id,
+      lockId: lock.lock.id,
     });
     const diff = await taskDiffSummary(task, paths);
     expect(diff).toMatchObject({
       ok: true,
       fileCount: 1,
+    });
+    await releaseTaskLock(task, 'succeeded', paths, diff);
+    await expect(listPreparedDiffs({}, paths)).resolves.toMatchObject({
+      preparedDiffs: [],
     });
 
     await reconcileCiFixRunForKiloTask(
@@ -252,6 +263,85 @@ describe('CI fix run', () => {
         }),
       ]),
     );
+  });
+
+  it('creates a prepared diff when Kilo leaves an untracked CI fix file', async () => {
+    const home = await tempDir('neondeck-home-');
+    const repo = await tempGitRepo();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await writeRepoRegistry(paths.repos, repo);
+    const created = await createWorktree(
+      {
+        repoId: 'neondeck',
+        prNumber: 10,
+        baseRef: 'main',
+        headRef: 'feature',
+      },
+      paths,
+    );
+    if (!created.ok || !('worktree' in created)) {
+      throw new Error(created.message);
+    }
+    const worktree = created.worktree;
+    const startedHeadSha = await git(worktree.localPath, ['rev-parse', 'HEAD']);
+    await writeFile(
+      join(worktree.localPath, 'src/new-fix.ts'),
+      'export const fixed = true;\n',
+    );
+    await addWorkflowSummary(
+      {
+        workflow: 'ci_fix_run',
+        runId: 'kilo-task-untracked',
+        status: 'running',
+        summary: {
+          outcome: 'kilo-started',
+          pr: 'pandemicsyn/neondeck#10',
+          headSha: startedHeadSha.trim(),
+          kiloTaskId: 'kilo-task-untracked',
+          worktreeId: worktree.id,
+          reportId: 'report-1',
+        },
+      },
+      paths,
+    );
+    const lock = await lockKiloWorktree(
+      worktree.id,
+      'kilo-task-untracked',
+      paths,
+    );
+    const task = kiloTask({
+      id: 'kilo-task-untracked',
+      cwd: worktree.localPath,
+      worktreeId: worktree.id,
+      lockId: lock.lock.id,
+    });
+    const diff = await taskDiffSummary(task, paths);
+    expect(diff).toMatchObject({
+      ok: true,
+      files: expect.arrayContaining([
+        expect.objectContaining({ path: 'src/new-fix.ts' }),
+      ]),
+    });
+
+    await releaseTaskLock(task, 'succeeded', paths, diff);
+    await reconcileCiFixRunForKiloTask(
+      {
+        task,
+        status: 'succeeded',
+        diff,
+      },
+      paths,
+    );
+
+    await expect(listPreparedDiffs({}, paths)).resolves.toMatchObject({
+      preparedDiffs: [
+        expect.objectContaining({
+          worktreeId: worktree.id,
+          status: 'prepared',
+        }),
+      ],
+    });
   });
 
   it('creates a prepared diff when Kilo commits a CI fix on a PR worktree', async () => {
@@ -296,10 +386,12 @@ describe('CI fix run', () => {
       },
       paths,
     );
+    const lock = await lockKiloWorktree(worktree.id, 'kilo-task-commit', paths);
     const task = kiloTask({
       id: 'kilo-task-commit',
       cwd: worktree.localPath,
       worktreeId: worktree.id,
+      lockId: lock.lock.id,
     });
 
     const diff = await taskDiffSummary(task, paths);
@@ -307,6 +399,7 @@ describe('CI fix run', () => {
       ok: true,
       fileCount: expect.any(Number),
     });
+    await releaseTaskLock(task, 'succeeded', paths, diff);
     await reconcileCiFixRunForKiloTask(
       {
         task,
@@ -379,6 +472,19 @@ async function tempGitRepo() {
 async function git(cwd: string, args: string[]) {
   const { stdout } = await execFileAsync('git', args, { cwd });
   return stdout.trim();
+}
+
+async function lockKiloWorktree(
+  worktreeId: string,
+  taskId: string,
+  paths: ReturnType<typeof runtimePaths>,
+) {
+  const lock = await lockWorktree(
+    { worktreeId, owner: `kilo:${taskId}`, ttlSeconds: 300 },
+    paths,
+  );
+  if (!lock.ok || !('lock' in lock)) throw new Error(lock.message);
+  return lock;
 }
 
 function testDependencies() {
@@ -502,6 +608,7 @@ function kiloTask(input: {
   id: string;
   cwd: string;
   worktreeId: string | null;
+  lockId?: string | null;
 }): KiloTaskRecord {
   return {
     id: input.id,
@@ -510,7 +617,7 @@ function kiloTask(input: {
     repoId: 'neondeck',
     repoFullName: 'pandemicsyn/neondeck',
     worktreeId: input.worktreeId,
-    lockId: null,
+    lockId: input.lockId ?? null,
     cwd: input.cwd,
     mode: 'draft-fix',
     status: 'succeeded',

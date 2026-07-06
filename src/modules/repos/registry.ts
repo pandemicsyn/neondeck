@@ -1,4 +1,5 @@
 import { runExecFile } from '../../lib/exec';
+import { gitDiff } from '../../repo-edit/git';
 import {
   type RepoConfig,
   type RuntimePaths,
@@ -167,38 +168,10 @@ export async function readGitDiffSummary(repo: {
   github: { owner: string; name: string };
   defaultBranch: string;
 }): Promise<RepoDiffSummary> {
+  const baseRef = repo.defaultBranch.trim() || 'HEAD';
   try {
-    const baseRef = repo.defaultBranch.trim() || 'HEAD';
-    const [nameStatus, numstat] = await Promise.all([
-      git(repo.path, ['diff', '--name-status', baseRef, '--']),
-      git(repo.path, ['diff', '--numstat', baseRef, '--']),
-    ]);
-    const statuses = new Map(
-      nameStatus
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line) => {
-          const [status, ...paths] = line.split(/\s+/);
-          return [paths.at(-1) ?? 'unknown', status ?? 'M'] as const;
-        }),
-    );
-    const files = numstat
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const [additions, deletions, ...paths] = line.split(/\s+/);
-        const path = paths.join(' ') || 'unknown';
-        const binary = additions === '-' || deletions === '-';
-        return {
-          path,
-          status: statuses.get(path) ?? 'M',
-          additions: binary ? 0 : Number(additions ?? 0),
-          deletions: binary ? 0 : Number(deletions ?? 0),
-          binary,
-        };
-      });
+    const diff = await gitDiff(repo.path, { base: baseRef });
+    const files = diff.files;
 
     return {
       ok: true,
