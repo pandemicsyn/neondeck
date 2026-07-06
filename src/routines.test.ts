@@ -6,7 +6,11 @@ import {
   createRoutine,
   materializeNextRunAt,
   readRoutine,
+  readRoutineConfig,
   recordRoutineFlueObservation,
+  routineCreateAction,
+  routinePauseAction,
+  routineResumeAction,
   runDueRoutines,
   runRoutineNow,
   setRoutineEnabled,
@@ -19,6 +23,8 @@ import { createRoutineRoutes } from './server/routes/routines';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import { openDb } from './lib/sqlite';
 import { listReports, readReportHtml } from './modules/reports';
+import { runWithFlueExecutionContextForTests } from './modules/flue/execution-context';
+import { updateRoutinesConfig } from './modules/config';
 
 const tempRoots: string[] = [];
 
@@ -60,6 +66,18 @@ describe('routines', () => {
       materializeNextRunAt('once', '2026-02-31T10:00:00.000Z', now),
     ).toMatchObject({
       ok: false,
+    });
+    expect(materializeNextRunAt('cron', '* * * * *', now)).toMatchObject({
+      ok: false,
+      message: expect.stringContaining('at least 900 seconds between runs'),
+    });
+    expect(materializeNextRunAt('cron', '0,5 * * * *', now)).toMatchObject({
+      ok: false,
+      message: expect.stringContaining('found a 300-second gap'),
+    });
+    expect(materializeNextRunAt('cron', '0,15,30,45 * * * *', now)).toEqual({
+      ok: true,
+      nextRunAt: '2026-07-06T09:15:00.000Z',
     });
   });
 
@@ -992,6 +1010,175 @@ describe('routines', () => {
         }),
       ]),
     );
+  });
+
+  it('derives agent-created routine actor and caps enabled agent routines', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const previousHome = process.env.NEONDECK_HOME;
+    process.env.NEONDECK_HOME = paths.home;
+    try {
+      const context = {
+        agentName: 'display-assistant',
+        instanceId: 'session-agent',
+      };
+      const first = await runWithFlueExecutionContextForTests(context, () =>
+        routineCreateAction.run({
+          input: {
+            name: 'Agent routine 1',
+            prompt: 'Summarize blockers.',
+            scheduleKind: 'interval',
+            schedule: '900',
+          },
+        } as never),
+      );
+      expect(first).toMatchObject({
+        ok: true,
+        routine: {
+          createdBy: 'agent:session-agent',
+        },
+      });
+      if (!first.ok || !('routine' in first)) {
+        throw new Error(first.message);
+      }
+      const firstRoutine = first.routine as { id: string };
+      expect(readRoutineEvents(paths, firstRoutine.id)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            actor: 'agent:session-agent',
+            eventType: 'routine_created',
+          }),
+        ]),
+      );
+
+      for (let index = 2; index <= 10; index += 1) {
+        await expect(
+          runWithFlueExecutionContextForTests(context, () =>
+            routineCreateAction.run({
+              input: {
+                name: `Agent routine ${index}`,
+                prompt: `Run agent routine ${index}.`,
+                scheduleKind: 'interval',
+                schedule: '900',
+              },
+            } as never),
+          ),
+        ).resolves.toMatchObject({ ok: true });
+      }
+
+      await expect(
+        runWithFlueExecutionContextForTests(context, () =>
+          routineCreateAction.run({
+            input: {
+              name: 'Agent routine over cap',
+              prompt: 'This should not be admitted.',
+              scheduleKind: 'interval',
+              schedule: '900',
+            },
+          } as never),
+        ),
+      ).resolves.toMatchObject({
+        ok: false,
+        message: expect.stringContaining('cap reached'),
+        requires: ['routine-cap'],
+      });
+
+      await expect(
+        runWithFlueExecutionContextForTests(context, () =>
+          routinePauseAction.run({
+            input: { id: firstRoutine.id },
+          } as never),
+        ),
+      ).resolves.toMatchObject({ ok: true });
+      await expect(
+        runWithFlueExecutionContextForTests(context, () =>
+          routineCreateAction.run({
+            input: {
+              name: 'Agent routine replacement',
+              prompt: 'Fill the freed enabled slot.',
+              scheduleKind: 'interval',
+              schedule: '900',
+            },
+          } as never),
+        ),
+      ).resolves.toMatchObject({ ok: true });
+      await expect(
+        runWithFlueExecutionContextForTests(context, () =>
+          routineResumeAction.run({
+            input: { id: firstRoutine.id },
+          } as never),
+        ),
+      ).resolves.toMatchObject({
+        ok: false,
+        message: expect.stringContaining('cap reached'),
+        requires: ['routine-cap'],
+      });
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.NEONDECK_HOME;
+      } else {
+        process.env.NEONDECK_HOME = previousHome;
+      }
+    }
+  });
+
+  it('uses the routine kill switch for due and manual admissions', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    let dispatchCount = 0;
+    const restoreDispatch = setRoutineDispatchForTests(async () => {
+      dispatchCount += 1;
+      return { dispatchId: `kill-switch-${dispatchCount}` } as never;
+    });
+    try {
+      const created = await createRoutine(
+        {
+          name: 'Switchable routine',
+          prompt: 'Respect the kill switch.',
+          scheduleKind: 'once',
+          schedule: '2026-07-06T08:00:00.000Z',
+          createdBy: 'test',
+        },
+        paths,
+      );
+      expect(created.ok).toBe(true);
+      if (!created.ok || !('routine' in created)) {
+        throw new Error(created.message);
+      }
+      await expect(
+        updateRoutinesConfig({ enabled: false }, paths),
+      ).resolves.toMatchObject({ ok: true, changed: true });
+      await expect(readRoutineConfig(paths)).resolves.toMatchObject({
+        routines: { enabled: false },
+      });
+
+      await expect(
+        runDueRoutines(paths, new Date('2026-07-06T09:00:00.000Z')),
+      ).resolves.toMatchObject({
+        outcome: 'silent',
+        result: { disabled: true, runCount: 0 },
+      });
+      await expect(
+        runRoutineNow(created.routine.id, paths),
+      ).resolves.toMatchObject({
+        ok: false,
+        message: expect.stringContaining('disabled'),
+        requires: ['routines.enabled'],
+      });
+      expect(dispatchCount).toBe(0);
+
+      await updateRoutinesConfig({ enabled: true }, paths);
+      await expect(
+        runRoutineNow(created.routine.id, paths),
+      ).resolves.toMatchObject({
+        ok: true,
+        run: expect.objectContaining({
+          dispatchId: 'kill-switch-1',
+        }),
+      });
+    } finally {
+      restoreDispatch();
+    }
   });
 });
 

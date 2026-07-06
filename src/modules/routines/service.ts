@@ -27,6 +27,9 @@ import {
 import { listRuntimeSkills, loadRuntimeSkill } from '../runtime';
 import {
   ensureRuntimeHome,
+  parseAppConfig,
+  readRuntimeJson,
+  resolveRoutinesConfig,
   runtimePaths,
   type RuntimePaths,
 } from '../../runtime-home';
@@ -36,6 +39,7 @@ const maxPromptLength = 8_000;
 const maxCommandEventInputLength = 2_000;
 const maxNameLength = 96;
 const maxRoutineRunsPerTick = 2;
+const maxAgentCreatedEnabledRoutines = 10;
 const maxConsecutiveFailures = 3;
 const staleRoutineRunMs = 6 * 60 * 60 * 1000;
 const maxRoutineOutputLength = 20_000;
@@ -130,6 +134,28 @@ export const routineUpdateInputSchema = v.partial(
   v.omit(routineCreateInputSchema, ['createdBy']),
 );
 
+export const routineAgentCreateInputSchema = v.omit(routineCreateInputSchema, [
+  'createdBy',
+]);
+
+export async function readRoutineConfig(paths = runtimePaths()) {
+  await ensureRuntimeHome(paths);
+  const config = await readRuntimeJson(paths.config, parseAppConfig);
+  return {
+    ok: true,
+    action: 'routine_config_read',
+    changed: false,
+    message: 'Read routine configuration.',
+    routines: resolveRoutinesConfig(config),
+    guardrails: {
+      maxAgentCreatedEnabledRoutines,
+      minIntervalSeconds,
+      maxConcurrentRuns: maxRoutineRunsPerTick,
+      maxConsecutiveFailures,
+    },
+  };
+}
+
 export async function listRoutines(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase);
@@ -169,6 +195,33 @@ export async function readRoutine(id: string, paths = runtimePaths()) {
     routine,
     runs: listRoutineRuns(paths, id, 20),
   };
+}
+
+export async function createAgentRoutine(
+  rawInput: v.InferInput<typeof routineAgentCreateInputSchema>,
+  agentSessionId: string,
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const sessionId = agentSessionId.trim();
+  if (!sessionId) {
+    return failedResult(
+      'routine_create',
+      'Agent-created routines require a Flue session id.',
+      ['agentSessionId'],
+    );
+  }
+  const parsed = v.safeParse(routineAgentCreateInputSchema, rawInput);
+  if (!parsed.success) {
+    return failedResult('routine_create', v.summarize(parsed.issues));
+  }
+  return createRoutine(
+    {
+      ...parsed.output,
+      createdBy: `agent:${sessionId}`,
+    },
+    paths,
+  );
 }
 
 export async function createRoutine(
@@ -222,6 +275,18 @@ export async function createRoutine(
   };
   const database = openDb(paths.neondeckDatabase);
   try {
+    database.exec('BEGIN IMMEDIATE;');
+    if (routine.createdBy.startsWith('agent:')) {
+      const enabledCount = countAgentCreatedEnabledRoutinesInDb(database);
+      if (enabledCount >= maxAgentCreatedEnabledRoutines) {
+        database.exec('ROLLBACK;');
+        return failedResult(
+          'routine_create',
+          `Agent-created enabled routine cap reached (${enabledCount}/${maxAgentCreatedEnabledRoutines}). Pause or delete an agent-created routine before creating another.`,
+          ['routine-cap'],
+        );
+      }
+    }
     database
       .prepare(
         `
@@ -272,6 +337,10 @@ export async function createRoutine(
         routine.lastRunAt,
         routine.nextRunAt,
       );
+    database.exec('COMMIT;');
+  } catch (error) {
+    rollback(database);
+    throw error;
   } finally {
     database.close();
   }
@@ -306,6 +375,7 @@ export async function updateRoutine(
   id: string,
   rawInput: v.InferInput<typeof routineUpdateInputSchema>,
   paths = runtimePaths(),
+  actor = 'user:api',
 ) {
   await ensureRuntimeHome(paths);
   const existing = readRoutineById(paths, id);
@@ -387,7 +457,7 @@ export async function updateRoutine(
     routineId: id,
     eventType: 'routine_updated',
     message: `Updated routine "${id}".`,
-    actor: 'user:api',
+    actor,
     before,
     after: updated,
   });
@@ -404,6 +474,7 @@ export async function setRoutineEnabled(
   id: string,
   enabled: boolean,
   paths = runtimePaths(),
+  actor = 'user:api',
 ) {
   await ensureRuntimeHome(paths);
   const routine = readRoutineById(paths, id);
@@ -414,14 +485,39 @@ export async function setRoutineEnabled(
     );
   }
   const now = new Date().toISOString();
-  const nextRunAt = enabled
-    ? resumeNextRunAt(routine, now)
-    : { ok: true as const, nextRunAt: routine.nextRunAt };
-  if (!nextRunAt.ok) {
-    return failedResult('routine_enabled_update', nextRunAt.message);
-  }
+  let before = routine;
   const database = openDb(paths.neondeckDatabase);
   try {
+    database.exec('BEGIN IMMEDIATE;');
+    const currentRow = database
+      .prepare('SELECT * FROM routines WHERE id = ? LIMIT 1;')
+      .get(id);
+    if (!currentRow) {
+      database.exec('ROLLBACK;');
+      return failedResult(
+        'routine_enabled_update',
+        `Routine "${id}" was not found.`,
+      );
+    }
+    before = readRoutineRow(currentRow);
+    const nextRunAt = enabled
+      ? resumeNextRunAt(before, now)
+      : { ok: true as const, nextRunAt: before.nextRunAt };
+    if (!nextRunAt.ok) {
+      database.exec('ROLLBACK;');
+      return failedResult('routine_enabled_update', nextRunAt.message);
+    }
+    if (enabled && !before.enabled && before.createdBy.startsWith('agent:')) {
+      const enabledCount = countAgentCreatedEnabledRoutinesInDb(database);
+      if (enabledCount >= maxAgentCreatedEnabledRoutines) {
+        database.exec('ROLLBACK;');
+        return failedResult(
+          'routine_enabled_update',
+          `Agent-created enabled routine cap reached (${enabledCount}/${maxAgentCreatedEnabledRoutines}). Pause or delete an agent-created routine before resuming another.`,
+          ['routine-cap'],
+        );
+      }
+    }
     database
       .prepare(
         `
@@ -431,6 +527,10 @@ export async function setRoutineEnabled(
       `,
       )
       .run(enabled ? 1 : 0, nextRunAt.nextRunAt, now, id);
+    database.exec('COMMIT;');
+  } catch (error) {
+    rollback(database);
+    throw error;
   } finally {
     database.close();
   }
@@ -438,21 +538,25 @@ export async function setRoutineEnabled(
   recordRoutineEvent(paths, {
     routineId: id,
     eventType: enabled ? 'routine_resumed' : 'routine_paused',
-    message: `${enabled ? 'Enabled' : 'Paused'} routine "${routine.name}".`,
-    actor: 'user:api',
-    before: routine,
+    message: `${enabled ? 'Enabled' : 'Paused'} routine "${before.name}".`,
+    actor,
+    before,
     after: updated,
   });
   return {
     ok: true,
     action: 'routine_enabled_update',
-    changed: routine.enabled !== enabled,
-    message: `${enabled ? 'Enabled' : 'Paused'} routine "${routine.name}".`,
+    changed: before.enabled !== enabled,
+    message: `${enabled ? 'Enabled' : 'Paused'} routine "${before.name}".`,
     routine: updated,
   };
 }
 
-export async function deleteRoutine(id: string, paths = runtimePaths()) {
+export async function deleteRoutine(
+  id: string,
+  paths = runtimePaths(),
+  actor = 'user:api',
+) {
   await ensureRuntimeHome(paths);
   await recoverStaleRoutineClaims(paths, new Date());
   const routine = readRoutineById(paths, id);
@@ -482,7 +586,7 @@ export async function deleteRoutine(id: string, paths = runtimePaths()) {
     routineId: id,
     eventType: 'routine_deleted',
     message: `Deleted routine "${routine.name}".`,
-    actor: 'user:api',
+    actor,
     before: { routine, runs },
     after: null,
   });
@@ -494,14 +598,31 @@ export async function deleteRoutine(id: string, paths = runtimePaths()) {
   };
 }
 
-export async function runRoutineNow(id: string, paths = runtimePaths()) {
+export async function runRoutineNow(
+  id: string,
+  paths = runtimePaths(),
+  actor = 'user:api',
+) {
   await ensureRuntimeHome(paths);
+  if (!(await routinesEnabled(paths))) {
+    return failedResult(
+      'routine_run_now',
+      'Routines are disabled by runtime config.',
+      ['routines.enabled'],
+    );
+  }
   await recoverStaleRoutineClaims(paths, new Date());
   const routine = readRoutineById(paths, id);
   if (!routine) {
     return failedResult('routine_run_now', `Routine "${id}" was not found.`);
   }
-  const result = await admitRoutineRun(routine, paths, new Date(), 'manual');
+  const result = await admitRoutineRun(
+    routine,
+    paths,
+    new Date(),
+    'manual',
+    actor,
+  );
   for (const notification of result.notifications ?? []) {
     await addNotification(notification, paths);
   }
@@ -568,6 +689,13 @@ export async function runDueRoutines(
   limit = maxRoutineRunsPerTick,
 ): Promise<JobExecutionResult> {
   await ensureRuntimeHome(paths);
+  if (!(await routinesEnabled(paths))) {
+    return {
+      outcome: 'silent',
+      message: 'Routines are disabled by runtime config.',
+      result: { disabled: true, runCount: 0 },
+    };
+  }
   await recoverStaleRoutineClaims(paths, now);
   const capacity = routineAdmissionCapacity(paths, limit);
   if (capacity.available <= 0) {
@@ -590,7 +718,13 @@ export async function runDueRoutines(
   }> = [];
   const notifications: NonNullable<JobExecutionResult['notifications']> = [];
   for (const routine of due) {
-    const result = await admitRoutineRun(routine, paths, now, 'scheduled');
+    const result = await admitRoutineRun(
+      routine,
+      paths,
+      now,
+      'scheduled',
+      'scheduler',
+    );
     if (result.ok && result.run) {
       runs.push(result.run);
     } else {
@@ -679,6 +813,13 @@ export function materializeNextRunAt(
         'Cron routines support five-field numeric/wildcard expressions in this slice.',
     };
   }
+  const spacingViolation = cronMinimumSpacingViolation(value, cron);
+  if (spacingViolation) {
+    return {
+      ok: false,
+      message: `Cron routines require at least ${minIntervalSeconds} seconds between runs; found a ${spacingViolation.gapSeconds}-second gap.`,
+    };
+  }
   return { ok: true, nextRunAt: cron.toISOString() };
 }
 
@@ -687,6 +828,7 @@ async function admitRoutineRun(
   paths: RuntimePaths,
   now: Date,
   trigger: 'scheduled' | 'manual',
+  actor: string,
 ) {
   const runId = `routine-run:${randomUUID()}`;
   const startedAt = now.toISOString();
@@ -779,7 +921,7 @@ async function admitRoutineRun(
         runId,
         eventType: 'routine_run_bookkeeping_failed',
         message,
-        actor: trigger === 'scheduled' ? 'scheduler' : 'user:api',
+        actor,
         after: readRoutineRunOrNull(paths, runId),
       });
       return {
@@ -815,7 +957,7 @@ async function admitRoutineRun(
       runId,
       eventType: 'routine_run_admitted',
       message: run.message,
-      actor: trigger === 'scheduled' ? 'scheduler' : 'user:api',
+      actor,
       after: run,
     });
     return {
@@ -879,7 +1021,7 @@ async function admitRoutineRun(
       runId,
       eventType: 'routine_run_failed',
       message,
-      actor: trigger === 'scheduled' ? 'scheduler' : 'user:api',
+      actor,
       after: reportedRun,
     });
     const notification = {
@@ -1903,6 +2045,36 @@ function routineAdmissionCapacity(paths: RuntimePaths, limit: number) {
   }
 }
 
+function countAgentCreatedEnabledRoutinesInDb(
+  database: ReturnType<typeof openDb>,
+) {
+  const row = database
+    .prepare(
+      `
+      SELECT COUNT(*) AS count
+      FROM routines
+      WHERE enabled = 1
+        AND created_by LIKE 'agent:%';
+    `,
+    )
+    .get() as { count?: number } | undefined;
+  return Number(row?.count ?? 0);
+}
+
+function rollback(database: ReturnType<typeof openDb>) {
+  try {
+    database.exec('ROLLBACK;');
+  } catch {
+    // Best effort: the transaction may have already been rolled back for an
+    // expected validation return path.
+  }
+}
+
+async function routinesEnabled(paths: RuntimePaths) {
+  const config = await readRuntimeJson(paths.config, parseAppConfig);
+  return resolveRoutinesConfig(config).enabled;
+}
+
 async function recoverStaleRoutineClaims(paths: RuntimePaths, now: Date) {
   const completedAt = now.toISOString();
   const staleBefore = new Date(now.getTime() - staleRoutineRunMs).toISOString();
@@ -2378,13 +2550,14 @@ function stringOrNull(value: unknown) {
   return typeof value === 'string' && value.trim() ? value : null;
 }
 
-function failedResult(action: string, message: string) {
+function failedResult(action: string, message: string, requires?: string[]) {
   return {
     ok: false,
     action,
     changed: false,
     message,
     errors: [message],
+    ...(requires ? { requires } : {}),
   };
 }
 
@@ -2411,6 +2584,20 @@ function nextCronRun(expression: string, now: Date) {
     }
   }
   return null;
+}
+
+function cronMinimumSpacingViolation(expression: string, firstRun: Date) {
+  let previous = firstRun;
+  const horizon = firstRun.getTime() + 366 * 24 * 60 * 60 * 1000;
+  for (;;) {
+    const next = nextCronRun(expression, previous);
+    if (!next || next.getTime() > horizon) return null;
+    const gapSeconds = Math.round((next.getTime() - previous.getTime()) / 1000);
+    if (gapSeconds < minIntervalSeconds) {
+      return { previous, next, gapSeconds };
+    }
+    previous = next;
+  }
 }
 
 function cronFieldMatches(
