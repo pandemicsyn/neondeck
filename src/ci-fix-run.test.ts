@@ -8,6 +8,7 @@ import {
   addWorkflowSummary,
   listNotifications,
   listWorkflowSummaries,
+  updateWorkflowSummary,
 } from './modules/app-state';
 import {
   createCiFailureDossierReport,
@@ -228,6 +229,100 @@ describe('CI fix run', () => {
       },
     });
     expect(prepareSawNoCiLock).toBe(true);
+  });
+
+  it('preserves a terminal CI fix workflow summary when Kilo finishes during start', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    let observedTaskId: string | null = null;
+
+    const result = await fixPrCiRun({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+      ...testDependencies(),
+      preparePrWorktree: async () =>
+        ({
+          ok: true,
+          action: 'autopilot_prepare_pr_worktree',
+          changed: true,
+          message: 'prepared',
+          data: {
+            worktree: {
+              id: 'worktree-1',
+              headSha: 'prepared-head-sha',
+            },
+          },
+        }) as never,
+      lockWorktree: async () =>
+        ({
+          ok: true,
+          action: 'worktree_lock',
+          changed: true,
+          message: 'locked',
+          lock: { id: 'ci-fix-lock-1' },
+        }) as never,
+      startKiloTask: async (input) => {
+        observedTaskId = stringField((input as { taskId?: unknown }).taskId);
+        if (!observedTaskId) throw new Error('missing Kilo task id');
+
+        const summaries = await listWorkflowSummaries(paths);
+        const summary = summaries.find(
+          (row) =>
+            row.workflow === 'ci_fix_run' && row.runId === observedTaskId,
+        );
+        if (!summary) throw new Error('missing pre-created workflow summary');
+
+        await updateWorkflowSummary(
+          summary.id,
+          {
+            status: 'completed',
+            summary: {
+              ...objectField(summary.summary),
+              outcome: 'no-op',
+            },
+          },
+          paths,
+        );
+
+        return {
+          ok: true,
+          action: 'kilo_task_start',
+          changed: true,
+          message: 'started',
+          taskId: observedTaskId,
+          pid: null,
+          rawLogPath: null,
+          command: [],
+          task: kiloTask({
+            id: observedTaskId,
+            cwd: '/tmp/neondeck',
+            worktreeId: 'worktree-1',
+          }),
+        };
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      workflowSummary: {
+        runId: observedTaskId,
+        status: 'completed',
+        summary: expect.objectContaining({
+          outcome: 'no-op',
+          kiloTaskId: observedTaskId,
+        }),
+      },
+    });
+    const summaries = await listWorkflowSummaries(paths);
+    const ciFixSummary = summaries.find(
+      (row) => row.workflow === 'ci_fix_run' && row.runId === observedTaskId,
+    );
+    expect(ciFixSummary).toMatchObject({
+      status: 'completed',
+      summary: expect.objectContaining({
+        outcome: 'no-op',
+        kiloTaskId: observedTaskId,
+      }),
+    });
   });
 
   it('stops after the dossier when current failing check facts are empty', async () => {
@@ -617,6 +712,12 @@ async function git(cwd: string, args: string[]) {
 
 function stringField(value: unknown) {
   return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function objectField(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 async function lockKiloWorktree(
