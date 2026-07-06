@@ -18,6 +18,7 @@ import {
   serverModule,
   serviceModule,
   skillPatchesModule,
+  watchActionsModule,
 } from './modules';
 import {
   loadEnvForPaths,
@@ -450,18 +451,20 @@ program
   .option('--interval <seconds>', 'poll interval in seconds')
   .option('--from <agent>', 'external agent attribution')
   .action(async (ref: string, options: WatchPrOptions) => {
-    const { registerHandoffWatchPr, normalizeHandoffSource } =
-      await handoffModule();
+    const { addPrWatch } = await watchActionsModule();
+    const { normalizeHandoffSource } = await handoffModule();
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
     loadEnvForPaths(paths);
     const desiredTerminalState = parseWatchTarget(options.until);
     const intervalSeconds = parseOptionalIntervalSeconds(options.interval);
-    const result = await registerHandoffWatchPr(
+    const result = await addPrWatch(
       {
         ref,
         desiredTerminalState,
         ...(intervalSeconds !== undefined ? { intervalSeconds } : {}),
-        source: normalizeHandoffSource(options.from),
+        ...(options.from
+          ? { createdBy: normalizeHandoffSource(options.from) }
+          : {}),
       },
       paths,
     );

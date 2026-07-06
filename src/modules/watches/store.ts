@@ -222,14 +222,18 @@ export function refWatchPollingJobId(id: string) {
   return `watch-ref:${id}`;
 }
 
-export function upsertReleasePollingJob(watch: PrWatch, paths: RuntimePaths) {
+export function upsertReleasePollingJob(
+  watch: PrWatch,
+  paths: RuntimePaths,
+  intervalSeconds = 900,
+) {
   return upsertJob(
     {
       id: releasePollingJobId(watch.repoId),
       type: 'release-watch',
       blueprint: 'release-watch',
       enabled: true,
-      intervalSeconds: 900,
+      intervalSeconds,
       config: {
         repo: watch.repoId,
         source: 'watch-pr-until-prod',

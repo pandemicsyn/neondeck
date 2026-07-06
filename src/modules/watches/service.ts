@@ -124,7 +124,7 @@ export async function addPrWatch(
       parsed.input.intervalSeconds ?? job?.intervalSeconds,
     );
     if (watch.desiredTerminalState === 'prod') {
-      await upsertReleasePollingJob(watch, paths);
+      await upsertReleasePollingJob(watch, paths, parsed.input.intervalSeconds);
     } else if (existing.desiredTerminalState === 'prod') {
       await deleteJob(releasePollingJobId(watch.repoId), paths);
     }
@@ -180,7 +180,7 @@ export async function addPrWatch(
   insertWatch(paths, watch);
   await upsertWatchPollingJob(watch, paths, parsed.input.intervalSeconds);
   if (watch.desiredTerminalState === 'prod') {
-    await upsertReleasePollingJob(watch, paths);
+    await upsertReleasePollingJob(watch, paths, parsed.input.intervalSeconds);
   }
 
   return okResult('watch_pr_add', true, 'created', `Watching ${watch.id}.`, {

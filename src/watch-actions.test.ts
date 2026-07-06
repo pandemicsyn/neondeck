@@ -274,6 +274,7 @@ describe('PR watch actions', () => {
         expect.objectContaining({
           id: 'release:neondeck',
           type: 'release-watch',
+          intervalSeconds: 120,
           config: expect.objectContaining({
             source: 'watch-pr-until-prod',
             sourceWatchId: 'pandemicsyn/neondeck#123',
