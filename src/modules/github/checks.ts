@@ -22,6 +22,7 @@ export async function fetchCheckSummary(options: {
   owner: string;
   repo: string;
   ref: string;
+  maxCheckRunPages?: number;
 }): Promise<GitHubCheckSummary> {
   const owner = encodePathSegment(options.owner);
   const repo = encodePathSegment(options.repo);
@@ -30,6 +31,7 @@ export async function fetchCheckSummary(options: {
     fetchCheckRuns(
       options.token,
       `https://api.github.com/repos/${owner}/${repo}/commits/${ref}/check-runs?per_page=100`,
+      options.maxCheckRunPages,
     ),
     githubFetch(
       options.token,
@@ -40,7 +42,7 @@ export async function fetchCheckSummary(options: {
     githubCommitStatusApiResponseSchema,
     await statusResponse.json(),
   );
-  const failed = runs.filter((run) =>
+  const failed = runs.items.filter((run) =>
     [
       'failure',
       'cancelled',
@@ -49,8 +51,10 @@ export async function fetchCheckSummary(options: {
       'startup_failure',
     ].includes(run.conclusion ?? ''),
   ).length;
-  const pending = runs.filter((run) => run.status !== 'completed').length;
-  const successful = runs.filter((run) => run.conclusion === 'success').length;
+  const pending = runs.items.filter((run) => run.status !== 'completed').length;
+  const successful = runs.items.filter(
+    (run) => run.conclusion === 'success',
+  ).length;
   const statusContexts = statusData.statuses ?? [];
   const failedStatuses = statusContexts.filter(
     (status) => status.state === 'failure' || status.state === 'error',
@@ -61,9 +65,10 @@ export async function fetchCheckSummary(options: {
   const successfulStatuses = statusContexts.filter(
     (status) => status.state === 'success',
   ).length;
-  const total = runs.length + statusContexts.length;
   const totalFailed = failed + failedStatuses;
-  const totalPending = pending + pendingStatuses;
+  const truncatedUnknown = runs.truncated && totalFailed === 0 ? 1 : 0;
+  const total = runs.items.length + statusContexts.length + truncatedUnknown;
+  const totalPending = pending + pendingStatuses + truncatedUnknown;
   const totalSuccessful = successful + successfulStatuses;
   const status =
     total === 0
@@ -81,15 +86,22 @@ export async function fetchCheckSummary(options: {
     failed: totalFailed,
     pending: totalPending,
     statusContexts: statusContexts.length,
+    truncated: runs.truncated,
     checkedAt: new Date().toISOString(),
   };
 }
 
-async function fetchCheckRuns(token: string, initialUrl: string) {
+async function fetchCheckRuns(
+  token: string,
+  initialUrl: string,
+  maxPages = 3,
+) {
   const runs: GitHubCheckRun[] = [];
   let nextUrl: string | undefined = initialUrl;
+  let pageCount = 0;
 
-  while (nextUrl) {
+  while (nextUrl && pageCount < maxPages) {
+    pageCount += 1;
     const response = await githubFetch(token, nextUrl);
     const data = v.parse(
       githubCheckRunsApiResponseSchema,
@@ -99,7 +111,10 @@ async function fetchCheckRuns(token: string, initialUrl: string) {
     nextUrl = nextLink(response.headers.get('link'));
   }
 
-  return runs;
+  return {
+    items: runs,
+    truncated: Boolean(nextUrl),
+  };
 }
 
 function isFailingCheckRun(run: GitHubCheckRun) {
@@ -118,11 +133,24 @@ async function fetchCheckRunAnnotations(
   repo: string,
   checkRunId: number,
 ): Promise<GitHubCheckAnnotation[]> {
+  return (
+    await fetchCheckRunAnnotationsWithMetadata(token, owner, repo, checkRunId)
+  ).annotations;
+}
+
+async function fetchCheckRunAnnotationsWithMetadata(
+  token: string,
+  owner: string,
+  repo: string,
+  checkRunId: number,
+) {
   const annotations: GitHubCheckAnnotation[] = [];
   let nextUrl: string | undefined =
     `https://api.github.com/repos/${owner}/${repo}/check-runs/${checkRunId}/annotations?per_page=100`;
+  let pageCount = 0;
 
-  while (nextUrl) {
+  while (nextUrl && pageCount < 3) {
+    pageCount += 1;
     const response = await githubFetch(token, nextUrl);
     const data = v.parse(
       githubCheckRunAnnotationsApiResponseSchema,
@@ -142,7 +170,10 @@ async function fetchCheckRunAnnotations(
     nextUrl = nextLink(response.headers.get('link'));
   }
 
-  return annotations;
+  return {
+    annotations,
+    truncated: Boolean(nextUrl),
+  };
 }
 
 async function fetchCheckRunLog(options: {
@@ -320,6 +351,15 @@ export async function fetchCheckRunDetails(options: {
   repo: string;
   ref: string;
 }): Promise<GitHubCheckRunDetail[]> {
+  return (await fetchCheckRunDetailsWithMetadata(options)).checkRuns;
+}
+
+export async function fetchCheckRunDetailsWithMetadata(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  ref: string;
+}): Promise<{ checkRuns: GitHubCheckRunDetail[]; truncated: boolean }> {
   const owner = encodePathSegment(options.owner);
   const repo = encodePathSegment(options.repo);
   const ref = encodePathSegment(options.ref);
@@ -328,18 +368,21 @@ export async function fetchCheckRunDetails(options: {
     `https://api.github.com/repos/${owner}/${repo}/commits/${ref}/check-runs?per_page=100`,
   );
 
-  return runs.map((run, index) => ({
-    id: run.id ?? index,
-    name: run.name ?? `check-run-${index + 1}`,
-    headSha: run.head_sha ?? options.ref,
-    status: run.status,
-    conclusion: run.conclusion,
-    url: run.url ?? null,
-    htmlUrl: run.html_url ?? null,
-    detailsUrl: run.details_url ?? null,
-    startedAt: run.started_at ?? null,
-    completedAt: run.completed_at ?? null,
-  }));
+  return {
+    checkRuns: runs.items.map((run, index) => ({
+      id: run.id ?? index,
+      name: run.name ?? `check-run-${index + 1}`,
+      headSha: run.head_sha ?? options.ref,
+      status: run.status,
+      conclusion: run.conclusion,
+      url: run.url ?? null,
+      htmlUrl: run.html_url ?? null,
+      detailsUrl: run.details_url ?? null,
+      startedAt: run.started_at ?? null,
+      completedAt: run.completed_at ?? null,
+    })),
+    truncated: runs.truncated,
+  };
 }
 
 export async function fetchFailingCheckFacts(options: {
@@ -356,13 +399,20 @@ export async function fetchFailingCheckFacts(options: {
     options.token,
     `https://api.github.com/repos/${owner}/${repo}/commits/${ref}/check-runs?per_page=100`,
   );
-  const failingRuns = runs.filter(isFailingCheckRun);
+  if (runs.truncated) {
+    throw new Error(
+      'GitHub check run facts are truncated; CI fixer requires complete failing check facts.',
+    );
+  }
+  const failingRuns = runs.items.filter(isFailingCheckRun);
 
   return Promise.all(
     failingRuns.map(async (run, index) => {
       const id = run.id ?? index;
       const [annotations, log] = await Promise.all([
-        id ? fetchCheckRunAnnotations(options.token, owner, repo, id) : [],
+        id
+          ? fetchCheckRunAnnotationsWithMetadata(options.token, owner, repo, id)
+          : { annotations: [], truncated: false },
         fetchCheckRunLog({
           token: options.token,
           owner,
@@ -372,6 +422,11 @@ export async function fetchFailingCheckFacts(options: {
           maxLogBytes: options.maxLogBytes,
         }),
       ]);
+      if (annotations.truncated) {
+        throw new Error(
+          'GitHub check annotation facts are truncated; CI fixer requires complete failing check facts.',
+        );
+      }
       return {
         id,
         name: run.name ?? `check-run-${index + 1}`,
@@ -386,7 +441,7 @@ export async function fetchFailingCheckFacts(options: {
         outputTitle: run.output?.title ?? null,
         outputSummary: run.output?.summary ?? null,
         outputText: run.output?.text ?? null,
-        annotations,
+        annotations: annotations.annotations,
         log,
       };
     }),
@@ -399,14 +454,25 @@ export async function fetchCheckSuites(options: {
   repo: string;
   ref: string;
 }): Promise<GitHubCheckSuiteDetail[]> {
+  return (await fetchCheckSuitesWithMetadata(options)).checkSuites;
+}
+
+export async function fetchCheckSuitesWithMetadata(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  ref: string;
+}): Promise<{ checkSuites: GitHubCheckSuiteDetail[]; truncated: boolean }> {
   const owner = encodePathSegment(options.owner);
   const repo = encodePathSegment(options.repo);
   const ref = encodePathSegment(options.ref);
   const suites: GitHubCheckSuiteApiResponse['check_suites'] = [];
   let nextUrl: string | undefined =
     `https://api.github.com/repos/${owner}/${repo}/commits/${ref}/check-suites?per_page=100`;
+  let pageCount = 0;
 
-  while (nextUrl) {
+  while (nextUrl && pageCount < 3) {
+    pageCount += 1;
     const response = await githubFetch(options.token, nextUrl);
     const data = v.parse(
       githubCheckSuitesApiResponseSchema,
@@ -416,15 +482,18 @@ export async function fetchCheckSuites(options: {
     nextUrl = nextLink(response.headers.get('link'));
   }
 
-  return suites.map((suite) => ({
-    id: suite.id,
-    headSha: suite.head_sha,
-    status: suite.status,
-    conclusion: suite.conclusion,
-    appSlug: suite.app?.slug ?? suite.app?.name ?? null,
-    url: suite.url ?? null,
-    htmlUrl: suite.html_url ?? null,
-    createdAt: suite.created_at ?? null,
-    updatedAt: suite.updated_at ?? null,
-  }));
+  return {
+    checkSuites: suites.map((suite) => ({
+      id: suite.id,
+      headSha: suite.head_sha,
+      status: suite.status,
+      conclusion: suite.conclusion,
+      appSlug: suite.app?.slug ?? suite.app?.name ?? null,
+      url: suite.url ?? null,
+      htmlUrl: suite.html_url ?? null,
+      createdAt: suite.created_at ?? null,
+      updatedAt: suite.updated_at ?? null,
+    })),
+    truncated: Boolean(nextUrl),
+  };
 }

@@ -225,13 +225,19 @@ export async function updateJobRun(
     outcome: string;
     message: string;
     result?: unknown;
+    preserveResult?: boolean;
     nextRunAt: string | null;
   },
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
   const now = new Date().toISOString();
-  const result = input.result === undefined ? null : asJsonValue(input.result);
+  const existing = input.preserveResult ? readJob(paths, id) : undefined;
+  const result = input.preserveResult
+    ? (existing?.lastResult ?? null)
+    : input.result === undefined
+      ? null
+      : asJsonValue(input.result);
   const database = openDb(paths.neondeckDatabase);
 
   try {

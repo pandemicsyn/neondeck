@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
+import { stageDocsDriftFix } from '../../modules/docs-drift';
 import { listReports, readReport, readReportHtml } from '../../modules/reports';
 import type { RuntimePaths } from '../../runtime-home';
+import { safeJsonObject } from '../http';
 
 export function createReportApiRoutes(paths: RuntimePaths) {
   const routes = new Hono();
@@ -88,6 +90,14 @@ export function createReportApiRoutes(paths: RuntimePaths) {
         400,
       );
     }
+  });
+
+  routes.post('/reports/:id/stage-docs-fix', async (c) => {
+    const result = await stageDocsDriftFix(
+      { ...(await safeJsonObject(c)), reportId: c.req.param('id') },
+      paths,
+    );
+    return c.json(result, result.ok ? 200 : 400);
   });
 
   return routes;

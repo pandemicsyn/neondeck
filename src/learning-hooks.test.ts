@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { addWorkflowSummary, listWorkflowSummaries } from './modules/app-state';
+import { extractHandledPrEvent } from './modules/learning/reviews/pr-context';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import { attachCommandRunSummaryRunId } from './server/learning-hooks';
 
@@ -120,6 +121,46 @@ describe('Flue learning hooks', () => {
         runId: 'actual-fix-pr-ci-run',
       }),
     ]);
+  });
+
+  it('extracts handled PR learning events from ci_fix_run workflow results', () => {
+    expect(
+      extractHandledPrEvent({
+        workflow: 'fix-pr-ci',
+        runId: 'actual-fix-pr-ci-run',
+        result: {
+          ok: true,
+          action: 'ci_fix_run',
+          changed: true,
+          message: 'Queued CI fix for pandemicsyn/neondeck#88.',
+          data: {
+            workflow: 'fix-pr-ci',
+            outcome: 'kilo-started',
+            dossier: {
+              repo: 'pandemicsyn/neondeck',
+              prNumber: 88,
+              headSha: 'abc123',
+              failedCheckCount: 1,
+            },
+            kiloTaskId: 'ci-fix-task-1',
+            worktreeId: 'worktree-1',
+          },
+        },
+      }),
+    ).toMatchObject({
+      eventType: 'ci-failure-workflow-completed',
+      source: 'fix-pr-ci',
+      sourceId:
+        'pandemicsyn/neondeck#88:ci-failure-workflow-completed:ci-fix-task-1',
+      repoFullName: 'pandemicsyn/neondeck',
+      prNumber: 88,
+      data: expect.objectContaining({
+        action: 'ci_fix_run',
+        workflow: 'fix-pr-ci',
+        taskId: 'ci-fix-task-1',
+        worktreeId: 'worktree-1',
+      }),
+    });
   });
 });
 

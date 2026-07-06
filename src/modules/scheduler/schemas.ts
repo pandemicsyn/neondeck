@@ -1,5 +1,4 @@
 import type { JsonValue } from '@flue/runtime';
-import type { NotificationLevel } from '../app-state';
 import type { RuntimePaths } from '../../runtime-home';
 import {
   addPrWatch,
@@ -32,19 +31,7 @@ export type BlueprintKind =
   | 'issue-triage'
   | 'hygiene';
 
-export type JobExecutionResult = {
-  outcome: 'silent' | 'updated' | 'recorded' | 'failed';
-  message: string;
-  result?: unknown;
-  notifications?: Array<{
-    level: NotificationLevel;
-    title: string;
-    message: string;
-    source?: string;
-    sourceId?: string;
-    data?: unknown;
-  }>;
-};
+export type { JobExecutionResult } from '../app-state';
 
 export type SchedulerDependencies = {
   addPrWatch?: (

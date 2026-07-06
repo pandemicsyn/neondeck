@@ -1,5 +1,6 @@
 import { defineAction } from '@flue/runtime';
 import * as v from 'valibot';
+import { runtimePaths } from '../../runtime-home';
 import {
   createScheduleBlueprint,
   listSchedulerJobs,
@@ -25,12 +26,14 @@ export const schedulerTickAction = defineAction({
   name: 'neondeck_scheduler_tick',
   description:
     'Synchronize configured schedules into durable jobs and run jobs that are due.',
-  input: v.object({}),
+  input: v.object({ runtimeHome: v.optional(v.string()) }),
   output: schedulerActionOutputSchema,
-  async run({ log }) {
+  async run({ input, log }) {
     log.info('Scheduler tick requested');
 
-    const result = await runSchedulerTick();
+    const result = await runSchedulerTick(
+      input.runtimeHome ? runtimePaths(input.runtimeHome) : runtimePaths(),
+    );
     const payload = {
       ok: result.ok,
       outcome: result.outcome ?? null,
@@ -61,6 +64,5 @@ export const schedulerListJobsAction = defineAction({
 
 export const neondeckSchedulerActions = [
   scheduleBlueprintCreateAction,
-  schedulerTickAction,
   schedulerListJobsAction,
 ];

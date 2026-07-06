@@ -83,6 +83,7 @@ export type GitHubCheckSummary = {
   failed: number;
   pending: number;
   statusContexts?: number;
+  truncated?: boolean;
   checkedAt: string;
 };
 
@@ -174,6 +175,7 @@ export type GitHubPullRequestReviewThread = {
   diffSide?: string | null;
   pullRequestRepo?: string | null;
   pullRequestNumber?: number | null;
+  commentsTruncated?: boolean;
   comments: GitHubPullRequestReviewThreadComment[];
 };
 
@@ -280,11 +282,16 @@ export type GitHubPullRequestEventState = {
   mergeableState: string | null;
   maintainerCanModify: boolean;
   commits: GitHubPullRequestCommit[];
+  commitsTruncated?: boolean;
   reviewThreads: GitHubPullRequestReviewThread[];
+  reviewThreadsTruncated?: boolean;
   requestedChangesReviews: GitHubPullRequestReview[];
   requestedChangesState: GitHubPullRequestRequestedChangesState;
   checkSuites: GitHubCheckSuiteDetail[];
+  checkSuitesTruncated?: boolean;
   checkRuns: GitHubCheckRunDetail[];
+  checkRunsTruncated?: boolean;
+  reviewsTruncated?: boolean;
   branchPermissions: GitHubBranchPushPermissions;
   isOutOfDate: boolean;
   fetchedAt: string;

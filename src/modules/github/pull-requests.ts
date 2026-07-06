@@ -1,9 +1,12 @@
 import * as v from 'valibot';
 import { encodePathSegment, githubFetch, nextLink } from './client';
-import { fetchCheckRunDetails, fetchCheckSuites } from './checks';
-import { fetchPullRequestReviewThreads } from './comments';
 import {
-  fetchPullRequestReviews,
+  fetchCheckRunDetailsWithMetadata,
+  fetchCheckSuitesWithMetadata,
+} from './checks';
+import { fetchPullRequestReviewThreadsWithMetadata } from './comments';
+import {
+  fetchPullRequestReviewsWithMetadata,
   requestedChangesStateFromReviews,
 } from './reviews';
 import {
@@ -72,23 +75,23 @@ export async function fetchPullRequestEventState(options: {
 }): Promise<GitHubPullRequestEventState> {
   const detail = await fetchPullRequestDetail(options);
   const [
-    commits,
-    reviews,
-    reviewThreads,
-    checkSuites,
-    checkRuns,
+    commitDetails,
+    reviewDetails,
+    reviewThreadDetails,
+    checkSuiteDetails,
+    checkRunDetails,
     branchPermissions,
   ] = await Promise.all([
-    fetchPullRequestCommits(options),
-    fetchPullRequestReviews(options),
-    fetchPullRequestReviewThreads(options),
-    fetchCheckSuites({
+    fetchPullRequestCommitsWithMetadata(options),
+    fetchPullRequestReviewsWithMetadata(options),
+    fetchPullRequestReviewThreadsWithMetadata(options),
+    fetchCheckSuitesWithMetadata({
       token: options.token,
       owner: options.owner,
       repo: options.repo,
       ref: detail.headSha,
     }),
-    fetchCheckRunDetails({
+    fetchCheckRunDetailsWithMetadata({
       token: options.token,
       owner: options.owner,
       repo: options.repo,
@@ -101,7 +104,9 @@ export async function fetchPullRequestEventState(options: {
       detail,
     }),
   ]);
-  const requestedChangesState = requestedChangesStateFromReviews(reviews);
+  const requestedChangesState = requestedChangesStateFromReviews(
+    reviewDetails.reviews,
+  );
 
   return {
     repo: detail.repo,
@@ -120,12 +125,19 @@ export async function fetchPullRequestEventState(options: {
     mergeable: detail.mergeable ?? null,
     mergeableState: detail.mergeableState ?? null,
     maintainerCanModify: detail.maintainerCanModify ?? false,
-    commits,
-    reviewThreads,
+    commits: commitDetails.commits,
+    commitsTruncated: commitDetails.truncated,
+    reviewThreads: reviewThreadDetails.reviewThreads,
+    reviewThreadsTruncated:
+      reviewThreadDetails.truncated ||
+      reviewThreadDetails.reviewThreads.some((thread) => thread.commentsTruncated),
     requestedChangesReviews: requestedChangesState.active,
     requestedChangesState,
-    checkSuites,
-    checkRuns,
+    reviewsTruncated: reviewDetails.truncated,
+    checkSuites: checkSuiteDetails.checkSuites,
+    checkSuitesTruncated: checkSuiteDetails.truncated,
+    checkRuns: checkRunDetails.checkRuns,
+    checkRunsTruncated: checkRunDetails.truncated,
     branchPermissions,
     isOutOfDate: isOutOfDateMergeState(detail.mergeableState),
     fetchedAt: new Date().toISOString(),
@@ -138,11 +150,22 @@ export async function fetchPullRequestCommits(options: {
   repo: string;
   number: number;
 }): Promise<GitHubPullRequestCommit[]> {
+  return (await fetchPullRequestCommitsWithMetadata(options)).commits;
+}
+
+export async function fetchPullRequestCommitsWithMetadata(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+}): Promise<{ commits: GitHubPullRequestCommit[]; truncated: boolean }> {
   const commits: GitHubPullRequestCommitApiItem[] = [];
   let nextUrl: string | undefined =
     `https://api.github.com/repos/${encodePathSegment(options.owner)}/${encodePathSegment(options.repo)}/pulls/${options.number}/commits?per_page=100`;
+  let pageCount = 0;
 
-  while (nextUrl) {
+  while (nextUrl && pageCount < 3) {
+    pageCount += 1;
     const response = await githubFetch(options.token, nextUrl);
     const data = v.parse(
       v.array(githubPullRequestCommitApiItemSchema),
@@ -152,13 +175,16 @@ export async function fetchPullRequestCommits(options: {
     nextUrl = nextLink(response.headers.get('link'));
   }
 
-  return commits.map((commit) => ({
-    sha: commit.sha,
-    url: commit.html_url,
-    authorLogin: commit.author?.login ?? null,
-    committedAt:
-      commit.commit.committer?.date ?? commit.commit.author?.date ?? null,
-  }));
+  return {
+    commits: commits.map((commit) => ({
+      sha: commit.sha,
+      url: commit.html_url,
+      authorLogin: commit.author?.login ?? null,
+      committedAt:
+        commit.commit.committer?.date ?? commit.commit.author?.date ?? null,
+    })),
+    truncated: Boolean(nextUrl),
+  };
 }
 
 export async function fetchPullRequestFiles(options: {

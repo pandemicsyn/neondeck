@@ -266,27 +266,32 @@ export async function runSchedulerTick(
         {
           outcome: 'started',
           message: 'Scheduler job started.',
-          result: job.lastResult,
+          preserveResult: true,
           nextRunAt,
         },
         paths,
       );
 
       let result: JobExecutionResult;
+      let resultNextRunAt = nextRunAt;
       try {
         result = await executeJob(job, paths, dependencies);
       } catch (error) {
-        await updateJobRun(
-          job.id,
-          {
-            outcome: 'failed',
-            message: `Scheduler job failed: ${errorMessage(error)}.`,
-            result: { error: errorMessage(error) },
-            nextRunAt: now.toISOString(),
-          },
-          paths,
-        );
-        throw error;
+        const message = `Scheduler job failed: ${errorMessage(error)}.`;
+        resultNextRunAt = now.toISOString();
+        result = {
+          outcome: 'failed',
+          message,
+          notifications: [
+            {
+              level: 'attention',
+              title: 'Scheduler job failed',
+              message,
+              source: 'scheduler',
+              sourceId: job.id,
+            },
+          ],
+        };
       }
 
       await updateJobRun(
@@ -294,8 +299,10 @@ export async function runSchedulerTick(
         {
           outcome: result.outcome,
           message: result.message,
-          result: result.result,
-          nextRunAt,
+          ...(result.outcome === 'failed' && result.result === undefined
+            ? { preserveResult: true }
+            : { result: result.result }),
+          nextRunAt: resultNextRunAt,
         },
         paths,
       );

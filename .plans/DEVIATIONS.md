@@ -15,6 +15,13 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-07-06 - Busywork Automation Trust Boundaries
+
+- Roadmap item: Busywork Automation Plan / `/fix-ci` and issue triage
+- Decision: `/fix-ci` stops before Kilo when failing check logs are unavailable or truncated, even when check-run identity and annotations were fetched. Issue triage v1 writes deterministic copy-ready draft replies into reports instead of launching a nested agent digest from inside the scheduler job.
+- Reason: Partial CI logs can make Kilo repair the wrong failure mode, and the scheduler currently owns durable job state. Keeping issue-triage drafts deterministic avoids nested workflow/job-state coupling while still producing human-owned copyable replies.
+- Follow-up: Revisit partial-log CI handoff once the dossier can distinguish providers with complete annotations from providers that require logs. Replace deterministic issue-triage drafts with a bounded Flue digest workflow when scheduler job state can safely record nested workflow outcomes.
+
 ## 2026-07-05 - Close Decision Loops Run Revision
 
 - Roadmap item: Close Decision Loops Plan / PR 1 run revision

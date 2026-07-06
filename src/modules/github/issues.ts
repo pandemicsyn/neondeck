@@ -20,6 +20,9 @@ export type FetchGitHubIssuesInput = {
   repo: string;
   since?: string | null;
   limit?: number;
+  maxPages?: number;
+  sort?: 'created' | 'updated' | 'comments';
+  direction?: 'asc' | 'desc';
 };
 
 const issueSchema = v.looseObject({
@@ -47,22 +50,30 @@ const issueSchema = v.looseObject({
 
 export async function fetchGitHubIssues(input: FetchGitHubIssuesInput) {
   const limit = Math.max(1, Math.min(200, input.limit ?? 100));
+  const maxPages = Math.max(1, Math.min(10, input.maxPages ?? 3));
   const params = new URLSearchParams({
     state: 'open',
     per_page: String(Math.min(100, limit)),
-    sort: 'updated',
-    direction: 'desc',
+    sort: input.sort ?? 'updated',
+    direction: input.direction ?? 'desc',
   });
   if (input.since) params.set('since', input.since);
   let url: string | undefined =
     `https://api.github.com/repos/${encodePathSegment(input.owner)}/${encodePathSegment(input.repo)}/issues?${params.toString()}`;
   const issues: GitHubIssue[] = [];
+  let stoppedAtLimit = false;
+  let pageCount = 0;
 
-  while (url && issues.length < limit) {
+  while (url && issues.length < limit && pageCount < maxPages) {
+    pageCount += 1;
     const response = await githubFetch(input.token, url);
     const page = v.parse(v.array(issueSchema), await response.json());
     for (const item of page) {
       if (item.pull_request) continue;
+      if (issues.length >= limit) {
+        stoppedAtLimit = true;
+        break;
+      }
       issues.push({
         number: item.number,
         title: item.title,
@@ -79,18 +90,21 @@ export async function fetchGitHubIssues(input: FetchGitHubIssuesInput) {
         commentCount: item.comments,
         bodyExcerpt: excerpt(item.body ?? ''),
       });
-      if (issues.length >= limit) break;
     }
-    url =
-      issues.length >= limit
-        ? undefined
-        : nextLink(response.headers.get('link'));
+    const next = nextLink(response.headers.get('link'));
+    if (issues.length >= limit) {
+      stoppedAtLimit = stoppedAtLimit || Boolean(next);
+      url = undefined;
+    } else {
+      url = next;
+    }
   }
+  const stoppedAtPageLimit = Boolean(url) && pageCount >= maxPages;
 
   return {
     items: issues,
     fetchedAt: new Date().toISOString(),
-    truncated: Boolean(url),
+    truncated: stoppedAtLimit || stoppedAtPageLimit || Boolean(url),
   };
 }
 

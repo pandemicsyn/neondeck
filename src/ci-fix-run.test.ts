@@ -213,6 +213,197 @@ describe('CI fix run', () => {
     );
   });
 
+  it('writes a dossier but does not start Kilo when PR event facts are truncated', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    let prepared = false;
+    let startedKilo = false;
+    const eventState = pullRequestEventState();
+    eventState.checkRunsTruncated = true;
+
+    const result = await fixPrCiRun({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+      prEventDependencies: {
+        token: 'token',
+        fetchPullRequestEventState: async () => eventState,
+      },
+      fetchFailingCheckFacts: async () => {
+        throw new Error('GitHub check run facts are truncated');
+      },
+      preparePrWorktree: async () => {
+        prepared = true;
+        throw new Error('should not prepare worktree');
+      },
+      startKiloTask: async () => {
+        startedKilo = true;
+        throw new Error('should not start Kilo');
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      requires: ['completePrEventFacts'],
+      errors: [expect.stringContaining('checkRuns')],
+      data: {
+        report: { url: expect.stringContaining('/reports/') },
+        dossier: {
+          failingCheckFactsError: 'GitHub check run facts are truncated',
+        },
+        truncation: {
+          categories: ['checkRuns'],
+        },
+      },
+      workflowSummary: {
+        workflow: 'ci_fix_run',
+        status: 'failed',
+        summary: expect.objectContaining({
+          outcome: 'pr-event-facts-truncated',
+          requires: ['completePrEventFacts'],
+          truncation: ['checkRuns'],
+        }),
+      },
+    });
+    expect(prepared).toBe(false);
+    expect(startedKilo).toBe(false);
+    const data = objectField('data' in result ? result.data : null);
+    const report = objectField(data.report);
+    const html = await readReportHtml(String(report.id), paths);
+    expect(html?.html).toContain('GitHub check run facts are truncated');
+    await expect(listNotifications(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: 'attention',
+          title: 'CI fix needs attention',
+        }),
+      ]),
+    );
+  });
+
+  it('writes a dossier but does not start Kilo when failing check logs are partial', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    let prepared = false;
+    let startedKilo = false;
+    const dossier = ciFixDossier();
+    const failingCheck = dossier.failingChecks[0];
+    if (!failingCheck) throw new Error('expected failing check fixture');
+    failingCheck.log.truncated = true;
+    failingCheck.log.text = 'npm run test\nERROR partial log';
+
+    const result = await fixPrCiRun({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+      readDossier: async () => dossier,
+      preparePrWorktree: async () => {
+        prepared = true;
+        throw new Error('should not prepare worktree');
+      },
+      startKiloTask: async () => {
+        startedKilo = true;
+        throw new Error('should not start Kilo');
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      requires: ['github-check-facts'],
+      errors: [expect.stringContaining('npm run test (truncated)')],
+      data: {
+        report: { url: expect.stringContaining('/reports/') },
+        dossier: {
+          failingCheckLogFactsError: expect.stringContaining(
+            'npm run test (truncated)',
+          ),
+        },
+      },
+      workflowSummary: {
+        workflow: 'ci_fix_run',
+        status: 'failed',
+        summary: expect.objectContaining({
+          outcome: 'failing-check-logs-incomplete',
+          requires: ['github-check-facts'],
+        }),
+      },
+    });
+    expect(prepared).toBe(false);
+    expect(startedKilo).toBe(false);
+    const data = objectField('data' in result ? result.data : null);
+    const report = objectField(data.report);
+    const html = await readReportHtml(String(report.id), paths);
+    expect(html?.html).toContain('Incomplete failing check logs');
+  });
+
+  it('writes a dossier but does not start Kilo when the PR head moves before prep completes', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    let startedKilo = false;
+    let releasedStatus: string | null = null;
+
+    const result = await fixPrCiRun({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+      ...testDependencies(),
+      lockWorktree: async () =>
+        ({
+          ok: true,
+          action: 'worktree_lock',
+          changed: true,
+          message: 'locked',
+          lock: { id: 'ci-fix-lock' },
+        }) as never,
+      preparePrWorktree: async () =>
+        ({
+          ok: true,
+          action: 'autopilot_prepare_pr_worktree',
+          changed: true,
+          message: 'prepared',
+          data: {
+            worktree: {
+              id: 'worktree-1',
+              headSha: 'new-head-sha',
+            },
+          },
+        }) as never,
+      releaseWorktreeLock: async (input) => {
+        releasedStatus =
+          typeof input === 'object' &&
+          input !== null &&
+          'finalStatus' in input &&
+          typeof input.finalStatus === 'string'
+            ? input.finalStatus
+            : null;
+        return { ok: true } as never;
+      },
+      startKiloTask: async () => {
+        startedKilo = true;
+        throw new Error('should not start Kilo');
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      requires: ['freshPrFacts'],
+      errors: [expect.stringContaining('new-head-sha')],
+      data: {
+        report: { url: expect.stringContaining('/reports/') },
+        worktreeId: 'worktree-1',
+        headSha: 'new-head-sha',
+        dossierHeadSha: 'abc123def456',
+      },
+      workflowSummary: {
+        workflow: 'ci_fix_run',
+        status: 'failed',
+        summary: expect.objectContaining({
+          outcome: 'pr-head-changed',
+          requires: ['freshPrFacts'],
+          headSha: 'new-head-sha',
+          dossierHeadSha: 'abc123def456',
+        }),
+      },
+    });
+    expect(startedKilo).toBe(false);
+    expect(releasedStatus).toBe('failed');
+  });
+
   it('creates the CI fix workflow summary before Kilo can finish', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
@@ -253,7 +444,7 @@ describe('CI fix run', () => {
           data: {
             worktree: {
               id: 'worktree-1',
-              headSha: 'prepared-head-sha',
+              headSha: 'abc123def456',
             },
           },
         } as never;
@@ -277,7 +468,7 @@ describe('CI fix run', () => {
               status: 'running',
               summary: expect.objectContaining({
                 outcome: 'kilo-starting',
-                headSha: 'prepared-head-sha',
+                headSha: 'abc123def456',
                 dossierHeadSha: 'abc123def456',
                 kiloTaskId: observedTaskId,
               }),
@@ -334,7 +525,7 @@ describe('CI fix run', () => {
           data: {
             worktree: {
               id: 'worktree-1',
-              headSha: 'prepared-head-sha',
+              headSha: 'abc123def456',
             },
           },
         }) as never,
@@ -945,6 +1136,7 @@ function ciFixDossier(): CiFixDossier {
       packageScripts: { test: 'vitest' },
     },
     failingChecks: failingChecks(),
+    failingCheckFactsError: null,
     likelyCommands: ['npm run test'],
     fetchedAt: '2026-07-05T20:02:30.000Z',
   };

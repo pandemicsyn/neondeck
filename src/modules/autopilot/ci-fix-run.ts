@@ -18,6 +18,7 @@ import {
 } from '../app-state';
 import {
   fetchFailingCheckFacts,
+  pullRequestEventStateTruncation,
   type GitHubFailingCheckFact,
   type GitHubPullRequestEventState,
 } from '../github';
@@ -26,6 +27,7 @@ import { writeReport, type ReportRecord } from '../reports';
 import { getGitHubPrEventState, type PullRequestTarget } from '../pr-events';
 import type { PrEventStateDependencies } from '../pr-events';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
+import { loadRuntimeSkill } from '../runtime';
 import { lockWorktree, releaseWorktreeLock } from '../worktrees';
 import { preparePrWorktree } from './worktree';
 import { identifyLikelyCommands } from './github-facts';
@@ -62,6 +64,7 @@ export type CiFixDossier = {
   state: GitHubPullRequestEventState;
   repo: RepoConfig | null;
   failingChecks: GitHubFailingCheckFact[];
+  failingCheckFactsError: string | null;
   likelyCommands: string[];
   fetchedAt: string;
 };
@@ -151,6 +154,93 @@ export async function runCiFix(
         dossier: dossierSummary(dossier),
       }),
     };
+  }
+
+  const stateTruncation = pullRequestEventStateTruncation(dossier.state);
+  if (stateTruncation.any) {
+    const message =
+      'CI fix handoff requires complete PR event facts; wrote the dossier report but did not start Kilo because GitHub data was truncated.';
+    await notifyCiFixAttention(dossier, report, message, paths);
+    const workflowSummary = await addTerminalCiFixSummary(
+      dossier,
+      report,
+      {
+        status: 'failed',
+        outcome: 'pr-event-facts-truncated',
+        message,
+        requires: ['completePrEventFacts'],
+        truncation: stateTruncation.categories,
+      },
+      paths,
+    );
+    return failure(message, {
+      requires: ['completePrEventFacts'],
+      errors: [
+        `Truncated PR event fact categories: ${stateTruncation.categories.join(', ')}.`,
+      ],
+      data: {
+        report: reportLink(report),
+        dossier: dossierSummary(dossier),
+        truncation: stateTruncation,
+      },
+      workflowSummary,
+    });
+  }
+
+  if (dossier.failingCheckFactsError) {
+    const message =
+      'CI fix handoff requires failing check facts; wrote the dossier report but did not start Kilo because check facts were unavailable.';
+    await notifyCiFixAttention(dossier, report, message, paths);
+    const workflowSummary = await addTerminalCiFixSummary(
+      dossier,
+      report,
+      {
+        status: 'failed',
+        outcome: 'failing-check-facts-unavailable',
+        message,
+        requires: ['github-check-facts'],
+        errors: [dossier.failingCheckFactsError],
+      },
+      paths,
+    );
+    return failure(message, {
+      requires: ['github-check-facts'],
+      errors: [dossier.failingCheckFactsError],
+      data: {
+        report: reportLink(report),
+        dossier: dossierSummary(dossier),
+      },
+      workflowSummary,
+    });
+  }
+
+  const failingCheckLogFactsError =
+    incompleteFailingCheckLogFactsError(dossier);
+  if (failingCheckLogFactsError) {
+    const message =
+      'CI fix handoff requires complete failing check logs; wrote the dossier report but did not start Kilo because GitHub log facts were incomplete.';
+    await notifyCiFixAttention(dossier, report, message, paths);
+    const workflowSummary = await addTerminalCiFixSummary(
+      dossier,
+      report,
+      {
+        status: 'failed',
+        outcome: 'failing-check-logs-incomplete',
+        message,
+        requires: ['github-check-facts'],
+        errors: [failingCheckLogFactsError],
+      },
+      paths,
+    );
+    return failure(message, {
+      requires: ['github-check-facts'],
+      errors: [failingCheckLogFactsError],
+      data: {
+        report: reportLink(report),
+        dossier: dossierSummary(dossier),
+      },
+      workflowSummary,
+    });
   }
 
   if (dossier.failingChecks.length === 0) {
@@ -310,8 +400,43 @@ export async function runCiFix(
     }
     const startedHeadSha =
       stringField(preparedWorktree.headSha) ?? dossier.state.headSha;
+    if (startedHeadSha !== dossier.state.headSha) {
+      releaseStatus = 'failed';
+      const message =
+        'CI fix handoff requires fresh PR facts; wrote the dossier report but did not start Kilo because the PR head changed after facts were collected.';
+      await notifyCiFixAttention(dossier, report, message, paths);
+      const workflowSummary = await addTerminalCiFixSummary(
+        dossier,
+        report,
+        {
+          status: 'failed',
+          outcome: 'pr-head-changed',
+          message,
+          requires: ['freshPrFacts'],
+          headSha: startedHeadSha,
+          dossierHeadSha: dossier.state.headSha,
+          ciFixLockId: lock.lock.id,
+          worktreeId,
+        },
+        paths,
+      );
+      return failure(message, {
+        requires: ['freshPrFacts'],
+        errors: [
+          `Prepared worktree head ${startedHeadSha} does not match dossier head ${dossier.state.headSha}.`,
+        ],
+        data: {
+          report: reportLink(report),
+          dossier: dossierSummary(dossier),
+          worktreeId,
+          headSha: startedHeadSha,
+          dossierHeadSha: dossier.state.headSha,
+        },
+        workflowSummary,
+      });
+    }
 
-    const prompt = await ciFixPrompt(dossier, report);
+    const prompt = await ciFixPrompt(dossier, report, paths);
     const kiloTaskId = `ci-fix-${randomUUID()}`;
     const workflowSummary = await addWorkflowSummary(
       {
@@ -522,7 +647,8 @@ export async function readCiFixDossier(
       }),
     };
   }
-  let failingChecks: GitHubFailingCheckFact[];
+  let failingChecks: GitHubFailingCheckFact[] = [];
+  let failingCheckFactsError: string | null = null;
   try {
     failingChecks = await (
       dependencies.fetchFailingCheckFacts ?? fetchFailingCheckFacts
@@ -534,22 +660,7 @@ export async function readCiFixDossier(
       maxLogBytes: input.maxLogBytes ?? 64 * 1024,
     });
   } catch (error) {
-    return {
-      ok: false,
-      result: failure(
-        `Could not fetch failing GitHub check facts for ${target.repoFullName}#${target.number}: ${errorMessage(error)}.`,
-        {
-          errors: [errorMessage(error)],
-          requires: ['github-check-facts'],
-          data: {
-            workflow: 'fix-pr-ci',
-            repo: target.repoFullName,
-            prNumber: target.number,
-            headSha: state.headSha,
-          },
-        },
-      ),
-    };
+    failingCheckFactsError = errorMessage(error);
   }
   const registry = await readRepoRegistrySnapshot(paths);
   const repo =
@@ -569,6 +680,7 @@ export async function readCiFixDossier(
       state,
       repo,
       failingChecks,
+      failingCheckFactsError,
       likelyCommands,
       fetchedAt: new Date().toISOString(),
     },
@@ -585,6 +697,9 @@ export async function writeCiFixDossierReport(
 ) {
   const ref = sourceRef(dossier);
   const generatedAt = new Date();
+  const stateTruncation = pullRequestEventStateTruncation(dossier.state);
+  const failingCheckLogFactsError =
+    incompleteFailingCheckLogFactsError(dossier);
   return writeReport(
     {
       kind: 'ci-fix',
@@ -599,15 +714,20 @@ export async function writeCiFixDossierReport(
         prNumber: dossier.target.number,
         headSha: dossier.state.headSha,
         failedCheckCount: dossier.failingChecks.length,
+        failingCheckFactsError: dossier.failingCheckFactsError,
+        failingCheckLogFactsError,
         likelyCommands: dossier.likelyCommands.slice(0, 5),
+        truncation: stateTruncation,
       },
       html: renderReportHtml({
         eyebrow: 'CI FIX',
         title: `CI Failure Dossier: ${ref}`,
         summary:
-          dossier.failingChecks.length === 0
-            ? 'No failing GitHub check runs were present in the fetched facts.'
-            : `${dossier.failingChecks.length} failing check run${dossier.failingChecks.length === 1 ? '' : 's'} found for ${dossier.state.headSha.slice(0, 12)}.`,
+          dossier.failingCheckFactsError || failingCheckLogFactsError
+            ? 'Failing GitHub check facts could not be completely collected; this CI dossier is partial.'
+            : dossier.failingChecks.length === 0
+              ? 'No failing GitHub check runs were present in the fetched facts.'
+              : `${dossier.failingChecks.length} failing check run${dossier.failingChecks.length === 1 ? '' : 's'} found for ${dossier.state.headSha.slice(0, 12)}.`,
         generatedAt,
         sections: [
           {
@@ -624,6 +744,27 @@ export async function writeCiFixDossierReport(
                   ? `${dossier.repo.id} (${dossier.repo.path})`
                   : 'not configured',
               },
+              {
+                label: 'truncated facts',
+                value: stateTruncation.any
+                  ? stateTruncation.categories.join(', ')
+                  : 'none',
+              },
+            ],
+          },
+          {
+            title: 'Fact Collection',
+            items: [
+              {
+                label: 'failing check facts',
+                value: dossier.failingCheckFactsError
+                  ? `unavailable: ${dossier.failingCheckFactsError}`
+                  : 'complete',
+              },
+              {
+                label: 'failing check logs',
+                value: failingCheckLogFactsError ?? 'complete',
+              },
             ],
           },
           {
@@ -634,7 +775,14 @@ export async function writeCiFixDossierReport(
                     label: check.name,
                     value: checkReportValue(check),
                   }))
-                : [{ label: 'checks', value: 'No failing checks found.' }],
+                : [
+                    {
+                      label: 'checks',
+                      value: dossier.failingCheckFactsError
+                        ? `Unavailable: ${dossier.failingCheckFactsError}`
+                        : 'No failing checks found.',
+                    },
+                  ],
           },
           {
             title: 'Extracted Error Lines',
@@ -743,12 +891,20 @@ function parseCiFixInput(
   return { ok: true, input: parsed.output };
 }
 
-async function ciFixPrompt(dossier: CiFixDossier, report: ReportRecord) {
-  const skill = await readFile(neonCiFixSkillPath, 'utf8').catch(() => '');
+async function ciFixPrompt(
+  dossier: CiFixDossier,
+  report: ReportRecord,
+  paths: RuntimePaths,
+) {
+  const skill = await runtimeSkillContent(
+    'neon-ci-fix',
+    neonCiFixSkillPath,
+    paths,
+  );
   return [
     skill.trim()
-      ? `Built-in skill neon-ci-fix:\n${skill.trim()}`
-      : 'Built-in skill neon-ci-fix was unavailable; follow the task bounds below.',
+      ? `Runtime skill neon-ci-fix:\n${skill.trim()}`
+      : 'Runtime skill neon-ci-fix was unavailable; follow the task bounds below.',
     '',
     `Task: fix the failing CI checks for ${sourceRef(dossier)}.`,
     `Report: /reports/${report.id}`,
@@ -795,6 +951,16 @@ async function ciFixPrompt(dossier: CiFixDossier, report: ReportRecord) {
       2,
     ),
   ].join('\n');
+}
+
+async function runtimeSkillContent(
+  id: string,
+  fallbackPath: string,
+  paths: RuntimePaths,
+) {
+  const loaded = await loadRuntimeSkill({ id }, paths);
+  if (loaded.ok) return loaded.skill.content;
+  return readFile(fallbackPath, 'utf8').catch(() => '');
 }
 
 function checkReportValue(check: GitHubFailingCheckFact) {
@@ -902,6 +1068,8 @@ function dossierSummary(dossier: CiFixDossier) {
     prNumber: dossier.target.number,
     headSha: dossier.state.headSha,
     failedCheckCount: dossier.failingChecks.length,
+    failingCheckFactsError: dossier.failingCheckFactsError,
+    failingCheckLogFactsError: incompleteFailingCheckLogFactsError(dossier),
     failingChecks: dossier.failingChecks.map((check) => ({
       id: check.id,
       name: check.name,
@@ -910,7 +1078,25 @@ function dossierSummary(dossier: CiFixDossier) {
     errorLines: extractedErrorLines(dossier).slice(0, 10),
     suspectFiles: suspectFiles(dossier),
     likelyCommands: dossier.likelyCommands.slice(0, 5),
+    truncation: pullRequestEventStateTruncation(dossier.state),
   };
+}
+
+function incompleteFailingCheckLogFactsError(dossier: CiFixDossier) {
+  const incomplete = dossier.failingChecks.filter(
+    (check) => !check.log.available || check.log.truncated,
+  );
+  if (incomplete.length === 0) return null;
+
+  const checks = incomplete
+    .map((check) => {
+      const reason = check.log.truncated
+        ? 'truncated'
+        : (check.log.unavailableReason ?? 'unavailable');
+      return `${check.name} (${reason})`;
+    })
+    .join(', ');
+  return `Incomplete failing check logs: ${checks}.`;
 }
 
 function reportLink(report: ReportRecord) {
@@ -954,8 +1140,12 @@ async function addTerminalCiFixSummary(
     outcome: string;
     message: string;
     requires?: string[];
+    errors?: string[];
     ciFixLockId?: string | null;
     worktreeId?: string | null;
+    truncation?: string[];
+    headSha?: string;
+    dossierHeadSha?: string;
   },
   paths: RuntimePaths,
 ) {
@@ -970,8 +1160,8 @@ async function addTerminalCiFixSummary(
         repoId: dossier.repo?.id ?? null,
         repoFullName: dossier.target.repoFullName,
         prNumber: dossier.target.number,
-        headSha: dossier.state.headSha,
-        dossierHeadSha: dossier.state.headSha,
+        headSha: input.headSha ?? dossier.state.headSha,
+        dossierHeadSha: input.dossierHeadSha ?? dossier.state.headSha,
         failedCheckCount: dossier.failingChecks.length,
         checks: dossier.failingChecks.map((check) => ({
           id: check.id,
@@ -982,6 +1172,8 @@ async function addTerminalCiFixSummary(
         ciFixLockId: input.ciFixLockId ?? null,
         message: input.message,
         requires: input.requires ?? [],
+        errors: input.errors ?? [],
+        truncation: input.truncation ?? [],
         worktreeId: input.worktreeId ?? null,
         completedAt: new Date().toISOString(),
       },

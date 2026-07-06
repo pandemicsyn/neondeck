@@ -17,7 +17,6 @@ import {
   type RuntimePaths,
   runtimePaths,
 } from '../runtime-home';
-import { startSchedulerLoop } from '../modules/scheduler';
 import { createConfigEventRoutes } from './events/config-stream';
 import { createNotificationEventRoutes } from './events/notification-stream';
 import { createSessionEventRoutes } from './events/session-stream';
@@ -49,6 +48,7 @@ import { createReposRoutes } from './routes/repos';
 import { createRuntimeRoutes } from './routes/runtime';
 import { createSafetyRoutes } from './routes/safety';
 import { createSchedulerRoutes } from './routes/scheduler';
+import { startSchedulerObservedLoop } from './scheduler-workflow';
 import { createSessionRoutes } from './routes/sessions';
 import { createSkillRoutes } from './routes/skills';
 import { createWatchRoutes } from './routes/watches';
@@ -85,7 +85,7 @@ export async function createApp(options: CreateAppOptions = {}) {
     options.scheduler !== false &&
     process.env.NEONDECK_DISABLE_SCHEDULER !== '1'
   ) {
-    startSchedulerLoop(paths);
+    startSchedulerObservedLoop(paths);
   }
   await getMcpRegistry(paths).start();
 

@@ -197,6 +197,21 @@ export async function fixPrReviewFeedback(
     const eventState = fetchedEventState;
 
     const reviewFacts = reviewFactsFromEventState(eventState);
+    if (reviewFacts.truncated) {
+      return {
+        ok: false,
+        action: 'autopilot_fix_pr_review_feedback',
+        changed: false,
+        message:
+          'PR review facts are incomplete; refusing to apply review-feedback edits from truncated GitHub data.',
+        requires: ['completeReviewFacts'],
+        data: asJsonValue({
+          repo: repoSummary(repo),
+          prNumber: input.prNumber,
+          truncation: reviewFacts.truncation,
+        }),
+      };
+    }
     const groups = groupReviewFeedback(reviewFacts.unresolvedComments);
     const plan = buildReviewFixPlan(groups, reviewFacts.requestedChanges);
     if (reviewFacts.unresolvedCommentCount === 0) {

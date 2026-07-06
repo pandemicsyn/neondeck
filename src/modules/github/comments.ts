@@ -54,8 +54,22 @@ export async function fetchPullRequestReviewThreads(options: {
   repo: string;
   number: number;
 }): Promise<GitHubPullRequestReviewThread[]> {
+  return (await fetchPullRequestReviewThreadsWithMetadata(options))
+    .reviewThreads;
+}
+
+export async function fetchPullRequestReviewThreadsWithMetadata(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+}): Promise<{
+  reviewThreads: GitHubPullRequestReviewThread[];
+  truncated: boolean;
+}> {
   const threads: GitHubPullRequestReviewThread[] = [];
   let cursor: string | null = null;
+  let truncated = false;
 
   for (let page = 0; page < 5; page += 1) {
     const data = await githubGraphqlFetch(
@@ -77,16 +91,20 @@ export async function fetchPullRequestReviewThreads(options: {
 
     if (!pullRequest.reviewThreads.pageInfo.hasNextPage) break;
     if (page === 4) {
+      truncated = true;
       console.warn(
         `[neondeck] GitHub review thread fetch reached the page cap for ${options.owner}/${options.repo}#${options.number}; results may be truncated.`,
       );
       break;
     }
     cursor = pullRequest.reviewThreads.pageInfo.endCursor ?? null;
-    if (!cursor) break;
+    if (!cursor) {
+      truncated = true;
+      break;
+    }
   }
 
-  return threads;
+  return { reviewThreads: threads, truncated };
 }
 
 export async function fetchPullRequestReviewThread(options: {
@@ -123,7 +141,8 @@ async function normalizeReviewThread(
     diffSide: thread.diffSide ?? null,
     pullRequestRepo: thread.pullRequest?.repository.nameWithOwner ?? null,
     pullRequestNumber: thread.pullRequest?.number ?? null,
-    comments: comments.map((comment) =>
+    commentsTruncated: comments.truncated,
+    comments: comments.items.map((comment) =>
       normalizeReviewThreadComment(comment, thread),
     ),
   };
@@ -135,10 +154,15 @@ async function fetchAllReviewThreadComments(
 ) {
   const comments = [...(thread.comments.nodes ?? [])];
   let cursor = thread.comments.pageInfo.endCursor;
+  let hasNextPage = thread.comments.pageInfo.hasNextPage;
+  let truncated = false;
 
-  for (let page = 0; thread.comments.pageInfo.hasNextPage && page < 10;) {
+  for (let page = 0; hasNextPage && page < 10;) {
     page += 1;
-    if (!cursor) break;
+    if (!cursor) {
+      truncated = true;
+      break;
+    }
     const data = await githubGraphqlFetch(token, reviewThreadCommentsQuery, {
       threadId: thread.id,
       after: cursor,
@@ -150,11 +174,13 @@ async function fetchAllReviewThreadComments(
     const node = parsed.data.node;
     if (!node?.comments) break;
     comments.push(...(node.comments.nodes ?? []));
-    if (!node.comments.pageInfo.hasNextPage) break;
+    hasNextPage = node.comments.pageInfo.hasNextPage;
+    if (!hasNextPage) break;
     cursor = node.comments.pageInfo.endCursor;
   }
+  truncated = truncated || hasNextPage;
 
-  return comments;
+  return { items: comments, truncated };
 }
 
 function normalizeReviewThreadComment(

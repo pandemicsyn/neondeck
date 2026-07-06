@@ -6,6 +6,7 @@ import {
   deletePrReviewDraftComment,
   readLivePrReviewDraft,
   recordPrReviewNeonSeed,
+  pullRequestEventStateTruncation,
   upsertPrReviewDraft,
   type GitHubDiffSummary,
   type GitHubPrReviewDraft,
@@ -91,7 +92,12 @@ export async function reviewPrForHuman(
 
   const facts = factsResult.facts;
   const repoId = await repoIdForFullName(facts.target.repoFullName, paths);
-  const seedResult = await seedDraftComments(facts, reviewed.output, paths);
+  const seedResult = await seedDraftComments(
+    facts,
+    reviewed.output,
+    paths,
+    reviewSeedingBlockedReason(facts),
+  );
   const reports = await writeReviewReports({
     facts,
     output: reviewed.output,
@@ -270,12 +276,24 @@ async function seedDraftComments(
   facts: ReviewAssistFacts,
   output: ReviewAssistStructuredOutput,
   paths: RuntimePaths,
+  seedingBlockedReason: string | null,
 ) {
   const existing = readLivePrReviewDraft({
     databasePath: paths.neondeckDatabase,
     repo: facts.target.repoFullName,
     prNumber: facts.target.number,
   });
+  if (seedingBlockedReason) {
+    return {
+      draft: existing,
+      seeded: [] as SeededFinding[],
+      reportOnly: output.findings.map((finding) => ({
+        finding,
+        reason: seedingBlockedReason,
+      })),
+      skippedReason: seedingBlockedReason,
+    };
+  }
   if (existing && draftHasHumanWork(existing)) {
     return {
       draft: existing,
@@ -383,6 +401,18 @@ async function seedDraftComments(
   }
 
   return { draft, seeded, reportOnly, skippedReason: null as string | null };
+}
+
+function reviewSeedingBlockedReason(facts: ReviewAssistFacts) {
+  const stateTruncation = pullRequestEventStateTruncation(facts.state);
+  const filePatchTruncation = facts.files.some((file) => file.truncated);
+  const reasons = [
+    stateTruncation.any
+      ? `truncated-pr-event-facts:${stateTruncation.categories.join(',')}`
+      : null,
+    filePatchTruncation ? 'truncated-file-patches' : null,
+  ].filter((reason): reason is string => Boolean(reason));
+  return reasons.length > 0 ? reasons.join(';') : null;
 }
 
 async function writeReviewReports(input: {
