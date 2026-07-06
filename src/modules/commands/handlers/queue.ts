@@ -103,6 +103,24 @@ export async function fixCiCommand(
   paths: RuntimePaths,
   dependencies: CommandDependencies,
 ): Promise<NeonCommandResult> {
+  const explicitRef = command.args.join(' ').trim();
+  if (explicitRef) {
+    const parsed = parsePullRequestRef(explicitRef);
+    if (!parsed) {
+      return failedCommand(
+        command.name,
+        command.raw,
+        'Expected a PR reference like repo#123, owner/repo#123, or a GitHub pull request URL.',
+        { requires: ['pr'] },
+      );
+    }
+    return queueFixCiWorkflow(
+      command,
+      `${parsed.repo}#${parsed.number}`,
+      dependencies,
+    );
+  }
+
   const queue = await readReviewQueue(paths, dependencies);
   if (!queue.ok) {
     return needsConfigCommand(command.name, command.raw, queue.message, {
@@ -135,6 +153,14 @@ export async function fixCiCommand(
   }
 
   const ref = `${selected.item.repo}#${selected.item.number}`;
+  return queueFixCiWorkflow(command, ref, dependencies);
+}
+
+async function queueFixCiWorkflow(
+  command: ParsedNeonCommand,
+  ref: string,
+  dependencies: CommandDependencies,
+): Promise<NeonCommandResult> {
   const invokeWorkflow =
     dependencies.invokeFixCiWorkflow ?? invokeFixCiWorkflow;
   const { runId } = await invokeWorkflow({ ref });
