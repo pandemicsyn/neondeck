@@ -2,6 +2,7 @@ import * as v from 'valibot';
 import { addNotification, addWorkflowSummary } from '../app-state';
 import {
   addPrReviewDraftComment,
+  deletePrReviewNeonSeedsForComments,
   deletePrReviewDraftComment,
   readLivePrReviewDraft,
   recordPrReviewNeonSeed,
@@ -360,6 +361,14 @@ async function seedDraftComments(
       }
     }
   } catch (error) {
+    try {
+      deletePrReviewNeonSeedsForComments({
+        databasePath: paths.neondeckDatabase,
+        commentIds: addedIds,
+      });
+    } catch {
+      // Preserve the original seeding failure.
+    }
     for (const id of addedIds) {
       try {
         deletePrReviewDraftComment({

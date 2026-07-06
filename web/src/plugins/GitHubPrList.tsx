@@ -4,7 +4,9 @@ import { lazy, Suspense, useId, useState } from 'react';
 import {
   getGitHubPullRequests,
   getRepoRegistry,
+  getWorkflowObservability,
   type GitHubPullRequest,
+  type WorkflowObservability,
 } from '../api';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
 import {
@@ -237,14 +239,14 @@ function NeonReviewButton({ item }: { item: GitHubPullRequest }) {
       });
       return run satisfies ReviewPrWorkflowAdmission;
     },
-    onSuccess() {
+    onSuccess(run) {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.workflowObservability,
       });
       void queryClient.invalidateQueries({
         queryKey: queryKeys.workflowSummaries,
       });
-      scheduleReviewCompletionRefresh(queryClient, item);
+      scheduleReviewCompletionRefresh(queryClient, item, run.runId);
     },
   });
 
@@ -274,7 +276,10 @@ function NeonReviewButton({ item }: { item: GitHubPullRequest }) {
 function scheduleReviewCompletionRefresh(
   queryClient: ReturnType<typeof useQueryClient>,
   item: GitHubPullRequest,
+  runId: string,
 ) {
+  let sawActiveRun = false;
+  let done = false;
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.reports });
     void queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
@@ -288,8 +293,55 @@ function scheduleReviewCompletionRefresh(
       queryKey: prReviewQueryKeys.draft(item),
     });
   };
-  window.setTimeout(refresh, 15_000);
-  window.setTimeout(refresh, 60_000);
+  const observe = async (forceRefresh: boolean) => {
+    if (done) return;
+    try {
+      const workflows = await queryClient.fetchQuery({
+        queryKey: queryKeys.workflowObservability,
+        queryFn: getWorkflowObservability,
+        staleTime: 0,
+      });
+      const state = reviewWorkflowCompletionState(
+        workflows,
+        runId,
+        sawActiveRun,
+      );
+      sawActiveRun = state.sawActiveRun;
+      if (state.shouldRefresh || forceRefresh) refresh();
+      if (state.terminal || state.shouldRefresh || forceRefresh) done = true;
+    } catch {
+      if (forceRefresh) {
+        refresh();
+        done = true;
+      }
+    }
+  };
+  for (const delay of reviewCompletionPollDelays) {
+    window.setTimeout(
+      () => void observe(delay === reviewCompletionPollDelays.at(-1)),
+      delay,
+    );
+  }
+}
+
+const reviewCompletionPollDelays = [15_000, 45_000, 90_000, 150_000, 210_000];
+
+export function reviewWorkflowCompletionState(
+  workflows: WorkflowObservability,
+  runId: string,
+  sawActiveRun: boolean,
+) {
+  const active = workflows.activeRuns.some((run) => run.runId === runId);
+  const terminal = [
+    ...workflows.recentFailures,
+    ...workflows.recentData,
+    ...workflows.recentEvents,
+  ].some((event) => event.runId === runId && event.eventType === 'run_end');
+  return {
+    terminal,
+    sawActiveRun: sawActiveRun || active,
+    shouldRefresh: terminal || (sawActiveRun && !active),
+  };
 }
 
 function WatchPrButton({ item }: { item: GitHubPullRequest }) {

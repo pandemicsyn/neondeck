@@ -11,7 +11,10 @@ export {
   fetchPullRequestEventState,
   fetchPullRequestFiles,
 } from './pull-requests';
-export { fetchPullRequestFilesWithCache } from './pr-file-cache';
+export {
+  fetchPullRequestFilesWithCache,
+  readCachedPullRequestFiles,
+} from './pr-file-cache';
 export {
   fetchCheckRunDetails,
   fetchCheckSuites,
@@ -20,6 +23,7 @@ export {
 } from './checks';
 export {
   addPrReviewDraftComment,
+  deletePrReviewNeonSeedsForComments,
   deletePrReviewDraftComment,
   discardPrReviewDraft,
   fetchPullRequestReviews,

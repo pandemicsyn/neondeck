@@ -96,7 +96,7 @@ async function fetchCurrentPullRequestHeadSha(options: {
   return detail.headSha;
 }
 
-function readCachedPullRequestFiles(options: {
+export function readCachedPullRequestFiles(options: {
   databasePath: string;
   repo: string;
   number: number;

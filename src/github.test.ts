@@ -6,6 +6,7 @@ import {
   addPrReviewDraftComment,
   buildPullRequestQueries,
   clearGitHubPullRequestQueueCache,
+  deletePrReviewNeonSeedsForComments,
   fetchFailingCheckFacts,
   fetchCheckSummary,
   fetchPullRequestFiles,
@@ -1226,6 +1227,90 @@ describe('github foundation', () => {
               },
             },
           },
+        }),
+      }),
+    ]);
+  });
+
+  it('does not count rolled-back Neon seed ledger rows as deleted seeds', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const draft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head123',
+      verdict: 'comment',
+      body: 'Submitting body only.',
+    });
+    const withComment = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 12,
+      body: 'Seeded issue.',
+      origin: 'neon',
+    });
+    const seeded = withComment.comments[0];
+    expect(seeded?.id).toEqual(expect.any(String));
+    if (!seeded) throw new Error('Expected seeded comment.');
+    recordPrReviewNeonSeed({
+      databasePath: paths.neondeckDatabase,
+      draft: withComment,
+      comment: seeded,
+      severity: 'major',
+      summary: 'Seeded issue summary.',
+      source: 'test',
+    });
+    expect(
+      deletePrReviewNeonSeedsForComments({
+        databasePath: paths.neondeckDatabase,
+        commentIds: [seeded.id],
+      }),
+    ).toBe(1);
+    deletePrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      commentId: seeded.id,
+    });
+
+    globalThis.fetch = vi.fn<typeof fetch>(async () =>
+      jsonResponse({
+        id: 9003,
+        node_id: 'review-node-9003',
+        state: 'COMMENTED',
+        user: { login: 'neon' },
+        submitted_at: '2026-07-05T15:05:00Z',
+        commit_id: 'head123',
+        html_url:
+          'https://github.com/pandemicsyn/neondeck/pull/123#pullrequestreview-9003',
+        body: 'Submitting body only.',
+      }),
+    );
+
+    await submitPullRequestReview({
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+      databasePath: paths.neondeckDatabase,
+      paths,
+      draftId: draft.id,
+      headSha: 'head123',
+      fetchHeadSha: async () => 'head123',
+    });
+
+    await expect(listWorkflowSummaries(paths)).resolves.toEqual([
+      expect.objectContaining({
+        workflow: 'github_pr_review',
+        summary: expect.objectContaining({
+          commentCount: 0,
+          neonDraftOutcome: expect.objectContaining({
+            seededNeonCommentCount: 0,
+            deletedNeonCommentCount: 0,
+            skippedOrDeletedNeonCommentCount: 0,
+            bySeverity: {},
+          }),
         }),
       }),
     ]);

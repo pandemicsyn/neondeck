@@ -56,9 +56,11 @@ export async function runNeonCommand(
   }
 
   const result = await executeCommand(parsed.command, paths, dependencies);
+  const runId = commandWorkflowRunId(result);
   const workflowSummary = await addWorkflowSummary(
     {
       workflow: `command:${parsed.command.name}`,
+      ...(runId ? { runId } : {}),
       status: result.status,
       summary: compactCommandSummary(result),
     },
@@ -129,4 +131,11 @@ async function executeCommand(
   }
 
   return devDoctorCommand(command, paths);
+}
+
+function commandWorkflowRunId(result: NeonCommandResult) {
+  if (!result.data || typeof result.data !== 'object') return null;
+  if (!('runId' in result.data)) return null;
+  const runId = result.data.runId;
+  return typeof runId === 'string' && runId.trim() ? runId : null;
 }
