@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs';
-import { readFile, rm, mkdtemp } from 'node:fs/promises';
+import { readFile, readdir, rm, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { renderReportHtml } from './lib/report-html';
 import {
@@ -132,6 +133,27 @@ describe('reports', () => {
     ]);
   });
 
+  it('cleans up the report artifact when the database insert fails', async () => {
+    const paths = runtimePaths(await tempDir());
+    await listReports(paths);
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database.exec('DROP TABLE reports;');
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      writeReport(
+        reportInput('cleanup', 'failed insert', '2026-07-05T00:00:00.000Z'),
+        paths,
+      ),
+    ).rejects.toThrow(/reports/);
+    await expect(
+      readdir(resolveReportFilePath(paths, 'cleanup')),
+    ).resolves.toEqual([]);
+  });
+
   it('serves report listings and HTML through local routes', async () => {
     const paths = runtimePaths(await tempDir());
     const report = await writeReport(
@@ -157,6 +179,26 @@ describe('reports', () => {
       items: [{ id: report.id }],
     });
 
+    const readResponse = await app.request(
+      `http://localhost/api/reports/${report.id}`,
+      { headers: { host: 'localhost' } },
+    );
+    const readBody = (await readResponse.json()) as {
+      ok: boolean;
+      item: { id: string } | null;
+    };
+    expect(readResponse.status).toBe(200);
+    expect(readBody).toMatchObject({
+      ok: true,
+      item: { id: report.id },
+    });
+
+    const missingResponse = await app.request(
+      'http://localhost/api/reports/missing',
+      { headers: { host: 'localhost' } },
+    );
+    expect(missingResponse.status).toBe(404);
+
     const htmlResponse = await app.request(
       `http://localhost/reports/${report.id}`,
       { headers: { host: 'localhost' } },
@@ -164,6 +206,12 @@ describe('reports', () => {
     expect(htmlResponse.status).toBe(200);
     expect(htmlResponse.headers.get('content-type')).toContain('text/html');
     await expect(htmlResponse.text()).resolves.toContain('Weekly hygiene');
+
+    const blockedResponse = await app.request(
+      `http://example.com/api/reports/${report.id}`,
+      { headers: { host: 'example.com' } },
+    );
+    expect(blockedResponse.status).toBe(404);
   });
 
   it('keeps report paths under the runtime reports root', async () => {

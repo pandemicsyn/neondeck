@@ -1605,6 +1605,12 @@ export const entries: SafetyPolicyEntry[] = [
     'Lists local, self-contained Neondeck report artifacts for dashboard display.',
   ),
   route(
+    '/api/reports/:id',
+    'Report metadata API',
+    readOnly,
+    'Reads one local report metadata record by durable report id for dashboard and local clients.',
+  ),
+  route(
     '/reports/:id',
     'Report artifact route',
     readOnly,

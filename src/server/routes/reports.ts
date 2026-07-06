@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { listReports, readReportHtml } from '../../modules/reports';
+import { listReports, readReport, readReportHtml } from '../../modules/reports';
 import type { RuntimePaths } from '../../runtime-home';
 
 export function createReportApiRoutes(paths: RuntimePaths) {
@@ -38,6 +38,52 @@ export function createReportApiRoutes(paths: RuntimePaths) {
           action: 'reports_list',
           message: error instanceof Error ? error.message : String(error),
           items: [],
+        },
+        400,
+      );
+    }
+  });
+
+  routes.get('/reports/:id', async (c) => {
+    const id = c.req.param('id')?.trim();
+    if (!id) {
+      return c.json(
+        {
+          ok: false,
+          action: 'reports_read',
+          message: 'Report id is required.',
+          item: null,
+        },
+        400,
+      );
+    }
+
+    try {
+      const item = await readReport(id, paths);
+      if (!item) {
+        return c.json(
+          {
+            ok: false,
+            action: 'reports_read',
+            message: 'Report not found.',
+            item: null,
+          },
+          404,
+        );
+      }
+      return c.json({
+        ok: true,
+        action: 'reports_read',
+        item,
+        fetchedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      return c.json(
+        {
+          ok: false,
+          action: 'reports_read',
+          message: error instanceof Error ? error.message : String(error),
+          item: null,
         },
         400,
       );
