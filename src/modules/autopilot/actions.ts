@@ -18,6 +18,11 @@ import { triagePrEvent } from './triage';
 import { preparePrWorktree, verifyPrWorktree } from './worktree';
 import { pushPrAutofix } from './push';
 import { fixPrCiFailure } from './ci-fix';
+import {
+  ciFixRunInputSchema,
+  ciFixRunOutputSchema,
+  fixPrCiRun,
+} from './ci-fix-run';
 import { fixPrReviewFeedback } from './review-feedback';
 import { commentPrAutofixResult } from './comments';
 
@@ -101,6 +106,17 @@ export const fixPrCiFailureAction = defineAction({
   },
 });
 
+export const ciFixRunAction = defineAction({
+  name: 'neondeck_autopilot_ci_fix_run',
+  description:
+    'Create a local CI failure dossier report, prepare a managed PR worktree, and start a bounded Kilo CI fix handoff without pushing or commenting.',
+  input: ciFixRunInputSchema,
+  output: ciFixRunOutputSchema,
+  async run({ input }) {
+    return fixPrCiRun(input);
+  },
+});
+
 export const fixPrReviewFeedbackAction = defineAction({
   name: 'neondeck_autopilot_fix_pr_review_feedback',
   description:
@@ -130,6 +146,7 @@ export const neondeckAutopilotActions = [
   verifyPrWorktreeAction,
   pushPrAutofixAction,
   fixPrCiFailureAction,
+  ciFixRunAction,
   fixPrReviewFeedbackAction,
   commentPrAutofixResultAction,
 ];

@@ -138,6 +138,9 @@ describe('runtime home', () => {
     await expect(
       readFile(join(paths.skills, 'neon-pr-review', 'SKILL.md'), 'utf8'),
     ).resolves.toContain('name: neon-pr-review');
+    await expect(
+      readFile(join(paths.skills, 'neon-ci-fix', 'SKILL.md'), 'utf8'),
+    ).resolves.toContain('name: neon-ci-fix');
   });
 
   it('does not clobber patched runtime skill seeds', async () => {
@@ -146,12 +149,17 @@ describe('runtime home', () => {
     const paths = runtimePaths(root);
     await ensureRuntimeHome(paths);
     const skillPath = join(paths.skills, 'neon-pr-review', 'SKILL.md');
+    const ciSkillPath = join(paths.skills, 'neon-ci-fix', 'SKILL.md');
     await writeFile(skillPath, 'locally patched skill\n');
+    await writeFile(ciSkillPath, 'locally patched ci skill\n');
 
     await ensureRuntimeHome(paths);
 
     await expect(readFile(skillPath, 'utf8')).resolves.toBe(
       'locally patched skill\n',
+    );
+    await expect(readFile(ciSkillPath, 'utf8')).resolves.toBe(
+      'locally patched ci skill\n',
     );
   });
 

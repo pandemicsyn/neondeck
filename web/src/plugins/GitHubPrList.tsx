@@ -196,6 +196,7 @@ function PrRow({
             }}
           />
           <NeonReviewButton item={item} />
+          {isCiFixCandidate(item) ? <FixCiButton item={item} /> : null}
           <WatchPrButton item={item} />
           <a
             className="inline-flex min-h-[28px] shrink-0 items-center border border-line px-2 py-1 text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
@@ -273,6 +274,49 @@ function NeonReviewButton({ item }: { item: GitHubPullRequest }) {
   );
 }
 
+function FixCiButton({ item }: { item: GitHubPullRequest }) {
+  const flue = useFlueClient();
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const run = await flue.workflows.invoke('fix-pr-ci', {
+        input: {
+          ref: `${item.repo}#${item.number}`,
+        },
+      });
+      return run satisfies FixCiWorkflowAdmission;
+    },
+    onSuccess(run) {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.workflowObservability,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.workflowSummaries,
+      });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.reports });
+      scheduleCiFixCompletionRefresh(queryClient, run.runId);
+    },
+  });
+
+  return (
+    <Button
+      className="min-h-[28px] shrink-0 border-line bg-transparent px-2 py-1 text-[10px] text-muted"
+      disabled={mutation.isPending}
+      onClick={() => mutation.mutate()}
+      title={
+        mutation.error
+          ? queryErrorMessage(mutation.error)
+          : mutation.data
+            ? `Queued CI fix workflow run ${mutation.data.runId}. Reports and prepared-diff state will refresh when the run completes.`
+            : 'Create a CI dossier and start a bounded local fix workflow'
+      }
+      type="button"
+    >
+      {mutation.isPending ? 'queuing' : mutation.data ? 'queued' : 'fix CI'}
+    </Button>
+  );
+}
+
 function scheduleReviewCompletionRefresh(
   queryClient: ReturnType<typeof useQueryClient>,
   item: GitHubPullRequest,
@@ -337,8 +381,75 @@ function scheduleReviewCompletionRefresh(
   }
 }
 
+function scheduleCiFixCompletionRefresh(
+  queryClient: ReturnType<typeof useQueryClient>,
+  runId: string,
+) {
+  let sawActiveRun = false;
+  let done = false;
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.reports });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.kiloTasks });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.autopilotState });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.worktrees });
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.workflowObservability,
+    });
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.workflowSummaries,
+    });
+  };
+  const scheduleActiveFollowUp = () => {
+    window.setTimeout(
+      () => void observe(true),
+      reviewCompletionActiveFollowUpDelay,
+    );
+  };
+  const observe = async (forceRefresh: boolean) => {
+    if (done) return;
+    try {
+      const workflows = await queryClient.fetchQuery({
+        queryKey: queryKeys.workflowObservability,
+        queryFn: getWorkflowObservability,
+        staleTime: 0,
+      });
+      const state = reviewWorkflowRefreshDecision(
+        workflows,
+        runId,
+        sawActiveRun,
+        forceRefresh,
+      );
+      sawActiveRun = state.sawActiveRun;
+      if (state.shouldRefresh) refresh();
+      if (state.done) {
+        done = true;
+        return;
+      }
+      if (forceRefresh && state.sawActiveRun) scheduleActiveFollowUp();
+    } catch {
+      if (forceRefresh && !sawActiveRun) {
+        refresh();
+        done = true;
+        return;
+      }
+      if (forceRefresh) scheduleActiveFollowUp();
+    }
+  };
+  for (const delay of reviewCompletionPollDelays) {
+    window.setTimeout(
+      () => void observe(delay === reviewCompletionPollDelays.at(-1)),
+      delay,
+    );
+  }
+}
+
 const reviewCompletionPollDelays = [15_000, 45_000, 90_000, 150_000, 210_000];
 const reviewCompletionActiveFollowUpDelay = 60_000;
+
+export function isCiFixCandidate(item: GitHubPullRequest) {
+  return item.checks?.status === 'failure' || item.checkError !== undefined;
+}
 
 export function reviewWorkflowCompletionState(
   workflows: WorkflowObservability,
@@ -429,6 +540,10 @@ type WatchPrWorkflowResult = {
 };
 
 type ReviewPrWorkflowAdmission = {
+  runId: string;
+};
+
+type FixCiWorkflowAdmission = {
   runId: string;
 };
 

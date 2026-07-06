@@ -1,11 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import type { WorkflowObservability } from '../api';
+import type {
+  GitHubPullRequest,
+  WorkflowObservability,
+} from '../api';
 import {
+  isCiFixCandidate,
   reviewWorkflowCompletionState,
   reviewWorkflowRefreshDecision,
 } from './GitHubPrList';
 
 describe('GitHubPrList review workflow state', () => {
+  it('shows the fix CI affordance only for failing or unknown check states', () => {
+    expect(isCiFixCandidate(githubPr({ checks: 'failure' }))).toBe(true);
+    expect(isCiFixCandidate(githubPr({ checkError: 'token denied' }))).toBe(
+      true,
+    );
+    expect(isCiFixCandidate(githubPr({ checks: 'success' }))).toBe(false);
+    expect(isCiFixCandidate(githubPr({ checks: 'pending' }))).toBe(false);
+  });
+
   it('refreshes when an admitted review run reaches terminal observability', () => {
     expect(
       reviewWorkflowCompletionState(
@@ -151,5 +164,44 @@ function workflowEvent(
     createdAt: '2026-07-05T20:02:00.000Z',
     runUrl: '/api/flue/runs/run-review',
     ...overrides,
+  };
+}
+
+function githubPr(
+  overrides: Omit<Partial<GitHubPullRequest>, 'checks'> & {
+    checks?: NonNullable<GitHubPullRequest['checks']>['status'];
+  } = {},
+): GitHubPullRequest {
+  const checks: GitHubPullRequest['checks'] =
+    overrides.checks === undefined
+      ? null
+      : {
+          status: overrides.checks,
+          total: 2,
+          successful: overrides.checks === 'success' ? 2 : 1,
+          failed: overrides.checks === 'failure' ? 1 : 0,
+          pending: overrides.checks === 'pending' ? 1 : 0,
+          statusContexts: 0,
+          checkedAt: '2026-07-05T20:00:00.000Z',
+        };
+  return {
+    id: 1,
+    title: 'Add thing',
+    repo: 'pandemicsyn/neondeck',
+    number: 10,
+    url: 'https://github.com/pandemicsyn/neondeck/pull/10',
+    state: 'open',
+    author: 'pandemicsyn',
+    labels: [],
+    comments: 0,
+    updatedAt: '2026-07-05T20:00:00.000Z',
+    createdAt: '2026-07-05T19:00:00.000Z',
+    relations: ['configured-repo'],
+    ageDays: 0,
+    stale: false,
+    headSha: 'abc123',
+    baseRef: 'main',
+    ...overrides,
+    checks,
   };
 }

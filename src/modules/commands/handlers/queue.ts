@@ -4,6 +4,7 @@ import type {
   GitHubQueueIssue,
 } from '../../github';
 import { fetchGitHubLogin, fetchPullRequestQueue } from '../../github';
+import { createCiFailureDossierReport } from '../../autopilot';
 import { readRepoRegistrySnapshot } from '../../repos';
 import { listPrWatchRecords } from '../../watches';
 import type { RuntimePaths } from '../../../runtime-home';
@@ -97,7 +98,7 @@ export async function invokeReviewPrWorkflow(input: { ref: string }) {
   return invoke(workflow.default, { input });
 }
 
-export async function explainCiCommand(
+export async function fixCiCommand(
   command: ParsedNeonCommand,
   paths: RuntimePaths,
   dependencies: CommandDependencies,
@@ -111,6 +112,70 @@ export async function explainCiCommand(
   }
 
   const selected = selectPullRequest(queue.queue, command.args, {
+    prefer: isCiFixCandidate,
+  });
+  if (!selected.ok) {
+    return failedCommand(command.name, command.raw, selected.message, {
+      requires: selected.requires,
+      data: {
+        available: summarizePullRequests(queue.queue.items).slice(0, 10),
+      },
+    });
+  }
+  if (!isCiFixCandidate(selected.item)) {
+    return failedCommand(
+      command.name,
+      command.raw,
+      `${selected.item.repo}#${selected.item.number} does not have failing or unknown CI checks.`,
+      {
+        requires: ['failingChecks'],
+        data: { pr: summarizePullRequests([selected.item])[0] },
+      },
+    );
+  }
+
+  const ref = `${selected.item.repo}#${selected.item.number}`;
+  const invokeWorkflow = dependencies.invokeFixCiWorkflow ?? invokeFixCiWorkflow;
+  const { runId } = await invokeWorkflow({ ref });
+  return completedCommand(
+    command.name,
+    command.raw,
+    `Queued CI fix workflow ${runId} for ${ref}.`,
+    {
+      workflow: 'fix-pr-ci',
+      runId,
+      ref,
+      queued: true,
+      reportUrlHint: '/reports',
+      trustBoundary:
+        'The workflow can create local reports, a managed local worktree, a Kilo task, and a prepared diff only; it does not push, comment, or submit a GitHub review.',
+      assistantBrief:
+        'Track the returned workflow run id. The dossier report is local; any code changes must pass through the prepared-diff review loop.',
+    },
+  );
+}
+
+export async function invokeFixCiWorkflow(input: { ref: string }) {
+  const { invoke } = await import('@flue/runtime');
+  const workflow = await import('../../../workflows/fix-pr-ci');
+  return invoke(workflow.default, { input });
+}
+
+export async function explainCiCommand(
+  command: ParsedNeonCommand,
+  paths: RuntimePaths,
+  dependencies: CommandDependencies,
+): Promise<NeonCommandResult> {
+  const options = parseExplainCiArgs(command.args);
+  const queue = await readReviewQueue(paths, dependencies);
+  if (!queue.ok) {
+    return needsConfigCommand(command.name, command.raw, queue.message, {
+      requires: queue.requires,
+      errors: queue.errors,
+    });
+  }
+
+  const selected = selectPullRequest(queue.queue, options.args, {
     prefer: (item) =>
       item.checks?.status === 'failure' ||
       item.checkError !== undefined ||
@@ -127,6 +192,55 @@ export async function explainCiCommand(
 
   const pr = selected.item;
   const explanation = ciExplanation(pr);
+  if (options.report) {
+    const writer =
+      dependencies.createCiFailureDossierReport ??
+      createCiFailureDossierReport;
+    const report = await writer(
+      { ref: `${pr.repo}#${pr.number}`, reportOnly: true },
+      paths,
+    );
+    if (!report.ok) {
+      const requires = 'requires' in report ? report.requires : undefined;
+      const errors = 'errors' in report ? report.errors : undefined;
+      return requires?.includes('GITHUB_TOKEN')
+        ? needsConfigCommand(command.name, command.raw, report.message, {
+            requires,
+            errors,
+          })
+        : failedCommand(command.name, command.raw, report.message, {
+            requires,
+            errors,
+          });
+    }
+    if (!('report' in report)) {
+      return failedCommand(
+        command.name,
+        command.raw,
+        'CI dossier report writer did not return a report record.',
+        { requires: ['report'] },
+      );
+    }
+    return completedCommand(
+      command.name,
+      command.raw,
+      `${explanation.message} Created CI dossier report ${report.report.id}.`,
+      {
+        pr: summarizePullRequests([pr])[0],
+        checks: pr.checks,
+        checkError: pr.checkError,
+        explanation,
+        report: {
+          id: report.report.id,
+          kind: report.report.kind,
+          title: report.report.title,
+          url: `/reports/${report.report.id}`,
+        },
+        assistantBrief:
+          'Use the deterministic CI dossier report and queue facts first. Separate observed facts from likely next debugging steps.',
+      },
+    );
+  }
   return completedCommand(command.name, command.raw, explanation.message, {
     pr: summarizePullRequests([pr])[0],
     checks: pr.checks,
@@ -135,6 +249,13 @@ export async function explainCiCommand(
     assistantBrief:
       'Use these deterministic CI/check facts first. Separate observed facts from likely next debugging steps.',
   });
+}
+
+function parseExplainCiArgs(args: string[]) {
+  return {
+    report: args.includes('--report'),
+    args: args.filter((arg) => arg !== '--report'),
+  };
 }
 
 export async function summarizePrCommand(
@@ -371,6 +492,10 @@ export function dedupeActions(actions: ReviewQueueAction[]) {
     seen.add(key);
     return true;
   });
+}
+
+export function isCiFixCandidate(item: GitHubPullRequest) {
+  return item.checks?.status === 'failure' || item.checkError !== undefined;
 }
 
 export function reviewQueueMessage(
