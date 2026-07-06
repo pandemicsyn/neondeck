@@ -45,6 +45,7 @@ import {
   createReportFileRoutes,
 } from './routes/reports';
 import { createReposRoutes } from './routes/repos';
+import { createRoutineRoutes } from './routes/routines';
 import { createRuntimeRoutes } from './routes/runtime';
 import { createSafetyRoutes } from './routes/safety';
 import { createSchedulerRoutes } from './routes/scheduler';
@@ -109,6 +110,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api', createAutopilotRoutes(paths));
   app.route('/api', createWatchRoutes(paths));
   app.route('/api', createSchedulerRoutes(paths));
+  app.route('/api', createRoutineRoutes(paths));
   app.route('/api/notifications', createNotificationRoutes(paths));
   app.route('/api', createMemoryRoutes(paths));
   app.route('/api/learning', createLearningRoutes(paths));

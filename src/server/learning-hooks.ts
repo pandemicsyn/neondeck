@@ -8,6 +8,7 @@ import {
 } from '../modules/learning/reviews';
 import type { RuntimePaths } from '../runtime-home';
 import { recordFlueObservation } from '../modules/learning';
+import { recordRoutineFlueObservation } from '../modules/routines';
 import curateLearningStoreWorkflow from '../workflows/curate_learning_store';
 import reviewConversationForLearningWorkflow from '../workflows/review_conversation_for_learning';
 import reviewPrBatchForLearningWorkflow from '../workflows/review_pr_batch_for_learning';
@@ -16,6 +17,9 @@ export function installFlueObservationHandlers(paths: RuntimePaths) {
   observe((event) => {
     void recordFlueObservation(event, paths).catch((error) => {
       console.error('[neondeck] failed to record Flue observation', error);
+    });
+    void recordRoutineFlueObservation(event, paths).catch((error) => {
+      console.error('[neondeck] failed to settle routine observation', error);
     });
 
     if (event.type === 'run_end') {
