@@ -65,6 +65,7 @@ import { repoFullName } from '../repos';
 import { lockWorktree, readManagedWorktree } from '../worktrees';
 import { readKiloResultStateSummary } from './results';
 import { reconcilePreparedDiffRevisionResult } from './revision-reconcile';
+import { reconcileCiFixRunForKiloTask } from './ci-fix-run-reconcile';
 
 export async function startKiloTask(
   rawInput: unknown,
@@ -379,6 +380,10 @@ export async function abortKiloTask(
     { task: requireKiloTask(task.id, paths), status: 'cancelled' },
     paths,
   );
+  await reconcileCiFixRunCompletion(
+    { task: requireKiloTask(task.id, paths), status: 'cancelled' },
+    paths,
+  );
   addKiloTaskEvent(
     task.id,
     {
@@ -397,6 +402,23 @@ export async function abortKiloTask(
     message: `Cancelled Kilo task ${task.id}.`,
     task: requireKiloTask(task.id, paths),
   };
+}
+
+async function reconcileCiFixRunCompletion(
+  input: {
+    task: ReturnType<typeof requireKiloTask>;
+    status: 'cancelled';
+  },
+  paths: RuntimePaths,
+) {
+  try {
+    await reconcileCiFixRunForKiloTask(input, paths);
+  } catch (error) {
+    console.error('[neondeck] failed to reconcile CI fix Kilo cancellation', {
+      taskId: input.task.id,
+      error: errorMessage(error),
+    });
+  }
 }
 
 export async function readKiloTaskSessions(

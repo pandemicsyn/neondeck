@@ -10,6 +10,7 @@ export {
   verifyPrWorktreeAction,
   pushPrAutofixAction,
   fixPrCiFailureAction,
+  ciFixRunAction,
   fixPrReviewFeedbackAction,
   commentPrAutofixResultAction,
   neondeckAutopilotActions,
@@ -22,6 +23,13 @@ export {
   runPreparedDiffRevision,
 } from './revision-run';
 export { fixPrCiFailure } from './ci-fix';
+export {
+  createCiFailureDossierReport,
+  fixPrCiRun,
+  ciFixRunInputSchema,
+  ciFixRunOutputSchema,
+  type CiFixRunInput,
+} from './ci-fix-run';
 export { fixPrReviewFeedback } from './review-feedback';
 export { commentPrAutofixResult } from './comments';
 export { autopilotStateLookupTool, readAutopilotState } from './state';

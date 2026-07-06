@@ -32,6 +32,7 @@ import {
 import { type RuntimePaths } from '../../runtime-home';
 import { releaseWorktreeLock } from '../worktrees';
 import { reconcilePreparedDiffRevisionResult } from './revision-reconcile';
+import { reconcileCiFixRunForKiloTask } from './ci-fix-run-reconcile';
 
 const execFileAsync = promisify(execFile);
 export const runningProcesses = new Map<string, RunningProcess>();
@@ -92,6 +93,14 @@ export function attachProcessHandlers(
       await reconcilePreparedDiffRevisionResult(
         {
           task,
+          status: 'failed',
+          error: errorMessage(error),
+        },
+        paths,
+      );
+      await reconcileCiFixRunCompletion(
+        {
+          task: tryKiloTask(taskId, paths) ?? task,
           status: 'failed',
           error: errorMessage(error),
         },
@@ -215,8 +224,17 @@ export function attachProcessHandlers(
           paths,
         );
       }
-      await releaseTaskLock(task, status, paths);
+      await releaseTaskLock(task, status, paths, observedDiff);
       await reconcilePreparedDiffRevisionResult(
+        {
+          task: tryKiloTask(taskId, paths) ?? current ?? task,
+          status,
+          diff: observedDiff,
+          error,
+        },
+        paths,
+      );
+      await reconcileCiFixRunCompletion(
         {
           task: tryKiloTask(taskId, paths) ?? current ?? task,
           status,
@@ -404,8 +422,16 @@ export async function reconcilePersistedRunningTasks(
       paths,
     );
     if (!processAlive) {
-      await releaseTaskLock(task, status, paths);
+      await releaseTaskLock(task, status, paths, diff);
       await reconcilePreparedDiffRevisionResult(
+        {
+          task: tryKiloTask(task.id, paths) ?? task,
+          status,
+          diff,
+        },
+        paths,
+      );
+      await reconcileCiFixRunCompletion(
         {
           task: tryKiloTask(task.id, paths) ?? task,
           status,
@@ -421,9 +447,16 @@ export async function releaseTaskLock(
   task: KiloTaskRecord | undefined,
   status: KiloTaskStatus,
   paths: RuntimePaths,
+  diff?: KiloTaskDiff | null,
 ) {
   if (!task?.lockId) return;
-  await releaseKiloTaskLock(task.lockId, kiloLockOwner(task.id), status, paths);
+  await releaseKiloTaskLock(
+    task.lockId,
+    kiloLockOwner(task.id),
+    status,
+    paths,
+    diff,
+  );
 }
 
 export async function releaseKiloTaskLock(
@@ -431,18 +464,31 @@ export async function releaseKiloTaskLock(
   owner: string | null,
   status: KiloTaskStatus,
   paths: RuntimePaths,
+  diff?: KiloTaskDiff | null,
 ) {
   await releaseWorktreeLock(
     {
       lockId,
       ...(owner ? { owner } : {}),
-      finalStatus: worktreeStatusForKiloStatus(status),
+      finalStatus: worktreeStatusForKiloStatus(status, diff),
     },
     paths,
   );
 }
 
-function worktreeStatusForKiloStatus(status: KiloTaskStatus) {
+type KiloTaskDiff = {
+  ok: boolean;
+  fileCount: number;
+  error?: string;
+};
+
+function worktreeStatusForKiloStatus(
+  status: KiloTaskStatus,
+  diff?: KiloTaskDiff | null,
+) {
+  if (status === 'succeeded' && diff?.ok === true && diff.fileCount === 0) {
+    return 'ready';
+  }
   if (
     status === 'succeeded' ||
     status === 'needs-review' ||
@@ -458,6 +504,25 @@ function worktreeStatusForKiloStatus(status: KiloTaskStatus) {
 
 export function kiloLockOwner(taskId: string) {
   return `kilo:${taskId}`;
+}
+
+async function reconcileCiFixRunCompletion(
+  input: {
+    task: KiloTaskRecord;
+    status: KiloTaskStatus;
+    diff?: Awaited<ReturnType<typeof taskDiffSummary>> | null;
+    error?: string | null;
+  },
+  paths: RuntimePaths,
+) {
+  try {
+    await reconcileCiFixRunForKiloTask(input, paths);
+  } catch (error) {
+    console.error('[neondeck] failed to reconcile CI fix Kilo result', {
+      taskId: input.task.id,
+      error: errorMessage(error),
+    });
+  }
 }
 
 async function inspectPersistedKiloProcess(task: KiloTaskRecord) {

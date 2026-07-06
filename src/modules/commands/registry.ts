@@ -19,10 +19,16 @@ export function supportedCommands() {
         'Prepare local PR review reports and Neon-origin draft comments for a human reviewer.',
     },
     {
-      name: 'explain-ci',
-      usage: '/explain-ci [repo#number|owner/repo#number]',
+      name: 'fix-ci',
+      usage: '/fix-ci [repo#number|owner/repo#number]',
       description:
-        'Explain deterministic CI/check status for a PR before agent reasoning.',
+        'Queue a bounded CI fix workflow for a PR with failing checks.',
+    },
+    {
+      name: 'explain-ci',
+      usage: '/explain-ci [--report] [repo#number|owner/repo#number]',
+      description:
+        'Explain deterministic CI/check status for a PR before agent reasoning, optionally writing a local dossier report.',
     },
     {
       name: 'summarize-pr',
@@ -141,6 +147,7 @@ export function isCommandName(value: string): value is NeonCommandName {
     'repo-status',
     'review-queue',
     'review-pr',
+    'fix-ci',
     'explain-ci',
     'summarize-pr',
     'draft-pr-description',

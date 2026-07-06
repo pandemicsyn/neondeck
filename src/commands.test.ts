@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { listWorkflowSummaries } from './modules/app-state';
 import { readAgentModelSelectionSync } from './modules/runtime';
 import { parseNeonCommand, runNeonCommand } from './modules/commands';
+import type { CommandDependencies } from './modules/commands';
 import { updateAgentModels } from './modules/config';
 import { listRepoStatus, runDevDoctor } from './modules/runtime';
 import { runtimePaths } from './runtime-home';
@@ -63,6 +64,20 @@ describe('Neon commands', () => {
       command: {
         name: 'review-pr',
         args: ['pandemicsyn/neondeck#10'],
+      },
+    });
+    expect(parseNeonCommand('/fix-ci neondeck#10')).toMatchObject({
+      ok: true,
+      command: {
+        name: 'fix-ci',
+        args: ['neondeck#10'],
+      },
+    });
+    expect(parseNeonCommand('/explain-ci --report neondeck#10')).toMatchObject({
+      ok: true,
+      command: {
+        name: 'explain-ci',
+        args: ['--report', 'neondeck#10'],
       },
     });
     expect(parseNeonCommand('/draft-pr-description')).toMatchObject({
@@ -126,6 +141,50 @@ describe('Neon commands', () => {
       workflowSummary: {
         workflow: 'command:review-pr',
         runId: 'review-run-1',
+        status: 'completed',
+      },
+    });
+    expect(invocations).toEqual([{ ref: 'pandemicsyn/neondeck#10' }]);
+  });
+
+  it('queues fix-ci through the bounded workflow surface for failing checks', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    process.env.GITHUB_LOGIN = 'pandemicsyn';
+    const home = await tempDir('neondeck-home-');
+    const repoPath = await tempGitRepo();
+    const paths = runtimePaths(home);
+    const invocations: unknown[] = [];
+    await writeRepoRegistry(paths.repos, repoPath);
+
+    await expect(
+      runNeonCommand({ command: '/fix-ci neondeck#10' }, paths, {
+        fetchPullRequestQueue: async () => ({
+          login: 'pandemicsyn',
+          repos: ['pandemicsyn/neondeck'],
+          items: [testPr({ checks: 'failure' })],
+          fetchedAt: '2026-06-27T20:01:00Z',
+          truncated: false,
+          issues: [],
+        }),
+        invokeFixCiWorkflow: async (input) => {
+          invocations.push(input);
+          return { runId: 'ci-fix-run-1' };
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      command: 'fix-ci',
+      message:
+        'Queued CI fix workflow ci-fix-run-1 for pandemicsyn/neondeck#10.',
+      data: {
+        workflow: 'fix-pr-ci',
+        runId: 'ci-fix-run-1',
+        ref: 'pandemicsyn/neondeck#10',
+        trustBoundary: expect.stringContaining('does not push'),
+      },
+      workflowSummary: {
+        workflow: 'command:fix-ci',
+        runId: 'ci-fix-run-1',
         status: 'completed',
       },
     });
@@ -317,6 +376,70 @@ describe('Neon commands', () => {
         workflow: 'command:explain-ci',
       },
     });
+  });
+
+  it('writes a CI dossier for explain-ci --report without dispatching a fix', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    process.env.GITHUB_LOGIN = 'pandemicsyn';
+    const home = await tempDir('neondeck-home-');
+    const repoPath = await tempGitRepo();
+    const paths = runtimePaths(home);
+    const reports: unknown[] = [];
+    await writeRepoRegistry(paths.repos, repoPath);
+    const dependencies: CommandDependencies = {
+      fetchPullRequestQueue: async () => ({
+        login: 'pandemicsyn',
+        repos: ['pandemicsyn/neondeck'],
+        items: [testPr({ checks: 'failure' })],
+        fetchedAt: '2026-06-27T20:01:00Z',
+        truncated: false,
+        issues: [],
+      }),
+      createCiFailureDossierReport: async (input) => {
+        reports.push(input);
+        return {
+          ok: true,
+          action: 'ci_fix_report',
+          changed: true,
+          message: 'Created report.',
+          report: {
+            id: 'report-1',
+            kind: 'ci-fix',
+            title: 'CI failure dossier',
+            repoId: 'neondeck',
+            sourceRef: 'pandemicsyn/neondeck#10',
+            htmlPath: 'ci-fix/report-1.html',
+            summary: null,
+            createdBy: 'ci_fix_run',
+            createdAt: '2026-06-27T20:01:00Z',
+          },
+          data: {},
+        };
+      },
+    };
+
+    await expect(
+      runNeonCommand(
+        { command: '/explain-ci --report neondeck#10' },
+        paths,
+        dependencies,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      command: 'explain-ci',
+      message:
+        'pandemicsyn/neondeck#10 CI is failure. Created CI dossier report report-1.',
+      data: {
+        report: {
+          id: 'report-1',
+          kind: 'ci-fix',
+          url: '/reports/report-1',
+        },
+      },
+    });
+    expect(reports).toEqual([
+      { ref: 'pandemicsyn/neondeck#10', reportOnly: true },
+    ]);
   });
 
   it('summarizes a selected PR from deterministic GitHub queue data', async () => {

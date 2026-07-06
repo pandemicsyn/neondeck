@@ -502,6 +502,16 @@ export const entries: SafetyPolicyEntry[] = [
     'Creates local PR review reports and Neon-origin local draft comments for human review. It never submits a GitHub review or performs external writes.',
   ),
   action(
+    'neondeck_autopilot_ci_fix_run',
+    'Run bounded PR CI fix',
+    {
+      ...hostExecution,
+      auditTarget:
+        'reports/worktrees/worktree_locks/kilo_tasks/kilo_task_events/prepared_diffs/notifications/workflow_summaries/workflow_events',
+    },
+    'Creates a local CI dossier report, prepares a managed PR worktree, and starts a bounded Kilo fix task. It may create a local prepared diff, but it never pushes, comments, or submits a GitHub review.',
+  ),
+  action(
     'neondeck_config_add_repo',
     'Add repository config',
     {
@@ -1446,6 +1456,16 @@ export const entries: SafetyPolicyEntry[] = [
         'reports/pr_review_drafts/pr_review_draft_comments/notifications/workflow_events',
     },
     'Runs bounded PR review assistance through the Flue workflow surface, creating local reports and Neon-origin draft comments only.',
+  ),
+  workflow(
+    'fix-pr-ci',
+    'Run PR CI fix workflow',
+    {
+      ...hostExecution,
+      auditTarget:
+        'reports/worktrees/worktree_locks/kilo_tasks/kilo_task_events/prepared_diffs/notifications/workflow_events',
+    },
+    'Runs bounded CI fix assistance through the Flue workflow surface, creating local reports, local worktree changes, and prepared diffs only. It does not push or comment.',
   ),
   workflow(
     'watch-release',

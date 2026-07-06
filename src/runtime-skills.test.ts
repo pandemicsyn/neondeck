@@ -45,7 +45,7 @@ describe('runtime skills', () => {
 
     expect(
       runtimeSkillReferencesSync(paths).map((skill) => skill.name),
-    ).toEqual(['neon-pr-review']);
+    ).toEqual(['neon-ci-fix', 'neon-pr-review']);
   });
 
   it('discovers user and external skills while ignoring broken folders', async () => {
@@ -181,7 +181,7 @@ describe('runtime skills', () => {
     );
     expect(
       runtimeSkillReferencesSync(paths).map((skill) => skill.name),
-    ).toEqual(['neon-pr-review']);
+    ).toEqual(['neon-ci-fix', 'neon-pr-review']);
   });
 
   it('ignores user skills that try to replace the built-in Neondeck skill', async () => {

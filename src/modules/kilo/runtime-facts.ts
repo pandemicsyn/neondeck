@@ -1,17 +1,18 @@
 import { type KiloNotificationFact } from './notifications';
 import { readKiloResultStateSummary } from './results';
 import { readGitDiffSummary } from '../repos';
-import { type RuntimePaths } from '../../runtime-home';
+import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 import { type KiloResultPlaceholder } from './schemas';
 import { type KiloTaskRecord, type KiloTaskStatus } from './store';
 import { splitRepoFullName } from './utils';
+import { readWorktreeRecord } from '../worktrees';
 
 export async function taskWithDiff(
   task: KiloTaskRecord,
   paths: RuntimePaths,
   notificationFacts: KiloNotificationFact[] = [],
 ) {
-  const diff = await taskDiffSummary(task);
+  const diff = await taskDiffSummary(task, paths);
   const resultState = readKiloResultStateSummary(task.id, paths);
   return taskWithRuntimeFacts(
     {
@@ -103,11 +104,22 @@ function resultPlaceholdersForTask(task: {
   return placeholders;
 }
 
-export async function taskDiffSummary(task: KiloTaskRecord) {
+export async function taskDiffSummary(
+  task: KiloTaskRecord,
+  paths: RuntimePaths = runtimePaths(),
+) {
+  let baseRef = 'HEAD';
+  if (task.worktreeId) {
+    try {
+      baseRef = readWorktreeRecord(task.worktreeId, paths).baseRef;
+    } catch {
+      baseRef = 'HEAD';
+    }
+  }
   return readGitDiffSummary({
     path: task.cwd,
     github: splitRepoFullName(task.repoFullName),
-    defaultBranch: 'HEAD',
+    defaultBranch: baseRef,
   });
 }
 
