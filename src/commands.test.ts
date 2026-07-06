@@ -147,7 +147,42 @@ describe('Neon commands', () => {
     expect(invocations).toEqual([{ ref: 'pandemicsyn/neondeck#10' }]);
   });
 
-  it('queues fix-ci through the bounded workflow surface for failing checks', async () => {
+  it('queues explicit fix-ci refs through the bounded workflow surface without review-queue gating', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    const invocations: unknown[] = [];
+
+    await expect(
+      runNeonCommand({ command: '/fix-ci pandemicsyn/neondeck#10' }, paths, {
+        fetchPullRequestQueue: async () => {
+          throw new Error('explicit fix-ci should not fetch review queue');
+        },
+        invokeFixCiWorkflow: async (input) => {
+          invocations.push(input);
+          return { runId: 'ci-fix-run-1' };
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      command: 'fix-ci',
+      message:
+        'Queued CI fix workflow ci-fix-run-1 for pandemicsyn/neondeck#10.',
+      data: {
+        workflow: 'fix-pr-ci',
+        runId: 'ci-fix-run-1',
+        ref: 'pandemicsyn/neondeck#10',
+        trustBoundary: expect.stringContaining('does not push'),
+      },
+      workflowSummary: {
+        workflow: 'command:fix-ci',
+        runId: 'ci-fix-run-1',
+        status: 'completed',
+      },
+    });
+    expect(invocations).toEqual([{ ref: 'pandemicsyn/neondeck#10' }]);
+  });
+
+  it('selects a failing queue item for bare fix-ci', async () => {
     process.env.GITHUB_TOKEN = 'token';
     process.env.GITHUB_LOGIN = 'pandemicsyn';
     const home = await tempDir('neondeck-home-');
@@ -157,7 +192,7 @@ describe('Neon commands', () => {
     await writeRepoRegistry(paths.repos, repoPath);
 
     await expect(
-      runNeonCommand({ command: '/fix-ci neondeck#10' }, paths, {
+      runNeonCommand({ command: '/fix-ci' }, paths, {
         fetchPullRequestQueue: async () => ({
           login: 'pandemicsyn',
           repos: ['pandemicsyn/neondeck'],
