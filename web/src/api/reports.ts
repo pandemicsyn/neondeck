@@ -1,4 +1,4 @@
-import type { ReportsResponse } from './types';
+import type { ReportResponse, ReportsResponse } from './types';
 import { getJson } from './http';
 
 export async function getReports(
@@ -12,5 +12,13 @@ export async function getReports(
     `/api/reports${query ? `?${query}` : ''}`,
   );
   if (!response.ok) throw new Error(response.message ?? 'Reports unavailable.');
+  return response;
+}
+
+export async function getReport(id: string) {
+  const response = await getJson<ReportResponse>(
+    `/api/reports/${encodeURIComponent(id)}`,
+  );
+  if (!response.ok) throw new Error(response.message ?? 'Report unavailable.');
   return response;
 }

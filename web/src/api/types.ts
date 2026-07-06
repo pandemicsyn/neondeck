@@ -130,6 +130,14 @@ export type ReportsResponse = {
   message?: string;
 };
 
+export type ReportResponse = {
+  ok: boolean;
+  action: 'reports_read';
+  item: ReportRecord | null;
+  fetchedAt?: string;
+  message?: string;
+};
+
 export type GitHubPullRequestFile = Omit<RepoDiffFile, 'patch'> & {
   patch?: string | null;
   previousPath?: string | null;

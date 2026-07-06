@@ -98,7 +98,14 @@ export async function writeReport(
         record.createdAt,
       );
   } catch (error) {
-    await unlink(filePath).catch(() => undefined);
+    try {
+      await unlink(filePath);
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        'Failed to insert report record and remove report artifact.',
+      );
+    }
     throw error;
   } finally {
     database.close();
