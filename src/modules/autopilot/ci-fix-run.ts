@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import * as v from 'valibot';
@@ -9,7 +10,11 @@ import {
   type RepoConfig,
   type RuntimePaths,
 } from '../../runtime-home';
-import { addNotification, addWorkflowSummary } from '../app-state';
+import {
+  addNotification,
+  addWorkflowSummary,
+  updateWorkflowSummary,
+} from '../app-state';
 import {
   fetchFailingCheckFacts,
   type GitHubFailingCheckFact,
@@ -141,6 +146,19 @@ export async function runCiFix(
     };
   }
 
+  if (dossier.failingChecks.length === 0) {
+    const message =
+      'No failing GitHub check runs were present in the current CI dossier.';
+    await notifyCiFixAttention(dossier, report, message, paths);
+    return failure(message, {
+      requires: ['failingChecks'],
+      data: {
+        report: reportLink(report),
+        dossier: dossierSummary(dossier),
+      },
+    });
+  }
+
   if (!dossier.repo) {
     await notifyCiFixAttention(
       dossier,
@@ -224,33 +242,15 @@ export async function runCiFix(
       stringField(preparedWorktree.headSha) ?? dossier.state.headSha;
 
     const prompt = await ciFixPrompt(dossier, report, paths);
-    const kilo = await (dependencies.startKiloTask ?? startKiloTask)(
-      {
-        worktreeId,
-        title: `Fix CI: ${sourceRef(dossier)}`,
-        prompt,
-        mode: 'draft-fix',
-        allowAuto: true,
-        confirmAuto: true,
-        explicitUserRequest: true,
-      },
-      paths,
-    );
-    if (!kilo.ok) {
-      releaseStatus = 'failed';
-      await notifyCiFixAttention(dossier, report, kilo.message, paths);
-      return lowerLevelFailure('kilo_task_start', kilo, { report, dossier });
-    }
-
-    const kiloTaskId = stringField(objectField(kilo).taskId);
+    const kiloTaskId = `ci-fix-${randomUUID()}`;
     const workflowSummary = await addWorkflowSummary(
       {
         workflow: 'ci_fix_run',
-        ...(kiloTaskId ? { runId: kiloTaskId } : {}),
+        runId: kiloTaskId,
         status: 'running',
         summary: {
           type: 'ci_fix_run',
-          outcome: 'kilo-started',
+          outcome: 'kilo-starting',
           pr: sourceRef(dossier),
           repoId: dossier.repo.id,
           repoFullName: dossier.target.repoFullName,
@@ -265,8 +265,53 @@ export async function runCiFix(
           })),
           reportId: report.id,
           ciFixLockId: lock.lock.id,
-          kiloTaskId: kiloTaskId ?? null,
+          kiloTaskId,
           worktreeId,
+        },
+      },
+      paths,
+    );
+    const kilo = await (dependencies.startKiloTask ?? startKiloTask)(
+      {
+        taskId: kiloTaskId,
+        worktreeId,
+        title: `Fix CI: ${sourceRef(dossier)}`,
+        prompt,
+        mode: 'draft-fix',
+        allowAuto: true,
+        confirmAuto: true,
+        explicitUserRequest: true,
+      },
+      paths,
+    );
+    if (!kilo.ok) {
+      releaseStatus = 'failed';
+      await notifyCiFixAttention(dossier, report, kilo.message, paths);
+      await updateWorkflowSummary(
+        workflowSummary.id,
+        {
+          status: 'failed',
+          summary: {
+            ...objectField(workflowSummary.summary),
+            outcome: 'kilo-start-failed',
+            error: kilo.message,
+          },
+        },
+        paths,
+      );
+      return lowerLevelFailure('kilo_task_start', kilo, { report, dossier });
+    }
+
+    const startedKiloTaskId =
+      stringField(objectField(kilo).taskId) ?? kiloTaskId;
+    const updatedWorkflowSummary = await updateWorkflowSummary(
+      workflowSummary.id,
+      {
+        status: 'running',
+        summary: {
+          ...objectField(workflowSummary.summary),
+          outcome: 'kilo-started',
+          kiloTaskId: startedKiloTaskId,
         },
       },
       paths,
@@ -284,7 +329,7 @@ export async function runCiFix(
           reportId: report.id,
           reportUrl: `/reports/${report.id}`,
           ciFixLockId: lock.lock.id,
-          kiloTaskId: kiloTaskId ?? null,
+          kiloTaskId: startedKiloTaskId,
           worktreeId,
         },
       },
@@ -302,10 +347,10 @@ export async function runCiFix(
         report: reportLink(report),
         dossier: dossierSummary(dossier),
         ciFixLockId: lock.lock.id,
-        kiloTaskId: kiloTaskId ?? null,
+        kiloTaskId: startedKiloTaskId,
         worktreeId,
       }),
-      workflowSummary,
+      workflowSummary: updatedWorkflowSummary ?? workflowSummary,
     };
   } finally {
     if (releaseStatus) {

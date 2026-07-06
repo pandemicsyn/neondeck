@@ -84,7 +84,7 @@ export async function startKiloTask(
     }
 
     await reconcilePersistedRunningTasks(paths);
-    const id = randomUUID();
+    const id = parsed.input.taskId ?? randomUUID();
     workspace = await resolveWorkspace(parsed.input, id, paths);
     assertRepoAllowed(kilo, workspace.repo, workspace.repoFullName);
     assertModeAllowed(parsed.input, workspace);

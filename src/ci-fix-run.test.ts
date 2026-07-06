@@ -127,6 +127,122 @@ describe('CI fix run', () => {
     );
   });
 
+  it('creates the CI fix workflow summary before Kilo can finish', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    let observedTaskId: string | null = null;
+
+    const result = await fixPrCiRun({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+      ...testDependencies(),
+      preparePrWorktree: async () =>
+        ({
+          ok: true,
+          action: 'autopilot_prepare_pr_worktree',
+          changed: true,
+          message: 'prepared',
+          data: {
+            worktree: {
+              id: 'worktree-1',
+              headSha: 'prepared-head-sha',
+            },
+          },
+        }) as never,
+      lockWorktree: async () =>
+        ({
+          ok: true,
+          action: 'worktree_lock',
+          changed: true,
+          message: 'locked',
+          lock: { id: 'ci-fix-lock-1' },
+        }) as never,
+      startKiloTask: async (input) => {
+        observedTaskId = stringField((input as { taskId?: unknown }).taskId);
+        expect(observedTaskId).toMatch(/^ci-fix-/);
+        await expect(listWorkflowSummaries(paths)).resolves.toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              workflow: 'ci_fix_run',
+              runId: observedTaskId,
+              status: 'running',
+              summary: expect.objectContaining({
+                outcome: 'kilo-starting',
+                headSha: 'prepared-head-sha',
+                dossierHeadSha: 'abc123def456',
+                kiloTaskId: observedTaskId,
+              }),
+            }),
+          ]),
+        );
+        return {
+          ok: true,
+          action: 'kilo_task_start',
+          changed: true,
+          message: 'started',
+          taskId: observedTaskId ?? 'missing-task-id',
+          pid: null,
+          rawLogPath: null,
+          command: [],
+          task: kiloTask({
+            id: observedTaskId ?? 'missing-task-id',
+            cwd: '/tmp/neondeck',
+            worktreeId: 'worktree-1',
+          }),
+        };
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        kiloTaskId: observedTaskId,
+      },
+      workflowSummary: {
+        runId: observedTaskId,
+        status: 'running',
+        summary: expect.objectContaining({ outcome: 'kilo-started' }),
+      },
+    });
+  });
+
+  it('stops after the dossier when current failing check facts are empty', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    let startedKilo = false;
+
+    const result = await fixPrCiRun({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+      readDossier: async () => ({
+        ...ciFixDossier(),
+        failingChecks: [],
+        likelyCommands: [],
+      }),
+      startKiloTask: async () => {
+        startedKilo = true;
+        throw new Error('should not start Kilo');
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      requires: ['failingChecks'],
+      data: {
+        report: { url: expect.stringContaining('/reports/') },
+      },
+    });
+    expect(startedKilo).toBe(false);
+    await expect(listNotifications(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: 'attention',
+          title: 'CI fix needs attention',
+          message:
+            'No failing GitHub check runs were present in the current CI dossier.',
+        }),
+      ]),
+    );
+  });
+
   it('marks a successful no-op Kilo run without creating a prepared diff', async () => {
     const home = await tempDir('neondeck-home-');
     const cwd = await tempDir('ci-fix-worktree-');
@@ -472,6 +588,10 @@ async function tempGitRepo() {
 async function git(cwd: string, args: string[]) {
   const { stdout } = await execFileAsync('git', args, { cwd });
   return stdout.trim();
+}
+
+function stringField(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value : null;
 }
 
 async function lockKiloWorktree(
