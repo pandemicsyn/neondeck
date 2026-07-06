@@ -99,6 +99,43 @@ describe('CI fix run', () => {
     expect(html?.html).not.toContain('<script>alert(1)</script>');
   });
 
+  it('records a typed failure when CI dossier preparation throws', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    const result = await fixPrCiRun({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+      readDossier: async () => {
+        throw new Error('GitHub checks unavailable');
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      action: 'ci_fix_run',
+      message: expect.stringContaining('GitHub checks unavailable'),
+      requires: ['ciFixDossier'],
+      data: {
+        workflow: 'fix-pr-ci',
+        outcome: 'dossier-failed',
+      },
+      workflowSummary: {
+        workflow: 'ci_fix_run',
+        status: 'failed',
+        summary: expect.objectContaining({
+          outcome: 'dossier-failed',
+        }),
+      },
+    });
+    await expect(listNotifications(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: 'attention',
+          title: 'CI fix failed',
+        }),
+      ]),
+    );
+  });
+
   it('fails deterministically on CI fix lock contention without starting Kilo', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
@@ -236,7 +273,7 @@ describe('CI fix run', () => {
           expect.arrayContaining([
             expect.objectContaining({
               workflow: 'ci_fix_run',
-              runId: observedTaskId,
+              runId: null,
               status: 'running',
               summary: expect.objectContaining({
                 outcome: 'kilo-starting',
@@ -271,7 +308,7 @@ describe('CI fix run', () => {
         kiloTaskId: observedTaskId,
       },
       workflowSummary: {
-        runId: observedTaskId,
+        runId: null,
         status: 'running',
         summary: expect.objectContaining({ outcome: 'kilo-started' }),
       },
@@ -316,7 +353,8 @@ describe('CI fix run', () => {
         const summaries = await listWorkflowSummaries(paths);
         const summary = summaries.find(
           (row) =>
-            row.workflow === 'ci_fix_run' && row.runId === observedTaskId,
+            row.workflow === 'ci_fix_run' &&
+            objectField(row.summary).kiloTaskId === observedTaskId,
         );
         if (!summary) throw new Error('missing pre-created workflow summary');
 
@@ -353,7 +391,7 @@ describe('CI fix run', () => {
     expect(result).toMatchObject({
       ok: true,
       workflowSummary: {
-        runId: observedTaskId,
+        runId: null,
         status: 'completed',
         summary: expect.objectContaining({
           outcome: 'no-op',
@@ -363,7 +401,9 @@ describe('CI fix run', () => {
     });
     const summaries = await listWorkflowSummaries(paths);
     const ciFixSummary = summaries.find(
-      (row) => row.workflow === 'ci_fix_run' && row.runId === observedTaskId,
+      (row) =>
+        row.workflow === 'ci_fix_run' &&
+        objectField(row.summary).kiloTaskId === observedTaskId,
     );
     expect(ciFixSummary).toMatchObject({
       status: 'completed',
@@ -524,7 +564,6 @@ describe('CI fix run', () => {
     await addWorkflowSummary(
       {
         workflow: 'ci_fix_run',
-        runId: 'kilo-task-1',
         status: 'running',
         summary: {
           outcome: 'kilo-started',
@@ -597,7 +636,6 @@ describe('CI fix run', () => {
     await addWorkflowSummary(
       {
         workflow: 'ci_fix_run',
-        runId: 'kilo-task-unchanged-pr',
         status: 'running',
         summary: {
           outcome: 'kilo-started',
@@ -681,7 +719,6 @@ describe('CI fix run', () => {
     await addWorkflowSummary(
       {
         workflow: 'ci_fix_run',
-        runId: 'kilo-task-untracked',
         status: 'running',
         summary: {
           outcome: 'kilo-started',
@@ -762,7 +799,6 @@ describe('CI fix run', () => {
     await addWorkflowSummary(
       {
         workflow: 'ci_fix_run',
-        runId: 'kilo-task-commit',
         status: 'running',
         summary: {
           outcome: 'kilo-started',

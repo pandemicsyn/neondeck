@@ -244,7 +244,11 @@ export async function pruneReports(
     }
 
     for (const [id, htmlPath] of toDelete) {
-      await unlink(resolveReportFilePath(paths, htmlPath));
+      try {
+        await unlink(resolveReportFilePath(paths, htmlPath));
+      } catch (error) {
+        if (!isNodeErrorCode(error, 'ENOENT')) throw error;
+      }
       database.prepare('DELETE FROM reports WHERE id = ?;').run(id);
     }
   } finally {
@@ -291,6 +295,15 @@ function normalizeReportKind(value: string) {
     throw new Error('Report kind must be lowercase kebab-case.');
   }
   return kind;
+}
+
+function isNodeErrorCode(error: unknown, code: string) {
+  return (
+    Boolean(error) &&
+    typeof error === 'object' &&
+    'code' in error &&
+    (error as { code?: unknown }).code === code
+  );
 }
 
 function nullableTrim(value: string | null | undefined) {

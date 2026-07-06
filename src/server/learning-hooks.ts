@@ -181,10 +181,13 @@ function commandRunSummaryLink(event: FlueObservation) {
 
   const id = (summary as { id?: unknown }).id;
   if (typeof id !== 'string') return undefined;
+  const summaryWorkflow = stringField(summary, 'workflow');
   const runId =
-    objectStringField(result, 'data', 'runId') ??
-    stringField(summary, 'runId') ??
-    stringField(event, 'runId');
+    summaryWorkflow === 'ci_fix_run'
+      ? stringField(event, 'runId')
+      : (objectStringField(result, 'data', 'runId') ??
+        stringField(summary, 'runId') ??
+        stringField(event, 'runId'));
   if (!runId) return undefined;
 
   return {

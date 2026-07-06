@@ -6,7 +6,11 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { listWorkflowSummaries } from './modules/app-state';
 import { readAgentModelSelectionSync } from './modules/runtime';
-import { parseNeonCommand, runNeonCommand } from './modules/commands';
+import {
+  commandRunAction,
+  parseNeonCommand,
+  runNeonCommand,
+} from './modules/commands';
 import type { CommandDependencies } from './modules/commands';
 import { updateAgentModels } from './modules/config';
 import { listRepoStatus, runDevDoctor } from './modules/runtime';
@@ -110,6 +114,21 @@ describe('Neon commands', () => {
     expect(parseNeonCommand('/unknown')).toMatchObject({
       ok: false,
       requires: ['supportedCommand'],
+    });
+  });
+
+  it('blocks host-executing fix-ci from the model-callable command action', async () => {
+    await expect(
+      commandRunAction.run({
+        input: { command: '/fix-ci pandemicsyn/neondeck#10' },
+        log: { info() {}, warn() {} },
+        harness: {},
+      } as never),
+    ).resolves.toMatchObject({
+      ok: false,
+      command: 'fix-ci',
+      status: 'failed',
+      requires: ['humanWorkflowAdmission'],
     });
   });
 

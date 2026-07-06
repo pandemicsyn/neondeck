@@ -78,6 +78,10 @@ const sensitiveSkillResourceNames = new Set([
 const applicationSkillPaths = [
   fileURLToPath(new URL('../../skills/neondeck/SKILL.md', import.meta.url)),
   fileURLToPath(new URL('../../skills/github-gh/SKILL.md', import.meta.url)),
+  fileURLToPath(
+    new URL('../../skills/neon-pr-review/SKILL.md', import.meta.url),
+  ),
+  fileURLToPath(new URL('../../skills/neon-ci-fix/SKILL.md', import.meta.url)),
 ];
 const reservedBuiltInSkillIds = new Set(
   applicationSkillPaths.map((path) => basename(dirname(path))),
@@ -432,7 +436,7 @@ function parseSkillFile(
         path,
         root,
         skillSource,
-        'Skill id "neondeck" is reserved for the built-in application Flue skill.',
+        `Skill id "${nameResult.output}" is reserved for a built-in application Flue skill.`,
       ),
     };
   }

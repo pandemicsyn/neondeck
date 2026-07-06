@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -131,39 +131,9 @@ describe('runtime home', () => {
         region.tabs.map((tab) => tab.pluginId),
       ),
     ).toContain('reports-panel');
-
-    await expect(
-      readFile(join(paths.skills, 'neondeck', 'SKILL.md'), 'utf8'),
-    ).rejects.toThrow('no such file or directory');
-    await expect(
-      readFile(join(paths.skills, 'neon-pr-review', 'SKILL.md'), 'utf8'),
-    ).resolves.toContain('name: neon-pr-review');
-    await expect(
-      readFile(join(paths.skills, 'neon-ci-fix', 'SKILL.md'), 'utf8'),
-    ).resolves.toContain('name: neon-ci-fix');
   });
 
-  it('does not clobber patched runtime skill seeds', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
-    tempRoots.push(root);
-    const paths = runtimePaths(root);
-    await ensureRuntimeHome(paths);
-    const skillPath = join(paths.skills, 'neon-pr-review', 'SKILL.md');
-    const ciSkillPath = join(paths.skills, 'neon-ci-fix', 'SKILL.md');
-    await writeFile(skillPath, 'locally patched skill\n');
-    await writeFile(ciSkillPath, 'locally patched ci skill\n');
-
-    await ensureRuntimeHome(paths);
-
-    await expect(readFile(skillPath, 'utf8')).resolves.toBe(
-      'locally patched skill\n',
-    );
-    await expect(readFile(ciSkillPath, 'utf8')).resolves.toBe(
-      'locally patched ci skill\n',
-    );
-  });
-
-  it('adds the reports tab to an existing dashboard during bootstrap', async () => {
+  it('does not mutate an existing dashboard during bootstrap', async () => {
     const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
     tempRoots.push(root);
     const paths = runtimePaths(root);
@@ -232,7 +202,7 @@ describe('runtime home', () => {
     const work = dashboard.layout.regions.find(
       (region) => region.id === 'work',
     );
-    expect(work?.tabs.map((tab) => tab.id)).toEqual(['github', 'reports']);
+    expect(work?.tabs.map((tab) => tab.id)).toEqual(['github']);
   });
 
   it('rejects malformed runtime config with a controlled validation error', async () => {
