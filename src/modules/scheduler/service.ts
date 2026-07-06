@@ -7,6 +7,7 @@ import {
   type JobRecord,
 } from '../app-state';
 import { addSchedule } from '../config';
+import { runDueRoutines } from '../routines';
 import {
   ensureRuntimeHome,
   parseScheduleConfig,
@@ -248,6 +249,7 @@ export async function runSchedulerTick(
     );
     const notifications = [];
     let stoppedForLostLease = false;
+    let routineResult: JobExecutionResult | null = null;
 
     for (const job of jobs) {
       if (!isSchedulerTickLeaseOwned(paths, lease.owner, new Date())) {
@@ -312,19 +314,40 @@ export async function runSchedulerTick(
       }
     }
 
-    const changed = notifications.length > 0;
-    return okResult(
-      'scheduler_tick',
-      changed,
-      changed ? 'updated' : 'silent',
+    if (
+      !stoppedForLostLease &&
+      isSchedulerTickLeaseOwned(paths, lease.owner, new Date())
+    ) {
+      routineResult = await runDueRoutines(paths, now);
+      for (const notification of routineResult.notifications ?? []) {
+        notifications.push(await addNotification(notification, paths));
+      }
+    }
+
+    const routineChanged =
+      routineResult?.outcome !== undefined && routineResult.outcome !== 'silent';
+    const changed = notifications.length > 0 || routineChanged;
+    const jobMessage =
       jobs.length === 0
         ? 'No scheduled jobs were due.'
         : stoppedForLostLease
           ? 'Scheduler tick stopped because it no longer owns the active lease.'
-          : `Ran ${jobs.length} scheduled job${jobs.length === 1 ? '' : 's'}.`,
+          : `Ran ${jobs.length} scheduled job${jobs.length === 1 ? '' : 's'}.`;
+    const message =
+      routineResult && routineChanged
+        ? jobs.length === 0
+          ? routineResult.message
+          : `${jobMessage} ${routineResult.message}`
+        : jobMessage;
+    return okResult(
+      'scheduler_tick',
+      changed,
+      changed ? 'updated' : 'silent',
+      message,
       {
         jobs: await listJobs(paths),
         notifications,
+        extra: routineResult ? { routines: routineResult } : undefined,
       },
     );
   } finally {

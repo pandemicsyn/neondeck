@@ -1667,6 +1667,61 @@ export const entries: SafetyPolicyEntry[] = [
     'Starts a bounded docs-only Kilo handoff from a docs-drift report. It creates local worktree state only and never pushes or comments.',
   ),
   route(
+    '/api/routines',
+    'Routines API',
+    {
+      ...safeMutation,
+      auditTarget: 'routines/routine_events/notifications',
+    },
+    'GET lists durable routine records; POST creates a local routine schedule without executing it.',
+  ),
+  route(
+    '/api/routines/:id',
+    'Routine metadata API',
+    {
+      ...safeMutation,
+      auditTarget: 'routines/routine_events',
+    },
+    'GET reads one routine and recent runs; POST updates routine metadata without executing it.',
+  ),
+  route(
+    '/api/routines/:id/run',
+    'Routine run-now API',
+    {
+      ...safeMutation,
+      auditTarget:
+        'routines/routine_runs/routine_events/chat_sessions/chat_session_command_events/reports/notifications',
+    },
+    'Dispatches a routine prompt to a local display-assistant session and records admission facts without synthesizing completion.',
+  ),
+  route(
+    '/api/routines/:id/pause',
+    'Routine pause API',
+    {
+      ...safeMutation,
+      auditTarget: 'routines/routine_events',
+    },
+    'Pauses a routine schedule without deleting run history.',
+  ),
+  route(
+    '/api/routines/:id/resume',
+    'Routine resume API',
+    {
+      ...safeMutation,
+      auditTarget: 'routines/routine_events',
+    },
+    'Resumes a routine schedule without immediately executing it.',
+  ),
+  route(
+    'DELETE /api/routines/:id',
+    'Routine delete API',
+    {
+      ...destructiveMutation,
+      auditTarget: 'routine_events/routines/routine_runs',
+    },
+    'DELETE removes a routine and local run history when no run is active.',
+  ),
+  route(
     '/reports/:id',
     'Report artifact route',
     readOnly,
