@@ -30,6 +30,8 @@ export type GitHubPrReviewDraftStatus = 'draft' | 'submitted' | 'discarded';
 
 export type GitHubPrReviewDraftCommentSide = 'RIGHT' | 'LEFT';
 
+export type GitHubPrReviewDraftCommentOrigin = 'human' | 'neon';
+
 export type GitHubPrReviewDraftComment = {
   id: string;
   draftId: string;
@@ -39,6 +41,7 @@ export type GitHubPrReviewDraftComment = {
   startLine: number | null;
   startSide: GitHubPrReviewDraftCommentSide | null;
   body: string;
+  origin: GitHubPrReviewDraftCommentOrigin;
   createdAt: string;
   updatedAt: string;
 };
@@ -82,6 +85,7 @@ const reviewVerdictSchema = v.picklist([
   'request-changes',
 ]);
 const reviewCommentSideSchema = v.picklist(['RIGHT', 'LEFT']);
+const reviewCommentOriginSchema = v.picklist(['human', 'neon']);
 const draftStatusSchema = v.picklist(['draft', 'submitted', 'discarded']);
 
 const draftRowSchema = v.object({
@@ -106,6 +110,7 @@ const draftCommentRowSchema = v.object({
   start_line: v.nullable(v.number()),
   start_side: v.nullable(reviewCommentSideSchema),
   body: v.string(),
+  origin: reviewCommentOriginSchema,
   created_at: v.string(),
   updated_at: v.string(),
 });
@@ -326,6 +331,7 @@ export function addPrReviewDraftComment(options: {
   startLine?: number | null;
   startSide?: GitHubPrReviewDraftCommentSide | null;
   body: string;
+  origin?: GitHubPrReviewDraftCommentOrigin;
 }): GitHubPrReviewDraft {
   const database = openDb(options.databasePath);
   const now = new Date().toISOString();
@@ -344,10 +350,11 @@ export function addPrReviewDraftComment(options: {
           start_line,
           start_side,
           body,
+          origin,
           created_at,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `,
       )
       .run(
@@ -359,6 +366,7 @@ export function addPrReviewDraftComment(options: {
         options.startLine ?? null,
         options.startSide ?? null,
         options.body.trim(),
+        options.origin ?? 'human',
         now,
         now,
       );
@@ -584,6 +592,7 @@ export async function submitPullRequestReview(options: {
   }
 
   const submitted = markDraftSubmitted(options.databasePath, draft.id);
+  const neonDraftOutcome = summarizeNeonDraftOutcome(draft, comments);
   await addWorkflowSummary(
     {
       workflow: 'github_pr_review',
@@ -595,6 +604,7 @@ export async function submitPullRequestReview(options: {
         verdict,
         commentCount: comments.length,
         skippedCommentCount: draft.comments.length - comments.length,
+        neonDraftOutcome,
         reviewUrl: review.url,
         headSha: currentHeadSha,
       },
@@ -603,6 +613,33 @@ export async function submitPullRequestReview(options: {
   );
 
   return { draft: submitted, review };
+}
+
+function summarizeNeonDraftOutcome(
+  draft: GitHubPrReviewDraft,
+  submittedComments: GitHubPrReviewDraftComment[],
+) {
+  const submittedIds = new Set(submittedComments.map((comment) => comment.id));
+  const survivingNeonComments = draft.comments.filter(
+    (comment) => comment.origin === 'neon',
+  );
+  const submittedNeonComments = survivingNeonComments.filter((comment) =>
+    submittedIds.has(comment.id),
+  );
+  const skippedNeonComments = survivingNeonComments.filter(
+    (comment) => !submittedIds.has(comment.id),
+  );
+
+  return {
+    survivingNeonCommentCount: survivingNeonComments.length,
+    submittedNeonCommentCount: submittedNeonComments.length,
+    skippedNeonCommentCount: skippedNeonComments.length,
+    editedSubmittedNeonCommentCount: submittedNeonComments.filter(
+      (comment) => comment.updatedAt !== comment.createdAt,
+    ).length,
+    submittedNeonCommentIds: submittedNeonComments.map((comment) => comment.id),
+    skippedNeonCommentIds: skippedNeonComments.map((comment) => comment.id),
+  };
 }
 
 export async function replyToPullRequestReviewThread(options: {
@@ -832,6 +869,7 @@ function readDraftComments(
         startLine: parsed.start_line,
         startSide: parsed.start_side,
         body: parsed.body,
+        origin: parsed.origin,
         createdAt: parsed.created_at,
         updatedAt: parsed.updated_at,
       };

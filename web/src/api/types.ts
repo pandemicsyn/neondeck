@@ -209,6 +209,7 @@ export type GitHubPrReviewDraftComment = {
   startLine: number | null;
   startSide: 'RIGHT' | 'LEFT' | null;
   body: string;
+  origin: 'human' | 'neon';
   createdAt: string;
   updatedAt: string;
 };

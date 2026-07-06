@@ -56,6 +56,15 @@ describe('Neon commands', () => {
         args: ['neondeck#10'],
       },
     });
+    expect(
+      parseNeonCommand('/review-pr pandemicsyn/neondeck#10'),
+    ).toMatchObject({
+      ok: true,
+      command: {
+        name: 'review-pr',
+        args: ['pandemicsyn/neondeck#10'],
+      },
+    });
     expect(parseNeonCommand('/draft-pr-description')).toMatchObject({
       ok: true,
       command: {
@@ -87,6 +96,39 @@ describe('Neon commands', () => {
       ok: false,
       requires: ['supportedCommand'],
     });
+  });
+
+  it('queues review-pr through the bounded workflow surface', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    const invocations: unknown[] = [];
+
+    await expect(
+      runNeonCommand({ command: '/review-pr pandemicsyn/neondeck#10' }, paths, {
+        invokeReviewPrWorkflow: async (input) => {
+          invocations.push(input);
+          return { runId: 'review-run-1' };
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      command: 'review-pr',
+      status: 'completed',
+      message:
+        'Queued PR review workflow review-run-1 for pandemicsyn/neondeck#10.',
+      data: {
+        workflow: 'review-pr-for-human',
+        runId: 'review-run-1',
+        ref: 'pandemicsyn/neondeck#10',
+        queued: true,
+        trustBoundary: expect.stringContaining('does not submit'),
+      },
+      workflowSummary: {
+        workflow: 'command:review-pr',
+        status: 'completed',
+      },
+    });
+    expect(invocations).toEqual([{ ref: 'pandemicsyn/neondeck#10' }]);
   });
 
   it('runs repo-status and stores a workflow summary', async () => {

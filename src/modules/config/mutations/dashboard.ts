@@ -304,6 +304,7 @@ function chatTab() {
       quickCommands: [
         { label: 'Repo', command: '/repo-status' },
         { label: 'Queue', command: '/review-queue' },
+        { label: 'Review PR', command: '/review-pr' },
         { label: 'CI', command: '/explain-ci' },
         { label: 'PR', command: '/summarize-pr' },
         { label: 'Draft', command: '/draft-pr-description' },

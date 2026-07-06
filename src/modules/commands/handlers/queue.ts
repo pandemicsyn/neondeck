@@ -53,6 +53,50 @@ export async function reviewQueueCommand(
   );
 }
 
+export async function reviewPrCommand(
+  command: ParsedNeonCommand,
+  _paths: RuntimePaths,
+  dependencies: CommandDependencies,
+): Promise<NeonCommandResult> {
+  const ref = command.args.join(' ').trim();
+  if (!ref) {
+    return failedCommand(
+      command.name,
+      command.raw,
+      '/review-pr requires a PR reference.',
+      { requires: ['ref'] },
+    );
+  }
+
+  const invokeWorkflow =
+    dependencies.invokeReviewPrWorkflow ?? invokeReviewPrWorkflow;
+  const { runId } = await invokeWorkflow({ ref });
+  return completedCommand(
+    command.name,
+    command.raw,
+    `Queued PR review workflow ${runId} for ${ref}.`,
+    {
+      workflow: 'review-pr-for-human',
+      runId,
+      ref,
+      queued: true,
+      reportUrlHint: '/reports',
+      reviewSurfaceHint:
+        'Open the PR review surface after the workflow completes.',
+      trustBoundary:
+        'The workflow can create local reports and local Neon-origin draft comments only; it does not submit a GitHub review.',
+      assistantBrief:
+        'Track the returned workflow run id. When it completes, open Reports and the PR review surface. Seeded comments are local drafts only; the human reviewer owns edits and submission.',
+    },
+  );
+}
+
+export async function invokeReviewPrWorkflow(input: { ref: string }) {
+  const { invoke } = await import('@flue/runtime');
+  const workflow = await import('../../../workflows/review-pr-for-human');
+  return invoke(workflow.default, { input });
+}
+
 export async function explainCiCommand(
   command: ParsedNeonCommand,
   paths: RuntimePaths,

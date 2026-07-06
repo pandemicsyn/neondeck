@@ -13,6 +13,12 @@ export function supportedCommands() {
       description: 'Fetch and summarize the configured GitHub PR queue.',
     },
     {
+      name: 'review-pr',
+      usage: '/review-pr <repo#number|owner/repo#number|url>',
+      description:
+        'Prepare local PR review reports and Neon-origin draft comments for a human reviewer.',
+    },
+    {
       name: 'explain-ci',
       usage: '/explain-ci [repo#number|owner/repo#number]',
       description:
@@ -134,6 +140,7 @@ export function isCommandName(value: string): value is NeonCommandName {
   return [
     'repo-status',
     'review-queue',
+    'review-pr',
     'explain-ci',
     'summarize-pr',
     'draft-pr-description',

@@ -320,6 +320,7 @@ function draftWithComments(
       ...comment,
       draftId: 'draft-1',
       body: comment.id,
+      origin: 'human',
       createdAt: '2026-07-05T00:00:00Z',
       updatedAt: '2026-07-05T00:00:00Z',
     })),

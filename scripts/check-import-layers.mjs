@@ -10,7 +10,7 @@ import {
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const sourceRoots = ['src', 'web/src'];
+const sourceRoots = ['src', 'web/src', 'shared'];
 const sourceExtensions = new Set(['.ts', '.tsx']);
 
 const backendLayers = new Map([
@@ -34,9 +34,11 @@ const backendLayers = new Map([
   ['src/modules/kilo', 3],
   ['src/modules/watches', 3],
   ['src/modules/pr-events', 3],
+  ['src/modules/reports', 3],
   ['src/modules/autopilot-policy', 3],
   ['src/modules/worktree-verification', 3],
   ['src/modules/autopilot', 4],
+  ['src/modules/pr-review-assist', 4],
   ['src/modules/learning', 4],
   ['src/modules/scheduler', 5],
   ['src/modules/commands', 5],
@@ -81,6 +83,8 @@ for (const file of files) {
       checkBackendImport(sourceRel, targetRel);
     } else if (sourceRel.startsWith('web/src/')) {
       checkFrontendImport(sourceRel, targetRel);
+    } else if (sourceRel.startsWith('shared/')) {
+      checkSharedImport(sourceRel, targetRel);
     }
   }
 }
@@ -123,6 +127,7 @@ function resolveImport(fromDirectory, specifier) {
 }
 
 function checkBackendImport(sourceRel, targetRel) {
+  if (targetRel.startsWith('shared/')) return;
   if (!targetRel.startsWith('src/')) {
     violations.push({
       source: sourceRel,
@@ -161,6 +166,7 @@ function checkBackendImport(sourceRel, targetRel) {
 }
 
 function checkFrontendImport(sourceRel, targetRel) {
+  if (targetRel.startsWith('shared/')) return;
   if (!targetRel.startsWith('web/src/')) {
     violations.push({
       source: sourceRel,
@@ -202,6 +208,16 @@ function checkFrontendImport(sourceRel, targetRel) {
       target: targetRel,
       reason:
         'frontend lib modules must stay below components, features, and plugins',
+    });
+  }
+}
+
+function checkSharedImport(sourceRel, targetRel) {
+  if (!targetRel.startsWith('shared/')) {
+    violations.push({
+      source: sourceRel,
+      target: targetRel,
+      reason: 'shared modules must not import backend or frontend modules',
     });
   }
 }

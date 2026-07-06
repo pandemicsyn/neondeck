@@ -492,6 +492,16 @@ export const entries: SafetyPolicyEntry[] = [
     'Runs supported slash commands and persists a workflow summary. Individual commands must stay within their own safety class.',
   ),
   action(
+    'neondeck_pr_review_for_human',
+    'Prepare PR review artifacts',
+    {
+      ...safeMutation,
+      auditTarget:
+        'reports/pr_review_drafts/pr_review_draft_comments/notifications/workflow_summaries',
+    },
+    'Creates local PR review reports and Neon-origin local draft comments for human review. It never submits a GitHub review or performs external writes.',
+  ),
+  action(
     'neondeck_config_add_repo',
     'Add repository config',
     {
@@ -1426,6 +1436,16 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget: 'pr_watches/jobs/workflow_events',
     },
     'Creates a PR watch through the Flue workflow surface.',
+  ),
+  workflow(
+    'review-pr-for-human',
+    'Run PR review assist workflow',
+    {
+      ...safeMutation,
+      auditTarget:
+        'reports/pr_review_drafts/pr_review_draft_comments/notifications/workflow_events',
+    },
+    'Runs bounded PR review assistance through the Flue workflow surface, creating local reports and Neon-origin draft comments only.',
   ),
   workflow(
     'watch-release',

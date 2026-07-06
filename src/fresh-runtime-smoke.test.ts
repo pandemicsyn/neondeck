@@ -48,8 +48,9 @@ describe('fresh runtime smoke test', () => {
       ]),
     );
 
-    await expect(listRuntimeSkills(paths)).resolves.toMatchObject({
-      skills: [
+    const skills = await listRuntimeSkills(paths);
+    expect(skills.skills).toEqual(
+      expect.arrayContaining([
         expect.objectContaining({
           id: 'github-gh',
           status: 'active',
@@ -60,8 +61,13 @@ describe('fresh runtime smoke test', () => {
           status: 'active',
           source: 'built-in',
         }),
-      ],
-    });
+        expect.objectContaining({
+          id: 'neon-pr-review',
+          status: 'active',
+          source: 'user',
+        }),
+      ]),
+    );
 
     await expect(
       updateAgentModels(

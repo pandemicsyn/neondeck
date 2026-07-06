@@ -1,0 +1,1 @@
+ALTER TABLE `pr_review_draft_comments` ADD `origin` text DEFAULT 'human' NOT NULL;

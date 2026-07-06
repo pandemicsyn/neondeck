@@ -135,6 +135,24 @@ describe('runtime home', () => {
     await expect(
       readFile(join(paths.skills, 'neondeck', 'SKILL.md'), 'utf8'),
     ).rejects.toThrow('no such file or directory');
+    await expect(
+      readFile(join(paths.skills, 'neon-pr-review', 'SKILL.md'), 'utf8'),
+    ).resolves.toContain('name: neon-pr-review');
+  });
+
+  it('does not clobber patched runtime skill seeds', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
+    tempRoots.push(root);
+    const paths = runtimePaths(root);
+    await ensureRuntimeHome(paths);
+    const skillPath = join(paths.skills, 'neon-pr-review', 'SKILL.md');
+    await writeFile(skillPath, 'locally patched skill\n');
+
+    await ensureRuntimeHome(paths);
+
+    await expect(readFile(skillPath, 'utf8')).resolves.toBe(
+      'locally patched skill\n',
+    );
   });
 
   it('adds the reports tab to an existing dashboard during bootstrap', async () => {

@@ -121,6 +121,10 @@
                   "command": "/summarize-pr"
                 },
                 {
+                  "label": "Neon review",
+                  "command": "/review-pr"
+                },
+                {
                   "label": "Draft",
                   "command": "/draft-pr-description"
                 },

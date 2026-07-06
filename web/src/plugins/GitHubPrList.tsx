@@ -15,6 +15,7 @@ import {
   ScrollArea,
 } from '../components/ui';
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
+import { prReviewQueryKeys } from '../features/pr-review/queries';
 import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
@@ -192,6 +193,7 @@ function PrRow({
               relations: item.relations,
             }}
           />
+          <NeonReviewButton item={item} />
           <WatchPrButton item={item} />
           <a
             className="inline-flex min-h-[28px] shrink-0 items-center border border-line px-2 py-1 text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
@@ -221,6 +223,64 @@ function readReviewPopoutTarget() {
   const number = Number(params.get('prReviewNumber'));
   if (!repo || !Number.isInteger(number) || number < 1) return null;
   return { repo, number };
+}
+
+function NeonReviewButton({ item }: { item: GitHubPullRequest }) {
+  const flue = useFlueClient();
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const run = await flue.workflows.invoke('review-pr-for-human', {
+        input: {
+          ref: `${item.repo}#${item.number}`,
+        },
+        wait: 'result',
+      });
+      const result = {
+        ...(run.result as ReviewPrWorkflowResult),
+        flueRunId: run.runId,
+      };
+      if (!result.ok) throw new Error(result.message);
+      return result;
+    },
+    onSuccess() {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.reports });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.notifications,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.workflowObservability,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.workflowSummaries,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: prReviewQueryKeys.draft(item),
+      });
+    },
+  });
+
+  return (
+    <Button
+      className="min-h-[28px] shrink-0 border-line bg-transparent px-2 py-1 text-[10px] text-muted"
+      disabled={mutation.isPending}
+      onClick={() => mutation.mutate()}
+      title={
+        mutation.error
+          ? queryErrorMessage(mutation.error)
+          : mutation.data
+            ? `${mutation.data.message} · run ${mutation.data.flueRunId}`
+            : 'Prepare local reports and Neon-origin draft comments through the review workflow'
+      }
+      type="button"
+    >
+      {mutation.isPending
+        ? 'reviewing'
+        : mutation.data
+          ? 'reviewed'
+          : 'neon review'}
+    </Button>
+  );
 }
 
 function WatchPrButton({ item }: { item: GitHubPullRequest }) {
@@ -273,6 +333,12 @@ function WatchPrButton({ item }: { item: GitHubPullRequest }) {
 }
 
 type WatchPrWorkflowResult = {
+  ok: boolean;
+  message: string;
+  flueRunId?: string;
+};
+
+type ReviewPrWorkflowResult = {
   ok: boolean;
   message: string;
   flueRunId?: string;
