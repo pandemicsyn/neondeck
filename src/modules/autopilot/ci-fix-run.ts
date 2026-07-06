@@ -151,76 +151,59 @@ export async function runCiFix(
     const message =
       'No failing GitHub check runs were present in the current CI dossier.';
     await notifyCiFixAttention(dossier, report, message, paths);
+    const workflowSummary = await addTerminalCiFixSummary(
+      dossier,
+      report,
+      {
+        status: 'failed',
+        outcome: 'no-failing-checks',
+        message,
+        requires: ['failingChecks'],
+      },
+      paths,
+    );
     return failure(message, {
       requires: ['failingChecks'],
       data: {
         report: reportLink(report),
         dossier: dossierSummary(dossier),
       },
+      workflowSummary,
     });
   }
 
   if (!dossier.repo) {
+    const message = `Repository ${dossier.target.repoFullName} is not configured for managed worktrees.`;
     await notifyCiFixAttention(
       dossier,
       report,
       'Repository is not configured.',
       paths,
     );
-    return failure(
-      `Repository ${dossier.target.repoFullName} is not configured for managed worktrees.`,
+    const workflowSummary = await addTerminalCiFixSummary(
+      dossier,
+      report,
       {
+        status: 'failed',
+        outcome: 'repo-missing',
+        message,
         requires: ['repo'],
-        data: {
-          report: reportLink(report),
-          dossier: dossierSummary(dossier),
-        },
       },
+      paths,
     );
+    return failure(message, {
+      requires: ['repo'],
+      data: {
+        report: reportLink(report),
+        dossier: dossierSummary(dossier),
+      },
+      workflowSummary,
+    });
   }
 
   let releaseStatus: 'ready' | 'failed' | null = 'ready';
   let lock: Awaited<ReturnType<typeof lockWorktree>> | null = null;
   try {
-    const prepared = await (
-      dependencies.preparePrWorktree ?? preparePrWorktree
-    )(
-      {
-        repoId: dossier.repo.id,
-        prNumber: dossier.target.number,
-        createWorktree: true,
-        sync: true,
-        fetch: true,
-        lock: false,
-      },
-      paths,
-    );
-    if (!prepared.ok) {
-      releaseStatus = 'failed';
-      await notifyCiFixAttention(dossier, report, prepared.message, paths);
-      return lowerLevelFailure('autopilot_prepare_pr_worktree', prepared, {
-        report,
-        dossier,
-      });
-    }
-
-    const preparedWorktree = objectField(objectField(prepared.data).worktree);
-    const worktreeId = stringField(preparedWorktree.id);
-    if (!worktreeId) {
-      releaseStatus = 'failed';
-      const message = 'PR worktree preparation did not return a worktree id.';
-      await notifyCiFixAttention(dossier, report, message, paths);
-      return failure(message, {
-        requires: ['worktreeId'],
-        data: {
-          report: reportLink(report),
-          dossier: dossierSummary(dossier),
-        },
-      });
-    }
-    const startedHeadSha =
-      stringField(preparedWorktree.headSha) ?? dossier.state.headSha;
-
     lock = await (dependencies.lockWorktree ?? lockWorktree)(
       {
         repoId: dossier.repo.id,
@@ -234,6 +217,17 @@ export async function runCiFix(
     if (!lock.ok || !('lock' in lock)) {
       releaseStatus = null;
       await notifyCiFixAttention(dossier, report, lock.message, paths);
+      const workflowSummary = await addTerminalCiFixSummary(
+        dossier,
+        report,
+        {
+          status: 'failed',
+          outcome: 'lock-failed',
+          message: lock.message,
+          requires: ['worktreeLock'],
+        },
+        paths,
+      );
       return failure(lock.message, {
         requires: ['worktreeLock'],
         data: {
@@ -241,8 +235,75 @@ export async function runCiFix(
           dossier: dossierSummary(dossier),
           lock,
         },
+        workflowSummary,
       });
     }
+
+    const prepared = await (
+      dependencies.preparePrWorktree ?? preparePrWorktree
+    )(
+      {
+        repoId: dossier.repo.id,
+        prNumber: dossier.target.number,
+        createWorktree: true,
+        sync: true,
+        fetch: true,
+        lock: false,
+        lockId: lock.lock.id,
+      },
+      paths,
+    );
+    if (!prepared.ok) {
+      releaseStatus = 'failed';
+      await notifyCiFixAttention(dossier, report, prepared.message, paths);
+      const workflowSummary = await addTerminalCiFixSummary(
+        dossier,
+        report,
+        {
+          status: 'failed',
+          outcome: 'prepare-failed',
+          message: prepared.message,
+          requires: prepared.requires,
+          ciFixLockId: lock.lock.id,
+        },
+        paths,
+      );
+      return lowerLevelFailure('autopilot_prepare_pr_worktree', prepared, {
+        report,
+        dossier,
+        workflowSummary,
+      });
+    }
+
+    const preparedWorktree = objectField(objectField(prepared.data).worktree);
+    const worktreeId = stringField(preparedWorktree.id);
+    if (!worktreeId) {
+      releaseStatus = 'failed';
+      const message = 'PR worktree preparation did not return a worktree id.';
+      await notifyCiFixAttention(dossier, report, message, paths);
+      const workflowSummary = await addTerminalCiFixSummary(
+        dossier,
+        report,
+        {
+          status: 'failed',
+          outcome: 'worktree-id-missing',
+          message,
+          requires: ['worktreeId'],
+          ciFixLockId: lock.lock.id,
+        },
+        paths,
+      );
+      return failure(message, {
+        requires: ['worktreeId'],
+        data: {
+          report: reportLink(report),
+          dossier: dossierSummary(dossier),
+        },
+        workflowSummary,
+      });
+    }
+    const startedHeadSha =
+      stringField(preparedWorktree.headSha) ?? dossier.state.headSha;
 
     const prompt = await ciFixPrompt(dossier, report, paths);
     const kiloTaskId = `ci-fix-${randomUUID()}`;
@@ -851,10 +912,59 @@ async function notifyCiFixAttention(
   );
 }
 
+async function addTerminalCiFixSummary(
+  dossier: CiFixDossier,
+  report: ReportRecord,
+  input: {
+    status: 'completed' | 'failed';
+    outcome: string;
+    message: string;
+    requires?: string[];
+    ciFixLockId?: string | null;
+    worktreeId?: string | null;
+  },
+  paths: RuntimePaths,
+) {
+  return addWorkflowSummary(
+    {
+      workflow: 'ci_fix_run',
+      runId: `ci-fix-${randomUUID()}`,
+      status: input.status,
+      summary: {
+        type: 'ci_fix_run',
+        outcome: input.outcome,
+        pr: sourceRef(dossier),
+        repoId: dossier.repo?.id ?? null,
+        repoFullName: dossier.target.repoFullName,
+        prNumber: dossier.target.number,
+        headSha: dossier.state.headSha,
+        dossierHeadSha: dossier.state.headSha,
+        failedCheckCount: dossier.failingChecks.length,
+        checks: dossier.failingChecks.map((check) => ({
+          id: check.id,
+          name: check.name,
+          conclusion: check.conclusion,
+        })),
+        reportId: report.id,
+        ciFixLockId: input.ciFixLockId ?? null,
+        message: input.message,
+        requires: input.requires ?? [],
+        worktreeId: input.worktreeId ?? null,
+        completedAt: new Date().toISOString(),
+      },
+    },
+    paths,
+  );
+}
+
 function lowerLevelFailure(
   action: string,
   result: { message: string; requires?: string[]; errors?: string[] },
-  input: { report: ReportRecord; dossier: CiFixDossier },
+  input: {
+    report: ReportRecord;
+    dossier: CiFixDossier;
+    workflowSummary?: unknown;
+  },
 ) {
   return failure(result.message, {
     requires: result.requires,
@@ -865,6 +975,7 @@ function lowerLevelFailure(
       dossier: dossierSummary(input.dossier),
       result,
     },
+    workflowSummary: input.workflowSummary,
   });
 }
 
@@ -874,6 +985,7 @@ function failure(
     errors?: string[];
     requires?: string[];
     data?: unknown;
+    workflowSummary?: unknown;
   } = {},
 ) {
   return {
@@ -884,6 +996,9 @@ function failure(
     ...(options.errors ? { errors: options.errors } : {}),
     ...(options.requires ? { requires: options.requires } : {}),
     ...(options.data ? { data: asJsonValue(options.data) } : {}),
+    ...(options.workflowSummary
+      ? { workflowSummary: options.workflowSummary }
+      : {}),
   };
 }
 

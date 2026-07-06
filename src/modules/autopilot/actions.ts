@@ -146,7 +146,6 @@ export const neondeckAutopilotActions = [
   verifyPrWorktreeAction,
   pushPrAutofixAction,
   fixPrCiFailureAction,
-  ciFixRunAction,
   fixPrReviewFeedbackAction,
   commentPrAutofixResultAction,
 ];

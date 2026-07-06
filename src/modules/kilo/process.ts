@@ -176,19 +176,32 @@ export function attachProcessHandlers(
         const diff = await taskDiffSummary(current ?? task);
         observedDiff = diff;
         if (diff.ok && diff.fileCount > 0) {
-          await notifyKiloState(
-            {
+          const ciFixReleaseStatus =
+            await ciFixRunWorktreeReleaseStatusForKiloTask(
+              { task: current ?? task, status, diff },
+              paths,
+            );
+          if (ciFixReleaseStatus === 'ready') {
+            await resolveKiloNotifications(
               taskId,
-              state: 'completed',
-              message: `Kilo task ${taskId} completed with ${diff.fileCount} changed file(s) and is ready for result review.`,
-              repoId: current?.repoId ?? task.repoId,
-              repoFullName: current?.repoFullName ?? task.repoFullName,
-              worktreeId: current?.worktreeId ?? task.worktreeId,
-              sessionId: current?.rootSessionId ?? task.rootSessionId,
-              data: { status, code, signal, diff },
-            },
-            paths,
-          );
+              ['started', 'progress', 'completed'],
+              paths,
+            );
+          } else {
+            await notifyKiloState(
+              {
+                taskId,
+                state: 'completed',
+                message: `Kilo task ${taskId} completed with ${diff.fileCount} changed file(s) and is ready for result review.`,
+                repoId: current?.repoId ?? task.repoId,
+                repoFullName: current?.repoFullName ?? task.repoFullName,
+                worktreeId: current?.worktreeId ?? task.worktreeId,
+                sessionId: current?.rootSessionId ?? task.rootSessionId,
+                data: { status, code, signal, diff },
+              },
+              paths,
+            );
+          }
         } else if (!diff.ok) {
           await notifyKiloState(
             {

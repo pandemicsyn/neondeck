@@ -26,6 +26,7 @@ import {
   ensurePreparedDiffForWorktree,
   readPreparedDiff,
 } from './modules/prepared-diffs';
+import { lockWorktree, releaseWorktreeLock } from './modules/worktrees';
 import { approvePreparedDiffPushWithDispatch } from './server/autopilot-push-dispatch';
 
 const execFileAsync = promisify(execFile);
@@ -167,6 +168,85 @@ describe('PR event autopilot', () => {
         runLinkage: { owningWorkflowRunIdAttached: false },
       },
     });
+  });
+
+  it('prepares a managed PR worktree under an existing caller lock', async () => {
+    const { paths, featureSha } = await fixture();
+    const locked = await lockWorktree(
+      {
+        repoId: 'sample',
+        prNumber: 7,
+        scope: 'pr',
+        owner: 'ci-fix-run',
+        ttlSeconds: 300,
+      },
+      paths,
+    );
+    if (!locked.ok || !('lock' in locked)) {
+      throw new Error(locked.message);
+    }
+
+    try {
+      const result = await preparePrWorktree(
+        {
+          repoId: 'sample',
+          prNumber: 7,
+          lock: false,
+          lockId: locked.lock.id,
+        },
+        paths,
+        {
+          token: 'test-token',
+          async fetchPullRequestDetail() {
+            return {
+              number: 7,
+              title: 'Update feature',
+              repo: 'example/sample',
+              url: 'https://github.com/example/sample/pull/7',
+              state: 'open',
+              draft: false,
+              merged: false,
+              mergeCommitSha: null,
+              headSha: featureSha,
+              headRef: 'feature',
+              headOwner: 'example',
+              headName: 'sample',
+              baseRef: 'main',
+              updatedAt: '2026-06-30T00:00:00.000Z',
+              maintainerCanModify: true,
+            };
+          },
+          async fetchCheckSummary() {
+            return {
+              status: 'success',
+              total: 1,
+              successful: 1,
+              failed: 0,
+              pending: 0,
+              checkedAt: '2026-06-30T00:00:00.000Z',
+            };
+          },
+        },
+      );
+
+      expect(result).toMatchObject({
+        ok: true,
+        action: 'autopilot_prepare_pr_worktree',
+        data: {
+          worktree: {
+            repoId: 'sample',
+            prNumber: 7,
+            lifecycleStatus: 'ready',
+          },
+          lock: null,
+        },
+      });
+    } finally {
+      await releaseWorktreeLock(
+        { lockId: locked.lock.id, owner: 'ci-fix-run' },
+        paths,
+      );
+    }
   });
 
   it('does not accept caller-supplied PR facts as authoritative input', async () => {
