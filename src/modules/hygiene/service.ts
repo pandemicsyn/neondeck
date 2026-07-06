@@ -2,6 +2,8 @@ import { openDb } from '../../lib/sqlite';
 import { runBoundedGit, runBoundedGitLines } from '../../lib/git';
 import { renderReportHtml } from '../../lib/report-html';
 import type { JobExecutionResult, JobRecord } from '../app-state';
+import { readAutomationHealth } from '../learning';
+import { loadMemoryBackgroundContextSync } from '../memory';
 import { listPreparedDiffs } from '../prepared-diffs';
 import { writeReport } from '../reports';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
@@ -70,20 +72,30 @@ async function runHygieneJobInner(
     ...watchItems,
     ...todoItems,
   ];
+  const memoryContext = loadMemoryBackgroundContextSync(paths, {
+    repoId: repos.length === 1 ? (repos[0]?.id ?? null) : null,
+  });
+  const automationHealth = await readAutomationHealth(paths);
   const result = {
     repoCount: repos.length,
     itemCount: items.length,
     counts: countKinds(items),
+    memoryIds: memoryContext.memoryIds,
+    automationHealth,
     checkedAt: new Date().toISOString(),
   };
 
-  if (items.length === 0) {
+  if (items.length === 0 && !automationHealthHasSignals(automationHealth)) {
     return {
       outcome: 'silent',
       message: 'Hygiene found no actionable items.',
       result,
     };
   }
+  const reportSummary =
+    items.length === 0
+      ? 'No local hygiene items need review. Automation health was updated.'
+      : `${items.length} local hygiene item${items.length === 1 ? '' : 's'} need review.`;
 
   const report = await writeReport(
     {
@@ -95,8 +107,10 @@ async function runHygieneJobInner(
       html: renderReportHtml({
         title: 'Workspace hygiene',
         eyebrow: 'HYGIENE',
-        summary: `${items.length} local hygiene item${items.length === 1 ? '' : 's'} need review.`,
+        summary: reportSummary,
         sections: [
+          automationHealthReportSection(automationHealth),
+          memoryReportSection(memoryContext),
           {
             title: 'Summary',
             items: Object.entries(result.counts).map(([kind, count]) => ({
@@ -119,13 +133,16 @@ async function runHygieneJobInner(
 
   return {
     outcome: 'updated',
-    message: `Hygiene found ${items.length} item${items.length === 1 ? '' : 's'}.`,
+    message:
+      items.length === 0
+        ? 'Hygiene found no actionable items; automation health was updated.'
+        : `Hygiene found ${items.length} item${items.length === 1 ? '' : 's'}.`,
     result: { ...result, reportId: report.id },
     notifications: [
       {
         level: 'info',
         title: 'Hygiene report ready',
-        message: `${items.length} local hygiene item${items.length === 1 ? '' : 's'} need review.`,
+        message: reportSummary,
         source: 'hygiene',
         sourceId: job.id,
         data: {
@@ -136,6 +153,84 @@ async function runHygieneJobInner(
       },
     ],
   };
+}
+
+function automationHealthReportSection(
+  health: Awaited<ReturnType<typeof readAutomationHealth>>,
+) {
+  return {
+    title: 'Automation Health',
+    items: [
+      {
+        label: 'window',
+        value: `${health.window.days} days (${health.window.since} to ${health.window.until})`,
+      },
+      {
+        label: 'review assist',
+        value: [
+          `seed survival: ${formatRate(health.reviewAssist.survivalRate)}`,
+          `seeded/submitted: ${health.reviewAssist.seeded}/${health.reviewAssist.submitted}`,
+          `edited before submit: ${formatRate(health.reviewAssist.editedBeforeSubmitRate)}`,
+        ].join('\n'),
+      },
+      {
+        label: 'revision loop',
+        value: [
+          `approval rate: ${formatRate(health.revisionLoop.approvalRate)}`,
+          `runs: ${health.revisionLoop.runs}`,
+          `re-revised/abandoned: ${health.revisionLoop.reRevised}/${health.revisionLoop.abandoned}`,
+        ].join('\n'),
+      },
+      {
+        label: 'routines',
+        value: [
+          `failure rate: ${formatRate(health.routines.failureRate)}`,
+          `runs/failures: ${health.routines.runs}/${health.routines.failures}`,
+          `silent output rate: ${formatRate(health.routines.silentOutputRate)}`,
+          `auto-pauses: ${health.routines.autoPauses}`,
+        ].join('\n'),
+      },
+      {
+        label: 'drift and triage',
+        value: [
+          `docs acted on: ${formatRate(health.driftTriage.docsDriftActedOnRate)}`,
+          `docs reports/staged fixes: ${health.driftTriage.docsDriftReports}/${health.driftTriage.docsDriftStagedFixes}`,
+          `issue triage reports: ${health.driftTriage.issueTriageReports}`,
+          `aged-out reports: ${health.driftTriage.agedOutReports}`,
+        ].join('\n'),
+      },
+    ],
+  };
+}
+
+function automationHealthHasSignals(
+  health: Awaited<ReturnType<typeof readAutomationHealth>>,
+) {
+  return (
+    health.reviewAssist.seeded > 0 ||
+    health.revisionLoop.runs > 0 ||
+    health.routines.runs > 0 ||
+    health.driftTriage.docsDriftReports > 0 ||
+    health.driftTriage.issueTriageReports > 0
+  );
+}
+
+function memoryReportSection(
+  context: ReturnType<typeof loadMemoryBackgroundContextSync>,
+) {
+  return {
+    title: 'Memory Context',
+    items: [
+      {
+        label: 'structured memory',
+        value: context.text,
+      },
+    ],
+  };
+}
+
+function formatRate(value: number | null) {
+  return value === null ? 'n/a' : `${Math.round(value * 100)}%`;
 }
 
 export async function readHygieneSummary(paths: RuntimePaths) {

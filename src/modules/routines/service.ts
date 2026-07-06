@@ -16,6 +16,7 @@ import {
   type JobExecutionResult,
   type NotificationLevel,
 } from '../app-state';
+import { loadAutomationLearningMemoryContext } from '../learning';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import { writeReport } from '../reports';
 import {
@@ -927,6 +928,7 @@ async function admitRoutineRun(
           commandEventId: commandEvent.id,
           dispatchReceipt,
           skills: composed.skillIds,
+          memoryIds: composed.memoryIds,
         },
         admittedAt: new Date().toISOString(),
       });
@@ -1093,6 +1095,13 @@ async function composeRoutinePrompt(
   }
   if (routine.scopeCwd)
     scopeLines.push(`Working directory: ${routine.scopeCwd}`);
+  const learningMemoryContext = await loadAutomationLearningMemoryContext(
+    paths,
+    {
+      repoId: routine.scopeRepoId ?? null,
+      includeGlobal: false,
+    },
+  );
   const skillText = loadedSkills
     .map((skill) => `## Skill: ${skill.title} (${skill.id})\n${skill.body}`)
     .join('\n\n');
@@ -1103,12 +1112,17 @@ async function composeRoutinePrompt(
     `Trigger: ${trigger}`,
     'Do not wait for user input. If an action requires approval, request/queue it, summarize the pending approval, and continue with the rest of the task.',
     scopeLines.length ? `Scope:\n${scopeLines.join('\n')}` : null,
+    routine.scopeRepoId ? learningMemoryContext.text : null,
     skillText ? `Loaded runtime skills:\n\n${skillText}` : null,
     `Task:\n${routine.prompt}`,
   ]
     .filter(Boolean)
     .join('\n\n');
-  return { prompt, skillIds: loadedSkills.map((skill) => skill.id) };
+  return {
+    prompt,
+    skillIds: loadedSkills.map((skill) => skill.id),
+    memoryIds: learningMemoryContext.memoryIds,
+  };
 }
 
 async function writeRoutineCompletionReport(
@@ -1573,7 +1587,16 @@ function completeFailedRoutineRun(
   } finally {
     database.close();
   }
-  return readRoutineRun(paths, runId);
+  const failedRun = readRoutineRun(paths, runId);
+  if (autoPause) {
+    recordRoutineAutoPauseEvent(paths, {
+      routine,
+      runId,
+      failureCount,
+      createdAt: input.completedAt,
+    });
+  }
+  return failedRun;
 }
 
 async function settleRoutineDispatch(
@@ -1589,6 +1612,8 @@ async function settleRoutineDispatch(
   const database = openDb(paths.neondeckDatabase);
   let run: RoutineRunRecord | null = null;
   let routine: RoutineRecord | null = null;
+  let autoPaused = false;
+  let autoPauseFailureCount = 0;
   try {
     database.exec('BEGIN;');
     const runRow = database
@@ -1628,6 +1653,8 @@ async function settleRoutineDispatch(
     const nextFailureCount =
       status === 'failed' ? (routine?.consecutiveFailures ?? 0) + 1 : 0;
     const autoPause = nextFailureCount >= maxConsecutiveFailures;
+    autoPaused = autoPause && status === 'failed';
+    autoPauseFailureCount = nextFailureCount;
     const repeatLimitReached =
       routine !== null &&
       routine.repeatLimit !== null &&
@@ -1762,6 +1789,14 @@ async function settleRoutineDispatch(
     before: run,
     after: settledRun,
   });
+  if (autoPaused && routine) {
+    recordRoutineAutoPauseEvent(paths, {
+      routine,
+      runId: run.id,
+      failureCount: autoPauseFailureCount,
+      createdAt: completedAt,
+    });
+  }
   return {
     ok: true,
     action: 'routine_flue_observation',
@@ -2099,6 +2134,8 @@ async function recoverStaleRoutineClaims(paths: RuntimePaths, now: Date) {
     routine: RoutineRecord;
     message: string;
     error: string;
+    autoPause: boolean;
+    failureCount: number;
   }> = [];
   const database = openDb(paths.neondeckDatabase);
   try {
@@ -2162,7 +2199,7 @@ async function recoverStaleRoutineClaims(paths: RuntimePaths, now: Date) {
           routine.id,
           run.id,
         );
-      recovered.push({ run, routine, message, error });
+      recovered.push({ run, routine, message, error, autoPause, failureCount });
     }
     database.exec('COMMIT;');
   } catch (error) {
@@ -2258,6 +2295,14 @@ async function recoverStaleRoutineClaims(paths: RuntimePaths, now: Date) {
       before: item.run,
       after: readRoutineRunOrNull(paths, item.run.id),
     });
+    if (item.autoPause) {
+      recordRoutineAutoPauseEvent(paths, {
+        routine: item.routine,
+        runId: item.run.id,
+        failureCount: item.failureCount,
+        createdAt: completedAt,
+      });
+    }
   }
   return recovered.map((item) => item.run);
 }
@@ -2450,6 +2495,33 @@ function recordRoutineEvent(
   } finally {
     database.close();
   }
+}
+
+function recordRoutineAutoPauseEvent(
+  paths: RuntimePaths,
+  input: {
+    routine: RoutineRecord;
+    runId: string;
+    failureCount: number;
+    createdAt: string;
+  },
+) {
+  recordRoutineEvent(paths, {
+    routineId: input.routine.id,
+    runId: input.runId,
+    eventType: 'routine_auto_paused',
+    message: `Routine "${input.routine.name}" was auto-paused after ${input.failureCount} consecutive failures.`,
+    actor: 'system',
+    before: input.routine,
+    after: {
+      ...input.routine,
+      enabled: false,
+      consecutiveFailures: input.failureCount,
+      runningRunId: null,
+      nextRunAt: null,
+    },
+    createdAt: input.createdAt,
+  });
 }
 
 async function validateRoutineSkills(ids: string[], paths: RuntimePaths) {

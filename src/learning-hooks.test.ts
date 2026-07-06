@@ -4,9 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { addWorkflowSummary, listWorkflowSummaries } from './modules/app-state';
+import { updateLearningConfig } from './modules/config';
 import { extractHandledPrEvent } from './modules/learning/reviews/pr-context';
+import { createChatSession } from './modules/sessions';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
-import { attachCommandRunSummaryRunId } from './server/learning-hooks';
+import {
+  attachCommandRunSummaryRunId,
+  recordRoutineConversationLearning,
+} from './server/learning-hooks';
 
 const tempRoots: string[] = [];
 
@@ -161,6 +166,57 @@ describe('Flue learning hooks', () => {
         worktreeId: 'worktree-1',
       }),
     });
+  });
+
+  it('counts settled routine turns toward conversation learning cadence', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-learning-hooks-'));
+    tempRoots.push(home);
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await updateLearningConfig(
+      {
+        conversationReviewTurnInterval: 1,
+        memoryCurationEnabled: true,
+        memoryCurationMode: 'review',
+        memoryCurationTurnInterval: 1,
+      },
+      paths,
+    );
+    const session = await createChatSession(
+      { title: 'Routine learning session' },
+      paths,
+    );
+    const sessionId = (session as { session: { id: string } }).session.id;
+    const queued: Array<{ workflow: string; turnCount: number | null }> = [];
+
+    await recordRoutineConversationLearning(
+      {
+        changed: true,
+        run: { sessionId },
+      },
+      paths,
+      {
+        async invokeConversationReview(input) {
+          queued.push({
+            workflow: 'review_conversation_for_learning',
+            turnCount: input.turnCount ?? null,
+          });
+          return { runId: 'routine-reflection' };
+        },
+        async invokeCurationReview(input) {
+          queued.push({
+            workflow: 'curate_learning_store',
+            turnCount: input.turnCount ?? null,
+          });
+          return { runId: 'routine-curation' };
+        },
+      },
+    );
+
+    expect(queued).toEqual([
+      { workflow: 'review_conversation_for_learning', turnCount: 1 },
+      { workflow: 'curate_learning_store', turnCount: 1 },
+    ]);
   });
 });
 

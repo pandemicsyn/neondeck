@@ -5,7 +5,10 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { JobRecord } from './modules/app-state';
-import { runDocsDriftJob } from './modules/docs-drift';
+import { listWorkflowSummaries } from './modules/app-state';
+import { runDocsDriftJob, stageDocsDriftFix } from './modules/docs-drift';
+import { upsertMemory } from './modules/memory';
+import { writeReport } from './modules/reports';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 
 const execFileAsync = promisify(execFile);
@@ -87,6 +90,98 @@ describe('docs drift job', () => {
     });
     expect(summary.scannedCommit).not.toBe(summary.attemptedCommit);
   });
+
+  it('injects learning memories into staged docs-fix prompts and summary', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const repoPath = join(home, 'repo-memory');
+    await mkdir(repoPath, { recursive: true });
+    await writeRepoRegistry(paths.repos, repoPath);
+    const memory = await upsertMemory(
+      {
+        scope: 'project',
+        repoId: 'sample',
+        key: 'docs-style',
+        value: 'Docs fixes should preserve existing heading style.',
+      },
+      paths,
+    );
+    const report = await writeReport(
+      {
+        kind: 'docs-drift',
+        title: 'Docs drift: pandemicsyn/sample',
+        repoId: 'sample',
+        sourceRef: 'base..head',
+        createdBy: 'test',
+        summary: {
+          repo: 'sample',
+          repoFullName: 'pandemicsyn/sample',
+          base: 'base',
+          scannedCommit: 'head',
+          attemptedCommit: 'head',
+          truncated: false,
+          hits: [
+            {
+              docPath: 'docs/api.md',
+              changedPath: 'src/api.ts',
+              previousPath: null,
+              status: 'M',
+              line: 1,
+              excerpt: 'oldApi',
+            },
+          ],
+        },
+        html: '<p>docs drift</p>',
+      },
+      paths,
+    );
+    let prompt = '';
+
+    const result = await stageDocsDriftFix({ reportId: report.id }, paths, {
+      createWorktree: async () =>
+        ({
+          ok: true,
+          action: 'worktree_create',
+          changed: true,
+          message: 'created',
+          worktree: {
+            id: 'wt-docs',
+            localPath: join(home, 'worktree'),
+            headSha: 'head',
+          },
+        }) as never,
+      startKiloTask: async (input) => {
+        prompt = String((input as { prompt?: unknown }).prompt ?? '');
+        return {
+          ok: true,
+          action: 'kilo_task_start',
+          changed: true,
+          message: 'started',
+          task: { id: 'docs-task' },
+        } as never;
+      },
+    });
+    const memoryId = (memory as { memory: { id: string } }).memory.id;
+
+    expect(result).toMatchObject({ ok: true, changed: true });
+    expect(prompt).toContain(
+      'Docs fixes should preserve existing heading style',
+    );
+    expect(prompt).toContain('Learning memories background context');
+    await expect(listWorkflowSummaries(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          workflow: 'docs_drift_stage_fix',
+          summary: expect.objectContaining({
+            reportId: report.id,
+            kiloTaskId: 'docs-task',
+            memoryIds: [memoryId],
+          }),
+        }),
+      ]),
+    );
+  });
 });
 
 async function setupRemoteRepo(remote: string, repo: string) {
@@ -151,6 +246,26 @@ async function tempDir() {
   const path = await mkdtemp(join(tmpdir(), 'neondeck-docs-drift-'));
   tempRoots.push(path);
   return path;
+}
+
+async function writeRepoRegistry(path: string, repoPath: string) {
+  await writeFile(
+    path,
+    JSON.stringify(
+      {
+        repos: [
+          {
+            id: 'sample',
+            github: { owner: 'pandemicsyn', name: 'sample' },
+            path: repoPath,
+            defaultBranch: 'main',
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 async function git(cwd: string, args: string[]) {

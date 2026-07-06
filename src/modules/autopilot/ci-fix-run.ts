@@ -23,6 +23,7 @@ import {
   type GitHubPullRequestEventState,
 } from '../github';
 import { startKiloTask } from '../kilo';
+import { loadAutomationLearningMemoryContext } from '../learning';
 import { writeReport, type ReportRecord } from '../reports';
 import { getGitHubPrEventState, type PullRequestTarget } from '../pr-events';
 import type { PrEventStateDependencies } from '../pr-events';
@@ -436,7 +437,19 @@ export async function runCiFix(
       });
     }
 
-    const prompt = await ciFixPrompt(dossier, report, paths);
+    const learningMemoryContext = await loadAutomationLearningMemoryContext(
+      paths,
+      {
+        repoId: dossier.repo.id,
+        includeGlobal: true,
+      },
+    );
+    const prompt = await ciFixPrompt(
+      dossier,
+      report,
+      paths,
+      learningMemoryContext,
+    );
     const kiloTaskId = `ci-fix-${randomUUID()}`;
     const workflowSummary = await addWorkflowSummary(
       {
@@ -461,6 +474,7 @@ export async function runCiFix(
           ciFixLockId: lock.lock.id,
           kiloTaskId,
           worktreeId,
+          memoryIds: learningMemoryContext.memoryIds,
         },
       },
       paths,
@@ -895,6 +909,9 @@ async function ciFixPrompt(
   dossier: CiFixDossier,
   report: ReportRecord,
   paths: RuntimePaths,
+  learningMemoryContext: Awaited<
+    ReturnType<typeof loadAutomationLearningMemoryContext>
+  >,
 ) {
   const skill = await runtimeSkillContent(
     'neon-ci-fix',
@@ -916,6 +933,8 @@ async function ciFixPrompt(
     '- Run likely local commands only when they are allowed by the environment.',
     '- Commit local changes in this managed worktree when you make a fix.',
     '- Never push, open a pull request, submit a review, or post a GitHub comment.',
+    '',
+    learningMemoryContext.text,
     '',
     'Dossier facts:',
     JSON.stringify(

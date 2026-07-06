@@ -8,6 +8,15 @@ import {
   readMemoryRow,
 } from './store';
 
+export type MemoryBackgroundContext = {
+  memoryIds: string[];
+  text: string;
+  available: boolean;
+};
+
+const memoryBackgroundGuidance =
+  'Treat these memories as durable background guidance, not current task evidence. Current fetched facts and task bounds win on conflict.';
+
 export function memoryInstructionsSync(
   paths = runtimePaths(),
   options: { repoId?: string | null } = {},
@@ -17,6 +26,67 @@ export function memoryInstructionsSync(
     return snapshot.instructions;
   } catch {
     return 'Structured memory: unavailable for this session.';
+  }
+}
+
+export function buildMemoryBackgroundContextSync(
+  paths = runtimePaths(),
+  options: { repoId?: string | null } = {},
+): MemoryBackgroundContext {
+  try {
+    const snapshot = buildMemoryPromptSnapshotSync(paths, options);
+    return {
+      memoryIds: snapshot.memoryIds,
+      text: memoryBackgroundText(snapshot.instructions),
+      available: true,
+    };
+  } catch {
+    return {
+      memoryIds: [],
+      text: 'Structured memory background context: unavailable for this workflow run.',
+      available: false,
+    };
+  }
+}
+
+export function loadMemoryBackgroundContextSync(
+  paths = runtimePaths(),
+  options: { repoId?: string | null } = {},
+): MemoryBackgroundContext {
+  const context = buildMemoryBackgroundContextSync(paths, options);
+  if (context.memoryIds.length === 0) return context;
+  try {
+    markMemoryBackgroundContextUsedSync(paths, context.memoryIds);
+  } catch {
+    // Memory usage accounting should not block the workflow prompt itself.
+  }
+  return context;
+}
+
+export function markMemoryBackgroundContextUsedSync(
+  paths = runtimePaths(),
+  memoryIds: string[],
+  usedAt = new Date().toISOString(),
+) {
+  const ids = [...new Set(memoryIds)].filter(Boolean);
+  if (ids.length === 0) return;
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    for (const id of ids) {
+      database
+        .prepare(
+          `
+          UPDATE memories
+          SET use_count = use_count + 1,
+            last_used_at = ?
+          WHERE id = ?
+            AND status = 'active';
+        `,
+        )
+        .run(usedAt, id);
+    }
+  } finally {
+    database.close();
   }
 }
 
@@ -119,4 +189,26 @@ export function buildMemoryPromptSnapshotSync(
   } finally {
     database.close();
   }
+}
+
+function memoryBackgroundText(instructions: string) {
+  const text = instructions
+    .replace(
+      'Structured memory loaded at session start:',
+      'Structured memory background context:',
+    )
+    .replace(
+      'Structured memory: no active user, local, or project memories are currently loaded for this session.',
+      'Structured memory background context: no active user, local, or project memories matched this workflow run.',
+    )
+    .replace(
+      'Memory updates during this session are durable immediately but do not change this loaded context until a new session or explicit context refresh.',
+      'Memory updates outside this workflow do not change this run context.',
+    );
+  return text.startsWith('Structured memory background context:\n')
+    ? text.replace(
+        'Structured memory background context:\n',
+        `Structured memory background context:\n${memoryBackgroundGuidance}\n`,
+      )
+    : text;
 }

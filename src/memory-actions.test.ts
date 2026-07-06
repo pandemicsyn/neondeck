@@ -12,6 +12,7 @@ import {
   listMemories,
   listMemoryCandidates,
   listMemoryEvents,
+  loadMemoryBackgroundContextSync,
   markMemoriesUsed,
   memoryInstructionsSync,
   mergeMemories,
@@ -353,6 +354,51 @@ describe('structured memory actions', () => {
     );
     expect(repoSnapshot.instructions).toContain('repo-checks (repo-a)');
     expect(repoSnapshot.instructions).not.toContain('repo-checks (repo-b)');
+  });
+
+  it('loads repo-filtered workflow memory background context and marks it used', async () => {
+    const paths = runtimePaths(await tempHome());
+    const repoMemory = await upsertMemory(
+      {
+        scope: 'project',
+        key: 'ci-flake',
+        repoId: 'repo-a',
+        value: 'e2e shard is flaky',
+      },
+      paths,
+    );
+    await upsertMemory(
+      {
+        scope: 'project',
+        key: 'other-repo',
+        repoId: 'repo-b',
+        value: 'do not include',
+      },
+      paths,
+    );
+
+    const context = loadMemoryBackgroundContextSync(paths, {
+      repoId: 'repo-a',
+    });
+    const memories = await listMemories({}, paths);
+    const loaded = memories.memories.find(
+      (memory) =>
+        memory.id === (repoMemory as { memory: { id: string } }).memory.id,
+    );
+
+    expect(context.available).toBe(true);
+    expect(context.memoryIds).toContain(
+      (repoMemory as { memory: { id: string } }).memory.id,
+    );
+    expect(context.text).toContain('Structured memory background context');
+    expect(context.text).toContain(
+      'Treat these memories as durable background guidance',
+    );
+    expect(context.text).toContain('- ci-flake (repo-a): e2e shard is flaky');
+    expect(context.text).not.toContain('loaded at session start');
+    expect(context.text).not.toContain('other-repo');
+    expect(loaded?.useCount).toBe(1);
+    expect(loaded?.lastUsedAt).toEqual(expect.any(String));
   });
 
   it('marks loaded memories as used without creating stale-context events', async () => {

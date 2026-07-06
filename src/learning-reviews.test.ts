@@ -188,6 +188,41 @@ describe('learning review orchestration', () => {
     expect(JSON.stringify(prepared.inputSummary)).not.toContain('pnpm test');
   });
 
+  it('includes routine session metadata in conversation learning evidence', async () => {
+    const paths = runtimePaths(await tempHome());
+    const session = await createChatSession(
+      {
+        title: 'Routine session',
+        kind: 'general',
+        summary: 'Routine checked repository health.',
+        summarySource: 'manual',
+        uiMetadata: {
+          routineId: 'routine-health',
+          routineRunId: 'routine-run-1',
+        },
+      },
+      paths,
+    );
+    const prepared = await prepareConversationReflection(
+      {
+        sessionId: (session as { session: { id: string } }).session.id,
+        trigger: 'manual',
+      },
+      paths,
+    );
+    if (!prepared.ok) throw new Error(prepared.message);
+
+    expect(prepared.inputSummary).toMatchObject({
+      session: {
+        kind: 'general',
+        uiMetadata: {
+          routineId: 'routine-health',
+          routineRunId: 'routine-run-1',
+        },
+      },
+    });
+  });
+
   it('rejects conversation upserts outside the reviewed project scope', async () => {
     const paths = runtimePaths(await tempHome());
     await updateLearningConfig({ memoryWriteMode: 'auto' }, paths);
@@ -1229,14 +1264,14 @@ describe('learning review orchestration', () => {
       skillMode: 'review',
     });
     if (!prepared.ok) throw new Error(prepared.message);
-    expect(prepared.allowedSkillIds).toEqual(
-      expect.arrayContaining([
-        'neon-pr-review',
-        'neon-ci-fix',
-        'neon-docs-fix',
-        'neon-issue-triage',
-      ]),
-    );
+    expect(prepared.allowedSkillIds).toEqual(['neondeck']);
+    expect(
+      (
+        prepared.inputSummary as {
+          automationHealth?: { window?: { days?: number } };
+        }
+      ).automationHealth?.window?.days,
+    ).toBe(30);
 
     await expect(
       completeLearningReviewFromModelOutput(
@@ -1321,6 +1356,10 @@ describe('learning review orchestration', () => {
       paths,
     );
     if (!prepared.ok) throw new Error(prepared.message);
+    expect(prepared.allowedSkillIds).toEqual(
+      expect.arrayContaining(['neondeck', 'neon-ci-fix']),
+    );
+    expect(prepared.allowedSkillIds).not.toContain('neon-docs-fix');
 
     const result = await completeLearningReviewFromModelOutput(
       prepared,

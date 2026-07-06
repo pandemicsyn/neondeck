@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { readAutomationHealth } from '../automation-health';
 import { readAgentModelSelectionSync } from '../../runtime';
 import {
   referenceChatSession,
@@ -120,6 +121,7 @@ export async function prepareConversationReflection(
       linkedRepoId: reviewedSession.linkedRepoId,
       linkedWatchId: reviewedSession.linkedWatchId,
       linkedTaskId: reviewedSession.linkedTaskId,
+      uiMetadata: reviewedSession.uiMetadata,
       summary: truncate(reviewedSession.summary ?? '', 2_000),
       summarySource: reviewedSession.summarySource,
       staleReasons: reviewedSession.staleReasons,
@@ -309,7 +311,24 @@ export async function preparePrBatchLearningReview(
     handledEvents.map((event) => event.repoId),
     paths,
   );
-  const skillSnippets = await readLearningSkillSnippets(paths);
+  const workflowSummaries = listRelatedWorkflowSummaries(handledEvents, paths);
+  const preparedDiffs = listRelatedPreparedDiffSummaries(handledEvents, paths);
+  const verificationResults = listRelatedVerificationSummaries(
+    handledEvents,
+    paths,
+  );
+  const notifications = listRelatedNotificationSummaries(handledEvents, paths);
+  const kiloResults = listRelatedKiloResultSummaries(handledEvents, paths);
+  const automationHealth = await readAutomationHealth(paths);
+  const skillSnippets = await readLearningSkillSnippets(paths, {
+    handledEvents,
+    workflowSummaries,
+    preparedDiffs,
+    verificationResults,
+    notifications,
+    kiloResults,
+    automationHealth,
+  });
   const models = readAgentModelSelectionSync(paths);
   const inputSummary = compactJson({
     kind: 'pr-batch',
@@ -323,11 +342,12 @@ export async function preparePrBatchLearningReview(
         'compact app-state summaries only; no raw diffs, transcripts, logs, or secrets',
     },
     handledEvents: handledEvents.map(summarizeHandledPrEvent),
-    workflowSummaries: listRelatedWorkflowSummaries(handledEvents, paths),
-    preparedDiffs: listRelatedPreparedDiffSummaries(handledEvents, paths),
-    verificationResults: listRelatedVerificationSummaries(handledEvents, paths),
-    notifications: listRelatedNotificationSummaries(handledEvents, paths),
-    kiloResults: listRelatedKiloResultSummaries(handledEvents, paths),
+    workflowSummaries,
+    preparedDiffs,
+    verificationResults,
+    notifications,
+    kiloResults,
+    automationHealth,
     activeMemories: summarizeMemories(memories),
     skillSnippets,
   });

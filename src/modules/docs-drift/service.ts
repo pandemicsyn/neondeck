@@ -13,7 +13,9 @@ import { runBoundedGit, runBoundedGitLines } from '../../lib/git';
 import { renderReportHtml } from '../../lib/report-html';
 import { parseInput, nonEmptyStringSchema } from '../../lib/valibot';
 import type { JobRecord } from '../app-state';
+import { addWorkflowSummary } from '../app-state';
 import { recordDocsDriftFixTaskBoundary, startKiloTask } from '../kilo';
+import { loadAutomationLearningMemoryContext } from '../learning';
 import { loadRuntimeSkill } from '../runtime';
 import { readReport, writeReport, type ReportRecord } from '../reports';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
@@ -337,12 +339,24 @@ export async function stageDocsDriftFix(
     );
   }
 
+  const learningMemoryContext = await loadAutomationLearningMemoryContext(
+    paths,
+    {
+      repoId: repo.id,
+      includeGlobal: true,
+    },
+  );
   const kilo = await (dependencies.startKiloTask ?? startKiloTask)(
     {
       taskId,
       worktreeId: created.worktree.id,
       title: `Docs drift fix: ${summary.repoFullName}`,
-      prompt: await docsFixPrompt(summary, report, paths),
+      prompt: await docsFixPrompt(
+        summary,
+        report,
+        paths,
+        learningMemoryContext,
+      ),
       mode: 'draft-fix',
       allowAuto: true,
       confirmAuto: true,
@@ -358,6 +372,22 @@ export async function stageDocsDriftFix(
     });
   }
   const startedTaskId = 'task' in kilo ? kilo.task.id : taskId;
+  await addWorkflowSummary(
+    {
+      workflow: 'docs_drift_stage_fix',
+      status: 'started',
+      summary: {
+        outcome: 'kilo-started',
+        reportId: report.id,
+        repoId: repo.id,
+        repoFullName: summary.repoFullName,
+        kiloTaskId: startedTaskId,
+        worktreeId: created.worktree.id,
+        memoryIds: learningMemoryContext.memoryIds,
+      },
+    },
+    paths,
+  );
 
   return okAction(
     'docs_drift_stage_fix',
@@ -439,6 +469,9 @@ async function docsFixPrompt(
   summary: DocsDriftSummary,
   report: ReportRecord,
   paths: RuntimePaths,
+  learningMemoryContext: Awaited<
+    ReturnType<typeof loadAutomationLearningMemoryContext>
+  >,
 ) {
   const skill = await runtimeSkillContent(
     'neon-docs-fix',
@@ -467,6 +500,8 @@ async function docsFixPrompt(
     '- Keep documentation edits minimal and fact-backed by the drift hits.',
     '- Commit local changes in this managed worktree when you make a fix.',
     '- Never push, open a pull request, post comments, submit reviews, or mutate external systems.',
+    '',
+    learningMemoryContext.text,
     '',
     'Drift facts:',
     JSON.stringify(

@@ -15,12 +15,26 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-07-06 - Learning Flywheel Wrap-Up
+
+- Roadmap item: Wrap Up the Learning Flywheel / memories in, health out, triggers verified
+- Decision: Routed bounded active learning memories into `/review-pr`, `/fix-ci`, docs-drift fix staging, and repo-scoped routines, with included memory ids recorded in workflow summaries or routine run summaries. Added an automation-health read model and surfaced it in hygiene reports plus PR retrospective evidence. PR retrospectives now load runtime skill snippets by evidence relevance instead of always loading all five busywork skills. Verified the existing applied skill-patch restore path already performs an audited rollback from retained before/after content. Routine settlement observations now count toward conversation learning cadence because unattended routine sessions generate assistant turns worth reflecting on.
+- Reason: Approved memories were not measurable in the automation loop, and retrospectives needed aggregate health next to per-event evidence. The existing skill-patch restore action already matched the rollback requirement, so no replacement action was needed. Routines bypass the HTTP chat middleware, so they needed explicit turn accounting from matched routine observations.
+- Follow-up: Keep `learning.prRetrospectiveThreshold`, `learning.conversationReviewTurnInterval`, and `learning.memoryCurationTurnInterval` at their configured defaults until dogfooding data shows over- or under-triggering. `/review-pr` preparation is deliberately not counted as a `pr_handled` terminal outcome because it prepares local reports/draft comments rather than resolving PR work; submitted review seed outcomes still flow through automation health. Issue-triage acted-on rate remains zero/unavailable until issue triage has a typed user action comparable to docs-drift stage-fix.
+
 ## 2026-07-06 - Busywork Automation Trust Boundaries
 
 - Roadmap item: Busywork Automation Plan / `/fix-ci` and issue triage
 - Decision: `/fix-ci` stops before Kilo when failing check logs are unavailable or truncated, even when check-run identity and annotations were fetched. Issue triage v1 writes deterministic copy-ready draft replies into reports instead of launching a nested agent digest from inside the scheduler job.
 - Reason: Partial CI logs can make Kilo repair the wrong failure mode, and the scheduler currently owns durable job state. Keeping issue-triage drafts deterministic avoids nested workflow/job-state coupling while still producing human-owned copyable replies.
 - Follow-up: Revisit partial-log CI handoff once the dossier can distinguish providers with complete annotations from providers that require logs. Replace deterministic issue-triage drafts with a bounded Flue digest workflow when scheduler job state can safely record nested workflow outcomes.
+
+## 2026-07-06 - Busywork And Routines Workflow Hosts
+
+- Roadmap item: Busywork Automation Plan and Routines Plan / Flue workflow execution
+- Decision: Added dedicated `pr-review-assistant`, `busywork-workflow`, and `scheduler-workflow` agents even though the plans preferred no new general-purpose agents.
+- Reason: These are zero-capability workflow hosts (`tools: []`, `actions: []`, `subagents: []`) that provide bounded workflows with model execution plus patchable runtime skills without exposing the display assistant's broader action surface to unattended runs.
+- Follow-up: Do not collapse these hosts back onto the display assistant unless the replacement preserves the same no-tool/no-action/no-subagent boundary.
 
 ## 2026-07-05 - Close Decision Loops Run Revision
 

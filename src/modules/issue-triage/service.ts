@@ -1,6 +1,7 @@
 import { renderReportHtml } from '../../lib/report-html';
 import type { JobExecutionResult, JobRecord } from '../app-state';
 import { fetchGitHubIssues, type GitHubIssue } from '../github';
+import { loadMemoryBackgroundContextSync } from '../memory';
 import { writeReport } from '../reports';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import type { RuntimePaths } from '../../runtime-home';
@@ -72,6 +73,9 @@ async function runIssueTriageJobInner(
     staleAfterDays,
     now: new Date(),
   });
+  const memoryContext = loadMemoryBackgroundContextSync(paths, {
+    repoId: repo.id,
+  });
   const total =
     classified.newIssues.length +
     classified.stale.length +
@@ -95,6 +99,7 @@ async function runIssueTriageJobInner(
       duplicateCandidates: classified.duplicateCandidates.length,
       draftedReplies: draftedReplyCount(classified),
     },
+    memoryIds: memoryContext.memoryIds,
   };
 
   if (total === 0) {
@@ -118,6 +123,7 @@ async function runIssueTriageJobInner(
         eyebrow: 'ISSUE TRIAGE',
         summary: `${result.counts.new} new, ${result.counts.stale} stale, ${result.counts.missingInfo} missing-info, ${result.counts.duplicateCandidates} duplicate candidate issue${total === 1 ? '' : 's'}.`,
         sections: [
+          memoryReportSection(memoryContext),
           issueSection('New', classified.newIssues, 'new'),
           issueSection('Stale', classified.stale, 'stale'),
           issueSection('Missing Info', classified.missingInfo, 'missing-info'),
@@ -149,6 +155,20 @@ async function runIssueTriageJobInner(
           reportUrl: `/reports/${report.id}`,
           counts: result.counts,
         },
+      },
+    ],
+  };
+}
+
+function memoryReportSection(
+  context: ReturnType<typeof loadMemoryBackgroundContextSync>,
+) {
+  return {
+    title: 'Memory Context',
+    items: [
+      {
+        label: 'structured memory',
+        value: context.text,
       },
     ],
   };
