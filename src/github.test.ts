@@ -977,6 +977,7 @@ describe('github foundation', () => {
       side: 'LEFT',
       line: 4,
       body: 'Left side comment.',
+      origin: 'neon',
     });
     saved = addPrReviewDraftComment({
       databasePath: paths.neondeckDatabase,
@@ -987,14 +988,19 @@ describe('github foundation', () => {
       startLine: 20,
       startSide: 'RIGHT',
       body: 'Range on renamed path.',
+      origin: 'neon',
     });
     const right = saved.comments.find(
       (comment) => comment.body === 'Right side comment.',
+    );
+    const left = saved.comments.find(
+      (comment) => comment.body === 'Left side comment.',
     );
     const range = saved.comments.find(
       (comment) => comment.body === 'Range on renamed path.',
     );
     expect(right?.id).toEqual(expect.any(String));
+    expect(left?.id).toEqual(expect.any(String));
     expect(range?.id).toEqual(expect.any(String));
 
     const requests: Array<{ url: string; init?: RequestInit }> = [];
@@ -1078,6 +1084,14 @@ describe('github foundation', () => {
           verdict: 'request-changes',
           commentCount: 2,
           skippedCommentCount: 1,
+          neonDraftOutcome: {
+            survivingNeonCommentCount: 2,
+            submittedNeonCommentCount: 1,
+            skippedNeonCommentCount: 1,
+            editedSubmittedNeonCommentCount: 0,
+            submittedNeonCommentIds: [range?.id],
+            skippedNeonCommentIds: [left?.id],
+          },
           reviewUrl:
             'https://github.com/pandemicsyn/neondeck/pull/123#pullrequestreview-9001',
           headSha: 'head123',

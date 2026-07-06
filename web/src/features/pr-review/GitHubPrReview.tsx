@@ -389,6 +389,7 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
     if (metadata.kind === 'draft') {
       const comment = draft?.comments.find((item) => item.id === metadata.id);
       const isEditing = editingCommentId === metadata.id;
+      const origin = comment?.origin === 'neon' ? 'neon draft' : 'draft';
       return (
         <div
           className={metadata.isStale ? 'pr-review-draft-stale' : undefined}
@@ -396,7 +397,8 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
         >
           <div data-neondeck-review-annotation-title="">
             <span>
-              {metadata.isStale ? 'stale draft' : 'draft'} · {metadata.title}
+              {metadata.isStale ? `stale ${origin}` : origin} ·{' '}
+              {metadata.title}
             </span>
           </div>
           {isEditing ? (
@@ -1177,7 +1179,10 @@ function StaleDraftCommentPanel({
             key={comment.id}
           >
             <div className="mb-1 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
-              <span className="min-w-0 truncate">{comment.path}</span>
+              <span className="min-w-0 truncate">
+                {comment.origin === 'neon' ? 'neon · ' : ''}
+                {comment.path}
+              </span>
               <span className="shrink-0">{commentAnchorLabel(comment)}</span>
             </div>
             <p className="line-clamp-2 text-[11px] leading-4 text-ink">

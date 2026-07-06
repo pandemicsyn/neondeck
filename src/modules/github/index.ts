@@ -37,6 +37,7 @@ export {
 export type {
   GitHubPrReviewDraft,
   GitHubPrReviewDraftComment,
+  GitHubPrReviewDraftCommentOrigin,
   GitHubPrReviewDraftCommentSide,
   GitHubPrReviewDraftStatus,
   GitHubPrReviewSubmitFailure,

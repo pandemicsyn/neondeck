@@ -21,6 +21,7 @@ import {
   preparePrCommand,
   reasoningCommand,
   repoStatusCommand,
+  reviewPrCommand,
   reviewLocalCommand,
   reviewQueueCommand,
   summarizePrCommand,
@@ -81,6 +82,10 @@ async function executeCommand(
 
   if (command.name === 'review-queue') {
     return reviewQueueCommand(command, paths, dependencies);
+  }
+
+  if (command.name === 'review-pr') {
+    return reviewPrCommand(command, paths, dependencies);
   }
 
   if (command.name === 'explain-ci') {

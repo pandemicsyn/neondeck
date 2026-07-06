@@ -1,11 +1,13 @@
 import type { JsonValue } from '@flue/runtime';
 import type { WorkflowSummaryRecord } from '../app-state';
 import type { fetchGitHubLogin, fetchPullRequestQueue } from '../github';
+import type { PrReviewAssistInput } from '../pr-review-assist';
 import * as v from 'valibot';
 
 export type NeonCommandName =
   | 'repo-status'
   | 'review-queue'
+  | 'review-pr'
   | 'explain-ci'
   | 'summarize-pr'
   | 'draft-pr-description'
@@ -39,6 +41,9 @@ export type NeonCommandResult = {
 export type CommandDependencies = {
   fetchPullRequestQueue?: typeof fetchPullRequestQueue;
   fetchGitHubLogin?: typeof fetchGitHubLogin;
+  invokeReviewPrWorkflow?: (
+    input: PrReviewAssistInput,
+  ) => Promise<{ runId: string }>;
 };
 
 export type ReviewQueueAction = {

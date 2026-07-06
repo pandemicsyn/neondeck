@@ -43,7 +43,9 @@ describe('runtime skills', () => {
     );
     expect(inventory.duplicates).toEqual([]);
 
-    expect(runtimeSkillReferencesSync(paths)).toEqual([]);
+    expect(
+      runtimeSkillReferencesSync(paths).map((skill) => skill.name),
+    ).toEqual(['neon-pr-review']);
   });
 
   it('discovers user and external skills while ignoring broken folders', async () => {
@@ -177,7 +179,9 @@ describe('runtime skills', () => {
     expect(inventory.ignored).toEqual(
       expect.arrayContaining([expect.objectContaining({ path: paths.config })]),
     );
-    expect(runtimeSkillReferencesSync(paths)).toEqual([]);
+    expect(
+      runtimeSkillReferencesSync(paths).map((skill) => skill.name),
+    ).toEqual(['neon-pr-review']);
   });
 
   it('ignores user skills that try to replace the built-in Neondeck skill', async () => {
