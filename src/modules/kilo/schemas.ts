@@ -76,6 +76,11 @@ export const runningProcesses = new Map<string, RunningProcess>();
 export const terminalTaskIds = new Set<string>();
 
 export const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
+const taskIdSchema = v.pipe(
+  nonEmptyStringSchema,
+  v.maxLength(128),
+  v.regex(/^[A-Za-z0-9._:-]+$/),
+);
 export const positiveIntegerSchema = v.pipe(
   v.number(),
   v.integer(),
@@ -174,6 +179,7 @@ export const tasksListOutputSchema = v.looseObject({
   fetchedAt: v.optional(v.string()),
 });
 export const startInputSchema = v.object({
+  taskId: v.optional(taskIdSchema),
   title: nonEmptyStringSchema,
   prompt: nonEmptyStringSchema,
   repoId: v.optional(nonEmptyStringSchema),
@@ -187,10 +193,10 @@ export const startInputSchema = v.object({
   explicitUserRequest: v.literal(true),
 });
 export const taskIdInputSchema = v.object({
-  taskId: nonEmptyStringSchema,
+  taskId: taskIdSchema,
 });
 export const eventsInputSchema = v.object({
-  taskId: nonEmptyStringSchema,
+  taskId: taskIdSchema,
   limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
 });
 export const tasksListInputSchema = v.object({
