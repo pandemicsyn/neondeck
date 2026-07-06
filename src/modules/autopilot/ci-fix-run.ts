@@ -13,6 +13,7 @@ import {
 import {
   addNotification,
   addWorkflowSummary,
+  findWorkflowSummaryByKiloTaskId,
   updateWorkflowSummary,
 } from '../app-state';
 import {
@@ -306,18 +307,37 @@ export async function runCiFix(
 
     const startedKiloTaskId =
       stringField(objectField(kilo).taskId) ?? kiloTaskId;
-    const updatedWorkflowSummary = await updateWorkflowSummary(
-      workflowSummary.id,
-      {
-        status: 'running',
-        summary: {
-          ...objectField(workflowSummary.summary),
-          outcome: 'kilo-started',
-          kiloTaskId: startedKiloTaskId,
-        },
-      },
-      paths,
+    const currentWorkflowSummary =
+      (await findWorkflowSummaryByKiloTaskId(
+        'ci_fix_run',
+        startedKiloTaskId,
+        paths,
+      )) ??
+      (await findWorkflowSummaryByKiloTaskId(
+        'ci_fix_run',
+        kiloTaskId,
+        paths,
+      )) ??
+      workflowSummary;
+    const currentWorkflowSummaryBody = objectField(
+      currentWorkflowSummary.summary,
     );
+    const updatedWorkflowSummary =
+      currentWorkflowSummary.status === 'running' &&
+      currentWorkflowSummaryBody.outcome === 'kilo-starting'
+        ? await updateWorkflowSummary(
+            currentWorkflowSummary.id,
+            {
+              status: 'running',
+              summary: {
+                ...currentWorkflowSummaryBody,
+                outcome: 'kilo-started',
+                kiloTaskId: startedKiloTaskId,
+              },
+            },
+            paths,
+          )
+        : currentWorkflowSummary;
     releaseStatus = null;
     await addNotification(
       {
@@ -352,7 +372,7 @@ export async function runCiFix(
         kiloTaskId: startedKiloTaskId,
         worktreeId,
       }),
-      workflowSummary: updatedWorkflowSummary ?? workflowSummary,
+      workflowSummary: updatedWorkflowSummary ?? currentWorkflowSummary,
     };
   } finally {
     if (releaseStatus && lock?.ok && 'lock' in lock) {
