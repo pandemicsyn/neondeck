@@ -97,11 +97,14 @@ export async function writeReport(
         record.createdBy,
         record.createdAt,
       );
+  } catch (error) {
+    await unlink(filePath).catch(() => undefined);
+    throw error;
   } finally {
     database.close();
   }
 
-  await pruneReports(paths, { kind });
+  await pruneReports(paths, { kind, preserveIds: [id] });
   return record;
 }
 
@@ -175,6 +178,7 @@ export async function pruneReports(
     maxPerKind?: number;
     maxAgeDays?: number;
     now?: Date;
+    preserveIds?: string[];
   } = {},
 ) {
   await ensureRuntimeHome(paths);
@@ -191,6 +195,7 @@ export async function pruneReports(
   ).toISOString();
   const database = openDb(paths.neondeckDatabase);
   const toDelete = new Map<string, string>();
+  const preserved = new Set(options.preserveIds ?? []);
 
   try {
     const ageRows = database
@@ -202,7 +207,9 @@ export async function pruneReports(
       `,
       )
       .all(cutoff) as Array<{ id: string; html_path: string }>;
-    for (const row of ageRows) toDelete.set(row.id, row.html_path);
+    for (const row of ageRows) {
+      if (!preserved.has(row.id)) toDelete.set(row.id, row.html_path);
+    }
 
     const kinds = options.kind
       ? [normalizeReportKind(options.kind)]
@@ -224,19 +231,17 @@ export async function pruneReports(
         `,
         )
         .all(kind, maxPerKind) as Array<{ id: string; html_path: string }>;
-      for (const row of overflowRows) toDelete.set(row.id, row.html_path);
+      for (const row of overflowRows) {
+        if (!preserved.has(row.id)) toDelete.set(row.id, row.html_path);
+      }
     }
 
-    if (toDelete.size > 0) {
-      const deleteRow = database.prepare('DELETE FROM reports WHERE id = ?;');
-      for (const id of toDelete.keys()) deleteRow.run(id);
+    for (const [id, htmlPath] of toDelete) {
+      await unlink(resolveReportFilePath(paths, htmlPath));
+      database.prepare('DELETE FROM reports WHERE id = ?;').run(id);
     }
   } finally {
     database.close();
-  }
-
-  for (const htmlPath of toDelete.values()) {
-    await unlink(resolveReportFilePath(paths, htmlPath)).catch(() => undefined);
   }
 
   return { deleted: toDelete.size };

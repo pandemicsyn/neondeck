@@ -117,17 +117,96 @@ describe('runtime home', () => {
     expect(existsSync(paths.flueDatabase)).toBe(true);
     expect(existsSync(paths.skills)).toBe(true);
 
-    await expect(
-      readRuntimeJson(paths.dashboard, parseDashboardConfig),
-    ).resolves.toMatchObject({
+    const dashboard = await readRuntimeJson(
+      paths.dashboard,
+      parseDashboardConfig,
+    );
+    expect(dashboard).toMatchObject({
       display: { width: 2560, height: 720 },
       statusline: { position: 'top', pluginId: 'host-metrics' },
       layout: { columns: 12, rows: 5 },
     });
+    expect(
+      dashboard.layout.regions.flatMap((region) =>
+        region.tabs.map((tab) => tab.pluginId),
+      ),
+    ).toContain('reports-panel');
 
     await expect(
       readFile(join(paths.skills, 'neondeck', 'SKILL.md'), 'utf8'),
     ).rejects.toThrow('no such file or directory');
+  });
+
+  it('adds the reports tab to an existing dashboard during bootstrap', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
+    tempRoots.push(root);
+    const paths = runtimePaths(root);
+
+    await writeFile(
+      paths.dashboard,
+      JSON.stringify(
+        {
+          display: { preset: 'xeneon-edge', width: 2560, height: 720 },
+          appearance: { density: 'comfortable' },
+          theme: 'dark',
+          layout: {
+            mode: 'auto',
+            columns: 12,
+            rows: 5,
+            regions: [
+              {
+                id: 'work',
+                title: 'WORK',
+                column: 1,
+                row: 1,
+                columnSpan: 4,
+                rowSpan: 5,
+                defaultTab: 'github',
+                tabs: [
+                  {
+                    id: 'github',
+                    title: 'GITHUB',
+                    pluginId: 'github-pr-list',
+                    config: { limit: 12 },
+                  },
+                ],
+              },
+              {
+                id: 'neon',
+                title: 'NEON',
+                column: 5,
+                row: 1,
+                columnSpan: 8,
+                rowSpan: 5,
+                defaultTab: 'chat',
+                tabs: [
+                  {
+                    id: 'chat',
+                    title: 'CHAT',
+                    pluginId: 'flue-chat',
+                    config: {},
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await ensureRuntimeHome(paths);
+    await ensureRuntimeHome(paths);
+
+    const dashboard = await readRuntimeJson(
+      paths.dashboard,
+      parseDashboardConfig,
+    );
+    const work = dashboard.layout.regions.find(
+      (region) => region.id === 'work',
+    );
+    expect(work?.tabs.map((tab) => tab.id)).toEqual(['github', 'reports']);
   });
 
   it('rejects malformed runtime config with a controlled validation error', async () => {

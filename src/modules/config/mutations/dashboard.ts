@@ -154,6 +154,7 @@ function dashboardPresetConfig(
                   pluginId: 'github-pr-list',
                   config: { limit: 12 },
                 },
+                reportsTab(),
               ],
             },
             {
@@ -210,6 +211,7 @@ function dashboardPresetConfig(
                 pluginId: 'active-watches',
                 config: { limit: 8 },
               },
+              reportsTab(),
             ],
           },
           {
@@ -274,6 +276,15 @@ function dashboardPresetConfig(
     },
     'dashboard:preset:cockpit',
   );
+}
+
+function reportsTab() {
+  return {
+    id: 'reports',
+    title: 'REPORTS',
+    pluginId: 'reports-panel',
+    config: { limit: 12, refreshSeconds: 60 },
+  };
 }
 
 function chatTab() {

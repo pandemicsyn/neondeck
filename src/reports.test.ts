@@ -111,6 +111,27 @@ describe('reports', () => {
     await expect(listReports(paths)).resolves.toEqual([]);
   });
 
+  it('does not prune the report being written when createdAt is older than retention', async () => {
+    const paths = runtimePaths(await tempDir());
+    const report = await writeReport(
+      reportInput(
+        'hygiene',
+        'old generated report',
+        '2025-01-01T00:00:00.000Z',
+      ),
+      paths,
+    );
+
+    expect(existsSync(resolveReportFilePath(paths, report.htmlPath))).toBe(
+      true,
+    );
+    await expect(
+      listReports(paths, { kind: 'hygiene' }),
+    ).resolves.toMatchObject([
+      { id: report.id, title: 'old generated report' },
+    ]);
+  });
+
   it('serves report listings and HTML through local routes', async () => {
     const paths = runtimePaths(await tempDir());
     const report = await writeReport(
