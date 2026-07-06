@@ -19,14 +19,9 @@ export function installFlueObservationHandlers(paths: RuntimePaths) {
     });
 
     if (event.type === 'run_end') {
-      const summaryId = commandRunSummaryId(event);
-      if (summaryId) {
-        void setWorkflowSummaryRunId(summaryId, event.runId, paths).catch(
-          (error) => {
-            console.error('[neondeck] failed to attach Flue run id', error);
-          },
-        );
-      }
+      void attachCommandRunSummaryRunId(event, paths).catch((error) => {
+        console.error('[neondeck] failed to attach Flue run id', error);
+      });
       const learningReviewId = learningReviewResultId(event);
       if (learningReviewId) {
         void Promise.resolve()
@@ -167,7 +162,16 @@ export function displayAssistantLearningMiddleware(
   };
 }
 
-function commandRunSummaryId(event: FlueObservation) {
+export async function attachCommandRunSummaryRunId(
+  event: FlueObservation,
+  paths: RuntimePaths,
+) {
+  const link = commandRunSummaryLink(event);
+  if (!link) return;
+  await setWorkflowSummaryRunId(link.summaryId, link.runId, paths);
+}
+
+function commandRunSummaryLink(event: FlueObservation) {
   if (!('result' in event)) return undefined;
   const result = event.result;
   if (!result || typeof result !== 'object') return undefined;
@@ -176,7 +180,17 @@ function commandRunSummaryId(event: FlueObservation) {
   if (!summary || typeof summary !== 'object') return undefined;
 
   const id = (summary as { id?: unknown }).id;
-  return typeof id === 'string' ? id : undefined;
+  if (typeof id !== 'string') return undefined;
+  const runId =
+    objectStringField(result, 'data', 'runId') ??
+    stringField(summary, 'runId') ??
+    stringField(event, 'runId');
+  if (!runId) return undefined;
+
+  return {
+    summaryId: id,
+    runId,
+  };
 }
 
 function learningReviewResultId(event: FlueObservation) {
@@ -202,6 +216,23 @@ function workflowLabel(event: FlueObservation) {
   }
 
   return `Workflow run ${event.runId ?? 'unknown'}`;
+}
+
+function objectStringField(
+  value: object,
+  objectKey: string,
+  stringKey: string,
+) {
+  if (!(objectKey in value)) return undefined;
+  const nested = (value as Record<string, unknown>)[objectKey];
+  if (!nested || typeof nested !== 'object') return undefined;
+  return stringField(nested, stringKey);
+}
+
+function stringField(value: object, key: string) {
+  if (!(key in value)) return undefined;
+  const field = (value as Record<string, unknown>)[key];
+  return typeof field === 'string' && field.trim() ? field : undefined;
 }
 
 function displayAssistantSessionId(path: string) {
