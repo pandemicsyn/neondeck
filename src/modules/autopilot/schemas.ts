@@ -390,6 +390,7 @@ export const preparePrWorktreeInputSchema = v.strictObject({
   sync: v.optional(v.boolean()),
   fetch: v.optional(v.boolean()),
   lock: v.optional(v.boolean()),
+  lockId: v.optional(nonEmptyStringSchema),
   lockOwner: v.optional(nonEmptyStringSchema),
   lockTtlSeconds: v.optional(
     v.pipe(v.number(), v.integer(), v.minValue(30), v.maxValue(86_400)),

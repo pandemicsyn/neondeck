@@ -420,6 +420,8 @@ export const autopilotWorkflowNames = new Set([
   'triage-pr-event',
   'prepare-pr-worktree',
   'fix-pr-review-feedback',
+  'fix-pr-ci',
+  'ci-fix-run',
   'fix-pr-ci-failure',
   'verify-pr-worktree',
   'push-pr-autofix',

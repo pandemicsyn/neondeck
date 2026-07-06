@@ -15,6 +15,15 @@ import {
   type CiFixDossier,
   fixPrCiRun,
 } from './modules/autopilot/ci-fix-run';
+import {
+  ciFixRunAction,
+  neondeckAutopilotActions,
+} from './modules/autopilot/actions';
+import {
+  autopilotWorkflowNames as policyAutopilotWorkflowNames,
+  mutationWorkflowNames,
+} from './modules/autopilot-policy/schemas';
+import { isAutopilotWorkflow } from './modules/autopilot/state-schemas';
 import { listPreparedDiffs } from './modules/prepared-diffs';
 import { readReportHtml } from './modules/reports';
 import type {
@@ -44,6 +53,16 @@ afterEach(async () => {
 });
 
 describe('CI fix run', () => {
+  it('registers fix-ci as a mutation workflow without exposing a model-callable action', () => {
+    expect(neondeckAutopilotActions).not.toContain(ciFixRunAction);
+    expect(policyAutopilotWorkflowNames.has('fix-pr-ci')).toBe(true);
+    expect(policyAutopilotWorkflowNames.has('ci-fix-run')).toBe(true);
+    expect(mutationWorkflowNames.has('fix-pr-ci')).toBe(true);
+    expect(mutationWorkflowNames.has('ci-fix-run')).toBe(true);
+    expect(isAutopilotWorkflow('fix-pr-ci')).toBe(true);
+    expect(isAutopilotWorkflow('ci_fix_run')).toBe(true);
+  });
+
   it('writes an escaped CI dossier report with failing checks and command hints', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
@@ -85,11 +104,13 @@ describe('CI fix run', () => {
     const paths = runtimePaths(home);
     await writeRepoRegistry(paths.repos);
     let startedKilo = false;
+    let prepared = false;
 
     const result = await fixPrCiRun({ ref: 'pandemicsyn/neondeck#10' }, paths, {
       ...testDependencies(),
-      preparePrWorktree: async () =>
-        ({
+      preparePrWorktree: async () => {
+        prepared = true;
+        return {
           ok: true,
           action: 'autopilot_prepare_pr_worktree',
           changed: true,
@@ -100,7 +121,8 @@ describe('CI fix run', () => {
               headSha: 'abc123',
             },
           },
-        }) as never,
+        } as never;
+      },
       lockWorktree: async () =>
         ({
           ok: false,
@@ -120,13 +142,35 @@ describe('CI fix run', () => {
       data: {
         report: { url: expect.stringContaining('/reports/') },
       },
+      workflowSummary: {
+        workflow: 'ci_fix_run',
+        status: 'failed',
+        summary: expect.objectContaining({
+          outcome: 'lock-failed',
+          reportId: expect.any(String),
+          worktreeId: null,
+        }),
+      },
     });
     expect(startedKilo).toBe(false);
+    expect(prepared).toBe(false);
     await expect(listNotifications(paths)).resolves.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           level: 'attention',
           title: 'CI fix needs attention',
+        }),
+      ]),
+    );
+    await expect(listWorkflowSummaries(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          workflow: 'ci_fix_run',
+          status: 'failed',
+          summary: expect.objectContaining({
+            outcome: 'lock-failed',
+            requires: ['worktreeLock'],
+          }),
         }),
       ]),
     );
@@ -137,11 +181,15 @@ describe('CI fix run', () => {
     const paths = runtimePaths(home);
     await writeRepoRegistry(paths.repos);
     let observedTaskId: string | null = null;
+    let observedPrepareLockId: string | null = null;
     let prepareSawNoCiLock = false;
 
     const result = await fixPrCiRun({ ref: 'pandemicsyn/neondeck#10' }, paths, {
       ...testDependencies(),
-      preparePrWorktree: async () => {
+      preparePrWorktree: async (input) => {
+        observedPrepareLockId = stringField(
+          (input as { lockId?: unknown }).lockId,
+        );
         const probeLock = await lockWorktree(
           {
             repoId: 'neondeck',
@@ -229,6 +277,7 @@ describe('CI fix run', () => {
       },
     });
     expect(prepareSawNoCiLock).toBe(true);
+    expect(observedPrepareLockId).toBe('ci-fix-lock-1');
   });
 
   it('preserves a terminal CI fix workflow summary when Kilo finishes during start', async () => {
@@ -349,6 +398,14 @@ describe('CI fix run', () => {
       data: {
         report: { url: expect.stringContaining('/reports/') },
       },
+      workflowSummary: {
+        workflow: 'ci_fix_run',
+        status: 'failed',
+        summary: expect.objectContaining({
+          outcome: 'no-failing-checks',
+          reportId: expect.any(String),
+        }),
+      },
     });
     expect(startedKilo).toBe(false);
     await expect(listNotifications(paths)).resolves.toEqual(
@@ -358,6 +415,102 @@ describe('CI fix run', () => {
           title: 'CI fix needs attention',
           message:
             'No failing GitHub check runs were present in the current CI dossier.',
+        }),
+      ]),
+    );
+    await expect(listWorkflowSummaries(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          workflow: 'ci_fix_run',
+          status: 'failed',
+          summary: expect.objectContaining({
+            outcome: 'no-failing-checks',
+            requires: ['failingChecks'],
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it('records terminal CI fix summaries when repo setup fails before Kilo starts', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    let startedKilo = false;
+
+    const missingRepo = await fixPrCiRun(
+      { ref: 'pandemicsyn/neondeck#10' },
+      paths,
+      {
+        readDossier: async () => ({
+          ...ciFixDossier(),
+          repo: null,
+        }),
+        startKiloTask: async () => {
+          startedKilo = true;
+          throw new Error('should not start Kilo');
+        },
+      },
+    );
+
+    expect(missingRepo).toMatchObject({
+      ok: false,
+      requires: ['repo'],
+      workflowSummary: {
+        workflow: 'ci_fix_run',
+        status: 'failed',
+        summary: expect.objectContaining({
+          outcome: 'repo-missing',
+          repoId: null,
+        }),
+      },
+    });
+    expect(startedKilo).toBe(false);
+
+    const prepareFailed = await fixPrCiRun(
+      { ref: 'pandemicsyn/neondeck#10' },
+      paths,
+      {
+        ...testDependencies(),
+        preparePrWorktree: async () =>
+          ({
+            ok: false,
+            action: 'autopilot_prepare_pr_worktree',
+            changed: false,
+            message: 'prepare failed',
+            requires: ['worktree'],
+          }) as never,
+        startKiloTask: async () => {
+          startedKilo = true;
+          throw new Error('should not start Kilo');
+        },
+      },
+    );
+
+    expect(prepareFailed).toMatchObject({
+      ok: false,
+      requires: ['worktree'],
+      workflowSummary: {
+        workflow: 'ci_fix_run',
+        status: 'failed',
+        summary: expect.objectContaining({
+          outcome: 'prepare-failed',
+          requires: ['worktree'],
+        }),
+      },
+    });
+    expect(startedKilo).toBe(false);
+    await expect(listWorkflowSummaries(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          workflow: 'ci_fix_run',
+          status: 'failed',
+          summary: expect.objectContaining({ outcome: 'repo-missing' }),
+        }),
+        expect.objectContaining({
+          workflow: 'ci_fix_run',
+          status: 'failed',
+          summary: expect.objectContaining({ outcome: 'prepare-failed' }),
         }),
       ]),
     );

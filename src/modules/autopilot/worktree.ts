@@ -260,6 +260,7 @@ export async function preparePrWorktree(
             headRef: prFacts.headRef ?? prFacts.headSha,
             headSha: prFacts.headSha,
             fetch: input.fetch,
+            lockId: input.lockId,
           },
           paths,
         );
