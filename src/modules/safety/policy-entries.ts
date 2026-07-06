@@ -715,9 +715,9 @@ export const entries: SafetyPolicyEntry[] = [
     'Run due scheduler jobs',
     {
       ...safeMutation,
-      auditTarget: 'jobs/notifications/workflow_events',
+      auditTarget: 'jobs/notifications/workflow_events/reports',
     },
-    'Runs due jobs and records job outcomes, notifications, and Flue workflow observations.',
+    'Runs due jobs and records job outcomes, notifications, Flue workflow observations, and scheduled report artifacts.',
   ),
   action(
     'neondeck_watch_pr_add',
@@ -1556,9 +1556,9 @@ export const entries: SafetyPolicyEntry[] = [
     'Run scheduler-tick workflow',
     {
       ...safeMutation,
-      auditTarget: 'jobs/notifications/workflow_events',
+      auditTarget: 'jobs/notifications/workflow_events/reports',
     },
-    'Runs due scheduled work through the Flue workflow surface.',
+    'Runs due scheduled work through the Flue workflow surface and records job outcomes, notifications, workflow observations, and scheduled report artifacts.',
   ),
   workflow(
     'curate_learning_store',
@@ -1655,6 +1655,16 @@ export const entries: SafetyPolicyEntry[] = [
     'Report metadata API',
     readOnly,
     'Reads one local report metadata record by durable report id for dashboard and local clients.',
+  ),
+  route(
+    '/api/reports/:id/stage-docs-fix',
+    'Stage docs drift fix API',
+    {
+      ...hostExecution,
+      auditTarget:
+        'reports/worktrees/worktree_locks/kilo_tasks/kilo_task_events',
+    },
+    'Starts a bounded docs-only Kilo handoff from a docs-drift report. It creates local worktree state only and never pushes or comments.',
   ),
   route(
     '/reports/:id',

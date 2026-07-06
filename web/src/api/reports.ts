@@ -1,5 +1,9 @@
-import type { ReportResponse, ReportsResponse } from './types';
-import { getJson } from './http';
+import type {
+  ReportActionResponse,
+  ReportResponse,
+  ReportsResponse,
+} from './types';
+import { getJson, postJson } from './http';
 
 export async function getReports(
   input: { kind?: string; limit?: number } = {},
@@ -20,5 +24,16 @@ export async function getReport(id: string) {
     `/api/reports/${encodeURIComponent(id)}`,
   );
   if (!response.ok) throw new Error(response.message ?? 'Report unavailable.');
+  return response;
+}
+
+export async function stageDocsDriftFix(reportId: string) {
+  const response = await postJson<ReportActionResponse>(
+    `/api/reports/${encodeURIComponent(reportId)}/stage-docs-fix`,
+    {},
+  );
+  if (!response.ok) {
+    throw new Error(response.message ?? 'Could not stage docs fix.');
+  }
   return response;
 }

@@ -8,9 +8,11 @@ import {
   clearGitHubPullRequestQueueCache,
   deletePrReviewNeonSeedsForComments,
   fetchFailingCheckFacts,
+  fetchGitHubIssues,
   fetchCheckSummary,
   fetchPullRequestFiles,
   fetchPullRequestReviewThreads,
+  fetchPullRequestReviewThreadsWithMetadata,
   fetchPullRequestQueue,
   postPullRequestComment,
   readLivePrReviewDraft,
@@ -162,6 +164,42 @@ describe('github foundation', () => {
       state: 'open',
       draft: true,
     });
+  });
+
+  it('marks issue pagination truncated when limit stops inside a page', async () => {
+    globalThis.fetch = vi.fn<typeof fetch>(async () =>
+      jsonResponse([githubIssue(1), githubIssue(2), githubIssue(3)]),
+    );
+
+    const issues = await fetchGitHubIssues({
+      token: 'gho_test',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      limit: 2,
+    });
+
+    expect(issues.items.map((issue) => issue.number)).toEqual([1, 2]);
+    expect(issues.truncated).toBe(true);
+  });
+
+  it('marks issue pagination truncated at the page cap', async () => {
+    globalThis.fetch = vi.fn<typeof fetch>(async (_input) =>
+      jsonResponse([githubPullRequest(1)], 200, {
+        Link: '<https://api.github.com/repos/pandemicsyn/neondeck/issues?page=2>; rel="next"',
+      }),
+    );
+
+    const issues = await fetchGitHubIssues({
+      token: 'gho_test',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      limit: 10,
+      maxPages: 1,
+    });
+
+    expect(issues.items).toEqual([]);
+    expect(issues.truncated).toBe(true);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('deduplicates authored PR searches for duplicate configured repos', () => {
@@ -445,7 +483,62 @@ describe('github foundation', () => {
       total: 101,
       successful: 100,
       failed: 1,
+      truncated: false,
     });
+  });
+
+  it('marks check summary truncated at the page cap', async () => {
+    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.includes('/check-runs')) {
+        return jsonResponse(
+          {
+            check_runs: [{ status: 'completed', conclusion: 'success' }],
+          },
+          200,
+          {
+            Link: '<https://api.github.com/repos/pandemicsyn/neondeck/commits/abc123/check-runs?per_page=100&page=2>; rel="next"',
+          },
+        );
+      }
+      if (url.endsWith('/status')) {
+        return jsonResponse({ statuses: [] });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    await expect(
+      fetchCheckSummary({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        ref: 'abc123',
+        maxCheckRunPages: 1,
+      }),
+    ).resolves.toMatchObject({
+      status: 'pending',
+      total: 2,
+      successful: 1,
+      pending: 1,
+      truncated: true,
+    });
+  });
+
+  it('fails closed when failing check facts are truncated', async () => {
+    globalThis.fetch = vi.fn<typeof fetch>(async () =>
+      jsonResponse({ check_runs: [] }, 200, {
+        Link: '<https://api.github.com/repos/pandemicsyn/neondeck/commits/abc123/check-runs?per_page=100&page=2>; rel="next"',
+      }),
+    );
+
+    await expect(
+      fetchFailingCheckFacts({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        ref: 'abc123',
+      }),
+    ).rejects.toThrow('GitHub check run facts are truncated');
   });
 
   it('collects failing check facts and records unavailable logs', async () => {
@@ -649,6 +742,49 @@ describe('github foundation', () => {
       }),
     ]);
     expect(fetchedBodies).toHaveLength(2);
+  });
+
+  it('marks review thread facts truncated when GitHub omits a next-page cursor', async () => {
+    globalThis.fetch = vi.fn<typeof fetch>(async () =>
+      jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: true, endCursor: null },
+                nodes: [
+                  {
+                    id: 'thread-1',
+                    isResolved: false,
+                    isOutdated: false,
+                    path: 'src/app.ts',
+                    line: 12,
+                    originalLine: null,
+                    diffSide: 'RIGHT',
+                    comments: {
+                      pageInfo: { hasNextPage: false, endCursor: null },
+                      nodes: [reviewThreadComment('comment-1', 1)],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      }),
+    );
+
+    await expect(
+      fetchPullRequestReviewThreadsWithMetadata({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+      }),
+    ).resolves.toMatchObject({
+      reviewThreads: [expect.objectContaining({ id: 'thread-1' })],
+      truncated: true,
+    });
   });
 
   it('logs when review thread pagination reaches the page cap', async () => {
@@ -1822,6 +1958,30 @@ function searchIssue(
     comments: 0,
     updated_at: options.updatedAt ?? '2026-06-27T20:00:00Z',
     created_at: options.createdAt ?? '2026-06-27T19:00:00Z',
+  };
+}
+
+function githubIssue(number: number) {
+  return {
+    number,
+    title: `Issue ${number}`,
+    html_url: `https://github.com/pandemicsyn/neondeck/issues/${number}`,
+    body: `Body for issue ${number}`,
+    user: { login: 'pandemicsyn' },
+    assignees: [],
+    labels: [],
+    comments: 0,
+    created_at: `2026-06-27T19:0${number}:00Z`,
+    updated_at: `2026-06-27T20:0${number}:00Z`,
+  };
+}
+
+function githubPullRequest(number: number) {
+  return {
+    ...githubIssue(number),
+    pull_request: {
+      url: `https://api.github.com/repos/pandemicsyn/neondeck/pulls/${number}`,
+    },
   };
 }
 

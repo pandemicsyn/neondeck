@@ -1,5 +1,8 @@
 import { defineAgent } from '@flue/runtime';
-import { readAgentModelSelectionSync } from '../modules/runtime';
+import {
+  readAgentModelSelectionSync,
+  runtimeSkillReferenceByIdSync,
+} from '../modules/runtime';
 import neonCiFix from '../skills/neon-ci-fix/SKILL.md' with { type: 'skill' };
 
 export default defineAgent(() => {
@@ -13,7 +16,7 @@ export default defineAgent(() => {
       'You are a private Neondeck workflow host for bounded busywork workflows.',
       'Workflow actions perform deterministic orchestration. Do not expose chat tools, host tools, or reusable Neondeck actions through this agent.',
     ].join('\n\n'),
-    skills: [neonCiFix],
+    skills: [runtimeSkillReferenceByIdSync('neon-ci-fix') ?? neonCiFix],
     tools: [],
     actions: [],
     subagents: [],

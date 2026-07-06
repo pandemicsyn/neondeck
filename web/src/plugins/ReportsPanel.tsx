@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { getReports, type ReportRecord } from '../api';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { getReports, stageDocsDriftFix, type ReportRecord } from '../api';
 import { Badge, EmptyState, ScrollArea } from '../components/ui';
 import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
@@ -73,6 +73,13 @@ export const ReportsPanelPlugin = {
 
 function ReportRow({ report }: { report: ReportRecord }) {
   const summary = reportSummary(report.summary);
+  const queryClient = useQueryClient();
+  const stageDocs = useMutation({
+    mutationFn: () => stageDocsDriftFix(report.id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.reports });
+    },
+  });
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
       <div className="flex items-start justify-between gap-2">
@@ -91,6 +98,21 @@ function ReportRow({ report }: { report: ReportRecord }) {
           {report.sourceRef ?? report.repoId ?? report.createdBy} ·{' '}
           {relativeTime(report.createdAt)}
         </span>
+        {report.kind === 'docs-drift' ? (
+          <button
+            className="shrink-0 border border-line px-1.5 py-0.5 text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-wait disabled:opacity-60"
+            disabled={stageDocs.isPending}
+            onClick={() => stageDocs.mutate()}
+            title={
+              stageDocs.error
+                ? queryErrorMessage(stageDocs.error)
+                : 'Stage a docs-only Kilo fix'
+            }
+            type="button"
+          >
+            {stageDocs.isPending ? 'staging' : 'stage'}
+          </button>
+        ) : null}
         <a
           className="shrink-0 border border-line px-1.5 py-0.5 text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
           href={`/reports/${encodeURIComponent(report.id)}`}

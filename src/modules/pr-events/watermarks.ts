@@ -114,15 +114,17 @@ export function watermarksFromEventState(
     .sort((a, b) => a.id - b.id);
 
   return [
-    categoryWatermark(watchId, 'commits', latestCommit, {
-      headSha: state.headSha,
-      total: state.commits.length,
-      shas: state.commits.map((commit) => commit.sha).sort(),
-      latestCommittedAt: latestCommit,
-    }),
-    categoryWatermark(watchId, 'review_threads', latestThreadComment, {
-      total: state.reviewThreads.length,
-      unresolvedThreadIds: reviewThreads
+	    categoryWatermark(watchId, 'commits', latestCommit, {
+	      headSha: state.headSha,
+	      total: state.commits.length,
+	      truncated: state.commitsTruncated ?? false,
+	      shas: state.commits.map((commit) => commit.sha).sort(),
+	      latestCommittedAt: latestCommit,
+	    }),
+	    categoryWatermark(watchId, 'review_threads', latestThreadComment, {
+	      total: state.reviewThreads.length,
+	      truncated: state.reviewThreadsTruncated ?? false,
+	      unresolvedThreadIds: reviewThreads
         .filter((thread) => !thread.isResolved)
         .map((thread) => thread.id),
       resolvedThreadIds: reviewThreads
@@ -139,8 +141,9 @@ export function watermarksFromEventState(
       'requested_changes_reviews',
       latestRequestedChanges,
       {
-        total: requestedChangesReviews.length,
-        reviewIds: requestedChangesReviews.map((review) => review.id),
+	      total: requestedChangesReviews.length,
+	      truncated: state.reviewsTruncated ?? false,
+	      reviewIds: requestedChangesReviews.map((review) => review.id),
         latestSubmittedAt: latestRequestedChanges,
         reviews: requestedChangesReviews,
         latestByReviewer: latestRequestedChangeStates,
@@ -148,8 +151,9 @@ export function watermarksFromEventState(
       },
     ),
     categoryWatermark(watchId, 'check_suites', latestSuiteUpdate, {
-      total: checkSuites.length,
-      suiteIds: checkSuites.map((suite) => suite.id),
+	      total: checkSuites.length,
+	      truncated: state.checkSuitesTruncated ?? false,
+	      suiteIds: checkSuites.map((suite) => suite.id),
       failingSuiteIds: checkSuites
         .filter((suite) => isFailingConclusion(suite.conclusion))
         .map((suite) => suite.id),
@@ -159,8 +163,9 @@ export function watermarksFromEventState(
       suites: checkSuites,
     }),
     categoryWatermark(watchId, 'check_runs', latestRunUpdate, {
-      total: checkRuns.length,
-      runIds: checkRuns.map((run) => run.id),
+	      total: checkRuns.length,
+	      truncated: state.checkRunsTruncated ?? false,
+	      runIds: checkRuns.map((run) => run.id),
       failingRunIds: checkRuns
         .filter((run) => isFailingConclusion(run.conclusion))
         .map((run) => run.id),

@@ -138,6 +138,16 @@ export type ReportResponse = {
   message?: string;
 };
 
+export type ReportActionResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  data?: unknown;
+  errors?: string[];
+  requires?: string[];
+};
+
 export type GitHubPullRequestFile = Omit<RepoDiffFile, 'patch'> & {
   patch?: string | null;
   previousPath?: string | null;
@@ -1309,7 +1319,7 @@ export type WorkflowObservability = {
     lastEventAt: string;
     lastMessage: string;
     eventCount: number;
-    runUrl: string;
+    runUrl: string | null;
   }>;
   recentFailures: WorkflowEventRecord[];
   recentData: WorkflowEventRecord[];

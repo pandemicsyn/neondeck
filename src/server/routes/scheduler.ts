@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
-import { listSchedulerJobs, runSchedulerTick } from '../../modules/scheduler';
+import { listSchedulerJobs } from '../../modules/scheduler';
 import type { RuntimePaths } from '../../runtime-home';
+import { runObservedSchedulerTick } from '../scheduler-workflow';
 
 export function createSchedulerRoutes(paths: RuntimePaths) {
   const routes = new Hono();
@@ -10,7 +11,7 @@ export function createSchedulerRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/scheduler/tick', async (c) => {
-    return c.json(await runSchedulerTick(paths));
+    return c.json(await runObservedSchedulerTick(paths));
   });
 
   return routes;

@@ -20,7 +20,7 @@ afterEach(async () => {
 });
 
 describe('runtime skills', () => {
-  it('lists the app-owned built-in Flue skills', async () => {
+  it('lists app-owned built-in skills and seeded workflow runtime skills', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
 
@@ -41,12 +41,22 @@ describe('runtime skills', () => {
         }),
         expect.objectContaining({
           id: 'neon-pr-review',
-          source: 'built-in',
+          source: 'user',
           status: 'active',
         }),
         expect.objectContaining({
           id: 'neon-ci-fix',
-          source: 'built-in',
+          source: 'user',
+          status: 'active',
+        }),
+        expect.objectContaining({
+          id: 'neon-docs-fix',
+          source: 'user',
+          status: 'active',
+        }),
+        expect.objectContaining({
+          id: 'neon-issue-triage',
+          source: 'user',
           status: 'active',
         }),
       ]),

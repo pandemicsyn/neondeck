@@ -208,6 +208,12 @@ export function reviewFactsFromEventState(state: GitHubPullRequestEventState) {
     },
     unresolvedThreadCount: unresolvedThreads.length,
     unresolvedCommentCount: unresolvedComments.length,
+    truncated:
+      Boolean(state.reviewThreadsTruncated) || Boolean(state.reviewsTruncated),
+    truncation: {
+      reviewThreads: Boolean(state.reviewThreadsTruncated),
+      reviews: Boolean(state.reviewsTruncated),
+    },
     unresolvedComments,
     requestedChanges: state.requestedChangesReviews.map((review) => ({
       id: review.id,

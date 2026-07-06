@@ -4,8 +4,7 @@ export {
   listGitHubIssues,
   listGitHubPrQueue,
 } from './actions';
-export { fetchGitHubIssues } from './issues';
-export type { GitHubIssue } from './issues';
+export { fetchGitHubIssues, type GitHubIssue } from './issues';
 export {
   buildPullRequestQueries,
   clearGitHubPullRequestQueueCache,
@@ -13,17 +12,22 @@ export {
 } from './queue';
 export {
   fetchPullRequestCommits,
+  fetchPullRequestCommitsWithMetadata,
   fetchPullRequestDetail,
   fetchPullRequestEventState,
   fetchPullRequestFiles,
 } from './pull-requests';
+export { pullRequestEventStateTruncation } from './state-truncation';
+export type { GitHubPullRequestEventStateTruncation } from './state-truncation';
 export {
   fetchPullRequestFilesWithCache,
   readCachedPullRequestFiles,
 } from './pr-file-cache';
 export {
   fetchCheckRunDetails,
+  fetchCheckRunDetailsWithMetadata,
   fetchCheckSuites,
+  fetchCheckSuitesWithMetadata,
   fetchCheckSummary,
   fetchFailingCheckFacts,
 } from './checks';
@@ -33,6 +37,7 @@ export {
   deletePrReviewDraftComment,
   discardPrReviewDraft,
   fetchPullRequestReviews,
+  fetchPullRequestReviewsWithMetadata,
   readLivePrReviewDraft,
   readPrReviewDraft,
   readPrReviewDraftForComment,
@@ -58,6 +63,7 @@ export {
   fetchPullRequestReviewThread,
   fetchPullRequestReviewThreads,
   postPullRequestComment,
+  fetchPullRequestReviewThreadsWithMetadata,
 } from './comments';
 export type {
   GitHubBranchPushPermissions,

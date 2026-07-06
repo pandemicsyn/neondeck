@@ -478,14 +478,20 @@ export function ActiveRunRow({
     <article className="border border-primary/60 bg-soft px-2.5 py-2">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <a
-            className="truncate font-mono text-[11px] text-ink hover:text-primary"
-            href={run.runUrl}
-            rel="noreferrer"
-            target="_blank"
-          >
-            {run.workflow}
-          </a>
+          {run.runUrl ? (
+            <a
+              className="truncate font-mono text-[11px] text-ink hover:text-primary"
+              href={run.runUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {run.workflow}
+            </a>
+          ) : (
+            <span className="block truncate font-mono text-[11px] text-ink">
+              {run.workflow}
+            </span>
+          )}
           <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
             {run.lastMessage}
           </p>

@@ -3,15 +3,23 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
-import { listJobs, listNotifications } from './modules/app-state';
+import { listJobs, listNotifications, updateJobRun } from './modules/app-state';
 import {
   createScheduleBlueprint,
   runSchedulerTick,
   startSchedulerLoop,
   syncScheduledJobs,
 } from './modules/scheduler';
-import { type RuntimePaths, runtimePaths } from './runtime-home';
+import {
+  ensureRuntimeHome,
+  type RuntimePaths,
+  runtimePaths,
+} from './runtime-home';
 import { addPrWatch, refreshPrWatch } from './modules/watches';
+import {
+  runObservedSchedulerTick,
+  startSchedulerObservedLoop,
+} from './server/scheduler-workflow';
 
 const tempRoots: string[] = [];
 const originalEnv = { ...process.env };
@@ -32,6 +40,10 @@ type TestSchedulerLease = {
   owner: string;
   acquiredAt: string;
   expiresAt: string;
+};
+type TestSchedulerWorkflowLease = TestSchedulerLease & {
+  runtimeHome: string;
+  runId: string | null;
 };
 
 afterEach(async () => {
@@ -346,7 +358,7 @@ describe('scheduler', () => {
     });
   });
 
-  it('records failed workflow admissions without leaving jobs started', async () => {
+  it('records failed workflow admissions and continues the tick', async () => {
     const home = await tempHome();
     const paths = runtimePaths(home);
 
@@ -366,6 +378,16 @@ describe('scheduler', () => {
     );
     await syncScheduledJobs(paths);
     const now = new Date(Date.now() + 1_000);
+    await updateJobRun(
+      'schedule:digest',
+      {
+        outcome: 'silent',
+        message: 'Previous digest run.',
+        result: { watermark: '2026-06-01T00:00:00Z' },
+        nextRunAt: now.toISOString(),
+      },
+      paths,
+    );
 
     await expect(
       runSchedulerTick(paths, now, {
@@ -373,13 +395,18 @@ describe('scheduler', () => {
           throw new Error('admission failed');
         },
       }),
-    ).rejects.toThrow('admission failed');
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      notifications: [{ title: 'Scheduler job failed' }],
+    });
 
     await expect(listJobs(paths)).resolves.toMatchObject([
       {
         id: 'schedule:digest',
         lastOutcome: 'failed',
         lastMessage: 'Scheduler job failed: admission failed.',
+        lastResult: { watermark: '2026-06-01T00:00:00Z' },
         nextRunAt: now.toISOString(),
       },
     ]);
@@ -412,6 +439,461 @@ describe('scheduler', () => {
     } finally {
       clearInterval(timer);
     }
+  });
+
+  it('does not start overlapping observed scheduler workflow ticks in one process', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    const activeTick = deferred<void>();
+    let ticks = 0;
+
+    const timer = startSchedulerObservedLoop(paths, 5, async () => {
+      ticks += 1;
+      await activeTick.promise;
+      return {
+        ok: true,
+        action: 'scheduler_tick',
+        changed: false,
+        outcome: 'silent',
+        message: 'done',
+      };
+    });
+
+    try {
+      await waitUntil(() => ticks === 1);
+      await delay(25);
+      expect(ticks).toBe(1);
+      activeTick.resolve();
+    } finally {
+      clearInterval(timer);
+    }
+  });
+
+  it('deduplicates concurrent observed scheduler workflow admissions', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    const completedRun = deferred<void>();
+    let invokes = 0;
+    const result = {
+      ok: true,
+      action: 'scheduler_tick',
+      changed: false,
+      outcome: 'silent',
+      message: 'done',
+    };
+    const dependencies = {
+      listRuns: async () => ({ runs: [] }),
+      invokeWorkflow: async () => {
+        invokes += 1;
+        return { runId: 'run-scheduler-1' };
+      },
+      getRun: async () => {
+        await completedRun.promise;
+        return {
+          runId: 'run-scheduler-1',
+          workflowName: 'scheduler-tick',
+          status: 'completed' as const,
+          startedAt: '2026-07-06T00:00:00.000Z',
+          result,
+        };
+      },
+      sleep: async () => undefined,
+    };
+
+    const first = runObservedSchedulerTick(paths, dependencies);
+    await waitUntil(() => invokes === 1);
+    const second = runObservedSchedulerTick(paths, dependencies);
+    await delay(25);
+    expect(invokes).toBe(1);
+    completedRun.resolve();
+
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      expect.objectContaining({ runId: 'run-scheduler-1' }),
+      expect.objectContaining({ runId: 'run-scheduler-1' }),
+    ]);
+    expect(invokes).toBe(1);
+  });
+
+  it('keeps observed scheduler workflow admission guards scoped by runtime home', async () => {
+    const firstHome = await tempHome();
+    const secondHome = await tempHome();
+    const firstPaths = runtimePaths(firstHome);
+    const secondPaths = runtimePaths(secondHome);
+    const completedRun = deferred<void>();
+    const invokedHomes: string[] = [];
+    const dependencies = {
+      listRuns: async () => ({ runs: [] }),
+      invokeWorkflow: async (paths: RuntimePaths) => {
+        invokedHomes.push(paths.home);
+        return {
+          runId: paths.home === firstHome ? 'run-first' : 'run-second',
+        };
+      },
+      getRun: async (runId: string) => {
+        await completedRun.promise;
+        return {
+          runId,
+          workflowName: 'scheduler-tick',
+          status: 'completed' as const,
+          startedAt: '2026-07-06T00:00:00.000Z',
+          result: {
+            ok: true,
+            action: 'scheduler_tick',
+            changed: false,
+            outcome: 'silent',
+            message: `done ${runId}`,
+          },
+        };
+      },
+      sleep: async () => undefined,
+    };
+
+    const first = runObservedSchedulerTick(firstPaths, dependencies);
+    const second = runObservedSchedulerTick(secondPaths, dependencies);
+    await waitUntil(() => invokedHomes.length === 2);
+    completedRun.resolve();
+
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      expect.objectContaining({
+        runId: 'run-first',
+        message: 'done run-first',
+      }),
+      expect.objectContaining({
+        runId: 'run-second',
+        message: 'done run-second',
+      }),
+    ]);
+    expect(invokedHomes).toHaveLength(2);
+    expect(invokedHomes).toEqual(
+      expect.arrayContaining([firstHome, secondHome]),
+    );
+  });
+
+  it('waits for matching active observed scheduler workflow runs', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    const completedRun = deferred<void>();
+    let matchingReads = 0;
+    let invoked = false;
+
+    const result = runObservedSchedulerTick(paths, {
+      listRuns: async () => ({
+        runs: [
+          {
+            runId: 'run-other',
+            workflowName: 'scheduler-tick',
+            status: 'active' as const,
+            startedAt: '2026-07-06T00:00:00.000Z',
+          },
+          {
+            runId: 'run-matching',
+            workflowName: 'scheduler-tick',
+            status: 'active' as const,
+            startedAt: '2026-07-06T00:00:01.000Z',
+          },
+        ],
+      }),
+      invokeWorkflow: async () => {
+        invoked = true;
+        throw new Error('should not admit another run');
+      },
+      getRun: async (runId: string) => {
+        if (runId === 'run-other') {
+          return {
+            runId,
+            workflowName: 'scheduler-tick',
+            status: 'active' as const,
+            startedAt: '2026-07-06T00:00:00.000Z',
+            input: { runtimeHome: '/tmp/other-neondeck-home' },
+          };
+        }
+        matchingReads += 1;
+        if (matchingReads === 1) {
+          return {
+            runId,
+            workflowName: 'scheduler-tick',
+            status: 'active' as const,
+            startedAt: '2026-07-06T00:00:01.000Z',
+            input: { runtimeHome: paths.home },
+          };
+        }
+        await completedRun.promise;
+        return {
+          runId,
+          workflowName: 'scheduler-tick',
+          status: 'completed' as const,
+          startedAt: '2026-07-06T00:00:01.000Z',
+          input: { runtimeHome: paths.home },
+          result: {
+            ok: true,
+            action: 'scheduler_tick',
+            changed: true,
+            outcome: 'updated',
+            message: 'active run completed',
+          },
+        };
+      },
+      now: () => new Date('2026-07-06T00:00:05.000Z'),
+      sleep: async () => undefined,
+    });
+
+    await waitUntil(() => matchingReads === 2);
+    expect(invoked).toBe(false);
+    completedRun.resolve();
+    await expect(result).resolves.toMatchObject({
+      runId: 'run-matching',
+      changed: true,
+      outcome: 'updated',
+      message: 'active run completed',
+    });
+    expect(invoked).toBe(false);
+  });
+
+  it('respects an active durable observed scheduler workflow admission lease', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    writeSchedulerWorkflowLease(paths, {
+      owner: 'other-process',
+      runtimeHome: paths.home,
+      runId: null,
+      acquiredAt: '2026-07-06T00:00:00.000Z',
+      expiresAt: '2026-07-06T00:10:00.000Z',
+    });
+    let invoked = false;
+
+    await expect(
+      runObservedSchedulerTick(paths, {
+        listRuns: async () => ({ runs: [] }),
+        invokeWorkflow: async () => {
+          invoked = true;
+          throw new Error('active admission lease should skip execution');
+        },
+        now: () => new Date('2026-07-06T00:01:00.000Z'),
+        sleep: async () => undefined,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      outcome: 'silent',
+      extra: { admissionLease: 'active' },
+    });
+    expect(invoked).toBe(false);
+  });
+
+  it('ignores stale active observed scheduler workflow runs', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    let invoked = false;
+
+    await expect(
+      runObservedSchedulerTick(paths, {
+        listRuns: async () => ({
+          runs: [
+            {
+              runId: 'run-stale',
+              workflowName: 'scheduler-tick',
+              status: 'active' as const,
+              startedAt: '2026-07-06T00:00:00.000Z',
+            },
+          ],
+        }),
+        getRun: async (runId: string) => {
+          if (runId === 'run-stale') {
+            return {
+              runId,
+              workflowName: 'scheduler-tick',
+              status: 'active' as const,
+              startedAt: '2026-07-06T00:00:00.000Z',
+              input: { runtimeHome: paths.home },
+            };
+          }
+          return {
+            runId,
+            workflowName: 'scheduler-tick',
+            status: 'completed' as const,
+            startedAt: '2026-07-06T00:10:00.000Z',
+            input: { runtimeHome: paths.home },
+            result: {
+              ok: true,
+              action: 'scheduler_tick',
+              changed: false,
+              outcome: 'silent',
+              message: 'new run completed',
+            },
+          };
+        },
+        invokeWorkflow: async () => {
+          invoked = true;
+          return { runId: 'run-new' };
+        },
+        now: () => new Date('2026-07-06T00:10:00.000Z'),
+        activeRunTtlMs: 60_000,
+        sleep: async () => undefined,
+      }),
+    ).resolves.toMatchObject({
+      runId: 'run-new',
+      outcome: 'silent',
+      message: 'new run completed',
+    });
+    expect(invoked).toBe(true);
+  });
+
+  it('falls back to a direct tick when observed scheduler workflow admission fails', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+
+    await expect(
+      runObservedSchedulerTick(paths, {
+        listRuns: async () => ({ runs: [] }),
+        invokeWorkflow: async () => {
+          throw new Error('Flue unavailable');
+        },
+        now: () => new Date('2026-07-06T00:00:00.000Z'),
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'scheduler_tick',
+      changed: true,
+      outcome: 'silent',
+      extra: {
+        workflowObservationFallback: true,
+        workflowObservationPhase: 'admission',
+        workflowAdmissionFailed: true,
+        workflowAdmissionError: 'Flue unavailable',
+      },
+    });
+    await expect(listNotifications(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: 'attention',
+          title: 'Scheduler workflow observation failed',
+          source: 'scheduler',
+          sourceId: 'scheduler-tick:workflow-observation-fallback',
+        }),
+      ]),
+    );
+  });
+
+  it('falls back to a direct tick when observed scheduler workflow inspection fails', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+
+    await expect(
+      runObservedSchedulerTick(paths, {
+        listRuns: async () => {
+          throw new Error('run store unavailable');
+        },
+        now: () => new Date('2026-07-06T00:00:00.000Z'),
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'scheduler_tick',
+      changed: true,
+      outcome: 'silent',
+      extra: {
+        workflowObservationFallback: true,
+        workflowObservationPhase: 'inspection',
+        workflowInspectionFailed: true,
+        workflowInspectionError: 'run store unavailable',
+      },
+    });
+    await expect(listNotifications(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: 'attention',
+          title: 'Scheduler workflow observation failed',
+          source: 'scheduler',
+          sourceId: 'scheduler-tick:workflow-observation-fallback',
+        }),
+      ]),
+    );
+  });
+
+  it('falls back to a direct tick when an admitted observed scheduler run cannot be inspected', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+
+    await expect(
+      runObservedSchedulerTick(paths, {
+        listRuns: async () => ({ runs: [] }),
+        invokeWorkflow: async () => ({ runId: 'run-admitted' }),
+        getRun: async () => {
+          throw new Error('admitted run store unavailable');
+        },
+        now: () => new Date('2026-07-06T00:00:00.000Z'),
+        sleep: async () => undefined,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'scheduler_tick',
+      changed: true,
+      outcome: 'silent',
+      extra: {
+        workflowObservationFallback: true,
+        workflowObservationPhase: 'inspection',
+        workflowInspectionFailed: true,
+        workflowInspectionError: 'admitted run store unavailable',
+      },
+    });
+    await expect(listNotifications(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: 'attention',
+          title: 'Scheduler workflow observation failed',
+          source: 'scheduler',
+          sourceId: 'scheduler-tick:workflow-observation-fallback',
+        }),
+      ]),
+    );
+  });
+
+  it('falls back to a direct tick when an active admission lease run cannot be inspected', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    writeSchedulerWorkflowLease(paths, {
+      owner: 'other-process',
+      runtimeHome: paths.home,
+      runId: 'run-other-process',
+      acquiredAt: '2026-07-06T00:00:00.000Z',
+      expiresAt: '2026-07-06T00:10:00.000Z',
+    });
+
+    await expect(
+      runObservedSchedulerTick(paths, {
+        listRuns: async () => ({ runs: [] }),
+        getRun: async () => {
+          throw new Error('leased run store unavailable');
+        },
+        invokeWorkflow: async () => {
+          throw new Error('active admission lease should skip execution');
+        },
+        now: () => new Date('2026-07-06T00:01:00.000Z'),
+        sleep: async () => undefined,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'scheduler_tick',
+      changed: true,
+      outcome: 'silent',
+      extra: {
+        workflowObservationFallback: true,
+        workflowObservationPhase: 'inspection',
+        workflowInspectionFailed: true,
+        workflowInspectionError: 'leased run store unavailable',
+      },
+    });
+    await expect(listNotifications(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: 'attention',
+          title: 'Scheduler workflow observation failed',
+          source: 'scheduler',
+          sourceId: 'scheduler-tick:workflow-observation-fallback',
+        }),
+      ]),
+    );
   });
 
   it('creates blueprint schedules and syncs jobs', async () => {
@@ -869,6 +1351,34 @@ function writeSchedulerLease(paths: RuntimePaths, lease: TestSchedulerLease) {
       `,
       )
       .run('scheduler.tick.lease', JSON.stringify(lease), updatedAt);
+  } finally {
+    database.close();
+  }
+}
+
+function writeSchedulerWorkflowLease(
+  paths: RuntimePaths,
+  lease: TestSchedulerWorkflowLease,
+) {
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  const updatedAt = lease.acquiredAt;
+
+  try {
+    database
+      .prepare(
+        `
+        INSERT INTO app_metadata (key, value, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+          value = excluded.value,
+          updated_at = excluded.updated_at;
+      `,
+      )
+      .run(
+        'scheduler.tick.workflow.admission.lease',
+        JSON.stringify(lease),
+        updatedAt,
+      );
   } finally {
     database.close();
   }

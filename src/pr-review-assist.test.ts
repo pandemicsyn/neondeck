@@ -185,6 +185,40 @@ describe('PR review assist', () => {
     });
   });
 
+  it('keeps findings report-only when PR file facts are truncated', async () => {
+    const paths = await tempPaths();
+    const facts = reviewFacts();
+    facts.files[0] = {
+      ...facts.files[0]!,
+      patch: null,
+      truncated: true,
+      message: 'GitHub omitted the text patch for this file.',
+    };
+
+    const result = await reviewPrForHuman(
+      { ref: 'pandemicsyn/neondeck#10' },
+      paths,
+      {
+        fetchFacts: async () => facts,
+        reviewer: async () => reviewOutputWithOneFinding(),
+      },
+    );
+
+    const okResult = requireReviewAssistOk(result);
+    expect(okResult.data).toMatchObject({
+      seededCount: 0,
+      reportOnlyCount: 1,
+      skippedSeedingReason: 'truncated-file-patches',
+    });
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 10,
+      }),
+    ).toBeNull();
+  });
+
   it('includes typed PR context and explicit limitations in review prompt facts', () => {
     const facts = reviewFacts();
     facts.state.commits = [

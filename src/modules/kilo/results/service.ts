@@ -3,6 +3,7 @@ import { checkAutopilotPolicy } from '../../autopilot-policy';
 import { notifyKiloState, resolveKiloNotifications } from '../notifications';
 import { getGitHubPrBranchPermissions } from '../../pr-events';
 import { ensurePreparedDiffForWorktree } from '../../prepared-diffs';
+import { validateDocsDriftFixTaskDiff } from '../docs-drift-boundary';
 import {
   ensureRuntimeHome,
   runtimePaths,
@@ -62,6 +63,98 @@ export async function reviewKiloResult(
   const diffChanged = Boolean(
     previous?.diffFingerprint && previous.diffFingerprint !== fingerprint,
   );
+  const docsDriftScopeViolation = validateDocsDriftFixTaskDiff(
+    { id: task.id, title: task.title },
+    diff,
+    paths,
+  );
+  if (docsDriftScopeViolation) {
+    const classification = 'needs-review' as const;
+    const summary = {
+      classification,
+      reasons: [
+        docsDriftScopeViolation.missingBoundary
+          ? 'Docs drift fix boundary metadata is missing.'
+          : 'Docs drift fix changed files outside the report allowlist.',
+        ...docsDriftScopeViolation.disallowedPaths.map(
+          (path) => `Out-of-scope path: ${path}`,
+        ),
+      ],
+      changedFiles: docsDriftScopeViolation.changedPaths,
+      docsDriftFix: {
+        reportId: docsDriftScopeViolation.boundary?.reportId ?? null,
+        allowedDocsPaths:
+          docsDriftScopeViolation.boundary?.allowedDocsPaths ?? [],
+        disallowedPaths: docsDriftScopeViolation.disallowedPaths,
+        missingBoundary: docsDriftScopeViolation.missingBoundary,
+      },
+    };
+    const state = upsertKiloResultState(
+      task.id,
+      {
+        preparedDiffId: null,
+        classification,
+        verificationStatus: 'blocked',
+        promotionStatus: 'blocked',
+        diffFingerprint: fingerprint,
+        verifiedDiffFingerprint: null,
+        reviewSummary: summary,
+        diffSummary: diff,
+        policy: null,
+        verification: null,
+        promotion: {
+          blocked: true,
+          reason:
+            'Docs drift fixes may only change documentation files listed in the originating report.',
+        },
+        pendingApprovals: [],
+        reviewedAt: new Date().toISOString(),
+        verifiedAt: null,
+        promotedAt: null,
+      },
+      paths,
+    );
+    updateKiloTaskStatus(task.id, 'needs-review', paths);
+    insertKiloResultEvent(
+      task.id,
+      'review',
+      'Kilo result rejected because docs drift fix changed out-of-scope files.',
+      {
+        classification,
+        diffFingerprint: fingerprint,
+        summary,
+      },
+      paths,
+    );
+    await notifyKiloState(
+      {
+        taskId: task.id,
+        state: 'needs-review',
+        title: 'Docs drift fix changed out-of-scope files',
+        message:
+          'Docs drift fix changed files outside the report allowlist; no prepared diff was created.',
+        repoId: task.repoId,
+        repoFullName: task.repoFullName,
+        worktreeId: task.worktreeId,
+        workflow: 'review_kilo_result',
+        data: { classification, summary },
+      },
+      paths,
+    );
+
+    return {
+      ok: false,
+      action: 'kilo_result_review',
+      changed: true,
+      message:
+        'Docs drift fix changed files outside the report allowlist; no prepared diff was created.',
+      task: readKiloTask(task.id, paths) ?? task,
+      resultState: state,
+      diff,
+      requires: ['docs-only-diff'],
+      data: asJsonValue({ docsDriftFix: docsDriftScopeViolation }),
+    };
+  }
   const preparedDiff =
     worktree && hasReviewableDiff
       ? await ensurePreparedDiffForWorktree(worktree, paths, {

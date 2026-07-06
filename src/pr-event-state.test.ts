@@ -380,6 +380,39 @@ describe('PR event state watermarks', () => {
     ]);
   });
 
+  it('refuses PR comments when event facts are truncated', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    let posted = false;
+
+    await expect(
+      postGitHubPrComment(
+        {
+          repo: 'neondeck',
+          prNumber: 123,
+          body: 'Addressed review feedback in commit abc123.',
+        },
+        paths,
+        {
+          fetchPullRequestEventState: async () =>
+            prEventState({ checkRunsTruncated: true }),
+          postPullRequestComment: async () => {
+            posted = true;
+            throw new Error('unexpected post');
+          },
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'pr_comment',
+      requires: ['completePrEventFacts'],
+      errors: [expect.stringContaining('checkRuns')],
+    });
+    expect(posted).toBe(false);
+  });
+
   it('blocks PR comments for unconfigured repositories', async () => {
     process.env.GITHUB_TOKEN = 'token';
     const home = await tempHome();

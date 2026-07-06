@@ -7,7 +7,10 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { listNotifications } from './modules/app-state';
 import { approvePreparedDiffPush } from './modules/prepared-diffs';
-import { readKiloTaskStatus } from './modules/kilo';
+import {
+  readKiloTaskStatus,
+  recordDocsDriftFixTaskBoundary,
+} from './modules/kilo';
 import {
   listKiloResultStates,
   promoteKiloResult,
@@ -189,6 +192,57 @@ describe('Kilo result review, verification, and promotion', () => {
         },
       ],
     });
+  });
+
+  it('rejects docs-drift Kilo results that change files outside the report allowlist', async () => {
+    const { paths, worktreeId, worktreePath } = await fixture();
+    await writeFile(join(worktreePath, 'README.md'), '# sample\n\nchanged\n');
+    await mkdir(join(worktreePath, 'src'), { recursive: true });
+    await writeFile(join(worktreePath, 'src', 'app.ts'), 'export {};\n');
+    insertKiloTask(paths, {
+      taskId: 'kilo-task-docs-scope',
+      worktreeId,
+      cwd: worktreePath,
+    });
+    await recordDocsDriftFixTaskBoundary(
+      {
+        taskId: 'kilo-task-docs-scope',
+        reportId: 'report-docs-1',
+        repoId: 'sample',
+        repoFullName: 'pandemicsyn/sample',
+        worktreeId,
+        allowedDocsPaths: ['README.md'],
+      },
+      paths,
+    );
+
+    await expect(
+      reviewKiloResult({ taskId: 'kilo-task-docs-scope' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: true,
+      requires: ['docs-only-diff'],
+      resultState: {
+        preparedDiffId: null,
+        classification: 'needs-review',
+        verificationStatus: 'blocked',
+        promotionStatus: 'blocked',
+      },
+      data: {
+        docsDriftFix: {
+          disallowedPaths: ['src/app.ts'],
+        },
+      },
+    });
+    await expect(listNotifications(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'kilo',
+          sourceId: 'task:kilo-task-docs-scope:needs-review',
+          title: 'Docs drift fix changed out-of-scope files',
+        }),
+      ]),
+    );
   });
 
   it('keeps Kilo result review recoverable when the task workspace is missing', async () => {

@@ -1229,6 +1229,14 @@ describe('learning review orchestration', () => {
       skillMode: 'review',
     });
     if (!prepared.ok) throw new Error(prepared.message);
+    expect(prepared.allowedSkillIds).toEqual(
+      expect.arrayContaining([
+        'neon-pr-review',
+        'neon-ci-fix',
+        'neon-docs-fix',
+        'neon-issue-triage',
+      ]),
+    );
 
     await expect(
       completeLearningReviewFromModelOutput(

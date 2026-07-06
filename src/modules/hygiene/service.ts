@@ -1,10 +1,10 @@
-import { runExecFile } from '../../lib/exec';
+import { openDb } from '../../lib/sqlite';
+import { runBoundedGit, runBoundedGitLines } from '../../lib/git';
 import { renderReportHtml } from '../../lib/report-html';
-import type { JobRecord } from '../app-state';
+import type { JobExecutionResult, JobRecord } from '../app-state';
 import { listPreparedDiffs } from '../prepared-diffs';
 import { writeReport } from '../reports';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
-import type { JobExecutionResult } from '../scheduler';
 import { listPrWatchRecords } from '../watches';
 import { listWorktrees } from '../worktrees';
 import type { RuntimePaths } from '../../runtime-home';
@@ -16,6 +16,17 @@ type HygieneItem = {
 };
 
 export async function runHygieneJob(
+  job: JobRecord,
+  paths: RuntimePaths,
+): Promise<JobExecutionResult> {
+  try {
+    return await runHygieneJobInner(job, paths);
+  } catch (error) {
+    return failed(job, `Hygiene failed: ${errorMessage(error)}.`);
+  }
+}
+
+async function runHygieneJobInner(
   job: JobRecord,
   paths: RuntimePaths,
 ): Promise<JobExecutionResult> {
@@ -36,18 +47,28 @@ export async function runHygieneJob(
     return failed(job, `Hygiene repository "${repoRef}" is not configured.`);
   }
 
-  const [branchItems, worktreeItems, decisionItems, watchItems] =
-    await Promise.all([
-      staleBranchItems(repos, staleBranchDays),
-      worktreeCleanupItems(paths),
-      stalledPreparedDiffItems(paths, stalledDecisionHours),
-      staleWatchItems(paths),
-    ]);
+  const [
+    branchItems,
+    worktreeItems,
+    decisionItems,
+    approvalItems,
+    watchItems,
+    todoItems,
+  ] = await Promise.all([
+    staleBranchItems(repos, staleBranchDays),
+    worktreeCleanupItems(paths),
+    stalledPreparedDiffItems(paths, stalledDecisionHours),
+    unusedExecutionApprovalItems(paths),
+    staleWatchItems(paths),
+    todoAgingItems(repos),
+  ]);
   const items = [
     ...branchItems,
     ...worktreeItems,
     ...decisionItems,
+    ...approvalItems,
     ...watchItems,
+    ...todoItems,
   ];
   const result = {
     repoCount: repos.length,
@@ -123,6 +144,7 @@ export async function readHygieneSummary(paths: RuntimePaths) {
     listPreparedDiffs({}, paths),
     listPrWatchRecords(paths),
   ]);
+  const unusedApprovals = countUnusedExecutionApprovals(paths);
   return {
     worktreeCleanupCandidates: worktrees.worktrees.filter((worktree) =>
       ['cleanup-pending', 'failed', 'needs-sync'].includes(
@@ -135,6 +157,7 @@ export async function readHygieneSummary(paths: RuntimePaths) {
     closedOrMergedWatches: watches.filter((watch) =>
       ['closed', 'merged'].includes(watch.status),
     ).length,
+    unusedExecutionApprovals: unusedApprovals,
   };
 }
 
@@ -213,6 +236,58 @@ async function stalledPreparedDiffItems(
     }));
 }
 
+function unusedExecutionApprovalItems(paths: RuntimePaths) {
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    const rows = database
+      .prepare(
+        `
+        SELECT id, command, backend, cwd, created_at, resolved_at, updated_at
+        FROM execution_approvals
+        WHERE status = 'approved'
+          AND used_at IS NULL
+        ORDER BY updated_at ASC
+        LIMIT 40;
+      `,
+      )
+      .all() as Array<{
+      id: string;
+      command: string;
+      backend: string;
+      cwd: string | null;
+      created_at: string;
+      resolved_at: string | null;
+      updated_at: string;
+    }>;
+    return rows.map((row) => ({
+      kind: 'unused-execution-approval',
+      label: row.id,
+      detail: `${row.backend}: ${row.command}\ncwd: ${row.cwd ?? 'default'}\napproved: ${row.resolved_at ?? row.updated_at}\ncreated: ${row.created_at}`,
+    }));
+  } finally {
+    database.close();
+  }
+}
+
+function countUnusedExecutionApprovals(paths: RuntimePaths) {
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    const row = database
+      .prepare(
+        `
+        SELECT COUNT(*) AS count
+        FROM execution_approvals
+        WHERE status = 'approved'
+          AND used_at IS NULL;
+      `,
+      )
+      .get() as { count?: number } | undefined;
+    return typeof row?.count === 'number' ? row.count : 0;
+  } finally {
+    database.close();
+  }
+}
+
 async function staleWatchItems(paths: RuntimePaths) {
   const watches = await listPrWatchRecords(paths);
   return watches
@@ -224,6 +299,67 @@ async function staleWatchItems(paths: RuntimePaths) {
     }));
 }
 
+async function todoAgingItems(
+  repos: Array<{
+    id: string;
+    path: string;
+    defaultBranch: string;
+    github: { owner: string; name: string };
+  }>,
+) {
+  const items: HygieneItem[] = [];
+  for (const repo of repos) {
+    const lines = await gitLines(repo.path, [
+      'grep',
+      '-n',
+      '-I',
+      '-E',
+      'TODO|FIXME|HACK',
+      '--',
+      '.',
+    ]).catch(() => []);
+    if (lines.length === 0) continue;
+
+    const paths = [...new Set(lines.map(todoPath).filter(Boolean))].slice(
+      0,
+      30,
+    ) as string[];
+    let oldest: { path: string; date: string } | null = null;
+    for (const path of paths) {
+      const date = await git(repo.path, [
+        'log',
+        '-1',
+        '--format=%cI',
+        '--',
+        path,
+      ]).catch(() => '');
+      if (!date) continue;
+      if (!oldest || Date.parse(date) < Date.parse(oldest.date)) {
+        oldest = { path, date };
+      }
+    }
+
+    items.push({
+      kind: 'todo-aging',
+      label: `${repoFullName(repo)} TODO/FIXME/HACK`,
+      detail: [
+        `${lines.length} tracked marker${lines.length === 1 ? '' : 's'} found.`,
+        oldest ? `Oldest touched file: ${oldest.path} (${oldest.date})` : null,
+        'Examples:',
+        ...lines.slice(0, 5),
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    });
+  }
+  return items;
+}
+
+function todoPath(line: string) {
+  const separator = line.indexOf(':');
+  return separator > 0 ? line.slice(0, separator) : null;
+}
+
 function countKinds(items: HygieneItem[]) {
   return items.reduce<Record<string, number>>((counts, item) => {
     counts[item.kind] = (counts[item.kind] ?? 0) + 1;
@@ -232,11 +368,11 @@ function countKinds(items: HygieneItem[]) {
 }
 
 async function gitLines(cwd: string, args: string[]) {
-  const { stdout } = await runExecFile('git', args, { cwd });
-  return stdout
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
+  return runBoundedGitLines(cwd, args);
+}
+
+async function git(cwd: string, args: string[]) {
+  return runBoundedGit(cwd, args);
 }
 
 function stringConfig(value: unknown) {
@@ -251,6 +387,10 @@ function objectConfig(value: unknown) {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function failed(job: JobRecord, message: string): JobExecutionResult {

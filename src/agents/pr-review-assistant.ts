@@ -1,5 +1,8 @@
 import { defineAgent } from '@flue/runtime';
-import { readAgentModelSelectionSync } from '../modules/runtime';
+import {
+  readAgentModelSelectionSync,
+  runtimeSkillReferenceByIdSync,
+} from '../modules/runtime';
 import neonPrReview from '../skills/neon-pr-review/SKILL.md' with { type: 'skill' };
 
 export default defineAgent(() => {
@@ -14,7 +17,7 @@ export default defineAgent(() => {
       'You receive pull request facts as data and return only the requested structured review output.',
       'You have no tools or actions. Do not attempt external mutations, host execution, GitHub submission, or Neondeck configuration changes.',
     ].join('\n\n'),
-    skills: [neonPrReview],
+    skills: [runtimeSkillReferenceByIdSync('neon-pr-review') ?? neonPrReview],
     tools: [],
     actions: [],
     subagents: [],

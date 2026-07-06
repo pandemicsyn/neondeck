@@ -78,14 +78,16 @@ const sensitiveSkillResourceNames = new Set([
 const applicationSkillPaths = [
   fileURLToPath(new URL('../../skills/neondeck/SKILL.md', import.meta.url)),
   fileURLToPath(new URL('../../skills/github-gh/SKILL.md', import.meta.url)),
-  fileURLToPath(
-    new URL('../../skills/neon-pr-review/SKILL.md', import.meta.url),
-  ),
-  fileURLToPath(new URL('../../skills/neon-ci-fix/SKILL.md', import.meta.url)),
 ];
 const reservedBuiltInSkillIds = new Set(
   applicationSkillPaths.map((path) => basename(dirname(path))),
 );
+const workflowRuntimeSkillIds = new Set([
+  'neon-pr-review',
+  'neon-ci-fix',
+  'neon-docs-fix',
+  'neon-issue-triage',
+]);
 
 export async function listRuntimeSkills(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
@@ -151,8 +153,30 @@ export function runtimeSkillReferencesSync(
     roots.ignored,
   );
   return inventory.skills
-    .filter((skill) => skill.status === 'active' && skill.source !== 'built-in')
+    .filter(
+      (skill) =>
+        skill.status === 'active' &&
+        skill.source !== 'built-in' &&
+        !workflowRuntimeSkillIds.has(skill.id),
+    )
     .map((skill) => runtimeSkillReference(skill));
+}
+
+export function runtimeSkillReferenceByIdSync(
+  id: string,
+  paths = runtimePaths(),
+): SkillReference | undefined {
+  ensureRuntimeHomeSync(paths);
+  const roots = runtimeSkillRootsSafeSync(paths);
+  const inventory = discoverRuntimeSkillsSync(
+    paths,
+    roots.roots,
+    roots.ignored,
+  );
+  const skill = inventory.skills.find(
+    (candidate) => candidate.id === id && candidate.status === 'active',
+  );
+  return skill ? runtimeSkillReference(skill) : undefined;
 }
 
 async function runtimeSkillRoots(paths: RuntimePaths) {

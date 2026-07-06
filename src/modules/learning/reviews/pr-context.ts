@@ -10,6 +10,14 @@ import {
 import { listActiveLearningMemories } from './context';
 import { compactJson, parseNullableJson, truncate } from './store';
 
+const learningSkillSnippetIds = [
+  'neondeck',
+  'neon-pr-review',
+  'neon-ci-fix',
+  'neon-docs-fix',
+  'neon-issue-triage',
+];
+
 export function listHandledPrEventsForReview(
   input: { repoId?: string; limit: number; sinceLastReview: boolean },
   paths: RuntimePaths,
@@ -78,18 +86,26 @@ export async function listPrLearningMemories(
 
 export async function readLearningSkillSnippets(paths: RuntimePaths) {
   const inventory = await listRuntimeSkills(paths);
-  const neondeck = inventory.skills.find(
-    (skill) => skill.id === 'neondeck' && skill.status === 'active',
+  const activeById = new Map(
+    inventory.skills
+      .filter((skill) => skill.status === 'active')
+      .map((skill) => [skill.id, skill]),
   );
-  if (!neondeck) return [];
-  return [
-    {
-      id: neondeck.id,
-      source: neondeck.source,
-      path: neondeck.path,
-      content: truncate(await readFile(neondeck.path, 'utf8'), 6_000),
-    },
-  ];
+  return Promise.all(
+    learningSkillSnippetIds.flatMap((id) => {
+      const skill = activeById.get(id);
+      return skill
+        ? [
+            readFile(skill.path, 'utf8').then((content) => ({
+              id: skill.id,
+              source: skill.source,
+              path: skill.path,
+              content: truncate(content, 6_000),
+            })),
+          ]
+        : [];
+    }),
+  );
 }
 
 export function listRelatedWorkflowSummaries(
@@ -297,6 +313,11 @@ export function extractHandledPrEvent(input: {
     objectRecord(data.result) ??
     objectRecord(result.result);
   const nestedData = objectRecord(nestedResult?.data) ?? {};
+  const dossier =
+    objectRecord(result.dossier) ??
+    objectRecord(data.dossier) ??
+    objectRecord(nestedResult?.dossier) ??
+    objectRecord(nestedData.dossier);
   const task = objectRecord(result.task) ?? objectRecord(data.task);
   const resultState =
     objectRecord(result.resultState) ?? objectRecord(data.resultState);
@@ -319,6 +340,7 @@ export function extractHandledPrEvent(input: {
     data.repoId,
     nestedResult?.repoId,
     nestedData.repoId,
+    dossier?.repoId,
     preparedDiff?.repoId,
     worktree?.repoId,
     task?.repoId,
@@ -328,6 +350,8 @@ export function extractHandledPrEvent(input: {
     data.repoFullName,
     nestedResult?.repoFullName,
     nestedData.repoFullName,
+    dossier?.repoFullName,
+    dossier?.repo,
     preparedDiff?.repoFullName,
     worktree?.repoFullName,
     task?.repoFullName,
@@ -337,6 +361,7 @@ export function extractHandledPrEvent(input: {
     data.prNumber,
     nestedResult?.prNumber,
     nestedData.prNumber,
+    dossier?.prNumber,
     preparedDiff?.prNumber,
     worktree?.prNumber,
   );
@@ -359,8 +384,10 @@ export function extractHandledPrEvent(input: {
   const taskId = firstString(
     result.taskId,
     data.taskId,
+    data.kiloTaskId,
     nestedResult?.taskId,
     nestedData.taskId,
+    nestedData.kiloTaskId,
     task?.id,
     resultState?.taskId,
   );
@@ -458,6 +485,8 @@ export function isAutopilotFixOutcome(
     value.includes('fix_pr_review') ||
     value.includes('review-feedback') ||
     value.includes('fix_pr_ci') ||
+    value.includes('fix-pr-ci') ||
+    value.includes('ci_fix_run') ||
     value.includes('ci-failure')
   );
 }
@@ -481,7 +510,12 @@ export function handledEventType(
       'review-feedback-workflow-failed',
     );
   }
-  if (value.includes('fix_pr_ci') || value.includes('ci-failure')) {
+  if (
+    value.includes('fix_pr_ci') ||
+    value.includes('fix-pr-ci') ||
+    value.includes('ci_fix_run') ||
+    value.includes('ci-failure')
+  ) {
     return outcomeLabel(
       'ci-failure-workflow-completed',
       'ci-failure-workflow-blocked',

@@ -12,6 +12,7 @@ import {
   fetchPullRequestReviewThread,
   GitHubPrReviewSubmitError,
   postPullRequestComment,
+  pullRequestEventStateTruncation,
   readLivePrReviewDraft,
   readCachedPullRequestFiles,
   readPrReviewDraft,
@@ -1051,12 +1052,25 @@ export async function postGitHubPrComment(
   try {
     const fetcher =
       dependencies.fetchPullRequestEventState ?? fetchPullRequestEventState;
-    await fetcher({
+    const eventState = await fetcher({
       token,
       owner: resolved.target.owner,
       repo: resolved.target.repo,
       number: resolved.target.number,
     });
+    const truncation = pullRequestEventStateTruncation(eventState);
+    if (truncation.any) {
+      return failResult(
+        'pr_comment',
+        'PR event facts are incomplete; refusing to post a PR comment from truncated GitHub data.',
+        {
+          requires: ['completePrEventFacts'],
+          errors: [
+            `Truncated PR event fact categories: ${truncation.categories.join(', ')}.`,
+          ],
+        },
+      );
+    }
 
     const poster =
       dependencies.postPullRequestComment ?? postPullRequestComment;

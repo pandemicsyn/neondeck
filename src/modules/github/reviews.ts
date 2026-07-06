@@ -987,11 +987,22 @@ export async function fetchPullRequestReviews(options: {
   repo: string;
   number: number;
 }): Promise<GitHubPullRequestReview[]> {
+  return (await fetchPullRequestReviewsWithMetadata(options)).reviews;
+}
+
+export async function fetchPullRequestReviewsWithMetadata(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+}): Promise<{ reviews: GitHubPullRequestReview[]; truncated: boolean }> {
   const reviews: GitHubPullRequestReviewApiItem[] = [];
   let nextUrl: string | undefined =
     `https://api.github.com/repos/${encodePathSegment(options.owner)}/${encodePathSegment(options.repo)}/pulls/${options.number}/reviews?per_page=100`;
+  let pageCount = 0;
 
-  while (nextUrl) {
+  while (nextUrl && pageCount < 3) {
+    pageCount += 1;
     const response = await githubFetch(options.token, nextUrl);
     const data = v.parse(
       v.array(githubPullRequestReviewApiItemSchema),
@@ -1001,15 +1012,18 @@ export async function fetchPullRequestReviews(options: {
     nextUrl = nextLink(response.headers.get('link'));
   }
 
-  return reviews.map((review) => ({
-    id: review.id,
-    nodeId: review.node_id ?? null,
-    state: review.state,
-    authorLogin: review.user?.login ?? null,
-    submittedAt: review.submitted_at ?? null,
-    commitId: review.commit_id ?? null,
-    url: review.html_url ?? null,
-  }));
+  return {
+    reviews: reviews.map((review) => ({
+      id: review.id,
+      nodeId: review.node_id ?? null,
+      state: review.state,
+      authorLogin: review.user?.login ?? null,
+      submittedAt: review.submitted_at ?? null,
+      commitId: review.commit_id ?? null,
+      url: review.html_url ?? null,
+    })),
+    truncated: Boolean(nextUrl),
+  };
 }
 
 export function requestedChangesStateFromReviews(

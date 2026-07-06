@@ -2,6 +2,20 @@ import { type JsonValue } from '@flue/runtime';
 
 export type NotificationLevel = 'info' | 'ready' | 'attention' | 'urgent';
 
+export type JobExecutionResult = {
+  outcome: 'silent' | 'updated' | 'recorded' | 'failed';
+  message: string;
+  result?: unknown;
+  notifications?: Array<{
+    level: NotificationLevel;
+    title: string;
+    message: string;
+    source?: string;
+    sourceId?: string;
+    data?: unknown;
+  }>;
+};
+
 export type NotificationRecord = {
   id: string;
   level: NotificationLevel;

@@ -193,6 +193,7 @@ export const checkSummarySchema = v.object({
   failed: v.number(),
   pending: v.number(),
   statusContexts: v.optional(v.number()),
+  truncated: v.optional(v.boolean()),
   checkedAt: nonEmptyStringSchema,
 });
 export const nullableStringSchema = v.nullable(v.string());
@@ -216,6 +217,7 @@ export const reviewThreadSchema = v.object({
   isOutdated: v.boolean(),
   path: nullableStringSchema,
   line: v.nullable(v.number()),
+  commentsTruncated: v.optional(v.boolean()),
   comments: v.array(reviewCommentSchema),
 });
 export const reviewSchema = v.object({
@@ -326,11 +328,16 @@ export const prReviewEventStateSchema = v.object({
   mergeableState: nullableStringSchema,
   maintainerCanModify: v.boolean(),
   commits: v.array(prCommitSchema),
+  commitsTruncated: v.optional(v.boolean()),
   reviewThreads: v.array(reviewThreadSchema),
+  reviewThreadsTruncated: v.optional(v.boolean()),
   requestedChangesReviews: v.array(reviewSchema),
   requestedChangesState: requestedChangesStateSchema,
   checkSuites: v.array(checkSuiteSchema),
+  checkSuitesTruncated: v.optional(v.boolean()),
   checkRuns: v.array(checkRunSchema),
+  checkRunsTruncated: v.optional(v.boolean()),
+  reviewsTruncated: v.optional(v.boolean()),
   branchPermissions: branchPermissionsSchema,
   isOutOfDate: v.boolean(),
   fetchedAt: nonEmptyStringSchema,
