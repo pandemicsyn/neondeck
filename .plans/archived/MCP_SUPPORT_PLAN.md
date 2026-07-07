@@ -1,6 +1,7 @@
 # MCP Support Plan
 
-Status: **active** — planning doc for adding Model Context Protocol (MCP) client support to
+Status: **complete / archived** — implementation landed; README and docs now cover MCP config,
+OAuth login/logout, approvals, CLI/API surfaces, and Runtime Overview state. Original planning doc for adding Model Context Protocol (MCP) client support to
 Neondeck. Written 2026-07-03, revised same day after verifying the installed `@flue/*` packages;
 sibling to `.plans/REFACTOR_PLAN.md`, whose module conventions this plan follows.
 

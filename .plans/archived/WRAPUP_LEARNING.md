@@ -1,6 +1,7 @@
 # Wrap Up the Learning Flywheel (memories in, health out, triggers verified)
 
-Status: **active** — small spec closing the remaining gaps between "learning signals are
+Status: **complete / archived** — implementation landed; README and memory-learning docs now cover
+memory flow into automation, automation health, and audited skill patch restore. Original small spec closing the remaining gaps between "learning signals are
 recorded" and "the loop actually cycles". Written 2026-07-06 against main `7ede574`; follows
 the findings in `.plans/BUSYWORK_ROUTINES_REVIEW.md` and a skeptical audit of the deferred
 items in `.plans/DEVIATIONS.md`.

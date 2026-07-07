@@ -21,12 +21,14 @@ export type WatchPrOptions = {
   until?: string;
   interval?: string;
   from?: string;
+  json?: boolean;
 };
 
 export type WatchReleaseOptions = {
   sourcePr?: string;
   interval?: string;
   from?: string;
+  json?: boolean;
 };
 
 export type HandoffNoteOptions = {
@@ -34,6 +36,7 @@ export type HandoffNoteOptions = {
   pr?: string;
   level?: string;
   from?: string;
+  json?: boolean;
 };
 
 export type RegisterPrOptions = {
@@ -41,6 +44,7 @@ export type RegisterPrOptions = {
   watch?: boolean;
   note?: string;
   from?: string;
+  json?: boolean;
 };
 
 export type ScheduleOptions = {

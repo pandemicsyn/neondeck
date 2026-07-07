@@ -427,7 +427,7 @@ export async function updateRoutine(
   const before = existing;
   const database = openDb(paths.neondeckDatabase);
   try {
-    const routineUpdate = database
+    database
       .prepare(
         `
         UPDATE routines
@@ -1283,7 +1283,7 @@ function recordRoutineSession(
 ) {
   const database = openDb(paths.neondeckDatabase);
   try {
-    const routineUpdate = database
+    database
       .prepare(
         `
         UPDATE routines

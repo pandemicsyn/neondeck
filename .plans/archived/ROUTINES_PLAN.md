@@ -1,6 +1,7 @@
 # Routines Plan (schedule arbitrary agent tasks with skills, Hermes-style)
 
-Status: **active** — specification for user-defined scheduled agent tasks: a natural-language
+Status: **complete / archived** — implementation landed; README and docs now cover routine
+records, guardrails, dashboard/API management, delivery modes, and scheduler admission. Original specification for user-defined scheduled agent tasks: a natural-language
 prompt + a schedule + a set of runtime skills + a scope, run unattended, delivering into
 notifications/reports/sessions. Modeled on Hermes's cron routines (researched at
 `~/projects/hermes-agent/cron/`, 2026-07-05) and mapped onto Neondeck's existing scheduler,

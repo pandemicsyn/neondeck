@@ -57,13 +57,16 @@ describe('issue triage job', () => {
     );
 
     const result = await runIssueTriageJob(
-      job({
-        repo: 'sample',
-        limit: 20,
-      }, {
-        watermark: previousWatermark,
-        recentIssueNumbers: [],
-      }),
+      job(
+        {
+          repo: 'sample',
+          limit: 20,
+        },
+        {
+          watermark: previousWatermark,
+          recentIssueNumbers: [],
+        },
+      ),
       paths,
     );
 

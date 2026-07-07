@@ -397,8 +397,7 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
         >
           <div data-neondeck-review-annotation-title="">
             <span>
-              {metadata.isStale ? `stale ${origin}` : origin} ·{' '}
-              {metadata.title}
+              {metadata.isStale ? `stale ${origin}` : origin} · {metadata.title}
             </span>
           </div>
           {isEditing ? (

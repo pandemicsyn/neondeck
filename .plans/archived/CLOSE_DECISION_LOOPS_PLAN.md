@@ -1,6 +1,7 @@
 # Close the Decision Loops Plan (revise runs, approvals dispatch, approvers get answers)
 
-Status: **active** — specification for making human decision surfaces dispatch the continuation
+Status: **complete / archived** — implementation landed; README/docs now cover prepared-diff
+revision, push/recovery, and approval visibility at the runtime level. Original specification for making human decision surfaces dispatch the continuation
 they imply, instead of recording an answer and going quiet. Written 2026-07-05 against main at
 `77ab999`; grounded in `.plans/DIFF_REVIEW.md` and a code audit of every deck decision surface.
 

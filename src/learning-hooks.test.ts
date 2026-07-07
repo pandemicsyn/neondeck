@@ -1,8 +1,8 @@
-import type { FlueObservation } from '@flue/runtime';
+import type { FlueObservation, FlueObservationSubscriber } from '@flue/runtime';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { addWorkflowSummary, listWorkflowSummaries } from './modules/app-state';
 import { updateLearningConfig } from './modules/config';
 import { extractHandledPrEvent } from './modules/learning/reviews/pr-context';
@@ -10,12 +10,15 @@ import { createChatSession } from './modules/sessions';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   attachCommandRunSummaryRunId,
+  installFlueObservationHandlers,
   recordRoutineConversationLearning,
+  resetFlueObservationHandlersForTests,
 } from './server/learning-hooks';
 
 const tempRoots: string[] = [];
 
 afterEach(async () => {
+  resetFlueObservationHandlersForTests();
   await Promise.all(
     tempRoots
       .splice(0)
@@ -24,6 +27,35 @@ afterEach(async () => {
 });
 
 describe('Flue learning hooks', () => {
+  it('installs one observation subscriber per runtime home', () => {
+    const subscribers: unknown[] = [];
+    const unsubscribers = [vi.fn<() => void>(), vi.fn<() => void>()];
+    const observe = vi.fn<
+      (subscriber: FlueObservationSubscriber) => () => void
+    >((subscriber: FlueObservationSubscriber): (() => void) => {
+      subscribers.push(subscriber);
+      return unsubscribers[subscribers.length - 1] ?? vi.fn<() => void>();
+    });
+
+    installFlueObservationHandlers(runtimePaths('/tmp/neondeck-a'), {
+      observe,
+    });
+    installFlueObservationHandlers(runtimePaths('/tmp/neondeck-a'), {
+      observe,
+    });
+    installFlueObservationHandlers(runtimePaths('/tmp/neondeck-b'), {
+      observe,
+    });
+
+    expect(observe).toHaveBeenCalledTimes(2);
+    expect(subscribers).toHaveLength(2);
+
+    resetFlueObservationHandlersForTests();
+
+    expect(unsubscribers[0]).toHaveBeenCalledTimes(1);
+    expect(unsubscribers[1]).toHaveBeenCalledTimes(1);
+  });
+
   it('preserves the admitted review workflow run id for review-pr command summaries', async () => {
     const home = await mkdtemp(join(tmpdir(), 'neondeck-learning-hooks-'));
     tempRoots.push(home);

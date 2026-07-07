@@ -53,9 +53,27 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <pre><code>briefing
 command-run
 dev-doctor
+fix-pr-ci
+fix-pr-ci-failure
+fix-pr-review-feedback
+review-pr-for-human
 scheduler-tick
 watch-pr
-watch-release</code></pre>
+watch-release
+prepare-pr-worktree
+verify-pr-worktree
+verify-then-push-pr-autofix
+push-pr-autofix
+comment-pr-autofix-result
+handoff_to_kilo
+reconcile_kilo_task
+summarize_kilo_session
+review_kilo_result
+verify_kilo_result
+promote_kilo_result
+review_conversation_for_learning
+review_pr_batch_for_learning
+curate_learning_store</code></pre>
 
         <h2>Skills</h2>
         <p>
@@ -82,6 +100,45 @@ watch-release</code></pre>
           scheduled work. PR and release watches are deterministic pollers that
           invoke agent reasoning only when there is meaningful state to
           summarize or act on.
+        </p>
+        <p>
+          Scheduler blueprints cover morning briefings, review queue digests, PR
+          watches, release watches, docs drift, issue triage, and workspace
+          hygiene. Docs-drift, issue-triage, and hygiene jobs write local HTML
+          reports, stay quiet when no action is needed, and surface one
+          notification when a report needs attention.
+        </p>
+
+        <h2>Reports and busywork</h2>
+        <p>
+          Busywork automation writes durable local reports under the runtime
+          home and lists them through <code>GET /api/reports</code> and the Reports
+          dashboard panel. <code>/review-pr</code> produces PR overview and findings
+          reports plus local Neon-origin draft comments for a human reviewer. <code
+            >/fix-ci</code
+          > writes a CI failure dossier and, when a bounded Kilo run creates commits,
+          returns through the prepared diff review loop. <code
+            >/explain-ci --report</code
+          > writes the dossier without attempting a fix.
+        </p>
+        <p>
+          Reports are local artifacts served from <code>/reports/:id</code>.
+          Docs-drift reports can stage a docs fix into a managed worktree, but
+          the result still lands as a prepared diff for human review.
+        </p>
+
+        <h2>Routines</h2>
+        <p>
+          Routines are user-defined scheduled Neon tasks: a prompt, schedule,
+          optional runtime skills, optional repo or cwd scope, and delivery to a
+          notification, report, or session. They run as display-assistant
+          session turns admitted by the scheduler, so approval-gated actions
+          remain approval-gated. The Routines dashboard panel and
+          <code>/api/routines</code> routes can create, edit, run, pause, resume,
+          and delete routines. Neon can also create and manage routines through typed
+          actions, subject to the global routines kill switch, a minimum 15-minute
+          interval, a cap on agent-created enabled routines, and auto-pause after
+          repeated failures.
         </p>
 
         <h2>External agent handoff</h2>

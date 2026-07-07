@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
+import type { GitHubPullRequestDetail } from './modules/github';
+import { addPrWatch } from './modules/watches';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 
 const execFileAsync = promisify(execFile);
@@ -57,6 +59,53 @@ describe('agent handoff CLI', () => {
     expect(parsed.id).toEqual(expect.any(String));
     expect(parsed.message).toContain('Registered pandemicsyn/neondeck#123');
   });
+
+  it('accepts command-local trailing JSON for documented handoff commands', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await writeRepoRegistry(paths.repos);
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
+
+    for (const command of [
+      {
+        args: ['watch-pr', 'neondeck#123', '--json'],
+        action: 'watch_pr_add',
+      },
+      {
+        args: ['watch-release', 'neondeck', '--json'],
+        action: 'handoff_release_watch',
+      },
+      {
+        args: ['note', 'Finished', 'handoff', '--from', 'codex', '--json'],
+        action: 'handoff_note_create',
+      },
+      {
+        args: [
+          'register-pr',
+          'neondeck#123',
+          '--from',
+          'codex',
+          '--note',
+          'Adds retry logic.',
+          '--no-watch',
+          '--json',
+        ],
+        action: 'handoff_pr_register',
+      },
+    ]) {
+      const result = await runCli(home, command.args);
+      const parsed = JSON.parse(result.stdout) as {
+        ok: boolean;
+        action: string;
+      };
+
+      expect(parsed).toMatchObject({
+        ok: true,
+        action: command.action,
+      });
+    }
+  });
 });
 
 async function tempHome() {
@@ -101,4 +150,22 @@ function tsxBin() {
     '.bin',
     process.platform === 'win32' ? 'tsx.cmd' : 'tsx',
   );
+}
+
+function prDetail(
+  overrides: Partial<GitHubPullRequestDetail> = {},
+): GitHubPullRequestDetail {
+  return {
+    number: 123,
+    title: 'Test PR',
+    repo: 'pandemicsyn/neondeck',
+    url: 'https://github.com/pandemicsyn/neondeck/pull/123',
+    state: 'open',
+    merged: false,
+    mergeCommitSha: null,
+    headSha: 'head123',
+    baseRef: 'main',
+    updatedAt: '2026-06-27T20:00:00Z',
+    ...overrides,
+  };
 }
