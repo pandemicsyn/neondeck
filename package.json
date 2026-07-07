@@ -8,7 +8,11 @@
     "neondeck": "bin/neondeck.mjs"
   },
   "files": [
+    "bin/",
+    "dist/",
+    "web/dist/",
     "src/",
+    "shared/",
     "config/",
     "SOUL.md",
     "README.md",
@@ -19,8 +23,8 @@
   ],
   "scripts": {
     "build": "npm run build:dashboard && npm run docs:build",
-    "build:dashboard": "npm run build:web && flue build --target node",
-    "build:server": "flue build --target node",
+    "build:dashboard": "npm run build:web && npm run build:server",
+    "build:server": "flue build --target node && node scripts/copy-runtime-assets.mjs",
     "build:web": "vite build --config web/vite.config.ts",
     "check": "npm run lint && npm run check:layers && npm run db:check && npm run typecheck && npm run test",
     "check:layers": "node scripts/check-import-layers.mjs",
@@ -57,7 +61,7 @@
     "report:file-sizes": "node scripts/file-size-report.mjs",
     "typecheck": "npm run typecheck:app && npm run docs:check",
     "typecheck:app": "tsc --noEmit && tsc -p web/tsconfig.json --noEmit",
-    "verify": "npm run lint && npm run check:layers && npm run db:check && npm run typecheck && npm run test:all && npm run smoke:npm-pack && npm run format:check && npm run build",
+    "verify": "npm run lint && npm run check:layers && npm run db:check && npm run typecheck && npm run test:all && npm run build && npm run smoke:npm-pack && npm run format:check",
     "docs:build": "npm --workspace @neondeck/docs-site run build",
     "docs:check": "npm --workspace @neondeck/docs-site run check",
     "docs:deploy": "npm --workspace @neondeck/docs-site run deploy",

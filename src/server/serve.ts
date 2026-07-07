@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import type { RuntimePaths } from '../runtime-home';
@@ -78,14 +78,9 @@ export async function runBuiltNeondeckServer(
 
 export function resolvePackagedServerEntry(
   env: NodeJS.ProcessEnv = process.env,
-  cwd = process.cwd(),
 ) {
   if (env.NEONDECK_SERVER_ENTRY) return env.NEONDECK_SERVER_ENTRY;
-  const candidates = [
-    fileURLToPath(new URL('../../dist/server.mjs', import.meta.url)),
-    join(cwd, 'dist', 'server.mjs'),
-  ];
-  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
+  return fileURLToPath(new URL('../../dist/server.mjs', import.meta.url));
 }
 
 export function packageRootForServerEntry(entry: string) {

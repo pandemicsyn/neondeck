@@ -25,6 +25,7 @@ const checksumPath = `${archivePath}.sha256`;
 for (const requiredPath of [
   'dist/server.mjs',
   'dist/assets',
+  'dist/assets/migrations',
   'web/dist/index.html',
   'web/dist/assets',
 ]) {
