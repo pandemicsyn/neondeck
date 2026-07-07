@@ -130,7 +130,9 @@ export async function fetchPullRequestEventState(options: {
     reviewThreads: reviewThreadDetails.reviewThreads,
     reviewThreadsTruncated:
       reviewThreadDetails.truncated ||
-      reviewThreadDetails.reviewThreads.some((thread) => thread.commentsTruncated),
+      reviewThreadDetails.reviewThreads.some(
+        (thread) => thread.commentsTruncated,
+      ),
     requestedChangesReviews: requestedChangesState.active,
     requestedChangesState,
     reviewsTruncated: reviewDetails.truncated,

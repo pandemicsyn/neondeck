@@ -325,7 +325,8 @@ export async function runSchedulerTick(
     }
 
     const routineChanged =
-      routineResult?.outcome !== undefined && routineResult.outcome !== 'silent';
+      routineResult?.outcome !== undefined &&
+      routineResult.outcome !== 'silent';
     const changed = notifications.length > 0 || routineChanged;
     const jobMessage =
       jobs.length === 0

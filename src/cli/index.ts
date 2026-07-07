@@ -80,16 +80,13 @@ program
   .option('--port <port>', 'override the configured/default API port')
   .action(async (options: ServeOptions) => {
     const { ensureRuntimeHome } = await runtimeHomeModule();
-    const { startNeondeckServer } = await serverModule();
+    const { runBuiltNeondeckServer } = await serverModule();
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
     await ensureRuntimeHome(paths);
     loadEnvForPaths(paths, { overwrite: false });
-    await startNeondeckServer({
+    await runBuiltNeondeckServer({
       paths,
       port: options.port,
-      onReady: ({ url }) => {
-        console.log(`Neondeck server listening on ${url}`);
-      },
     });
   });
 
@@ -450,7 +447,9 @@ program
   )
   .option('--interval <seconds>', 'poll interval in seconds')
   .option('--from <agent>', 'external agent attribution')
+  .option('--json', 'print machine-readable JSON')
   .action(async (ref: string, options: WatchPrOptions) => {
+    applyCommandJsonOption(options);
     const { addPrWatch } = await watchActionsModule();
     const { normalizeHandoffSource } = await handoffModule();
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
@@ -477,7 +476,9 @@ program
   .option('--source-pr <ref>', 'link release watching to a source PR')
   .option('--interval <seconds>', 'poll interval in seconds')
   .option('--from <agent>', 'external agent attribution')
+  .option('--json', 'print machine-readable JSON')
   .action(async (repo: string, options: WatchReleaseOptions) => {
+    applyCommandJsonOption(options);
     const { registerHandoffReleaseWatch, normalizeHandoffSource } =
       await handoffModule();
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
@@ -505,7 +506,9 @@ program
   .option('--pr <ref>', 'linked PR reference')
   .option('--level <level>', 'note level: info, ready, or attention', 'info')
   .option('--from <agent>', 'external agent attribution')
+  .option('--json', 'print machine-readable JSON')
   .action(async (text: string[], options: HandoffNoteOptions) => {
+    applyCommandJsonOption(options);
     const { createHandoffNote, normalizeHandoffSource } = await handoffModule();
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
     loadEnvForPaths(paths);
@@ -534,7 +537,9 @@ program
   .option('--note <text>', 'one-line handoff note')
   .option('--review', 'queue bounded PR review assistance')
   .option('--no-watch', 'skip creating or confirming the PR watch')
+  .option('--json', 'print machine-readable JSON')
   .action(async (ref: string, options: RegisterPrOptions) => {
+    applyCommandJsonOption(options);
     const { registerHandoffPr, normalizeHandoffSource } = await handoffModule();
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
     loadEnvForPaths(paths);
@@ -631,3 +636,7 @@ program
   });
 
 await program.parseAsync(process.argv);
+
+function applyCommandJsonOption(options: { json?: boolean }) {
+  if (options.json) setJsonOutput(true);
+}

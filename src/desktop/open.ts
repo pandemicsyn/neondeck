@@ -1,14 +1,17 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   parseDashboardConfig,
   readRuntimeJson,
   type DashboardWindowProfile,
   type RuntimePaths,
 } from '../runtime-home';
-import { resolveServerPort } from '../server/serve';
+import {
+  packageRootForServerEntry,
+  resolvePackagedServerEntry,
+  resolveServerPort,
+} from '../server/serve';
 import { readServiceStatus, startService, type ServiceStatus } from './service';
 
 export type WindowProfile = DashboardWindowProfile;
@@ -477,14 +480,16 @@ async function spawnDetachedServe(
   port: number,
   spawnCommand: CommandSpawner = spawnDetached,
 ) {
-  const entry = fileURLToPath(
-    new URL('../../bin/neondeck.mjs', import.meta.url),
-  );
-  const packageRoot = fileURLToPath(new URL('../../', import.meta.url));
-  const args = [entry, 'serve', '--port', String(port)];
+  const entry = resolvePackagedServerEntry();
+  if (!existsSync(entry)) {
+    throw new Error(
+      `Built Neondeck server entry was not found at ${entry}. Run npm run build:server or install a packaged Neondeck build before using neondeck open without an installed service.`,
+    );
+  }
+  const args = [entry];
   await spawnCommand(process.execPath, args, {
     detached: true,
-    cwd: packageRoot,
+    cwd: packageRootForServerEntry(entry),
     env: {
       ...process.env,
       NEONDECK_HOME: paths.home,

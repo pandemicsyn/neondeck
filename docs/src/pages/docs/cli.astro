@@ -69,7 +69,10 @@ neondeck open
 neondeck open sidebar
 neondeck open xeneon --kiosk</code></pre>
         <p>
-          <code>serve</code> starts the production server in the foreground.
+          <code>serve</code> starts the production server in the foreground. It expects
+          the packaged <code>dist/server.mjs</code> entry; in a source checkout, run
+          <code>npm run build:server</code> first or use
+          <code>npm run dev</code> for the fast development loop.
           <code>service install</code> creates a login service on macOS launchd or
           Linux systemd user units. Windows users should run
           <code>neondeck serve</code> directly for now. Service status reports installation
@@ -131,7 +134,53 @@ npm run cli -- schedule --morning-briefing
 npm run cli -- schedule --review-queue-digest</code></pre>
         <p>
           Natural-language scheduling is reserved for later. Today, the CLI
-          creates known schedule blueprints and lists configured jobs.
+          creates the morning briefing and review queue digest convenience
+          blueprints and lists configured jobs. The backend scheduler also has
+          typed blueprints for PR watches, release watches, docs drift, issue
+          triage, and hygiene; those are created through typed actions, local
+          API/dashboard flows, or watch-specific commands.
+        </p>
+
+        <h2>Neon slash commands</h2>
+        <pre><code>/repo-status [repo-id]
+/review-queue
+/review-pr &lt;repo#number|owner/repo#number|url&gt;
+/fix-ci [repo#number|owner/repo#number]
+/explain-ci [--report] [repo#number|owner/repo#number]
+/summarize-pr [repo#number|owner/repo#number]
+/draft-pr-description [repo-id|owner/repo]
+/prepare-pr [repo-id|owner/repo]
+/review-local [repo-id|owner/repo]
+/briefing
+/reasoning [off|minimal|low|medium|high|xhigh]
+/memory ...
+/watch-pr &lt;repo#number|owner/repo#number|url&gt;
+/watch-release &lt;repo-id|owner/repo&gt;
+/dev-doctor</code></pre>
+        <p>
+          Slash commands can be typed in chat, launched from dashboard buttons,
+          or invoked through the <code>command-run</code> Flue workflow.
+          <code>/review-pr</code> prepares local reports and Neon-origin draft review
+          comments for a human reviewer; it does not submit a GitHub review. <code
+            >/fix-ci</code
+          > queues a bounded CI fix workflow and routes any resulting code change
+          back through prepared-diff review.
+          <code>/explain-ci --report</code> writes the CI dossier without starting
+          a fix attempt.
+        </p>
+
+        <h2>Reports and routines</h2>
+        <pre><code>GET /api/reports?kind=docs-drift
+GET /api/routines
+POST /api/routines/:id/run
+POST /api/routines/:id/pause
+POST /api/routines/:id/resume</code></pre>
+        <p>
+          Reports and routines are primarily dashboard/API surfaces rather than
+          top-level CLI subcommands in this slice. Reports are local HTML
+          artifacts opened from the Reports panel or <code>/reports/:id</code>.
+          Routines are scheduled Neon tasks managed from the Routines panel,
+          local API routes, or typed <code>neondeck_routine_*</code> actions.
         </p>
 
         <h2>MCP servers</h2>

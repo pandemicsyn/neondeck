@@ -10,7 +10,7 @@ import { runtimePaths } from '../runtime-home';
 
 const definition = {
   nodePath: '/Users/tester/.fnm/node-versions/v26.4.0/bin/node',
-  cliEntry: '/Users/tester/neondeck dist/bin/neondeck.mjs',
+  serverEntry: '/Users/tester/neondeck dist/dist/server.mjs',
   runtimeHome: '/Users/tester/.config/neondeck',
   logPath: '/Users/tester/.config/neondeck/data/logs/server.log',
   port: 3599,
@@ -24,16 +24,15 @@ describe('desktop service renderers', () => {
     expect(plist).toContain('<key>Label</key>');
     expect(plist).toContain('<string>dev.neondeck.server</string>');
     expect(plist).toContain(`<string>${definition.nodePath}</string>`);
-    expect(plist).toContain(`<string>${definition.cliEntry}</string>`);
-    expect(plist).toContain('<string>serve</string>');
-    expect(plist).toContain('<string>--port</string>');
-    expect(plist).toContain('<string>3599</string>');
+    expect(plist).toContain(`<string>${definition.serverEntry}</string>`);
+    expect(plist).not.toContain('<string>serve</string>');
+    expect(plist).not.toContain('<string>--port</string>');
     expect(plist).toContain('<key>RunAtLoad</key>');
     expect(plist).toContain('<key>KeepAlive</key>');
     expect(plist).toContain(`<string>${definition.logPath}</string>`);
     expect(parseLaunchdPlist(plist)).toEqual({
       nodePath: definition.nodePath,
-      serverEntry: definition.cliEntry,
+      serverEntry: definition.serverEntry,
       runtimeHome: definition.runtimeHome,
       port: '3599',
       logPath: definition.logPath,
@@ -45,8 +44,9 @@ describe('desktop service renderers', () => {
 
     expect(unit).toContain('[Unit]');
     expect(unit).toContain(
-      `ExecStart="${definition.nodePath}" "${definition.cliEntry}" serve --port "3599"`,
+      `ExecStart="${definition.nodePath}" "${definition.serverEntry}"`,
     );
+    expect(unit).not.toContain(' serve --port ');
     expect(unit).toContain('Restart=on-failure');
     expect(unit).toContain(
       `Environment="NEONDECK_HOME=${definition.runtimeHome}"`,
@@ -54,7 +54,7 @@ describe('desktop service renderers', () => {
     expect(unit).toContain(`StandardOutput=append:${definition.logPath}`);
     expect(parseSystemdUnit(unit)).toEqual({
       nodePath: definition.nodePath,
-      serverEntry: definition.cliEntry,
+      serverEntry: definition.serverEntry,
       runtimeHome: definition.runtimeHome,
       port: '3599',
       logPath: definition.logPath,

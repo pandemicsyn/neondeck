@@ -91,11 +91,7 @@ export async function fetchCheckSummary(options: {
   };
 }
 
-async function fetchCheckRuns(
-  token: string,
-  initialUrl: string,
-  maxPages = 3,
-) {
+async function fetchCheckRuns(token: string, initialUrl: string, maxPages = 3) {
   const runs: GitHubCheckRun[] = [];
   let nextUrl: string | undefined = initialUrl;
   let pageCount = 0;
@@ -125,17 +121,6 @@ function isFailingCheckRun(run: GitHubCheckRun) {
     'action_required',
     'startup_failure',
   ].includes(run.conclusion ?? '');
-}
-
-async function fetchCheckRunAnnotations(
-  token: string,
-  owner: string,
-  repo: string,
-  checkRunId: number,
-): Promise<GitHubCheckAnnotation[]> {
-  return (
-    await fetchCheckRunAnnotationsWithMetadata(token, owner, repo, checkRunId)
-  ).annotations;
 }
 
 async function fetchCheckRunAnnotationsWithMetadata(

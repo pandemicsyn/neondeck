@@ -164,6 +164,71 @@ describe('app database migrator', () => {
     }
   });
 
+  it('drops partial legacy MCP tables before stamping', async () => {
+    const root = await tempDir();
+    const databasePath = join(root, 'neondeck.db');
+    const migrations = readAppDbMigrationFiles();
+    initializePrePendingMigrationAppDatabase(databasePath);
+    const database = new DatabaseSync(databasePath);
+    try {
+      database.exec(`
+        DROP TABLE mcp_tool_audit;
+        CREATE TABLE mcp_tool_audit (
+          id TEXT PRIMARY KEY,
+          server_id TEXT NOT NULL,
+          tool_name TEXT NOT NULL,
+          adapted_name TEXT NOT NULL,
+          arguments_hash TEXT NOT NULL,
+          approval_id TEXT,
+          duration_ms INTEGER,
+          error TEXT,
+          created_at TEXT NOT NULL
+        );
+        INSERT INTO mcp_tool_audit (
+          id, server_id, tool_name, adapted_name, arguments_hash, error, created_at
+        )
+        VALUES (
+          'audit-1', 'linear', 'list_issues', 'mcp__linear__list_issues',
+          'hash-1', NULL, '2026-07-04T00:00:00.000Z'
+        );
+
+        DROP TABLE mcp_oauth_tokens;
+        CREATE TABLE mcp_oauth_tokens (
+          server_id TEXT PRIMARY KEY,
+          access_token TEXT
+        );
+        INSERT INTO mcp_oauth_tokens (server_id, access_token)
+        VALUES ('linear', 'token');
+
+        UPDATE app_metadata SET value = '9' WHERE key = 'schema_version';
+      `);
+    } finally {
+      database.close();
+    }
+
+    const result = applyAppDbMigrations(databasePath);
+
+    expect(result).toMatchObject({
+      applied: migrations.slice(1).map((migration) => migration.name),
+      stampedBaseline: true,
+    });
+    const stamped = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      expect(readJournalNames(stamped)).toEqual(
+        migrations.map((migration) => migration.name),
+      );
+      expect(columnNotNull(stamped, 'mcp_tool_audit', 'ok')).toBe(true);
+      expect(columnNotNull(stamped, 'mcp_tool_audit', 'decision')).toBe(true);
+      expect(columnNotNull(stamped, 'mcp_oauth_tokens', 'updated_at')).toBe(
+        true,
+      );
+      expect(countRows(stamped, 'mcp_tool_audit')).toBe(0);
+      expect(countRows(stamped, 'mcp_oauth_tokens')).toBe(0);
+    } finally {
+      stamped.close();
+    }
+  });
+
   it('refuses to open a database with unknown newer migrations', async () => {
     const root = await tempDir();
     const databasePath = join(root, 'neondeck.db');
@@ -432,6 +497,23 @@ function indexExists(database: DatabaseSync, index: string) {
       )
       .get(index),
   );
+}
+
+function columnNotNull(database: DatabaseSync, table: string, column: string) {
+  const rows = database.prepare(`PRAGMA table_info(${table});`).all() as Array<{
+    name?: unknown;
+    notnull?: unknown;
+  }>;
+  return rows.some(
+    (row) => row.name === column && Number(row.notnull ?? 0) === 1,
+  );
+}
+
+function countRows(database: DatabaseSync, table: string) {
+  const row = database
+    .prepare(`SELECT COUNT(*) AS count FROM ${table};`)
+    .get() as { count: number };
+  return row.count;
 }
 
 function readJournalNames(database: DatabaseSync) {

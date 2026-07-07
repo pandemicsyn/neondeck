@@ -1,6 +1,7 @@
 # Database Migrations Plan (Drizzle)
 
-Status: **active** — planning doc for replacing the hand-rolled app-database schema management in
+Status: **complete / archived** — implementation landed; README and docs now cover app database
+migrations, auto-apply, backups, and `db status`. Original planning doc for replacing the hand-rolled app-database schema management in
 `runtime-home.ts` with Drizzle-generated, versioned, auto-applied migrations. Written 2026-07-03
 for implementation agents; sibling to `.plans/REFACTOR_PLAN.md`, whose conventions this follows.
 Intended to land **after** REFACTOR_PLAN Phase 2 (runtime-home split), but not blocked on it — see

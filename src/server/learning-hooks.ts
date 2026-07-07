@@ -1,4 +1,10 @@
-import { invoke, observe, type FlueObservation } from '@flue/runtime';
+import {
+  invoke,
+  observe,
+  type FlueEventContext,
+  type FlueObservation,
+  type FlueObservationSubscriber,
+} from '@flue/runtime';
 import type { MiddlewareHandler } from 'hono';
 import { addNotification, setWorkflowSummaryRunId } from '../modules/app-state';
 import {
@@ -17,8 +23,22 @@ type RoutineConversationLearningDependencies = NonNullable<
   Parameters<typeof recordConversationTurnAndMaybeQueueLearning>[2]
 >;
 
-export function installFlueObservationHandlers(paths: RuntimePaths) {
-  observe((event) => {
+type ObservationInstallDependencies = {
+  observe?: (subscriber: FlueObservationSubscriber) => () => void;
+};
+
+const observationHandlerUnsubscribers = new Map<string, () => void>();
+
+export function installFlueObservationHandlers(
+  paths: RuntimePaths,
+  dependencies: ObservationInstallDependencies = {},
+) {
+  if (observationHandlerUnsubscribers.has(paths.home)) return;
+  const observeFn = dependencies.observe ?? observe;
+  const unsubscribe = observeFn((event, context) => {
+    const contextHome = flueContextRuntimeHome(context);
+    if (contextHome && contextHome !== paths.home) return;
+
     void recordFlueObservation(event, paths).catch((error) => {
       console.error('[neondeck] failed to record Flue observation', error);
     });
@@ -127,6 +147,19 @@ export function installFlueObservationHandlers(paths: RuntimePaths) {
       });
     }
   });
+  observationHandlerUnsubscribers.set(paths.home, unsubscribe);
+}
+
+export function resetFlueObservationHandlersForTests() {
+  for (const unsubscribe of observationHandlerUnsubscribers.values()) {
+    unsubscribe();
+  }
+  observationHandlerUnsubscribers.clear();
+}
+
+function flueContextRuntimeHome(context: FlueEventContext | undefined) {
+  const value = context?.env?.NEONDECK_HOME;
+  return typeof value === 'string' && value ? value : undefined;
 }
 
 export async function recordRoutineConversationLearning(

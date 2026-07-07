@@ -1,6 +1,8 @@
 # PR Review Actions Plan (full deck review: comments, threads, verdicts)
 
-Status: **active** — full specification for reviewing PRs _from_ the deck: inline comments, thread
+Status: **complete / archived** — implementation landed; dashboard docs now cover human-only PR
+review comments, thread replies/resolution, verdict submission, stale anchors, and compact pop-out
+behavior. Original full specification for reviewing PRs _from_ the deck: inline comments, thread
 replies, thread resolution, and submitted reviews with a verdict (Comment / Approve / Request
 changes). Written 2026-07-04 against the implemented viewing stack from `.plans/archived/DIFF_UI_PLAN.md`
 (its PR 1 and PR 2 are on main); this doc supersedes that plan's "review actions are v2" note.

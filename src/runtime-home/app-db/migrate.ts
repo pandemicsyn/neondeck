@@ -486,6 +486,12 @@ function upgradeLegacyDatabaseToCurrentBaseline(database: DatabaseSync) {
 
 function ensureLegacyMcpTables(database: DatabaseSync) {
   database.exec(`
+    DROP TABLE IF EXISTS mcp_tool_catalog;
+    DROP TABLE IF EXISTS mcp_tool_approvals;
+    DROP TABLE IF EXISTS mcp_tool_audit;
+    DROP TABLE IF EXISTS mcp_oauth_tokens;
+    DROP TABLE IF EXISTS mcp_oauth_logins;
+
     CREATE TABLE IF NOT EXISTS mcp_tool_catalog (
       server_id TEXT NOT NULL,
       tool_name TEXT NOT NULL,
@@ -562,34 +568,6 @@ function ensureLegacyMcpTables(database: DatabaseSync) {
       updated_at TEXT NOT NULL
     );
   `);
-
-  ensureColumn(database, 'mcp_tool_catalog', 'annotations_json', 'TEXT');
-  ensureColumn(database, 'mcp_tool_audit', 'decision', 'TEXT');
-  ensureColumn(database, 'mcp_tool_audit', 'ok', 'INTEGER');
-  ensureColumn(database, 'mcp_tool_audit', 'result_preview', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_tokens', 'server_identity', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_tokens', 'access_token', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_tokens', 'refresh_token', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_tokens', 'token_type', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_tokens', 'id_token', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_tokens', 'expires_at', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_tokens', 'scopes_json', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_tokens', 'client_information_json', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_tokens', 'discovery_state_json', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_tokens', 'code_verifier', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_tokens', 'updated_at', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_logins', 'server_identity', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_logins', 'state', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_logins', 'status', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_logins', 'redirect_url', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_logins', 'authorization_url', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_logins', 'discovery_state_json', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_logins', 'code_verifier', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_logins', 'error', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_logins', 'created_at', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_logins', 'expires_at', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_logins', 'completed_at', 'TEXT');
-  ensureColumn(database, 'mcp_oauth_logins', 'updated_at', 'TEXT');
 }
 
 function repairLegacyIndexes(database: DatabaseSync) {

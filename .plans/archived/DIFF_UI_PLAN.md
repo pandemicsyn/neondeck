@@ -1,6 +1,7 @@
 # Diff & PR Viewing UI Plan (@pierre/diffs + @pierre/trees)
 
-Status: **active** — planning doc for adopting Pierre's open-source rendering libraries
+Status: **complete / archived** — implementation landed; dashboard docs now cover deck-rendered
+diffs and PR review surfaces. Original planning doc for adopting Pierre's open-source rendering libraries
 ([diffs.com](https://diffs.com) → `@pierre/diffs`, [trees.software](https://trees.software) →
 `@pierre/trees`) as the dashboard's diff and file-tree surface: reviewing prepared autopilot
 diffs, viewing PRs, and inspecting agent edits. Written 2026-07-04 for implementation agents;

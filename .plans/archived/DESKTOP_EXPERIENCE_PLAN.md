@@ -1,6 +1,7 @@
 # Desktop Experience Plan: service install, PWA, `neondeck open`
 
-Status: **active** — planning doc for making Neondeck feel like an installed app without adopting a
+Status: **complete / archived** — implementation landed; README and docs now cover service
+install, PWA install, `neondeck open`, and window profiles. Original planning doc for making Neondeck feel like an installed app without adopting a
 desktop shell: a first-class background service, a PWA manifest for window identity, and a
 `neondeck open` launcher with window geometry profiles. Written 2026-07-04 for implementation
 agents; sibling to the other `.plans/` docs and following their conventions. Tauri is the
@@ -67,9 +68,10 @@ felt experience with the architecture we already have:
 
 Foreground production server start: resolve runtime home, load env, start the built server (same
 entry `npm start` uses today), log to stdout. Flags: `--port` (overrides the configured/default
-3583). This is what the service definition executes and what Windows users run by hand. It must
-work from both a repo checkout and the installed npm package (resolve the server entry relative to
-the package, not `cwd` — same rule as the migrations plan's packaged-files resolution).
+3583). `neondeck serve` is the human-facing primitive; service units and `neondeck open` fallbacks
+execute the built `dist/server.mjs` entry directly so they do not nest the CLI inside the service.
+It must work from both a repo checkout and the installed npm package (resolve the server entry
+relative to the package, not `cwd` — same rule as the migrations plan's packaged-files resolution).
 
 ### 2. `neondeck service install | uninstall | status | start | stop`
 

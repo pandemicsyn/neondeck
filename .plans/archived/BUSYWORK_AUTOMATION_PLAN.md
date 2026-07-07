@@ -1,6 +1,7 @@
 # Busywork Automation Plan (/review-pr, /fix-ci, docs drift, issue triage, hygiene briefing)
 
-Status: **active** — specification for the next slice of "Neon does the busy work": a
+Status: **complete / archived** — implementation landed; README and docs now cover reports,
+`/review-pr`, `/fix-ci`, docs drift, issue triage, hygiene, and the Reports panel. Original specification for the next slice of "Neon does the busy work": a
 `/review-pr` assigned-review flow (two HTML reports + seeded review drafts), a `/fix-ci`
 intake flow, scheduled docs-drift and issue-triage jobs, and a hygiene extension of the morning
 briefing, all emitting into a new lightweight **reports** primitive. Written 2026-07-05 against

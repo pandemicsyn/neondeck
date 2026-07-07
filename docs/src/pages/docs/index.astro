@@ -36,11 +36,13 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           </li>
           <li>
             <a href="/docs/cli/">CLI</a>: command reference for setup, repo
-            registry, watches, schedules, and future TUI entrypoints.
+            registry, watches, schedules, Neon slash commands, and future TUI
+            entrypoints.
           </li>
           <li>
             <a href="/docs/agent-runtime/">Agent runtime</a>: Flue agents,
-            actions, workflows, skills, memory, watches, and observability.
+            actions, workflows, skills, memory, watches, reports, routines, and
+            observability.
           </li>
           <li>
             <a href="/docs/mcp/">MCP servers</a>: remote and local MCP servers,
@@ -134,8 +136,16 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         </p>
         <pre><code>/repo-status [repo-id]
 /review-queue
+/review-pr &lt;repo#number|owner/repo#number|url&gt;
+/fix-ci [repo#number|owner/repo#number]
+/explain-ci [--report] [repo#number|owner/repo#number]
+/summarize-pr [repo#number|owner/repo#number]
+/draft-pr-description [repo-id|owner/repo]
+/prepare-pr [repo-id|owner/repo]
+/review-local [repo-id|owner/repo]
 /briefing
 /reasoning [off|minimal|low|medium|high|xhigh]
+/memory ...
 /dev-doctor
 /watch-pr &lt;repo#number|owner/repo#number|url&gt;
 /watch-release &lt;repo-id|owner/repo&gt;</code></pre>
@@ -150,6 +160,23 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           source PR to merge, then tracks the source PR merge SHA until checks are
           green. Provider-specific deploy adapters are still a future integration.
         </p>
+        <p>
+          The scheduler also owns report-producing busywork blueprints for docs
+          drift, issue triage, and hygiene. Routines cover the long tail of
+          user-defined scheduled Neon tasks and deliver output as notifications,
+          reports, or session events.
+        </p>
+
+        <h2 id="reports-routines">Reports and routines</h2>
+        <p>
+          Reports are local HTML artifacts for PR review assistance, CI failure
+          dossiers, docs drift, issue triage, hygiene, and routine runs. The
+          dashboard lists them in the Reports panel and serves individual
+          artifacts from <code>/reports/:id</code>. Routines are durable
+          scheduled Neon prompts with optional skills and repo/cwd scope,
+          managed through the Routines panel, <code>/api/routines</code>, and
+          typed <code>neondeck_routine_*</code> actions.
+        </p>
 
         <h2 id="flue">Flue actions and workflows</h2>
         <p>
@@ -162,9 +189,21 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <pre><code>briefing
 command-run
 dev-doctor
+fix-pr-ci
+review-pr-for-human
 scheduler-tick
 watch-pr
-watch-release</code></pre>
+watch-release
+prepare-pr-worktree
+verify-pr-worktree
+push-pr-autofix
+comment-pr-autofix-result
+handoff_to_kilo
+review_kilo_result
+verify_kilo_result
+promote_kilo_result
+review_conversation_for_learning
+review_pr_batch_for_learning</code></pre>
 
         <h2 id="observability">Workflow observability</h2>
         <p>

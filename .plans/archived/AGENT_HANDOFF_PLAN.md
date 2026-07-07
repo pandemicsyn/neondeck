@@ -1,13 +1,15 @@
 # Agent Handoff Plan (let Claude/Codex/Kilo/CI register work with Neon)
 
-Status: **active** — specification for a small, stable surface that lets *other* agents and
-systems hand things to Neondeck: "watch this PR I just pushed", "note this for the deck",
-"queue a review of this". Written 2026-07-06 against main `7ede574`.
+Status: **complete / archived** — the CLI commands, localhost HTTP mirror, runtime skill, docs,
+attribution/audit path, and verification coverage have landed. Original specification for a
+small, stable surface that lets _other_ agents and systems hand things to Neondeck: "watch this
+PR I just pushed", "note this for the deck", "queue a review of this". Written 2026-07-06
+against main `7ede574`.
 
 ## Purpose
 
 Neondeck assumes work enters through its own surfaces — the deck, Neon's chat, its watchers.
-But the developer's *other* agents create work all day: a Claude Code session pushes a PR, a
+But the developer's _other_ agents create work all day: a Claude Code session pushes a PR, a
 Codex run finishes a refactor, CI cuts a release candidate. Today none of them can tell Neon.
 The human is the message bus: they finish a session with one agent, then walk to the deck and
 re-type what just happened.
@@ -104,10 +106,10 @@ A registration surface nobody's agent knows about is dead code. Ship
 `skills/neondeck-handoff/` in-repo containing:
 
 - **`SKILL.md`** — agent-facing instructions in the agentskills.io shape (compatible with
-  Claude Code skills and Hermes skills alike): *when you push a PR in a repo the user tracks
+  Claude Code skills and Hermes skills alike): _when you push a PR in a repo the user tracks
   with Neondeck, run `neondeck register-pr <ref> --from <your-name> --note "<one-line
-  summary>" --json`; when you finish significant work without a PR, `neondeck note`; check
-  `command -v neondeck` first and stay silent if absent.* Includes the JSON output contract
+summary>" --json`; when you finish significant work without a PR, `neondeck note`; check
+  `command -v neondeck` first and stay silent if absent._ Includes the JSON output contract
   and exit codes so agents can branch on results.
 - **Install pointers** in the docs page ("Connecting other agents"): copy into
   `~/.claude/skills/` for Claude Code, reference from AGENTS.md/CLAUDE.md for repo-scoped
@@ -155,7 +157,7 @@ review reports appear on the deck untouched.
 ## Definition of Done
 
 - From a Claude Code session: `neondeck register-pr myrepo#42 --from claude-code --note
-  "adds retry logic" --json` returns machine-readable success; the deck shows the watch
+"adds retry logic" --json` returns machine-readable success; the deck shows the watch
   (attributed), the note, and — with `--review` — the two review reports, with zero human
   re-typing.
 - The same works via `curl` from a git post-push hook on localhost.

@@ -29,14 +29,14 @@ What stands out:
   added three (`pr-review-assistant`, `busywork-workflow`, `scheduler-workflow`) — but each has
   `tools: [], actions: [], subagents: []` and exists only to give bounded workflows an LLM +
   the patchable runtime skill (`runtimeSkillReferenceByIdSync(...) ?? compiled`). This is a
-  *stronger* posture than reusing the display assistant, which would have carried its full
+  _stronger_ posture than reusing the display assistant, which would have carried its full
   action surface into unattended runs. Good deviation — but see note 3.
 - **`/fix-ci` is hard-denylisted for Neon** (`modelCallableCommandDenylist`,
   `src/modules/commands/actions.ts:37`) with a typed refusal — not instruction-only. Both the
   Fix CI and "neon review" dashboard buttons invoke workflows directly (human admission).
 - **The Flue prompt-goal substrate exists and was used**: the review pass runs via
   `harness.session().skill('neon-pr-review', { args, result: schema, signal: timeout })` —
-  structured output validated at the harness *and* re-validated in the service; malformed
+  structured output validated at the harness _and_ re-validated in the service; malformed
   output fails the run without seeding, exactly per plan.
 - **Seeding guards all present**: `draftHasHumanWork` + existing-draft-comments skip,
   `commentAnchorExists` via the shared `shared/patch-anchors.ts` module (frontend re-imports
@@ -46,7 +46,7 @@ What stands out:
   (seeded/submitted/skipped/deleted/edited-submitted) and stamps per-comment outcomes.
 - **Routines are the plan plus more**: session-substrate (durable command event + live
   `dispatch`), 15-minute minimum interval enforced even for cron expressions via gap analysis,
-  agent-created cap (10) enforced on create *and* resume, unspoofable `created_by` (session id
+  agent-created cap (10) enforced on create _and_ resume, unspoofable `created_by` (session id
   from the AsyncLocalStorage Flue context, not model input), per-routine single-flight +
   global concurrency cap + stale-claim recovery, transactional idempotent settlement with
   auto-pause after consecutive failures and repeat-limit self-disable, kill switch, ticker

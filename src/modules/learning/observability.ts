@@ -24,15 +24,15 @@ export type WorkflowEventRecord = {
 export type WorkflowObservabilitySnapshot = {
   ok: true;
   action: 'workflow_observability_read';
-	  activeRuns: Array<{
-	    runId: string;
-	    workflow: string;
-	    startedAt: string;
-	    lastEventAt: string;
-	    lastMessage: string;
-	    eventCount: number;
-	    runUrl: string | null;
-	  }>;
+  activeRuns: Array<{
+    runId: string;
+    workflow: string;
+    startedAt: string;
+    lastEventAt: string;
+    lastMessage: string;
+    eventCount: number;
+    runUrl: string | null;
+  }>;
   recentFailures: WorkflowEventRecord[];
   recentData: WorkflowEventRecord[];
   recentLogs: WorkflowEventRecord[];
@@ -342,9 +342,9 @@ function readWorkflowEventRow(
         ? parseJson(record.summary_json)
         : null,
     createdAt: String(record.created_at),
-	    runUrl: runInspectionUrl(runId, localApiToken),
-	  };
-	}
+    runUrl: runInspectionUrl(runId, localApiToken),
+  };
+}
 
 function readActiveRunRow(row: unknown, localApiToken: string | null) {
   const record = row as Record<string, unknown>;
@@ -356,9 +356,9 @@ function readActiveRunRow(row: unknown, localApiToken: string | null) {
     lastEventAt: String(record.last_event_at),
     lastMessage: String(record.last_message),
     eventCount: Number(record.event_count),
-	    runUrl: runInspectionUrl(runId, localApiToken),
-	  };
-	}
+    runUrl: runInspectionUrl(runId, localApiToken),
+  };
+}
 
 function runInspectionUrl(runId: string | null, localApiToken: string | null) {
   if (!runId || runId.startsWith('scheduler_tick_')) return null;
