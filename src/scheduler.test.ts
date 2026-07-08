@@ -1339,6 +1339,106 @@ describe('scheduler', () => {
     ]);
   });
 
+  it('retries pending triage admission before admitting a new PR event delta', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    const invocations: Array<{ workflow: string; input: unknown }> = [];
+    await writeRepoRegistry(paths.repos);
+    await writeFile(
+      paths.config,
+      `${JSON.stringify({
+        version: 1,
+        autopilot: { defaultMode: 'draft-fix' },
+      })}\n`,
+    );
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
+    await updateJobRun(
+      'watch:pandemicsyn/neondeck#123',
+      {
+        outcome: 'updated',
+        message: 'Previous triage was blocked.',
+        result: blockedTriageJobResult('event-1'),
+        nextRunAt: new Date(Date.now() - 1_000).toISOString(),
+      },
+      paths,
+    );
+
+    await expect(
+      runSchedulerTick(paths, new Date(), {
+        refreshPrWatch: async () => noChangeWatchRefresh(),
+        listPrWatchEventWatermarks: async () => commitBaselineWatermarks(),
+        refreshPrWatchEventState: async () => commitEventRefresh(),
+        checkAutopilotConcurrency: async () =>
+          concurrencyDecision({ allowed: true }),
+        invokeWorkflow: async (workflow, input) => {
+          invocations.push({ workflow, input });
+          return { runId: `run-${invocations.length}` };
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'updated',
+    });
+
+    expect(invocations).toEqual([
+      {
+        workflow: 'triage-pr-event',
+        input: expect.objectContaining({ eventId: 'event-1' }),
+      },
+      {
+        workflow: 'triage-pr-event',
+        input: expect.objectContaining({
+          deltas: [
+            expect.objectContaining({
+              type: 'new-commit',
+            }),
+          ],
+        }),
+      },
+    ]);
+  });
+
+  it('preserves pending triage admissions when PR watch refresh fails', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
+    await updateJobRun(
+      'watch:pandemicsyn/neondeck#123',
+      {
+        outcome: 'updated',
+        message: 'Previous triage was blocked.',
+        result: blockedTriageJobResult('event-1'),
+        nextRunAt: new Date(Date.now() - 1_000).toISOString(),
+      },
+      paths,
+    );
+
+    await expect(
+      runSchedulerTick(paths, new Date(), {
+        refreshPrWatch: async () => ({
+          ok: false,
+          action: 'watch_pr_refresh',
+          changed: false,
+          message: 'GitHub returned 502.',
+        }),
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'updated',
+      notifications: [
+        expect.objectContaining({ title: 'PR watch refresh failed' }),
+      ],
+    });
+
+    const job = (await listJobs(paths)).find(
+      (item) => item.id === 'watch:pandemicsyn/neondeck#123',
+    );
+    expect(JSON.stringify(job?.lastResult)).toContain('event-1');
+  });
+
   it('classifies cleared requested changes as non-actionable metadata', async () => {
     const home = await tempHome();
     const paths = runtimePaths(home);
@@ -1378,17 +1478,7 @@ describe('scheduler', () => {
       ],
     });
 
-    expect(invocations[0]).toMatchObject({
-      workflow: 'triage-pr-event',
-      input: expect.objectContaining({
-        deltas: [
-          expect.objectContaining({
-            type: 'metadata',
-            summary: 'Requested changes were cleared.',
-          }),
-        ],
-      }),
-    });
+    expect(invocations).toEqual([]);
   });
 
   it('does not report cleared requested changes when the previous state was healthy', async () => {
@@ -1430,20 +1520,7 @@ describe('scheduler', () => {
       ],
     });
 
-    expect(invocations[0]).toMatchObject({
-      workflow: 'triage-pr-event',
-      input: expect.objectContaining({
-        deltas: [
-          expect.objectContaining({
-            type: 'metadata',
-            summary: 'Requested-change review state changed.',
-          }),
-        ],
-      }),
-    });
-    expect(JSON.stringify(invocations[0]?.input)).not.toContain(
-      'Requested changes were cleared.',
-    );
+    expect(invocations).toEqual([]);
   });
 
   it('does not report check recovery when the previous state had no failures', async () => {
@@ -1484,20 +1561,7 @@ describe('scheduler', () => {
       ],
     });
 
-    expect(invocations[0]).toMatchObject({
-      workflow: 'triage-pr-event',
-      input: expect.objectContaining({
-        deltas: [
-          expect.objectContaining({
-            type: 'metadata',
-            summary: 'Check run state changed.',
-          }),
-        ],
-      }),
-    });
-    expect(JSON.stringify(invocations[0]?.input)).not.toContain(
-      'Check state recovered.',
-    );
+    expect(invocations).toEqual([]);
   });
 
   it('preserves draft state in PR event triage snapshots', async () => {
@@ -1902,6 +1966,62 @@ function reviewThreadEventRefresh(
   };
 }
 
+function commitBaselineWatermarks(): PrEventActionResult {
+  return {
+    ok: true,
+    action: 'pr_watch_event_watermarks_list',
+    changed: false,
+    message: 'Listed 1 PR watch event watermark(s).',
+    data: {
+      watermarks: [
+        {
+          watchId: 'pandemicsyn/neondeck#123',
+          category: 'commits',
+          watermark: {
+            headSha: 'head123',
+            total: 1,
+            shas: ['head123'],
+            latestCommittedAt: '2026-06-27T20:00:00Z',
+          },
+          sourceUpdatedAt: '2026-06-27T20:00:00Z',
+          checkedAt: '2026-06-27T20:00:30Z',
+          createdAt: '2026-06-27T20:00:30Z',
+          updatedAt: '2026-06-27T20:00:30Z',
+        },
+      ],
+    },
+  };
+}
+
+function commitEventRefresh(): PrEventActionResult {
+  return {
+    ok: true,
+    action: 'pr_watch_event_state_refresh',
+    changed: true,
+    message: 'Updated 1 PR event watermark(s) for pandemicsyn/neondeck#123.',
+    data: {
+      watchId: 'pandemicsyn/neondeck#123',
+      changedCategories: ['commits'],
+      watermarks: [
+        {
+          watchId: 'pandemicsyn/neondeck#123',
+          category: 'commits',
+          watermark: {
+            headSha: 'head456',
+            total: 2,
+            shas: ['head123', 'head456'],
+            latestCommittedAt: '2026-06-27T20:10:00Z',
+          },
+          sourceUpdatedAt: '2026-06-27T20:10:00Z',
+          checkedAt: '2026-06-27T20:10:30Z',
+          createdAt: '2026-06-27T20:10:30Z',
+          updatedAt: '2026-06-27T20:10:30Z',
+        },
+      ],
+    },
+  };
+}
+
 function requestedChangesBaselineWatermarks(): PrEventActionResult {
   return {
     ok: true,
@@ -2171,6 +2291,41 @@ function checkRunSuccessRefresh(): PrEventActionResult {
         },
       ],
     },
+  };
+}
+
+function blockedTriageJobResult(eventId: string) {
+  return {
+    eventResults: [
+      {
+        ok: true,
+        changed: true,
+        watchId: 'pandemicsyn/neondeck#123',
+        repoId: 'neondeck',
+        repoFullName: 'pandemicsyn/neondeck',
+        prNumber: 123,
+        triage: {
+          status: 'blocked',
+          eventId,
+          input: {
+            repoId: 'neondeck',
+            repoFullName: 'pandemicsyn/neondeck',
+            prNumber: 123,
+            watchId: 'pandemicsyn/neondeck#123',
+            eventId,
+            source: 'watch',
+            autopilotMode: 'draft-fix',
+            deltas: [
+              {
+                type: 'review-comment',
+                actionable: true,
+                summary: 'Pending review feedback.',
+              },
+            ],
+          },
+        },
+      },
+    ],
   };
 }
 
