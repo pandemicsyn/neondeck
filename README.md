@@ -342,6 +342,38 @@ suite. The slower git/worktree/Kilo/autopilot workflow coverage lives under
 `npm run verify` keeps the full pre-release path: lint, typecheck, all tests,
 format check, and production builds.
 
+## Publishing
+
+Use npm's built-in semver-aware version command for now:
+
+```sh
+npm version patch
+npm version minor
+npm version major
+```
+
+That updates `package.json` and `package-lock.json`, creates a `v*` git tag,
+and gives the publish workflow a stable release ref. Push the version commit and
+tag together:
+
+```sh
+git push origin main --follow-tags
+```
+
+The npm release path is separate from the GitHub app archive release:
+
+- `.github/workflows/npm-package.yml` validates the packed npm artifact on PRs.
+- `.github/workflows/npm-publish.yml` verifies the release tag, runs
+  `npm run release:npm:check`, and publishes `neondeck` to npm from `v*` tags.
+
+For the first npm publish, the package may need to be created once before npm
+trusted publishing can be configured. Either publish the first version locally
+with npm 2FA, or set a temporary GitHub Actions `NPM_TOKEN` secret with publish
+access and run the publish workflow for the first tag. After `neondeck` exists on
+npm, configure trusted publishing for GitHub Actions with workflow filename
+`npm-publish.yml`, environment `npm`, and allowed action `npm publish`, then
+revoke the temporary token if one was used.
+
 ## Marketing/docs site
 
 ```sh

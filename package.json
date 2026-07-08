@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "Local companion-display dashboard and Flue agent server for neondeck.",
   "homepage": "https://neondeck.dev",
-  "private": true,
   "bin": {
     "neondeck": "bin/neondeck.mjs"
   },
@@ -11,11 +10,17 @@
     "bin/",
     "dist/",
     "web/dist/",
-    "src/",
     "shared/",
+    "src/**/*.ts",
+    "!src/**/*.test.ts",
+    "!src/test-setup.ts",
+    "src/runtime-home/app-db/migrations/",
+    "src/skills/",
     "config/",
     "SOUL.md",
     "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
     "drizzle.config.ts"
   ],
   "workspaces": [
@@ -28,6 +33,7 @@
     "build:web": "vite build --config web/vite.config.ts",
     "check": "npm run lint && npm run check:layers && npm run db:check && npm run typecheck && npm run test",
     "check:layers": "node scripts/check-import-layers.mjs",
+    "check:npm-package": "node scripts/check-npm-package.mjs",
     "dev": "concurrently -n server,web -c blue,green \"flue dev --target node\" \"vite --config web/vite.config.ts --host 127.0.0.1\"",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -58,10 +64,11 @@
     "test:watch": "vitest --config vitest.unit.config.ts",
     "package:app": "node scripts/package-app-release.mjs",
     "release:app": "npm run build:dashboard && npm run package:app",
+    "release:npm:check": "npm run lint && npm run check:layers && npm run db:check && npm run typecheck && npm run test:all && npm run build && npm run check:npm-package && npm run smoke:npm-pack",
     "report:file-sizes": "node scripts/file-size-report.mjs",
     "typecheck": "npm run typecheck:app && npm run docs:check",
     "typecheck:app": "tsc --noEmit && tsc -p web/tsconfig.json --noEmit",
-    "verify": "npm run lint && npm run check:layers && npm run db:check && npm run typecheck && npm run test:all && npm run build && npm run smoke:npm-pack && npm run format:check",
+    "verify": "npm run lint && npm run check:layers && npm run db:check && npm run typecheck && npm run test:all && npm run build && npm run check:npm-package && npm run smoke:npm-pack && npm run format:check",
     "docs:build": "npm --workspace @neondeck/docs-site run build",
     "docs:check": "npm --workspace @neondeck/docs-site run check",
     "docs:deploy": "npm --workspace @neondeck/docs-site run deploy",
@@ -79,10 +86,15 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pandemicsyn/neondeck.git"
+    "url": "git+https://github.com/pandemicsyn/neondeck.git"
   },
   "bugs": {
     "url": "https://github.com/pandemicsyn/neondeck/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
   },
   "type": "module",
   "engines": {

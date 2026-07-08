@@ -1,0 +1,149 @@
+name: Publish npm package
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Release tag to publish, for example v1.0.0.
+        required: true
+        type: string
+      npm_tag:
+        description: npm dist-tag to apply.
+        required: true
+        default: latest
+        type: choice
+        options:
+          - latest
+          - next
+      dry_run:
+        description: Pack and validate without publishing.
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-publish-${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish npm package
+    runs-on: ubuntu-latest
+    environment: npm
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release metadata
+        id: release
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag_name }}"
+            npm_tag="${{ inputs.npm_tag }}"
+            dry_run="${{ inputs.dry_run }}"
+          else
+            tag="${{ github.ref_name }}"
+            npm_tag="latest"
+            dry_run="false"
+          fi
+
+          case "${tag}" in
+            v[0-9]*.[0-9]*.[0-9]*)
+              ;;
+            *)
+              echo "Release tag must look like v1.2.3; got ${tag}." >&2
+              exit 1
+              ;;
+          esac
+
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "npm_tag=${npm_tag}" >> "$GITHUB_OUTPUT"
+          echo "dry_run=${dry_run}" >> "$GITHUB_OUTPUT"
+
+      - name: Check out release tag
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          git checkout --detach "refs/tags/${{ steps.release.outputs.tag }}"
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Use npm 11 CLI
+        run: |
+          npm install --global npm@^11.15.0
+          npm --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify release
+        run: npm run release:npm:check
+
+      - name: Check package version and registry state
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          package_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version")"
+          if [ "${package_version}" != "${RELEASE_VERSION}" ]; then
+            echo "package.json version ${package_version} does not match release tag v${RELEASE_VERSION}." >&2
+            exit 1
+          fi
+
+          if npm view "neondeck@${RELEASE_VERSION}" version --json >/dev/null 2>&1; then
+            echo "neondeck@${RELEASE_VERSION} is already published." >&2
+            exit 1
+          fi
+
+      - name: Configure temporary npm token
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
+            npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
+            echo "Using NPM_TOKEN for this publish."
+          else
+            echo "No NPM_TOKEN configured; npm will use trusted publishing/OIDC."
+          fi
+
+      - name: Publish package
+        env:
+          NPM_CONFIG_PROVENANCE: 'true'
+          NPM_TAG: ${{ steps.release.outputs.npm_tag }}
+          DRY_RUN: ${{ steps.release.outputs.dry_run }}
+        run: |
+          set -euo pipefail
+          args=(publish --tag "${NPM_TAG}")
+          if [ "${DRY_RUN}" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          npm "${args[@]}"
+
+      - name: Verify published package
+        if: steps.release.outputs.dry_run != 'true'
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          npm view "neondeck@${RELEASE_VERSION}" name version dist-tags --json
+          tmp="$(mktemp -d)"
+          npm init -y --prefix "${tmp}" >/dev/null
+          npm install --ignore-scripts --prefix "${tmp}" "neondeck@${RELEASE_VERSION}"
+          npx --prefix "${tmp}" neondeck --home "${tmp}/home" --json status >/dev/null
