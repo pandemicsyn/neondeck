@@ -6,6 +6,7 @@ import {
   type RuntimePaths,
 } from '../../runtime-home';
 import type {
+  CommandExecutionContext,
   CommandDependencies,
   NeonCommandResult,
   ParsedNeonCommand,
@@ -56,7 +57,16 @@ export async function runNeonCommand(
     );
   }
 
-  const result = await executeCommand(parsed.command, paths, dependencies);
+  const context: CommandExecutionContext = {
+    sessionId: parsedInput.output.sessionId,
+    surface: parsedInput.output.surface,
+  };
+  const result = await executeCommand(
+    parsed.command,
+    paths,
+    dependencies,
+    context,
+  );
   const runId = commandWorkflowRunId(result);
   const workflowSummary = await addWorkflowSummary(
     {
@@ -78,6 +88,7 @@ async function executeCommand(
   command: ParsedNeonCommand,
   paths: RuntimePaths,
   dependencies: CommandDependencies,
+  context: CommandExecutionContext,
 ): Promise<NeonCommandResult> {
   if (command.name === 'repo-status') {
     return repoStatusCommand(command, paths);
@@ -128,7 +139,7 @@ async function executeCommand(
   }
 
   if (command.name === 'watch-pr') {
-    return watchPrCommand(command, paths);
+    return watchPrCommand(command, paths, dependencies, context);
   }
 
   if (command.name === 'watch-release') {

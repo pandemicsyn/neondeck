@@ -352,7 +352,11 @@ export function FlueChatSessionView({
     setRunningCommand(command);
     try {
       const run = await flue.workflows.invoke('command-run', {
-        input: { command },
+        input: {
+          command,
+          ...(session?.id ? { sessionId: session.id } : {}),
+          surface: 'dashboard',
+        },
         wait: 'result',
       });
       return {

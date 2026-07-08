@@ -6,6 +6,11 @@ import {
   refreshRefWatch,
   type WatchActionResult,
 } from '../watches';
+import {
+  listPrWatchEventWatermarks,
+  refreshPrWatchEventState,
+} from '../pr-events';
+import { checkAutopilotConcurrency } from '../autopilot-policy';
 import { fetchCheckSummary } from '../github';
 import * as v from 'valibot';
 
@@ -46,6 +51,15 @@ export type SchedulerDependencies = {
     input: Parameters<typeof refreshRefWatch>[0],
     paths: RuntimePaths,
   ) => Promise<WatchActionResult>;
+  refreshPrWatchEventState?: (
+    input: Parameters<typeof refreshPrWatchEventState>[0],
+    paths: RuntimePaths,
+  ) => ReturnType<typeof refreshPrWatchEventState>;
+  listPrWatchEventWatermarks?: (
+    input: Parameters<typeof listPrWatchEventWatermarks>[0],
+    paths: RuntimePaths,
+  ) => ReturnType<typeof listPrWatchEventWatermarks>;
+  checkAutopilotConcurrency?: typeof checkAutopilotConcurrency;
   fetchCheckSummary?: typeof fetchCheckSummary;
   invokeWorkflow?: (
     workflow: ScheduledWorkflowName,
@@ -54,7 +68,8 @@ export type SchedulerDependencies = {
   tickLeaseTtlMs?: number;
 };
 
-export type ScheduledWorkflowName = 'briefing' | 'command-run';
+export type ScheduledWorkflowName =
+  'briefing' | 'command-run' | 'triage-pr-event';
 export type SchedulerTickLease = {
   owner: string;
   acquiredAt: string;

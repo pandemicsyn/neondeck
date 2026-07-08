@@ -176,6 +176,7 @@ export function watermarksFromEventState(
     }),
     categoryWatermark(watchId, 'mergeability', state.fetchedAt, {
       state: state.state,
+      draft: state.draft,
       merged: state.merged,
       mergeable: state.mergeable,
       mergeableState: state.mergeableState,

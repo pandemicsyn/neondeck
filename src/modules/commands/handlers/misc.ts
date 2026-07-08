@@ -5,11 +5,17 @@ import { runDevDoctor } from '../../runtime';
 import { deleteMemory, listMemories, upsertMemory } from '../../memory';
 import { readRepoRegistrySnapshot } from '../../repos';
 import { createScheduleBlueprint } from '../../scheduler';
-import { startNeonSession } from '../../sessions';
+import {
+  readChatSession,
+  readNeonSessionState,
+  startNeonSession,
+  type ChatSessionRecord,
+} from '../../sessions';
 import { addPrWatch, listPrWatchRecords } from '../../watches';
 import { readHygieneSummary } from '../../hygiene';
 import type { RuntimePaths } from '../../../runtime-home';
 import type {
+  CommandExecutionContext,
   NeonCommandResult,
   ParsedNeonCommand,
   CommandDependencies,
@@ -312,8 +318,14 @@ export async function memoryCommand(
 export async function watchPrCommand(
   command: ParsedNeonCommand,
   paths: RuntimePaths,
+  dependencies: CommandDependencies = {},
+  context: CommandExecutionContext = {},
 ): Promise<NeonCommandResult> {
-  const ref = command.args.join(' ').trim();
+  const explicitRef = command.args.join(' ').trim();
+  const inferredRef = explicitRef
+    ? null
+    : await inferWatchPrReferenceFromContext(paths, context);
+  const ref = explicitRef || inferredRef;
   if (!ref) {
     return failedCommand(
       command.name,
@@ -325,7 +337,7 @@ export async function watchPrCommand(
     );
   }
 
-  const watch = await addPrWatch({ ref }, paths);
+  const watch = await (dependencies.addPrWatch ?? addPrWatch)({ ref }, paths);
   if (!watch.ok) {
     return failedCommand(command.name, command.raw, watch.message, {
       errors: watch.errors,
@@ -336,7 +348,97 @@ export async function watchPrCommand(
 
   return completedCommand(command.name, command.raw, watch.message, {
     watch: watch.watch,
+    ...(inferredRef ? { inferredRef } : {}),
   });
+}
+
+async function inferWatchPrReferenceFromContext(
+  paths: RuntimePaths,
+  context: CommandExecutionContext,
+) {
+  const session = await readWatchPrContextSession(paths, context);
+  return session ? inferWatchPrReferenceFromSession(session) : null;
+}
+
+async function readWatchPrContextSession(
+  paths: RuntimePaths,
+  context: CommandExecutionContext,
+) {
+  if (context.sessionId) {
+    const result = await readChatSession(
+      {
+        id: context.sessionId,
+        reason: 'watch-pr-command-context',
+      },
+      paths,
+    );
+    return result.ok && 'session' in result ? result.session : undefined;
+  }
+
+  if (context.surface) {
+    const state = await readNeonSessionState(paths, context.surface);
+    return state.activeChatSession;
+  }
+
+  return undefined;
+}
+
+export function inferWatchPrReferenceFromSession(
+  session: Pick<
+    ChatSessionRecord,
+    'linkedTaskId' | 'uiMetadata' | 'title' | 'summary'
+  >,
+) {
+  const linkedTaskMatch = session.linkedTaskId
+    ?.trim()
+    .match(/^github-pr:([^#\s]+\/[^#\s]+#\d+)$/);
+  if (linkedTaskMatch) return linkedTaskMatch[1];
+
+  if (isRecord(session.uiMetadata)) {
+    const repo =
+      readMetadataString(session.uiMetadata.repo) ??
+      readMetadataString(session.uiMetadata.repoFullName);
+    const prNumber = readMetadataPrNumber(session.uiMetadata.prNumber);
+    if (repo && prNumber) return `${repo}#${prNumber}`;
+
+    const url = readMetadataString(session.uiMetadata.url);
+    if (
+      url &&
+      /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+\/?$/i.test(url)
+    ) {
+      return url;
+    }
+  }
+
+  return (
+    readPrReferenceFromText(session.title) ??
+    readPrReferenceFromText(session.summary)
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function readMetadataString(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function readMetadataPrNumber(value: unknown) {
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+    return value;
+  }
+
+  if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
+    return Number(value.trim());
+  }
+
+  return null;
+}
+
+function readPrReferenceFromText(value: string | null) {
+  const match = value?.match(/\b([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+#\d+)\b/);
+  return match?.[1] ?? null;
 }
 
 export async function watchReleaseCommand(
