@@ -655,7 +655,11 @@ async function refreshOneWatchEvent(
 
   const triageAttempts: JsonValue[] = [];
   if (pendingTriageEvents.length > 0) {
-    if (mode === 'notify-only') {
+    if (!shouldRetainPendingTriage(currentWatermarks, deltas)) {
+      triageAttempts.push(
+        ...supersededPendingTriageSnapshots(pendingTriageEvents, deltas),
+      );
+    } else if (mode === 'notify-only') {
       triageAttempts.push(...pendingTriageSnapshots(pendingTriageEvents));
     } else {
       const retry = await admitWatchTriageEvents(
@@ -1022,6 +1026,21 @@ function pendingTriageSnapshots(events: PendingWatchTriageEvent[]) {
   );
 }
 
+function supersededPendingTriageSnapshots(
+  events: PendingWatchTriageEvent[],
+  deltas: Array<Record<string, unknown>>,
+) {
+  return events.map((event) =>
+    jsonRecord({
+      status: 'superseded',
+      eventId: event.eventId,
+      reason: 'current-pr-state-non-actionable',
+      input: event.input,
+      supersededBy: deltas as unknown as JsonValue,
+    }),
+  );
+}
+
 function triageValue(attempts: JsonValue[]) {
   if (attempts.length === 0) return undefined;
   return attempts.length === 1 ? attempts[0] : (attempts as JsonValue);
@@ -1296,6 +1315,42 @@ function shouldAdmitTriageForDeltas(deltas: Array<Record<string, unknown>>) {
       delta.type === 'new-commit'
     );
   });
+}
+
+function shouldRetainPendingTriage(
+  currentWatermarks: PrWatchEventWatermarkRecord[],
+  deltas: Array<Record<string, unknown>>,
+) {
+  return (
+    shouldAdmitTriageForDeltas(deltas) ||
+    hasActionablePrEventState(currentWatermarks)
+  );
+}
+
+function hasActionablePrEventState(watermarks: PrWatchEventWatermarkRecord[]) {
+  const reviewThreads = watermarkPayload(watermarks, 'review_threads');
+  if (arrayField(reviewThreads.unresolvedThreadIds).length > 0) return true;
+
+  const requestedChanges = watermarkPayload(
+    watermarks,
+    'requested_changes_reviews',
+  );
+  const requestedTotal =
+    numberField(requestedChanges.total) ??
+    arrayField(requestedChanges.reviewIds).length;
+  if (requestedTotal > 0) return true;
+
+  const runs = watermarkPayload(watermarks, 'check_runs');
+  if (arrayField(runs.failingRunIds).length > 0) return true;
+
+  const suites = watermarkPayload(watermarks, 'check_suites');
+  if (arrayField(suites.failingSuiteIds).length > 0) return true;
+
+  const mergeability = watermarkPayload(watermarks, 'mergeability');
+  if (mergeability.mergeable === false) return true;
+
+  const outOfDate = watermarkPayload(watermarks, 'out_of_date_branch');
+  return outOfDate.isOutOfDate === true;
 }
 
 function snapshotFromWatermarks(watermarks: PrWatchEventWatermarkRecord[]) {

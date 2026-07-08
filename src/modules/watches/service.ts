@@ -244,7 +244,7 @@ export async function listPrWatchRecords(paths = runtimePaths()) {
 }
 
 function isTerminalPrWatchStatus(status: PrWatch['status']) {
-  return status === 'closed' || status === 'merged';
+  return status === 'closed' || status === 'merged' || status === 'green';
 }
 
 export async function addRefWatch(

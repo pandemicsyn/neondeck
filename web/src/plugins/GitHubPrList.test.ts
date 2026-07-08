@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { GitHubPullRequest, WorkflowObservability } from '../api';
 import {
   isCiFixCandidate,
+  isTerminalWatchStatus,
   reviewWorkflowCompletionState,
   reviewWorkflowRefreshDecision,
 } from './GitHubPrList';
@@ -14,6 +15,13 @@ describe('GitHubPrList review workflow state', () => {
     );
     expect(isCiFixCandidate(githubPr({ checks: 'success' }))).toBe(false);
     expect(isCiFixCandidate(githubPr({ checks: 'pending' }))).toBe(false);
+  });
+
+  it('treats green PR watches as terminal for dashboard re-watch affordances', () => {
+    expect(isTerminalWatchStatus('green')).toBe(true);
+    expect(isTerminalWatchStatus('merged')).toBe(true);
+    expect(isTerminalWatchStatus('closed')).toBe(true);
+    expect(isTerminalWatchStatus('watching')).toBe(false);
   });
 
   it('refreshes when an admitted review run reaches terminal observability', () => {

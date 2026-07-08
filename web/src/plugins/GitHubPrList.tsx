@@ -556,8 +556,8 @@ function WatchPrButton({ item }: { item: GitHubPullRequest }) {
   );
 }
 
-function isTerminalWatchStatus(status: string | null | undefined) {
-  return status === 'closed' || status === 'merged';
+export function isTerminalWatchStatus(status: string | null | undefined) {
+  return status === 'closed' || status === 'merged' || status === 'green';
 }
 
 type ReviewPrWorkflowAdmission = {

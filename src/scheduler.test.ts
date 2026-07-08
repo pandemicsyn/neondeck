@@ -1482,6 +1482,64 @@ describe('scheduler', () => {
     expect(JSON.stringify(job?.lastResult)).toContain('event-1');
   });
 
+  it('supersedes pending triage when the current PR event state is non-actionable', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    const invocations: Array<{ workflow: string; input: unknown }> = [];
+    await writeRepoRegistry(paths.repos);
+    await writeFile(
+      paths.config,
+      `${JSON.stringify({
+        version: 1,
+        autopilot: { defaultMode: 'draft-fix' },
+      })}\n`,
+    );
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
+    await updateJobRun(
+      'watch:pandemicsyn/neondeck#123',
+      {
+        outcome: 'updated',
+        message: 'Previous triage was blocked.',
+        result: blockedTriageJobResult('event-1'),
+        nextRunAt: new Date(Date.now() - 1_000).toISOString(),
+      },
+      paths,
+    );
+
+    await expect(
+      runSchedulerTick(paths, new Date(), {
+        refreshPrWatch: async () => noChangeWatchRefresh(),
+        listPrWatchEventWatermarks: async () =>
+          requestedChangesBaselineWatermarks(),
+        refreshPrWatchEventState: async () => requestedChangesClearedRefresh(),
+        checkAutopilotConcurrency: async () =>
+          concurrencyDecision({ allowed: true }),
+        invokeWorkflow: async (workflow, input) => {
+          invocations.push({ workflow, input });
+          return { runId: 'run-stale-pending-triage' };
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'updated',
+      notifications: [
+        expect.objectContaining({
+          title: 'PR watch event changed',
+          level: 'info',
+        }),
+      ],
+    });
+
+    expect(invocations).toEqual([]);
+    const job = (await listJobs(paths)).find(
+      (item) => item.id === 'watch:pandemicsyn/neondeck#123',
+    );
+    const lastResult = JSON.stringify(job?.lastResult);
+    expect(lastResult).toContain('"status":"superseded"');
+    expect(lastResult).not.toContain('"status":"blocked"');
+  });
+
   it('classifies cleared requested changes as non-actionable metadata', async () => {
     const home = await tempHome();
     const paths = runtimePaths(home);
