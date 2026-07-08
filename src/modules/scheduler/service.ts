@@ -248,6 +248,7 @@ export async function runSchedulerTick(
         (!job.nextRunAt || Date.parse(job.nextRunAt) <= now.getTime()),
     );
     const notifications = [];
+    let jobChanged = false;
     let stoppedForLostLease = false;
     let routineResult: JobExecutionResult | null = null;
 
@@ -308,6 +309,9 @@ export async function runSchedulerTick(
         },
         paths,
       );
+      if (result.outcome !== 'silent') {
+        jobChanged = true;
+      }
 
       for (const notification of result.notifications ?? []) {
         notifications.push(await addNotification(notification, paths));
@@ -327,7 +331,7 @@ export async function runSchedulerTick(
     const routineChanged =
       routineResult?.outcome !== undefined &&
       routineResult.outcome !== 'silent';
-    const changed = notifications.length > 0 || routineChanged;
+    const changed = jobChanged || notifications.length > 0 || routineChanged;
     const jobMessage =
       jobs.length === 0
         ? 'No scheduled jobs were due.'

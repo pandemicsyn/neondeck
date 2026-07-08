@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { JsonValue } from '@flue/runtime';
 import { type JobRecord, type NotificationLevel } from '../app-state';
 import { fetchCheckSummary, type GitHubCheckSummary } from '../github';
@@ -397,6 +398,7 @@ export async function refreshWatchJob(
     results,
     paths,
     dependencies,
+    job.lastResult,
   );
   const eventFailures = eventResults.filter((result) => !result.ok);
   const changed = results.filter((result) => result.changed);
@@ -492,6 +494,18 @@ type WatchJobEventResult = {
   triage?: JsonValue;
   notifications?: JobExecutionResult['notifications'];
 };
+type PendingWatchTriageEvent = {
+  eventId: string;
+  input: Record<string, JsonValue>;
+  reason: string;
+};
+type TriageAdmissionResult = {
+  ok: boolean;
+  changed: boolean;
+  triage?: JsonValue;
+  notifications: NonNullable<JobExecutionResult['notifications']>;
+  message?: string;
+};
 
 async function refreshWatchJobEvents(
   results: Awaited<
@@ -499,11 +513,13 @@ async function refreshWatchJobEvents(
   >[],
   paths: RuntimePaths,
   dependencies: SchedulerDependencies,
+  previousJobResult: JsonValue | null,
 ): Promise<WatchJobEventResult[]> {
   if (!dependencies.refreshPrWatchEventState && !process.env.GITHUB_TOKEN) {
     return [];
   }
 
+  const pendingByWatch = pendingTriageEventsFromJobResult(previousJobResult);
   const watches = await listPrWatchRecords(paths);
   const watchById = new Map(watches.map((watch) => [watch.id, watch]));
   const targetWatches = results
@@ -514,7 +530,14 @@ async function refreshWatchJobEvents(
 
   const eventResults: WatchJobEventResult[] = [];
   for (const watch of targetWatches) {
-    eventResults.push(await refreshOneWatchEvent(watch, paths, dependencies));
+    eventResults.push(
+      await refreshOneWatchEvent(
+        watch,
+        paths,
+        dependencies,
+        pendingByWatch.get(watch.id) ?? [],
+      ),
+    );
   }
 
   return eventResults;
@@ -524,6 +547,7 @@ async function refreshOneWatchEvent(
   watch: PrWatch,
   paths: RuntimePaths,
   dependencies: SchedulerDependencies,
+  pendingTriageEvents: PendingWatchTriageEvent[],
 ): Promise<WatchJobEventResult> {
   const listWatermarks =
     dependencies.listPrWatchEventWatermarks ?? listPrWatchEventWatermarks;
@@ -556,7 +580,20 @@ async function refreshOneWatchEvent(
   }
 
   const changedCategories = changedCategoriesFromActionResult(refresh);
+  const policy = await readEffectiveWatchAutopilotPolicy(watch, paths);
+  const mode = policy.mode;
   if (changedCategories.length === 0) {
+    if (mode !== 'notify-only' && pendingTriageEvents.length > 0) {
+      return retryPendingWatchTriage(
+        watch,
+        pendingTriageEvents,
+        paths,
+        dependencies,
+        refresh as unknown as JsonValue,
+        mode,
+      );
+    }
+
     return {
       ok: true,
       changed: false,
@@ -570,14 +607,27 @@ async function refreshOneWatchEvent(
   }
 
   const currentWatermarks = watermarksFromActionResult(refresh);
+  if (previousWatermarks.length === 0) {
+    return {
+      ok: true,
+      changed: false,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      mode,
+      changedCategories,
+      message: `Seeded PR event watermark baseline for ${watch.id}.`,
+      refresh: refresh as unknown as JsonValue,
+    };
+  }
+
   const deltas = deltasFromChangedCategories(
     changedCategories,
     currentWatermarks,
   );
   const current = snapshotFromWatermarks(currentWatermarks);
   const previous = snapshotFromWatermarks(previousWatermarks);
-  const policy = await readEffectiveWatchAutopilotPolicy(watch, paths);
-  const mode = policy.mode;
   const notifications: JobExecutionResult['notifications'] = [
     prEventNotification(
       watch,
@@ -590,100 +640,42 @@ async function refreshOneWatchEvent(
   let triage: JsonValue | undefined;
 
   if (mode !== 'notify-only' && deltas.length > 0) {
-    const concurrencyCheck =
-      dependencies.checkAutopilotConcurrency ?? checkAutopilotConcurrency;
-    const concurrency = await concurrencyCheck(
-      {
-        repoId: watch.repoId,
-        prNumber: watch.prNumber,
-        workflow: 'triage-pr-event',
-        mutation: false,
-      },
+    const input = jsonRecord({
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      watchId: watch.id,
+      eventId: prEventSourceId(watch, changedCategories, currentWatermarks),
+      source: 'watch',
+      autopilotMode: triageModeForPolicy(mode),
+      previous,
+      current,
+      deltas,
+    });
+    const admission = await admitWatchTriageEvent(
+      watch,
       paths,
+      dependencies,
+      input,
     );
-
-    if (!concurrency.allowed) {
-      triage = {
-        status: 'blocked',
-        reason: concurrency.message,
-        concurrency,
-      } as unknown as JsonValue;
-      notifications.push({
-        level: 'attention',
-        title: 'Autopilot triage blocked',
-        message: concurrency.message,
-        source: 'autopilot',
-        sourceId: `triage:${watch.id}:blocked`,
-        data: {
-          watchId: watch.id,
-          repoId: watch.repoId,
-          repoFullName: watch.repoFullName,
-          prNumber: watch.prNumber,
-          concurrency,
-        },
-      });
-    } else {
-      const invokeWorkflow =
-        dependencies.invokeWorkflow ?? invokeScheduledWorkflow;
-      const input = compactObject({
+    notifications.push(...admission.notifications);
+    triage = admission.triage;
+    if (!admission.ok) {
+      return {
+        ok: false,
+        changed: true,
+        watchId: watch.id,
         repoId: watch.repoId,
         repoFullName: watch.repoFullName,
         prNumber: watch.prNumber,
-        watchId: watch.id,
-        eventId: prEventSourceId(watch, changedCategories, currentWatermarks),
-        source: 'watch',
-        autopilotMode: triageModeForPolicy(mode),
-        previous,
-        current,
+        mode,
+        changedCategories,
         deltas,
-      });
-      try {
-        const { runId } = await invokeWorkflow(
-          'triage-pr-event',
-          input as JsonValue,
-        );
-        triage = {
-          status: 'admitted',
-          runId,
-          workflow: 'triage-pr-event',
-          input,
-        } as unknown as JsonValue;
-      } catch (error) {
-        const message = `Autopilot triage admission failed: ${errorMessage(error)}.`;
-        triage = {
-          status: 'failed',
-          error: errorMessage(error),
-        } as unknown as JsonValue;
-        notifications.push({
-          level: 'attention',
-          title: 'Autopilot triage failed',
-          message,
-          source: 'autopilot',
-          sourceId: `triage:${watch.id}:failed`,
-          data: {
-            watchId: watch.id,
-            repoId: watch.repoId,
-            repoFullName: watch.repoFullName,
-            prNumber: watch.prNumber,
-            error: errorMessage(error),
-          },
-        });
-        return {
-          ok: false,
-          changed: true,
-          watchId: watch.id,
-          repoId: watch.repoId,
-          repoFullName: watch.repoFullName,
-          prNumber: watch.prNumber,
-          mode,
-          changedCategories,
-          deltas,
-          message,
-          refresh: refresh as unknown as JsonValue,
-          triage,
-          notifications,
-        };
-      }
+        message: admission.message ?? 'Autopilot triage admission failed.',
+        refresh: refresh as unknown as JsonValue,
+        triage,
+        notifications,
+      };
     }
   }
 
@@ -702,6 +694,193 @@ async function refreshOneWatchEvent(
     triage,
     notifications,
   };
+}
+
+async function retryPendingWatchTriage(
+  watch: PrWatch,
+  pendingEvents: PendingWatchTriageEvent[],
+  paths: RuntimePaths,
+  dependencies: SchedulerDependencies,
+  refresh: JsonValue,
+  mode: AutopilotMode,
+): Promise<WatchJobEventResult> {
+  const notifications: NonNullable<JobExecutionResult['notifications']> = [];
+  const retried = [];
+
+  for (const pending of pendingEvents) {
+    const admission = await admitWatchTriageEvent(
+      watch,
+      paths,
+      dependencies,
+      pending.input,
+    );
+    notifications.push(...admission.notifications);
+    retried.push({
+      eventId: pending.eventId,
+      reason: pending.reason,
+      triage: admission.triage,
+    });
+    if (!admission.ok) {
+      return {
+        ok: false,
+        changed: true,
+        watchId: watch.id,
+        repoId: watch.repoId,
+        repoFullName: watch.repoFullName,
+        prNumber: watch.prNumber,
+        mode,
+        message: admission.message ?? 'Autopilot triage admission failed.',
+        refresh,
+        triage: admission.triage,
+        notifications,
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    changed: retried.length > 0,
+    watchId: watch.id,
+    repoId: watch.repoId,
+    repoFullName: watch.repoFullName,
+    prNumber: watch.prNumber,
+    mode,
+    message:
+      retried.length > 0
+        ? `Retried ${retried.length} pending autopilot triage event${retried.length === 1 ? '' : 's'} for ${watch.id}.`
+        : `No PR event watermark changes for ${watch.id}.`,
+    refresh,
+    triage: retried.length === 1 ? retried[0].triage : (retried as JsonValue),
+    notifications,
+  };
+}
+
+async function admitWatchTriageEvent(
+  watch: PrWatch,
+  paths: RuntimePaths,
+  dependencies: SchedulerDependencies,
+  input: Record<string, JsonValue>,
+): Promise<TriageAdmissionResult> {
+  const eventId = stringField(input.eventId) ?? 'unknown';
+  const concurrencyCheck =
+    dependencies.checkAutopilotConcurrency ?? checkAutopilotConcurrency;
+  const concurrency = await concurrencyCheck(
+    {
+      repoId: watch.repoId,
+      prNumber: watch.prNumber,
+      workflow: 'triage-pr-event',
+      mutation: false,
+    },
+    paths,
+  );
+
+  if (!concurrency.allowed) {
+    return {
+      ok: true,
+      changed: true,
+      triage: {
+        status: 'blocked',
+        eventId,
+        reason: concurrency.message,
+        input,
+        concurrency,
+      } as unknown as JsonValue,
+      notifications: [
+        {
+          level: 'attention',
+          title: 'Autopilot triage blocked',
+          message: concurrency.message,
+          source: 'autopilot',
+          sourceId: `triage:${watch.id}:${eventId}:blocked`,
+          data: {
+            watchId: watch.id,
+            repoId: watch.repoId,
+            repoFullName: watch.repoFullName,
+            prNumber: watch.prNumber,
+            eventId,
+            input,
+            concurrency,
+          },
+        },
+      ],
+    };
+  }
+
+  const invokeWorkflow = dependencies.invokeWorkflow ?? invokeScheduledWorkflow;
+  try {
+    const { runId } = await invokeWorkflow('triage-pr-event', input);
+    return {
+      ok: true,
+      changed: true,
+      triage: {
+        status: 'admitted',
+        eventId,
+        runId,
+        workflow: 'triage-pr-event',
+        input,
+      } as unknown as JsonValue,
+      notifications: [],
+    };
+  } catch (error) {
+    const message = `Autopilot triage admission failed: ${errorMessage(error)}.`;
+    return {
+      ok: false,
+      changed: true,
+      message,
+      triage: {
+        status: 'failed',
+        eventId,
+        input,
+        error: errorMessage(error),
+      } as unknown as JsonValue,
+      notifications: [
+        {
+          level: 'attention',
+          title: 'Autopilot triage failed',
+          message,
+          source: 'autopilot',
+          sourceId: `triage:${watch.id}:${eventId}:failed`,
+          data: {
+            watchId: watch.id,
+            repoId: watch.repoId,
+            repoFullName: watch.repoFullName,
+            prNumber: watch.prNumber,
+            eventId,
+            input,
+            error: errorMessage(error),
+          },
+        },
+      ],
+    };
+  }
+}
+
+function pendingTriageEventsFromJobResult(value: JsonValue | null) {
+  const pendingByWatch = new Map<string, PendingWatchTriageEvent[]>();
+  const eventResults = readJsonArray(readObjectConfig(value).eventResults);
+  for (const eventResult of eventResults) {
+    const result = readObjectConfig(eventResult);
+    const watchId = stringField(result.watchId);
+    if (!watchId) continue;
+
+    const triage = readObjectConfig(result.triage);
+    const status = stringField(triage.status);
+    if (status !== 'blocked' && status !== 'failed') continue;
+
+    const input = readJsonRecord(triage.input);
+    if (!input) continue;
+
+    const eventId = stringField(input.eventId) ?? `${watchId}:pending`;
+    const pending = pendingByWatch.get(watchId) ?? [];
+    pending.push({
+      eventId,
+      input,
+      reason: status,
+    });
+    pendingByWatch.set(watchId, pending);
+  }
+
+  return pendingByWatch;
 }
 
 async function readEffectiveWatchAutopilotPolicy(
@@ -844,10 +1023,20 @@ function deltaFromWatermark(
 
   if (category === 'requested_changes_reviews') {
     const reviewIds = arrayField(payload.reviewIds);
+    const total = numberField(payload.total) ?? reviewIds.length;
+    if (total === 0) {
+      return jsonRecord({
+        type: 'metadata',
+        id: category,
+        summary: 'Requested changes were cleared.',
+        severity: 'medium',
+      });
+    }
+
     return jsonRecord({
       type: 'requested-changes',
       id: `${category}:${reviewIds.join(',') || 'latest'}`,
-      summary: `${numberField(payload.total) ?? reviewIds.length} requested-changes review${(numberField(payload.total) ?? reviewIds.length) === 1 ? '' : 's'}.`,
+      summary: `${total} requested-changes review${total === 1 ? '' : 's'}.`,
       actionable: true,
       severity: 'high',
     });
@@ -1013,7 +1202,22 @@ function prEventSourceId(
   watermarks: PrWatchEventWatermarkRecord[],
 ) {
   const latest = latestWatermarkTimestamp(watermarks, categories);
-  return `${watch.id}:${[...categories].sort().join('+')}:${latest ?? 'unknown'}`;
+  const hash = eventWatermarkHash(watermarks, categories);
+  return `${watch.id}:${[...categories].sort().join('+')}:${latest ?? 'unknown'}:${hash}`;
+}
+
+function eventWatermarkHash(
+  watermarks: PrWatchEventWatermarkRecord[],
+  categories: PrWatchEventWatermarkCategory[],
+) {
+  const payload = [...categories].sort().map((category) => ({
+    category,
+    watermark: watermarkPayload(watermarks, category),
+  }));
+  return createHash('sha256')
+    .update(stableJson(payload))
+    .digest('hex')
+    .slice(0, 12);
 }
 
 function latestWatermarkTimestamp(
@@ -1047,6 +1251,15 @@ function jsonRecord(value: Record<string, unknown>) {
   return compactObject(value) as Record<string, JsonValue>;
 }
 
+function readJsonRecord(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, JsonValue>;
+}
+
+function readJsonArray(value: unknown) {
+  return Array.isArray(value) ? value : [];
+}
+
 function arrayField(value: unknown) {
   return Array.isArray(value) ? value : [];
 }
@@ -1063,6 +1276,19 @@ function numberField(value: unknown) {
 
 function booleanField(value: unknown) {
   return typeof value === 'boolean' ? value : undefined;
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableJson(item)).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
 }
 
 export async function refreshRefWatchJob(
