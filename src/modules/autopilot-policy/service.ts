@@ -55,7 +55,12 @@ export async function checkAutopilotPolicy(
       'Repository is not configured.',
     );
   }
+  const watchId =
+    worktree?.prNumber !== undefined && worktree.prNumber !== null
+      ? `${repo.github.owner}/${repo.github.name}#${worktree.prNumber}`
+      : undefined;
   const policy = repoAutopilotPolicyForWatch(repo, appConfig, {
+    id: watchId,
     prNumber: worktree?.prNumber,
   });
   const repoFullName = `${repo.github.owner}/${repo.github.name}`;

@@ -559,6 +559,7 @@ async function refreshOneWatchEvent(
   const previousWatermarks = watermarksFromActionResult(previousResult);
   const refresh = await refreshEvents({ watchId: watch.id }, paths);
   if (!refresh.ok) {
+    const triage = triageValue(pendingTriageSnapshots(pendingTriageEvents));
     return {
       ok: false,
       changed: false,
@@ -568,6 +569,7 @@ async function refreshOneWatchEvent(
       prNumber: watch.prNumber,
       message: refresh.message,
       refresh: refresh as unknown as JsonValue,
+      triage,
       notifications: [
         {
           level: 'attention',

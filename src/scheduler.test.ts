@@ -1439,6 +1439,49 @@ describe('scheduler', () => {
     expect(JSON.stringify(job?.lastResult)).toContain('event-1');
   });
 
+  it('preserves pending triage admissions when PR event refresh fails', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
+    await updateJobRun(
+      'watch:pandemicsyn/neondeck#123',
+      {
+        outcome: 'updated',
+        message: 'Previous triage was blocked.',
+        result: blockedTriageJobResult('event-1'),
+        nextRunAt: new Date(Date.now() - 1_000).toISOString(),
+      },
+      paths,
+    );
+
+    await expect(
+      runSchedulerTick(paths, new Date(), {
+        refreshPrWatch: async () => noChangeWatchRefresh(),
+        listPrWatchEventWatermarks: async () =>
+          reviewThreadBaselineWatermarks(),
+        refreshPrWatchEventState: async () => ({
+          ok: false,
+          action: 'pr_watch_event_state_refresh',
+          changed: false,
+          message: 'GitHub events returned 502.',
+        }),
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'updated',
+      notifications: [
+        expect.objectContaining({ title: 'PR event refresh failed' }),
+      ],
+    });
+
+    const job = (await listJobs(paths)).find(
+      (item) => item.id === 'watch:pandemicsyn/neondeck#123',
+    );
+    expect(JSON.stringify(job?.lastResult)).toContain('event-1');
+  });
+
   it('classifies cleared requested changes as non-actionable metadata', async () => {
     const home = await tempHome();
     const paths = runtimePaths(home);
