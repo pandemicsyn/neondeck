@@ -15,6 +15,11 @@ import type { DeckArrangement } from './lib/deck-profile';
 import { useDeckProfile } from './lib/deck-profile';
 import { queryErrorMessage, queryKeys } from './lib/query';
 import { pluginRegistry, resolvePluginConfig } from './plugins/registry';
+import {
+  PrReviewPopoutErrorPage,
+  PrReviewPopoutPage,
+  type ReviewPopoutTarget,
+} from './features/pr-review/PrReviewPopoutPage';
 import type {
   DashboardConfig,
   DashboardDensity,
@@ -90,9 +95,25 @@ export function App() {
     );
   }
 
+  const reviewRoute = readReviewPopoutRoute();
+  const appearance = resolveAppearance(config);
+
   return (
     <main className="deck-page h-screen overflow-hidden bg-bg text-ink">
-      <DashboardShell config={config} />
+      {reviewRoute.kind === 'target' ? (
+        <PrReviewPopoutPage
+          appearance={appearance}
+          target={reviewRoute.target}
+        />
+      ) : reviewRoute.kind === 'invalid' ? (
+        <PrReviewPopoutErrorPage
+          appearance={appearance}
+          detail={reviewRoute.message}
+          title="Invalid review route"
+        />
+      ) : (
+        <DashboardShell config={config} />
+      )}
     </main>
   );
 }
@@ -456,6 +477,41 @@ function resolveTheme(theme: DashboardTheme) {
   return window.matchMedia('(prefers-color-scheme: dark)').matches
     ? 'dark'
     : 'light';
+}
+
+type ReviewPopoutRoute =
+  | { kind: 'none' }
+  | { kind: 'invalid'; message: string }
+  | { kind: 'target'; target: ReviewPopoutTarget };
+
+function readReviewPopoutRoute(): ReviewPopoutRoute {
+  if (window.location.pathname !== '/review') return { kind: 'none' };
+  const params = new URLSearchParams(window.location.search);
+  const repo = params.get('repo')?.trim();
+  const number = Number(params.get('number'));
+  if (!repo) {
+    return {
+      kind: 'invalid',
+      message:
+        'A repository query parameter is required, for example /review?repo=owner/repo&number=123.',
+    };
+  }
+  const repoParts = repo.split('/');
+  if (repoParts.length !== 2 || !repoParts[0] || !repoParts[1]) {
+    return {
+      kind: 'invalid',
+      message:
+        'The repository query parameter must be in owner/repo form, for example /review?repo=owner/repo&number=123.',
+    };
+  }
+  if (!Number.isInteger(number) || number < 1) {
+    return {
+      kind: 'invalid',
+      message:
+        'A positive pull request number is required, for example /review?repo=owner/repo&number=123.',
+    };
+  }
+  return { kind: 'target', target: { repo, number } };
 }
 
 function resolveAppearance(config: DashboardConfig): {

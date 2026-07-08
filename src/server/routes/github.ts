@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { listGitHubPrQueue } from '../../modules/github';
+import { getGitHubPullRequest, listGitHubPrQueue } from '../../modules/github';
 import {
   getGitHubPrBranchPermissions,
   getGitHubPrEventState,
@@ -44,6 +44,20 @@ export function createGitHubRoutes(paths: RuntimePaths) {
       },
       result.requires?.includes('GITHUB_TOKEN') ? 503 : 502,
     );
+  });
+
+  routes.get('/prs/:owner/:repo/:number', async (c) => {
+    const target = prTargetFromParams(
+      c.req.param('owner'),
+      c.req.param('repo'),
+      c.req.param('number'),
+    );
+    if (!target.ok) return c.json(target.result, 400);
+    const result = await getGitHubPullRequest(
+      { repo: target.input.repo, number: target.input.prNumber },
+      paths,
+    );
+    return c.json(result, result.ok ? 200 : 400);
   });
 
   routes.get('/prs/:owner/:repo/:number/files', async (c) => {

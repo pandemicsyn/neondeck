@@ -113,7 +113,7 @@ function AutopilotView({
   const activity = state.recentActivity.slice(0, config.activityLimit);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="autopilot-panel flex h-full min-h-0 flex-col">
       <header className="panel-header flex h-8 items-center justify-between border-b border-line px-3 font-mono text-[10.5px] tracking-[0.12em]">
         <span className="text-primary">AUTOPILOT</span>
         <div className="flex items-center gap-1.5">
@@ -123,8 +123,8 @@ function AutopilotView({
       </header>
       <NeedsAttentionBanner state={state} />
       <ScrollArea className="flex-1">
-        <div className="grid gap-2 p-3 xl:grid-cols-[1.15fr_0.85fr]">
-          <section className="space-y-2">
+        <div className="autopilot-grid grid gap-2 p-3">
+          <section className="min-w-0 space-y-2">
             <SummaryStrip state={state} />
             <PanelSection
               count={state.queue.length}
@@ -164,7 +164,7 @@ function AutopilotView({
               ))}
             </PanelSection>
           </section>
-          <section className="space-y-2">
+          <section className="min-w-0 space-y-2">
             <PolicyBlock
               repoPolicies={repoPolicies}
               state={state}
@@ -243,7 +243,7 @@ function SummaryStrip({ state }: { state: AutopilotState }) {
   ] as const;
 
   return (
-    <div className="grid grid-cols-4 border border-line bg-soft font-mono">
+    <div className="autopilot-summary grid border border-line bg-soft font-mono">
       {items.map(([label, value]) => (
         <div
           className="border-r border-line px-2 py-2 last:border-r-0"

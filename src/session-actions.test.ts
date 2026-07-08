@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { updateAgentModels } from './modules/config';
 import { deleteMemory, rewriteMemory, upsertMemory } from './modules/memory';
+import { initializeAppDatabase } from './runtime-home/app-db/index.ts';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   archiveChatSession,
@@ -829,7 +830,7 @@ describe('session actions', () => {
       database.close();
     }
 
-    await ensureRuntimeHome(paths);
+    initializeAppDatabase(paths.neondeckDatabase);
     const state = await readNeonSessionState(paths);
 
     expect(state.activeSession.id).toBe('duplicate-newer');

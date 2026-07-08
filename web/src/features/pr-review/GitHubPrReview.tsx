@@ -1,5 +1,11 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 import {
   ApiError,
   type DiffSummary,
@@ -31,6 +37,7 @@ import {
   failingCommentIdsFromError,
   normalizeReviewBody,
   patchAnchorIndexesByPath,
+  reviewDraftNeedsSubmitSave,
   reviewCommentPreview,
   staleDraftCommentIds,
   type PatchAnchorIndex,
@@ -42,7 +49,15 @@ type ComposerState = {
   annotation: DiffReviewAnnotation;
 };
 
-export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
+type GitHubPrReviewMode = 'embedded' | 'standalone';
+
+export function GitHubPrReview({
+  mode = 'embedded',
+  pr,
+}: {
+  mode?: GitHubPrReviewMode;
+  pr: GitHubPullRequest;
+}) {
   const filesQuery = useGitHubPullRequestFiles(pr);
   const threadsQuery = useGitHubPrReviewThreads(pr);
   const draftQuery = useGitHubPrReviewDraft(pr);
@@ -142,6 +157,11 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
         mutations.setThreadResolution.error,
       draft,
     ) ?? statusMessage;
+  const fileLoadMessage = filesQuery.isLoading
+    ? 'Loading PR files.'
+    : filesQuery.error
+      ? `PR files unavailable: ${queryErrorMessage(filesQuery.error)}`
+      : null;
 
   useEffect(() => {
     if (activePath && files.some((file) => file.path === activePath)) return;
@@ -175,18 +195,6 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
       return next.size === current.size ? current : next;
     });
   }, [draft?.comments]);
-
-  if (filesQuery.isLoading) {
-    return <MiniEmpty label="Loading PR files." />;
-  }
-
-  if (filesQuery.error) {
-    return (
-      <MiniEmpty
-        label={`PR files unavailable: ${queryErrorMessage(filesQuery.error)}`}
-      />
-    );
-  }
 
   const summary = filesQuery.data?.diffSummary;
   const saveDraft = async (
@@ -570,10 +578,22 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
     setStatusMessage(null);
     try {
       const normalizedBody = normalizeReviewBody(reviewBody);
-      const savedDraft =
-        !draft || draft.body !== normalizedBody || draft.verdict !== verdict
-          ? await saveDraft({ body: normalizedBody, verdict })
-          : draft;
+      const shouldReanchorDraft = Boolean(
+        draft && draft.headSha !== currentHeadSha,
+      );
+      const savedDraft = reviewDraftNeedsSubmitSave(
+        draft,
+        normalizedBody,
+        verdict,
+        currentHeadSha,
+      )
+        ? await saveDraft({
+            body: normalizedBody,
+            verdict,
+            reanchorHeadSha: shouldReanchorDraft,
+          })
+        : draft;
+      if (!savedDraft) throw new Error('Review draft could not be saved.');
       await mutations.submitReview.mutateAsync({
         repo: pr.repo,
         number: pr.number,
@@ -604,18 +624,47 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
     setStatusMessage(`Showing draft comment on ${next.path} L${next.line}.`);
   };
   const openPopout = () => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('prReviewRepo', pr.repo);
-    url.searchParams.set('prReviewNumber', String(pr.number));
+    const url = new URL('/review', window.location.origin);
+    url.searchParams.set('repo', pr.repo);
+    url.searchParams.set('number', String(pr.number));
     window.open(
       url.toString(),
       `neondeck-pr-review-${pr.number}`,
-      'popup,width=1280,height=900',
+      'popup,width=1440,height=940',
     );
   };
+  const isStandalone = mode === 'standalone';
+  const reviewPanels = (
+    <>
+      <ReviewThreadPanel
+        activePath={activePath}
+        isLoading={threadsQuery.isLoading}
+        threads={selectedThreads}
+      />
+      <StaleDraftCommentPanel
+        comments={staleDraftComments}
+        isDeleting={mutations.deleteComment.isPending}
+        onDelete={(commentId) => {
+          setStatusMessage(null);
+          mutations.deleteComment.mutate({
+            repo: pr.repo,
+            number: pr.number,
+            id: commentId,
+          });
+        }}
+        onReanchor={(comment) => beginReanchorComment(comment.id, comment.path)}
+      />
+    </>
+  );
 
   return (
-    <section className="pr-review-shell">
+    <section
+      className={
+        isStandalone
+          ? 'pr-review-shell pr-review-shell-standalone'
+          : 'pr-review-shell'
+      }
+    >
       <header className="pr-review-header">
         <div className="min-w-0">
           <p className="truncate font-mono text-[10px] tracking-[0.12em] text-primary">
@@ -638,14 +687,25 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
           {fileStats.binary > 0 ? (
             <Badge>{fileStats.binary} binary</Badge>
           ) : null}
-          <button
-            className="pr-review-popout-button"
-            onClick={openPopout}
-            title="Open this review in a separate window"
-            type="button"
-          >
-            pop out
-          </button>
+          {isStandalone ? (
+            <a
+              className="pr-review-popout-button"
+              href={pr.url}
+              rel="noreferrer"
+              target="_blank"
+            >
+              GitHub
+            </a>
+          ) : (
+            <button
+              className="pr-review-popout-button"
+              onClick={openPopout}
+              title="Open this review in a focused review window"
+              type="button"
+            >
+              pop out
+            </button>
+          )}
         </div>
       </header>
       {reanchoringCommentId ? (
@@ -680,87 +740,163 @@ export function GitHubPrReview({ pr }: { pr: GitHubPullRequest }) {
           </button>
         </div>
       ) : null}
-      <MultiFileView
-        activePath={activePath}
-        annotationsByPath={annotationsByPath}
-        detail={prDetail(pr, summary)}
-        emptyLabel="No PR file patches available."
-        files={files}
-        footer={
-          <>
-            <ReviewThreadPanel
-              activePath={activePath}
-              isLoading={threadsQuery.isLoading}
-              threads={selectedThreads}
-            />
-            <StaleDraftCommentPanel
-              comments={staleDraftComments}
-              isDeleting={mutations.deleteComment.isPending}
-              onDelete={(commentId) => {
-                setStatusMessage(null);
-                mutations.deleteComment.mutate({
-                  repo: pr.repo,
-                  number: pr.number,
-                  id: commentId,
-                });
-              }}
-              onReanchor={(comment) =>
-                beginReanchorComment(comment.id, comment.path)
-              }
-            />
-          </>
-        }
-        onSelectedLinesChange={onSelectionChange}
-        onActivePathChange={setActivePath}
-        renderAnnotation={renderAnnotation}
-        selectedLines={
-          composer?.path === activePath ? composer.selection : null
-        }
-        title={pr.title}
-        tone="primary"
-      />
-      <ReviewBar
-        cleanCommentCount={cleanCommentIds.length}
-        draft={draft}
-        isBusy={isDraftMutationPending || isThreadMutationPending}
-        isHeadAvailable={currentHeadSha.length > 0}
-        onBodyBlur={() => {
-          setIsReviewBodyFocused(false);
-          const normalizedBody = normalizeReviewBody(reviewBody);
-          if ((draft?.body ?? null) !== normalizedBody) {
-            void saveDraft({ body: normalizedBody })
-              .then(() => setHasPendingReviewBodyEdit(false))
-              .catch(() => undefined);
-          } else {
-            setHasPendingReviewBodyEdit(false);
-          }
-        }}
-        onBodyChange={(value) => {
-          setReviewBody(value);
-          setHasPendingReviewBodyEdit(true);
-        }}
-        onBodyFocus={() => setIsReviewBodyFocused(true)}
-        onDiscard={() => {
-          if (!draft) return;
-          setStatusMessage(null);
-          const confirmed = window.confirm('Discard this PR review draft?');
-          if (confirmed) {
-            mutations.discardDraft.mutate({ repo: pr.repo, number: pr.number });
-          }
-        }}
-        onSubmit={submitReview}
-        onPendingCountClick={focusNextPendingComment}
-        onVerdictChange={(next) => {
-          setVerdict(next);
-          void saveDraft({ verdict: next }).catch(() => undefined);
-        }}
-        isSubmitting={mutations.submitReview.isPending}
-        reviewBody={reviewBody}
-        staleCommentCount={blockedCommentIds.size}
-        statusMessage={reviewBarStatusMessage}
-        verdict={verdict}
-      />
+      {fileLoadMessage ? (
+        <div className="pr-review-load-state">
+          <MiniEmpty label={fileLoadMessage} />
+        </div>
+      ) : (
+        <>
+          <MultiFileView
+            activePath={activePath}
+            annotationsByPath={annotationsByPath}
+            detail={prDetail(pr, summary)}
+            emptyLabel="No PR file patches available."
+            files={files}
+            footer={isStandalone ? null : reviewPanels}
+            inspector={
+              isStandalone ? (
+                <ReviewInspector
+                  activePath={activePath}
+                  cleanCommentCount={cleanCommentIds.length}
+                  draft={draft}
+                  files={files}
+                  reviewThreads={reviewThreads}
+                  staleCommentCount={blockedCommentIds.size}
+                  unresolvedThreads={unresolvedThreads}
+                >
+                  {reviewPanels}
+                </ReviewInspector>
+              ) : undefined
+            }
+            inspectorLabel="PR review inspector"
+            onSelectedLinesChange={onSelectionChange}
+            onActivePathChange={setActivePath}
+            renderAnnotation={renderAnnotation}
+            selectedLines={
+              composer?.path === activePath ? composer.selection : null
+            }
+            title={pr.title}
+            tone="primary"
+          />
+          {isStandalone ? (
+            <div
+              aria-label="Collapsed PR review details"
+              className="pr-review-compact-panels"
+            >
+              {reviewPanels}
+            </div>
+          ) : null}
+        </>
+      )}
+      {fileLoadMessage ? null : (
+        <ReviewBar
+          cleanCommentCount={cleanCommentIds.length}
+          draft={draft}
+          isBusy={isDraftMutationPending || isThreadMutationPending}
+          isHeadAvailable={currentHeadSha.length > 0}
+          onBodyBlur={() => {
+            setIsReviewBodyFocused(false);
+            const normalizedBody = normalizeReviewBody(reviewBody);
+            if ((draft?.body ?? null) !== normalizedBody) {
+              void saveDraft({ body: normalizedBody })
+                .then(() => setHasPendingReviewBodyEdit(false))
+                .catch(() => undefined);
+            } else {
+              setHasPendingReviewBodyEdit(false);
+            }
+          }}
+          onBodyChange={(value) => {
+            setReviewBody(value);
+            setHasPendingReviewBodyEdit(true);
+          }}
+          onBodyFocus={() => setIsReviewBodyFocused(true)}
+          onDiscard={() => {
+            if (!draft) return;
+            setStatusMessage(null);
+            const confirmed = window.confirm('Discard this PR review draft?');
+            if (confirmed) {
+              mutations.discardDraft.mutate({
+                repo: pr.repo,
+                number: pr.number,
+              });
+            }
+          }}
+          onSubmit={submitReview}
+          onPendingCountClick={focusNextPendingComment}
+          onVerdictChange={(next) => {
+            setVerdict(next);
+            void saveDraft({ verdict: next }).catch(() => undefined);
+          }}
+          isSubmitting={mutations.submitReview.isPending}
+          reviewBody={reviewBody}
+          staleCommentCount={blockedCommentIds.size}
+          statusMessage={reviewBarStatusMessage}
+          verdict={verdict}
+        />
+      )}
     </section>
+  );
+}
+
+function ReviewInspector({
+  activePath,
+  children,
+  cleanCommentCount,
+  draft,
+  files,
+  reviewThreads,
+  staleCommentCount,
+  unresolvedThreads,
+}: {
+  activePath: string | null;
+  children: ReactNode;
+  cleanCommentCount: number;
+  draft: GitHubPrReviewDraft | null;
+  files: DiffFilePatch[];
+  reviewThreads: GitHubPullRequestReviewThread[];
+  staleCommentCount: number;
+  unresolvedThreads: GitHubPullRequestReviewThread[];
+}) {
+  const reviewedFileCount = new Set([
+    ...reviewThreads
+      .map(threadPath)
+      .filter((path): path is string => Boolean(path)),
+    ...(draft?.comments.map((comment) => comment.path) ?? []),
+  ]).size;
+  return (
+    <div className="pr-review-inspector">
+      <section className="pr-review-inspector-section">
+        <div className="pr-review-inspector-heading">
+          <span>Review focus</span>
+          <span>{activePath ? 'active file' : 'no file'}</span>
+        </div>
+        <p className="pr-review-inspector-path">
+          {activePath ?? 'Select a changed file to review.'}
+        </p>
+        <div className="pr-review-inspector-metrics">
+          <span>{files.length} files</span>
+          <span>{reviewedFileCount} touched</span>
+          <span>
+            {unresolvedThreads.length}/{reviewThreads.length} threads
+          </span>
+          <span>{cleanCommentCount} pending</span>
+          {staleCommentCount > 0 ? (
+            <span>{staleCommentCount} stale</span>
+          ) : null}
+        </div>
+      </section>
+      <section className="pr-review-inspector-section">
+        <div className="pr-review-inspector-heading">
+          <span>Line review</span>
+          <span>select diff lines</span>
+        </div>
+        <p className="pr-review-inspector-copy">
+          Select a changed line or range in the diff to draft an inline review
+          comment. Saved drafts stay local until the review is submitted.
+        </p>
+      </section>
+      {children}
+    </div>
   );
 }
 

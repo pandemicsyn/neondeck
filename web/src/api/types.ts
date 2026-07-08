@@ -110,6 +110,18 @@ export type GitHubPullRequestResponse = {
   error?: string;
 };
 
+export type GitHubPullRequestDetailResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  data?: {
+    pullRequest?: GitHubPullRequest;
+  };
+  requires?: string[];
+  errors?: string[];
+};
+
 export type ReportRecord = {
   id: string;
   kind: string;

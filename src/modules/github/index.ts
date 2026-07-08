@@ -1,6 +1,7 @@
 export { fetchGitHubLogin } from './client';
 export {
   getGitHubCheckSummary,
+  getGitHubPullRequest,
   listGitHubIssues,
   listGitHubPrQueue,
 } from './actions';

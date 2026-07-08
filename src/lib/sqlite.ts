@@ -6,8 +6,15 @@ export type OpenDbOptions = {
   readOnly?: boolean;
 };
 
+export const defaultSqliteBusyTimeoutMs = 5000;
+
 export function openDb(path: string, options: OpenDbOptions = {}) {
-  return new DatabaseSync(path, options);
+  return configureDb(new DatabaseSync(path, options));
+}
+
+export function configureDb(database: DatabaseSync) {
+  database.exec(`PRAGMA busy_timeout = ${defaultSqliteBusyTimeoutMs};`);
+  return database;
 }
 
 export function parseRow<T>(

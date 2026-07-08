@@ -53,6 +53,7 @@ export type PullRequestSearchResult = {
 };
 
 export type GitHubPullRequestDetail = {
+  id?: number;
   number: number;
   title: string;
   body?: string | null;
@@ -60,6 +61,9 @@ export type GitHubPullRequestDetail = {
   url: string;
   state: string;
   draft?: boolean;
+  author?: string;
+  labels?: string[];
+  comments?: number;
   merged: boolean;
   mergeCommitSha: string | null;
   headSha: string;
@@ -73,6 +77,7 @@ export type GitHubPullRequestDetail = {
   mergeable?: boolean | null;
   mergeableState?: string | null;
   maintainerCanModify?: boolean;
+  createdAt?: string;
   updatedAt: string;
 };
 
@@ -318,17 +323,22 @@ export const githubSearchIssuesApiResponseSchema = v.object({
 });
 
 export const githubPullRequestApiResponseSchema = v.object({
+  id: v.optional(v.number()),
   number: v.number(),
   title: v.string(),
   body: v.optional(v.nullable(v.string())),
   html_url: v.string(),
   state: v.string(),
   draft: v.optional(v.boolean()),
+  user: v.optional(v.nullable(v.object({ login: v.string() }))),
+  labels: v.optional(v.array(v.object({ name: v.optional(v.string()) }))),
+  comments: v.optional(v.number()),
   merged: v.boolean(),
   merge_commit_sha: v.nullable(v.string()),
   mergeable: v.optional(v.nullable(v.boolean())),
   mergeable_state: v.optional(v.nullable(v.string())),
   maintainer_can_modify: v.optional(v.boolean()),
+  created_at: v.optional(v.string()),
   updated_at: v.string(),
   head: v.object({
     sha: v.string(),

@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 
+import { configureDb } from '../../lib/sqlite.ts';
 import { applyAppDbMigrations } from './migrate.ts';
 import { migrateLegacyNeonSessions } from './migrations.ts';
 import {
@@ -11,7 +12,7 @@ import {
 
 export function initializeAppDatabase(path: string) {
   applyAppDbMigrations(path);
-  const database = new DatabaseSync(path);
+  const database = configureDb(new DatabaseSync(path));
 
   try {
     database
@@ -79,6 +80,6 @@ export function initializeAppDatabase(path: string) {
 }
 
 export function initializeFlueDatabase(path: string) {
-  const database = new DatabaseSync(path);
+  const database = configureDb(new DatabaseSync(path));
   database.close();
 }
