@@ -5,7 +5,7 @@ Related: `.plans/ROADMAP.md` Phases 19–20 (machinery, marked complete)
 
 ## Findings — what is wired today
 
-The autopilot *engine* is complete; the *ignition* is missing.
+The autopilot _engine_ is complete; the _ignition_ is missing.
 
 **Wired:**
 
@@ -47,7 +47,7 @@ The autopilot *engine* is complete; the *ignition* is missing.
 
 Net: autopilot only acts when the user (or Neon in chat) explicitly drives it.
 Setting `draft-fix`/`auto-fix` modes in config currently changes what triage
-*would* decide, but triage never fires on its own.
+_would_ decide, but triage never fires on its own.
 
 ## Watch button semantics (current)
 

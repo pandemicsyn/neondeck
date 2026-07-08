@@ -32,7 +32,7 @@ REST API, serially, with all patch text shipped up front.
    reviews, review threads, check suites, check runs, and branch permissions —
    roughly seven request groups — just to render the thread panel.
 4. **GitHub truncates large diffs.** The REST API omits `patch` for large files
-   and caps the file list, so big PRs are both slow *and* incomplete (the UI
+   and caps the file list, so big PRs are both slow _and_ incomplete (the UI
    already shows "N truncated" badges).
 5. **All patches ship up front.** The file tree cannot render until every
    patch for every file has been fetched, parsed, and transferred, even though
@@ -76,7 +76,7 @@ instant local reads, with no truncation.
   - Compute `git merge-base <baseSha> <headSha>`; diff merge-base → head.
   - Extend `gitDiff` to accept an explicit `head` ref (today it diffs base vs
     the working tree; `git diff <base> <head>` is a trivial extension).
-  - Return the file metadata list (path/status/additions/deletions) *without*
+  - Return the file metadata list (path/status/additions/deletions) _without_
     patches, and per-file patches on demand with the existing `maxPatchBytes`
     guard.
 - Single-flight the fetch per repo (reuse `src/modules/worktrees/locks.ts` or
@@ -92,7 +92,7 @@ instant local reads, with no truncation.
 - New `GET /prs/:o/:r/:n/files/diff?path=&head=` returning a single file's
   patch, mirroring the prepared-diffs file-diff response shape.
 - Keep the SQLite payload cache for the GitHub fallback only; for the local
-  source, git *is* the cache (optionally memoize merge-base per
+  source, git _is_ the cache (optionally memoize merge-base per
   `(repo, baseSha, headSha)`).
 
 ### Phase 3 — Frontend lazy patch loading
