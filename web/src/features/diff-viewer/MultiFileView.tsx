@@ -33,6 +33,8 @@ type MultiFileViewProps = {
   selectedLines?: SelectedLineRange | null;
   onSelectedLinesChange?: (selection: SelectedLineRange | null) => void;
   footer?: ReactNode;
+  inspector?: ReactNode;
+  inspectorLabel?: string;
 };
 
 export function MultiFileView({
@@ -49,6 +51,8 @@ export function MultiFileView({
   selectedLines,
   onSelectedLinesChange,
   footer,
+  inspector,
+  inspectorLabel = 'Diff inspector',
   title,
   tone = 'primary',
 }: MultiFileViewProps) {
@@ -81,7 +85,13 @@ export function MultiFileView({
   const status = selectedFile ? filePatchStatus(selectedFile) : null;
 
   return (
-    <section className={cn('diff-multi-file', className)}>
+    <section
+      className={cn(
+        'diff-multi-file',
+        inspector ? 'diff-multi-file-with-inspector' : undefined,
+        className,
+      )}
+    >
       <aside className="diff-tree-pane">
         <FileTreePane
           files={files}
@@ -149,6 +159,11 @@ export function MultiFileView({
         ) : null}
         {footer}
       </div>
+      {inspector ? (
+        <aside aria-label={inspectorLabel} className="diff-inspector-pane">
+          {inspector}
+        </aside>
+      ) : null}
     </section>
   );
 }

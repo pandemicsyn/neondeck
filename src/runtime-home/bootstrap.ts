@@ -1,6 +1,6 @@
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -53,6 +53,9 @@ const seededRuntimeSkills = [
   },
 ];
 
+const initializedRuntimeDatabases = new Set<string>();
+const pendingRuntimeDatabaseInitializations = new Map<string, Promise<void>>();
+
 export async function ensureRuntimeHome(paths = runtimePaths()) {
   await mkdir(paths.home, { recursive: true });
   await mkdir(paths.data, { recursive: true });
@@ -69,8 +72,7 @@ export async function ensureRuntimeHome(paths = runtimePaths()) {
   await copyIfMissing(defaultDashboardSchemaPath, paths.dashboardSchema);
   await copyIfMissing(defaultSoulPath, paths.soul);
   await seedRuntimeSkills(paths);
-  initializeAppDatabase(paths.neondeckDatabase);
-  initializeFlueDatabase(paths.flueDatabase);
+  await ensureRuntimeDatabases(paths);
 }
 
 export function ensureRuntimeHomeSync(paths = runtimePaths()) {
@@ -89,6 +91,39 @@ export function ensureRuntimeHomeSync(paths = runtimePaths()) {
   copyIfMissingSync(defaultDashboardSchemaPath, paths.dashboardSchema);
   copyIfMissingSync(defaultSoulPath, paths.soul);
   seedRuntimeSkillsSync(paths);
+  ensureRuntimeDatabasesSync(paths);
+}
+
+async function ensureRuntimeDatabases(paths = runtimePaths()) {
+  const key = runtimeDatabaseKey(paths);
+  if (runtimeDatabasesAreInitialized(key, paths)) return;
+
+  const pending = pendingRuntimeDatabaseInitializations.get(key);
+  if (pending) {
+    await pending;
+    return;
+  }
+
+  const initialization = Promise.resolve()
+    .then(() => {
+      initializeRuntimeDatabases(paths);
+      initializedRuntimeDatabases.add(key);
+    })
+    .finally(() => {
+      pendingRuntimeDatabaseInitializations.delete(key);
+    });
+  pendingRuntimeDatabaseInitializations.set(key, initialization);
+  await initialization;
+}
+
+function ensureRuntimeDatabasesSync(paths = runtimePaths()) {
+  const key = runtimeDatabaseKey(paths);
+  if (runtimeDatabasesAreInitialized(key, paths)) return;
+  initializeRuntimeDatabases(paths);
+  initializedRuntimeDatabases.add(key);
+}
+
+function initializeRuntimeDatabases(paths = runtimePaths()) {
   initializeAppDatabase(paths.neondeckDatabase);
   initializeFlueDatabase(paths.flueDatabase);
 }
@@ -105,4 +140,16 @@ function seedRuntimeSkillsSync(paths = runtimePaths()) {
   for (const skill of seededRuntimeSkills) {
     copyIfMissingSync(skill.source, join(paths.skills, skill.id, 'SKILL.md'));
   }
+}
+
+function runtimeDatabaseKey(paths = runtimePaths()) {
+  return `${resolve(paths.neondeckDatabase)}\0${resolve(paths.flueDatabase)}`;
+}
+
+function runtimeDatabasesAreInitialized(key: string, paths = runtimePaths()) {
+  return (
+    initializedRuntimeDatabases.has(key) &&
+    existsSync(paths.neondeckDatabase) &&
+    existsSync(paths.flueDatabase)
+  );
 }

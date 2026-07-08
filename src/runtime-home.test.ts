@@ -9,6 +9,7 @@ import {
   resolveAgentModelSelection,
 } from './modules/runtime';
 import { parseMcpConfig } from './domains/mcp/schemas';
+import { initializeAppDatabase } from './runtime-home/app-db/index.ts';
 import {
   ConfigValidationError,
   ensureRuntimeHome,
@@ -203,6 +204,23 @@ describe('runtime home', () => {
       (region) => region.id === 'work',
     );
     expect(work?.tabs.map((tab) => tab.id)).toEqual(['github']);
+  });
+
+  it('does not rerun database bootstrap after initial runtime setup', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
+    tempRoots.push(root);
+    const paths = runtimePaths(root);
+
+    await ensureRuntimeHome(paths);
+
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database.exec('BEGIN EXCLUSIVE;');
+      await expect(ensureRuntimeHome(paths)).resolves.toBeUndefined();
+    } finally {
+      database.exec('ROLLBACK;');
+      database.close();
+    }
   });
 
   it('rejects malformed runtime config with a controlled validation error', async () => {
@@ -589,7 +607,7 @@ describe('runtime home', () => {
     ).rejects.toThrow(ConfigValidationError);
   });
 
-  it('reconciles existing duplicate unresolved notifications during bootstrap', async () => {
+  it('reconciles existing duplicate unresolved notifications during database initialization', async () => {
     const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
     tempRoots.push(root);
     const paths = runtimePaths(root);
@@ -630,7 +648,7 @@ describe('runtime home', () => {
       database.close();
     }
 
-    await ensureRuntimeHome(paths);
+    initializeAppDatabase(paths.neondeckDatabase);
 
     const result = new DatabaseSync(paths.neondeckDatabase);
     try {

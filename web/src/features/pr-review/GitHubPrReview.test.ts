@@ -7,6 +7,7 @@ import {
   commentInputFromSelection,
   failingCommentIdsFromError,
   normalizeReviewBody,
+  reviewDraftNeedsSubmitSave,
   reviewCommentPreview,
   staleDraftCommentIds,
 } from './review-helpers';
@@ -246,6 +247,16 @@ describe('GitHubPrReview helpers', () => {
     expect(normalizeReviewBody('  \n ')).toBeNull();
     expect(normalizeReviewBody(null)).toBeNull();
     expect(normalizeReviewBody(' Looks good. ')).toBe('Looks good.');
+  });
+
+  it('requires submit-time saving when the draft head is stale', () => {
+    const draft = draftWithComments([]);
+    expect(
+      reviewDraftNeedsSubmitSave(draft, draft.body, 'comment', 'head456'),
+    ).toBe(true);
+    expect(
+      reviewDraftNeedsSubmitSave(draft, draft.body, 'comment', draft.headSha),
+    ).toBe(false);
   });
 
   it('renders markdown draft comment bodies as plain annotation previews', () => {

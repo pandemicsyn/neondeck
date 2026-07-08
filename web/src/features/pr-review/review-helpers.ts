@@ -2,6 +2,7 @@ import type { SelectedLineRange } from '@pierre/diffs/react';
 import {
   ApiError,
   type GitHubPrReviewDraft,
+  type GitHubPrReviewVerdict,
   type GitHubPrReviewSubmitResponse,
 } from '../../api';
 import {
@@ -64,6 +65,20 @@ export function failingCommentIdsFromError(error: unknown) {
 export function normalizeReviewBody(value: string | null | undefined) {
   const trimmed = value?.trim() ?? '';
   return trimmed.length > 0 ? trimmed : null;
+}
+
+export function reviewDraftNeedsSubmitSave(
+  draft: Pick<GitHubPrReviewDraft, 'body' | 'headSha' | 'verdict'> | null,
+  normalizedBody: string | null,
+  verdict: GitHubPrReviewVerdict,
+  currentHeadSha: string,
+) {
+  return (
+    !draft ||
+    draft.body !== normalizedBody ||
+    draft.verdict !== verdict ||
+    draft.headSha !== currentHeadSha
+  );
 }
 
 export function reviewCommentPreview(

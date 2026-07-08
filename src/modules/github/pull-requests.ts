@@ -43,6 +43,7 @@ export async function fetchPullRequestDetail(options: {
   );
 
   return {
+    id: data.id,
     number: data.number,
     title: data.title,
     body: data.body ?? null,
@@ -50,6 +51,11 @@ export async function fetchPullRequestDetail(options: {
     url: data.html_url,
     state: data.state,
     draft: data.draft ?? false,
+    author: data.user?.login ?? 'unknown',
+    labels: (data.labels ?? [])
+      .map((label) => label.name)
+      .filter((name): name is string => Boolean(name)),
+    comments: data.comments ?? 0,
     merged: data.merged,
     mergeCommitSha: data.merge_commit_sha,
     headSha: data.head.sha,
@@ -63,6 +69,7 @@ export async function fetchPullRequestDetail(options: {
     mergeable: data.mergeable ?? null,
     mergeableState: data.mergeable_state ?? null,
     maintainerCanModify: data.maintainer_can_modify ?? false,
+    createdAt: data.created_at ?? data.updated_at,
     updatedAt: data.updated_at,
   };
 }

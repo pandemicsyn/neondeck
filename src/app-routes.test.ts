@@ -560,6 +560,170 @@ describe('app API safety routes', () => {
     }
   });
 
+  it('serves single PR metadata over the local GitHub API route', async () => {
+    const token = process.env.GITHUB_TOKEN;
+    const previousFetch = globalThis.fetch;
+    process.env.GITHUB_TOKEN = 'server-token';
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      expect(init?.headers).toMatchObject({
+        Authorization: 'Bearer server-token',
+      });
+      const url = String(input);
+      if (
+        url === 'https://api.github.com/repos/pandemicsyn/neondeck/pulls/123'
+      ) {
+        return new Response(
+          JSON.stringify({
+            number: 123,
+            title: 'Review workbench',
+            body: 'Review body',
+            html_url: 'https://github.com/pandemicsyn/neondeck/pull/123',
+            state: 'open',
+            draft: false,
+            user: { login: 'pandemicsyn' },
+            labels: [{ name: 'ui' }],
+            comments: 4,
+            merged: false,
+            merge_commit_sha: null,
+            updated_at: '2026-07-05T14:00:00Z',
+            created_at: '2026-07-04T14:00:00Z',
+            head: { sha: 'head123', ref: 'feature/review-popout' },
+            base: { sha: 'base123', ref: 'main' },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (
+        url ===
+        'https://api.github.com/repos/pandemicsyn/neondeck/commits/head123/check-runs?per_page=100'
+      ) {
+        return new Response(JSON.stringify({ check_runs: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (
+        url ===
+        'https://api.github.com/repos/pandemicsyn/neondeck/commits/head123/status'
+      ) {
+        return new Response(JSON.stringify({ statuses: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected GitHub fetch: ${url}`);
+    });
+    globalThis.fetch = fetchMock;
+    try {
+      const response = await app.request(
+        'http://localhost/api/github/prs/pandemicsyn/neondeck/123',
+        { headers: { host: 'localhost' } },
+      );
+      const body = (await response.json()) as {
+        ok: boolean;
+        data?: {
+          pullRequest?: {
+            repo?: string;
+            number?: number;
+            title?: string;
+            headSha?: string | null;
+            baseRef?: string | null;
+          };
+        };
+      };
+
+      expect(response.status).toBe(200);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(body).toMatchObject({
+        ok: true,
+        data: {
+          pullRequest: {
+            repo: 'pandemicsyn/neondeck',
+            number: 123,
+            title: 'Review workbench',
+            headSha: 'head123',
+            baseRef: 'main',
+          },
+        },
+      });
+    } finally {
+      globalThis.fetch = previousFetch;
+      if (token === undefined) {
+        delete process.env.GITHUB_TOKEN;
+      } else {
+        process.env.GITHUB_TOKEN = token;
+      }
+    }
+  });
+
+  it('serves single PR metadata when check enrichment fails', async () => {
+    const token = process.env.GITHUB_TOKEN;
+    const previousFetch = globalThis.fetch;
+    process.env.GITHUB_TOKEN = 'server-token';
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (
+        url === 'https://api.github.com/repos/pandemicsyn/neondeck/pulls/123'
+      ) {
+        return new Response(
+          JSON.stringify({
+            id: 1001,
+            number: 123,
+            title: 'Review workbench',
+            html_url: 'https://github.com/pandemicsyn/neondeck/pull/123',
+            state: 'open',
+            draft: false,
+            merged: false,
+            merge_commit_sha: null,
+            updated_at: '2026-07-05T14:00:00Z',
+            created_at: '2026-07-04T14:00:00Z',
+            head: { sha: 'head123' },
+            base: { ref: 'main' },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response(JSON.stringify({ message: 'checks unavailable' }), {
+        status: 403,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    globalThis.fetch = fetchMock;
+    try {
+      const response = await app.request(
+        'http://localhost/api/github/prs/pandemicsyn/neondeck/123',
+        { headers: { host: 'localhost' } },
+      );
+      const body = (await response.json()) as {
+        ok: boolean;
+        data?: {
+          pullRequest?: {
+            checkError?: string;
+            checks?: unknown;
+            title?: string;
+          };
+        };
+      };
+
+      expect(response.status).toBe(200);
+      expect(body.ok).toBe(true);
+      expect(body.data?.pullRequest).toMatchObject({
+        title: 'Review workbench',
+        checks: null,
+      });
+      expect(body.data?.pullRequest?.checkError).toContain(
+        'checks unavailable',
+      );
+    } finally {
+      globalThis.fetch = previousFetch;
+      if (token === undefined) {
+        delete process.env.GITHUB_TOKEN;
+      } else {
+        process.env.GITHUB_TOKEN = token;
+      }
+    }
+  });
+
   it('serves PR file diffs over the local GitHub API route without browser tokens', async () => {
     const token = process.env.GITHUB_TOKEN;
     const previousFetch = globalThis.fetch;

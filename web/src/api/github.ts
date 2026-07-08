@@ -4,6 +4,7 @@ import type {
   GitHubPrReviewSubmitResponse,
   GitHubPrReviewVerdict,
   GitHubPrThreadMutationResponse,
+  GitHubPullRequestDetailResponse,
   GitHubPullRequestFilesResponse,
   GitHubPullRequestResponse,
 } from './types';
@@ -11,6 +12,19 @@ import { deleteJson, getJson, patchJson, postJson, putJson } from './http';
 
 export async function getGitHubPullRequests() {
   return getJson<GitHubPullRequestResponse>('/api/github/prs');
+}
+
+export async function getGitHubPullRequest(input: {
+  repo: string;
+  number: number;
+}) {
+  const [owner, name] = parseRepo(input.repo);
+  const response = await getJson<GitHubPullRequestDetailResponse>(
+    `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}`,
+  );
+  const pullRequest = response.data?.pullRequest;
+  if (!pullRequest) throw new Error(response.message);
+  return pullRequest;
 }
 
 export async function getGitHubPullRequestFiles(input: {
@@ -220,9 +234,9 @@ export async function postGitHubPrThreadResolution(input: {
 }
 
 function parseRepo(repo: string): [string, string] {
-  const [owner, name] = repo.split('/');
-  if (!owner || !name) {
+  const parts = repo.split('/');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
     throw new Error(`Invalid GitHub repository "${repo}".`);
   }
-  return [owner, name];
+  return [parts[0], parts[1]];
 }

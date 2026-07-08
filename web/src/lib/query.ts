@@ -12,6 +12,8 @@ export const queryClient = new QueryClient({
 export const queryKeys = {
   dashboardConfig: ['dashboard-config'] as const,
   executionApprovals: ['execution-approvals'] as const,
+  githubPr: (repo: string, number: number) =>
+    ['github-pr', repo, number] as const,
   githubPrs: ['github-prs'] as const,
   hostMetrics: ['host-metrics'] as const,
   kiloTasks: ['kilo-tasks'] as const,

@@ -880,6 +880,12 @@ export const entries: SafetyPolicyEntry[] = [
     'Lists persisted PR watch event watermarks.',
   ),
   route(
+    '/api/github/prs/:owner/:repo/:number',
+    'Fetch PR metadata API',
+    readOnly,
+    'Local API route for fetching read-only PR metadata with the server-side GitHub token.',
+  ),
+  route(
     '/api/github/prs/:owner/:repo/:number/files',
     'Fetch PR file diffs API',
     readOnly,
