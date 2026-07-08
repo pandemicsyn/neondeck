@@ -2,10 +2,12 @@ import { useFlueClient } from '@flue/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useId, useState } from 'react';
 import {
+  getPrWatches,
   getGitHubPullRequests,
   getRepoRegistry,
   getWorkflowObservability,
   type GitHubPullRequest,
+  type NeonCommandResult,
   type WorkflowObservability,
 } from '../api';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
@@ -487,17 +489,29 @@ export function reviewWorkflowRefreshDecision(
 function WatchPrButton({ item }: { item: GitHubPullRequest }) {
   const flue = useFlueClient();
   const queryClient = useQueryClient();
+  const watchId = `${item.repo}#${item.number}`;
+  const { data: watchData } = useQuery({
+    queryKey: queryKeys.prWatches,
+    queryFn: getPrWatches,
+    refetchInterval: 30_000,
+  });
+  const existingWatch = watchData?.watches.find(
+    (watch) =>
+      watch.id.toLowerCase() === watchId.toLowerCase() ||
+      (watch.repoFullName.toLowerCase() === item.repo.toLowerCase() &&
+        watch.prNumber === item.number),
+  );
   const mutation = useMutation({
     mutationFn: async () => {
-      const run = await flue.workflows.invoke('watch-pr', {
+      const run = await flue.workflows.invoke('command-run', {
         input: {
-          ref: `${item.repo}#${item.number}`,
-          desiredTerminalState: 'checks',
+          command: `/watch-pr ${watchId}`,
+          surface: 'dashboard',
         },
         wait: 'result',
       });
       const result = {
-        ...(run.result as WatchPrWorkflowResult),
+        ...(run.result as NeonCommandResult),
         flueRunId: run.runId,
       };
       if (!result.ok) throw new Error(result.message);
@@ -513,31 +527,28 @@ function WatchPrButton({ item }: { item: GitHubPullRequest }) {
       });
     },
   });
+  const watched = Boolean(existingWatch || mutation.data);
 
   return (
     <Button
       className="min-h-[28px] shrink-0 border-line bg-transparent px-2 py-1 text-[10px] text-muted"
-      disabled={mutation.isPending}
+      disabled={mutation.isPending || Boolean(existingWatch)}
       onClick={() => mutation.mutate()}
       title={
         mutation.error
           ? queryErrorMessage(mutation.error)
-          : mutation.data
-            ? `${mutation.data.message} · run ${mutation.data.flueRunId}`
-            : 'Watch this PR until checks are green'
+          : existingWatch
+            ? `Watching ${existingWatch.id}`
+            : mutation.data
+              ? `${mutation.data.message} · run ${mutation.data.flueRunId}`
+              : 'Watch this PR until checks are green'
       }
       type="button"
     >
-      {mutation.isPending ? 'watching' : mutation.data ? 'watched' : 'watch'}
+      {mutation.isPending ? 'watching' : watched ? 'watched' : 'watch'}
     </Button>
   );
 }
-
-type WatchPrWorkflowResult = {
-  ok: boolean;
-  message: string;
-  flueRunId?: string;
-};
 
 type ReviewPrWorkflowAdmission = {
   runId: string;

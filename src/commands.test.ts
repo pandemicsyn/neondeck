@@ -8,6 +8,7 @@ import { listWorkflowSummaries } from './modules/app-state';
 import { readAgentModelSelectionSync } from './modules/runtime';
 import {
   commandRunAction,
+  inferWatchPrReferenceFromSession,
   parseNeonCommand,
   runNeonCommand,
 } from './modules/commands';
@@ -15,7 +16,7 @@ import type { CommandDependencies } from './modules/commands';
 import { updateAgentModels } from './modules/config';
 import { listRepoStatus, runDevDoctor } from './modules/runtime';
 import { runtimePaths } from './runtime-home';
-import { readNeonSessionState } from './modules/sessions';
+import { createChatSession, readNeonSessionState } from './modules/sessions';
 import { addPrWatch } from './modules/watches';
 
 const execFileAsync = promisify(execFile);
@@ -898,6 +899,80 @@ describe('Neon commands', () => {
         status: 'failed',
       },
     });
+  });
+
+  it('infers watch-pr refs from linked PR session metadata', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    const session = await createChatSession(
+      {
+        title: 'PR Kilo-Org/cloud#4443',
+        kind: 'task',
+        linkedTaskId: 'github-pr:Kilo-Org/cloud#4443',
+        uiMetadata: {
+          source: 'github-pr',
+          repo: 'Kilo-Org/cloud',
+          prNumber: 4443,
+        },
+      },
+      paths,
+    );
+    if (!session.ok || !('session' in session)) {
+      throw new Error('Expected session metadata.');
+    }
+
+    const addPrWatchStub: typeof addPrWatch = async (input) => ({
+      ok: true,
+      action: 'watch_pr_add',
+      changed: true,
+      outcome: 'created',
+      message: `Watching ${input.ref}.`,
+      watch: { id: input.ref },
+    });
+
+    await expect(
+      runNeonCommand(
+        { command: '/watch-pr', sessionId: session.session.id },
+        paths,
+        { addPrWatch: addPrWatchStub },
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      command: 'watch-pr',
+      status: 'completed',
+      data: {
+        inferredRef: 'Kilo-Org/cloud#4443',
+        watch: { id: 'Kilo-Org/cloud#4443' },
+      },
+    });
+  });
+
+  it('reads watch-pr refs from PR session ui metadata', () => {
+    expect(
+      inferWatchPrReferenceFromSession({
+        title: 'PR fallback/repo#1',
+        linkedTaskId: null,
+        summary: null,
+        uiMetadata: {
+          source: 'github-pr',
+          repo: 'Kilo-Org/cloud',
+          prNumber: '4443',
+        },
+      }),
+    ).toBe('Kilo-Org/cloud#4443');
+
+    expect(
+      inferWatchPrReferenceFromSession({
+        title: 'Watch fallback/repo#1',
+        linkedTaskId: null,
+        summary: null,
+        uiMetadata: {
+          source: 'pr-watch',
+          repoFullName: 'Kilo-Org/cloud',
+          prNumber: 4443,
+        },
+      }),
+    ).toBe('Kilo-Org/cloud#4443');
   });
 
   it('creates a release watch through slash command workflow', async () => {

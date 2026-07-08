@@ -3,6 +3,7 @@ import type { WorkflowSummaryRecord } from '../app-state';
 import type { fetchGitHubLogin, fetchPullRequestQueue } from '../github';
 import type { CiFixRunInput, createCiFailureDossierReport } from '../autopilot';
 import type { PrReviewAssistInput } from '../pr-review-assist';
+import type { addPrWatch } from '../watches';
 import * as v from 'valibot';
 
 export type NeonCommandName =
@@ -48,6 +49,12 @@ export type CommandDependencies = {
   ) => Promise<{ runId: string }>;
   invokeFixCiWorkflow?: (input: CiFixRunInput) => Promise<{ runId: string }>;
   createCiFailureDossierReport?: typeof createCiFailureDossierReport;
+  addPrWatch?: typeof addPrWatch;
+};
+
+export type CommandExecutionContext = {
+  sessionId?: string;
+  surface?: string;
 };
 
 export type ReviewQueueAction = {
@@ -61,6 +68,8 @@ export type ReviewQueueAction = {
 
 export const commandRunInputSchema = v.object({
   command: v.pipe(v.string(), v.minLength(1)),
+  sessionId: v.optional(v.pipe(v.string(), v.minLength(1))),
+  surface: v.optional(v.pipe(v.string(), v.minLength(1), v.maxLength(64))),
 });
 export const workflowSummaryRecordSchema = v.looseObject({
   id: v.string(),

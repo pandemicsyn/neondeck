@@ -5,10 +5,29 @@ import { runDocsDriftJob } from '../docs-drift';
 import { runIssueTriageJob } from '../issue-triage';
 import { runHygieneJob } from '../hygiene';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
+import {
+  checkAutopilotConcurrency,
+  normalizeAutopilotMode,
+  readRepoAutopilotConfig,
+  repoAutopilotPolicy,
+  type AutopilotMode,
+} from '../autopilot-policy';
+import {
+  listPrWatchEventWatermarks,
+  refreshPrWatchEventState,
+  type PrWatchEventWatermarkCategory,
+  type PrWatchEventWatermarkRecord,
+} from '../pr-events';
 import type { RuntimePaths } from '../../runtime-home';
+import {
+  parseAppConfig,
+  readRuntimeJson,
+  type RepoConfig,
+} from '../../runtime-home';
 import {
   listPrWatchRecords,
   listRefWatchRecords,
+  type PrWatch,
   refreshPrWatch,
   refreshRefWatch,
 } from '../watches';
@@ -26,7 +45,7 @@ export async function executeJob(
   dependencies: SchedulerDependencies,
 ): Promise<JobExecutionResult> {
   if (job.type === 'watch-pr') {
-    return refreshWatchJob(job, paths, dependencies.refreshPrWatch);
+    return refreshWatchJob(job, paths, dependencies);
   }
 
   if (job.type === 'watch-ref') {
@@ -110,6 +129,13 @@ export async function invokeScheduledWorkflow(
   if (workflow === 'briefing') {
     const module = await import('../../workflows/briefing');
     return invoke(module.default, { input: input as Record<string, never> });
+  }
+
+  if (workflow === 'triage-pr-event') {
+    const module = await import('../../workflows/triage-pr-event');
+    return invoke(module.default, {
+      input: input as never,
+    });
   }
 
   const module = await import('../../workflows/command-run');
@@ -329,8 +355,9 @@ export function readReleaseWatchResult(value: JsonValue | null) {
 export async function refreshWatchJob(
   job: JobRecord,
   paths: RuntimePaths,
-  refreshWatch: SchedulerDependencies['refreshPrWatch'] = refreshPrWatch,
+  dependencies: SchedulerDependencies = {},
 ): Promise<JobExecutionResult> {
+  const refreshWatch = dependencies.refreshPrWatch ?? refreshPrWatch;
   const config = readObjectConfig(job.config);
   const target =
     typeof config.id === 'string'
@@ -366,45 +393,676 @@ export async function refreshWatchJob(
     };
   }
 
+  const eventResults = await refreshWatchJobEvents(
+    results,
+    paths,
+    dependencies,
+  );
+  const eventFailures = eventResults.filter((result) => !result.ok);
   const changed = results.filter((result) => result.changed);
-  const notifications = changed.map((result) => {
-    const watch = result.watch as { id?: string; status?: string } | undefined;
-    const level: NotificationLevel =
-      watch?.status === 'closed' || watch?.status === 'attention-needed'
-        ? 'attention'
-        : watch?.status === 'merged' || watch?.status === 'green'
-          ? 'ready'
-          : 'info';
-    const title =
-      watch?.status === 'green'
-        ? 'PR watch green'
-        : watch?.status === 'attention-needed'
-          ? 'PR watch needs attention'
-          : watch?.status === 'merged'
-            ? 'PR watch merged'
-            : watch?.status === 'closed'
-              ? 'PR watch closed'
-              : 'PR watch changed';
+  const notifications: NonNullable<JobExecutionResult['notifications']> =
+    changed.map((result) => {
+      const watch = result.watch as
+        { id?: string; status?: string } | undefined;
+      const level: NotificationLevel =
+        watch?.status === 'closed' || watch?.status === 'attention-needed'
+          ? 'attention'
+          : watch?.status === 'merged' || watch?.status === 'green'
+            ? 'ready'
+            : 'info';
+      const title =
+        watch?.status === 'green'
+          ? 'PR watch green'
+          : watch?.status === 'attention-needed'
+            ? 'PR watch needs attention'
+            : watch?.status === 'merged'
+              ? 'PR watch merged'
+              : watch?.status === 'closed'
+                ? 'PR watch closed'
+                : 'PR watch changed';
 
-    return {
-      level,
-      title,
-      message: result.message,
-      source: 'watch-pr',
-      sourceId: watch?.id,
-      data: result.watch,
-    };
-  });
+      return {
+        level,
+        title,
+        message: result.message,
+        source: 'watch-pr',
+        sourceId: watch?.id,
+        data: result.watch,
+      };
+    });
+  notifications.push(
+    ...eventResults.flatMap((result) => result.notifications ?? []),
+  );
 
+  const eventChanges = eventResults.filter(
+    (result) => result.ok && result.changed,
+  );
   return {
-    outcome: changed.length > 0 ? 'updated' : 'silent',
-    message:
-      changed.length > 0
-        ? `Updated ${changed.length} PR watch${changed.length === 1 ? '' : 'es'}.`
-        : 'PR watch refresh had no changes.',
-    result: { results },
+    outcome:
+      eventFailures.length > 0
+        ? 'failed'
+        : changed.length > 0 || eventChanges.length > 0
+          ? 'updated'
+          : 'silent',
+    message: watchRefreshMessage(
+      changed.length,
+      eventChanges.length,
+      eventFailures.length,
+    ),
+    result: {
+      results,
+      ...(eventResults.length > 0 ? { eventResults } : {}),
+    },
     notifications,
   };
+}
+
+function watchRefreshMessage(
+  watchChanges: number,
+  eventChanges: number,
+  eventFailures: number,
+) {
+  if (eventFailures > 0) {
+    return `Failed to refresh ${eventFailures} PR event watch${eventFailures === 1 ? '' : 'es'}.`;
+  }
+  if (watchChanges > 0 && eventChanges > 0) {
+    return `Updated ${watchChanges} PR watch${watchChanges === 1 ? '' : 'es'} and ${eventChanges} PR event watch${eventChanges === 1 ? '' : 'es'}.`;
+  }
+  if (watchChanges > 0) {
+    return `Updated ${watchChanges} PR watch${watchChanges === 1 ? '' : 'es'}.`;
+  }
+  if (eventChanges > 0) {
+    return `Updated ${eventChanges} PR event watch${eventChanges === 1 ? '' : 'es'}.`;
+  }
+  return 'PR watch refresh had no changes.';
+}
+
+type WatchJobEventResult = {
+  ok: boolean;
+  changed: boolean;
+  watchId: string;
+  repoId: string;
+  repoFullName: string;
+  prNumber: number;
+  mode?: AutopilotMode;
+  changedCategories?: PrWatchEventWatermarkCategory[];
+  deltas?: JsonValue[];
+  message: string;
+  refresh?: JsonValue;
+  triage?: JsonValue;
+  notifications?: JobExecutionResult['notifications'];
+};
+
+async function refreshWatchJobEvents(
+  results: Awaited<
+    ReturnType<NonNullable<SchedulerDependencies['refreshPrWatch']>>
+  >[],
+  paths: RuntimePaths,
+  dependencies: SchedulerDependencies,
+): Promise<WatchJobEventResult[]> {
+  if (!dependencies.refreshPrWatchEventState && !process.env.GITHUB_TOKEN) {
+    return [];
+  }
+
+  const watches = await listPrWatchRecords(paths);
+  const watchById = new Map(watches.map((watch) => [watch.id, watch]));
+  const targetWatches = results
+    .map((result) => watchIdFromResult(result))
+    .filter((id): id is string => Boolean(id))
+    .map((id) => watchById.get(id))
+    .filter((watch): watch is PrWatch => Boolean(watch));
+
+  const eventResults: WatchJobEventResult[] = [];
+  for (const watch of targetWatches) {
+    eventResults.push(await refreshOneWatchEvent(watch, paths, dependencies));
+  }
+
+  return eventResults;
+}
+
+async function refreshOneWatchEvent(
+  watch: PrWatch,
+  paths: RuntimePaths,
+  dependencies: SchedulerDependencies,
+): Promise<WatchJobEventResult> {
+  const listWatermarks =
+    dependencies.listPrWatchEventWatermarks ?? listPrWatchEventWatermarks;
+  const refreshEvents =
+    dependencies.refreshPrWatchEventState ?? refreshPrWatchEventState;
+  const previousResult = await listWatermarks({ watchId: watch.id }, paths);
+  const previousWatermarks = watermarksFromActionResult(previousResult);
+  const refresh = await refreshEvents({ watchId: watch.id }, paths);
+  if (!refresh.ok) {
+    return {
+      ok: false,
+      changed: false,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      message: refresh.message,
+      refresh: refresh as unknown as JsonValue,
+      notifications: [
+        {
+          level: 'attention',
+          title: 'PR event refresh failed',
+          message: refresh.message,
+          source: 'watch-pr-events',
+          sourceId: watch.id,
+          data: refresh,
+        },
+      ],
+    };
+  }
+
+  const changedCategories = changedCategoriesFromActionResult(refresh);
+  if (changedCategories.length === 0) {
+    return {
+      ok: true,
+      changed: false,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      message: refresh.message,
+      refresh: refresh as unknown as JsonValue,
+    };
+  }
+
+  const currentWatermarks = watermarksFromActionResult(refresh);
+  const deltas = deltasFromChangedCategories(
+    changedCategories,
+    currentWatermarks,
+  );
+  const current = snapshotFromWatermarks(currentWatermarks);
+  const previous = snapshotFromWatermarks(previousWatermarks);
+  const policy = await readEffectiveWatchAutopilotPolicy(watch, paths);
+  const mode = policy.mode;
+  const notifications: JobExecutionResult['notifications'] = [
+    prEventNotification(
+      watch,
+      changedCategories,
+      currentWatermarks,
+      deltas,
+      mode,
+    ),
+  ];
+  let triage: JsonValue | undefined;
+
+  if (mode !== 'notify-only' && deltas.length > 0) {
+    const concurrencyCheck =
+      dependencies.checkAutopilotConcurrency ?? checkAutopilotConcurrency;
+    const concurrency = await concurrencyCheck(
+      {
+        repoId: watch.repoId,
+        prNumber: watch.prNumber,
+        workflow: 'triage-pr-event',
+        mutation: false,
+      },
+      paths,
+    );
+
+    if (!concurrency.allowed) {
+      triage = {
+        status: 'blocked',
+        reason: concurrency.message,
+        concurrency,
+      } as unknown as JsonValue;
+      notifications.push({
+        level: 'attention',
+        title: 'Autopilot triage blocked',
+        message: concurrency.message,
+        source: 'autopilot',
+        sourceId: `triage:${watch.id}:blocked`,
+        data: {
+          watchId: watch.id,
+          repoId: watch.repoId,
+          repoFullName: watch.repoFullName,
+          prNumber: watch.prNumber,
+          concurrency,
+        },
+      });
+    } else {
+      const invokeWorkflow =
+        dependencies.invokeWorkflow ?? invokeScheduledWorkflow;
+      const input = compactObject({
+        repoId: watch.repoId,
+        repoFullName: watch.repoFullName,
+        prNumber: watch.prNumber,
+        watchId: watch.id,
+        eventId: prEventSourceId(watch, changedCategories, currentWatermarks),
+        source: 'watch',
+        autopilotMode: triageModeForPolicy(mode),
+        previous,
+        current,
+        deltas,
+      });
+      try {
+        const { runId } = await invokeWorkflow(
+          'triage-pr-event',
+          input as JsonValue,
+        );
+        triage = {
+          status: 'admitted',
+          runId,
+          workflow: 'triage-pr-event',
+          input,
+        } as unknown as JsonValue;
+      } catch (error) {
+        const message = `Autopilot triage admission failed: ${errorMessage(error)}.`;
+        triage = {
+          status: 'failed',
+          error: errorMessage(error),
+        } as unknown as JsonValue;
+        notifications.push({
+          level: 'attention',
+          title: 'Autopilot triage failed',
+          message,
+          source: 'autopilot',
+          sourceId: `triage:${watch.id}:failed`,
+          data: {
+            watchId: watch.id,
+            repoId: watch.repoId,
+            repoFullName: watch.repoFullName,
+            prNumber: watch.prNumber,
+            error: errorMessage(error),
+          },
+        });
+        return {
+          ok: false,
+          changed: true,
+          watchId: watch.id,
+          repoId: watch.repoId,
+          repoFullName: watch.repoFullName,
+          prNumber: watch.prNumber,
+          mode,
+          changedCategories,
+          deltas,
+          message,
+          refresh: refresh as unknown as JsonValue,
+          triage,
+          notifications,
+        };
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    changed: true,
+    watchId: watch.id,
+    repoId: watch.repoId,
+    repoFullName: watch.repoFullName,
+    prNumber: watch.prNumber,
+    mode,
+    changedCategories,
+    deltas,
+    message: refresh.message,
+    refresh: refresh as unknown as JsonValue,
+    triage,
+    notifications,
+  };
+}
+
+async function readEffectiveWatchAutopilotPolicy(
+  watch: PrWatch,
+  paths: RuntimePaths,
+) {
+  const [registry, appConfig] = await Promise.all([
+    readRepoRegistrySnapshot(paths),
+    readRuntimeJson(paths.config, parseAppConfig),
+  ]);
+  const repo = registry.repos.find(
+    (candidate) => candidate.id === watch.repoId,
+  );
+  if (!repo) {
+    return { mode: 'notify-only' as AutopilotMode };
+  }
+
+  const repoPolicy = repoAutopilotPolicy(repo, appConfig);
+  const override = watchAutopilotOverride(repo, watch);
+  return {
+    ...repoPolicy,
+    mode: override?.mode
+      ? normalizeAutopilotMode(override.mode)
+      : repoPolicy.mode,
+  };
+}
+
+function watchAutopilotOverride(repo: RepoConfig, watch: PrWatch) {
+  return readRepoAutopilotConfig(repo)?.watchOverrides?.find(
+    (candidate) =>
+      candidate.watchId === watch.id || candidate.prNumber === watch.prNumber,
+  );
+}
+
+function watchIdFromResult(result: unknown) {
+  const watch = readObjectConfig(
+    result && typeof result === 'object' && !Array.isArray(result)
+      ? (result as { watch?: unknown }).watch
+      : undefined,
+  );
+  const id = watch.id;
+  return typeof id === 'string' ? id : undefined;
+}
+
+function changedCategoriesFromActionResult(result: unknown) {
+  const data = dataFromActionResult(result);
+  const categories = Array.isArray(data.changedCategories)
+    ? data.changedCategories
+    : [];
+  return categories.filter(isWatermarkCategory);
+}
+
+function watermarksFromActionResult(result: unknown) {
+  const data = dataFromActionResult(result);
+  const watermarks = Array.isArray(data.watermarks) ? data.watermarks : [];
+  return watermarks
+    .map(readWatermarkLike)
+    .filter((item): item is PrWatchEventWatermarkRecord => Boolean(item));
+}
+
+function dataFromActionResult(result: unknown) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return {};
+  return readObjectConfig((result as { data?: unknown }).data);
+}
+
+function readWatermarkLike(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const category = record.category;
+  if (!isWatermarkCategory(category)) return null;
+  return {
+    watchId: typeof record.watchId === 'string' ? record.watchId : '',
+    category,
+    watermark: (record.watermark ?? null) as JsonValue,
+    sourceUpdatedAt:
+      typeof record.sourceUpdatedAt === 'string'
+        ? record.sourceUpdatedAt
+        : null,
+    checkedAt: typeof record.checkedAt === 'string' ? record.checkedAt : '',
+    createdAt: typeof record.createdAt === 'string' ? record.createdAt : '',
+    updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : '',
+  };
+}
+
+function isWatermarkCategory(
+  value: unknown,
+): value is PrWatchEventWatermarkCategory {
+  return (
+    value === 'commits' ||
+    value === 'review_threads' ||
+    value === 'requested_changes_reviews' ||
+    value === 'check_suites' ||
+    value === 'check_runs' ||
+    value === 'mergeability' ||
+    value === 'out_of_date_branch'
+  );
+}
+
+function deltasFromChangedCategories(
+  categories: PrWatchEventWatermarkCategory[],
+  watermarks: PrWatchEventWatermarkRecord[],
+) {
+  return categories.map((category) =>
+    deltaFromWatermark(category, watermarkPayload(watermarks, category)),
+  );
+}
+
+function deltaFromWatermark(
+  category: PrWatchEventWatermarkCategory,
+  payload: Record<string, unknown>,
+) {
+  if (category === 'commits') {
+    return jsonRecord({
+      type: 'new-commit',
+      id: stringField(payload.headSha) ?? category,
+      summary: `PR commits changed (${numberField(payload.total) ?? 0} total).`,
+      requiresExplanation: true,
+      severity: 'low',
+    });
+  }
+
+  if (category === 'review_threads') {
+    const unresolved = arrayField(payload.unresolvedThreadIds);
+    if (unresolved.length > 0) {
+      return jsonRecord({
+        type: 'review-comment',
+        id: `${category}:${unresolved.join(',')}`,
+        summary: `${unresolved.length} unresolved review thread${unresolved.length === 1 ? '' : 's'}.`,
+        actionable: true,
+        severity: 'medium',
+      });
+    }
+    return jsonRecord({
+      type: 'review-thread-resolved',
+      id: category,
+      summary: 'Review thread state changed.',
+      severity: 'low',
+    });
+  }
+
+  if (category === 'requested_changes_reviews') {
+    const reviewIds = arrayField(payload.reviewIds);
+    return jsonRecord({
+      type: 'requested-changes',
+      id: `${category}:${reviewIds.join(',') || 'latest'}`,
+      summary: `${numberField(payload.total) ?? reviewIds.length} requested-changes review${(numberField(payload.total) ?? reviewIds.length) === 1 ? '' : 's'}.`,
+      actionable: true,
+      severity: 'high',
+    });
+  }
+
+  if (category === 'check_suites' || category === 'check_runs') {
+    const failingIds = arrayField(
+      category === 'check_suites'
+        ? payload.failingSuiteIds
+        : payload.failingRunIds,
+    );
+    const pendingIds = arrayField(
+      category === 'check_suites'
+        ? payload.pendingSuiteIds
+        : payload.pendingRunIds,
+    );
+    if (failingIds.length > 0) {
+      return jsonRecord({
+        type: 'check-failure',
+        id: `${category}:${failingIds.join(',')}`,
+        summary: `${failingIds.length} failing ${category === 'check_suites' ? 'check suite' : 'check run'}${failingIds.length === 1 ? '' : 's'}.`,
+        actionable: true,
+        severity: 'high',
+      });
+    }
+    return jsonRecord({
+      type: pendingIds.length > 0 ? 'metadata' : 'check-recovery',
+      id: category,
+      summary:
+        pendingIds.length > 0
+          ? `${pendingIds.length} pending check ${pendingIds.length === 1 ? 'item' : 'items'}.`
+          : 'Check state recovered.',
+      severity: pendingIds.length > 0 ? 'low' : 'medium',
+    });
+  }
+
+  if (category === 'mergeability') {
+    if (payload.mergeable === false) {
+      return jsonRecord({
+        type: 'merge-conflict',
+        id: category,
+        summary: 'PR is not currently mergeable.',
+        requiresExplanation: true,
+        severity: 'medium',
+      });
+    }
+    return jsonRecord({
+      type: 'metadata',
+      id: category,
+      summary: 'Mergeability changed.',
+      severity: 'low',
+    });
+  }
+
+  if (payload.isOutOfDate === true) {
+    return jsonRecord({
+      type: 'branch-out-of-date',
+      id: category,
+      summary: 'PR branch is out of date with the base branch.',
+      requiresExplanation: true,
+      severity: 'medium',
+    });
+  }
+
+  return jsonRecord({
+    type: 'metadata',
+    id: category,
+    summary: 'PR branch freshness changed.',
+    severity: 'low',
+  });
+}
+
+function snapshotFromWatermarks(watermarks: PrWatchEventWatermarkRecord[]) {
+  const mergeability = watermarkPayload(watermarks, 'mergeability');
+  const outOfDate = watermarkPayload(watermarks, 'out_of_date_branch');
+  return compactObject({
+    state: stringField(mergeability.state),
+    merged: booleanField(mergeability.merged),
+    mergeable: booleanField(mergeability.mergeable),
+    outOfDate: booleanField(outOfDate.isOutOfDate),
+    headSha:
+      stringField(mergeability.headSha) ?? stringField(outOfDate.headSha),
+    baseRef: stringField(outOfDate.baseRef),
+    checkStatus: checkStatusFromWatermarks(watermarks),
+  });
+}
+
+function checkStatusFromWatermarks(watermarks: PrWatchEventWatermarkRecord[]) {
+  const runs = watermarkPayload(watermarks, 'check_runs');
+  const suites = watermarkPayload(watermarks, 'check_suites');
+  const failing =
+    arrayField(runs.failingRunIds).length +
+    arrayField(suites.failingSuiteIds).length;
+  if (failing > 0) return 'failure';
+
+  const pending =
+    arrayField(runs.pendingRunIds).length +
+    arrayField(suites.pendingSuiteIds).length;
+  if (pending > 0) return 'pending';
+
+  const total =
+    (numberField(runs.total) ?? 0) + (numberField(suites.total) ?? 0);
+  return total > 0 ? 'success' : undefined;
+}
+
+function watermarkPayload(
+  watermarks: PrWatchEventWatermarkRecord[],
+  category: PrWatchEventWatermarkCategory,
+) {
+  return readObjectConfig(
+    watermarks.find((watermark) => watermark.category === category)?.watermark,
+  );
+}
+
+function prEventNotification(
+  watch: PrWatch,
+  categories: PrWatchEventWatermarkCategory[],
+  watermarks: PrWatchEventWatermarkRecord[],
+  deltas: Array<Record<string, unknown>>,
+  mode: AutopilotMode,
+) {
+  const actionable = deltas.some((delta) => delta.actionable === true);
+  const requestedChanges = deltas.some(
+    (delta) => delta.type === 'requested-changes',
+  );
+  const reviewFeedback = deltas.some(
+    (delta) => delta.type === 'review-comment',
+  );
+  const checkFailure = deltas.some((delta) => delta.type === 'check-failure');
+  const title = requestedChanges
+    ? 'PR watch requested changes'
+    : reviewFeedback
+      ? 'PR watch review feedback'
+      : checkFailure
+        ? 'PR watch checks failed'
+        : 'PR watch event changed';
+  const message = `${watch.repoFullName}#${watch.prNumber}: ${deltas
+    .map((delta) => stringField(delta.summary))
+    .filter(Boolean)
+    .join(' ')}`;
+
+  return {
+    level: actionable ? ('attention' as const) : ('info' as const),
+    title,
+    message,
+    source: 'watch-pr-events',
+    sourceId: prEventSourceId(watch, categories, watermarks),
+    data: {
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      mode,
+      changedCategories: categories,
+      deltas,
+    },
+  };
+}
+
+function prEventSourceId(
+  watch: PrWatch,
+  categories: PrWatchEventWatermarkCategory[],
+  watermarks: PrWatchEventWatermarkRecord[],
+) {
+  const latest = latestWatermarkTimestamp(watermarks, categories);
+  return `${watch.id}:${[...categories].sort().join('+')}:${latest ?? 'unknown'}`;
+}
+
+function latestWatermarkTimestamp(
+  watermarks: PrWatchEventWatermarkRecord[],
+  categories: PrWatchEventWatermarkCategory[],
+) {
+  return watermarks
+    .filter((watermark) => categories.includes(watermark.category))
+    .map((watermark) => watermark.sourceUpdatedAt ?? watermark.updatedAt)
+    .filter(Boolean)
+    .sort()
+    .at(-1);
+}
+
+function triageModeForPolicy(mode: AutopilotMode) {
+  if (mode === 'prepare-only') return 'draft-fix';
+  if (mode === 'autofix-with-approval') return 'auto-fix-no-push';
+  if (mode === 'autofix-push-when-safe') {
+    return 'auto-fix-push-after-checks';
+  }
+  return mode;
+}
+
+function compactObject(value: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== undefined),
+  );
+}
+
+function jsonRecord(value: Record<string, unknown>) {
+  return compactObject(value) as Record<string, JsonValue>;
+}
+
+function arrayField(value: unknown) {
+  return Array.isArray(value) ? value : [];
+}
+
+function stringField(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function numberField(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function booleanField(value: unknown) {
+  return typeof value === 'boolean' ? value : undefined;
 }
 
 export async function refreshRefWatchJob(
