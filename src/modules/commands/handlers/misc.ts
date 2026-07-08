@@ -410,10 +410,7 @@ export function inferWatchPrReferenceFromSession(
     }
   }
 
-  return (
-    readPrReferenceFromText(session.title) ??
-    readPrReferenceFromText(session.summary)
-  );
+  return null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -434,11 +431,6 @@ function readMetadataPrNumber(value: unknown) {
   }
 
   return null;
-}
-
-function readPrReferenceFromText(value: string | null) {
-  const match = value?.match(/\b([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+#\d+)\b/);
-  return match?.[1] ?? null;
 }
 
 export async function watchReleaseCommand(

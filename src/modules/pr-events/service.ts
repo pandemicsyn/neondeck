@@ -1136,7 +1136,10 @@ export async function refreshPrWatchEventState(
       const existing = previous.find(
         (record) => record.category === item.category,
       );
-      return stableJson(existing?.watermark ?? null) !== stableJson(item.value);
+      return (
+        stableJson(comparableWatermark(item.category, existing?.watermark)) !==
+        stableJson(comparableWatermark(item.category, item.value))
+      );
     })
     .map((item) => item.category);
 
@@ -1158,6 +1161,24 @@ export async function refreshPrWatchEventState(
       ) as unknown as JsonValue,
     },
   );
+}
+
+function comparableWatermark(category: string, value: unknown) {
+  if (category !== 'mergeability') return value ?? null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value ?? null;
+  }
+  const record = value as Record<string, unknown>;
+  return {
+    state: record.state,
+    draft: typeof record.draft === 'boolean' ? record.draft : false,
+    merged: record.merged,
+    mergeable: record.mergeable,
+    mergeableState: record.mergeableState,
+    mergeCommitSha: record.mergeCommitSha,
+    headSha: record.headSha,
+    baseSha: record.baseSha,
+  };
 }
 
 export async function listPrWatchEventWatermarks(

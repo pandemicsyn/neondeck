@@ -426,6 +426,101 @@ describe('PR watch actions', () => {
     });
   });
 
+  it('re-arms terminal PR watches when watch-pr is run again', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () =>
+      prDetail({ state: 'open', updatedAt: '2026-06-27T20:00:00Z' }),
+    );
+    await refreshPrWatch(
+      { id: 'pandemicsyn/neondeck#123' },
+      paths,
+      async () =>
+        prDetail({
+          state: 'closed',
+          merged: false,
+          updatedAt: '2026-06-27T20:05:00Z',
+        }),
+      async () => checkSummary('none'),
+    );
+
+    await expect(
+      addPrWatch(
+        { ref: 'neondeck#123' },
+        paths,
+        async () =>
+          prDetail({
+            state: 'open',
+            merged: false,
+            updatedAt: '2026-06-27T20:10:00Z',
+          }),
+        async () => checkSummary('pending'),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'updated',
+      watch: {
+        status: 'watching',
+        prState: 'open',
+        lastSnapshot: {
+          checks: null,
+        },
+      },
+    });
+  });
+
+  it('re-arms green PR watches when watch-pr is run again', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () =>
+      prDetail({ state: 'open', updatedAt: '2026-06-27T20:00:00Z' }),
+    );
+    await refreshPrWatch(
+      { id: 'pandemicsyn/neondeck#123' },
+      paths,
+      async () =>
+        prDetail({
+          state: 'closed',
+          merged: true,
+          mergeCommitSha: 'abc123',
+          updatedAt: '2026-06-27T20:05:00Z',
+        }),
+      async () => checkSummary('success'),
+    );
+
+    await expect(
+      addPrWatch(
+        { ref: 'neondeck#123' },
+        paths,
+        async () =>
+          prDetail({
+            state: 'closed',
+            merged: true,
+            mergeCommitSha: 'abc123',
+            updatedAt: '2026-06-27T20:10:00Z',
+          }),
+        async () => checkSummary('success'),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'updated',
+      watch: {
+        status: 'green',
+        prState: 'closed',
+        lastSnapshot: {
+          checks: { status: 'success' },
+          updatedAt: '2026-06-27T20:10:00Z',
+        },
+      },
+    });
+  });
+
   it('creates a linked release watch job for until prod PR watches', async () => {
     const home = await tempHome();
     const paths = runtimePaths(home);

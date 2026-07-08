@@ -8,9 +8,7 @@ import { runHygieneJob } from '../hygiene';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import {
   checkAutopilotConcurrency,
-  normalizeAutopilotMode,
-  readRepoAutopilotConfig,
-  repoAutopilotPolicy,
+  repoAutopilotPolicyForWatch,
   type AutopilotMode,
 } from '../autopilot-policy';
 import {
@@ -20,11 +18,7 @@ import {
   type PrWatchEventWatermarkRecord,
 } from '../pr-events';
 import type { RuntimePaths } from '../../runtime-home';
-import {
-  parseAppConfig,
-  readRuntimeJson,
-  type RepoConfig,
-} from '../../runtime-home';
+import { parseAppConfig, readRuntimeJson } from '../../runtime-home';
 import {
   listPrWatchRecords,
   listRefWatchRecords,
@@ -379,10 +373,18 @@ export async function refreshWatchJob(
 
   const failures = results.filter((result) => !result.ok);
   if (failures.length > 0) {
+    const pendingEventResults = pendingEventResultsFromJobResult(
+      job.lastResult,
+    );
     return {
       outcome: 'failed',
       message: `Failed to refresh ${failures.length} PR watch${failures.length === 1 ? '' : 'es'}.`,
-      result: { results },
+      result: {
+        results,
+        ...(pendingEventResults.length > 0
+          ? { eventResults: pendingEventResults }
+          : {}),
+      },
       notifications: failures.map((result) => ({
         level: 'attention',
         title: 'PR watch refresh failed',
@@ -557,6 +559,7 @@ async function refreshOneWatchEvent(
   const previousWatermarks = watermarksFromActionResult(previousResult);
   const refresh = await refreshEvents({ watchId: watch.id }, paths);
   if (!refresh.ok) {
+    const triage = triageValue(pendingTriageSnapshots(pendingTriageEvents));
     return {
       ok: false,
       changed: false,
@@ -566,6 +569,7 @@ async function refreshOneWatchEvent(
       prNumber: watch.prNumber,
       message: refresh.message,
       refresh: refresh as unknown as JsonValue,
+      triage,
       notifications: [
         {
           level: 'attention',
@@ -583,7 +587,16 @@ async function refreshOneWatchEvent(
   const policy = await readEffectiveWatchAutopilotPolicy(watch, paths);
   const mode = policy.mode;
   if (changedCategories.length === 0) {
-    if (mode !== 'notify-only' && pendingTriageEvents.length > 0) {
+    if (pendingTriageEvents.length > 0) {
+      if (mode === 'notify-only') {
+        return preservedPendingWatchTriage(
+          watch,
+          pendingTriageEvents,
+          refresh as unknown as JsonValue,
+          mode,
+        );
+      }
+
       return retryPendingWatchTriage(
         watch,
         pendingTriageEvents,
@@ -640,7 +653,48 @@ async function refreshOneWatchEvent(
   ];
   let triage: JsonValue | undefined;
 
-  if (mode !== 'notify-only' && deltas.length > 0) {
+  const triageAttempts: JsonValue[] = [];
+  if (pendingTriageEvents.length > 0) {
+    if (!shouldRetainPendingTriage(currentWatermarks, deltas)) {
+      triageAttempts.push(
+        ...supersededPendingTriageSnapshots(pendingTriageEvents, deltas),
+      );
+    } else if (mode === 'notify-only') {
+      triageAttempts.push(...pendingTriageSnapshots(pendingTriageEvents));
+    } else {
+      const retry = await admitWatchTriageEvents(
+        watch,
+        paths,
+        dependencies,
+        pendingTriageEvents.map((event) => event.input),
+      );
+      notifications.push(...retry.notifications);
+      triageAttempts.push(...retry.triage);
+      if (!retry.ok) {
+        return {
+          ok: false,
+          changed: true,
+          watchId: watch.id,
+          repoId: watch.repoId,
+          repoFullName: watch.repoFullName,
+          prNumber: watch.prNumber,
+          mode,
+          changedCategories,
+          deltas,
+          message: retry.message ?? 'Autopilot triage admission failed.',
+          refresh: refresh as unknown as JsonValue,
+          triage: triageValue(triageAttempts),
+          notifications,
+        };
+      }
+    }
+  }
+
+  if (
+    mode !== 'notify-only' &&
+    deltas.length > 0 &&
+    shouldAdmitTriageForDeltas(deltas)
+  ) {
     const input = jsonRecord({
       repoId: watch.repoId,
       repoFullName: watch.repoFullName,
@@ -660,7 +714,7 @@ async function refreshOneWatchEvent(
       input,
     );
     notifications.push(...admission.notifications);
-    triage = admission.triage;
+    if (admission.triage) triageAttempts.push(admission.triage);
     if (!admission.ok) {
       return {
         ok: false,
@@ -674,11 +728,12 @@ async function refreshOneWatchEvent(
         deltas,
         message: admission.message ?? 'Autopilot triage admission failed.',
         refresh: refresh as unknown as JsonValue,
-        triage,
+        triage: triageValue(triageAttempts),
         notifications,
       };
     }
   }
+  triage = triageValue(triageAttempts);
 
   return {
     ok: true,
@@ -697,6 +752,26 @@ async function refreshOneWatchEvent(
   };
 }
 
+function preservedPendingWatchTriage(
+  watch: PrWatch,
+  pendingEvents: PendingWatchTriageEvent[],
+  refresh: JsonValue,
+  mode: AutopilotMode,
+): WatchJobEventResult {
+  return {
+    ok: true,
+    changed: false,
+    watchId: watch.id,
+    repoId: watch.repoId,
+    repoFullName: watch.repoFullName,
+    prNumber: watch.prNumber,
+    mode,
+    message: `Preserved ${pendingEvents.length} pending autopilot triage event${pendingEvents.length === 1 ? '' : 's'} for ${watch.id}.`,
+    refresh,
+    triage: pendingTriageSnapshots(pendingEvents),
+  };
+}
+
 async function retryPendingWatchTriage(
   watch: PrWatch,
   pendingEvents: PendingWatchTriageEvent[],
@@ -705,55 +780,73 @@ async function retryPendingWatchTriage(
   refresh: JsonValue,
   mode: AutopilotMode,
 ): Promise<WatchJobEventResult> {
-  const notifications: NonNullable<JobExecutionResult['notifications']> = [];
-  const retried = [];
-
-  for (const pending of pendingEvents) {
-    const admission = await admitWatchTriageEvent(
-      watch,
-      paths,
-      dependencies,
-      pending.input,
-    );
-    notifications.push(...admission.notifications);
-    retried.push({
-      eventId: pending.eventId,
-      reason: pending.reason,
-      triage: admission.triage,
-    });
-    if (!admission.ok) {
-      return {
-        ok: false,
-        changed: true,
-        watchId: watch.id,
-        repoId: watch.repoId,
-        repoFullName: watch.repoFullName,
-        prNumber: watch.prNumber,
-        mode,
-        message: admission.message ?? 'Autopilot triage admission failed.',
-        refresh,
-        triage: admission.triage,
-        notifications,
-      };
-    }
+  const retry = await admitWatchTriageEvents(
+    watch,
+    paths,
+    dependencies,
+    pendingEvents.map((event) => event.input),
+  );
+  if (!retry.ok) {
+    return {
+      ok: false,
+      changed: true,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      mode,
+      message: retry.message ?? 'Autopilot triage admission failed.',
+      refresh,
+      triage: triageValue(retry.triage),
+      notifications: retry.notifications,
+    };
   }
 
   return {
     ok: true,
-    changed: retried.length > 0,
+    changed: retry.triage.length > 0,
     watchId: watch.id,
     repoId: watch.repoId,
     repoFullName: watch.repoFullName,
     prNumber: watch.prNumber,
     mode,
     message:
-      retried.length > 0
-        ? `Retried ${retried.length} pending autopilot triage event${retried.length === 1 ? '' : 's'} for ${watch.id}.`
+      retry.triage.length > 0
+        ? `Retried ${retry.triage.length} pending autopilot triage event${retry.triage.length === 1 ? '' : 's'} for ${watch.id}.`
         : `No PR event watermark changes for ${watch.id}.`,
     refresh,
-    triage: retried.length === 1 ? retried[0].triage : (retried as JsonValue),
-    notifications,
+    triage: triageValue(retry.triage),
+    notifications: retry.notifications,
   };
+}
+
+async function admitWatchTriageEvents(
+  watch: PrWatch,
+  paths: RuntimePaths,
+  dependencies: SchedulerDependencies,
+  inputs: Array<Record<string, JsonValue>>,
+) {
+  const notifications: NonNullable<JobExecutionResult['notifications']> = [];
+  const triage: JsonValue[] = [];
+  let ok = true;
+  let message: string | undefined;
+
+  for (const input of inputs) {
+    const admission = await admitWatchTriageEvent(
+      watch,
+      paths,
+      dependencies,
+      input,
+    );
+    notifications.push(...admission.notifications);
+    if (admission.triage) triage.push(admission.triage);
+    if (!admission.ok) {
+      ok = false;
+      message = admission.message ?? message;
+    }
+  }
+
+  return { ok, triage, notifications, message };
 }
 
 async function admitWatchTriageEvent(
@@ -856,32 +949,101 @@ async function admitWatchTriageEvent(
   }
 }
 
+function pendingEventResultsFromJobResult(value: JsonValue | null) {
+  return readJsonArray(readObjectConfig(value).eventResults).filter(
+    (eventResult) => pendingTriageEventsFromEventResult(eventResult).length > 0,
+  );
+}
+
 function pendingTriageEventsFromJobResult(value: JsonValue | null) {
   const pendingByWatch = new Map<string, PendingWatchTriageEvent[]>();
   const eventResults = readJsonArray(readObjectConfig(value).eventResults);
   for (const eventResult of eventResults) {
-    const result = readObjectConfig(eventResult);
-    const watchId = stringField(result.watchId);
-    if (!watchId) continue;
-
-    const triage = readObjectConfig(result.triage);
-    const status = stringField(triage.status);
-    if (status !== 'blocked' && status !== 'failed') continue;
-
-    const input = readJsonRecord(triage.input);
-    if (!input) continue;
-
-    const eventId = stringField(input.eventId) ?? `${watchId}:pending`;
-    const pending = pendingByWatch.get(watchId) ?? [];
-    pending.push({
-      eventId,
-      input,
-      reason: status,
-    });
-    pendingByWatch.set(watchId, pending);
+    for (const triageEvent of pendingTriageEventsFromEventResult(eventResult)) {
+      const pending = pendingByWatch.get(triageEvent.watchId) ?? [];
+      if (!pending.some((item) => item.eventId === triageEvent.eventId)) {
+        pending.push({
+          eventId: triageEvent.eventId,
+          input: triageEvent.input,
+          reason: triageEvent.reason,
+        });
+      }
+      pendingByWatch.set(triageEvent.watchId, pending);
+    }
   }
 
   return pendingByWatch;
+}
+
+function pendingTriageEventsFromEventResult(value: unknown) {
+  const result = readObjectConfig(value);
+  const watchId = stringField(result.watchId);
+  if (!watchId) return [];
+
+  return triageRecords(result.triage)
+    .map((triage) => pendingTriageEventFromRecord(watchId, triage))
+    .filter((event): event is PendingWatchTriageEvent & { watchId: string } =>
+      Boolean(event),
+    );
+}
+
+function pendingTriageEventFromRecord(
+  watchId: string,
+  triage: Record<string, unknown>,
+) {
+  const status = stringField(triage.status);
+  if (status !== 'blocked' && status !== 'failed') return null;
+
+  const input = readJsonRecord(triage.input);
+  if (!input) return null;
+
+  return {
+    watchId,
+    eventId: stringField(input.eventId) ?? `${watchId}:pending`,
+    input,
+    reason: status,
+  };
+}
+
+function triageRecords(value: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => triageRecords(item));
+  }
+
+  const record = readObjectConfig(value);
+  const nested = readObjectConfig(record.triage);
+  return Object.keys(nested).length > 0 ? [nested] : [record];
+}
+
+function pendingTriageSnapshots(events: PendingWatchTriageEvent[]) {
+  return events.map((event) =>
+    jsonRecord({
+      status: event.reason === 'failed' ? 'failed' : 'blocked',
+      eventId: event.eventId,
+      reason: event.reason,
+      input: event.input,
+    }),
+  );
+}
+
+function supersededPendingTriageSnapshots(
+  events: PendingWatchTriageEvent[],
+  deltas: Array<Record<string, unknown>>,
+) {
+  return events.map((event) =>
+    jsonRecord({
+      status: 'superseded',
+      eventId: event.eventId,
+      reason: 'current-pr-state-non-actionable',
+      input: event.input,
+      supersededBy: deltas as unknown as JsonValue,
+    }),
+  );
+}
+
+function triageValue(attempts: JsonValue[]) {
+  if (attempts.length === 0) return undefined;
+  return attempts.length === 1 ? attempts[0] : (attempts as JsonValue);
 }
 
 async function readEffectiveWatchAutopilotPolicy(
@@ -899,21 +1061,10 @@ async function readEffectiveWatchAutopilotPolicy(
     return { mode: 'notify-only' as AutopilotMode };
   }
 
-  const repoPolicy = repoAutopilotPolicy(repo, appConfig);
-  const override = watchAutopilotOverride(repo, watch);
-  return {
-    ...repoPolicy,
-    mode: override?.mode
-      ? normalizeAutopilotMode(override.mode)
-      : repoPolicy.mode,
-  };
-}
-
-function watchAutopilotOverride(repo: RepoConfig, watch: PrWatch) {
-  return readRepoAutopilotConfig(repo)?.watchOverrides?.find(
-    (candidate) =>
-      candidate.watchId === watch.id || candidate.prNumber === watch.prNumber,
-  );
+  return repoAutopilotPolicyForWatch(repo, appConfig, {
+    id: watch.id,
+    prNumber: watch.prNumber,
+  });
 }
 
 function watchIdFromResult(result: unknown) {
@@ -1148,6 +1299,58 @@ function deltaFromWatermark(
     summary: 'PR branch freshness changed.',
     severity: 'low',
   });
+}
+
+function shouldAdmitTriageForDeltas(deltas: Array<Record<string, unknown>>) {
+  return deltas.some((delta) => {
+    if (delta.actionable === true || delta.requiresExplanation === true) {
+      return true;
+    }
+    return (
+      delta.type === 'requested-changes' ||
+      delta.type === 'review-comment' ||
+      delta.type === 'check-failure' ||
+      delta.type === 'merge-conflict' ||
+      delta.type === 'branch-out-of-date' ||
+      delta.type === 'new-commit'
+    );
+  });
+}
+
+function shouldRetainPendingTriage(
+  currentWatermarks: PrWatchEventWatermarkRecord[],
+  deltas: Array<Record<string, unknown>>,
+) {
+  return (
+    shouldAdmitTriageForDeltas(deltas) ||
+    hasActionablePrEventState(currentWatermarks)
+  );
+}
+
+function hasActionablePrEventState(watermarks: PrWatchEventWatermarkRecord[]) {
+  const reviewThreads = watermarkPayload(watermarks, 'review_threads');
+  if (arrayField(reviewThreads.unresolvedThreadIds).length > 0) return true;
+
+  const requestedChanges = watermarkPayload(
+    watermarks,
+    'requested_changes_reviews',
+  );
+  const requestedTotal =
+    numberField(requestedChanges.total) ??
+    arrayField(requestedChanges.reviewIds).length;
+  if (requestedTotal > 0) return true;
+
+  const runs = watermarkPayload(watermarks, 'check_runs');
+  if (arrayField(runs.failingRunIds).length > 0) return true;
+
+  const suites = watermarkPayload(watermarks, 'check_suites');
+  if (arrayField(suites.failingSuiteIds).length > 0) return true;
+
+  const mergeability = watermarkPayload(watermarks, 'mergeability');
+  if (mergeability.mergeable === false) return true;
+
+  const outOfDate = watermarkPayload(watermarks, 'out_of_date_branch');
+  return outOfDate.isOutOfDate === true;
 }
 
 function snapshotFromWatermarks(watermarks: PrWatchEventWatermarkRecord[]) {

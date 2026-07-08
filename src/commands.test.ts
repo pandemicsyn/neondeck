@@ -975,6 +975,17 @@ describe('Neon commands', () => {
     ).toBe('Kilo-Org/cloud#4443');
   });
 
+  it('does not infer watch-pr refs from free session title text', () => {
+    expect(
+      inferWatchPrReferenceFromSession({
+        title: 'Fix flaky test noted in acme/widgets#412',
+        linkedTaskId: null,
+        summary: 'Mentioned pandemicsyn/neondeck#123 as a related example.',
+        uiMetadata: null,
+      }),
+    ).toBeNull();
+  });
+
   it('creates a release watch through slash command workflow', async () => {
     const home = await tempDir('neondeck-home-');
     const repoPath = await tempGitRepo();

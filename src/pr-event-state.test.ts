@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import type {
   GitHubPullRequestDetail,
@@ -145,6 +146,36 @@ describe('PR event state watermarks', () => {
           'out_of_date_branch',
         ],
       },
+    });
+  });
+
+  it('does not treat legacy mergeability watermarks missing draft as changed', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
+
+    await refreshPrWatchEventState(
+      { watchId: 'pandemicsyn/neondeck#123' },
+      paths,
+      {
+        fetchPullRequestEventState: async () => prEventState(),
+      },
+    );
+    rewriteMergeabilityWatermark(paths.neondeckDatabase, (watermark) => {
+      const { draft: _draft, ...legacy } = watermark;
+      return legacy;
+    });
+
+    await expect(
+      refreshPrWatchEventState({ watchId: 'pandemicsyn/neondeck#123' }, paths, {
+        fetchPullRequestEventState: async () => prEventState(),
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      data: { changedCategories: [] },
     });
   });
 
@@ -1199,6 +1230,47 @@ function reviewThread(
     comments: [],
     ...overrides,
   };
+}
+
+function rewriteMergeabilityWatermark(
+  databasePath: string,
+  rewrite: (watermark: Record<string, unknown>) => Record<string, unknown>,
+) {
+  const database = new DatabaseSync(databasePath);
+  try {
+    const row = database
+      .prepare(
+        `
+        SELECT watermark_json
+        FROM pr_watch_event_watermarks
+        WHERE watch_id = ?
+          AND category = 'mergeability';
+      `,
+      )
+      .get('pandemicsyn/neondeck#123');
+    if (
+      !row ||
+      typeof row !== 'object' ||
+      !('watermark_json' in row) ||
+      typeof row.watermark_json !== 'string'
+    ) {
+      throw new Error('Expected mergeability watermark fixture.');
+    }
+
+    const watermark = JSON.parse(row.watermark_json) as Record<string, unknown>;
+    database
+      .prepare(
+        `
+        UPDATE pr_watch_event_watermarks
+        SET watermark_json = ?
+        WHERE watch_id = ?
+          AND category = 'mergeability';
+      `,
+      )
+      .run(JSON.stringify(rewrite(watermark)), 'pandemicsyn/neondeck#123');
+  } finally {
+    database.close();
+  }
 }
 
 function anchorValidationDependencies() {

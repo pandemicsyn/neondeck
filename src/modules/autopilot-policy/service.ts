@@ -8,7 +8,11 @@ import {
   type RuntimePaths,
 } from '../../runtime-home';
 import { listWorktrees } from '../worktrees';
-import { repoAutopilotPolicy, globalAutopilotPolicy } from './config';
+import {
+  globalAutopilotPolicy,
+  repoAutopilotPolicy,
+  repoAutopilotPolicyForWatch,
+} from './config';
 import {
   classifyFileRisk,
   emptyPolicyFailure,
@@ -51,7 +55,14 @@ export async function checkAutopilotPolicy(
       'Repository is not configured.',
     );
   }
-  const policy = repoAutopilotPolicy(repo, appConfig);
+  const watchId =
+    worktree?.prNumber !== undefined && worktree.prNumber !== null
+      ? `${repo.github.owner}/${repo.github.name}#${worktree.prNumber}`
+      : undefined;
+  const policy = repoAutopilotPolicyForWatch(repo, appConfig, {
+    id: watchId,
+    prNumber: worktree?.prNumber,
+  });
   const repoFullName = `${repo.github.owner}/${repo.github.name}`;
   const localPath = worktree?.localPath ?? repo.path;
   const diffBase = input.diffBaseRef ?? worktree?.headSha ?? 'HEAD';

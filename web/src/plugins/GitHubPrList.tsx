@@ -501,6 +501,10 @@ function WatchPrButton({ item }: { item: GitHubPullRequest }) {
       (watch.repoFullName.toLowerCase() === item.repo.toLowerCase() &&
         watch.prNumber === item.number),
   );
+  const activeExistingWatch =
+    existingWatch && !isTerminalWatchStatus(existingWatch.status)
+      ? existingWatch
+      : undefined;
   const mutation = useMutation({
     mutationFn: async () => {
       const run = await flue.workflows.invoke('command-run', {
@@ -527,27 +531,33 @@ function WatchPrButton({ item }: { item: GitHubPullRequest }) {
       });
     },
   });
-  const watched = Boolean(existingWatch || mutation.data);
+  const watched = Boolean(activeExistingWatch || mutation.data);
 
   return (
     <Button
       className="min-h-[28px] shrink-0 border-line bg-transparent px-2 py-1 text-[10px] text-muted"
-      disabled={mutation.isPending || Boolean(existingWatch)}
+      disabled={mutation.isPending || Boolean(activeExistingWatch)}
       onClick={() => mutation.mutate()}
       title={
         mutation.error
           ? queryErrorMessage(mutation.error)
-          : existingWatch
-            ? `Watching ${existingWatch.id}`
-            : mutation.data
-              ? `${mutation.data.message} · run ${mutation.data.flueRunId}`
-              : 'Watch this PR until checks are green'
+          : activeExistingWatch
+            ? `Watching ${activeExistingWatch.id}`
+            : existingWatch
+              ? `Re-watch ${existingWatch.id}`
+              : mutation.data
+                ? `${mutation.data.message} · run ${mutation.data.flueRunId}`
+                : 'Watch this PR until checks are green'
       }
       type="button"
     >
       {mutation.isPending ? 'watching' : watched ? 'watched' : 'watch'}
     </Button>
   );
+}
+
+export function isTerminalWatchStatus(status: string | null | undefined) {
+  return status === 'closed' || status === 'merged' || status === 'green';
 }
 
 type ReviewPrWorkflowAdmission = {

@@ -80,6 +80,7 @@ export async function addPrWatch(
     const job = jobs.find((item) => item.id === watchPollingJobId(existing.id));
     const desiredTerminalStateChanged =
       existing.desiredTerminalState !== resolved.reference.desiredTerminalState;
+    const terminalWatch = isTerminalPrWatchStatus(existing.status);
     const intervalChanged =
       parsed.input.intervalSeconds !== undefined &&
       job?.intervalSeconds !== parsed.input.intervalSeconds;
@@ -87,7 +88,8 @@ export async function addPrWatch(
     if (
       !desiredTerminalStateChanged &&
       !intervalChanged &&
-      !missingPollingJob
+      !missingPollingJob &&
+      !terminalWatch
     ) {
       return okResult(
         'watch_pr_add',
@@ -100,7 +102,7 @@ export async function addPrWatch(
       );
     }
 
-    const watch: PrWatch = desiredTerminalStateChanged
+    let watch: PrWatch = desiredTerminalStateChanged
       ? {
           ...existing,
           desiredTerminalState: resolved.reference.desiredTerminalState,
@@ -115,7 +117,37 @@ export async function addPrWatch(
         }
       : existing;
 
-    if (desiredTerminalStateChanged) {
+    if (terminalWatch) {
+      const detail = await fetchWatchDetail(
+        'watch_pr_add',
+        resolved.reference,
+        fetcher,
+      );
+      if (!detail.ok) return detail.result;
+
+      const now = new Date().toISOString();
+      const snapshot = await snapshotFromDetail(
+        detail.detail,
+        resolved.reference,
+        checkFetcher,
+      );
+      watch = {
+        ...watch,
+        status: statusFromSnapshot(
+          snapshot,
+          resolved.reference.desiredTerminalState,
+        ),
+        prState: snapshot.state,
+        title: snapshot.title,
+        url: snapshot.url,
+        mergeCommitSha: snapshot.mergeCommitSha,
+        lastSnapshot: snapshot,
+        lastOutcome: 'updated',
+        lastCheckedAt: now,
+        updatedAt: now,
+      };
+      updateWatch(paths, watch);
+    } else if (desiredTerminalStateChanged) {
       updateWatch(paths, watch);
     }
     await upsertWatchPollingJob(
@@ -209,6 +241,10 @@ export async function listPrWatches(
 export async function listPrWatchRecords(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
   return readWatches(paths);
+}
+
+function isTerminalPrWatchStatus(status: PrWatch['status']) {
+  return status === 'closed' || status === 'merged' || status === 'green';
 }
 
 export async function addRefWatch(

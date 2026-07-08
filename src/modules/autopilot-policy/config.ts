@@ -94,6 +94,27 @@ export function repoAutopilotPolicy(
   };
 }
 
+export function repoAutopilotPolicyForWatch(
+  repo: RepoConfig,
+  appConfig: AppConfig,
+  watch?: { id?: string | null; prNumber?: number | null },
+): AutopilotPolicyConfig {
+  const policy = repoAutopilotPolicy(repo, appConfig);
+  if (!watch) return policy;
+
+  const override = readRepoAutopilotConfig(repo)?.watchOverrides?.find(
+    (candidate) =>
+      (watch.id && candidate.watchId === watch.id) ||
+      (watch.prNumber !== undefined &&
+        watch.prNumber !== null &&
+        candidate.prNumber === watch.prNumber),
+  );
+  return {
+    ...policy,
+    mode: override?.mode ? normalizeAutopilotMode(override.mode) : policy.mode,
+  };
+}
+
 export function pathDeniedByAutopilotPolicy(
   path: string,
   limits: AutopilotPolicyLimits,

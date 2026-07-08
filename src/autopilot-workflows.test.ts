@@ -321,6 +321,112 @@ describe('PR event autopilot', () => {
     });
   });
 
+  it('applies PR watch overrides during downstream autopilot policy checks', async () => {
+    const { paths, featureSha, repo } = await fixture();
+    const prepared = await preparePreparedWorktree(paths, featureSha);
+    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
+    await writeFile(
+      paths.config,
+      `${JSON.stringify(
+        {
+          version: 1,
+          autopilot: {
+            defaultMode: 'notify-only',
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFile(
+      paths.repos,
+      `${JSON.stringify(
+        {
+          repos: [
+            {
+              id: 'sample',
+              github: { owner: 'example', name: 'sample' },
+              path: repo,
+              defaultBranch: 'main',
+              metadata: {
+                autopilot: {
+                  watchOverrides: [
+                    {
+                      prNumber: 7,
+                      mode: 'autofix-with-approval',
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    const policy = await checkAutopilotPolicy({ worktreeId }, paths);
+
+    expect(policy).toMatchObject({
+      ok: true,
+      mode: 'autofix-with-approval',
+    });
+  });
+
+  it('applies watch-id overrides during downstream autopilot policy checks', async () => {
+    const { paths, featureSha, repo } = await fixture();
+    const prepared = await preparePreparedWorktree(paths, featureSha);
+    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
+    await writeFile(
+      paths.config,
+      `${JSON.stringify(
+        {
+          version: 1,
+          autopilot: {
+            defaultMode: 'notify-only',
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFile(
+      paths.repos,
+      `${JSON.stringify(
+        {
+          repos: [
+            {
+              id: 'sample',
+              github: { owner: 'example', name: 'sample' },
+              path: repo,
+              defaultBranch: 'main',
+              metadata: {
+                autopilot: {
+                  watchOverrides: [
+                    {
+                      watchId: 'example/sample#7',
+                      mode: 'autofix-with-approval',
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    const policy = await checkAutopilotPolicy({ worktreeId }, paths);
+
+    expect(policy).toMatchObject({
+      ok: true,
+      mode: 'autofix-with-approval',
+    });
+  });
+
   it('classifies root package dependency changes even without approval globs', async () => {
     const { paths, featureSha } = await fixture();
     await writeFile(
