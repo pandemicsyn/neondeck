@@ -98,7 +98,10 @@ describe('PR event state watermarks', () => {
           expect.objectContaining({ category: 'requested_changes_reviews' }),
           expect.objectContaining({ category: 'check_suites' }),
           expect.objectContaining({ category: 'check_runs' }),
-          expect.objectContaining({ category: 'mergeability' }),
+          expect.objectContaining({
+            category: 'mergeability',
+            watermark: expect.objectContaining({ draft: false }),
+          }),
           expect.objectContaining({ category: 'out_of_date_branch' }),
         ]),
       },

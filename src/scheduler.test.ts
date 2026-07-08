@@ -1391,6 +1391,157 @@ describe('scheduler', () => {
     });
   });
 
+  it('does not report cleared requested changes when the previous state was healthy', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    const invocations: Array<{ workflow: string; input: unknown }> = [];
+    await writeRepoRegistry(paths.repos);
+    await writeFile(
+      paths.config,
+      `${JSON.stringify({
+        version: 1,
+        autopilot: { defaultMode: 'draft-fix' },
+      })}\n`,
+    );
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
+
+    await expect(
+      runSchedulerTick(paths, new Date(), {
+        refreshPrWatch: async () => noChangeWatchRefresh(),
+        listPrWatchEventWatermarks: async () =>
+          requestedChangesHealthyBaselineWatermarks(),
+        refreshPrWatchEventState: async () => requestedChangesApprovalRefresh(),
+        checkAutopilotConcurrency: async () =>
+          concurrencyDecision({ allowed: true }),
+        invokeWorkflow: async (workflow, input) => {
+          invocations.push({ workflow, input });
+          return { runId: 'run-requested-changes-metadata' };
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'updated',
+      notifications: [
+        expect.objectContaining({
+          title: 'PR watch event changed',
+          level: 'info',
+        }),
+      ],
+    });
+
+    expect(invocations[0]).toMatchObject({
+      workflow: 'triage-pr-event',
+      input: expect.objectContaining({
+        deltas: [
+          expect.objectContaining({
+            type: 'metadata',
+            summary: 'Requested-change review state changed.',
+          }),
+        ],
+      }),
+    });
+    expect(JSON.stringify(invocations[0]?.input)).not.toContain(
+      'Requested changes were cleared.',
+    );
+  });
+
+  it('does not report check recovery when the previous state had no failures', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    const invocations: Array<{ workflow: string; input: unknown }> = [];
+    await writeRepoRegistry(paths.repos);
+    await writeFile(
+      paths.config,
+      `${JSON.stringify({
+        version: 1,
+        autopilot: { defaultMode: 'draft-fix' },
+      })}\n`,
+    );
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
+
+    await expect(
+      runSchedulerTick(paths, new Date(), {
+        refreshPrWatch: async () => noChangeWatchRefresh(),
+        listPrWatchEventWatermarks: async () => checkRunHealthyWatermarks(),
+        refreshPrWatchEventState: async () => checkRunSuccessRefresh(),
+        checkAutopilotConcurrency: async () =>
+          concurrencyDecision({ allowed: true }),
+        invokeWorkflow: async (workflow, input) => {
+          invocations.push({ workflow, input });
+          return { runId: 'run-check-metadata' };
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'updated',
+      notifications: [
+        expect.objectContaining({
+          title: 'PR watch event changed',
+          level: 'info',
+        }),
+      ],
+    });
+
+    expect(invocations[0]).toMatchObject({
+      workflow: 'triage-pr-event',
+      input: expect.objectContaining({
+        deltas: [
+          expect.objectContaining({
+            type: 'metadata',
+            summary: 'Check run state changed.',
+          }),
+        ],
+      }),
+    });
+    expect(JSON.stringify(invocations[0]?.input)).not.toContain(
+      'Check state recovered.',
+    );
+  });
+
+  it('preserves draft state in PR event triage snapshots', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    const invocations: Array<{ workflow: string; input: unknown }> = [];
+    await writeRepoRegistry(paths.repos);
+    await writeFile(
+      paths.config,
+      `${JSON.stringify({
+        version: 1,
+        autopilot: { defaultMode: 'draft-fix' },
+      })}\n`,
+    );
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
+
+    await expect(
+      runSchedulerTick(paths, new Date(), {
+        refreshPrWatch: async () => noChangeWatchRefresh(),
+        listPrWatchEventWatermarks: async () =>
+          reviewThreadBaselineWatermarks(),
+        refreshPrWatchEventState: async () =>
+          reviewThreadEventRefresh({ draft: true }),
+        checkAutopilotConcurrency: async () =>
+          concurrencyDecision({ allowed: true }),
+        invokeWorkflow: async (workflow, input) => {
+          invocations.push({ workflow, input });
+          return { runId: 'run-draft-triage' };
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'updated',
+    });
+
+    expect(invocations[0]).toMatchObject({
+      workflow: 'triage-pr-event',
+      input: expect.objectContaining({
+        current: expect.objectContaining({ draft: true }),
+      }),
+    });
+  });
+
   it('notifies when an auto-polled watch turns green', async () => {
     const home = await tempHome();
     const paths = runtimePaths(home);
@@ -1690,7 +1841,9 @@ function reviewThreadBaselineWatermarks(): PrEventActionResult {
   };
 }
 
-function reviewThreadEventRefresh(): PrEventActionResult {
+function reviewThreadEventRefresh(
+  overrides: { draft?: boolean } = {},
+): PrEventActionResult {
   return {
     ok: true,
     action: 'pr_watch_event_state_refresh',
@@ -1731,6 +1884,7 @@ function reviewThreadEventRefresh(): PrEventActionResult {
           category: 'mergeability',
           watermark: {
             state: 'open',
+            draft: overrides.draft ?? false,
             merged: false,
             mergeable: true,
             mergeableState: 'clean',
@@ -1800,6 +1954,51 @@ function requestedChangesBaselineWatermarks(): PrEventActionResult {
   };
 }
 
+function requestedChangesHealthyBaselineWatermarks(): PrEventActionResult {
+  return {
+    ok: true,
+    action: 'pr_watch_event_watermarks_list',
+    changed: false,
+    message: 'Listed 1 PR watch event watermark(s).',
+    data: {
+      watermarks: [
+        {
+          watchId: 'pandemicsyn/neondeck#123',
+          category: 'requested_changes_reviews',
+          watermark: {
+            total: 0,
+            reviewIds: [],
+            latestSubmittedAt: null,
+            reviews: [],
+            latestByReviewer: [
+              {
+                id: 102,
+                state: 'APPROVED',
+                authorLogin: 'reviewer',
+                commitId: 'head123',
+                submittedAt: '2026-06-27T20:00:00Z',
+              },
+            ],
+            history: [
+              {
+                id: 102,
+                state: 'APPROVED',
+                authorLogin: 'reviewer',
+                commitId: 'head123',
+                submittedAt: '2026-06-27T20:00:00Z',
+              },
+            ],
+          },
+          sourceUpdatedAt: '2026-06-27T20:00:00Z',
+          checkedAt: '2026-06-27T20:00:30Z',
+          createdAt: '2026-06-27T20:00:30Z',
+          updatedAt: '2026-06-27T20:00:30Z',
+        },
+      ],
+    },
+  };
+}
+
 function requestedChangesClearedRefresh(): PrEventActionResult {
   return {
     ok: true,
@@ -1841,6 +2040,127 @@ function requestedChangesClearedRefresh(): PrEventActionResult {
                 authorLogin: 'reviewer',
                 commitId: 'head123',
                 submittedAt: '2026-06-27T20:10:00Z',
+              },
+            ],
+          },
+          sourceUpdatedAt: '2026-06-27T20:10:00Z',
+          checkedAt: '2026-06-27T20:10:30Z',
+          createdAt: '2026-06-27T20:10:30Z',
+          updatedAt: '2026-06-27T20:10:30Z',
+        },
+      ],
+    },
+  };
+}
+
+function requestedChangesApprovalRefresh(): PrEventActionResult {
+  return {
+    ok: true,
+    action: 'pr_watch_event_state_refresh',
+    changed: true,
+    message: 'Updated 1 PR event watermark(s) for pandemicsyn/neondeck#123.',
+    data: {
+      watchId: 'pandemicsyn/neondeck#123',
+      changedCategories: ['requested_changes_reviews'],
+      watermarks: [
+        {
+          watchId: 'pandemicsyn/neondeck#123',
+          category: 'requested_changes_reviews',
+          watermark: {
+            total: 0,
+            reviewIds: [],
+            latestSubmittedAt: null,
+            reviews: [],
+            latestByReviewer: [
+              {
+                id: 103,
+                state: 'APPROVED',
+                authorLogin: 'reviewer',
+                commitId: 'head123',
+                submittedAt: '2026-06-27T20:10:00Z',
+              },
+            ],
+            history: [
+              {
+                id: 102,
+                state: 'APPROVED',
+                authorLogin: 'reviewer',
+                commitId: 'head123',
+                submittedAt: '2026-06-27T20:00:00Z',
+              },
+              {
+                id: 103,
+                state: 'APPROVED',
+                authorLogin: 'reviewer',
+                commitId: 'head123',
+                submittedAt: '2026-06-27T20:10:00Z',
+              },
+            ],
+          },
+          sourceUpdatedAt: '2026-06-27T20:10:00Z',
+          checkedAt: '2026-06-27T20:10:30Z',
+          createdAt: '2026-06-27T20:10:30Z',
+          updatedAt: '2026-06-27T20:10:30Z',
+        },
+      ],
+    },
+  };
+}
+
+function checkRunHealthyWatermarks(): PrEventActionResult {
+  return {
+    ok: true,
+    action: 'pr_watch_event_watermarks_list',
+    changed: false,
+    message: 'Listed 1 PR watch event watermark(s).',
+    data: {
+      watermarks: [
+        {
+          watchId: 'pandemicsyn/neondeck#123',
+          category: 'check_runs',
+          watermark: {
+            total: 0,
+            runIds: [],
+            failingRunIds: [],
+            pendingRunIds: [],
+            runs: [],
+          },
+          sourceUpdatedAt: null,
+          checkedAt: '2026-06-27T20:00:30Z',
+          createdAt: '2026-06-27T20:00:30Z',
+          updatedAt: '2026-06-27T20:00:30Z',
+        },
+      ],
+    },
+  };
+}
+
+function checkRunSuccessRefresh(): PrEventActionResult {
+  return {
+    ok: true,
+    action: 'pr_watch_event_state_refresh',
+    changed: true,
+    message: 'Updated 1 PR event watermark(s) for pandemicsyn/neondeck#123.',
+    data: {
+      watchId: 'pandemicsyn/neondeck#123',
+      changedCategories: ['check_runs'],
+      watermarks: [
+        {
+          watchId: 'pandemicsyn/neondeck#123',
+          category: 'check_runs',
+          watermark: {
+            total: 1,
+            runIds: [6001],
+            failingRunIds: [],
+            pendingRunIds: [],
+            runs: [
+              {
+                id: 6001,
+                name: 'test',
+                headSha: 'head123',
+                status: 'completed',
+                conclusion: 'success',
+                completedAt: '2026-06-27T20:10:00Z',
               },
             ],
           },

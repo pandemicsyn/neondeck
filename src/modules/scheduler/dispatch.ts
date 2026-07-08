@@ -625,6 +625,7 @@ async function refreshOneWatchEvent(
   const deltas = deltasFromChangedCategories(
     changedCategories,
     currentWatermarks,
+    previousWatermarks,
   );
   const current = snapshotFromWatermarks(currentWatermarks);
   const previous = snapshotFromWatermarks(previousWatermarks);
@@ -981,16 +982,22 @@ function isWatermarkCategory(
 
 function deltasFromChangedCategories(
   categories: PrWatchEventWatermarkCategory[],
-  watermarks: PrWatchEventWatermarkRecord[],
+  currentWatermarks: PrWatchEventWatermarkRecord[],
+  previousWatermarks: PrWatchEventWatermarkRecord[],
 ) {
   return categories.map((category) =>
-    deltaFromWatermark(category, watermarkPayload(watermarks, category)),
+    deltaFromWatermark(
+      category,
+      watermarkPayload(currentWatermarks, category),
+      watermarkPayload(previousWatermarks, category),
+    ),
   );
 }
 
 function deltaFromWatermark(
   category: PrWatchEventWatermarkCategory,
   payload: Record<string, unknown>,
+  previousPayload: Record<string, unknown>,
 ) {
   if (category === 'commits') {
     return jsonRecord({
@@ -1013,10 +1020,18 @@ function deltaFromWatermark(
         severity: 'medium',
       });
     }
+    if (arrayField(previousPayload.unresolvedThreadIds).length === 0) {
+      return jsonRecord({
+        type: 'metadata',
+        id: category,
+        summary: 'Review thread state changed.',
+        severity: 'low',
+      });
+    }
     return jsonRecord({
       type: 'review-thread-resolved',
       id: category,
-      summary: 'Review thread state changed.',
+      summary: 'Review threads were resolved.',
       severity: 'low',
     });
   }
@@ -1025,6 +1040,18 @@ function deltaFromWatermark(
     const reviewIds = arrayField(payload.reviewIds);
     const total = numberField(payload.total) ?? reviewIds.length;
     if (total === 0) {
+      const previousReviewIds = arrayField(previousPayload.reviewIds);
+      const previousTotal =
+        numberField(previousPayload.total) ?? previousReviewIds.length;
+      if (previousTotal === 0) {
+        return jsonRecord({
+          type: 'metadata',
+          id: category,
+          summary: 'Requested-change review state changed.',
+          severity: 'low',
+        });
+      }
+
       return jsonRecord({
         type: 'metadata',
         id: category,
@@ -1062,6 +1089,20 @@ function deltaFromWatermark(
         severity: 'high',
       });
     }
+    const previousFailingIds = arrayField(
+      category === 'check_suites'
+        ? previousPayload.failingSuiteIds
+        : previousPayload.failingRunIds,
+    );
+    if (pendingIds.length === 0 && previousFailingIds.length === 0) {
+      return jsonRecord({
+        type: 'metadata',
+        id: category,
+        summary: `${category === 'check_suites' ? 'Check suite' : 'Check run'} state changed.`,
+        severity: 'low',
+      });
+    }
+
     return jsonRecord({
       type: pendingIds.length > 0 ? 'metadata' : 'check-recovery',
       id: category,
@@ -1114,6 +1155,7 @@ function snapshotFromWatermarks(watermarks: PrWatchEventWatermarkRecord[]) {
   const outOfDate = watermarkPayload(watermarks, 'out_of_date_branch');
   return compactObject({
     state: stringField(mergeability.state),
+    draft: booleanField(mergeability.draft),
     merged: booleanField(mergeability.merged),
     mergeable: booleanField(mergeability.mergeable),
     outOfDate: booleanField(outOfDate.isOutOfDate),
