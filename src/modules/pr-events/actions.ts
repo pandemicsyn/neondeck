@@ -2,6 +2,7 @@ import { defineAction, defineTool } from '@flue/runtime';
 import {
   getGitHubPrBranchPermissions,
   getGitHubPrEventState,
+  getGitHubPrFileDiff,
   getGitHubPrFiles,
   getGitHubPrRequestedChanges,
   getGitHubPrReviewThreads,
@@ -13,6 +14,7 @@ import {
   prCommentInputSchema,
   prEventOutputSchema,
   prEventTargetInputSchema,
+  prFileDiffInputSchema,
   prFilesInputSchema,
   prWatchEventWatermarkListInputSchema,
 } from './schemas';
@@ -47,6 +49,16 @@ export const githubPrFilesGetAction = defineAction({
   output: prEventOutputSchema,
   async run({ input }) {
     return getGitHubPrFiles(input);
+  },
+});
+
+export const githubPrFileDiffGetAction = defineAction({
+  name: 'neondeck_github_pr_file_diff_get',
+  description: 'Fetch a single read-only GitHub PR file diff patch by path.',
+  input: prFileDiffInputSchema,
+  output: prEventOutputSchema,
+  async run({ input }) {
+    return getGitHubPrFileDiff(input);
   },
 });
 
@@ -91,6 +103,17 @@ export const prReviewCommentsLookupTool = defineTool({
   output: prEventOutputSchema,
   async run({ input }) {
     return getGitHubPrReviewThreads(input);
+  },
+});
+
+export const prFileDiffLookupTool = defineTool({
+  name: 'neondeck_pr_file_diff_lookup',
+  description:
+    'Fetch one GitHub PR file diff patch by path without loading every PR file patch.',
+  input: prFileDiffInputSchema,
+  output: prEventOutputSchema,
+  async run({ input }) {
+    return getGitHubPrFileDiff(input);
   },
 });
 
@@ -151,6 +174,7 @@ export const neondeckPrEventActions = [
   githubPrEventStateGetAction,
   githubPrReviewThreadsGetAction,
   githubPrFilesGetAction,
+  githubPrFileDiffGetAction,
   githubPrRequestedChangesGetAction,
   githubPrBranchPermissionsGetAction,
   prCommentAction,
@@ -160,6 +184,7 @@ export const neondeckPrEventActions = [
 
 export const neondeckPrEventTools = [
   prReviewCommentsLookupTool,
+  prFileDiffLookupTool,
   prRequestedChangesLookupTool,
   prBranchPermissionsLookupTool,
   prWatchEventWatermarksLookupTool,

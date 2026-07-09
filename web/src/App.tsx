@@ -511,7 +511,17 @@ function readReviewPopoutRoute(): ReviewPopoutRoute {
         'A positive pull request number is required, for example /review?repo=owner/repo&number=123.',
     };
   }
-  return { kind: 'target', target: { repo, number } };
+  return {
+    kind: 'target',
+    target: {
+      repo,
+      number,
+      headSha: params.get('head')?.trim() || null,
+      baseSha: params.get('base')?.trim() || null,
+      baseRef: params.get('baseRef')?.trim() || null,
+      title: params.get('title')?.trim() || null,
+    },
+  };
 }
 
 function resolveAppearance(config: DashboardConfig): {

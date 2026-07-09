@@ -7,11 +7,13 @@ export type {
 } from './schemas';
 export {
   githubPrEventStateGetAction,
+  githubPrFileDiffGetAction,
   githubPrFilesGetAction,
   githubPrReviewThreadsGetAction,
   githubPrRequestedChangesGetAction,
   githubPrBranchPermissionsGetAction,
   prCommentAction,
+  prFileDiffLookupTool,
   prReviewCommentsLookupTool,
   prRequestedChangesLookupTool,
   prBranchPermissionsLookupTool,
@@ -23,6 +25,7 @@ export {
 } from './actions';
 export {
   getGitHubPrEventState,
+  getGitHubPrFileDiff,
   getGitHubPrFiles,
   getGitHubPrReviewThreads,
   getGitHubPrRequestedChanges,

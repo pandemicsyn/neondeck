@@ -75,6 +75,7 @@ export type GitHubPullRequest = {
   ageDays: number;
   stale: boolean;
   headSha: string | null;
+  baseSha?: string | null;
   baseRef: string | null;
   checks: {
     status: 'success' | 'failure' | 'pending' | 'none';
@@ -187,6 +188,30 @@ export type GitHubPullRequestFilesResponse = {
     files: GitHubPullRequestFile[];
     diffSummary: DiffSummary;
     fetchedAt: string;
+    source?: 'local' | 'github';
+  };
+  requires?: string[];
+  errors?: string[];
+};
+
+export type GitHubPullRequestFileDiffResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  data?: {
+    target?: {
+      repoFullName: string;
+      owner: string;
+      repo: string;
+      number: number;
+      watchId?: string | null;
+    };
+    file: GitHubPullRequestFile | null;
+    diff: string;
+    diffSummary: DiffSummary;
+    fetchedAt: string;
+    source?: 'local' | 'github';
   };
   requires?: string[];
   errors?: string[];
@@ -321,6 +346,7 @@ export type GitHubPrReviewThreadsResponse = {
   message: string;
   data?: {
     reviewThreads?: GitHubPullRequestReviewThread[];
+    reviewThreadsTruncated?: boolean;
     unresolvedReviewThreads?: GitHubPullRequestReviewThread[];
   };
   requires?: string[];

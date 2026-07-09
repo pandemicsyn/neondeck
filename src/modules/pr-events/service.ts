@@ -9,6 +9,7 @@ import {
   fetchPullRequestEventState,
   fetchPullRequestFiles,
   fetchPullRequestFilesWithCache,
+  fetchPullRequestReviewThreadsWithMetadata,
   fetchPullRequestReviewThread,
   GitHubPrReviewSubmitError,
   postPullRequestComment,
@@ -28,6 +29,10 @@ import {
   type GitHubPullRequestEventState,
   type GitHubPullRequestReviewThread,
 } from '../github';
+import {
+  readLocalPullRequestFileDiff,
+  readLocalPullRequestFiles,
+} from '../pr-local-diffs';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import {
   type RuntimePaths,
@@ -42,6 +47,7 @@ import {
 import {
   prCommentInputSchema,
   prEventTargetInputSchema,
+  prFileDiffInputSchema,
   prFilesInputSchema,
   prReviewDraftCommentInputSchema,
   prReviewDraftCommentUpdateInputSchema,
@@ -104,14 +110,46 @@ export async function getGitHubPrReviewThreads(
   paths: RuntimePaths = runtimePaths(),
   dependencies: PrEventStateDependencies = {},
 ): Promise<PrEventActionResult> {
-  const resolved = await fetchEventState(
-    'github_pr_review_threads_get',
-    input,
-    paths,
-    dependencies,
-  );
+  const action = 'github_pr_review_threads_get';
+  await ensureRuntimeHome(paths);
+  const parsed = v.safeParse(prEventTargetInputSchema, input);
+  if (!parsed.success) {
+    return failResult(action, 'Invalid PR review threads input.', {
+      errors: [v.summarize(parsed.issues)],
+    });
+  }
+
+  const token = dependencies.token ?? process.env.GITHUB_TOKEN;
+  if (!token) {
+    return failResult(action, 'GITHUB_TOKEN is not configured.', {
+      requires: ['GITHUB_TOKEN'],
+    });
+  }
+
+  const resolved = await resolvePullRequestTarget(parsed.output, paths, action);
   if (!resolved.ok) return resolved.result;
-  const threads = resolved.state.reviewThreads;
+
+  let threads: GitHubPullRequestReviewThread[];
+  let truncated = false;
+  try {
+    const fetcher =
+      dependencies.fetchPullRequestReviewThreads ??
+      fetchPullRequestReviewThreadsWithMetadata;
+    const result = await fetcher({
+      token,
+      owner: resolved.target.owner,
+      repo: resolved.target.repo,
+      number: resolved.target.number,
+    });
+    threads = result.reviewThreads;
+    truncated =
+      result.truncated || threads.some((thread) => thread.commentsTruncated);
+  } catch (error) {
+    return failResult(action, 'Could not fetch GitHub PR review threads.', {
+      errors: [errorMessage(error)],
+    });
+  }
+
   const unresolvedThreads = threads.filter((thread) => !thread.isResolved);
   const unresolvedReviewComments = unresolvedThreads.flatMap((thread) =>
     thread.comments.map((comment) => ({
@@ -124,12 +162,13 @@ export async function getGitHubPrReviewThreads(
   );
 
   return okResult(
-    'github_pr_review_threads_get',
+    action,
     false,
     `Fetched ${threads.length} review thread(s) for ${resolved.target.repoFullName}#${resolved.target.number}.`,
     {
       target: eventTargetJson(resolved.target),
       reviewThreads: threads as unknown as JsonValue,
+      reviewThreadsTruncated: truncated,
       unresolvedReviewThreads: unresolvedThreads as unknown as JsonValue,
       unresolvedReviewComments:
         unresolvedReviewComments as unknown as JsonValue,
@@ -150,17 +189,6 @@ export async function getGitHubPrFiles(
     });
   }
 
-  const token = dependencies.token ?? process.env.GITHUB_TOKEN;
-  if (!token) {
-    return failResult(
-      'github_pr_files_get',
-      'GITHUB_TOKEN is not configured.',
-      {
-        requires: ['GITHUB_TOKEN'],
-      },
-    );
-  }
-
   const resolved = await resolvePullRequestTarget(
     {
       watchId: parsed.output.watchId,
@@ -173,6 +201,60 @@ export async function getGitHubPrFiles(
   );
   if (!resolved.ok) return resolved.result;
 
+  const patches = parsed.output.patches ?? 'all';
+  const source = parsed.output.source ?? 'auto';
+  const token = dependencies.token ?? process.env.GITHUB_TOKEN;
+  const localErrorMessages: string[] = [];
+  if (source !== 'github') {
+    try {
+      const diff = await readLocalPullRequestFiles(
+        {
+          owner: resolved.target.owner,
+          repo: resolved.target.repo,
+          number: resolved.target.number,
+          headSha: parsed.output.headSha ?? null,
+          baseSha: parsed.output.baseSha ?? null,
+          baseRef: parsed.output.baseRef ?? null,
+          includePatches: patches === 'all',
+        },
+        paths,
+      );
+
+      return okResult(
+        'github_pr_files_get',
+        false,
+        `Fetched ${diff.files.length} local PR file diff(s) for ${resolved.target.repoFullName}#${resolved.target.number}.`,
+        {
+          target: eventTargetJson(resolved.target),
+          files: diff.files as unknown as JsonValue,
+          diffSummary: diff.diffSummary as unknown as JsonValue,
+          fetchedAt: diff.fetchedAt,
+          source: 'local',
+        },
+      );
+    } catch (error) {
+      localErrorMessages.push(errorMessage(error));
+      if (source === 'local') {
+        return failResult(
+          'github_pr_files_get',
+          'Could not fetch local PR files.',
+          { errors: localErrorMessages },
+        );
+      }
+    }
+  }
+
+  if (!token) {
+    return failResult(
+      'github_pr_files_get',
+      'GITHUB_TOKEN is not configured.',
+      {
+        requires: ['GITHUB_TOKEN'],
+        errors: localErrorMessages.length ? localErrorMessages : undefined,
+      },
+    );
+  }
+
   try {
     const fetcher = dependencies.fetchPullRequestFiles ?? fetchPullRequestFiles;
     const diff = await fetchPullRequestFilesWithCache({
@@ -181,6 +263,7 @@ export async function getGitHubPrFiles(
       repo: resolved.target.repo,
       number: resolved.target.number,
       headSha: parsed.output.headSha ?? null,
+      patches,
       databasePath: paths.neondeckDatabase,
       fetcher,
       fetchHeadSha: dependencies.fetchPullRequestHeadSha,
@@ -195,12 +278,138 @@ export async function getGitHubPrFiles(
         files: diff.files as unknown as JsonValue,
         diffSummary: diff.diffSummary as unknown as JsonValue,
         fetchedAt: diff.fetchedAt,
+        source: 'github',
       },
     );
   } catch (error) {
     return failResult(
       'github_pr_files_get',
       'Could not fetch GitHub PR files.',
+      {
+        errors: [errorMessage(error)],
+      },
+    );
+  }
+}
+
+export async function getGitHubPrFileDiff(
+  input: v.InferInput<typeof prFileDiffInputSchema>,
+  paths: RuntimePaths = runtimePaths(),
+  dependencies: PrEventStateDependencies = {},
+): Promise<PrEventActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsed = v.safeParse(prFileDiffInputSchema, input);
+  if (!parsed.success) {
+    return failResult(
+      'github_pr_file_diff_get',
+      'Invalid PR file diff input.',
+      {
+        errors: [v.summarize(parsed.issues)],
+      },
+    );
+  }
+
+  const resolved = await resolvePullRequestTarget(
+    {
+      watchId: parsed.output.watchId,
+      ref: parsed.output.ref,
+      repo: parsed.output.repo,
+      prNumber: parsed.output.prNumber,
+    },
+    paths,
+    'github_pr_file_diff_get',
+  );
+  if (!resolved.ok) return resolved.result;
+
+  const source = parsed.output.source ?? 'auto';
+  const localErrorMessages: string[] = [];
+  if (source !== 'github') {
+    try {
+      const diff = await readLocalPullRequestFileDiff(
+        {
+          owner: resolved.target.owner,
+          repo: resolved.target.repo,
+          number: resolved.target.number,
+          headSha: parsed.output.headSha ?? null,
+          baseSha: parsed.output.baseSha ?? null,
+          baseRef: parsed.output.baseRef ?? null,
+          path: parsed.output.path,
+          maxPatchBytes: parsed.output.maxPatchBytes,
+        },
+        paths,
+      );
+      return okResult(
+        'github_pr_file_diff_get',
+        false,
+        diff.file
+          ? `Read local PR diff for ${parsed.output.path}.`
+          : `No local PR diff found for ${parsed.output.path}.`,
+        {
+          target: eventTargetJson(resolved.target),
+          file: diff.file as unknown as JsonValue,
+          diff: diff.diff,
+          diffSummary: diff.diffSummary as unknown as JsonValue,
+          fetchedAt: diff.fetchedAt,
+          source: 'local',
+        },
+      );
+    } catch (error) {
+      localErrorMessages.push(errorMessage(error));
+      if (source === 'local') {
+        return failResult(
+          'github_pr_file_diff_get',
+          'Could not fetch local PR file diff.',
+          { errors: localErrorMessages },
+        );
+      }
+    }
+  }
+
+  const token = dependencies.token ?? process.env.GITHUB_TOKEN;
+  if (!token) {
+    return failResult(
+      'github_pr_file_diff_get',
+      'GITHUB_TOKEN is not configured.',
+      {
+        requires: ['GITHUB_TOKEN'],
+        errors: localErrorMessages.length ? localErrorMessages : undefined,
+      },
+    );
+  }
+
+  try {
+    const diff = await fetchPullRequestFilesWithCache({
+      token,
+      owner: resolved.target.owner,
+      repo: resolved.target.repo,
+      number: resolved.target.number,
+      headSha: parsed.output.headSha ?? null,
+      patches: 'all',
+      databasePath: paths.neondeckDatabase,
+      fetcher: dependencies.fetchPullRequestFiles ?? fetchPullRequestFiles,
+      fetchHeadSha: dependencies.fetchPullRequestHeadSha,
+    });
+    const file =
+      diff.files.find((item) => item.path === parsed.output.path) ?? null;
+    return okResult(
+      'github_pr_file_diff_get',
+      false,
+      file
+        ? `Read GitHub PR diff for ${parsed.output.path}.`
+        : `No GitHub PR diff found for ${parsed.output.path}.`,
+      {
+        target: eventTargetJson(resolved.target),
+        file: file as unknown as JsonValue,
+        diff: file?.patch ?? '',
+        diffSummary: diff.diffSummary as unknown as JsonValue,
+        fetchedAt: diff.fetchedAt,
+        source: 'github',
+      },
+    );
+  } catch (error) {
+    return failResult(
+      'github_pr_file_diff_get',
+      'Could not fetch GitHub PR file diff.',
       {
         errors: [errorMessage(error)],
       },

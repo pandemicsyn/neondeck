@@ -1,10 +1,17 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
+import { useCallback } from 'react';
 import {
   deleteGitHubPrReviewDraft,
   deleteGitHubPrReviewDraftComment,
   getGitHubPullRequests,
   getGitHubPrReviewDraft,
   getGitHubPrReviewThreads,
+  getGitHubPullRequestFileDiff,
   getGitHubPullRequestFiles,
   patchGitHubPrReviewDraftComment,
   postGitHubPrReview,
@@ -22,24 +29,26 @@ type ReviewThreadsQueryData = Awaited<
 >;
 
 export const prReviewQueryKeys = {
-  files: (pr: GitHubPullRequest) =>
+  revision: (pr: GitHubPullRequest) =>
     [
-      'pr-review',
-      'files',
       pr.repo,
       pr.number,
-      pr.headSha,
-      pr.updatedAt,
+      pr.headSha ?? null,
+      pr.baseSha ?? pr.baseRef ?? null,
+    ] as const,
+  files: (pr: GitHubPullRequest) =>
+    ['pr-review', 'files', ...prReviewQueryKeys.revision(pr)] as const,
+  fileList: (pr: GitHubPullRequest) =>
+    ['pr-review', 'file-list', ...prReviewQueryKeys.revision(pr)] as const,
+  filePatch: (pr: GitHubPullRequest, path: string) =>
+    [
+      'pr-review',
+      'file-patch',
+      ...prReviewQueryKeys.revision(pr),
+      path,
     ] as const,
   reviewThreads: (pr: GitHubPullRequest) =>
-    [
-      'pr-review',
-      'review-threads',
-      pr.repo,
-      pr.number,
-      pr.headSha,
-      pr.updatedAt,
-    ] as const,
+    ['pr-review', 'review-threads', ...prReviewQueryKeys.revision(pr)] as const,
   draft: (pr: Pick<GitHubPullRequest, 'repo' | 'number'>) =>
     ['pr-review', 'draft', pr.repo, pr.number] as const,
 };
@@ -52,9 +61,71 @@ export function useGitHubPullRequestFiles(pr: GitHubPullRequest) {
         repo: pr.repo,
         number: pr.number,
         headSha: pr.headSha,
+        baseSha: pr.baseSha,
+        baseRef: pr.baseRef,
       }),
     enabled: pr.repo.length > 0 && pr.number > 0,
   });
+}
+
+export function useGitHubPullRequestFileList(pr: GitHubPullRequest) {
+  return useQuery({
+    queryKey: prReviewQueryKeys.fileList(pr),
+    queryFn: () =>
+      getGitHubPullRequestFiles({
+        repo: pr.repo,
+        number: pr.number,
+        headSha: pr.headSha,
+        baseSha: pr.baseSha,
+        baseRef: pr.baseRef,
+        patches: 'none',
+        source: 'auto',
+      }),
+    enabled: pr.repo.length > 0 && pr.number > 0,
+  });
+}
+
+export function useGitHubPullRequestFilePatches(
+  pr: GitHubPullRequest,
+  paths: string[],
+) {
+  return useQueries({
+    queries: paths.map((path) => ({
+      queryKey: prReviewQueryKeys.filePatch(pr, path),
+      queryFn: () =>
+        getGitHubPullRequestFileDiff({
+          repo: pr.repo,
+          number: pr.number,
+          path,
+          headSha: pr.headSha,
+          baseSha: pr.baseSha,
+          baseRef: pr.baseRef,
+          source: 'auto' as const,
+        }),
+      enabled: pr.repo.length > 0 && pr.number > 0 && path.length > 0,
+    })),
+  });
+}
+
+export function usePrefetchGitHubPullRequestFilePatch(pr: GitHubPullRequest) {
+  const queryClient = useQueryClient();
+  return useCallback(
+    (path: string) =>
+      queryClient.prefetchQuery({
+        queryKey: prReviewQueryKeys.filePatch(pr, path),
+        queryFn: () =>
+          getGitHubPullRequestFileDiff({
+            repo: pr.repo,
+            number: pr.number,
+            path,
+            headSha: pr.headSha,
+            baseSha: pr.baseSha,
+            baseRef: pr.baseRef,
+            source: 'auto',
+          }),
+      }),
+    [pr, queryClient],
+  );
 }
 
 export function useGitHubPrReviewThreads(pr: GitHubPullRequest) {
@@ -101,6 +172,12 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
   };
   const invalidateReviewSources = () =>
     Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ['pr-review', 'file-list', pr.repo, pr.number],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ['pr-review', 'file-patch', pr.repo, pr.number],
+      }),
       queryClient.invalidateQueries({
         queryKey: ['pr-review', 'files', pr.repo, pr.number],
       }),
@@ -157,6 +234,7 @@ export function upsertReviewThread(
   const reviewThreads = upsertThread(current?.reviewThreads ?? [], thread);
   return {
     reviewThreads,
+    reviewThreadsTruncated: current?.reviewThreadsTruncated ?? false,
     unresolvedReviewThreads: reviewThreads.filter((item) => !item.isResolved),
   };
 }

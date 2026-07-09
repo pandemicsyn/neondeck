@@ -253,6 +253,7 @@ async function enrichPullRequest(token: string, item: GitHubPullRequest) {
       state: detail.state,
       draft: detail.draft,
       headSha: detail.headSha,
+      baseSha: detail.baseSha ?? null,
       baseRef: detail.baseRef,
       checks,
       ageDays: ageDays(item.updatedAt),

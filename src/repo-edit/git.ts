@@ -16,6 +16,7 @@ export type RepoGitStatus = {
 
 export type RepoDiffFile = {
   path: string;
+  previousPath?: string | null;
   status: string;
   additions: number;
   deletions: number;
@@ -99,16 +100,35 @@ export async function gitDiff(
   repoRoot: string,
   input: {
     base?: string;
+    head?: string;
     paths?: string[];
     includePatch?: boolean;
     maxPatchBytes?: number;
   } = {},
 ): Promise<RepoDiffResult> {
   const base = validateRef(input.base ?? 'HEAD');
+  const head = input.head ? validateRef(input.head) : undefined;
   const pathspec = validatePathspec(input.paths);
+  const refs = head ? [base, head] : [base];
   const [nameStatus, numstat] = await Promise.all([
-    git(repoRoot, ['diff', '--name-status', base, '--', ...pathspec]),
-    git(repoRoot, ['diff', '--numstat', base, '--', ...pathspec]),
+    git(repoRoot, [
+      'diff',
+      '--name-status',
+      '--find-renames',
+      '-z',
+      ...refs,
+      '--',
+      ...pathspec,
+    ]),
+    git(repoRoot, [
+      'diff',
+      '--numstat',
+      '--find-renames',
+      '-z',
+      ...refs,
+      '--',
+      ...pathspec,
+    ]),
   ]);
   const statuses = parseNameStatus(nameStatus);
   const numstats = parseNumstat(numstat);
@@ -119,12 +139,21 @@ export async function gitDiff(
         deletions: 0,
         binary: false,
       };
+      const status = statuses.get(path);
       const patch = input.includePatch
-        ? await filePatch(repoRoot, base, path, input.maxPatchBytes)
+        ? await filePatch(
+            repoRoot,
+            base,
+            path,
+            input.maxPatchBytes,
+            head,
+            status?.previousPath ?? null,
+          )
         : undefined;
       return {
         path,
-        status: statuses.get(path) ?? 'M',
+        previousPath: status?.previousPath ?? null,
+        status: status?.status ?? 'M',
         additions: stats.additions,
         deletions: stats.deletions,
         binary: stats.binary,
@@ -134,7 +163,7 @@ export async function gitDiff(
       };
     }),
   );
-  const untrackedFiles = await listUntracked(repoRoot, pathspec);
+  const untrackedFiles = head ? [] : await listUntracked(repoRoot, pathspec);
   const files = [
     ...trackedFiles,
     ...(await Promise.all(
@@ -145,6 +174,7 @@ export async function gitDiff(
           : undefined;
         return {
           path,
+          previousPath: null,
           status: 'untracked',
           additions,
           deletions: 0,
@@ -458,8 +488,20 @@ async function filePatch(
   base: string,
   path: string,
   maxBytes = 64 * 1024,
+  head?: string,
+  previousPath?: string | null,
 ) {
-  const patch = await git(repoRoot, ['diff', '--no-color', base, '--', path]);
+  const refs = head ? [base, head] : [base];
+  const paths =
+    previousPath && previousPath !== path ? [previousPath, path] : [path];
+  const patch = await git(repoRoot, [
+    'diff',
+    '--no-color',
+    '--find-renames',
+    ...refs,
+    '--',
+    ...paths,
+  ]);
   if (Buffer.byteLength(patch, 'utf8') <= maxBytes) {
     return { patch, truncated: false };
   }
@@ -467,17 +509,66 @@ async function filePatch(
 }
 
 function parseNameStatus(output: string) {
-  const statuses = new Map<string, string>();
+  if (output.includes('\0')) return parseNameStatusZ(output);
+  const statuses = new Map<
+    string,
+    { status: string; previousPath: string | null }
+  >();
   for (const line of output.split('\n')) {
     if (!line.trim()) continue;
-    const [status, ...paths] = line.split(/\s+/);
+    const [status, ...paths] = line.split('\t');
     const path = paths.at(-1);
-    if (status && path) statuses.set(path, status);
+    if (!status || !path) continue;
+    statuses.set(path, {
+      status: normalizeNameStatus(status),
+      previousPath:
+        status.startsWith('R') || status.startsWith('C')
+          ? (paths[0] ?? null)
+          : null,
+    });
   }
   return statuses;
 }
 
+function parseNameStatusZ(output: string) {
+  const statuses = new Map<
+    string,
+    { status: string; previousPath: string | null }
+  >();
+  const fields = output.split('\0');
+  for (let index = 0; index < fields.length;) {
+    const status = fields[index++];
+    if (!status) continue;
+    if (status.startsWith('R') || status.startsWith('C')) {
+      const previousPath = fields[index++] ?? null;
+      const path = fields[index++];
+      if (path) {
+        statuses.set(path, {
+          status: normalizeNameStatus(status),
+          previousPath,
+        });
+      }
+      continue;
+    }
+    const path = fields[index++];
+    if (path) {
+      statuses.set(path, {
+        status: normalizeNameStatus(status),
+        previousPath: null,
+      });
+    }
+  }
+  return statuses;
+}
+
+function normalizeNameStatus(status: string) {
+  if (status.startsWith('R')) return 'R';
+  if (status.startsWith('C')) return 'C';
+  return status;
+}
+
 function parseNumstat(output: string) {
+  if (output.includes('\0')) return parseNumstatZ(output);
   const stats = new Map<
     string,
     { additions: number; deletions: number; binary: boolean }
@@ -486,6 +577,32 @@ function parseNumstat(output: string) {
     if (!line.trim()) continue;
     const [additions, deletions, ...paths] = line.split(/\s+/);
     const path = paths.join(' ');
+    if (!path) continue;
+    const binary = additions === '-' || deletions === '-';
+    stats.set(path, {
+      additions: binary ? 0 : Number(additions ?? 0),
+      deletions: binary ? 0 : Number(deletions ?? 0),
+      binary,
+    });
+  }
+  return stats;
+}
+
+function parseNumstatZ(output: string) {
+  const stats = new Map<
+    string,
+    { additions: number; deletions: number; binary: boolean }
+  >();
+  const fields = output.split('\0');
+  for (let index = 0; index < fields.length;) {
+    const header = fields[index++];
+    if (!header) continue;
+    const [additions, deletions, pathFromHeader = ''] = header.split('\t');
+    let path = pathFromHeader;
+    if (!pathFromHeader) {
+      index += 1;
+      path = fields[index++] ?? '';
+    }
     if (!path) continue;
     const binary = additions === '-' || deletions === '-';
     stats.set(path, {

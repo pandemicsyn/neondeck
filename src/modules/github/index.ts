@@ -23,6 +23,7 @@ export type { GitHubPullRequestEventStateTruncation } from './state-truncation';
 export {
   fetchPullRequestFilesWithCache,
   readCachedPullRequestFiles,
+  stripPullRequestPatches,
 } from './pr-file-cache';
 export {
   fetchCheckRunDetails,

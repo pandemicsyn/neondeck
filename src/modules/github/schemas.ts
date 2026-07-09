@@ -17,6 +17,7 @@ export type GitHubPullRequest = {
   ageDays: number;
   stale: boolean;
   headSha: string | null;
+  baseSha?: string | null;
   baseRef: string | null;
   checks: GitHubCheckSummary | null;
   checkError?: string;

@@ -29,7 +29,9 @@ import {
   useGitHubPrReviewDraft,
   useGitHubPrReviewMutations,
   useGitHubPrReviewThreads,
-  useGitHubPullRequestFiles,
+  useGitHubPullRequestFileList,
+  useGitHubPullRequestFilePatches,
+  usePrefetchGitHubPullRequestFilePatch,
 } from './queries';
 import {
   commentAnchorExists,
@@ -58,14 +60,10 @@ export function GitHubPrReview({
   mode?: GitHubPrReviewMode;
   pr: GitHubPullRequest;
 }) {
-  const filesQuery = useGitHubPullRequestFiles(pr);
+  const filesQuery = useGitHubPullRequestFileList(pr);
   const threadsQuery = useGitHubPrReviewThreads(pr);
   const draftQuery = useGitHubPrReviewDraft(pr);
   const mutations = useGitHubPrReviewMutations(pr);
-  const files = useMemo(
-    () => (filesQuery.data?.files ?? []) as DiffFilePatch[],
-    [filesQuery.data?.files],
-  );
   const [activePath, setActivePath] = useState<string | null>(null);
   const [composer, setComposer] = useState<ComposerState | null>(null);
   const [composerBody, setComposerBody] = useState('');
@@ -86,6 +84,10 @@ export function GitHubPrReview({
     Set<string>
   >(() => new Set());
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const fileList = useMemo(
+    () => (filesQuery.data?.files ?? []) as DiffFilePatch[],
+    [filesQuery.data?.files],
+  );
   const reviewThreads = useMemo(
     () => threadsQuery.data?.reviewThreads ?? [],
     [threadsQuery.data?.reviewThreads],
@@ -95,14 +97,41 @@ export function GitHubPrReview({
     [threadsQuery.data?.unresolvedReviewThreads],
   );
   const draft = draftQuery.data ?? null;
+  const eagerPatchPaths = useMemo(
+    () =>
+      reviewPatchPaths({
+        activePath,
+        draft,
+        files: fileList,
+        unresolvedThreads,
+      }),
+    [activePath, draft, fileList, unresolvedThreads],
+  );
+  const patchQueries = useGitHubPullRequestFilePatches(pr, eagerPatchPaths);
+  const patchQueryByPath = new Map(
+    eagerPatchPaths.map((path, index) => [path, patchQueries[index]]),
+  );
+  const files = mergePatchResults(fileList, patchQueries);
+  const activePatchQuery = activePath
+    ? patchQueryByPath.get(activePath)
+    : undefined;
+  const prefetchPatch = usePrefetchGitHubPullRequestFilePatch(pr);
   const currentHeadSha = pr.headSha ?? '';
   const patchIndexesByPath = useMemo(
     () => patchAnchorIndexesByPath(files),
     [files],
   );
+  const isDraftPatchLoading = (draft?.comments ?? []).some((comment) => {
+    const file = files.find((item) => item.path === comment.path);
+    if (patchHasContent(file?.patch)) return false;
+    return patchQueryByPath.get(comment.path)?.isLoading ?? false;
+  });
   const staleCommentIds = useMemo(
-    () => staleDraftCommentIds(draft, patchIndexesByPath),
-    [draft, patchIndexesByPath],
+    () =>
+      isDraftPatchLoading
+        ? new Set<string>()
+        : staleDraftCommentIds(draft, patchIndexesByPath),
+    [draft, isDraftPatchLoading, patchIndexesByPath],
   );
   const blockedCommentIds = useMemo(
     () => new Set([...staleCommentIds, ...submitFailedCommentIds]),
@@ -162,11 +191,28 @@ export function GitHubPrReview({
     : filesQuery.error
       ? `PR files unavailable: ${queryErrorMessage(filesQuery.error)}`
       : null;
+  const patchErrorMessage = activePatchQuery?.error
+    ? `Patch unavailable: ${queryErrorMessage(activePatchQuery.error)}`
+    : null;
 
   useEffect(() => {
-    if (activePath && files.some((file) => file.path === activePath)) return;
-    setActivePath(firstRenderablePath(files) ?? null);
-  }, [activePath, files]);
+    if (activePath && fileList.some((file) => file.path === activePath)) return;
+    setActivePath(fileList[0]?.path ?? null);
+  }, [activePath, fileList]);
+
+  useEffect(() => {
+    const firstPath = fileList[0]?.path;
+    if (firstPath) void prefetchPatch(firstPath);
+  }, [fileList, prefetchPatch]);
+
+  useEffect(() => {
+    if (!activePath) return;
+    const index = fileList.findIndex((file) => file.path === activePath);
+    if (index < 0) return;
+    for (const file of [fileList[index - 1], fileList[index + 1]]) {
+      if (file?.path) void prefetchPatch(file.path);
+    }
+  }, [activePath, fileList, prefetchPatch]);
 
   useEffect(() => {
     const nextDraftId = draft?.id ?? null;
@@ -627,6 +673,10 @@ export function GitHubPrReview({
     const url = new URL('/review', window.location.origin);
     url.searchParams.set('repo', pr.repo);
     url.searchParams.set('number', String(pr.number));
+    if (pr.headSha) url.searchParams.set('head', pr.headSha);
+    if (pr.baseSha) url.searchParams.set('base', pr.baseSha);
+    if (pr.baseRef) url.searchParams.set('baseRef', pr.baseRef);
+    if (pr.title) url.searchParams.set('title', pr.title);
     window.open(
       url.toString(),
       `neondeck-pr-review-${pr.number}`,
@@ -769,8 +819,10 @@ export function GitHubPrReview({
               ) : undefined
             }
             inspectorLabel="PR review inspector"
+            isLoadingPatch={Boolean(activePatchQuery?.isLoading)}
             onSelectedLinesChange={onSelectionChange}
             onActivePathChange={setActivePath}
+            patchError={patchErrorMessage}
             renderAnnotation={renderAnnotation}
             selectedLines={
               composer?.path === activePath ? composer.selection : null
@@ -835,6 +887,46 @@ export function GitHubPrReview({
         />
       )}
     </section>
+  );
+}
+
+function mergePatchResults(
+  files: DiffFilePatch[],
+  patchQueries: Array<{ data?: { file: DiffFilePatch | null } }>,
+) {
+  const patchesByPath = new Map<string, DiffFilePatch>();
+  for (const query of patchQueries) {
+    const file = query.data?.file;
+    if (file) patchesByPath.set(file.path, file);
+  }
+  if (patchesByPath.size === 0) return files;
+  return files.map((file) => {
+    const patched = patchesByPath.get(file.path);
+    return patched ? { ...file, ...patched } : file;
+  });
+}
+
+function reviewPatchPaths({
+  activePath,
+  draft,
+  files,
+  unresolvedThreads,
+}: {
+  activePath: string | null;
+  draft: GitHubPrReviewDraft | null;
+  files: DiffFilePatch[];
+  unresolvedThreads: GitHubPullRequestReviewThread[];
+}) {
+  const availablePaths = new Set(files.map((file) => file.path));
+  const paths = [
+    activePath,
+    ...(draft?.comments.map((comment) => comment.path) ?? []),
+    ...unresolvedThreads
+      .map(threadPath)
+      .filter((path): path is string => Boolean(path)),
+  ];
+  return [...new Set(paths)].filter((path): path is string =>
+    Boolean(path && availablePaths.has(path)),
   );
 }
 
