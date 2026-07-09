@@ -137,7 +137,7 @@ async function resolveLocalPullRequestRefs(
     throw unavailable('A base SHA or base ref is required for local PR diffs.');
   }
 
-  const base = baseSha ?? remoteBranchRef(baseRef!);
+  const base = baseSha ?? neondeckBaseRef(baseRef!);
   const warmMergeBase = await mergeBase(repo.path, base, head).catch(
     () => null,
   );
@@ -158,9 +158,15 @@ async function resolveLocalPullRequestRefs(
       `+refs/pull/${input.number}/head:refs/neondeck/pull/${input.number}/head`,
     ];
     if (baseRef) {
-      refspecs.push(`+refs/heads/${baseRef}:${remoteBranchRef(baseRef)}`);
+      refspecs.push(`+refs/heads/${baseRef}:${neondeckBaseRef(baseRef)}`);
     }
-    await git(repo.path, ['fetch', '--no-tags', 'origin', ...refspecs]);
+    await git(repo.path, [
+      'fetch',
+      '--no-tags',
+      '--refmap=',
+      'origin',
+      ...refspecs,
+    ]);
   });
 
   const fetchedMergeBase = await mergeBase(repo.path, base, head).catch(
@@ -176,9 +182,11 @@ async function resolveLocalPullRequestRefs(
 }
 
 async function assertOriginMatches(repo: RepoConfig) {
-  const origin = await git(repo.path, ['remote', 'get-url', 'origin']).then(
-    (output) => output.trim(),
-  );
+  const origin = await git(repo.path, [
+    'config',
+    '--get',
+    'remote.origin.url',
+  ]).then((output) => output.trim());
   const parsed = parseGitHubRemote(origin);
   if (!parsed) {
     throw unavailable(`Origin remote is not a GitHub repository: ${origin}`);
@@ -279,8 +287,8 @@ function validateBranchName(value: string) {
   return trimmed;
 }
 
-function remoteBranchRef(baseRef: string) {
-  return `refs/remotes/origin/${baseRef}`;
+function neondeckBaseRef(baseRef: string) {
+  return `refs/neondeck/base/${baseRef}`;
 }
 
 function fetchKey(

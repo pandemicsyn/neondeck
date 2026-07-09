@@ -122,6 +122,39 @@ describe('local PR diffs', () => {
     expect(patch.diff).toContain('rename from src/old-name.ts');
     expect(patch.diff).toContain('rename to src/new-name.ts');
   });
+
+  it('fetches base refs into the Neondeck namespace', async () => {
+    const { baseSha, headSha, movedBaseSha, paths, repo } =
+      await fetchRefFixture();
+
+    const files = await readLocalPullRequestFiles(
+      {
+        owner: 'example',
+        repo: 'sample',
+        number: 44,
+        headSha,
+        baseRef: 'main',
+        includePatches: false,
+      },
+      paths,
+    );
+
+    expect(files.files).toEqual([
+      expect.objectContaining({
+        path: 'src/app.ts',
+        status: 'modified',
+      }),
+    ]);
+    expect(await git(repo, ['rev-parse', 'refs/remotes/origin/main'])).toBe(
+      baseSha,
+    );
+    expect(await git(repo, ['rev-parse', 'refs/neondeck/base/main'])).toBe(
+      movedBaseSha,
+    );
+    expect(await git(repo, ['rev-parse', 'refs/neondeck/pull/44/head'])).toBe(
+      headSha,
+    );
+  });
 });
 
 async function fixture() {
@@ -235,6 +268,66 @@ async function renameFixture() {
   const headSha = await git(repo, ['rev-parse', 'HEAD']);
   await writeRepoRegistry(paths, repo);
   return { baseSha, headSha, paths };
+}
+
+async function fetchRefFixture() {
+  const home = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
+  const root = await mkdtemp(join(tmpdir(), 'neondeck-fetch-'));
+  const remote = join(root, 'remote.git');
+  const seed = join(root, 'seed');
+  const repo = join(root, 'work');
+  tempRoots.push(home, root);
+  const paths = runtimePaths(home);
+
+  await git(root, ['init', '--bare', '-b', 'main', remote]);
+  await git(root, ['init', '-b', 'main', seed]);
+  await git(seed, ['remote', 'add', 'origin', remote]);
+  await mkdir(join(seed, 'src'), { recursive: true });
+  await writeFile(join(seed, 'src/app.ts'), 'export const value = 1;\n');
+  await commitAll(seed, 'base');
+  const baseSha = await git(seed, ['rev-parse', 'HEAD']);
+  await git(seed, ['push', 'origin', 'main']);
+
+  await execFileAsync('git', ['clone', remote, repo]);
+  await git(repo, [
+    'remote',
+    'set-url',
+    'origin',
+    'git@github.com:example/sample.git',
+  ]);
+  await git(repo, [
+    'config',
+    `url.file://${remote}.insteadOf`,
+    'git@github.com:example/sample.git',
+  ]);
+
+  await git(seed, ['switch', '-c', 'feature']);
+  await writeFile(join(seed, 'src/app.ts'), 'export const value = 2;\n');
+  await commitAll(seed, 'head');
+  const headSha = await git(seed, ['rev-parse', 'HEAD']);
+  await git(seed, ['push', 'origin', `HEAD:refs/pull/44/head`]);
+
+  await git(seed, ['switch', 'main']);
+  await writeFile(join(seed, 'README.md'), '# sample\n');
+  await commitAll(seed, 'move base');
+  const movedBaseSha = await git(seed, ['rev-parse', 'HEAD']);
+  await git(seed, ['push', 'origin', 'main']);
+
+  await writeRepoRegistry(paths, repo);
+  return { baseSha, headSha, movedBaseSha, paths, repo };
+}
+
+async function commitAll(repo: string, message: string) {
+  await git(repo, ['add', '-A']);
+  await git(repo, [
+    '-c',
+    'user.name=Test',
+    '-c',
+    'user.email=test@example.com',
+    'commit',
+    '-m',
+    message,
+  ]);
 }
 
 async function writeRepoRegistry(paths: RuntimePaths, repo: string) {

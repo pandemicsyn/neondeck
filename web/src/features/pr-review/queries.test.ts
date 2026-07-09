@@ -6,7 +6,7 @@ import type {
 import { prReviewQueryKeys, upsertReviewThread } from './queries';
 
 describe('prReviewQueryKeys', () => {
-  it('keys file and thread data by revision, not PR activity timestamp', () => {
+  it('keys files by diff inputs and threads by PR activity', () => {
     const pr = pullRequest();
     const activityUpdated = {
       ...pr,
@@ -18,11 +18,20 @@ describe('prReviewQueryKeys', () => {
     expect(prReviewQueryKeys.files(pr)).not.toEqual(
       prReviewQueryKeys.files(headUpdated),
     );
-    expect(prReviewQueryKeys.fileList(pr)).toEqual(
+    expect(prReviewQueryKeys.files(pr)).not.toEqual(
+      prReviewQueryKeys.files(baseUpdated),
+    );
+    expect(prReviewQueryKeys.fileList(pr)).not.toEqual(
       prReviewQueryKeys.fileList(baseUpdated),
+    );
+    expect(prReviewQueryKeys.filePatch(pr, 'src/app.ts')).not.toEqual(
+      prReviewQueryKeys.filePatch(baseUpdated, 'src/app.ts'),
     );
     expect(prReviewQueryKeys.reviewThreads(pr)).not.toEqual(
       prReviewQueryKeys.reviewThreads(headUpdated),
+    );
+    expect(prReviewQueryKeys.reviewThreads(pr)).not.toEqual(
+      prReviewQueryKeys.reviewThreads(activityUpdated),
     );
     expect(prReviewQueryKeys.files(pr)).toEqual(
       prReviewQueryKeys.files(activityUpdated),
