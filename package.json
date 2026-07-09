@@ -19,6 +19,7 @@
     "config/",
     "SOUL.md",
     "README.md",
+    "DEVELOPMENT.md",
     "CHANGELOG.md",
     "LICENSE",
     "drizzle.config.ts"
