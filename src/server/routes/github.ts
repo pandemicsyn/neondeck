@@ -3,6 +3,7 @@ import { getGitHubPullRequest, listGitHubPrQueue } from '../../modules/github';
 import {
   getGitHubPrBranchPermissions,
   getGitHubPrEventState,
+  getGitHubPrFileDiff,
   getGitHubPrFiles,
   getGitHubPrReviewDraft,
   getGitHubPrRequestedChanges,
@@ -18,7 +19,7 @@ import {
   putGitHubPrReviewDraft,
 } from '../../modules/pr-events';
 import type { RuntimePaths } from '../../runtime-home';
-import { safeJsonBody } from '../http';
+import { queryNumber, safeJsonBody } from '../http';
 
 export function createGitHubRoutes(paths: RuntimePaths) {
   const routes = new Hono();
@@ -60,6 +61,39 @@ export function createGitHubRoutes(paths: RuntimePaths) {
     return c.json(result, result.ok ? 200 : 400);
   });
 
+  routes.get('/prs/:owner/:repo/:number/files/diff', async (c) => {
+    const owner = c.req.param('owner');
+    const repo = c.req.param('repo');
+    const number = Number(c.req.param('number'));
+    if (!Number.isInteger(number) || number <= 0) {
+      return c.json(
+        {
+          ok: false,
+          action: 'github_pr_file_diff_get',
+          changed: false,
+          message: 'Invalid PR number.',
+          requires: ['prNumber'],
+        },
+        400,
+      );
+    }
+
+    const result = await getGitHubPrFileDiff(
+      {
+        repo: `${owner}/${repo}`,
+        prNumber: number,
+        path: c.req.query('path') ?? '',
+        headSha: c.req.query('head')?.trim() || undefined,
+        baseSha: c.req.query('base')?.trim() || undefined,
+        baseRef: c.req.query('baseRef')?.trim() || undefined,
+        source: sourceQuery(c.req.query('source')),
+        maxPatchBytes: queryNumber(c.req.query('maxPatchBytes')),
+      },
+      paths,
+    );
+    return c.json(result, result.ok ? 200 : 400);
+  });
+
   routes.get('/prs/:owner/:repo/:number/files', async (c) => {
     const owner = c.req.param('owner');
     const repo = c.req.param('repo');
@@ -77,9 +111,16 @@ export function createGitHubRoutes(paths: RuntimePaths) {
       );
     }
 
-    const headSha = c.req.query('head')?.trim() || undefined;
     const result = await getGitHubPrFiles(
-      { repo: `${owner}/${repo}`, prNumber: number, headSha },
+      {
+        repo: `${owner}/${repo}`,
+        prNumber: number,
+        headSha: c.req.query('head')?.trim() || undefined,
+        baseSha: c.req.query('base')?.trim() || undefined,
+        baseRef: c.req.query('baseRef')?.trim() || undefined,
+        patches: patchesQuery(c.req.query('patches')),
+        source: sourceQuery(c.req.query('source')),
+      },
       paths,
     );
     return c.json(result, result.ok ? 200 : 400);
@@ -318,4 +359,14 @@ function prTargetFromParams(owner: string, repo: string, numberText: string) {
     ok: true as const,
     input: { repo: `${owner}/${repo}`, prNumber: number },
   };
+}
+
+function patchesQuery(value: string | undefined) {
+  return value === 'none' || value === 'all' ? value : undefined;
+}
+
+function sourceQuery(value: string | undefined) {
+  return value === 'local' || value === 'github' || value === 'auto'
+    ? value
+    : undefined;
 }

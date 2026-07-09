@@ -813,6 +813,20 @@ describe('app API safety routes', () => {
     }
   });
 
+  it('labels invalid GitHub PR file-diff route inputs with the file-diff action', async () => {
+    const response = await app.request(
+      'http://localhost/api/github/prs/pandemicsyn/neondeck/not-a-number/files/diff?path=src/app.ts',
+      { headers: { host: 'localhost' } },
+    );
+    const body = (await response.json()) as { action?: string; ok?: boolean };
+
+    expect(response.status).toBe(400);
+    expect(body).toMatchObject({
+      ok: false,
+      action: 'github_pr_file_diff_get',
+    });
+  });
+
   it('serves PR event autopilot triage over the local API', async () => {
     const response = await app.request(
       'http://localhost/api/autopilot/triage-pr-event',

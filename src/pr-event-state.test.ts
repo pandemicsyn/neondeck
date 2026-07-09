@@ -47,12 +47,16 @@ describe('PR event state watermarks', () => {
     expect(neondeckPrEventTools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
         'neondeck_pr_review_comments_lookup',
+        'neondeck_pr_file_diff_lookup',
         'neondeck_pr_requested_changes_lookup',
         'neondeck_pr_branch_permissions_lookup',
       ]),
     );
     expect(neondeckPrEventActions.map((action) => action.name)).toEqual(
-      expect.arrayContaining(['neondeck_pr_comment']),
+      expect.arrayContaining([
+        'neondeck_github_pr_file_diff_get',
+        'neondeck_pr_comment',
+      ]),
     );
   });
 
@@ -290,6 +294,10 @@ describe('PR event state watermarks', () => {
 
     const dependencies = {
       fetchPullRequestEventState: async () => prEventState(),
+      fetchPullRequestReviewThreads: async () => ({
+        reviewThreads: prEventState().reviewThreads,
+        truncated: false,
+      }),
     };
 
     await expect(

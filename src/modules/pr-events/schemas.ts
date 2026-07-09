@@ -5,6 +5,7 @@ import * as v from 'valibot';
 import {
   fetchPullRequestEventState,
   fetchPullRequestFiles,
+  fetchPullRequestReviewThreadsWithMetadata,
   fetchPullRequestReviewThread,
   replyToPullRequestReviewThread,
   resolvePullRequestReviewThread,
@@ -71,6 +72,7 @@ export type PrEventStateDependencies = {
     repo: string;
     number: number;
   }) => Promise<string | null | undefined>;
+  fetchPullRequestReviewThreads?: typeof fetchPullRequestReviewThreadsWithMetadata;
   fetchPullRequestReviewThread?: typeof fetchPullRequestReviewThread;
   postPullRequestComment?: typeof postPullRequestComment;
   submitPullRequestReview?: typeof submitPullRequestReview;
@@ -103,6 +105,24 @@ export const prFilesInputSchema = v.object({
   repo: v.optional(nonEmptyStringSchema),
   prNumber: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
   headSha: v.optional(v.nullable(nonEmptyStringSchema)),
+  baseSha: v.optional(v.nullable(nonEmptyStringSchema)),
+  baseRef: v.optional(v.nullable(nonEmptyStringSchema)),
+  patches: v.optional(v.picklist(['all', 'none'])),
+  source: v.optional(v.picklist(['auto', 'local', 'github'])),
+});
+export const prFileDiffInputSchema = v.object({
+  watchId: v.optional(nonEmptyStringSchema),
+  ref: v.optional(nonEmptyStringSchema),
+  repo: v.optional(nonEmptyStringSchema),
+  prNumber: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+  headSha: v.optional(v.nullable(nonEmptyStringSchema)),
+  baseSha: v.optional(v.nullable(nonEmptyStringSchema)),
+  baseRef: v.optional(v.nullable(nonEmptyStringSchema)),
+  source: v.optional(v.picklist(['auto', 'local', 'github'])),
+  path: nonEmptyStringSchema,
+  maxPatchBytes: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(256 * 1024)),
+  ),
 });
 export const prWatchEventWatermarkListInputSchema = v.object({
   watchId: v.optional(nonEmptyStringSchema),

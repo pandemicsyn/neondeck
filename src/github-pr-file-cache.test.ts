@@ -100,6 +100,53 @@ describe('GitHub PR file cache', () => {
     expect(hit).toEqual(fetched);
   });
 
+  it('serves patchless responses without stripping the cached payload', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const files = [
+      prFile({
+        path: 'src/app.ts',
+        patch:
+          'diff --git a/src/app.ts b/src/app.ts\n@@ -1 +1 @@\n-old\n+new\n',
+      }),
+    ];
+    const fetched = prFiles(files, '2026-07-05T14:00:00.000Z');
+
+    const miss = await fetchPullRequestFilesWithCache({
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+      headSha: 'head123',
+      patches: 'none',
+      databasePath: paths.neondeckDatabase,
+      fetcher: async () => fetched,
+      fetchHeadSha: async () => 'head123',
+      now: new Date('2026-07-05T14:00:00.000Z'),
+    });
+
+    expect(miss.files[0]?.patch).toBeNull();
+    expect(readCacheRows(paths.neondeckDatabase)[0]?.payload).toBe(
+      JSON.stringify(files),
+    );
+
+    const hit = await fetchPullRequestFilesWithCache({
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+      headSha: 'head123',
+      patches: 'none',
+      databasePath: paths.neondeckDatabase,
+      fetcher: async () => {
+        throw new Error('cache hit should not fetch');
+      },
+    });
+
+    expect(hit.files[0]?.patch).toBeNull();
+    expect(hit.diffSummary).toEqual(fetched.diffSummary);
+  });
+
   it('bypasses the cache without a head SHA and skips empty file lists', async () => {
     const paths = runtimePaths(await tempHome());
     await ensureRuntimeHome(paths);

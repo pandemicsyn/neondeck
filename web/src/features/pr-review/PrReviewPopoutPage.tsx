@@ -1,6 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { lazy, Suspense, type CSSProperties } from 'react';
-import { getGitHubPullRequest, type DashboardDensity } from '../../api';
+import {
+  getGitHubPullRequest,
+  type DashboardDensity,
+  type GitHubPullRequest,
+} from '../../api';
 import { EmptyState } from '../../components/ui';
 import { queryErrorMessage, queryKeys } from '../../lib/query';
 
@@ -13,6 +17,10 @@ const GitHubPrReview = lazy(() =>
 export type ReviewPopoutTarget = {
   repo: string;
   number: number;
+  headSha?: string | null;
+  baseSha?: string | null;
+  baseRef?: string | null;
+  title?: string | null;
 };
 
 export type ReviewPopoutAppearance = {
@@ -32,6 +40,7 @@ export function PrReviewPopoutPage({
     queryFn: () => getGitHubPullRequest(target),
     refetchInterval: 5 * 60_000,
   });
+  const pullRequest = prQuery.data ?? optimisticPullRequest(target);
   const style = {
     '--deck-text-scale': appearance.textScale.toString(),
   } as CSSProperties;
@@ -44,30 +53,22 @@ export function PrReviewPopoutPage({
       data-display-preset="review-popout"
       style={style}
     >
-      {prQuery.isLoading ? (
-        <ReviewPopoutState
-          detail={`Loading ${target.repo}#${target.number}.`}
-          title="Loading PR review"
-        />
-      ) : null}
       {prQuery.error ? (
         <ReviewPopoutState
           detail={queryErrorMessage(prQuery.error)}
-          title="GitHub PR unavailable"
+          title="GitHub PR detail unavailable"
         />
       ) : null}
-      {prQuery.data ? (
-        <Suspense
-          fallback={
-            <ReviewPopoutState
-              detail="Loading the review workbench."
-              title="Loading PR review"
-            />
-          }
-        >
-          <GitHubPrReview mode="standalone" pr={prQuery.data} />
-        </Suspense>
-      ) : null}
+      <Suspense
+        fallback={
+          <ReviewPopoutState
+            detail="Loading the review workbench."
+            title="Loading PR review"
+          />
+        }
+      >
+        <GitHubPrReview mode="standalone" pr={pullRequest} />
+      </Suspense>
     </section>
   );
 }
@@ -109,4 +110,29 @@ function ReviewPopoutState({
       <EmptyState detail={detail} title={title} />
     </div>
   );
+}
+
+function optimisticPullRequest(target: ReviewPopoutTarget): GitHubPullRequest {
+  const now = new Date().toISOString();
+  return {
+    id: target.number,
+    title: target.title?.trim() || `${target.repo}#${target.number}`,
+    repo: target.repo,
+    number: target.number,
+    url: `https://github.com/${target.repo}/pull/${target.number}`,
+    state: 'open',
+    draft: false,
+    author: 'unknown',
+    labels: [],
+    comments: 0,
+    updatedAt: now,
+    createdAt: now,
+    relations: [],
+    ageDays: 0,
+    stale: false,
+    headSha: target.headSha ?? null,
+    baseSha: target.baseSha ?? null,
+    baseRef: target.baseRef ?? null,
+    checks: null,
+  };
 }

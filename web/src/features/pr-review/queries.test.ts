@@ -6,22 +6,41 @@ import type {
 import { prReviewQueryKeys, upsertReviewThread } from './queries';
 
 describe('prReviewQueryKeys', () => {
-  it('includes PR revision fields in files and review thread keys', () => {
+  it('keys files by diff inputs and threads by PR activity', () => {
     const pr = pullRequest();
-    const updated = {
+    const activityUpdated = {
       ...pr,
-      headSha: 'head-2',
       updatedAt: '2026-07-05T02:30:00.000Z',
     };
+    const headUpdated = { ...activityUpdated, headSha: 'head-2' };
+    const baseUpdated = { ...activityUpdated, baseSha: 'base-2' };
 
     expect(prReviewQueryKeys.files(pr)).not.toEqual(
-      prReviewQueryKeys.files(updated),
+      prReviewQueryKeys.files(headUpdated),
+    );
+    expect(prReviewQueryKeys.files(pr)).not.toEqual(
+      prReviewQueryKeys.files(baseUpdated),
+    );
+    expect(prReviewQueryKeys.fileList(pr)).not.toEqual(
+      prReviewQueryKeys.fileList(baseUpdated),
+    );
+    expect(prReviewQueryKeys.filePatch(pr, 'src/app.ts')).not.toEqual(
+      prReviewQueryKeys.filePatch(baseUpdated, 'src/app.ts'),
     );
     expect(prReviewQueryKeys.reviewThreads(pr)).not.toEqual(
-      prReviewQueryKeys.reviewThreads(updated),
+      prReviewQueryKeys.reviewThreads(headUpdated),
+    );
+    expect(prReviewQueryKeys.reviewThreads(pr)).not.toEqual(
+      prReviewQueryKeys.reviewThreads(activityUpdated),
+    );
+    expect(prReviewQueryKeys.files(pr)).toEqual(
+      prReviewQueryKeys.files(activityUpdated),
+    );
+    expect(prReviewQueryKeys.filePatch(pr, 'src/app.ts')).toEqual(
+      prReviewQueryKeys.filePatch(activityUpdated, 'src/app.ts'),
     );
     expect(prReviewQueryKeys.draft(pr)).toEqual(
-      prReviewQueryKeys.draft(updated),
+      prReviewQueryKeys.draft(activityUpdated),
     );
   });
 
@@ -34,12 +53,14 @@ describe('prReviewQueryKeys', () => {
       upsertReviewThread(
         {
           reviewThreads: [existing, other],
+          reviewThreadsTruncated: false,
           unresolvedReviewThreads: [existing, other],
         },
         updated,
       ),
     ).toEqual({
       reviewThreads: [updated, other],
+      reviewThreadsTruncated: false,
       unresolvedReviewThreads: [other],
     });
   });
@@ -62,6 +83,7 @@ function pullRequest(): GitHubPullRequest {
     ageDays: 0,
     stale: false,
     headSha: 'head-1',
+    baseSha: 'base-1',
     baseRef: 'agent/diff-ui-pr1',
     checks: null,
   };

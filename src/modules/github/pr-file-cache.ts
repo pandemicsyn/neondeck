@@ -30,6 +30,7 @@ export async function fetchPullRequestFilesWithCache(options: {
   repo: string;
   number: number;
   headSha?: string | null;
+  patches?: 'all' | 'none';
   databasePath: string;
   fetcher?: typeof fetchPullRequestFiles;
   fetchHeadSha?: PullRequestHeadShaFetcher;
@@ -40,12 +41,15 @@ export async function fetchPullRequestFilesWithCache(options: {
   const repoFullName = `${options.owner}/${options.repo}`;
   const headSha = options.headSha?.trim() || null;
   if (!headSha) {
-    return fetcher({
-      token: options.token,
-      owner: options.owner,
-      repo: options.repo,
-      number: options.number,
-    });
+    return maybeStripPatches(
+      await fetcher({
+        token: options.token,
+        owner: options.owner,
+        repo: options.repo,
+        number: options.number,
+      }),
+      options.patches,
+    );
   }
 
   const cached = readCachedPullRequestFiles({
@@ -54,7 +58,7 @@ export async function fetchPullRequestFilesWithCache(options: {
     number: options.number,
     headSha,
   });
-  if (cached) return cached;
+  if (cached) return maybeStripPatches(cached, options.patches);
 
   const request = {
     token: options.token,
@@ -83,7 +87,27 @@ export async function fetchPullRequestFilesWithCache(options: {
     });
   }
 
-  return diff;
+  return maybeStripPatches(diff, options.patches);
+}
+
+export function stripPullRequestPatches(
+  diff: GitHubPullRequestFiles,
+): GitHubPullRequestFiles {
+  return {
+    ...diff,
+    files: diff.files.map((file) => ({
+      ...file,
+      patch: null,
+      message: file.message,
+    })),
+  };
+}
+
+function maybeStripPatches(
+  diff: GitHubPullRequestFiles,
+  patches: 'all' | 'none' | undefined,
+) {
+  return patches === 'none' ? stripPullRequestPatches(diff) : diff;
 }
 
 async function fetchCurrentPullRequestHeadSha(options: {

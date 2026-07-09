@@ -158,6 +158,7 @@ export async function getGitHubPullRequest(
       ageDays: ageDays(detail.updatedAt),
       stale: isStale(detail.updatedAt),
       headSha: detail.headSha,
+      baseSha: detail.baseSha ?? null,
       baseRef: detail.baseRef,
       checks,
       ...(checkError ? { checkError } : {}),

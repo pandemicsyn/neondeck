@@ -5,6 +5,7 @@ import type {
   GitHubPrReviewVerdict,
   GitHubPrThreadMutationResponse,
   GitHubPullRequestDetailResponse,
+  GitHubPullRequestFileDiffResponse,
   GitHubPullRequestFilesResponse,
   GitHubPullRequestResponse,
 } from './types';
@@ -31,17 +32,35 @@ export async function getGitHubPullRequestFiles(input: {
   repo: string;
   number: number;
   headSha?: string | null;
+  baseSha?: string | null;
+  baseRef?: string | null;
+  patches?: 'all' | 'none';
+  source?: 'auto' | 'local' | 'github';
 }) {
-  const [owner, name] = input.repo.split('/');
-  if (!owner || !name) {
-    throw new Error(`Invalid GitHub repository "${input.repo}".`);
-  }
-  const query = input.headSha
-    ? `?head=${encodeURIComponent(input.headSha)}`
-    : '';
+  const [owner, name] = parseRepo(input.repo);
+  const query = prFilesQuery(input);
 
   const response = await getJson<GitHubPullRequestFilesResponse>(
     `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/files${query}`,
+  );
+  if (!response.data) throw new Error(response.message);
+  return response.data;
+}
+
+export async function getGitHubPullRequestFileDiff(input: {
+  repo: string;
+  number: number;
+  path: string;
+  headSha?: string | null;
+  baseSha?: string | null;
+  baseRef?: string | null;
+  source?: 'auto' | 'local' | 'github';
+}) {
+  const [owner, name] = parseRepo(input.repo);
+  const query = prFilesQuery({ ...input, patches: undefined });
+  const separator = query ? '&' : '?';
+  const response = await getJson<GitHubPullRequestFileDiffResponse>(
+    `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/files/diff${query}${separator}path=${encodeURIComponent(input.path)}`,
   );
   if (!response.data) throw new Error(response.message);
   return response.data;
@@ -57,6 +76,7 @@ export async function getGitHubPrReviewThreads(input: {
   );
   return {
     reviewThreads: response.data?.reviewThreads ?? [],
+    reviewThreadsTruncated: response.data?.reviewThreadsTruncated ?? false,
     unresolvedReviewThreads: response.data?.unresolvedReviewThreads ?? [],
   };
 }
@@ -239,4 +259,21 @@ function parseRepo(repo: string): [string, string] {
     throw new Error(`Invalid GitHub repository "${repo}".`);
   }
   return [parts[0], parts[1]];
+}
+
+function prFilesQuery(input: {
+  headSha?: string | null;
+  baseSha?: string | null;
+  baseRef?: string | null;
+  patches?: 'all' | 'none';
+  source?: 'auto' | 'local' | 'github';
+}) {
+  const params = new URLSearchParams();
+  if (input.headSha) params.set('head', input.headSha);
+  if (input.baseSha) params.set('base', input.baseSha);
+  if (input.baseRef) params.set('baseRef', input.baseRef);
+  if (input.patches) params.set('patches', input.patches);
+  if (input.source) params.set('source', input.source);
+  const text = params.toString();
+  return text ? `?${text}` : '';
 }

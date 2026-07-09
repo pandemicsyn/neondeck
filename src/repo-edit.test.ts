@@ -19,6 +19,7 @@ import {
   replaceRepoFile,
   writeRepoFile,
 } from './repo-edit';
+import { gitDiff } from './repo-edit/git';
 import { runtimePaths } from './runtime-home';
 
 const execFileAsync = promisify(execFile);
@@ -321,6 +322,116 @@ describe('repo edit actions', () => {
     });
   });
 
+  it('reads explicit head diffs without including worktree-only files', async () => {
+    const { repo } = await fixture();
+    const baseSha = await gitOutput(repo, ['rev-parse', 'HEAD']);
+    await writeFile(join(repo, 'src/app.ts'), 'export const value = 2;\n');
+    await writeFile(
+      join(repo, 'src/head-only.ts'),
+      'export const head = true;\n',
+    );
+    await execFileAsync('git', ['add', '-A'], { cwd: repo });
+    await execFileAsync(
+      'git',
+      [
+        '-c',
+        'user.name=Test',
+        '-c',
+        'user.email=test@example.com',
+        'commit',
+        '-m',
+        'head',
+      ],
+      { cwd: repo },
+    );
+    const headSha = await gitOutput(repo, ['rev-parse', 'HEAD']);
+    await writeFile(
+      join(repo, 'src/worktree-only.ts'),
+      'export const local = true;\n',
+    );
+
+    const diff = await gitDiff(repo, {
+      base: baseSha,
+      head: headSha,
+      includePatch: true,
+    });
+
+    expect(diff.files.map((file) => file.path).sort()).toEqual([
+      'src/app.ts',
+      'src/head-only.ts',
+    ]);
+    expect(
+      diff.files.find((file) => file.path === 'src/app.ts')?.patch,
+    ).toContain('+export const value = 2;');
+  });
+
+  it('maps renamed files with edits to the destination path', async () => {
+    const { repo } = await fixture();
+    await writeFile(
+      join(repo, 'src/old-name.ts'),
+      [
+        'export const one = 1;',
+        'export const two = 2;',
+        'export const three = 3;',
+        'export const four = 4;',
+      ].join('\n') + '\n',
+    );
+    await execFileAsync('git', ['add', '-A'], { cwd: repo });
+    await execFileAsync(
+      'git',
+      [
+        '-c',
+        'user.name=Test',
+        '-c',
+        'user.email=test@example.com',
+        'commit',
+        '-m',
+        'old name',
+      ],
+      { cwd: repo },
+    );
+    const baseSha = await gitOutput(repo, ['rev-parse', 'HEAD']);
+    await execFileAsync('git', ['mv', 'src/old-name.ts', 'src/new-name.ts'], {
+      cwd: repo,
+    });
+    await writeFile(
+      join(repo, 'src/new-name.ts'),
+      [
+        'export const one = 1;',
+        'export const two = 22;',
+        'export const three = 3;',
+        'export const four = 4;',
+      ].join('\n') + '\n',
+    );
+    await execFileAsync('git', ['add', '-A'], { cwd: repo });
+    await execFileAsync(
+      'git',
+      [
+        '-c',
+        'user.name=Test',
+        '-c',
+        'user.email=test@example.com',
+        'commit',
+        '-m',
+        'rename with edits',
+      ],
+      { cwd: repo },
+    );
+    const headSha = await gitOutput(repo, ['rev-parse', 'HEAD']);
+
+    const diff = await gitDiff(repo, { base: baseSha, head: headSha });
+
+    expect(diff.files).toEqual([
+      expect.objectContaining({
+        path: 'src/new-name.ts',
+        previousPath: 'src/old-name.ts',
+        status: 'R',
+        additions: 1,
+        deletions: 1,
+      }),
+    ]);
+  });
+
   it('rejects unsafe git diff refs and pathspecs', async () => {
     const { paths } = await fixture();
 
@@ -401,4 +512,9 @@ async function fixture() {
     )}\n`,
   );
   return { home, repo, paths };
+}
+
+async function gitOutput(repo: string, args: string[]) {
+  const { stdout } = await execFileAsync('git', args, { cwd: repo });
+  return stdout.trim();
 }
