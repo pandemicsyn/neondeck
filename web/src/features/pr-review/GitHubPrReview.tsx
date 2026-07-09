@@ -32,6 +32,7 @@ import {
   useGitHubPullRequestFileList,
   useGitHubPullRequestFilePatches,
   usePrefetchGitHubPullRequestFilePatch,
+  type PullRequestFilePatchQueryState,
 } from './queries';
 import {
   commentAnchorExists,
@@ -108,10 +109,11 @@ export function GitHubPrReview({
     [activePath, draft, fileList, unresolvedThreads],
   );
   const patchQueries = useGitHubPullRequestFilePatches(pr, eagerPatchPaths);
-  const patchQueryByPath = new Map(
-    eagerPatchPaths.map((path, index) => [path, patchQueries[index]]),
+  const patchQueryByPath = patchQueries.byPath;
+  const files = useMemo(
+    () => mergePatchResults(fileList, patchQueryByPath),
+    [fileList, patchQueryByPath],
   );
-  const files = mergePatchResults(fileList, patchQueries);
   const activePatchQuery = activePath
     ? patchQueryByPath.get(activePath)
     : undefined;
@@ -121,18 +123,16 @@ export function GitHubPrReview({
     () => patchAnchorIndexesByPath(files),
     [files],
   );
-  const isDraftPatchLoading = (draft?.comments ?? []).some((comment) => {
-    const file = files.find((item) => item.path === comment.path);
-    if (patchHasContent(file?.patch)) return false;
-    return patchQueryByPath.get(comment.path)?.isLoading ?? false;
-  });
-  const staleCommentIds = useMemo(
-    () =>
-      isDraftPatchLoading
-        ? new Set<string>()
-        : staleDraftCommentIds(draft, patchIndexesByPath),
-    [draft, isDraftPatchLoading, patchIndexesByPath],
+  const unknownDraftPatchCommentIds = useMemo(
+    () => draftCommentIdsWithUnknownPatch(draft, files, patchQueryByPath),
+    [draft, files, patchQueryByPath],
   );
+  const staleCommentIds = useMemo(() => {
+    const stale = staleDraftCommentIds(draft, patchIndexesByPath);
+    for (const commentId of unknownDraftPatchCommentIds)
+      stale.delete(commentId);
+    return stale;
+  }, [draft, patchIndexesByPath, unknownDraftPatchCommentIds]);
   const blockedCommentIds = useMemo(
     () => new Set([...staleCommentIds, ...submitFailedCommentIds]),
     [staleCommentIds, submitFailedCommentIds],
@@ -197,11 +197,11 @@ export function GitHubPrReview({
 
   useEffect(() => {
     if (activePath && fileList.some((file) => file.path === activePath)) return;
-    setActivePath(fileList[0]?.path ?? null);
+    setActivePath(firstReviewablePath(fileList) ?? null);
   }, [activePath, fileList]);
 
   useEffect(() => {
-    const firstPath = fileList[0]?.path;
+    const firstPath = firstReviewablePath(fileList);
     if (firstPath) void prefetchPatch(firstPath);
   }, [fileList, prefetchPatch]);
 
@@ -892,18 +892,44 @@ export function GitHubPrReview({
 
 function mergePatchResults(
   files: DiffFilePatch[],
-  patchQueries: Array<{ data?: { file: DiffFilePatch | null } }>,
+  patchQueryByPath: Map<string, PullRequestFilePatchQueryState>,
 ) {
-  const patchesByPath = new Map<string, DiffFilePatch>();
-  for (const query of patchQueries) {
-    const file = query.data?.file;
-    if (file) patchesByPath.set(file.path, file);
-  }
-  if (patchesByPath.size === 0) return files;
+  if (patchQueryByPath.size === 0) return files;
   return files.map((file) => {
-    const patched = patchesByPath.get(file.path);
-    return patched ? { ...file, ...patched } : file;
+    const patched = patchQueryByPath.get(file.path)?.file;
+    return patched
+      ? {
+          ...file,
+          message: patched.message ?? file.message,
+          patch: patched.patch,
+          truncated: patched.truncated ?? file.truncated,
+        }
+      : file;
   });
+}
+
+function draftCommentIdsWithUnknownPatch(
+  draft: GitHubPrReviewDraft | null,
+  files: DiffFilePatch[],
+  patchQueryByPath: Map<string, PullRequestFilePatchQueryState>,
+) {
+  const unknown = new Set<string>();
+  for (const comment of draft?.comments ?? []) {
+    const file = files.find((item) => item.path === comment.path);
+    if (patchHasContent(file?.patch)) continue;
+    const query = patchQueryByPath.get(comment.path);
+    if (query && (query.isLoading || query.isError || !query.hasData)) {
+      unknown.add(comment.id);
+    }
+  }
+  return unknown;
+}
+
+function firstReviewablePath(files: DiffFilePatch[]) {
+  return (
+    files.find((file) => !file.binary && !file.truncated)?.path ??
+    files[0]?.path
+  );
 }
 
 function reviewPatchPaths({

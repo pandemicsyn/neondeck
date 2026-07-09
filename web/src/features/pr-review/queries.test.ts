@@ -18,7 +18,7 @@ describe('prReviewQueryKeys', () => {
     expect(prReviewQueryKeys.files(pr)).not.toEqual(
       prReviewQueryKeys.files(headUpdated),
     );
-    expect(prReviewQueryKeys.fileList(pr)).not.toEqual(
+    expect(prReviewQueryKeys.fileList(pr)).toEqual(
       prReviewQueryKeys.fileList(baseUpdated),
     );
     expect(prReviewQueryKeys.reviewThreads(pr)).not.toEqual(

@@ -27,15 +27,17 @@ import { queryKeys } from '../../lib/query';
 type ReviewThreadsQueryData = Awaited<
   ReturnType<typeof getGitHubPrReviewThreads>
 >;
+export type PullRequestFilePatchQueryState = {
+  file: Awaited<ReturnType<typeof getGitHubPullRequestFileDiff>>['file'];
+  hasData: boolean;
+  isError: boolean;
+  isLoading: boolean;
+  error: unknown;
+};
 
 export const prReviewQueryKeys = {
   revision: (pr: GitHubPullRequest) =>
-    [
-      pr.repo,
-      pr.number,
-      pr.headSha ?? null,
-      pr.baseSha ?? pr.baseRef ?? null,
-    ] as const,
+    [pr.repo, pr.number, pr.headSha ?? null] as const,
   files: (pr: GitHubPullRequest) =>
     ['pr-review', 'files', ...prReviewQueryKeys.revision(pr)] as const,
   fileList: (pr: GitHubPullRequest) =>
@@ -104,6 +106,23 @@ export function useGitHubPullRequestFilePatches(
         }),
       enabled: pr.repo.length > 0 && pr.number > 0 && path.length > 0,
     })),
+    combine: (results) => ({
+      byPath: new Map(
+        paths.map((path, index) => {
+          const result = results[index];
+          return [
+            path,
+            {
+              file: result?.data?.file ?? null,
+              hasData: Boolean(result?.data),
+              isError: result?.isError ?? false,
+              isLoading: result?.isLoading ?? false,
+              error: result?.error ?? null,
+            } satisfies PullRequestFilePatchQueryState,
+          ] as const;
+        }),
+      ),
+    }),
   });
 }
 
