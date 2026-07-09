@@ -43,10 +43,9 @@ const dashboardConfig = `{
             >
           </h1>
           <p class="hero-copy">
-            Your GitHub queue, watched PRs and issues, tracked deployments,
-            alerts, and assistant sessions in one local, agent-managed console.
-            Run it on a companion display, a vertical panel, or a sensor deck on
-            your primary monitor.
+            Your PR queue, active watches, deployments, and alerts in one
+            always-on console that Neon manages for you. Run it on a companion
+            display, a vertical panel, or a sensor deck beside your main monitor.
           </p>
           <div class="command">
             <span class="command-code"
@@ -86,74 +85,79 @@ const dashboardConfig = `{
         <div class="container">
           <div class="section-header">
             <h2>Built for work in progress.</h2>
-            <p>Neon helps you automate developer busy work.</p>
+            <p>Neon watches your PRs, prepares fixes, and keeps the busywork moving.</p>
           </div>
           <div class="feature-grid">
             <article class="feature">
               <div class="spark pink"></div>
-              <h3>GitHub work queue</h3>
+              <h3>Your PRs, with CI status at a glance</h3>
               <p>
-                Review requests, authored and assigned PRs, failing checks,
-                stale work, and related GitHub issues are ranked from
-                server-side GitHub data.
+                Every open PR you've authored across your repos in one panel,
+                with live check status and a flag when one goes stale.
               </p>
             </article>
             <article class="feature">
               <div class="spark teal"></div>
-              <h3>Quiet watches</h3>
+              <h3>Watch a PR, then let autopilot move it</h3>
               <p>
-                Watched PRs, release checks, and deploy targets persist
-                watermarks, survive restarts, and stay quiet until something
-                meaningful changes.
+                Neon tracks a PR through merge, checks, and deploy. When a
+                review requests changes or CI breaks, autopilot prepares the fix
+                in an isolated worktree, runs your checks, and hands you the diff
+                or pushes it — your call, per repo.
               </p>
             </article>
             <article class="feature">
               <div class="spark"></div>
-              <h3>Alerts that know priority</h3>
+              <h3>Review and approve PRs on the deck</h3>
               <p>
-                Notifications dedupe repeated watcher output and separate
-                passive updates from ready, attention, and urgent states.
+                Read the diff, leave inline comments, resolve threads, and
+                submit an approval or change request — without switching to
+                github.com. The verdict is always yours.
               </p>
             </article>
             <article class="feature">
               <div class="spark violet"></div>
-              <h3>Durable sessions</h3>
+              <h3>Handoff, both directions</h3>
               <p>
-                Neon conversations can be named, pinned, archived, searched, and
-                linked back to repos, watches, tasks, and workflow summaries.
+                Delegate real work to dedicated agents like Kilo or Codex — then
+                have them hand the finished PR back to Neon to follow through
+                checks and deployment.
               </p>
             </article>
             <article class="feature">
               <div class="spark pink"></div>
-              <h3>Autopilot worktrees</h3>
+              <h3>Briefings and routines on a schedule</h3>
               <p>
-                When policy allows, Neon prepares review or CI fixes in managed
-                worktrees, verifies checks, and explains the result before push.
+                A morning briefing pulls your PRs, watches, CI failures, and
+                next actions. Or add your own routines — a saved prompt that
+                runs on a timer.
               </p>
             </article>
             <article class="feature">
               <div class="spark teal"></div>
-              <h3>Local-first runtime</h3>
+              <h3>Sandboxed, gated execution</h3>
               <p>
-                Config, schedules, skills, memories, approvals, and Flue session
-                state live on your machine under a runtime home you control.
+                Agents work in throwaway worktrees, never your live checkout.
+                Shell commands clear an approval policy first — or run off your
+                machine entirely on an <code>exe.dev</code> sandbox VM.
               </p>
             </article>
             <article class="feature">
               <div class="spark"></div>
-              <h3>Scheduled briefings</h3>
+              <h3>Memory that learns from your work</h3>
               <p>
-                Morning briefings and review digests pull queue state, active
-                watches, CI failures, and recommended next actions on a
-                schedule.
+                Neon remembers your preferences and each repo's conventions, and
+                learns from your conversations and PR feedback. What it wants to
+                remember is always a suggestion you approve, never a silent
+                change.
               </p>
             </article>
             <article class="feature">
               <div class="spark violet"></div>
-              <h3>Workflow observability</h3>
+              <h3>Ask Neon to set up the deck</h3>
               <p>
-                Flue runs, command results, subagent summaries, approvals, and
-                failures stay inspectable without turning raw logs into the UI.
+                Neon configures itself — repos, models, schedules, even its own
+                layout and display. Want to change something? Just ask.
               </p>
             </article>
           </div>
