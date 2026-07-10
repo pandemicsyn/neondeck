@@ -12,6 +12,7 @@ import {
   beginAutopilotAdmissionPrepare,
   failAutopilotAdmission,
   recordAutopilotAdmissionRun,
+  recordAutopilotAdmissionTerminalFact,
   settleAutopilotAdmissionPrepare,
   settleAutopilotAdmissionTriage,
 } from '../modules/autopilot';
@@ -44,6 +45,15 @@ export function installFlueObservationHandlers(
 
     if (event.type === 'run_end') {
       void recordFlueObservation(event, paths)
+        .then(async () => {
+          const terminalFact = autopilotTerminalFact(event);
+          if (terminalFact) {
+            await recordAutopilotAdmissionTerminalFact(
+              { runId: event.runId, fact: terminalFact },
+              paths,
+            );
+          }
+        })
         .then(() =>
           Promise.all([
             settleScheduledTaskWorkflowRun(
@@ -186,7 +196,10 @@ async function startPrepareAfterTriage(
   paths: RuntimePaths,
 ) {
   if (event.isError || !triageRequestsPrepare(event)) return;
-  const admission = await beginAutopilotAdmissionPrepare(event.runId, paths);
+  const admission = await beginAutopilotAdmissionPrepare(
+    { triageRunId: event.runId },
+    paths,
+  );
   if (!admission) return;
   try {
     const workflow = await import('../workflows/prepare-pr-worktree');
@@ -242,6 +255,28 @@ function prepareWorktreeId(
   if (!worktree || typeof worktree !== 'object') return undefined;
   const id = (worktree as Record<string, unknown>).id;
   return typeof id === 'string' ? id : undefined;
+}
+
+function autopilotTerminalFact(
+  event: Extract<FlueObservation, { type: 'run_end' }>,
+) {
+  const workflow = workflowLabel(event);
+  const failed = terminalActionFailed(event);
+  if (workflow === 'triage-pr-event') {
+    return {
+      workflow,
+      failed,
+      shouldPrepare: !failed && triageRequestsPrepare(event),
+    } as const;
+  }
+  if (workflow === 'prepare-pr-worktree') {
+    return {
+      workflow,
+      failed,
+      worktreeId: failed ? undefined : prepareWorktreeId(event),
+    } as const;
+  }
+  return undefined;
 }
 
 function terminalActionFailed(

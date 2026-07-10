@@ -1,10 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { openDb } from '../../lib/sqlite';
-import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
+import {
+  ensureRuntimeHome,
+  parseAppConfig,
+  readRuntimeJson,
+  runtimePaths,
+} from '../../runtime-home';
+import { readRepoRegistrySnapshot } from '../repos';
+import { listPrWatchRecords } from '../watches';
 import type {
   AutopilotConcurrencyPolicy,
   AutopilotMode,
 } from '../autopilot-policy';
+import { repoAutopilotPolicyForWatch } from '../autopilot-policy';
 
 export type AutopilotAdmissionState =
   | 'triage-admitted'
@@ -31,6 +39,15 @@ export type AutopilotAdmission = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type AutopilotAdmissionTerminalFact = {
+  workflow: 'triage-pr-event' | 'prepare-pr-worktree';
+  failed: boolean;
+  shouldPrepare?: boolean;
+  worktreeId?: string;
+};
+
+const terminalFactKeyPrefix = 'autopilot.admission.terminal:';
 
 export async function claimAutopilotTriageAdmission(
   input: {
@@ -60,18 +77,10 @@ export async function claimAutopilotTriageAdmission(
         (existing.state === 'blocked' || existing.state === 'failed') &&
         (!existing.nextAttemptAt ||
           Date.parse(existing.nextAttemptAt) <= Date.parse(now));
-      const usage = database
-        .prepare(
-          `SELECT COUNT(*) AS global_count,
-            SUM(CASE WHEN repo_id = ? THEN 1 ELSE 0 END) AS repo_count
-           FROM autopilot_admissions
-           WHERE state IN ('triage-admitted', 'prepare-admitted');`,
-        )
-        .get(input.repoId) as { global_count?: unknown; repo_count?: unknown };
-      const capped =
-        Number(usage.global_count ?? 0) >= input.limits.maxAutonomousJobs ||
-        Number(usage.global_count ?? 0) >= input.limits.maxActiveWorkflowRuns ||
-        Number(usage.repo_count ?? 0) >= input.limits.maxPerRepoAutonomousJobs;
+      const capped = admissionUsageExceedsLimits(
+        readAdmissionUsage(database, input.repoId, input.prNumber),
+        input.limits,
+      );
       if (due && !capped) {
         database
           .prepare(
@@ -105,20 +114,10 @@ export async function claimAutopilotTriageAdmission(
         reason: 'duplicate' as const,
       };
     }
-    const usage = database
-      .prepare(
-        `SELECT COUNT(*) AS global_count,
-          SUM(CASE WHEN repo_id = ? THEN 1 ELSE 0 END) AS repo_count
-         FROM autopilot_admissions
-         WHERE state IN ('triage-admitted', 'prepare-admitted');`,
-      )
-      .get(input.repoId) as { global_count?: unknown; repo_count?: unknown };
-    const globalCount = Number(usage.global_count ?? 0);
-    const repoCount = Number(usage.repo_count ?? 0);
-    const capped =
-      globalCount >= input.limits.maxAutonomousJobs ||
-      globalCount >= input.limits.maxActiveWorkflowRuns ||
-      repoCount >= input.limits.maxPerRepoAutonomousJobs;
+    const capped = admissionUsageExceedsLimits(
+      readAdmissionUsage(database, input.repoId, input.prNumber),
+      input.limits,
+    );
     const state: AutopilotAdmissionState = capped
       ? 'blocked'
       : 'triage-admitted';
@@ -194,34 +193,64 @@ export async function recordAutopilotAdmissionRun(
       database.exec('COMMIT;');
       return;
     }
-    const terminal = database
+    const observation = database
       .prepare(
         `SELECT status FROM workflow_run_observations
          WHERE run_id = ? AND status IN ('completed', 'failed');`,
       )
       .get(input.runId) as { status?: unknown } | undefined;
-    const failed = terminal?.status === 'failed';
-    const completedState =
-      admission.state === 'triage-admitted' ? 'triaged' : 'failed';
-    database
+    const terminal = readTerminalFact(
+      database
+        .prepare('SELECT value FROM app_metadata WHERE key = ?;')
+        .get(terminalFactKey(input.runId)),
+    );
+    const observationFailed = observation?.status === 'failed';
+    const settles = Boolean(observation || terminal);
+    const workflowMatches =
+      !terminal || terminal.workflow === admission.currentWorkflow;
+    const settled =
+      settles && workflowMatches
+        ? settledAdmissionState(admission, terminal, observationFailed)
+        : undefined;
+    const update = database
       .prepare(
         `UPDATE autopilot_admissions
-         SET current_run_id = ?, state = ?, current_workflow = ?,
+         SET current_run_id = ?, state = ?, current_workflow = ?, worktree_id = ?,
              last_error = ?, next_attempt_at = ?, updated_at = ?
          WHERE id = ? AND state IN ('triage-admitted', 'prepare-admitted');`,
       )
       .run(
         input.runId,
-        terminal ? (failed ? 'failed' : completedState) : admission.state,
-        terminal ? null : admission.currentWorkflow,
-        terminal && (failed || completedState === 'failed')
+        settled?.state ?? admission.state,
+        settled ? null : admission.currentWorkflow,
+        settled?.worktreeId ?? null,
+        settled?.failed
           ? 'Workflow ended before its admission run id was attached.'
           : null,
-        terminal && (failed || completedState === 'failed') ? now : null,
+        settled?.failed ? now : null,
         now,
         input.id,
       );
+    if (settled && workflowMatches && update.changes > 0) {
+      database
+        .prepare('DELETE FROM app_metadata WHERE key = ?;')
+        .run(terminalFactKey(input.runId));
+    }
     database.exec('COMMIT;');
+    return {
+      admission: {
+        ...admission,
+        currentRunId: input.runId,
+        state: settled?.state ?? admission.state,
+        currentWorkflow: settled ? null : admission.currentWorkflow,
+        nextAttemptAt: settled?.failed ? now : null,
+        lastError: settled?.failed
+          ? 'Workflow ended before its admission run id was attached.'
+          : null,
+        updatedAt: now,
+      },
+      terminal: settles && workflowMatches ? terminal : undefined,
+    };
   } catch (error) {
     database.exec('ROLLBACK;');
     throw error;
@@ -262,7 +291,7 @@ export async function settleAutopilotAdmissionTriage(
   const now = new Date().toISOString();
   const database = openDb(paths.neondeckDatabase);
   try {
-    database
+    const update = database
       .prepare(
         `UPDATE autopilot_admissions
          SET state = ?, current_workflow = NULL, last_error = ?,
@@ -276,16 +305,23 @@ export async function settleAutopilotAdmissionTriage(
         now,
         input.runId,
       );
+    if (update.changes > 0) {
+      database
+        .prepare('DELETE FROM app_metadata WHERE key = ?;')
+        .run(terminalFactKey(input.runId));
+    }
   } finally {
     database.close();
   }
 }
 
 export async function beginAutopilotAdmissionPrepare(
-  triageRunId: string,
+  input: { triageRunId: string; limits?: AutopilotConcurrencyPolicy },
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
+  const limits =
+    input.limits ?? (await readAdmissionLimits(input.triageRunId, paths));
   const now = new Date().toISOString();
   const database = openDb(paths.neondeckDatabase);
   try {
@@ -294,11 +330,21 @@ export async function beginAutopilotAdmissionPrepare(
       database
         .prepare(
           `SELECT * FROM autopilot_admissions
-           WHERE current_run_id = ? AND state = 'triaged';`,
+          WHERE current_run_id = ? AND state = 'triaged';`,
         )
-        .get(triageRunId),
+        .get(input.triageRunId),
     );
     if (!admission) {
+      database.exec('COMMIT;');
+      return undefined;
+    }
+    if (
+      !limits ||
+      admissionUsageExceedsLimits(
+        readAdmissionUsage(database, admission.repoId, admission.prNumber),
+        limits,
+      )
+    ) {
       database.exec('COMMIT;');
       return undefined;
     }
@@ -327,6 +373,28 @@ export async function beginAutopilotAdmissionPrepare(
   }
 }
 
+export async function recordAutopilotAdmissionTerminalFact(
+  input: { runId: string; fact: AutopilotAdmissionTerminalFact },
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `INSERT INTO app_metadata (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at;`,
+      )
+      .run(
+        terminalFactKey(input.runId),
+        JSON.stringify(input.fact),
+        new Date().toISOString(),
+      );
+  } finally {
+    database.close();
+  }
+}
+
 export async function settleAutopilotAdmissionPrepare(
   input: { runId: string; failed: boolean; worktreeId?: string },
   paths = runtimePaths(),
@@ -335,7 +403,7 @@ export async function settleAutopilotAdmissionPrepare(
   const now = new Date().toISOString();
   const database = openDb(paths.neondeckDatabase);
   try {
-    database
+    const update = database
       .prepare(
         `UPDATE autopilot_admissions
          SET state = ?, current_workflow = NULL, worktree_id = ?, last_error = ?,
@@ -352,9 +420,139 @@ export async function settleAutopilotAdmissionPrepare(
         now,
         input.runId,
       );
+    if (update.changes > 0) {
+      database
+        .prepare('DELETE FROM app_metadata WHERE key = ?;')
+        .run(terminalFactKey(input.runId));
+    }
   } finally {
     database.close();
   }
+}
+
+function terminalFactKey(runId: string) {
+  return `${terminalFactKeyPrefix}${runId}`;
+}
+
+function readTerminalFact(
+  row: unknown,
+): AutopilotAdmissionTerminalFact | undefined {
+  if (!row || typeof row !== 'object') return undefined;
+  const value = (row as { value?: unknown }).value;
+  if (typeof value !== 'string') return undefined;
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    if (
+      (parsed.workflow !== 'triage-pr-event' &&
+        parsed.workflow !== 'prepare-pr-worktree') ||
+      typeof parsed.failed !== 'boolean'
+    ) {
+      return undefined;
+    }
+    return {
+      workflow: parsed.workflow,
+      failed: parsed.failed,
+      shouldPrepare:
+        typeof parsed.shouldPrepare === 'boolean'
+          ? parsed.shouldPrepare
+          : undefined,
+      worktreeId:
+        typeof parsed.worktreeId === 'string' ? parsed.worktreeId : undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function settledAdmissionState(
+  admission: AutopilotAdmission,
+  terminal: AutopilotAdmissionTerminalFact | undefined,
+  observationFailed: boolean,
+) {
+  const failed = terminal?.failed ?? observationFailed;
+  if (failed) return { state: 'failed' as const, failed: true };
+  if (admission.currentWorkflow === 'triage-pr-event') {
+    return { state: 'triaged' as const, failed: false };
+  }
+  if (terminal?.worktreeId) {
+    return {
+      state: 'prepared' as const,
+      failed: false,
+      worktreeId: terminal.worktreeId,
+    };
+  }
+  return { state: 'failed' as const, failed: true };
+}
+
+function readAdmissionUsage(
+  database: ReturnType<typeof openDb>,
+  repoId: string,
+  prNumber: number,
+) {
+  return database
+    .prepare(
+      `SELECT COUNT(*) AS global_count,
+        SUM(CASE WHEN repo_id = ? THEN 1 ELSE 0 END) AS repo_count,
+        SUM(CASE WHEN repo_id = ? AND pr_number = ? THEN 1 ELSE 0 END) AS pr_count
+       FROM autopilot_admissions
+       WHERE state IN ('triage-admitted', 'prepare-admitted');`,
+    )
+    .get(repoId, repoId, prNumber) as {
+    global_count?: unknown;
+    repo_count?: unknown;
+    pr_count?: unknown;
+  };
+}
+
+function admissionUsageExceedsLimits(
+  usage: { global_count?: unknown; repo_count?: unknown; pr_count?: unknown },
+  limits: AutopilotConcurrencyPolicy,
+) {
+  const globalCount = Number(usage.global_count ?? 0);
+  const repoCount = Number(usage.repo_count ?? 0);
+  const prCount = Number(usage.pr_count ?? 0);
+  return (
+    globalCount >= limits.maxAutonomousJobs ||
+    globalCount >= limits.maxActiveWorkflowRuns ||
+    repoCount >= limits.maxPerRepoAutonomousJobs ||
+    (limits.singleMutationPerPr && prCount > 0)
+  );
+}
+
+async function readAdmissionLimits(
+  triageRunId: string,
+  paths: ReturnType<typeof runtimePaths>,
+) {
+  const database = openDb(paths.neondeckDatabase);
+  let admission: AutopilotAdmission | undefined;
+  try {
+    admission = readAdmission(
+      database
+        .prepare(
+          `SELECT * FROM autopilot_admissions
+           WHERE current_run_id = ? AND state = 'triaged';`,
+        )
+        .get(triageRunId),
+    );
+  } finally {
+    database.close();
+  }
+  if (!admission) return undefined;
+  const [registry, appConfig, watches] = await Promise.all([
+    readRepoRegistrySnapshot(paths),
+    readRuntimeJson(paths.config, parseAppConfig),
+    listPrWatchRecords(paths),
+  ]);
+  const repo = registry.repos.find(
+    (candidate) => candidate.id === admission.repoId,
+  );
+  const watch = watches.find((candidate) => candidate.id === admission.watchId);
+  if (!repo || !watch) return undefined;
+  const policy = repoAutopilotPolicyForWatch(repo, appConfig, {
+    id: watch.id,
+    prNumber: watch.prNumber,
+  });
+  return 'concurrency' in policy ? policy.concurrency : undefined;
 }
 
 function readAdmission(row: unknown): AutopilotAdmission | undefined {

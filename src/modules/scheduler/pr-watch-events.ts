@@ -6,10 +6,13 @@ import {
   type AutopilotMode,
 } from '../autopilot-policy';
 import {
+  beginAutopilotAdmissionPrepare,
   claimAutopilotTriageAdmission,
   failAutopilotAdmission,
   recordAutopilotAdmissionRun,
+  type AutopilotAdmission,
 } from '../autopilot';
+import type { AutopilotConcurrencyPolicy } from '../autopilot-policy';
 import {
   listPrWatchEventWatermarks,
   refreshPrWatchEventState,
@@ -478,10 +481,23 @@ async function admitWatchTriageEvent(
       ...input,
       admissionId: admission.admission.id,
     });
-    await recordAutopilotAdmissionRun(
+    const attached = await recordAutopilotAdmissionRun(
       { id: admission.admission.id, runId },
       paths,
     );
+    if (
+      attached?.terminal?.workflow === 'triage-pr-event' &&
+      !attached.terminal.failed &&
+      attached.terminal.shouldPrepare
+    ) {
+      await continueTerminalTriageAdmission(
+        attached.admission,
+        policy.concurrency,
+        input,
+        invokeWorkflow,
+        paths,
+      );
+    }
     return {
       ok: true,
       changed: true,
@@ -529,6 +545,38 @@ async function admitWatchTriageEvent(
         },
       ],
     };
+  }
+}
+
+async function continueTerminalTriageAdmission(
+  admission: AutopilotAdmission,
+  limits: AutopilotConcurrencyPolicy,
+  input: Record<string, JsonValue>,
+  invokeWorkflow: NonNullable<SchedulerDependencies['invokeWorkflow']>,
+  paths: RuntimePaths,
+) {
+  const preparedAdmission = await beginAutopilotAdmissionPrepare(
+    { triageRunId: admission.currentRunId ?? '', limits },
+    paths,
+  );
+  if (!preparedAdmission) return;
+  try {
+    const { runId } = await invokeWorkflow('prepare-pr-worktree', {
+      repoId: preparedAdmission.repoId,
+      prNumber: preparedAdmission.prNumber,
+      eventId: preparedAdmission.eventFingerprint,
+      lock: false,
+      sourceEvent: input,
+    });
+    await recordAutopilotAdmissionRun(
+      { id: preparedAdmission.id, runId },
+      paths,
+    );
+  } catch (error) {
+    await failAutopilotAdmission(
+      { id: preparedAdmission.id, error: errorMessage(error) },
+      paths,
+    );
   }
 }
 

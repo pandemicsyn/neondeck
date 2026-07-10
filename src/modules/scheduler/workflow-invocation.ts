@@ -19,6 +19,13 @@ export async function invokeScheduledWorkflow(
     });
   }
 
+  if (workflow === 'prepare-pr-worktree') {
+    const module = await import('../../workflows/prepare-pr-worktree');
+    return invoke(module.default, {
+      input: input as never,
+    });
+  }
+
   if (workflow === 'scheduled-agent-instruction') {
     const module = await import('../../workflows/scheduled-agent-instruction');
     return invoke(module.default, {
