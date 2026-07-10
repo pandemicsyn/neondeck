@@ -1697,8 +1697,6 @@ describe('PR event autopilot', () => {
       changed: false,
       action: 'autopilot_push_pr_autofix',
       requires: [
-        'prepared-diff-status',
-        'prepared-diff-approval',
         'verification',
       ],
       data: {
