@@ -1,7 +1,6 @@
 import { defineAction, defineTool } from '@flue/runtime';
 import {
   abandonPreparedDiff,
-  approvePreparedDiffPush,
   listPreparedDiffs,
   openPreparedDiffWorktree,
   readPreparedDiffChangedFiles,
@@ -12,7 +11,6 @@ import {
 } from './service';
 import {
   abandonInputSchema,
-  approvePushInputSchema,
   fileDiffInputSchema,
   idInputSchema,
   listInputSchema,
@@ -76,17 +74,6 @@ export const preparedDiffFileDiffAction = defineAction({
   },
 });
 
-export const preparedDiffApprovePushAction = defineAction({
-  name: 'neondeck_prepared_diff_approve_push',
-  description:
-    'Approve push-back for a prepared diff. This records approval only; the later push workflow performs the GitHub mutation.',
-  input: approvePushInputSchema,
-  output: outputSchema,
-  async run({ input }) {
-    return approvePreparedDiffPush(input);
-  },
-});
-
 export const preparedDiffRequestRevisionAction = defineAction({
   name: 'neondeck_prepared_diff_request_revision',
   description:
@@ -136,7 +123,6 @@ export const neondeckPreparedDiffActions = [
   preparedDiffSummaryAction,
   preparedDiffChangedFilesAction,
   preparedDiffFileDiffAction,
-  preparedDiffApprovePushAction,
   preparedDiffRequestRevisionAction,
   preparedDiffAbandonAction,
   preparedDiffOpenWorktreeAction,

@@ -34,6 +34,7 @@ export type {
   AutopilotAdmissionTerminalFact,
 } from './admissions';
 export { preparePrWorktree, verifyPrWorktree } from './worktree';
+export { approvePreparedDiffPushWithPolicy } from './approvals';
 export { pushPrAutofix } from './push';
 export {
   abandonPreparedDiffWithRevisionAbort,

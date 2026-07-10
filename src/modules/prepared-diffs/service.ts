@@ -7,7 +7,6 @@ import { addNotification } from '../app-state';
 import { buildPreparedDiffAuditSummary } from '../autonomous-audit';
 import { openDb } from '../../lib/sqlite';
 import { gitCurrentSha, gitDiff, type RepoDiffFile } from '../../repo-edit/git';
-import { checkAutopilotPolicy } from '../autopilot-policy';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
@@ -348,6 +347,11 @@ export async function readPreparedDiffFileDiff(
 export async function approvePreparedDiffPush(
   rawInput: unknown,
   paths: RuntimePaths = runtimePaths(),
+  binding?: {
+    targetSha: string;
+    policyHash: string;
+    policyDecision: 'require-approval' | 'allow';
+  },
 ): Promise<PreparedDiffActionResult> {
   const parsed = parseInput(
     approvePushInputSchema,
@@ -388,19 +392,11 @@ export async function approvePreparedDiffPush(
       'PREPARED_DIFF_SHA_UNAVAILABLE',
     );
   }
-  const policy = await checkAutopilotPolicy(
-    {
-      worktreeId: record.record.worktreeId,
-      diffBaseRef: record.record.headSha ?? record.record.baseRef,
-      pushDestination: 'pull-request-head',
-    },
-    paths,
-  );
-  if (policy.decision === 'deny') {
+  if (binding && binding.targetSha !== approvedCommitSha) {
     return failure(
       'prepared_diff_approve_push',
-      'Prepared diff policy denies push-back; approval cannot override it.',
-      'PREPARED_DIFF_POLICY_DENIED',
+      'Prepared diff changed before approval could be recorded.',
+      'PREPARED_DIFF_APPROVAL_STALE',
     );
   }
   const updated = updatePreparedDiffState(
@@ -426,8 +422,8 @@ export async function approvePreparedDiffPush(
     parsed.input.approverSurface,
     {
       targetSha: approvedCommitSha,
-      policyHash: policy.policyHash,
-      policyDecision: policy.decision,
+      policyHash: binding?.policyHash ?? null,
+      policyDecision: binding?.policyDecision ?? null,
     },
     paths,
   );
