@@ -7,7 +7,12 @@ import type {
 } from '../autopilot-policy';
 
 export type AutopilotAdmissionState =
-  'triage-admitted' | 'triaged' | 'blocked' | 'failed' | 'superseded';
+  | 'triage-admitted'
+  | 'triaged'
+  | 'prepare-admitted'
+  | 'blocked'
+  | 'failed'
+  | 'superseded';
 
 export type AutopilotAdmission = {
   id: string;
@@ -141,7 +146,7 @@ export async function recordAutopilotAdmissionRun(
       .prepare(
         `UPDATE autopilot_admissions
          SET current_run_id = ?, updated_at = ?
-         WHERE id = ? AND state = 'triage-admitted';`,
+         WHERE id = ? AND state IN ('triage-admitted', 'prepare-admitted');`,
       )
       .run(input.runId, new Date().toISOString(), input.id);
   } finally {
@@ -160,7 +165,7 @@ export async function failAutopilotAdmission(
       .prepare(
         `UPDATE autopilot_admissions
          SET state = 'failed', last_error = ?, next_attempt_at = ?, updated_at = ?
-         WHERE id = ? AND state = 'triage-admitted';`,
+         WHERE id = ? AND state IN ('triage-admitted', 'prepare-admitted');`,
       )
       .run(
         input.error,
@@ -195,6 +200,52 @@ export async function settleAutopilotAdmissionTriage(
         now,
         input.runId,
       );
+  } finally {
+    database.close();
+  }
+}
+
+export async function beginAutopilotAdmissionPrepare(
+  triageRunId: string,
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database.exec('BEGIN IMMEDIATE;');
+    const admission = readAdmission(
+      database
+        .prepare(
+          `SELECT * FROM autopilot_admissions
+           WHERE current_run_id = ? AND state = 'triaged';`,
+        )
+        .get(triageRunId),
+    );
+    if (!admission) {
+      database.exec('COMMIT;');
+      return undefined;
+    }
+    database
+      .prepare(
+        `UPDATE autopilot_admissions
+         SET state = 'prepare-admitted', current_workflow = 'prepare-pr-worktree',
+             current_run_id = NULL, attempt_count = attempt_count + 1, updated_at = ?
+         WHERE id = ?;`,
+      )
+      .run(now, admission.id);
+    database.exec('COMMIT;');
+    return {
+      ...admission,
+      state: 'prepare-admitted' as const,
+      currentWorkflow: 'prepare-pr-worktree',
+      currentRunId: null,
+      attemptCount: admission.attemptCount + 1,
+      updatedAt: now,
+    };
+  } catch (error) {
+    database.exec('ROLLBACK;');
+    throw error;
   } finally {
     database.close();
   }

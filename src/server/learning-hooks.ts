@@ -8,7 +8,12 @@ import {
 import type { MiddlewareHandler } from 'hono';
 import { addNotification, setWorkflowSummaryRunId } from '../modules/app-state';
 import { settleScheduledTaskWorkflowRun } from '../modules/scheduled-tasks';
-import { settleAutopilotAdmissionTriage } from '../modules/autopilot';
+import {
+  beginAutopilotAdmissionPrepare,
+  failAutopilotAdmission,
+  recordAutopilotAdmissionRun,
+  settleAutopilotAdmissionTriage,
+} from '../modules/autopilot';
 import {
   attachLearningReviewRunId,
   recordConversationTurnAndMaybeQueueLearning,
@@ -50,6 +55,7 @@ export function installFlueObservationHandlers(
             ),
           ]),
         )
+        .then(() => startPrepareAfterTriage(event, paths))
         .catch((error) => {
           console.error(
             '[neondeck] failed to record or settle Flue observation',
@@ -164,6 +170,51 @@ export function resetFlueObservationHandlersForTests() {
 function flueContextRuntimeHome(context: FlueEventContext | undefined) {
   const value = context?.env?.NEONDECK_HOME;
   return typeof value === 'string' && value ? value : undefined;
+}
+
+async function startPrepareAfterTriage(
+  event: Extract<FlueObservation, { type: 'run_end' }>,
+  paths: RuntimePaths,
+) {
+  if (event.isError || !triageRequestsPrepare(event)) return;
+  const admission = await beginAutopilotAdmissionPrepare(event.runId, paths);
+  if (!admission) return;
+  try {
+    const workflow = await import('../workflows/prepare-pr-worktree');
+    const { runId } = await invoke(workflow.default, {
+      input: {
+        repoId: admission.repoId,
+        prNumber: admission.prNumber,
+        eventId: admission.eventFingerprint,
+        lock: false,
+      },
+    });
+    await recordAutopilotAdmissionRun({ id: admission.id, runId }, paths);
+  } catch (error) {
+    await failAutopilotAdmission(
+      {
+        id: admission.id,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      paths,
+    );
+  }
+}
+
+function triageRequestsPrepare(
+  event: Extract<FlueObservation, { type: 'run_end' }>,
+) {
+  if (workflowLabel(event) !== 'triage-pr-event' || !('result' in event)) {
+    return false;
+  }
+  const result = event.result;
+  if (!result || typeof result !== 'object') return false;
+  const data = (result as Record<string, unknown>).data;
+  return Boolean(
+    data &&
+    typeof data === 'object' &&
+    (data as Record<string, unknown>).shouldPrepareWorktree === true,
+  );
 }
 
 export function recordHandledPrApiResult(
