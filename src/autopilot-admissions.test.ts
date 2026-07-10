@@ -1,12 +1,16 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import {
   beginAutopilotAdmissionPrepare,
   claimAutopilotTriageAdmission,
   recordAutopilotAdmissionRun,
   recordAutopilotAdmissionTerminalFact,
+  listAutopilotAdmissionsAwaitingPreparation,
+  listAutopilotAdmissions,
+  reconcileAutopilotAdmissions,
   settleAutopilotAdmissionTriage,
 } from './modules/autopilot';
 import { runtimePaths } from './runtime-home';
@@ -91,6 +95,66 @@ describe('autopilot admissions', () => {
     }
   });
 
+  it('counts manually started active autopilot workflows against admission limits', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-admissions-'));
+    const paths = runtimePaths(home);
+    try {
+      await claimAutopilotTriageAdmission(
+        {
+          watchId: 'watch:bootstrap',
+          eventFingerprint: 'event:bootstrap',
+          repoId: 'repo',
+          prNumber: 1,
+          mode: 'prepare-only',
+          input: {},
+          limits: {
+            ...limits,
+            maxAutonomousJobs: 2,
+            maxActiveWorkflowRuns: 2,
+            maxPerRepoAutonomousJobs: 2,
+          },
+        },
+        paths,
+      );
+      const now = new Date().toISOString();
+      const database = new DatabaseSync(paths.neondeckDatabase);
+      try {
+        database
+          .prepare(
+            `INSERT INTO workflow_run_observations (
+               run_id, workflow, status, started_at, last_event_at,
+               last_message, event_count, is_error, updated_at
+             ) VALUES (?, 'verify-pr-worktree', 'active', ?, ?, ?, 1, 0, ?);`,
+          )
+          .run('manual:verify', now, now, 'Manual autopilot run.', now);
+      } finally {
+        database.close();
+      }
+
+      await expect(
+        claimAutopilotTriageAdmission(
+          {
+            watchId: 'watch:limited',
+            eventFingerprint: 'event:limited',
+            repoId: 'repo',
+            prNumber: 2,
+            mode: 'prepare-only',
+            input: {},
+            limits: {
+              ...limits,
+              maxAutonomousJobs: 2,
+              maxActiveWorkflowRuns: 2,
+              maxPerRepoAutonomousJobs: 2,
+            },
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({ claimed: false, reason: 'limited' });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   it('recovers an early terminal triage run and enforces same-PR preparation admission', async () => {
     const home = await mkdtemp(join(tmpdir(), 'neondeck-admissions-'));
     const paths = runtimePaths(home);
@@ -132,6 +196,12 @@ describe('autopilot admissions', () => {
         admission: { state: 'triaged', currentRunId: 'flue:triage:one' },
         terminal: { shouldPrepare: true },
       });
+      await reconcileAutopilotAdmissions(paths);
+      await expect(
+        listAutopilotAdmissionsAwaitingPreparation(paths),
+      ).resolves.toMatchObject([
+        expect.objectContaining({ id: first.admission.id }),
+      ]);
 
       const competing = await claimAutopilotTriageAdmission(
         {
@@ -167,6 +237,91 @@ describe('autopilot admissions', () => {
           paths,
         ),
       ).resolves.toMatchObject({ state: 'prepare-admitted' });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves the worktree linked by a recovered terminal prepare run', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-admissions-'));
+    const paths = runtimePaths(home);
+    try {
+      const triage = await claimAutopilotTriageAdmission(
+        {
+          watchId: 'watch:prepare-recovery',
+          eventFingerprint: 'event:prepare-recovery',
+          repoId: 'repo',
+          prNumber: 1,
+          mode: 'prepare-only',
+          input: {},
+          limits: { ...limits, maxAutonomousJobs: 2, maxActiveWorkflowRuns: 2 },
+        },
+        paths,
+      );
+      await recordAutopilotAdmissionRun(
+        { id: triage.admission.id, runId: 'flue:triage:recovery' },
+        paths,
+      );
+      await settleAutopilotAdmissionTriage(
+        { runId: 'flue:triage:recovery', failed: false },
+        paths,
+      );
+      const prepare = await beginAutopilotAdmissionPrepare(
+        {
+          triageRunId: 'flue:triage:recovery',
+          limits: { ...limits, maxAutonomousJobs: 2, maxActiveWorkflowRuns: 2 },
+        },
+        paths,
+      );
+      if (!prepare) throw new Error('Expected prepare admission.');
+      await recordAutopilotAdmissionRun(
+        { id: prepare.id, runId: 'flue:prepare:recovery' },
+        paths,
+      );
+      const now = new Date().toISOString();
+      const database = new DatabaseSync(paths.neondeckDatabase);
+      try {
+        database
+          .prepare(
+            `INSERT INTO workflow_run_observations (
+               run_id, workflow, status, started_at, ended_at, last_event_at,
+               last_message, event_count, is_error, updated_at
+             ) VALUES (?, 'prepare-pr-worktree', 'completed', ?, ?, ?, ?, 1, 0, ?);`,
+          )
+          .run('flue:prepare:recovery', now, now, now, 'Completed.', now);
+      } finally {
+        database.close();
+      }
+      await expect(
+        recordAutopilotAdmissionRun(
+          { id: prepare.id, runId: 'flue:prepare:recovery' },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        admission: { state: 'prepare-admitted' },
+      });
+      await recordAutopilotAdmissionTerminalFact(
+        {
+          runId: 'flue:prepare:recovery',
+          fact: {
+            workflow: 'prepare-pr-worktree',
+            failed: false,
+            worktreeId: 'worktree:recovered',
+          },
+        },
+        paths,
+      );
+
+      await reconcileAutopilotAdmissions(paths);
+      await expect(listAutopilotAdmissions(paths)).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: prepare.id,
+            state: 'prepared',
+            worktreeId: 'worktree:recovered',
+          }),
+        ]),
+      );
     } finally {
       await rm(home, { recursive: true, force: true });
     }

@@ -84,38 +84,79 @@ export async function reconcileAutopilotAdmissions(
       );
     const terminalRuns = database
       .prepare(
-        `SELECT a.id, a.current_workflow, observation.status
+        `SELECT a.*, observation.status AS observation_status,
+                observation.last_event_at AS observation_last_event_at
          FROM autopilot_admissions AS a
          JOIN workflow_run_observations AS observation
            ON observation.run_id = a.current_run_id
          WHERE a.state IN ('triage-admitted', 'prepare-admitted')
            AND observation.status IN ('completed', 'failed');`,
       )
-      .all() as Array<{
-      id: string;
-      current_workflow: string | null;
-      status: string;
-    }>;
+      .all();
     for (const run of terminalRuns) {
+      const admission = readAdmission(run);
+      if (!admission) continue;
+      const terminal = readTerminalFact(
+        database
+          .prepare('SELECT value FROM app_metadata WHERE key = ?;')
+          .get(terminalFactKey(admission.currentRunId ?? '')),
+      );
+      if (
+        !terminal &&
+        (run as { observation_status?: unknown }).observation_status ===
+          'completed' &&
+        Date.parse(
+          String(
+            (run as { observation_last_event_at?: unknown })
+              .observation_last_event_at ?? '',
+          ),
+        ) > Date.parse(staleBefore)
+      ) {
+        continue;
+      }
+      const settled = settledAdmissionState(
+        admission,
+        terminal,
+        (run as { observation_status?: unknown }).observation_status ===
+          'failed',
+      );
+      const preserveTriageDecision =
+        terminal?.workflow === 'triage-pr-event' &&
+        !terminal.failed &&
+        terminal.shouldPrepare === true;
       const uncertainPrepare =
-        run.current_workflow === 'prepare-pr-worktree' &&
-        run.status === 'completed';
+        !terminal &&
+        admission.currentWorkflow === 'prepare-pr-worktree' &&
+        (run as { observation_status?: unknown }).observation_status ===
+          'completed';
       database
         .prepare(
           `UPDATE autopilot_admissions
-           SET state = ?, current_workflow = NULL, last_error = ?,
+           SET state = ?, current_workflow = NULL, worktree_id = ?, last_error = ?,
                next_attempt_at = ?, updated_at = ?
            WHERE id = ?;`,
         )
         .run(
-          uncertainPrepare ? 'manual-review' : 'failed',
+          terminal
+            ? settled.state
+            : uncertainPrepare
+              ? 'manual-review'
+              : 'failed',
+          settled.worktreeId ?? admission.worktreeId,
           uncertainPrepare
             ? 'Prepare run completed before its durable result was recorded; inspect before retrying.'
-            : 'Attached Flue run ended before its durable result was recorded.',
-          uncertainPrepare ? null : nowIso,
+            : settled.failed
+              ? 'Attached Flue run ended before its durable result was recorded.'
+              : null,
+          uncertainPrepare || !settled.failed ? null : nowIso,
           nowIso,
-          run.id,
+          admission.id,
         );
+      if (terminal && !preserveTriageDecision) {
+        database
+          .prepare('DELETE FROM app_metadata WHERE key = ?;')
+          .run(terminalFactKey(admission.currentRunId ?? ''));
+      }
     }
     const due = database
       .prepare(
@@ -132,9 +173,15 @@ export async function reconcileAutopilotAdmissions(
     database
       .prepare(
         `DELETE FROM app_metadata
-         WHERE key LIKE ? AND updated_at <= ?;`,
+         WHERE key LIKE ? AND updated_at <= ?
+           AND NOT EXISTS (
+             SELECT 1
+             FROM autopilot_admissions AS admission
+             WHERE admission.state = 'triaged'
+               AND app_metadata.key = ? || admission.current_run_id
+           );`,
       )
-      .run(`${terminalFactKeyPrefix}%`, factBefore);
+      .run(`${terminalFactKeyPrefix}%`, factBefore, terminalFactKeyPrefix);
     database.exec('COMMIT;');
     return retries;
   } catch (error) {
@@ -156,6 +203,40 @@ export async function listAutopilotAdmissions(paths = runtimePaths()) {
       .filter((admission): admission is AutopilotAdmission =>
         Boolean(admission),
       );
+  } finally {
+    database.close();
+  }
+}
+
+export async function listAutopilotAdmissionsAwaitingPreparation(
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const admissions = database
+      .prepare(
+        `SELECT * FROM autopilot_admissions
+         WHERE state = 'triaged' AND current_run_id IS NOT NULL
+         ORDER BY updated_at ASC;`,
+      )
+      .all()
+      .map(readAdmission)
+      .filter((admission): admission is AutopilotAdmission =>
+        Boolean(admission),
+      );
+    return admissions.filter((admission) => {
+      const fact = readTerminalFact(
+        database
+          .prepare('SELECT value FROM app_metadata WHERE key = ?;')
+          .get(terminalFactKey(admission.currentRunId ?? '')),
+      );
+      return (
+        fact?.workflow === 'triage-pr-event' &&
+        !fact.failed &&
+        fact.shouldPrepare === true
+      );
+    });
   } finally {
     database.close();
   }
@@ -324,8 +405,12 @@ export async function recordAutopilotAdmissionRun(
     const settles = Boolean(observation || terminal);
     const workflowMatches =
       !terminal || terminal.workflow === admission.currentWorkflow;
+    const awaitsPrepareFact =
+      observation?.status === 'completed' &&
+      admission.currentWorkflow === 'prepare-pr-worktree' &&
+      !terminal;
     const settled =
-      settles && workflowMatches
+      settles && workflowMatches && !awaitsPrepareFact
         ? settledAdmissionState(admission, terminal, observationFailed)
         : undefined;
     const update = database
@@ -347,7 +432,16 @@ export async function recordAutopilotAdmissionRun(
         now,
         input.id,
       );
-    if (settled && workflowMatches && update.changes > 0) {
+    if (
+      settled &&
+      workflowMatches &&
+      update.changes > 0 &&
+      !(
+        terminal?.workflow === 'triage-pr-event' &&
+        !terminal.failed &&
+        terminal.shouldPrepare
+      )
+    ) {
       database
         .prepare('DELETE FROM app_metadata WHERE key = ?;')
         .run(terminalFactKey(input.runId));
@@ -400,7 +494,7 @@ export async function failAutopilotAdmission(
 }
 
 export async function settleAutopilotAdmissionTriage(
-  input: { runId: string; failed: boolean },
+  input: { runId: string; failed: boolean; shouldPrepare?: boolean },
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
@@ -421,7 +515,7 @@ export async function settleAutopilotAdmissionTriage(
         now,
         input.runId,
       );
-    if (update.changes > 0) {
+    if (update.changes > 0 && (input.failed || !input.shouldPrepare)) {
       database
         .prepare('DELETE FROM app_metadata WHERE key = ?;')
         .run(terminalFactKey(input.runId));
@@ -436,8 +530,9 @@ export async function beginAutopilotAdmissionPrepare(
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
-  const limits =
-    input.limits ?? (await readAdmissionLimits(input.triageRunId, paths));
+  const configuredLimits = await readAdmissionLimits(input.triageRunId, paths);
+  if (configuredLimits === 'disabled') return undefined;
+  const limits = configuredLimits ?? input.limits;
   const now = new Date().toISOString();
   const database = openDb(paths.neondeckDatabase);
   try {
@@ -472,6 +567,9 @@ export async function beginAutopilotAdmissionPrepare(
          WHERE id = ?;`,
       )
       .run(now, admission.id);
+    database
+      .prepare('DELETE FROM app_metadata WHERE key = ?;')
+      .run(terminalFactKey(input.triageRunId));
     database.exec('COMMIT;');
     return {
       ...admission,
@@ -605,15 +703,66 @@ function readAdmissionUsage(
   repoId: string,
   prNumber: number,
 ) {
+  const workflows = [
+    'triage-pr-event',
+    'triage_pr_event',
+    'prepare-pr-worktree',
+    'prepare_pr_worktree',
+    'fix-pr-review-feedback',
+    'fix_pr_review_feedback',
+    'fix-pr-ci',
+    'fix_pr_ci',
+    'ci-fix-run',
+    'ci_fix_run',
+    'fix-pr-ci-failure',
+    'fix_pr_ci_failure',
+    'verify-pr-worktree',
+    'verify_pr_worktree',
+    'push-pr-autofix',
+    'push_pr_autofix',
+    'verify-then-push-pr-autofix',
+    'verify_then_push_pr_autofix',
+    'comment-pr-autofix-result',
+    'comment_pr_autofix_result',
+    'cleanup-autopilot-worktree',
+    'cleanup_autopilot_worktree',
+  ];
+  const workflowPlaceholders = workflows.map(() => '?').join(', ');
   return database
     .prepare(
-      `SELECT COUNT(*) AS global_count,
-        SUM(CASE WHEN repo_id = ? THEN 1 ELSE 0 END) AS repo_count,
-        SUM(CASE WHEN repo_id = ? AND pr_number = ? THEN 1 ELSE 0 END) AS pr_count
-       FROM autopilot_admissions
-       WHERE state IN ('triage-admitted', 'prepare-admitted');`,
+      `WITH active_admissions AS (
+         SELECT * FROM autopilot_admissions
+         WHERE state IN ('triage-admitted', 'prepare-admitted')
+       ), manual_runs AS (
+         SELECT run_id FROM workflow_run_observations
+         WHERE status = 'active' AND workflow IN (${workflowPlaceholders})
+           AND NOT EXISTS (
+             SELECT 1 FROM active_admissions
+             WHERE active_admissions.current_run_id = workflow_run_observations.run_id
+           )
+       ), manual_worktrees AS (
+         SELECT * FROM worktrees
+         WHERE lifecycle_status = 'busy'
+           AND (
+             owning_workflow_run_id IS NULL OR NOT EXISTS (
+               SELECT 1 FROM active_admissions
+               WHERE active_admissions.current_run_id = worktrees.owning_workflow_run_id
+             )
+           )
+       )
+       SELECT
+         (SELECT COUNT(*) FROM active_admissions) +
+           (SELECT COUNT(*) FROM manual_runs) +
+           (SELECT COUNT(*) FROM manual_worktrees
+            WHERE owning_workflow_run_id IS NULL
+              OR owning_workflow_run_id NOT IN (SELECT run_id FROM manual_runs))
+           AS global_count,
+         (SELECT COUNT(*) FROM active_admissions WHERE repo_id = ?) +
+           (SELECT COUNT(*) FROM manual_worktrees WHERE repo_id = ?) AS repo_count,
+         (SELECT COUNT(*) FROM active_admissions WHERE repo_id = ? AND pr_number = ?) +
+           (SELECT COUNT(*) FROM manual_worktrees WHERE repo_id = ? AND pr_number = ?) AS pr_count;`,
     )
-    .get(repoId, repoId, prNumber) as {
+    .get(...workflows, repoId, repoId, repoId, prNumber, repoId, prNumber) as {
     global_count?: unknown;
     repo_count?: unknown;
     pr_count?: unknown;
@@ -668,7 +817,10 @@ async function readAdmissionLimits(
     id: watch.id,
     prNumber: watch.prNumber,
   });
-  return 'concurrency' in policy ? policy.concurrency : undefined;
+  if (!('concurrency' in policy) || policy.mode === 'notify-only') {
+    return 'disabled';
+  }
+  return policy.concurrency;
 }
 
 function readAdmission(row: unknown): AutopilotAdmission | undefined {

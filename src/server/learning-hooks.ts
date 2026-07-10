@@ -61,7 +61,11 @@ export function installFlueObservationHandlers(
               paths,
             ),
             settleAutopilotAdmissionTriage(
-              { runId: event.runId, failed: terminalActionFailed(event) },
+              {
+                runId: event.runId,
+                failed: terminalActionFailed(event),
+                shouldPrepare: triageRequestsPrepare(event),
+              },
               paths,
             ),
             settleAutopilotAdmissionPrepare(
