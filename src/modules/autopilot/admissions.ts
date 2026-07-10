@@ -20,6 +20,7 @@ export type AutopilotAdmissionState =
   | 'prepare-admitted'
   | 'prepared'
   | 'blocked'
+  | 'manual-review'
   | 'failed'
   | 'superseded';
 
@@ -107,7 +108,7 @@ export async function reconcileAutopilotAdmissions(
            WHERE id = ?;`,
         )
         .run(
-          uncertainPrepare ? 'blocked' : 'failed',
+          uncertainPrepare ? 'manual-review' : 'failed',
           uncertainPrepare
             ? 'Prepare run completed before its durable result was recorded; inspect before retrying.'
             : 'Attached Flue run ended before its durable result was recorded.',

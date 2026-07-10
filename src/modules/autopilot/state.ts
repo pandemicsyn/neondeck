@@ -149,7 +149,9 @@ export async function readAutopilotState(
       status:
         admission.state === 'prepared'
           ? ('prepared' as const)
-          : admission.state === 'blocked' || admission.state === 'failed'
+          : admission.state === 'blocked' ||
+              admission.state === 'failed' ||
+              admission.state === 'manual-review'
             ? ('blocked' as const)
             : admission.state.endsWith('admitted')
               ? ('running' as const)
