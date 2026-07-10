@@ -11,8 +11,7 @@ export function sanitizeMcpNamePart(value: string) {
 }
 
 export function mcpServerLabel(id: string, server: McpServerConfig) {
-  if (server.transport === 'http')
-    return `${id} (${server.sse ? 'sse' : 'http'})`;
+  if (server.transport === 'http') return `${id} (http)`;
   return `${id} (stdio)`;
 }
 

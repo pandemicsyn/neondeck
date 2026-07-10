@@ -407,11 +407,7 @@ function mcpApprovalScopeChanged(
   if (before.transport !== after.transport) return true;
   if (jsonChanged(before.tools, after.tools)) return true;
   if (before.transport === 'http' && after.transport === 'http') {
-    return (
-      before.url !== after.url ||
-      before.sse !== after.sse ||
-      jsonChanged(before.auth, after.auth)
-    );
+    return before.url !== after.url || jsonChanged(before.auth, after.auth);
   }
   if (before.transport === 'stdio' && after.transport === 'stdio') {
     return (
@@ -436,7 +432,6 @@ function mcpOAuthIdentityChanged(
   }
   return (
     before.url !== after.url ||
-    before.sse !== after.sse ||
     before.auth.clientId !== after.auth.clientId ||
     before.auth.clientSecret?.env !== after.auth.clientSecret?.env
   );

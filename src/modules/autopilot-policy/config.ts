@@ -5,22 +5,13 @@ import {
   defaultAutopilotConcurrency,
   defaultAutopilotPolicyLimits,
   metadataSchema,
-  modeAliasMap,
   type AutopilotConcurrencyPolicy,
   type AutopilotMode,
-  type AutopilotModeAlias,
   type AutopilotPolicyConfig,
   type AutopilotPolicyLimits,
   type RepoAutopilotConfig,
 } from './schemas';
 import { matchesAny } from './risk';
-
-export function normalizeAutopilotMode(
-  mode: AutopilotMode | AutopilotModeAlias,
-): AutopilotMode {
-  if (mode in modeAliasMap) return modeAliasMap[mode as AutopilotModeAlias];
-  return mode as AutopilotMode;
-}
 
 export function mergeAutopilotLimits(
   base: AutopilotPolicyLimits,
@@ -56,9 +47,7 @@ export function globalAutopilotPolicy(
   const parsed = v.safeParse(appAutopilotSchema, appConfig);
   const raw = parsed.success ? parsed.output.autopilot : undefined;
   return {
-    mode: normalizeAutopilotMode(
-      raw?.defaultMode ?? raw?.mode ?? 'notify-only',
-    ),
+    mode: raw?.defaultMode ?? raw?.mode ?? 'notify-only',
     limits: mergeAutopilotLimits(defaultAutopilotPolicyLimits, raw?.limits),
     concurrency: mergeAutopilotConcurrency(
       defaultAutopilotConcurrency,
@@ -83,9 +72,7 @@ export function repoAutopilotPolicy(
   const global = globalAutopilotPolicy(appConfig);
   const repoPolicy = readRepoAutopilotConfig(repo);
   return {
-    mode: repoPolicy?.mode
-      ? normalizeAutopilotMode(repoPolicy.mode)
-      : global.mode,
+    mode: repoPolicy?.mode ?? global.mode,
     limits: mergeAutopilotLimits(global.limits, repoPolicy?.limits),
     concurrency: mergeAutopilotConcurrency(
       global.concurrency,
@@ -111,7 +98,7 @@ export function repoAutopilotPolicyForWatch(
   );
   return {
     ...policy,
-    mode: override?.mode ? normalizeAutopilotMode(override.mode) : policy.mode,
+    mode: override?.mode ?? policy.mode,
   };
 }
 

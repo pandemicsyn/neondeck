@@ -118,13 +118,13 @@ export async function triagePrEvent(
 
   const input = parsed.input;
   const deltas = input.deltas ?? [];
-  const mode = input.autopilotMode ?? 'draft-fix';
+  const mode = input.autopilotMode ?? 'prepare-only';
   const signals = classifySignals(input.current, deltas);
   const classification = classificationFor(mode, signals);
   const shouldPrepareWorktree =
-    classification === 'draft-fix' ||
-    classification === 'auto-fix-no-push' ||
-    classification === 'auto-fix-push-after-checks';
+    classification === 'prepare-only' ||
+    classification === 'autofix-with-approval' ||
+    classification === 'autofix-push-when-safe';
   const reasons = reasonsFor(classification, mode, signals, deltas);
 
   return {

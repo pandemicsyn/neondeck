@@ -219,9 +219,9 @@ export function reasonsFor(
   if (signals.actionable)
     reasons.push('At least one delta is marked actionable.');
   if (
-    classification === 'draft-fix' ||
-    classification === 'auto-fix-no-push' ||
-    classification === 'auto-fix-push-after-checks'
+    classification === 'prepare-only' ||
+    classification === 'autofix-with-approval' ||
+    classification === 'autofix-push-when-safe'
   ) {
     reasons.push(`Autopilot mode allows ${mode}.`);
   }

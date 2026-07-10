@@ -16,7 +16,6 @@ import {
   refreshChatSessionSummary,
   restoreChatSession,
   searchChatSessions,
-  startNeonSession,
   switchChatSession,
   updateChatSessionCommandEvent,
 } from '../../modules/sessions';
@@ -27,15 +26,6 @@ export function createSessionRoutes(paths: RuntimePaths) {
 
   routes.get('/session', async (c) => {
     return c.json(await readNeonSessionState(paths, c.req.query('surface')));
-  });
-
-  routes.post('/session/new', async (c) => {
-    const input = (await c.req.json().catch(() => ({}))) as Record<
-      string,
-      unknown
-    >;
-    const result = await startNeonSession(input, paths);
-    return c.json(result, result.ok ? 200 : 400);
   });
 
   routes.get('/sessions', async (c) => {

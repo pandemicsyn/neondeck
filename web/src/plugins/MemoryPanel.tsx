@@ -212,8 +212,6 @@ function memoryPreview(value: unknown) {
 
 function scopeClass(scope: MemoryScope) {
   if (scope === 'local') return 'border-accent text-accent';
-  if (scope === 'session') return 'border-violet text-violet';
   if (scope === 'project') return 'border-primary text-primary';
-  if (scope === 'watch') return 'border-accent text-accent';
   return '';
 }

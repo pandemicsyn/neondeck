@@ -8,7 +8,7 @@ import { createScheduleBlueprint } from '../../scheduler';
 import {
   readChatSession,
   readNeonSessionState,
-  startNeonSession,
+  createChatSession,
   type ChatSessionRecord,
 } from '../../sessions';
 import { addPrWatch, listPrWatchRecords } from '../../watches';
@@ -185,10 +185,12 @@ export async function reasoningCommand(
   }
 
   const session = update.changed
-    ? await startNeonSession(
+    ? await createChatSession(
         {
-          label: `Reasoning ${requestedLevel}`,
+          title: `Reasoning ${requestedLevel}`,
           reason: `reasoning-level:${requestedLevel}`,
+          surface: 'dashboard',
+          activate: true,
         },
         paths,
       )

@@ -78,8 +78,8 @@ describe('safety policy', () => {
           audited: true,
         }),
         expect.objectContaining({
-          id: 'neondeck_memory_delete',
-          class: 'destructive-mutation',
+          id: 'neondeck_config_update_repo_autopilot_policy',
+          class: 'safe-mutation',
           requiresConfirmation: true,
           audited: true,
         }),

@@ -204,7 +204,7 @@ export const entries: SafetyPolicyEntry[] = [
     'neondeck_memory_lookup',
     'Read structured memory',
     readOnly,
-    'Reads durable Neondeck memory scoped to user, local, project, or legacy session/watch rows.',
+    'Reads durable Neondeck memory scoped to user, local, or project.',
   ),
   tool(
     'neondeck_worktrees_lookup',
@@ -552,6 +552,16 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget: 'config_history',
     },
     'Updates an existing repo entry after schema and path validation.',
+  ),
+  action(
+    'neondeck_config_update_repo_autopilot_policy',
+    'Update repository autopilot policy',
+    {
+      ...safeMutation,
+      auditTarget: 'repos.json/config_history',
+      requiresConfirmation: true,
+    },
+    'Updates typed repo autopilot policy. Increasing autonomy, relaxing limits, expanding push destinations, enabling force push, or changing watch overrides requires confirm=true.',
   ),
   action(
     'neondeck_config_update_agent_models',
@@ -1278,15 +1288,6 @@ export const entries: SafetyPolicyEntry[] = [
     'Rescans trusted local runtime skill folders. A new session is required before changed skills affect prompt context.',
   ),
   action(
-    'neondeck_memory_upsert',
-    'Write structured memory',
-    {
-      ...safeMutation,
-      auditTarget: 'memories/memory_events',
-    },
-    'Compatibility alias for learning scoped durable memory. Autonomous writes obey learning.memoryWriteMode; active prompt context changes only on a new session.',
-  ),
-  action(
     'neondeck_memory_learn',
     'Learn structured memory',
     {
@@ -1407,15 +1408,6 @@ export const entries: SafetyPolicyEntry[] = [
     'Reads consolidated learning reviews, candidates, memory decisions, skill patch decisions, and audit history.',
   ),
   action(
-    'neondeck_session_start',
-    'Start new Neon session',
-    {
-      ...safeMutation,
-      auditTarget: 'chat_sessions/chat_session_surfaces/chat_session_audit',
-    },
-    'Creates and activates a new Flue agent session id without deleting or copying previous history.',
-  ),
-  action(
     'neondeck_session_create',
     'Create chat session',
     {
@@ -1504,15 +1496,6 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget: 'pr_watches/jobs',
     },
     'Requires confirm=true before removing the watch and related jobs.',
-  ),
-  action(
-    'neondeck_memory_delete',
-    'Delete structured memory',
-    {
-      ...destructiveMutation,
-      auditTarget: 'memories/memory_events',
-    },
-    'Requires confirm=true before deleting durable memory and recording a memory event.',
   ),
   action(
     'neondeck_worktree_cleanup',

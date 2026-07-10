@@ -134,7 +134,7 @@ describe('structured memory actions', () => {
     });
   });
 
-  it('rejects new session and watch memory writes while keeping old scopes listable', async () => {
+  it('rejects removed session and watch memory scopes', async () => {
     const paths = runtimePaths(await tempHome());
 
     await expect(
@@ -152,9 +152,7 @@ describe('structured memory actions', () => {
       errors: [expect.stringContaining('Invalid type')],
     });
 
-    await expect(
-      listMemories({ scope: 'session' }, paths),
-    ).resolves.toMatchObject({
+    await expect(listMemories({}, paths)).resolves.toMatchObject({
       ok: true,
       memories: [],
     });

@@ -30,7 +30,7 @@ describe('autopilot operator state', () => {
         {
           version: 1,
           autopilot: {
-            defaultMode: 'draft-fix',
+            defaultMode: 'prepare-only',
             limits: { maxFilesChanged: 3 },
             concurrency: { maxAutonomousJobs: 2 },
           },
@@ -51,7 +51,7 @@ describe('autopilot operator state', () => {
               defaultBranch: 'main',
               metadata: {
                 autopilot: {
-                  mode: 'auto-fix-no-push',
+                  mode: 'autofix-with-approval',
                   reason: 'Repo is safe for prepared local fixes.',
                   limits: { requiredChecks: ['npm run check'] },
                   concurrency: { maxPerRepoAutonomousJobs: 1 },

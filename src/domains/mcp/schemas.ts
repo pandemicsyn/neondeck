@@ -55,7 +55,6 @@ const mcpHttpServerSchema = v.pipe(
     ...mcpCommonServerFields,
     transport: v.literal('http'),
     url: nonEmptyStringSchema,
-    sse: v.optional(v.boolean()),
     auth: v.optional(mcpAuthConfigSchema),
   }),
   v.check(

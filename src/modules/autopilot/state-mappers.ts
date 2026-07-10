@@ -8,11 +8,9 @@ import {
   globalAutopilotPolicy,
   mergeAutopilotConcurrency,
   mergeAutopilotLimits,
-  normalizeAutopilotMode,
   readRepoAutopilotConfig,
   type AutopilotConcurrencyPolicy,
   type AutopilotMode,
-  type AutopilotModeAlias,
   type AutopilotPolicyLimits,
 } from '../autopilot-policy';
 import {
@@ -64,9 +62,7 @@ export function repoPolicy(
 ): RepoAutopilotPolicy {
   const global = globalPolicy(appConfig);
   const repoAutopilot = readRepoAutopilot(repo);
-  const mode = repoAutopilot?.mode
-    ? normalizeAutopilotMode(repoAutopilot.mode)
-    : global.mode;
+  const mode = repoAutopilot?.mode ?? global.mode;
   const source = repoAutopilot?.mode ? 'repo-metadata' : 'global-default';
 
   return {
@@ -98,9 +94,7 @@ export function watchPolicy(
       candidate.watchId === watch.id || candidate.prNumber === watch.prNumber,
   );
   const inheritedMode = repoPolicy?.mode ?? 'notify-only';
-  const mode = override?.mode
-    ? normalizeAutopilotMode(override.mode)
-    : inheritedMode;
+  const mode = override?.mode ?? inheritedMode;
 
   return {
     watchId: watch.id,

@@ -753,9 +753,8 @@ describe('Neon commands', () => {
         thinkingLevel: 'high',
         sessionStarted: true,
         session: {
-          activeSession: {
-            label: 'Reasoning high',
-            reason: 'reasoning-level:high',
+          activeChatSession: {
+            title: 'Reasoning high',
           },
         },
       },
@@ -769,8 +768,8 @@ describe('Neon commands', () => {
       displayAssistantThinkingLevel: 'high',
     });
     const afterSession = await readNeonSessionState(paths);
-    expect(afterSession.activeSession.id).not.toBe(
-      beforeSession.activeSession.id,
+    expect(afterSession.activeChatSession.id).not.toBe(
+      beforeSession.activeChatSession.id,
     );
   });
 

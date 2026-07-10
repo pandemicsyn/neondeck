@@ -26,7 +26,6 @@ import {
   setActiveSession,
 } from './store';
 import {
-  legacySessionStartInputSchema,
   sessionArchiveInputSchema,
   sessionCommandEventCreateInputSchema,
   sessionCommandEventListInputSchema,
@@ -64,7 +63,6 @@ export async function createChatSession(
   const activate = parsed.output.activate ?? true;
   const uiMetadata = sessionUiMetadata(
     parsed.output.uiMetadata as JsonValue | null | undefined,
-    parsed.output.reason,
   );
   const summary = parsed.output.summary?.trim() || null;
   const summaryGeneratedAt = summary ? now : null;
@@ -210,33 +208,6 @@ export async function createChatSession(
     session,
     state,
     titleSuggestion,
-  };
-}
-
-export async function startNeonSession(
-  input: v.InferInput<typeof legacySessionStartInputSchema> = {},
-  paths: RuntimePaths = runtimePaths(),
-) {
-  const parsed = v.safeParse(legacySessionStartInputSchema, input);
-  if (!parsed.success) {
-    return failedSessionResult('session_start', v.summarize(parsed.issues));
-  }
-
-  const result = await createChatSession(
-    {
-      title: parsed.output.label,
-      reason: parsed.output.reason ?? 'manual-new-session',
-      surface: 'dashboard',
-      activate: true,
-    },
-    paths,
-  );
-
-  return {
-    ...result,
-    action: 'session_start',
-    message:
-      'Started a new Neon session. New chat messages will load current SOUL, skills, model config, and memory context.',
   };
 }
 
@@ -846,16 +817,8 @@ function inferSessionKind(
   return 'scratch';
 }
 
-function sessionUiMetadata(
-  metadata: JsonValue | null | undefined,
-  reason: string | undefined,
-) {
-  if (!reason) return metadata === undefined ? null : metadata;
-  if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
-    return asJsonValue({ ...metadata, legacyReason: reason });
-  }
-
-  return asJsonValue({ legacyReason: reason });
+function sessionUiMetadata(metadata: JsonValue | null | undefined) {
+  return metadata === undefined ? null : metadata;
 }
 
 function owns<T extends object, K extends PropertyKey>(

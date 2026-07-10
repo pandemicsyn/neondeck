@@ -314,7 +314,7 @@ export async function resolveSessionId(
 ) {
   if (inputSessionId) return inputSessionId;
   return readNeonSessionState(paths)
-    .then((state) => state.activeSession.id)
+    .then((state) => state.activeChatSession.id)
     .catch(() => undefined);
 }
 

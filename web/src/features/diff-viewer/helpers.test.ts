@@ -66,7 +66,7 @@ describe('diff viewer patch helpers', () => {
     ]);
   });
 
-  it('splits legacy plain unified repo-edit patches into Pierre-ready files', () => {
+  it('marks non-canonical patches as unrenderable', () => {
     const patch = [
       '--- a/src/a.ts',
       '+++ b/src/a.ts',
@@ -85,23 +85,17 @@ describe('diff viewer patch helpers', () => {
 
     const files = splitUnifiedPatchFiles(patch);
 
-    expect(patchFilePaths(patch)).toEqual(['src/a.ts', 'src/b.ts']);
+    expect(patchFilePaths(patch)).toEqual([]);
     expect(files).toMatchObject([
       {
-        additions: 1,
-        deletions: 1,
-        path: 'src/a.ts',
+        additions: 0,
+        deletions: 0,
+        path: 'patch.diff',
         status: 'M',
-      },
-      {
-        additions: 2,
-        deletions: 1,
-        path: 'src/b.ts',
-        status: 'M',
+        patch: null,
+        message: 'Patch is not in canonical git diff format.',
       },
     ]);
-    expect(files[0]?.patch).toMatch(/^diff --git a\/src\/a\.ts b\/src\/a\.ts/);
-    expect(files[1]?.patch).toMatch(/^diff --git a\/src\/b\.ts b\/src\/b\.ts/);
   });
 
   it('handles large patches without scanning line-by-line manually', () => {

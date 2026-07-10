@@ -357,10 +357,6 @@ function providerEnvRequirement(
     if (!status.enabled) return undefined;
     return {
       id: status.apiKeyEnv,
-      aliases:
-        status.apiKeyEnv === 'KILOCODE_API_KEY'
-          ? ['KILO_API_KEY']
-          : ['KILOCODE_API_KEY'],
     };
   }
 

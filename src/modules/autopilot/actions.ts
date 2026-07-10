@@ -29,7 +29,7 @@ import { commentPrAutofixResult } from './comments';
 export const triagePrEventAction = defineAction({
   name: 'neondeck_autopilot_triage_pr_event',
   description:
-    'Classify a structured PR watch delta into no-op, notify-only, explain-only, draft-fix, auto-fix-no-push, or auto-fix-push-after-checks without applying fixes.',
+    'Classify a structured PR watch delta into no-op, notify-only, explain-only, prepare-only, autofix-with-approval, or autofix-push-when-safe without applying fixes.',
   input: triagePrEventInputSchema,
   output: autopilotOutputSchema,
   async run({ input }) {

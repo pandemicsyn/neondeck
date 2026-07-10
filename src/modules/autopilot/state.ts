@@ -8,11 +8,9 @@ import {
   globalAutopilotPolicy,
   mergeAutopilotConcurrency,
   mergeAutopilotLimits,
-  normalizeAutopilotMode,
   readRepoAutopilotConfig,
   type AutopilotConcurrencyPolicy,
   type AutopilotMode,
-  type AutopilotModeAlias,
   type AutopilotPolicyLimits,
 } from '../autopilot-policy';
 import {

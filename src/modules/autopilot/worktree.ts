@@ -274,7 +274,10 @@ export async function preparePrWorktree(
         worktree = objectField(synced, 'worktree') ?? worktree;
       }
 
-      if (input.lock ?? true) {
+      // A prepared worktree is durable state, not an active mutation. Holding a
+      // PR lock here prevents the next independent fixer or verifier workflow
+      // from acquiring the lock it needs.
+      if (input.lock === true) {
         const locked = await lockWorktree(
           {
             worktreeId,

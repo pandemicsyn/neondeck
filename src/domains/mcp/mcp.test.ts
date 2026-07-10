@@ -2071,7 +2071,6 @@ function fixturePath() {
 function oauthServerIdentity(url: string) {
   return JSON.stringify({
     url,
-    sse: false,
     clientId: null,
     clientSecretEnv: null,
   });

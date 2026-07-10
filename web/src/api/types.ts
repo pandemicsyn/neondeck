@@ -1201,18 +1201,6 @@ export type ProviderUpdate = {
   organizationIdEnv?: string | null;
 };
 
-export type NeonSessionRecord = {
-  id: string;
-  label: string;
-  agentName: string;
-  status: 'active' | 'archived';
-  reason: string | null;
-  createdAt: string;
-  activatedAt: string;
-  endedAt: string | null;
-  updatedAt: string;
-};
-
 export type ChatSessionKind =
   'main' | 'scratch' | 'general' | 'repo' | 'watch' | 'task' | 'briefing';
 
@@ -1249,7 +1237,6 @@ export type ChatSessionRecord = {
 export type NeonSessionState = {
   ok: boolean;
   action: 'session_status';
-  activeSession: NeonSessionRecord;
   activeChatSession: ChatSessionRecord;
   activeSessionId: string;
   surface: string;
@@ -1261,7 +1248,6 @@ export type NeonSessionState = {
     changedAt: string;
     target: string | null;
   }>;
-  history: NeonSessionRecord[];
   sessions: ChatSessionRecord[];
   fetchedAt: string;
 };
@@ -1407,7 +1393,7 @@ export type SchedulerJobsResponse = {
   jobs: SchedulerJob[];
 };
 
-export type MemoryScope = 'user' | 'local' | 'project' | 'session' | 'watch';
+export type MemoryScope = 'user' | 'local' | 'project';
 
 export type MemoryRecord = {
   id: string;

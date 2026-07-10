@@ -625,7 +625,6 @@ function oauthServerIdentity(server: McpServerConfig) {
   }
   return JSON.stringify({
     url: server.url,
-    sse: server.sse ?? false,
     clientId: server.auth.clientId ?? null,
     clientSecretEnv: server.auth.clientSecret?.env ?? null,
   });

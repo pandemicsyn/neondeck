@@ -688,10 +688,5 @@ function isWatermarkCategory(
 }
 
 function triageModeForPolicy(mode: AutopilotMode) {
-  if (mode === 'prepare-only') return 'draft-fix';
-  if (mode === 'autofix-with-approval') return 'auto-fix-no-push';
-  if (mode === 'autofix-push-when-safe') {
-    return 'auto-fix-push-after-checks';
-  }
   return mode;
 }

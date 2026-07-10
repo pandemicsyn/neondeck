@@ -48,7 +48,7 @@ describe('PR event autopilot', () => {
       repoId: 'sample',
       prNumber: 7,
       source: 'fixture',
-      autopilotMode: 'auto-fix-no-push',
+      autopilotMode: 'autofix-with-approval',
       current: {
         state: 'open',
         draft: false,
@@ -71,7 +71,7 @@ describe('PR event autopilot', () => {
       changed: true,
       action: 'autopilot_triage_pr_event',
       data: {
-        classification: 'auto-fix-no-push',
+        classification: 'autofix-with-approval',
         shouldPrepareWorktree: true,
         nextWorkflow: 'prepare_pr_worktree',
       },
@@ -83,7 +83,7 @@ describe('PR event autopilot', () => {
       repoId: 'sample',
       prNumber: 8,
       source: 'fixture',
-      autopilotMode: 'draft-fix',
+      autopilotMode: 'prepare-only',
       current: { state: 'open', mergeable: false },
       deltas: [{ type: 'merge-conflict', actionable: true }],
     });
@@ -156,10 +156,7 @@ describe('PR event autopilot', () => {
           lifecycleStatus: 'ready',
           directPushAllowed: true,
         },
-        lock: {
-          scope: 'pr',
-          owner: 'test-prepare',
-        },
+        lock: null,
         status: {
           ok: true,
           git: { dirty: false },

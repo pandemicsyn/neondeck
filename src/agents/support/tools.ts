@@ -54,9 +54,7 @@ const skillLoadInputSchema = v.object({
   id: nonEmptyStringSchema,
 });
 const memoryLookupInputSchema = v.object({
-  scope: v.optional(
-    v.picklist(['user', 'local', 'project', 'session', 'watch']),
-  ),
+  scope: v.optional(v.picklist(['user', 'local', 'project'])),
   key: v.optional(nonEmptyStringSchema),
   status: v.optional(v.picklist(['active', 'archived'])),
   includeArchived: v.optional(v.boolean()),

@@ -6,6 +6,7 @@ import {
   updateAgentModels,
   updateDashboardLayout,
   updateProviderConfig,
+  updateRepoAutopilotPolicy,
   updateWorktreePolicy,
 } from '../../modules/config';
 import { isRegisteredProvider } from '../../modules/repos';
@@ -76,6 +77,15 @@ export function createConfigRoutes(paths: RuntimePaths) {
       typeof updateWorktreePolicy
     >[0];
     const result = await updateWorktreePolicy(input, paths);
+    return c.json(result, result.ok ? 200 : 400);
+  });
+
+  routes.post('/repos/:repoId/autopilot-policy', async (c) => {
+    const input = (await safeJsonObject(c)) as Record<string, unknown>;
+    const result = await updateRepoAutopilotPolicy(
+      { ...input, repoId: c.req.param('repoId') },
+      paths,
+    );
     return c.json(result, result.ok ? 200 : 400);
   });
 
