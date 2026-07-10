@@ -439,7 +439,7 @@ program
   .description('Create a persistent PR watch.')
   .option(
     '--until <state>',
-    'desired terminal state: checks, merged, or prod',
+    'desired terminal state: checks or merged',
     'checks',
   )
   .option('--interval <seconds>', 'poll interval in seconds')

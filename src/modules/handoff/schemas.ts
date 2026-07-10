@@ -47,7 +47,7 @@ export const handoffRegisterPrInputSchema = v.strictObject({
 export const handoffWatchPrInputSchema = v.strictObject({
   ref: v.pipe(v.string(), v.minLength(1)),
   source: v.optional(handoffSourceSchema),
-  desiredTerminalState: v.optional(v.picklist(['checks', 'merged', 'prod'])),
+  desiredTerminalState: v.optional(v.picklist(['checks', 'merged'])),
   intervalSeconds: v.optional(v.pipe(v.number(), v.integer(), v.minValue(60))),
 });
 
