@@ -39,6 +39,7 @@ import {
   readPreparedDiff,
   readPreparedDiffByWorktree,
   readPreparedDiffRecord,
+  listApprovalRecords,
   recordPreparedDiffVerification,
   type PreparedDiffRecord,
 } from '../prepared-diffs';
@@ -340,6 +341,16 @@ export async function pushPrAutofix(
       policy.mode === 'autofix-with-approval' ||
       policy.mode === 'autofix-push-when-safe';
     const hasCommittedDiff = policy.diff.filesChanged > 0;
+    const matchingPushApproval = listApprovalRecords(
+      { status: 'approved', preparedDiffIds: [preparedDiff.id] },
+      paths,
+    ).find(
+      (approval) =>
+        approval.approvalType === 'push' &&
+        approval.targetSha === currentSha &&
+        approval.policyHash === policy.policyHash &&
+        approval.policyDecision !== 'deny',
+    );
     const gates = [
       {
         gate: 'autopilot-mode',
@@ -350,11 +361,16 @@ export async function pushPrAutofix(
       },
       {
         gate: 'autopilot-policy',
-        ok: Boolean(policy.ok && !policy.blocked && !policy.approvalRequired),
+        ok: Boolean(
+          policy.decision === 'allow' ||
+          (policy.decision === 'require-approval' && matchingPushApproval),
+        ),
         reason:
-          policy.ok && !policy.blocked && !policy.approvalRequired
+          policy.decision === 'allow'
             ? 'Autopilot policy allows this diff and push destination.'
-            : policy.message,
+            : matchingPushApproval
+              ? 'A matching SHA-bound approval satisfies this policy requirement.'
+              : policy.message,
       },
       {
         gate: 'prepared-diff-approval',
@@ -363,6 +379,18 @@ export async function pushPrAutofix(
           preparedDiff.pushApprovalStatus === 'approved'
             ? 'Prepared diff push approval is approved.'
             : `Prepared diff push approval is ${preparedDiff.pushApprovalStatus}.`,
+      },
+      {
+        gate: 'sha-bound-policy-approval',
+        ok:
+          policy.decision !== 'require-approval' ||
+          Boolean(matchingPushApproval),
+        reason:
+          policy.decision !== 'require-approval'
+            ? 'Policy does not require a bound approval.'
+            : matchingPushApproval
+              ? 'A matching SHA-bound approval satisfies this policy requirement.'
+              : 'No approved push approval matches the current SHA and policy.',
       },
       {
         gate: 'prepared-diff-status',

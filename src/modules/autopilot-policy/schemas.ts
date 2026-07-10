@@ -52,6 +52,9 @@ export type AutopilotPolicyDecision = {
     binaryFiles: number;
   };
   files: AutopilotFileRisk[];
+  decision: 'deny' | 'require-approval' | 'allow';
+  approvalClass: string | null;
+  policyHash: string;
   blocked: boolean;
   approvalRequired: boolean;
   canPush: boolean;

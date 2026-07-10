@@ -57,6 +57,9 @@ export type PreparedDiffApprovalRecord = {
   worktreeId: string;
   approvalType: 'push' | 'revision' | 'abandon' | 'verification';
   status: 'pending' | 'approved' | 'rejected' | 'superseded';
+  targetSha: string | null;
+  policyHash: string | null;
+  policyDecision: 'deny' | 'require-approval' | 'allow' | null;
   reason: string | null;
   approverSurface: string | null;
   requestedAt: string;
@@ -241,6 +244,9 @@ export const approvalRowSchema = v.object({
   worktree_id: v.string(),
   approval_type: v.string(),
   status: v.string(),
+  target_sha: v.nullable(v.string()),
+  policy_hash: v.nullable(v.string()),
+  policy_decision: v.nullable(v.string()),
   reason: v.nullable(v.string()),
   approver_surface: v.nullable(v.string()),
   requested_at: v.string(),
