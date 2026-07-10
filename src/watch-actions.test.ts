@@ -54,16 +54,6 @@ describe('PR watch actions', () => {
       },
     });
     expect(
-      parseWatchPrReference('neondeck#123 until prod', registry),
-    ).toMatchObject({
-      ok: true,
-      reference: {
-        repoId: 'neondeck',
-        id: 'pandemicsyn/neondeck#123',
-        desiredTerminalState: 'prod',
-      },
-    });
-    expect(
       parseWatchPrReference(
         'https://github.com/pandemicsyn/neondeck/pull/123',
         registry,
@@ -269,7 +259,7 @@ describe('PR watch actions', () => {
       addPrWatch(
         {
           ref: 'neondeck#123',
-          desiredTerminalState: 'prod',
+          desiredTerminalState: 'merged',
           intervalSeconds: 120,
         },
         paths,
@@ -283,7 +273,7 @@ describe('PR watch actions', () => {
       outcome: 'updated',
       watch: {
         id: 'pandemicsyn/neondeck#123',
-        desiredTerminalState: 'prod',
+        desiredTerminalState: 'merged',
         status: 'watching',
         lastOutcome: 'updated',
       },
@@ -293,7 +283,7 @@ describe('PR watch actions', () => {
       watches: [
         {
           id: 'pandemicsyn/neondeck#123',
-          desiredTerminalState: 'prod',
+          desiredTerminalState: 'merged',
           pollIntervalSeconds: 120,
         },
       ],

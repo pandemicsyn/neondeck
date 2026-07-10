@@ -220,7 +220,7 @@ export function okRefReference(
 }
 
 export function readDesiredTerminalState(input: string) {
-  const match = input.match(/\s+until\s+(prod|checks|merged?)\s*$/i);
+  const match = input.match(/\s+until\s+(checks|merged?)\s*$/i);
   if (!match) return { ref: input.trim(), state: undefined };
 
   const rawState = match[1].toLowerCase();

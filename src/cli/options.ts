@@ -17,9 +17,9 @@ export function loadEnvForPaths(
 }
 
 export function parseWatchTarget(value: string | undefined) {
-  if (value === 'checks' || value === 'merged' || value === 'prod')
+  if (value === 'checks' || value === 'merged')
     return value;
-  throw new Error('--until must be checks, merged, or prod');
+  throw new Error('--until must be checks or merged');
 }
 
 export function parseHandoffNoteLevel(value: string | undefined) {

@@ -7,7 +7,7 @@ export type PrWatchStatus =
 export type RefWatchStatus =
   'watching' | 'green' | 'attention-needed' | 'unknown';
 
-export type DesiredTerminalState = 'checks' | 'merged' | 'prod';
+export type DesiredTerminalState = 'checks' | 'merged';
 export type WatchOutcome = 'created' | 'updated' | 'removed' | 'silent';
 
 export type WatchActionResult = {
@@ -110,7 +110,7 @@ export type CheckFetcher = (
 
 export const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 export const desiredTerminalStateSchema = v.optional(
-  v.picklist(['checks', 'merged', 'prod']),
+  v.picklist(['checks', 'merged']),
 );
 
 export const watchPrAddInputSchema = v.object({

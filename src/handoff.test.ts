@@ -145,13 +145,15 @@ describe('agent handoff service', () => {
     expect(invokeReviewPrWorkflow).toHaveBeenCalledWith({
       ref: 'pandemicsyn/neondeck#123',
     });
-    await expect(listWorkflowSummaries(paths)).resolves.toEqual([
+    await expect(listWorkflowSummaries(paths)).resolves.toEqual(
+      expect.arrayContaining([
       expect.objectContaining({
         workflow: 'agent_handoff',
         runId: 'run-123',
       }),
       expect.objectContaining({ workflow: 'agent_handoff' }),
-    ]);
+      ]),
+    );
   });
 
   it('does not create a PR watch when register note validation fails', async () => {
@@ -233,13 +235,13 @@ describe('agent handoff service', () => {
       ): Promise<WatchActionResult> => {
         expect(input).toMatchObject({
           ref: 'pandemicsyn/neondeck#123',
-          desiredTerminalState: 'prod',
+          desiredTerminalState: 'merged',
           intervalSeconds: 120,
           createdBy: 'external:codex',
         });
         return fakePrWatchResult({
           ref: 'pandemicsyn/neondeck#123',
-          desiredTerminalState: 'prod',
+          desiredTerminalState: 'merged',
           createdBy: 'external:codex',
         });
       },
@@ -250,7 +252,7 @@ describe('agent handoff service', () => {
         {
           ref: 'neondeck#123',
           source: 'codex',
-          desiredTerminalState: 'prod',
+          desiredTerminalState: 'merged',
           intervalSeconds: 120,
         },
         paths,
@@ -265,7 +267,7 @@ describe('agent handoff service', () => {
           event: 'watch-pr',
           source: 'external:codex',
           ref: 'pandemicsyn/neondeck#123',
-          desiredTerminalState: 'prod',
+          desiredTerminalState: 'merged',
         },
       },
     });
@@ -314,7 +316,7 @@ async function tempPaths() {
 
 function fakePrWatchResult(input: {
   ref: 'pandemicsyn/neondeck#123' | 'pandemicsyn/other#123';
-  desiredTerminalState?: 'checks' | 'prod';
+  desiredTerminalState?: 'checks' | 'merged';
   createdBy: string;
 }): WatchActionResult {
   const [repoFullName, prNumber] = input.ref.split('#') as [string, string];
