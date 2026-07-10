@@ -203,8 +203,52 @@ export async function claimDueScheduledTasks(
   }> = [];
   const nowIso = now.toISOString();
   const expiresAt = new Date(now.getTime() + claimTtlMs).toISOString();
+  const staleUnattachedRunAt = new Date(
+    now.getTime() - claimTtlMs,
+  ).toISOString();
   try {
     database.exec('BEGIN IMMEDIATE;');
+    database
+      .prepare(
+        `
+        UPDATE scheduled_tasks
+        SET enabled = 1, next_run_at = ?, updated_at = ?
+        WHERE json_extract(trigger_json, '$.kind') = 'once'
+          AND EXISTS (
+            SELECT 1 FROM scheduled_task_runs
+            WHERE scheduled_task_runs.task_id = scheduled_tasks.id
+              AND scheduled_task_runs.status = 'active'
+              AND scheduled_task_runs.workflow_run_id IS NULL
+              AND scheduled_task_runs.started_at <= ?
+          );
+      `,
+      )
+      .run(nowIso, nowIso, staleUnattachedRunAt);
+    database
+      .prepare(
+        `
+        UPDATE scheduled_task_runs
+        SET status = 'failed', outcome = 'failed',
+            message = 'Scheduled workflow admission was not durably attached before recovery.',
+            error = 'Scheduled workflow run id was not attached before the recovery deadline.',
+            completed_at = ?, updated_at = ?
+        WHERE status = 'active'
+          AND workflow_run_id IS NULL
+          AND started_at <= ?;
+      `,
+      )
+      .run(nowIso, nowIso, staleUnattachedRunAt);
+    database
+      .prepare(
+        `
+        UPDATE scheduled_tasks
+        SET enabled = 1, next_run_at = ?, updated_at = ?
+        WHERE json_extract(trigger_json, '$.kind') = 'once'
+          AND claim_id IS NOT NULL
+          AND claim_expires_at <= ?;
+      `,
+      )
+      .run(nowIso, nowIso, nowIso);
     database
       .prepare(
         `
