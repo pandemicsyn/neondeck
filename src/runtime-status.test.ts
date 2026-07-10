@@ -101,8 +101,7 @@ describe('runtime status', () => {
     expect(appDatabase.migrations).toMatchObject(
       expect.objectContaining({
         ok: false,
-        message:
-          'Legacy app database has not been stamped with Drizzle migrations yet.',
+        message: 'App database has no Drizzle migration journal.',
       }),
     );
   });
