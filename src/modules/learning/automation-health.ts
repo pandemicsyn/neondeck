@@ -41,11 +41,10 @@ export type AutomationHealthSnapshot = {
     reRevisionRate: number | null;
     abandonedRate: number | null;
   };
-  routines: {
+  scheduledTasks: {
     runs: number;
     failures: number;
     failureRate: number | null;
-    autoPauses: number;
     silentOutputs: number;
     silentOutputRate: number | null;
   };
@@ -87,7 +86,7 @@ export async function readAutomationHealth(
       window,
       reviewAssist: reviewAssistHealth(database, window),
       revisionLoop: revisionLoopHealth(database, window),
-      routines: routinesHealth(database, window),
+      scheduledTasks: scheduledTaskHealth(database, window),
       driftTriage: driftTriageHealth(database, window),
     };
   } finally {
@@ -240,49 +239,35 @@ function revisionLoopHealth(
   };
 }
 
-function routinesHealth(
+function scheduledTaskHealth(
   database: DatabaseSync,
   window: AutomationHealthSnapshot['window'],
-): AutomationHealthSnapshot['routines'] {
+): AutomationHealthSnapshot['scheduledTasks'] {
   const rows = database
     .prepare(
       `
-      SELECT status, outcome, summary_json
-      FROM routine_runs
+      SELECT status, outcome, result_json
+      FROM scheduled_task_runs
       WHERE created_at >= ? AND created_at <= ?;
     `,
     )
     .all(window.since, window.until) as Array<{
     status: string;
     outcome: string | null;
-    summary_json: string | null;
+    result_json: string | null;
   }>;
   const runs = rows.length;
   const failures = rows.filter(
     (row) => row.status === 'failed' || row.outcome === 'failed',
   ).length;
   const silentOutputs = rows.filter((row) =>
-    Boolean(objectField(parseJson(row.summary_json)).silent),
+    Boolean(objectField(parseJson(row.result_json)).silent),
   ).length;
-  const autoPauses =
-    (
-      database
-        .prepare(
-          `
-        SELECT COUNT(*) AS count
-        FROM routine_events
-        WHERE event_type = 'routine_auto_paused'
-          AND created_at >= ? AND created_at <= ?;
-      `,
-        )
-        .get(window.since, window.until) as { count?: number } | undefined
-    )?.count ?? 0;
 
   return {
     runs,
     failures,
     failureRate: rate(failures, runs),
-    autoPauses,
     silentOutputs,
     silentOutputRate: rate(silentOutputs, runs),
   };

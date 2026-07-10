@@ -14,7 +14,6 @@ import {
   updateProviderInputSchema,
   updateRepoAutopilotPolicyInputSchema,
   updateRepoInputSchema,
-  updateRoutinesConfigInputSchema,
   updateSkillRootsInputSchema,
   updateWorktreePolicyInputSchema,
 } from './schemas';
@@ -41,7 +40,6 @@ import {
   updateRepo,
   updateRepoAutopilotPolicy,
 } from './mutations/repos';
-import { updateRoutinesConfig } from './mutations/routines';
 
 export const configReadAction = defineAction({
   name: 'neondeck_config_read',
@@ -121,17 +119,6 @@ export const updateHandoffConfigAction = defineAction({
   output: configActionOutputSchema,
   async run({ input }) {
     return updateHandoffConfig(input);
-  },
-});
-
-export const updateRoutinesConfigAction = defineAction({
-  name: 'neondeck_config_update_routines',
-  description:
-    'Enable or disable the global routines subsystem in runtime config.json. When disabled, routine scheduling and run-now admission are paused immediately.',
-  input: updateRoutinesConfigInputSchema,
-  output: configActionOutputSchema,
-  async run({ input }) {
-    return updateRoutinesConfig(input);
   },
 });
 
@@ -253,7 +240,6 @@ export const neondeckConfigActions = [
   updateSkillRootsAction,
   updateLearningConfigAction,
   updateHandoffConfigAction,
-  updateRoutinesConfigAction,
   updateWorktreePolicyAction,
   readProvidersAction,
   updateProviderAction,

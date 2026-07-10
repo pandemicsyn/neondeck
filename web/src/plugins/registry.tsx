@@ -8,7 +8,6 @@ import { HostMetricsPlugin } from './HostMetrics';
 import { LearningOperatorPanelPlugin } from './LearningOperatorPanel';
 import { MemoryPanelPlugin } from './MemoryPanel';
 import { ReportsPanelPlugin } from './ReportsPanel';
-import { RoutinesPanelPlugin } from './RoutinesPanel';
 import { RuntimeOverviewPlugin } from './RuntimeOverview';
 import { SubagentSummaryPlugin } from './SubagentSummary';
 import { WorkflowObservabilityPanelPlugin } from './WorkflowObservabilityPanel';
@@ -19,7 +18,6 @@ export const plugins = [
   ActiveWatchesPlugin,
   AutopilotPanelPlugin,
   ReportsPanelPlugin,
-  RoutinesPanelPlugin,
   RuntimeOverviewPlugin,
   BriefingPanelPlugin,
   MemoryPanelPlugin,

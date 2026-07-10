@@ -30,8 +30,6 @@ export const queryKeys = {
   repoHealth: ['repo-health'] as const,
   repoEditEvents: ['repo-edit-events'] as const,
   reports: ['reports'] as const,
-  routines: ['routines'] as const,
-  routineConfig: ['routine-config'] as const,
   repoRegistry: ['repo-registry'] as const,
   runtimeStatus: ['runtime-status'] as const,
   runtimeSkills: ['runtime-skills'] as const,

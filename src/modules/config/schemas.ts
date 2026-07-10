@@ -138,9 +138,6 @@ export const updateLearningConfigInputSchema = v.strictObject({
     v.pipe(v.number(), v.integer(), v.minValue(1)),
   ),
 });
-export const updateRoutinesConfigInputSchema = v.strictObject({
-  enabled: v.optional(v.boolean()),
-});
 export const updateHandoffConfigInputSchema = v.strictObject({
   allowExternalReviewQueue: v.optional(v.boolean()),
 });

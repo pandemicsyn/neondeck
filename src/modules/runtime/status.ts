@@ -352,7 +352,7 @@ export async function readRuntimeStatus(
     counts: {
       repos: repos.ok ? repos.value.repos.length : 0,
       activeSchedules: 0,
-      activeJobs: appDatabase.counts.activeJobs,
+      activeJobs: appDatabase.counts.activeScheduledTasks,
       activeWatches: appDatabase.counts.activeWatches,
       activeSkills: activeSkills.length,
       duplicateSkills: skills.ok ? skills.value.duplicates.length : 0,

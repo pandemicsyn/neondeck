@@ -12,7 +12,7 @@ type AppDatabaseSnapshot = {
   message: string;
   migrations: AppDbMigrationStatus;
   counts: {
-    activeJobs: number;
+    activeScheduledTasks: number;
     activeWatches: number;
     recentFailedWorkflowSummaries: number;
     unreadFlueFailureNotifications: number;
@@ -38,9 +38,9 @@ export function inspectAppDatabase(paths: RuntimePaths): AppDatabaseSnapshot {
   const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
 
   try {
-    const activeJobs = count(
+    const activeScheduledTasks = count(
       database,
-      'SELECT COUNT(*) AS count FROM jobs WHERE enabled = 1;',
+      'SELECT COUNT(*) AS count FROM scheduled_tasks WHERE enabled = 1;',
     );
     const activeWatches = count(
       database,
@@ -135,7 +135,7 @@ export function inspectAppDatabase(paths: RuntimePaths): AppDatabaseSnapshot {
       message: 'Neondeck app database is readable.',
       migrations,
       counts: {
-        activeJobs,
+        activeScheduledTasks,
         activeWatches,
         recentFailedWorkflowSummaries,
         unreadFlueFailureNotifications,
@@ -184,7 +184,7 @@ function emptyDatabaseSnapshot(
     message,
     migrations,
     counts: {
-      activeJobs: 0,
+      activeScheduledTasks: 0,
       activeWatches: 0,
       recentFailedWorkflowSummaries: 0,
       unreadFlueFailureNotifications: 0,

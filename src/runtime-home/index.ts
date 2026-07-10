@@ -1,7 +1,6 @@
 export {
   generateLocalApiToken,
   resolveLearningConfig,
-  resolveRoutinesConfig,
 } from './defaults.ts';
 export { ensureRuntimeHome, ensureRuntimeHomeSync } from './bootstrap.ts';
 export {
@@ -40,7 +39,6 @@ export {
   providerConfigSchema,
   repoConfigSchema,
   repoRegistrySchema,
-  routinesConfigSchema,
   thinkingLevelSchema,
   worktreeCleanupConfigSchema,
   worktreeConfigSchema,
@@ -64,8 +62,6 @@ export {
   type RepoConfig,
   type RepoRegistry,
   type ResolvedLearningConfig,
-  type ResolvedRoutinesConfig,
-  type RoutinesConfig,
   type ThinkingLevel,
   type WorktreeCleanupConfig,
   type WorktreeConfig,
