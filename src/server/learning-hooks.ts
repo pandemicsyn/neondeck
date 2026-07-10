@@ -12,6 +12,7 @@ import {
   beginAutopilotAdmissionPrepare,
   failAutopilotAdmission,
   recordAutopilotAdmissionRun,
+  settleAutopilotAdmissionPrepare,
   settleAutopilotAdmissionTriage,
 } from '../modules/autopilot';
 import {
@@ -51,6 +52,14 @@ export function installFlueObservationHandlers(
             ),
             settleAutopilotAdmissionTriage(
               { runId: event.runId, failed: event.isError },
+              paths,
+            ),
+            settleAutopilotAdmissionPrepare(
+              {
+                runId: event.runId,
+                failed: event.isError,
+                worktreeId: prepareWorktreeId(event),
+              },
               paths,
             ),
           ]),
@@ -215,6 +224,24 @@ function triageRequestsPrepare(
     typeof data === 'object' &&
     (data as Record<string, unknown>).shouldPrepareWorktree === true,
   );
+}
+
+function prepareWorktreeId(
+  event: Extract<FlueObservation, { type: 'run_end' }>,
+) {
+  if (
+    !('result' in event) ||
+    !event.result ||
+    typeof event.result !== 'object'
+  ) {
+    return undefined;
+  }
+  const data = (event.result as Record<string, unknown>).data;
+  if (!data || typeof data !== 'object') return undefined;
+  const worktree = (data as Record<string, unknown>).worktree;
+  if (!worktree || typeof worktree !== 'object') return undefined;
+  const id = (worktree as Record<string, unknown>).id;
+  return typeof id === 'string' ? id : undefined;
 }
 
 export function recordHandledPrApiResult(

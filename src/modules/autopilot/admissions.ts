@@ -10,6 +10,7 @@ export type AutopilotAdmissionState =
   | 'triage-admitted'
   | 'triaged'
   | 'prepare-admitted'
+  | 'prepared'
   | 'blocked'
   | 'failed'
   | 'superseded';
@@ -246,6 +247,34 @@ export async function beginAutopilotAdmissionPrepare(
   } catch (error) {
     database.exec('ROLLBACK;');
     throw error;
+  } finally {
+    database.close();
+  }
+}
+
+export async function settleAutopilotAdmissionPrepare(
+  input: { runId: string; failed: boolean; worktreeId?: string },
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `UPDATE autopilot_admissions
+         SET state = ?, current_workflow = NULL, worktree_id = ?, last_error = ?,
+             next_attempt_at = ?, updated_at = ?
+         WHERE current_run_id = ? AND state = 'prepare-admitted';`,
+      )
+      .run(
+        input.failed ? 'failed' : 'prepared',
+        input.worktreeId ?? null,
+        input.failed ? 'Prepare workflow failed; see Flue run details.' : null,
+        input.failed ? now : null,
+        now,
+        input.runId,
+      );
   } finally {
     database.close();
   }
