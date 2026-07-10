@@ -477,6 +477,45 @@ export const workflowRunObservations = sqliteTable(
   },
 );
 
+export const autopilotAdmissions = sqliteTable(
+  'autopilot_admissions',
+  {
+    id: text('id').primaryKey(),
+    watchId: text('watch_id').notNull(),
+    eventFingerprint: text('event_fingerprint').notNull(),
+    repoId: text('repo_id').notNull(),
+    prNumber: integer('pr_number').notNull(),
+    mode: text('mode').notNull(),
+    state: text('state').notNull(),
+    priority: integer('priority').default(0).notNull(),
+    currentWorkflow: text('current_workflow'),
+    currentRunId: text('current_run_id'),
+    worktreeId: text('worktree_id'),
+    preparedDiffId: text('prepared_diff_id'),
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    nextAttemptAt: text('next_attempt_at'),
+    lastError: text('last_error'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_autopilot_admissions_watch_event').on(
+      table.watchId,
+      table.eventFingerprint,
+    ),
+    index('idx_autopilot_admissions_state_due').on(
+      table.state,
+      table.nextAttemptAt,
+      sql`${table.updatedAt} DESC`,
+    ),
+    index('idx_autopilot_admissions_repo_pr').on(
+      table.repoId,
+      table.prNumber,
+      table.state,
+    ),
+  ],
+);
+
 export const neonSessions = sqliteTable('neon_sessions', {
   id: text('id').primaryKey(),
   label: text('label').notNull(),
