@@ -418,7 +418,6 @@ describe('scheduled task storage', () => {
       await expect(
         createAgentInstructionTask(
           {
-            id: 'instruction:nightly',
             prompt:
               'Inspect the configured repository and report stale branches.',
             trigger: { kind: 'interval', everySeconds: 43_200 },
@@ -430,7 +429,7 @@ describe('scheduled task storage', () => {
       ).resolves.toMatchObject({
         ok: true,
         task: {
-          id: 'instruction:nightly',
+          id: expect.stringMatching(/^instruction:/),
           spec: {
             kind: 'run-agent-instruction',
             target: { kind: 'workflow' },

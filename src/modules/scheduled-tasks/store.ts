@@ -13,7 +13,6 @@ import * as v from 'valibot';
 
 const defaultClaimTtlMs = 5 * 60 * 1_000;
 export const maxActiveScheduledWorkflowRuns = 10;
-const maxScheduledWorkflowRuntimeMs = 60 * 60 * 1_000;
 
 export async function listScheduledTasks(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
@@ -88,6 +87,11 @@ export async function upsertScheduledTask(
   const trigger = triggerResult.trigger;
   const now = new Date();
   const existing = await readScheduledTask(input.id, paths);
+  if (existing && existing.spec.kind !== spec.kind) {
+    throw new Error(
+      `Scheduled task "${input.id}" is a ${existing.spec.kind} task and cannot be replaced with ${spec.kind}.`,
+    );
+  }
   const record: ScheduledTaskRecord = {
     id: input.id,
     spec,
@@ -199,23 +203,8 @@ export async function claimDueScheduledTasks(
   }> = [];
   const nowIso = now.toISOString();
   const expiresAt = new Date(now.getTime() + claimTtlMs).toISOString();
-  const staleWorkflowStartedAt = new Date(
-    now.getTime() - maxScheduledWorkflowRuntimeMs,
-  ).toISOString();
   try {
     database.exec('BEGIN IMMEDIATE;');
-    database
-      .prepare(
-        `
-        UPDATE scheduled_task_runs
-        SET status = 'failed', outcome = 'failed',
-            message = 'Scheduled workflow exceeded its maximum runtime.',
-            error = 'Scheduled workflow exceeded its maximum runtime.',
-            completed_at = ?, updated_at = ?
-        WHERE status = 'active' AND started_at <= ?;
-      `,
-      )
-      .run(nowIso, nowIso, staleWorkflowStartedAt);
     database
       .prepare(
         `
