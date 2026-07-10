@@ -94,17 +94,33 @@ export async function refreshWatchJobEvents(
     if (!watch) continue;
     const policy = await readEffectiveWatchAutopilotPolicy(watch, paths);
     if (!('concurrency' in policy)) continue;
+    const recoveredClaim = await claimAutopilotTriageAdmission(
+      {
+        watchId: admission.watchId,
+        eventFingerprint: admission.eventFingerprint,
+        repoId: admission.repoId,
+        prNumber: admission.prNumber,
+        mode: admission.mode,
+        input: admission.input,
+        limits: policy.concurrency,
+      },
+      paths,
+    );
+    if (!recoveredClaim.claimed) continue;
     const invokeWorkflow =
       dependencies.invokeWorkflow ?? invokeScheduledWorkflow;
     try {
       const { runId } = await invokeWorkflow('triage-pr-event', {
-        ...admission.input,
-        admissionId: admission.id,
+        ...recoveredClaim.admission.input,
+        admissionId: recoveredClaim.admission.id,
       } as JsonValue);
-      await recordAutopilotAdmissionRun({ id: admission.id, runId }, paths);
+      await recordAutopilotAdmissionRun(
+        { id: recoveredClaim.admission.id, runId },
+        paths,
+      );
     } catch (error) {
       await failAutopilotAdmission(
-        { id: admission.id, error: errorMessage(error) },
+        { id: recoveredClaim.admission.id, error: errorMessage(error) },
         paths,
       );
     }
