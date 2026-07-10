@@ -359,18 +359,6 @@ CREATE TABLE `memory_events` (
 	`created_at` text NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `neon_sessions` (
-	`id` text PRIMARY KEY,
-	`label` text NOT NULL,
-	`agent_name` text NOT NULL,
-	`status` text NOT NULL,
-	`reason` text,
-	`created_at` text NOT NULL,
-	`activated_at` text NOT NULL,
-	`ended_at` text,
-	`updated_at` text NOT NULL
-);
---> statement-breakpoint
 CREATE TABLE `notifications` (
 	`id` text PRIMARY KEY,
 	`level` text NOT NULL,

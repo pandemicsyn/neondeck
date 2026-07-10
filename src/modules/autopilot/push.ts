@@ -361,13 +361,10 @@ export async function pushPrAutofix(
       },
       {
         gate: 'autopilot-policy',
-        ok: Boolean(
-          policy.decision === 'allow' ||
-          (policy.decision === 'require-approval' && matchingPushApproval),
-        ),
+        ok: Boolean(policy.decision !== 'deny' && matchingPushApproval),
         reason:
-          policy.decision === 'allow'
-            ? 'Autopilot policy allows this diff and push destination.'
+          policy.decision === 'deny'
+            ? policy.message
             : matchingPushApproval
               ? 'A matching SHA-bound approval satisfies this policy requirement.'
               : policy.message,
@@ -382,15 +379,10 @@ export async function pushPrAutofix(
       },
       {
         gate: 'sha-bound-policy-approval',
-        ok:
-          policy.decision !== 'require-approval' ||
-          Boolean(matchingPushApproval),
-        reason:
-          policy.decision !== 'require-approval'
-            ? 'Policy does not require a bound approval.'
-            : matchingPushApproval
-              ? 'A matching SHA-bound approval satisfies this policy requirement.'
-              : 'No approved push approval matches the current SHA and policy.',
+        ok: Boolean(matchingPushApproval),
+        reason: matchingPushApproval
+          ? 'A matching SHA-bound approval satisfies this policy requirement.'
+          : 'No approved push approval matches the current SHA and policy.',
       },
       {
         gate: 'prepared-diff-status',

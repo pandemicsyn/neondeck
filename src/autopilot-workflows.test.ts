@@ -10,6 +10,7 @@ import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   checkAutopilotConcurrency,
   checkAutopilotPolicy,
+  approvePreparedDiffPushWithPolicy,
 } from './modules/autopilot';
 import {
   fixPrCiFailure,
@@ -22,7 +23,6 @@ import {
 } from './modules/autopilot';
 import {
   abandonPreparedDiff,
-  approvePreparedDiffPush,
   ensurePreparedDiffForWorktree,
   readPreparedDiff,
 } from './modules/prepared-diffs';
@@ -1589,7 +1589,7 @@ describe('PR event autopilot', () => {
     const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
     const preparedDiffId = stringPath(prepared, ['data', 'preparedDiff', 'id']);
 
-    const approval = await approvePreparedDiffPush(
+    const approval = await approvePreparedDiffPushWithPolicy(
       {
         preparedDiffId,
         reason: 'Fixture approval.',
@@ -1684,7 +1684,7 @@ describe('PR event autopilot', () => {
       pushApprovalStatus: 'pending',
     });
 
-    const approval = await approvePreparedDiffPush(
+    const approval = await approvePreparedDiffPushWithPolicy(
       { preparedDiffId, confirm: true },
       paths,
     );
@@ -1978,7 +1978,10 @@ describe('PR event autopilot', () => {
     const prepared = await prepareReviewPreparedDiff(paths, featureSha);
     const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
     const preparedDiffId = stringPath(prepared, ['data', 'preparedDiff', 'id']);
-    await approvePreparedDiffPush({ preparedDiffId, confirm: true }, paths);
+    await approvePreparedDiffPushWithPolicy(
+      { preparedDiffId, confirm: true },
+      paths,
+    );
     const verification = await verifyPrWorktree(
       { worktreeId, checks: ['npm run check'], lock: false },
       paths,
@@ -2018,7 +2021,10 @@ describe('PR event autopilot', () => {
       'localPath',
     ]);
     const preparedDiffId = stringPath(prepared, ['data', 'preparedDiff', 'id']);
-    await approvePreparedDiffPush({ preparedDiffId, confirm: true }, paths);
+    await approvePreparedDiffPushWithPolicy(
+      { preparedDiffId, confirm: true },
+      paths,
+    );
     const verification = await verifyPrWorktree(
       { worktreeId, checks: ['npm run check'], lock: false },
       paths,
@@ -2040,7 +2046,12 @@ describe('PR event autopilot', () => {
     expect(result).toMatchObject({
       ok: false,
       action: 'autopilot_push_pr_autofix',
-      requires: ['approved-commit', 'verified-commit'],
+      requires: [
+        'autopilot-policy',
+        'sha-bound-policy-approval',
+        'approved-commit',
+        'verified-commit',
+      ],
       data: {
         preparedDiff: { status: 'push-blocked' },
         worktree: { lifecycleStatus: 'prepared-diff' },

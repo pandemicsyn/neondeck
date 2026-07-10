@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "f7e534ea-785a-4f99-9a5a-e7a4fab82b65",
+  "id": "e2b65ac5-dd54-488c-b120-0219934d20dd",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -100,10 +100,6 @@
     },
     {
       "name": "memory_events",
-      "entityType": "tables"
-    },
-    {
-      "name": "neon_sessions",
       "entityType": "tables"
     },
     {
@@ -3068,96 +3064,6 @@
       "generated": null,
       "name": "id",
       "entityType": "columns",
-      "table": "neon_sessions"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "label",
-      "entityType": "columns",
-      "table": "neon_sessions"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "agent_name",
-      "entityType": "columns",
-      "table": "neon_sessions"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "status",
-      "entityType": "columns",
-      "table": "neon_sessions"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "reason",
-      "entityType": "columns",
-      "table": "neon_sessions"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "table": "neon_sessions"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "activated_at",
-      "entityType": "columns",
-      "table": "neon_sessions"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "ended_at",
-      "entityType": "columns",
-      "table": "neon_sessions"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "updated_at",
-      "entityType": "columns",
-      "table": "neon_sessions"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "id",
-      "entityType": "columns",
       "table": "notifications"
     },
     {
@@ -6047,15 +5953,6 @@
       "nameExplicit": false,
       "name": "memory_events_pk",
       "table": "memory_events",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "id"
-      ],
-      "nameExplicit": false,
-      "name": "neon_sessions_pk",
-      "table": "neon_sessions",
       "entityType": "pks"
     },
     {

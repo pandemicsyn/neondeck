@@ -52,38 +52,6 @@ export function reconcileActiveChatSession(database: DatabaseSync) {
     .run(fallback.id);
 }
 
-/**
- * Temporary support for pre-baseline fixtures. Production initialization uses
- * chat_sessions exclusively; the migration-history reset removes this helper.
- */
-export function reconcileActiveNeonSessions(database: DatabaseSync) {
-  const now = new Date().toISOString();
-  const active = database
-    .prepare(
-      `
-      SELECT id
-      FROM neon_sessions
-      WHERE agent_name = 'display-assistant'
-        AND status = 'active'
-      ORDER BY activated_at DESC, created_at DESC;
-    `,
-    )
-    .all() as Array<{ id: string }>;
-  const [, ...duplicates] = active;
-  if (duplicates.length === 0) return;
-
-  const placeholders = duplicates.map(() => '?').join(', ');
-  database
-    .prepare(
-      `
-      UPDATE neon_sessions
-      SET status = 'archived', ended_at = ?, updated_at = ?
-      WHERE id IN (${placeholders});
-    `,
-    )
-    .run(now, now, ...duplicates.map((session) => session.id));
-}
-
 export function reconcileExistingNotificationDuplicates(
   database: DatabaseSync,
 ) {

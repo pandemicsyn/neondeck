@@ -347,7 +347,7 @@ export async function readPreparedDiffFileDiff(
 export async function approvePreparedDiffPush(
   rawInput: unknown,
   paths: RuntimePaths = runtimePaths(),
-  binding?: {
+  binding: {
     targetSha: string;
     policyHash: string;
     policyDecision: 'require-approval' | 'allow';
@@ -392,7 +392,7 @@ export async function approvePreparedDiffPush(
       'PREPARED_DIFF_SHA_UNAVAILABLE',
     );
   }
-  if (binding && binding.targetSha !== approvedCommitSha) {
+  if (binding.targetSha !== approvedCommitSha) {
     return failure(
       'prepared_diff_approve_push',
       'Prepared diff changed before approval could be recorded.',
@@ -422,8 +422,8 @@ export async function approvePreparedDiffPush(
     parsed.input.approverSurface,
     {
       targetSha: approvedCommitSha,
-      policyHash: binding?.policyHash ?? null,
-      policyDecision: binding?.policyDecision ?? null,
+      policyHash: binding.policyHash,
+      policyDecision: binding.policyDecision,
     },
     paths,
   );

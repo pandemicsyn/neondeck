@@ -517,18 +517,6 @@ export const autopilotAdmissions = sqliteTable(
   ],
 );
 
-export const neonSessions = sqliteTable('neon_sessions', {
-  id: text('id').primaryKey(),
-  label: text('label').notNull(),
-  agentName: text('agent_name').notNull(),
-  status: text('status').notNull(),
-  reason: text('reason'),
-  createdAt: text('created_at').notNull(),
-  activatedAt: text('activated_at').notNull(),
-  endedAt: text('ended_at'),
-  updatedAt: text('updated_at').notNull(),
-});
-
 export const chatSessions = sqliteTable(
   'chat_sessions',
   {
