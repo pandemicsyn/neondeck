@@ -96,27 +96,27 @@ export async function createAgentInstructionTask(
     return invalidResult('scheduled_task_instruction_create', parsed);
   }
   const input = parsed.output;
-  if (input.target?.kind === 'agent-session') {
-    const session = await readChatSessionInternal(
-      input.target.sessionId,
-      paths,
-    );
-    if (
-      !session ||
-      session.archivedAt ||
-      session.agentName !== 'display-assistant'
-    ) {
-      return {
-        ok: false,
-        action: 'scheduled_task_instruction_create',
-        changed: false,
-        message:
-          'Agent-session targets must reference an active display-assistant chat session.',
-        requires: ['activeChatSession'],
-      };
-    }
-  }
   try {
+    if (input.target?.kind === 'agent-session') {
+      const session = await readChatSessionInternal(
+        input.target.sessionId,
+        paths,
+      );
+      if (
+        !session ||
+        session.archivedAt ||
+        session.agentName !== 'display-assistant'
+      ) {
+        return {
+          ok: false,
+          action: 'scheduled_task_instruction_create',
+          changed: false,
+          message:
+            'Agent-session targets must reference an active display-assistant chat session.',
+          requires: ['activeChatSession'],
+        };
+      }
+    }
     const task = await upsertScheduledTask(
       {
         id: input.id ?? `instruction:${randomUUID()}`,

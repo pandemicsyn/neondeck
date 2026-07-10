@@ -19,6 +19,7 @@ import {
   validateAutomationTrigger,
 } from './modules/scheduled-tasks';
 import { runSchedulerTick } from './modules/scheduler';
+import { recordFlueObservation } from './modules/learning';
 import { createChatSession } from './modules/sessions';
 import { runtimePaths } from './runtime-home';
 
@@ -286,6 +287,68 @@ describe('scheduled task storage', () => {
         { workflowRunId: 'workflow:briefing:active', failed: false },
         paths,
       );
+      await expect(
+        canAdmitScheduledWorkflow(claim.task.id, paths),
+      ).resolves.toBe(true);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('reconciles a terminal workflow observation that arrives before linkage', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
+    const paths = runtimePaths(home);
+    try {
+      await upsertScheduledTask(
+        {
+          id: 'briefing:terminal-race',
+          spec: { kind: 'run-briefing', briefingId: 'daily' },
+          trigger: { kind: 'interval', everySeconds: 300 },
+          nextRunAt: '2026-07-10T00:00:00.000Z',
+        },
+        paths,
+      );
+      const [claim] = await claimDueScheduledTasks(
+        paths,
+        new Date('2026-07-10T00:00:00.000Z'),
+      );
+      if (!claim) throw new Error('Expected the due task to be claimed.');
+      await activateScheduledTaskWorkflowRun(
+        {
+          taskId: claim.task.id,
+          runId: claim.run.id,
+          claimId: claim.task.claimId ?? '',
+        },
+        paths,
+      );
+      await recordFlueObservation(
+        {
+          v: 3,
+          type: 'run_end',
+          eventIndex: 2,
+          runId: 'workflow:briefing:terminal-race',
+          workflow: 'briefing',
+          timestamp: '2026-07-10T00:00:01.000Z',
+          durationMs: 1_000,
+          isError: false,
+          result: { ok: true },
+        } as never,
+        paths,
+      );
+      await attachScheduledTaskWorkflowRunId(
+        {
+          runId: claim.run.id,
+          workflowRunId: 'workflow:briefing:terminal-race',
+        },
+        paths,
+      );
+
+      await expect(
+        readLatestScheduledTaskRun(claim.task.id, paths),
+      ).resolves.toMatchObject({
+        id: claim.run.id,
+        status: 'completed',
+      });
       await expect(
         canAdmitScheduledWorkflow(claim.task.id, paths),
       ).resolves.toBe(true);

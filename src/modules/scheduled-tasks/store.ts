@@ -490,15 +490,52 @@ export async function attachScheduledTaskWorkflowRunId(
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase);
   try {
+    database.exec('BEGIN IMMEDIATE;');
+    const terminal = database
+      .prepare(
+        `
+        SELECT status, ended_at
+        FROM workflow_run_observations
+        WHERE run_id = ? AND status IN ('completed', 'failed');
+      `,
+      )
+      .get(input.workflowRunId) as
+      { status?: unknown; ended_at?: unknown } | undefined;
     database
       .prepare(
         `
         UPDATE scheduled_task_runs
-        SET workflow_run_id = ?, updated_at = ?
+        SET workflow_run_id = ?, status = ?, outcome = ?, message = ?, error = ?,
+            completed_at = ?, updated_at = ?
         WHERE id = ? AND status = 'active';
       `,
       )
-      .run(input.workflowRunId, new Date().toISOString(), input.runId);
+      .run(
+        input.workflowRunId,
+        terminal?.status === 'failed'
+          ? 'failed'
+          : terminal
+            ? 'completed'
+            : 'active',
+        terminal?.status === 'failed' ? 'failed' : 'recorded',
+        terminal
+          ? terminal.status === 'failed'
+            ? 'Scheduled workflow failed; see Flue run details.'
+            : 'Scheduled workflow completed.'
+          : 'Scheduled workflow admitted and awaiting terminal observation.',
+        terminal?.status === 'failed' ? 'See Flue run details.' : null,
+        terminal
+          ? typeof terminal.ended_at === 'string'
+            ? terminal.ended_at
+            : new Date().toISOString()
+          : null,
+        new Date().toISOString(),
+        input.runId,
+      );
+    database.exec('COMMIT;');
+  } catch (error) {
+    database.exec('ROLLBACK;');
+    throw error;
   } finally {
     database.close();
   }
