@@ -9,6 +9,7 @@ import {
   beginAutopilotAdmissionPrepare,
   claimAutopilotTriageAdmission,
   failAutopilotAdmission,
+  listAutopilotAdmissionsAwaitingPreparation,
   recordAutopilotAdmissionRun,
   reconcileAutopilotAdmissions,
   type AutopilotAdmission,
@@ -88,12 +89,28 @@ export async function refreshWatchJobEvents(
   const pendingByWatch = pendingTriageEventsFromJobResult(previousJobResult);
   const watches = await listPrWatchRecords(paths);
   const watchById = new Map(watches.map((watch) => [watch.id, watch]));
+  const invokeWorkflow = dependencies.invokeWorkflow ?? invokeScheduledWorkflow;
   const recovered = await reconcileAutopilotAdmissions(paths);
+  const awaitingPreparation =
+    await listAutopilotAdmissionsAwaitingPreparation(paths);
+  for (const admission of awaitingPreparation) {
+    const watch = watchById.get(admission.watchId);
+    if (!watch) continue;
+    const policy = await readEffectiveWatchAutopilotPolicy(watch, paths);
+    if (!('concurrency' in policy) || policy.mode === 'notify-only') continue;
+    await continueTerminalTriageAdmission(
+      admission,
+      policy.concurrency,
+      admission.input as Record<string, JsonValue>,
+      invokeWorkflow,
+      paths,
+    );
+  }
   for (const admission of recovered) {
     const watch = watchById.get(admission.watchId);
     if (!watch) continue;
     const policy = await readEffectiveWatchAutopilotPolicy(watch, paths);
-    if (!('concurrency' in policy)) continue;
+    if (!('concurrency' in policy) || policy.mode === 'notify-only') continue;
     const recoveredClaim = await claimAutopilotTriageAdmission(
       {
         watchId: admission.watchId,
@@ -107,17 +124,28 @@ export async function refreshWatchJobEvents(
       paths,
     );
     if (!recoveredClaim.claimed) continue;
-    const invokeWorkflow =
-      dependencies.invokeWorkflow ?? invokeScheduledWorkflow;
     try {
       const { runId } = await invokeWorkflow('triage-pr-event', {
         ...recoveredClaim.admission.input,
         admissionId: recoveredClaim.admission.id,
       } as JsonValue);
-      await recordAutopilotAdmissionRun(
+      const attached = await recordAutopilotAdmissionRun(
         { id: recoveredClaim.admission.id, runId },
         paths,
       );
+      if (
+        attached?.terminal?.workflow === 'triage-pr-event' &&
+        !attached.terminal.failed &&
+        attached.terminal.shouldPrepare
+      ) {
+        await continueTerminalTriageAdmission(
+          attached.admission,
+          policy.concurrency,
+          recoveredClaim.admission.input as Record<string, JsonValue>,
+          invokeWorkflow,
+          paths,
+        );
+      }
     } catch (error) {
       await failAutopilotAdmission(
         { id: recoveredClaim.admission.id, error: errorMessage(error) },
