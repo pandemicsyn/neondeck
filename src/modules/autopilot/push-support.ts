@@ -81,12 +81,19 @@ import {
 import { AutopilotActionResult } from './schemas';
 import { asJsonValue, objectField, stringField } from './utils';
 
-export function pushReadinessGates(preparedDiff: PreparedDiffRecord) {
+export function pushReadinessGates(
+  preparedDiff: PreparedDiffRecord,
+  options: { requireApproval?: boolean } = {},
+) {
+  const requireApproval = options.requireApproval !== false;
+  const allowedStatuses = requireApproval
+    ? ['push-approved', 'push-blocked']
+    : ['prepared', 'verification-requested', 'push-approved', 'push-blocked'];
   return [
     {
       gate: 'prepared-diff-status',
-      ok: ['push-approved', 'push-blocked'].includes(preparedDiff.status),
-      reason: ['push-approved', 'push-blocked'].includes(preparedDiff.status)
+      ok: allowedStatuses.includes(preparedDiff.status),
+      reason: allowedStatuses.includes(preparedDiff.status)
         ? `Prepared diff status is ${preparedDiff.status}.`
         : ['pushed', 'abandoned'].includes(preparedDiff.status)
           ? `Prepared diff status is ${preparedDiff.status}; terminal records are not pushed again.`
@@ -94,9 +101,9 @@ export function pushReadinessGates(preparedDiff: PreparedDiffRecord) {
     },
     {
       gate: 'prepared-diff-approval',
-      ok: preparedDiff.pushApprovalStatus === 'approved',
+      ok: !requireApproval || preparedDiff.pushApprovalStatus === 'approved',
       reason:
-        preparedDiff.pushApprovalStatus === 'approved'
+        !requireApproval || preparedDiff.pushApprovalStatus === 'approved'
           ? 'Prepared diff push approval is approved.'
           : `Prepared diff push approval is ${preparedDiff.pushApprovalStatus}.`,
     },

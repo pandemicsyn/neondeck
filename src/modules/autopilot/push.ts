@@ -188,7 +188,9 @@ export async function pushPrAutofix(
       preparedDiff.repoId,
       paths,
     );
-    const readinessGates = pushReadinessGates(preparedDiff);
+    const readinessGates = pushReadinessGates(preparedDiff, {
+      requireApproval: false,
+    });
     const failedReadinessGates = readinessGates.filter((gate) => !gate.ok);
     if (failedReadinessGates.length > 0) {
       return pushNotReadyResult(
@@ -340,6 +342,9 @@ export async function pushPrAutofix(
     const modeAllowsPush =
       policy.mode === 'autofix-with-approval' ||
       policy.mode === 'autofix-push-when-safe';
+    const requiresExplicitApproval =
+      policy.mode === 'autofix-with-approval' ||
+      policy.decision === 'require-approval';
     const hasCommittedDiff = policy.diff.filesChanged > 0;
     const matchingPushApproval = listApprovalRecords(
       { status: 'approved', preparedDiffIds: [preparedDiff.id] },
@@ -361,7 +366,10 @@ export async function pushPrAutofix(
       },
       {
         gate: 'autopilot-policy',
-        ok: Boolean(policy.decision !== 'deny' && matchingPushApproval),
+        ok: Boolean(
+          policy.decision !== 'deny' &&
+          (!requiresExplicitApproval || matchingPushApproval),
+        ),
         reason:
           policy.decision === 'deny'
             ? policy.message
@@ -371,7 +379,9 @@ export async function pushPrAutofix(
       },
       {
         gate: 'prepared-diff-approval',
-        ok: preparedDiff.pushApprovalStatus === 'approved',
+        ok:
+          !requiresExplicitApproval ||
+          preparedDiff.pushApprovalStatus === 'approved',
         reason:
           preparedDiff.pushApprovalStatus === 'approved'
             ? 'Prepared diff push approval is approved.'
@@ -379,15 +389,30 @@ export async function pushPrAutofix(
       },
       {
         gate: 'sha-bound-policy-approval',
-        ok: Boolean(matchingPushApproval),
+        ok: !requiresExplicitApproval || Boolean(matchingPushApproval),
         reason: matchingPushApproval
           ? 'A matching SHA-bound approval satisfies this policy requirement.'
           : 'No approved push approval matches the current SHA and policy.',
       },
       {
         gate: 'prepared-diff-status',
-        ok: ['push-approved', 'push-blocked'].includes(preparedDiff.status),
-        reason: ['push-approved', 'push-blocked'].includes(preparedDiff.status)
+        ok: requiresExplicitApproval
+          ? ['push-approved', 'push-blocked'].includes(preparedDiff.status)
+          : [
+              'prepared',
+              'verification-requested',
+              'push-approved',
+              'push-blocked',
+            ].includes(preparedDiff.status),
+        reason: (requiresExplicitApproval
+          ? ['push-approved', 'push-blocked']
+          : [
+              'prepared',
+              'verification-requested',
+              'push-approved',
+              'push-blocked',
+            ]
+        ).includes(preparedDiff.status)
           ? `Prepared diff status is ${preparedDiff.status}.`
           : `Prepared diff status is ${preparedDiff.status}, not ready to push.`,
       },
@@ -401,7 +426,7 @@ export async function pushPrAutofix(
       },
       {
         gate: 'approved-commit',
-        ok: approvedCommitSha === currentSha,
+        ok: !requiresExplicitApproval || approvedCommitSha === currentSha,
         reason:
           approvedCommitSha === currentSha
             ? 'Prepared diff push approval matches current HEAD.'
