@@ -57,7 +57,7 @@ export function supportedCommands() {
       name: 'briefing',
       usage: '/briefing',
       description:
-        'Summarize repos, watches, scheduled jobs, notifications, and PR queue readiness.',
+        'Summarize repos, watches, scheduled tasks, notifications, and PR queue readiness.',
     },
     {
       name: 'reasoning',

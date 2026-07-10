@@ -618,7 +618,6 @@ function commandNameFromInput(command: string): NeonCommandResult['command'] {
     'memory',
     'watch-pr',
     'dev-doctor',
-    'watch-release',
   ];
   return supported.includes(name as NeonCommandResult['command'])
     ? (name as NeonCommandResult['command'])

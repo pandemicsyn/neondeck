@@ -43,11 +43,6 @@ export const defaultCommandCatalog: FlueChatCommand[] = [
     description: 'create or inspect a PR watch',
   },
   {
-    label: 'Watch release',
-    command: '/watch-release',
-    description: 'track release checks until green',
-  },
-  {
     label: 'CI',
     command: '/explain-ci',
     description: 'explain a failing check or PR ref',

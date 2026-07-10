@@ -40,8 +40,7 @@ export const ActiveWatchesPlugin = {
     useConfigEvents((event) => {
       if (
         event.action === 'config_reload' ||
-        configEventTouchesFile(event, 'repos.json') ||
-        configEventTouchesFile(event, 'schedules.json')
+        configEventTouchesFile(event, 'repos.json')
       ) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
       }
