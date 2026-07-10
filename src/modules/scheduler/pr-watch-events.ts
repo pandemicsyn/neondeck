@@ -465,6 +465,7 @@ async function admitWatchTriageEvent(
       triage: {
         status: admission.admission.state,
         eventId,
+        input,
         admission: admission.admission,
       } as unknown as JsonValue,
       notifications: [],
