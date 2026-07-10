@@ -21,10 +21,15 @@ export {
   claimAutopilotTriageAdmission,
   failAutopilotAdmission,
   recordAutopilotAdmissionRun,
+  recordAutopilotAdmissionTerminalFact,
   settleAutopilotAdmissionTriage,
   settleAutopilotAdmissionPrepare,
 } from './admissions';
-export type { AutopilotAdmission, AutopilotAdmissionState } from './admissions';
+export type {
+  AutopilotAdmission,
+  AutopilotAdmissionState,
+  AutopilotAdmissionTerminalFact,
+} from './admissions';
 export { preparePrWorktree, verifyPrWorktree } from './worktree';
 export { pushPrAutofix } from './push';
 export {

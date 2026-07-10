@@ -50,6 +50,7 @@ export type ScheduledWorkflowName =
   | 'briefing'
   | 'command-run'
   | 'scheduled-agent-instruction'
+  | 'prepare-pr-worktree'
   | 'triage-pr-event';
 export type SchedulerTickLease = {
   owner: string;
