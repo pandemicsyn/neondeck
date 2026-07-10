@@ -281,7 +281,10 @@ Scheduling model:
 - Flue owns the workflow that performs the briefing.
 - Node.js scheduling should use an app scheduler that invokes Flue workflows for finite occurrences or dispatches to a continuing agent only when shared conversation state is intentional.
 - Cloudflare deployment can later map to Worker cron/scheduling primitives with the same workflow-versus-agent-dispatch split.
-- User-facing schedules should prefer typed blueprints over raw cron strings. Raw schedules can exist underneath, but common flows should be created through presets such as morning briefing, watch PR, release watch, and review queue digest.
+- User-facing scheduling uses typed SQLite task operations: internal PR-watch
+  polling, bounded briefings, and bounded agent instructions. Each task uses a
+  validated trigger and admits one Flue workflow or intentional session event;
+  raw schedule blueprints are not part of the current contract.
 
 ### Local Dev Doctor
 
@@ -1036,16 +1039,15 @@ Must-haves:
 
 - Status: complete for local scheduler/watch substrate.
 
-- [x] Add app SQLite tables for watches, jobs, notifications, memories, and workflow summaries.
+- [x] Add app SQLite tables for watches, scheduled tasks/runs, notifications, memories, and workflow summaries.
 - [x] Keep Flue runtime persistence separate unless the Flue adapter requires otherwise.
 - [x] Add migrations or startup schema initialization.
 - [x] Add APIs for active watches and notifications.
-- [x] Add local scheduler loop for configured jobs.
-- [x] Add blueprint-style job creation for:
-  - morning briefing
-  - watch PR
-  - release watch
-  - review queue digest
+- [x] Add a local scheduler loop for canonical scheduled tasks.
+- [x] Support the three typed task operations:
+  - internal PR-watch polling
+  - bounded briefings
+  - bounded agent instructions
 - [x] Persist watcher watermarks/snapshots.
 - [x] Add quiet no-op handling for unchanged watches.
 
