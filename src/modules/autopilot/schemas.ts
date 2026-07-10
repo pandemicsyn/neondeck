@@ -157,6 +157,7 @@ export const triagePrEventInputSchema = v.object({
   prNumber: positiveIntegerSchema,
   watchId: v.optional(nonEmptyStringSchema),
   eventId: v.optional(nonEmptyStringSchema),
+  admissionId: v.optional(nonEmptyStringSchema),
   source: v.optional(v.picklist(['watch', 'api', 'fixture'])),
   autopilotMode: v.optional(autopilotModeSchema),
   previous: v.optional(prEventSnapshotSchema),
