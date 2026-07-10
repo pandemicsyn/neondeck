@@ -171,10 +171,10 @@ export const entries: SafetyPolicyEntry[] = [
     'Reads persisted PR watch event watermarks without contacting GitHub.',
   ),
   tool(
-    'neondeck_scheduler_jobs_lookup',
-    'Read scheduler jobs',
+    'neondeck_scheduled_tasks_lookup',
+    'Read scheduled tasks',
     readOnly,
-    'Reads durable scheduler jobs and last run state.',
+    'Reads canonical scheduled tasks and their most recent run.',
   ),
   tool(
     'neondeck_pr_watches_lookup',
@@ -375,28 +375,16 @@ export const entries: SafetyPolicyEntry[] = [
     'Lists persistent PR watches.',
   ),
   action(
-    'neondeck_scheduler_list_jobs',
-    'List scheduler jobs',
+    'neondeck_scheduled_task_list',
+    'List scheduled tasks',
     readOnly,
-    'Lists durable scheduler jobs and last run state.',
+    'Lists canonical scheduled tasks and their most recent run.',
   ),
   action(
-    'neondeck_routine_list',
-    'List routines',
+    'neondeck_scheduled_task_read',
+    'Read scheduled task',
     readOnly,
-    'Lists durable routine records and schedule state.',
-  ),
-  action(
-    'neondeck_routine_read',
-    'Read routine',
-    readOnly,
-    'Reads one routine and recent local run history.',
-  ),
-  action(
-    'neondeck_routine_config_read',
-    'Read routine config',
-    readOnly,
-    'Reads resolved routine configuration and guardrail constants.',
+    'Reads one canonical scheduled task and its most recent run.',
   ),
   action(
     'neondeck_skills_list',
@@ -582,68 +570,49 @@ export const entries: SafetyPolicyEntry[] = [
     'Updates learning, memory write, and memory curation policy without running reviews or mutating memory.',
   ),
   action(
-    'neondeck_config_update_routines',
-    'Update routines config',
+    'neondeck_scheduled_task_briefing_create',
+    'Create briefing task',
     {
       ...safeMutation,
-      auditTarget: 'config_history',
+      auditTarget: 'scheduled_tasks/scheduled_task_runs',
     },
-    'Updates the global routines kill switch without changing individual routine records.',
+    'Creates or updates a canonical timezone-aware briefing task without running it.',
   ),
   action(
-    'neondeck_routine_create',
-    'Create routine',
+    'neondeck_scheduled_task_instruction_create',
+    'Create scheduled instruction',
     {
       ...safeMutation,
-      auditTarget: 'routines/routine_events/notifications',
+      auditTarget: 'scheduled_tasks/scheduled_task_runs',
     },
-    'Creates an enabled local routine schedule from the current agent session, subject to cap and minimum interval guardrails.',
+    'Creates or updates a bounded scheduled agent instruction with explicit workflow or session delivery.',
   ),
   action(
-    'neondeck_routine_update',
-    'Update routine',
+    'neondeck_scheduled_task_pause',
+    'Pause scheduled task',
     {
       ...safeMutation,
-      auditTarget: 'routines/routine_events',
+      auditTarget: 'scheduled_tasks',
     },
-    'Updates routine metadata, prompt, schedule, skills, scope, or delivery without executing it.',
+    'Pauses a scheduled task without deleting run history.',
   ),
   action(
-    'neondeck_routine_run',
-    'Run routine now',
+    'neondeck_scheduled_task_resume',
+    'Resume scheduled task',
     {
       ...safeMutation,
-      auditTarget:
-        'routines/routine_runs/routine_events/chat_sessions/chat_session_command_events/reports/notifications',
+      auditTarget: 'scheduled_tasks',
     },
-    'Admits one routine display-assistant session turn and records local run state without bypassing approval-gated actions.',
+    'Resumes a scheduled task without immediately executing it.',
   ),
   action(
-    'neondeck_routine_pause',
-    'Pause routine',
-    {
-      ...safeMutation,
-      auditTarget: 'routines/routine_events',
-    },
-    'Pauses a routine schedule without deleting run history.',
-  ),
-  action(
-    'neondeck_routine_resume',
-    'Resume routine',
-    {
-      ...safeMutation,
-      auditTarget: 'routines/routine_events',
-    },
-    'Resumes a paused routine without running it immediately.',
-  ),
-  action(
-    'neondeck_routine_delete',
-    'Delete routine',
+    'neondeck_scheduled_task_delete',
+    'Delete scheduled task',
     {
       ...destructiveMutation,
-      auditTarget: 'routine_events/routines/routine_runs',
+      auditTarget: 'scheduled_tasks/scheduled_task_runs',
     },
-    'Deletes a routine and local run history only after confirm=true and only when no run is active.',
+    'Deletes a scheduled task and its local run history after confirm=true.',
   ),
   action(
     'neondeck_config_update_provider',
@@ -776,24 +745,6 @@ export const entries: SafetyPolicyEntry[] = [
     'Requires confirm=true before removing an MCP server and cached MCP runtime state.',
   ),
   action(
-    'neondeck_config_add_schedule',
-    'Add schedule config',
-    {
-      ...safeMutation,
-      auditTarget: 'config_history',
-    },
-    'Adds a validated schedule entry to schedules.json.',
-  ),
-  action(
-    'neondeck_config_update_schedule',
-    'Update schedule config',
-    {
-      ...safeMutation,
-      auditTarget: 'config_history',
-    },
-    'Updates an existing schedule entry and can disable a schedule.',
-  ),
-  action(
     'neondeck_config_update_handoff',
     'Update handoff config',
     {
@@ -803,31 +754,22 @@ export const entries: SafetyPolicyEntry[] = [
     'Updates external agent handoff policy, including whether external registrations can queue bounded PR review assistance.',
   ),
   action(
-    'neondeck_schedule_blueprint_create',
-    'Create schedule blueprint',
-    {
-      ...safeMutation,
-      auditTarget: 'config_history/jobs/pr_watches',
-    },
-    'Creates common schedules through typed blueprints and may create linked watch/job records.',
-  ),
-  action(
     'neondeck_scheduler_tick',
-    'Run due scheduler jobs',
+    'Run due scheduled tasks',
     {
       ...safeMutation,
-      auditTarget: 'jobs/notifications/workflow_events/reports',
+      auditTarget: 'scheduled_tasks/scheduled_task_runs/notifications/workflow_events',
     },
-    'Runs due jobs and records job outcomes, notifications, Flue workflow observations, and scheduled report artifacts.',
+    'Claims due scheduled tasks and records task runs, notifications, and Flue workflow admissions.',
   ),
   action(
     'neondeck_watch_pr_add',
     'Add PR watch',
     {
       ...safeMutation,
-      auditTarget: 'pr_watches/jobs',
+      auditTarget: 'pr_watches/scheduled_tasks',
     },
-    'Creates durable watch and job records after GitHub PR lookup.',
+    'Creates a durable PR watch and its canonical polling task after GitHub PR lookup.',
   ),
   action(
     'neondeck_watch_pr_refresh',
@@ -1480,22 +1422,13 @@ export const entries: SafetyPolicyEntry[] = [
     'Requires confirm=true before removing a configured repository.',
   ),
   action(
-    'neondeck_config_remove_schedule',
-    'Remove schedule config',
-    {
-      ...destructiveMutation,
-      auditTarget: 'config_history',
-    },
-    'Requires confirm=true before removing a schedule from schedules.json.',
-  ),
-  action(
     'neondeck_watch_pr_remove',
     'Remove PR watch',
     {
       ...destructiveMutation,
-      auditTarget: 'pr_watches/jobs',
+      auditTarget: 'pr_watches/scheduled_tasks/scheduled_task_runs',
     },
-    'Requires confirm=true before removing the watch and related jobs.',
+    'Requires confirm=true before removing the watch and its polling task history.',
   ),
   action(
     'neondeck_worktree_cleanup',
@@ -1747,13 +1680,13 @@ export const entries: SafetyPolicyEntry[] = [
     'Starts a bounded docs-only Kilo handoff from a docs-drift report. It creates local worktree state only and never pushes or comments.',
   ),
   route(
-    '/api/routines',
-    'Routines API',
+    '/api/scheduled-tasks',
+    'Scheduled tasks API',
     {
       ...safeMutation,
-      auditTarget: 'routines/routine_events/notifications',
+      auditTarget: 'scheduled_tasks/scheduled_task_runs',
     },
-    'GET lists durable routine records; POST creates a local routine schedule without executing it.',
+    'GET lists canonical scheduled tasks; task creation uses the typed briefing and instruction endpoints.',
   ),
   route(
     '/api/routines/config',
