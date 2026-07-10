@@ -10,11 +10,6 @@ import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
-import {
-  ensureColumn,
-  migrateMemoriesRepoIdentity,
-  migrateMemoryEvents,
-} from './migrations.ts';
 
 const drizzleMigrationsTable = '__drizzle_migrations';
 const defaultMigrationsFolder = fileURLToPath(
@@ -35,7 +30,6 @@ export type ApplyAppDbMigrationsResult = {
   applied: string[];
   pending: string[];
   backupPath: string | null;
-  stampedBaseline: boolean;
 };
 
 export type AppDbMigrationStatus = {
@@ -103,10 +97,6 @@ export function readAppDbMigrationStatus(
   try {
     database = new DatabaseSync(databasePath, { readOnly: true });
     if (!tableExists(database, drizzleMigrationsTable)) {
-      const legacy = readLegacyDatabaseState(database);
-      const message = legacy.legacy
-        ? 'Legacy app database has not been stamped with Drizzle migrations yet.'
-        : 'App database has no Drizzle migration journal.';
       return {
         ok: false,
         databasePath,
@@ -118,7 +108,7 @@ export function readAppDbMigrationStatus(
         localHead,
         journalHead: null,
         lastBackup,
-        message,
+        message: 'App database has no Drizzle migration journal.',
       };
     }
 
@@ -196,24 +186,15 @@ export function applyAppDbMigrations(
     );
     const journalExisted = tableExists(database, drizzleMigrationsTable);
     const userTablesBeforeJournal = listUserTables(database);
-    const legacy = journalExisted
-      ? { legacy: false, schemaVersion: null }
-      : readLegacyDatabaseState(database);
-
     if (journalExisted) {
       assertJournalMatchesLocalMigrations(readJournal(database), localByName);
     }
 
-    if (!journalExisted && legacy.legacy) {
-      const baseline = baselineMigration(migrations);
-      backupPath = backupDatabase(databasePath, baseline.name, options.now);
-      upgradeLegacyDatabaseToCurrentBaseline(database);
-      createJournalTable(database);
-      insertJournalRow(database, baseline);
-    } else if (!journalExisted) {
+    if (!journalExisted) {
       if (userTablesBeforeJournal.length > 0) {
-        const baseline = baselineMigration(migrations);
-        backupPath = backupDatabase(databasePath, baseline.name, options.now);
+        throw new AppDbMigrationError(
+          'This app database predates the current Neondeck baseline. Reset it instead of applying a pre-1.0 compatibility upgrade.',
+        );
       }
       createJournalTable(database);
     }
@@ -229,8 +210,7 @@ export function applyAppDbMigrations(
     const pending = migrations.filter(
       (migration) => !appliedNames.has(migration.name),
     );
-    const shouldBackupPending =
-      journalExisted || legacy.legacy || userTablesBeforeJournal.length > 0;
+    const shouldBackupPending = journalExisted;
 
     if (pending.length > 0 && !backupPath && shouldBackupPending) {
       backupPath = backupDatabase(databasePath, pending[0].name, options.now);
@@ -251,7 +231,6 @@ export function applyAppDbMigrations(
       applied: pending.map((migration) => migration.name),
       pending: [],
       backupPath,
-      stampedBaseline: !journalExisted && legacy.legacy,
     };
   } catch (error) {
     if (transactionOpen) rollback(database);
@@ -355,241 +334,6 @@ function insertJournalRow(database: DatabaseSync, migration: DrizzleMigration) {
       migration.name,
       new Date().toISOString(),
     );
-}
-
-function baselineMigration(migrations: DrizzleMigration[]) {
-  const [baseline] = migrations;
-  if (!baseline) {
-    throw new AppDbMigrationError('No baseline app database migration found.');
-  }
-  return baseline;
-}
-
-function readLegacyDatabaseState(database: DatabaseSync) {
-  const schemaVersion = readSchemaVersion(database);
-  if (schemaVersion) {
-    return { legacy: true, schemaVersion };
-  }
-  const sentinelTables = ['app_metadata', 'memories', 'workflow_summaries'];
-  return {
-    legacy: sentinelTables.every((table) => tableExists(database, table)),
-    schemaVersion: null,
-  };
-}
-
-function readSchemaVersion(database: DatabaseSync) {
-  if (!tableExists(database, 'app_metadata')) return null;
-  const row = database
-    .prepare(
-      `
-      SELECT value
-      FROM app_metadata
-      WHERE key = 'schema_version';
-    `,
-    )
-    .get() as { value?: unknown } | undefined;
-  return typeof row?.value === 'string' ? row.value : null;
-}
-
-function upgradeLegacyDatabaseToCurrentBaseline(database: DatabaseSync) {
-  const requiredTables = [
-    'repo_edit_events',
-    'repo_file_reads',
-    'kilo_tasks',
-    'kilo_result_state',
-    'notifications',
-    'chat_sessions',
-    'memories',
-    'memory_events',
-    'learning_candidates',
-    'learning_reviews',
-  ];
-  const missing = requiredTables.filter(
-    (table) => !tableExists(database, table),
-  );
-  if (missing.length > 0) {
-    throw new AppDbMigrationError(
-      `Legacy app database is too old to upgrade automatically; missing tables: ${missing.join(', ')}.`,
-    );
-  }
-
-  ensureColumn(database, 'repo_edit_events', 'worktree_id', 'TEXT');
-  ensureColumn(database, 'repo_file_reads', 'worktree_id', 'TEXT');
-  ensureColumn(database, 'kilo_tasks', 'lock_id', 'TEXT');
-  ensureColumn(database, 'kilo_result_state', 'diff_fingerprint', 'TEXT');
-  ensureColumn(
-    database,
-    'kilo_result_state',
-    'verified_diff_fingerprint',
-    'TEXT',
-  );
-  ensureColumn(database, 'notifications', 'resolved_at', 'TEXT');
-  ensureColumn(database, 'notifications', 'updated_at', 'TEXT');
-  ensureColumn(
-    database,
-    'notifications',
-    'occurrence_count',
-    'INTEGER NOT NULL DEFAULT 1',
-  );
-  ensureColumn(database, 'chat_sessions', 'context_loaded_at', 'TEXT');
-  ensureColumn(database, 'chat_sessions', 'summary_generated_at', 'TEXT');
-  ensureColumn(database, 'chat_sessions', 'summary_source', 'TEXT');
-  ensureColumn(database, 'chat_sessions', 'summary_refresh_note', 'TEXT');
-  ensureColumn(database, 'chat_sessions', 'context_memory_ids_json', 'TEXT');
-  ensureColumn(
-    database,
-    'chat_sessions',
-    'learning_turn_count',
-    'INTEGER NOT NULL DEFAULT 0',
-  );
-  ensureColumn(
-    database,
-    'chat_sessions',
-    'last_learning_review_turn_count',
-    'INTEGER NOT NULL DEFAULT 0',
-  );
-  ensureColumn(database, 'chat_sessions', 'last_learning_review_at', 'TEXT');
-  ensureColumn(
-    database,
-    'chat_sessions',
-    'last_learning_curation_turn_count',
-    'INTEGER NOT NULL DEFAULT 0',
-  );
-  ensureColumn(database, 'chat_sessions', 'last_learning_curation_at', 'TEXT');
-  ensureColumn(database, 'memories', 'repo_id', 'TEXT');
-  ensureColumn(
-    database,
-    'memories',
-    'status',
-    "TEXT NOT NULL DEFAULT 'active'",
-  );
-  ensureColumn(database, 'memories', 'use_count', 'INTEGER NOT NULL DEFAULT 0');
-  ensureColumn(database, 'memories', 'last_used_at', 'TEXT');
-  migrateMemoriesRepoIdentity(database);
-  migrateMemoryEvents(database);
-  ensureColumn(database, 'learning_candidates', 'action', 'TEXT');
-  ensureColumn(database, 'learning_reviews', 'flue_run_id', 'TEXT');
-  ensureLegacyMcpTables(database);
-  repairLegacyIndexes(database);
-  database
-    .prepare(
-      `
-      INSERT INTO app_metadata (key, value, updated_at)
-      VALUES ('schema_version', '9', datetime('now'))
-      ON CONFLICT(key) DO UPDATE SET
-        value = excluded.value,
-        updated_at = excluded.updated_at;
-    `,
-    )
-    .run();
-}
-
-function ensureLegacyMcpTables(database: DatabaseSync) {
-  database.exec(`
-    DROP TABLE IF EXISTS mcp_tool_catalog;
-    DROP TABLE IF EXISTS mcp_tool_approvals;
-    DROP TABLE IF EXISTS mcp_tool_audit;
-    DROP TABLE IF EXISTS mcp_oauth_tokens;
-    DROP TABLE IF EXISTS mcp_oauth_logins;
-
-    CREATE TABLE IF NOT EXISTS mcp_tool_catalog (
-      server_id TEXT NOT NULL,
-      tool_name TEXT NOT NULL,
-      adapted_name TEXT NOT NULL,
-      description TEXT NOT NULL,
-      input_schema_json TEXT,
-      output_schema_json TEXT,
-      annotations_json TEXT,
-      status TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      PRIMARY KEY(server_id, tool_name)
-    );
-
-    CREATE TABLE IF NOT EXISTS mcp_tool_approvals (
-      id TEXT PRIMARY KEY,
-      server_id TEXT NOT NULL,
-      tool_name TEXT NOT NULL,
-      adapted_name TEXT NOT NULL,
-      arguments_hash TEXT NOT NULL,
-      arguments_preview TEXT NOT NULL,
-      status TEXT NOT NULL,
-      approver_surface TEXT,
-      expires_at TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      resolved_at TEXT,
-      used_at TEXT,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS mcp_tool_audit (
-      id TEXT PRIMARY KEY,
-      server_id TEXT NOT NULL,
-      tool_name TEXT NOT NULL,
-      adapted_name TEXT NOT NULL,
-      arguments_hash TEXT NOT NULL,
-      decision TEXT NOT NULL,
-      approval_id TEXT,
-      duration_ms INTEGER,
-      ok INTEGER NOT NULL,
-      result_preview TEXT,
-      error TEXT,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS mcp_oauth_tokens (
-      server_id TEXT PRIMARY KEY,
-      server_identity TEXT,
-      access_token TEXT,
-      refresh_token TEXT,
-      token_type TEXT,
-      id_token TEXT,
-      expires_at TEXT,
-      scopes_json TEXT,
-      client_information_json TEXT,
-      discovery_state_json TEXT,
-      code_verifier TEXT,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS mcp_oauth_logins (
-      id TEXT PRIMARY KEY,
-      server_id TEXT NOT NULL,
-      server_identity TEXT,
-      state TEXT NOT NULL,
-      status TEXT NOT NULL,
-      redirect_url TEXT NOT NULL,
-      authorization_url TEXT,
-      discovery_state_json TEXT,
-      code_verifier TEXT,
-      error TEXT,
-      created_at TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      completed_at TEXT,
-      updated_at TEXT NOT NULL
-    );
-  `);
-}
-
-function repairLegacyIndexes(database: DatabaseSync) {
-  database.exec(`
-    CREATE INDEX IF NOT EXISTS idx_memory_events_changed
-      ON memory_events(created_at DESC);
-
-    CREATE INDEX IF NOT EXISTS idx_memories_active_scope
-      ON memories(status, scope, updated_at DESC);
-
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_scope_key_repo
-      ON memories(scope, key, COALESCE(repo_id, ''));
-
-    CREATE INDEX IF NOT EXISTS idx_mcp_tool_catalog_status
-      ON mcp_tool_catalog(server_id, status, updated_at DESC);
-
-    CREATE INDEX IF NOT EXISTS idx_mcp_tool_approvals_pending
-      ON mcp_tool_approvals(server_id, tool_name, adapted_name, arguments_hash, status, expires_at);
-
-    CREATE INDEX IF NOT EXISTS idx_mcp_tool_audit_created
-      ON mcp_tool_audit(created_at DESC);
-  `);
 }
 
 function backupDatabase(

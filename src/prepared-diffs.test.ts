@@ -136,6 +136,15 @@ describe('prepared diff lifecycle', () => {
       ok: true,
       changed: true,
       preparedDiff: { status: 'push-approved', pushApprovalStatus: 'approved' },
+      approvals: [
+        {
+          approvalType: 'push',
+          status: 'approved',
+          targetSha: expect.any(String),
+          policyHash: expect.any(String),
+          policyDecision: expect.any(String),
+        },
+      ],
       data: { nextWorkflow: 'push_pr_autofix' },
     });
     expect(verification).toMatchObject({
