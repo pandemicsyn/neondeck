@@ -2,7 +2,7 @@ import { type JsonValue } from '@flue/runtime';
 
 export type NotificationLevel = 'info' | 'ready' | 'attention' | 'urgent';
 
-export type JobExecutionResult = {
+export type AutomationExecutionResult = {
   outcome: 'silent' | 'updated' | 'recorded' | 'failed';
   message: string;
   result?: unknown;
@@ -27,22 +27,6 @@ export type NotificationRecord = {
   readAt: string | null;
   resolvedAt: string | null;
   occurrenceCount: number;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type JobRecord = {
-  id: string;
-  type: string;
-  blueprint: string | null;
-  enabled: boolean;
-  intervalSeconds: number;
-  config: JsonValue | null;
-  nextRunAt: string | null;
-  lastRunAt: string | null;
-  lastOutcome: string | null;
-  lastMessage: string | null;
-  lastResult: JsonValue | null;
   createdAt: string;
   updatedAt: string;
 };

@@ -1,5 +1,5 @@
 import type { JsonValue } from '@flue/runtime';
-import type { JobExecutionResult } from '../app-state';
+import type { AutomationExecutionResult } from '../app-state';
 import { readRepoRegistrySnapshot } from '../repos';
 import {
   checkAutopilotConcurrency,
@@ -50,7 +50,7 @@ type WatchJobEventResult = {
   message: string;
   refresh?: JsonValue;
   triage?: JsonValue;
-  notifications?: JobExecutionResult['notifications'];
+  notifications?: AutomationExecutionResult['notifications'];
 };
 type PendingWatchTriageEvent = {
   eventId: string;
@@ -61,7 +61,7 @@ type TriageAdmissionResult = {
   ok: boolean;
   changed: boolean;
   triage?: JsonValue;
-  notifications: NonNullable<JobExecutionResult['notifications']>;
+  notifications: NonNullable<AutomationExecutionResult['notifications']>;
   message?: string;
 };
 
@@ -198,7 +198,7 @@ async function refreshOneWatchEvent(
   );
   const current = snapshotFromWatermarks(currentWatermarks);
   const previous = snapshotFromWatermarks(previousWatermarks);
-  const notifications: JobExecutionResult['notifications'] = [
+  const notifications: AutomationExecutionResult['notifications'] = [
     prEventNotification(
       watch,
       changedCategories,
@@ -382,7 +382,8 @@ async function admitWatchTriageEvents(
   dependencies: SchedulerDependencies,
   inputs: Array<Record<string, JsonValue>>,
 ) {
-  const notifications: NonNullable<JobExecutionResult['notifications']> = [];
+  const notifications: NonNullable<AutomationExecutionResult['notifications']> =
+    [];
   const triage: JsonValue[] = [];
   let ok = true;
   let message: string | undefined;

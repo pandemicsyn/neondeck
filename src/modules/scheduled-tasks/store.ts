@@ -199,6 +199,34 @@ export async function claimDueScheduledTasks(
   const expiresAt = new Date(now.getTime() + claimTtlMs).toISOString();
   try {
     database.exec('BEGIN IMMEDIATE;');
+    database
+      .prepare(
+        `
+        UPDATE scheduled_task_runs
+        SET status = 'failed', outcome = 'failed',
+            message = 'Scheduled task claim expired before execution completed.',
+            error = 'Scheduled task claim expired before execution completed.',
+            completed_at = ?, updated_at = ?
+        WHERE status = 'claimed'
+          AND EXISTS (
+            SELECT 1
+            FROM scheduled_tasks
+            WHERE scheduled_tasks.id = scheduled_task_runs.task_id
+              AND scheduled_tasks.claim_id IS NOT NULL
+              AND scheduled_tasks.claim_expires_at <= ?
+          );
+      `,
+      )
+      .run(nowIso, nowIso, nowIso);
+    database
+      .prepare(
+        `
+        UPDATE scheduled_tasks
+        SET claim_id = NULL, claim_expires_at = NULL, updated_at = ?
+        WHERE claim_id IS NOT NULL AND claim_expires_at <= ?;
+      `,
+      )
+      .run(nowIso, nowIso);
     const due = database
       .prepare(
         `

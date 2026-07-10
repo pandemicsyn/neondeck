@@ -65,11 +65,11 @@ describe('safety policy', () => {
           auditTarget: 'config_history',
         }),
         expect.objectContaining({
-          id: 'neondeck_config_remove_schedule',
+          id: 'neondeck_scheduled_task_delete',
           class: 'destructive-mutation',
           requiresConfirmation: true,
           audited: true,
-          auditTarget: 'config_history',
+          auditTarget: 'scheduled_tasks/scheduled_task_runs',
         }),
         expect.objectContaining({
           id: 'neondeck_watch_pr_remove',

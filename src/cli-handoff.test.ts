@@ -73,10 +73,6 @@ describe('agent handoff CLI', () => {
         action: 'watch_pr_add',
       },
       {
-        args: ['watch-release', 'neondeck', '--json'],
-        action: 'handoff_release_watch',
-      },
-      {
         args: ['note', 'Finished', 'handoff', '--from', 'codex', '--json'],
         action: 'handoff_note_create',
       },

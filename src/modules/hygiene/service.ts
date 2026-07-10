@@ -1,7 +1,8 @@
 import { openDb } from '../../lib/sqlite';
 import { runBoundedGit, runBoundedGitLines } from '../../lib/git';
 import { renderReportHtml } from '../../lib/report-html';
-import type { JobExecutionResult, JobRecord } from '../app-state';
+import type { AutomationExecutionResult } from '../app-state';
+import type { JsonValue } from '@flue/runtime';
 import { readAutomationHealth } from '../learning';
 import { loadMemoryBackgroundContextSync } from '../memory';
 import { listPreparedDiffs } from '../prepared-diffs';
@@ -17,21 +18,26 @@ type HygieneItem = {
   detail: string;
 };
 
-export async function runHygieneJob(
-  job: JobRecord,
+type ReportAutomationInput = {
+  id: string;
+  config: JsonValue | null;
+};
+
+export async function runHygieneReport(
+  job: ReportAutomationInput,
   paths: RuntimePaths,
-): Promise<JobExecutionResult> {
+): Promise<AutomationExecutionResult> {
   try {
-    return await runHygieneJobInner(job, paths);
+    return await runHygieneReportInner(job, paths);
   } catch (error) {
     return failed(job, `Hygiene failed: ${errorMessage(error)}.`);
   }
 }
 
-async function runHygieneJobInner(
-  job: JobRecord,
+async function runHygieneReportInner(
+  job: ReportAutomationInput,
   paths: RuntimePaths,
-): Promise<JobExecutionResult> {
+): Promise<AutomationExecutionResult> {
   const config = objectConfig(job.config);
   const staleBranchDays = numberConfig(config.staleBranchDays, 30);
   const stalledDecisionHours = numberConfig(config.stalledDecisionHours, 48);
@@ -487,7 +493,10 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function failed(job: JobRecord, message: string): JobExecutionResult {
+function failed(
+  job: ReportAutomationInput,
+  message: string,
+): AutomationExecutionResult {
   return {
     outcome: 'failed',
     message,

@@ -3,10 +3,10 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
+import type { JsonValue } from '@flue/runtime';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { JobRecord } from './modules/app-state';
 import { listWorkflowSummaries } from './modules/app-state';
-import { runDocsDriftJob, stageDocsDriftFix } from './modules/docs-drift';
+import { runDocsDriftReport, stageDocsDriftFix } from './modules/docs-drift';
 import { upsertMemory } from './modules/memory';
 import { writeReport } from './modules/reports';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
@@ -48,7 +48,7 @@ describe('docs drift job', () => {
       ),
     );
 
-    const result = await runDocsDriftJob(
+    const result = await runDocsDriftReport(
       job({
         repo: 'sample',
         docsGlobs: ['docs/**/*.md'],
@@ -223,22 +223,11 @@ async function setupRemoteRepo(remote: string, repo: string) {
   await git(repo, ['reset', '--hard', firstCommit]);
 }
 
-function job(config: Record<string, unknown>): JobRecord {
-  const now = new Date().toISOString();
+function job(config: Record<string, unknown>) {
   return {
     id: 'schedule:docs',
-    type: 'docs-drift',
-    blueprint: 'docs-drift',
-    enabled: true,
-    intervalSeconds: 600,
-    config: config as JobRecord['config'],
-    nextRunAt: now,
-    lastRunAt: null,
-    lastOutcome: null,
-    lastMessage: null,
+    config: config as JsonValue,
     lastResult: null,
-    createdAt: now,
-    updatedAt: now,
   };
 }
 
