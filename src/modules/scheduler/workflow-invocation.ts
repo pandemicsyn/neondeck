@@ -19,6 +19,13 @@ export async function invokeScheduledWorkflow(
     });
   }
 
+  if (workflow === 'scheduled-agent-instruction') {
+    const module = await import('../../workflows/scheduled-agent-instruction');
+    return invoke(module.default, {
+      input: input as { prompt: string },
+    });
+  }
+
   const module = await import('../../workflows/command-run');
   return invoke(module.default, {
     input: input as { command: string },

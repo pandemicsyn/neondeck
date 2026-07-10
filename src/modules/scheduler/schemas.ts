@@ -21,6 +21,7 @@ export type SchedulerResult = {
   message: string;
   outcome?: string;
   jobs?: JsonValue[];
+  tasks?: JsonValue[];
   notifications?: JsonValue[];
   extra?: JsonValue;
   errors?: string[];
@@ -69,7 +70,10 @@ export type SchedulerDependencies = {
 };
 
 export type ScheduledWorkflowName =
-  'briefing' | 'command-run' | 'triage-pr-event';
+  | 'briefing'
+  | 'command-run'
+  | 'scheduled-agent-instruction'
+  | 'triage-pr-event';
 export type SchedulerTickLease = {
   owner: string;
   acquiredAt: string;
