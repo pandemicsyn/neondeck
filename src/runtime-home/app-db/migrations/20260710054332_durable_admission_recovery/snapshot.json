@@ -285,7 +285,7 @@
       "type": "text",
       "notNull": true,
       "autoincrement": false,
-      "default": null,
+      "default": "'{}'",
       "generated": null,
       "name": "input_json",
       "entityType": "columns",
