@@ -56,6 +56,48 @@ export async function claimAutopilotTriageAdmission(
         .get(input.watchId, input.eventFingerprint),
     );
     if (existing) {
+      const due =
+        (existing.state === 'blocked' || existing.state === 'failed') &&
+        (!existing.nextAttemptAt ||
+          Date.parse(existing.nextAttemptAt) <= Date.parse(now));
+      const usage = database
+        .prepare(
+          `SELECT COUNT(*) AS global_count,
+            SUM(CASE WHEN repo_id = ? THEN 1 ELSE 0 END) AS repo_count
+           FROM autopilot_admissions
+           WHERE state IN ('triage-admitted', 'prepare-admitted');`,
+        )
+        .get(input.repoId) as { global_count?: unknown; repo_count?: unknown };
+      const capped =
+        Number(usage.global_count ?? 0) >= input.limits.maxAutonomousJobs ||
+        Number(usage.global_count ?? 0) >= input.limits.maxActiveWorkflowRuns ||
+        Number(usage.repo_count ?? 0) >= input.limits.maxPerRepoAutonomousJobs;
+      if (due && !capped) {
+        database
+          .prepare(
+            `UPDATE autopilot_admissions
+             SET state = 'triage-admitted', current_workflow = 'triage-pr-event',
+                 current_run_id = NULL, attempt_count = attempt_count + 1,
+                 next_attempt_at = NULL, last_error = NULL, updated_at = ?
+             WHERE id = ?;`,
+          )
+          .run(now, existing.id);
+        database.exec('COMMIT;');
+        return {
+          claimed: true,
+          admission: {
+            ...existing,
+            state: 'triage-admitted' as const,
+            currentWorkflow: 'triage-pr-event',
+            currentRunId: null,
+            attemptCount: existing.attemptCount + 1,
+            nextAttemptAt: null,
+            lastError: null,
+            updatedAt: now,
+          },
+          reason: 'retry' as const,
+        };
+      }
       database.exec('COMMIT;');
       return {
         claimed: false,
@@ -68,7 +110,7 @@ export async function claimAutopilotTriageAdmission(
         `SELECT COUNT(*) AS global_count,
           SUM(CASE WHEN repo_id = ? THEN 1 ELSE 0 END) AS repo_count
          FROM autopilot_admissions
-         WHERE state IN ('triage-admitted');`,
+         WHERE state IN ('triage-admitted', 'prepare-admitted');`,
       )
       .get(input.repoId) as { global_count?: unknown; repo_count?: unknown };
     const globalCount = Number(usage.global_count ?? 0);
@@ -139,15 +181,50 @@ export async function recordAutopilotAdmissionRun(
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
+  const now = new Date().toISOString();
   const database = openDb(paths.neondeckDatabase);
   try {
+    database.exec('BEGIN IMMEDIATE;');
+    const admission = readAdmission(
+      database
+        .prepare('SELECT * FROM autopilot_admissions WHERE id = ?;')
+        .get(input.id),
+    );
+    if (!admission) {
+      database.exec('COMMIT;');
+      return;
+    }
+    const terminal = database
+      .prepare(
+        `SELECT status FROM workflow_run_observations
+         WHERE run_id = ? AND status IN ('completed', 'failed');`,
+      )
+      .get(input.runId) as { status?: unknown } | undefined;
+    const failed = terminal?.status === 'failed';
+    const completedState =
+      admission.state === 'triage-admitted' ? 'triaged' : 'failed';
     database
       .prepare(
         `UPDATE autopilot_admissions
-         SET current_run_id = ?, updated_at = ?
+         SET current_run_id = ?, state = ?, current_workflow = ?,
+             last_error = ?, next_attempt_at = ?, updated_at = ?
          WHERE id = ? AND state IN ('triage-admitted', 'prepare-admitted');`,
       )
-      .run(input.runId, new Date().toISOString(), input.id);
+      .run(
+        input.runId,
+        terminal ? (failed ? 'failed' : completedState) : admission.state,
+        terminal ? null : admission.currentWorkflow,
+        terminal && (failed || completedState === 'failed')
+          ? 'Workflow ended before its admission run id was attached.'
+          : null,
+        terminal && (failed || completedState === 'failed') ? now : null,
+        now,
+        input.id,
+      );
+    database.exec('COMMIT;');
+  } catch (error) {
+    database.exec('ROLLBACK;');
+    throw error;
   } finally {
     database.close();
   }
@@ -266,10 +343,12 @@ export async function settleAutopilotAdmissionPrepare(
          WHERE current_run_id = ? AND state = 'prepare-admitted';`,
       )
       .run(
-        input.failed ? 'failed' : 'prepared',
+        input.failed || !input.worktreeId ? 'failed' : 'prepared',
         input.worktreeId ?? null,
-        input.failed ? 'Prepare workflow failed; see Flue run details.' : null,
-        input.failed ? now : null,
+        input.failed || !input.worktreeId
+          ? 'Prepare workflow failed or did not produce a worktree.'
+          : null,
+        input.failed || !input.worktreeId ? now : null,
         now,
         input.runId,
       );
