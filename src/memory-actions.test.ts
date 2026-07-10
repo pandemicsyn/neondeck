@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   archiveMemory,
@@ -133,7 +134,7 @@ describe('structured memory actions', () => {
     });
   });
 
-  it('rejects removed session and watch memory scopes', async () => {
+  it('keeps legacy session and watch scopes readable while rejecting new writes', async () => {
     const paths = runtimePaths(await tempHome());
 
     await expect(
@@ -151,9 +152,43 @@ describe('structured memory actions', () => {
       errors: [expect.stringContaining('Invalid type')],
     });
 
+    const now = new Date().toISOString();
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `INSERT INTO memories (
+             id, scope, key, value_json, repo_id, status, use_count,
+             last_used_at, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, NULL, 'active', 0, NULL, ?, ?);`,
+        )
+        .run(
+          'legacy:session',
+          'session',
+          'current-task',
+          '"debug CI"',
+          now,
+          now,
+        );
+    } finally {
+      database.close();
+    }
+
     await expect(listMemories({}, paths)).resolves.toMatchObject({
       ok: true,
-      memories: [],
+      memories: [
+        expect.objectContaining({
+          scope: 'session',
+          key: 'current-task',
+          value: 'debug CI',
+        }),
+      ],
+    });
+    await expect(
+      archiveMemory({ id: 'legacy:session', confirm: true }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['active-memory-scope'],
     });
   });
 

@@ -81,7 +81,13 @@ export function formatList(values: string[]) {
 }
 
 export function isMemoryScope(value: string | undefined): value is MemoryScope {
-  return value === 'user' || value === 'local' || value === 'project';
+  return (
+    value === 'user' ||
+    value === 'local' ||
+    value === 'project' ||
+    value === 'session' ||
+    value === 'watch'
+  );
 }
 
 export function isActiveMemoryScope(

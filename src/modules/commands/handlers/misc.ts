@@ -271,7 +271,7 @@ export async function memoryCommand(
 
   if (operation === 'archive') {
     const [scope, key] = rest;
-    if (!isMemoryScope(scope) || !key) {
+    if (!isActiveMemoryScope(scope) || !key) {
       return failedCommand(
         command.name,
         command.raw,

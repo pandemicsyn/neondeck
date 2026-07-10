@@ -172,16 +172,37 @@ export async function setScheduledTaskEnabled(
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase);
   try {
+    database.exec('BEGIN IMMEDIATE;');
+    const current = database
+      .prepare('SELECT * FROM scheduled_tasks WHERE id = ?;')
+      .get(id);
+    if (!current) {
+      database.exec('COMMIT;');
+      return undefined;
+    }
+    const task = readScheduledTaskRow(current);
+    const now = new Date();
+    const resumeAt =
+      enabled &&
+      !task.enabled &&
+      (!task.nextRunAt || Date.parse(task.nextRunAt) <= now.getTime())
+        ? nextOccurrence(task.trigger, now)
+        : task.nextRunAt;
+    const nextEnabled = enabled && (task.trigger.kind !== 'once' || resumeAt);
     const result = database
       .prepare(
         `
         UPDATE scheduled_tasks
-        SET enabled = ?, updated_at = ?
+        SET enabled = ?, next_run_at = ?, updated_at = ?
         WHERE id = ?;
       `,
       )
-      .run(enabled ? 1 : 0, new Date().toISOString(), id);
+      .run(nextEnabled ? 1 : 0, resumeAt, now.toISOString(), id);
+    database.exec('COMMIT;');
     if (result.changes !== 1) return undefined;
+  } catch (error) {
+    database.exec('ROLLBACK;');
+    throw error;
   } finally {
     database.close();
   }
@@ -427,6 +448,65 @@ export async function releaseUnstartedScheduledTaskClaim(
         input.previous.nextRunAt,
         input.previous.lastRunAt,
         now,
+        input.task.id,
+        input.task.claimId,
+      );
+    database.exec('COMMIT;');
+  } catch (error) {
+    database.exec('ROLLBACK;');
+    throw error;
+  } finally {
+    database.close();
+  }
+}
+
+export async function deferUnstartedScheduledTaskClaim(
+  input: {
+    task: ScheduledTaskRecord;
+    previous: ScheduledTaskRecord;
+    run: ScheduledTaskRunRecord;
+    message: string;
+  },
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const retryAt = new Date(now.getTime() + 60_000).toISOString();
+  const nextRunAt =
+    input.task.trigger.kind === 'once'
+      ? retryAt
+      : nextOccurrence(input.task.trigger, now);
+  const enabled =
+    input.task.trigger.kind === 'once'
+      ? input.previous.enabled
+      : input.task.enabled;
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database.exec('BEGIN IMMEDIATE;');
+    database
+      .prepare(
+        `
+        UPDATE scheduled_task_runs
+        SET status = 'completed', outcome = 'silent', message = ?, error = NULL,
+            completed_at = ?, updated_at = ?
+        WHERE id = ? AND task_id = ? AND status IN ('claimed', 'active');
+      `,
+      )
+      .run(input.message, nowIso, nowIso, input.run.id, input.task.id);
+    database
+      .prepare(
+        `
+        UPDATE scheduled_tasks
+        SET enabled = ?, next_run_at = ?, claim_id = NULL, claim_expires_at = NULL,
+            updated_at = ?
+        WHERE id = ? AND claim_id = ?;
+      `,
+      )
+      .run(
+        enabled ? 1 : 0,
+        nextRunAt,
+        nowIso,
         input.task.id,
         input.task.claimId,
       );

@@ -1678,6 +1678,16 @@ describe('PR event autopilot', () => {
       ok: false,
       requires: ['autopilot-policy', 'sha-bound-policy-approval'],
     });
+
+    await expect(
+      approvePreparedDiffPushWithPolicy(
+        { preparedDiffId, confirm: true },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      preparedDiff: { status: 'push-approved' },
+    });
   });
 
   it('does not mark a prepared diff push-blocked before push approval', async () => {
