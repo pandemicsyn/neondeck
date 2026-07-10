@@ -35,7 +35,7 @@ export type ScheduledTaskRecord = {
 export type ScheduledTaskRunRecord = {
   id: string;
   taskId: string;
-  status: 'claimed' | 'completed' | 'failed';
+  status: 'claimed' | 'active' | 'completed' | 'failed';
   outcome: 'recorded' | 'silent' | 'failed';
   message: string;
   workflowRunId: string | null;

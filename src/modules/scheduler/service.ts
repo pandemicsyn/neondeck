@@ -1,5 +1,8 @@
 import { addNotification } from '../app-state';
 import {
+  activateScheduledTaskWorkflowRun,
+  attachScheduledTaskWorkflowRunId,
+  canAdmitScheduledWorkflow,
   claimDueScheduledTasks,
   executeScheduledTask,
   listScheduledTasks,
@@ -76,26 +79,57 @@ export async function runSchedulerTick(
       }
       const previous = await readLatestScheduledTaskRun(task.id, paths);
       try {
+        const workflowTask = requiresWorkflowAdmission(task);
+        if (
+          workflowTask &&
+          !(await canAdmitScheduledWorkflow(task.id, paths))
+        ) {
+          await releaseUnstartedScheduledTaskClaim(
+            {
+              ...claim,
+              message:
+                'Scheduled task was deferred because the active workflow limit is reached.',
+            },
+            paths,
+          );
+          continue;
+        }
+        if (workflowTask) {
+          await activateScheduledTaskWorkflowRun(
+            {
+              taskId: task.id,
+              runId: run.id,
+              claimId: task.claimId ?? '',
+            },
+            paths,
+          );
+        }
         const result = await executeScheduledTask(
           task,
           previous?.result ?? null,
           paths,
           dependencies,
         );
-        await settleScheduledTaskRun(
-          {
-            taskId: task.id,
-            runId: run.id,
-            claimId: task.claimId ?? '',
-            status: 'completed',
-            outcome: result.outcome,
-            message: result.message,
-            workflowRunId: result.workflowRunId,
-            sessionId: result.sessionId,
-            result: result.result,
-          },
-          paths,
-        );
+        if (result.workflowRunId) {
+          await attachScheduledTaskWorkflowRunId(
+            { runId: run.id, workflowRunId: result.workflowRunId },
+            paths,
+          );
+        } else {
+          await settleScheduledTaskRun(
+            {
+              taskId: task.id,
+              runId: run.id,
+              claimId: task.claimId ?? '',
+              status: 'completed',
+              outcome: result.outcome,
+              message: result.message,
+              sessionId: result.sessionId,
+              result: result.result,
+            },
+            paths,
+          );
+        }
         if (result.outcome !== 'silent') taskChanged = true;
         for (const notification of result.notifications ?? []) {
           notifications.push(
@@ -157,6 +191,16 @@ export async function runSchedulerTick(
     stopLeaseHeartbeat();
     await releaseSchedulerTickLease(paths, lease.owner);
   }
+}
+
+function requiresWorkflowAdmission(task: {
+  spec: { kind: string; target?: { kind: string } };
+}) {
+  return (
+    task.spec.kind === 'run-briefing' ||
+    (task.spec.kind === 'run-agent-instruction' &&
+      task.spec.target?.kind === 'workflow')
+  );
 }
 
 export function startSchedulerLoop(

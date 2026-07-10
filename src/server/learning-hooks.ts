@@ -7,6 +7,7 @@ import {
 } from '@flue/runtime';
 import type { MiddlewareHandler } from 'hono';
 import { addNotification, setWorkflowSummaryRunId } from '../modules/app-state';
+import { settleScheduledTaskWorkflowRun } from '../modules/scheduled-tasks';
 import {
   attachLearningReviewRunId,
   recordConversationTurnAndMaybeQueueLearning,
@@ -38,6 +39,15 @@ export function installFlueObservationHandlers(
       console.error('[neondeck] failed to record Flue observation', error);
     });
     if (event.type === 'run_end') {
+      void settleScheduledTaskWorkflowRun(
+        { workflowRunId: event.runId, failed: event.isError },
+        paths,
+      ).catch((error) => {
+        console.error(
+          '[neondeck] failed to settle scheduled task workflow run',
+          error,
+        );
+      });
       void attachCommandRunSummaryRunId(event, paths).catch((error) => {
         console.error('[neondeck] failed to attach Flue run id', error);
       });

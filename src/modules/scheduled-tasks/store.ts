@@ -12,6 +12,8 @@ import { nextOccurrence, validateAutomationTrigger } from './triggers';
 import * as v from 'valibot';
 
 const defaultClaimTtlMs = 5 * 60 * 1_000;
+export const maxActiveScheduledWorkflowRuns = 10;
+const maxScheduledWorkflowRuntimeMs = 60 * 60 * 1_000;
 
 export async function listScheduledTasks(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
@@ -197,8 +199,23 @@ export async function claimDueScheduledTasks(
   }> = [];
   const nowIso = now.toISOString();
   const expiresAt = new Date(now.getTime() + claimTtlMs).toISOString();
+  const staleWorkflowStartedAt = new Date(
+    now.getTime() - maxScheduledWorkflowRuntimeMs,
+  ).toISOString();
   try {
     database.exec('BEGIN IMMEDIATE;');
+    database
+      .prepare(
+        `
+        UPDATE scheduled_task_runs
+        SET status = 'failed', outcome = 'failed',
+            message = 'Scheduled workflow exceeded its maximum runtime.',
+            error = 'Scheduled workflow exceeded its maximum runtime.',
+            completed_at = ?, updated_at = ?
+        WHERE status = 'active' AND started_at <= ?;
+      `,
+      )
+      .run(nowIso, nowIso, staleWorkflowStartedAt);
     database
       .prepare(
         `
@@ -236,6 +253,12 @@ export async function claimDueScheduledTasks(
           AND next_run_at IS NOT NULL
           AND next_run_at <= ?
           AND (claim_expires_at IS NULL OR claim_expires_at <= ?)
+          AND NOT EXISTS (
+            SELECT 1
+            FROM scheduled_task_runs
+            WHERE scheduled_task_runs.task_id = scheduled_tasks.id
+              AND scheduled_task_runs.status = 'active'
+          )
         ORDER BY next_run_at ASC, id ASC
         LIMIT ?;
       `,
@@ -353,7 +376,7 @@ export async function releaseUnstartedScheduledTaskClaim(
         UPDATE scheduled_task_runs
         SET status = 'failed', outcome = 'failed', message = ?, error = ?,
             completed_at = ?, updated_at = ?
-        WHERE id = ? AND task_id = ? AND status = 'claimed';
+        WHERE id = ? AND task_id = ? AND status IN ('claimed', 'active');
       `,
       )
       .run(input.message, input.message, now, now, input.run.id, input.task.id);
@@ -378,6 +401,136 @@ export async function releaseUnstartedScheduledTaskClaim(
   } catch (error) {
     database.exec('ROLLBACK;');
     throw error;
+  } finally {
+    database.close();
+  }
+}
+
+export async function canAdmitScheduledWorkflow(
+  taskId: string,
+  paths = runtimePaths(),
+  maximumActiveRuns = maxActiveScheduledWorkflowRuns,
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const activeForTask = database
+      .prepare(
+        `
+        SELECT 1
+        FROM scheduled_task_runs
+        WHERE task_id = ? AND status = 'active'
+        LIMIT 1;
+      `,
+      )
+      .get(taskId);
+    if (activeForTask) return false;
+    const row = database
+      .prepare(
+        `
+        SELECT COUNT(*) AS count
+        FROM scheduled_task_runs
+        WHERE status = 'active';
+      `,
+      )
+      .get() as { count?: unknown } | undefined;
+    return Number(row?.count ?? 0) < maximumActiveRuns;
+  } finally {
+    database.close();
+  }
+}
+
+export async function activateScheduledTaskWorkflowRun(
+  input: { taskId: string; runId: string; claimId: string },
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database.exec('BEGIN IMMEDIATE;');
+    const run = database
+      .prepare(
+        `
+        UPDATE scheduled_task_runs
+        SET status = 'active', message = ?, updated_at = ?
+        WHERE id = ? AND task_id = ? AND status = 'claimed';
+      `,
+      )
+      .run(
+        'Scheduled workflow admitted and awaiting terminal observation.',
+        now,
+        input.runId,
+        input.taskId,
+      );
+    if (run.changes !== 1)
+      throw new Error('Scheduled task run is not claimable.');
+    database
+      .prepare(
+        `
+        UPDATE scheduled_tasks
+        SET claim_id = NULL, claim_expires_at = NULL, updated_at = ?
+        WHERE id = ? AND claim_id = ?;
+      `,
+      )
+      .run(now, input.taskId, input.claimId);
+    database.exec('COMMIT;');
+  } catch (error) {
+    database.exec('ROLLBACK;');
+    throw error;
+  } finally {
+    database.close();
+  }
+}
+
+export async function attachScheduledTaskWorkflowRunId(
+  input: { runId: string; workflowRunId: string },
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        UPDATE scheduled_task_runs
+        SET workflow_run_id = ?, updated_at = ?
+        WHERE id = ? AND status = 'active';
+      `,
+      )
+      .run(input.workflowRunId, new Date().toISOString(), input.runId);
+  } finally {
+    database.close();
+  }
+}
+
+export async function settleScheduledTaskWorkflowRun(
+  input: { workflowRunId: string; failed: boolean },
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        UPDATE scheduled_task_runs
+        SET status = ?, outcome = ?, message = ?, error = ?, completed_at = ?, updated_at = ?
+        WHERE workflow_run_id = ? AND status = 'active';
+      `,
+      )
+      .run(
+        input.failed ? 'failed' : 'completed',
+        input.failed ? 'failed' : 'recorded',
+        input.failed
+          ? 'Scheduled workflow failed; see Flue run details.'
+          : 'Scheduled workflow completed.',
+        input.failed ? 'See Flue run details.' : null,
+        now,
+        now,
+        input.workflowRunId,
+      );
   } finally {
     database.close();
   }
@@ -480,7 +633,7 @@ function readScheduledTaskRunRow(row: unknown): ScheduledTaskRunRecord {
     id: String(record.id),
     taskId: String(record.task_id),
     status: v.parse(
-      v.picklist(['claimed', 'completed', 'failed']),
+      v.picklist(['claimed', 'active', 'completed', 'failed']),
       record.status,
     ),
     outcome: v.parse(
