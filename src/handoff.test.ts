@@ -7,7 +7,6 @@ import {
   createHandoffNote,
   normalizeHandoffSource,
   registerHandoffPr,
-  registerHandoffReleaseWatch,
   registerHandoffWatchPr,
   type HandoffDependencies,
 } from './modules/handoff';
@@ -270,73 +269,6 @@ describe('agent handoff service', () => {
         },
       },
     });
-  });
-
-  it('scopes release source PR watches to the requested repo', async () => {
-    const paths = await tempPaths();
-    await writeRepoRegistry(paths.repos, { includeOtherRepo: true });
-    const addPrWatch = vi.fn<NonNullable<HandoffDependencies['addPrWatch']>>(
-      async (
-        input: Parameters<typeof addPrWatchFunction>[0],
-      ): Promise<WatchActionResult> => {
-        expect(input).toMatchObject({
-          ref: 'pandemicsyn/neondeck#123',
-          desiredTerminalState: 'prod',
-          createdBy: 'external:codex',
-        });
-        return fakePrWatchResult({
-          ref: 'pandemicsyn/neondeck#123',
-          desiredTerminalState: 'prod',
-          createdBy: 'external:codex',
-        });
-      },
-    );
-
-    await expect(
-      registerHandoffReleaseWatch(
-        {
-          repo: 'neondeck',
-          source: 'codex',
-          sourcePr: '#123',
-        },
-        paths,
-        { addPrWatch },
-      ),
-    ).resolves.toMatchObject({
-      ok: true,
-      action: 'handoff_release_watch',
-      watch: { id: 'pandemicsyn/neondeck#123' },
-      audit: {
-        summary: {
-          event: 'watch-release',
-          repoFullName: 'pandemicsyn/neondeck',
-          sourcePr: 'pandemicsyn/neondeck#123',
-        },
-      },
-    });
-  });
-
-  it('rejects release source PRs from a different repo before mutating watches', async () => {
-    const paths = await tempPaths();
-    await writeRepoRegistry(paths.repos, { includeOtherRepo: true });
-    const addPrWatch = vi.fn<NonNullable<HandoffDependencies['addPrWatch']>>();
-
-    await expect(
-      registerHandoffReleaseWatch(
-        {
-          repo: 'neondeck',
-          source: 'codex',
-          sourcePr: 'pandemicsyn/other#123',
-        },
-        paths,
-        { addPrWatch },
-      ),
-    ).resolves.toMatchObject({
-      ok: false,
-      action: 'handoff_release_watch',
-      requires: ['repo'],
-    });
-    expect(addPrWatch).not.toHaveBeenCalled();
   });
 
   it('blocks external PR review queueing when config disables it', async () => {

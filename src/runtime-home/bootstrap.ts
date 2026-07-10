@@ -67,7 +67,6 @@ export async function ensureRuntimeHome(paths = runtimePaths()) {
   await ensureLocalApiConfig(paths.config);
   await writeJsonIfMissing(paths.mcp, defaultMcpConfig());
   await writeJsonIfMissing(paths.repos, { repos: [] });
-  await writeJsonIfMissing(paths.schedules, { schedules: [] });
   await copyIfMissing(defaultDashboardPath, paths.dashboard);
   await copyIfMissing(defaultDashboardSchemaPath, paths.dashboardSchema);
   await copyIfMissing(defaultSoulPath, paths.soul);
@@ -86,7 +85,6 @@ export function ensureRuntimeHomeSync(paths = runtimePaths()) {
   ensureLocalApiConfigSync(paths.config);
   writeJsonIfMissingSync(paths.mcp, defaultMcpConfig());
   writeJsonIfMissingSync(paths.repos, { repos: [] });
-  writeJsonIfMissingSync(paths.schedules, { schedules: [] });
   copyIfMissingSync(defaultDashboardPath, paths.dashboard);
   copyIfMissingSync(defaultDashboardSchemaPath, paths.dashboardSchema);
   copyIfMissingSync(defaultSoulPath, paths.soul);

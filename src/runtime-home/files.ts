@@ -17,7 +17,6 @@ import {
   parseDashboardConfig,
   parseMcpConfig,
   parseRepoRegistry,
-  parseScheduleConfig,
 } from './schemas.ts';
 
 export async function readRuntimeJson<T>(
@@ -41,7 +40,6 @@ export async function validateRuntimeFiles(paths = runtimePaths()) {
   await readRuntimeJson(paths.mcp, parseMcpConfig);
   await readRuntimeJson(paths.repos, parseRepoRegistry);
   await readRuntimeJson(paths.dashboard, parseDashboardConfig);
-  await readRuntimeJson(paths.schedules, parseScheduleConfig);
 }
 
 export function validateRuntimeFilesSync(paths = runtimePaths()) {
@@ -49,7 +47,6 @@ export function validateRuntimeFilesSync(paths = runtimePaths()) {
   readRuntimeJsonSync(paths.mcp, parseMcpConfig);
   readRuntimeJsonSync(paths.repos, parseRepoRegistry);
   readRuntimeJsonSync(paths.dashboard, parseDashboardConfig);
-  readRuntimeJsonSync(paths.schedules, parseScheduleConfig);
 }
 
 export async function ensureLocalApiConfig(path: string) {

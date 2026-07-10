@@ -7,9 +7,7 @@ import {
   configActionOutputSchema,
   configTargetSchema,
   dashboardPresetSchema,
-  nonEmptyStringSchema,
   removeRepoInputSchema,
-  scheduleInputSchema,
   updateAgentModelsInputSchema,
   updateHandoffConfigInputSchema,
   updateLearningConfigInputSchema,
@@ -17,7 +15,6 @@ import {
   updateRepoAutopilotPolicyInputSchema,
   updateRepoInputSchema,
   updateRoutinesConfigInputSchema,
-  updateScheduleInputSchema,
   updateSkillRootsInputSchema,
   updateWorktreePolicyInputSchema,
 } from './schemas';
@@ -45,11 +42,6 @@ import {
   updateRepoAutopilotPolicy,
 } from './mutations/repos';
 import { updateRoutinesConfig } from './mutations/routines';
-import {
-  addSchedule,
-  removeSchedule,
-  updateSchedule,
-} from './mutations/schedules';
 
 export const configReadAction = defineAction({
   name: 'neondeck_config_read',
@@ -253,42 +245,6 @@ export const removeRepoAction = defineAction({
   },
 });
 
-export const addScheduleAction = defineAction({
-  name: 'neondeck_config_add_schedule',
-  description:
-    'Add a Neondeck schedule entry to schedules.json with schema validation.',
-  input: scheduleInputSchema,
-  output: configActionOutputSchema,
-  async run({ input }) {
-    return addSchedule(input);
-  },
-});
-
-export const updateScheduleAction = defineAction({
-  name: 'neondeck_config_update_schedule',
-  description:
-    'Update an existing Neondeck schedule entry in schedules.json with schema validation.',
-  input: updateScheduleInputSchema,
-  output: configActionOutputSchema,
-  async run({ input }) {
-    return updateSchedule(input);
-  },
-});
-
-export const removeScheduleAction = defineAction({
-  name: 'neondeck_config_remove_schedule',
-  description:
-    'Remove an existing Neondeck schedule entry from schedules.json after explicit confirmation.',
-  input: v.object({
-    id: nonEmptyStringSchema,
-    confirm: v.optional(v.boolean()),
-  }),
-  output: configActionOutputSchema,
-  async run({ input }) {
-    return removeSchedule(input);
-  },
-});
-
 export const neondeckConfigActions = [
   configReadAction,
   configValidateAction,
@@ -308,7 +264,4 @@ export const neondeckConfigActions = [
   updateRepoAction,
   updateRepoAutopilotPolicyAction,
   removeRepoAction,
-  addScheduleAction,
-  updateScheduleAction,
-  removeScheduleAction,
 ];

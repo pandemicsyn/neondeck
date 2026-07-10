@@ -1,26 +1,8 @@
 import { defineAction } from '@flue/runtime';
 import * as v from 'valibot';
 import { runtimePaths } from '../../runtime-home';
-import {
-  createScheduleBlueprint,
-  listSchedulerJobs,
-  runSchedulerTick,
-} from './service';
-import {
-  createBlueprintInputSchema,
-  schedulerActionOutputSchema,
-} from './schemas';
-
-export const scheduleBlueprintCreateAction = defineAction({
-  name: 'neondeck_schedule_blueprint_create',
-  description:
-    'Create a blueprint-backed automation for morning briefing, watch PR, release watch, review queue digest, docs drift, issue triage, or hygiene.',
-  input: createBlueprintInputSchema,
-  output: schedulerActionOutputSchema,
-  async run({ input }) {
-    return createScheduleBlueprint(input);
-  },
-});
+import { runSchedulerTick } from './service';
+import { schedulerActionOutputSchema } from './schemas';
 
 export const schedulerTickAction = defineAction({
   name: 'neondeck_scheduler_tick',
@@ -39,7 +21,7 @@ export const schedulerTickAction = defineAction({
       outcome: result.outcome ?? null,
       changed: result.changed,
       message: result.message,
-      jobs: result.jobs?.length ?? 0,
+      tasks: result.tasks?.length ?? 0,
       notifications: result.notifications?.length ?? 0,
     };
     if (result.ok) {
@@ -52,17 +34,4 @@ export const schedulerTickAction = defineAction({
   },
 });
 
-export const schedulerListJobsAction = defineAction({
-  name: 'neondeck_scheduler_list_jobs',
-  description: 'List durable Neondeck scheduler jobs and last run state.',
-  input: v.object({}),
-  output: schedulerActionOutputSchema,
-  async run() {
-    return listSchedulerJobs();
-  },
-});
-
-export const neondeckSchedulerActions = [
-  scheduleBlueprintCreateAction,
-  schedulerListJobsAction,
-];
+export const neondeckSchedulerActions = [];

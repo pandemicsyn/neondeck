@@ -4,7 +4,6 @@ import { updateAgentModels } from '../../config';
 import { runDevDoctor } from '../../runtime';
 import { archiveMemory, listMemories, upsertMemory } from '../../memory';
 import { readRepoRegistrySnapshot } from '../../repos';
-import { createScheduleBlueprint } from '../../scheduler';
 import {
   readChatSession,
   readNeonSessionState,
@@ -429,43 +428,6 @@ function readMetadataPrNumber(value: unknown) {
   }
 
   return null;
-}
-
-export async function watchReleaseCommand(
-  command: ParsedNeonCommand,
-  paths: RuntimePaths,
-): Promise<NeonCommandResult> {
-  const repo = command.args.join(' ').trim();
-  if (!repo) {
-    return failedCommand(
-      command.name,
-      command.raw,
-      '/watch-release requires a repository id or owner/repo.',
-      {
-        requires: ['repo'],
-      },
-    );
-  }
-
-  const result = await createScheduleBlueprint(
-    {
-      blueprint: 'release-watch',
-      repo,
-    },
-    paths,
-  );
-
-  if (!result.ok) {
-    return failedCommand(command.name, command.raw, result.message, {
-      errors: result.errors,
-      requires: result.requires,
-      data: { result },
-    });
-  }
-
-  return completedCommand(command.name, command.raw, result.message, {
-    result,
-  });
 }
 
 export async function devDoctorCommand(

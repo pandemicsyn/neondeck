@@ -40,7 +40,6 @@ const trackedPaths = [
   paths.config,
   paths.repos,
   paths.dashboard,
-  paths.schedules,
   paths.soul,
   paths.skills,
   paths.neondeckDatabase,

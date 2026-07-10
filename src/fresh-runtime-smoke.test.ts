@@ -29,7 +29,6 @@ describe('fresh runtime smoke test', () => {
     await ensureRuntimeHome(paths);
     expect(existsSync(paths.config)).toBe(true);
     expect(existsSync(paths.repos)).toBe(true);
-    expect(existsSync(paths.schedules)).toBe(true);
     expect(existsSync(paths.neondeckDatabase)).toBe(true);
     expect(existsSync(paths.flueDatabase)).toBe(true);
 

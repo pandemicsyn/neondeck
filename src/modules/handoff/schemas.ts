@@ -51,13 +51,6 @@ export const handoffWatchPrInputSchema = v.strictObject({
   intervalSeconds: v.optional(v.pipe(v.number(), v.integer(), v.minValue(60))),
 });
 
-export const handoffWatchReleaseInputSchema = v.strictObject({
-  repo: v.pipe(v.string(), v.minLength(1)),
-  source: v.optional(handoffSourceSchema),
-  sourcePr: v.optional(v.pipe(v.string(), v.minLength(1))),
-  intervalSeconds: v.optional(v.pipe(v.number(), v.integer(), v.minValue(60))),
-});
-
 export const handoffActionOutputSchema = v.looseObject({
   ok: v.boolean(),
   action: v.string(),

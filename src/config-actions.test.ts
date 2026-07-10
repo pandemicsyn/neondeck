@@ -8,13 +8,11 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   addRepo,
-  addSchedule,
   applyDashboardPreset,
   readConfig,
   readProviderConfig,
   reloadConfig,
   removeRepo,
-  removeSchedule,
   updateRepo,
   updateRepoAutopilotPolicy,
   updateAgentModels,
@@ -22,7 +20,6 @@ import {
   updateExecutionPolicy,
   updateDashboardLayout,
   updateProviderConfig,
-  updateSchedule,
   updateSkillRoots,
   updateWorktreePolicy,
   validateConfig,
@@ -35,7 +32,6 @@ import {
   parseAppConfig,
   parseDashboardConfig,
   parseRepoRegistry,
-  parseScheduleConfig,
   runtimePaths,
 } from './runtime-home';
 
@@ -273,69 +269,6 @@ describe('config actions', () => {
     ]);
   });
 
-  it('adds, updates, and removes schedules through validated config operations', async () => {
-    const home = await tempDir('neondeck-home-');
-    const paths = runtimePaths(home);
-
-    await expect(
-      addSchedule(
-        {
-          id: 'morning',
-          type: 'morning-briefing',
-          preset: 'weekday-morning',
-        },
-        paths,
-      ),
-    ).resolves.toMatchObject({
-      ok: true,
-      changed: true,
-      message: 'Added schedule "morning".',
-    });
-
-    await expect(
-      updateSchedule({ id: 'morning', enabled: false }, paths),
-    ).resolves.toMatchObject({
-      ok: true,
-      changed: true,
-      message: 'Updated schedule "morning".',
-    });
-
-    let schedules = parseScheduleConfig(
-      JSON.parse(await readFile(paths.schedules, 'utf8')),
-      paths.schedules,
-    ).schedules;
-    expect(schedules).toMatchObject([
-      { id: 'morning', type: 'morning-briefing', enabled: false },
-    ]);
-
-    await expect(
-      removeSchedule({ id: 'morning' }, paths),
-    ).resolves.toMatchObject({
-      ok: false,
-      changed: false,
-      requires: ['confirm'],
-    });
-
-    await expect(
-      removeSchedule({ id: 'morning', confirm: true }, paths),
-    ).resolves.toMatchObject({
-      ok: true,
-      changed: true,
-      message: 'Removed schedule "morning".',
-    });
-
-    schedules = parseScheduleConfig(
-      JSON.parse(await readFile(paths.schedules, 'utf8')),
-      paths.schedules,
-    ).schedules;
-    expect(schedules).toEqual([]);
-    expect(readHistory(paths.neondeckDatabase)).toMatchObject([
-      { action: 'config_add_schedule', target: 'morning' },
-      { action: 'config_update_schedule', target: 'morning' },
-      { action: 'config_remove_schedule', target: 'morning' },
-    ]);
-  });
-
   it('updates agent, utility, self-improvement, and subagent model config through a typed action', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
@@ -523,7 +456,6 @@ describe('config actions', () => {
           paths.mcp,
           paths.repos,
           paths.dashboard,
-          paths.schedules,
         ],
         target: 'all',
       },
@@ -1035,38 +967,6 @@ describe('config actions', () => {
     ]);
   });
 
-  it('returns structured failures for empty schedule action fields', async () => {
-    const home = await tempDir('neondeck-home-');
-    const paths = runtimePaths(home);
-
-    await expect(
-      addSchedule({ id: '', type: '' }, paths),
-    ).resolves.toMatchObject({
-      ok: false,
-      changed: false,
-      action: 'config_add_schedule',
-      message: 'Invalid action input.',
-    });
-
-    await expect(
-      updateSchedule({ id: '', cron: '' }, paths),
-    ).resolves.toMatchObject({
-      ok: false,
-      changed: false,
-      action: 'config_update_schedule',
-      message: 'Invalid action input.',
-    });
-
-    await expect(
-      removeSchedule({ id: '', confirm: true }, paths),
-    ).resolves.toMatchObject({
-      ok: false,
-      changed: false,
-      action: 'config_remove_schedule',
-      message: 'Invalid action input.',
-    });
-  });
-
   it('reads and validates config through explicit action boundaries', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
@@ -1094,15 +994,6 @@ describe('config actions', () => {
       },
     );
 
-    await writeFile(paths.schedules, '{ "schedules": [{ "id": "" }] }\n');
-
-    await expect(
-      validateConfig({ target: 'schedules' }, paths),
-    ).resolves.toMatchObject({
-      ok: false,
-      changed: false,
-      message: 'Invalid schedules config.',
-    });
     expect(existsSync(paths.neondeckDatabase)).toBe(true);
     expect(existsSync(paths.flueDatabase)).toBe(true);
   });

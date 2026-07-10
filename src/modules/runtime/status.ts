@@ -10,7 +10,6 @@ import {
   type RuntimePaths,
   parseAppConfig,
   parseRepoRegistry,
-  parseScheduleConfig,
   readRuntimeJson,
   runtimePaths,
 } from '../../runtime-home';
@@ -32,12 +31,11 @@ export async function readRuntimeStatus(
   paths: RuntimePaths = runtimePaths(),
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<RuntimeStatus> {
-  const [config, mcpConfig, repos, schedules, skills, session] =
+  const [config, mcpConfig, repos, skills, session] =
     await Promise.all([
       safeRead(() => readRuntimeJson(paths.config, parseAppConfig)),
       safeRead(() => readRuntimeJson(paths.mcp, parseMcpConfig)),
       safeRead(() => readRuntimeJson(paths.repos, parseRepoRegistry)),
-      safeRead(() => readRuntimeJson(paths.schedules, parseScheduleConfig)),
       safeRead(() => listRuntimeSkills(paths)),
       safeRead(() => readNeonSessionState(paths)),
     ]);
@@ -69,9 +67,6 @@ export async function readRuntimeStatus(
   const anthropicKey =
     anthropicProvider.enabled && anthropicProvider.apiKeyPresent;
   const githubToken = Boolean(env.GITHUB_TOKEN);
-  const activeSchedules = schedules.ok
-    ? schedules.value.schedules.filter((schedule) => schedule.enabled ?? true)
-    : [];
   const activeSkills = skills.ok
     ? skills.value.skills.filter((skill) => skill.status === 'active')
     : [];
@@ -90,12 +85,6 @@ export async function readRuntimeStatus(
     configCheck('config', 'Runtime config', paths.config, config),
     configCheck('mcp-config', 'MCP config', paths.mcp, mcpConfig),
     configCheck('repos-config', 'Repo config', paths.repos, repos),
-    configCheck(
-      'schedules-config',
-      'Schedule config',
-      paths.schedules,
-      schedules,
-    ),
     configCheck('skills', 'Runtime skills', paths.skills, skills),
     check(
       'session-context',
@@ -277,7 +266,6 @@ export async function readRuntimeStatus(
       config: paths.config,
       mcp: paths.mcp,
       repos: paths.repos,
-      schedules: paths.schedules,
       dashboard: paths.dashboard,
       skills: paths.skills,
       worktrees: paths.worktrees,
@@ -363,7 +351,7 @@ export async function readRuntimeStatus(
         },
     counts: {
       repos: repos.ok ? repos.value.repos.length : 0,
-      activeSchedules: activeSchedules.length,
+      activeSchedules: 0,
       activeJobs: appDatabase.counts.activeJobs,
       activeWatches: appDatabase.counts.activeWatches,
       activeSkills: activeSkills.length,

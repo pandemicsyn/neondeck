@@ -83,11 +83,6 @@ export function supportedCommands() {
       description:
         'Inspect local repo, package, env, port, server, and database health.',
     },
-    {
-      name: 'watch-release',
-      usage: '/watch-release <repo-id|owner/repo>',
-      description: 'Watch a configured repo until its default branch is green.',
-    },
   ];
 }
 
@@ -158,6 +153,5 @@ export function isCommandName(value: string): value is NeonCommandName {
     'memory',
     'watch-pr',
     'dev-doctor',
-    'watch-release',
   ].includes(value);
 }

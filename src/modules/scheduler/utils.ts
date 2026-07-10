@@ -2,7 +2,6 @@ import type { JsonValue } from '@flue/runtime';
 import { failedAction } from '../../lib/action-result';
 import { asJsonValue } from '../../lib/action-result';
 import { parseInput as parseSharedInput } from '../../lib/valibot';
-import type { JobRecord } from '../app-state';
 import type { SchedulerResult } from './schemas';
 import type * as v from 'valibot';
 
@@ -24,7 +23,6 @@ export function okResult(
   outcome: string | undefined,
   message: string,
   data: {
-    jobs?: JobRecord[];
     tasks?: unknown[];
     notifications?: unknown[];
     extra?: unknown;
@@ -36,7 +34,6 @@ export function okResult(
     changed,
     ...(outcome ? { outcome } : {}),
     message,
-    ...(data.jobs ? { jobs: data.jobs.map(asJsonValue) } : {}),
     ...(data.tasks ? { tasks: data.tasks.map(asJsonValue) } : {}),
     ...(data.notifications
       ? { notifications: data.notifications.map(asJsonValue) }

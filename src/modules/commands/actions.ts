@@ -12,7 +12,7 @@ import {
 export const commandRunAction = defineAction({
   name: 'neondeck_command_run',
   description:
-    'Run a safe Neon slash command such as /repo-status, /review-queue, /review-pr, /explain-ci, /summarize-pr, /draft-pr-description, /prepare-pr, /review-local, /briefing, /reasoning, /memory, /watch-pr, /watch-release, or /dev-doctor and persist a workflow summary.',
+    'Run a safe Neon slash command such as /repo-status, /review-queue, /review-pr, /explain-ci, /summarize-pr, /draft-pr-description, /prepare-pr, /review-local, /briefing, /reasoning, /memory, /watch-pr, or /dev-doctor and persist a workflow summary.',
   input: commandRunInputSchema,
   output: commandRunOutputSchema,
   async run({ input, log }) {

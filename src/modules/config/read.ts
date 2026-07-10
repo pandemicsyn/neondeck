@@ -7,7 +7,6 @@ import {
   parseAppConfig,
   parseDashboardConfig,
   parseRepoRegistry,
-  parseScheduleConfig,
   readRuntimeJson,
   runtimePaths,
   validateRuntimeFiles,
@@ -101,12 +100,6 @@ async function readTarget(target: ConfigTarget, paths: RuntimePaths) {
     };
   }
 
-  if (target === 'schedules') {
-    return {
-      schedules: await readRuntimeJson(paths.schedules, parseScheduleConfig),
-    };
-  }
-
   return {
     config: publicAppConfig(
       await readRuntimeJson(paths.config, parseAppConfig),
@@ -114,7 +107,6 @@ async function readTarget(target: ConfigTarget, paths: RuntimePaths) {
     mcp: await readRuntimeJson(paths.mcp, parseMcpConfig),
     repos: await readRuntimeJson(paths.repos, parseRepoRegistry),
     dashboard: await readRuntimeJson(paths.dashboard, parseDashboardConfig),
-    schedules: await readRuntimeJson(paths.schedules, parseScheduleConfig),
   };
 }
 
@@ -123,13 +115,11 @@ export function targetFiles(target: ConfigTarget, paths: RuntimePaths) {
   if (target === 'mcp') return [paths.mcp];
   if (target === 'repos') return [paths.repos];
   if (target === 'dashboard') return [paths.dashboard];
-  if (target === 'schedules') return [paths.schedules];
   return [
     paths.config,
     paths.mcp,
     paths.repos,
     paths.dashboard,
-    paths.schedules,
   ];
 }
 

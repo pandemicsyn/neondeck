@@ -28,7 +28,7 @@ import {
   runtimeStatusSchema,
 } from '../../modules/runtime';
 import { safetyPolicyLookupTool } from '../../modules/safety';
-import { listSchedulerJobs } from '../../modules/scheduler';
+import { listTaskRecords } from '../../modules/scheduled-tasks';
 import {
   listChatSessions,
   readChatSession,
@@ -239,13 +239,13 @@ export const githubIssuesLookupTool = defineTool({
   },
 });
 
-export const schedulerJobsLookupTool = defineTool({
-  name: 'neondeck_scheduler_jobs_lookup',
-  description: 'List durable Neondeck scheduler jobs and last run state.',
+export const scheduledTasksLookupTool = defineTool({
+  name: 'neondeck_scheduled_tasks_lookup',
+  description: 'List canonical scheduled tasks and their most recent run.',
   input: emptyInputSchema,
   output: toolOutputSchema,
   async run() {
-    return listSchedulerJobs();
+    return listTaskRecords();
   },
 });
 
@@ -325,7 +325,7 @@ export const neondeckFactTools = [
   githubPrQueueLookupTool,
   githubCheckSummaryLookupTool,
   githubIssuesLookupTool,
-  schedulerJobsLookupTool,
+  scheduledTasksLookupTool,
   prWatchesLookupTool,
   refWatchesLookupTool,
   runtimeSkillsLookupTool,
