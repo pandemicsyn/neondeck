@@ -22,7 +22,6 @@ import {
   updateProviderConfig,
   updateSkillRoots,
   updateWorktreePolicy,
-  validateConfig,
 } from './modules/config';
 import {
   subscribeConfigEvents,
@@ -451,12 +450,7 @@ describe('config actions', () => {
       {
         action: 'config_reload',
         changed: false,
-        files: [
-          paths.config,
-          paths.mcp,
-          paths.repos,
-          paths.dashboard,
-        ],
+        files: [paths.config, paths.mcp, paths.repos, paths.dashboard],
         target: 'all',
       },
     ]);

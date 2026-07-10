@@ -12,7 +12,7 @@ import type {
   RuntimeSkillsResponse,
   RuntimeStatus,
   SafetyPolicy,
-  SchedulerJobsResponse,
+  ScheduledTasksResponse,
   WorkflowObservability,
   WorktreesResponse,
 } from '../../api';
@@ -23,7 +23,7 @@ import type { RuntimeSnapshot } from './types';
 type RuntimeSnapshotQueries = {
   registry: UseQueryResult<RepoRegistryResponse>;
   repoHealth: UseQueryResult<RepoHealthResponse>;
-  jobs: UseQueryResult<SchedulerJobsResponse>;
+  jobs: UseQueryResult<ScheduledTasksResponse>;
   skills: UseQueryResult<RuntimeSkillsResponse>;
   memories: UseQueryResult<MemoryResponse>;
   notifications: UseQueryResult<NotificationResponse>;
@@ -69,7 +69,7 @@ export function runtimeSnapshotFromQueries(
       count: 0,
       fetchedAt: status.fetchedAt,
     },
-    jobs: queries.jobs.data?.jobs ?? [],
+    jobs: queries.jobs.data?.tasks ?? [],
     skills: queries.skills.data ?? {
       roots: [],
       skills: [],
@@ -155,7 +155,7 @@ export async function invalidateRuntimeQueries(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: queryKeys.runtimeStatus }),
     queryClient.invalidateQueries({ queryKey: queryKeys.repoRegistry }),
     queryClient.invalidateQueries({ queryKey: queryKeys.repoHealth }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.schedulerJobs }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.scheduledTasks }),
     queryClient.invalidateQueries({ queryKey: queryKeys.runtimeSkills }),
     queryClient.invalidateQueries({
       queryKey: queryKeys.workflowObservability,

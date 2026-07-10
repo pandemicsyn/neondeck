@@ -13,7 +13,7 @@ import {
   getRuntimeSkills,
   getRuntimeStatus,
   getSafetyPolicy,
-  getSchedulerJobs,
+  getScheduledTasks,
   getWorkflowObservability,
   getWorktrees,
   openNotificationEventStream,
@@ -76,8 +76,8 @@ export const RuntimeOverviewPlugin = {
           refetchInterval: 30_000,
         },
         {
-          queryKey: queryKeys.schedulerJobs,
-          queryFn: getSchedulerJobs,
+          queryKey: queryKeys.scheduledTasks,
+          queryFn: getScheduledTasks,
           refetchInterval: 30_000,
         },
         {

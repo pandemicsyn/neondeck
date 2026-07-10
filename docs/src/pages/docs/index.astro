@@ -32,17 +32,16 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           </li>
           <li>
             <a href="/docs/configuration/">Configuration</a>: runtime-home
-            files, models, providers, repos, schedules, SOUL, and skills.
+            files, models, providers, repos, SOUL, and skills.
           </li>
           <li>
             <a href="/docs/cli/">CLI</a>: command reference for setup, repo
-            registry, watches, schedules, Neon slash commands, and future TUI
-            entrypoints.
+            registry, watches, Neon slash commands, and future TUI entrypoints.
           </li>
           <li>
             <a href="/docs/agent-runtime/">Agent runtime</a>: Flue agents,
-            actions, workflows, skills, memory, watches, reports, routines, and
-            observability.
+            actions, workflows, skills, memory, watches, reports, scheduled
+            tasks, and observability.
           </li>
           <li>
             <a href="/docs/mcp/">MCP servers</a>: remote and local MCP servers,
@@ -85,7 +84,6 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   mcp.json
   repos.json
   dashboard.json
-  schedules.json
   SOUL.md
   skills/
     custom-skill/
@@ -147,35 +145,28 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 /reasoning [off|minimal|low|medium|high|xhigh]
 /memory ...
 /dev-doctor
-/watch-pr &lt;repo#number|owner/repo#number|url&gt;
-/watch-release &lt;repo-id|owner/repo&gt;</code></pre>
+/watch-pr &lt;repo#number|owner/repo#number|url&gt;</code></pre>
 
         <h2>Watches and scheduler</h2>
         <p>
           PR watches persist in SQLite and survive restart. A
           <code>/watch-pr</code> watch polls GitHub for merge state, merge commit
-          checks, and quiet no-op refreshes. A direct
-          <code>/watch-release</code> watch tracks the configured default branch checks.
-          A linked <code>/watch-pr ... until prod</code> release watch waits for the
-          source PR to merge, then tracks the source PR merge SHA until checks are
-          green. Provider-specific deploy adapters are still a future integration.
+          checks, and quiet no-op refreshes. Provider-specific deploy adapters are
+          still a future integration.
         </p>
         <p>
-          The scheduler also owns report-producing busywork blueprints for docs
-          drift, issue triage, and hygiene. Routines cover the long tail of
-          user-defined scheduled Neon tasks and deliver output as notifications,
-          reports, or session events.
+          Scheduled tasks use validated interval, one-shot, or timezone-aware
+          cron triggers. Typed briefing and agent-instruction endpoints create
+          the tasks that the local scheduler dispatches through Flue.
         </p>
 
-        <h2 id="reports-routines">Reports and routines</h2>
+        <h2 id="reports-scheduled-tasks">Reports and scheduled tasks</h2>
         <p>
           Reports are local HTML artifacts for PR review assistance, CI failure
-          dossiers, docs drift, issue triage, hygiene, and routine runs. The
-          dashboard lists them in the Reports panel and serves individual
-          artifacts from <code>/reports/:id</code>. Routines are durable
-          scheduled Neon prompts with optional skills and repo/cwd scope,
-          managed through the Routines panel, <code>/api/routines</code>, and
-          typed <code>neondeck_routine_*</code> actions.
+          dossiers, docs drift, issue triage, and hygiene. The dashboard lists
+          them in the Reports panel and serves individual artifacts from
+          <code>/reports/:id</code>. Scheduled tasks are durable local work
+          managed through <code>/api/scheduled-tasks</code> and typed task actions.
         </p>
 
         <h2 id="flue">Flue actions and workflows</h2>
@@ -192,8 +183,8 @@ dev-doctor
 fix-pr-ci
 review-pr-for-human
 scheduler-tick
+scheduled-agent-instruction
 watch-pr
-watch-release
 prepare-pr-worktree
 verify-pr-worktree
 push-pr-autofix

@@ -9,6 +9,7 @@ import {
   nextOccurrence,
   readLatestScheduledTaskRun,
   readScheduledTask,
+  releaseUnstartedScheduledTaskClaim,
   settleScheduledTaskRun,
   upsertScheduledTask,
   validateAutomationTrigger,
@@ -82,7 +83,9 @@ describe('scheduled task storage', () => {
         paths,
       );
 
-      await expect(readScheduledTask(claim.task.id, paths)).resolves.toMatchObject({
+      await expect(
+        readScheduledTask(claim.task.id, paths),
+      ).resolves.toMatchObject({
         claimId: null,
         nextRunAt: '2026-07-10T00:05:00.000Z',
       });
@@ -116,6 +119,80 @@ describe('scheduled task storage', () => {
         new Date('2026-07-10T00:00:00.000Z'),
       );
       expect(claim?.task).toMatchObject({ enabled: false, nextRunAt: null });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('recomputes the next occurrence when an existing trigger changes', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
+    const paths = runtimePaths(home);
+    try {
+      await upsertScheduledTask(
+        {
+          id: 'briefing:change-trigger',
+          spec: { kind: 'run-briefing', briefingId: 'daily' },
+          trigger: { kind: 'interval', everySeconds: 300 },
+          nextRunAt: '2030-01-01T00:00:00.000Z',
+        },
+        paths,
+      );
+
+      const updated = await upsertScheduledTask(
+        {
+          id: 'briefing:change-trigger',
+          spec: { kind: 'run-briefing', briefingId: 'daily' },
+          trigger: { kind: 'interval', everySeconds: 3_600 },
+        },
+        paths,
+      );
+
+      expect(updated.nextRunAt).not.toBe('2030-01-01T00:00:00.000Z');
+      expect(Date.parse(updated.nextRunAt ?? '')).toBeGreaterThan(Date.now());
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('releases an unstarted claim back to its original task state', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
+    const paths = runtimePaths(home);
+    try {
+      await upsertScheduledTask(
+        {
+          id: 'briefing:released',
+          spec: { kind: 'run-briefing', briefingId: 'daily' },
+          trigger: { kind: 'once', at: '2026-07-10T00:00:00.000Z' },
+          nextRunAt: '2026-07-10T00:00:00.000Z',
+        },
+        paths,
+      );
+      const [claim] = await claimDueScheduledTasks(
+        paths,
+        new Date('2026-07-10T00:00:00.000Z'),
+      );
+      if (!claim) throw new Error('Expected the due task to be claimed.');
+      await releaseUnstartedScheduledTaskClaim(
+        {
+          ...claim,
+          message: 'Lease was lost before this task started.',
+        },
+        paths,
+      );
+
+      await expect(
+        readScheduledTask(claim.task.id, paths),
+      ).resolves.toMatchObject({
+        enabled: true,
+        nextRunAt: '2026-07-10T00:00:00.000Z',
+        claimId: null,
+      });
+      await expect(
+        readLatestScheduledTaskRun(claim.task.id, paths),
+      ).resolves.toMatchObject({
+        id: claim.run.id,
+        status: 'failed',
+      });
     } finally {
       await rm(home, { recursive: true, force: true });
     }
@@ -186,7 +263,8 @@ describe('scheduled task storage', () => {
         createAgentInstructionTask(
           {
             id: 'instruction:nightly',
-            prompt: 'Inspect the configured repository and report stale branches.',
+            prompt:
+              'Inspect the configured repository and report stale branches.',
             trigger: { kind: 'interval', everySeconds: 43_200 },
             target: { kind: 'workflow' },
             skills: [],

@@ -1369,28 +1369,25 @@ export type WorkflowSummaryResponse = {
   fetchedAt: string;
 };
 
-export type SchedulerJob = {
+export type ScheduledTask = {
   id: string;
-  type: string;
-  blueprint: string | null;
+  spec: { kind: string };
+  trigger: { kind: string; everySeconds?: number };
   enabled: boolean;
-  intervalSeconds: number;
-  config: unknown;
-  nextRunAt?: string | null;
+  nextRunAt: string | null;
   lastRunAt: string | null;
-  lastOutcome: string | null;
-  lastMessage: string | null;
-  lastResult: unknown;
+  claimId: string | null;
+  claimExpiresAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
 
-export type SchedulerJobsResponse = {
+export type ScheduledTasksResponse = {
   ok: boolean;
   action: string;
   changed: boolean;
   message: string;
-  jobs: SchedulerJob[];
+  tasks: ScheduledTask[];
 };
 
 export type MemoryScope = 'user' | 'local' | 'project';

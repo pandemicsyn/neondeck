@@ -4,6 +4,7 @@ import { openDb } from '../../lib/sqlite';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import {
   scheduledTaskSpecSchema,
+  type AutomationTrigger,
   type ScheduledTaskRecord,
   type ScheduledTaskRunRecord,
 } from './schemas';
@@ -31,10 +32,7 @@ export async function listScheduledTasks(paths = runtimePaths()) {
   }
 }
 
-export async function readScheduledTask(
-  id: string,
-  paths = runtimePaths(),
-) {
+export async function readScheduledTask(id: string, paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase);
   try {
@@ -95,8 +93,9 @@ export async function upsertScheduledTask(
     enabled: input.enabled ?? existing?.enabled ?? true,
     nextRunAt:
       input.nextRunAt ??
-      existing?.nextRunAt ??
-      nextOccurrence(trigger, now),
+      (existing && sameTrigger(existing.trigger, trigger)
+        ? existing.nextRunAt
+        : nextOccurrence(trigger, now)),
     claimId: existing?.claimId ?? null,
     claimExpiresAt: existing?.claimExpiresAt ?? null,
     lastRunAt: existing?.lastRunAt ?? null,
@@ -141,15 +140,14 @@ export async function upsertScheduledTask(
   return record;
 }
 
-export async function deleteScheduledTask(
-  id: string,
-  paths = runtimePaths(),
-) {
+export async function deleteScheduledTask(id: string, paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase);
   try {
     database.exec('BEGIN IMMEDIATE;');
-    database.prepare('DELETE FROM scheduled_task_runs WHERE task_id = ?;').run(id);
+    database
+      .prepare('DELETE FROM scheduled_task_runs WHERE task_id = ?;')
+      .run(id);
     database.prepare('DELETE FROM scheduled_tasks WHERE id = ?;').run(id);
     database.exec('COMMIT;');
   } catch (error) {
@@ -192,7 +190,11 @@ export async function claimDueScheduledTasks(
 ) {
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase);
-  const claimed: Array<{ task: ScheduledTaskRecord; run: ScheduledTaskRunRecord }> = [];
+  const claimed: Array<{
+    task: ScheduledTaskRecord;
+    previous: ScheduledTaskRecord;
+    run: ScheduledTaskRunRecord;
+  }> = [];
   const nowIso = now.toISOString();
   const expiresAt = new Date(now.getTime() + claimTtlMs).toISOString();
   try {
@@ -280,12 +282,71 @@ export async function claimDueScheduledTasks(
           run.updatedAt,
         );
       claimed.push({
-        task: { ...task, enabled, nextRunAt, claimId, claimExpiresAt: expiresAt, lastRunAt: nowIso, updatedAt: nowIso },
+        task: {
+          ...task,
+          enabled,
+          nextRunAt,
+          claimId,
+          claimExpiresAt: expiresAt,
+          lastRunAt: nowIso,
+          updatedAt: nowIso,
+        },
+        previous: task,
         run,
       });
     }
     database.exec('COMMIT;');
     return claimed;
+  } catch (error) {
+    database.exec('ROLLBACK;');
+    throw error;
+  } finally {
+    database.close();
+  }
+}
+
+export async function releaseUnstartedScheduledTaskClaim(
+  input: {
+    task: ScheduledTaskRecord;
+    previous: ScheduledTaskRecord;
+    run: ScheduledTaskRunRecord;
+    message: string;
+  },
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database.exec('BEGIN IMMEDIATE;');
+    database
+      .prepare(
+        `
+        UPDATE scheduled_task_runs
+        SET status = 'failed', outcome = 'failed', message = ?, error = ?,
+            completed_at = ?, updated_at = ?
+        WHERE id = ? AND task_id = ? AND status = 'claimed';
+      `,
+      )
+      .run(input.message, input.message, now, now, input.run.id, input.task.id);
+    database
+      .prepare(
+        `
+        UPDATE scheduled_tasks
+        SET enabled = ?, next_run_at = ?, claim_id = NULL, claim_expires_at = NULL,
+            last_run_at = ?, updated_at = ?
+        WHERE id = ? AND claim_id = ?;
+      `,
+      )
+      .run(
+        input.previous.enabled ? 1 : 0,
+        input.previous.nextRunAt,
+        input.previous.lastRunAt,
+        now,
+        input.task.id,
+        input.task.claimId,
+      );
+    database.exec('COMMIT;');
   } catch (error) {
     database.exec('ROLLBACK;');
     throw error;
@@ -329,7 +390,9 @@ export async function settleScheduledTaskRun(
         input.message,
         input.workflowRunId ?? null,
         input.sessionId ?? null,
-        input.result === undefined ? null : JSON.stringify(asJsonValue(input.result)),
+        input.result === undefined
+          ? null
+          : JSON.stringify(asJsonValue(input.result)),
         input.error ?? null,
         now,
         now,
@@ -369,11 +432,15 @@ function readScheduledTaskRow(row: unknown): ScheduledTaskRecord {
     spec,
     trigger: triggerResult.trigger,
     enabled: Boolean(record.enabled),
-    nextRunAt: typeof record.next_run_at === 'string' ? record.next_run_at : null,
+    nextRunAt:
+      typeof record.next_run_at === 'string' ? record.next_run_at : null,
     claimId: typeof record.claim_id === 'string' ? record.claim_id : null,
     claimExpiresAt:
-      typeof record.claim_expires_at === 'string' ? record.claim_expires_at : null,
-    lastRunAt: typeof record.last_run_at === 'string' ? record.last_run_at : null,
+      typeof record.claim_expires_at === 'string'
+        ? record.claim_expires_at
+        : null,
+    lastRunAt:
+      typeof record.last_run_at === 'string' ? record.last_run_at : null,
     createdAt: String(record.created_at),
     updatedAt: String(record.updated_at),
   };
@@ -394,7 +461,9 @@ function readScheduledTaskRunRow(row: unknown): ScheduledTaskRunRecord {
     ),
     message: String(record.message),
     workflowRunId:
-      typeof record.workflow_run_id === 'string' ? record.workflow_run_id : null,
+      typeof record.workflow_run_id === 'string'
+        ? record.workflow_run_id
+        : null,
     sessionId: typeof record.session_id === 'string' ? record.session_id : null,
     result:
       typeof record.result_json === 'string'
@@ -407,4 +476,8 @@ function readScheduledTaskRunRow(row: unknown): ScheduledTaskRunRecord {
     createdAt: String(record.created_at),
     updatedAt: String(record.updated_at),
   };
+}
+
+function sameTrigger(left: AutomationTrigger, right: AutomationTrigger) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }

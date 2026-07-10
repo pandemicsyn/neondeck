@@ -1708,41 +1708,40 @@ export const entries: SafetyPolicyEntry[] = [
     'Creates or updates bounded scheduled agent instructions.',
   ),
   route(
-    '/api/routines/:id/run',
-    'Routine run-now API',
+    '/api/scheduled-tasks/:id',
+    'Scheduled task detail API',
     {
-      ...safeMutation,
-      auditTarget:
-        'routines/routine_runs/routine_events/chat_sessions/chat_session_command_events/reports/notifications',
+      ...readOnly,
+      auditTarget: 'scheduled_tasks/scheduled_task_runs',
     },
-    'Dispatches a routine prompt to a local display-assistant session and records admission facts without synthesizing completion.',
+    'Reads one canonical scheduled task and its latest execution facts.',
   ),
   route(
-    '/api/routines/:id/pause',
-    'Routine pause API',
+    '/api/scheduled-tasks/:id/pause',
+    'Scheduled task pause API',
     {
       ...safeMutation,
-      auditTarget: 'routines/routine_events',
+      auditTarget: 'scheduled_tasks/scheduled_task_runs',
     },
-    'Pauses a routine schedule without deleting run history.',
+    'Pauses a scheduled task without deleting its run history.',
   ),
   route(
-    '/api/routines/:id/resume',
-    'Routine resume API',
+    '/api/scheduled-tasks/:id/resume',
+    'Scheduled task resume API',
     {
       ...safeMutation,
-      auditTarget: 'routines/routine_events',
+      auditTarget: 'scheduled_tasks/scheduled_task_runs',
     },
-    'Resumes a routine schedule without immediately executing it.',
+    'Resumes a scheduled task without immediately executing it.',
   ),
   route(
-    'DELETE /api/routines/:id',
-    'Routine delete API',
+    'DELETE /api/scheduled-tasks/:id',
+    'Scheduled task delete API',
     {
       ...destructiveMutation,
-      auditTarget: 'routine_events/routines/routine_runs',
+      auditTarget: 'scheduled_task_runs/scheduled_tasks',
     },
-    'DELETE removes a routine and local run history when no run is active.',
+    'DELETE removes a scheduled task and its local execution history.',
   ),
   route(
     '/reports/:id',
@@ -2237,9 +2236,10 @@ export const entries: SafetyPolicyEntry[] = [
     'External agent handoff API',
     {
       ...safeMutation,
-      auditTarget: 'pr_watches/jobs/notifications/workflow_summaries',
+      auditTarget:
+        'pr_watches/scheduled_tasks/notifications/workflow_summaries',
     },
-    'Localhost-only registration surface for external agents to create attributed watches, notes, release watches, and optionally queue bounded PR review assistance when config allows it. It does not execute commands, approve work, push, or mutate remote providers.',
+    'Localhost-only registration surface for external agents to create attributed watches, notes, and optionally queue bounded PR review assistance when config allows it. It does not execute commands, approve work, push, or mutate remote providers.',
   ),
   route(
     '/api/memories',

@@ -412,13 +412,17 @@ export function RuntimeView({
               ) : null}
             </div>
           </RuntimeSection>
-          <RuntimeSection count={enabledJobs.length} title="JOBS" tone="accent">
+          <RuntimeSection
+            count={enabledJobs.length}
+            title="TASKS"
+            tone="accent"
+          >
             <div className="space-y-1.5">
               {snapshot.jobs.slice(0, config.jobLimit).map((job) => (
                 <JobRow job={job} key={job.id} />
               ))}
               {snapshot.jobs.length === 0 ? (
-                <MiniEmpty label="No scheduler jobs recorded." />
+                <MiniEmpty label="No scheduled tasks recorded." />
               ) : null}
             </div>
           </RuntimeSection>

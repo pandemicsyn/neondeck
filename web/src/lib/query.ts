@@ -34,7 +34,7 @@ export const queryKeys = {
   runtimeStatus: ['runtime-status'] as const,
   runtimeSkills: ['runtime-skills'] as const,
   safetyPolicy: ['safety-policy'] as const,
-  schedulerJobs: ['scheduler-jobs'] as const,
+  scheduledTasks: ['scheduled-tasks'] as const,
   subagents: ['subagents'] as const,
   notifications: ['notifications'] as const,
   workflowObservability: ['workflow-observability'] as const,

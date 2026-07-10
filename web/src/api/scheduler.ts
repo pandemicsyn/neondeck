@@ -1,6 +1,6 @@
-import type { SchedulerJobsResponse } from './types';
+import type { ScheduledTasksResponse } from './types';
 import { getJson } from './http';
 
-export async function getSchedulerJobs() {
-  return getJson<SchedulerJobsResponse>('/api/jobs');
+export async function getScheduledTasks() {
+  return getJson<ScheduledTasksResponse>('/api/scheduled-tasks');
 }

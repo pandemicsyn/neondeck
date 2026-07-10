@@ -59,7 +59,7 @@ fix-pr-review-feedback
 review-pr-for-human
 scheduler-tick
 watch-pr
-watch-release
+scheduled-agent-instruction
 prepare-pr-worktree
 verify-pr-worktree
 verify-then-push-pr-autofix
@@ -97,16 +97,13 @@ curate_learning_store</code></pre>
         <h2>Schedules and watches</h2>
         <p>
           The local scheduler admits real Flue workflow runs for bounded
-          scheduled work. PR and release watches are deterministic pollers that
-          invoke agent reasoning only when there is meaningful state to
-          summarize or act on.
+          scheduled work. PR watches are deterministic pollers that invoke agent
+          reasoning only when there is meaningful state to summarize or act on.
         </p>
         <p>
-          Scheduler blueprints cover morning briefings, review queue digests, PR
-          watches, release watches, docs drift, issue triage, and workspace
-          hygiene. Docs-drift, issue-triage, and hygiene jobs write local HTML
-          reports, stay quiet when no action is needed, and surface one
-          notification when a report needs attention.
+          Scheduled tasks cover PR watches, briefings, and bounded agent
+          instructions. Their validated triggers are persisted locally, while
+          Flue owns each admitted workflow run.
         </p>
 
         <h2>Reports and busywork</h2>
@@ -127,18 +124,14 @@ curate_learning_store</code></pre>
           the result still lands as a prepared diff for human review.
         </p>
 
-        <h2>Routines</h2>
+        <h2>Scheduled tasks</h2>
         <p>
-          Routines are user-defined scheduled Neon tasks: a prompt, schedule,
-          optional runtime skills, optional repo or cwd scope, and delivery to a
-          notification, report, or session. They run as display-assistant
-          session turns admitted by the scheduler, so approval-gated actions
-          remain approval-gated. The Routines dashboard panel and
-          <code>/api/routines</code> routes can create, edit, run, pause, resume,
-          and delete routines. Neon can also create and manage routines through typed
-          actions, subject to the global routines kill switch, a minimum 15-minute
-          interval, a cap on agent-created enabled routines, and auto-pause after
-          repeated failures.
+          Scheduled tasks are validated local records with a typed spec and an
+          interval, one-shot, or timezone-aware cron trigger. The scheduler
+          claims each due occurrence before dispatching a bounded Flue workflow;
+          approval-gated actions remain approval-gated. The scheduled-task API
+          creates briefings and agent instructions, and can pause, resume, or
+          delete existing tasks.
         </p>
 
         <h2>External agent handoff</h2>

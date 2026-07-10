@@ -264,12 +264,6 @@ function objectStringField(
   return stringField(nested, stringKey);
 }
 
-function objectRecord(value: unknown) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
 function stringField(value: object, key: string) {
   if (!(key in value)) return undefined;
   const field = (value as Record<string, unknown>)[key];
