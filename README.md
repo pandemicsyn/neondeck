@@ -27,7 +27,7 @@ Neon watches your PRs, prepares fixes, and keeps the busywork moving.
   github.com.
 - **Handoff, both directions.** Delegate work to agents like Kilo or Codex, then
   let the finished PR come back to Neon for checks and deployment follow-through.
-- **Briefings and routines on a schedule.** Pull your PRs, watches, CI failures,
+- **Briefings and scheduled instructions.** Pull your PRs, watches, CI failures,
   and next actions into a morning briefing, or run your own saved prompt on a
   timer.
 - **Sandboxed, gated execution.** Keep code-changing work in throwaway
@@ -107,7 +107,7 @@ neondeck open sidebar
 - [Configuration](https://neondeck.dev/docs/configuration/): runtime config,
   models, providers, repos, schedules, SOUL, and skills.
 - [Agent runtime](https://neondeck.dev/docs/agent-runtime/): Flue agents,
-  actions, workflows, memory, watches, reports, and routines.
+  actions, workflows, memory, watches, reports, and scheduled tasks.
 - [Execution environments](https://neondeck.dev/docs/execution/): local and
   sandboxed execution policy.
 - [MCP servers](https://neondeck.dev/docs/mcp/): MCP registration, OAuth, tool

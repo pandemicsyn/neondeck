@@ -12,7 +12,6 @@ Use these commands when explaining setup to another agent or a user:
 ```sh
 neondeck register-pr <owner/repo#number> --from <agent-name> --note "<one-line summary>" --json
 neondeck note "Finished significant work without a PR." --from <agent-name> --repo <repo-id-or-owner/name> --level ready --json
-neondeck watch-release <repo-id-or-owner/name> --from <agent-name> --json
 ```
 
 The same-host HTTP mirror is:

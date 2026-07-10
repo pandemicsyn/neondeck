@@ -758,7 +758,8 @@ export const entries: SafetyPolicyEntry[] = [
     'Run due scheduled tasks',
     {
       ...safeMutation,
-      auditTarget: 'scheduled_tasks/scheduled_task_runs/notifications/workflow_events',
+      auditTarget:
+        'scheduled_tasks/scheduled_task_runs/notifications/workflow_events',
     },
     'Claims due scheduled tasks and records task runs, notifications, and Flue workflow admissions.',
   ),
@@ -1487,13 +1488,13 @@ export const entries: SafetyPolicyEntry[] = [
     'Runs bounded CI fix assistance through the Flue workflow surface, creating local reports, local worktree changes, and prepared diffs only. It does not push or comment.',
   ),
   workflow(
-    'watch-release',
-    'Run watch-release workflow',
+    'scheduled-agent-instruction',
+    'Run scheduled instruction workflow',
     {
       ...safeMutation,
-      auditTarget: 'config_history/jobs/workflow_events',
+      auditTarget: 'scheduled_task_runs/workflow_events',
     },
-    'Creates a release-watch schedule through the Flue workflow surface.',
+    'Runs one bounded scheduled instruction occurrence through Flue.',
   ),
   workflow(
     'triage-pr-event',
@@ -1689,22 +1690,22 @@ export const entries: SafetyPolicyEntry[] = [
     'GET lists canonical scheduled tasks; task creation uses the typed briefing and instruction endpoints.',
   ),
   route(
-    '/api/routines/config',
-    'Routine config API',
+    '/api/scheduled-tasks/briefings',
+    'Briefing task API',
     {
       ...safeMutation,
-      auditTarget: 'config_history',
+      auditTarget: 'scheduled_tasks/scheduled_task_runs',
     },
-    'GET reads resolved routine config; POST updates the global routines kill switch.',
+    'Creates or updates canonical briefing tasks.',
   ),
   route(
-    '/api/routines/:id',
-    'Routine metadata API',
+    '/api/scheduled-tasks/instructions',
+    'Scheduled instruction API',
     {
       ...safeMutation,
-      auditTarget: 'routines/routine_events',
+      auditTarget: 'scheduled_tasks/scheduled_task_runs',
     },
-    'GET reads one routine and recent runs; POST updates routine metadata without executing it.',
+    'Creates or updates bounded scheduled agent instructions.',
   ),
   route(
     '/api/routines/:id/run',
