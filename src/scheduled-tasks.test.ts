@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   claimDueScheduledTasks,
+  createAgentInstructionTask,
+  createBriefingTask,
   nextOccurrence,
   readLatestScheduledTaskRun,
   readScheduledTask,
@@ -151,6 +153,55 @@ describe('scheduled task storage', () => {
       ).resolves.toMatchObject({
         status: 'completed',
         workflowRunId: 'workflow:briefing:1',
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('creates only validated typed briefing and instruction payloads', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
+    const paths = runtimePaths(home);
+    try {
+      await expect(
+        createBriefingTask(
+          {
+            id: 'morning',
+            trigger: {
+              kind: 'cron',
+              expression: '0 9 * * 1-5',
+              timezone: 'America/Chicago',
+            },
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        ok: true,
+        task: {
+          id: 'briefing:morning',
+          spec: { kind: 'run-briefing', briefingId: 'morning' },
+        },
+      });
+      await expect(
+        createAgentInstructionTask(
+          {
+            id: 'instruction:nightly',
+            prompt: 'Inspect the configured repository and report stale branches.',
+            trigger: { kind: 'interval', everySeconds: 43_200 },
+            target: { kind: 'workflow' },
+            skills: [],
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        ok: true,
+        task: {
+          id: 'instruction:nightly',
+          spec: {
+            kind: 'run-agent-instruction',
+            target: { kind: 'workflow' },
+          },
+        },
       });
     } finally {
       await rm(home, { recursive: true, force: true });
