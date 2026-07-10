@@ -16,7 +16,6 @@ import {
   parseAppConfig,
   parseDashboardConfig,
   parseRepoRegistry,
-  parseScheduleConfig,
   resolveLearningConfig,
   readRuntimeJson,
   resolveRuntimeHome,
@@ -99,11 +98,6 @@ describe('runtime home', () => {
           defaultBranch: 'main',
         },
       ],
-    });
-    await expect(
-      readRuntimeJson(paths.schedules, parseScheduleConfig),
-    ).resolves.toEqual({
-      schedules: [],
     });
     await expect(readRuntimeJson(paths.mcp, parseMcpConfig)).resolves.toEqual({
       servers: {},

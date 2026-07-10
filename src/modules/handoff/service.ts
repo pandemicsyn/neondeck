@@ -10,20 +10,17 @@ import {
 } from '../../runtime-home';
 import { addNotification, addWorkflowSummary } from '../app-state';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
-import { createScheduleBlueprint } from '../scheduler';
 import { addPrWatch, resolvePrReference, type PrWatch } from '../watches';
 import {
   handoffNoteInputSchema,
   handoffRegisterPrInputSchema,
   handoffWatchPrInputSchema,
-  handoffWatchReleaseInputSchema,
   type HandoffActionResult,
 } from './schemas';
 import type * as v from 'valibot';
 
 export type HandoffDependencies = {
   addPrWatch?: typeof addPrWatch;
-  createScheduleBlueprint?: typeof createScheduleBlueprint;
   createNotification?: typeof addNotification;
   invokeReviewPrWorkflow?: (input: {
     ref: string;
@@ -341,127 +338,6 @@ export async function registerHandoffPr(
       watch,
       notification,
       review,
-      audit,
-    },
-  );
-}
-
-export async function registerHandoffReleaseWatch(
-  rawInput: v.InferInput<typeof handoffWatchReleaseInputSchema>,
-  paths = runtimePaths(),
-  dependencies: HandoffDependencies = {},
-): Promise<HandoffActionResult> {
-  await ensureRuntimeHome(paths);
-  const parsed = parseHandoffInput(
-    handoffWatchReleaseInputSchema,
-    rawInput,
-    'handoff_release_watch',
-  );
-  if (!parsed.ok) return parsed.result;
-
-  const source = normalizeHandoffSource(parsed.input.source);
-  const repoResult = await resolveRegisteredRepo(parsed.input.repo, paths);
-  if (!repoResult.ok) return repoResult.result;
-
-  const repo = repoResult.repo;
-  const repoName = repoFullName(repo);
-  if (parsed.input.sourcePr) {
-    const sourcePrRef = scopePrRefToRepo(parsed.input.sourcePr, repo);
-    const prLink = await resolveRegisteredPrLink(sourcePrRef, paths);
-    if (!prLink.ok) return prLink.result;
-
-    const sourceRepoName = repoFullName(prLink.link.repo);
-    if (sourceRepoName.toLowerCase() !== repoName.toLowerCase()) {
-      return failResult(
-        'handoff_release_watch',
-        `Source PR "${prLink.link.ref.id}" belongs to "${sourceRepoName}", not "${repoName}".`,
-        { requires: ['repo'] },
-      );
-    }
-
-    const watchResult = await (dependencies.addPrWatch ?? addPrWatch)(
-      {
-        ref: prLink.link.ref.id,
-        desiredTerminalState: 'prod',
-        ...(parsed.input.intervalSeconds !== undefined
-          ? { intervalSeconds: parsed.input.intervalSeconds }
-          : {}),
-        createdBy: source,
-      },
-      paths,
-    );
-    if (!watchResult.ok) {
-      return failResult('handoff_release_watch', watchResult.message, {
-        errors: watchResult.errors,
-        requires: watchResult.requires,
-      });
-    }
-    const audit = await addHandoffAudit(
-      {
-        event: 'watch-release',
-        source,
-        repoId: repo.id,
-        repoFullName: repoName,
-        sourcePr: prLink.link.ref.id,
-        watchId: watchIdFromValue(watchResult.watch),
-      },
-      paths,
-    );
-    return okResult(
-      'handoff_release_watch',
-      watchResult.changed,
-      watchResult.changed
-        ? `Watching release for ${repoName} through ${prLink.link.ref.id}.`
-        : `Release watch for ${prLink.link.ref.id} was already current.`,
-      {
-        id: watchIdFromValue(watchResult.watch),
-        watch: watchResult.watch,
-        audit,
-      },
-    );
-  }
-
-  const releaseResult = await (
-    dependencies.createScheduleBlueprint ?? createScheduleBlueprint
-  )(
-    {
-      blueprint: 'release-watch',
-      repo: repo.id,
-      ...(parsed.input.intervalSeconds !== undefined
-        ? { intervalSeconds: parsed.input.intervalSeconds }
-        : {}),
-      config: {
-        source: 'agent-handoff',
-        createdBy: source,
-      },
-    },
-    paths,
-  );
-  if (!releaseResult.ok) {
-    return failResult('handoff_release_watch', releaseResult.message, {
-      errors: releaseResult.errors,
-      requires: releaseResult.requires,
-    });
-  }
-  const audit = await addHandoffAudit(
-    {
-      event: 'watch-release',
-      source,
-      repoId: repo.id,
-      repoFullName: repoName,
-      sourcePr: null,
-      schedule: releaseResult.extra ?? null,
-    },
-    paths,
-  );
-
-  return okResult(
-    'handoff_release_watch',
-    releaseResult.changed,
-    releaseResult.message,
-    {
-      id: `release:${repo.id}`,
-      release: asJsonValue(releaseResult),
       audit,
     },
   );

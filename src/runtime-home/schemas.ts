@@ -311,20 +311,6 @@ export const repoRegistrySchema = v.looseObject({
   repos: v.array(repoConfigSchema),
 });
 
-export const scheduleEntrySchema = v.looseObject({
-  id: nonEmptyStringSchema,
-  type: nonEmptyStringSchema,
-  enabled: v.optional(v.boolean()),
-  timezone: v.optional(nonEmptyStringSchema),
-  cron: v.optional(nonEmptyStringSchema),
-  preset: v.optional(nonEmptyStringSchema),
-  config: v.optional(unknownRecordSchema),
-});
-
-export const scheduleConfigSchema = v.looseObject({
-  schedules: v.array(scheduleEntrySchema),
-});
-
 export const dashboardTabSchema = v.looseObject({
   id: nonEmptyStringSchema,
   title: nonEmptyStringSchema,
@@ -405,8 +391,6 @@ export type LocalApiConfig = v.InferOutput<typeof localApiConfigSchema>;
 export type { McpConfig };
 export type RepoConfig = v.InferOutput<typeof repoConfigSchema>;
 export type RepoRegistry = v.InferOutput<typeof repoRegistrySchema>;
-export type ScheduleEntry = v.InferOutput<typeof scheduleEntrySchema>;
-export type ScheduleConfig = v.InferOutput<typeof scheduleConfigSchema>;
 export type DashboardConfig = v.InferOutput<typeof dashboardConfigSchema>;
 export type DashboardWindowProfile = v.InferOutput<
   typeof dashboardWindowProfileSchema
@@ -434,13 +418,6 @@ export function parseMcpConfig(value: unknown, path: string): McpConfig {
 
 export function parseRepoRegistry(value: unknown, path: string): RepoRegistry {
   return parseSchema(repoRegistrySchema, value, path);
-}
-
-export function parseScheduleConfig(
-  value: unknown,
-  path: string,
-): ScheduleConfig {
-  return parseSchema(scheduleConfigSchema, value, path);
 }
 
 export function parseDashboardConfig(

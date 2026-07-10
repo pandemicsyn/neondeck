@@ -26,7 +26,6 @@ export const runtimeStatusSchema = v.looseObject({
     config: v.string(),
     mcp: v.string(),
     repos: v.string(),
-    schedules: v.string(),
     dashboard: v.string(),
     skills: v.string(),
     worktrees: v.string(),

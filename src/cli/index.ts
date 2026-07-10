@@ -14,7 +14,6 @@ import {
   repoEditModule,
   runtimeHomeModule,
   runtimeStatusModule,
-  schedulerModule,
   serverModule,
   serviceModule,
   skillPatchesModule,
@@ -48,10 +47,8 @@ import type {
   OpenOptions,
   RegisterPrOptions,
   RepoAddOptions,
-  ScheduleOptions,
   ServiceInstallOptions,
   ServeOptions,
-  WatchReleaseOptions,
   WatchPrOptions,
 } from './types';
 
@@ -471,33 +468,6 @@ program
   });
 
 program
-  .command('watch-release <repo>')
-  .description('Create a release watch for a configured repository.')
-  .option('--source-pr <ref>', 'link release watching to a source PR')
-  .option('--interval <seconds>', 'poll interval in seconds')
-  .option('--from <agent>', 'external agent attribution')
-  .option('--json', 'print machine-readable JSON')
-  .action(async (repo: string, options: WatchReleaseOptions) => {
-    applyCommandJsonOption(options);
-    const { registerHandoffReleaseWatch, normalizeHandoffSource } =
-      await handoffModule();
-    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
-    loadEnvForPaths(paths);
-    const intervalSeconds = parseOptionalIntervalSeconds(options.interval);
-    printActionResult(
-      await registerHandoffReleaseWatch(
-        {
-          repo,
-          source: normalizeHandoffSource(options.from),
-          ...(options.sourcePr ? { sourcePr: options.sourcePr } : {}),
-          ...(intervalSeconds !== undefined ? { intervalSeconds } : {}),
-        },
-        paths,
-      ),
-    );
-  });
-
-program
   .command('note <text...>')
   .description(
     'Leave a bounded attributed note on the Neondeck notification stream.',
@@ -555,58 +525,6 @@ program
         paths,
       ),
     );
-  });
-
-program
-  .command('schedule [request...]')
-  .description('Create or inspect Neondeck schedules.')
-  .option('--morning-briefing', 'create the morning briefing blueprint')
-  .option('--review-queue-digest', 'create the review queue digest blueprint')
-  .option('--interval <seconds>', 'poll interval in seconds')
-  .action(async (request: string[] | undefined, options: ScheduleOptions) => {
-    const { createScheduleBlueprint, listSchedulerJobs } =
-      await schedulerModule();
-    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
-    loadEnvForPaths(paths);
-    const intervalSeconds = parseOptionalIntervalSeconds(options.interval);
-
-    if (options.morningBriefing) {
-      printActionResult(
-        await createScheduleBlueprint(
-          {
-            blueprint: 'morning-briefing',
-            ...(intervalSeconds !== undefined ? { intervalSeconds } : {}),
-          },
-          paths,
-        ),
-      );
-      return;
-    }
-
-    if (options.reviewQueueDigest) {
-      printActionResult(
-        await createScheduleBlueprint(
-          {
-            blueprint: 'review-queue-digest',
-            ...(intervalSeconds !== undefined ? { intervalSeconds } : {}),
-          },
-          paths,
-        ),
-      );
-      return;
-    }
-
-    const naturalLanguage = request?.join(' ').trim();
-    if (naturalLanguage) {
-      console.error(
-        'Natural-language scheduling is not implemented yet. Use --morning-briefing or --review-queue-digest for now.',
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    const jobs = await listSchedulerJobs(paths);
-    printActionResult(jobs);
   });
 
 program

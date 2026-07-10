@@ -24,13 +24,6 @@ export type WatchPrOptions = {
   json?: boolean;
 };
 
-export type WatchReleaseOptions = {
-  sourcePr?: string;
-  interval?: string;
-  from?: string;
-  json?: boolean;
-};
-
 export type HandoffNoteOptions = {
   repo?: string;
   pr?: string;
@@ -45,12 +38,6 @@ export type RegisterPrOptions = {
   note?: string;
   from?: string;
   json?: boolean;
-};
-
-export type ScheduleOptions = {
-  morningBriefing?: boolean;
-  reviewQueueDigest?: boolean;
-  interval?: string;
 };
 
 export type ServeOptions = {

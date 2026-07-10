@@ -28,7 +28,6 @@ import {
   reviewQueueCommand,
   summarizePrCommand,
   watchPrCommand,
-  watchReleaseCommand,
 } from './handlers';
 import { compactCommandSummary, failedCommand } from './summaries';
 
@@ -140,10 +139,6 @@ async function executeCommand(
 
   if (command.name === 'watch-pr') {
     return watchPrCommand(command, paths, dependencies, context);
-  }
-
-  if (command.name === 'watch-release') {
-    return watchReleaseCommand(command, paths);
   }
 
   return devDoctorCommand(command, paths);

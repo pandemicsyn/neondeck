@@ -88,12 +88,6 @@ export async function serverModule() {
   >;
 }
 
-export async function schedulerModule() {
-  return import(
-    new URL('../modules/scheduler/index.ts', import.meta.url).href
-  ) as Promise<typeof import('../modules/scheduler')>;
-}
-
 export async function serviceModule() {
   return import(
     new URL('../desktop/service.ts', import.meta.url).href

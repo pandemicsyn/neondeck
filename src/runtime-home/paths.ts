@@ -14,7 +14,6 @@ export type RuntimePaths = {
   repos: string;
   dashboard: string;
   dashboardSchema: string;
-  schedules: string;
   soul: string;
   skills: string;
   worktrees: string;
@@ -54,7 +53,6 @@ export function runtimePaths(home = resolveRuntimeHome()): RuntimePaths {
     repos: join(home, 'repos.json'),
     dashboard: join(home, 'dashboard.json'),
     dashboardSchema: join(home, 'dashboard.schema.json'),
-    schedules: join(home, 'schedules.json'),
     soul: join(home, 'SOUL.md'),
     skills: join(home, 'skills'),
     worktrees: join(home, 'worktrees'),

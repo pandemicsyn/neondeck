@@ -12,7 +12,6 @@ import {
   modelDiscoveryModule,
   runtimeHomeModule,
   runtimeStatusModule,
-  schedulerModule,
 } from './modules';
 import { loadEnvForPaths } from './options';
 import {
@@ -66,7 +65,6 @@ export async function runInit(options: { home?: string }) {
   await configureRepos(paths);
   await configureDashboard(paths);
   await configureExecution(paths);
-  await configureSchedules(paths);
   await configureSkillRoots(paths);
 
   const status = await readRuntimeStatus(paths);
@@ -600,34 +598,6 @@ export async function configureExecution(paths: RuntimePaths) {
   );
 }
 
-export async function configureSchedules(paths: RuntimePaths) {
-  const { createScheduleBlueprint } = await schedulerModule();
-  const briefing = await promptConfirm({
-    message: 'Create a morning briefing schedule?',
-    initialValue: false,
-  });
-  if (!briefing) return;
-
-  const intervalSeconds = await promptText({
-    message: 'Briefing check interval in seconds',
-    placeholder: '86400',
-    initialValue: '86400',
-    validate(value) {
-      const number = Number(value);
-      return Number.isInteger(number) && number >= 60
-        ? undefined
-        : 'Enter an integer >= 60.';
-    },
-  });
-
-  await createScheduleBlueprint(
-    {
-      blueprint: 'morning-briefing',
-      intervalSeconds: Number(intervalSeconds),
-    },
-    paths,
-  );
-}
 
 export async function configureSkillRoots(paths: RuntimePaths) {
   const { readConfig, updateSkillRoots } = await configActionsModule();

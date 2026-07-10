@@ -3,7 +3,6 @@ import {
   createHandoffNote,
   registerHandoffPr,
   registerHandoffWatchPr,
-  registerHandoffReleaseWatch,
 } from '../../modules/handoff';
 import type { RuntimePaths } from '../../runtime-home';
 import { safeJsonObject } from '../http';
@@ -22,16 +21,6 @@ export function createHandoffRoutes(paths: RuntimePaths) {
         desiredTerminalState: body.desiredTerminalState,
         intervalSeconds: body.intervalSeconds,
       } as Parameters<typeof registerHandoffWatchPr>[0],
-      paths,
-    );
-    return c.json(result, result.ok ? 200 : 400);
-  });
-
-  routes.post('/handoff/watch-release', async (c) => {
-    const input = await handoffBody(c);
-    if (!input.ok) return c.json(input.result, 400);
-    const result = await registerHandoffReleaseWatch(
-      input.body as Parameters<typeof registerHandoffReleaseWatch>[0],
       paths,
     );
     return c.json(result, result.ok ? 200 : 400);

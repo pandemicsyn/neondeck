@@ -20,8 +20,7 @@ export type NeonCommandName =
   | 'reasoning'
   | 'memory'
   | 'watch-pr'
-  | 'dev-doctor'
-  | 'watch-release';
+  | 'dev-doctor';
 
 export type ParsedNeonCommand = {
   name: NeonCommandName;

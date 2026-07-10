@@ -10,7 +10,7 @@ import {
 } from '../autopilot-policy';
 
 export type ConfigTarget =
-  'all' | 'config' | 'mcp' | 'repos' | 'dashboard' | 'schedules';
+  'all' | 'config' | 'mcp' | 'repos' | 'dashboard';
 
 export type ConfigActionResult = {
   ok: boolean;
@@ -25,7 +25,7 @@ export type ConfigActionResult = {
 };
 
 export const configTargetSchema = v.optional(
-  v.picklist(['all', 'config', 'mcp', 'repos', 'dashboard', 'schedules']),
+  v.picklist(['all', 'config', 'mcp', 'repos', 'dashboard']),
   'all',
 );
 
@@ -83,25 +83,6 @@ export const removeRepoInputSchema = v.object({
   confirm: v.optional(v.boolean()),
 });
 
-export const scheduleInputSchema = v.object({
-  id: nonEmptyStringSchema,
-  type: nonEmptyStringSchema,
-  enabled: v.optional(v.boolean()),
-  timezone: v.optional(nonEmptyStringSchema),
-  cron: v.optional(nonEmptyStringSchema),
-  preset: v.optional(nonEmptyStringSchema),
-  config: v.optional(unknownRecordSchema),
-});
-
-export const updateScheduleInputSchema = v.object({
-  id: nonEmptyStringSchema,
-  type: v.optional(nonEmptyStringSchema),
-  enabled: v.optional(v.boolean()),
-  timezone: v.optional(nonEmptyStringSchema),
-  cron: v.optional(nonEmptyStringSchema),
-  preset: v.optional(nonEmptyStringSchema),
-  config: v.optional(unknownRecordSchema),
-});
 export const subagentModelInputSchema = v.object({
   default: v.optional(providerQualifiedModelSchema),
   defaultThinkingLevel: v.optional(thinkingLevelSchema),
