@@ -51,13 +51,13 @@ export function installFlueObservationHandlers(
               paths,
             ),
             settleAutopilotAdmissionTriage(
-              { runId: event.runId, failed: event.isError },
+              { runId: event.runId, failed: terminalActionFailed(event) },
               paths,
             ),
             settleAutopilotAdmissionPrepare(
               {
                 runId: event.runId,
-                failed: event.isError,
+                failed: terminalActionFailed(event),
                 worktreeId: prepareWorktreeId(event),
               },
               paths,
@@ -242,6 +242,18 @@ function prepareWorktreeId(
   if (!worktree || typeof worktree !== 'object') return undefined;
   const id = (worktree as Record<string, unknown>).id;
   return typeof id === 'string' ? id : undefined;
+}
+
+function terminalActionFailed(
+  event: Extract<FlueObservation, { type: 'run_end' }>,
+) {
+  if (event.isError || !('result' in event)) return event.isError;
+  const result = event.result;
+  return Boolean(
+    result &&
+    typeof result === 'object' &&
+    (result as { ok?: unknown }).ok === false,
+  );
 }
 
 export function recordHandledPrApiResult(
