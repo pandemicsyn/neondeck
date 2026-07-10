@@ -1,12 +1,11 @@
-import {
-  deleteJob,
-  deleteJobsByConfigField,
-  listJobs,
-  setJobEnabled,
-  setJobsEnabledByConfigField,
-} from '../app-state';
 import { readRepoRegistrySnapshot } from '../repos';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
+import {
+  deleteScheduledTask,
+  listScheduledTasks,
+  readScheduledTask,
+  setScheduledTaskEnabled,
+} from '../scheduled-tasks';
 import type {
   CheckFetcher,
   PrWatch,
@@ -48,11 +47,8 @@ import {
   readWatches,
   updateRefWatch,
   updateWatch,
-  releasePollingJobId,
-  upsertRefWatchPollingJob,
-  upsertReleasePollingJob,
-  upsertWatchPollingJob,
-  watchPollingJobId,
+  upsertWatchPollingTask,
+  watchPollingTaskId,
 } from './store';
 import { resolvePrReference, resolveRefReference } from './references';
 import { failResult, okResult, parseActionInput } from './utils';
@@ -77,19 +73,19 @@ export async function addPrWatch(
 
   const existing = readWatch(paths, resolved.reference.id);
   if (existing) {
-    const jobs = await listJobs(paths);
-    const job = jobs.find((item) => item.id === watchPollingJobId(existing.id));
+    const task = await readScheduledTask(watchPollingTaskId(existing.id), paths);
     const desiredTerminalStateChanged =
       existing.desiredTerminalState !== resolved.reference.desiredTerminalState;
     const terminalWatch = isTerminalPrWatchStatus(existing.status);
     const intervalChanged =
       parsed.input.intervalSeconds !== undefined &&
-      job?.intervalSeconds !== parsed.input.intervalSeconds;
-    const missingPollingJob = !job;
+      (task?.trigger.kind !== 'interval' ||
+        task.trigger.everySeconds !== parsed.input.intervalSeconds);
+    const missingPollingTask = !task;
     if (
       !desiredTerminalStateChanged &&
       !intervalChanged &&
-      !missingPollingJob &&
+      !missingPollingTask &&
       !terminalWatch
     ) {
       return okResult(
@@ -151,16 +147,14 @@ export async function addPrWatch(
     } else if (desiredTerminalStateChanged) {
       updateWatch(paths, watch);
     }
-    await upsertWatchPollingJob(
+    await upsertWatchPollingTask(
       watch,
       paths,
-      parsed.input.intervalSeconds ?? job?.intervalSeconds,
+      parsed.input.intervalSeconds ??
+        (task?.trigger.kind === 'interval'
+          ? task.trigger.everySeconds
+          : undefined),
     );
-    if (watch.desiredTerminalState === 'prod') {
-      await upsertReleasePollingJob(watch, paths, parsed.input.intervalSeconds);
-    } else if (existing.desiredTerminalState === 'prod') {
-      await deleteJob(releasePollingJobId(watch.repoId), paths);
-    }
 
     return okResult(
       'watch_pr_add',
@@ -211,10 +205,7 @@ export async function addPrWatch(
   };
 
   insertWatch(paths, watch);
-  await upsertWatchPollingJob(watch, paths, parsed.input.intervalSeconds);
-  if (watch.desiredTerminalState === 'prod') {
-    await upsertReleasePollingJob(watch, paths, parsed.input.intervalSeconds);
-  }
+  await upsertWatchPollingTask(watch, paths, parsed.input.intervalSeconds);
 
   return okResult('watch_pr_add', true, 'created', `Watching ${watch.id}.`, {
     watch,
@@ -225,15 +216,20 @@ export async function listPrWatches(
   paths = runtimePaths(),
 ): Promise<WatchActionResult> {
   await ensureRuntimeHome(paths);
-  const jobs = new Map((await listJobs(paths)).map((job) => [job.id, job]));
+  const tasks = new Map(
+    (await listScheduledTasks(paths)).map((task) => [task.id, task]),
+  );
   return okResult('watch_pr_list', false, undefined, 'Listed PR watches.', {
     watches: readWatches(paths).map((watch) => {
-      const job = jobs.get(watchPollingJobId(watch.id));
+      const task = tasks.get(watchPollingTaskId(watch.id));
       return {
         ...watch,
-        nextRunAt: job?.nextRunAt ?? null,
-        pollingEnabled: job?.enabled ?? false,
-        pollIntervalSeconds: job?.intervalSeconds ?? null,
+        nextRunAt: task?.nextRunAt ?? null,
+        pollingEnabled: task?.enabled ?? false,
+        pollIntervalSeconds:
+          task?.trigger.kind === 'interval'
+            ? task.trigger.everySeconds
+            : null,
       };
     }),
   });
@@ -299,8 +295,6 @@ export async function addRefWatch(
   };
 
   insertRefWatch(paths, watch);
-  await upsertRefWatchPollingJob(watch, paths, parsed.input.intervalSeconds);
-
   return okResult('watch_ref_add', true, 'created', `Watching ${watch.id}.`, {
     watch,
   });
@@ -424,8 +418,7 @@ export async function removePrWatch(
   }
 
   deleteWatch(paths, idResult.id);
-  await deleteJob(watchPollingJobId(idResult.id), paths);
-  await deleteJobsByConfigField('sourceWatchId', idResult.id, paths);
+  await deleteScheduledTask(watchPollingTaskId(idResult.id), paths);
   return okResult(
     'watch_pr_remove',
     true,
@@ -454,23 +447,17 @@ export async function setPrWatchPolling(
     return failResult(action, `Watch "${idResult.id}" does not exist.`);
   }
 
-  const job = await setJobEnabled(
-    watchPollingJobId(idResult.id),
+  const task = await setScheduledTaskEnabled(
+    watchPollingTaskId(idResult.id),
     parsed.input.enabled,
     paths,
   );
-  if (!job) {
+  if (!task) {
     return failResult(
       action,
-      `Polling job for watch "${idResult.id}" does not exist.`,
+      `Polling task for watch "${idResult.id}" does not exist.`,
     );
   }
-  await setJobsEnabledByConfigField(
-    'sourceWatchId',
-    idResult.id,
-    parsed.input.enabled,
-    paths,
-  );
 
   return okResult(
     action,
@@ -482,9 +469,12 @@ export async function setPrWatchPolling(
     {
       watch: {
         ...watch,
-        nextRunAt: job.nextRunAt,
-        pollingEnabled: job.enabled,
-        pollIntervalSeconds: job.intervalSeconds,
+        nextRunAt: task.nextRunAt,
+        pollingEnabled: task.enabled,
+        pollIntervalSeconds:
+          task.trigger.kind === 'interval'
+            ? task.trigger.everySeconds
+            : null,
       },
     },
   );

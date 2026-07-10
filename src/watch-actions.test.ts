@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { listJobs } from './modules/app-state';
+import { listScheduledTasks } from './modules/scheduled-tasks';
 import {
   addRefWatch,
   addPrWatch,
@@ -131,11 +131,12 @@ describe('PR watch actions', () => {
       changed: false,
       watches: [{ id: 'pandemicsyn/neondeck#123' }],
     });
-    await expect(listJobs(paths)).resolves.toEqual(
+    await expect(listScheduledTasks(paths)).resolves.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: 'watch:pandemicsyn/neondeck#123',
-          type: 'watch-pr',
+          spec: { kind: 'poll-pr-watch', watchId: 'pandemicsyn/neondeck#123' },
+          trigger: { kind: 'interval', everySeconds: 300 },
           enabled: true,
         }),
       ]),
@@ -163,7 +164,7 @@ describe('PR watch actions', () => {
       changed: true,
       outcome: 'removed',
     });
-    await expect(listJobs(paths)).resolves.not.toEqual(
+    await expect(listScheduledTasks(paths)).resolves.not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: 'watch:pandemicsyn/neondeck#123' }),
       ]),
@@ -297,20 +298,11 @@ describe('PR watch actions', () => {
         },
       ],
     });
-    await expect(listJobs(paths)).resolves.toEqual(
+    await expect(listScheduledTasks(paths)).resolves.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: 'watch:pandemicsyn/neondeck#123',
-          intervalSeconds: 120,
-        }),
-        expect.objectContaining({
-          id: 'release:neondeck',
-          type: 'release-watch',
-          intervalSeconds: 120,
-          config: expect.objectContaining({
-            source: 'watch-pr-until-prod',
-            sourceWatchId: 'pandemicsyn/neondeck#123',
-          }),
+          trigger: { kind: 'interval', everySeconds: 120 },
         }),
       ]),
     );
@@ -553,37 +545,12 @@ describe('PR watch actions', () => {
     });
   });
 
-  it('creates a linked release watch job for until prod PR watches', async () => {
+  it('pauses and resumes the single PR polling task', async () => {
     const home = await tempHome();
     const paths = runtimePaths(home);
     await writeRepoRegistry(paths.repos);
 
-    await addPrWatch({ ref: 'neondeck#123 until prod' }, paths, async () =>
-      prDetail({ state: 'open', updatedAt: '2026-06-27T20:00:00Z' }),
-    );
-
-    await expect(listJobs(paths)).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: 'release:neondeck',
-          type: 'release-watch',
-          enabled: true,
-          config: expect.objectContaining({
-            repo: 'neondeck',
-            source: 'watch-pr-until-prod',
-            sourceWatchId: 'pandemicsyn/neondeck#123',
-          }),
-        }),
-      ]),
-    );
-  });
-
-  it('pauses and resumes linked release watch jobs for until prod PR watches', async () => {
-    const home = await tempHome();
-    const paths = runtimePaths(home);
-    await writeRepoRegistry(paths.repos);
-
-    await addPrWatch({ ref: 'neondeck#123 until prod' }, paths, async () =>
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () =>
       prDetail({ state: 'open', updatedAt: '2026-06-27T20:00:00Z' }),
     );
 
@@ -592,14 +559,10 @@ describe('PR watch actions', () => {
       paths,
     );
 
-    await expect(listJobs(paths)).resolves.toEqual(
+    await expect(listScheduledTasks(paths)).resolves.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: 'watch:pandemicsyn/neondeck#123',
-          enabled: false,
-        }),
-        expect.objectContaining({
-          id: 'release:neondeck',
           enabled: false,
         }),
       ]),
@@ -610,36 +573,12 @@ describe('PR watch actions', () => {
       paths,
     );
 
-    await expect(listJobs(paths)).resolves.toEqual(
+    await expect(listScheduledTasks(paths)).resolves.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: 'watch:pandemicsyn/neondeck#123',
           enabled: true,
         }),
-        expect.objectContaining({
-          id: 'release:neondeck',
-          enabled: true,
-        }),
-      ]),
-    );
-  });
-
-  it('removes linked release watch jobs when an until prod PR watch is removed', async () => {
-    const home = await tempHome();
-    const paths = runtimePaths(home);
-    await writeRepoRegistry(paths.repos);
-
-    await addPrWatch({ ref: 'neondeck#123 until prod' }, paths, async () =>
-      prDetail({ state: 'open', updatedAt: '2026-06-27T20:00:00Z' }),
-    );
-    await removePrWatch(
-      { id: 'pandemicsyn/neondeck#123', confirm: true },
-      paths,
-    );
-
-    await expect(listJobs(paths)).resolves.not.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: 'release:neondeck' }),
       ]),
     );
   });
@@ -660,14 +599,14 @@ describe('ref watch actions', () => {
 
     expect(
       parseWatchRefReference(
-        { target: 'pandemicsyn/neondeck@feature/raycast' },
+        { target: 'pandemicsyn/neondeck@feature/scheduler' },
         registry,
       ),
     ).toMatchObject({
       ok: true,
       reference: {
-        id: 'pandemicsyn/neondeck@feature/raycast',
-        ref: 'feature/raycast',
+        id: 'pandemicsyn/neondeck@feature/scheduler',
+        ref: 'feature/scheduler',
       },
     });
     expect(
@@ -683,15 +622,15 @@ describe('ref watch actions', () => {
       parseWatchRefReference(
         {
           target:
-            'https://github.com/pandemicsyn/neondeck/tree/feature%2Fraycast',
+            'https://github.com/pandemicsyn/neondeck/tree/feature%2Fscheduler',
         },
         registry,
       ),
     ).toMatchObject({
       ok: true,
       reference: {
-        id: 'pandemicsyn/neondeck@feature/raycast',
-        ref: 'feature/raycast',
+        id: 'pandemicsyn/neondeck@feature/scheduler',
+        ref: 'feature/scheduler',
       },
     });
   });
@@ -703,7 +642,7 @@ describe('ref watch actions', () => {
 
     await expect(
       addRefWatch(
-        { repo: 'neondeck', ref: 'feature/raycast' },
+        { repo: 'neondeck', ref: 'feature/scheduler' },
         paths,
         async () => checkSummary('pending'),
       ),
@@ -712,30 +651,22 @@ describe('ref watch actions', () => {
       changed: true,
       outcome: 'created',
       watch: {
-        id: 'pandemicsyn/neondeck@feature/raycast',
+        id: 'pandemicsyn/neondeck@feature/scheduler',
         status: 'watching',
-        ref: 'feature/raycast',
+        ref: 'feature/scheduler',
       },
     });
 
     await expect(listRefWatches(paths)).resolves.toMatchObject({
       ok: true,
       changed: false,
-      watches: [{ id: 'pandemicsyn/neondeck@feature/raycast' }],
+      watches: [{ id: 'pandemicsyn/neondeck@feature/scheduler' }],
     });
-    await expect(listJobs(paths)).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: 'watch-ref:pandemicsyn/neondeck@feature/raycast',
-          type: 'watch-ref',
-          enabled: true,
-        }),
-      ]),
-    );
+    await expect(listScheduledTasks(paths)).resolves.toEqual([]);
 
     await expect(
       refreshRefWatch(
-        { id: 'pandemicsyn/neondeck@feature/raycast' },
+        { id: 'pandemicsyn/neondeck@feature/scheduler' },
         paths,
         async () => checkSummary('pending'),
       ),
@@ -751,12 +682,12 @@ describe('ref watch actions', () => {
     const paths = runtimePaths(home);
     await writeRepoRegistry(paths.repos);
 
-    await addRefWatch({ target: 'neondeck@feature/raycast' }, paths, async () =>
+    await addRefWatch({ target: 'neondeck@feature/scheduler' }, paths, async () =>
       checkSummary('pending'),
     );
 
     await expect(
-      refreshRefWatch({ target: 'neondeck@feature/raycast' }, paths, async () =>
+      refreshRefWatch({ target: 'neondeck@feature/scheduler' }, paths, async () =>
         checkSummary('success'),
       ),
     ).resolves.toMatchObject({
@@ -764,7 +695,7 @@ describe('ref watch actions', () => {
       changed: true,
       outcome: 'updated',
       watch: {
-        id: 'pandemicsyn/neondeck@feature/raycast',
+        id: 'pandemicsyn/neondeck@feature/scheduler',
         status: 'green',
         lastSnapshot: {
           checks: { status: 'success' },

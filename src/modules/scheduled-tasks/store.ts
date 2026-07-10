@@ -137,6 +137,30 @@ export async function deleteScheduledTask(
   }
 }
 
+export async function setScheduledTaskEnabled(
+  id: string,
+  enabled: boolean,
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const result = database
+      .prepare(
+        `
+        UPDATE scheduled_tasks
+        SET enabled = ?, updated_at = ?
+        WHERE id = ?;
+      `,
+      )
+      .run(enabled ? 1 : 0, new Date().toISOString(), id);
+    if (result.changes !== 1) return undefined;
+  } finally {
+    database.close();
+  }
+  return readScheduledTask(id, paths);
+}
+
 export async function claimDueScheduledTasks(
   paths = runtimePaths(),
   now = new Date(),
