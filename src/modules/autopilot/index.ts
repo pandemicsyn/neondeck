@@ -16,7 +16,11 @@ export {
   neondeckAutopilotActions,
 } from './actions';
 export { triagePrEvent } from './triage';
-export { claimAutopilotTriageAdmission } from './admissions';
+export {
+  claimAutopilotTriageAdmission,
+  failAutopilotAdmission,
+  recordAutopilotAdmissionRun,
+} from './admissions';
 export type { AutopilotAdmission, AutopilotAdmissionState } from './admissions';
 export { preparePrWorktree, verifyPrWorktree } from './worktree';
 export { pushPrAutofix } from './push';

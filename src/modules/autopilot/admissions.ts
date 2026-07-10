@@ -130,6 +130,49 @@ export async function claimAutopilotTriageAdmission(
   }
 }
 
+export async function recordAutopilotAdmissionRun(
+  input: { id: string; runId: string },
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `UPDATE autopilot_admissions
+         SET current_run_id = ?, updated_at = ?
+         WHERE id = ? AND state = 'triage-admitted';`,
+      )
+      .run(input.runId, new Date().toISOString(), input.id);
+  } finally {
+    database.close();
+  }
+}
+
+export async function failAutopilotAdmission(
+  input: { id: string; error: string },
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `UPDATE autopilot_admissions
+         SET state = 'failed', last_error = ?, next_attempt_at = ?, updated_at = ?
+         WHERE id = ? AND state = 'triage-admitted';`,
+      )
+      .run(
+        input.error,
+        new Date().toISOString(),
+        new Date().toISOString(),
+        input.id,
+      );
+  } finally {
+    database.close();
+  }
+}
+
 function readAdmission(row: unknown): AutopilotAdmission | undefined {
   if (!row) return undefined;
   const value = row as Record<string, unknown>;

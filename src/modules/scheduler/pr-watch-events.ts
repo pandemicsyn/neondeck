@@ -2,10 +2,14 @@ import type { JsonValue } from '@flue/runtime';
 import type { AutomationExecutionResult } from '../app-state';
 import { readRepoRegistrySnapshot } from '../repos';
 import {
-  checkAutopilotConcurrency,
   repoAutopilotPolicyForWatch,
   type AutopilotMode,
 } from '../autopilot-policy';
+import {
+  claimAutopilotTriageAdmission,
+  failAutopilotAdmission,
+  recordAutopilotAdmissionRun,
+} from '../autopilot';
 import {
   listPrWatchEventWatermarks,
   refreshPrWatchEventState,
@@ -413,34 +417,22 @@ async function admitWatchTriageEvent(
   input: Record<string, JsonValue>,
 ): Promise<TriageAdmissionResult> {
   const eventId = stringField(input.eventId) ?? 'unknown';
-  const concurrencyCheck =
-    dependencies.checkAutopilotConcurrency ?? checkAutopilotConcurrency;
-  const concurrency = await concurrencyCheck(
-    {
-      repoId: watch.repoId,
-      prNumber: watch.prNumber,
-      workflow: 'triage-pr-event',
-      mutation: false,
-    },
-    paths,
-  );
-
-  if (!concurrency.allowed) {
+  const policy = await readEffectiveWatchAutopilotPolicy(watch, paths);
+  if (!('concurrency' in policy)) {
     return {
       ok: true,
       changed: true,
       triage: {
         status: 'blocked',
         eventId,
-        reason: concurrency.message,
+        reason: 'Autopilot policy is unavailable for this repository.',
         input,
-        concurrency,
       } as unknown as JsonValue,
       notifications: [
         {
           level: 'attention',
           title: 'Autopilot triage blocked',
-          message: concurrency.message,
+          message: 'Autopilot policy is unavailable for this repository.',
           source: 'autopilot',
           sourceId: `triage:${watch.id}:${eventId}:blocked`,
           data: {
@@ -450,16 +442,45 @@ async function admitWatchTriageEvent(
             prNumber: watch.prNumber,
             eventId,
             input,
-            concurrency,
           },
         },
       ],
     };
   }
+  const admission = await claimAutopilotTriageAdmission(
+    {
+      watchId: watch.id,
+      eventFingerprint: eventId,
+      repoId: watch.repoId,
+      prNumber: watch.prNumber,
+      mode: policy.mode,
+      limits: policy.concurrency,
+    },
+    paths,
+  );
+  if (!admission.claimed) {
+    return {
+      ok: true,
+      changed: admission.reason !== 'duplicate',
+      triage: {
+        status: admission.admission.state,
+        eventId,
+        admission: admission.admission,
+      } as unknown as JsonValue,
+      notifications: [],
+    };
+  }
 
   const invokeWorkflow = dependencies.invokeWorkflow ?? invokeScheduledWorkflow;
   try {
-    const { runId } = await invokeWorkflow('triage-pr-event', input);
+    const { runId } = await invokeWorkflow('triage-pr-event', {
+      ...input,
+      admissionId: admission.admission.id,
+    });
+    await recordAutopilotAdmissionRun(
+      { id: admission.admission.id, runId },
+      paths,
+    );
     return {
       ok: true,
       changed: true,
@@ -468,12 +489,16 @@ async function admitWatchTriageEvent(
         eventId,
         runId,
         workflow: 'triage-pr-event',
-        input,
+        input: { ...input, admissionId: admission.admission.id },
       } as unknown as JsonValue,
       notifications: [],
     };
   } catch (error) {
     const message = `Autopilot triage admission failed: ${errorMessage(error)}.`;
+    await failAutopilotAdmission(
+      { id: admission.admission.id, error: errorMessage(error) },
+      paths,
+    );
     return {
       ok: false,
       changed: true,

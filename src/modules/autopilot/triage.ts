@@ -142,6 +142,7 @@ export async function triagePrEvent(
       nextWorkflow: shouldPrepareWorktree ? 'prepare_pr_worktree' : null,
       source: input.source ?? 'api',
       eventId: input.eventId ?? null,
+      admissionId: input.admissionId ?? null,
       watchId: input.watchId ?? null,
       repoId: input.repoId ?? null,
       repoFullName: input.repoFullName ?? null,
