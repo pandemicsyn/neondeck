@@ -146,13 +146,6 @@ export function setupStep(check: RuntimeStatusCheck): SetupStep {
       surface: 'action',
       detail: 'Repair repos.json before repo status, queues, or watches run.',
     },
-    'schedules-config': {
-      action: 'neondeck_config_validate',
-      docsHref: `${docsBase}#commands`,
-      docsLabel: 'commands',
-      surface: 'action',
-      detail: 'Repair schedules.json before scheduler jobs can load.',
-    },
     skills: {
       action: 'neondeck_skills_reload',
       docsHref: `${docsBase}#runtime-skills`,

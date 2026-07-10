@@ -7,7 +7,7 @@ import { schedulerActionOutputSchema } from './schemas';
 export const schedulerTickAction = defineAction({
   name: 'neondeck_scheduler_tick',
   description:
-    'Synchronize configured schedules into durable jobs and run jobs that are due.',
+    'Claim due canonical scheduled tasks and run their bounded executions.',
   input: v.object({ runtimeHome: v.optional(v.string()) }),
   output: schedulerActionOutputSchema,
   async run({ input, log }) {
