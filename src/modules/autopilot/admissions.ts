@@ -34,6 +34,7 @@ export type AutopilotAdmission = {
   state: AutopilotAdmissionState;
   currentWorkflow: string | null;
   currentRunId: string | null;
+  worktreeId: string | null;
   attemptCount: number;
   nextAttemptAt: string | null;
   lastError: string | null;
@@ -71,6 +72,7 @@ export async function reconcileAutopilotAdmissions(
          SET state = 'failed', current_workflow = NULL, last_error = ?,
              next_attempt_at = ?, updated_at = ?
          WHERE state IN ('triage-admitted', 'prepare-admitted')
+           AND current_run_id IS NULL
            AND updated_at <= ?;`,
       )
       .run(
@@ -91,17 +93,6 @@ export async function reconcileAutopilotAdmissions(
     const retries = due.filter((admission): admission is AutopilotAdmission =>
       Boolean(admission),
     );
-    for (const admission of retries) {
-      database
-        .prepare(
-          `UPDATE autopilot_admissions
-           SET state = 'triage-admitted', current_workflow = 'triage-pr-event',
-               current_run_id = NULL, attempt_count = attempt_count + 1,
-               next_attempt_at = NULL, last_error = NULL, updated_at = ?
-           WHERE id = ?;`,
-        )
-        .run(nowIso, admission.id);
-    }
     database
       .prepare(
         `DELETE FROM app_metadata
@@ -109,16 +100,7 @@ export async function reconcileAutopilotAdmissions(
       )
       .run(`${terminalFactKeyPrefix}%`, factBefore);
     database.exec('COMMIT;');
-    return retries.map((admission) => ({
-      ...admission,
-      state: 'triage-admitted' as const,
-      currentWorkflow: 'triage-pr-event',
-      currentRunId: null,
-      attemptCount: admission.attemptCount + 1,
-      nextAttemptAt: null,
-      lastError: null,
-      updatedAt: nowIso,
-    }));
+    return retries;
   } catch (error) {
     database.exec('ROLLBACK;');
     throw error;
@@ -227,6 +209,7 @@ export async function claimAutopilotTriageAdmission(
       state,
       currentWorkflow: capped ? null : 'triage-pr-event',
       currentRunId: null,
+      worktreeId: null,
       attemptCount: capped ? 0 : 1,
       nextAttemptAt: capped ? now : null,
       lastError: capped ? 'Autopilot admission limit reached.' : null,
@@ -670,6 +653,8 @@ function readAdmission(row: unknown): AutopilotAdmission | undefined {
         : null,
     currentRunId:
       typeof value.current_run_id === 'string' ? value.current_run_id : null,
+    worktreeId:
+      typeof value.worktree_id === 'string' ? value.worktree_id : null,
     attemptCount: Number(value.attempt_count),
     nextAttemptAt:
       typeof value.next_attempt_at === 'string' ? value.next_attempt_at : null,

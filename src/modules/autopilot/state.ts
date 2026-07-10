@@ -166,7 +166,7 @@ export async function readAutopilotState(
       reason: admission.lastError ?? `Durable admission is ${admission.state}.`,
       nextStep:
         admission.currentWorkflow ?? 'Await the next autopilot admission.',
-      worktreeId: null,
+      worktreeId: admission.worktreeId,
       runId: admission.currentRunId,
       updatedAt: admission.updatedAt,
     })),
