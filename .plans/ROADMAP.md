@@ -588,7 +588,7 @@ Session read/search policy:
 - Do not redact Kilo transcripts, tool outputs, or diffs by default; Kilo is another trusted local agent harness.
 - Use very basic audit only: record task/session ids, read type, requester surface, and timestamp for session reads.
 - Maintain a local metadata index for Kilo sessions linked to Neondeck tasks. Query Kilo on demand for broader unlinked searches because they should be rare, and cache only sessions that are referenced or linked.
-- Start disk fallback with current Kilo SQLite storage. Treat legacy JSON as a later best-effort recovery adapter only if implementation shows it is needed.
+- Start disk fallback with current Kilo SQLite storage; do not add a legacy JSON compatibility adapter.
 - Teach the runtime skill that Neon should call Kilo session actions/workflows instead of reading Kilo storage directly.
 
 Child Kilo sessions should be represented as a tree under the root Kilo task. Audit records should store parent/child ids and basic event summaries. Dashboard and future TUI should show child sessions collapsed by default with title, status, and latest summary.
@@ -618,8 +618,10 @@ Memory categories:
 
 - project memory: repo conventions, test commands, deploy rules
 - user memory: preferred summary style, notification preferences, working hours
-- local memory: current task, active PR, debugging thread
+- local memory: durable machine-specific tool, path, and environment facts
 - persisted watch state: active watches and their last observed state
+
+Current task, active PR, and debugging-thread context belongs in chat-session summaries or typed task/worktree state, not durable local memory.
 
 Store important operational state in SQLite/config. Use chat history for conversational continuity, not as the only source of truth.
 
@@ -938,7 +940,7 @@ Display extension points:
 - host metrics panel
 - CI/deploy status panel
 - briefing panel
-- memory/current-task panel
+- durable memory panel
 
 Runtime extension points should be shared by all UI surfaces. The web dashboard should call the same backend APIs/events that a future TUI or OpenTUI client would use.
 
@@ -1101,7 +1103,7 @@ Must-haves:
 - [x] Show scheduled jobs and last run state.
 - [x] Show loaded skills.
 - [x] Show recent workflow runs and command summaries linked to Flue run ids.
-- [x] Show dedicated briefing, memory/current-task, and subagent summary panels.
+- [x] Show dedicated briefing, durable-memory, and subagent summary panels.
 - [x] Show one Neon chat session.
 - [x] Keep the panel layout optimized for Xeneon Edge, but driven by backend state.
 
@@ -1144,7 +1146,7 @@ Must-haves:
 
 - [x] Add memory tables/actions for user, local, and project memory.
 - [x] Add `/memory` command for listing and updating memory through typed actions.
-- [x] Add memory dashboard/current-task panel.
+- [x] Add durable-memory dashboard panel.
 - [x] Keep memory writes durable immediately but session context stable until new session or explicit refresh.
 - [x] Avoid echoing full memory blobs after successful updates.
 
