@@ -32,8 +32,6 @@ export type AutopilotAdmission = {
   updatedAt: string;
 };
 
-const activeStates: AutopilotAdmissionState[] = ['triage-admitted'];
-
 export async function claimAutopilotTriageAdmission(
   input: {
     watchId: string;
