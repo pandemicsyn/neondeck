@@ -116,7 +116,7 @@ Expected behavior:
 9. Hot reload the app.
 10. Report exactly what changed.
 
-The agent should not freestyle-edit config files. It should use actions such as config read, validate, add repo, update repo, remove repo, add schedule, remove schedule, and reload.
+The agent should not freestyle-edit config files. It should use typed actions such as config read, validate, add repo, update repo, remove repo, create or manage scheduled tasks, and reload.
 
 Confirmation policy: bias toward capable agents that can make ordinary validated changes without friction, but require explicit confirmation when a mutation deletes state, changes trust boundaries, expands execution authority, increases autonomy, or changes credentials/provider wiring.
 
@@ -618,8 +618,8 @@ Memory categories:
 
 - project memory: repo conventions, test commands, deploy rules
 - user memory: preferred summary style, notification preferences, working hours
-- session memory: current task, active PR, debugging thread
-- watch memory: active watches and last observed state
+- local memory: current task, active PR, debugging thread
+- persisted watch state: active watches and their last observed state
 
 Store important operational state in SQLite/config. Use chat history for conversational continuity, not as the only source of truth.
 
@@ -968,7 +968,7 @@ Must-haves:
 18. [x] Runtime readiness/status panel and API.
 19. [x] Typed model config actions for display assistant, utility, and subagent models.
 20. [x] Flue workflow/run observability for recent command and scheduler activity.
-21. [x] Structured memory actions for user, project, session, and watch memory.
+21. [x] Structured memory actions for user, local, and project memory.
 22. [x] Named subagent roles with configurable model choices.
 23. [x] Dedicated subagent run summary dashboard beyond current Flue observations.
 24. [x] Config-backed execution approval policy for `local` and planned `exe.dev` backends.
@@ -1010,9 +1010,8 @@ Must-haves:
   - add repo
   - update repo
   - remove repo
-  - add schedule
-  - update schedule
-  - remove schedule
+  - create briefing or agent-instruction scheduled task
+  - pause, resume, or delete a scheduled task
   - update display assistant, utility, and subagent model settings
   - reload config
 - [x] Ensure actions write config atomically.
@@ -1143,7 +1142,7 @@ Must-haves:
 
 - Status: complete for current structured-memory command and dashboard surface.
 
-- [x] Add memory tables/actions for user, project, session, and watch memory.
+- [x] Add memory tables/actions for user, local, and project memory.
 - [x] Add `/memory` command for listing and updating memory through typed actions.
 - [x] Add memory dashboard/current-task panel.
 - [x] Keep memory writes durable immediately but session context stable until new session or explicit refresh.
