@@ -195,11 +195,7 @@ function MemoryRow({ memory }: { memory: MemoryRecord }) {
             {memoryPreview(memory.value)}
           </p>
         </div>
-        <Badge className={scopeClass(memory.scope)}>
-          {isLegacyMemoryScope(memory.scope)
-            ? `legacy:${memory.scope}`
-            : memory.scope}
-        </Badge>
+        <Badge className={scopeClass(memory.scope)}>{memory.scope}</Badge>
       </div>
     </article>
   );
@@ -217,10 +213,5 @@ function memoryPreview(value: unknown) {
 function scopeClass(scope: MemoryScope) {
   if (scope === 'local') return 'border-accent text-accent';
   if (scope === 'project') return 'border-primary text-primary';
-  if (isLegacyMemoryScope(scope)) return 'border-line text-muted';
   return '';
-}
-
-function isLegacyMemoryScope(scope: MemoryScope) {
-  return scope === 'session' || scope === 'watch';
 }

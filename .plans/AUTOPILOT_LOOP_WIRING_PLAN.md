@@ -57,8 +57,9 @@ Watch-delta-to-triage ignition and durable worktree-preparation admission are im
   workflow (`web/src/plugins/GitHubPrList.tsx:488`) → `watchPrAddAction` →
   adds a PR watch record.
 - Scheduler `watch-pr` jobs poll (~300s) and emit status-change notifications.
-- Watching a PR does **not** enable autopilot for it. Autopilot mode comes
-  from repo/app config, and even then nothing auto-dispatches (see gap above).
+- Watching a PR does **not** enable autopilot by itself. When the effective
+  repo/watch mode permits it, meaningful watch deltas automatically admit
+  durable triage and may continue to worktree preparation.
 - Minor bug: `WatchPrButton` derives its "watched" state only from its own
   mutation result, so an already-watched PR shows `watch` again after reload.
   It should read the `prWatches` query.

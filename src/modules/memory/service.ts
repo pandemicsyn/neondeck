@@ -3,11 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
-import type {
-  ActiveMemoryScope,
-  MemoryMutationSource,
-  MemoryRecord,
-} from './schemas';
+import type { MemoryMutationSource, MemoryRecord } from './schemas';
 import {
   memoryArchiveInputSchema,
   memoryEventsInputSchema,
@@ -262,13 +258,6 @@ export async function rewriteMemory(
         'memory',
       ]);
     }
-    if (!isActiveMemoryScope(existing.scope)) {
-      return failedMemoryMutation(
-        'memory_rewrite',
-        'Legacy session and watch memories are read-only compatibility rows.',
-        ['active-memory-scope'],
-      );
-    }
 
     const before = memoryToJson(existing);
     database
@@ -342,13 +331,6 @@ export async function mergeMemories(
         ['targetId'],
       );
     }
-    if (!isActiveMemoryScope(target.scope)) {
-      return failedMemoryMutation(
-        'memory_merge',
-        'Legacy session and watch memories are read-only compatibility rows.',
-        ['active-memory-scope'],
-      );
-    }
 
     const sourceIds = [...new Set(parsed.output.sourceIds)].filter(
       (id) => id !== target.id,
@@ -360,13 +342,6 @@ export async function mergeMemories(
       return failedMemoryMutation('memory_merge', 'No source memories found.', [
         'sourceIds',
       ]);
-    }
-    if (sources.some((source) => !isActiveMemoryScope(source.scope))) {
-      return failedMemoryMutation(
-        'memory_merge',
-        'Legacy session and watch memories are read-only compatibility rows.',
-        ['active-memory-scope'],
-      );
     }
 
     const before = memoryToJson(target);
@@ -466,13 +441,6 @@ export async function archiveMemory(
         message: 'No matching memory entry existed.',
       };
     }
-    if (!isActiveMemoryScope(existing.scope)) {
-      return failedMemoryMutation(
-        'memory_archive',
-        'Legacy session and watch memories are read-only compatibility rows.',
-        ['active-memory-scope'],
-      );
-    }
     if (existing.status === 'archived') {
       return {
         ok: true,
@@ -562,10 +530,6 @@ export async function markMemoriesUsed(
   } finally {
     database.close();
   }
-}
-
-function isActiveMemoryScope(scope: string): scope is ActiveMemoryScope {
-  return scope === 'user' || scope === 'local' || scope === 'project';
 }
 
 export async function listMemoryEvents(

@@ -1391,7 +1391,7 @@ export type ScheduledTasksResponse = {
 };
 
 export type ActiveMemoryScope = 'user' | 'local' | 'project';
-export type MemoryScope = ActiveMemoryScope | 'session' | 'watch';
+export type MemoryScope = ActiveMemoryScope;
 
 export type MemoryRecord = {
   id: string;

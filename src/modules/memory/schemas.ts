@@ -2,8 +2,7 @@ import type { JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 
 export type ActiveMemoryScope = 'user' | 'local' | 'project';
-export type LegacyMemoryScope = 'session' | 'watch';
-export type MemoryScope = ActiveMemoryScope | LegacyMemoryScope;
+export type MemoryScope = ActiveMemoryScope;
 export type MemoryStatus = 'active' | 'archived';
 export type MemoryMutationSource = 'user' | 'neon' | 'workflow';
 
@@ -48,13 +47,7 @@ export type MemoryCandidateRecord = {
   decidedAt: string | null;
 };
 
-export const allMemoryScopeSchema = v.picklist([
-  'user',
-  'local',
-  'project',
-  'session',
-  'watch',
-]);
+export const allMemoryScopeSchema = v.picklist(['user', 'local', 'project']);
 export const activeMemoryScopeSchema = v.picklist(['user', 'local', 'project']);
 export const memoryStatusSchema = v.picklist(['active', 'archived']);
 export const memoryActorSchema = v.picklist(['user', 'neon', 'workflow']);

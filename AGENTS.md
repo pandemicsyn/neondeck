@@ -38,7 +38,7 @@ Design toward one backend command/event surface. The web dashboard is the first 
 - Prefer deterministic APIs/actions for facts and mutations.
 - Do not make the agent freestyle-edit Neondeck config as the primary path. Config changes should go through typed Flue actions once those exist.
 - Keep session context stable. SOUL, selected skills, memory summaries, and repo config should be loaded deliberately rather than silently changing mid-session.
-- Treat memory as current guidance for future sessions. New memory writes should use only `user`, `local`, and `project` scopes; legacy `session` and `watch` memories are readable compatibility rows, not new write targets. Archive stale guidance instead of deleting it so audit history remains intact.
+- Treat memory as current guidance for future sessions. Memory uses only `user`, `local`, and `project` scopes. Archive stale guidance instead of deleting it so audit history remains intact.
 - Treat learning operator state as an auditable subsystem. Use `/api/learning/state`, the Learning dashboard tab, or `neondeck learning ...` for reviews, candidates, memory decisions, skill patch decisions, and audit history. Handled PR/autopilot learning events come from Flue workflow observations and typed local API action results with idempotent source ids. Applied skill patches may be restored only through the explicit audit-backed restore action when the target file is unchanged since application.
 - Build deterministic watchers first. Invoke agent reasoning only when there is a meaningful state change to summarize or act on.
 - Treat skills as guidance and actions as execution.
