@@ -62,18 +62,6 @@ export function initializeAppDatabase(path: string) {
       .run();
 
     reconcileActiveChatSession(database);
-
-    database
-      .prepare(
-        `
-        INSERT INTO app_metadata (key, value, updated_at)
-        VALUES ('schema_version', '9', datetime('now'))
-        ON CONFLICT(key) DO UPDATE SET
-          value = excluded.value,
-          updated_at = excluded.updated_at;
-      `,
-      )
-      .run();
   } finally {
     database.close();
   }

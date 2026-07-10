@@ -4,6 +4,27 @@ CREATE TABLE `app_metadata` (
 	`updated_at` text NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE `autopilot_admissions` (
+	`id` text PRIMARY KEY,
+	`watch_id` text NOT NULL,
+	`event_fingerprint` text NOT NULL,
+	`repo_id` text NOT NULL,
+	`pr_number` integer NOT NULL,
+	`mode` text NOT NULL,
+	`input_json` text DEFAULT '{}' NOT NULL,
+	`state` text NOT NULL,
+	`priority` integer DEFAULT 0 NOT NULL,
+	`current_workflow` text,
+	`current_run_id` text,
+	`worktree_id` text,
+	`prepared_diff_id` text,
+	`attempt_count` integer DEFAULT 0 NOT NULL,
+	`next_attempt_at` text,
+	`last_error` text,
+	`created_at` text NOT NULL,
+	`updated_at` text NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE `chat_session_audit` (
 	`id` integer PRIMARY KEY AUTOINCREMENT,
 	`action` text NOT NULL,
@@ -12,6 +33,19 @@ CREATE TABLE `chat_session_audit` (
 	`reason` text,
 	`metadata_json` text,
 	`created_at` text NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `chat_session_command_events` (
+	`id` text PRIMARY KEY,
+	`session_id` text NOT NULL,
+	`input` text NOT NULL,
+	`status` text NOT NULL,
+	`result_json` text,
+	`flue_run_id` text,
+	`workflow_summary_id` text,
+	`created_at` text NOT NULL,
+	`completed_at` text,
+	`updated_at` text NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE `chat_session_surfaces` (
@@ -78,24 +112,19 @@ CREATE TABLE `execution_approvals` (
 	`error` text,
 	`created_at` text NOT NULL,
 	`resolved_at` text,
+	`used_at` text,
 	`executed_at` text,
 	`updated_at` text NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `jobs` (
-	`id` text PRIMARY KEY,
-	`type` text NOT NULL,
-	`blueprint` text,
-	`enabled` integer NOT NULL,
-	`interval_seconds` integer NOT NULL,
-	`config_json` text,
-	`next_run_at` text,
-	`last_run_at` text,
-	`last_outcome` text,
-	`last_message` text,
-	`last_result_json` text,
-	`created_at` text NOT NULL,
-	`updated_at` text NOT NULL
+CREATE TABLE `github_pr_file_cache` (
+	`repo` text NOT NULL,
+	`pr_number` integer NOT NULL,
+	`head_sha` text NOT NULL,
+	`payload` text NOT NULL,
+	`byte_size` integer NOT NULL,
+	`fetched_at` text NOT NULL,
+	CONSTRAINT `github_pr_file_cache_pk` PRIMARY KEY(`repo`, `pr_number`, `head_sha`)
 );
 --> statement-breakpoint
 CREATE TABLE `kilo_result_events` (
@@ -270,6 +299,7 @@ CREATE TABLE `mcp_tool_approvals` (
 	`arguments_preview` text NOT NULL,
 	`status` text NOT NULL,
 	`approver_surface` text,
+	`session_id` text,
 	`expires_at` text NOT NULL,
 	`created_at` text NOT NULL,
 	`resolved_at` text,
@@ -356,6 +386,54 @@ CREATE TABLE `notifications` (
 	`occurrence_count` integer DEFAULT 1 NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE `pr_review_draft_comments` (
+	`id` text PRIMARY KEY,
+	`draft_id` text NOT NULL,
+	`path` text NOT NULL,
+	`side` text NOT NULL,
+	`line` integer NOT NULL,
+	`start_line` integer,
+	`start_side` text,
+	`body` text NOT NULL,
+	`origin` text DEFAULT 'human' NOT NULL,
+	`created_at` text NOT NULL,
+	`updated_at` text NOT NULL,
+	CONSTRAINT `fk_pr_review_draft_comments_draft_id_pr_review_drafts_id_fk` FOREIGN KEY (`draft_id`) REFERENCES `pr_review_drafts`(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `pr_review_drafts` (
+	`id` text PRIMARY KEY,
+	`repo` text NOT NULL,
+	`pr_number` integer NOT NULL,
+	`head_sha` text NOT NULL,
+	`verdict` text,
+	`body` text,
+	`status` text NOT NULL,
+	`created_at` text NOT NULL,
+	`updated_at` text NOT NULL,
+	`submitted_at` text
+);
+--> statement-breakpoint
+CREATE TABLE `pr_review_neon_seeded_comments` (
+	`comment_id` text PRIMARY KEY,
+	`draft_id` text NOT NULL,
+	`repo` text NOT NULL,
+	`pr_number` integer NOT NULL,
+	`head_sha` text NOT NULL,
+	`path` text NOT NULL,
+	`side` text NOT NULL,
+	`line` integer NOT NULL,
+	`start_line` integer,
+	`start_side` text,
+	`severity` text NOT NULL,
+	`summary` text NOT NULL,
+	`source` text NOT NULL,
+	`outcome` text,
+	`outcome_at` text,
+	`seeded_at` text NOT NULL,
+	CONSTRAINT `fk_pr_review_neon_seeded_comments_draft_id_pr_review_drafts_id_fk` FOREIGN KEY (`draft_id`) REFERENCES `pr_review_drafts`(`id`)
+);
+--> statement-breakpoint
 CREATE TABLE `pr_watch_event_watermarks` (
 	`watch_id` text NOT NULL,
 	`category` text NOT NULL,
@@ -383,6 +461,7 @@ CREATE TABLE `pr_watches` (
 	`last_snapshot_json` text,
 	`last_outcome` text,
 	`last_checked_at` text,
+	`created_by` text,
 	`created_at` text NOT NULL,
 	`updated_at` text NOT NULL,
 	CONSTRAINT `pr_watches_repo_full_name_pr_number_unique` UNIQUE(`repo_full_name`,`pr_number`)
@@ -394,6 +473,9 @@ CREATE TABLE `prepared_diff_approvals` (
 	`worktree_id` text NOT NULL,
 	`approval_type` text NOT NULL,
 	`status` text NOT NULL,
+	`target_sha` text,
+	`policy_hash` text,
+	`policy_decision` text,
 	`reason` text,
 	`approver_surface` text,
 	`requested_at` text NOT NULL,
@@ -471,6 +553,48 @@ CREATE TABLE `repo_file_reads` (
 	`sha256` text NOT NULL,
 	`partial` integer DEFAULT 0 NOT NULL,
 	`read_at` text NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `reports` (
+	`id` text PRIMARY KEY,
+	`kind` text NOT NULL,
+	`title` text NOT NULL,
+	`repo_id` text,
+	`source_ref` text,
+	`html_path` text NOT NULL,
+	`summary_json` text,
+	`created_by` text NOT NULL,
+	`created_at` text NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `scheduled_task_runs` (
+	`id` text PRIMARY KEY,
+	`task_id` text NOT NULL,
+	`status` text NOT NULL,
+	`outcome` text NOT NULL,
+	`message` text NOT NULL,
+	`workflow_run_id` text,
+	`session_id` text,
+	`result_json` text,
+	`error` text,
+	`started_at` text NOT NULL,
+	`completed_at` text,
+	`created_at` text NOT NULL,
+	`updated_at` text NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `scheduled_tasks` (
+	`id` text PRIMARY KEY,
+	`kind` text NOT NULL,
+	`trigger_json` text NOT NULL,
+	`payload_json` text NOT NULL,
+	`enabled` integer DEFAULT 1 NOT NULL,
+	`next_run_at` text,
+	`claim_id` text,
+	`claim_expires_at` text,
+	`last_run_at` text,
+	`created_at` text NOT NULL,
+	`updated_at` text NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE `workflow_events` (
@@ -579,7 +703,11 @@ CREATE TABLE `worktrees` (
 	`updated_at` text NOT NULL
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX `idx_autopilot_admissions_watch_event` ON `autopilot_admissions` (`watch_id`,`event_fingerprint`);--> statement-breakpoint
+CREATE INDEX `idx_autopilot_admissions_state_due` ON `autopilot_admissions` (`state`,`next_attempt_at`,"updated_at" DESC);--> statement-breakpoint
+CREATE INDEX `idx_autopilot_admissions_repo_pr` ON `autopilot_admissions` (`repo_id`,`pr_number`,`state`);--> statement-breakpoint
 CREATE INDEX `idx_chat_session_audit_session` ON `chat_session_audit` (`session_id`,"created_at" DESC);--> statement-breakpoint
+CREATE INDEX `idx_chat_session_command_events_session` ON `chat_session_command_events` (`session_id`,"created_at" DESC);--> statement-breakpoint
 CREATE INDEX `idx_chat_sessions_recent` ON `chat_sessions` (`archived_at`,"pinned" DESC,"last_active_at" DESC);--> statement-breakpoint
 CREATE INDEX `idx_chat_sessions_kind` ON `chat_sessions` (`kind`,`archived_at`,"last_active_at" DESC);--> statement-breakpoint
 CREATE INDEX `idx_execution_approvals_status` ON `execution_approvals` (`status`,"updated_at" DESC);--> statement-breakpoint
@@ -603,6 +731,11 @@ CREATE UNIQUE INDEX `idx_memories_scope_key_repo` ON `memories` (`scope`,`key`,C
 CREATE INDEX `idx_memory_events_changed` ON `memory_events` ("created_at" DESC);--> statement-breakpoint
 CREATE INDEX `idx_notifications_source_unresolved` ON `notifications` (`source`,`source_id`,`resolved_at`);--> statement-breakpoint
 CREATE INDEX `idx_notifications_attention` ON `notifications` (`resolved_at`,`read_at`,`level`,"created_at" DESC);--> statement-breakpoint
+CREATE INDEX `idx_pr_review_draft_comments_draft` ON `pr_review_draft_comments` (`draft_id`,"created_at" ASC);--> statement-breakpoint
+CREATE UNIQUE INDEX `idx_pr_review_drafts_live` ON `pr_review_drafts` (`repo`,`pr_number`) WHERE "pr_review_drafts"."status" = 'draft';--> statement-breakpoint
+CREATE INDEX `idx_pr_review_drafts_pr` ON `pr_review_drafts` (`repo`,`pr_number`,"updated_at" DESC);--> statement-breakpoint
+CREATE INDEX `idx_pr_review_neon_seeded_comments_draft` ON `pr_review_neon_seeded_comments` (`draft_id`,"seeded_at" ASC);--> statement-breakpoint
+CREATE INDEX `idx_pr_review_neon_seeded_comments_pr` ON `pr_review_neon_seeded_comments` (`repo`,`pr_number`,"seeded_at" ASC);--> statement-breakpoint
 CREATE INDEX `idx_pr_watch_event_watermarks_watch` ON `pr_watch_event_watermarks` (`watch_id`,"updated_at" DESC);--> statement-breakpoint
 CREATE INDEX `idx_prepared_diff_approvals_pending` ON `prepared_diff_approvals` (`status`,"updated_at" DESC);--> statement-breakpoint
 CREATE INDEX `idx_prepared_diff_approvals_diff` ON `prepared_diff_approvals` (`prepared_diff_id`,"updated_at" DESC);--> statement-breakpoint
@@ -611,6 +744,12 @@ CREATE INDEX `idx_prepared_diffs_repo` ON `prepared_diffs` (`repo_id`,`pr_number
 CREATE INDEX `idx_repo_edit_events_updated` ON `repo_edit_events` ("updated_at" DESC);--> statement-breakpoint
 CREATE INDEX `idx_repo_edit_events_repo` ON `repo_edit_events` (`repo_id`,"updated_at" DESC);--> statement-breakpoint
 CREATE INDEX `idx_repo_file_reads_lookup` ON `repo_file_reads` (`session_id`,`repo_id`,`worktree_id`,`path`,"read_at" DESC);--> statement-breakpoint
+CREATE INDEX `idx_reports_kind_created` ON `reports` (`kind`,"created_at" DESC);--> statement-breakpoint
+CREATE INDEX `idx_reports_repo_created` ON `reports` (`repo_id`,"created_at" DESC);--> statement-breakpoint
+CREATE INDEX `idx_scheduled_task_runs_task` ON `scheduled_task_runs` (`task_id`,"created_at" DESC);--> statement-breakpoint
+CREATE INDEX `idx_scheduled_task_runs_status` ON `scheduled_task_runs` (`status`,"updated_at" DESC);--> statement-breakpoint
+CREATE INDEX `idx_scheduled_tasks_due` ON `scheduled_tasks` (`enabled`,`next_run_at`,`claim_expires_at`);--> statement-breakpoint
+CREATE INDEX `idx_scheduled_tasks_kind` ON `scheduled_tasks` (`kind`,`enabled`);--> statement-breakpoint
 CREATE INDEX `idx_workflow_events_run` ON `workflow_events` (`run_id`,`event_index`);--> statement-breakpoint
 CREATE INDEX `idx_workflow_events_created` ON `workflow_events` ("created_at" DESC);--> statement-breakpoint
 CREATE INDEX `idx_worktree_cleanup_attempts_worktree` ON `worktree_cleanup_attempts` (`worktree_id`,"attempted_at" DESC);--> statement-breakpoint

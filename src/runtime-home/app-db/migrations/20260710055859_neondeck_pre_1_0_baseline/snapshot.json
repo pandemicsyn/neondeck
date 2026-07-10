@@ -1,11 +1,17 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "8c765b61-5aa3-46db-aba7-db559cb3ec4d",
-  "prevIds": ["dfd197b8-884b-4b78-892e-d51bb107de5c"],
+  "id": "f7e534ea-785a-4f99-9a5a-e7a4fab82b65",
+  "prevIds": [
+    "00000000-0000-0000-0000-000000000000"
+  ],
   "ddl": [
     {
       "name": "app_metadata",
+      "entityType": "tables"
+    },
+    {
+      "name": "autopilot_admissions",
       "entityType": "tables"
     },
     {
@@ -34,10 +40,6 @@
     },
     {
       "name": "github_pr_file_cache",
-      "entityType": "tables"
-    },
-    {
-      "name": "jobs",
       "entityType": "tables"
     },
     {
@@ -117,6 +119,10 @@
       "entityType": "tables"
     },
     {
+      "name": "pr_review_neon_seeded_comments",
+      "entityType": "tables"
+    },
+    {
       "name": "pr_watch_event_watermarks",
       "entityType": "tables"
     },
@@ -146,6 +152,14 @@
     },
     {
       "name": "reports",
+      "entityType": "tables"
+    },
+    {
+      "name": "scheduled_task_runs",
+      "entityType": "tables"
+    },
+    {
+      "name": "scheduled_tasks",
       "entityType": "tables"
     },
     {
@@ -205,6 +219,186 @@
       "name": "updated_at",
       "entityType": "columns",
       "table": "app_metadata"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "watch_id",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "event_fingerprint",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "repo_id",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "pr_number",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "mode",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'{}'",
+      "generated": null,
+      "name": "input_json",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "state",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "priority",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "current_workflow",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "current_run_id",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "worktree_id",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "prepared_diff_id",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "attempt_count",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "next_attempt_at",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_error",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
     },
     {
       "type": "integer",
@@ -1005,136 +1199,6 @@
       "name": "fetched_at",
       "entityType": "columns",
       "table": "github_pr_file_cache"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "id",
-      "entityType": "columns",
-      "table": "jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "type",
-      "entityType": "columns",
-      "table": "jobs"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "blueprint",
-      "entityType": "columns",
-      "table": "jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "enabled",
-      "entityType": "columns",
-      "table": "jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "interval_seconds",
-      "entityType": "columns",
-      "table": "jobs"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "config_json",
-      "entityType": "columns",
-      "table": "jobs"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "next_run_at",
-      "entityType": "columns",
-      "table": "jobs"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "last_run_at",
-      "entityType": "columns",
-      "table": "jobs"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "last_outcome",
-      "entityType": "columns",
-      "table": "jobs"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "last_message",
-      "entityType": "columns",
-      "table": "jobs"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "last_result_json",
-      "entityType": "columns",
-      "table": "jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "table": "jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "updated_at",
-      "entityType": "columns",
-      "table": "jobs"
     },
     {
       "type": "text",
@@ -3290,6 +3354,16 @@
       "type": "text",
       "notNull": true,
       "autoincrement": false,
+      "default": "'human'",
+      "generated": null,
+      "name": "origin",
+      "entityType": "columns",
+      "table": "pr_review_draft_comments"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
       "default": null,
       "generated": null,
       "name": "created_at",
@@ -3405,6 +3479,166 @@
       "name": "submitted_at",
       "entityType": "columns",
       "table": "pr_review_drafts"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "comment_id",
+      "entityType": "columns",
+      "table": "pr_review_neon_seeded_comments"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "draft_id",
+      "entityType": "columns",
+      "table": "pr_review_neon_seeded_comments"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "repo",
+      "entityType": "columns",
+      "table": "pr_review_neon_seeded_comments"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "pr_number",
+      "entityType": "columns",
+      "table": "pr_review_neon_seeded_comments"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "head_sha",
+      "entityType": "columns",
+      "table": "pr_review_neon_seeded_comments"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "path",
+      "entityType": "columns",
+      "table": "pr_review_neon_seeded_comments"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "side",
+      "entityType": "columns",
+      "table": "pr_review_neon_seeded_comments"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "line",
+      "entityType": "columns",
+      "table": "pr_review_neon_seeded_comments"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "start_line",
+      "entityType": "columns",
+      "table": "pr_review_neon_seeded_comments"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "start_side",
+      "entityType": "columns",
+      "table": "pr_review_neon_seeded_comments"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "severity",
+      "entityType": "columns",
+      "table": "pr_review_neon_seeded_comments"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "summary",
+      "entityType": "columns",
+      "table": "pr_review_neon_seeded_comments"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source",
+      "entityType": "columns",
+      "table": "pr_review_neon_seeded_comments"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "outcome",
+      "entityType": "columns",
+      "table": "pr_review_neon_seeded_comments"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "outcome_at",
+      "entityType": "columns",
+      "table": "pr_review_neon_seeded_comments"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "seeded_at",
+      "entityType": "columns",
+      "table": "pr_review_neon_seeded_comments"
     },
     {
       "type": "text",
@@ -3628,6 +3862,16 @@
     },
     {
       "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_by",
+      "entityType": "columns",
+      "table": "pr_watches"
+    },
+    {
+      "type": "text",
       "notNull": true,
       "autoincrement": false,
       "default": null,
@@ -3693,6 +3937,36 @@
       "default": null,
       "generated": null,
       "name": "status",
+      "entityType": "columns",
+      "table": "prepared_diff_approvals"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "target_sha",
+      "entityType": "columns",
+      "table": "prepared_diff_approvals"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "policy_hash",
+      "entityType": "columns",
+      "table": "prepared_diff_approvals"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "policy_decision",
       "entityType": "columns",
       "table": "prepared_diff_approvals"
     },
@@ -4425,6 +4699,246 @@
       "name": "created_at",
       "entityType": "columns",
       "table": "reports"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "scheduled_task_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "task_id",
+      "entityType": "columns",
+      "table": "scheduled_task_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "scheduled_task_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "outcome",
+      "entityType": "columns",
+      "table": "scheduled_task_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "message",
+      "entityType": "columns",
+      "table": "scheduled_task_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "workflow_run_id",
+      "entityType": "columns",
+      "table": "scheduled_task_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_id",
+      "entityType": "columns",
+      "table": "scheduled_task_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "result_json",
+      "entityType": "columns",
+      "table": "scheduled_task_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "error",
+      "entityType": "columns",
+      "table": "scheduled_task_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "started_at",
+      "entityType": "columns",
+      "table": "scheduled_task_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "completed_at",
+      "entityType": "columns",
+      "table": "scheduled_task_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "scheduled_task_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "scheduled_task_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "scheduled_tasks"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "kind",
+      "entityType": "columns",
+      "table": "scheduled_tasks"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "trigger_json",
+      "entityType": "columns",
+      "table": "scheduled_tasks"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "payload_json",
+      "entityType": "columns",
+      "table": "scheduled_tasks"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "enabled",
+      "entityType": "columns",
+      "table": "scheduled_tasks"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "next_run_at",
+      "entityType": "columns",
+      "table": "scheduled_tasks"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "claim_id",
+      "entityType": "columns",
+      "table": "scheduled_tasks"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "claim_expires_at",
+      "entityType": "columns",
+      "table": "scheduled_tasks"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_run_at",
+      "entityType": "columns",
+      "table": "scheduled_tasks"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "scheduled_tasks"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "scheduled_tasks"
     },
     {
       "type": "integer",
@@ -5277,9 +5791,13 @@
       "table": "worktrees"
     },
     {
-      "columns": ["draft_id"],
+      "columns": [
+        "draft_id"
+      ],
       "tableTo": "pr_review_drafts",
-      "columnsTo": ["id"],
+      "columnsTo": [
+        "id"
+      ],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "nameExplicit": false,
@@ -5288,305 +5806,499 @@
       "table": "pr_review_draft_comments"
     },
     {
-      "columns": ["repo", "pr_number", "head_sha"],
+      "columns": [
+        "draft_id"
+      ],
+      "tableTo": "pr_review_drafts",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_pr_review_neon_seeded_comments_draft_id_pr_review_drafts_id_fk",
+      "entityType": "fks",
+      "table": "pr_review_neon_seeded_comments"
+    },
+    {
+      "columns": [
+        "repo",
+        "pr_number",
+        "head_sha"
+      ],
       "nameExplicit": false,
       "name": "github_pr_file_cache_pk",
       "entityType": "pks",
       "table": "github_pr_file_cache"
     },
     {
-      "columns": ["server_id", "tool_name"],
+      "columns": [
+        "server_id",
+        "tool_name"
+      ],
       "nameExplicit": false,
       "name": "mcp_tool_catalog_pk",
       "entityType": "pks",
       "table": "mcp_tool_catalog"
     },
     {
-      "columns": ["watch_id", "category"],
+      "columns": [
+        "watch_id",
+        "category"
+      ],
       "nameExplicit": false,
       "name": "pr_watch_event_watermarks_pk",
       "entityType": "pks",
       "table": "pr_watch_event_watermarks"
     },
     {
-      "columns": ["key"],
+      "columns": [
+        "key"
+      ],
       "nameExplicit": false,
       "name": "app_metadata_pk",
       "table": "app_metadata",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "autopilot_admissions_pk",
+      "table": "autopilot_admissions",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "chat_session_audit_pk",
       "table": "chat_session_audit",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "chat_session_command_events_pk",
       "table": "chat_session_command_events",
       "entityType": "pks"
     },
     {
-      "columns": ["surface"],
+      "columns": [
+        "surface"
+      ],
       "nameExplicit": false,
       "name": "chat_session_surfaces_pk",
       "table": "chat_session_surfaces",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "chat_sessions_pk",
       "table": "chat_sessions",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "config_history_pk",
       "table": "config_history",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "execution_approvals_pk",
       "table": "execution_approvals",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
-      "nameExplicit": false,
-      "name": "jobs_pk",
-      "table": "jobs",
-      "entityType": "pks"
-    },
-    {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "kilo_result_events_pk",
       "table": "kilo_result_events",
       "entityType": "pks"
     },
     {
-      "columns": ["task_id"],
+      "columns": [
+        "task_id"
+      ],
       "nameExplicit": false,
       "name": "kilo_result_state_pk",
       "table": "kilo_result_state",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "kilo_session_audit_pk",
       "table": "kilo_session_audit",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "kilo_task_events_pk",
       "table": "kilo_task_events",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "kilo_tasks_pk",
       "table": "kilo_tasks",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "learning_candidates_pk",
       "table": "learning_candidates",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "learning_events_pk",
       "table": "learning_events",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "learning_reviews_pk",
       "table": "learning_reviews",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "mcp_oauth_logins_pk",
       "table": "mcp_oauth_logins",
       "entityType": "pks"
     },
     {
-      "columns": ["server_id"],
+      "columns": [
+        "server_id"
+      ],
       "nameExplicit": false,
       "name": "mcp_oauth_tokens_pk",
       "table": "mcp_oauth_tokens",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "mcp_tool_approvals_pk",
       "table": "mcp_tool_approvals",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "mcp_tool_audit_pk",
       "table": "mcp_tool_audit",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "memories_pk",
       "table": "memories",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "memory_events_pk",
       "table": "memory_events",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "neon_sessions_pk",
       "table": "neon_sessions",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "notifications_pk",
       "table": "notifications",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "pr_review_draft_comments_pk",
       "table": "pr_review_draft_comments",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "pr_review_drafts_pk",
       "table": "pr_review_drafts",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "comment_id"
+      ],
+      "nameExplicit": false,
+      "name": "pr_review_neon_seeded_comments_pk",
+      "table": "pr_review_neon_seeded_comments",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "pr_watches_pk",
       "table": "pr_watches",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "prepared_diff_approvals_pk",
       "table": "prepared_diff_approvals",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "prepared_diffs_pk",
       "table": "prepared_diffs",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "ref_watches_pk",
       "table": "ref_watches",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "repo_edit_events_pk",
       "table": "repo_edit_events",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "repo_file_reads_pk",
       "table": "repo_file_reads",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "reports_pk",
       "table": "reports",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "scheduled_task_runs_pk",
+      "table": "scheduled_task_runs",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "scheduled_tasks_pk",
+      "table": "scheduled_tasks",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "workflow_events_pk",
       "table": "workflow_events",
       "entityType": "pks"
     },
     {
-      "columns": ["run_id"],
+      "columns": [
+        "run_id"
+      ],
       "nameExplicit": false,
       "name": "workflow_run_observations_pk",
       "table": "workflow_run_observations",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "workflow_summaries_pk",
       "table": "workflow_summaries",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "worktree_cleanup_attempts_pk",
       "table": "worktree_cleanup_attempts",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "worktree_events_pk",
       "table": "worktree_events",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "worktree_locks_pk",
       "table": "worktree_locks",
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "worktrees_pk",
       "table": "worktrees",
       "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "watch_id",
+          "isExpression": false
+        },
+        {
+          "value": "event_fingerprint",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_autopilot_admissions_watch_event",
+      "entityType": "indexes",
+      "table": "autopilot_admissions"
+    },
+    {
+      "columns": [
+        {
+          "value": "state",
+          "isExpression": false
+        },
+        {
+          "value": "next_attempt_at",
+          "isExpression": false
+        },
+        {
+          "value": "\"updated_at\" DESC",
+          "isExpression": true
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_autopilot_admissions_state_due",
+      "entityType": "indexes",
+      "table": "autopilot_admissions"
+    },
+    {
+      "columns": [
+        {
+          "value": "repo_id",
+          "isExpression": false
+        },
+        {
+          "value": "pr_number",
+          "isExpression": false
+        },
+        {
+          "value": "state",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_autopilot_admissions_repo_pr",
+      "entityType": "indexes",
+      "table": "autopilot_admissions"
     },
     {
       "columns": [
@@ -6131,6 +6843,46 @@
     {
       "columns": [
         {
+          "value": "draft_id",
+          "isExpression": false
+        },
+        {
+          "value": "\"seeded_at\" ASC",
+          "isExpression": true
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_pr_review_neon_seeded_comments_draft",
+      "entityType": "indexes",
+      "table": "pr_review_neon_seeded_comments"
+    },
+    {
+      "columns": [
+        {
+          "value": "repo",
+          "isExpression": false
+        },
+        {
+          "value": "pr_number",
+          "isExpression": false
+        },
+        {
+          "value": "\"seeded_at\" ASC",
+          "isExpression": true
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_pr_review_neon_seeded_comments_pr",
+      "entityType": "indexes",
+      "table": "pr_review_neon_seeded_comments"
+    },
+    {
+      "columns": [
+        {
           "value": "watch_id",
           "isExpression": false
         },
@@ -6323,6 +7075,82 @@
     {
       "columns": [
         {
+          "value": "task_id",
+          "isExpression": false
+        },
+        {
+          "value": "\"created_at\" DESC",
+          "isExpression": true
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_scheduled_task_runs_task",
+      "entityType": "indexes",
+      "table": "scheduled_task_runs"
+    },
+    {
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false
+        },
+        {
+          "value": "\"updated_at\" DESC",
+          "isExpression": true
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_scheduled_task_runs_status",
+      "entityType": "indexes",
+      "table": "scheduled_task_runs"
+    },
+    {
+      "columns": [
+        {
+          "value": "enabled",
+          "isExpression": false
+        },
+        {
+          "value": "next_run_at",
+          "isExpression": false
+        },
+        {
+          "value": "claim_expires_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_scheduled_tasks_due",
+      "entityType": "indexes",
+      "table": "scheduled_tasks"
+    },
+    {
+      "columns": [
+        {
+          "value": "kind",
+          "isExpression": false
+        },
+        {
+          "value": "enabled",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_scheduled_tasks_kind",
+      "entityType": "indexes",
+      "table": "scheduled_tasks"
+    },
+    {
+      "columns": [
+        {
           "value": "run_id",
           "isExpression": false
         },
@@ -6473,28 +7301,38 @@
       "table": "worktrees"
     },
     {
-      "columns": ["repo_full_name", "pr_number"],
+      "columns": [
+        "repo_full_name",
+        "pr_number"
+      ],
       "nameExplicit": false,
       "name": "pr_watches_repo_full_name_pr_number_unique",
       "entityType": "uniques",
       "table": "pr_watches"
     },
     {
-      "columns": ["worktree_id"],
+      "columns": [
+        "worktree_id"
+      ],
       "nameExplicit": false,
       "name": "prepared_diffs_worktree_id_unique",
       "entityType": "uniques",
       "table": "prepared_diffs"
     },
     {
-      "columns": ["repo_full_name", "ref"],
+      "columns": [
+        "repo_full_name",
+        "ref"
+      ],
       "nameExplicit": false,
       "name": "ref_watches_repo_full_name_ref_unique",
       "entityType": "uniques",
       "table": "ref_watches"
     },
     {
-      "columns": ["local_path"],
+      "columns": [
+        "local_path"
+      ],
       "nameExplicit": false,
       "name": "worktrees_local_path_unique",
       "entityType": "uniques",
