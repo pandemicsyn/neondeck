@@ -23,7 +23,7 @@ Core principles:
 - Use deterministic watchers first and agent summarization only when a watcher detects a meaningful state change.
 - Treat worktrees as the isolation boundary for autonomous PR work. Automated fix workflows should not mutate the user's primary checkout.
 - Treat external agent harnesses such as KiloCode as delegated workers that operate inside declared repos or Neondeck-managed worktrees and report durable task state back to Neondeck.
-- Prefer bounded autopilot modes over a binary on/off switch: notify-only, draft-fix, auto-fix without push, and auto-fix with push after checks.
+- Prefer bounded autopilot modes over a binary on/off switch: notify-only, prepare-only, autofix with approval, and autofix push when safe.
 - Keep one backend command/event surface so the web dashboard, future TUI, and possible companion surfaces reuse the same runtime.
 
 Flue usage boundaries:
@@ -389,11 +389,11 @@ Needed actions:
 - `neondeck_pr_requested_changes_lookup`: summarize current requested-changes state.
 - `neondeck_pr_push_changes`: push committed worktree changes back to the PR branch when allowed.
 - `neondeck_pr_comment`: post a summary comment linking addressed review feedback and checks.
-- `neondeck_pr_autopilot_policy_check`: decide whether a watch is notify-only, draft-fix, auto-fix-no-push, or auto-fix-push-after-checks.
+- `neondeck_pr_autopilot_policy_check`: decide whether a watch is notify-only, prepare-only, autofix-with-approval, or autofix-push-when-safe.
 
 Needed workflows:
 
-- `triage_pr_event`: classify a watcher delta as no-op, notify-only, explain-only, draft-fix, or auto-fix.
+- `triage_pr_event`: classify a watcher delta as no-op, notify-only, explain-only, prepare-only, or autofix.
 - `prepare_pr_worktree`: create/sync/lock a PR worktree and gather deterministic facts.
 - `fix_pr_review_feedback`: address unresolved review comments in an isolated worktree.
 - `fix_pr_ci_failure`: inspect failing checks/logs and attempt a scoped fix.
@@ -405,11 +405,11 @@ Needed workflows:
 Autopilot modes:
 
 - `notify-only`: detect and notify, but do not create a worktree.
-- `draft-fix`: create a worktree, prepare a diff, and surface it for review without committing or pushing.
-- `auto-fix-no-push`: create a worktree, commit locally, run checks, and wait for explicit user approval before push.
-- `auto-fix-push-after-checks`: create a worktree, commit locally, run configured checks, push when checks pass, and comment on the PR.
+- `prepare-only`: create a worktree, prepare a diff, and surface it for review without committing or pushing.
+- `autofix-with-approval`: create a worktree, commit locally, run checks, and wait for explicit user approval before push.
+- `autofix-push-when-safe`: create a worktree, commit locally, run configured checks, push when checks pass, and comment on the PR.
 
-Decision: default newly configured repos to `draft-fix`, and make the default configurable globally and per repo.
+Decision: default newly configured repos to `prepare-only`, and make the default configurable globally and per repo.
 
 Worktree cleanup policy:
 
@@ -427,7 +427,7 @@ Push-back policy:
 - Before pushing, require a clean worktree except for the intended commit, a diff summary, and configured checks.
 - Auto-push requires configured checks to pass by default. Repo policy can explicitly allow push with failing checks for low-risk classes such as docs-only changes.
 - Autonomous fixes should create one commit per workflow run, with the commit message referencing the PR and addressed review/check ids.
-- Large, generated, secret-like, or high-risk files should require explicit approval even in auto-push mode. Database migrations are a common expected output and should be easy to generate in draft-fix or approved flows, but unattended auto-push of migration changes still requires explicit repo policy or approval.
+- Large, generated, secret-like, or high-risk files should require explicit approval even in auto-push mode. Database migrations are a common expected output and should be easy to generate in prepare-only or approved flows, but unattended auto-push of migration changes still requires explicit repo policy or approval.
 
 Direct push-back readiness should verify that the configured GitHub credential can read repository metadata, PRs, checks/statuses, and contents; write contents to the target branch; comment on PRs/issues; and rerun workflows where that feature is enabled. For fork PRs, readiness should verify that GitHub reports maintainer push permission or that the credential can push to the fork branch. Missing permissions should be reported in plain language with the affected repo/branch.
 
@@ -1267,7 +1267,7 @@ Must-haves:
 - Status: complete for current in-scope PR autopilot work. Event watermarks, triage, worktree preparation, review/CI fix workflows, verification, push-back, PR result comments, concurrency controls, dashboard/TUI-ready state, notification policy, runtime guidance, and fixture-backed smoke/integration coverage have landed. Future refinements such as richer model-planning orchestration, provider-specific log adapters, and broader production rollout policy can build on this foundation.
 
 - [x] Extend PR watches to persist event watermarks for commits, review threads, requested-changes reviews, check suites, check runs, mergeability, and out-of-date branch state.
-- [x] Add a `triage_pr_event` workflow that classifies deltas into no-op, notify-only, explain-only, draft-fix, auto-fix-no-push, or auto-fix-push-after-checks.
+- [x] Add a `triage_pr_event` workflow that classifies deltas into no-op, notify-only, explain-only, prepare-only, autofix-with-approval, or autofix-push-when-safe.
 - [x] Add deterministic GitHub tools/actions for unresolved review comments, review thread state, requested-changes state, branch push permissions, and PR comment posting.
 - [x] Add `prepare_pr_worktree` workflow to create/sync/lock a PR worktree and gather deterministic repo/GitHub/check facts.
 - [x] Add `fix_pr_review_feedback` workflow:
@@ -1309,9 +1309,9 @@ Must-haves:
 
 - [x] Add repo-level autopilot config with explicit modes:
   - `notify-only`
-  - `draft-fix`
-  - `auto-fix-no-push`
-  - `auto-fix-push-after-checks`
+  - `prepare-only`
+  - `autofix-with-approval`
+  - `autofix-push-when-safe`
 - [x] Add watch-rule overrides so a single PR watch can be more or less autonomous than the repo default.
 - [x] Add policy limits:
   - maximum files changed

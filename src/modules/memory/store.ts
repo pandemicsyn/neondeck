@@ -226,7 +226,7 @@ export async function memoryWritePolicyResult(
     return {
       ok: false as const,
       result: failedMemoryMutation(
-        'memory_upsert',
+        'memory_learn',
         'Learning is disabled; autonomous memory writes are blocked.',
         ['learning-enabled'],
       ),
@@ -236,7 +236,7 @@ export async function memoryWritePolicyResult(
     return {
       ok: false as const,
       result: failedMemoryMutation(
-        'memory_upsert',
+        'memory_learn',
         'Memory write mode is off; autonomous memory writes are blocked.',
         ['memory-write-mode'],
       ),
@@ -246,7 +246,7 @@ export async function memoryWritePolicyResult(
     return {
       ok: false as const,
       result: failedMemoryMutation(
-        'memory_upsert',
+        'memory_learn',
         'Memory write mode is review; create a memory candidate instead of mutating memory directly.',
         ['memory-candidate'],
       ),

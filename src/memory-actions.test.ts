@@ -8,7 +8,6 @@ import {
   createMemoryCandidate,
   curateMemoryStore,
   decideMemoryCandidate,
-  deleteMemory,
   listMemories,
   listMemoryCandidates,
   listMemoryEvents,
@@ -247,20 +246,12 @@ describe('structured memory actions', () => {
     );
   });
 
-  it('archives through the delete compatibility alias after confirmation', async () => {
+  it('archives durable memory through the canonical mutation', async () => {
     const paths = runtimePaths(await tempHome());
     await upsertMemory({ scope: 'user', key: 'tone', value: 'brief' }, paths);
 
     await expect(
-      deleteMemory({ scope: 'user', key: 'tone' }, paths),
-    ).resolves.toMatchObject({
-      ok: false,
-      changed: false,
-      requires: ['confirm'],
-    });
-
-    await expect(
-      deleteMemory({ scope: 'user', key: 'tone', confirm: true }, paths),
+      archiveMemory({ scope: 'user', key: 'tone' }, paths),
     ).resolves.toMatchObject({
       ok: true,
       changed: true,

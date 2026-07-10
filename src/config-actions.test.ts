@@ -149,6 +149,17 @@ describe('config actions', () => {
       requires: ['confirm'],
     });
 
+    await expect(
+      updateRepoAutopilotPolicy(
+        { repoId: 'neondeck', limits: { highRiskClasses: [] } },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      requires: ['confirm'],
+    });
+
     const replacementRepoPath = await tempGitRepo();
     await expect(
       updateRepo({ id: 'neondeck', path: replacementRepoPath }, paths),
@@ -684,9 +695,7 @@ describe('config actions', () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
 
-    await expect(
-      readProviderConfig(paths, { KILO_API_KEY: 'legacy' }),
-    ).resolves.toMatchObject({
+    await expect(readProviderConfig(paths, {})).resolves.toMatchObject({
       ok: true,
       changed: false,
       action: 'config_read_providers',

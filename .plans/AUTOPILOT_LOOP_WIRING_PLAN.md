@@ -1,16 +1,16 @@
 # Autopilot Loop Wiring Plan
 
-Status: proposed
-Related: `.plans/ROADMAP.md` Phases 19–20 (machinery, marked complete)
+Status: partially implemented
+Related: `.plans/ROADMAP.md` Phases 19–20 (watch-delta triage ignition implemented; durable admission/coordinator work remains)
 
 ## Findings — what is wired today
 
-The autopilot _engine_ is complete; the _ignition_ is missing.
+Watch-delta-to-triage ignition is implemented; downstream autonomous orchestration is not.
 
 **Wired:**
 
-- **Policy/config**: modes `notify-only` (default), `draft-fix`,
-  `auto-fix-no-push`, `auto-fix-push-after-checks`. Global default comes from
+- **Policy/config**: modes `notify-only` (default), `prepare-only`,
+  `autofix-with-approval`, `autofix-push-when-safe`. Global default comes from
   app config `autopilot.defaultMode`; per-repo override lives in repo
   `metadata.autopilot` (`src/modules/autopilot-policy/config.ts`).
 - **Workflows**: `triage-pr-event` → `prepare-pr-worktree` →
@@ -33,21 +33,23 @@ The autopilot _engine_ is complete; the _ignition_ is missing.
 - **Chat**: Neon (display-assistant) has the full tool set and guidance
   (`src/agents/display-assistant.ts:72`), so chat-driven autopilot works today.
 
-**Not wired (the gap):**
+**Wired since the scheduler PR-event dispatch extraction:**
 
-- Scheduler `watch-pr` jobs (`src/modules/scheduler/dispatch.ts:329`) only
-  refresh watch status (green / attention / merged / closed) and emit
-  notifications. They never touch event watermarks and never invoke triage.
-- `refreshPrWatchEventState` (`src/modules/pr-events/service.ts:1109`) — the
-  watermark/delta computation that triage was designed to consume — is only
-  reachable via an API route (`src/server/routes/watches.ts:46`) and an agent
-  tool. Nothing schedules it.
-- `triage-pr-event` is only invoked by `POST /api/autopilot/triage-pr-event`
-  or the agent tool. No code path connects watch deltas → triage → fix chain.
+- Scheduler `watch-pr` jobs refresh event watermarks, compute meaningful
+  deltas, resolve effective policy server-side, and admit `triage-pr-event`
+  when the mode is not `notify-only`.
+- Failed or blocked triage admissions remain in the scheduler result and are
+  retried or superseded on a later tick.
 
-Net: autopilot only acts when the user (or Neon in chat) explicitly drives it.
-Setting `draft-fix`/`auto-fix` modes in config currently changes what triage
-_would_ decide, but triage never fires on its own.
+**Not wired (the remaining gap):**
+
+- No production coordinator consumes a terminal triage result to admit
+  worktree preparation, fixing, verification, push, or comments.
+- Scheduler result JSON is carrying retry state that should become durable
+  autopilot admissions with atomic capacity claims.
+
+Net: watcher deltas automatically reach triage, but subsequent autonomous work
+still requires an operator/chat action until durable admissions and a coordinator land.
 
 ## Watch button semantics (current)
 
@@ -63,7 +65,7 @@ _would_ decide, but triage never fires on its own.
 
 ## Plan
 
-### Phase 1 — Dispatch triage from watch deltas
+### Phase 1 — Dispatch triage from watch deltas (complete)
 
 - In `refreshWatchJob` (or a sibling `watch-pr-events` job type), after
   refreshing a watch: call `refreshPrWatchEventState` to compute watermark
@@ -77,10 +79,10 @@ _would_ decide, but triage never fires on its own.
 ### Phase 2 — Chain triage decisions per mode
 
 - Triage classification → follow-up dispatch:
-  - `draft-fix`: prepare worktree + fix workflow, stop at prepared diff +
+  - `prepare-only`: prepare worktree + fix workflow, stop at prepared diff +
     pending approval (surfaces in AutopilotPanel + `ready` notification).
-  - `auto-fix-no-push`: continue through `verify-pr-worktree`, stop before push.
-  - `auto-fix-push-after-checks`: use `verify-then-push-pr-autofix`
+  - `autofix-with-approval`: continue through `verify-pr-worktree`, stop before push.
+  - `autofix-push-when-safe`: use `verify-then-push-pr-autofix`
     (`src/workflows/verify-then-push-pr-autofix.ts`) via the same dispatch used
     by dashboard approvals (`src/server/autopilot-push-dispatch.ts`).
 - Every hop already records notifications and learning events; no new
@@ -94,7 +96,7 @@ _would_ decide, but triage never fires on its own.
 - Fix `WatchPrButton` to reflect pre-existing watches (read `prWatches`).
 - Optional: per-PR autopilot mode override on the watch record (roadmap
   already anticipates per-PR autopilot mode), so `watch` can offer
-  "watch + draft-fix" without changing repo config.
+  "watch + prepare-only" without changing repo config.
 
 ### Phase 4 — Notification affordances
 

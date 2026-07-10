@@ -112,7 +112,7 @@ describe('fresh runtime smoke test', () => {
     ).resolves.toMatchObject({
       ok: true,
       changed: true,
-      action: 'memory_upsert',
+      action: 'memory_learn',
     });
     await expect(
       listMemories({ scope: 'local', key: 'smoke' }, paths),

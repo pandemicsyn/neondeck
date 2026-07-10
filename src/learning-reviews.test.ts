@@ -1,8 +1,6 @@
-import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { updateAgentModels, updateLearningConfig } from './modules/config';
 import {
@@ -291,7 +289,7 @@ describe('learning review orchestration', () => {
     ).resolves.toMatchObject({
       ok: true,
       changed: true,
-      applied: [expect.objectContaining({ action: 'memory_upsert' })],
+      applied: [expect.objectContaining({ action: 'memory_learn' })],
       skipped: [
         expect.objectContaining({
           action: 'upsert',
@@ -1597,37 +1595,6 @@ async function tempHome() {
   const home = await mkdtemp(join(tmpdir(), 'neondeck-learning-'));
   tempRoots.push(home);
   return home;
-}
-
-function insertLegacyMemory(
-  paths: ReturnType<typeof runtimePaths>,
-  input: { scope: 'session' | 'watch'; key: string; value: string },
-) {
-  const id = randomUUID();
-  const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
-  try {
-    database
-      .prepare(
-        `
-        INSERT INTO memories (
-          id,
-          scope,
-          key,
-          value_json,
-          status,
-          use_count,
-          created_at,
-          updated_at
-        )
-        VALUES (?, ?, ?, ?, 'active', 0, ?, ?);
-      `,
-      )
-      .run(id, input.scope, input.key, JSON.stringify(input.value), now, now);
-  } finally {
-    database.close();
-  }
-  return id;
 }
 
 async function writeUserSkill(home: string, id: string) {

@@ -2,7 +2,7 @@ import { listJobs, listNotifications } from '../../app-state';
 import { readAgentModelSelectionSync, isThinkingLevel } from '../../runtime';
 import { updateAgentModels } from '../../config';
 import { runDevDoctor } from '../../runtime';
-import { deleteMemory, listMemories, upsertMemory } from '../../memory';
+import { archiveMemory, listMemories, upsertMemory } from '../../memory';
 import { readRepoRegistrySnapshot } from '../../repos';
 import { createScheduleBlueprint } from '../../scheduler';
 import {
@@ -237,13 +237,13 @@ export async function memoryCommand(
     );
   }
 
-  if (operation === 'set' || operation === 'upsert') {
+  if (operation === 'learn') {
     const [scope, key, ...valueParts] = rest;
     if (!isActiveMemoryScope(scope) || !key || valueParts.length === 0) {
       return failedCommand(
         command.name,
         command.raw,
-        '/memory set requires user, local, or project scope, key, and a JSON-safe value.',
+        '/memory learn requires user, local, or project scope, key, and a JSON-safe value.',
         {
           requires: ['scope', 'key', 'value'],
         },
@@ -269,27 +269,23 @@ export async function memoryCommand(
     return completedCommand(command.name, command.raw, result.message, result);
   }
 
-  if (operation === 'delete' || operation === 'remove') {
-    const [scope, key, ...flags] = rest;
+  if (operation === 'archive') {
+    const [scope, key] = rest;
     if (!isMemoryScope(scope) || !key) {
       return failedCommand(
         command.name,
         command.raw,
-        '/memory delete requires scope and key.',
+        '/memory archive requires scope and key.',
         {
           requires: ['scope', 'key'],
         },
       );
     }
 
-    const result = await deleteMemory(
+    const result = await archiveMemory(
       {
         scope,
         key,
-        confirm:
-          flags.includes('--confirm') ||
-          flags.includes('confirm=true') ||
-          flags.includes('confirm'),
       },
       paths,
     );
@@ -311,7 +307,7 @@ export async function memoryCommand(
       requires: ['memoryOperation'],
       data: {
         usage:
-          '/memory [scope] | /memory set <user|local|project> <key> <json-or-text> | /memory delete <scope> <key> --confirm',
+          '/memory [scope] | /memory learn <user|local|project> <key> <json-or-text> | /memory archive <scope> <key>',
       },
     },
   );
