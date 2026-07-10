@@ -17,6 +17,7 @@ export {
 } from './actions';
 export { triagePrEvent } from './triage';
 export {
+  beginAutopilotAdmissionPrepare,
   claimAutopilotTriageAdmission,
   failAutopilotAdmission,
   recordAutopilotAdmissionRun,
