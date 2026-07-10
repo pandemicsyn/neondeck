@@ -486,6 +486,7 @@ export const autopilotAdmissions = sqliteTable(
     repoId: text('repo_id').notNull(),
     prNumber: integer('pr_number').notNull(),
     mode: text('mode').notNull(),
+    inputJson: text('input_json').notNull(),
     state: text('state').notNull(),
     priority: integer('priority').default(0).notNull(),
     currentWorkflow: text('current_workflow'),
