@@ -8,6 +8,7 @@ import {
 import type { MiddlewareHandler } from 'hono';
 import { addNotification, setWorkflowSummaryRunId } from '../modules/app-state';
 import { settleScheduledTaskWorkflowRun } from '../modules/scheduled-tasks';
+import { settleAutopilotAdmissionTriage } from '../modules/autopilot';
 import {
   attachLearningReviewRunId,
   recordConversationTurnAndMaybeQueueLearning,
@@ -38,10 +39,16 @@ export function installFlueObservationHandlers(
     if (event.type === 'run_end') {
       void recordFlueObservation(event, paths)
         .then(() =>
-          settleScheduledTaskWorkflowRun(
-            { workflowRunId: event.runId, failed: event.isError },
-            paths,
-          ),
+          Promise.all([
+            settleScheduledTaskWorkflowRun(
+              { workflowRunId: event.runId, failed: event.isError },
+              paths,
+            ),
+            settleAutopilotAdmissionTriage(
+              { runId: event.runId, failed: event.isError },
+              paths,
+            ),
+          ]),
         )
         .catch((error) => {
           console.error(

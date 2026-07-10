@@ -20,6 +20,7 @@ export {
   claimAutopilotTriageAdmission,
   failAutopilotAdmission,
   recordAutopilotAdmissionRun,
+  settleAutopilotAdmissionTriage,
 } from './admissions';
 export type { AutopilotAdmission, AutopilotAdmissionState } from './admissions';
 export { preparePrWorktree, verifyPrWorktree } from './worktree';
