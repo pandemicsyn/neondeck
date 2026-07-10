@@ -22,6 +22,8 @@ export {
   failAutopilotAdmission,
   recordAutopilotAdmissionRun,
   recordAutopilotAdmissionTerminalFact,
+  reconcileAutopilotAdmissions,
+  listAutopilotAdmissions,
   settleAutopilotAdmissionTriage,
   settleAutopilotAdmissionPrepare,
 } from './admissions';

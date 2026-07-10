@@ -10,6 +10,7 @@ import {
   claimAutopilotTriageAdmission,
   failAutopilotAdmission,
   recordAutopilotAdmissionRun,
+  reconcileAutopilotAdmissions,
   type AutopilotAdmission,
 } from '../autopilot';
 import type { AutopilotConcurrencyPolicy } from '../autopilot-policy';
@@ -87,6 +88,27 @@ export async function refreshWatchJobEvents(
   const pendingByWatch = pendingTriageEventsFromJobResult(previousJobResult);
   const watches = await listPrWatchRecords(paths);
   const watchById = new Map(watches.map((watch) => [watch.id, watch]));
+  const recovered = await reconcileAutopilotAdmissions(paths);
+  for (const admission of recovered) {
+    const watch = watchById.get(admission.watchId);
+    if (!watch) continue;
+    const policy = await readEffectiveWatchAutopilotPolicy(watch, paths);
+    if (!('concurrency' in policy)) continue;
+    const invokeWorkflow =
+      dependencies.invokeWorkflow ?? invokeScheduledWorkflow;
+    try {
+      const { runId } = await invokeWorkflow('triage-pr-event', {
+        ...admission.input,
+        admissionId: admission.id,
+      } as JsonValue);
+      await recordAutopilotAdmissionRun({ id: admission.id, runId }, paths);
+    } catch (error) {
+      await failAutopilotAdmission(
+        { id: admission.id, error: errorMessage(error) },
+        paths,
+      );
+    }
+  }
   const targetWatches = results
     .map((result) => watchIdFromResult(result))
     .filter((id): id is string => Boolean(id))
@@ -457,6 +479,7 @@ async function admitWatchTriageEvent(
       repoId: watch.repoId,
       prNumber: watch.prNumber,
       mode: policy.mode,
+      input,
       limits: policy.concurrency,
     },
     paths,

@@ -30,6 +30,7 @@ export type AutopilotAdmission = {
   repoId: string;
   prNumber: number;
   mode: AutopilotMode;
+  input: Record<string, unknown>;
   state: AutopilotAdmissionState;
   currentWorkflow: string | null;
   currentRunId: string | null;
@@ -48,6 +49,99 @@ export type AutopilotAdmissionTerminalFact = {
 };
 
 const terminalFactKeyPrefix = 'autopilot.admission.terminal:';
+const staleAdmissionMs = 5 * 60 * 1000;
+const terminalFactRetentionMs = 60 * 60 * 1000;
+
+export async function reconcileAutopilotAdmissions(
+  paths = runtimePaths(),
+  now = new Date(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  const nowIso = now.toISOString();
+  const staleBefore = new Date(now.getTime() - staleAdmissionMs).toISOString();
+  const factBefore = new Date(
+    now.getTime() - terminalFactRetentionMs,
+  ).toISOString();
+  try {
+    database.exec('BEGIN IMMEDIATE;');
+    database
+      .prepare(
+        `UPDATE autopilot_admissions
+         SET state = 'failed', current_workflow = NULL, last_error = ?,
+             next_attempt_at = ?, updated_at = ?
+         WHERE state IN ('triage-admitted', 'prepare-admitted')
+           AND updated_at <= ?;`,
+      )
+      .run(
+        'Autopilot admission became stale before its workflow completed.',
+        nowIso,
+        nowIso,
+        staleBefore,
+      );
+    const due = database
+      .prepare(
+        `SELECT * FROM autopilot_admissions
+         WHERE state IN ('blocked', 'failed')
+           AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+         ORDER BY priority DESC, updated_at ASC;`,
+      )
+      .all(nowIso)
+      .map(readAdmission);
+    const retries = due.filter((admission): admission is AutopilotAdmission =>
+      Boolean(admission),
+    );
+    for (const admission of retries) {
+      database
+        .prepare(
+          `UPDATE autopilot_admissions
+           SET state = 'triage-admitted', current_workflow = 'triage-pr-event',
+               current_run_id = NULL, attempt_count = attempt_count + 1,
+               next_attempt_at = NULL, last_error = NULL, updated_at = ?
+           WHERE id = ?;`,
+        )
+        .run(nowIso, admission.id);
+    }
+    database
+      .prepare(
+        `DELETE FROM app_metadata
+         WHERE key LIKE ? AND updated_at <= ?;`,
+      )
+      .run(`${terminalFactKeyPrefix}%`, factBefore);
+    database.exec('COMMIT;');
+    return retries.map((admission) => ({
+      ...admission,
+      state: 'triage-admitted' as const,
+      currentWorkflow: 'triage-pr-event',
+      currentRunId: null,
+      attemptCount: admission.attemptCount + 1,
+      nextAttemptAt: null,
+      lastError: null,
+      updatedAt: nowIso,
+    }));
+  } catch (error) {
+    database.exec('ROLLBACK;');
+    throw error;
+  } finally {
+    database.close();
+  }
+}
+
+export async function listAutopilotAdmissions(paths = runtimePaths()) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return database
+      .prepare('SELECT * FROM autopilot_admissions ORDER BY updated_at DESC;')
+      .all()
+      .map(readAdmission)
+      .filter((admission): admission is AutopilotAdmission =>
+        Boolean(admission),
+      );
+  } finally {
+    database.close();
+  }
+}
 
 export async function claimAutopilotTriageAdmission(
   input: {
@@ -56,6 +150,7 @@ export async function claimAutopilotTriageAdmission(
     repoId: string;
     prNumber: number;
     mode: AutopilotMode;
+    input: Record<string, unknown>;
     limits: AutopilotConcurrencyPolicy;
   },
   paths = runtimePaths(),
@@ -128,6 +223,7 @@ export async function claimAutopilotTriageAdmission(
       repoId: input.repoId,
       prNumber: input.prNumber,
       mode: input.mode,
+      input: input.input,
       state,
       currentWorkflow: capped ? null : 'triage-pr-event',
       currentRunId: null,
@@ -140,10 +236,10 @@ export async function claimAutopilotTriageAdmission(
     database
       .prepare(
         `INSERT INTO autopilot_admissions (
-          id, watch_id, event_fingerprint, repo_id, pr_number, mode, state,
+          id, watch_id, event_fingerprint, repo_id, pr_number, mode, input_json, state,
           current_workflow, current_run_id, attempt_count, next_attempt_at,
           last_error, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       )
       .run(
         admission.id,
@@ -152,6 +248,7 @@ export async function claimAutopilotTriageAdmission(
         admission.repoId,
         admission.prNumber,
         admission.mode,
+        JSON.stringify(input.input),
         admission.state,
         admission.currentWorkflow,
         null,
@@ -565,6 +662,7 @@ function readAdmission(row: unknown): AutopilotAdmission | undefined {
     repoId: String(value.repo_id),
     prNumber: Number(value.pr_number),
     mode: value.mode as AutopilotMode,
+    input: readAdmissionInput(value.input_json),
     state: value.state as AutopilotAdmissionState,
     currentWorkflow:
       typeof value.current_workflow === 'string'
@@ -579,4 +677,16 @@ function readAdmission(row: unknown): AutopilotAdmission | undefined {
     createdAt: String(value.created_at),
     updatedAt: String(value.updated_at),
   };
+}
+
+function readAdmissionInput(value: unknown) {
+  if (typeof value !== 'string') return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
 }
