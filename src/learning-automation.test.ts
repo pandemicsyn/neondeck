@@ -121,7 +121,7 @@ describe('learning automation context', () => {
     const now = '2026-07-06T12:00:00.000Z';
     seedReviewAssistRows(paths.neondeckDatabase, now);
     seedRevisionRows(paths.neondeckDatabase, now);
-    seedRoutineRows(paths.neondeckDatabase, now);
+    seedScheduledTaskRows(paths.neondeckDatabase, now);
     const docsReport = await writeReport(
       {
         kind: 'docs-drift',
@@ -192,11 +192,10 @@ describe('learning automation context', () => {
       reRevisionRate: 0.3333,
       failedOrAborted: 2,
     });
-    expect(health.routines).toMatchObject({
+    expect(health.scheduledTasks).toMatchObject({
       runs: 2,
       failures: 1,
       failureRate: 0.5,
-      autoPauses: 1,
       silentOutputs: 1,
       silentOutputRate: 0.5,
     });
@@ -229,7 +228,7 @@ describe('learning automation context', () => {
       runs: 0,
       approvalRate: null,
     });
-    expect(health.routines).toMatchObject({
+    expect(health.scheduledTasks).toMatchObject({
       runs: 0,
       failureRate: null,
       silentOutputRate: null,
@@ -495,55 +494,22 @@ function stageDocsFixSummary(
   }
 }
 
-function seedRoutineRows(databasePath: string, now: string) {
+function seedScheduledTaskRows(databasePath: string, now: string) {
   const database = openDb(databasePath);
   try {
-    database
-      .prepare(
-        `
-        INSERT INTO routines (
-          id, name, prompt, schedule_kind, schedule, skills_json, scope_repo_id,
-          scope_cwd, delivery, session_id, repeat_limit, run_count,
-          consecutive_failures, running_run_id, enabled, created_by,
-          created_at, updated_at, last_run_at, next_run_at
-        )
-        VALUES (
-          'routine-paused', 'Paused', 'prompt', 'interval', '900', '[]', NULL,
-          NULL, 'report', NULL, NULL, 3, 3, NULL, 0, 'test',
-          ?, ?, ?, NULL
-        );
-      `,
-      )
-      .run(now, now, now);
-    database
-      .prepare(
-        `
-        INSERT INTO routine_events (
-          id, routine_id, run_id, event_type, message, actor,
-          before_json, after_json, created_at
-        )
-        VALUES (
-          'routine-event-auto-pause', 'routine-paused', 'routine-failed',
-          'routine_auto_paused', 'Routine auto-paused.', 'system',
-          NULL, NULL, ?
-        );
-      `,
-      )
-      .run(now);
     for (const [id, status, outcome, summary] of [
-      ['routine-ok', 'completed', 'recorded', { silent: true }],
-      ['routine-failed', 'failed', 'failed', { silent: false }],
+      ['task-run-ok', 'completed', 'recorded', { silent: true }],
+      ['task-run-failed', 'failed', 'failed', { silent: false }],
     ] as const) {
       database
         .prepare(
           `
-          INSERT INTO routine_runs (
-            id, routine_id, status, outcome, message, report_id, session_id,
-            command_event_id, dispatch_id, summary_json, error, started_at,
-            completed_at, created_at, updated_at
+          INSERT INTO scheduled_task_runs (
+            id, task_id, status, outcome, message, workflow_run_id, session_id,
+            result_json, error, started_at, completed_at, created_at, updated_at
           )
-          VALUES (?, 'routine-paused', ?, ?, 'message', NULL, NULL,
-            NULL, NULL, ?, NULL, ?, ?, ?, ?);
+          VALUES (?, 'task:health', ?, ?, 'message', NULL, NULL,
+            ?, NULL, ?, ?, ?, ?);
         `,
         )
         .run(id, status, outcome, JSON.stringify(summary), now, now, now, now);

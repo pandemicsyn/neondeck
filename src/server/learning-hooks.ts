@@ -14,14 +14,9 @@ import {
 } from '../modules/learning/reviews';
 import type { RuntimePaths } from '../runtime-home';
 import { recordFlueObservation } from '../modules/learning';
-import { recordRoutineFlueObservation } from '../modules/routines';
 import curateLearningStoreWorkflow from '../workflows/curate_learning_store';
 import reviewConversationForLearningWorkflow from '../workflows/review_conversation_for_learning';
 import reviewPrBatchForLearningWorkflow from '../workflows/review_pr_batch_for_learning';
-
-type RoutineConversationLearningDependencies = NonNullable<
-  Parameters<typeof recordConversationTurnAndMaybeQueueLearning>[2]
->;
 
 type ObservationInstallDependencies = {
   observe?: (subscriber: FlueObservationSubscriber) => () => void;
@@ -42,19 +37,6 @@ export function installFlueObservationHandlers(
     void recordFlueObservation(event, paths).catch((error) => {
       console.error('[neondeck] failed to record Flue observation', error);
     });
-    void recordRoutineFlueObservation(event, paths)
-      .then((result) =>
-        recordRoutineConversationLearning(result, paths).catch((error) => {
-          console.error(
-            '[neondeck] failed to queue routine learning review',
-            error,
-          );
-        }),
-      )
-      .catch((error) => {
-        console.error('[neondeck] failed to settle routine observation', error);
-      });
-
     if (event.type === 'run_end') {
       void attachCommandRunSummaryRunId(event, paths).catch((error) => {
         console.error('[neondeck] failed to attach Flue run id', error);
@@ -160,27 +142,6 @@ export function resetFlueObservationHandlersForTests() {
 function flueContextRuntimeHome(context: FlueEventContext | undefined) {
   const value = context?.env?.NEONDECK_HOME;
   return typeof value === 'string' && value ? value : undefined;
-}
-
-export async function recordRoutineConversationLearning(
-  result: unknown,
-  paths: RuntimePaths,
-  dependencies: RoutineConversationLearningDependencies = {},
-) {
-  const record = objectRecord(result);
-  if (record?.changed !== true) return;
-  const run = objectRecord(record.run);
-  const sessionId = typeof run?.sessionId === 'string' ? run.sessionId : null;
-  if (!sessionId) return;
-  await recordConversationTurnAndMaybeQueueLearning(sessionId, paths, {
-    invokeConversationReview:
-      dependencies.invokeConversationReview ??
-      (async (input) =>
-        invoke(reviewConversationForLearningWorkflow, { input })),
-    invokeCurationReview:
-      dependencies.invokeCurationReview ??
-      (async (input) => invoke(curateLearningStoreWorkflow, { input })),
-  });
 }
 
 export function recordHandledPrApiResult(

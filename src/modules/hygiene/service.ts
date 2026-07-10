@@ -182,12 +182,11 @@ function automationHealthReportSection(
         ].join('\n'),
       },
       {
-        label: 'routines',
+        label: 'scheduled tasks',
         value: [
-          `failure rate: ${formatRate(health.routines.failureRate)}`,
-          `runs/failures: ${health.routines.runs}/${health.routines.failures}`,
-          `silent output rate: ${formatRate(health.routines.silentOutputRate)}`,
-          `auto-pauses: ${health.routines.autoPauses}`,
+          `failure rate: ${formatRate(health.scheduledTasks.failureRate)}`,
+          `runs/failures: ${health.scheduledTasks.runs}/${health.scheduledTasks.failures}`,
+          `silent output rate: ${formatRate(health.scheduledTasks.silentOutputRate)}`,
         ].join('\n'),
       },
       {
@@ -209,7 +208,7 @@ function automationHealthHasSignals(
   return (
     health.reviewAssist.seeded > 0 ||
     health.revisionLoop.runs > 0 ||
-    health.routines.runs > 0 ||
+    health.scheduledTasks.runs > 0 ||
     health.driftTriage.docsDriftReports > 0 ||
     health.driftTriage.issueTriageReports > 0
   );

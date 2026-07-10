@@ -1,4 +1,4 @@
-import { listJobs, listNotifications } from '../../app-state';
+import { listNotifications } from '../../app-state';
 import { readAgentModelSelectionSync, isThinkingLevel } from '../../runtime';
 import { updateAgentModels } from '../../config';
 import { runDevDoctor } from '../../runtime';
@@ -12,6 +12,7 @@ import {
 } from '../../sessions';
 import { addPrWatch, listPrWatchRecords } from '../../watches';
 import { readHygieneSummary } from '../../hygiene';
+import { listScheduledTasks } from '../../scheduled-tasks';
 import type { RuntimePaths } from '../../../runtime-home';
 import type {
   CommandExecutionContext,
@@ -35,11 +36,11 @@ export async function briefingCommand(
   paths: RuntimePaths,
   dependencies: CommandDependencies,
 ): Promise<NeonCommandResult> {
-  const [registry, watches, jobs, notifications, queue, hygiene] =
+  const [registry, watches, tasks, notifications, queue, hygiene] =
     await Promise.all([
       readRepoRegistrySnapshot(paths),
       listPrWatchRecords(paths),
-      listJobs(paths),
+      listScheduledTasks(paths),
       listNotifications(paths),
       readReviewQueue(paths, dependencies),
       readHygieneSummary(paths),
@@ -47,7 +48,7 @@ export async function briefingCommand(
   const unreadNotifications = notifications.filter(
     (notification) => !notification.readAt,
   );
-  const activeJobs = jobs.filter((job) => job.enabled);
+  const activeTasks = tasks.filter((task) => task.enabled);
   const activeWatches = watches.filter((watch) =>
     ['watching', 'merged', 'attention-needed'].includes(watch.status),
   );
@@ -103,9 +104,9 @@ export async function briefingCommand(
       attention: watches.filter((watch) => watch.status === 'attention-needed')
         .length,
     },
-    jobs: {
-      total: jobs.length,
-      active: activeJobs.length,
+    scheduledTasks: {
+      total: tasks.length,
+      active: activeTasks.length,
     },
     notifications: {
       unread: unreadNotifications.length,

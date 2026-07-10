@@ -98,10 +98,6 @@ export const learningConfigSchema = v.looseObject({
   projectMemoryBudgetChars: v.optional(positiveIntegerSchema),
 });
 
-export const routinesConfigSchema = v.looseObject({
-  enabled: v.optional(v.boolean()),
-});
-
 export const handoffConfigSchema = v.looseObject({
   allowExternalReviewQueue: v.optional(v.boolean()),
 });
@@ -288,7 +284,6 @@ export const appConfigSchema = v.looseObject({
   autopilot: v.optional(autopilotConfigSchema),
   kilo: v.optional(kiloConfigSchema),
   learning: v.optional(learningConfigSchema),
-  routines: v.optional(routinesConfigSchema),
   handoff: v.optional(handoffConfigSchema),
 });
 
@@ -365,9 +360,7 @@ export type AppConfig = v.InferOutput<typeof appConfigSchema>;
 export type AgentModelConfig = v.InferOutput<typeof agentModelConfigSchema>;
 export type LearningConfig = v.InferOutput<typeof learningConfigSchema>;
 export type ResolvedLearningConfig = Required<LearningConfig>;
-export type RoutinesConfig = v.InferOutput<typeof routinesConfigSchema>;
 export type HandoffConfig = v.InferOutput<typeof handoffConfigSchema>;
-export type ResolvedRoutinesConfig = Required<RoutinesConfig>;
 export type ProviderConfig = v.InferOutput<typeof providerConfigSchema>;
 export type ThinkingLevel = v.InferOutput<typeof thinkingLevelSchema>;
 export type ExecutionConfig = v.InferOutput<typeof executionConfigSchema>;

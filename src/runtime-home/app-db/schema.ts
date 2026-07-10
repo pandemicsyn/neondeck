@@ -92,87 +92,6 @@ export const prWatchEventWatermarks = sqliteTable(
   ],
 );
 
-export const jobs = sqliteTable('jobs', {
-  id: text('id').primaryKey(),
-  type: text('type').notNull(),
-  blueprint: text('blueprint'),
-  enabled: integer('enabled').notNull(),
-  intervalSeconds: integer('interval_seconds').notNull(),
-  configJson: text('config_json'),
-  nextRunAt: text('next_run_at'),
-  lastRunAt: text('last_run_at'),
-  lastOutcome: text('last_outcome'),
-  lastMessage: text('last_message'),
-  lastResultJson: text('last_result_json'),
-  createdAt: text('created_at').notNull(),
-  updatedAt: text('updated_at').notNull(),
-});
-
-export const routines = sqliteTable(
-  'routines',
-  {
-    id: text('id').primaryKey(),
-    name: text('name').notNull(),
-    prompt: text('prompt').notNull(),
-    scheduleKind: text('schedule_kind').notNull(),
-    schedule: text('schedule').notNull(),
-    skillsJson: text('skills_json'),
-    scopeRepoId: text('scope_repo_id'),
-    scopeCwd: text('scope_cwd'),
-    delivery: text('delivery').notNull(),
-    sessionId: text('session_id'),
-    repeatLimit: integer('repeat_limit'),
-    runCount: integer('run_count').default(0).notNull(),
-    consecutiveFailures: integer('consecutive_failures').default(0).notNull(),
-    runningRunId: text('running_run_id'),
-    enabled: integer('enabled').default(1).notNull(),
-    createdBy: text('created_by').notNull(),
-    createdAt: text('created_at').notNull(),
-    updatedAt: text('updated_at').notNull(),
-    lastRunAt: text('last_run_at'),
-    nextRunAt: text('next_run_at'),
-  },
-  (table) => [
-    index('idx_routines_due').on(
-      table.enabled,
-      table.nextRunAt,
-      table.runningRunId,
-    ),
-    index('idx_routines_updated').on(sql`${table.updatedAt} DESC`),
-  ],
-);
-
-export const routineRuns = sqliteTable(
-  'routine_runs',
-  {
-    id: text('id').primaryKey(),
-    routineId: text('routine_id').notNull(),
-    status: text('status').notNull(),
-    outcome: text('outcome'),
-    message: text('message').notNull(),
-    reportId: text('report_id'),
-    sessionId: text('session_id'),
-    commandEventId: text('command_event_id'),
-    dispatchId: text('dispatch_id'),
-    summaryJson: text('summary_json'),
-    error: text('error'),
-    startedAt: text('started_at').notNull(),
-    completedAt: text('completed_at'),
-    createdAt: text('created_at').notNull(),
-    updatedAt: text('updated_at').notNull(),
-  },
-  (table) => [
-    index('idx_routine_runs_routine').on(
-      table.routineId,
-      sql`${table.createdAt} DESC`,
-    ),
-    index('idx_routine_runs_status').on(
-      table.status,
-      sql`${table.updatedAt} DESC`,
-    ),
-  ],
-);
-
 export const scheduledTasks = sqliteTable(
   'scheduled_tasks',
   {
@@ -224,28 +143,6 @@ export const scheduledTaskRuns = sqliteTable(
       table.status,
       sql`${table.updatedAt} DESC`,
     ),
-  ],
-);
-
-export const routineEvents = sqliteTable(
-  'routine_events',
-  {
-    id: text('id').primaryKey(),
-    routineId: text('routine_id'),
-    runId: text('run_id'),
-    eventType: text('event_type').notNull(),
-    message: text('message').notNull(),
-    actor: text('actor').notNull(),
-    beforeJson: text('before_json'),
-    afterJson: text('after_json'),
-    createdAt: text('created_at').notNull(),
-  },
-  (table) => [
-    index('idx_routine_events_routine').on(
-      table.routineId,
-      sql`${table.createdAt} DESC`,
-    ),
-    index('idx_routine_events_created').on(sql`${table.createdAt} DESC`),
   ],
 );
 
