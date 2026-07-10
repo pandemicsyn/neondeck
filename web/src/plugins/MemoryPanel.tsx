@@ -1,18 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import {
-  getMemories,
-  upsertMemory,
-  type MemoryRecord,
-  type MemoryScope,
-} from '../api';
-import {
-  Badge,
-  Button,
-  EmptyState,
-  MiniEmpty,
-  ScrollArea,
-} from '../components/ui';
+import { useQuery } from '@tanstack/react-query';
+import { getMemories, type MemoryRecord, type MemoryScope } from '../api';
+import { Badge, EmptyState, MiniEmpty, ScrollArea } from '../components/ui';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 import { parsePositiveIntegerConfig } from './config';
@@ -65,14 +53,6 @@ function MemoryView({
   limit: number;
   memories: MemoryRecord[];
 }) {
-  const currentTask = useMemo(
-    () =>
-      memories.find(
-        (memory) => memory.scope === 'local' && memory.key === 'current-task',
-      ),
-    [memories],
-  );
-
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="panel-header flex h-8 items-center justify-between border-b border-line px-3 font-mono text-[10.5px] tracking-[0.12em]">
@@ -81,7 +61,6 @@ function MemoryView({
       </header>
       <ScrollArea className="flex-1">
         <div className="space-y-2.5 p-3">
-          <CurrentTaskForm currentTask={currentTask} />
           <section>
             <div className="mb-1.5 flex items-center justify-between font-mono text-[10px] tracking-[0.12em]">
               <span className="text-primary">DURABLE NOTES</span>
@@ -99,87 +78,6 @@ function MemoryView({
         </div>
       </ScrollArea>
     </div>
-  );
-}
-
-function CurrentTaskForm({
-  currentTask,
-}: {
-  currentTask: MemoryRecord | undefined;
-}) {
-  const queryClient = useQueryClient();
-  const remoteValue = memoryPreview(currentTask?.value ?? '');
-  const [value, setValue] = useState(remoteValue);
-  const [isDirty, setIsDirty] = useState(false);
-  const skipSyncForRemoteValue = useRef<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const mutation = useMutation({
-    mutationFn: upsertMemory,
-    onSuccess(result) {
-      setMessage(result.message);
-      skipSyncForRemoteValue.current = remoteValue;
-      setIsDirty(false);
-      void Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.memories }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.runtimeStatus }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.neonSession }),
-      ]);
-    },
-    onError(cause) {
-      setMessage(queryErrorMessage(cause));
-    },
-  });
-
-  useEffect(() => {
-    if (skipSyncForRemoteValue.current === remoteValue) return;
-    skipSyncForRemoteValue.current = null;
-    if (isDirty || mutation.isPending) return;
-    setValue(remoteValue);
-  }, [isDirty, mutation.isPending, remoteValue]);
-
-  async function save(event: FormEvent) {
-    event.preventDefault();
-    setMessage(null);
-    mutation.mutate({
-      scope: 'local',
-      key: 'current-task',
-      value: value.trim(),
-      reason: 'Dashboard current-task note.',
-    });
-  }
-
-  return (
-    <form className="border border-line bg-soft px-2.5 py-2" onSubmit={save}>
-      <div className="flex items-center justify-between gap-2">
-        <p className="font-mono text-[10px] tracking-[0.12em] text-violet">
-          CURRENT TASK
-        </p>
-        <Button
-          className="h-6 border-violet bg-field px-2 py-0 font-mono text-[10px] text-violet"
-          disabled={mutation.isPending}
-          type="submit"
-        >
-          {mutation.isPending ? 'saving' : 'save'}
-        </Button>
-      </div>
-      <textarea
-        className="mt-2 h-14 w-full resize-none border border-line bg-field px-2 py-1.5 text-[11px] leading-4 text-ink outline-none focus:border-violet"
-        onChange={(event) => {
-          setIsDirty(true);
-          setValue(event.target.value);
-        }}
-        placeholder="What is Neon focused on right now?"
-        value={value}
-      />
-      <p className="mt-1 line-clamp-2 text-[10.5px] leading-4 text-muted">
-        Applies to new agent context after a new session.
-      </p>
-      {message ? (
-        <p className="mt-1 line-clamp-2 text-[10.5px] leading-4 text-muted">
-          {message}
-        </p>
-      ) : null}
-    </form>
   );
 }
 

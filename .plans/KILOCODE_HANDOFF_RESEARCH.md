@@ -136,7 +136,8 @@ actions:
    including `KILO_DB` where applicable.
 2. Prefer SQLite reads from the current `session`, `message`, `part`, `todo`,
    and related tables.
-3. Fall back to legacy JSON only when the database is absent or unreadable.
+3. Return unavailable when the current SQLite database is absent or unreadable;
+   do not add a legacy JSON compatibility adapter.
 4. Return a normalized, redacted session view.
 5. Record that disk fallback was used, because direct storage shape can change.
 
