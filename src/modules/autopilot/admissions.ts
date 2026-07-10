@@ -81,6 +81,41 @@ export async function reconcileAutopilotAdmissions(
         nowIso,
         staleBefore,
       );
+    const terminalRuns = database
+      .prepare(
+        `SELECT a.id, a.current_workflow, observation.status
+         FROM autopilot_admissions AS a
+         JOIN workflow_run_observations AS observation
+           ON observation.run_id = a.current_run_id
+         WHERE a.state IN ('triage-admitted', 'prepare-admitted')
+           AND observation.status IN ('completed', 'failed');`,
+      )
+      .all() as Array<{
+      id: string;
+      current_workflow: string | null;
+      status: string;
+    }>;
+    for (const run of terminalRuns) {
+      const uncertainPrepare =
+        run.current_workflow === 'prepare-pr-worktree' &&
+        run.status === 'completed';
+      database
+        .prepare(
+          `UPDATE autopilot_admissions
+           SET state = ?, current_workflow = NULL, last_error = ?,
+               next_attempt_at = ?, updated_at = ?
+           WHERE id = ?;`,
+        )
+        .run(
+          uncertainPrepare ? 'blocked' : 'failed',
+          uncertainPrepare
+            ? 'Prepare run completed before its durable result was recorded; inspect before retrying.'
+            : 'Attached Flue run ended before its durable result was recorded.',
+          uncertainPrepare ? null : nowIso,
+          nowIso,
+          run.id,
+        );
+    }
     const due = database
       .prepare(
         `SELECT * FROM autopilot_admissions
