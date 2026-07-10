@@ -209,6 +209,7 @@ export function ensurePendingApproval(
     'pending',
     reason,
     undefined,
+    {},
     paths,
   );
 }
@@ -247,6 +248,11 @@ export function resolvePendingApprovals(
   status: 'approved' | 'rejected' | 'superseded',
   reason: string | undefined,
   approverSurface: string | undefined,
+  binding: {
+    targetSha?: string | null;
+    policyHash?: string | null;
+    policyDecision?: 'deny' | 'require-approval' | 'allow' | null;
+  } = {},
   paths: RuntimePaths,
 ) {
   const pending = pendingApproval(record.id, approvalType, paths);
@@ -257,6 +263,7 @@ export function resolvePendingApprovals(
       status,
       reason,
       approverSurface,
+      binding,
       paths,
     );
   }
@@ -272,6 +279,9 @@ export function resolvePendingApprovals(
           status = ?,
           reason = COALESCE(?, reason),
           approver_surface = COALESCE(?, approver_surface),
+          target_sha = COALESCE(?, target_sha),
+          policy_hash = COALESCE(?, policy_hash),
+          policy_decision = COALESCE(?, policy_decision),
           resolved_at = ?,
           updated_at = ?
         WHERE prepared_diff_id = ?
@@ -283,6 +293,9 @@ export function resolvePendingApprovals(
         status,
         reason ?? null,
         approverSurface ?? null,
+        binding.targetSha ?? null,
+        binding.policyHash ?? null,
+        binding.policyDecision ?? null,
         now,
         now,
         record.id,
@@ -294,7 +307,15 @@ export function resolvePendingApprovals(
 
   return (
     readApprovalRecord(pending.id, paths) ??
-    insertApproval(record, approvalType, status, reason, approverSurface, paths)
+    insertApproval(
+      record,
+      approvalType,
+      status,
+      reason,
+      approverSurface,
+      binding,
+      paths,
+    )
   );
 }
 
@@ -342,6 +363,11 @@ export function insertApproval(
   status: PreparedDiffApprovalRecord['status'],
   reason: string | undefined,
   approverSurface: string | undefined,
+  binding: {
+    targetSha?: string | null;
+    policyHash?: string | null;
+    policyDecision?: 'deny' | 'require-approval' | 'allow' | null;
+  } = {},
   paths: RuntimePaths,
 ) {
   const now = new Date().toISOString();
@@ -351,6 +377,9 @@ export function insertApproval(
     worktreeId: record.worktreeId,
     approvalType,
     status,
+    targetSha: binding.targetSha ?? null,
+    policyHash: binding.policyHash ?? null,
+    policyDecision: binding.policyDecision ?? null,
     reason: reason ?? null,
     approverSurface: approverSurface ?? null,
     requestedAt: now,
@@ -363,10 +392,11 @@ export function insertApproval(
       .prepare(
         `
         INSERT INTO prepared_diff_approvals (
-          id, prepared_diff_id, worktree_id, approval_type, status, reason,
+          id, prepared_diff_id, worktree_id, approval_type, status, target_sha,
+          policy_hash, policy_decision, reason,
           approver_surface, requested_at, resolved_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `,
       )
       .run(
@@ -375,6 +405,9 @@ export function insertApproval(
         approval.worktreeId,
         approval.approvalType,
         approval.status,
+        approval.targetSha,
+        approval.policyHash,
+        approval.policyDecision,
         approval.reason,
         approval.approverSurface,
         approval.requestedAt,
@@ -519,6 +552,14 @@ export function readApprovalRow(row: unknown): PreparedDiffApprovalRecord {
       item.status === 'superseded'
         ? item.status
         : 'pending',
+    targetSha: item.target_sha,
+    policyHash: item.policy_hash,
+    policyDecision:
+      item.policy_decision === 'deny' ||
+      item.policy_decision === 'require-approval' ||
+      item.policy_decision === 'allow'
+        ? item.policy_decision
+        : null,
     reason: item.reason,
     approverSurface: item.approver_surface,
     requestedAt: item.requested_at,

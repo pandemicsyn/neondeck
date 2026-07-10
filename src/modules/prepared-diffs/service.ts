@@ -7,6 +7,7 @@ import { addNotification } from '../app-state';
 import { buildPreparedDiffAuditSummary } from '../autonomous-audit';
 import { openDb } from '../../lib/sqlite';
 import { gitCurrentSha, gitDiff, type RepoDiffFile } from '../../repo-edit/git';
+import { checkAutopilotPolicy } from '../autopilot-policy';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
@@ -380,6 +381,28 @@ export async function approvePreparedDiffPush(
   const approvedCommitSha = await gitCurrentSha(
     record.record.sourceWorktreePath,
   ).catch(() => null);
+  if (!approvedCommitSha) {
+    return failure(
+      'prepared_diff_approve_push',
+      'Prepared diff approval requires a readable worktree commit SHA.',
+      'PREPARED_DIFF_SHA_UNAVAILABLE',
+    );
+  }
+  const policy = await checkAutopilotPolicy(
+    {
+      worktreeId: record.record.worktreeId,
+      diffBaseRef: record.record.headSha ?? record.record.baseRef,
+      pushDestination: 'pull-request-head',
+    },
+    paths,
+  );
+  if (policy.decision === 'deny') {
+    return failure(
+      'prepared_diff_approve_push',
+      'Prepared diff policy denies push-back; approval cannot override it.',
+      'PREPARED_DIFF_POLICY_DENIED',
+    );
+  }
   const updated = updatePreparedDiffState(
     record.record.id,
     {
@@ -401,6 +424,11 @@ export async function approvePreparedDiffPush(
     'approved',
     parsed.input.reason,
     parsed.input.approverSurface,
+    {
+      targetSha: approvedCommitSha,
+      policyHash: policy.policyHash,
+      policyDecision: policy.decision,
+    },
     paths,
   );
   await addNotification(
@@ -467,6 +495,7 @@ export async function requestPreparedDiffRevision(
     'rejected',
     parsed.input.reason,
     parsed.input.approverSurface,
+    {},
     paths,
   );
   const approval = insertApproval(
@@ -475,6 +504,7 @@ export async function requestPreparedDiffRevision(
     'rejected',
     parsed.input.reason,
     parsed.input.approverSurface,
+    {},
     paths,
   );
   return {
@@ -567,6 +597,7 @@ export async function abandonPreparedDiff(
     'rejected',
     parsed.input.reason,
     parsed.input.approverSurface,
+    {},
     paths,
   );
   const approval = insertApproval(
@@ -575,6 +606,7 @@ export async function abandonPreparedDiff(
     'rejected',
     parsed.input.reason,
     parsed.input.approverSurface,
+    {},
     paths,
   );
   return {

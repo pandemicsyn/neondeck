@@ -1,4 +1,5 @@
 import { gitDiff } from '../../repo-edit/git';
+import { createHash } from 'node:crypto';
 import {
   ensureRuntimeHome,
   parseAppConfig,
@@ -132,16 +133,31 @@ export async function checkAutopilotPolicy(
       diff.summary.files > policy.limits.maxFilesChanged ||
       totalLines > policy.limits.maxLinesChanged ||
       Boolean(input.forcePush && !policy.limits.allowForcePush));
+  const decision = blocked
+    ? ('deny' as const)
+    : approvalRequired
+      ? ('require-approval' as const)
+      : ('allow' as const);
+  const policyHash = createHash('sha256')
+    .update(
+      JSON.stringify({
+        mode: policy.mode,
+        limits: policy.limits,
+        concurrency: policy.concurrency,
+      }),
+    )
+    .digest('hex');
 
   return {
     ok: true,
     action: 'autopilot_policy_check',
     changed: false,
-    message: blocked
-      ? 'Autopilot policy blocks this worktree diff.'
-      : approvalRequired
-        ? 'Autopilot policy requires explicit approval for this worktree diff.'
-        : 'Autopilot policy allows this worktree diff to proceed to verification.',
+    message:
+      decision === 'deny'
+        ? 'Autopilot policy blocks this worktree diff.'
+        : decision === 'require-approval'
+          ? 'Autopilot policy requires explicit approval for this worktree diff.'
+          : 'Autopilot policy allows this worktree diff to proceed to verification.',
     repoId: repo.id,
     repoFullName,
     prNumber: worktree?.prNumber ?? null,
@@ -157,6 +173,9 @@ export async function checkAutopilotPolicy(
       binaryFiles: diff.summary.binaryFiles,
     },
     files,
+    decision,
+    approvalClass: approvalRequired ? 'high-risk-diff' : null,
+    policyHash,
     blocked,
     approvalRequired,
     canPush:

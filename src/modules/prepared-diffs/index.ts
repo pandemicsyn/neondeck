@@ -42,6 +42,7 @@ export {
   readApprovalRecord as readPreparedDiffApprovalRecord,
   readPreparedDiffRecord,
   readPreparedDiffByWorktreeId,
+  listApprovalRecords,
   assertTransition,
   mergeSummary,
   updatePreparedDiffState,
