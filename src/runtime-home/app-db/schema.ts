@@ -173,6 +173,60 @@ export const routineRuns = sqliteTable(
   ],
 );
 
+export const scheduledTasks = sqliteTable(
+  'scheduled_tasks',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind').notNull(),
+    triggerJson: text('trigger_json').notNull(),
+    payloadJson: text('payload_json').notNull(),
+    enabled: integer('enabled').default(1).notNull(),
+    nextRunAt: text('next_run_at'),
+    claimId: text('claim_id'),
+    claimExpiresAt: text('claim_expires_at'),
+    lastRunAt: text('last_run_at'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_scheduled_tasks_due').on(
+      table.enabled,
+      table.nextRunAt,
+      table.claimExpiresAt,
+    ),
+    index('idx_scheduled_tasks_kind').on(table.kind, table.enabled),
+  ],
+);
+
+export const scheduledTaskRuns = sqliteTable(
+  'scheduled_task_runs',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id').notNull(),
+    status: text('status').notNull(),
+    outcome: text('outcome').notNull(),
+    message: text('message').notNull(),
+    workflowRunId: text('workflow_run_id'),
+    sessionId: text('session_id'),
+    resultJson: text('result_json'),
+    error: text('error'),
+    startedAt: text('started_at').notNull(),
+    completedAt: text('completed_at'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_scheduled_task_runs_task').on(
+      table.taskId,
+      sql`${table.createdAt} DESC`,
+    ),
+    index('idx_scheduled_task_runs_status').on(
+      table.status,
+      sql`${table.updatedAt} DESC`,
+    ),
+  ],
+);
+
 export const routineEvents = sqliteTable(
   'routine_events',
   {
