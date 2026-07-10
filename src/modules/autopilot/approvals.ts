@@ -14,13 +14,24 @@ export async function approvePreparedDiffPushWithPolicy(
   paths: RuntimePaths = runtimePaths(),
 ): Promise<PreparedDiffActionResult> {
   const parsed = v.safeParse(approvePushInputSchema, input);
-  if (!parsed.success) return approvePreparedDiffPush(input, paths);
+  const unavailableBinding = {
+    targetSha: '',
+    policyHash: '',
+    policyDecision: 'allow' as const,
+  };
+  if (!parsed.success) {
+    return approvePreparedDiffPush(input, paths, unavailableBinding);
+  }
   const preparedDiff = readPreparedDiff(parsed.output.preparedDiffId, paths);
-  if (!preparedDiff) return approvePreparedDiffPush(input, paths);
+  if (!preparedDiff) {
+    return approvePreparedDiffPush(input, paths, unavailableBinding);
+  }
   const targetSha = await gitCurrentSha(preparedDiff.sourceWorktreePath).catch(
     () => null,
   );
-  if (!targetSha) return approvePreparedDiffPush(input, paths);
+  if (!targetSha) {
+    return approvePreparedDiffPush(input, paths, unavailableBinding);
+  }
   const policy = await checkAutopilotPolicy(
     {
       worktreeId: preparedDiff.worktreeId,

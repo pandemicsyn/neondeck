@@ -50,6 +50,34 @@ describe('app database migrator', () => {
       message: 'App database has no Drizzle migration journal.',
     });
   });
+
+  it('gives journaled pre-baseline databases the same reset instruction', async () => {
+    const root = await tempDir();
+    const databasePath = join(root, 'neondeck.db');
+    const database = new DatabaseSync(databasePath);
+    database.exec(`
+      CREATE TABLE __drizzle_migrations (
+        id INTEGER PRIMARY KEY,
+        hash text NOT NULL,
+        created_at numeric,
+        name text,
+        applied_at TEXT
+      );
+    `);
+    database
+      .prepare(
+        'INSERT INTO __drizzle_migrations (hash, created_at, name) VALUES (?, ?, ?);',
+      )
+      .run('old-hash', 1, '20260704065926_baseline');
+    database.close();
+
+    expect(() => applyAppDbMigrations(databasePath)).toThrow(
+      'This app database predates the current Neondeck baseline.',
+    );
+    expect(readAppDbMigrationStatus(databasePath).message).toContain(
+      'predates the current Neondeck baseline',
+    );
+  });
 });
 
 async function tempDir() {

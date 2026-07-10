@@ -113,6 +113,22 @@ export function readAppDbMigrationStatus(
     }
 
     const applied = readJournal(database);
+    if (journalPredatesCurrentBaseline(applied, migrations)) {
+      return {
+        ok: false,
+        databasePath,
+        migrationsFolder,
+        applied,
+        pending: migrations.map((migration) => migration.name),
+        unknown: applied,
+        changed: [],
+        localHead,
+        journalHead: applied.at(-1)?.name ?? null,
+        lastBackup,
+        message:
+          'This app database predates the current Neondeck baseline. Reset it instead of applying a pre-1.0 compatibility upgrade.',
+      };
+    }
     const unknown = applied.filter(
       (row) => !row.name || !localByName.has(row.name),
     );
@@ -187,7 +203,13 @@ export function applyAppDbMigrations(
     const journalExisted = tableExists(database, drizzleMigrationsTable);
     const userTablesBeforeJournal = listUserTables(database);
     if (journalExisted) {
-      assertJournalMatchesLocalMigrations(readJournal(database), localByName);
+      const applied = readJournal(database);
+      if (journalPredatesCurrentBaseline(applied, migrations)) {
+        throw new AppDbMigrationError(
+          'This app database predates the current Neondeck baseline. Reset it instead of applying a pre-1.0 compatibility upgrade.',
+        );
+      }
+      assertJournalMatchesLocalMigrations(applied, localByName);
     }
 
     if (!journalExisted) {
@@ -318,6 +340,18 @@ function assertJournalMatchesLocalMigrations(
       { migrationName: changed.name ?? undefined },
     );
   }
+}
+
+function journalPredatesCurrentBaseline(
+  appliedRows: AppDbMigrationRecord[],
+  migrations: DrizzleMigration[],
+) {
+  const baseline = migrations[0]?.name;
+  return Boolean(
+    baseline &&
+    appliedRows.length > 0 &&
+    !appliedRows.some((row) => row.name === baseline),
+  );
 }
 
 function insertJournalRow(database: DatabaseSync, migration: DrizzleMigration) {

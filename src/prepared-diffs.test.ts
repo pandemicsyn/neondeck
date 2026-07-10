@@ -7,7 +7,6 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   abandonPreparedDiff,
-  approvePreparedDiffPush,
   ensurePreparedDiffForWorktree,
   listPreparedDiffs,
   readPreparedDiffChangedFiles,
@@ -16,6 +15,7 @@ import {
   requestPreparedDiffRevision,
   runPreparedDiffVerification,
 } from './modules/prepared-diffs';
+import { approvePreparedDiffPushWithPolicy } from './modules/autopilot';
 import {
   abandonPreparedDiffWithRevisionAbort,
   runPreparedDiffRevision,
@@ -93,11 +93,11 @@ describe('prepared diff lifecycle', () => {
     const { paths } = await fixture();
     const prepared = await preparedFixture(paths);
 
-    const blockedApproval = await approvePreparedDiffPush(
+    const blockedApproval = await approvePreparedDiffPushWithPolicy(
       { preparedDiffId: prepared.id },
       paths,
     );
-    const approved = await approvePreparedDiffPush(
+    const approved = await approvePreparedDiffPushWithPolicy(
       {
         preparedDiffId: prepared.id,
         confirm: true,
@@ -122,7 +122,7 @@ describe('prepared diff lifecycle', () => {
       { preparedDiffId: prepared.id, confirm: true, reason: 'Superseded.' },
       paths,
     );
-    const invalidAfterAbandon = await approvePreparedDiffPush(
+    const invalidAfterAbandon = await approvePreparedDiffPushWithPolicy(
       { preparedDiffId: prepared.id, confirm: true },
       paths,
     );
@@ -141,8 +141,8 @@ describe('prepared diff lifecycle', () => {
           approvalType: 'push',
           status: 'approved',
           targetSha: expect.any(String),
-          policyHash: null,
-          policyDecision: null,
+          policyHash: expect.any(String),
+          policyDecision: expect.any(String),
         },
       ],
       data: { nextWorkflow: 'push_pr_autofix' },
@@ -185,7 +185,7 @@ describe('prepared diff lifecycle', () => {
   it('preserves approval and verification state on idempotent prepared diff reads', async () => {
     const { paths } = await fixture();
     const prepared = await preparedFixture(paths);
-    await approvePreparedDiffPush(
+    await approvePreparedDiffPushWithPolicy(
       {
         preparedDiffId: prepared.id,
         confirm: true,
@@ -238,7 +238,7 @@ describe('prepared diff lifecycle', () => {
   it('resets approval and verification state when releasing a revised prepared-diff worktree', async () => {
     const { paths } = await fixture();
     const prepared = await preparedFixture(paths);
-    await approvePreparedDiffPush(
+    await approvePreparedDiffPushWithPolicy(
       {
         preparedDiffId: prepared.id,
         confirm: true,

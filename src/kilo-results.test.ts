@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { listNotifications } from './modules/app-state';
-import { approvePreparedDiffPush } from './modules/prepared-diffs';
+import { approvePreparedDiffPushWithPolicy } from './modules/autopilot';
 import {
   readKiloTaskStatus,
   recordDocsDriftFixTaskBoundary,
@@ -118,7 +118,7 @@ describe('Kilo result review, verification, and promotion', () => {
     );
 
     await expect(
-      approvePreparedDiffPush(
+      approvePreparedDiffPushWithPolicy(
         {
           preparedDiffId,
           confirm: true,
@@ -347,7 +347,7 @@ describe('Kilo result review, verification, and promotion', () => {
       },
       paths,
     );
-    await approvePreparedDiffPush(
+    await approvePreparedDiffPushWithPolicy(
       {
         preparedDiffId,
         confirm: true,
