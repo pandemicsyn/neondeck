@@ -173,6 +173,33 @@ export async function failAutopilotAdmission(
   }
 }
 
+export async function settleAutopilotAdmissionTriage(
+  input: { runId: string; failed: boolean },
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `UPDATE autopilot_admissions
+         SET state = ?, current_workflow = NULL, last_error = ?,
+             next_attempt_at = ?, updated_at = ?
+         WHERE current_run_id = ? AND state = 'triage-admitted';`,
+      )
+      .run(
+        input.failed ? 'failed' : 'triaged',
+        input.failed ? 'Triage workflow failed; see Flue run details.' : null,
+        input.failed ? now : null,
+        now,
+        input.runId,
+      );
+  } finally {
+    database.close();
+  }
+}
+
 function readAdmission(row: unknown): AutopilotAdmission | undefined {
   if (!row) return undefined;
   const value = row as Record<string, unknown>;
