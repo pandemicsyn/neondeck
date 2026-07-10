@@ -1,4 +1,9 @@
-import type { MemoryScope, MemoryRecord, MemoryResponse } from './types';
+import type {
+  ActiveMemoryScope,
+  MemoryScope,
+  MemoryRecord,
+  MemoryResponse,
+} from './types';
 import { getJson, postJson } from './http';
 
 export async function getMemories(
@@ -17,7 +22,7 @@ export async function getMemories(
 }
 
 export async function upsertMemory(input: {
-  scope: 'user' | 'local' | 'project';
+  scope: ActiveMemoryScope;
   key: string;
   value: unknown;
   repoId?: string;

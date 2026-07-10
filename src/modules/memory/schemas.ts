@@ -2,7 +2,8 @@ import type { JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 
 export type ActiveMemoryScope = 'user' | 'local' | 'project';
-export type MemoryScope = ActiveMemoryScope;
+export type LegacyMemoryScope = 'session' | 'watch';
+export type MemoryScope = ActiveMemoryScope | LegacyMemoryScope;
 export type MemoryStatus = 'active' | 'archived';
 export type MemoryMutationSource = 'user' | 'neon' | 'workflow';
 
@@ -47,7 +48,13 @@ export type MemoryCandidateRecord = {
   decidedAt: string | null;
 };
 
-export const allMemoryScopeSchema = v.picklist(['user', 'local', 'project']);
+export const allMemoryScopeSchema = v.picklist([
+  'user',
+  'local',
+  'project',
+  'session',
+  'watch',
+]);
 export const activeMemoryScopeSchema = v.picklist(['user', 'local', 'project']);
 export const memoryStatusSchema = v.picklist(['active', 'archived']);
 export const memoryActorSchema = v.picklist(['user', 'neon', 'workflow']);
@@ -86,7 +93,7 @@ export const memoryLearnInputSchema = v.object({
 });
 export const memoryRewriteInputSchema = v.object({
   id: v.optional(nonEmptyStringSchema),
-  scope: v.optional(allMemoryScopeSchema),
+  scope: v.optional(activeMemoryScopeSchema),
   key: v.optional(nonEmptyStringSchema),
   repoId: v.optional(nonEmptyStringSchema),
   value: jsonValueSchema,
@@ -102,7 +109,7 @@ export const memoryMergeInputSchema = v.object({
 });
 export const memoryArchiveInputSchema = v.object({
   id: v.optional(nonEmptyStringSchema),
-  scope: v.optional(allMemoryScopeSchema),
+  scope: v.optional(activeMemoryScopeSchema),
   key: v.optional(nonEmptyStringSchema),
   repoId: v.optional(nonEmptyStringSchema),
   reason: v.optional(v.string()),

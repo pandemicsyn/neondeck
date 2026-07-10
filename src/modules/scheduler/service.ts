@@ -4,6 +4,7 @@ import {
   attachScheduledTaskWorkflowRunId,
   canAdmitScheduledWorkflow,
   claimDueScheduledTasks,
+  deferUnstartedScheduledTaskClaim,
   executeScheduledTask,
   listScheduledTasks,
   readLatestScheduledTaskRun,
@@ -84,9 +85,11 @@ export async function runSchedulerTick(
           workflowTask &&
           !(await canAdmitScheduledWorkflow(task.id, paths))
         ) {
-          await releaseUnstartedScheduledTaskClaim(
+          await deferUnstartedScheduledTaskClaim(
             {
-              ...claim,
+              task,
+              previous: claim.previous,
+              run,
               message:
                 'Scheduled task was deferred because the active workflow limit is reached.',
             },

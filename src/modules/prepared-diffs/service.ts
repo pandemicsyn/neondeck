@@ -379,7 +379,7 @@ export async function approvePreparedDiffPush(
     record.record,
     'prepared_diff_approve_push',
     'approve-push',
-    ['prepared', 'verification-requested'],
+    ['prepared', 'verification-requested', 'push-blocked'],
   );
   if (!transition.ok) return transition.result;
   const approvedCommitSha = await gitCurrentSha(
