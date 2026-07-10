@@ -16,6 +16,7 @@ import {
   removeRepo,
   removeSchedule,
   updateRepo,
+  updateRepoAutopilotPolicy,
   updateAgentModels,
   updateLearningConfig,
   updateExecutionPolicy,
@@ -95,6 +96,68 @@ describe('config actions', () => {
     ).repos;
     expect(repos[0].defaultBranch).toBe('trunk');
 
+    await expect(
+      updateRepo(
+        {
+          id: 'neondeck',
+          metadata: { autopilot: { mode: 'autofix-push-when-safe' } },
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      requires: ['autopilotPolicy'],
+    });
+
+    await expect(
+      updateRepoAutopilotPolicy(
+        { repoId: 'neondeck', mode: 'prepare-only' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      requires: ['confirm'],
+    });
+
+    await expect(
+      updateRepoAutopilotPolicy(
+        {
+          repoId: 'neondeck',
+          mode: 'prepare-only',
+          reason: 'Allow a managed worktree to be prepared.',
+          confirm: true,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'config_update_repo_autopilot_policy',
+      data: { policy: { mode: 'prepare-only' } },
+    });
+
+    await expect(
+      updateRepoAutopilotPolicy(
+        { repoId: 'neondeck', mode: 'autofix-push-when-safe' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      requires: ['confirm'],
+    });
+
+    const replacementRepoPath = await tempGitRepo();
+    await expect(
+      updateRepo({ id: 'neondeck', path: replacementRepoPath }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      requires: ['confirm'],
+    });
+
     await expect(removeRepo({ id: 'neondeck' }, paths)).resolves.toMatchObject({
       ok: false,
       changed: false,
@@ -116,6 +179,10 @@ describe('config actions', () => {
     expect(readHistory(paths.neondeckDatabase)).toMatchObject([
       { action: 'config_add_repo', target: 'neondeck' },
       { action: 'config_update_repo', target: 'neondeck' },
+      {
+        action: 'config_update_repo_autopilot_policy',
+        target: 'neondeck',
+      },
       { action: 'config_remove_repo', target: 'neondeck' },
     ]);
   });
@@ -627,7 +694,7 @@ describe('config actions', () => {
         providers: {
           kilocode: {
             enabled: true,
-            apiKeyEnv: 'KILO_API_KEY',
+            apiKeyEnv: 'KILOCODE_API_KEY',
             organizationIdEnv: null,
           },
         },

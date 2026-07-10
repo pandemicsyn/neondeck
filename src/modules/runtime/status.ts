@@ -105,7 +105,7 @@ export async function readRuntimeStatus(
       session.ok
         ? session.value.stale
           ? `${session.value.staleReasons.length} context change${session.value.staleReasons.length === 1 ? '' : 's'} require a new session.`
-          : `Active session ${session.value.activeSession.id} is current.`
+          : `Active session ${session.value.activeChatSession.id} is current.`
         : 'Session state could not be read.',
     ),
     check(
@@ -341,11 +341,11 @@ export async function readRuntimeStatus(
     },
     session: session.ok
       ? {
-          id: session.value.activeSession.id,
-          label: session.value.activeSession.label,
+          id: session.value.activeChatSession.id,
+          label: session.value.activeChatSession.title,
           stale: session.value.stale,
           staleReasons: session.value.staleReasons,
-          activatedAt: session.value.activeSession.activatedAt,
+          activatedAt: session.value.activeChatSession.lastActiveAt,
         }
       : {
           id: 'unknown',

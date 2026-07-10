@@ -14,6 +14,7 @@ import {
   updateHandoffConfigInputSchema,
   updateLearningConfigInputSchema,
   updateProviderInputSchema,
+  updateRepoAutopilotPolicyInputSchema,
   updateRepoInputSchema,
   updateRoutinesConfigInputSchema,
   updateScheduleInputSchema,
@@ -37,7 +38,12 @@ import {
   readProviderConfig,
   updateProviderConfig,
 } from './mutations/providers';
-import { addRepo, removeRepo, updateRepo } from './mutations/repos';
+import {
+  addRepo,
+  removeRepo,
+  updateRepo,
+  updateRepoAutopilotPolicy,
+} from './mutations/repos';
 import { updateRoutinesConfig } from './mutations/routines';
 import {
   addSchedule,
@@ -225,6 +231,17 @@ export const updateRepoAction = defineAction({
   },
 });
 
+export const updateRepoAutopilotPolicyAction = defineAction({
+  name: 'neondeck_config_update_repo_autopilot_policy',
+  description:
+    'Update one repository’s typed autopilot policy. Explicit confirmation is required when the change increases autonomy, relaxes limits, expands push destinations, or enables force push.',
+  input: updateRepoAutopilotPolicyInputSchema,
+  output: configActionOutputSchema,
+  async run({ input }) {
+    return updateRepoAutopilotPolicy(input);
+  },
+});
+
 export const removeRepoAction = defineAction({
   name: 'neondeck_config_remove_repo',
   description:
@@ -289,6 +306,7 @@ export const neondeckConfigActions = [
   applyDashboardPresetAction,
   addRepoAction,
   updateRepoAction,
+  updateRepoAutopilotPolicyAction,
   removeRepoAction,
   addScheduleAction,
   updateScheduleAction,

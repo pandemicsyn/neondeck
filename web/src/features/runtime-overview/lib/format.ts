@@ -161,7 +161,7 @@ export function setupStep(check: RuntimeStatusCheck): SetupStep {
       detail: 'Fix ignored or invalid runtime skills, then reload skills.',
     },
     'session-context': {
-      action: 'neondeck_session_start',
+      action: 'neondeck_session_create',
       docsHref: `${docsBase}#agent-models`,
       docsLabel: 'models',
       surface: 'action',

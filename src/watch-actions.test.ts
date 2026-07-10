@@ -170,6 +170,38 @@ describe('PR watch actions', () => {
     );
   });
 
+  it('ignores refreshed check observation timestamps for unchanged merged PRs', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    const detail = prDetail({
+      state: 'closed',
+      merged: true,
+      mergeCommitSha: 'merge123',
+      updatedAt: '2026-06-27T20:00:00Z',
+    });
+
+    await addPrWatch(
+      { ref: 'neondeck#123' },
+      paths,
+      async () => detail,
+      async () => checkSummary('success', '2026-06-27T20:05:30Z'),
+    );
+
+    await expect(
+      refreshPrWatch(
+        { id: 'pandemicsyn/neondeck#123' },
+        paths,
+        async () => detail,
+        async () => checkSummary('success', '2026-06-27T21:05:30Z'),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      outcome: 'silent',
+    });
+  });
+
   it('returns an existing PR watch as an idempotent no-op with attribution preserved', async () => {
     const home = await tempHome();
     const paths = runtimePaths(home);
@@ -784,6 +816,7 @@ function prDetail(
 
 function checkSummary(
   status: GitHubCheckSummary['status'],
+  checkedAt = '2026-06-27T20:05:30Z',
 ): GitHubCheckSummary {
   return {
     status,
@@ -791,6 +824,6 @@ function checkSummary(
     successful: status === 'success' ? 1 : 0,
     failed: status === 'failure' ? 1 : 0,
     pending: status === 'pending' ? 1 : 0,
-    checkedAt: '2026-06-27T20:05:30Z',
+    checkedAt,
   };
 }

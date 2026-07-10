@@ -29,6 +29,7 @@ import {
   defaultCheckFetcher,
   defaultWatchFetcher,
   fetchWatchDetail,
+  meaningfulPrSnapshot,
   refStatusFromChecks,
   meaningfulRefSnapshot,
   resolveRefWatchId,
@@ -537,8 +538,8 @@ export async function refreshPrWatch(
   );
   const nextStatus = statusFromSnapshot(snapshot, watch.desiredTerminalState);
   const changed =
-    JSON.stringify(watch.lastSnapshot) !== JSON.stringify(snapshot) ||
-    watch.status !== nextStatus;
+    meaningfulPrSnapshot(watch.lastSnapshot) !==
+      meaningfulPrSnapshot(snapshot) || watch.status !== nextStatus;
   const now = new Date().toISOString();
   const nextWatch: PrWatch = {
     ...watch,

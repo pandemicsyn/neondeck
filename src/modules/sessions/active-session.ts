@@ -5,11 +5,7 @@ import {
   runtimePaths,
 } from '../../runtime-home';
 import type { NeonSessionState } from './schemas';
-import {
-  readActiveChatSession,
-  readChatSessionRow,
-  toNeonSessionRecord,
-} from './store';
+import { readActiveChatSession, readChatSessionRow } from './store';
 
 export async function readNeonSessionState(
   paths: RuntimePaths = runtimePaths(),
@@ -20,7 +16,6 @@ export async function readNeonSessionState(
 
   try {
     const active = readActiveChatSession(database, surface);
-    const activeSession = toNeonSessionRecord(active, active.id);
     const sessions = database
       .prepare(
         `
@@ -37,15 +32,11 @@ export async function readNeonSessionState(
     return {
       ok: true,
       action: 'session_status',
-      activeSession,
       activeChatSession: active,
       activeSessionId: active.id,
       surface,
       stale: active.staleReasons.length > 0,
       staleReasons: active.staleReasons,
-      history: sessions
-        .slice(0, 10)
-        .map((session) => toNeonSessionRecord(session, active.id)),
       sessions,
       fetchedAt: new Date().toISOString(),
     };

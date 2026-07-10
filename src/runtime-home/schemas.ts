@@ -208,9 +208,6 @@ export const autopilotModeSchema = v.picklist([
   'prepare-only',
   'autofix-with-approval',
   'autofix-push-when-safe',
-  'draft-fix',
-  'auto-fix-no-push',
-  'auto-fix-push-after-checks',
 ]);
 
 export const autopilotPolicyLimitsSchema = v.looseObject({

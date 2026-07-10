@@ -322,7 +322,6 @@ function hasUserOwnedMcpUpdateField(patch: Record<string, unknown>) {
   return [
     'transport',
     'url',
-    'sse',
     'auth',
     'tools',
     'command',

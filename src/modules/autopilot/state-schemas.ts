@@ -8,11 +8,9 @@ import {
   globalAutopilotPolicy,
   mergeAutopilotConcurrency,
   mergeAutopilotLimits,
-  normalizeAutopilotMode,
   readRepoAutopilotConfig,
   type AutopilotConcurrencyPolicy,
   type AutopilotMode,
-  type AutopilotModeAlias,
   type AutopilotPolicyLimits,
 } from '../autopilot-policy';
 import {
@@ -191,14 +189,14 @@ export type AutopilotState = {
 };
 
 export type AutopilotRepoConfig = Partial<{
-  mode: AutopilotMode | AutopilotModeAlias;
+  mode: AutopilotMode;
   reason: string;
   limits: Partial<AutopilotPolicyLimits>;
   concurrency: Partial<AutopilotConcurrencyPolicy>;
   watchOverrides: Array<{
     watchId?: string;
     prNumber?: number;
-    mode?: AutopilotMode | AutopilotModeAlias;
+    mode?: AutopilotMode;
     reason?: string;
   }>;
 }>;

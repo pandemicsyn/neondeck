@@ -70,28 +70,14 @@ export type ChatSessionCommandEvent = {
   updatedAt: string;
 };
 
-export type NeonSessionRecord = {
-  id: string;
-  label: string;
-  agentName: string;
-  status: 'active' | 'archived';
-  reason: string | null;
-  createdAt: string;
-  activatedAt: string;
-  endedAt: string | null;
-  updatedAt: string;
-};
-
 export type NeonSessionState = {
   ok: boolean;
   action: 'session_status';
-  activeSession: NeonSessionRecord;
   activeChatSession: ChatSessionRecord;
   activeSessionId: string;
   surface: string;
   stale: boolean;
   staleReasons: NeonSessionStaleReason[];
-  history: NeonSessionRecord[];
   sessions: ChatSessionRecord[];
   fetchedAt: string;
 };
@@ -259,10 +245,6 @@ export const sessionCommandEventUpdateInputSchema = v.object({
   ),
   completedAt: v.optional(v.nullable(nonEmptyStringSchema)),
   reason: v.optional(v.pipe(v.string(), v.maxLength(200))),
-});
-export const legacySessionStartInputSchema = v.object({
-  label: v.optional(titleSchema),
-  reason: v.optional(v.pipe(v.string(), v.minLength(1), v.maxLength(160))),
 });
 export const sessionActionOutputSchema = v.looseObject({
   ok: v.boolean(),

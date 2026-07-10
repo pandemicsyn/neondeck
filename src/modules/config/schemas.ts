@@ -2,6 +2,12 @@ import { type JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 import { thinkingLevelSchema } from '../../runtime-home';
 import { isRegisteredProvider } from '../repos';
+import {
+  autopilotConcurrencySchema,
+  autopilotPolicyLimitsSchema,
+  modeSchema,
+  watchOverrideSchema,
+} from '../autopilot-policy';
 
 export type ConfigTarget =
   'all' | 'config' | 'mcp' | 'repos' | 'dashboard' | 'schedules';
@@ -59,6 +65,17 @@ export const updateRepoInputSchema = v.object({
   packageScripts: v.optional(stringRecordSchema),
   metadata: v.optional(unknownRecordSchema),
   watchRules: v.optional(v.array(v.unknown())),
+  confirm: v.optional(v.boolean()),
+});
+
+export const updateRepoAutopilotPolicyInputSchema = v.strictObject({
+  repoId: nonEmptyStringSchema,
+  mode: v.optional(modeSchema),
+  reason: v.optional(nonEmptyStringSchema),
+  limits: v.optional(autopilotPolicyLimitsSchema),
+  concurrency: v.optional(autopilotConcurrencySchema),
+  watchOverrides: v.optional(v.array(watchOverrideSchema)),
+  confirm: v.optional(v.boolean()),
 });
 
 export const removeRepoInputSchema = v.object({

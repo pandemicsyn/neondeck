@@ -1169,7 +1169,7 @@ describe('scheduler', () => {
       paths.config,
       `${JSON.stringify({
         version: 1,
-        autopilot: { defaultMode: 'draft-fix' },
+        autopilot: { defaultMode: 'prepare-only' },
       })}\n`,
     );
     await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
@@ -1202,7 +1202,7 @@ describe('scheduler', () => {
           prNumber: 123,
           watchId: 'pandemicsyn/neondeck#123',
           source: 'watch',
-          autopilotMode: 'draft-fix',
+          autopilotMode: 'prepare-only',
           deltas: [
             expect.objectContaining({
               type: 'review-comment',
@@ -1222,7 +1222,7 @@ describe('scheduler', () => {
       paths.config,
       `${JSON.stringify({
         version: 1,
-        autopilot: { defaultMode: 'draft-fix' },
+        autopilot: { defaultMode: 'prepare-only' },
       })}\n`,
     );
     await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
@@ -1266,7 +1266,7 @@ describe('scheduler', () => {
       paths.config,
       `${JSON.stringify({
         version: 1,
-        autopilot: { defaultMode: 'draft-fix' },
+        autopilot: { defaultMode: 'prepare-only' },
       })}\n`,
     );
     await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
@@ -1294,7 +1294,7 @@ describe('scheduler', () => {
                   watchId: 'pandemicsyn/neondeck#123',
                   eventId: 'event-1',
                   source: 'watch',
-                  autopilotMode: 'draft-fix',
+                  autopilotMode: 'prepare-only',
                   deltas: [
                     {
                       type: 'review-comment',
@@ -1348,7 +1348,7 @@ describe('scheduler', () => {
       paths.config,
       `${JSON.stringify({
         version: 1,
-        autopilot: { defaultMode: 'draft-fix' },
+        autopilot: { defaultMode: 'prepare-only' },
       })}\n`,
     );
     await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
@@ -1491,7 +1491,7 @@ describe('scheduler', () => {
       paths.config,
       `${JSON.stringify({
         version: 1,
-        autopilot: { defaultMode: 'draft-fix' },
+        autopilot: { defaultMode: 'prepare-only' },
       })}\n`,
     );
     await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
@@ -1549,7 +1549,7 @@ describe('scheduler', () => {
       paths.config,
       `${JSON.stringify({
         version: 1,
-        autopilot: { defaultMode: 'draft-fix' },
+        autopilot: { defaultMode: 'prepare-only' },
       })}\n`,
     );
     await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
@@ -1591,7 +1591,7 @@ describe('scheduler', () => {
       paths.config,
       `${JSON.stringify({
         version: 1,
-        autopilot: { defaultMode: 'draft-fix' },
+        autopilot: { defaultMode: 'prepare-only' },
       })}\n`,
     );
     await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
@@ -1633,7 +1633,7 @@ describe('scheduler', () => {
       paths.config,
       `${JSON.stringify({
         version: 1,
-        autopilot: { defaultMode: 'draft-fix' },
+        autopilot: { defaultMode: 'prepare-only' },
       })}\n`,
     );
     await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
@@ -1674,7 +1674,7 @@ describe('scheduler', () => {
       paths.config,
       `${JSON.stringify({
         version: 1,
-        autopilot: { defaultMode: 'draft-fix' },
+        autopilot: { defaultMode: 'prepare-only' },
       })}\n`,
     );
     await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
@@ -2415,7 +2415,7 @@ function blockedTriageJobResult(eventId: string) {
             watchId: 'pandemicsyn/neondeck#123',
             eventId,
             source: 'watch',
-            autopilotMode: 'draft-fix',
+            autopilotMode: 'prepare-only',
             deltas: [
               {
                 type: 'review-comment',

@@ -6,9 +6,6 @@ export type AutopilotMode =
   | 'autofix-with-approval'
   | 'autofix-push-when-safe';
 
-export type AutopilotModeAlias =
-  'draft-fix' | 'auto-fix-no-push' | 'auto-fix-push-after-checks';
-
 export type AutopilotPolicyLimits = {
   maxFilesChanged: number;
   maxLinesChanged: number;
@@ -99,14 +96,14 @@ export type AutopilotFileRisk = {
 };
 
 export type RepoAutopilotConfig = Partial<{
-  mode: AutopilotMode | AutopilotModeAlias;
+  mode: AutopilotMode;
   reason: string;
   limits: Partial<AutopilotPolicyLimits>;
   concurrency: Partial<AutopilotConcurrencyPolicy>;
   watchOverrides: Array<{
     watchId?: string;
     prNumber?: number;
-    mode?: AutopilotMode | AutopilotModeAlias;
+    mode?: AutopilotMode;
     reason?: string;
   }>;
 }>;
@@ -123,9 +120,6 @@ export const modeSchema = v.picklist([
   'prepare-only',
   'autofix-with-approval',
   'autofix-push-when-safe',
-  'draft-fix',
-  'auto-fix-no-push',
-  'auto-fix-push-after-checks',
 ]);
 export const stringArraySchema = v.array(nonEmptyStringSchema);
 export const watchOverrideSchema = v.looseObject({
@@ -237,12 +231,6 @@ export const defaultAutopilotConcurrency: AutopilotConcurrencyPolicy = {
   maxPerRepoAutonomousJobs: 1,
   singleMutationPerPr: true,
   localExecutionLimit: 1,
-};
-
-export const modeAliasMap: Record<AutopilotModeAlias, AutopilotMode> = {
-  'draft-fix': 'prepare-only',
-  'auto-fix-no-push': 'autofix-with-approval',
-  'auto-fix-push-after-checks': 'autofix-push-when-safe',
 };
 
 export const autopilotWorkflowNames = new Set([

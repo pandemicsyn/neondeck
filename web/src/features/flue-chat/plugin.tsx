@@ -168,7 +168,7 @@ export const FlueChatPlugin = {
     const activeSession = sessionState
       ? {
           id: sessionState.activeSessionId,
-          label: activeRecord?.title ?? sessionState.activeSession.label,
+          label: activeRecord?.title ?? sessionState.activeChatSession.title,
           placeholder:
             linkedContextPlaceholder(activeRecord) ??
             fallbackSession.placeholder,

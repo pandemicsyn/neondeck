@@ -1,6 +1,5 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
@@ -125,9 +124,6 @@ function createTransport(
 
   const requestInit = headers ? { headers } : undefined;
   const url = new URL(server.url);
-  if (server.sse) {
-    return new SSEClientTransport(url, { requestInit, authProvider });
-  }
   return new StreamableHTTPClientTransport(url, { requestInit, authProvider });
 }
 

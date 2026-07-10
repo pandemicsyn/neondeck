@@ -313,29 +313,6 @@ describe('app API safety routes', () => {
     expect(response.status).toBe(404);
   });
 
-  it('returns a client error when memory delete is not confirmed', async () => {
-    const response = await app.request(
-      'http://localhost/api/memories?scope=session&key=current-task',
-      {
-        method: 'DELETE',
-        headers: {
-          host: 'localhost',
-          origin: 'http://localhost',
-        },
-      },
-    );
-    const body = (await response.json()) as {
-      ok: boolean;
-      requires?: string[];
-    };
-
-    expect(response.status).toBe(400);
-    expect(body).toMatchObject({
-      ok: false,
-      requires: ['confirm'],
-    });
-  });
-
   it('validates learning review API inputs before workflow admission', async () => {
     const badReview = await app.request(
       'http://localhost/api/learning/reviews/conversation',
@@ -840,7 +817,7 @@ describe('app API safety routes', () => {
         body: JSON.stringify({
           repoId: 'sample',
           prNumber: 1,
-          autopilotMode: 'draft-fix',
+          autopilotMode: 'prepare-only',
           deltas: [{ type: 'check-failure', actionable: true }],
           current: { state: 'open', checkStatus: 'failure' },
         }),
@@ -854,7 +831,7 @@ describe('app API safety routes', () => {
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
       ok: true,
-      data: { classification: 'draft-fix' },
+      data: { classification: 'prepare-only' },
     });
   });
 

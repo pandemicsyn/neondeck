@@ -78,14 +78,9 @@ import {
   syncWorktree,
   type WorktreeRecord,
 } from '../worktrees';
+import type { AutopilotMode } from '../autopilot-policy';
 
-export type AutopilotTriageClass =
-  | 'no-op'
-  | 'notify-only'
-  | 'explain-only'
-  | 'draft-fix'
-  | 'auto-fix-no-push'
-  | 'auto-fix-push-after-checks';
+export type AutopilotTriageClass = 'no-op' | 'explain-only' | AutopilotMode;
 
 export type AutopilotActionResult = {
   ok: boolean;
@@ -121,9 +116,9 @@ export const positiveIntegerSchema = v.pipe(
 );
 export const autopilotModeSchema = v.picklist([
   'notify-only',
-  'draft-fix',
-  'auto-fix-no-push',
-  'auto-fix-push-after-checks',
+  'prepare-only',
+  'autofix-with-approval',
+  'autofix-push-when-safe',
 ]);
 export const prEventDeltaSchema = v.object({
   type: v.picklist([

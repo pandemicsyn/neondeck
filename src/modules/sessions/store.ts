@@ -12,7 +12,6 @@ import {
   type ChatSessionRecord,
   type ChatSessionSummarySource,
   type ChatSessionSummaryStatus,
-  type NeonSessionRecord,
   type NeonSessionStaleReason,
 } from './schemas';
 
@@ -486,32 +485,6 @@ export function recordSessionAudit(
         : JSON.stringify(asJsonValue(input.metadata)),
       new Date().toISOString(),
     );
-}
-
-export function toNeonSessionRecord(
-  session: ChatSessionRecord,
-  activeSessionId: string,
-): NeonSessionRecord {
-  return {
-    id: session.id,
-    label: session.title,
-    agentName: session.agentName,
-    status:
-      session.archivedAt || session.id !== activeSessionId
-        ? 'archived'
-        : 'active',
-    reason:
-      typeof session.uiMetadata === 'object' &&
-      session.uiMetadata !== null &&
-      !Array.isArray(session.uiMetadata) &&
-      typeof session.uiMetadata.legacyReason === 'string'
-        ? session.uiMetadata.legacyReason
-        : null,
-    createdAt: session.createdAt,
-    activatedAt: session.lastActiveAt,
-    endedAt: session.archivedAt,
-    updatedAt: session.updatedAt,
-  };
 }
 
 function chatSessionKind(value: unknown): ChatSessionKind {

@@ -511,60 +511,6 @@ describe('learning review orchestration', () => {
     });
   });
 
-  it('does not expose legacy memory rows as model curation targets', async () => {
-    const paths = runtimePaths(await tempHome());
-    await updateLearningConfig(
-      {
-        memoryCurationMode: 'auto',
-        memoryWriteMode: 'auto',
-      },
-      paths,
-    );
-    const legacyId = insertLegacyMemory(paths, {
-      scope: 'session',
-      key: 'old-task',
-      value: 'legacy task state',
-    });
-
-    const prepared = await prepareMemoryCurationReview(
-      { trigger: 'manual', mode: 'auto' },
-      paths,
-    );
-    if (!prepared.ok) throw new Error(prepared.message);
-    expect(prepared.allowedMemoryIds).not.toContain(legacyId);
-    expect(JSON.stringify(prepared.inputSummary)).not.toContain(legacyId);
-
-    await expect(
-      completeLearningReviewFromModelOutput(
-        prepared,
-        {
-          summary: 'Ignore legacy rows.',
-          memoryActions: [
-            {
-              action: 'archive',
-              memoryId: legacyId,
-              reason: 'Legacy row should not be model-curated.',
-            },
-          ],
-        },
-        paths,
-      ),
-    ).resolves.toMatchObject({
-      ok: true,
-      changed: false,
-      skipped: [
-        expect.objectContaining({
-          reason: 'memory-not-in-review-snapshot',
-        }),
-      ],
-    });
-    await expect(
-      listMemories({ includeArchived: true, scope: 'session' }, paths),
-    ).resolves.toMatchObject({
-      memories: [expect.objectContaining({ id: legacyId, status: 'active' })],
-    });
-  });
-
   it('queues bounded learning workflows on configured turn intervals', async () => {
     const paths = runtimePaths(await tempHome());
     await updateLearningConfig(

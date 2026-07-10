@@ -40,9 +40,7 @@ export type ProviderRuntimeRegistration = {
 };
 
 const defaultKilocodeApiKeyEnv = 'KILOCODE_API_KEY';
-const fallbackKilocodeApiKeyEnv = 'KILO_API_KEY';
 const defaultKilocodeOrganizationIdEnv = 'KILOCODE_ORGANIZATION_ID';
-const fallbackKilocodeOrganizationIdEnv = 'KILO_ORGANIZATION_ID';
 const defaultOpenAiApiKeyEnv = 'OPENAI_API_KEY';
 const defaultAnthropicApiKeyEnv = 'ANTHROPIC_API_KEY';
 const kilocodeGatewayBaseUrl = 'https://api.kilo.ai/api/gateway';
@@ -116,18 +114,12 @@ export function resolveKilocodeProviderStatus(
   env: NodeJS.ProcessEnv = process.env,
 ): KilocodeProviderStatus {
   const kilocode = config?.providers?.kilocode;
-  const apiKeyEnv =
-    kilocode?.apiKeyEnv ??
-    (env[fallbackKilocodeApiKeyEnv] && !env[defaultKilocodeApiKeyEnv]
-      ? fallbackKilocodeApiKeyEnv
-      : defaultKilocodeApiKeyEnv);
+  const apiKeyEnv = kilocode?.apiKeyEnv ?? defaultKilocodeApiKeyEnv;
   const organizationIdEnv =
     kilocode?.organizationIdEnv ??
     (env[defaultKilocodeOrganizationIdEnv]
       ? defaultKilocodeOrganizationIdEnv
-      : env[fallbackKilocodeOrganizationIdEnv]
-        ? fallbackKilocodeOrganizationIdEnv
-        : null);
+      : null);
 
   return {
     id: 'kilocode',

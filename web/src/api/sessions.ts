@@ -20,22 +20,6 @@ export async function getChatSessions(
   return getJson<ChatSessionListResponse>(`/api/sessions${query}`);
 }
 
-export async function startNeonSession(
-  input: {
-    label?: string;
-    reason?: string;
-  } = {},
-) {
-  return postJson<{
-    ok: boolean;
-    action: string;
-    changed: boolean;
-    message: string;
-    state?: NeonSessionState;
-    errors?: string[];
-  }>('/api/session/new', input);
-}
-
 export async function createChatSession(
   input: {
     title?: string;

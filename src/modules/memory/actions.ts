@@ -3,7 +3,6 @@ import * as v from 'valibot';
 import { runtimePaths } from '../../runtime-home';
 import {
   archiveMemory,
-  deleteMemory,
   listMemories,
   listMemoryEvents,
   markMemoriesUsed,
@@ -35,7 +34,7 @@ import {
 export const memoryListAction = defineAction({
   name: 'neondeck_memory_list',
   description:
-    'List durable Neondeck structured memories by optional scope, key, status, and repo id. Legacy session/watch memories are readable but not writable.',
+    'List durable Neondeck structured memories by optional scope, key, status, and repo id.',
   input: memoryListInputSchema,
   output: v.looseObject({
     ok: v.boolean(),
@@ -51,17 +50,6 @@ export const memoryLearnAction = defineAction({
   name: 'neondeck_memory_learn',
   description:
     'Learn or update current durable guidance in user, local, or project memory with audit history.',
-  input: memoryLearnInputSchema,
-  output: memoryActionOutputSchema,
-  async run({ input }) {
-    return upsertMemory(input, runtimePaths(), { source: 'neon' });
-  },
-});
-
-export const memoryUpsertAction = defineAction({
-  name: 'neondeck_memory_upsert',
-  description:
-    'Compatibility alias for neondeck_memory_learn. New writes are restricted to user, local, and project memory.',
   input: memoryLearnInputSchema,
   output: memoryActionOutputSchema,
   async run({ input }) {
@@ -99,17 +87,6 @@ export const memoryArchiveAction = defineAction({
   output: memoryActionOutputSchema,
   async run({ input }) {
     return archiveMemory(input, runtimePaths(), { source: 'neon' });
-  },
-});
-
-export const memoryDeleteAction = defineAction({
-  name: 'neondeck_memory_delete',
-  description:
-    'Compatibility alias that archives one durable memory entry after explicit confirmation.',
-  input: memoryArchiveInputSchema,
-  output: memoryActionOutputSchema,
-  async run({ input }) {
-    return deleteMemory(input, runtimePaths(), { source: 'neon' });
   },
 });
 
@@ -194,11 +171,9 @@ export const memoryCurateAction = defineAction({
 export const neondeckMemoryActions = [
   memoryListAction,
   memoryLearnAction,
-  memoryUpsertAction,
   memoryRewriteAction,
   memoryMergeAction,
   memoryArchiveAction,
-  memoryDeleteAction,
   memoryMarkUsedAction,
   memoryEventsAction,
   memoryCandidateCreateAction,

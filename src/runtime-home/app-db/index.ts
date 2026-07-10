@@ -2,10 +2,8 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { configureDb } from '../../lib/sqlite.ts';
 import { applyAppDbMigrations } from './migrate.ts';
-import { migrateLegacyNeonSessions } from './migrations.ts';
 import {
   reconcileActiveChatSession,
-  reconcileActiveNeonSessions,
   reconcileActiveWorktreeLocks,
   reconcileExistingNotificationDuplicates,
 } from './reconcile.ts';
@@ -26,41 +24,43 @@ export function initializeAppDatabase(path: string) {
       .run();
     reconcileActiveWorktreeLocks(database);
     reconcileExistingNotificationDuplicates(database);
-    reconcileActiveNeonSessions(database);
 
     database
       .prepare(
         `
-        INSERT INTO neon_sessions (
+        INSERT INTO chat_sessions (
           id,
-          label,
+          title,
           agent_name,
-          status,
-          reason,
+          kind,
+          pinned,
           created_at,
-          activated_at,
-          updated_at
+          updated_at,
+          last_active_at,
+          context_loaded_at,
+          context_memory_ids_json
         )
         SELECT
           'neondeck-main',
           'Primary',
           'display-assistant',
-          'active',
-          'initial-session',
+          'main',
+          1,
           datetime('now'),
           datetime('now'),
-          datetime('now')
+          datetime('now'),
+          datetime('now'),
+          '[]'
         WHERE NOT EXISTS (
           SELECT 1
-          FROM neon_sessions
+          FROM chat_sessions
           WHERE agent_name = 'display-assistant'
-            AND status = 'active'
+            AND archived_at IS NULL
         );
       `,
       )
       .run();
 
-    migrateLegacyNeonSessions(database);
     reconcileActiveChatSession(database);
 
     database

@@ -3,7 +3,6 @@ import * as v from 'valibot';
 import { readNeonSessionState } from './active-session';
 import {
   createChatSession,
-  startNeonSession,
   switchChatSession,
   renameChatSession,
   pinChatSession,
@@ -20,7 +19,6 @@ import {
 import { refreshChatSessionSummary } from './summaries';
 import { referenceChatSession } from './references';
 import {
-  legacySessionStartInputSchema,
   sessionActionOutputSchema,
   sessionArchiveInputSchema,
   sessionCreateInputSchema,
@@ -197,17 +195,6 @@ export const sessionStatusAction = defineAction({
   },
 });
 
-export const sessionStartAction = defineAction({
-  name: 'neondeck_session_start',
-  description:
-    'Compatibility action for starting and activating a new Neon display-assistant session.',
-  input: legacySessionStartInputSchema,
-  output: sessionActionOutputSchema,
-  async run({ input }) {
-    return startNeonSession(input);
-  },
-});
-
 export const neondeckSessionActions = [
   sessionListAction,
   sessionSearchAction,
@@ -223,5 +210,4 @@ export const neondeckSessionActions = [
   sessionRestoreAction,
   sessionLinkContextAction,
   sessionStatusAction,
-  sessionStartAction,
 ];

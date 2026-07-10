@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import {
   archiveMemory,
-  deleteMemory,
   listMemories,
   listMemoryEvents,
   upsertMemory,
@@ -59,28 +58,6 @@ export function createMemoryRoutes(paths: RuntimePaths) {
     return c.json(await upsertMemory(await c.req.json(), paths));
   });
 
-  routes.delete('/memories', async (c) => {
-    const scope = memoryScope(c.req.query('scope'));
-    const key = c.req.query('key');
-    if (!scope || !key) {
-      return c.json(
-        {
-          ok: false,
-          action: 'memory_delete',
-          changed: false,
-          message: 'Memory delete requires scope and key query parameters.',
-        },
-        400,
-      );
-    }
-
-    const result = await deleteMemory(
-      { scope, key, confirm: c.req.query('confirm') === 'true' },
-      paths,
-    );
-    return c.json(result, result.ok ? 200 : 400);
-  });
-
   routes.post('/memories/:id/archive', async (c) => {
     const result = await archiveMemory(
       {
@@ -109,13 +86,7 @@ export function createMemoryRoutes(paths: RuntimePaths) {
 }
 
 function memoryScope(value: string | undefined) {
-  if (
-    value === 'user' ||
-    value === 'local' ||
-    value === 'project' ||
-    value === 'session' ||
-    value === 'watch'
-  ) {
+  if (value === 'user' || value === 'local' || value === 'project') {
     return value;
   }
 

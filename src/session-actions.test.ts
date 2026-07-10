@@ -5,7 +5,6 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { updateAgentModels } from './modules/config';
 import { deleteMemory, rewriteMemory, upsertMemory } from './modules/memory';
-import { initializeAppDatabase } from './runtime-home/app-db/index.ts';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   archiveChatSession,
@@ -26,7 +25,6 @@ import {
   restoreChatSession,
   searchChatSessions,
   sessionContextInstructionsForAgentSync,
-  startNeonSession,
   switchChatSession,
   updateChatSessionCommandEvent,
 } from './modules/sessions';
@@ -48,41 +46,42 @@ describe('session actions', () => {
     const state = await readNeonSessionState(paths);
 
     expect(state.ok).toBe(true);
-    expect(state.activeSession).toMatchObject({
+    expect(state.activeChatSession).toMatchObject({
       id: 'neondeck-main',
-      label: 'Primary',
+      title: 'Primary',
       agentName: 'display-assistant',
-      status: 'active',
     });
     expect(state.stale).toBe(false);
-    expect(state.history).toHaveLength(1);
+    expect(state.sessions).toHaveLength(1);
   });
 
   it('starts a new active session and keeps previous sessions indexed', async () => {
     const paths = runtimePaths(await tempDir());
 
-    const result = await startNeonSession(
-      { label: 'After config', reason: 'test-restart' },
+    const result = await createChatSession(
+      {
+        title: 'After config',
+        reason: 'test-restart',
+        surface: 'dashboard',
+        activate: true,
+      },
       paths,
     );
 
     expect(result).toMatchObject({
       ok: true,
       changed: true,
-      action: 'session_start',
+      action: 'session_create',
     });
     const state = await readNeonSessionState(paths);
-    expect(state.activeSession).toMatchObject({
-      label: 'After config',
-      reason: 'test-restart',
-      status: 'active',
+    expect(state.activeChatSession).toMatchObject({
+      title: 'After config',
     });
-    expect(state.activeSession.id).not.toBe('neondeck-main');
-    expect(state.history).toEqual(
+    expect(state.activeChatSession.id).not.toBe('neondeck-main');
+    expect(state.sessions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: 'neondeck-main',
-          status: 'archived',
         }),
       ]),
     );
@@ -312,8 +311,8 @@ describe('session actions', () => {
   it('uses the utility model role metadata for generated session titles', async () => {
     const paths = runtimePaths(await tempDir());
 
-    const result = await startNeonSession(
-      { reason: 'reasoning-level:high' },
+    const result = await createChatSession(
+      { reason: 'reasoning-level:high', activate: true, surface: 'dashboard' },
       paths,
     );
 
@@ -328,8 +327,8 @@ describe('session actions', () => {
         invokedModel: false,
       },
       state: {
-        activeSession: {
-          label: 'reasoning level high',
+        activeChatSession: {
+          title: 'reasoning level high',
         },
       },
     });
@@ -442,7 +441,10 @@ describe('session actions', () => {
 
   it('reports stale context after model config and memory changes', async () => {
     const paths = runtimePaths(await tempDir());
-    await startNeonSession({ reason: 'fresh-baseline' }, paths);
+    await createChatSession(
+      { reason: 'fresh-baseline', activate: true, surface: 'dashboard' },
+      paths,
+    );
     await sleep(5);
 
     await updateAgentModels({ displayAssistant: 'kilocode/kilo/new' }, paths);
@@ -474,7 +476,14 @@ describe('session actions', () => {
       { scope: 'local', key: 'current-task', value: 'debug CI' },
       paths,
     );
-    await startNeonSession({ reason: 'fresh-after-memory-load' }, paths);
+    await createChatSession(
+      {
+        reason: 'fresh-after-memory-load',
+        activate: true,
+        surface: 'dashboard',
+      },
+      paths,
+    );
     await sleep(5);
 
     await deleteMemory(
@@ -502,7 +511,10 @@ describe('session actions', () => {
       { scope: 'user', key: 'loaded', value: 'brief' },
       paths,
     );
-    await startNeonSession({ reason: 'memory-snapshot' }, paths);
+    await createChatSession(
+      { reason: 'memory-snapshot', activate: true, surface: 'dashboard' },
+      paths,
+    );
     await sleep(5);
     await upsertMemory(
       { scope: 'user', key: 'not-loaded-later', value: 'ignore for session' },
@@ -804,56 +816,16 @@ describe('session actions', () => {
     expect(state.activeChatSession.staleReasons).toEqual([]);
   });
 
-  it('recovers duplicate active sessions by keeping the newest active', async () => {
-    const paths = runtimePaths(await tempDir());
-    await ensureRuntimeHome(paths);
-    const newer = new Date(Date.now() + 1_000).toISOString();
-    const database = new DatabaseSync(paths.neondeckDatabase);
-    try {
-      database
-        .prepare(
-          `
-          INSERT INTO neon_sessions (
-            id,
-            label,
-            agent_name,
-            status,
-            created_at,
-            activated_at,
-            updated_at
-          )
-          VALUES (?, ?, 'display-assistant', 'active', ?, ?, ?);
-        `,
-        )
-        .run('duplicate-newer', 'Duplicate', newer, newer, newer);
-    } finally {
-      database.close();
-    }
-
-    initializeAppDatabase(paths.neondeckDatabase);
-    const state = await readNeonSessionState(paths);
-
-    expect(state.activeSession.id).toBe('duplicate-newer');
-    expect(state.history).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: 'neondeck-main',
-          status: 'archived',
-        }),
-      ]),
-    );
-  });
-
   it('rejects invalid new-session labels', async () => {
     const paths = runtimePaths(await tempDir());
 
-    await expect(startNeonSession({ label: '' }, paths)).resolves.toMatchObject(
-      {
-        ok: false,
-        changed: false,
-        action: 'session_start',
-      },
-    );
+    await expect(
+      createChatSession({ title: '' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'session_create',
+    });
   });
 });
 

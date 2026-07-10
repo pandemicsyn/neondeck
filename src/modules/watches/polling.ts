@@ -214,8 +214,28 @@ export function meaningfulRefSnapshot(snapshot: RefWatchSnapshot | null) {
   return JSON.stringify({
     ref: snapshot.ref,
     url: snapshot.url,
-    checks: snapshot.checks,
+    checks: semanticCheckFingerprint(snapshot.checks),
   });
+}
+
+export function meaningfulPrSnapshot(snapshot: PrWatchSnapshot | null) {
+  if (!snapshot) return '';
+  return JSON.stringify({
+    state: snapshot.state,
+    merged: snapshot.merged,
+    mergeCommitSha: snapshot.mergeCommitSha,
+    checks: snapshot.checks ? semanticCheckFingerprint(snapshot.checks) : null,
+    title: snapshot.title,
+    url: snapshot.url,
+    updatedAt: snapshot.updatedAt,
+    headSha: snapshot.headSha,
+    baseRef: snapshot.baseRef,
+  });
+}
+
+function semanticCheckFingerprint(checks: GitHubCheckSummary) {
+  const { checkedAt: _checkedAt, ...semanticChecks } = checks;
+  return semanticChecks;
 }
 
 export function refUrl(reference: ResolvedRefReference) {

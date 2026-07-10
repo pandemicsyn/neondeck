@@ -23,7 +23,7 @@ describe('provider runtime registrations', () => {
     );
   });
 
-  it('prefers KILOCODE_API_KEY unless only the legacy Kilo key is present', () => {
+  it('uses KILOCODE_API_KEY unless an explicit config overrides it', () => {
     expect(resolveKilocodeProviderStatus(undefined, {})).toMatchObject({
       apiKeyEnv: 'KILOCODE_API_KEY',
       apiKeyPresent: false,
@@ -33,8 +33,8 @@ describe('provider runtime registrations', () => {
         KILO_API_KEY: 'legacy',
       } as NodeJS.ProcessEnv),
     ).toMatchObject({
-      apiKeyEnv: 'KILO_API_KEY',
-      apiKeyPresent: true,
+      apiKeyEnv: 'KILOCODE_API_KEY',
+      apiKeyPresent: false,
     });
   });
 

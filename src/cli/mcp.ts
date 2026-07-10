@@ -18,7 +18,6 @@ import type { GlobalOptions } from './types';
 
 type McpAddOptions = {
   url?: string;
-  sse?: boolean;
   command?: string;
   arg?: string[];
   cwd?: string;
@@ -86,8 +85,7 @@ export function registerMcpCommands(program: Command) {
   mcp
     .command('add <id>')
     .description('Add an MCP server.')
-    .option('--url <url>', 'streamable HTTP or SSE MCP endpoint')
-    .option('--sse', 'use legacy SSE transport for HTTP MCP')
+    .option('--url <url>', 'streamable HTTP MCP endpoint')
     .option('--command <command>', 'stdio command')
     .option(
       '--arg <arg>',
@@ -333,7 +331,6 @@ function mcpServerFromAddOptions(options: McpAddOptions) {
     return {
       transport: 'http' as const,
       url: options.url,
-      ...(options.sse ? { sse: true } : {}),
       enabled: !options.disabled,
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
       ...(tools ? { tools } : {}),
