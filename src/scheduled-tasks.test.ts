@@ -204,7 +204,7 @@ describe('scheduled task storage', () => {
     }
   });
 
-  it('settles expired claims without retrying a missed one-shot task', async () => {
+  it('retries an expired one-shot claim instead of discarding its only occurrence', async () => {
     const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
     const paths = runtimePaths(home);
     try {
@@ -225,14 +225,22 @@ describe('scheduled task storage', () => {
       );
       if (!claim) throw new Error('Expected the due task to be claimed.');
 
-      await expect(
-        claimDueScheduledTasks(paths, new Date('2026-07-10T00:00:02.000Z')),
-      ).resolves.toEqual([]);
+      const [retry] = await claimDueScheduledTasks(
+        paths,
+        new Date('2026-07-10T00:00:02.000Z'),
+        10,
+        1_000,
+      );
+      expect(retry).toMatchObject({
+        task: { id: claim.task.id, claimId: expect.any(String) },
+        run: { status: 'claimed' },
+      });
+      expect(retry?.run.id).not.toBe(claim.run.id);
       await expect(
         readScheduledTask(claim.task.id, paths),
       ).resolves.toMatchObject({
         enabled: false,
-        claimId: null,
+        claimId: expect.any(String),
       });
       await expect(
         readLatestScheduledTaskRun(claim.task.id, paths),
@@ -241,6 +249,59 @@ describe('scheduled task storage', () => {
         status: 'failed',
         outcome: 'failed',
       });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('recovers stale active workflow rows that never attach a Flue run id', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
+    const paths = runtimePaths(home);
+    try {
+      await upsertScheduledTask(
+        {
+          id: 'briefing:unattached-workflow',
+          spec: { kind: 'run-briefing', briefingId: 'daily' },
+          trigger: { kind: 'interval', everySeconds: 300 },
+          nextRunAt: '2026-07-10T00:00:00.000Z',
+        },
+        paths,
+      );
+      const [claim] = await claimDueScheduledTasks(
+        paths,
+        new Date('2026-07-10T00:00:00.000Z'),
+        10,
+        1_000,
+      );
+      if (!claim) throw new Error('Expected the due task to be claimed.');
+      await activateScheduledTaskWorkflowRun(
+        {
+          taskId: claim.task.id,
+          runId: claim.run.id,
+          claimId: claim.task.claimId ?? '',
+        },
+        paths,
+      );
+
+      await expect(
+        canAdmitScheduledWorkflow(claim.task.id, paths),
+      ).resolves.toBe(false);
+      await claimDueScheduledTasks(
+        paths,
+        new Date('2026-07-10T00:00:02.000Z'),
+        10,
+        1_000,
+      );
+      await expect(
+        readLatestScheduledTaskRun(claim.task.id, paths),
+      ).resolves.toMatchObject({
+        id: claim.run.id,
+        status: 'failed',
+        error: expect.stringContaining('not attached'),
+      });
+      await expect(
+        canAdmitScheduledWorkflow(claim.task.id, paths),
+      ).resolves.toBe(true);
     } finally {
       await rm(home, { recursive: true, force: true });
     }
