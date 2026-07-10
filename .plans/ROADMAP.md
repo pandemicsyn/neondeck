@@ -154,7 +154,6 @@ Initial layout:
   config.json
   repos.json
   dashboard.json
-  schedules.json
   skills/
     neondeck/
       SKILL.md
@@ -987,7 +986,6 @@ Must-haves:
   - `config.json`
   - `repos.json`
   - `dashboard.json`
-  - `schedules.json`
   - `SOUL.md`
   - `skills/`
   - `data/neondeck.db`
