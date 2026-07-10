@@ -55,7 +55,7 @@ export type ScheduledTaskActionResult = {
 };
 
 export async function createBriefingTask(
-  rawInput: v.InferInput<typeof briefingTaskInputSchema>,
+  rawInput: unknown,
   paths = runtimePaths(),
 ): Promise<ScheduledTaskActionResult> {
   await ensureRuntimeHome(paths);
@@ -78,7 +78,7 @@ export async function createBriefingTask(
 }
 
 export async function createAgentInstructionTask(
-  rawInput: v.InferInput<typeof agentInstructionTaskInputSchema>,
+  rawInput: unknown,
   paths = runtimePaths(),
 ): Promise<ScheduledTaskActionResult> {
   await ensureRuntimeHome(paths);

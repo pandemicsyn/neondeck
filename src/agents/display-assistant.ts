@@ -28,8 +28,8 @@ import {
 } from '../modules/runtime';
 import { neondeckSkillPatchActions } from '../modules/learning/skill-patches';
 import { neondeckRepoEditActions } from '../repo-edit';
-import { neondeckRoutineActions } from '../modules/routines';
 import { neondeckSchedulerActions } from '../modules/scheduler';
+import { neondeckScheduledTaskActions } from '../modules/scheduled-tasks';
 import {
   neondeckSessionActions,
   sessionContextInstructionsForAgentSync,
@@ -68,7 +68,7 @@ export default defineAgent(({ id }) => {
       'For provider configuration, use neondeck_config_read_providers and neondeck_config_update_provider. Provider config is allowlisted and stores environment variable references only; raw secrets, arbitrary base URLs, and arbitrary provider ids are not supported. Server restart is required for provider registration changes.',
       'For dashboard layout changes, use neondeck_config_apply_dashboard_preset for classic or cockpit layouts, or neondeck_config_update_dashboard_layout for a complete validated custom dashboard object. Do not freestyle-edit dashboard.json.',
       'For PR watches, use the provided neondeck_watch_pr_* actions. Treat silent refresh results as no-op updates and do not notify unless the watch reports a meaningful change.',
-      'For routines, use neondeck_routine_create, neondeck_routine_list, neondeck_routine_read, neondeck_routine_update, neondeck_routine_run, neondeck_routine_pause, neondeck_routine_resume, neondeck_routine_delete, and neondeck_routine_config_read. Routine creation is capped, audited, and records the current agent session as created_by. Use neondeck_config_update_routines for the global routines kill switch.',
+      'For scheduled work, use neondeck_scheduled_task_briefing_create and neondeck_scheduled_task_instruction_create. Scheduled instructions run as bounded workflows by default; select an explicit agent session target only when the user needs continuity. Use the scheduled-task list, read, pause, resume, and delete actions to operate existing tasks.',
       'For autopilot status, use neondeck_autopilot_state_lookup before explaining what Neon is watching, why it did or did not act, which worktrees are prepared, which approvals are pending, and what repo/watch policy allows. Treat this as read-only operator state; do not invent queue entries, diffs, pushes, or workflow outcomes that are not present in the lookup.',
       'For prepared autopilot diffs, use neondeck_prepared_diff_list, neondeck_prepared_diff_summary, neondeck_prepared_diff_changed_files, and neondeck_prepared_diff_file_diff for facts. Use neondeck_autopilot_recovery_options before recommending recovery from prepared, blocked, pushed, or failed autopilot states. Use neondeck_autopilot_recovery_run for bounded inspect, retry-after-new-commit, rebase/resync worktree, retry verify, retry push, retry comment, request revision, cleanup worktree, abandon, or manual-follow-up decisions. These recovery actions dispatch to existing prepared-diff, worktree sync/cleanup, and autopilot services, keep the source worktree as the source of truth, and never bypass confirmation, execution, policy, cleanup, or GitHub gates.',
       'For PR event autopilot, use neondeck_autopilot_triage_pr_event to classify structured watcher deltas before preparing work. Only use neondeck_autopilot_prepare_pr_worktree when the triage result says to prepare a worktree. Use neondeck_autopilot_fix_pr_review_feedback only for unresolved review feedback with a bounded explicit replace/patch plan; it applies changes through repo-edit inside a managed worktree, commits locally, and records a prepared diff. Use neondeck_autopilot_fix_pr_ci_failure only for managed worktrees with deterministic failing check facts; it runs diagnostics through execution policy, applies only scoped repo-edit patches, commits locally by default, and creates a prepared diff. Use neondeck_autopilot_policy_check before describing whether a prepared diff is safe, blocked, or approval-required. Use neondeck_autopilot_verify_pr_worktree to run configured checks through execution policy. Use neondeck_autopilot_push_pr_autofix only for an approved preparedDiffId after verification has passed, policy and GitHub branch permission gates allow push-back, and the worktree is clean with committed changes. If push is blocked, report the retained worktree and recovery options. Use neondeck_autopilot_comment_pr_autofix_result only to post a concise PR comment generated from prepared-diff/autopilot result facts after a prepared, pushed, or blocked result exists.',
@@ -118,7 +118,7 @@ export default defineAgent(({ id }) => {
       ...neondeckAutopilotActions,
       ...neondeckAutopilotRecoveryActions,
       ...neondeckPreparedDiffActions,
-      ...neondeckRoutineActions,
+      ...neondeckScheduledTaskActions,
       ...neondeckSchedulerActions,
       ...neondeckSessionActions,
       ...neondeckRuntimeSkillActions,
