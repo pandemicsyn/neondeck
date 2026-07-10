@@ -100,12 +100,12 @@ describe('Neon commands', () => {
       },
     });
     expect(
-      parseNeonCommand('/memory set session current-task "ship it"'),
+      parseNeonCommand('/memory learn local current-task "ship it"'),
     ).toMatchObject({
       ok: true,
       command: {
         name: 'memory',
-        args: ['set', 'session', 'current-task', 'ship it'],
+        args: ['learn', 'local', 'current-task', 'ship it'],
       },
     });
     expect(parseNeonCommand('repo-status')).toMatchObject({
@@ -679,14 +679,14 @@ describe('Neon commands', () => {
 
     await expect(
       runNeonCommand(
-        { command: '/memory set local current-task "finish roadmap item 3"' },
+        { command: '/memory learn local current-task "finish roadmap item 3"' },
         paths,
       ),
     ).resolves.toMatchObject({
       ok: true,
       command: 'memory',
       data: {
-        action: 'memory_upsert',
+        action: 'memory_learn',
         memory: {
           scope: 'local',
           key: 'current-task',

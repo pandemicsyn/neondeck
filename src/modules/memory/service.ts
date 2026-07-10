@@ -101,7 +101,7 @@ export async function upsertMemory(
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(memoryLearnInputSchema, input);
   if (!parsed.success) {
-    return failedMemoryMutation('memory_upsert', v.summarize(parsed.issues));
+    return failedMemoryMutation('memory_learn', v.summarize(parsed.issues));
   }
   const mutationSource = options.source ?? 'user';
   const policy = await memoryWritePolicyResult(paths, mutationSource);
@@ -122,7 +122,7 @@ export async function upsertMemory(
     } finally {
       database.close();
     }
-    return failedMemoryMutation('memory_upsert', rejection, ['value']);
+    return failedMemoryMutation('memory_learn', rejection, ['value']);
   }
 
   const now = new Date().toISOString();
@@ -216,7 +216,7 @@ export async function upsertMemory(
 
     return {
       ok: true,
-      action: 'memory_upsert',
+      action: 'memory_learn',
       changed,
       memory,
       appliesAfter: 'new-session',
@@ -486,48 +486,6 @@ export async function archiveMemory(
   } finally {
     database.close();
   }
-}
-
-export async function deleteMemory(
-  input: v.InferInput<typeof memoryArchiveInputSchema>,
-  paths = runtimePaths(),
-  options: { source?: MemoryMutationSource } = {},
-) {
-  const parsed = v.safeParse(memoryArchiveInputSchema, input);
-  if (!parsed.success) {
-    return failedMemoryMutation('memory_delete', v.summarize(parsed.issues));
-  }
-
-  if (parsed.output.confirm !== true) {
-    const label =
-      'id' in parsed.output
-        ? parsed.output.id
-        : `${parsed.output.scope}:${parsed.output.key}`;
-    return {
-      ok: false,
-      action: 'memory_delete',
-      changed: false,
-      requires: ['confirm'],
-      message: `Archiving memory "${label}" requires confirmation.`,
-    };
-  }
-
-  const result = await archiveMemory(
-    {
-      ...parsed.output,
-      reason: parsed.output.reason ?? 'Archived through memory delete alias.',
-    },
-    paths,
-    options,
-  );
-
-  return {
-    ...result,
-    action: 'memory_delete',
-    message: result.changed
-      ? 'Archived durable memory. Active agent context will pick this up on a new session.'
-      : result.message,
-  };
 }
 
 export async function markMemoriesUsed(

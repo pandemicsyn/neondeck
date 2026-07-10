@@ -28,11 +28,7 @@ describe('provider runtime registrations', () => {
       apiKeyEnv: 'KILOCODE_API_KEY',
       apiKeyPresent: false,
     });
-    expect(
-      resolveKilocodeProviderStatus(undefined, {
-        KILO_API_KEY: 'legacy',
-      } as NodeJS.ProcessEnv),
-    ).toMatchObject({
+    expect(resolveKilocodeProviderStatus(undefined, {})).toMatchObject({
       apiKeyEnv: 'KILOCODE_API_KEY',
       apiKeyPresent: false,
     });

@@ -14,7 +14,7 @@ try {
     repoId: 'sample',
     prNumber: 7,
     source: 'fixture',
-    autopilotMode: 'draft-fix',
+    autopilotMode: 'prepare-only',
     current: { state: 'open', headSha: 'fixture-head', baseRef: 'main' },
     deltas: [{ type: 'requested-changes', actionable: true }],
   };

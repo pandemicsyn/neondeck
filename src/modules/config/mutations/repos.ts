@@ -427,6 +427,10 @@ function autopilotAuthorityIncreases(
     )
   )
     return true;
+  if (
+    removesValues(current.limits.highRiskClasses, next.limits.highRiskClasses)
+  )
+    return true;
   if (removesValues(current.limits.requiredChecks, next.limits.requiredChecks))
     return true;
   if (

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { updateAgentModels } from './modules/config';
-import { deleteMemory, rewriteMemory, upsertMemory } from './modules/memory';
+import { archiveMemory, rewriteMemory, upsertMemory } from './modules/memory';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   archiveChatSession,
@@ -486,10 +486,7 @@ describe('session actions', () => {
     );
     await sleep(5);
 
-    await deleteMemory(
-      { scope: 'local', key: 'current-task', confirm: true },
-      paths,
-    );
+    await archiveMemory({ scope: 'local', key: 'current-task' }, paths);
 
     const state = await readNeonSessionState(paths);
 

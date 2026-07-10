@@ -68,7 +68,7 @@ export function supportedCommands() {
     {
       name: 'memory',
       usage:
-        '/memory [scope] | /memory set <user|local|project> <key> <json-or-text> | /memory delete <scope> <key> --confirm',
+        '/memory [scope] | /memory learn <user|local|project> <key> <json-or-text> | /memory archive <scope> <key>',
       description:
         'List or mutate durable structured memory through typed memory actions.',
     },
