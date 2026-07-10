@@ -420,3 +420,17 @@ Use this format:
 - Decision: Added idempotent `pr_handled` learning events, threshold-based admission from the existing Flue `run_end` observation path with a durable admission marker, manual `review_pr_batch_for_learning` workflow/API trigger, compact PR retrospective evidence gathering, and review result handling that can create/apply memory changes only through existing memory actions. Added audited skill patch propose/list/apply/reject actions and APIs for the built-in Neondeck skill and user skills under `NEONDECK_HOME/skills`. Skill patch candidates preserve frontmatter, store before/after content, hashes, and a generated diff, and applied patches mark sessions stale through `config_history`. Automatic workflow skill patch application is append-only; whole-file replacements require review.
 - Reason: The existing app has a reliable workflow observation path and compact app-state summaries but does not yet have first-class autopilot queue admission rows or a dedicated learning dashboard/CLI. Restricting automatic accounting to durable workflow/prepared-diff/Kilo/recovery results avoids over-counting speculative API calls. Full rollback can be reconstructed from retained before/after audit data, but an explicit rollback action would be a separate mutation surface.
 - Follow-up: Add first-class autopilot queue/outcome accounting when that table exists, broaden automatic handled-event admission for direct non-workflow APIs if needed, add relevance-based user skill snippets to PR retrospectives, add dedicated dashboard/CLI learning controls, add an explicit skill patch rollback action, and add `docs/README.md` coverage if that file is introduced later.
+
+## 2026-07-10 - Scheduler, Admission, Approval, And Baseline Refactor
+
+- Roadmap item: scheduler/autopilot cleanup following `.plans/20260709-review.md`.
+- Decision: Replaced the duplicate schedule/routine models with SQLite scheduled
+  tasks, made watcher triage and worktree preparation durable admission stages,
+  bound prepared-diff push approvals to the exact SHA and effective policy hash,
+  and reset the unshipped app-database migration chain to one baseline.
+- Reason: The project has no production compatibility requirement. Retaining
+  old scheduler formats, unjournaled database repair/stamping, or generic
+  approvals would make autonomous state harder to inspect and unsafe to replay.
+- Follow-up: Later autonomous mutation stages remain bounded explicit workflows;
+  do not reintroduce legacy scheduler formats, database repair chains, or
+  unbound approval writes.

@@ -1,18 +1,18 @@
 # Autopilot Loop Wiring Plan
 
-Status: partially implemented
-Related: `.plans/ROADMAP.md` Phases 19–20 (watch-delta triage ignition implemented; durable admission/coordinator work remains)
+Status: implemented through watcher triage and worktree preparation
+Related: `.plans/ROADMAP.md` Phases 19–20
 
 ## Findings — what is wired today
 
-Watch-delta-to-triage ignition is implemented; downstream autonomous orchestration is not.
+Watch-delta-to-triage ignition and durable worktree-preparation admission are implemented.
 
 **Wired:**
 
 - **Policy/config**: modes `notify-only` (default), `prepare-only`,
   `autofix-with-approval`, `autofix-push-when-safe`. Global default comes from
-  app config `autopilot.defaultMode`; per-repo override lives in repo
-  `metadata.autopilot` (`src/modules/autopilot-policy/config.ts`).
+  app config `autopilot.defaultMode`; repo policy changes use the typed,
+  confirmation-aware autopilot-policy action.
 - **Workflows**: `triage-pr-event` → `prepare-pr-worktree` →
   `fix-pr-review-feedback` / `fix-pr-ci-failure` → `verify-pr-worktree` →
   `push-pr-autofix` / `comment-pr-autofix-result`, plus prepared diffs,
@@ -35,21 +35,21 @@ Watch-delta-to-triage ignition is implemented; downstream autonomous orchestrati
 
 **Wired since the scheduler PR-event dispatch extraction:**
 
-- Scheduler `watch-pr` jobs refresh event watermarks, compute meaningful
-  deltas, resolve effective policy server-side, and admit `triage-pr-event`
-  when the mode is not `notify-only`.
-- Failed or blocked triage admissions remain in the scheduler result and are
-  retried or superseded on a later tick.
+- Scheduler `watch-pr` tasks refresh event watermarks, compute meaningful
+  deltas, resolve effective policy server-side, and atomically claim a durable
+  autopilot admission before invoking `triage-pr-event`.
+- Terminal triage observations advance durable admissions to bounded
+  `prepare-pr-worktree` workflows when the result requests preparation.
+- Failed, limited, and stale handoffs reconcile through the SQLite admission
+  state machine. Completed preparation with missing durable facts is held for
+  manual review rather than replayed.
 
-**Not wired (the remaining gap):**
+**Deliberate boundary:**
 
-- No production coordinator consumes a terminal triage result to admit
-  worktree preparation, fixing, verification, push, or comments.
-- Scheduler result JSON is carrying retry state that should become durable
-  autopilot admissions with atomic capacity claims.
-
-Net: watcher deltas automatically reach triage, but subsequent autonomous work
-still requires an operator/chat action until durable admissions and a coordinator land.
+- The coordinator advances watcher triage to durable worktree preparation.
+- Subsequent fix, verification, push, and comment workflows remain bounded,
+  explicit operations. Push additionally requires a matching prepared-diff
+  approval bound to the exact commit SHA and current policy hash.
 
 ## Watch button semantics (current)
 
@@ -76,17 +76,15 @@ still requires an operator/chat action until durable admissions and a coordinato
   (global / per-repo / one-mutation-per-PR limits).
 - `notify-only` repos keep exactly today's behavior.
 
-### Phase 2 — Chain triage decisions per mode
+### Phase 2 — Durable triage-to-prepare coordinator (complete)
 
-- Triage classification → follow-up dispatch:
-  - `prepare-only`: prepare worktree + fix workflow, stop at prepared diff +
-    pending approval (surfaces in AutopilotPanel + `ready` notification).
-  - `autofix-with-approval`: continue through `verify-pr-worktree`, stop before push.
-  - `autofix-push-when-safe`: use `verify-then-push-pr-autofix`
-    (`src/workflows/verify-then-push-pr-autofix.ts`) via the same dispatch used
-    by dashboard approvals (`src/server/autopilot-push-dispatch.ts`).
-- Every hop already records notifications and learning events; no new
-  surfacing machinery needed.
+- Triage results that request preparation atomically reserve the next admission
+  slot and invoke one `prepare-pr-worktree` workflow.
+- Admissions are idempotent by watch/event fingerprint, enforce global,
+  per-repo, and same-PR capacity, and expose state/run/worktree linkage to the
+  operator queue.
+- Later mutation stages remain explicit rather than promising an unbounded
+  autonomous fix/push chain.
 
 ### Phase 3 — Per-PR surfacing in the PR list
 
