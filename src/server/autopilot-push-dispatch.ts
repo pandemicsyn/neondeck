@@ -1,8 +1,8 @@
 import { invoke, type WorkflowDefinition } from '@flue/runtime';
 import { asJsonValue } from '../lib/action-result';
 import { addNotification, addWorkflowSummary } from '../modules/app-state';
+import { approvePreparedDiffPushWithPolicy } from '../modules/autopilot';
 import {
-  approvePreparedDiffPush,
   type PreparedDiffActionResult,
   type PreparedDiffRecord,
 } from '../modules/prepared-diffs';
@@ -31,7 +31,7 @@ export async function approvePreparedDiffPushWithDispatch(
   paths: RuntimePaths = runtimePaths(),
   dependencies: ApprovalDispatchDependencies = {},
 ): Promise<PreparedDiffActionResult> {
-  const approval = await approvePreparedDiffPush(rawInput, paths);
+  const approval = await approvePreparedDiffPushWithPolicy(rawInput, paths);
   if (!approval.ok || !approval.preparedDiff) return approval;
   return dispatchApprovedPreparedDiffPush(approval, paths, dependencies);
 }

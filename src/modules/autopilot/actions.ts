@@ -25,6 +25,19 @@ import {
 } from './ci-fix-run';
 import { fixPrReviewFeedback } from './review-feedback';
 import { commentPrAutofixResult } from './comments';
+import { approvePreparedDiffPushWithPolicy } from './approvals';
+import { approvePushInputSchema } from '../prepared-diffs';
+
+export const approvePreparedDiffPushAction = defineAction({
+  name: 'neondeck_prepared_diff_approve_push',
+  description:
+    'Approve a prepared diff only after binding the approval to its current commit SHA and effective autopilot policy.',
+  input: approvePushInputSchema,
+  output: autopilotOutputSchema,
+  async run({ input }) {
+    return approvePreparedDiffPushWithPolicy(input);
+  },
+});
 
 export const triagePrEventAction = defineAction({
   name: 'neondeck_autopilot_triage_pr_event',
@@ -140,6 +153,7 @@ export const commentPrAutofixResultAction = defineAction({
 });
 
 export const neondeckAutopilotActions = [
+  approvePreparedDiffPushAction,
   triagePrEventAction,
   preparePrWorktreeAction,
   autopilotPolicyCheckAction,

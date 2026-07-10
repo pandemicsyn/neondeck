@@ -13,7 +13,6 @@ export {
   preparedDiffSummaryAction,
   preparedDiffChangedFilesAction,
   preparedDiffFileDiffAction,
-  preparedDiffApprovePushAction,
   preparedDiffRequestRevisionAction,
   preparedDiffAbandonAction,
   preparedDiffOpenWorktreeAction,
@@ -47,4 +46,8 @@ export {
   mergeSummary,
   updatePreparedDiffState,
 } from './store';
-export { abandonInputSchema, runRevisionInputSchema } from './schemas';
+export {
+  abandonInputSchema,
+  approvePushInputSchema,
+  runRevisionInputSchema,
+} from './schemas';
