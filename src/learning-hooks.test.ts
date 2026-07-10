@@ -4,9 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { addWorkflowSummary, listWorkflowSummaries } from './modules/app-state';
-import { updateLearningConfig } from './modules/config';
 import { extractHandledPrEvent } from './modules/learning/reviews/pr-context';
-import { createChatSession } from './modules/sessions';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   attachCommandRunSummaryRunId,
@@ -198,7 +196,6 @@ describe('Flue learning hooks', () => {
       }),
     });
   });
-
 });
 
 function commandRunEndObservation(result: unknown): FlueObservation {

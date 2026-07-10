@@ -99,12 +99,10 @@ npm run cli -- repo list</code></pre>
 
         <h2>Watches</h2>
         <pre><code>npm run cli -- watch-pr pandemicsyn/neondeck#521
-npm run cli -- watch-pr pandemicsyn/neondeck#521 --until prod
 npm run cli -- watch-pr https://github.com/pandemicsyn/neondeck/pull/521
-npm run cli -- watch-release neondeck</code></pre>
+</code></pre>
         <p>
           PR watches persist in SQLite and poll GitHub for merge/check changes.
-          <code>--until prod</code> links the source PR to a release watch after merge.
         </p>
 
         <h2>External agent handoff</h2>
@@ -121,24 +119,18 @@ neondeck note "Finished local cleanup without a PR." \
         <p>
           Handoff commands let same-host tools such as Claude Code, Codex, Kilo,
           and git hooks register work with Neon. They create attributed PR
-          watches, notifications, and release watches; they do not grant
-          execution, approval, push, provider, or remote ingest powers.
+          watches and notifications; they do not grant execution, approval,
+          push, provider, or remote ingest powers.
           <code>register-pr --review</code> is default-off per command and also respects
           <code>handoff.allowExternalReviewQueue</code> in runtime-home
           <code>config.json</code>.
         </p>
 
-        <h2>Schedules</h2>
-        <pre><code>npm run cli -- schedule
-npm run cli -- schedule --morning-briefing
-npm run cli -- schedule --review-queue-digest</code></pre>
+        <h2>Scheduled tasks</h2>
         <p>
-          Natural-language scheduling is reserved for later. Today, the CLI
-          creates the morning briefing and review queue digest convenience
-          blueprints and lists configured jobs. The backend scheduler also has
-          typed blueprints for PR watches, release watches, docs drift, issue
-          triage, and hygiene; those are created through typed actions, local
-          API/dashboard flows, or watch-specific commands.
+          Scheduled tasks are created with typed local API actions. The backend
+          scheduler persists their validated trigger and dispatches each due
+          occurrence through a bounded Flue workflow.
         </p>
 
         <h2>Neon slash commands</h2>
@@ -155,7 +147,6 @@ npm run cli -- schedule --review-queue-digest</code></pre>
 /reasoning [off|minimal|low|medium|high|xhigh]
 /memory ...
 /watch-pr &lt;repo#number|owner/repo#number|url&gt;
-/watch-release &lt;repo-id|owner/repo&gt;
 /dev-doctor</code></pre>
         <p>
           Slash commands can be typed in chat, launched from dashboard buttons,
@@ -169,18 +160,19 @@ npm run cli -- schedule --review-queue-digest</code></pre>
           a fix attempt.
         </p>
 
-        <h2>Reports and routines</h2>
+        <h2>Reports and scheduled tasks</h2>
         <pre><code>GET /api/reports?kind=docs-drift
-GET /api/routines
-POST /api/routines/:id/run
-POST /api/routines/:id/pause
-POST /api/routines/:id/resume</code></pre>
+GET /api/scheduled-tasks
+POST /api/scheduled-tasks/briefings
+POST /api/scheduled-tasks/instructions
+POST /api/scheduled-tasks/:id/pause
+POST /api/scheduled-tasks/:id/resume</code></pre>
         <p>
-          Reports and routines are primarily dashboard/API surfaces rather than
-          top-level CLI subcommands in this slice. Reports are local HTML
-          artifacts opened from the Reports panel or <code>/reports/:id</code>.
-          Routines are scheduled Neon tasks managed from the Routines panel,
-          local API routes, or typed <code>neondeck_routine_*</code> actions.
+          Reports and scheduled tasks are primarily dashboard/API surfaces
+          rather than top-level CLI subcommands in this slice. Reports are local
+          HTML artifacts opened from the Reports panel or <code
+            >/reports/:id</code
+          >. Scheduled tasks use typed local API routes and task actions.
         </p>
 
         <h2>MCP servers</h2>

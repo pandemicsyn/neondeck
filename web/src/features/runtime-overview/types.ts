@@ -11,7 +11,7 @@ import type {
   RuntimeSkillsResponse,
   RuntimeStatus,
   SafetyPolicy,
-  SchedulerJob,
+  ScheduledTask,
   WorkflowObservability,
   WorktreesResponse,
 } from '../../api';
@@ -31,7 +31,7 @@ export type RuntimeSnapshot = {
   status: RuntimeStatus;
   repos: RepoConfig[];
   repoHealth: RepoHealthResponse;
-  jobs: SchedulerJob[];
+  jobs: ScheduledTask[];
   skills: RuntimeSkillsResponse;
   memories: MemoryRecord[];
   notifications: NotificationResponse;

@@ -14,7 +14,7 @@ import {
   RepoHealth,
   RuntimeSkill,
   RuntimeSkillsResponse,
-  SchedulerJob,
+  ScheduledTask,
   WorkflowEventRecord,
   WorkflowObservability,
   WorktreeCleanupFailure,
@@ -617,14 +617,14 @@ export function RepoRow({
   );
 }
 
-export function JobRow({ job }: { job: SchedulerJob }) {
+export function JobRow({ job }: { job: ScheduledTask }) {
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate font-mono text-[11px] text-ink">{job.id}</p>
           <p className="mt-0.5 truncate font-mono text-[10px] text-muted">
-            {job.type} · every {formatInterval(job.intervalSeconds)}
+            {job.spec.kind} · {taskTriggerLabel(job.trigger)}
           </p>
         </div>
         <Badge className={job.enabled ? 'border-primary text-primary' : ''}>
@@ -632,13 +632,19 @@ export function JobRow({ job }: { job: SchedulerJob }) {
         </Badge>
       </div>
       <div className="mt-1.5 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
-        <span className="truncate">{job.lastOutcome ?? 'not-run'}</span>
+        <span className="truncate">{job.claimId ? 'running' : 'not-run'}</span>
         <span className="shrink-0">
           {job.lastRunAt ? relativeTime(job.lastRunAt) : 'due'}
         </span>
       </div>
     </article>
   );
+}
+
+function taskTriggerLabel(trigger: ScheduledTask['trigger']) {
+  return trigger.kind === 'interval' && trigger.everySeconds
+    ? `every ${formatInterval(trigger.everySeconds)}`
+    : trigger.kind;
 }
 
 export function SkillRow({ skill }: { skill: RuntimeSkill }) {

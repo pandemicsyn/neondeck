@@ -449,12 +449,6 @@ async function resolveRegisteredRepo(
   };
 }
 
-function scopePrRefToRepo(ref: string, repo: ResolvedRepo) {
-  const value = ref.trim();
-  if (/^#\d+$/.test(value)) return `${repoFullName(repo)}${value}`;
-  return value;
-}
-
 async function externalReviewQueueAllowed(paths: RuntimePaths) {
   const config = await readRuntimeJson(paths.config, parseAppConfig);
   return config.handoff?.allowExternalReviewQueue ?? true;

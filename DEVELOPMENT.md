@@ -35,7 +35,7 @@ npm run init
 The wizard prepares the runtime home, writes local secrets to
 `$NEONDECK_HOME/.env`, tunes `SOUL.md`, configures the selected model provider,
 optionally sets a low-cost utility model, adds local git checkouts, applies a
-dashboard preset, and can create schedules and command preapprovals.
+dashboard preset, and can create command preapprovals.
 
 The CLI is also the base for direct command-and-control surfaces:
 
@@ -44,8 +44,7 @@ npm run cli -- status
 npm run cli -- doctor
 npm run cli -- db status
 npm run cli -- repo add ~/dev/neondeck
-npm run cli -- watch-pr pandemicsyn/neondeck#123 --until prod
-npm run cli -- schedule --morning-briefing
+npm run cli -- watch-pr pandemicsyn/neondeck#123
 npm run cli -- tui
 ```
 
@@ -78,7 +77,7 @@ XDG_CONFIG_HOME/neondeck
 ```
 
 The runtime home contains `.env`, `config.json`, `mcp.json`, `repos.json`,
-`dashboard.json`, `schedules.json`, `SOUL.md`, `skills/`, and separate
+`dashboard.json`, `SOUL.md`, `skills/`, and separate
 `data/neondeck.db` and `data/flue.db` databases. Neondeck app database
 migrations are shipped with the package and auto-apply before app code touches
 `data/neondeck.db`; pre-migration backups are kept under `data/backups/`.
@@ -118,7 +117,7 @@ Common commands include `/repo-status`, `/review-queue`, `/review-pr <ref>`,
 `/fix-ci [ref]`, `/explain-ci [--report] [ref]`, `/summarize-pr [ref]`,
 `/draft-pr-description [repo]`, `/prepare-pr [repo]`, `/review-local [repo]`,
 `/briefing`, `/reasoning [level]`, `/memory ...`, `/dev-doctor`,
-`/watch-pr <ref>`, and `/watch-release <repo>`.
+`/watch-pr <ref>`.
 
 ## CLI Surface
 
@@ -139,10 +138,8 @@ npm run cli -- mcp list
 npm run cli -- db status
 npm run cli -- learning status
 npm run cli -- watch-pr <repo#number>
-npm run cli -- watch-release <repo>
 npm run cli -- note "message"
 npm run cli -- register-pr <repo#number>
-npm run cli -- schedule --morning-briefing
 npm run cli -- doctor
 npm run cli -- tui
 ```

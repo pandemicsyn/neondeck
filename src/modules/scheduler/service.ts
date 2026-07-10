@@ -4,6 +4,7 @@ import {
   executeScheduledTask,
   listScheduledTasks,
   readLatestScheduledTaskRun,
+  releaseUnstartedScheduledTaskClaim,
   settleScheduledTaskRun,
 } from '../scheduled-tasks';
 import {
@@ -55,9 +56,22 @@ export async function runSchedulerTick(
     let taskChanged = false;
     let stoppedForLostLease = false;
 
-    for (const { task, run } of claimedTasks) {
+    for (const [index, claim] of claimedTasks.entries()) {
+      const { task, run } = claim;
       if (!isSchedulerTickLeaseOwned(paths, lease.owner, new Date())) {
         stoppedForLostLease = true;
+        const message =
+          'Scheduled task was released because the scheduler tick lost its lease before execution.';
+        await Promise.all(
+          claimedTasks
+            .slice(index)
+            .map((unstarted) =>
+              releaseUnstartedScheduledTaskClaim(
+                { ...unstarted, message },
+                paths,
+              ),
+            ),
+        );
         break;
       }
       const previous = await readLatestScheduledTaskRun(task.id, paths);
