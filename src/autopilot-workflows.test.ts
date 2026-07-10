@@ -1651,6 +1651,35 @@ describe('PR event autopilot', () => {
     });
   });
 
+  it('invalidates a SHA-matching approval after the effective policy changes', async () => {
+    const { paths, featureSha, remote } = await fixture({ remote: true });
+    const prepared = await prepareReviewPreparedDiff(paths, featureSha);
+    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
+    const preparedDiffId = stringPath(prepared, ['data', 'preparedDiff', 'id']);
+    await approvePreparedDiffPushWithPolicy(
+      { preparedDiffId, confirm: true },
+      paths,
+    );
+    await verifyPrWorktree(
+      { worktreeId, checks: ['npm run check'], lock: false },
+      paths,
+      { runExecution: successfulExecution },
+    );
+    await writeAutopilotConfig(paths, {
+      limits: { maxFilesChanged: 13 },
+    });
+
+    const result = await pushPrAutofix({ preparedDiffId }, paths, {
+      getBranchPermissions: pushAllowedPermissions,
+      pushGit: pushToFixtureOrigin(requireRemote(remote)),
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      requires: ['autopilot-policy', 'sha-bound-policy-approval'],
+    });
+  });
+
   it('does not mark a prepared diff push-blocked before push approval', async () => {
     const { paths, featureSha, remote } = await fixture({ remote: true });
     const remotePath = requireRemote(remote);
