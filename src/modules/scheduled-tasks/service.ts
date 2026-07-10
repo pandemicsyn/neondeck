@@ -32,7 +32,6 @@ export const briefingTaskInputSchema = v.object({
 });
 
 export const agentInstructionTaskInputSchema = v.object({
-  id: v.optional(nonEmptyStringSchema),
   prompt: v.pipe(v.string(), v.minLength(1), v.maxLength(8_000)),
   trigger: automationTriggerSchema,
   target: v.optional(agentTargetSchema),
@@ -66,6 +65,9 @@ export async function createBriefingTask(
   const parsed = v.safeParse(briefingTaskInputSchema, rawInput);
   if (!parsed.success)
     return invalidResult('scheduled_task_briefing_create', parsed);
+  const triggerError = pastOneShotTriggerMessage(parsed.output.trigger);
+  if (triggerError)
+    return failure('scheduled_task_briefing_create', triggerError);
   try {
     const task = await upsertScheduledTask(
       {
@@ -96,6 +98,9 @@ export async function createAgentInstructionTask(
     return invalidResult('scheduled_task_instruction_create', parsed);
   }
   const input = parsed.output;
+  const triggerError = pastOneShotTriggerMessage(input.trigger);
+  if (triggerError)
+    return failure('scheduled_task_instruction_create', triggerError);
   try {
     if (input.target?.kind === 'agent-session') {
       const session = await readChatSessionInternal(
@@ -119,7 +124,7 @@ export async function createAgentInstructionTask(
     }
     const task = await upsertScheduledTask(
       {
-        id: input.id ?? `instruction:${randomUUID()}`,
+        id: `instruction:${randomUUID()}`,
         spec: v.parse(scheduledTaskSpecSchema, {
           kind: 'run-agent-instruction',
           prompt: input.prompt,
@@ -186,6 +191,17 @@ export async function setTaskEnabled(
   enabled: boolean,
   paths = runtimePaths(),
 ) {
+  const existing = await readScheduledTask(id, paths);
+  if (existing?.spec.kind === 'poll-pr-watch') {
+    return {
+      ok: false,
+      action: 'scheduled_task_enabled_update',
+      changed: false,
+      message:
+        'PR watch tasks are managed by their watch and cannot be paused directly.',
+      requires: ['watch'],
+    } as const;
+  }
   const task = await setScheduledTaskEnabled(id, enabled, paths);
   if (!task) {
     return {
@@ -210,6 +226,16 @@ export async function removeTask(id: string, paths = runtimePaths()) {
       action: 'scheduled_task_delete',
       changed: false,
       message: `Scheduled task "${id}" was not found.`,
+    } as const;
+  }
+  if (task.spec.kind === 'poll-pr-watch') {
+    return {
+      ok: false,
+      action: 'scheduled_task_delete',
+      changed: false,
+      message:
+        'PR watch tasks are managed by their watch and cannot be deleted directly.',
+      requires: ['watch'],
     } as const;
   }
   await deleteScheduledTask(id, paths);
@@ -258,4 +284,13 @@ function failure(action: string, error: unknown): ScheduledTaskActionResult {
     changed: false,
     message: error instanceof Error ? error.message : String(error),
   };
+}
+
+function pastOneShotTriggerMessage(
+  trigger: v.InferOutput<typeof automationTriggerSchema>,
+) {
+  if (trigger.kind !== 'once' || Date.parse(trigger.at) > Date.now()) {
+    return undefined;
+  }
+  return 'One-shot scheduled tasks must be scheduled in the future.';
 }

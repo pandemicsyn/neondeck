@@ -8,11 +8,13 @@ export function validateAutomationTrigger(input: unknown) {
     return { ok: false as const, message: v.summarize(parsed.issues) };
   }
   const trigger = parsed.output;
-  if (trigger.kind === 'once' && !isIsoDate(trigger.at)) {
-    return {
-      ok: false as const,
-      message: 'One-shot scheduled tasks require an ISO timestamp.',
-    };
+  if (trigger.kind === 'once') {
+    if (!isIsoDate(trigger.at)) {
+      return {
+        ok: false as const,
+        message: 'One-shot scheduled tasks require an ISO timestamp.',
+      };
+    }
   }
   if (trigger.kind === 'cron') {
     if (!isIanaTimezone(trigger.timezone)) {
