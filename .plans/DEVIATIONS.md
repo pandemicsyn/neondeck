@@ -81,6 +81,9 @@ Use this format:
 ## 2026-06-27 - Schedules, Watches, And Blueprint-Style Automations
 
 - Roadmap item: Phase 4 / schedules, watches, and blueprint-style automations
+- Status: superseded by the 2026-07-10 scheduler refactor. Blueprint/raw-
+  schedule terminology is historical only; current scheduling uses typed SQLite
+  scheduled tasks for PR-watch polling, briefings, and agent instructions.
 - Decision: Landed durable app tables for watches, jobs, notifications, memories, and workflow summaries; deterministic `neondeck_watch_pr_*` actions; GitHub check-run status enrichment for merged PR watches; blueprint-backed schedule creation; a local scheduler loop; active watch/job/notification APIs; and quiet `silent` refresh results for unchanged watches. The later Flue alignment pass changed morning briefing and review queue digest scheduler jobs from app-only summary placeholders into admissions of real Flue workflows with run ids recorded in job results and notifications. Production/deploy status watching remains a provider-specific follow-up.
 - Reason: Phase 4 needs the local scheduler and deterministic watch substrate first. Deploy status adapters depend on configured deployment providers. The Flue alignment pass kept scheduling deterministic while using Flue workflow runs for bounded scheduled work.
 - Follow-up: Add deploy-provider status adapters when repo deploy targets are formalized, and build richer dashboard inspection over scheduled Flue run history.
