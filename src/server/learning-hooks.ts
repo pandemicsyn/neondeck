@@ -35,19 +35,20 @@ export function installFlueObservationHandlers(
     const contextHome = flueContextRuntimeHome(context);
     if (contextHome && contextHome !== paths.home) return;
 
-    void recordFlueObservation(event, paths).catch((error) => {
-      console.error('[neondeck] failed to record Flue observation', error);
-    });
     if (event.type === 'run_end') {
-      void settleScheduledTaskWorkflowRun(
-        { workflowRunId: event.runId, failed: event.isError },
-        paths,
-      ).catch((error) => {
-        console.error(
-          '[neondeck] failed to settle scheduled task workflow run',
-          error,
-        );
-      });
+      void recordFlueObservation(event, paths)
+        .then(() =>
+          settleScheduledTaskWorkflowRun(
+            { workflowRunId: event.runId, failed: event.isError },
+            paths,
+          ),
+        )
+        .catch((error) => {
+          console.error(
+            '[neondeck] failed to record or settle Flue observation',
+            error,
+          );
+        });
       void attachCommandRunSummaryRunId(event, paths).catch((error) => {
         console.error('[neondeck] failed to attach Flue run id', error);
       });
@@ -114,6 +115,10 @@ export function installFlueObservationHandlers(
 
       return;
     }
+
+    void recordFlueObservation(event, paths).catch((error) => {
+      console.error('[neondeck] failed to record Flue observation', error);
+    });
 
     if (
       event.type === 'operation' &&
