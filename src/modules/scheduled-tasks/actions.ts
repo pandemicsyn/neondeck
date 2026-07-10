@@ -32,7 +32,7 @@ export const scheduledBriefingTaskCreateAction = defineAction({
 export const scheduledInstructionTaskCreateAction = defineAction({
   name: 'neondeck_scheduled_task_instruction_create',
   description:
-    'Create or update a scheduled bounded agent instruction. Workflow delivery is the default; use an agent session only when continuity is explicitly required.',
+    'Create or update a scheduled bounded agent instruction. Use an agent-session target only when continuity is explicitly required.',
   input: agentInstructionTaskInputSchema,
   output: actionOutputSchema,
   async run({ input }) {

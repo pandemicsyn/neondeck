@@ -16,10 +16,12 @@ import {
 } from './store';
 import * as v from 'valibot';
 
-const deliverySchema = v.picklist(['notification', 'report', 'session']);
 const agentTargetSchema = v.variant('kind', [
   v.object({ kind: v.literal('workflow') }),
-  v.object({ kind: v.literal('agent-session'), sessionId: nonEmptyStringSchema }),
+  v.object({
+    kind: v.literal('agent-session'),
+    sessionId: nonEmptyStringSchema,
+  }),
 ]);
 
 export const briefingTaskInputSchema = v.object({
@@ -36,11 +38,12 @@ export const agentInstructionTaskInputSchema = v.object({
   repoId: v.optional(nonEmptyStringSchema),
   cwd: v.optional(nonEmptyStringSchema),
   skills: v.optional(v.array(nonEmptyStringSchema)),
-  delivery: v.optional(deliverySchema),
   enabled: v.optional(v.boolean()),
 });
 
-export const scheduledTaskIdInputSchema = v.object({ id: nonEmptyStringSchema });
+export const scheduledTaskIdInputSchema = v.object({
+  id: nonEmptyStringSchema,
+});
 
 export type ScheduledTaskActionResult = {
   ok: boolean;
@@ -60,7 +63,8 @@ export async function createBriefingTask(
 ): Promise<ScheduledTaskActionResult> {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(briefingTaskInputSchema, rawInput);
-  if (!parsed.success) return invalidResult('scheduled_task_briefing_create', parsed);
+  if (!parsed.success)
+    return invalidResult('scheduled_task_briefing_create', parsed);
   try {
     const task = await upsertScheduledTask(
       {
@@ -71,7 +75,11 @@ export async function createBriefingTask(
       },
       paths,
     );
-    return success('scheduled_task_briefing_create', task, 'Created briefing task.');
+    return success(
+      'scheduled_task_briefing_create',
+      task,
+      'Created briefing task.',
+    );
   } catch (error) {
     return failure('scheduled_task_briefing_create', error);
   }
@@ -98,7 +106,6 @@ export async function createAgentInstructionTask(
           ...(input.repoId ? { repoId: input.repoId } : {}),
           ...(input.cwd ? { cwd: input.cwd } : {}),
           skills: input.skills ?? [],
-          delivery: input.delivery ?? 'notification',
         }),
         trigger: input.trigger,
         enabled: input.enabled,
@@ -174,10 +181,7 @@ export async function setTaskEnabled(
   );
 }
 
-export async function removeTask(
-  id: string,
-  paths = runtimePaths(),
-) {
+export async function removeTask(id: string, paths = runtimePaths()) {
   const task = await readScheduledTask(id, paths);
   if (!task) {
     return {
@@ -188,7 +192,11 @@ export async function removeTask(
     } as const;
   }
   await deleteScheduledTask(id, paths);
-  return success('scheduled_task_delete', task, `Deleted scheduled task "${id}".`);
+  return success(
+    'scheduled_task_delete',
+    task,
+    `Deleted scheduled task "${id}".`,
+  );
 }
 
 function success(
@@ -210,7 +218,14 @@ function invalidResult(
     message: 'Invalid scheduled task input.',
     errors:
       parsed.issues && parsed.issues.length > 0
-        ? [v.summarize(parsed.issues as [v.BaseIssue<unknown>, ...v.BaseIssue<unknown>[]])]
+        ? [
+            v.summarize(
+              parsed.issues as [
+                v.BaseIssue<unknown>,
+                ...v.BaseIssue<unknown>[],
+              ],
+            ),
+          ]
         : undefined,
   };
 }

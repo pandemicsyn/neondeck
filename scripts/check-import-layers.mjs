@@ -40,7 +40,6 @@ const backendLayers = new Map([
   ['src/modules/docs-drift', 4],
   ['src/modules/issue-triage', 4],
   ['src/modules/hygiene', 4],
-  ['src/modules/routines', 4],
   ['src/modules/autopilot', 4],
   ['src/modules/pr-review-assist', 4],
   ['src/modules/learning', 4],

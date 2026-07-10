@@ -585,7 +585,7 @@ export const entries: SafetyPolicyEntry[] = [
       ...safeMutation,
       auditTarget: 'scheduled_tasks/scheduled_task_runs',
     },
-    'Creates or updates a bounded scheduled agent instruction with explicit workflow or session delivery.',
+    'Creates or updates a bounded scheduled agent instruction with an explicit workflow or session target.',
   ),
   action(
     'neondeck_scheduled_task_pause',

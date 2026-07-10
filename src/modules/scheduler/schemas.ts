@@ -22,7 +22,7 @@ export type SchedulerResult = {
   requires?: string[];
 };
 
-export type { JobExecutionResult } from '../app-state';
+export type { AutomationExecutionResult } from '../app-state';
 
 export type SchedulerDependencies = {
   refreshPrWatch?: (

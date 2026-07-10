@@ -198,6 +198,48 @@ describe('scheduled task storage', () => {
     }
   });
 
+  it('settles expired claims without retrying a missed one-shot task', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
+    const paths = runtimePaths(home);
+    try {
+      await upsertScheduledTask(
+        {
+          id: 'briefing:expired-claim',
+          spec: { kind: 'run-briefing', briefingId: 'daily' },
+          trigger: { kind: 'once', at: '2026-07-10T00:00:00.000Z' },
+          nextRunAt: '2026-07-10T00:00:00.000Z',
+        },
+        paths,
+      );
+      const [claim] = await claimDueScheduledTasks(
+        paths,
+        new Date('2026-07-10T00:00:00.000Z'),
+        10,
+        1_000,
+      );
+      if (!claim) throw new Error('Expected the due task to be claimed.');
+
+      await expect(
+        claimDueScheduledTasks(paths, new Date('2026-07-10T00:00:02.000Z')),
+      ).resolves.toEqual([]);
+      await expect(
+        readScheduledTask(claim.task.id, paths),
+      ).resolves.toMatchObject({
+        enabled: false,
+        claimId: null,
+      });
+      await expect(
+        readLatestScheduledTaskRun(claim.task.id, paths),
+      ).resolves.toMatchObject({
+        id: claim.run.id,
+        status: 'failed',
+        outcome: 'failed',
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   it('admits due briefings through Flue and settles the scheduling attempt', async () => {
     const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
     const paths = runtimePaths(home);

@@ -12,8 +12,10 @@ import {
 import { runBoundedGit, runBoundedGitLines } from '../../lib/git';
 import { renderReportHtml } from '../../lib/report-html';
 import { parseInput, nonEmptyStringSchema } from '../../lib/valibot';
-import type { JobRecord } from '../app-state';
-import { addWorkflowSummary } from '../app-state';
+import {
+  addWorkflowSummary,
+  type AutomationExecutionResult,
+} from '../app-state';
 import { recordDocsDriftFixTaskBoundary, startKiloTask } from '../kilo';
 import { loadAutomationLearningMemoryContext } from '../learning';
 import { loadRuntimeSkill } from '../runtime';
@@ -22,7 +24,7 @@ import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import { createWorktree } from '../worktrees';
 import type { RuntimePaths } from '../../runtime-home';
 import { runtimePaths } from '../../runtime-home';
-import type { JobExecutionResult } from '../app-state';
+import type { JsonValue } from '@flue/runtime';
 
 type ChangedPath = {
   path: string;
@@ -38,6 +40,12 @@ type DriftHit = {
   status: string;
   line: number;
   excerpt: string;
+};
+
+type ReportAutomationInput = {
+  id: string;
+  config: JsonValue | null;
+  lastResult: JsonValue | null;
 };
 
 const maxDocsToScan = 200;
@@ -56,21 +64,21 @@ export type DocsDriftStageFixDependencies = {
   startKiloTask?: typeof startKiloTask;
 };
 
-export async function runDocsDriftJob(
-  job: JobRecord,
+export async function runDocsDriftReport(
+  job: ReportAutomationInput,
   paths: RuntimePaths,
-): Promise<JobExecutionResult> {
+): Promise<AutomationExecutionResult> {
   try {
-    return await runDocsDriftJobInner(job, paths);
+    return await runDocsDriftReportInner(job, paths);
   } catch (error) {
     return failed(job, `Docs drift failed: ${errorMessage(error)}.`);
   }
 }
 
-async function runDocsDriftJobInner(
-  job: JobRecord,
+async function runDocsDriftReportInner(
+  job: ReportAutomationInput,
   paths: RuntimePaths,
-): Promise<JobExecutionResult> {
+): Promise<AutomationExecutionResult> {
   const config = objectConfig(job.config);
   const repoRef = stringConfig(config.repo);
   if (!repoRef) {
@@ -835,7 +843,10 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function failed(job: JobRecord, message: string): JobExecutionResult {
+function failed(
+  job: ReportAutomationInput,
+  message: string,
+): AutomationExecutionResult {
   return {
     outcome: 'failed',
     message,

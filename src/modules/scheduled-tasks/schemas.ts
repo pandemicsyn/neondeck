@@ -17,7 +17,6 @@ export type ScheduledTaskSpec =
       repoId?: string;
       cwd?: string;
       skills: string[];
-      delivery: 'notification' | 'report' | 'session';
     };
 
 export type ScheduledTaskRecord = {
@@ -88,6 +87,5 @@ export const scheduledTaskSpecSchema = v.variant('kind', [
     repoId: v.optional(nonEmptyStringSchema),
     cwd: v.optional(nonEmptyStringSchema),
     skills: v.array(nonEmptyStringSchema),
-    delivery: v.picklist(['notification', 'report', 'session']),
   }),
 ]);
