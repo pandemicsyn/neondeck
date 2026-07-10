@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { asJsonValue } from '../../lib/action-result';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
+import { readChatSessionInternal } from '../sessions/store';
 import {
   automationTriggerSchema,
   nonEmptyStringSchema,
@@ -95,6 +96,26 @@ export async function createAgentInstructionTask(
     return invalidResult('scheduled_task_instruction_create', parsed);
   }
   const input = parsed.output;
+  if (input.target?.kind === 'agent-session') {
+    const session = await readChatSessionInternal(
+      input.target.sessionId,
+      paths,
+    );
+    if (
+      !session ||
+      session.archivedAt ||
+      session.agentName !== 'display-assistant'
+    ) {
+      return {
+        ok: false,
+        action: 'scheduled_task_instruction_create',
+        changed: false,
+        message:
+          'Agent-session targets must reference an active display-assistant chat session.',
+        requires: ['activeChatSession'],
+      };
+    }
+  }
   try {
     const task = await upsertScheduledTask(
       {

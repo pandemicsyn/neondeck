@@ -3,6 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  activateScheduledTaskWorkflowRun,
+  attachScheduledTaskWorkflowRunId,
+  canAdmitScheduledWorkflow,
   claimDueScheduledTasks,
   createAgentInstructionTask,
   createBriefingTask,
@@ -11,10 +14,12 @@ import {
   readScheduledTask,
   releaseUnstartedScheduledTaskClaim,
   settleScheduledTaskRun,
+  settleScheduledTaskWorkflowRun,
   upsertScheduledTask,
   validateAutomationTrigger,
 } from './modules/scheduled-tasks';
 import { runSchedulerTick } from './modules/scheduler';
+import { createChatSession } from './modules/sessions';
 import { runtimePaths } from './runtime-home';
 
 describe('scheduled task triggers', () => {
@@ -240,7 +245,56 @@ describe('scheduled task storage', () => {
     }
   });
 
-  it('admits due briefings through Flue and settles the scheduling attempt', async () => {
+  it('holds workflow capacity until the terminal Flue observation settles it', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
+    const paths = runtimePaths(home);
+    try {
+      await upsertScheduledTask(
+        {
+          id: 'briefing:active-workflow',
+          spec: { kind: 'run-briefing', briefingId: 'daily' },
+          trigger: { kind: 'interval', everySeconds: 300 },
+          nextRunAt: '2026-07-10T00:00:00.000Z',
+        },
+        paths,
+      );
+      const [claim] = await claimDueScheduledTasks(
+        paths,
+        new Date('2026-07-10T00:00:00.000Z'),
+      );
+      if (!claim) throw new Error('Expected the due task to be claimed.');
+      await activateScheduledTaskWorkflowRun(
+        {
+          taskId: claim.task.id,
+          runId: claim.run.id,
+          claimId: claim.task.claimId ?? '',
+        },
+        paths,
+      );
+      await attachScheduledTaskWorkflowRunId(
+        { runId: claim.run.id, workflowRunId: 'workflow:briefing:active' },
+        paths,
+      );
+
+      await expect(
+        canAdmitScheduledWorkflow(claim.task.id, paths),
+      ).resolves.toBe(false);
+      await expect(
+        canAdmitScheduledWorkflow('briefing:another-task', paths, 1),
+      ).resolves.toBe(false);
+      await settleScheduledTaskWorkflowRun(
+        { workflowRunId: 'workflow:briefing:active', failed: false },
+        paths,
+      );
+      await expect(
+        canAdmitScheduledWorkflow(claim.task.id, paths),
+      ).resolves.toBe(true);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('admits due briefings through Flue and retains an active workflow run', async () => {
     const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
     const paths = runtimePaths(home);
     try {
@@ -268,11 +322,8 @@ describe('scheduled task storage', () => {
         tasks: [expect.objectContaining({ id: 'briefing:daily' })],
       });
       await expect(
-        readLatestScheduledTaskRun('briefing:daily', paths),
-      ).resolves.toMatchObject({
-        status: 'completed',
-        workflowRunId: 'workflow:briefing:1',
-      });
+        canAdmitScheduledWorkflow('briefing:daily', paths),
+      ).resolves.toBe(false);
     } finally {
       await rm(home, { recursive: true, force: true });
     }
@@ -323,6 +374,31 @@ describe('scheduled task storage', () => {
           },
         },
       });
+      await expect(
+        createAgentInstructionTask(
+          {
+            prompt: 'Use continuity for this scheduled check.',
+            trigger: { kind: 'interval', everySeconds: 3_600 },
+            target: { kind: 'agent-session', sessionId: 'missing-session' },
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({ ok: false, requires: ['activeChatSession'] });
+      const sessionResult = await createChatSession(
+        { title: 'Scheduled instruction continuity', activate: false },
+        paths,
+      );
+      const session = (sessionResult as { session: { id: string } }).session;
+      await expect(
+        createAgentInstructionTask(
+          {
+            prompt: 'Use continuity for this scheduled check.',
+            trigger: { kind: 'interval', everySeconds: 3_600 },
+            target: { kind: 'agent-session', sessionId: session.id },
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({ ok: true });
     } finally {
       await rm(home, { recursive: true, force: true });
     }
