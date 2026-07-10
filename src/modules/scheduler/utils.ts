@@ -25,6 +25,7 @@ export function okResult(
   message: string,
   data: {
     jobs?: JobRecord[];
+    tasks?: unknown[];
     notifications?: unknown[];
     extra?: unknown;
   } = {},
@@ -36,6 +37,7 @@ export function okResult(
     ...(outcome ? { outcome } : {}),
     message,
     ...(data.jobs ? { jobs: data.jobs.map(asJsonValue) } : {}),
+    ...(data.tasks ? { tasks: data.tasks.map(asJsonValue) } : {}),
     ...(data.notifications
       ? { notifications: data.notifications.map(asJsonValue) }
       : {}),

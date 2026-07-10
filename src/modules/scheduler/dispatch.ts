@@ -321,7 +321,6 @@ export async function refreshWatchJob(
   paths: RuntimePaths,
   dependencies: SchedulerDependencies = {},
 ): Promise<JobExecutionResult> {
-  const refreshWatch = dependencies.refreshPrWatch ?? refreshPrWatch;
   const config = readObjectConfig(job.config);
   const target =
     typeof config.id === 'string'
@@ -329,6 +328,30 @@ export async function refreshWatchJob(
       : typeof config.ref === 'string'
         ? { ref: config.ref }
         : undefined;
+  return refreshWatchTargets(target, job.lastResult, paths, dependencies);
+}
+
+export async function refreshWatchTask(
+  watchId: string,
+  previousResult: JsonValue | null,
+  paths: RuntimePaths,
+  dependencies: SchedulerDependencies = {},
+): Promise<JobExecutionResult> {
+  return refreshWatchTargets(
+    { id: watchId },
+    previousResult,
+    paths,
+    dependencies,
+  );
+}
+
+async function refreshWatchTargets(
+  target: { id?: string; ref?: string } | undefined,
+  previousResult: JsonValue | null,
+  paths: RuntimePaths,
+  dependencies: SchedulerDependencies,
+): Promise<JobExecutionResult> {
+  const refreshWatch = dependencies.refreshPrWatch ?? refreshPrWatch;
 
   const results = [];
   if (target) {
@@ -343,7 +366,7 @@ export async function refreshWatchJob(
   const failures = results.filter((result) => !result.ok);
   if (failures.length > 0) {
     const pendingEventResults = pendingEventResultsFromJobResult(
-      job.lastResult,
+      previousResult,
     );
     return {
       outcome: 'failed',
@@ -369,7 +392,7 @@ export async function refreshWatchJob(
     results,
     paths,
     dependencies,
-    job.lastResult,
+    previousResult,
   );
   const eventFailures = eventResults.filter((result) => !result.ok);
   const changed = results.filter((result) => result.changed);

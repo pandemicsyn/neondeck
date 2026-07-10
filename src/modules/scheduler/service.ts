@@ -2,12 +2,17 @@ import {
   addNotification,
   disableStaleScheduleJobs,
   listJobs,
-  updateJobRun,
   upsertJob,
   type JobRecord,
 } from '../app-state';
 import { addSchedule } from '../config';
-import { runDueRoutines } from '../routines';
+import {
+  claimDueScheduledTasks,
+  executeScheduledTask,
+  listScheduledTasks,
+  readLatestScheduledTaskRun,
+  settleScheduledTaskRun,
+} from '../scheduled-tasks';
 import {
   ensureRuntimeHome,
   parseScheduleConfig,
@@ -18,7 +23,6 @@ import {
 import { addPrWatch } from '../watches';
 import type {
   BlueprintKind,
-  JobExecutionResult,
   SchedulerDependencies,
   SchedulerResult,
 } from './schemas';
@@ -29,7 +33,6 @@ import {
 import {
   defaultBlueprintId,
   defaultIntervalSeconds,
-  executeJob,
   readIntervalSeconds,
   resolveReleaseWatchRepo,
 } from './dispatch';
@@ -241,118 +244,96 @@ export async function runSchedulerTick(
   );
 
   try {
-    await syncScheduledJobs(paths);
-    const jobs = (await listJobs(paths)).filter(
-      (job) =>
-        job.enabled &&
-        (!job.nextRunAt || Date.parse(job.nextRunAt) <= now.getTime()),
-    );
+    const claimedTasks = await claimDueScheduledTasks(paths, now);
     const notifications = [];
-    let jobChanged = false;
+    let taskChanged = false;
     let stoppedForLostLease = false;
-    let routineResult: JobExecutionResult | null = null;
 
-    for (const job of jobs) {
+    for (const { task, run } of claimedTasks) {
       if (!isSchedulerTickLeaseOwned(paths, lease.owner, new Date())) {
         stoppedForLostLease = true;
         break;
       }
-
-      const nextRunAt = new Date(
-        now.getTime() + job.intervalSeconds * 1000,
-      ).toISOString();
-
-      // Advance before external side effects so a crash after admission does
-      // not leave the same job immediately due for duplicate admission.
-      await updateJobRun(
-        job.id,
-        {
-          outcome: 'started',
-          message: 'Scheduler job started.',
-          preserveResult: true,
-          nextRunAt,
-        },
-        paths,
-      );
-
-      let result: JobExecutionResult;
-      let resultNextRunAt = nextRunAt;
+      const previous = await readLatestScheduledTaskRun(task.id, paths);
       try {
-        result = await executeJob(job, paths, dependencies);
+        const result = await executeScheduledTask(
+          task,
+          previous?.result ?? null,
+          paths,
+          dependencies,
+        );
+        await settleScheduledTaskRun(
+          {
+            taskId: task.id,
+            runId: run.id,
+            claimId: task.claimId ?? '',
+            status: 'completed',
+            outcome: result.outcome,
+            message: result.message,
+            workflowRunId: result.workflowRunId,
+            sessionId: result.sessionId,
+            result: result.result,
+          },
+          paths,
+        );
+        if (result.outcome !== 'silent') taskChanged = true;
+        for (const notification of result.notifications ?? []) {
+          notifications.push(
+            await addNotification(
+              {
+                ...notification,
+                source: notification.source ?? 'scheduled-task',
+                sourceId: notification.sourceId ?? task.id,
+              },
+              paths,
+            ),
+          );
+        }
       } catch (error) {
         const message = `Scheduler job failed: ${errorMessage(error)}.`;
-        resultNextRunAt = now.toISOString();
-        result = {
-          outcome: 'failed',
-          message,
-          notifications: [
+        await settleScheduledTaskRun(
+          {
+            taskId: task.id,
+            runId: run.id,
+            claimId: task.claimId ?? '',
+            status: 'failed',
+            outcome: 'failed',
+            message,
+            error: errorMessage(error),
+          },
+          paths,
+        );
+        taskChanged = true;
+        notifications.push(
+          await addNotification(
             {
               level: 'attention',
-              title: 'Scheduler job failed',
+              title: 'Scheduled task failed',
               message,
               source: 'scheduler',
-              sourceId: job.id,
+              sourceId: task.id,
             },
-          ],
-        };
-      }
-
-      await updateJobRun(
-        job.id,
-        {
-          outcome: result.outcome,
-          message: result.message,
-          ...(result.outcome === 'failed' && result.result === undefined
-            ? { preserveResult: true }
-            : { result: result.result }),
-          nextRunAt: resultNextRunAt,
-        },
-        paths,
-      );
-      if (result.outcome !== 'silent') {
-        jobChanged = true;
-      }
-
-      for (const notification of result.notifications ?? []) {
-        notifications.push(await addNotification(notification, paths));
+            paths,
+          ),
+        );
       }
     }
 
-    if (
-      !stoppedForLostLease &&
-      isSchedulerTickLeaseOwned(paths, lease.owner, new Date())
-    ) {
-      routineResult = await runDueRoutines(paths, now);
-      for (const notification of routineResult.notifications ?? []) {
-        notifications.push(await addNotification(notification, paths));
-      }
-    }
-
-    const routineChanged =
-      routineResult?.outcome !== undefined &&
-      routineResult.outcome !== 'silent';
-    const changed = jobChanged || notifications.length > 0 || routineChanged;
-    const jobMessage =
-      jobs.length === 0
-        ? 'No scheduled jobs were due.'
+    const changed = taskChanged || notifications.length > 0;
+    const message =
+      claimedTasks.length === 0
+        ? 'No scheduled tasks were due.'
         : stoppedForLostLease
           ? 'Scheduler tick stopped because it no longer owns the active lease.'
-          : `Ran ${jobs.length} scheduled job${jobs.length === 1 ? '' : 's'}.`;
-    const message =
-      routineResult && routineChanged
-        ? jobs.length === 0
-          ? routineResult.message
-          : `${jobMessage} ${routineResult.message}`
-        : jobMessage;
+          : `Ran ${claimedTasks.length} scheduled task${claimedTasks.length === 1 ? '' : 's'}.`;
     return okResult(
       'scheduler_tick',
       changed,
       changed ? 'updated' : 'silent',
       message,
       {
-        jobs: await listJobs(paths),
+        tasks: await listScheduledTasks(paths),
         notifications,
-        extra: routineResult ? { routines: routineResult } : undefined,
       },
     );
   } finally {

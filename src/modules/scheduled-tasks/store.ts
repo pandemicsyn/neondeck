@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { asJsonValue } from '../../lib/action-result';
 import { openDb } from '../../lib/sqlite';
-import { ensureRuntimeHome, runtimePaths, type RuntimePaths } from '../../runtime-home';
+import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import {
   scheduledTaskSpecSchema,
-  type AutomationTrigger,
   type ScheduledTaskRecord,
   type ScheduledTaskRunRecord,
 } from './schemas';
@@ -43,6 +42,30 @@ export async function readScheduledTask(
       .prepare('SELECT * FROM scheduled_tasks WHERE id = ?;')
       .get(id);
     return row ? readScheduledTaskRow(row) : undefined;
+  } finally {
+    database.close();
+  }
+}
+
+export async function readLatestScheduledTaskRun(
+  taskId: string,
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const row = database
+      .prepare(
+        `
+        SELECT *
+        FROM scheduled_task_runs
+        WHERE task_id = ? AND status IN ('completed', 'failed')
+        ORDER BY created_at DESC
+        LIMIT 1;
+      `,
+      )
+      .get(taskId);
+    return row ? readScheduledTaskRunRow(row) : undefined;
   } finally {
     database.close();
   }
@@ -351,6 +374,36 @@ function readScheduledTaskRow(row: unknown): ScheduledTaskRecord {
     claimExpiresAt:
       typeof record.claim_expires_at === 'string' ? record.claim_expires_at : null,
     lastRunAt: typeof record.last_run_at === 'string' ? record.last_run_at : null,
+    createdAt: String(record.created_at),
+    updatedAt: String(record.updated_at),
+  };
+}
+
+function readScheduledTaskRunRow(row: unknown): ScheduledTaskRunRecord {
+  const record = row as Record<string, unknown>;
+  return {
+    id: String(record.id),
+    taskId: String(record.task_id),
+    status: v.parse(
+      v.picklist(['claimed', 'completed', 'failed']),
+      record.status,
+    ),
+    outcome: v.parse(
+      v.picklist(['recorded', 'silent', 'failed']),
+      record.outcome,
+    ),
+    message: String(record.message),
+    workflowRunId:
+      typeof record.workflow_run_id === 'string' ? record.workflow_run_id : null,
+    sessionId: typeof record.session_id === 'string' ? record.session_id : null,
+    result:
+      typeof record.result_json === 'string'
+        ? (JSON.parse(record.result_json) as ScheduledTaskRunRecord['result'])
+        : null,
+    error: typeof record.error === 'string' ? record.error : null,
+    startedAt: String(record.started_at),
+    completedAt:
+      typeof record.completed_at === 'string' ? record.completed_at : null,
     createdAt: String(record.created_at),
     updatedAt: String(record.updated_at),
   };
