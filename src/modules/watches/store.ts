@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
-import { upsertJob } from '../app-state';
 import type { RuntimePaths } from '../../runtime-home';
+import { upsertScheduledTask } from '../scheduled-tasks';
 import type {
   DesiredTerminalState,
   PrWatch,
@@ -170,82 +170,30 @@ export function updateRefWatch(paths: RuntimePaths, watch: RefWatch) {
   }
 }
 
-export function upsertWatchPollingJob(
+export function upsertWatchPollingTask(
   watch: PrWatch,
   paths: RuntimePaths,
   intervalSeconds = 300,
 ) {
-  return upsertJob(
+  return upsertScheduledTask(
     {
-      id: watchPollingJobId(watch.id),
-      type: 'watch-pr',
-      blueprint: 'watch-pr',
-      enabled: true,
-      intervalSeconds,
-      config: {
-        id: watch.id,
-        repo: watch.repoFullName,
-        prNumber: watch.prNumber,
+      id: watchPollingTaskId(watch.id),
+      spec: {
+        kind: 'poll-pr-watch',
+        watchId: watch.id,
       },
+      trigger: {
+        kind: 'interval',
+        everySeconds: intervalSeconds,
+      },
+      enabled: true,
     },
     paths,
   );
 }
 
-export function upsertRefWatchPollingJob(
-  watch: RefWatch,
-  paths: RuntimePaths,
-  intervalSeconds = 300,
-) {
-  return upsertJob(
-    {
-      id: refWatchPollingJobId(watch.id),
-      type: 'watch-ref',
-      blueprint: 'watch-ref',
-      enabled: true,
-      intervalSeconds,
-      config: {
-        id: watch.id,
-        repo: watch.repoFullName,
-        ref: watch.ref,
-      },
-    },
-    paths,
-  );
-}
-
-export function watchPollingJobId(id: string) {
+export function watchPollingTaskId(id: string) {
   return `watch:${id}`;
-}
-
-export function refWatchPollingJobId(id: string) {
-  return `watch-ref:${id}`;
-}
-
-export function upsertReleasePollingJob(
-  watch: PrWatch,
-  paths: RuntimePaths,
-  intervalSeconds = 900,
-) {
-  return upsertJob(
-    {
-      id: releasePollingJobId(watch.repoId),
-      type: 'release-watch',
-      blueprint: 'release-watch',
-      enabled: true,
-      intervalSeconds,
-      config: {
-        repo: watch.repoId,
-        source: 'watch-pr-until-prod',
-        sourceWatchId: watch.id,
-      },
-    },
-    paths,
-  );
-}
-
-export function releasePollingJobId(repoId: string) {
-  return `release:${repoId}`;
 }
 
 export function readWatches(paths: RuntimePaths): PrWatch[] {
