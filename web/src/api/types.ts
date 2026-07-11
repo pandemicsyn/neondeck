@@ -1545,6 +1545,66 @@ export type NotificationChangeEvent = {
   changedAt: string;
 };
 
+export type BriefingProfile = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  instructions: string;
+  instructionsVersion: number;
+  schedule: string;
+  timezone: string;
+  sessionId: string | null;
+  compatibility: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type BriefingRun = {
+  id: string;
+  profileId: string | null;
+  trigger: 'manual' | 'scheduled' | 'dashboard';
+  sessionId: string;
+  commandEventId: string | null;
+  dispatchId: string | null;
+  workflowRunId: string | null;
+  status: 'queued' | 'ready' | 'failed';
+  error: string | null;
+  queuedAt: string;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  snapshot: {
+    version: 1;
+    collectedAt: string;
+    byteSize: number;
+    truncated: boolean;
+  };
+  instructionsVersion: number;
+};
+
+export type BriefingStateResponse = {
+  ok: boolean;
+  action: 'briefing_state_read';
+  changed: boolean;
+  profile: BriefingProfile;
+  latestRun: BriefingRun | null;
+  runs: BriefingRun[];
+  unreadCount: number;
+  sessionStaleReasons: ChatSessionRecord['staleReasons'];
+  fetchedAt: string;
+};
+
+export type BriefingMutationResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  profile?: BriefingProfile;
+  run?: BriefingRun;
+  workflowRunId?: string;
+  errors?: string[];
+};
+
 export type SafetyClass =
   'read-only' | 'safe-mutation' | 'destructive-mutation' | 'host-execution';
 

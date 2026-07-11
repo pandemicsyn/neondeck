@@ -16,6 +16,7 @@ export * from './scheduler';
 export * from './memory';
 export * from './learning';
 export * from './notifications';
+export * from './briefings';
 export * from './reports';
 export * from './worktrees';
 export * from './watches';

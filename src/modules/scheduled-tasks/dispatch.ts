@@ -45,7 +45,10 @@ export async function executeScheduledTask(
   if (task.spec.kind === 'run-briefing') {
     const invokeWorkflow =
       dependencies.invokeWorkflow ?? invokeScheduledWorkflow;
-    const { runId } = await invokeWorkflow('briefing', {});
+    const { runId } = await invokeWorkflow('briefing', {
+      profileId: task.spec.briefingId,
+      taskId: task.id,
+    });
     return {
       outcome: 'recorded',
       message: `Admitted briefing workflow ${runId}.`,
@@ -58,10 +61,9 @@ export async function executeScheduledTask(
   if (task.spec.target.kind === 'workflow') {
     const invokeWorkflow =
       dependencies.invokeWorkflow ?? invokeScheduledWorkflow;
-    const { runId } = await invokeWorkflow(
-      'scheduled-agent-instruction',
-      { prompt },
-    );
+    const { runId } = await invokeWorkflow('scheduled-agent-instruction', {
+      prompt,
+    });
     return {
       outcome: 'recorded',
       message: `Admitted scheduled instruction workflow ${runId}.`,
