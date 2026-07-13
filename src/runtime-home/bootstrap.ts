@@ -54,9 +54,27 @@ const seededRuntimeSkills = [
 ];
 
 const initializedRuntimeDatabases = new Set<string>();
+const pendingRuntimeHomeInitializations = new Map<string, Promise<void>>();
 const pendingRuntimeDatabaseInitializations = new Map<string, Promise<void>>();
 
 export async function ensureRuntimeHome(paths = runtimePaths()) {
+  const key = resolve(paths.home);
+  const pending = pendingRuntimeHomeInitializations.get(key);
+  if (pending) {
+    await pending;
+    return;
+  }
+
+  const initialization = initializeRuntimeHome(paths).finally(() => {
+    if (pendingRuntimeHomeInitializations.get(key) === initialization) {
+      pendingRuntimeHomeInitializations.delete(key);
+    }
+  });
+  pendingRuntimeHomeInitializations.set(key, initialization);
+  await initialization;
+}
+
+async function initializeRuntimeHome(paths = runtimePaths()) {
   await mkdir(paths.home, { recursive: true });
   await mkdir(paths.data, { recursive: true });
   await mkdir(paths.skills, { recursive: true });

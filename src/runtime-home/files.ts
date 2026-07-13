@@ -1,11 +1,12 @@
 import {
-  existsSync,
+  constants,
+  copyFileSync,
   mkdirSync,
   readFileSync,
   renameSync,
   writeFileSync,
 } from 'node:fs';
-import { cp, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { dirname } from 'node:path';
 
@@ -130,39 +131,48 @@ export function writeJsonIfMissingSync(path: string, value: unknown) {
 }
 
 export async function writeFileIfMissing(path: string, value: string) {
-  if (existsSync(path)) {
-    return;
-  }
-
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, value, 'utf8');
+  try {
+    await writeFile(path, value, { encoding: 'utf8', flag: 'wx' });
+  } catch (error) {
+    if (!isAlreadyExistsError(error)) throw error;
+  }
 }
 
 export function writeFileIfMissingSync(path: string, value: string) {
-  if (existsSync(path)) {
-    return;
-  }
-
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, value, 'utf8');
+  try {
+    writeFileSync(path, value, { encoding: 'utf8', flag: 'wx' });
+  } catch (error) {
+    if (!isAlreadyExistsError(error)) throw error;
+  }
 }
 
 export async function copyIfMissing(source: string, target: string) {
-  if (existsSync(target)) {
-    return;
-  }
-
   await mkdir(dirname(target), { recursive: true });
-  await cp(source, target);
+  try {
+    await copyFile(source, target, constants.COPYFILE_EXCL);
+  } catch (error) {
+    if (!isAlreadyExistsError(error)) throw error;
+  }
 }
 
 export function copyIfMissingSync(source: string, target: string) {
-  if (existsSync(target)) {
-    return;
-  }
-
   mkdirSync(dirname(target), { recursive: true });
-  writeFileSync(target, readFileSync(source));
+  try {
+    copyFileSync(source, target, constants.COPYFILE_EXCL);
+  } catch (error) {
+    if (!isAlreadyExistsError(error)) throw error;
+  }
+}
+
+function isAlreadyExistsError(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === 'EEXIST'
+  );
 }
 
 function parseJson<T>(
