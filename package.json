@@ -143,7 +143,7 @@
     "concurrently": "^10.0.3",
     "drizzle-kit": "1.0.0-rc.4",
     "jsdom": "^29.1.1",
-    "oxlint": "^1.71.0",
+    "oxlint": "^1.73.0",
     "playwright": "^1.61.1",
     "prettier": "^3.9.4",
     "prettier-plugin-astro": "^0.14.1",
