@@ -113,6 +113,7 @@ jobs:
         run: npm run release:npm:check
 
       - name: Check registry state
+        id: registry
         if: steps.release.outputs.dry_run != 'true'
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
@@ -123,17 +124,19 @@ jobs:
           registry_status=$?
           set -e
           if [ "${registry_status}" -eq 0 ]; then
-            echo "neondeck@${RELEASE_VERSION} is already published." >&2
-            exit 1
+            echo "neondeck@${RELEASE_VERSION} is already published; verifying the existing release."
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           if ! grep -q 'E404' <<<"${registry_output}"; then
             echo "Could not confirm that neondeck@${RELEASE_VERSION} is unpublished:" >&2
             echo "${registry_output}" >&2
             exit "${registry_status}"
           fi
+          echo "already_published=false" >> "$GITHUB_OUTPUT"
 
       - name: Configure temporary npm token
-        if: steps.release.outputs.dry_run != 'true'
+        if: steps.release.outputs.dry_run != 'true' && steps.registry.outputs.already_published != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -146,6 +149,7 @@ jobs:
           fi
 
       - name: Publish package
+        if: steps.release.outputs.dry_run == 'true' || steps.registry.outputs.already_published != 'true'
         env:
           NPM_CONFIG_PROVENANCE: 'true'
           NPM_TAG: ${{ steps.release.outputs.npm_tag }}
@@ -164,8 +168,20 @@ jobs:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
           set -euo pipefail
-          npm view "neondeck@${RELEASE_VERSION}" name version dist-tags --json
-          tmp="$(mktemp -d)"
-          npm init -y --prefix "${tmp}" >/dev/null
-          npm install --ignore-scripts --prefix "${tmp}" "neondeck@${RELEASE_VERSION}"
-          npx --prefix "${tmp}" neondeck --home "${tmp}/home" --json status >/dev/null
+          for attempt in $(seq 1 12); do
+            tmp="$(mktemp -d)"
+            if npm view "neondeck@${RELEASE_VERSION}" name version dist-tags --json \
+              && npm init -y --prefix "${tmp}" >/dev/null \
+              && npm install --ignore-scripts --prefix "${tmp}" "neondeck@${RELEASE_VERSION}" \
+              && npx --prefix "${tmp}" neondeck --home "${tmp}/home" --json status >/dev/null; then
+              rm -rf "${tmp}"
+              exit 0
+            fi
+            rm -rf "${tmp}"
+            if [ "${attempt}" -eq 12 ]; then
+              echo "neondeck@${RELEASE_VERSION} did not become installable after ${attempt} attempts." >&2
+              exit 1
+            fi
+            echo "Registry propagation is still pending (attempt ${attempt}/12); retrying in 5 seconds."
+            sleep 5
+          done
