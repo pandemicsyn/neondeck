@@ -243,20 +243,41 @@ The Cloudflare deployment config is `docs/wrangler.jsonc`.
 
 ## Publishing
 
-Use npm's semver-aware version command:
+User-facing pull requests should include a concise Changeset:
 
 ```sh
-npm version patch
-npm version minor
-npm version major
+npm run changeset
 ```
 
-That updates `package.json` and `package-lock.json`, creates a `v*` git tag,
-and gives the publish workflow a stable release ref. Push the version commit and
+Use `patch` for fixes, `minor` for features, and `major` for breaking changes.
+The private docs workspace is excluded from package versioning. While Neondeck
+is on the beta channel, enter Changesets prerelease mode before consuming the
+pending changesets:
+
+```sh
+npx changeset pre enter beta
+npm run version-packages
+```
+
+Commit the generated package versions, lockfile, changelog, and Changesets
+state. Tag the exact package version and push the version commit and annotated
 tag together:
 
 ```sh
+version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version")"
+git tag -a "v${version}" -m "neondeck v${version}"
 git push origin main --follow-tags
+```
+
+Prerelease tags such as `v1.0.0-beta.1` publish to npm's `next` dist-tag.
+Stable tags publish to `latest`. Before creating a tag, the workflow can validate
+a branch or commit without publishing:
+
+```sh
+gh workflow run npm-publish.yml \
+  -f release_ref=main \
+  -f npm_tag=auto \
+  -f dry_run=true
 ```
 
 The npm release path is separate from the GitHub app archive release:
@@ -265,13 +286,13 @@ The npm release path is separate from the GitHub app archive release:
 - `.github/workflows/npm-publish.yml` verifies the release tag, runs
   `npm run release:npm:check`, and publishes `neondeck` to npm from `v*` tags.
 
-For the first npm publish, the package may need to be created once before npm
-trusted publishing can be configured. Either publish the first version locally
-with npm 2FA, or set a temporary GitHub Actions `NPM_TOKEN` secret with publish
-access and run the publish workflow for the first tag. After `neondeck` exists
-on npm, configure trusted publishing for GitHub Actions with workflow filename
-`npm-publish.yml`, environment `npm`, and allowed action `npm publish`, then
-revoke the temporary token if one was used.
+For the first npm publish, the package must be created before npm trusted
+publishing can be configured. Set a temporary granular publish token with
+bypass-2FA enabled as the `NPM_TOKEN` secret on the GitHub `npm` environment,
+then push the first release tag. After `neondeck` exists on npm, configure
+trusted publishing for GitHub Actions with workflow filename `npm-publish.yml`,
+environment `npm`, and allowed action `npm publish`. Delete the GitHub secret
+and revoke the temporary npm token after the first trusted publish succeeds.
 
 ## Deeper Runtime Docs
 
