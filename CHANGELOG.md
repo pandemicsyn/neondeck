@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0-beta.6
+
+### Patch Changes
+
+- [#105](https://github.com/pandemicsyn/neondeck/pull/105) [`d82f8f2`](https://github.com/pandemicsyn/neondeck/commit/d82f8f28914509c6b6ac9710c0c2b09783538cd4) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep fresh display-assistant sessions active across host timezones and briefing profile updates so manual briefings can run immediately.
+
 ## 1.0.0-beta.5
 
 ### Minor Changes
