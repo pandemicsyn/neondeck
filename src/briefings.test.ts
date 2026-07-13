@@ -39,6 +39,24 @@ afterEach(async () => {
 });
 
 describe('conversational briefings', () => {
+  it('initializes the advertised default schedule on a fresh runtime', async () => {
+    const paths = runtimePaths(await tempDir());
+
+    await expect(readBriefingProfile('morning', paths)).resolves.toMatchObject({
+      compatibility: false,
+      enabled: true,
+      schedule: '0 8 * * 1-5',
+    });
+    await expect(
+      readScheduledTask('briefing:morning', paths),
+    ).resolves.toMatchObject({
+      enabled: true,
+      spec: { kind: 'run-briefing', briefingId: 'morning' },
+      trigger: { kind: 'cron', expression: '0 8 * * 1-5' },
+      nextRunAt: expect.any(String),
+    });
+  });
+
   it('admits manual briefing requests through the bounded briefing workflow', async () => {
     const paths = runtimePaths(await tempDir());
     const invokeWorkflow = vi.fn<

@@ -86,6 +86,26 @@ export async function readBriefingProfile(
   }
 
   const compatibleTask = await readScheduledTask(`briefing:${id}`, paths);
+  const timezone =
+    compatibleTask?.trigger.kind === 'cron'
+      ? compatibleTask.trigger.timezone
+      : (Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC');
+  if (!compatibleTask) {
+    const initialized = await writeBriefingProfileAndTask(
+      {
+        id,
+        name: id === defaultBriefingProfileId ? 'Morning Briefing' : id,
+        enabled: true,
+        instructions: defaultBriefingInstructions,
+        instructionsVersion: 1,
+        schedule: defaultBriefingSchedule,
+        timezone,
+        sessionId: null,
+      },
+      paths,
+    );
+    return initialized.profile;
+  }
   const cron =
     compatibleTask?.trigger.kind === 'cron'
       ? compatibleTask.trigger
@@ -93,14 +113,11 @@ export async function readBriefingProfile(
   return {
     id,
     name: id === defaultBriefingProfileId ? 'Morning Briefing' : id,
-    enabled: compatibleTask?.enabled ?? true,
+    enabled: compatibleTask.enabled,
     instructions: defaultBriefingInstructions,
     instructionsVersion: 1,
     schedule: cron?.expression ?? defaultBriefingSchedule,
-    timezone:
-      cron?.timezone ??
-      Intl.DateTimeFormat().resolvedOptions().timeZone ??
-      'UTC',
+    timezone,
     sessionId: null,
     compatibility: true,
     createdAt: null,
