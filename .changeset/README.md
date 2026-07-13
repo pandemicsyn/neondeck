@@ -10,16 +10,13 @@ Use `patch` for fixes, `minor` for features, and `major` for breaking changes.
 Changesets are consumed by the release versioning step and become entries in
 `CHANGELOG.md`. The private docs workspace is intentionally excluded.
 
-While Neondeck is on the beta channel, enter Changesets prerelease mode before
-versioning a release:
-
-```sh
-npx changeset pre enter beta
-npm run version-packages
-```
+Neondeck's committed `.changeset/pre.json` keeps releases on the beta channel.
+Do not run `changeset pre enter` or `npm run version-packages` in feature PRs.
+After changesets reach `main`, the Changesets workflow creates or updates the
+version PR.
 
 When the stable release is ready, exit prerelease mode and version the pending
-changesets again:
+changesets through a dedicated PR:
 
 ```sh
 npx changeset pre exit

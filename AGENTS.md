@@ -107,6 +107,13 @@ npm run docs:build
 - `npm run check` is intended to stay fast and uses the unit suite.
 - `npm run verify` includes the full Vitest suite, format check, and full build.
 
+## Changesets
+
+- Add `npm run changeset` for user-facing package changes.
+- Use patch for fixes, minor for features, and major for breaking changes.
+- Skip changesets for docs, tests, and internal-only work.
+- Never run prerelease or version commands in feature PRs; automation owns the version PR.
+
 ## Current Notes
 
 - `.env` is local-only and gitignored.
