@@ -2,16 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { asJsonValue } from '../../lib/action-result';
 import { openDb } from '../../lib/sqlite';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
-import { deliverNativeNotification } from './native-notifications';
 import { publishNotificationEvent } from './notification-events';
 import type { NotificationLevel, NotificationRecord } from './types';
-
-const notificationLevelRank: Record<NotificationLevel, number> = {
-  info: 0,
-  ready: 1,
-  attention: 2,
-  urgent: 3,
-};
 
 export async function listNotifications(
   paths = runtimePaths(),
@@ -125,13 +117,6 @@ export async function addNotification(
         notification: reconciled,
         changedAt: now,
       });
-      if (
-        notificationLevelRank[reconciled.level] >
-        notificationLevelRank[existingRecord.level]
-      ) {
-        deliverNativeNotification(reconciled);
-      }
-
       return reconciled;
     }
 
@@ -179,8 +164,6 @@ export async function addNotification(
     notification,
     changedAt: now,
   });
-  deliverNativeNotification(notification);
-
   return notification;
 }
 

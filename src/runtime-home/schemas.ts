@@ -324,6 +324,30 @@ export const dashboardRegionSchema = v.looseObject({
   tabs: v.pipe(v.array(dashboardTabSchema), v.minLength(1)),
 });
 
+export const dashboardToastConfigSchema = v.looseObject({
+  enabled: v.optional(v.boolean(), true),
+  minimumLevel: v.optional(
+    v.picklist(['info', 'ready', 'attention', 'urgent']),
+    'ready',
+  ),
+  readyDurationMs: v.optional(
+    v.pipe(
+      v.number(),
+      v.integer(),
+      v.transform((value) => Math.min(60_000, Math.max(1_000, value))),
+    ),
+    6_000,
+  ),
+  maxVisible: v.optional(
+    v.pipe(
+      v.number(),
+      v.integer(),
+      v.transform((value) => Math.min(3, Math.max(1, value))),
+    ),
+    3,
+  ),
+});
+
 export const dashboardConfigSchema = v.looseObject({
   $schema: v.optional(v.string()),
   display: v.object({
@@ -337,6 +361,24 @@ export const dashboardConfigSchema = v.looseObject({
       density: v.optional(dashboardDensitySchema),
       textScale: v.optional(dashboardTextScaleSchema),
     }),
+  ),
+  notifications: v.optional(
+    v.looseObject({
+      toasts: v.optional(dashboardToastConfigSchema, {
+        enabled: true,
+        minimumLevel: 'ready',
+        readyDurationMs: 6_000,
+        maxVisible: 3,
+      }),
+    }),
+    {
+      toasts: {
+        enabled: true,
+        minimumLevel: 'ready',
+        readyDurationMs: 6_000,
+        maxVisible: 3,
+      },
+    },
   ),
   windows: v.optional(
     v.record(nonEmptyStringSchema, dashboardWindowProfileSchema),

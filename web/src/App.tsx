@@ -20,6 +20,7 @@ import {
   PrReviewPopoutPage,
   type ReviewPopoutTarget,
 } from './features/pr-review/PrReviewPopoutPage';
+import { NotificationController } from './features/notifications/controller';
 import type {
   DashboardConfig,
   DashboardDensity,
@@ -112,7 +113,9 @@ export function App() {
           title="Invalid review route"
         />
       ) : (
-        <DashboardShell config={config} />
+        <NotificationController config={config}>
+          <DashboardShell config={config} />
+        </NotificationController>
       )}
     </main>
   );
@@ -299,21 +302,27 @@ function DashboardPanel({
   }, [activeTabId, initialTabId, region.id, region.tabs]);
 
   useEffect(() => {
-    function handleFocusChat(event: Event) {
-      const detail = (event as CustomEvent<{ pluginId?: string }>).detail;
+    function handleNavigation(event: Event) {
+      const detail = (
+        event as CustomEvent<{ pluginId?: string; handled?: boolean }>
+      ).detail;
       const targetPluginId = detail?.pluginId ?? 'flue-chat';
       const tab = region.tabs.find(
         (entry) => entry.pluginId === targetPluginId,
       );
       if (!tab) return;
+      detail.handled = true;
       setActiveTabId(tab.id);
       setFocusPulse(true);
       window.setTimeout(() => setFocusPulse(false), 900);
     }
 
-    window.addEventListener('neondeck:focus-chat', handleFocusChat);
-    return () =>
-      window.removeEventListener('neondeck:focus-chat', handleFocusChat);
+    window.addEventListener('neondeck:navigate', handleNavigation);
+    window.addEventListener('neondeck:focus-chat', handleNavigation);
+    return () => {
+      window.removeEventListener('neondeck:navigate', handleNavigation);
+      window.removeEventListener('neondeck:focus-chat', handleNavigation);
+    };
   }, [region.tabs]);
 
   // In column mode an error frame must stay visible, not be capped under the
