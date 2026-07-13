@@ -12,7 +12,7 @@
     "preview": "astro preview --host 127.0.0.1 --port 4321"
   },
   "dependencies": {
-    "astro": "^7.0.3",
+    "astro": "^7.0.7",
     "mermaid": "^11.16.0"
   },
   "devDependencies": {
