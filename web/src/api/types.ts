@@ -14,6 +14,9 @@ export type DashboardConfig = {
     density?: DashboardDensity;
     textScale?: number;
   };
+  notifications?: {
+    toasts?: DashboardToastConfig;
+  };
   windows?: Record<string, DashboardWindowProfile>;
   statusline?: DashboardStatusline;
   layout: {
@@ -22,6 +25,13 @@ export type DashboardConfig = {
     rows: number;
     regions: DashboardRegion[];
   };
+};
+
+export type DashboardToastConfig = {
+  enabled: boolean;
+  minimumLevel: NotificationLevel;
+  readyDurationMs: number;
+  maxVisible: number;
 };
 
 export type DashboardWindowProfile = {

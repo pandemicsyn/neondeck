@@ -48,6 +48,36 @@
         }
       }
     },
+    "notifications": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "toasts": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "minimumLevel": {
+              "enum": ["info", "ready", "attention", "urgent"],
+              "default": "ready"
+            },
+            "readyDurationMs": {
+              "type": "integer",
+              "default": 6000,
+              "description": "Automatically dismiss ready toasts after this many milliseconds. Values are clamped from 1000 through 60000."
+            },
+            "maxVisible": {
+              "type": "integer",
+              "default": 3,
+              "description": "Maximum visible toast rows. Values are clamped from 1 through 3."
+            }
+          }
+        }
+      }
+    },
     "windows": {
       "type": "object",
       "additionalProperties": {

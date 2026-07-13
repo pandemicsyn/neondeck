@@ -709,7 +709,7 @@ Notifications should have a clear attention policy:
 - support read/resolve flows
 - avoid emitting notifications for quiet watcher no-ops
 - use the deck UI notification inbox/statusline as the primary surface
-- use native desktop notifications where available, starting with macOS `osascript`/Notification Center support
+- project durable notifications into the dashboard through the global in-app toast controller
 - defer email, Slack, Discord, and other remote notification delivery until the local workflow is solid
 
 ### Runtime Readiness

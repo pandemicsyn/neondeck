@@ -159,6 +159,190 @@ button:disabled {
   }
 }
 
+@keyframes nd-toast-in {
+  from {
+    opacity: 0;
+    transform: translate3d(8px, 0, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.notification-toast-viewport {
+  position: fixed;
+  z-index: 50;
+  inset-inline-end: max(10px, env(safe-area-inset-right));
+  bottom: max(10px, env(safe-area-inset-bottom));
+  display: flex;
+  width: min(380px, calc(100vw - 20px));
+  max-height: calc(100vh - 20px);
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+  overflow-y: auto;
+}
+
+.notification-toast-viewport.toast-above-statusline {
+  bottom: max(44px, calc(env(safe-area-inset-bottom) + 44px));
+  max-height: calc(100vh - 54px);
+}
+
+.notification-toast {
+  --toast-signal: var(--primary);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--toast-signal) 54%, var(--line));
+  border-radius: 0;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: none;
+  flex: none;
+  pointer-events: auto;
+  animation: nd-toast-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.notification-toast-attention,
+.notification-toast-urgent {
+  --toast-signal: var(--accent);
+}
+
+.notification-toast-urgent .notification-toast-heading {
+  background: color-mix(in srgb, var(--accent) 9%, var(--field));
+}
+
+.notification-toast-urgent .notification-toast-level::before {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-inline-end: 6px;
+  background: var(--accent);
+  content: '';
+}
+
+.notification-toast-heading {
+  display: flex;
+  min-height: 26px;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--field);
+  padding-inline-start: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.notification-toast-level {
+  color: var(--toast-signal);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.notification-toast-meta {
+  margin-inline-start: auto;
+  color: var(--muted);
+}
+
+.notification-toast-close {
+  display: inline-flex;
+  width: 28px;
+  min-height: 26px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-inline-start: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1;
+}
+
+.notification-toast-close:hover,
+.notification-toast-close:focus-visible {
+  color: var(--toast-signal);
+}
+
+.notification-toast-close:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.notification-toast h2 {
+  margin: 0;
+  padding: 10px 12px 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+
+.notification-toast p {
+  margin: 0;
+  padding: 5px 12px 10px;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.notification-toast .notification-toast-error {
+  padding-top: 0;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.notification-toast-actions {
+  display: flex;
+  gap: 6px;
+  border-top: 1px solid var(--line);
+  padding: 7px 10px;
+}
+
+.notification-toast-actions button {
+  min-height: 26px;
+  padding: 4px 9px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.toast-density-compact .notification-toast h2 {
+  padding-top: 8px;
+  font-size: 11px;
+}
+
+.toast-density-compact .notification-toast p {
+  padding-bottom: 8px;
+  font-size: 11px;
+}
+
+.toast-density-large .notification-toast h2 {
+  font-size: 13px;
+}
+
+.toast-density-large .notification-toast p {
+  font-size: 13px;
+}
+
+@media (pointer: coarse) {
+  .notification-toast-viewport .notification-toast-close,
+  .notification-toast-viewport .notification-toast-actions button {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notification-toast {
+    animation-duration: 1ms;
+    transform: none;
+  }
+}
+
 .dashboard-grid {
   --deck-statusline-height: 34px;
   --deck-panel-header-height: 36px;
