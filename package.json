@@ -25,6 +25,7 @@
     "drizzle.config.ts"
   ],
   "workspaces": [
+    ".",
     "docs"
   ],
   "scripts": {

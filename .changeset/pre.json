@@ -1,0 +1,9 @@
+{
+  "mode": "pre",
+  "tag": "beta",
+  "initialVersions": {
+    "neondeck": "1.0.0-beta.4",
+    "@neondeck/docs-site": "0.1.0"
+  },
+  "changesets": []
+}
