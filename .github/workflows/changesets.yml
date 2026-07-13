@@ -35,6 +35,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Disable local commit hooks
+        run: git config core.hooksPath /dev/null
+
       - name: Create or update version PR
         uses: changesets/action@v1
         with:
