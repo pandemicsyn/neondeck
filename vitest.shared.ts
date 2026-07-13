@@ -17,6 +17,12 @@ export const integrationTestFiles = [
   'src/worktrees.test.ts',
 ];
 
+export const serialUnitTestFiles = [
+  'src/ci-fix-run.test.ts',
+  'src/docs-drift.test.ts',
+  'src/pr-local-diffs.test.ts',
+];
+
 export const sharedTestOptions = {
   testTimeout: 15_000,
   passWithNoTests: true,

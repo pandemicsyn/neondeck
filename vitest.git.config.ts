@@ -1,7 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import {
   baseExclude,
-  integrationTestFiles,
   serialUnitTestFiles,
   sharedTestOptions,
 } from './vitest.shared';
@@ -9,6 +8,9 @@ import {
 export default defineConfig({
   test: {
     ...sharedTestOptions,
-    exclude: [...baseExclude, ...integrationTestFiles, ...serialUnitTestFiles],
+    exclude: baseExclude,
+    include: serialUnitTestFiles,
+    maxWorkers: 1,
+    testTimeout: 30_000,
   },
 });

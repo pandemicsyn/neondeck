@@ -40,12 +40,18 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             tag="${{ inputs.tag_name }}"
+            prerelease="${{ inputs.prerelease }}"
           else
             tag="${{ github.ref_name }}"
+            case "${tag#v}" in
+              *-*) prerelease=true ;;
+              *) prerelease=false ;;
+            esac
           fi
           version="${tag#v}"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=${prerelease}" >> "$GITHUB_OUTPUT"
 
       - name: Check out release tag
         run: |
@@ -91,7 +97,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
-          PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
         run: |
           set -euo pipefail
           git fetch --tags --force

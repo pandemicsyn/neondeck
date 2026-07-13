@@ -6,6 +6,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 
 copyDirectory('src/runtime-home/app-db/migrations', 'dist/assets/migrations');
 copyDirectory('src/skills', 'dist/assets/skills');
+copyDirectory('src/skills', 'dist/skills');
 copyDirectory('config', 'dist/config');
 copyFile('SOUL.md', 'dist/SOUL.md');
 

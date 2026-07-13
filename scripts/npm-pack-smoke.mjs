@@ -27,6 +27,10 @@ try {
   for (const requiredPath of [
     'dist/server.mjs',
     'dist/assets/migrations',
+    'dist/skills/neon-pr-review/SKILL.md',
+    'dist/skills/neon-ci-fix/SKILL.md',
+    'dist/skills/neon-docs-fix/SKILL.md',
+    'dist/skills/neon-issue-triage/SKILL.md',
     'web/dist/index.html',
     'bin/neondeck.mjs',
   ]) {

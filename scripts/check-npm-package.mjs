@@ -33,7 +33,7 @@ expect(
   'publishConfig.provenance must stay enabled.',
 );
 
-const pack = run('npm', ['pack', '--dry-run', '--json']);
+const pack = run('npm', ['pack', '--ignore-scripts', '--dry-run', '--json']);
 const packOutput = parsePackOutput(pack.stdout);
 const files = new Set(packOutput.files.map((file) => file.path));
 
@@ -47,17 +47,25 @@ for (const requiredPath of [
   'config/dashboard.json',
   'config/dashboard.schema.json',
   'dist/server.mjs',
+  'dist/skills/neon-pr-review/SKILL.md',
+  'dist/skills/neon-ci-fix/SKILL.md',
+  'dist/skills/neon-docs-fix/SKILL.md',
+  'dist/skills/neon-issue-triage/SKILL.md',
   'web/dist/index.html',
   'web/dist/manifest.webmanifest',
   'drizzle.config.ts',
   'src/cli/index.ts',
-  'src/runtime-home/app-db/migrations/20260704065926_baseline/migration.sql',
-  'src/runtime-home/app-db/migrations/20260704065926_baseline/snapshot.json',
   'src/skills/neondeck/SKILL.md',
   'src/skills/neondeck-handoff/SKILL.md',
 ]) {
   expect(files.has(requiredPath), `packed package is missing ${requiredPath}.`);
 }
+
+expectMirroredMigrationTrees(
+  files,
+  'src/runtime-home/app-db/migrations',
+  'dist/assets/migrations',
+);
 
 const forbiddenPatterns = [
   /^\.env(?:\.|$)/,
@@ -94,6 +102,69 @@ console.log(
 
 function expect(condition, message) {
   if (!condition) failures.push(message);
+}
+
+function expectMirroredMigrationTrees(files, sourceRoot, builtRoot) {
+  const sourceMigrations = migrationDirectories(files, sourceRoot);
+  const builtMigrations = migrationDirectories(files, builtRoot);
+
+  expect(
+    sourceMigrations.size > 0,
+    `packed package must contain at least one migration under ${sourceRoot}.`,
+  );
+  expect(
+    builtMigrations.size > 0,
+    `packed package must contain at least one migration under ${builtRoot}.`,
+  );
+
+  for (const directory of sourceMigrations) {
+    expect(
+      builtMigrations.has(directory),
+      `packed package is missing built migration ${builtRoot}/${directory}.`,
+    );
+  }
+  for (const directory of builtMigrations) {
+    expect(
+      sourceMigrations.has(directory),
+      `packed package contains built migration ${builtRoot}/${directory} without a matching source migration.`,
+    );
+  }
+}
+
+function migrationDirectories(files, root) {
+  const migrationSql = new Set();
+  const snapshots = new Set();
+  for (const file of files) {
+    const match = file.match(
+      new RegExp(
+        `^${escapeRegExp(root)}/([^/]+)/(migration\\.sql|snapshot\\.json)$`,
+      ),
+    );
+    if (!match) continue;
+    const [, directory, filename] = match;
+    if (filename === 'migration.sql') migrationSql.add(directory);
+    if (filename === 'snapshot.json') snapshots.add(directory);
+  }
+
+  for (const directory of migrationSql) {
+    expect(
+      snapshots.has(directory),
+      `packed migration ${root}/${directory} is missing snapshot.json.`,
+    );
+  }
+  for (const directory of snapshots) {
+    expect(
+      migrationSql.has(directory),
+      `packed migration ${root}/${directory} is missing migration.sql.`,
+    );
+  }
+  return new Set(
+    [...migrationSql].filter((directory) => snapshots.has(directory)),
+  );
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function parsePackOutput(stdout) {
