@@ -20,10 +20,17 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           OpenAI, or Anthropic as the Flue model provider.
         </p>
 
-        <h2>Install</h2>
+        <h2>Install from npm</h2>
+        <p>
+          Neondeck currently publishes beta releases on npm's
+          <code>next</code> channel. The package and installed CLI are both named
+          <a href="https://www.npmjs.com/package/neondeck"
+            ><code>neondeck</code></a
+          >.
+        </p>
         <pre><code>fnm install 26.4.0
 fnm use 26.4.0
-npm install</code></pre>
+npm install --global neondeck@next</code></pre>
 
         <h2>Run the CLI wizard</h2>
         <p>
@@ -33,29 +40,29 @@ npm install</code></pre>
           schedules. When KiloCode is selected, init can discover and search
           available KiloCode models before writing model config.
         </p>
-        <pre><code>npm run init</code></pre>
+        <pre><code>neondeck init</code></pre>
         <p>
           The same CLI is the base for direct command-and-control workflows and
           the future OpenTUI client.
         </p>
-        <pre><code>npm run cli -- status
-npm run cli -- repo add ~/dev/neondeck
-npm run cli -- watch-pr pandemicsyn/neondeck#123
-npm run cli -- tui</code></pre>
+        <pre><code>neondeck status
+neondeck repo add ~/dev/neondeck
+neondeck watch-pr pandemicsyn/neondeck#123
+neondeck tui</code></pre>
 
         <h2 id="runtime-home">Initialize runtime home</h2>
         <p>
           The app creates a runtime home on first start. You can also prepare it
-          explicitly before launching the dashboard. For new installs, prefer
-          <code>npm run init</code>; <code>npm run setup</code> is the lower-level
-          non-interactive initializer.
+          explicitly before launching the dashboard. For new installs, use
+          <code>neondeck init</code>. Any command that reads app state also
+          creates missing runtime-home files without rerunning the wizard.
         </p>
-        <pre><code>npm run setup</code></pre>
+        <pre><code>neondeck status</code></pre>
         <p>
           By default this writes to <code>~/.config/neondeck</code>. Set
           <code>NEONDECK_HOME</code> when you want an isolated test home.
         </p>
-        <pre><code>NEONDECK_HOME=.neondeck-test npm run setup</code></pre>
+        <pre><code>neondeck --home .neondeck-test status</code></pre>
 
         <h2 id="secrets">Configure secrets</h2>
         <p>
@@ -90,20 +97,22 @@ GITHUB_LOGIN=...</code></pre>
         </p>
 
         <h2>Run the local dashboard</h2>
-        <pre><code>npm run dev</code></pre>
+        <pre><code>neondeck service install
+neondeck open</code></pre>
         <p>
-          Open <code>http://127.0.0.1:5173/</code> on a companion display, a vertical
-          panel, or a sensor-panel style window on your primary monitor.
+          The service command installs and starts Neondeck for your login. The
+          open command waits for a healthy local server, then opens the
+          dashboard on a companion display, a vertical panel, or your primary
+          monitor.
         </p>
 
-        <h2>Install the local app</h2>
+        <h2>Open a specific window profile</h2>
         <p>
-          After a production build or package install, use the service and open
-          commands for the always-ready app path.
+          Named profiles can set size, placement, and kiosk behavior for a
+          particular display.
         </p>
-        <pre><code>neondeck service install
-neondeck open
-neondeck open sidebar</code></pre>
+        <pre><code>neondeck open sidebar
+neondeck open xeneon --kiosk</code></pre>
         <p>
           <code>neondeck service install</code> writes a macOS launchd agent or Linux
           systemd user unit with absolute Node and Neondeck CLI entry paths. Re-run
