@@ -2,12 +2,9 @@
 
 ## Unreleased
 
-## 1.0.0-beta.2 - 2026-07-12
+## 1.0.0-beta.4 - 2026-07-12
 
 - fix(runtime): make concurrent runtime-home initialization atomic
-
-## 1.0.0-beta.1 - 2026-07-12
-
 - fix(flue): expose command, watch, scheduler, GitHub, and doctor operations through Flue actions/workflows
 - feat(release): add release watch command and default-branch check polling
 - feat(dev): add local dev doctor command and diagnostics action
