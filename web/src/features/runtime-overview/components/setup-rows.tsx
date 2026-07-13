@@ -1,8 +1,10 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
   markNotificationRead,
   resolveExecutionApproval,
   resolveNotification,
+  switchChatSession,
   type ExecutionApproval,
   type NotificationRecord,
   type RuntimeStatus,
@@ -10,6 +12,7 @@ import {
   type SafetyPolicyEntry,
 } from '../../../api';
 import { Badge } from '../../../components/ui';
+import { queryKeys } from '../../../lib/query';
 import { MiniEmpty } from './atoms';
 import {
   checkClass,
@@ -154,6 +157,7 @@ export function NotificationRow({
   notification: NotificationRecord;
   onRefresh: () => void;
 }) {
+  const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -173,6 +177,37 @@ export function NotificationRow({
       setBusy(false);
     }
   }
+
+  async function openConversation() {
+    const sessionId = notificationSessionId(notification.data);
+    if (!sessionId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await switchChatSession(sessionId);
+      if (!result.ok) throw new Error(result.message);
+      if (result.state) {
+        queryClient.setQueryData(queryKeys.neonSession, result.state);
+      }
+      await markNotificationRead(notification.id);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.notifications }),
+      ]);
+      window.dispatchEvent(
+        new CustomEvent('neondeck:focus-chat', {
+          detail: { pluginId: 'flue-chat' },
+        }),
+      );
+      onRefresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const sessionId = notificationSessionId(notification.data);
 
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
@@ -207,6 +242,16 @@ export function NotificationRow({
             read
           </button>
         ) : null}
+        {sessionId ? (
+          <button
+            className="shrink-0 border border-primary/50 px-1.5 py-0.5 text-primary disabled:opacity-50"
+            disabled={busy}
+            onClick={() => void openConversation()}
+            type="button"
+          >
+            open
+          </button>
+        ) : null}
         <button
           className="shrink-0 border border-line px-1.5 py-0.5 text-muted disabled:opacity-50"
           disabled={busy}
@@ -223,6 +268,12 @@ export function NotificationRow({
       ) : null}
     </article>
   );
+}
+
+function notificationSessionId(data: unknown) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const sessionId = (data as Record<string, unknown>).sessionId;
+  return typeof sessionId === 'string' && sessionId ? sessionId : null;
 }
 
 export function SafetyPolicyRow({ entry }: { entry: SafetyPolicyEntry }) {

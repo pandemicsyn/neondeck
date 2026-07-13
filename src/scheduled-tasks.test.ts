@@ -435,7 +435,10 @@ describe('scheduled task storage', () => {
         runSchedulerTick(paths, new Date('2026-07-10T00:00:00.000Z'), {
           invokeWorkflow: async (workflow, input) => {
             expect(workflow).toBe('briefing');
-            expect(input).toEqual({});
+            expect(input).toEqual({
+              profileId: 'daily',
+              taskId: 'briefing:daily',
+            });
             return { runId: 'workflow:briefing:1' };
           },
         }),

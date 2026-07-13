@@ -1,7 +1,8 @@
 # Conversational Briefings Plan
 
-Status: proposed
+Status: completed
 Written: 2026-07-11
+Completed: 2026-07-11
 Related: `.plans/ROADMAP.md` Morning Briefing, Phase 7, Phase 14, and Phase 16
 
 ## Purpose
@@ -212,8 +213,8 @@ Provide two supported mutation surfaces:
 1. A compact dashboard editor for schedule, timezone, enabled state, and
    briefing instructions.
 2. A typed agent action so a user can say, for example, `Change my morning
-   briefing to include Jira sprint blockers and prioritize review requests
-   from my team.`
+briefing to include Jira sprint blockers and prioritize review requests
+from my team.`
 
 Configuration changes must use typed validation and audit. The primary path is
 not manual editing of `schedules.json`.

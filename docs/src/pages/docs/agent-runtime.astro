@@ -129,9 +129,20 @@ curate_learning_store</code></pre>
           Scheduled tasks are validated local records with a typed spec and an
           interval, one-shot, or timezone-aware cron trigger. The scheduler
           claims each due occurrence before dispatching a bounded Flue workflow;
-          approval-gated actions remain approval-gated. The scheduled-task API
-          creates briefings and agent instructions, and can pause, resume, or
-          delete existing tasks.
+          approval-gated actions remain approval-gated. Morning briefings use a
+          typed profile and a persistent, non-active briefing session so a
+          background run never replaces the dashboard's active conversation. The
+          scheduled-task API also creates agent instructions and can pause,
+          resume, or delete existing tasks.
+        </p>
+        <p>
+          Briefing orchestration persists deterministic grounding separately
+          from the Flue transcript, dispatches the user's selected display
+          assistant model with its complete configured MCP catalog, and settles
+          run metadata from Flue submission observations. Assistant prose is
+          never an application schema. MCP login or approval failures produce a
+          candid partial briefing rather than fabricated facts or automatic
+          approval.
         </p>
 
         <h2>External agent handoff</h2>

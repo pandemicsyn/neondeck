@@ -437,3 +437,10 @@ Use this format:
 - Follow-up: Later autonomous mutation stages remain bounded explicit workflows;
   do not reintroduce legacy scheduler formats, database repair chains, or
   unbound approval writes.
+
+## 2026-07-11 - Conversational Briefings
+
+- Roadmap item: Morning Briefing; Phase 7 commands; Phase 8 dashboard; Phase 16 durable chat sessions.
+- Decision: Added dedicated `briefing_profiles` and `briefing_runs` app-state tables instead of overloading `workflow_summaries`. Reused the current scheduled-task admission, linked-session, Flue dispatch, observation, and notification primitives because the Routines module named in the proposal no longer exists. On installed Flue `1.0.0-beta.9`, continuing-agent dispatches settle from correlated `agent_end` success or terminal prompt `operation` failure observations; `submission_settled` is retained as a compatible direct-prompt signal but is not emitted for `dispatch()`. Retained the Briefing dashboard slot as a compact profile/run launcher and editor.
+- Reason: Briefings need exact bounded snapshot persistence, instruction versioning, stable profile/session linkage, dispatch correlation, and queryable terminal state without treating assistant prose as application data. Dedicated rows preserve that contract and keep panel polling from returning snapshot bodies. The version-matched Flue events are the only correct terminal signals for continuing-agent dispatch in the installed runtime.
+- Follow-up: None.

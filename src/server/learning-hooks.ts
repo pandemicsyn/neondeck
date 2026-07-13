@@ -26,6 +26,10 @@ import { recordFlueObservation } from '../modules/learning';
 import curateLearningStoreWorkflow from '../workflows/curate_learning_store';
 import reviewConversationForLearningWorkflow from '../workflows/review_conversation_for_learning';
 import reviewPrBatchForLearningWorkflow from '../workflows/review_pr_batch_for_learning';
+import {
+  linkBriefingWorkflowObservation,
+  settleBriefingObservation,
+} from '../modules/briefings';
 
 type ObservationInstallDependencies = {
   observe?: (subscriber: FlueObservationSubscriber) => () => void;
@@ -87,6 +91,9 @@ export function installFlueObservationHandlers(
         });
       void attachCommandRunSummaryRunId(event, paths).catch((error) => {
         console.error('[neondeck] failed to attach Flue run id', error);
+      });
+      void linkBriefingWorkflowObservation(event, paths).catch((error) => {
+        console.error('[neondeck] failed to link briefing workflow run', error);
       });
       const learningReviewId = learningReviewResultId(event);
       if (learningReviewId) {
@@ -150,6 +157,16 @@ export function installFlueObservationHandlers(
       }
 
       return;
+    }
+
+    if (
+      event.type === 'agent_end' ||
+      event.type === 'operation' ||
+      event.type === 'submission_settled'
+    ) {
+      void settleBriefingObservation(event, paths).catch((error) => {
+        console.error('[neondeck] failed to settle briefing submission', error);
+      });
     }
 
     void recordFlueObservation(event, paths).catch((error) => {

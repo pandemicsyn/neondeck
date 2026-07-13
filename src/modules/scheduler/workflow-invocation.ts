@@ -9,7 +9,15 @@ export async function invokeScheduledWorkflow(
 
   if (workflow === 'briefing') {
     const module = await import('../../workflows/briefing');
-    return invoke(module.default, { input: input as Record<string, never> });
+    return invoke(module.default, {
+      input: input as {
+        profileId?: string;
+        taskId?: string;
+        sessionId?: string;
+        commandEventId?: string;
+        trigger?: 'manual' | 'scheduled' | 'dashboard';
+      },
+    });
   }
 
   if (workflow === 'triage-pr-event') {

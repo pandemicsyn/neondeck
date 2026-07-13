@@ -122,12 +122,14 @@ neondeck open sidebar</code></pre>
         <h2 id="commands">Run Neon commands</h2>
         <p>
           Commands can be typed into the chat panel or invoked through the
-          <code>command-run</code> Flue workflow. Command results are stored as workflow
-          summaries for dashboard panels and follow-up agent context.
+          <code>command-run</code> Flue workflow. Deterministic command results are
+          stored as workflow summaries for follow-up agent context. In chat,
+          <code>/briefing</code> is conversational: it dispatches a normal turn to
+          the active display-assistant session.
         </p>
-        <pre><code>curl -X POST 'http://127.0.0.1:5173/api/flue/workflows/command-run?wait=result' \
+        <pre><code>curl -X POST 'http://127.0.0.1:5173/api/briefings/run' \
   -H 'content-type: application/json' \
-  -d '&#123;"input":&#123;"command":"/briefing"&#125;&#125;'</code></pre>
+  -d '&#123;"profileId":"morning","trigger":"dashboard"&#125;'</code></pre>
         <p>Current commands:</p>
         <pre><code>/repo-status [repo-id]
 /review-queue

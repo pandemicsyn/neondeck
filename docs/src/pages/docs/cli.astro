@@ -157,12 +157,19 @@ neondeck note "Finished local cleanup without a PR." \
           > queues a bounded CI fix workflow and routes any resulting code change
           back through prepared-diff review.
           <code>/explain-ci --report</code> writes the CI dossier without starting
-          a fix attempt.
+          a fix attempt. In the dashboard chat, <code>/briefing</code> persists a
+          local snapshot and streams a normal assistant response; it does not render
+          the legacy deterministic result card.
         </p>
 
         <h2>Reports and scheduled tasks</h2>
         <pre><code>GET /api/reports?kind=docs-drift
 GET /api/scheduled-tasks
+GET /api/briefings
+GET /api/briefings/runs/:id
+PUT /api/briefings/profile
+POST /api/briefings/run
+POST /api/briefings/session/rotate
 POST /api/scheduled-tasks/briefings
 POST /api/scheduled-tasks/instructions
 POST /api/scheduled-tasks/:id/pause
