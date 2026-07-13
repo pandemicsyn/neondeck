@@ -29,6 +29,7 @@ import {
   requireLocalApiAccess,
 } from './middleware';
 import { createAutopilotRoutes } from './routes/autopilot';
+import { createBriefingRoutes } from './routes/briefings';
 import { createCommandRoutes } from './routes/commands';
 import { createConfigRoutes } from './routes/config';
 import { createExecutionRoutes } from './routes/execution';
@@ -109,6 +110,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api', createWorktreeRoutes(paths));
   app.route('/api/kilo', createKiloRoutes(paths));
   app.route('/api', createAutopilotRoutes(paths));
+  app.route('/api', createBriefingRoutes(paths));
   app.route('/api', createHandoffRoutes(paths));
   app.route('/api', createWatchRoutes(paths));
   app.route('/api', createSchedulerRoutes(paths));

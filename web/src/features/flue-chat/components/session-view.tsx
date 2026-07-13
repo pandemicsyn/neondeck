@@ -17,6 +17,8 @@ import type {
 import {
   createChatSessionCommandEvent,
   getChatSessionCommandEvents,
+  openChatSessionEventStream,
+  runBriefing,
   updateChatSessionCommandEvent,
 } from '../../../api';
 import {
@@ -133,6 +135,18 @@ export function FlueChatSessionView({
   }, [commandEventsQuery.data?.events]);
 
   useEffect(() => {
+    if (!session?.id) return;
+    return openChatSessionEventStream((event) => {
+      if (event.session.id !== session.id) return;
+      setCanonicalMessages(undefined);
+      setPendingHistoryRefresh(true);
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.chatSessionCommandEvents(session.id),
+      });
+    });
+  }, [queryClient, session?.id]);
+
+  useEffect(() => {
     if (!referenceDraft) return;
     setInput((current) =>
       current.trim() ? `${current}\n\n${referenceDraft}` : referenceDraft,
@@ -208,6 +222,30 @@ export function FlueChatSessionView({
         createdEvent = created.event;
         appendCommandEvent(createdEvent);
 
+        if (commandNameFromInput(message) === 'briefing') {
+          setRunningCommand(message);
+          const admitted = await runBriefing({
+            profileId: 'morning',
+            sessionId: session.id,
+            commandEventId: createdEvent.id,
+            trigger: 'manual',
+          });
+          if (!admitted.ok) throw new Error(admitted.message);
+          if (admitted.workflowRunId) {
+            updateCommandEvent(createdEvent.id, {
+              flueRunId: admitted.workflowRunId,
+            });
+            await updateChatSessionCommandEvent(session.id, createdEvent.id, {
+              status: 'running',
+              flueRunId: admitted.workflowRunId,
+              reason: 'dashboard-briefing-workflow-admitted',
+            });
+          }
+          setInput('');
+          setCanonicalMessages(undefined);
+          return;
+        }
+
         const result = await runCommand(message);
         const completedAt = new Date().toISOString();
         const status = result.ok ? 'completed' : 'failed';
@@ -281,6 +319,7 @@ export function FlueChatSessionView({
         });
         setSubmitError(errorMessage(error));
       } finally {
+        setRunningCommand(undefined);
         commandSubmitLockRef.current = false;
         setCommandSubmitting(false);
       }
@@ -469,7 +508,7 @@ export function FlueChatSessionView({
               </span>
             </div>
           ) : null}
-          {commandEvents.map((event) => (
+          {commandEvents.filter(isDeterministicCommandEvent).map((event) => (
             <CommandResultSummary
               event={event}
               key={event.id}
@@ -587,6 +626,10 @@ export function FlueChatSessionView({
 type CommandRunResult = NeonCommandResult & { flueRunId?: string };
 
 type CommandEvent = ChatSessionCommandEvent;
+
+function isDeterministicCommandEvent(event: CommandEvent) {
+  return commandNameFromInput(event.input) !== 'briefing';
+}
 
 function commandFailureResult(
   command: string,

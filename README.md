@@ -27,9 +27,10 @@ Neon watches your PRs, prepares fixes, and keeps the busywork moving.
   github.com.
 - **Handoff, both directions.** Delegate work to agents like Kilo or Codex, then
   let the finished PR come back to Neon for checks and deployment follow-through.
-- **Briefings and scheduled instructions.** Pull your PRs, watches, CI failures,
-  and next actions into a morning briefing, or run your own saved prompt on a
-  timer.
+- **Conversational briefings and scheduled instructions.** Neon grounds a
+  durable Morning Briefing conversation in an inspectable local snapshot, then
+  can enrich it with any relevant configured MCP source under normal login and
+  approval controls. Follow up in chat, or run your own saved prompt on a timer.
 - **Sandboxed, gated execution.** Keep code-changing work in throwaway
   worktrees, gate shell commands through approval policy, or run work off your
   machine on an `exe.dev` sandbox VM.

@@ -31,6 +31,8 @@ describe('app database migrator', () => {
     const database = new DatabaseSync(databasePath, { readOnly: true });
     try {
       expect(tableExists(database, 'notifications')).toBe(true);
+      expect(tableExists(database, 'briefing_profiles')).toBe(true);
+      expect(tableExists(database, 'briefing_runs')).toBe(true);
     } finally {
       database.close();
     }
