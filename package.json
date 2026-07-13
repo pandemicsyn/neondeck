@@ -107,7 +107,7 @@
     "node": ">=26"
   },
   "dependencies": {
-    "@clack/prompts": "^1.6.0",
+    "@clack/prompts": "^1.7.0",
     "@flue/react": "1.0.0-beta.9",
     "@flue/runtime": "1.0.0-beta.9",
     "@flue/sdk": "1.0.0-beta.9",
