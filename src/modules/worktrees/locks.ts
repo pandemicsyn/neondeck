@@ -14,11 +14,7 @@ export function assertNoForeignActiveLock(
     (lock) => Date.parse(lock.expiresAt) > now,
   );
   if (lockId) {
-    if (
-      record.lifecycleStatus !== 'prepared-diff' &&
-      locks.some((lock) => lock.id === lockId)
-    )
-      return;
+    if (locks.some((lock) => lock.id === lockId && !lock.revokedAt)) return;
     throw new WorktreeError(
       'WORKTREE_LOCKED',
       `Worktree lock ${lockId} is no longer active; the mutation lease was revoked or expired.`,
@@ -77,10 +73,10 @@ export function acquireLock(
         `
         INSERT INTO worktree_locks (
           id, scope, scope_key, worktree_id, repo_id, pr_number, owner,
-          workflow_run_id, expires_at, released_at, stale_recovered_at,
-          created_at, updated_at
+          workflow_run_id, expires_at, revoked_at, released_at,
+          stale_recovered_at, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `,
       )
       .run(
@@ -93,6 +89,7 @@ export function acquireLock(
         lock.owner,
         lock.workflowRunId,
         lock.expiresAt,
+        lock.revokedAt,
         lock.releasedAt,
         lock.staleRecoveredAt,
         lock.createdAt,
@@ -193,6 +190,25 @@ export function releaseLock(id: string, now: string, paths: RuntimePaths) {
         SET released_at = ?, updated_at = ?
         WHERE id = ?
           AND released_at IS NULL;
+      `,
+      )
+      .run(now, now, id);
+  } finally {
+    database.close();
+  }
+}
+
+export function revokeLock(id: string, now: string, paths: RuntimePaths) {
+  const database = new DatabaseSync(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        UPDATE worktree_locks
+        SET revoked_at = ?, updated_at = ?
+        WHERE id = ?
+          AND released_at IS NULL
+          AND revoked_at IS NULL;
       `,
       )
       .run(now, now, id);

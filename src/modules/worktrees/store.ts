@@ -352,6 +352,7 @@ export function readLockRow(row: unknown): WorktreeLockRecord {
     owner: item.owner,
     workflowRunId: item.workflow_run_id,
     expiresAt: item.expires_at,
+    revokedAt: item.revoked_at,
     releasedAt: item.released_at,
     staleRecoveredAt: item.stale_recovered_at,
     createdAt: item.created_at,

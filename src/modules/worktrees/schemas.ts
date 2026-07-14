@@ -51,6 +51,7 @@ export type WorktreeLockRecord = {
   owner: string;
   workflowRunId: string | null;
   expiresAt: string;
+  revokedAt: string | null;
   releasedAt: string | null;
   staleRecoveredAt: string | null;
   createdAt: string;
@@ -216,6 +217,7 @@ export const lockRowSchema = v.object({
   owner: v.string(),
   workflow_run_id: rowNullableStringSchema,
   expires_at: v.string(),
+  revoked_at: rowNullableStringSchema,
   released_at: rowNullableStringSchema,
   stale_recovered_at: rowNullableStringSchema,
   created_at: v.string(),

@@ -29,7 +29,11 @@ import {
   type RuntimePaths,
 } from './runtime-home';
 import type { GitHubPullRequestEventState } from './modules/github';
-import { lockWorktree, releaseWorktreeLock } from './modules/worktrees';
+import {
+  lockWorktree,
+  readWorktreeLock,
+  releaseWorktreeLock,
+} from './modules/worktrees';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
@@ -596,7 +600,7 @@ describe('task authority', () => {
     expect(deletion).toMatchObject({ ok: true, changed: true });
   });
 
-  it('preempts an autopilot-owned PR lock and leaves a recovery event', async () => {
+  it('preempts an autopilot-owned PR lock within the first interactive call', async () => {
     const { paths, sha } = await fixture();
     const session = await linkedSession(paths);
     const eventState = fakeEventState(sha);
@@ -630,7 +634,7 @@ describe('task authority', () => {
           paths,
         ),
     );
-    const preemption = await commitInteractiveRepo(
+    const preemptionPromise = commitInteractiveRepo(
       {
         repoId: 'sample',
         worktreeId: context!.worktree.id,
@@ -639,23 +643,29 @@ describe('task authority', () => {
       },
       paths,
     );
+    if (!autonomousLock.ok || !('lock' in autonomousLock)) {
+      throw new Error('Expected autonomous lock.');
+    }
+    let revokedLock = await readWorktreeLock(autonomousLock.lock.id, paths);
+    for (
+      let attempt = 0;
+      !revokedLock.revokedAt && attempt < 100;
+      attempt += 1
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      revokedLock = await readWorktreeLock(autonomousLock.lock.id, paths);
+    }
     const staleMutation = await replaceRepoFile(
       {
         repoId: 'sample',
         worktreeId: context!.worktree.id,
-        worktreeLockId:
-          autonomousLock.ok && 'lock' in autonomousLock
-            ? autonomousLock.lock.id
-            : 'missing',
+        worktreeLockId: autonomousLock.lock.id,
         path: 'src/app.ts',
         oldString: 'value = 3',
         newString: 'value = 4',
       },
       paths,
     );
-    if (!autonomousLock.ok || !('lock' in autonomousLock)) {
-      throw new Error('Expected autonomous lock.');
-    }
     await releaseWorktreeLock(
       {
         lockId: autonomousLock.lock.id,
@@ -664,15 +674,7 @@ describe('task authority', () => {
       },
       paths,
     );
-    const commit = await commitInteractiveRepo(
-      {
-        repoId: 'sample',
-        worktreeId: context!.worktree.id,
-        message: 'fix: interactive preemption',
-        sessionId: session.id,
-      },
-      paths,
-    );
+    const preemption = await preemptionPromise;
     const database = new DatabaseSync(paths.neondeckDatabase, {
       readOnly: true,
     });
@@ -692,15 +694,12 @@ describe('task authority', () => {
     expect(autonomousLock).toMatchObject({
       lock: { workflowRunId: 'run-autopilot' },
     });
-    expect(preemption).toMatchObject({
-      ok: false,
-      requires: ['worktreeLock'],
-    });
+    expect(revokedLock.revokedAt).not.toBeNull();
     expect(staleMutation).toMatchObject({
       ok: false,
       error: { code: 'WORKTREE_LOCKED' },
     });
-    expect(commit).toMatchObject({ ok: true, changed: true });
+    expect(preemption).toMatchObject({ ok: true, changed: true });
     expect(recovery?.message).toContain('run-autopilot');
     expect(activeLocks.count).toBe(0);
   });

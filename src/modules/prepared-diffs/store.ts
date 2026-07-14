@@ -190,13 +190,12 @@ export function updatePreparedDiffVerificationWithLease(
     const lease = database
       .prepare(
         `
-        SELECT locks.id
-        FROM worktree_locks AS locks
-        JOIN worktrees ON worktrees.id = locks.worktree_id
-        WHERE locks.id = ?
-          AND locks.released_at IS NULL
-          AND locks.expires_at > ?
-          AND worktrees.lifecycle_status != 'prepared-diff';
+        SELECT id
+        FROM worktree_locks
+        WHERE id = ?
+          AND released_at IS NULL
+          AND revoked_at IS NULL
+          AND expires_at > ?;
       `,
       )
       .get(input.lockId, now);

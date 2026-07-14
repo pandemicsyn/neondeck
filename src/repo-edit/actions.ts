@@ -11,10 +11,12 @@ import { resolveInteractiveRepoContext } from '../modules/sessions/repo-context'
 import { recordSessionAudit } from '../modules/sessions/store';
 import {
   lockWorktree,
+  readWorktreeLock,
   readManagedWorktree,
   recordWorktreePushBlocked,
   recordWorktreePushSucceeded,
   releaseWorktreeLock,
+  revokeWorktreeLockLease,
   type WorktreeLockRecord,
   type WorktreeRecord,
 } from '../modules/worktrees';
@@ -420,7 +422,7 @@ async function withInteractiveWorktreeLock<T>(
   run: () => Promise<T>,
 ) {
   const owner = `interactive:${sessionId ?? 'session'}`;
-  const locked = await lockWorktree(
+  let locked = await lockWorktree(
     {
       worktreeId: worktree.id,
       scope: worktree.prNumber === null ? 'worktree' : 'pr',
@@ -435,6 +437,7 @@ async function withInteractiveWorktreeLock<T>(
     if (!active?.workflowRunId) {
       return requirementFailure(action, locked.message, 'worktreeLock');
     }
+    await revokeWorktreeLockLease(active.id, paths);
     await recordWorktreePushBlocked(
       worktree.id,
       {
@@ -447,15 +450,28 @@ async function withInteractiveWorktreeLock<T>(
       },
       paths,
     );
-    return requirementFailure(
-      action,
-      `Requested preemption of autopilot run ${active.workflowRunId}; retry after it acknowledges the revoked mutation lease.`,
-      'worktreeLock',
+    const released = await waitForWorktreeLockRelease(active.id, paths);
+    if (!released) {
+      return requirementFailure(
+        action,
+        `Autopilot run ${active.workflowRunId} did not yield its revoked mutation lease within 30 seconds. Its future mutations remain blocked; retry after the run settles.`,
+        'worktreeLock',
+      );
+    }
+    locked = await lockWorktree(
+      {
+        worktreeId: worktree.id,
+        scope: worktree.prNumber === null ? 'worktree' : 'pr',
+        owner,
+        ttlSeconds: 3_600,
+      },
+      paths,
     );
   }
-  if (!locked.ok || !('lock' in locked) || !locked.lock) {
+  if (!locked.ok || !('lock' in locked)) {
     return requirementFailure(action, locked.message, 'worktreeLock');
   }
+  const interactiveLock = locked.lock;
   try {
     return await run();
   } finally {
@@ -466,7 +482,7 @@ async function withInteractiveWorktreeLock<T>(
     ).catch(() => null);
     await releaseWorktreeLock(
       {
-        lockId: locked.lock.id,
+        lockId: interactiveLock.id,
         owner,
         finalStatus:
           current?.lifecycleStatus === 'succeeded' ? 'succeeded' : 'ready',
@@ -474,6 +490,19 @@ async function withInteractiveWorktreeLock<T>(
       paths,
     );
   }
+}
+
+async function waitForWorktreeLockRelease(
+  lockId: string,
+  paths: ReturnType<typeof runtimePaths>,
+) {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const lock = await readWorktreeLock(lockId, paths);
+    if (lock.releasedAt) return true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return (await readWorktreeLock(lockId, paths)).releasedAt !== null;
 }
 
 function pushConfirmationToken(

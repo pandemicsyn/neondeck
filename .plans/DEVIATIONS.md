@@ -468,14 +468,15 @@ Use this format:
 ## 2026-07-14 - Task Authority Cooperative Preemption
 
 - Roadmap item: Phases 14, 19, and 20 / task authority refactor.
-- Decision: Interactive takeover requests revoke the autonomous mutation lease and
-  returns a retryable `worktreeLock` result until the autonomous owner reaches a lease
-  check and releases normally. It does not forcibly release and immediately reacquire
-  the lock as the original plan text proposed.
+- Decision: Interactive takeover requests explicitly mark the autonomous mutation
+  lease revoked, wait within the original typed action until the autonomous owner
+  reaches a lease check and releases normally, then acquire the lock and continue the
+  requested commit or push. A 30-second bounded failure remains for a hung owner. The
+  interactive path does not forcibly release a lock while work may be in flight.
 - Reason: Static correctness review identified a race where Git or diagnostic work
   already running after its last lease check could overlap the immediate interactive
   takeover. Cooperative handoff preserves interactive priority without concurrent
   mutation.
 - Follow-up: None. Autonomous command loops, commit, push, and result-persistence
-  boundaries recheck lease ownership, and contention coverage exercises revocation,
-  release, and retry.
+  boundaries recheck the explicit `revoked_at` lease state, and contention coverage
+  proves that the first interactive call completes after cooperative handoff.
