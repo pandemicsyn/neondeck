@@ -146,7 +146,7 @@ describe('config actions', () => {
 
     await expect(
       updateRepoAutopilotPolicy(
-        { repoId: 'neondeck', limits: { highRiskClasses: [] } },
+        { repoId: 'neondeck', guardrails: { maxFilesChanged: 100 } },
         paths,
       ),
     ).resolves.toMatchObject({
@@ -202,6 +202,38 @@ describe('config actions', () => {
       ok: false,
       changed: false,
       requires: ['githubOwner', 'githubName'],
+    });
+  });
+
+  it('preserves reserved guardrails during unrelated metadata updates', async () => {
+    const home = await tempDir('neondeck-home-');
+    const repoPath = await tempGitRepo();
+    const paths = runtimePaths(home);
+    await addRepo({ path: repoPath }, paths);
+    await updateRepoAutopilotPolicy(
+      {
+        repoId: 'neondeck',
+        guardrails: { maxFilesChanged: 2, deniedFileGlobs: ['private/**'] },
+        reason: 'Keep this repository tightly bounded.',
+        confirm: true,
+      },
+      paths,
+    );
+
+    await expect(
+      updateRepo({ id: 'neondeck', metadata: { team: 'platform' } }, paths),
+    ).resolves.toMatchObject({ ok: true });
+
+    const [repo] = parseRepoRegistry(
+      JSON.parse(await readFile(paths.repos, 'utf8')),
+      paths.repos,
+    ).repos;
+    expect(repo?.metadata).toMatchObject({
+      team: 'platform',
+      guardrails: {
+        maxFilesChanged: 2,
+        deniedFileGlobs: ['private/**'],
+      },
     });
   });
 

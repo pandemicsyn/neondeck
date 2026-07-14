@@ -29,8 +29,10 @@ import {
   type ConfigActionResult,
 } from '../schemas';
 import {
+  repoGuardrails,
   repoAutopilotPolicy,
   type AutopilotMode,
+  type RepoGuardrailsConfig,
   type RepoAutopilotConfig,
 } from '../../autopilot-policy';
 
@@ -213,6 +215,9 @@ export async function updateRepo(
             ...(current.metadata?.autopilot !== undefined
               ? { autopilot: current.metadata.autopilot }
               : {}),
+            ...(current.metadata?.guardrails !== undefined
+              ? { guardrails: current.metadata.guardrails }
+              : {}),
           },
         }
       : {}),
@@ -261,7 +266,13 @@ export async function updateRepoAutopilotPolicy(
       [paths.repos, paths.config],
       {
         message: 'At least one autopilot policy setting is required.',
-        requires: ['mode', 'reason', 'limits', 'concurrency', 'watchOverrides'],
+        requires: [
+          'mode',
+          'reason',
+          'guardrails',
+          'concurrency',
+          'watchOverrides',
+        ],
       },
     );
   }
@@ -284,21 +295,31 @@ export async function updateRepoAutopilotPolicy(
 
   const current = registry.repos[index];
   const currentPolicy = repoAutopilotPolicy(current, appConfig);
+  const currentGuardrails = repoGuardrails(current, appConfig);
   const currentOverride = readAutopilotMetadata(current);
+  const currentGuardrailOverride = readGuardrailsMetadata(current);
   const nextOverride = mergeRepoAutopilotConfig(currentOverride, input);
+  const nextGuardrailOverride = {
+    ...currentGuardrailOverride,
+    ...input.guardrails,
+  };
   const nextRepo: RepoConfig = {
     ...current,
     metadata: {
-      ...(current.metadata ?? {}),
+      ...current.metadata,
       autopilot: nextOverride,
+      guardrails: nextGuardrailOverride,
     },
   };
   const nextPolicy = repoAutopilotPolicy(nextRepo, appConfig);
+  const nextGuardrails = repoGuardrails(nextRepo, appConfig);
 
   if (
     autopilotAuthorityIncreases(
       currentPolicy,
       nextPolicy,
+      currentGuardrails,
+      nextGuardrails,
       currentOverride,
       nextOverride,
     ) &&
@@ -310,7 +331,7 @@ export async function updateRepoAutopilotPolicy(
       [paths.repos, paths.config],
       {
         message:
-          'Increasing autopilot authority or relaxing its limits requires explicit confirmation.',
+          'Increasing autopilot authority or relaxing shared guardrails requires explicit confirmation.',
         requires: ['confirm'],
       },
     );
@@ -347,7 +368,9 @@ export async function updateRepoAutopilotPolicy(
 }
 
 function hasAutopilotMetadata(metadata: Record<string, unknown> | undefined) {
-  return metadata?.autopilot !== undefined;
+  return (
+    metadata?.autopilot !== undefined || metadata?.guardrails !== undefined
+  );
 }
 
 function hasAutopilotPolicyUpdate(
@@ -382,9 +405,6 @@ function mergeRepoAutopilotConfig(
     ...current,
     ...(input.mode !== undefined ? { mode: input.mode } : {}),
     ...(input.reason !== undefined ? { reason: input.reason } : {}),
-    ...(input.limits !== undefined
-      ? { limits: { ...current.limits, ...input.limits } }
-      : {}),
     ...(input.concurrency !== undefined
       ? { concurrency: { ...current.concurrency, ...input.concurrency } }
       : {}),
@@ -394,44 +414,67 @@ function mergeRepoAutopilotConfig(
   };
 }
 
+function readGuardrailsMetadata(repo: RepoConfig): RepoGuardrailsConfig {
+  const guardrails = repo.metadata?.guardrails;
+  return guardrails && typeof guardrails === 'object'
+    ? (guardrails as RepoGuardrailsConfig)
+    : {};
+}
+
 function autopilotAuthorityIncreases(
   current: ReturnType<typeof repoAutopilotPolicy>,
   next: ReturnType<typeof repoAutopilotPolicy>,
+  currentGuardrails: ReturnType<typeof repoGuardrails>,
+  nextGuardrails: ReturnType<typeof repoGuardrails>,
   currentOverride: RepoAutopilotConfig,
   nextOverride: RepoAutopilotConfig,
 ) {
   if (modeRank(next.mode) > modeRank(current.mode)) return true;
-  if (next.limits.maxFilesChanged > current.limits.maxFilesChanged) return true;
-  if (next.limits.maxLinesChanged > current.limits.maxLinesChanged) return true;
+  if (nextGuardrails.maxFilesChanged > currentGuardrails.maxFilesChanged)
+    return true;
+  if (nextGuardrails.maxLinesChanged > currentGuardrails.maxLinesChanged)
+    return true;
   if (
-    next.limits.generatedFileSizeThresholdBytes >
-    current.limits.generatedFileSizeThresholdBytes
+    nextGuardrails.generatedFileSizeThresholdBytes >
+    currentGuardrails.generatedFileSizeThresholdBytes
   )
     return true;
-  if (next.limits.allowForcePush && !current.limits.allowForcePush) return true;
+  if (nextGuardrails.allowForcePush && !currentGuardrails.allowForcePush)
+    return true;
   if (
     addsValues(
-      current.limits.allowedPushDestinations,
-      next.limits.allowedPushDestinations,
+      currentGuardrails.allowedPushDestinations,
+      nextGuardrails.allowedPushDestinations,
     )
-  )
-    return true;
-  if (
-    removesValues(current.limits.deniedFileGlobs, next.limits.deniedFileGlobs)
   )
     return true;
   if (
     removesValues(
-      current.limits.approvalRequiredFileGlobs,
-      next.limits.approvalRequiredFileGlobs,
+      currentGuardrails.deniedFileGlobs,
+      nextGuardrails.deniedFileGlobs,
     )
   )
     return true;
   if (
-    removesValues(current.limits.highRiskClasses, next.limits.highRiskClasses)
+    removesValues(
+      currentGuardrails.approvalRequiredFileGlobs,
+      nextGuardrails.approvalRequiredFileGlobs,
+    )
   )
     return true;
-  if (removesValues(current.limits.requiredChecks, next.limits.requiredChecks))
+  if (
+    removesValues(
+      currentGuardrails.highRiskClasses,
+      nextGuardrails.highRiskClasses,
+    )
+  )
+    return true;
+  if (
+    removesValues(
+      currentGuardrails.requiredChecks,
+      nextGuardrails.requiredChecks,
+    )
+  )
     return true;
   if (
     next.concurrency.maxAutonomousJobs > current.concurrency.maxAutonomousJobs

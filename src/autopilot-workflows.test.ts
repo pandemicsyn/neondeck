@@ -28,6 +28,7 @@ import {
 } from './modules/prepared-diffs';
 import { lockWorktree, releaseWorktreeLock } from './modules/worktrees';
 import { approvePreparedDiffPushWithDispatch } from './server/autopilot-push-dispatch';
+import { runWithFlueExecutionContextForTests } from './modules/flue/execution-context';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
@@ -431,11 +432,9 @@ describe('PR event autopilot', () => {
       `${JSON.stringify(
         {
           version: 1,
-          autopilot: {
-            limits: {
-              approvalRequiredFileGlobs: [],
-              highRiskClasses: ['dependency-manifest'],
-            },
+          guardrails: {
+            approvalRequiredFileGlobs: [],
+            highRiskClasses: ['dependency-manifest'],
           },
         },
         null,
@@ -517,9 +516,7 @@ describe('PR event autopilot', () => {
       `${JSON.stringify(
         {
           version: 1,
-          autopilot: {
-            limits: { requiredChecks: ["node -e 'process.exit(0)'"] },
-          },
+          guardrails: { requiredChecks: ["node -e 'process.exit(0)'"] },
           execution: {
             preapprovedCommands: [
               {
@@ -564,10 +561,8 @@ describe('PR event autopilot', () => {
       `${JSON.stringify(
         {
           version: 1,
-          autopilot: {
-            limits: {
-              requiredChecks: ['node -e \'process.stdout.write("required")\''],
-            },
+          guardrails: {
+            requiredChecks: ['node -e \'process.stdout.write("required")\''],
           },
           execution: {
             preapprovedCommands: [
@@ -688,9 +683,7 @@ describe('PR event autopilot', () => {
       `${JSON.stringify(
         {
           version: 1,
-          autopilot: {
-            limits: { requiredChecks: ["node -e 'process.exit(0)'"] },
-          },
+          guardrails: { requiredChecks: ["node -e 'process.exit(0)'"] },
         },
         null,
         2,
@@ -1665,9 +1658,7 @@ describe('PR event autopilot', () => {
       paths,
       { runExecution: successfulExecution },
     );
-    await writeAutopilotConfig(paths, {
-      limits: { maxFilesChanged: 13 },
-    });
+    await writeAutopilotConfig(paths, {}, { maxFilesChanged: 13 });
 
     const result = await pushPrAutofix({ preparedDiffId }, paths, {
       getBranchPermissions: pushAllowedPermissions,
@@ -1706,9 +1697,7 @@ describe('PR event autopilot', () => {
       ok: false,
       changed: false,
       action: 'autopilot_push_pr_autofix',
-      requires: [
-        'verification',
-      ],
+      requires: ['verification'],
       data: {
         preparedDiff: {
           status: 'prepared',
@@ -2276,12 +2265,14 @@ async function pushDeniedPermissions() {
 async function writeAutopilotConfig(
   paths: ReturnType<typeof runtimePaths>,
   autopilot: Record<string, unknown>,
+  guardrails?: Record<string, unknown>,
 ) {
   await writeFile(
     paths.config,
     `${JSON.stringify(
       {
         version: 1,
+        ...(guardrails ? { guardrails } : {}),
         autopilot: {
           defaultMode: 'autofix-with-approval',
           ...autopilot,
@@ -2487,7 +2478,10 @@ async function runWorkflowAction(workflow: unknown, input: unknown) {
       run(context: { input: unknown }): unknown;
     };
   };
-  return Promise.resolve(runnable.action.run({ input }));
+  return runWithFlueExecutionContextForTests(
+    { runId: `test-run-${Date.now()}` },
+    () => Promise.resolve(runnable.action.run({ input })),
+  );
 }
 
 function insertActiveWorkflowRun(

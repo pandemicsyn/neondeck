@@ -38,6 +38,7 @@ import {
   resolvePendingApprovals,
   supersedeApprovals,
   updatePreparedDiffState,
+  updatePreparedDiffVerificationWithLease,
   updateWorktreeLifecycle,
   upsertPreparedDiff,
 } from './store';
@@ -138,6 +139,7 @@ export async function recordPreparedDiffVerification(
   input: {
     preparedDiffId?: string;
     worktreeId?: string;
+    lockId?: string;
     status: Extract<PreparedDiffVerificationStatus, 'passed' | 'failed'>;
     summary?: Record<string, unknown>;
   },
@@ -152,17 +154,29 @@ export async function recordPreparedDiffVerification(
   const verifiedCommitSha = await gitCurrentSha(
     record.sourceWorktreePath,
   ).catch(() => null);
+  const verification = {
+    status: input.status,
+    verifiedCommitSha,
+    recordedAt: new Date().toISOString(),
+    ...input.summary,
+  };
+  if (input.lockId) {
+    return updatePreparedDiffVerificationWithLease(
+      record.id,
+      {
+        lockId: input.lockId,
+        status: input.status,
+        verification,
+      },
+      paths,
+    );
+  }
   return updatePreparedDiffState(
     record.id,
     {
       verificationStatus: input.status,
       summary: mergeSummary(record.summary, {
-        verification: {
-          status: input.status,
-          verifiedCommitSha,
-          recordedAt: new Date().toISOString(),
-          ...input.summary,
-        },
+        verification,
       }),
     },
     paths,

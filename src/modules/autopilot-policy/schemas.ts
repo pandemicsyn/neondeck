@@ -1,22 +1,22 @@
 import * as v from 'valibot';
+import {
+  defaultRepoGuardrails,
+  repoGuardrailsSchema,
+  type RepoGuardrails,
+} from '../../runtime-home';
+
+export {
+  defaultRepoGuardrails,
+  repoGuardrailsSchema,
+  type RepoGuardrails,
+  type RepoGuardrailsConfig,
+} from '../../runtime-home';
 
 export type AutopilotMode =
   | 'notify-only'
   | 'prepare-only'
   | 'autofix-with-approval'
   | 'autofix-push-when-safe';
-
-export type AutopilotPolicyLimits = {
-  maxFilesChanged: number;
-  maxLinesChanged: number;
-  deniedFileGlobs: string[];
-  approvalRequiredFileGlobs: string[];
-  requiredChecks: string[];
-  allowedPushDestinations: string[];
-  allowForcePush: boolean;
-  highRiskClasses: string[];
-  generatedFileSizeThresholdBytes: number;
-};
 
 export type AutopilotConcurrencyPolicy = {
   maxAutonomousJobs: number;
@@ -28,7 +28,6 @@ export type AutopilotConcurrencyPolicy = {
 
 export type AutopilotPolicyConfig = {
   mode: AutopilotMode;
-  limits: AutopilotPolicyLimits;
   concurrency: AutopilotConcurrencyPolicy;
 };
 
@@ -41,7 +40,7 @@ export type AutopilotPolicyDecision = {
   repoFullName: string;
   prNumber: number | null;
   mode: AutopilotMode;
-  limits: AutopilotPolicyLimits;
+  limits: RepoGuardrails;
   concurrency: AutopilotConcurrencyPolicy;
   diff: {
     base: string;
@@ -101,7 +100,6 @@ export type AutopilotFileRisk = {
 export type RepoAutopilotConfig = Partial<{
   mode: AutopilotMode;
   reason: string;
-  limits: Partial<AutopilotPolicyLimits>;
   concurrency: Partial<AutopilotConcurrencyPolicy>;
   watchOverrides: Array<{
     watchId?: string;
@@ -124,25 +122,11 @@ export const modeSchema = v.picklist([
   'autofix-with-approval',
   'autofix-push-when-safe',
 ]);
-export const stringArraySchema = v.array(nonEmptyStringSchema);
 export const watchOverrideSchema = v.looseObject({
   watchId: v.optional(nonEmptyStringSchema),
   prNumber: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
   mode: v.optional(modeSchema),
   reason: v.optional(nonEmptyStringSchema),
-});
-export const autopilotPolicyLimitsSchema = v.looseObject({
-  maxFilesChanged: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
-  maxLinesChanged: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
-  deniedFileGlobs: v.optional(stringArraySchema),
-  approvalRequiredFileGlobs: v.optional(stringArraySchema),
-  requiredChecks: v.optional(stringArraySchema),
-  allowedPushDestinations: v.optional(stringArraySchema),
-  allowForcePush: v.optional(v.boolean()),
-  highRiskClasses: v.optional(stringArraySchema),
-  generatedFileSizeThresholdBytes: v.optional(
-    v.pipe(v.number(), v.integer(), v.minValue(1)),
-  ),
 });
 export const autopilotConcurrencySchema = v.looseObject({
   maxAutonomousJobs: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
@@ -158,6 +142,7 @@ export const autopilotConcurrencySchema = v.looseObject({
   ),
 });
 export const appAutopilotSchema = v.looseObject({
+  guardrails: v.optional(repoGuardrailsSchema),
   autopilot: v.optional(
     v.looseObject({
       defaultMode: v.optional(modeSchema),
@@ -165,68 +150,28 @@ export const appAutopilotSchema = v.looseObject({
       pushOnApproval: v.optional(
         v.picklist(['push', 'verify-then-push', 'off']),
       ),
-      limits: v.optional(autopilotPolicyLimitsSchema),
       concurrency: v.optional(autopilotConcurrencySchema),
     }),
   ),
 });
 export const metadataSchema = v.looseObject({
+  guardrails: v.optional(repoGuardrailsSchema),
   autopilot: v.optional(
     v.looseObject({
       mode: v.optional(modeSchema),
       reason: v.optional(nonEmptyStringSchema),
-      limits: v.optional(autopilotPolicyLimitsSchema),
       concurrency: v.optional(autopilotConcurrencySchema),
       watchOverrides: v.optional(v.array(watchOverrideSchema)),
     }),
   ),
 });
 
-export const defaultAutopilotPolicyLimits: AutopilotPolicyLimits = {
-  maxFilesChanged: 12,
-  maxLinesChanged: 500,
-  deniedFileGlobs: [
-    '.git/**',
-    '.env*',
-    '**/.env*',
-    '*.{pem,key,p12,pfx}',
-    '**/*.{pem,key,p12,pfx}',
-    '**/*secret*',
-  ],
-  approvalRequiredFileGlobs: [
-    '**/package-lock.json',
-    '**/pnpm-lock.yaml',
-    '**/yarn.lock',
-    '**/bun.lock',
-    '**/Cargo.lock',
-    '**/package.json',
-    '.github/**',
-    '.gitlab-ci.yml',
-    '**/migrations/**',
-    '**/*.{png,jpg,jpeg,gif,webp,zip}',
-    'vendor/**',
-    '**/vendor/**',
-    'third_party/**',
-    '**/third_party/**',
-  ],
-  requiredChecks: [],
-  allowedPushDestinations: ['pull-request-head'],
-  allowForcePush: false,
-  highRiskClasses: [
-    'lockfile',
-    'dependency-manifest',
-    'ci-config',
-    'deployment-config',
-    'security-sensitive-code',
-    'secrets-env',
-    'database-migration',
-    'large-generated-file',
-    'binary-file',
-    'vendored-code',
-    'repo-glob',
-  ],
-  generatedFileSizeThresholdBytes: 256 * 1024,
-};
+/** @deprecated Use RepoGuardrails. Kept for stable policy-result consumers. */
+export type AutopilotPolicyLimits = RepoGuardrails;
+/** @deprecated Use repoGuardrailsSchema. */
+export const autopilotPolicyLimitsSchema = repoGuardrailsSchema;
+/** @deprecated Use defaultRepoGuardrails. */
+export const defaultAutopilotPolicyLimits = defaultRepoGuardrails;
 
 export const defaultAutopilotConcurrency: AutopilotConcurrencyPolicy = {
   maxAutonomousJobs: 3,

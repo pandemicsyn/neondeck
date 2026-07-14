@@ -549,7 +549,7 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget: 'repos.json/config_history',
       requiresConfirmation: true,
     },
-    'Updates typed repo autopilot policy. Increasing autonomy, relaxing limits, expanding push destinations, enabling force push, or changing watch overrides requires confirm=true.',
+    'Updates typed repo autopilot policy and shared guardrails. Increasing autonomy, relaxing guardrails, expanding push destinations, enabling force push, or changing watch overrides requires confirm=true.',
   ),
   action(
     'neondeck_config_update_agent_models',
@@ -1080,7 +1080,7 @@ export const entries: SafetyPolicyEntry[] = [
     'neondeck_autopilot_policy_check',
     'Check autopilot policy',
     readOnly,
-    'Classifies a worktree diff against autopilot limits, high-risk file classes, push destination policy, and concurrency settings without mutating repos or GitHub.',
+    'Classifies a worktree diff against shared repo guardrails, high-risk file classes, push destination policy, and autopilot concurrency without mutating repos or GitHub.',
   ),
   action(
     'neondeck_autopilot_fix_pr_ci_failure',

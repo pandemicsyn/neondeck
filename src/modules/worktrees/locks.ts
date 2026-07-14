@@ -13,8 +13,18 @@ export function assertNoForeignActiveLock(
   const locks = activeLocksForWorktree(record, paths).filter(
     (lock) => Date.parse(lock.expiresAt) > now,
   );
+  if (lockId) {
+    if (
+      record.lifecycleStatus !== 'prepared-diff' &&
+      locks.some((lock) => lock.id === lockId)
+    )
+      return;
+    throw new WorktreeError(
+      'WORKTREE_LOCKED',
+      `Worktree lock ${lockId} is no longer active; the mutation lease was revoked or expired.`,
+    );
+  }
   if (locks.length === 0) return;
-  if (lockId && locks.some((lock) => lock.id === lockId)) return;
   throw new WorktreeError(
     'WORKTREE_LOCKED',
     `Worktree ${record.id} has an active lock held by ${locks[0]!.owner}.`,

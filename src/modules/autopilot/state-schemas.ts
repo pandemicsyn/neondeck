@@ -191,7 +191,6 @@ export type AutopilotState = {
 export type AutopilotRepoConfig = Partial<{
   mode: AutopilotMode;
   reason: string;
-  limits: Partial<AutopilotPolicyLimits>;
   concurrency: Partial<AutopilotConcurrencyPolicy>;
   watchOverrides: Array<{
     watchId?: string;

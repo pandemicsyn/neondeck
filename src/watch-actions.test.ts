@@ -672,13 +672,17 @@ describe('ref watch actions', () => {
     const paths = runtimePaths(home);
     await writeRepoRegistry(paths.repos);
 
-    await addRefWatch({ target: 'neondeck@feature/scheduler' }, paths, async () =>
-      checkSummary('pending'),
+    await addRefWatch(
+      { target: 'neondeck@feature/scheduler' },
+      paths,
+      async () => checkSummary('pending'),
     );
 
     await expect(
-      refreshRefWatch({ target: 'neondeck@feature/scheduler' }, paths, async () =>
-        checkSummary('success'),
+      refreshRefWatch(
+        { target: 'neondeck@feature/scheduler' },
+        paths,
+        async () => checkSummary('success'),
       ),
     ).resolves.toMatchObject({
       ok: true,

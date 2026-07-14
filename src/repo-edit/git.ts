@@ -92,6 +92,52 @@ export async function gitStatus(repoRoot: string): Promise<RepoGitStatus> {
   };
 }
 
+export async function gitChangedPaths(repoRoot: string) {
+  const porcelain = await git(repoRoot, [
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--untracked-files=all',
+  ]);
+  const entries = porcelain.split('\u0000');
+  const paths: string[] = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (!entry) continue;
+    const status = entry.slice(0, 2);
+    paths.push(entry.slice(3));
+    if (status.includes('R') || status.includes('C')) {
+      const source = entries[index + 1];
+      if (source) paths.push(source);
+      index += 1;
+    }
+  }
+  return [...new Set(paths)];
+}
+
+export async function gitStagedPaths(repoRoot: string) {
+  const output = await git(repoRoot, [
+    'diff',
+    '--cached',
+    '--name-status',
+    '--find-renames',
+    '-z',
+  ]);
+  const entries = output.split('\u0000');
+  const paths: string[] = [];
+  for (let index = 0; index < entries.length;) {
+    const status = entries[index++];
+    if (!status) continue;
+    const path = entries[index++];
+    if (path) paths.push(path);
+    if (status.startsWith('R') || status.startsWith('C')) {
+      const destination = entries[index++];
+      if (destination) paths.push(destination);
+    }
+  }
+  return [...new Set(paths)];
+}
+
 export async function gitCurrentSha(repoRoot: string) {
   return (await git(repoRoot, ['rev-parse', 'HEAD'])).trim();
 }
@@ -417,7 +463,7 @@ export async function gitCommitPaths(
     };
   }
 
-  await git(repoRoot, ['commit', '-m', message]);
+  await git(repoRoot, ['commit', '--only', '-m', message, '--', ...pathspec]);
   const sha = (await git(repoRoot, ['rev-parse', 'HEAD'])).trim();
   return {
     committed: true,

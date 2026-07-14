@@ -444,3 +444,38 @@ Use this format:
 - Decision: Added dedicated `briefing_profiles` and `briefing_runs` app-state tables instead of overloading `workflow_summaries`. Reused the current scheduled-task admission, linked-session, Flue dispatch, observation, and notification primitives because the Routines module named in the proposal no longer exists. On installed Flue `1.0.0-beta.9`, continuing-agent dispatches settle from correlated `agent_end` success or terminal prompt `operation` failure observations; `submission_settled` is retained as a compatible direct-prompt signal but is not emitted for `dispatch()`. Retained the Briefing dashboard slot as a compact profile/run launcher and editor.
 - Reason: Briefings need exact bounded snapshot persistence, instruction versioning, stable profile/session linkage, dispatch correlation, and queryable terminal state without treating assistant prose as application data. Dedicated rows preserve that contract and keep panel polling from returning snapshot bodies. The version-matched Flue events are the only correct terminal signals for continuing-agent dispatch in the installed runtime.
 - Follow-up: None.
+
+## 2026-07-14 - Task Authority Refactor Verification Cleanup
+
+- Roadmap item: Phases 14, 19, and 20 / task authority refactor.
+- Decision: Included formatter-only normalization of pre-existing drift in the `tidy-briefings-glow.md` changeset, CLI onboarding/options, handoff/watch tests, runtime/config/watch/scheduled-task modules, and the baseline snapshot while implementing the single-PR authority refactor.
+- Reason: These unrelated files failed the repository-wide `npm run format:check` acceptance gate before the authority implementation could pass full verification.
+- Follow-up: None.
+
+## 2026-07-14 - Task Authority Push Confirmation Binding
+
+- Roadmap item: Phases 14, 19, and 20 / task authority refactor.
+- Decision: Interactive push expansion acknowledgments carry a deterministic
+  confirmation token bound to the reviewed commit SHA, guardrail policy hash, and
+  human effect summary, in addition to the plan's `acknowledgeExpansion` boolean.
+- Reason: Static correctness review found that a bare boolean could authorize a
+  different commit or effect if the worktree changed between prompt and retry. The
+  token keeps the plan's inline one-confirmation UX without creating an approval
+  subsystem.
+- Follow-up: None. The token is returned by the same typed push action and is
+  documented in the agent/runtime skill guidance.
+
+## 2026-07-14 - Task Authority Cooperative Preemption
+
+- Roadmap item: Phases 14, 19, and 20 / task authority refactor.
+- Decision: Interactive takeover requests revoke the autonomous mutation lease and
+  returns a retryable `worktreeLock` result until the autonomous owner reaches a lease
+  check and releases normally. It does not forcibly release and immediately reacquire
+  the lock as the original plan text proposed.
+- Reason: Static correctness review identified a race where Git or diagnostic work
+  already running after its last lease check could overlap the immediate interactive
+  takeover. Cooperative handoff preserves interactive priority without concurrent
+  mutation.
+- Follow-up: None. Autonomous command loops, commit, push, and result-persistence
+  boundaries recheck lease ownership, and contention coverage exercises revocation,
+  release, and retry.

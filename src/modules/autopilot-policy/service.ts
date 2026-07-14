@@ -1,5 +1,3 @@
-import { gitDiff } from '../../repo-edit/git';
-import { createHash } from 'node:crypto';
 import {
   ensureRuntimeHome,
   parseAppConfig,
@@ -11,11 +9,11 @@ import {
 import { listWorktrees } from '../worktrees';
 import {
   globalAutopilotPolicy,
+  repoGuardrails,
   repoAutopilotPolicy,
   repoAutopilotPolicyForWatch,
 } from './config';
 import {
-  classifyFileRisk,
   emptyPolicyFailure,
   normalizeWorkflowName,
   readActiveAutopilotRuns,
@@ -26,6 +24,7 @@ import {
   type AutopilotConcurrencyPolicy,
   type AutopilotPolicyDecision,
 } from './schemas';
+import { evaluateRepoGuardrails } from '../repo-guardrails';
 
 let activeLocalExecutions = 0;
 
@@ -64,90 +63,34 @@ export async function checkAutopilotPolicy(
     id: watchId,
     prNumber: worktree?.prNumber,
   });
+  const guardrails = repoGuardrails(repo, appConfig);
   const repoFullName = `${repo.github.owner}/${repo.github.name}`;
-  const localPath = worktree?.localPath ?? repo.path;
   const diffBase = input.diffBaseRef ?? worktree?.headSha ?? 'HEAD';
-  const diff = await gitDiff(localPath, {
-    base: diffBase,
-    includePatch: true,
-    maxPatchBytes: 128 * 1024,
-  });
-  const files = await Promise.all(
-    diff.files.map((file) => classifyFileRisk(localPath, file, policy.limits)),
+  const evaluated = await evaluateRepoGuardrails(
+    { ...input, diffBaseRef: diffBase, guardrails },
+    paths,
   );
-  const totalLines = diff.summary.additions + diff.summary.deletions;
-  const reasons: string[] = [];
-  const requires = new Set<string>();
-
-  if (diff.summary.files > policy.limits.maxFilesChanged) {
-    reasons.push(
-      `Changed ${diff.summary.files} files, above maxFilesChanged=${policy.limits.maxFilesChanged}.`,
-    );
-    requires.add('maxFilesChanged');
-  }
-  if (totalLines > policy.limits.maxLinesChanged) {
-    reasons.push(
-      `Changed ${totalLines} lines, above maxLinesChanged=${policy.limits.maxLinesChanged}.`,
-    );
-    requires.add('maxLinesChanged');
-  }
-  const deniedFiles = files.filter((file) => file.denied);
-  for (const file of deniedFiles) {
-    reasons.push(`${file.path} matches denied autopilot policy.`);
-    requires.add('deniedFileGlobs');
-  }
-  const riskyFiles = files.filter((file) => file.approvalRequired);
-  for (const file of riskyFiles) {
-    reasons.push(`${file.path} requires approval: ${file.reasons.join(', ')}.`);
-    requires.add('approval');
-  }
-  if (input.forcePush && !policy.limits.allowForcePush) {
-    reasons.push('Force-push is disabled by autopilot policy.');
-    requires.add('allowForcePush');
-  }
-  const forcePushBlocked = Boolean(
-    input.forcePush && !policy.limits.allowForcePush,
+  const reasons = [...evaluated.denied, ...evaluated.expansions].map(
+    (violation) => violation.detail,
   );
-  let pushDestinationBlocked = false;
-  if (
-    input.pushDestination &&
-    !policy.limits.allowedPushDestinations.includes(input.pushDestination)
-  ) {
-    pushDestinationBlocked = true;
+  const requires = new Set(
+    [...evaluated.denied, ...evaluated.expansions].map((violation) =>
+      requirementForViolation(violation.kind),
+    ),
+  );
+  if (guardrails.requiredChecks.length > 0) {
     reasons.push(
-      `Push destination "${input.pushDestination}" is not in allowedPushDestinations.`,
-    );
-    requires.add('allowedPushDestinations');
-  }
-  if (policy.limits.requiredChecks.length > 0) {
-    reasons.push(
-      `Required checks before push: ${policy.limits.requiredChecks.join(', ')}.`,
+      `Required checks before push: ${guardrails.requiredChecks.join(', ')}.`,
     );
   }
 
-  const blocked =
-    deniedFiles.length > 0 || forcePushBlocked || pushDestinationBlocked;
-  const approvalRequired =
-    !blocked &&
-    (riskyFiles.length > 0 ||
-      diff.summary.files > policy.limits.maxFilesChanged ||
-      totalLines > policy.limits.maxLinesChanged ||
-      Boolean(input.forcePush && !policy.limits.allowForcePush));
+  const blocked = evaluated.denied.length > 0;
+  const approvalRequired = !blocked && evaluated.expansions.length > 0;
   const decision = blocked
     ? ('deny' as const)
     : approvalRequired
       ? ('require-approval' as const)
       : ('allow' as const);
-  const policyHash = createHash('sha256')
-    .update(
-      JSON.stringify({
-        mode: policy.mode,
-        limits: policy.limits,
-        concurrency: policy.concurrency,
-      }),
-    )
-    .digest('hex');
-
   return {
     ok: true,
     action: 'autopilot_policy_check',
@@ -162,20 +105,20 @@ export async function checkAutopilotPolicy(
     repoFullName,
     prNumber: worktree?.prNumber ?? null,
     mode: policy.mode,
-    limits: policy.limits,
+    limits: guardrails,
     concurrency: policy.concurrency,
     diff: {
-      base: diff.base,
-      filesChanged: diff.summary.files,
-      linesChanged: totalLines,
-      additions: diff.summary.additions,
-      deletions: diff.summary.deletions,
-      binaryFiles: diff.summary.binaryFiles,
+      base: diffBase,
+      filesChanged: evaluated.diffSummary.files,
+      linesChanged: evaluated.diffSummary.lines,
+      additions: evaluated.diffSummary.additions,
+      deletions: evaluated.diffSummary.deletions,
+      binaryFiles: evaluated.files.filter((file) => file.binary).length,
     },
-    files,
+    files: evaluated.files,
     decision,
     approvalClass: approvalRequired ? 'high-risk-diff' : null,
-    policyHash,
+    policyHash: evaluated.policyHash,
     blocked,
     approvalRequired,
     canPush:
@@ -184,6 +127,31 @@ export async function checkAutopilotPolicy(
     requires: [...requires],
     fetchedAt: new Date().toISOString(),
   };
+}
+
+function requirementForViolation(
+  kind:
+    | 'denied-path'
+    | 'high-risk-file'
+    | 'max-files'
+    | 'max-lines'
+    | 'force-push'
+    | 'push-destination',
+) {
+  switch (kind) {
+    case 'denied-path':
+      return 'deniedFileGlobs';
+    case 'high-risk-file':
+      return 'approval';
+    case 'max-files':
+      return 'maxFilesChanged';
+    case 'max-lines':
+      return 'maxLinesChanged';
+    case 'force-push':
+      return 'allowForcePush';
+    case 'push-destination':
+      return 'allowedPushDestinations';
+  }
 }
 
 export async function checkAutopilotConcurrency(

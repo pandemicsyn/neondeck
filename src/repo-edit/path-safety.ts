@@ -77,8 +77,7 @@ export async function resolveRepoPath(
     );
   }
 
-  const relativePath = normalizeRepoRelativePath(input.path);
-  assertAllowedSegments(relativePath);
+  const relativePath = assertRepoRelativePathAllowed(input.path);
 
   const worktree = input.worktreeId
     ? await readManagedWorktree(input.worktreeId, repo.id, paths)
@@ -177,6 +176,12 @@ export function normalizeRepoRelativePath(path: string) {
     );
   }
   return parts.join('/');
+}
+
+export function assertRepoRelativePathAllowed(path: string) {
+  const normalized = normalizeRepoRelativePath(path);
+  assertAllowedSegments(normalized);
+  return normalized;
 }
 
 export function isInside(root: string, candidate: string) {

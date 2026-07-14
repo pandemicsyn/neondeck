@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { currentFlueExecutionContext } from '../flue';
 import { realpath } from 'node:fs/promises';
 import type * as v from 'valibot';
 import { invalidInputAction } from '../../lib/action-result';
@@ -408,7 +409,8 @@ export async function lockWorktree(
       repoId,
       prNumber,
       owner: input.owner,
-      workflowRunId: input.workflowRunId ?? null,
+      workflowRunId:
+        input.workflowRunId ?? currentFlueExecutionContext()?.runId ?? null,
       expiresAt,
       releasedAt: null,
       staleRecoveredAt: null,

@@ -1,7 +1,10 @@
+export { generateLocalApiToken, resolveLearningConfig } from './defaults.ts';
 export {
-  generateLocalApiToken,
-  resolveLearningConfig,
-} from './defaults.ts';
+  defaultRepoGuardrails,
+  repoGuardrailsSchema,
+  type RepoGuardrails,
+  type RepoGuardrailsConfig,
+} from './guardrails.ts';
 export { ensureRuntimeHome, ensureRuntimeHomeSync } from './bootstrap.ts';
 export {
   readRuntimeJson,
@@ -21,7 +24,6 @@ export {
   autopilotConcurrencySchema,
   autopilotConfigSchema,
   autopilotModeSchema,
-  autopilotPolicyLimitsSchema,
   ConfigValidationError,
   dashboardConfigSchema,
   dashboardRegionSchema,

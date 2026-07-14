@@ -73,7 +73,10 @@ export async function addPrWatch(
 
   const existing = readWatch(paths, resolved.reference.id);
   if (existing) {
-    const task = await readScheduledTask(watchPollingTaskId(existing.id), paths);
+    const task = await readScheduledTask(
+      watchPollingTaskId(existing.id),
+      paths,
+    );
     const desiredTerminalStateChanged =
       existing.desiredTerminalState !== resolved.reference.desiredTerminalState;
     const terminalWatch = isTerminalPrWatchStatus(existing.status);
@@ -227,9 +230,7 @@ export async function listPrWatches(
         nextRunAt: task?.nextRunAt ?? null,
         pollingEnabled: task?.enabled ?? false,
         pollIntervalSeconds:
-          task?.trigger.kind === 'interval'
-            ? task.trigger.everySeconds
-            : null,
+          task?.trigger.kind === 'interval' ? task.trigger.everySeconds : null,
       };
     }),
   });
@@ -472,9 +473,7 @@ export async function setPrWatchPolling(
         nextRunAt: task.nextRunAt,
         pollingEnabled: task.enabled,
         pollIntervalSeconds:
-          task.trigger.kind === 'interval'
-            ? task.trigger.everySeconds
-            : null,
+          task.trigger.kind === 'interval' ? task.trigger.everySeconds : null,
       },
     },
   );
