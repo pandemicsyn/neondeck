@@ -57,6 +57,9 @@ export function NotificationController({
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.notifications }),
         queryClient.invalidateQueries({ queryKey: queryKeys.runtimeStatus }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.chatSessionActivityRoot,
+        }),
       ]);
       dispatch({
         type: 'notification-event',

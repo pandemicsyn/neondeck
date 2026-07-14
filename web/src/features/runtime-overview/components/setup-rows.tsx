@@ -13,6 +13,7 @@ import {
 } from '../../../api';
 import { Badge } from '../../../components/ui';
 import { queryKeys } from '../../../lib/query';
+import { notificationDisplayMessage } from '../../../lib/watch-status';
 import { MiniEmpty } from './atoms';
 import {
   checkClass,
@@ -217,7 +218,7 @@ export function NotificationRow({
             {notification.title}
           </p>
           <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
-            {notification.message}
+            {notificationDisplayMessage(notification)}
           </p>
         </div>
         <Badge className={notificationClass(notification)}>

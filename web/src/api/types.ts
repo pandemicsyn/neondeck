@@ -1317,6 +1317,20 @@ export type ChatSessionCommandEventMutationResponse = {
   requires?: string[];
 };
 
+export type ChatSessionActivityItem = NotificationRecord & {
+  kind: 'notification';
+};
+
+export type ChatSessionActivityListResponse = {
+  ok: boolean;
+  action: 'session_activity_list';
+  changed: false;
+  items: ChatSessionActivityItem[];
+  fetchedAt: string;
+  errors?: string[];
+  requires?: string[];
+};
+
 export type ChatSessionChangeEvent = {
   id: string;
   action: 'created' | 'updated' | 'switched' | 'archived' | 'restored';
@@ -1730,12 +1744,32 @@ export type PrWatch = {
   title: string | null;
   url: string | null;
   mergeCommitSha: string | null;
+  lastSnapshot: PrWatchSnapshot | null;
   lastCheckedAt: string | null;
   createdBy: string | null;
   nextRunAt?: string | null;
   pollingEnabled?: boolean;
   pollIntervalSeconds?: number | null;
   updatedAt: string;
+};
+
+export type PrWatchSnapshot = {
+  state: string;
+  merged: boolean;
+  mergeCommitSha: string | null;
+  checks: {
+    status: 'success' | 'failure' | 'pending' | 'none';
+    total: number;
+    successful: number;
+    failed: number;
+    pending: number;
+    checkedAt: string;
+  } | null;
+  title: string;
+  url: string;
+  updatedAt: string;
+  headSha: string;
+  baseRef: string;
 };
 
 export type PrWatchResponse = {
