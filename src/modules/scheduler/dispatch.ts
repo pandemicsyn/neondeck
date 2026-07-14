@@ -19,7 +19,8 @@ export async function refreshWatchTask(
   const refreshWatch = dependencies.refreshPrWatch ?? refreshPrWatch;
   const result = await refreshWatch({ id: watchId }, paths);
   if (!result.ok) {
-    const pendingEventResults = pendingEventResultsFromJobResult(previousResult);
+    const pendingEventResults =
+      pendingEventResultsFromJobResult(previousResult);
     return {
       outcome: 'failed' as const,
       message: `Failed to refresh PR watch "${watchId}".`,
@@ -78,31 +79,96 @@ function notificationFromWatchResult(
   result: Awaited<ReturnType<typeof refreshPrWatch>>,
   watchId: string,
 ) {
-  const watch = result.watch as { id?: string; status?: string } | undefined;
+  const watch = result.watch as WatchNotificationFacts | undefined;
   const level: NotificationLevel =
     watch?.status === 'closed' || watch?.status === 'attention-needed'
       ? 'attention'
       : watch?.status === 'merged' || watch?.status === 'green'
         ? 'ready'
         : 'info';
-  const title =
-    watch?.status === 'green'
-      ? 'PR watch green'
-      : watch?.status === 'attention-needed'
-        ? 'PR watch needs attention'
-        : watch?.status === 'merged'
-          ? 'PR watch merged'
-          : watch?.status === 'closed'
-            ? 'PR watch closed'
-            : 'PR watch changed';
+  const copy = watchNotificationCopy(watch, result.message);
   return {
     level,
-    title,
-    message: result.message,
+    title: copy.title,
+    message: copy.message,
     source: 'watch-pr',
     sourceId: watch?.id ?? watchId,
     data: result.watch,
   };
+}
+
+type WatchNotificationFacts = {
+  id?: string;
+  repoFullName?: string;
+  prNumber?: number;
+  status?: string;
+  prState?: string | null;
+  lastSnapshot?: {
+    merged?: boolean;
+    checks?: {
+      status?: string;
+      total?: number;
+      failed?: number;
+      pending?: number;
+    } | null;
+  } | null;
+};
+
+export function watchNotificationCopy(
+  watch: WatchNotificationFacts | undefined,
+  fallbackMessage: string,
+) {
+  const titleSubject = watch?.prNumber ? `PR ${watch.prNumber}` : 'PR watch';
+  const subject =
+    watch?.id ??
+    (watch?.repoFullName && watch.prNumber
+      ? `${watch.repoFullName}#${watch.prNumber}`
+      : 'PR watch');
+  const checks = watch?.lastSnapshot?.checks;
+
+  if (watch?.status === 'attention-needed') {
+    const failed = checks?.failed;
+    const total = checks?.total;
+    const failedLabel =
+      typeof failed === 'number' && failed > 0
+        ? typeof total === 'number' && total > 0
+          ? `${failed} of ${total} ${total === 1 ? 'check' : 'checks'} failed`
+          : `${failed} ${failed === 1 ? 'check' : 'checks'} failed`
+        : 'checks are failing';
+    const state = watch.lastSnapshot?.merged
+      ? ' is merged, but '
+      : watch.prState === 'closed'
+        ? ' is closed, but '
+        : ' has ';
+    return {
+      title: `${titleSubject} needs attention`,
+      message: `${subject}${state}${failedLabel}.`,
+    };
+  }
+
+  if (watch?.status === 'green') {
+    const total = checks?.total;
+    return {
+      title: `${titleSubject} checks passed`,
+      message:
+        typeof total === 'number' && total > 0
+          ? `${subject}: all ${total} ${total === 1 ? 'check' : 'checks'} passed.`
+          : `${subject}: all checks passed.`,
+    };
+  }
+
+  if (watch?.status === 'merged') {
+    return { title: `${titleSubject} merged`, message: `${subject} merged.` };
+  }
+
+  if (watch?.status === 'closed') {
+    return {
+      title: `${titleSubject} closed`,
+      message: `${subject} closed without merging.`,
+    };
+  }
+
+  return { title: 'PR watch changed', message: fallbackMessage };
 }
 
 function watchRefreshMessage(
