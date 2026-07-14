@@ -330,6 +330,7 @@ function readStaleReasons(
       `
       SELECT action, target, changed_at
       FROM config_history
+      WHERE action != 'briefing_profile_update'
       ORDER BY changed_at DESC
       LIMIT 1;
     `,

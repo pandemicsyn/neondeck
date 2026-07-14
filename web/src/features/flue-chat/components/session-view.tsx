@@ -16,7 +16,11 @@ import type {
 } from '../../../api';
 import {
   createChatSessionCommandEvent,
+  getChatSessionActivity,
   getChatSessionCommandEvents,
+  getNeonCommands,
+  openChatSessionEventStream,
+  runBriefing,
   updateChatSessionCommandEvent,
 } from '../../../api';
 import {
@@ -28,6 +32,7 @@ import {
 } from '../../../components/ui';
 import { queryKeys } from '../../../lib/query';
 import { CommandResultSummary, CommandTypeahead } from './command-controls';
+import { SessionActivityRow } from './session-activity-row';
 import {
   ChatPartEvent,
   errorMessage,
@@ -39,6 +44,10 @@ import {
   mergeCommandCatalog,
 } from '../lib/commands';
 import { chatMessagesForRender } from '../lib/messages';
+import {
+  sessionActivityForLinkedWatch,
+  sessionTimelineItems,
+} from '../lib/timeline';
 import type {
   FlueChatCommand,
   FlueChatConfig,
@@ -46,6 +55,7 @@ import type {
 } from '../types';
 
 export function FlueChatSessionView({
+  activeRecord,
   agentName,
   onReferenceDraftConsumed,
   quickCommands,
@@ -85,9 +95,14 @@ export function FlueChatSessionView({
     canonicalMessages,
     agent.status,
   );
+  const commandsQuery = useQuery({
+    queryKey: queryKeys.neonCommands,
+    queryFn: getNeonCommands,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
   const commandCatalog = useMemo(
-    () => mergeCommandCatalog(quickCommands),
-    [quickCommands],
+    () => mergeCommandCatalog(quickCommands, commandsQuery.data?.items),
+    [commandsQuery.data?.items, quickCommands],
   );
   const commandQuery = commandQueryFromInput(input);
   const matchingCommands = useMemo(
@@ -111,11 +126,23 @@ export function FlueChatSessionView({
       : pendingHistoryRefresh
         ? 'Loading session history...'
         : session.placeholder;
+  const linkedWatchId = activeRecord?.linkedWatchId;
   const commandEventsQuery = useQuery({
     queryKey: queryKeys.chatSessionCommandEvents(session?.id),
     queryFn: () => getChatSessionCommandEvents(session?.id ?? ''),
     enabled: Boolean(session?.id),
   });
+  const activityQuery = useQuery({
+    queryKey: queryKeys.chatSessionActivity(session?.id, linkedWatchId),
+    queryFn: () => getChatSessionActivity(session?.id ?? ''),
+    enabled: Boolean(session?.id && linkedWatchId),
+    refetchInterval: 30_000,
+  });
+  const activity = sessionActivityForLinkedWatch(
+    linkedWatchId,
+    activityQuery.data?.items,
+  );
+  const timelineItems = sessionTimelineItems(messages, activity);
 
   useEffect(() => {
     setActiveCommandIndex(0);
@@ -131,6 +158,21 @@ export function FlueChatSessionView({
   useEffect(() => {
     setCommandEvents(commandEventsQuery.data?.events ?? []);
   }, [commandEventsQuery.data?.events]);
+
+  useEffect(() => {
+    if (!session?.id) return;
+    return openChatSessionEventStream((event) => {
+      if (event.session.id !== session.id) return;
+      setCanonicalMessages(undefined);
+      setPendingHistoryRefresh(true);
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.chatSessionCommandEvents(session.id),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.chatSessionActivity(session.id, linkedWatchId),
+      });
+    });
+  }, [linkedWatchId, queryClient, session?.id]);
 
   useEffect(() => {
     if (!referenceDraft) return;
@@ -208,6 +250,30 @@ export function FlueChatSessionView({
         createdEvent = created.event;
         appendCommandEvent(createdEvent);
 
+        if (commandNameFromInput(message) === 'briefing') {
+          setRunningCommand(message);
+          const admitted = await runBriefing({
+            profileId: 'morning',
+            sessionId: session.id,
+            commandEventId: createdEvent.id,
+            trigger: 'manual',
+          });
+          if (!admitted.ok) throw new Error(admitted.message);
+          if (admitted.workflowRunId) {
+            updateCommandEvent(createdEvent.id, {
+              flueRunId: admitted.workflowRunId,
+            });
+            await updateChatSessionCommandEvent(session.id, createdEvent.id, {
+              status: 'running',
+              flueRunId: admitted.workflowRunId,
+              reason: 'dashboard-briefing-workflow-admitted',
+            });
+          }
+          setInput('');
+          setCanonicalMessages(undefined);
+          return;
+        }
+
         const result = await runCommand(message);
         const completedAt = new Date().toISOString();
         const status = result.ok ? 'completed' : 'failed';
@@ -281,6 +347,7 @@ export function FlueChatSessionView({
         });
         setSubmitError(errorMessage(error));
       } finally {
+        setRunningCommand(undefined);
         commandSubmitLockRef.current = false;
         setCommandSubmitting(false);
       }
@@ -461,15 +528,23 @@ export function FlueChatSessionView({
               {errorMessage(commandEventsQuery.error)}
             </div>
           ) : null}
-          {messages.length > 0 ? (
+          {linkedWatchId && activityQuery.error ? (
+            <div className="border border-accent/60 bg-soft px-2.5 py-2 font-mono text-[10.5px] leading-4 text-accent">
+              SESSION ACTIVITY UNAVAILABLE · {errorMessage(activityQuery.error)}
+            </div>
+          ) : null}
+          {timelineItems.length > 0 ? (
             <div className="chat-workflow px-2.5 py-1 font-mono text-[10.5px]">
               <span>workflow</span>
               <span className="text-muted">
                 session · {messages.length} messages
+                {activity.length > 0
+                  ? ` · ${activity.length} activity records`
+                  : ''}
               </span>
             </div>
           ) : null}
-          {commandEvents.map((event) => (
+          {commandEvents.filter(isDeterministicCommandEvent).map((event) => (
             <CommandResultSummary
               event={event}
               key={event.id}
@@ -478,7 +553,7 @@ export function FlueChatSessionView({
               }
             />
           ))}
-          {messages.length === 0 ? (
+          {timelineItems.length === 0 ? (
             <div className="flex flex-1 items-center justify-center text-center text-[13px] text-muted">
               <div className="max-w-[42ch]">
                 <div className="miami-accent mx-auto mb-2 h-1.5 w-12" />
@@ -493,29 +568,38 @@ export function FlueChatSessionView({
               </div>
             </div>
           ) : (
-            messages.map((message) => (
-              <article
-                className={`chat-message chat-message-${message.role} space-y-1.5`}
-                key={message.id}
-              >
-                <p className="font-mono text-[10px] font-semibold text-muted">
-                  {message.role}
-                </p>
-                <div className="space-y-2 text-[13px] leading-[1.55] text-ink">
-                  {message.parts.length > 0 ? (
-                    message.parts.map((part, index) =>
-                      renderMessagePart(part, `${message.id}-${index}`),
-                    )
-                  ) : (
-                    <ChatPartEvent
-                      kind="event"
-                      name="assistant message"
-                      preview="No visible message parts were returned."
-                    />
-                  )}
-                </div>
-              </article>
-            ))
+            timelineItems.map((item) => {
+              if (item.kind === 'activity') {
+                return (
+                  <SessionActivityRow activity={item.activity} key={item.id} />
+                );
+              }
+
+              const message = item.message;
+              return (
+                <article
+                  className={`chat-message chat-message-${message.role} space-y-1.5`}
+                  key={item.id}
+                >
+                  <p className="font-mono text-[10px] font-semibold text-muted">
+                    {message.role}
+                  </p>
+                  <div className="space-y-2 text-[13px] leading-[1.55] text-ink">
+                    {message.parts.length > 0 ? (
+                      message.parts.map((part, index) =>
+                        renderMessagePart(part, `${message.id}-${index}`),
+                      )
+                    ) : (
+                      <ChatPartEvent
+                        kind="event"
+                        name="assistant message"
+                        preview="No visible message parts were returned."
+                      />
+                    )}
+                  </div>
+                </article>
+              );
+            })
           )}
         </div>
       </ScrollArea>
@@ -588,6 +672,10 @@ type CommandRunResult = NeonCommandResult & { flueRunId?: string };
 
 type CommandEvent = ChatSessionCommandEvent;
 
+function isDeterministicCommandEvent(event: CommandEvent) {
+  return commandNameFromInput(event.input) !== 'briefing';
+}
+
 function commandFailureResult(
   command: string,
   error: unknown,
@@ -604,24 +692,7 @@ function commandFailureResult(
 
 function commandNameFromInput(command: string): NeonCommandResult['command'] {
   const name = command.replace(/^\//, '').split(/\s+/, 1)[0];
-  const supported: NeonCommandResult['command'][] = [
-    'repo-status',
-    'review-queue',
-    'fix-ci',
-    'explain-ci',
-    'summarize-pr',
-    'draft-pr-description',
-    'prepare-pr',
-    'review-local',
-    'briefing',
-    'reasoning',
-    'memory',
-    'watch-pr',
-    'dev-doctor',
-  ];
-  return supported.includes(name as NeonCommandResult['command'])
-    ? (name as NeonCommandResult['command'])
-    : 'dev-doctor';
+  return name || 'unknown';
 }
 
 function isMissingHistoryError(error: unknown) {

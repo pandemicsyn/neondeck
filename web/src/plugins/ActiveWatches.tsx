@@ -11,6 +11,7 @@ import { Badge, Button, ScrollArea } from '../components/ui';
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
 import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
+import { prWatchAttentionReason } from '../lib/watch-status';
 import type { DisplayPlugin } from '../types';
 import { parsePositiveIntegerConfig } from './config';
 
@@ -111,6 +112,7 @@ function WatchRow({ watch }: { watch: PrWatch }) {
       ? `next ${relativeTime(watch.nextRunAt)}`
       : 'next poll pending';
   const sourceLabel = watch.createdBy ? ` · ${watch.createdBy}` : '';
+  const attentionReason = prWatchAttentionReason(watch);
 
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
@@ -122,6 +124,11 @@ function WatchRow({ watch }: { watch: PrWatch }) {
           <p className="mt-1 line-clamp-2 text-[12px] leading-4 text-ink">
             {watch.title ?? 'Untitled PR'}
           </p>
+          {attentionReason ? (
+            <p className="mt-1 font-mono text-[10px] leading-4 text-accent">
+              why · {attentionReason}
+            </p>
+          ) : null}
         </div>
         <Badge className={statusClass(watch.status)}>{watch.status}</Badge>
       </div>

@@ -11,6 +11,7 @@ import {
 export function initializeAppDatabase(path: string) {
   applyAppDbMigrations(path);
   const database = configureDb(new DatabaseSync(path));
+  const now = new Date().toISOString();
 
   try {
     database
@@ -46,10 +47,10 @@ export function initializeAppDatabase(path: string) {
           'display-assistant',
           'main',
           1,
-          datetime('now'),
-          datetime('now'),
-          datetime('now'),
-          datetime('now'),
+          ?,
+          ?,
+          ?,
+          ?,
           '[]'
         WHERE NOT EXISTS (
           SELECT 1
@@ -59,7 +60,7 @@ export function initializeAppDatabase(path: string) {
         );
       `,
       )
-      .run();
+      .run(now, now, now, now);
 
     reconcileActiveChatSession(database);
   } finally {

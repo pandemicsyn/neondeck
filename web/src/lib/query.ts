@@ -1,5 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
 
+const chatSessionActivityRoot = ['chat-session-activity'] as const;
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -11,6 +13,7 @@ export const queryClient = new QueryClient({
 
 export const queryKeys = {
   dashboardConfig: ['dashboard-config'] as const,
+  briefings: ['briefings'] as const,
   executionApprovals: ['execution-approvals'] as const,
   githubPr: (repo: string, number: number) =>
     ['github-pr', repo, number] as const,
@@ -25,6 +28,17 @@ export const queryKeys = {
   chatSessions: ['chat-sessions'] as const,
   chatSessionCommandEvents: (sessionId: string | undefined) =>
     ['chat-session-command-events', sessionId ?? 'none'] as const,
+  chatSessionActivityRoot,
+  chatSessionActivity: (
+    sessionId: string | undefined,
+    linkedWatchId: string | null | undefined,
+  ) =>
+    [
+      ...chatSessionActivityRoot,
+      sessionId ?? 'none',
+      linkedWatchId ?? 'none',
+    ] as const,
+  neonCommands: ['neon-commands'] as const,
   autopilotState: ['autopilot-state'] as const,
   prWatches: ['pr-watches'] as const,
   repoHealth: ['repo-health'] as const,

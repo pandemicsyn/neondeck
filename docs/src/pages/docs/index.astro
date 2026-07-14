@@ -76,7 +76,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           <code>NEONDECK_HOME</code>, then
           <code>XDG_CONFIG_HOME/neondeck</code>, then
           <code>~/.config/neondeck</code>. First run, or
-          <code>npm run setup</code>, creates the runtime home.
+          <code>neondeck init</code>, creates the runtime home.
         </p>
         <pre><code>~/.config/neondeck/
   .env
@@ -128,9 +128,10 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <p>
           Slash commands can be typed into the chat panel, run from dashboard
           buttons, or invoked through the <code>command-run</code> Flue workflow.
-          Results are persisted in
+          Deterministic results are persisted in
           <code>workflow_summaries</code> and exposed at
-          <code>/api/workflows/summaries</code>.
+          <code>/api/workflows/summaries</code>. The chat surface special-cases
+          <code>/briefing</code> as a normal assistant turn instead of a result card.
         </p>
         <pre><code>/repo-status [repo-id]
 /review-queue
@@ -156,8 +157,28 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         </p>
         <p>
           Scheduled tasks use validated interval, one-shot, or timezone-aware
-          cron triggers. Typed briefing and agent-instruction endpoints create
-          the tasks that the local scheduler dispatches through Flue.
+          cron triggers. The typed briefing profile owns its cron schedule,
+          timezone, enabled state, instructions, and persistent conversation;
+          agent-instruction endpoints create other tasks that the local
+          scheduler dispatches through Flue.
+        </p>
+
+        <h2 id="conversational-briefings">Conversational briefings</h2>
+        <p>
+          A briefing first persists a bounded deterministic snapshot of repos,
+          review queue, watches, scheduler state, notifications, hygiene, and
+          autopilot state. It then dispatches a normal turn to the configured
+          display assistant model in a durable <code>briefing</code> session. The
+          Flue transcript is the canonical response; Neondeck never parses the assistant
+          prose into metrics or a second report.
+        </p>
+        <p>
+          Every enabled MCP tool configured for the display assistant remains
+          available. Neon calls only sources relevant to the saved instructions,
+          and normal login, approval, denial, and audit controls still apply. If
+          local or MCP sources are unavailable, the assistant should identify
+          the partial context and continue with the facts it has. Briefing turns
+          are informational and do not mutate external systems.
         </p>
 
         <h2 id="reports-scheduled-tasks">Reports and scheduled tasks</h2>

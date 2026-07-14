@@ -18,7 +18,7 @@ import {
   checkAutopilotConcurrency,
   checkAutopilotPolicy,
   pathDeniedByAutopilotPolicy,
-  repoAutopilotPolicy,
+  repoGuardrails,
   withAutopilotLocalExecutionSlot,
 } from '../autopilot-policy';
 import { addWorkflowSummary, updateWorkflowSummary } from '../app-state';
@@ -68,6 +68,7 @@ import {
 } from '../../runtime-home';
 import {
   createWorktree,
+  assertWorktreeMutationAllowed,
   listWorktrees,
   lockWorktree,
   recordWorktreePushBlocked,
@@ -452,21 +453,31 @@ export async function verifyPrWorktree(
     const checks = resolveVerificationChecks(
       input.checks,
       repo,
-      repoAutopilotPolicy(repo, appConfig).limits.requiredChecks,
+      repoGuardrails(repo, appConfig).requiredChecks,
     );
     if (checks.length === 0) {
       return failResult(
         'autopilot_verify_pr_worktree',
         'No repo checks are configured for this worktree.',
         {
-          requires: ['autopilot.limits.requiredChecks', 'repo.packageScripts'],
+          requires: ['guardrails.requiredChecks', 'repo.packageScripts'],
         },
       );
     }
 
     const runExecution = dependencies.runExecution ?? runApprovedExecution;
+    const assertLease = () =>
+      assertWorktreeMutationAllowed(
+        {
+          repoId: repo.id,
+          worktreeId: worktree.id,
+          lockId: acquiredLockId,
+        },
+        paths,
+      );
     const results = [];
     for (const command of checks) {
+      assertLease();
       const slot = await withAutopilotLocalExecutionSlot(
         policy.concurrency,
         () =>
@@ -490,6 +501,7 @@ export async function verifyPrWorktree(
             paths,
           ),
       );
+      assertLease();
       if ('blocked' in slot) {
         results.push({
           command,
@@ -513,10 +525,13 @@ export async function verifyPrWorktree(
     const passed =
       results.length === checks.length && results.every((item) => item.ok);
     const blocked = results.some((item) => item.requires.length > 0);
+    assertLease();
     const status = await readWorktreeStatus({ worktreeId: worktree.id }, paths);
+    assertLease();
     const preparedDiffVerification = await recordPreparedDiffVerification(
       {
         worktreeId: worktree.id,
+        lockId: acquiredLockId,
         status: passed ? 'passed' : 'failed',
         summary: {
           checks,

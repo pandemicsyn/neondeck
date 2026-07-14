@@ -146,6 +146,52 @@ export const scheduledTaskRuns = sqliteTable(
   ],
 );
 
+export const briefingProfiles = sqliteTable('briefing_profiles', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  enabled: integer('enabled').default(1).notNull(),
+  instructions: text('instructions').notNull(),
+  instructionsVersion: integer('instructions_version').default(1).notNull(),
+  schedule: text('schedule').notNull(),
+  timezone: text('timezone').notNull(),
+  sessionId: text('session_id'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+export const briefingRuns = sqliteTable(
+  'briefing_runs',
+  {
+    id: text('id').primaryKey(),
+    profileId: text('profile_id'),
+    trigger: text('trigger').notNull(),
+    snapshotJson: text('snapshot_json').notNull(),
+    instructions: text('instructions').notNull(),
+    instructionsVersion: integer('instructions_version').notNull(),
+    sessionId: text('session_id').notNull(),
+    commandEventId: text('command_event_id'),
+    dispatchId: text('dispatch_id'),
+    workflowRunId: text('workflow_run_id'),
+    status: text('status').notNull(),
+    error: text('error'),
+    queuedAt: text('queued_at').notNull(),
+    completedAt: text('completed_at'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_briefing_runs_profile').on(
+      table.profileId,
+      sql`${table.createdAt} DESC`,
+    ),
+    uniqueIndex('idx_briefing_runs_dispatch').on(table.dispatchId),
+    index('idx_briefing_runs_status').on(
+      table.status,
+      sql`${table.updatedAt} DESC`,
+    ),
+  ],
+);
+
 export const notifications = sqliteTable(
   'notifications',
   {
@@ -756,6 +802,7 @@ export const worktreeLocks = sqliteTable(
     owner: text('owner').notNull(),
     workflowRunId: text('workflow_run_id'),
     expiresAt: text('expires_at').notNull(),
+    revokedAt: text('revoked_at'),
     releasedAt: text('released_at'),
     staleRecoveredAt: text('stale_recovered_at'),
     createdAt: text('created_at').notNull(),

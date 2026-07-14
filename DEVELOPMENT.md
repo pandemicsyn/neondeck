@@ -250,23 +250,19 @@ npm run changeset
 ```
 
 Use `patch` for fixes, `minor` for features, and `major` for breaking changes.
-The private docs workspace is excluded from package versioning. While Neondeck
-is on the beta channel, enter Changesets prerelease mode before consuming the
-pending changesets:
+The private docs workspace is excluded from package versioning. The committed
+Changesets prerelease state keeps versions on the beta channel. After changesets
+reach `main`, `.github/workflows/changesets.yml` creates or updates a version PR
+containing the package version, lockfile, changelog, and consumed Changesets.
+
+Merge the version PR, pull `main`, then tag and push the exact package version:
 
 ```sh
-npx changeset pre enter beta
-npm run version-packages
-```
-
-Commit the generated package versions, lockfile, changelog, and Changesets
-state. Tag the exact package version and push the version commit and annotated
-tag together:
-
-```sh
+git switch main
+git pull --ff-only
 version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version")"
 git tag -a "v${version}" -m "neondeck v${version}"
-git push origin main --follow-tags
+git push origin "v${version}"
 ```
 
 Prerelease tags such as `v1.0.0-beta.1` publish to npm's `next` dist-tag.
@@ -283,16 +279,14 @@ gh workflow run npm-publish.yml \
 The npm release path is separate from the GitHub app archive release:
 
 - `.github/workflows/npm-package.yml` validates the packed npm artifact on PRs.
+- `.github/workflows/changesets.yml` maintains the version PR from changesets
+  merged to `main`.
 - `.github/workflows/npm-publish.yml` verifies the release tag, runs
   `npm run release:npm:check`, and publishes `neondeck` to npm from `v*` tags.
 
-For the first npm publish, the package must be created before npm trusted
-publishing can be configured. Set a temporary granular publish token with
-bypass-2FA enabled as the `NPM_TOKEN` secret on the GitHub `npm` environment,
-then push the first release tag. After `neondeck` exists on npm, configure
-trusted publishing for GitHub Actions with workflow filename `npm-publish.yml`,
-environment `npm`, and allowed action `npm publish`. Delete the GitHub secret
-and revoke the temporary npm token after the first trusted publish succeeds.
+npm publishing uses trusted publishing for GitHub Actions with workflow
+`npm-publish.yml`, environment `npm`, and allowed action `npm publish`. Do not
+add a long-lived npm publish token.
 
 ## Deeper Runtime Docs
 

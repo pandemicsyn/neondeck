@@ -655,9 +655,16 @@ describe('Neon commands', () => {
       ok: true,
       command: 'briefing',
       data: {
-        reviewQueue: {
-          error: 'GITHUB_TOKEN is not configured.',
-          requires: ['GITHUB_TOKEN'],
+        snapshot: {
+          sources: {
+            reviewQueue: {
+              status: 'partial',
+              data: {
+                available: false,
+                requires: ['GITHUB_TOKEN'],
+              },
+            },
+          },
         },
       },
       workflowSummary: {

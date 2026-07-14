@@ -22,16 +22,16 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         </p>
 
         <h2>Global options</h2>
-        <pre><code>npm run cli -- --home ~/.config/neondeck status
-npm run cli -- --json status</code></pre>
+        <pre><code>neondeck --home ~/.config/neondeck status
+neondeck --json status</code></pre>
         <p>
           Use <code>--home</code> to isolate a runtime home for testing. Use
           <code>--json</code> for machine-readable output where supported.
         </p>
 
         <h2>Initialize</h2>
-        <pre><code>npm run init
-npm run cli -- init --home .neondeck-test</code></pre>
+        <pre><code>neondeck init
+neondeck init --home .neondeck-test</code></pre>
         <p>
           The init wizard creates runtime files, writes runtime-home secrets,
           tunes <code>SOUL.md</code>, configures models and provider references,
@@ -40,7 +40,7 @@ npm run cli -- init --home .neondeck-test</code></pre>
         </p>
 
         <h2>Status</h2>
-        <pre><code>npm run cli -- status</code></pre>
+        <pre><code>neondeck status</code></pre>
         <p>
           Status reports runtime readiness, active home paths, model/provider
           config, credential presence, repo counts, skills, watches, and setup
@@ -48,8 +48,8 @@ npm run cli -- init --home .neondeck-test</code></pre>
         </p>
 
         <h2>Database</h2>
-        <pre><code>npm run cli -- db status
-npm run cli -- --json db status</code></pre>
+        <pre><code>neondeck db status
+neondeck --json db status</code></pre>
         <p>
           Database status reads the Neondeck app database migration journal,
           shipped migration head, pending entries, unknown newer entries, hash
@@ -87,19 +87,19 @@ neondeck open xeneon --kiosk</code></pre>
         </p>
 
         <h2>Repositories</h2>
-        <pre><code>npm run cli -- repo add ~/dev/neondeck \
+        <pre><code>neondeck repo add ~/dev/neondeck \
   --github-owner pandemicsyn \
   --github-name neondeck
 
-npm run cli -- repo list</code></pre>
+neondeck repo list</code></pre>
         <p>
           Repositories should be local git checkouts when you want local status,
           dev doctor diagnostics, and command execution against the repo.
         </p>
 
         <h2>Watches</h2>
-        <pre><code>npm run cli -- watch-pr pandemicsyn/neondeck#521
-npm run cli -- watch-pr https://github.com/pandemicsyn/neondeck/pull/521
+        <pre><code>neondeck watch-pr pandemicsyn/neondeck#521
+neondeck watch-pr https://github.com/pandemicsyn/neondeck/pull/521
 </code></pre>
         <p>
           PR watches persist in SQLite and poll GitHub for merge/check changes.
@@ -157,12 +157,19 @@ neondeck note "Finished local cleanup without a PR." \
           > queues a bounded CI fix workflow and routes any resulting code change
           back through prepared-diff review.
           <code>/explain-ci --report</code> writes the CI dossier without starting
-          a fix attempt.
+          a fix attempt. In the dashboard chat, <code>/briefing</code> persists a
+          local snapshot and streams a normal assistant response; it does not render
+          the legacy deterministic result card.
         </p>
 
         <h2>Reports and scheduled tasks</h2>
         <pre><code>GET /api/reports?kind=docs-drift
 GET /api/scheduled-tasks
+GET /api/briefings
+GET /api/briefings/runs/:id
+PUT /api/briefings/profile
+POST /api/briefings/run
+POST /api/briefings/session/rotate
 POST /api/scheduled-tasks/briefings
 POST /api/scheduled-tasks/instructions
 POST /api/scheduled-tasks/:id/pause
@@ -176,13 +183,13 @@ POST /api/scheduled-tasks/:id/resume</code></pre>
         </p>
 
         <h2>MCP servers</h2>
-        <pre><code>npm run cli -- mcp list
-npm run cli -- mcp add linear --url https://mcp.linear.app/mcp --oauth
-npm run cli -- mcp login linear
-npm run cli -- mcp tools linear
-npm run cli -- mcp approvals
-npm run cli -- mcp approvals --resolve &lt;id&gt; --approve
-npm run cli -- mcp logout linear --confirm</code></pre>
+        <pre><code>neondeck mcp list
+neondeck mcp add linear --url https://mcp.linear.app/mcp --oauth
+neondeck mcp login linear
+neondeck mcp tools linear
+neondeck mcp approvals
+neondeck mcp approvals --resolve &lt;id&gt; --approve
+neondeck mcp logout linear --confirm</code></pre>
         <p>
           MCP config lives in runtime-home <code>mcp.json</code>. Stdio servers,
           header-authenticated servers, and auto-approval policy should be
@@ -190,12 +197,12 @@ npm run cli -- mcp logout linear --confirm</code></pre>
         </p>
 
         <h2>Learning</h2>
-        <pre><code>npm run cli -- learning status
-npm run cli -- learning reviews
-npm run cli -- learning candidates --status proposed
-npm run cli -- learning approve &lt;candidate-id&gt;
-npm run cli -- learning reject &lt;candidate-id&gt;
-npm run cli -- learning restore-skill-patch &lt;candidate-id&gt;</code></pre>
+        <pre><code>neondeck learning status
+neondeck learning reviews
+neondeck learning candidates --status proposed
+neondeck learning approve &lt;candidate-id&gt;
+neondeck learning reject &lt;candidate-id&gt;
+neondeck learning restore-skill-patch &lt;candidate-id&gt;</code></pre>
         <p>
           Learning commands inspect the same review, candidate, and audit state
           as <code>GET /api/learning/state</code>. Approve/reject commands
@@ -205,7 +212,7 @@ npm run cli -- learning restore-skill-patch &lt;candidate-id&gt;</code></pre>
         </p>
 
         <h2>TUI</h2>
-        <pre><code>npm run cli -- tui</code></pre>
+        <pre><code>neondeck tui</code></pre>
         <p>
           The command is reserved for the future OpenTUI client. The TUI should
           reuse backend APIs and event streams rather than growing a second

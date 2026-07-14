@@ -1,6 +1,6 @@
 {
   "name": "neondeck",
-  "version": "1.0.0-beta.4",
+  "version": "1.0.0-beta.6",
   "description": "Local companion-display dashboard and Flue agent server for neondeck.",
   "homepage": "https://neondeck.dev",
   "bin": {
@@ -25,6 +25,7 @@
     "drizzle.config.ts"
   ],
   "workspaces": [
+    ".",
     "docs"
   ],
   "scripts": {

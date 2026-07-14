@@ -22,8 +22,10 @@ import {
   createWorktree,
   listWorktrees,
   lockWorktree,
+  readWorktreeLock,
   readWorktreeStatus,
   releaseWorktreeLock,
+  revokeWorktreeLockLease,
   syncWorktree,
 } from './modules/worktrees';
 
@@ -275,6 +277,60 @@ describe('worktree runtime foundation', () => {
     const inventory = await listWorktrees(paths);
     expect(inventory.activeLocks).toHaveLength(1);
     expect(inventory.activeLocks[0]).toMatchObject({ owner: 'workflow-b' });
+  });
+
+  it('recovers revoked locks after the cooperative handoff grace', async () => {
+    const { paths } = await fixture();
+    const created = await createWorktree(
+      { repoId: 'sample', prNumber: 7, headRef: 'feature' },
+      paths,
+    );
+    const worktree = worktreeFrom(created);
+    const first = await lockWorktree(
+      {
+        worktreeId: worktree.id,
+        scope: 'pr',
+        owner: 'workflow-a',
+        ttlSeconds: 3_600,
+      },
+      paths,
+    );
+    const firstLock = lockFrom(first);
+    await revokeWorktreeLockLease(firstLock.id, paths);
+
+    const duringGrace = await lockWorktree(
+      {
+        worktreeId: worktree.id,
+        scope: 'pr',
+        owner: 'interactive-a',
+      },
+      paths,
+    );
+    ageLockRevocation(paths.neondeckDatabase, firstLock.id);
+    const afterGrace = await lockWorktree(
+      {
+        worktreeId: worktree.id,
+        scope: 'pr',
+        owner: 'interactive-b',
+      },
+      paths,
+    );
+    const recovered = readWorktreeLock(firstLock.id, paths);
+
+    expect(duringGrace).toMatchObject({
+      ok: false,
+      lock: { id: firstLock.id, owner: 'workflow-a' },
+    });
+    expect(afterGrace).toMatchObject({
+      ok: true,
+      lock: { owner: 'interactive-b' },
+    });
+    expect(recovered).toMatchObject({
+      id: firstLock.id,
+      revokedAt: expect.any(String),
+      releasedAt: expect.any(String),
+      staleRecoveredAt: expect.any(String),
+    });
   });
 
   it('blocks worktree-targeted repo edits while another active lock is held', async () => {
@@ -604,6 +660,23 @@ function expireLock(databasePath: string, id: string) {
         `
         UPDATE worktree_locks
         SET expires_at = ?
+        WHERE id = ?;
+      `,
+      )
+      .run(new Date(Date.now() - 60_000).toISOString(), id);
+  } finally {
+    database.close();
+  }
+}
+
+function ageLockRevocation(databasePath: string, id: string) {
+  const database = new DatabaseSync(databasePath);
+  try {
+    database
+      .prepare(
+        `
+        UPDATE worktree_locks
+        SET revoked_at = ?
         WHERE id = ?;
       `,
       )

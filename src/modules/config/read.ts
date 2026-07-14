@@ -115,12 +115,7 @@ export function targetFiles(target: ConfigTarget, paths: RuntimePaths) {
   if (target === 'mcp') return [paths.mcp];
   if (target === 'repos') return [paths.repos];
   if (target === 'dashboard') return [paths.dashboard];
-  return [
-    paths.config,
-    paths.mcp,
-    paths.repos,
-    paths.dashboard,
-  ];
+  return [paths.config, paths.mcp, paths.repos, paths.dashboard];
 }
 
 function publicAppConfig(config: AppConfig) {

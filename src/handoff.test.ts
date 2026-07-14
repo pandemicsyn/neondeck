@@ -147,11 +147,11 @@ describe('agent handoff service', () => {
     });
     await expect(listWorkflowSummaries(paths)).resolves.toEqual(
       expect.arrayContaining([
-      expect.objectContaining({
-        workflow: 'agent_handoff',
-        runId: 'run-123',
-      }),
-      expect.objectContaining({ workflow: 'agent_handoff' }),
+        expect.objectContaining({
+          workflow: 'agent_handoff',
+          runId: 'run-123',
+        }),
+        expect.objectContaining({ workflow: 'agent_handoff' }),
       ]),
     );
   });

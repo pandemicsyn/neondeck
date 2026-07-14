@@ -2,7 +2,8 @@
 import { defineAction } from '@flue/runtime';
 import * as v from 'valibot';
 import { checkAutopilotPolicy } from '../autopilot-policy';
-import { asJsonValue } from './utils';
+import { currentTaskOrigin } from '../flue/origin';
+import { asJsonValue, failResult } from './utils';
 import {
   commentPrAutofixResultInputSchema,
   fixPrCiFailureInputSchema,
@@ -57,6 +58,9 @@ export const preparePrWorktreeAction = defineAction({
   input: preparePrWorktreeInputSchema,
   output: autopilotOutputSchema,
   async run({ input }) {
+    if (currentTaskOrigin() === 'interactive') {
+      return workflowOnlyFailure('autopilot_prepare_pr_worktree');
+    }
     return preparePrWorktree(input);
   },
 });
@@ -64,7 +68,7 @@ export const preparePrWorktreeAction = defineAction({
 export const autopilotPolicyCheckAction = defineAction({
   name: 'neondeck_autopilot_policy_check',
   description:
-    'Classify an autopilot worktree diff against repo policy limits, high-risk file classes, push destination rules, and concurrency settings.',
+    'Classify an autopilot worktree diff against shared repo guardrails, high-risk file classes, push destination rules, and concurrency settings.',
   input: v.strictObject({
     repoId: v.optional(nonEmptyStringSchema),
     worktreeId: v.optional(nonEmptyStringSchema),
@@ -104,6 +108,9 @@ export const pushPrAutofixAction = defineAction({
   input: pushPrAutofixInputSchema,
   output: autopilotOutputSchema,
   async run({ input }) {
+    if (currentTaskOrigin() === 'interactive') {
+      return workflowOnlyFailure('autopilot_push_pr_autofix');
+    }
     return pushPrAutofix(input);
   },
 });
@@ -115,6 +122,9 @@ export const fixPrCiFailureAction = defineAction({
   input: fixPrCiFailureInputSchema,
   output: autopilotOutputSchema,
   async run({ input }) {
+    if (currentTaskOrigin() === 'interactive') {
+      return workflowOnlyFailure('autopilot_fix_pr_ci_failure');
+    }
     return fixPrCiFailure(input);
   },
 });
@@ -137,6 +147,9 @@ export const fixPrReviewFeedbackAction = defineAction({
   input: fixPrReviewFeedbackInputSchema,
   output: autopilotOutputSchema,
   async run({ input }) {
+    if (currentTaskOrigin() === 'interactive') {
+      return workflowOnlyFailure('autopilot_fix_pr_review_feedback');
+    }
     return fixPrReviewFeedback(input);
   },
 });
@@ -163,3 +176,11 @@ export const neondeckAutopilotActions = [
   fixPrReviewFeedbackAction,
   commentPrAutofixResultAction,
 ];
+
+function workflowOnlyFailure(action: string) {
+  return failResult(
+    action,
+    'This autopilot mutation is only available inside a bounded workflow run.',
+    { requires: ['autopilotWorkflow'] },
+  );
+}

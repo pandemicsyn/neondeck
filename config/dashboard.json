@@ -9,6 +9,14 @@
     "density": "comfortable"
   },
   "theme": "dark",
+  "notifications": {
+    "toasts": {
+      "enabled": true,
+      "minimumLevel": "ready",
+      "readyDurationMs": 6000,
+      "maxVisible": 3
+    }
+  },
   "windows": {
     "sidebar": {
       "width": 480,

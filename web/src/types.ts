@@ -8,6 +8,7 @@ export type {
   DashboardStatusline,
   DashboardTab,
   DashboardTheme,
+  DashboardToastConfig,
 } from './api/types';
 
 export type DisplayPluginProps<

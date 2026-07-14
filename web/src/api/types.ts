@@ -14,6 +14,9 @@ export type DashboardConfig = {
     density?: DashboardDensity;
     textScale?: number;
   };
+  notifications?: {
+    toasts?: DashboardToastConfig;
+  };
   windows?: Record<string, DashboardWindowProfile>;
   statusline?: DashboardStatusline;
   layout: {
@@ -22,6 +25,13 @@ export type DashboardConfig = {
     rows: number;
     regions: DashboardRegion[];
   };
+};
+
+export type DashboardToastConfig = {
+  enabled: boolean;
+  minimumLevel: NotificationLevel;
+  readyDurationMs: number;
+  maxVisible: number;
 };
 
 export type DashboardWindowProfile = {
@@ -1307,6 +1317,20 @@ export type ChatSessionCommandEventMutationResponse = {
   requires?: string[];
 };
 
+export type ChatSessionActivityItem = NotificationRecord & {
+  kind: 'notification';
+};
+
+export type ChatSessionActivityListResponse = {
+  ok: boolean;
+  action: 'session_activity_list';
+  changed: false;
+  items: ChatSessionActivityItem[];
+  fetchedAt: string;
+  errors?: string[];
+  requires?: string[];
+};
+
 export type ChatSessionChangeEvent = {
   id: string;
   action: 'created' | 'updated' | 'switched' | 'archived' | 'restored';
@@ -1545,6 +1569,66 @@ export type NotificationChangeEvent = {
   changedAt: string;
 };
 
+export type BriefingProfile = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  instructions: string;
+  instructionsVersion: number;
+  schedule: string;
+  timezone: string;
+  sessionId: string | null;
+  compatibility: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type BriefingRun = {
+  id: string;
+  profileId: string | null;
+  trigger: 'manual' | 'scheduled' | 'dashboard';
+  sessionId: string;
+  commandEventId: string | null;
+  dispatchId: string | null;
+  workflowRunId: string | null;
+  status: 'queued' | 'ready' | 'failed';
+  error: string | null;
+  queuedAt: string;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  snapshot: {
+    version: 1;
+    collectedAt: string;
+    byteSize: number;
+    truncated: boolean;
+  };
+  instructionsVersion: number;
+};
+
+export type BriefingStateResponse = {
+  ok: boolean;
+  action: 'briefing_state_read';
+  changed: boolean;
+  profile: BriefingProfile;
+  latestRun: BriefingRun | null;
+  runs: BriefingRun[];
+  unreadCount: number;
+  sessionStaleReasons: ChatSessionRecord['staleReasons'];
+  fetchedAt: string;
+};
+
+export type BriefingMutationResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  profile?: BriefingProfile;
+  run?: BriefingRun;
+  workflowRunId?: string;
+  errors?: string[];
+};
+
 export type SafetyClass =
   'read-only' | 'safe-mutation' | 'destructive-mutation' | 'host-execution';
 
@@ -1637,6 +1721,16 @@ export type NeonCommandResult = {
   };
 };
 
+export type NeonCommandDefinition = {
+  name: string;
+  usage: string;
+  description: string;
+};
+
+export type NeonCommandsResponse = {
+  items: NeonCommandDefinition[];
+};
+
 export type PrWatch = {
   id: string;
   repoId: string;
@@ -1650,12 +1744,32 @@ export type PrWatch = {
   title: string | null;
   url: string | null;
   mergeCommitSha: string | null;
+  lastSnapshot: PrWatchSnapshot | null;
   lastCheckedAt: string | null;
   createdBy: string | null;
   nextRunAt?: string | null;
   pollingEnabled?: boolean;
   pollIntervalSeconds?: number | null;
   updatedAt: string;
+};
+
+export type PrWatchSnapshot = {
+  state: string;
+  merged: boolean;
+  mergeCommitSha: string | null;
+  checks: {
+    status: 'success' | 'failure' | 'pending' | 'none';
+    total: number;
+    successful: number;
+    failed: number;
+    pending: number;
+    checkedAt: string;
+  } | null;
+  title: string;
+  url: string;
+  updatedAt: string;
+  headSha: string;
+  baseRef: string;
 };
 
 export type PrWatchResponse = {

@@ -1,7 +1,8 @@
 # In-App Toast Notifications Plan
 
-Status: proposed
+Status: completed
 Written: 2026-07-11
+Completed: 2026-07-11
 Related: `.plans/ROADMAP.md` Phase 14, `.plans/AUTOPILOT_LOOP_WIRING_PLAN.md`
 
 ## Purpose
@@ -233,9 +234,9 @@ Add a typed appearance/behavior section to dashboard configuration:
       "enabled": true,
       "minimumLevel": "ready",
       "readyDurationMs": 6000,
-      "maxVisible": 3
-    }
-  }
+      "maxVisible": 3,
+    },
+  },
 }
 ```
 

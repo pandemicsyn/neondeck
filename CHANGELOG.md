@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.0-beta.6
+
+### Patch Changes
+
+- [#105](https://github.com/pandemicsyn/neondeck/pull/105) [`d82f8f2`](https://github.com/pandemicsyn/neondeck/commit/d82f8f28914509c6b6ac9710c0c2b09783538cd4) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep fresh display-assistant sessions active across host timezones and briefing profile updates so manual briefings can run immediately.
+
+## 1.0.0-beta.5
+
+### Minor Changes
+
+- [#103](https://github.com/pandemicsyn/neondeck/pull/103) [`5475ffe`](https://github.com/pandemicsyn/neondeck/commit/5475ffe1689b2bfeba29db87bcc4ced21e0463da) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add configurable in-app toast notifications for durable dashboard events.
+
+- [#98](https://github.com/pandemicsyn/neondeck/pull/98) [`fc2305b`](https://github.com/pandemicsyn/neondeck/commit/fc2305ba4b08d0a15eab3480f9bcd6b3cf950718) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add durable conversational morning briefings with scheduled Flue dispatch, configurable grounding, persistent conversations, and dashboard controls.
+
 ## Unreleased
 
 ## 1.0.0-beta.4 - 2026-07-12

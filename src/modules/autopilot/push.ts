@@ -69,6 +69,7 @@ import {
 } from '../../runtime-home';
 import {
   createWorktree,
+  assertWorktreeMutationAllowed,
   listWorktrees,
   lockWorktree,
   recordWorktreePushBlocked,
@@ -493,6 +494,14 @@ export async function pushPrAutofix(
 
     const remote = remoteForPush(worktree, branchPermissions);
     const branch = worktree.headRef || preparedDiff.headRef;
+    assertWorktreeMutationAllowed(
+      {
+        repoId: worktree.repoId,
+        worktreeId: worktree.id,
+        lockId: acquiredLockId,
+      },
+      paths,
+    );
     const push = await (dependencies.pushGit ?? gitPushHead)(
       worktree.localPath,
       {

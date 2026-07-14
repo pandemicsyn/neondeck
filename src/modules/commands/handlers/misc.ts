@@ -1,18 +1,15 @@
-import { listNotifications } from '../../app-state';
 import { readAgentModelSelectionSync, isThinkingLevel } from '../../runtime';
 import { updateAgentModels } from '../../config';
 import { runDevDoctor } from '../../runtime';
 import { archiveMemory, listMemories, upsertMemory } from '../../memory';
-import { readRepoRegistrySnapshot } from '../../repos';
 import {
   readChatSession,
   readNeonSessionState,
   createChatSession,
   type ChatSessionRecord,
 } from '../../sessions';
-import { addPrWatch, listPrWatchRecords } from '../../watches';
-import { readHygieneSummary } from '../../hygiene';
-import { listScheduledTasks } from '../../scheduled-tasks';
+import { addPrWatch } from '../../watches';
+import { collectBriefingSnapshot } from '../../briefings';
 import type { RuntimePaths } from '../../../runtime-home';
 import type {
   CommandExecutionContext,
@@ -20,7 +17,6 @@ import type {
   ParsedNeonCommand,
   CommandDependencies,
 } from '../schemas';
-import { readReviewQueue, triageReviewQueue } from './queue';
 import { completedCommand, failedCommand } from '../summaries';
 import {
   formatList,
@@ -36,84 +32,14 @@ export async function briefingCommand(
   paths: RuntimePaths,
   dependencies: CommandDependencies,
 ): Promise<NeonCommandResult> {
-  const [registry, watches, tasks, notifications, queue, hygiene] =
-    await Promise.all([
-      readRepoRegistrySnapshot(paths),
-      listPrWatchRecords(paths),
-      listScheduledTasks(paths),
-      listNotifications(paths),
-      readReviewQueue(paths, dependencies),
-      readHygieneSummary(paths),
-    ]);
-  const unreadNotifications = notifications.filter(
-    (notification) => !notification.readAt,
-  );
-  const activeTasks = tasks.filter((task) => task.enabled);
-  const activeWatches = watches.filter((watch) =>
-    ['watching', 'merged', 'attention-needed'].includes(watch.status),
-  );
-  const topActions = [
-    ...(queue.ok ? triageReviewQueue(queue.queue, watches).topActions : []),
-    ...activeWatches.slice(0, 3).map((watch) => ({
-      title: `Check watch ${watch.id}`,
-      status: watch.status,
-      url: watch.url,
-    })),
-    ...unreadNotifications.slice(0, 3).map((notification) => ({
-      title: notification.title,
-      level: notification.level,
-    })),
-    ...(hygiene.worktreeCleanupCandidates > 0
-      ? [
-          {
-            title: 'Review worktree cleanup candidates',
-            count: hygiene.worktreeCleanupCandidates,
-          },
-        ]
-      : []),
-    ...(hygiene.stalledPreparedDiffs > 0
-      ? [
-          {
-            title: 'Review stalled prepared diffs',
-            count: hygiene.stalledPreparedDiffs,
-          },
-        ]
-      : []),
-  ].slice(0, 3);
+  const snapshot = await collectBriefingSnapshot(paths, dependencies);
 
-  return completedCommand(command.name, command.raw, 'Prepared briefing.', {
-    repos: {
-      count: registry.count,
-      configured: registry.repos.map((repo) => repo.id),
-    },
-    reviewQueue: queue.ok
-      ? {
-          count: queue.queue.items.length,
-          fetchedAt: queue.queue.fetchedAt,
-          truncated: queue.queue.truncated,
-          issues: queue.queue.issues.length,
-        }
-      : {
-          count: null,
-          error: queue.message,
-          requires: queue.requires,
-        },
-    watches: {
-      total: watches.length,
-      active: activeWatches.length,
-      attention: watches.filter((watch) => watch.status === 'attention-needed')
-        .length,
-    },
-    scheduledTasks: {
-      total: tasks.length,
-      active: activeTasks.length,
-    },
-    notifications: {
-      unread: unreadNotifications.length,
-    },
-    hygiene,
-    topActions,
-  });
+  return completedCommand(
+    command.name,
+    command.raw,
+    'Prepared deterministic briefing snapshot.',
+    { snapshot },
+  );
 }
 
 export async function reasoningCommand(

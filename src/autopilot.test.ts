@@ -29,9 +29,9 @@ describe('autopilot operator state', () => {
       `${JSON.stringify(
         {
           version: 1,
+          guardrails: { maxFilesChanged: 3 },
           autopilot: {
             defaultMode: 'prepare-only',
-            limits: { maxFilesChanged: 3 },
             concurrency: { maxAutonomousJobs: 2 },
           },
         },
@@ -50,10 +50,10 @@ describe('autopilot operator state', () => {
               path: '/tmp/neondeck',
               defaultBranch: 'main',
               metadata: {
+                guardrails: { requiredChecks: ['npm run check'] },
                 autopilot: {
                   mode: 'autofix-with-approval',
                   reason: 'Repo is safe for prepared local fixes.',
-                  limits: { requiredChecks: ['npm run check'] },
                   concurrency: { maxPerRepoAutonomousJobs: 1 },
                   watchOverrides: [
                     {

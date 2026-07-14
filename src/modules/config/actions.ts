@@ -213,7 +213,7 @@ export const updateRepoAction = defineAction({
 export const updateRepoAutopilotPolicyAction = defineAction({
   name: 'neondeck_config_update_repo_autopilot_policy',
   description:
-    'Update one repository’s typed autopilot policy. Explicit confirmation is required when the change increases autonomy, relaxes limits, expands push destinations, or enables force push.',
+    'Update one repository’s typed autopilot policy and shared repo guardrails. Explicit confirmation is required when the change increases autonomy, relaxes guardrails, expands push destinations, or enables force push.',
   input: updateRepoAutopilotPolicyInputSchema,
   output: configActionOutputSchema,
   async run({ input }) {

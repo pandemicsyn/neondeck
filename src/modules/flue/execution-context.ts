@@ -16,8 +16,7 @@ export function installFlueExecutionContextTracker() {
     observe() {
       return undefined;
     },
-    async interceptor(operation, context, next) {
-      if (operation.type !== 'tool') return next();
+    async interceptor(_operation, context, next) {
       return contextStorage.run(context, next);
     },
     dispose() {

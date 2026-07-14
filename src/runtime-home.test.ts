@@ -706,6 +706,41 @@ describe('runtime home', () => {
       },
     });
 
+    expect(
+      parseDashboardConfig(dashboardConfig(), 'dashboard.json').notifications,
+    ).toEqual({
+      toasts: {
+        enabled: true,
+        minimumLevel: 'ready',
+        readyDurationMs: 6_000,
+        maxVisible: 3,
+      },
+    });
+
+    expect(
+      parseDashboardConfig(
+        {
+          ...dashboardConfig(),
+          notifications: {
+            toasts: {
+              enabled: true,
+              minimumLevel: 'attention',
+              readyDurationMs: 100,
+              maxVisible: 20,
+            },
+          },
+        },
+        'dashboard.json',
+      ).notifications,
+    ).toEqual({
+      toasts: {
+        enabled: true,
+        minimumLevel: 'attention',
+        readyDurationMs: 1_000,
+        maxVisible: 3,
+      },
+    });
+
     expect(() =>
       parseDashboardConfig(
         {

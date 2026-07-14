@@ -1,5 +1,4 @@
 import { useQueries, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
 import {
   getExecutionApprovals,
   getKiloTasks,
@@ -16,7 +15,6 @@ import {
   getScheduledTasks,
   getWorkflowObservability,
   getWorktrees,
-  openNotificationEventStream,
 } from '../../api';
 import { EmptyState } from '../../components/ui';
 import { useConfigEvents } from '../../lib/config-events';
@@ -141,19 +139,6 @@ export const RuntimeOverviewPlugin = {
     useConfigEvents(() => {
       void invalidateRuntimeQueries(queryClient);
     });
-
-    useEffect(() => {
-      return openNotificationEventStream(() => {
-        void Promise.all([
-          queryClient.invalidateQueries({
-            queryKey: queryKeys.notifications,
-          }),
-          queryClient.invalidateQueries({
-            queryKey: queryKeys.runtimeStatus,
-          }),
-        ]);
-      });
-    }, [queryClient]);
 
     if (statusQuery.isLoading) {
       return (

@@ -415,12 +415,8 @@ async function fixture() {
             },
           ],
         },
-        autopilot: {
-          defaultMode: 'autofix-push-when-safe',
-          limits: {
-            requiredChecks: ['node --version'],
-          },
-        },
+        guardrails: { requiredChecks: ['node --version'] },
+        autopilot: { defaultMode: 'autofix-push-when-safe' },
       },
       null,
       2,

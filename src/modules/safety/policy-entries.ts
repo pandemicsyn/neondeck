@@ -549,7 +549,7 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget: 'repos.json/config_history',
       requiresConfirmation: true,
     },
-    'Updates typed repo autopilot policy. Increasing autonomy, relaxing limits, expanding push destinations, enabling force push, or changing watch overrides requires confirm=true.',
+    'Updates typed repo autopilot policy and shared guardrails. Increasing autonomy, relaxing guardrails, expanding push destinations, enabling force push, or changing watch overrides requires confirm=true.',
   ),
   action(
     'neondeck_config_update_agent_models',
@@ -577,6 +577,45 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget: 'scheduled_tasks/scheduled_task_runs',
     },
     'Creates or updates a canonical timezone-aware briefing task without running it.',
+  ),
+  action(
+    'neondeck_briefing_profile_read',
+    'Read briefing profile',
+    readOnly,
+    'Reads the morning briefing profile and operational run metadata without reading or duplicating the Flue transcript.',
+  ),
+  action(
+    'neondeck_briefing_profile_update',
+    'Update briefing profile',
+    {
+      ...safeMutation,
+      auditTarget: 'briefing_profiles/config_history/scheduled_tasks',
+    },
+    'Updates validated briefing instructions and schedule settings without changing MCP approval policy.',
+  ),
+  action(
+    'neondeck_briefing_run_read',
+    'Read briefing run grounding',
+    readOnly,
+    'Reads one exact persisted deterministic snapshot and operational run metadata without reading assistant prose.',
+  ),
+  action(
+    'neondeck_briefing_run_now',
+    'Run conversational briefing',
+    {
+      ...safeMutation,
+      auditTarget: 'briefing_runs/chat_sessions/notifications',
+    },
+    'Collects deterministic local facts and dispatches an informational turn to the persistent display-assistant session.',
+  ),
+  action(
+    'neondeck_briefing_session_rotate',
+    'Start fresh briefing conversation',
+    {
+      ...safeMutation,
+      auditTarget: 'chat_sessions/briefing_profiles/config_history',
+    },
+    'Explicitly starts a fresh briefing conversation while preserving the prior transcript.',
   ),
   action(
     'neondeck_scheduled_task_instruction_create',
@@ -1041,7 +1080,7 @@ export const entries: SafetyPolicyEntry[] = [
     'neondeck_autopilot_policy_check',
     'Check autopilot policy',
     readOnly,
-    'Classifies a worktree diff against autopilot limits, high-risk file classes, push destination policy, and concurrency settings without mutating repos or GitHub.',
+    'Classifies a worktree diff against shared repo guardrails, high-risk file classes, push destination policy, and autopilot concurrency without mutating repos or GitHub.',
   ),
   action(
     'neondeck_autopilot_fix_pr_ci_failure',
@@ -1688,6 +1727,36 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget: 'scheduled_tasks/scheduled_task_runs',
     },
     'GET lists canonical scheduled tasks; task creation uses the typed briefing and instruction endpoints.',
+  ),
+  route(
+    '/api/briefings',
+    'Briefing state API',
+    readOnly,
+    'Reads typed briefing profile and operational run metadata; assistant prose remains in Flue persistence.',
+  ),
+  route(
+    '/api/briefings/profile',
+    'Briefing profile API',
+    {
+      ...safeMutation,
+      auditTarget: 'briefing_profiles/config_history/scheduled_tasks',
+    },
+    'Updates validated briefing instructions and scheduling fields.',
+  ),
+  route(
+    '/api/briefings/runs/:id',
+    'Briefing run grounding API',
+    readOnly,
+    'Reads one exact deterministic briefing snapshot by durable run id.',
+  ),
+  route(
+    '/api/briefings/run',
+    'Conversational briefing admission API',
+    {
+      ...safeMutation,
+      auditTarget: 'briefing_runs/chat_session_command_events/notifications',
+    },
+    'Persists a deterministic snapshot before dispatching a normal display-assistant turn.',
   ),
   route(
     '/api/scheduled-tasks/briefings',
