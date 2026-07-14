@@ -38,6 +38,7 @@ export const queryKeys = {
       sessionId ?? 'none',
       linkedWatchId ?? 'none',
     ] as const,
+  neonCommands: ['neon-commands'] as const,
   autopilotState: ['autopilot-state'] as const,
   prWatches: ['pr-watches'] as const,
   repoHealth: ['repo-health'] as const,
