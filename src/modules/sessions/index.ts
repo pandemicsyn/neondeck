@@ -1,4 +1,5 @@
 export * from './actions';
+export * from './activity';
 export * from './approval-nudges';
 export * from './active-session';
 export * from './agent-context';

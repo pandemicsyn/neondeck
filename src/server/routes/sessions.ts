@@ -5,6 +5,7 @@ import {
   createChatSession,
   createChatSessionCommandEvent,
   linkChatSessionContext,
+  listChatSessionActivity,
   listChatSessionCommandEvents,
   listChatSessions,
   pinChatSession,
@@ -88,6 +89,18 @@ export function createSessionRoutes(paths: RuntimePaths) {
   routes.get('/sessions/:id/command-events', async (c) => {
     const rawLimit = Number(c.req.query('limit'));
     const result = await listChatSessionCommandEvents(
+      {
+        sessionId: c.req.param('id'),
+        limit: Number.isFinite(rawLimit) ? rawLimit : undefined,
+      },
+      paths,
+    );
+    return c.json(result, result.ok ? 200 : 404);
+  });
+
+  routes.get('/sessions/:id/activity', async (c) => {
+    const rawLimit = Number(c.req.query('limit'));
+    const result = await listChatSessionActivity(
       {
         sessionId: c.req.param('id'),
         limit: Number.isFinite(rawLimit) ? rawLimit : undefined,

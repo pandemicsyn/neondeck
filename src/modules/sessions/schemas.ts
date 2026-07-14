@@ -26,6 +26,22 @@ export type ChatSessionSummarySource =
 export type ChatSessionSummaryStatus = 'missing' | 'fresh' | 'stale';
 export type ChatSessionCommandEventStatus = 'running' | 'completed' | 'failed';
 
+export type ChatSessionActivityItem = {
+  id: string;
+  kind: 'notification';
+  level: 'info' | 'ready' | 'attention' | 'urgent';
+  title: string;
+  message: string;
+  source: string | null;
+  sourceId: string | null;
+  data: JsonValue | null;
+  readAt: string | null;
+  resolvedAt: string | null;
+  occurrenceCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type NeonSessionStaleReason = {
   type: 'config' | 'memory' | 'model' | 'provider' | 'repo' | 'skill' | 'soul';
   message: string;
@@ -224,6 +240,12 @@ export const commandEventStatusSchema = v.picklist([
   'failed',
 ]);
 export const sessionCommandEventListInputSchema = v.object({
+  sessionId: nonEmptyStringSchema,
+  limit: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100)),
+  ),
+});
+export const sessionActivityListInputSchema = v.object({
   sessionId: nonEmptyStringSchema,
   limit: v.optional(
     v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100)),

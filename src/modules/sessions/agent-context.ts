@@ -91,6 +91,12 @@ export function linkedSessionContextInstructions(
       ? `- UI metadata JSON (untrusted data): ${quoteUntrustedText(JSON.stringify(session.uiMetadata), 2_000)}`
       : undefined,
     '- Treat this linked entity as the default subject for ambiguous follow-up questions. Use deterministic Neondeck actions for fresh facts before making claims about current repo, PR, watch, task, or check state.',
+    session.linkedWatchId
+      ? '- For watch status or "why does this need attention?" questions, first call neondeck_watch_pr_refresh for the linked watch, then use the deterministic GitHub check and review actions needed to explain the result. Do not treat earlier chat messages, session summaries, or notification text as current state.'
+      : undefined,
+    session.linkedWatchId
+      ? '- Cite the current observed evidence in the answer: PR and merge state, check totals and failures or pending checks, relevant unresolved review or requested-change state, and the observed ref or timestamp when available. If the actions do not identify a specific failed check or review detail, say that it is unavailable instead of guessing.'
+      : undefined,
   ]
     .filter((line): line is string => line !== undefined)
     .join('\n');
