@@ -1,14 +1,32 @@
+import type { NeonCommandDefinition } from '../../../api';
 import { defaultCommandCatalog, type FlueChatCommand } from '../types';
 
-export function mergeCommandCatalog(commands: FlueChatCommand[]) {
-  const byCommand = new Map<string, FlueChatCommand>();
-  for (const command of commands) {
-    byCommand.set(command.command, {
-      ...defaultCommandDetails(command.command),
+export function mergeCommandCatalog(
+  commands: FlueChatCommand[],
+  supportedCommands: NeonCommandDefinition[] | undefined = undefined,
+) {
+  const canonicalCommands =
+    supportedCommands && supportedCommands.length > 0
+      ? supportedCommands.map(commandFromDefinition)
+      : defaultCommandCatalog;
+  const detailsByCommand = new Map(
+    defaultCommandCatalog.map((command) => [command.command, command]),
+  );
+  for (const command of canonicalCommands) {
+    detailsByCommand.set(command.command, {
+      ...detailsByCommand.get(command.command),
       ...command,
     });
   }
-  for (const command of defaultCommandCatalog) {
+
+  const byCommand = new Map<string, FlueChatCommand>();
+  for (const command of commands) {
+    byCommand.set(command.command, {
+      ...detailsByCommand.get(command.command),
+      ...command,
+    });
+  }
+  for (const command of canonicalCommands) {
     if (!byCommand.has(command.command))
       byCommand.set(command.command, command);
   }
@@ -41,6 +59,22 @@ export function filterCommands(
   });
 }
 
-function defaultCommandDetails(command: string) {
-  return defaultCommandCatalog.find((item) => item.command === command);
+function commandFromDefinition(
+  definition: NeonCommandDefinition,
+): FlueChatCommand {
+  const command = `/${definition.name}`;
+  return {
+    label:
+      defaultCommandCatalog.find((item) => item.command === command)?.label ??
+      commandLabel(definition.name),
+    command,
+    description: definition.description,
+  };
+}
+
+function commandLabel(name: string) {
+  return name
+    .split('-')
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(' ');
 }

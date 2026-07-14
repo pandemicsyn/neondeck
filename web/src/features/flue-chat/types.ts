@@ -38,6 +38,11 @@ export const defaultCommandCatalog: FlueChatCommand[] = [
     description: 'list active GitHub PR work',
   },
   {
+    label: 'Review PR',
+    command: '/review-pr',
+    description: 'prepare a review of a GitHub pull request',
+  },
+  {
     label: 'Watch PR',
     command: '/watch-pr',
     description: 'create or inspect a PR watch',

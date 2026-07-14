@@ -16,6 +16,7 @@ import type {
 } from '../../../api';
 import {
   createChatSessionCommandEvent,
+  getNeonCommands,
   getChatSessionCommandEvents,
   openChatSessionEventStream,
   runBriefing,
@@ -87,9 +88,14 @@ export function FlueChatSessionView({
     canonicalMessages,
     agent.status,
   );
+  const commandsQuery = useQuery({
+    queryKey: queryKeys.neonCommands,
+    queryFn: getNeonCommands,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
   const commandCatalog = useMemo(
-    () => mergeCommandCatalog(quickCommands),
-    [quickCommands],
+    () => mergeCommandCatalog(quickCommands, commandsQuery.data?.items),
+    [commandsQuery.data?.items, quickCommands],
   );
   const commandQuery = commandQueryFromInput(input);
   const matchingCommands = useMemo(
@@ -647,24 +653,7 @@ function commandFailureResult(
 
 function commandNameFromInput(command: string): NeonCommandResult['command'] {
   const name = command.replace(/^\//, '').split(/\s+/, 1)[0];
-  const supported: NeonCommandResult['command'][] = [
-    'repo-status',
-    'review-queue',
-    'fix-ci',
-    'explain-ci',
-    'summarize-pr',
-    'draft-pr-description',
-    'prepare-pr',
-    'review-local',
-    'briefing',
-    'reasoning',
-    'memory',
-    'watch-pr',
-    'dev-doctor',
-  ];
-  return supported.includes(name as NeonCommandResult['command'])
-    ? (name as NeonCommandResult['command'])
-    : 'dev-doctor';
+  return name || 'unknown';
 }
 
 function isMissingHistoryError(error: unknown) {

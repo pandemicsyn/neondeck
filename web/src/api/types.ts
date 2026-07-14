@@ -1707,6 +1707,16 @@ export type NeonCommandResult = {
   };
 };
 
+export type NeonCommandDefinition = {
+  name: string;
+  usage: string;
+  description: string;
+};
+
+export type NeonCommandsResponse = {
+  items: NeonCommandDefinition[];
+};
+
 export type PrWatch = {
   id: string;
   repoId: string;

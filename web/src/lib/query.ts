@@ -26,6 +26,7 @@ export const queryKeys = {
   chatSessions: ['chat-sessions'] as const,
   chatSessionCommandEvents: (sessionId: string | undefined) =>
     ['chat-session-command-events', sessionId ?? 'none'] as const,
+  neonCommands: ['neon-commands'] as const,
   autopilotState: ['autopilot-state'] as const,
   prWatches: ['pr-watches'] as const,
   repoHealth: ['repo-health'] as const,
