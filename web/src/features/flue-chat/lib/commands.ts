@@ -6,9 +6,13 @@ export function mergeCommandCatalog(
   supportedCommands: NeonCommandDefinition[] | undefined = undefined,
 ) {
   const canonicalCommands =
-    supportedCommands && supportedCommands.length > 0
+    supportedCommands !== undefined
       ? supportedCommands.map(commandFromDefinition)
       : defaultCommandCatalog;
+  const canonicalCommandNames =
+    supportedCommands === undefined
+      ? undefined
+      : new Set(canonicalCommands.map((command) => command.command));
   const detailsByCommand = new Map(
     defaultCommandCatalog.map((command) => [command.command, command]),
   );
@@ -21,6 +25,9 @@ export function mergeCommandCatalog(
 
   const byCommand = new Map<string, FlueChatCommand>();
   for (const command of commands) {
+    if (canonicalCommandNames && !canonicalCommandNames.has(command.command)) {
+      continue;
+    }
     byCommand.set(command.command, {
       ...detailsByCommand.get(command.command),
       ...command,

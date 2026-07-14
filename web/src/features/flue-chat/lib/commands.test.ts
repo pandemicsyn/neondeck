@@ -11,7 +11,10 @@ describe('chat command catalog', () => {
 
   it('adds commands from the backend registry without requiring dashboard config changes', () => {
     const catalog = mergeCommandCatalog(
-      [{ label: 'Queue override', command: '/review-queue' }],
+      [
+        { label: 'Queue override', command: '/review-queue' },
+        { label: 'Removed command', command: '/removed-command' },
+      ],
       [
         {
           name: 'review-queue',
@@ -41,5 +44,13 @@ describe('chat command catalog', () => {
     expect(filterCommands(catalog, 'release')).toEqual([
       expect.objectContaining({ command: '/inspect-release' }),
     ]);
+  });
+
+  it('keeps configured commands when the backend registry is unavailable', () => {
+    expect(
+      mergeCommandCatalog([
+        { label: 'Local command', command: '/local-command' },
+      ]),
+    ).toContainEqual({ label: 'Local command', command: '/local-command' });
   });
 });
