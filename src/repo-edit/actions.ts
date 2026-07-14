@@ -17,6 +17,7 @@ import {
   recordWorktreePushSucceeded,
   releaseWorktreeLock,
   revokeWorktreeLockLease,
+  WORKTREE_LOCK_REVOCATION_GRACE_MS,
   type WorktreeLockRecord,
   type WorktreeRecord,
 } from '../modules/worktrees';
@@ -450,14 +451,7 @@ async function withInteractiveWorktreeLock<T>(
       },
       paths,
     );
-    const released = await waitForWorktreeLockRelease(active.id, paths);
-    if (!released) {
-      return requirementFailure(
-        action,
-        `Autopilot run ${active.workflowRunId} did not yield its revoked mutation lease within 30 seconds. Its future mutations remain blocked; retry after the run settles.`,
-        'worktreeLock',
-      );
-    }
+    await waitForWorktreeLockHandoff(active.id, paths);
     locked = await lockWorktree(
       {
         worktreeId: worktree.id,
@@ -492,17 +486,16 @@ async function withInteractiveWorktreeLock<T>(
   }
 }
 
-async function waitForWorktreeLockRelease(
+async function waitForWorktreeLockHandoff(
   lockId: string,
   paths: ReturnType<typeof runtimePaths>,
 ) {
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + WORKTREE_LOCK_REVOCATION_GRACE_MS;
   while (Date.now() < deadline) {
     const lock = await readWorktreeLock(lockId, paths);
-    if (lock.releasedAt) return true;
+    if (lock.releasedAt) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  return (await readWorktreeLock(lockId, paths)).releasedAt !== null;
 }
 
 function pushConfirmationToken(

@@ -3,6 +3,7 @@ import type { RepoConfig } from '../../runtime-home';
 
 export type WorktreeStorageKind = 'home' | 'repo-local';
 export type WorktreeLockScope = 'worktree' | 'pr';
+export const WORKTREE_LOCK_REVOCATION_GRACE_MS = 30_000;
 export type WorktreeLifecycleStatus =
   | 'creating'
   | 'ready'

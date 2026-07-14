@@ -1,7 +1,11 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { RuntimePaths } from '../../runtime-home';
 import { WorktreeError, isSqliteUniqueConstraint } from './errors';
-import type { WorktreeLockRecord, WorktreeRecord } from './schemas';
+import {
+  WORKTREE_LOCK_REVOCATION_GRACE_MS,
+  type WorktreeLockRecord,
+  type WorktreeRecord,
+} from './schemas';
 import { readLockRow } from './store';
 
 export function assertNoForeignActiveLock(
@@ -51,7 +55,7 @@ export function acquireLock(
       )
       .get(lock.scopeKey);
     const active = activeRow ? readLockRow(activeRow) : undefined;
-    if (active && Date.parse(active.expiresAt) > now.getTime()) {
+    if (active && !isLockReclaimable(active, now)) {
       database.exec('ROLLBACK;');
       committed = true;
       return { ok: false, active };
@@ -110,6 +114,15 @@ export function acquireLock(
   } finally {
     database.close();
   }
+}
+
+function isLockReclaimable(lock: WorktreeLockRecord, now: Date) {
+  if (Date.parse(lock.expiresAt) <= now.getTime()) return true;
+  return (
+    lock.revokedAt !== null &&
+    Date.parse(lock.revokedAt) + WORKTREE_LOCK_REVOCATION_GRACE_MS <=
+      now.getTime()
+  );
 }
 
 function activeLockByScope(scopeKey: string, paths: RuntimePaths) {
