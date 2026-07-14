@@ -43,7 +43,10 @@ import {
   mergeCommandCatalog,
 } from '../lib/commands';
 import { chatMessagesForRender } from '../lib/messages';
-import { sessionTimelineItems } from '../lib/timeline';
+import {
+  sessionActivityForLinkedWatch,
+  sessionTimelineItems,
+} from '../lib/timeline';
 import type {
   FlueChatCommand,
   FlueChatConfig,
@@ -117,18 +120,22 @@ export function FlueChatSessionView({
       : pendingHistoryRefresh
         ? 'Loading session history...'
         : session.placeholder;
+  const linkedWatchId = activeRecord?.linkedWatchId;
   const commandEventsQuery = useQuery({
     queryKey: queryKeys.chatSessionCommandEvents(session?.id),
     queryFn: () => getChatSessionCommandEvents(session?.id ?? ''),
     enabled: Boolean(session?.id),
   });
   const activityQuery = useQuery({
-    queryKey: queryKeys.chatSessionActivity(session?.id),
+    queryKey: queryKeys.chatSessionActivity(session?.id, linkedWatchId),
     queryFn: () => getChatSessionActivity(session?.id ?? ''),
-    enabled: Boolean(session?.id && activeRecord?.linkedWatchId),
+    enabled: Boolean(session?.id && linkedWatchId),
     refetchInterval: 30_000,
   });
-  const activity = activityQuery.data?.items ?? [];
+  const activity = sessionActivityForLinkedWatch(
+    linkedWatchId,
+    activityQuery.data?.items,
+  );
   const timelineItems = sessionTimelineItems(messages, activity);
 
   useEffect(() => {
@@ -156,10 +163,10 @@ export function FlueChatSessionView({
         queryKey: queryKeys.chatSessionCommandEvents(session.id),
       });
       void queryClient.invalidateQueries({
-        queryKey: queryKeys.chatSessionActivity(session.id),
+        queryKey: queryKeys.chatSessionActivity(session.id, linkedWatchId),
       });
     });
-  }, [queryClient, session?.id]);
+  }, [linkedWatchId, queryClient, session?.id]);
 
   useEffect(() => {
     if (!referenceDraft) return;
@@ -515,7 +522,7 @@ export function FlueChatSessionView({
               {errorMessage(commandEventsQuery.error)}
             </div>
           ) : null}
-          {activityQuery.error ? (
+          {linkedWatchId && activityQuery.error ? (
             <div className="border border-accent/60 bg-soft px-2.5 py-2 font-mono text-[10.5px] leading-4 text-accent">
               SESSION ACTIVITY UNAVAILABLE · {errorMessage(activityQuery.error)}
             </div>

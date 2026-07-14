@@ -17,6 +17,13 @@ export type SessionTimelineItem =
       activity: ChatSessionActivityItem;
     };
 
+export function sessionActivityForLinkedWatch(
+  linkedWatchId: string | null | undefined,
+  activity: ChatSessionActivityItem[] | undefined,
+) {
+  return linkedWatchId ? (activity ?? []) : [];
+}
+
 export function sessionTimelineItems(
   messages: FlueConversationMessage[],
   activity: ChatSessionActivityItem[],

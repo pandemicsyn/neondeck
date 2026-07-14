@@ -1,7 +1,10 @@
 import type { FlueConversationMessage } from '@flue/react';
 import { describe, expect, it } from 'vitest';
 import type { ChatSessionActivityItem } from '../../../api';
-import { sessionTimelineItems } from './timeline';
+import {
+  sessionActivityForLinkedWatch,
+  sessionTimelineItems,
+} from './timeline';
 
 describe('session timeline', () => {
   it('interleaves durable activity with Flue messages by timestamp', () => {
@@ -31,6 +34,13 @@ describe('session timeline', () => {
         [notification('checks', '2026-07-13T20:03:00.000Z')],
       ).map((item) => item.id),
     ).toEqual(['activity:checks', 'message:optimistic']);
+  });
+
+  it('hides cached activity after the session is unlinked from its watch', () => {
+    const cached = [notification('checks', '2026-07-13T20:03:00.000Z')];
+
+    expect(sessionActivityForLinkedWatch('watch-1', cached)).toEqual(cached);
+    expect(sessionActivityForLinkedWatch(null, cached)).toEqual([]);
   });
 });
 

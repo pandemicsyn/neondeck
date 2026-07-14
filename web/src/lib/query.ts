@@ -29,8 +29,15 @@ export const queryKeys = {
   chatSessionCommandEvents: (sessionId: string | undefined) =>
     ['chat-session-command-events', sessionId ?? 'none'] as const,
   chatSessionActivityRoot,
-  chatSessionActivity: (sessionId: string | undefined) =>
-    [...chatSessionActivityRoot, sessionId ?? 'none'] as const,
+  chatSessionActivity: (
+    sessionId: string | undefined,
+    linkedWatchId: string | null | undefined,
+  ) =>
+    [
+      ...chatSessionActivityRoot,
+      sessionId ?? 'none',
+      linkedWatchId ?? 'none',
+    ] as const,
   autopilotState: ['autopilot-state'] as const,
   prWatches: ['pr-watches'] as const,
   repoHealth: ['repo-health'] as const,
