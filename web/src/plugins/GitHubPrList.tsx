@@ -6,6 +6,7 @@ import {
   getGitHubPullRequests,
   getRepoRegistry,
   getWorkflowObservability,
+  startPrReview,
   type GitHubPullRequest,
   type NeonCommandResult,
   type WorkflowObservability,
@@ -19,7 +20,6 @@ import {
   ScrollArea,
 } from '../components/ui';
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
-import { prReviewQueryKeys } from '../features/pr-review/queries';
 import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
@@ -231,25 +231,15 @@ function readReviewPopoutTarget() {
 }
 
 function NeonReviewButton({ item }: { item: GitHubPullRequest }) {
-  const flue = useFlueClient();
   const queryClient = useQueryClient();
   const mutation = useMutation({
-    mutationFn: async () => {
-      const run = await flue.workflows.invoke('review-pr-for-human', {
-        input: {
-          ref: `${item.repo}#${item.number}`,
-        },
-      });
-      return run satisfies ReviewPrWorkflowAdmission;
-    },
-    onSuccess(run) {
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.workflowObservability,
-      });
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.workflowSummaries,
-      });
-      scheduleReviewCompletionRefresh(queryClient, item, run.runId);
+    mutationFn: () =>
+      startPrReview({
+        ref: `${item.repo}#${item.number}`,
+        origin: 'panel',
+      }),
+    onSuccess() {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.prReviews });
     },
   });
 
@@ -262,7 +252,7 @@ function NeonReviewButton({ item }: { item: GitHubPullRequest }) {
         mutation.error
           ? queryErrorMessage(mutation.error)
           : mutation.data
-            ? `Queued review workflow run ${mutation.data.runId}. Reports and local drafts will refresh when the run completes.`
+            ? `Review workflow ${mutation.data.runId} is running. Follow it in Reviews.`
             : 'Prepare local reports and Neon-origin draft comments through the review workflow'
       }
       type="button"
@@ -317,70 +307,6 @@ function FixCiButton({ item }: { item: GitHubPullRequest }) {
       {mutation.isPending ? 'queuing' : mutation.data ? 'queued' : 'fix CI'}
     </Button>
   );
-}
-
-function scheduleReviewCompletionRefresh(
-  queryClient: ReturnType<typeof useQueryClient>,
-  item: GitHubPullRequest,
-  runId: string,
-) {
-  let sawActiveRun = false;
-  let done = false;
-  const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: queryKeys.reports });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
-    void queryClient.invalidateQueries({
-      queryKey: queryKeys.workflowObservability,
-    });
-    void queryClient.invalidateQueries({
-      queryKey: queryKeys.workflowSummaries,
-    });
-    void queryClient.invalidateQueries({
-      queryKey: prReviewQueryKeys.draft(item),
-    });
-  };
-  const scheduleActiveFollowUp = () => {
-    window.setTimeout(
-      () => void observe(true),
-      reviewCompletionActiveFollowUpDelay,
-    );
-  };
-  const observe = async (forceRefresh: boolean) => {
-    if (done) return;
-    try {
-      const workflows = await queryClient.fetchQuery({
-        queryKey: queryKeys.workflowObservability,
-        queryFn: getWorkflowObservability,
-        staleTime: 0,
-      });
-      const state = reviewWorkflowRefreshDecision(
-        workflows,
-        runId,
-        sawActiveRun,
-        forceRefresh,
-      );
-      sawActiveRun = state.sawActiveRun;
-      if (state.shouldRefresh) refresh();
-      if (state.done) {
-        done = true;
-        return;
-      }
-      if (forceRefresh && state.sawActiveRun) scheduleActiveFollowUp();
-    } catch {
-      if (forceRefresh && !sawActiveRun) {
-        refresh();
-        done = true;
-        return;
-      }
-      if (forceRefresh) scheduleActiveFollowUp();
-    }
-  };
-  for (const delay of reviewCompletionPollDelays) {
-    window.setTimeout(
-      () => void observe(delay === reviewCompletionPollDelays.at(-1)),
-      delay,
-    );
-  }
 }
 
 function scheduleCiFixCompletionRefresh(
@@ -559,10 +485,6 @@ function WatchPrButton({ item }: { item: GitHubPullRequest }) {
 export function isTerminalWatchStatus(status: string | null | undefined) {
   return status === 'closed' || status === 'merged' || status === 'green';
 }
-
-type ReviewPrWorkflowAdmission = {
-  runId: string;
-};
 
 type FixCiWorkflowAdmission = {
   runId: string;

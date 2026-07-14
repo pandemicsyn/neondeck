@@ -19,5 +19,6 @@ export * from './learning';
 export * from './notifications';
 export * from './briefings';
 export * from './reports';
+export * from './reviews';
 export * from './worktrees';
 export * from './watches';

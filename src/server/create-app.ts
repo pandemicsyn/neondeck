@@ -19,6 +19,7 @@ import {
 } from '../runtime-home';
 import { createConfigEventRoutes } from './events/config-stream';
 import { createNotificationEventRoutes } from './events/notification-stream';
+import { createReviewEventRoutes } from './events/review-stream';
 import { createSessionEventRoutes } from './events/session-stream';
 import {
   displayAssistantLearningMiddleware,
@@ -46,6 +47,7 @@ import {
   createReportApiRoutes,
   createReportFileRoutes,
 } from './routes/reports';
+import { createReviewRoutes } from './routes/reviews';
 import { createReposRoutes } from './routes/repos';
 import { createScheduledTaskRoutes } from './routes/scheduled-tasks';
 import { createRuntimeRoutes } from './routes/runtime';
@@ -98,6 +100,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api', createRuntimeRoutes(paths));
   app.route('/api/events', createConfigEventRoutes());
   app.route('/api/events', createNotificationEventRoutes());
+  app.route('/api/events', createReviewEventRoutes());
   app.route('/api/events', createSessionEventRoutes());
   app.route('/api/safety', createSafetyRoutes(paths));
   app.route('/api/execution', createExecutionRoutes(paths));
@@ -121,6 +124,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api/skills', createSkillRoutes(paths));
   app.route('/api/commands', createCommandRoutes());
   app.route('/api', createReportApiRoutes(paths));
+  app.route('/api', createReviewRoutes(paths));
   app.route('/api/workflows', createWorkflowRoutes(paths));
   app.route('/api/github', createGitHubRoutes(paths));
 

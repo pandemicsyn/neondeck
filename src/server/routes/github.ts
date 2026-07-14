@@ -19,6 +19,10 @@ import {
   putGitHubPrReviewDraft,
 } from '../../modules/pr-events';
 import type { RuntimePaths } from '../../runtime-home';
+import {
+  readPrReviewForTarget,
+  submitPrReview,
+} from '../../modules/pr-reviews';
 import { queryNumber, safeJsonBody } from '../http';
 
 export function createGitHubRoutes(paths: RuntimePaths) {
@@ -226,11 +230,77 @@ export function createGitHubRoutes(paths: RuntimePaths) {
       c.req.param('number'),
     );
     if (!target.ok) return c.json(target.result, 400);
-    const result = await postGitHubPrReview(
-      target.input,
-      (await safeJsonBody(c)) as Parameters<typeof postGitHubPrReview>[1],
+    const reviewInput = await safeJsonBody(c);
+    const reviewInputObject = objectField(reviewInput);
+    const requestedHeadSha =
+      typeof reviewInputObject.headSha === 'string'
+        ? reviewInputObject.headSha
+        : null;
+    const durableReview = readPrReviewForTarget(
+      target.input.repo,
+      target.input.prNumber,
       paths,
     );
+    if (
+      durableReview &&
+      (durableReview.status !== 'ready' ||
+        !requestedHeadSha ||
+        durableReview.headSha !== requestedHeadSha)
+    ) {
+      return c.json(
+        {
+          ok: false,
+          action: 'github_pr_review_post',
+          changed: false,
+          message:
+            durableReview.status !== 'ready'
+              ? 'The durable review must be ready before it can be submitted.'
+              : 'The durable review does not match the pull request head being submitted.',
+          data: { reviewId: durableReview.id },
+        },
+        409,
+      );
+    }
+    const result = await postGitHubPrReview(
+      target.input,
+      reviewInput as Parameters<typeof postGitHubPrReview>[1],
+      paths,
+    );
+    if (result.ok) {
+      const data = objectField(result.data);
+      const draft = objectField(data.draft);
+      const review = objectField(data.review);
+      const verdict = draft.verdict;
+      if (
+        verdict === 'comment' ||
+        verdict === 'approve' ||
+        verdict === 'request-changes'
+      ) {
+        const submitted = submitPrReview(
+          {
+            repoFullName: target.input.repo,
+            prNumber: target.input.prNumber,
+            verdict,
+            githubReviewUrl: typeof review.url === 'string' ? review.url : null,
+            headSha: typeof draft.headSha === 'string' ? draft.headSha : null,
+          },
+          paths,
+        );
+        if (durableReview && !submitted) {
+          return c.json(
+            {
+              ok: false,
+              action: 'github_pr_review_post',
+              changed: true,
+              message:
+                'GitHub accepted the review, but Neondeck could not settle its durable review record.',
+              data: result.data,
+            },
+            409,
+          );
+        }
+      }
+    }
     return c.json(result, result.ok ? 200 : 400);
   });
 
@@ -338,6 +408,12 @@ export function createGitHubRoutes(paths: RuntimePaths) {
   });
 
   return routes;
+}
+
+function objectField(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function prTargetFromParams(owner: string, repo: string, numberText: string) {

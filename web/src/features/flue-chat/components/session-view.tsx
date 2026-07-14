@@ -275,8 +275,14 @@ export function FlueChatSessionView({
         }
 
         const result = await runCommand(message);
-        const completedAt = new Date().toISOString();
-        const status = result.ok ? 'completed' : 'failed';
+        const status =
+          result.status === 'running'
+            ? 'running'
+            : result.ok
+              ? 'completed'
+              : 'failed';
+        const completedAt =
+          status === 'running' ? null : new Date().toISOString();
         updateCommandEvent(createdEvent.id, {
           status,
           result,
@@ -294,8 +300,11 @@ export function FlueChatSessionView({
               result,
               flueRunId: result.flueRunId ?? null,
               workflowSummaryId: result.workflowSummary?.id ?? null,
-              completedAt,
-              reason: 'dashboard-slash-command-complete',
+              ...(completedAt ? { completedAt } : {}),
+              reason:
+                status === 'running'
+                  ? 'dashboard-slash-command-admitted'
+                  : 'dashboard-slash-command-complete',
             },
           );
           if (updated.event)

@@ -1,4 +1,6 @@
 import { defineAction } from '@flue/runtime';
+import { currentFlueExecutionContext } from '../flue';
+import { completePrReview, failPrReview } from '../pr-reviews';
 import {
   prReviewAssistInputSchema,
   prReviewAssistOutputSchema,
@@ -17,20 +19,58 @@ export const reviewPrForHumanAction = defineAction({
   input: prReviewAssistInputSchema,
   output: prReviewAssistOutputSchema,
   async run({ harness, input, log }) {
-    const result = await reviewPrForHuman(input, undefined, {
-      reviewer: async (facts, context) => {
-        const session = await harness.session();
-        const response = await session.skill('neon-pr-review', {
-          args: {
-            task: 'Review the pull request facts and return only the requested structured review output.',
-            facts: reviewFactsForPrompt(facts, context),
-          },
-          result: reviewAssistStructuredOutputSchema,
-          signal: AbortSignal.timeout(180_000),
+    const runId = currentFlueExecutionContext()?.runId;
+    let result: Awaited<ReturnType<typeof reviewPrForHuman>>;
+    try {
+      result = await reviewPrForHuman(input, undefined, {
+        workflowRunId: runId,
+        reviewer: async (facts, context) => {
+          const session = await harness.session();
+          const response = await session.skill('neon-pr-review', {
+            args: {
+              task: 'Review the pull request facts and return only the requested structured review output.',
+              facts: reviewFactsForPrompt(facts, context),
+            },
+            result: reviewAssistStructuredOutputSchema,
+            signal: AbortSignal.timeout(180_000),
+          });
+          return response.data;
+        },
+      });
+    } catch (error) {
+      if (input.reviewId) {
+        failPrReview({
+          reviewId: input.reviewId,
+          attemptId: input.attemptId,
+          runId,
+          message: error instanceof Error ? error.message : String(error),
         });
-        return response.data;
-      },
-    });
+      }
+      throw error;
+    }
+    if (input.reviewId) {
+      if (result.ok && 'data' in result) {
+        completePrReview({
+          reviewId: input.reviewId,
+          attemptId: input.attemptId,
+          runId,
+          headSha: result.data.headSha,
+          reportIds: result.data.reports.map((report) => report.id),
+          reviewUrl: result.data.reviewUrl,
+          findingCount: result.data.findingCount,
+          seededCount: result.data.seededCount,
+          reportOnlyCount: result.data.reportOnlyCount,
+          reportOnlyFindings: result.data.reportOnlyFindings,
+        });
+      } else {
+        failPrReview({
+          reviewId: input.reviewId,
+          attemptId: input.attemptId,
+          runId,
+          message: result.message,
+        });
+      }
+    }
     if (result.ok) {
       log.info('Prepared PR review assist artifacts', {
         message: result.message,

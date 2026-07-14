@@ -99,6 +99,85 @@ export type GitHubPullRequest = {
   checkError?: string;
 };
 
+export type PrReviewStatus = 'reviewing' | 'ready' | 'submitted' | 'failed';
+
+export type PrReviewVerdict = 'comment' | 'approve' | 'request-changes';
+
+export type PrReviewReportOnlyFinding = {
+  severity: 'critical' | 'major' | 'minor' | 'nit';
+  path: string;
+  line: number | null;
+  summary: string;
+  suggestedFix: string;
+  reason: string;
+};
+
+export type PrReviewRecord = {
+  id: string;
+  ref: string;
+  repoFullName: string;
+  prNumber: number;
+  title: string;
+  author: string | null;
+  prUrl: string;
+  status: PrReviewStatus;
+  runId: string | null;
+  headSha: string;
+  origin: 'chat' | 'panel' | 'api';
+  reviewUrl: string;
+  reportIds: string[];
+  findingCount: number;
+  seededCount: number;
+  reportOnlyCount: number;
+  reportOnlyFindings: PrReviewReportOnlyFinding[];
+  trustBoundary: string;
+  verdict: PrReviewVerdict | null;
+  previousVerdict: PrReviewVerdict | null;
+  githubReviewUrl: string | null;
+  failureMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+  readyAt: string | null;
+  submittedAt: string | null;
+  failedAt: string | null;
+};
+
+export type PrReviewAwaitingItem = {
+  pullRequest: GitHubPullRequest;
+  review: PrReviewRecord | null;
+};
+
+export type PrReviewsResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  items: PrReviewRecord[];
+  groups: {
+    awaiting: PrReviewAwaitingItem[];
+    inProgress: PrReviewRecord[];
+    needsAction: PrReviewRecord[];
+    submitted: PrReviewRecord[];
+  };
+  queueIssues?: string[];
+};
+
+export type PrReviewMutationResponse = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  review: PrReviewRecord;
+  reviewId: string;
+  runId: string;
+};
+
+export type PrReviewChangeEvent = {
+  id: string;
+  action: 'created' | 'changed';
+  review: PrReviewRecord;
+  changedAt: string;
+};
+
 export type GitHubQueueIssue = {
   type:
     | 'search-truncated'
@@ -1707,7 +1786,7 @@ export type NeonCommandResult = {
   ok: boolean;
   command: string;
   input: string;
-  status: 'completed' | 'failed' | 'needs-config';
+  status: 'running' | 'completed' | 'failed' | 'needs-config';
   message: string;
   flueRunId?: string;
   data?: unknown;

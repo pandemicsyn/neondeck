@@ -7,6 +7,7 @@ import { fetchGitHubLogin, fetchPullRequestQueue } from '../../github';
 import { createCiFailureDossierReport } from '../../autopilot';
 import { readRepoRegistrySnapshot } from '../../repos';
 import { listPrWatchRecords } from '../../watches';
+import { startPrReview } from '../../pr-reviews';
 import type { RuntimePaths } from '../../../runtime-home';
 import type {
   CommandDependencies,
@@ -18,6 +19,7 @@ import {
   completedCommand,
   failedCommand,
   needsConfigCommand,
+  runningCommand,
 } from '../summaries';
 import { errorMessage } from '../utils';
 
@@ -56,7 +58,7 @@ export async function reviewQueueCommand(
 
 export async function reviewPrCommand(
   command: ParsedNeonCommand,
-  _paths: RuntimePaths,
+  paths: RuntimePaths,
   dependencies: CommandDependencies,
 ): Promise<NeonCommandResult> {
   const ref = command.args.join(' ').trim();
@@ -69,30 +71,44 @@ export async function reviewPrCommand(
     );
   }
 
-  const invokeWorkflow =
-    dependencies.invokeReviewPrWorkflow ?? invokeReviewPrWorkflow;
-  const { runId } = await invokeWorkflow({ ref });
-  return completedCommand(
+  const starter = dependencies.startPrReview ?? startPrReview;
+  const { review, reviewId, runId } = await starter(
+    { ref, origin: 'chat' },
+    paths,
+    dependencies.invokeReviewPrWorkflow
+      ? {
+          invokeWorkflow: (input) =>
+            dependencies.invokeReviewPrWorkflow!({
+              ref: input.ref,
+              reviewId: input.reviewId,
+              attemptId: input.attemptId,
+            }),
+        }
+      : undefined,
+  );
+  return runningCommand(
     command.name,
     command.raw,
-    `Queued PR review workflow ${runId} for ${ref}.`,
+    `Reviewing ${review.repoFullName}#${review.prNumber}.`,
     {
       workflow: 'review-pr-for-human',
+      reviewId,
       runId,
-      ref,
+      ref: review.ref,
       queued: true,
-      reportUrlHint: '/reports',
-      reviewSurfaceHint:
-        'Open the PR review surface after the workflow completes.',
-      trustBoundary:
-        'The workflow can create local reports and local Neon-origin draft comments only; it does not submit a GitHub review.',
+      reviewUrl: review.reviewUrl,
+      trustBoundary: review.trustBoundary,
       assistantBrief:
-        'Track the returned workflow run id. When it completes, open Reports and the PR review surface. Seeded comments are local drafts only; the human reviewer owns edits and submission.',
+        'Track the durable review record. It will transition to ready with report links and local draft counts; the human reviewer owns edits and submission.',
     },
   );
 }
 
-export async function invokeReviewPrWorkflow(input: { ref: string }) {
+export async function invokeReviewPrWorkflow(input: {
+  ref: string;
+  reviewId?: string;
+  attemptId?: string;
+}) {
   const { invoke } = await import('@flue/runtime');
   const workflow = await import('../../../workflows/review-pr-for-human');
   return invoke(workflow.default, { input });

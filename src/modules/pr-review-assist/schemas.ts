@@ -1,6 +1,8 @@
 import * as v from 'valibot';
 
 export const prReviewAssistInputSchema = v.object({
+  reviewId: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
+  attemptId: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
   watchId: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
   ref: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
   repo: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),

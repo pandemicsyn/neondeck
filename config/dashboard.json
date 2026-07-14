@@ -47,8 +47,14 @@
         "row": 1,
         "columnSpan": 4,
         "rowSpan": 5,
-        "defaultTab": "github",
+        "defaultTab": "reviews",
         "tabs": [
+          {
+            "id": "reviews",
+            "title": "REVIEWS",
+            "pluginId": "reviews-panel",
+            "config": {}
+          },
           {
             "id": "github",
             "title": "GITHUB",

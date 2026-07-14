@@ -512,6 +512,7 @@ describe('config actions', () => {
     });
     expect(dashboard.layout.regions).toHaveLength(2);
     expect(dashboard.layout.regions[0].tabs.map((tab) => tab.id)).toEqual([
+      'reviews',
       'github',
       'reports',
     ]);
@@ -571,6 +572,7 @@ describe('config actions', () => {
     );
     expect(dashboard.statusline?.position).toBe('bottom');
     expect(dashboard.layout.regions[0].tabs.map((tab) => tab.id)).toEqual([
+      'reviews',
       'github',
       'watches',
       'reports',

@@ -25,6 +25,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': apiProxyTarget,
+      '/reports': apiProxyTarget,
     },
   },
 });

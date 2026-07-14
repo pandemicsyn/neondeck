@@ -30,6 +30,7 @@ import {
   linkBriefingWorkflowObservation,
   settleBriefingObservation,
 } from '../modules/briefings';
+import { attachPrReviewAttemptRun, failPrReview } from '../modules/pr-reviews';
 
 type ObservationInstallDependencies = {
   observe?: (subscriber: FlueObservationSubscriber) => () => void;
@@ -46,6 +47,14 @@ export function installFlueObservationHandlers(
   const unsubscribe = observeFn((event, context) => {
     const contextHome = flueContextRuntimeHome(context);
     if (contextHome && contextHome !== paths.home) return;
+
+    if (event.type === 'run_start') {
+      try {
+        linkPrReviewRunObservation(event, paths);
+      } catch (error) {
+        console.error('[neondeck] failed to link PR review run', error);
+      }
+    }
 
     if (event.type === 'run_end') {
       void recordFlueObservation(event, paths)
@@ -95,6 +104,11 @@ export function installFlueObservationHandlers(
       void linkBriefingWorkflowObservation(event, paths).catch((error) => {
         console.error('[neondeck] failed to link briefing workflow run', error);
       });
+      void Promise.resolve()
+        .then(() => settlePrReviewObservation(event, paths))
+        .catch((error) => {
+          console.error('[neondeck] failed to settle PR review run', error);
+        });
       const learningReviewId = learningReviewResultId(event);
       if (learningReviewId) {
         void Promise.resolve()
@@ -205,6 +219,34 @@ export function resetFlueObservationHandlersForTests() {
     unsubscribe();
   }
   observationHandlerUnsubscribers.clear();
+}
+
+export function settlePrReviewObservation(
+  event: Extract<FlueObservation, { type: 'run_end' }>,
+  paths: RuntimePaths,
+) {
+  if (!event.isError) return null;
+  return failPrReview(
+    {
+      runId: event.runId,
+      allowReady: true,
+      message:
+        'The Flue review workflow failed. Inspect the guarded run for details.',
+    },
+    paths,
+  );
+}
+
+export function linkPrReviewRunObservation(
+  event: Extract<FlueObservation, { type: 'run_start' }>,
+  paths: RuntimePaths,
+) {
+  if (event.workflowName !== 'review-pr-for-human') return null;
+  if (!event.input || typeof event.input !== 'object') return null;
+  const reviewId = stringField(event.input, 'reviewId');
+  const attemptId = stringField(event.input, 'attemptId');
+  if (!reviewId || !attemptId) return null;
+  return attachPrReviewAttemptRun(reviewId, attemptId, event.runId, paths);
 }
 
 function flueContextRuntimeHome(context: FlueEventContext | undefined) {

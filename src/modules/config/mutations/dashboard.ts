@@ -146,8 +146,9 @@ function dashboardPresetConfig(
               row: 1,
               columnSpan: 4,
               rowSpan: 5,
-              defaultTab: 'github',
+              defaultTab: 'reviews',
               tabs: [
+                reviewsTab(),
                 {
                   id: 'github',
                   title: 'GITHUB',
@@ -197,8 +198,9 @@ function dashboardPresetConfig(
             row: 1,
             columnSpan: 4,
             rowSpan: 5,
-            defaultTab: 'github',
+            defaultTab: 'reviews',
             tabs: [
+              reviewsTab(),
               {
                 id: 'github',
                 title: 'GITHUB',
@@ -284,6 +286,15 @@ function reportsTab() {
     title: 'REPORTS',
     pluginId: 'reports-panel',
     config: { limit: 12, refreshSeconds: 60 },
+  };
+}
+
+function reviewsTab() {
+  return {
+    id: 'reviews',
+    title: 'REVIEWS',
+    pluginId: 'reviews-panel',
+    config: {},
   };
 }
 
