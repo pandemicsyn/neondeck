@@ -1,678 +1,454 @@
 # Task Authority Refactor Plan
 
-Status: proposed
+Status: implemented (single-PR)
 
 Related:
 
-- `.plans/ROADMAP.md` Phases 14, 19, and 20
-- `.plans/AUTOPILOT_LOOP_WIRING_PLAN.md`
+- `.plans/ROADMAP.md` Phases 14, 19, 20
 - `.plans/REPO_EDITING_PLAN.md`
 - `.plans/EXEDEV_WORKSPACE_MODE_PLAN.md`
 
-## Purpose
+> The app is not widely used. There is no legacy data or external contract to
+> preserve, and breaking changes are acceptable. **This ships as one PR**, not a
+> phased rollout. The task list at the end is the build order _within_ that PR.
 
-Refactor Neondeck's code-changing task model so that a direct user instruction
-and an unattended watcher decision are treated as fundamentally different
-sources of authority.
+## Goals
 
-A watch is an observation subscription. Autopilot is permission for Neondeck
-to initiate work from observed events. A direct instruction in an interactive
-session is user-granted authority for a specific task. Linking a session to a
-watched repository or PR should provide context, but it should neither grant
-autopilot authority nor restrict an explicitly requested task.
+1. **Interactive sessions rarely prompt.** If a human is driving a chat session —
+   started from a watched PR or anywhere else — permission prompts are few and far
+   between. This is a blanket fact of being interactive. It must not depend on
+   keyword detection, request phrasing, or the watch/autopilot state of the linked
+   PR.
+2. **Autopilot sessions are governed.** When a PR is explicitly put on autopilot,
+   restrictions apply. In particular, autopilot can prepare fixes automatically but
+   still require review before anything lands.
 
-The target experience is:
+## The one idea: authority is a function of origin
 
-- “Explain this reviewer feedback” reads facts and explains them.
-- “Draft a fix” edits and verifies in an isolated worktree, but does not
-  deliver the change.
-- “Implement/address this reviewer feedback” performs the ordinary work needed
-  to update the linked PR when repo policy allows interactive delivery.
-- A passive watch continues to notify only.
-- A PR explicitly placed on autopilot follows its configured unattended mode.
-- Approvals represent meaningful scope expansion or external risk, not the
-  spelling of internal Git and shell commands.
+There is exactly one authority question: **is a human driving this session?**
 
-## Problem Statement
+- **Interactive** — a person is present. Determined solely by that fact, never by
+  the PR link, the words used, or an inferred outcome. A watched-PR link supplies
+  _context_ (which repo/PR/worktree) and never authority.
+- **Autopilot** — work initiated from an event with no human present, governed by a
+  per-PR mode.
 
-The current system uses “autopilot policy” for more than unattended initiative.
-Repo policy is consulted inside review-fix behavior even when work was requested
-interactively. Generic host execution approval is then used as a fallback for
-routine Git mechanics. This creates several product and architecture problems:
+No `inspect`/`prepare`/`deliver` enum, no verb classification, no additional
+origins. Provenance beyond these two (scheduled, delegated, recovery) is at most an
+audit label and gets no distinct authority path in this refactor.
 
-1. A `notify-only` watch can be interpreted as forbidding work the user just
-   requested explicitly.
-2. A user can approve a raw command that the executor will reject anyway, such
-   as a command containing `&&`.
-3. Exact command approval does not survive harmless retries or rewritten commit
-   messages, so one logical task can create many approval requests.
-4. Approval resolution nudges the continuing agent, but the durable workflow
-   does not own a resumable task grant. The agent must reconstruct the retry.
-5. Prepared diffs, worktrees, workflow runs, approvals, and session context are
-   correlated indirectly instead of belonging to one durable task.
-6. The Runtime approval audit surface has become part of the normal product
-   path instead of an escalation and diagnostics surface.
+## Interactive authority: a fixed capability boundary
 
-This is not solved by broadly preapproving more command strings. Routine repo
-work should use typed, scope-aware capabilities. Generic host execution should
-remain available for genuinely arbitrary commands and should retain its
-hardline safety boundary.
+Inside a **declared Neondeck repo/worktree boundary**, an interactive session gets a
+fixed capability set for free. Defined in code, not per-repo config.
 
-## Product Model
+**Free — never prompts (the routine 90%):**
 
-### Observation, initiative, authority, and execution are separate concepts
+- read/search repo files
+- edit repo files (already true: `display-assistant.ts:89`)
+- `git add` / `git commit` in the managed worktree
+- `git push` to the **linked PR head** (the branch the session is already on)
+- run configured repo checks
+- post the result comment to the linked PR
 
-```text
-manual user instruction ──> interactive task grant ─┐
-                                                    ├─> shared task workflow
-watch event ──> autopilot admission ──> task grant ─┘
-                                                              │
-                              worktree → edit → commit → verify → deliver
-```
+**Still prompts — legitimately, and rarely:**
 
-- **Observation** answers what Neondeck knows about: a repo, PR, watch, review,
-  CI result, schedule, or session link.
-- **Initiative** answers who decided that work should start: the user, a watch,
-  a schedule, a delegated worker, or a recovery action.
-- **Authority** answers what outcome that initiator is allowed to pursue for
-  this task.
-- **Guardrails** constrain all tasks using objective repo and risk policy.
-- **Execution** is the typed action or bounded workflow used to do the work.
-- **Escalation** is required only when the task exceeds its granted authority or
-  crosses a protected boundary.
+- force-push, or push to any destination other than the linked head
+- destructive git (hard reset on shared history, branch delete, history rewrite)
+- credential / secret operations
+- arbitrary host shell outside the repo capability set
+- anything outside the declared repo/worktree boundary
+- a diff that trips a shared guardrail (high-risk file, over the file/line limit)
 
-### Task origins
+**Never — hardline denies** remain denied for both origins.
 
-Introduce a first-class origin on every code-changing task:
+"Few prompts" is structural: the routine set is authorized by origin, so the only
+prompts are the rare, genuinely consequential ones. There is no language parsing in
+this decision. Interactive work is the agent using these capabilities
+conversationally — no special workflow, no admission step.
 
-```ts
-type RepoTaskOrigin =
-  | 'interactive'
-  | 'autopilot'
-  | 'scheduled'
-  | 'delegated'
-  | 'recovery';
-```
+## Autopilot authority: mode is the only mode-consuming path
 
-Origin is durable provenance, not a display-only label. It determines which
-admission policy may grant authority.
+Autopilot is the only place a mode is consulted. Existing per-PR modes are reused:
 
-| Origin | Admission source | Expected behavior |
-| --- | --- | --- |
-| `interactive` | Explicit user message or user-owned UI action | Execute the requested outcome within the linked task scope. |
-| `autopilot` | Watch event plus repo/watch autopilot policy | Act only to the configured unattended mode. |
-| `scheduled` | Enabled schedule plus schedule task policy | Run only the declared scheduled operation. |
-| `delegated` | Parent task grant plus delegation policy | Cannot exceed the parent task’s scope or authority. |
-| `recovery` | Explicit recovery action | Run only the selected bounded recovery operation. |
+| Mode                     | Behavior                                                                       |
+| ------------------------ | ------------------------------------------------------------------------------ |
+| `notify-only`            | Observe and notify; never touch code.                                          |
+| `prepare-only`           | Prepare a diff in a worktree; retain it; never deliver.                        |
+| `autofix-with-approval`  | Prepare, commit, verify; **wait for explicit approval before push** (goal #2). |
+| `autofix-push-when-safe` | Prepare and deliver automatically when all guardrails pass.                    |
 
-### Requested outcomes
+Autopilot runs as the existing bounded watcher workflow, over the **same** repo-edit,
+git, worktree, and check services as interactive work. It differs only in the
+authority wrapper: no human is present, so it is mode-gated and, on a guardrail hit,
+it **stops** (or retains a prepared diff) rather than prompting.
 
-Use outcome semantics rather than inferring authority from individual tools:
+Putting a PR on autopilot stays a separate, explicit action from watching it.
 
-```ts
-type RepoTaskOutcome = 'inspect' | 'prepare' | 'deliver';
-```
+## Shared guardrails, origin-differentiated response
 
-- `inspect`: gather and explain facts; no repo mutation.
-- `prepare`: edit in an isolated worktree, commit when appropriate, run
-  configured checks, and retain a prepared result without remote delivery.
-- `deliver`: perform `prepare`, then update the linked PR/branch and post the
-  configured result communication when delivery guardrails pass.
+Both origins evaluate the same objective guardrails via a new shared evaluator. Only
+the _response_ differs:
 
-For a PR-linked interactive session, recommended language semantics are:
+- **Interactive** may prompt once for a genuine expansion (new dependency, high-risk
+  file, over-limit diff), described by effect, never by command string.
+- **Autopilot** cannot expand its own authority: it stops, or under
+  `autofix-with-approval` retains the prepared diff and waits.
+- **Hardline denies** are denies for both.
 
-- “explain”, “investigate”, “review” → `inspect`
-- “draft”, “propose”, “prepare”, “do not push” → `prepare`
-- “implement”, “fix”, “address”, “update the PR” → `deliver`
+---
 
-The agent must pass the selected outcome and the originating user event id to a
-typed task action. The task card should make that interpretation visible. Repo
-configuration can choose the conservative fallback for ambiguous language, but
-should not force an additional approval after an unambiguous explicit request.
+# Implementation
 
-### Capabilities
+Everything below lands in one PR. File paths are exact; where a decision is left to
+implementation it is called out explicitly.
 
-A task grant should contain typed capabilities scoped to the task:
+## 0. Origin detection (the enforcement primitive)
+
+There is **one** `display-assistant` agent, and it exposes every action via its
+`actions:` array (`display-assistant.ts:120`). The same agent object is bound to the
+autonomous workflows (e.g. `fix-pr-review-feedback.ts` binds `agent: displayAssistant`).
+So origin **cannot** be enforced by which tools are on the agent — there is no
+separate interactive tool list. It must be detected at runtime and enforced inside
+the actions.
+
+The signal already exists. `FlueExecutionContext` carries `runId` **only inside a
+workflow run**; direct/interactive agent turns carry `instanceId`/`session` with **no
+`runId`** (`@flue/runtime` `run-store-*.d.mts`: "Workflow events may carry `runId`;
+direct and dispatched agent events carry `instanceId`… without becoming workflow
+runs"). The app already tracks it via `currentFlueExecutionContext()`
+(`src/modules/flue/execution-context.ts`). This is the same axis the codebase already
+uses for execution `context: 'interactive' | 'unattended'`.
+
+Add one helper:
 
 ```ts
-type RepoTaskCapability =
-  | 'repo:read'
-  | 'repo:edit'
-  | 'worktree:create'
-  | 'worktree:sync'
-  | 'worktree:commit'
-  | 'checks:configured'
-  | 'pr:push-linked-head'
-  | 'pr:comment-result';
+// src/modules/flue/origin.ts
+export type TaskOrigin = 'interactive' | 'autopilot';
+export function currentTaskOrigin(): TaskOrigin {
+  return currentFlueExecutionContext()?.runId ? 'autopilot' : 'interactive';
+}
 ```
 
-Each grant is bounded by `repoId`, optional `prNumber`, `sessionId`,
-`worktreeId`, task id, allowed push destination, and lifetime. The grant expires
-when the task reaches a terminal state or is abandoned.
+Enforcement rules that follow from this:
 
-`git add`, `git commit`, `git push`, and concrete check command strings are
-implementation details behind these capabilities. They remain audited but are
-not separate interactive approval boundaries when a typed action is operating
-within the grant.
+- The new interactive git capabilities (§3) **refuse when origin is `autopilot`** —
+  autopilot must go through its prepared-diff/push workflow, never the interactive
+  fast path.
+- The autopilot fix/prepare/push actions (`neondeck_autopilot_*`) **refuse when origin
+  is `interactive`** — this is what structurally guarantees an interactive session can
+  never reach the autopilot-policy gate, regardless of what the model tries to call.
+- Guardrail _response_ (§1) branches on `currentTaskOrigin()`: interactive → one
+  effect-worded confirm; autopilot → stop / prepare per mode.
 
-## Policy Separation
+## 1. Shared guardrails module (`src/modules/repo-guardrails/`)
 
-### Watch policy
-
-Watching means “observe this PR and report meaningful changes.” Adding a watch
-must not itself enable code-changing initiative.
-
-Watch records continue to own event watermarks, notification behavior, and
-event reconciliation. They provide context to linked sessions and may be used
-as an input to autopilot admission.
-
-### Autopilot policy
-
-Autopilot policy applies only when `origin === 'autopilot'`:
-
-- `notify-only`: do not create a code-changing task.
-- `prepare-only`: admit a task with outcome `prepare` and no delivery
-  capability.
-- `autofix-with-approval`: admit a `prepare` task and create one task-level
-  delivery escalation after checks pass.
-- `autofix-push-when-safe`: admit a `deliver` task when all shared guardrails
-  allow it.
-
-Repo-level defaults and per-watch/PR overrides remain useful, but must no longer
-govern interactive task admission.
-
-### Interactive task policy
-
-Add a separate per-repo interactive policy. The exact config schema should be
-validated during implementation, but it needs to express at least:
+Extract the objective logic currently inlined in
+`src/modules/autopilot-policy/service.ts:32-187` (`checkAutopilotPolicy`) into an
+origin-independent evaluator. **Do not** move the mode logic.
 
 ```ts
-type InteractiveRepoPolicy = {
-  ambiguousOutcome: 'prepare' | 'deliver-linked-pr';
-  allowManagedWorktreeEdits: boolean;
-  allowLocalCommits: boolean;
-  allowConfiguredChecks: boolean;
-  allowPushToLinkedPr: boolean;
-  allowResultComments: boolean;
+// src/modules/repo-guardrails/index.ts
+export type RepoGuardrailViolation = {
+  kind:
+    | 'denied-path' // hardline for both origins
+    | 'high-risk-file' // expansion (interactive prompt / autopilot stop)
+    | 'max-files' // expansion
+    | 'max-lines' // expansion
+    | 'force-push' // expansion unless allowForcePush
+    | 'push-destination'; // hardline: only allowedPushDestinations
+  path?: string;
+  detail: string;
 };
+
+export type RepoGuardrailResult = {
+  files: FileRiskClassification[];
+  diffSummary: {
+    files: number;
+    lines: number;
+    additions: number;
+    deletions: number;
+  };
+  denied: RepoGuardrailViolation[]; // hardline; both origins refuse
+  expansions: RepoGuardrailViolation[]; // interactive: one prompt; autopilot: stop
+  policyHash: string;
+};
+
+export async function evaluateRepoGuardrails(
+  input: {
+    repoId?: string;
+    worktreeId?: string;
+    diffBaseRef?: string;
+    pushDestination?: string;
+    forcePush?: boolean;
+    guardrails: RepoGuardrails; // shared config block; see §5
+  },
+  paths?: RuntimePaths,
+): Promise<RepoGuardrailResult>;
 ```
 
-Recommended policy for trusted personal repos:
+- Move `classifyFileRisk`, the file/line-limit checks, `pathDeniedByAutopilotPolicy`,
+  push-destination and force-push checks here. `classifyFileRisk` and `matchesAny`
+  currently live in `src/modules/autopilot-policy/risk.ts` — relocate or re-export.
+- Classify each violation as `denied` (hardline) or `expansion` per the table above.
+- `checkAutopilotPolicy` is rewritten to: call `evaluateRepoGuardrails`, then apply
+  `mode` to produce the existing `AutopilotPolicyDecision` shape (keep `decision`,
+  `canPush`, `approvalRequired`, `blocked`, `policyHash`, `mode`, `limits` fields so
+  the watcher workflow and `neondeck_autopilot_policy_check` tool are unchanged
+  externally). `canPush` stays `mode === 'autofix-push-when-safe' && !denied &&
+!expansions`.
+- Keep `checkAutopilotConcurrency` and `withAutopilotLocalExecutionSlot` where they
+  are; the single-mutation-per-PR lock (`singleMutationPerPr`,
+  `service.ts:253-261`) is already origin-agnostic — interactive commits must also
+  respect it (see step 4).
 
-- allow managed-worktree edits, local commits, and configured checks
-- interpret explicit “implement/fix/address” requests as delivery requests
-- allow ordinary push to the already-linked PR head
-- keep force-push, alternate destinations, destructive Git operations, and
-  trust-boundary changes outside the grant
+## 2. Interactive repo-context resolver (`src/modules/sessions/repo-context.ts`)
 
-Interactive policy is not permission for the agent to initiate work. It defines
-how much of an explicit request can be fulfilled without asking the user to
-approve its mechanical substeps.
-
-### Shared guardrails
-
-Both interactive and autonomous tasks must use the same objective constraints:
-
-- declared repo and managed-worktree boundaries
-- denied paths and approval-required paths
-- max file and line limits
-- high-risk file classification
-- required checks
-- allowed push destinations
-- GitHub branch permissions
-- no force-push by default
-- credential and secret boundaries
-- concurrency and one-mutation-per-PR locking
-
-The response to a guardrail differs by origin:
-
-- Autopilot cannot expand its own authority. It stops or requests a task-level
-  escalation.
-- An interactive task may request one explicit scope expansion tied to the
-  original task.
-- Hardline denies remain denies regardless of origin.
-
-## Durable Task Domain
-
-### Persistence
-
-Add app-state tables using the existing migration workflow.
-
-`repo_tasks` should include:
-
-- id
-- origin
-- requested outcome and currently authorized outcome
-- repo id, PR number, session id, and originating session event id
-- watch id, schedule id, parent task id, or recovery source id when applicable
-- worktree id and prepared diff id
-- workflow name and Flue run id
-- status
-- grant/capability JSON
-- risk and guardrail summary JSON
-- requested-at, started-at, updated-at, and terminal timestamps
-- compact user-visible summary and last error
-
-Suggested task states:
+The linchpin. Resolves an interactive session to a concrete edit/push target.
+Nothing today does this end-to-end.
 
 ```ts
-type RepoTaskStatus =
-  | 'requested'
-  | 'admitted'
-  | 'running'
-  | 'needs-input'
-  | 'needs-approval'
-  | 'prepared'
-  | 'delivering'
-  | 'completed'
-  | 'blocked'
-  | 'failed'
-  | 'abandoned';
+export type InteractiveRepoContext = {
+  repo: RepoConfig;
+  prNumber: number | null;
+  worktree: WorktreeRecord; // resolved or created
+  pushRemote: string; // origin or fork per maintainerCanModify
+  pushBranch: string; // the linked PR head ref
+  linkedPrHead: boolean; // true when derived from a linked PR
+};
+
+export async function resolveInteractiveRepoContext(
+  input: {
+    sessionId?: string;
+    repoId?: string;
+    prNumber?: number;
+    worktreeId?: string;
+  },
+  paths?: RuntimePaths,
+): Promise<InteractiveRepoContext | null>;
 ```
 
-`repo_task_events` should record compact state transitions, capability use,
-workflow linkage, risk changes, approval linkage, and terminal outcomes.
+Algorithm:
 
-Existing `worktrees`, `prepared_diffs`, workflow summaries, notifications,
-Kilo tasks, and approvals should gain nullable `task_id` linkage rather than
-being replaced in the first migration.
+1. Load the session via `findChatSession` (`src/modules/sessions/store.ts`). Take
+   `linkedRepoId` (fall back to `input.repoId`). No repo ⇒ return `null` (interactive
+   edits require a declared repo).
+2. Derive `prNumber`: prefer `input.prNumber`; else parse `linkedWatchId` of the form
+   `owner/name#N` (`agent-context.ts:85` shows this is the encoding). No PR ⇒
+   `prNumber = null`; commits still allowed, push becomes an expansion prompt (no
+   linked head to target).
+3. Resolve the managed worktree by `(repoId, prNumber)`. Reuse the exact
+   create/adopt logic from `review-feedback.ts:302-341` (`listWorktrees` /
+   `readManagedWorktree` / `createWorktree` with `directPushAllowed =
+maintainerCanModify`). Factor that block into a shared `ensurePrWorktree` helper in
+   `src/modules/worktrees/` and call it from both places so interactive and autopilot
+   resolve worktrees identically.
+4. `pushRemote` / `pushBranch`: reuse `remoteForPush` from
+   `src/modules/autopilot/push-support.ts` and the PR head ref from the event state.
 
-### Authority resolver
+Note the `linkedTaskId` session field already exists (`agent-context.ts:86`); this
+refactor does **not** introduce a durable task domain, so leave it unused/nullable.
 
-Add one domain service that computes an effective task grant:
+## 3. Typed git capabilities (`src/repo-edit/actions.ts`)
 
-```text
-origin admission
-  ∩ requested outcome
-  ∩ interactive/autopilot/schedule/delegation policy
-  ∩ repo guardrails
-  ∩ workspace boundary
-  ∩ credential and branch permissions
-= effective task grant
+Add two actions that operate inside the declared boundary and **never create an
+execution-approval record**, mirroring the existing file actions. Both are
+**interactive-only**: first line of each `run` is
+`if (currentTaskOrigin() === 'autopilot') return failedResult(..., requires:['interactiveOnly'])`.
+
+```ts
+export const repoCommitAction = defineAction({
+  name: 'neondeck_repo_commit',
+  // interactive-only guard first.
+  // input: { repoId, worktreeId, message, paths?: string[] }
+  // paths omitted ⇒ commit all worktree changes (gitCommitAll)
+  // paths present ⇒ gitCommitPaths(worktree.localPath, message, paths)
+  // output: GitCommitResult
+});
+
+export const repoPushAction = defineAction({
+  name: 'neondeck_repo_push',
+  // interactive-only guard first.
+  // input: { sessionId?, repoId?, worktreeId?, prNumber?, acknowledgeExpansion?: boolean }
+  // 1. ctx = resolveInteractiveRepoContext(input); null ⇒ typed error requires:['repoContext']
+  // 2. no linked PR head ⇒ ok:false requires:['pushTarget'] (which branch?)
+  // 3. g = evaluateRepoGuardrails({ worktreeId: ctx.worktree.id, pushDestination:'pull-request-head', guardrails })
+  //    - g.denied.length     ⇒ ok:false requires:['guardrail'] (hardline; do not push)
+  //    - g.expansions.length && !acknowledgeExpansion
+  //                          ⇒ ok:false requires:['confirmPush'], effect: humanEffectSummary(g.expansions)
+  //    - otherwise gitPushHead(ctx.worktree.localPath, { remote: ctx.pushRemote, branch: ctx.pushBranch })
+  // output: GitPushResult + guardrail summary
+});
 ```
 
-The resolver should return structured reasons and required escalations. No
-agent prompt or UI client should recreate this logic.
+**Scope-expansion confirm — best-UX, auditable, no new subsystem.** When a push trips
+an expansion guardrail, the action returns typed `requires: ['confirmPush']` plus an
+effect-worded `effect` string. The agent relays it in natural language; on "yes" it
+re-calls `neondeck_repo_push` with `acknowledgeExpansion: true`. This keeps the
+confirmation inline in the conversation (no approvalId nudge, no retry reconstruction —
+the failure mode that motivated this whole refactor). For audit, **record the decision
+as a session audit row** (`recordSessionAudit`, `action: 'repo_push_expansion_ack'`,
+with the effect summary and resolved commit SHA) so there is a durable trail without a
+parallel approval-record type. `add` and `commit` never gate — push is the single
+confirm point.
 
-### Idempotency
+Register both alongside the existing `neondeck_repo_file_*` actions
+(`neondeckRepoEditActions`, `display-assistant.ts:131`). Enforce the boundary with the
+repo-registry + `src/repo-edit/path-safety.ts`; `repoPush` refuses any explicit
+remote/branch other than the resolved linked head.
 
-- Interactive task creation is idempotent by originating session event id.
-- Watcher task creation remains idempotent by admission/event fingerprint.
-- Delegated work is idempotent by parent task plus delegation id.
-- Only one active mutation task may own a PR/worktree lock by default.
-- Retrying a workflow resumes the same task and grant.
-- Prepared-diff refresh supersedes the previous snapshot while retaining audit
-  history and task identity.
+## 4. Make interactive and autopilot structurally separate
 
-## Workflow Architecture
+The separation is enforced by the §0 origin guards, **not** by editing the agent's
+tool set (which is shared and would break the autonomous path). Concretely:
 
-### Shared task workflow
+- The `neondeck_repo_commit` / `neondeck_repo_push` actions refuse in autopilot origin
+  (§3). The `neondeck_autopilot_fix_pr_review_feedback` / `_fix_pr_ci_failure` /
+  `_prepare_pr_worktree` / `_push_pr_autofix` actions gain the inverse guard: **refuse
+  in interactive origin**, returning `requires:['autopilotWorkflow']`. This is the hard
+  guarantee that an interactive session can never reach the autopilot-policy gate.
+- After that guard, delete the now-unreachable autopilot-policy consults from the
+  interactive story: `repoAutopilotPolicy` / `checkAutopilotPolicy` /
+  `pathDeniedByAutopilotPolicy` in `review-feedback.ts:266,480` remain, but only ever
+  run under `runId` (autopilot). Interactive edits/commits/pushes use
+  `evaluateRepoGuardrails` directly, only at push.
+- Rewrite the display-assistant guidance at `display-assistant.ts:75,89` to tell the
+  agent: for interactive repo work use `neondeck_repo_file_*` + `neondeck_repo_commit`
+  - `neondeck_repo_push`; the `neondeck_autopilot_*` fix actions are workflow-only and
+    will refuse in a chat session. The guidance is a hint; the origin guards are the
+    enforcement, so a model mistake degrades to a typed error, not a policy prompt.
 
-Manual and autonomous paths should converge after task admission:
+**Verified during planning** (was previously an open risk): the watcher does not reach
+these fix actions through the chat agent's tool choice — the autonomous path runs them
+as bound workflow actions / HTTP routes (`autopilot.ts:58`) under a `runId`, so the
+interactive-refuse guard does not affect it. A watcher integration test still asserts
+this.
 
-1. Create or adopt a managed worktree.
-2. Acquire the task/PR mutation lock.
-3. Fetch deterministic repo, PR, review, and check facts.
-4. Plan and apply changes through repo-edit actions.
-5. Evaluate the resulting diff against shared guardrails.
-6. Commit through the app-owned Git service and the task’s
-   `worktree:commit` capability.
-7. Run configured checks through typed check definitions.
-8. Recompute risk and effective delivery authority.
-9. Deliver, request one task-level escalation, or retain a prepared result.
-10. Post the configured result comment, release the lock, and close the task.
+**Contention — interactive preempts autopilot (verified feasible).** Interactive
+commit/push acquires the shared per-PR worktree lock (`lockWorktree`, scope `pr`).
+`worktree_locks` records `owner` and `workflow_run_id` (`locks.ts:24`, auto-recovers
+expired locks). If acquisition fails against a live **autopilot-owned** lock (non-null
+`workflow_run_id`), the interactive path requests cooperative preemption through the
+existing prepared-diff/recovery surface. The autonomous owner checks its mutation lease
+between awaited commands and before commit/push/persistence, then releases in its normal
+`finally`; the interactive action surfaces `worktreeLock` until retry can acquire the
+released lock. This avoids transferring ownership while an already-started Git or
+diagnostic subprocess may still be running. An interactive-owned lock is simply waited
+on / surfaced. Document this as the rule.
 
-Flue workflows should remain finite, inspectable work units. The continuing
-display-assistant agent owns the conversation, while app state owns the durable
-task and Flue owns workflow execution history.
+## 5. Config — move objective limits into a shared `guardrails` block
 
-### Manual session path
-
-Add a typed action such as `neondeck_repo_task_start` that accepts:
-
-- origin `interactive`
-- originating session/event identity
-- repo/PR context
-- requested outcome
-- user-request summary
-- optional structured reviewer/check target
-
-It creates the task grant and invokes the appropriate bounded workflow. Manual
-reviewer-fix behavior must not pass through watcher admission or consult
-autopilot mode to decide whether the task may exist.
-
-### Watcher path
-
-The watcher continues to detect and reconcile events. Its autopilot admission
-step creates a task only when the effective repo/watch mode permits it. Once
-created, that task uses the same task workflow and shared guardrails as an
-interactive task.
-
-### Typed execution first
-
-Routine operations must use app-owned services:
-
-- file reads and edits through repo-edit
-- worktree lifecycle through worktree services
-- selected-path staging and commits through repo-edit Git services
-- configured checks through named repo check definitions
-- linked-branch push through the PR delivery service
-- result comments through the GitHub service
-
-Generic `neondeck_execution_run` remains for commands that do not map to typed
-task capabilities. It must not be the normal implementation path for commit,
-push, or configured verification inside a managed task.
-
-## Approval And Escalation Model
-
-### What requires escalation
-
-Create a task-level escalation only when one of these occurs:
-
-- the task needs an outcome beyond the user or autopilot grant
-- the diff enters a configured high-risk class
-- the task needs a denied-by-default operation that policy permits a user to
-  override
-- delivery targets something other than the linked PR head
-- a new dependency, migration, CI/deployment change, credential operation, or
-  destructive Git operation is required
-- an arbitrary host command is required outside configured task capabilities
-
-### What does not require escalation
-
-Do not request approval for:
-
-- ordinary reads and edits inside the task’s managed worktree
-- staging paths changed by the task
-- creating the task’s local commit
-- running configured checks
-- retrying an idempotent task step
-- changing the wording of a commit message
-- pushing to the linked PR head when an interactive `deliver` grant or safe
-  autopilot grant already includes that effect
-
-### Approval identity
-
-Approvals attach to task id, requested capability/scope expansion, policy hash,
-and relevant commit/diff identity. They do not attach primarily to raw command
-text.
-
-Requirements:
-
-- dedupe identical pending escalations
-- automatically supersede obsolete requests after task/diff changes
-- resume the owning task/workflow directly after resolution
-- never create an approval for an operation the executor will structurally
-  reject
-- preserve exact user, dashboard, API, or policy provenance
-- support “allow for this task” and explicit durable repo-policy changes as
-  separate decisions
-
-Execution approvals remain a separate lower-level mechanism for arbitrary host
-commands. An execution approval must link to the task when one exists, and a
-command rewrite must not silently become a new task-level scope request.
-
-## Dashboard And Chat UX
-
-### Task-first interaction
-
-Add an operator-visible task card/timeline showing:
-
-- origin and who initiated it
-- repo, PR, worktree, and session
-- requested and authorized outcome
-- current phase
-- files changed and risk summary
-- checks and delivery state
-- one clear escalation when needed
-
-Normal interactive work should be controlled in the linked chat/task context.
-Runtime remains the audit, policy, and debugging surface.
-
-### Surface separation
-
-- **Watches**: observation state and meaningful deltas.
-- **Autopilot**: unattended task admission, autonomous queue, prepared results,
-  and delivery decisions.
-- **Chat/task card**: user-requested work, progress, and relevant escalation.
-- **Runtime**: execution audit, raw approvals, safety policy, and failures.
-
-An interactive task on a watched PR may be referenced from Autopilot for shared
-worktree visibility, but it must be labeled `interactive` and must not appear as
-an autonomous decision.
-
-### Escalation copy
-
-Ask about effects and scope, not internal commands.
-
-Good:
-
-> This reviewer fix now needs to update `package-lock.json` and install a new
-> dependency. Allow that expansion for this task?
-
-Bad:
-
-> Approve `git add ... && git commit ...`?
-
-## Configuration Direction
-
-Keep the current `autopilot` config for unattended initiative, but move shared
-risk limits into a clearly shared policy layer over time. Add an `interactive`
-repo policy rather than overloading autopilot modes.
-
-Conceptual shape:
+Do the ideal shape now (breaking change, no legacy data to preserve). Split today's
+`autopilot` config: objective limits become a top-level `guardrails` block read by both
+origins; `autopilot` keeps only initiative concerns.
 
 ```json
 {
-  "interactive": {
-    "ambiguousOutcome": "prepare",
-    "allowManagedWorktreeEdits": true,
-    "allowLocalCommits": true,
-    "allowConfiguredChecks": true,
-    "allowPushToLinkedPr": true,
-    "allowResultComments": true
+  "guardrails": {
+    "deniedFileGlobs": [],
+    "approvalRequiredFileGlobs": [],
+    "highRiskClasses": [],
+    "maxFilesChanged": 50,
+    "maxLinesChanged": 1500,
+    "allowForcePush": false,
+    "allowedPushDestinations": ["pull-request-head"],
+    "requiredChecks": []
   },
   "autopilot": {
-    "mode": "notify-only"
-  },
-  "guardrails": {
-    "allowForcePush": false,
-    "allowedPushDestinations": ["pull-request-head"]
+    "mode": "notify-only",
+    "concurrency": { "singleMutationPerPr": true },
+    "pushOnApproval": "verify-then-push",
+    "watchOverrides": []
   }
 }
 ```
 
-This is illustrative, not a committed schema. Preserve compatibility with
-existing `metadata.autopilot.limits` while migrating shared limits through
-typed config actions.
+- Move the `AutopilotPolicyLimits` fields out of `appAutopilotSchema` /
+  `metadataSchema` (`autopilot-policy/schemas.ts`, `config.ts`) into a new
+  `RepoGuardrails` schema; keep per-repo override merging (`mergeAutopilotLimits`
+  becomes `mergeGuardrails`).
+- `repoAutopilotPolicy` returns `{ mode, concurrency }` only; guardrails are read
+  separately by `evaluateRepoGuardrails`.
+- There is deliberately **no** `interactive` config block — the interactive capability
+  boundary is fixed in code.
+- Update `neondeck_config_*` actions and any dashboard config UI that wrote
+  `autopilot.limits` to write `guardrails`. This is the one place the "one PR" touches
+  config surface; budget for it.
 
-## Implementation Phases
+## 6. Deletions (same PR)
 
-Each phase should land as a focused change with `npm run check`, relevant
-integration tests, and `npm run db:check` when migrations change.
+- The interactive dependence on execution-approval string matching for git. Routine
+  commit/push no longer creates approval records, so the exact-match / shell-operator
+  churn in `src/modules/execution/approvals.ts` (`hasShellOperator` at `:274`,
+  `match:'exact'` at `:302`) and the "retry with approvalId" nudge at `:236` stop
+  occurring on the common path. Leave `neondeck_execution_run` + its approval flow
+  intact for genuinely arbitrary host commands.
+- Any `inspect`/`prepare`/`deliver` outcome scaffolding — do not build it.
 
-### Phase 0 — Specify invariants and instrument origin
+## Task list (build order within the one PR)
 
-- [ ] Document the distinction between watch, autopilot, interactive tasks,
-  guardrails, and execution approvals in README/runtime guidance.
-- [ ] Add an origin field to relevant workflow inputs, summaries, and audit
-  events without changing behavior.
-- [ ] Measure approval count, duplicate approvals, blocked-after-approval
-  operations, retries, and completion latency by logical task/session/PR.
-- [ ] Add regression coverage proving that unsupported shell commands cannot
-  create actionable approval requests.
+1. [x] Add `currentTaskOrigin()` in `src/modules/flue/origin.ts` (§0). Unit-test both
+       branches with `runWithFlueExecutionContextForTests`.
+2. [x] Split config (§5): new `RepoGuardrails` schema + `guardrails` block; strip
+       limits from `autopilot`; update `mergeGuardrails`, `repoAutopilotPolicy`, and
+       `neondeck_config_*` write paths. `npm run db:check` if the config parse/validation
+       touches persisted shape.
+3. [x] Add `src/modules/repo-guardrails/` with `evaluateRepoGuardrails`; move
+       `classifyFileRisk` / limit / denied-path / push-dest / force-push out of
+       `autopilot-policy`. Unit-test denied-vs-expansion classification.
+4. [x] Rewrite `checkAutopilotPolicy` on top of `evaluateRepoGuardrails`, preserving
+       its external output shape. Existing autopilot tests pass unchanged (or update for
+       the config move only).
+5. [x] Factor `ensurePrWorktree` out of `review-feedback.ts` into `worktrees/`.
+6. [x] Add `src/modules/sessions/repo-context.ts` with `resolveInteractiveRepoContext`.
+       Unit-test PR parsing from `linkedWatchId` and the no-PR path.
+7. [x] Add `neondeck_repo_commit` + `neondeck_repo_push` (interactive-only guard,
+       `confirmPush` expansion return, session-audit ack). Register in
+       `neondeckRepoEditActions`.
+8. [x] Add the interactive-refuse guard to the `neondeck_autopilot_*` fix/prepare/push
+       actions; rewrite display-assistant guidance (§4).
+9. [x] Wire the shared per-PR lock + interactive-preempts-autopilot contention into
+       interactive commit/push (§4).
+10. [x] Confirm the watcher path is untouched (integration test); remove any code made
+        dead by the guards.
+11. [x] Tests + docs (below). `npm run check`, `npm run verify`.
 
-### Phase 1 — Add the durable task domain
+## Verification
 
-- [ ] Add `repo_tasks` and `repo_task_events` migrations and schemas.
-- [ ] Implement task create/read/list/transition services with idempotency.
-- [ ] Link worktrees, prepared diffs, workflow summaries, notifications,
-  execution approvals, and Kilo tasks to task ids where applicable.
-- [ ] Add task lookup APIs/tools for chat, dashboard, and future TUI use.
-- [ ] Keep existing APIs compatible while task linkage is nullable.
+**Single acceptance gate (must pass to merge):** an integration test where a session
+is linked to a PR watched `notify-only`, an explicit "fix this" edits a file, commits,
+pushes to the linked head, and comments — asserting **zero** execution-approval
+records are created and `notify-only` never blocks the work.
 
-### Phase 2 — Split authority resolution from autopilot policy
+Supporting tests:
 
-- [ ] Implement the shared task authority resolver.
-- [ ] Add typed interactive repo policy config and update actions.
-- [ ] Restrict autopilot mode checks to autopilot-origin admission and delivery.
-- [ ] Preserve shared limits/guardrails across origins.
-- [ ] Add policy explanations that state origin, grant, constraint, and required
-  escalation separately.
+- Unit: `currentTaskOrigin()` both branches; `evaluateRepoGuardrails`
+  denied-vs-expansion; interactive push refuses non-linked-head destinations;
+  `resolveInteractiveRepoContext` PR parsing and no-PR fallback.
+- Origin guards: `neondeck_repo_push`/`_commit` refuse under a `runId` context;
+  `neondeck_autopilot_fix_pr_review_feedback` refuses with no `runId`.
+- Integration: `autofix-with-approval` autopilot prepares but never auto-lands;
+  `autofix-push-when-safe` lands only within guardrails; watcher path unchanged.
+- Contention: an interactive push preempts a live autopilot-owned PR lock and marks the
+  autopilot run for recovery.
+- Regression: interactive git creates no `execution_approvals` rows; the `confirmPush`
+  path prompts exactly once, proceeds on `acknowledgeExpansion: true`, and writes one
+  session-audit ack row.
+- `npm run verify` before merge.
 
-### Phase 3 — Build the interactive task path
+Primary metric:
 
-- [ ] Add `neondeck_repo_task_start` and the matching service/API.
-- [ ] Route explicit reviewer-fix and CI-fix requests into interactive tasks.
-- [ ] Treat the originating user event as the grant provenance.
-- [ ] Select/create the linked PR worktree without watcher admission.
-- [ ] Use typed repo-edit, Git commit, configured-check, and delivery services.
-- [ ] Ensure `notify-only` does not block an interactive task.
+> An explicit interactive fix on a trusted linked PR completes with zero routine
+> approvals. An `autofix-with-approval` autopilot task lands only after exactly one
+> explicit review approval.
 
-### Phase 4 — Converge watcher autopilot on the shared task engine
+## Non-goals
 
-- [ ] Make watcher admissions create autopilot-origin tasks.
-- [ ] Map existing modes to task outcomes and capabilities.
-- [ ] Preserve watcher event idempotency and same-PR concurrency behavior.
-- [ ] Link existing prepared-diff push approvals to task-level delivery
-  escalation.
-- [ ] Keep passive watches notification-only.
-
-### Phase 5 — Refactor approvals and resumption
-
-- [ ] Add task-scoped escalation records or extend prepared-diff approvals with
-  task scope and capability semantics.
-- [ ] Dedupe/supersede stale approvals and reconcile existing duplicates.
-- [ ] Resume the owning workflow directly after approval.
-- [ ] Validate structural executability before requesting execution approval.
-- [ ] Keep arbitrary host execution approval strict and separately auditable.
-- [ ] Remove generic shell fallback for routine managed-task commit and push.
-
-### Phase 6 — Deliver task-first UX
-
-- [ ] Add interactive task cards/timeline to linked chat.
-- [ ] Add task origin and requested/authorized outcome to operator views.
-- [ ] Keep unattended tasks in Autopilot and execution details in Runtime.
-- [ ] Deep-link notifications to the owning task and relevant escalation.
-- [ ] Make approval controls visually accurate and show ids/scope in audit
-  views.
-- [ ] Add typed UI controls for per-repo interactive behavior and per-PR
-  autopilot enrollment.
-
-### Phase 7 — Migrate, document, and remove compatibility paths
-
-- [ ] Backfill task linkage where reliable; leave unverifiable historic records
-  unlinked rather than inventing provenance.
-- [ ] Update the built-in Neondeck runtime skill and display-assistant guidance.
-- [ ] Update README and operator documentation with the new mental model.
-- [ ] Remove manual-review code paths that directly consult autopilot admission.
-- [ ] Remove obsolete approval retry/nudge behavior after all task workflows are
-  resumable.
-- [ ] Record all roadmap deviations and deferred items in
-  `.plans/DEVIATIONS.md` during implementation.
-
-## Acceptance Scenarios
-
-### Manual request on a passive watch
-
-Given a PR is watched with `notify-only`, when the user says “implement this
-reviewer suggestion” in its linked session:
-
-- one interactive task is created
-- the watch mode is shown as context but is not consulted for task admission
-- a managed worktree is used
-- the change is edited, committed, and checked through typed capabilities
-- the linked PR is updated when interactive delivery policy permits it
-- no Git execution approval is created
-- any required escalation is task-scoped and appears once
-
-### Passive watch event
-
-Given the same PR is `notify-only`, when a new reviewer comment arrives without
-a user instruction:
-
-- Neondeck updates watch state and notifies
-- no code-changing task or worktree mutation begins
-
-### Autofix with approval
-
-Given the PR is explicitly configured as `autofix-with-approval`, when a bounded
-review event arrives:
-
-- one autopilot-origin task prepares, commits, and verifies the fix
-- one delivery escalation is created after checks pass
-- approval resumes that task and completes delivery
-- no raw Git execution approvals are created
-
-### Safe auto-delivery
-
-Given `autofix-push-when-safe` and a low-risk diff that passes all guardrails:
-
-- the task prepares and delivers without user interaction
-- the audit trail identifies watcher admission and policy authority
-
-### Meaningful interactive scope expansion
-
-Given an interactive reviewer fix unexpectedly needs a dependency change:
-
-- routine work does not generate approvals
-- one task-level request explains the dependency and lockfile expansion
-- approval applies to that task scope and resumes the same workflow
-
-### Arbitrary execution fallback
-
-Given a task requires an undeclared diagnostic command:
-
-- one execution escalation links to the task
-- approval resumes the same task step
-- duplicate retries do not create duplicate requests
-- structurally unsupported commands are rejected before approval creation
-
-## Verification Strategy
-
-- Unit tests for origin-aware authority resolution and policy intersections.
-- Migration and schema tests for task/event linkage.
-- Integration tests for interactive, autopilot, scheduled, delegated, and
-  recovery task origins.
-- Fixture-backed Flue smoke tests for task creation, workflow resumption,
-  prepared-diff refresh, delivery, and terminal cleanup.
-- UI tests for task cards, origin labels, inline escalation, deep links, and
-  duplicate suppression.
-- Regression tests for shell-operator approval loops, exact-command rewrite
-  churn, stale prepared diffs, and duplicate watcher/manual work on one PR.
-- Full `npm run verify` before completing the final migration phase.
-
-Primary usability metric:
-
-> A normal explicit reviewer-fix request on a trusted linked PR completes with
-> zero mechanical execution approvals. An unattended `autofix-with-approval`
-> task requires at most one meaningful delivery approval.
-
-## Recommended Decisions
-
-1. Watching and autopilot enrollment remain separate operations.
-2. Linking session context never changes task authority by itself.
-3. Explicit “implement/fix/address” language on a linked PR requests delivery;
-   “draft/prepare/do not push” requests a retained prepared result.
-4. Managed-worktree edit, commit, and configured checks are ordinary task
-   capabilities, not shell approvals.
-5. Interactive delivery to the already-linked PR head is configurable per repo
-   and enabled for trusted personal repos.
-6. Autopilot policy governs only unattended initiative and autonomous delivery.
-7. Shared guardrails remain origin-independent and hardline denies remain hard.
-8. Approvals represent capability or scope expansion and resume a durable task.
-9. Flue workflows own bounded execution; the display assistant owns the
-   conversation; Neondeck app state owns durable task authority and audit.
-
-## Non-Goals
-
-- Do not provide unrestricted shell access to interactive agents.
-- Do not make watching a PR equivalent to enabling autopilot.
-- Do not allow an autonomous task to approve its own scope expansion.
-- Do not bypass hardline denies, credential boundaries, or branch permissions.
-- Do not replace Flue workflow/run persistence with app-state task persistence;
-  link them and keep their responsibilities distinct.
-- Do not require every repo operation to become a single giant workflow. Tasks
-  may coordinate several bounded workflows while retaining one grant and audit
-  identity.
-- Do not infer or backfill authority that was not recorded for historic work.
+- No unrestricted shell for interactive sessions; the capability boundary and
+  hardline denies still hold.
+- Watching a PR is never equivalent to enabling autopilot.
+- No keyword/verb detection to determine authority.
+- No autonomous task may expand its own authority or bypass hardline denies,
+  credential boundaries, or branch permissions.
+- No durable task domain, extended origin taxonomy, or outcome enum. Origin is a
+  runtime-derived `interactive | autopilot`, not a persisted field.

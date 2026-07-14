@@ -31,14 +31,13 @@ export async function readRuntimeStatus(
   paths: RuntimePaths = runtimePaths(),
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<RuntimeStatus> {
-  const [config, mcpConfig, repos, skills, session] =
-    await Promise.all([
-      safeRead(() => readRuntimeJson(paths.config, parseAppConfig)),
-      safeRead(() => readRuntimeJson(paths.mcp, parseMcpConfig)),
-      safeRead(() => readRuntimeJson(paths.repos, parseRepoRegistry)),
-      safeRead(() => listRuntimeSkills(paths)),
-      safeRead(() => readNeonSessionState(paths)),
-    ]);
+  const [config, mcpConfig, repos, skills, session] = await Promise.all([
+    safeRead(() => readRuntimeJson(paths.config, parseAppConfig)),
+    safeRead(() => readRuntimeJson(paths.mcp, parseMcpConfig)),
+    safeRead(() => readRuntimeJson(paths.repos, parseRepoRegistry)),
+    safeRead(() => listRuntimeSkills(paths)),
+    safeRead(() => readNeonSessionState(paths)),
+  ]);
   const mcpServers = mcpStatusFromConfig(paths, mcpConfig);
   const appDatabase = inspectAppDatabase(paths);
   const flueDatabase = inspectFlueDatabase(paths);

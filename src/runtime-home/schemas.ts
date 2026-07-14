@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 import { mcpConfigSchema, type McpConfig } from '../domains/mcp/schemas';
+import { repoGuardrailsSchema } from './guardrails';
 
 function hasShellOperator(value: string) {
   return /(?:\n|&&|\|\||[;&|<>`]|\$\()/.test(value);
@@ -206,20 +207,6 @@ export const autopilotModeSchema = v.picklist([
   'autofix-push-when-safe',
 ]);
 
-export const autopilotPolicyLimitsSchema = v.looseObject({
-  maxFilesChanged: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
-  maxLinesChanged: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
-  deniedFileGlobs: v.optional(v.array(nonEmptyStringSchema)),
-  approvalRequiredFileGlobs: v.optional(v.array(nonEmptyStringSchema)),
-  requiredChecks: v.optional(v.array(nonEmptyStringSchema)),
-  allowedPushDestinations: v.optional(v.array(nonEmptyStringSchema)),
-  allowForcePush: v.optional(v.boolean()),
-  highRiskClasses: v.optional(v.array(nonEmptyStringSchema)),
-  generatedFileSizeThresholdBytes: v.optional(
-    v.pipe(v.number(), v.integer(), v.minValue(1)),
-  ),
-});
-
 export const autopilotConcurrencySchema = v.looseObject({
   maxAutonomousJobs: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
   maxActiveWorkflowRuns: v.optional(
@@ -238,7 +225,6 @@ export const autopilotConfigSchema = v.looseObject({
   defaultMode: v.optional(autopilotModeSchema),
   mode: v.optional(autopilotModeSchema),
   pushOnApproval: v.optional(v.picklist(['push', 'verify-then-push', 'off'])),
-  limits: v.optional(autopilotPolicyLimitsSchema),
   concurrency: v.optional(autopilotConcurrencySchema),
 });
 
@@ -281,6 +267,7 @@ export const appConfigSchema = v.looseObject({
   providers: v.optional(providerConfigSchema),
   execution: v.optional(executionConfigSchema),
   worktrees: v.optional(worktreeConfigSchema),
+  guardrails: v.optional(repoGuardrailsSchema),
   autopilot: v.optional(autopilotConfigSchema),
   kilo: v.optional(kiloConfigSchema),
   learning: v.optional(learningConfigSchema),

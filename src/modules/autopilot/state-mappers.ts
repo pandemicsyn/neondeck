@@ -6,9 +6,10 @@ import { listExecutionApprovals } from '../execution';
 import { flueRunInspectionUrl } from '../runtime';
 import {
   globalAutopilotPolicy,
+  globalRepoGuardrails,
   mergeAutopilotConcurrency,
-  mergeAutopilotLimits,
   readRepoAutopilotConfig,
+  repoGuardrails,
   type AutopilotConcurrencyPolicy,
   type AutopilotMode,
   type AutopilotPolicyLimits,
@@ -19,6 +20,7 @@ import {
   parseRepoRegistry,
   readRuntimeJson,
   runtimePaths,
+  type AppConfig,
   type RepoConfig,
   type RuntimePaths,
 } from '../../runtime-home';
@@ -53,12 +55,15 @@ import {
 } from './state-schemas';
 
 export function globalPolicy(appConfig: unknown): AutopilotPolicyConfig {
-  return globalAutopilotPolicy(appConfig);
+  return {
+    ...globalAutopilotPolicy(appConfig),
+    limits: globalRepoGuardrails(appConfig),
+  };
 }
 
 export function repoPolicy(
   repo: RepoConfig,
-  appConfig: unknown,
+  appConfig: AppConfig,
 ): RepoAutopilotPolicy {
   const global = globalPolicy(appConfig);
   const repoAutopilot = readRepoAutopilot(repo);
@@ -75,7 +80,7 @@ export function repoPolicy(
       (source === 'repo-metadata'
         ? 'Repo metadata overrides the global autopilot mode.'
         : 'Repo inherits the global autopilot default.'),
-    limits: mergeAutopilotLimits(global.limits, repoAutopilot?.limits),
+    limits: repoGuardrails(repo, appConfig),
     concurrency: mergeAutopilotConcurrency(
       global.concurrency,
       repoAutopilot?.concurrency,

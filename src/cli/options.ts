@@ -17,8 +17,7 @@ export function loadEnvForPaths(
 }
 
 export function parseWatchTarget(value: string | undefined) {
-  if (value === 'checks' || value === 'merged')
-    return value;
+  if (value === 'checks' || value === 'merged') return value;
   throw new Error('--until must be checks or merged');
 }
 

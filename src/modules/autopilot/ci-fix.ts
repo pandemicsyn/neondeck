@@ -18,7 +18,7 @@ import {
   checkAutopilotConcurrency,
   checkAutopilotPolicy,
   pathDeniedByAutopilotPolicy,
-  repoAutopilotPolicy,
+  repoGuardrails,
   withAutopilotLocalExecutionSlot,
 } from '../autopilot-policy';
 import { addWorkflowSummary, updateWorkflowSummary } from '../app-state';
@@ -68,6 +68,7 @@ import {
 } from '../../runtime-home';
 import {
   createWorktree,
+  assertWorktreeMutationAllowed,
   listWorktrees,
   lockWorktree,
   recordWorktreePushBlocked,
@@ -283,9 +284,17 @@ export async function fixPrCiFailure(
     const likelyCommands = identifyLikelyCommands(
       checkFacts,
       repo,
-      repoAutopilotPolicy(repo, appConfig).limits.requiredChecks,
+      repoGuardrails(repo, appConfig).requiredChecks,
       input.checks,
       input.diagnostics,
+    );
+    assertWorktreeMutationAllowed(
+      {
+        repoId: repo.id,
+        worktreeId: worktree.id,
+        lockId: acquiredLockId,
+      },
+      paths,
     );
     const diagnostics = await runAutopilotDiagnostics(
       likelyCommands,
@@ -301,6 +310,15 @@ export async function fixPrCiFailure(
       paths,
       input,
       dependencies,
+      () =>
+        assertWorktreeMutationAllowed(
+          {
+            repoId: repo.id,
+            worktreeId: worktree.id,
+            lockId: acquiredLockId,
+          },
+          paths,
+        ),
     );
     const blocked = diagnostics.some((item) => item.requires.length > 0);
     if (blocked && input.patch) {
@@ -474,6 +492,14 @@ export async function fixPrCiFailure(
     let commit: unknown = null;
     if (dirty) {
       try {
+        assertWorktreeMutationAllowed(
+          {
+            repoId: repo.id,
+            worktreeId: worktree.id,
+            lockId: acquiredLockId,
+          },
+          paths,
+        );
         commit = await gitCommitAll(
           worktree.localPath,
           input.commitMessage ??

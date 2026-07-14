@@ -598,7 +598,6 @@ export async function configureExecution(paths: RuntimePaths) {
   );
 }
 
-
 export async function configureSkillRoots(paths: RuntimePaths) {
   const { readConfig, updateSkillRoots } = await configActionsModule();
   const config = await readConfig({ target: 'config' }, paths);

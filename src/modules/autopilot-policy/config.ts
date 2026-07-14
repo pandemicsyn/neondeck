@@ -3,36 +3,26 @@ import { type AppConfig, type RepoConfig } from '../../runtime-home';
 import {
   appAutopilotSchema,
   defaultAutopilotConcurrency,
-  defaultAutopilotPolicyLimits,
   metadataSchema,
   type AutopilotConcurrencyPolicy,
-  type AutopilotMode,
   type AutopilotPolicyConfig,
-  type AutopilotPolicyLimits,
+  type RepoGuardrails,
   type RepoAutopilotConfig,
 } from './schemas';
-import { matchesAny } from './risk';
+import { matchesAny } from '../repo-guardrails/risk';
+import {
+  globalRepoGuardrails,
+  mergeGuardrails,
+  readRepoGuardrailsConfig,
+  repoGuardrails,
+} from '../repo-guardrails/config';
 
-export function mergeAutopilotLimits(
-  base: AutopilotPolicyLimits,
-  override: Partial<AutopilotPolicyLimits> | undefined,
-): AutopilotPolicyLimits {
-  return {
-    ...base,
-    ...override,
-    deniedFileGlobs: override?.deniedFileGlobs ?? base.deniedFileGlobs,
-    approvalRequiredFileGlobs:
-      override?.approvalRequiredFileGlobs ?? base.approvalRequiredFileGlobs,
-    requiredChecks: override?.requiredChecks ?? base.requiredChecks,
-    allowedPushDestinations:
-      override?.allowedPushDestinations ?? base.allowedPushDestinations,
-    highRiskClasses: override?.highRiskClasses ?? base.highRiskClasses,
-    allowForcePush: override?.allowForcePush ?? base.allowForcePush,
-    generatedFileSizeThresholdBytes:
-      override?.generatedFileSizeThresholdBytes ??
-      base.generatedFileSizeThresholdBytes,
-  };
-}
+export {
+  globalRepoGuardrails,
+  mergeGuardrails,
+  readRepoGuardrailsConfig,
+  repoGuardrails,
+};
 
 export function mergeAutopilotConcurrency(
   base: AutopilotConcurrencyPolicy,
@@ -48,7 +38,6 @@ export function globalAutopilotPolicy(
   const raw = parsed.success ? parsed.output.autopilot : undefined;
   return {
     mode: raw?.defaultMode ?? raw?.mode ?? 'notify-only',
-    limits: mergeAutopilotLimits(defaultAutopilotPolicyLimits, raw?.limits),
     concurrency: mergeAutopilotConcurrency(
       defaultAutopilotConcurrency,
       raw?.concurrency,
@@ -73,7 +62,6 @@ export function repoAutopilotPolicy(
   const repoPolicy = readRepoAutopilotConfig(repo);
   return {
     mode: repoPolicy?.mode ?? global.mode,
-    limits: mergeAutopilotLimits(global.limits, repoPolicy?.limits),
     concurrency: mergeAutopilotConcurrency(
       global.concurrency,
       repoPolicy?.concurrency,
@@ -104,7 +92,10 @@ export function repoAutopilotPolicyForWatch(
 
 export function pathDeniedByAutopilotPolicy(
   path: string,
-  limits: AutopilotPolicyLimits,
+  guardrails: RepoGuardrails,
 ) {
-  return matchesAny(path, limits.deniedFileGlobs);
+  return matchesAny(path, guardrails.deniedFileGlobs);
 }
+
+/** @deprecated Use mergeGuardrails. */
+export const mergeAutopilotLimits = mergeGuardrails;

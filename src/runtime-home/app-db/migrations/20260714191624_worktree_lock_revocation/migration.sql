@@ -1,0 +1,1 @@
+ALTER TABLE `worktree_locks` ADD `revoked_at` text;

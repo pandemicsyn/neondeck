@@ -1,14 +1,26 @@
 import { randomBytes } from 'node:crypto';
 
-import type {
-  AppConfig,
-  ResolvedLearningConfig,
-} from './schemas.ts';
+import type { AppConfig, ResolvedLearningConfig } from './schemas.ts';
 
 export function defaultAppConfig(): AppConfig {
   return {
     version: 1,
     localApi: { token: generateLocalApiToken() },
+    guardrails: {
+      deniedFileGlobs: [],
+      approvalRequiredFileGlobs: [],
+      highRiskClasses: [],
+      maxFilesChanged: 50,
+      maxLinesChanged: 1_500,
+      allowForcePush: false,
+      allowedPushDestinations: ['pull-request-head'],
+      requiredChecks: [],
+    },
+    autopilot: {
+      mode: 'notify-only',
+      concurrency: { singleMutationPerPr: true },
+      pushOnApproval: 'verify-then-push',
+    },
   };
 }
 

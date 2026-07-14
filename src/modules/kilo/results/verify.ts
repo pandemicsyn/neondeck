@@ -195,7 +195,7 @@ export async function verifyKiloResult(
         action: 'kilo_result_verify',
         changed: false,
         message: 'No repo checks are configured for this worktree.',
-        requires: ['autopilot.limits.requiredChecks', 'repo.packageScripts'],
+        requires: ['guardrails.requiredChecks', 'repo.packageScripts'],
       };
     }
     const worktreeId = task.worktreeId;

@@ -18,7 +18,7 @@ import {
   checkAutopilotConcurrency,
   checkAutopilotPolicy,
   pathDeniedByAutopilotPolicy,
-  repoAutopilotPolicy,
+  repoGuardrails,
   withAutopilotLocalExecutionSlot,
 } from '../autopilot-policy';
 import { addWorkflowSummary, updateWorkflowSummary } from '../app-state';
@@ -67,12 +67,11 @@ import {
   runtimePaths,
 } from '../../runtime-home';
 import {
-  createWorktree,
-  listWorktrees,
+  ensurePrWorktree,
+  assertWorktreeMutationAllowed,
   lockWorktree,
   recordWorktreePushBlocked,
   recordWorktreePushSucceeded,
-  readManagedWorktree,
   readWorktreeStatus,
   releaseWorktreeLock,
   syncWorktree,
@@ -263,9 +262,9 @@ export async function fixPrReviewFeedback(
         },
       );
     }
-    const preflightPolicy = repoAutopilotPolicy(repo, appConfig);
+    const preflightGuardrails = repoGuardrails(repo, appConfig);
     const deniedPlannedPaths = plannedPaths.filter((path) =>
-      pathDeniedByAutopilotPolicy(path, preflightPolicy.limits),
+      pathDeniedByAutopilotPolicy(path, preflightGuardrails),
     );
     if (deniedPlannedPaths.length > 0) {
       return failResult(
@@ -300,36 +299,27 @@ export async function fixPrReviewFeedback(
     }
 
     const createEnabled = input.createWorktree ?? !input.worktreeId;
-    if (input.worktreeId) {
-      worktree = await readManagedWorktree(input.worktreeId, repo.id, paths);
-      if (worktree.prNumber !== input.prNumber) {
-        return failResult(
-          'autopilot_fix_pr_review_feedback',
-          `Worktree "${worktree.id}" belongs to PR ${worktree.prNumber ?? 'none'}, not PR ${input.prNumber}.`,
-          { requires: ['worktreeId'] },
+    if (input.worktreeId || createEnabled) {
+      try {
+        worktree = await ensurePrWorktree(
+          {
+            repo,
+            prNumber: input.prNumber,
+            eventState,
+            worktreeId: input.worktreeId,
+          },
+          paths,
         );
+      } catch (error) {
+        if (input.worktreeId && errorMessage(error).includes('belongs to PR')) {
+          return failResult(
+            'autopilot_fix_pr_review_feedback',
+            errorMessage(error),
+            { requires: ['worktreeId'] },
+          );
+        }
+        throw error;
       }
-    } else if (createEnabled) {
-      const created = await createWorktree(
-        {
-          repoId: repo.id,
-          prNumber: input.prNumber,
-          baseRef: eventState.headSha,
-          headRef: eventState.headRef ?? eventState.headSha,
-          headSha: eventState.headSha,
-          directPushAllowed: Boolean(eventState.maintainerCanModify),
-          createdBy: 'neondeck',
-        },
-        paths,
-      );
-      if (!created.ok) {
-        return lowerLevelFailure(
-          'autopilot_fix_pr_review_feedback',
-          'worktree_create',
-          created,
-        );
-      }
-      worktree = objectField(created, 'worktree') as WorktreeRecord | undefined;
     }
 
     if (!worktree) {
@@ -516,6 +506,14 @@ export async function fixPrReviewFeedback(
       (input.commit ?? true) &&
       changedFiles > 0
     ) {
+      assertWorktreeMutationAllowed(
+        {
+          repoId: repo.id,
+          worktreeId: worktree.id,
+          lockId: acquiredLockId,
+        },
+        paths,
+      );
       commit = await gitCommitPaths(
         worktree.localPath,
         reviewFixCommitMessage(repoFullName(repo), input.prNumber, addressed),

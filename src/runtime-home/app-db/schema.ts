@@ -802,6 +802,7 @@ export const worktreeLocks = sqliteTable(
     owner: text('owner').notNull(),
     workflowRunId: text('workflow_run_id'),
     expiresAt: text('expires_at').notNull(),
+    revokedAt: text('revoked_at'),
     releasedAt: text('released_at'),
     staleRecoveredAt: text('stale_recovered_at'),
     createdAt: text('created_at').notNull(),

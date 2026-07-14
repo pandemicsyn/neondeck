@@ -249,35 +249,7 @@ export function recoveryOptionsForPushBlock(
     : ['Inspect the retained worktree, resolve the blocked gate, and retry.'];
 }
 
-export function remoteForPush(
-  worktree: WorktreeRecord,
-  branchPermissions: unknown,
-) {
-  const headRepoFullName = stringField(branchPermissions, 'headRepoFullName');
-  const worktreeHeadFullName =
-    worktree.headOwner && worktree.headName
-      ? `${worktree.headOwner}/${worktree.headName}`
-      : undefined;
-  return githubRemoteUrl(
-    headRepoFullName ?? worktreeHeadFullName ?? worktree.repoFullName,
-  );
-}
-
-export function githubRemoteUrl(fullName: string) {
-  const [owner, repo, extra] = fullName.split('/');
-  if (
-    extra !== undefined ||
-    !owner ||
-    !repo ||
-    !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(owner) ||
-    !/^[A-Za-z0-9._-]+$/.test(repo) ||
-    repo === '.' ||
-    repo === '..'
-  ) {
-    throw new Error(`Invalid GitHub repository full name: ${fullName}`);
-  }
-  return `https://github.com/${fullName}.git`;
-}
+export { githubRemoteUrl, remoteForPush } from '../worktrees';
 
 export function preparedDiffCommitSha(
   summary: JsonValue | null,

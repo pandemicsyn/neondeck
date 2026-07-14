@@ -242,10 +242,12 @@ export async function runAutopilotDiagnostics(
   paths: RuntimePaths,
   input: v.InferOutput<typeof fixPrCiFailureInputSchema>,
   dependencies: AutopilotDependencies,
+  assertLease?: () => void,
 ) {
   const runExecution = dependencies.runExecution ?? runApprovedExecution;
   const results = [];
   for (const command of commands) {
+    assertLease?.();
     const slot = await withAutopilotLocalExecutionSlot(limits, () =>
       runExecution(
         {
@@ -263,6 +265,7 @@ export async function runAutopilotDiagnostics(
         paths,
       ),
     );
+    assertLease?.();
     if ('blocked' in slot) {
       results.push({
         command,

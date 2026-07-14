@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { currentFlueExecutionContext } from '../flue';
 import { realpath } from 'node:fs/promises';
 import type * as v from 'valibot';
 import { invalidInputAction } from '../../lib/action-result';
@@ -17,6 +18,7 @@ import {
   activeLocksForWorktree,
   assertNoForeignActiveLock,
   releaseLock,
+  revokeLock,
   requireLock,
 } from './locks';
 import {
@@ -408,8 +410,10 @@ export async function lockWorktree(
       repoId,
       prNumber,
       owner: input.owner,
-      workflowRunId: input.workflowRunId ?? null,
+      workflowRunId:
+        input.workflowRunId ?? currentFlueExecutionContext()?.runId ?? null,
       expiresAt,
+      revokedAt: null,
       releasedAt: null,
       staleRecoveredAt: null,
       createdAt,
@@ -463,6 +467,25 @@ export async function lockWorktree(
   } catch (error) {
     return failureResult('worktree_lock', error);
   }
+}
+
+export async function revokeWorktreeLockLease(
+  lockId: string,
+  paths: RuntimePaths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const lock = requireLock(lockId, paths);
+  if (lock.releasedAt || lock.revokedAt) return lock;
+  const now = new Date().toISOString();
+  revokeLock(lock.id, now, paths);
+  return requireLock(lock.id, paths);
+}
+
+export function readWorktreeLock(
+  lockId: string,
+  paths: RuntimePaths = runtimePaths(),
+) {
+  return requireLock(lockId, paths);
 }
 
 export async function releaseWorktreeLock(

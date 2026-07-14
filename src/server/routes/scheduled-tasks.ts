@@ -13,7 +13,9 @@ import { safeJsonObject } from '../http';
 export function createScheduledTaskRoutes(paths: RuntimePaths) {
   const routes = new Hono();
 
-  routes.get('/scheduled-tasks', async (c) => c.json(await listTaskRecords(paths)));
+  routes.get('/scheduled-tasks', async (c) =>
+    c.json(await listTaskRecords(paths)),
+  );
   routes.post('/scheduled-tasks/briefings', async (c) => {
     const result = await createBriefingTask(await safeJsonObject(c), paths);
     return c.json(result, result.ok ? 200 : 400);

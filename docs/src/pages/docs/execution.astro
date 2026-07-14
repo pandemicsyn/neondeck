@@ -149,6 +149,19 @@ const layersDiagram = `flowchart TB
           worktrees, and results re-enter through prepared diffs, verification
           through the policy gate, and push gates.
         </p>
+        <p>
+          Authority follows task origin. In a human-driven chat, typed repo
+          actions may edit, commit, and push to the linked PR head without
+          creating routine execution approvals. A shared
+          <code>guardrails</code> config block still denies forbidden paths and destinations,
+          and asks once before high-risk or over-limit pushes. That acknowledgment
+          is bound to the reviewed commit and effect, so a changed worktree prompts
+          again. Event-driven autopilot runs are the only path that consumes the per-PR
+          autopilot mode; they retain prepared work instead of expanding their own
+          authority. Interactive work requests preemption of an autopilot-owned PR
+          lock, waits for its mutation lease to release, and leaves the autonomous
+          run recoverable from its retained diff.
+        </p>
 
         <h2>Planned: exe.dev workspace mode</h2>
         <p>

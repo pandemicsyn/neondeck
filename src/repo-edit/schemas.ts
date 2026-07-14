@@ -122,6 +122,23 @@ export const repoStatusInputSchema = v.object({
   worktreeId: v.optional(nonEmptyStringSchema),
 });
 
+export const repoCommitInputSchema = v.strictObject({
+  repoId: repoIdSchema,
+  worktreeId: nonEmptyStringSchema,
+  message: nonEmptyStringSchema,
+  paths: v.optional(v.array(repoRelativePathSchema)),
+  sessionId: v.optional(nonEmptyStringSchema),
+});
+
+export const repoPushInputSchema = v.strictObject({
+  sessionId: v.optional(nonEmptyStringSchema),
+  repoId: v.optional(repoIdSchema),
+  worktreeId: v.optional(nonEmptyStringSchema),
+  prNumber: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+  acknowledgeExpansion: v.optional(v.boolean()),
+  confirmationToken: v.optional(nonEmptyStringSchema),
+});
+
 export const repoEditOutputSchema = v.looseObject({
   ok: v.boolean(),
   action: v.string(),
@@ -137,6 +154,8 @@ export type RepoReplaceInput = v.InferOutput<typeof repoReplaceInputSchema>;
 export type RepoPatchInput = v.InferOutput<typeof repoPatchInputSchema>;
 export type RepoDiffInput = v.InferOutput<typeof repoDiffInputSchema>;
 export type RepoStatusInput = v.InferOutput<typeof repoStatusInputSchema>;
+export type RepoCommitInput = v.InferOutput<typeof repoCommitInputSchema>;
+export type RepoPushInput = v.InferOutput<typeof repoPushInputSchema>;
 
 export type RepoEditStatus = 'preview' | 'applied' | 'failed' | 'blocked';
 

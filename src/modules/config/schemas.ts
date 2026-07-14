@@ -4,13 +4,12 @@ import { thinkingLevelSchema } from '../../runtime-home';
 import { isRegisteredProvider } from '../repos';
 import {
   autopilotConcurrencySchema,
-  autopilotPolicyLimitsSchema,
+  repoGuardrailsSchema,
   modeSchema,
   watchOverrideSchema,
 } from '../autopilot-policy';
 
-export type ConfigTarget =
-  'all' | 'config' | 'mcp' | 'repos' | 'dashboard';
+export type ConfigTarget = 'all' | 'config' | 'mcp' | 'repos' | 'dashboard';
 
 export type ConfigActionResult = {
   ok: boolean;
@@ -72,7 +71,7 @@ export const updateRepoAutopilotPolicyInputSchema = v.strictObject({
   repoId: nonEmptyStringSchema,
   mode: v.optional(modeSchema),
   reason: v.optional(nonEmptyStringSchema),
-  limits: v.optional(autopilotPolicyLimitsSchema),
+  guardrails: v.optional(repoGuardrailsSchema),
   concurrency: v.optional(autopilotConcurrencySchema),
   watchOverrides: v.optional(v.array(watchOverrideSchema)),
   confirm: v.optional(v.boolean()),
