@@ -1,5 +1,6 @@
 import type {
   ChatSessionKind,
+  ChatSessionActivityListResponse,
   ChatSessionCommandEventListResponse,
   ChatSessionCommandEventMutationResponse,
   NeonSessionState,
@@ -107,6 +108,12 @@ export async function restoreChatSession(id: string) {
 export async function getChatSessionCommandEvents(id: string) {
   return getJson<ChatSessionCommandEventListResponse>(
     `/api/sessions/${id}/command-events`,
+  );
+}
+
+export async function getChatSessionActivity(id: string) {
+  return getJson<ChatSessionActivityListResponse>(
+    `/api/sessions/${id}/activity`,
   );
 }
 

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { updateAgentModels } from './modules/config';
+import { addNotification, resolveNotification } from './modules/app-state';
 import { archiveMemory, rewriteMemory, upsertMemory } from './modules/memory';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
@@ -14,6 +15,7 @@ import {
   createChatSession,
   linkChatSessionContext,
   listChatSessionCommandEvents,
+  listChatSessionActivity,
   listChatSessions,
   pinChatSession,
   readChatSession,
@@ -306,6 +308,99 @@ describe('session actions', () => {
     expect((list as { sessions: ChatSessionRecord[] }).sessions).toHaveLength(
       1,
     );
+  });
+
+  it('lists historical notifications and watch events for a linked session', async () => {
+    const paths = runtimePaths(await tempDir());
+    const watchId = 'Kilo-Org/cloud#4480';
+    const created = await createChatSession(
+      {
+        title: 'Watch cloud#4480',
+        kind: 'watch',
+        linkedRepoId: 'Kilo-Org/cloud',
+        linkedWatchId: watchId,
+      },
+      paths,
+    );
+    const sessionId = (created as { session: ChatSessionRecord }).session.id;
+    const status = await addNotification(
+      {
+        level: 'attention',
+        title: 'PR 4480 needs attention',
+        message: `${watchId} has 1 failed check.`,
+        source: 'watch-pr',
+        sourceId: watchId,
+        data: { id: watchId, status: 'attention-needed' },
+      },
+      paths,
+    );
+    await resolveNotification(status.id, paths);
+    await addNotification(
+      {
+        level: 'info',
+        title: 'PR watch event changed',
+        message: `${watchId}: Review threads were resolved.`,
+        source: 'watch-pr-events',
+        sourceId: `${watchId}:review_threads:event-1`,
+        data: { watchId, changedCategories: ['review_threads'] },
+      },
+      paths,
+    );
+    await addNotification(
+      {
+        level: 'urgent',
+        title: 'Unrelated watch',
+        message: 'Another watch changed.',
+        source: 'watch-pr',
+        sourceId: 'other/repo#1',
+        data: { id: 'other/repo#1' },
+      },
+      paths,
+    );
+
+    await expect(
+      listChatSessionActivity({ sessionId }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'session_activity_list',
+      items: [
+        expect.objectContaining({
+          id: status.id,
+          kind: 'notification',
+          title: 'PR 4480 needs attention',
+          resolvedAt: expect.any(String),
+        }),
+        expect.objectContaining({
+          kind: 'notification',
+          title: 'PR watch event changed',
+        }),
+      ],
+    });
+  });
+
+  it('requires fresh deterministic evidence in linked watch sessions', async () => {
+    const paths = runtimePaths(await tempDir());
+    const created = await createChatSession(
+      {
+        title: 'Watch cloud#4480',
+        kind: 'watch',
+        linkedWatchId: 'Kilo-Org/cloud#4480',
+      },
+      paths,
+    );
+    const sessionId = (created as { session: ChatSessionRecord }).session.id;
+
+    const instructions = sessionContextInstructionsForAgentSync(
+      sessionId,
+      paths,
+    );
+
+    expect(instructions).toContain('first call neondeck_watch_pr_refresh');
+    expect(instructions).toContain(
+      'Do not treat earlier chat messages, session summaries, or notification text as current state.',
+    );
+    expect(instructions).toContain('check totals and failures');
+    expect(instructions).toContain('unresolved review or requested-change');
   });
 
   it('uses the utility model role metadata for generated session titles', async () => {

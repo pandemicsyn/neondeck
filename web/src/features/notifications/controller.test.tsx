@@ -5,6 +5,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DashboardConfig, NotificationChangeEvent } from '../../api';
+import { queryKeys } from '../../lib/query';
 import { dispatchPluginNavigation, NotificationController } from './controller';
 
 describe('NotificationController integration', () => {
@@ -49,7 +50,10 @@ describe('NotificationController integration', () => {
     act(() => FakeEventSource.instances[0]!.emit(notificationEvent()));
 
     expect(document.querySelectorAll('.notification-toast')).toHaveLength(1);
-    expect(invalidate).toHaveBeenCalledTimes(2);
+    expect(invalidate).toHaveBeenCalledTimes(3);
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: queryKeys.chatSessionActivityRoot,
+    });
   });
 
   it('keeps cache invalidation subscribed when toast presentation is disabled', () => {

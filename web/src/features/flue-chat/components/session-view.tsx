@@ -16,6 +16,7 @@ import type {
 } from '../../../api';
 import {
   createChatSessionCommandEvent,
+  getChatSessionActivity,
   getChatSessionCommandEvents,
   openChatSessionEventStream,
   runBriefing,
@@ -30,6 +31,7 @@ import {
 } from '../../../components/ui';
 import { queryKeys } from '../../../lib/query';
 import { CommandResultSummary, CommandTypeahead } from './command-controls';
+import { SessionActivityRow } from './session-activity-row';
 import {
   ChatPartEvent,
   errorMessage,
@@ -41,6 +43,7 @@ import {
   mergeCommandCatalog,
 } from '../lib/commands';
 import { chatMessagesForRender } from '../lib/messages';
+import { sessionTimelineItems } from '../lib/timeline';
 import type {
   FlueChatCommand,
   FlueChatConfig,
@@ -48,6 +51,7 @@ import type {
 } from '../types';
 
 export function FlueChatSessionView({
+  activeRecord,
   agentName,
   onReferenceDraftConsumed,
   quickCommands,
@@ -118,6 +122,14 @@ export function FlueChatSessionView({
     queryFn: () => getChatSessionCommandEvents(session?.id ?? ''),
     enabled: Boolean(session?.id),
   });
+  const activityQuery = useQuery({
+    queryKey: queryKeys.chatSessionActivity(session?.id),
+    queryFn: () => getChatSessionActivity(session?.id ?? ''),
+    enabled: Boolean(session?.id && activeRecord?.linkedWatchId),
+    refetchInterval: 30_000,
+  });
+  const activity = activityQuery.data?.items ?? [];
+  const timelineItems = sessionTimelineItems(messages, activity);
 
   useEffect(() => {
     setActiveCommandIndex(0);
@@ -142,6 +154,9 @@ export function FlueChatSessionView({
       setPendingHistoryRefresh(true);
       void queryClient.invalidateQueries({
         queryKey: queryKeys.chatSessionCommandEvents(session.id),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.chatSessionActivity(session.id),
       });
     });
   }, [queryClient, session?.id]);
@@ -500,11 +515,19 @@ export function FlueChatSessionView({
               {errorMessage(commandEventsQuery.error)}
             </div>
           ) : null}
-          {messages.length > 0 ? (
+          {activityQuery.error ? (
+            <div className="border border-accent/60 bg-soft px-2.5 py-2 font-mono text-[10.5px] leading-4 text-accent">
+              SESSION ACTIVITY UNAVAILABLE · {errorMessage(activityQuery.error)}
+            </div>
+          ) : null}
+          {timelineItems.length > 0 ? (
             <div className="chat-workflow px-2.5 py-1 font-mono text-[10.5px]">
               <span>workflow</span>
               <span className="text-muted">
                 session · {messages.length} messages
+                {activity.length > 0
+                  ? ` · ${activity.length} activity records`
+                  : ''}
               </span>
             </div>
           ) : null}
@@ -517,7 +540,7 @@ export function FlueChatSessionView({
               }
             />
           ))}
-          {messages.length === 0 ? (
+          {timelineItems.length === 0 ? (
             <div className="flex flex-1 items-center justify-center text-center text-[13px] text-muted">
               <div className="max-w-[42ch]">
                 <div className="miami-accent mx-auto mb-2 h-1.5 w-12" />
@@ -532,29 +555,38 @@ export function FlueChatSessionView({
               </div>
             </div>
           ) : (
-            messages.map((message) => (
-              <article
-                className={`chat-message chat-message-${message.role} space-y-1.5`}
-                key={message.id}
-              >
-                <p className="font-mono text-[10px] font-semibold text-muted">
-                  {message.role}
-                </p>
-                <div className="space-y-2 text-[13px] leading-[1.55] text-ink">
-                  {message.parts.length > 0 ? (
-                    message.parts.map((part, index) =>
-                      renderMessagePart(part, `${message.id}-${index}`),
-                    )
-                  ) : (
-                    <ChatPartEvent
-                      kind="event"
-                      name="assistant message"
-                      preview="No visible message parts were returned."
-                    />
-                  )}
-                </div>
-              </article>
-            ))
+            timelineItems.map((item) => {
+              if (item.kind === 'activity') {
+                return (
+                  <SessionActivityRow activity={item.activity} key={item.id} />
+                );
+              }
+
+              const message = item.message;
+              return (
+                <article
+                  className={`chat-message chat-message-${message.role} space-y-1.5`}
+                  key={item.id}
+                >
+                  <p className="font-mono text-[10px] font-semibold text-muted">
+                    {message.role}
+                  </p>
+                  <div className="space-y-2 text-[13px] leading-[1.55] text-ink">
+                    {message.parts.length > 0 ? (
+                      message.parts.map((part, index) =>
+                        renderMessagePart(part, `${message.id}-${index}`),
+                      )
+                    ) : (
+                      <ChatPartEvent
+                        kind="event"
+                        name="assistant message"
+                        preview="No visible message parts were returned."
+                      />
+                    )}
+                  </div>
+                </article>
+              );
+            })
           )}
         </div>
       </ScrollArea>

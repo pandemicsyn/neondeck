@@ -1,5 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
 
+const chatSessionActivityRoot = ['chat-session-activity'] as const;
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -26,6 +28,9 @@ export const queryKeys = {
   chatSessions: ['chat-sessions'] as const,
   chatSessionCommandEvents: (sessionId: string | undefined) =>
     ['chat-session-command-events', sessionId ?? 'none'] as const,
+  chatSessionActivityRoot,
+  chatSessionActivity: (sessionId: string | undefined) =>
+    [...chatSessionActivityRoot, sessionId ?? 'none'] as const,
   autopilotState: ['autopilot-state'] as const,
   prWatches: ['pr-watches'] as const,
   repoHealth: ['repo-health'] as const,

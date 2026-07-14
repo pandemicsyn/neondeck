@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/ui';
 import { relativeTime } from '../../lib/format';
+import { notificationDisplayMessage } from '../../lib/watch-status';
 import type { NotificationTarget, ToastItem } from './types';
 
 export function ToastRow({
@@ -56,6 +57,7 @@ export function ToastRow({
   ]);
   const assertive =
     notification.level === 'attention' || notification.level === 'urgent';
+  const message = notificationDisplayMessage(notification);
 
   return (
     // Toast containers intentionally coordinate hover, focus, and Escape so
@@ -99,7 +101,7 @@ export function ToastRow({
         </button>
       </div>
       <h2 id={`toast-title-${notification.id}`}>{notification.title}</h2>
-      <p>{notification.message}</p>
+      <p>{message}</p>
       {actionError ? (
         <p className="notification-toast-error">{actionError}</p>
       ) : null}
