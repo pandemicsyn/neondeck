@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.0-beta.7
+
+### Minor Changes
+
+- [#111](https://github.com/pandemicsyn/neondeck/pull/111) [`bf72138`](https://github.com/pandemicsyn/neondeck/commit/bf7213830b1df5f378913b2857a7781fe97c1187) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Separate interactive repo authority from autopilot policy, add typed commit and linked-PR push actions, and share objective repo guardrails across both origins. Existing local config must move any `autopilot.limits` values to the top-level `guardrails` block; the legacy location is no longer read.
+
+### Patch Changes
+
+- [#108](https://github.com/pandemicsyn/neondeck/pull/108) [`37296be`](https://github.com/pandemicsyn/neondeck/commit/37296beb48ed4c811f775caae5492656b0f422f7) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep dashboard slash-command completion synchronized with the backend command registry and restore `/review-pr` completion for existing runtime homes.
+
+- [#109](https://github.com/pandemicsyn/neondeck/pull/109) [`0f7d4b8`](https://github.com/pandemicsyn/neondeck/commit/0f7d4b8770752afb6103939fe11a8d56d788302e) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Explain why a pull request watch needs attention, show durable watch activity inline in linked chat sessions, and require fresh deterministic evidence before the agent answers watch-status questions.
+
 ## 1.0.0-beta.6
 
 ### Patch Changes

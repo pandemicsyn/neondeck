@@ -6,7 +6,10 @@
     "@neondeck/docs-site": "0.1.0"
   },
   "changesets": [
+    "bright-commands-appear",
     "bright-toasts-glow",
+    "calm-authority-flows",
+    "clear-watch-alerts",
     "fresh-sessions-glow",
     "tidy-briefings-glow"
   ]
