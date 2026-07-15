@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0-beta.8
+
+### Minor Changes
+
+- [#113](https://github.com/pandemicsyn/neondeck/pull/113) [`8eaa12d`](https://github.com/pandemicsyn/neondeck/commit/8eaa12df1c4b0344f1f7a11f0fbf491d76678be0) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add a durable PR review inbox with live chat and dashboard updates, queue-independent review workbenches, linked local reports, and explicit whole-review GitHub submission.
+
 ## 1.0.0-beta.7
 
 ### Minor Changes
