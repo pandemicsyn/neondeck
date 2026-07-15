@@ -337,7 +337,7 @@ export const dashboardToastConfigSchema = v.looseObject({
 
 export const dashboardConfigSchema = v.looseObject({
   $schema: v.optional(v.string()),
-  schemaVersion: v.literal(1),
+  schemaVersion: v.pipe(v.number(), v.integer(), v.minValue(1)),
   display: v.object({
     preset: v.optional(nonEmptyStringSchema),
     width: positiveIntegerSchema,

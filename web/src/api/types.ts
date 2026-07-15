@@ -4,7 +4,7 @@ export type DashboardLayoutMode = 'auto' | 'xeneon' | 'stacked';
 
 export type DashboardConfig = {
   $schema?: string;
-  schemaVersion: 1;
+  schemaVersion: number;
   display: {
     preset?: string;
     width: number;

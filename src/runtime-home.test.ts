@@ -233,6 +233,59 @@ describe('runtime home', () => {
     expect(customizedWork?.tabs.map((tab) => tab.id)).toEqual(['github']);
   });
 
+  it('appends Reviews to the first region when a layout has no standard work region', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
+    tempRoots.push(root);
+    const paths = runtimePaths(root);
+
+    await writeFile(
+      paths.dashboard,
+      JSON.stringify(
+        {
+          display: { preset: 'xeneon-edge', width: 2560, height: 720 },
+          theme: 'dark',
+          layout: {
+            columns: 12,
+            rows: 5,
+            regions: [
+              {
+                id: 'custom',
+                title: 'CUSTOM',
+                column: 1,
+                row: 1,
+                columnSpan: 12,
+                rowSpan: 5,
+                defaultTab: 'chat',
+                tabs: [
+                  {
+                    id: 'chat',
+                    title: 'CHAT',
+                    pluginId: 'flue-chat',
+                    config: {},
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await ensureRuntimeHome(paths);
+    const migrated = await readRuntimeJson(
+      paths.dashboard,
+      parseDashboardConfig,
+    );
+    expect(migrated.schemaVersion).toBe(1);
+    expect(migrated.layout.regions[0]?.defaultTab).toBe('chat');
+    expect(migrated.layout.regions[0]?.tabs.map((tab) => tab.id)).toEqual([
+      'chat',
+      'reviews',
+    ]);
+  });
+
   it('does not rerun database bootstrap after initial runtime setup', async () => {
     const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
     tempRoots.push(root);
@@ -750,6 +803,13 @@ describe('runtime home', () => {
         maxVisible: 3,
       },
     });
+
+    expect(
+      parseDashboardConfig(
+        { ...dashboardConfig(), schemaVersion: 2 },
+        'dashboard.json',
+      ).schemaVersion,
+    ).toBe(2);
 
     expect(
       parseDashboardConfig(

@@ -59,23 +59,36 @@ export function migrateDashboardConfigValue(
             (tab) => isRecord(tab) && tab.pluginId === 'github-pr-list',
           ))),
   );
+  const fallbackRegionIndex = regions?.findIndex(
+    (region) => isRecord(region) && Array.isArray(region.tabs),
+  );
+  const targetRegionIndex =
+    workRegionIndex !== undefined && workRegionIndex >= 0
+      ? workRegionIndex
+      : fallbackRegionIndex;
 
   let nextLayout = layout;
   if (
     !hasReviews &&
     regions &&
-    workRegionIndex !== undefined &&
-    workRegionIndex >= 0
+    targetRegionIndex !== undefined &&
+    targetRegionIndex >= 0
   ) {
-    const workRegion = regions[workRegionIndex];
-    if (isRecord(workRegion) && Array.isArray(workRegion.tabs)) {
-      const tabs = [...workRegion.tabs];
+    const targetRegion = regions[targetRegionIndex];
+    if (isRecord(targetRegion) && Array.isArray(targetRegion.tabs)) {
+      const tabs = [...targetRegion.tabs];
       const githubIndex = tabs.findIndex(
         (tab) => isRecord(tab) && tab.pluginId === 'github-pr-list',
       );
-      tabs.splice(githubIndex >= 0 ? githubIndex + 1 : 0, 0, reviewsTab);
+      const insertIndex =
+        workRegionIndex !== undefined && workRegionIndex >= 0
+          ? githubIndex >= 0
+            ? githubIndex + 1
+            : 0
+          : tabs.length;
+      tabs.splice(insertIndex, 0, reviewsTab);
       const nextRegions = [...regions];
-      nextRegions[workRegionIndex] = { ...workRegion, tabs };
+      nextRegions[targetRegionIndex] = { ...targetRegion, tabs };
       nextLayout = { ...layout, regions: nextRegions };
     }
   }
