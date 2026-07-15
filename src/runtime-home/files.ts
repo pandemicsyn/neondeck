@@ -72,7 +72,7 @@ export function ensureLocalApiConfigSync(path: string) {
   });
 }
 
-async function readJsonObjectLenient(path: string) {
+export async function readJsonObjectLenient(path: string) {
   try {
     const value = JSON.parse(await readFile(path, 'utf8')) as unknown;
     return isRecord(value) ? value : null;
@@ -81,7 +81,7 @@ async function readJsonObjectLenient(path: string) {
   }
 }
 
-function readJsonObjectLenientSync(path: string) {
+export function readJsonObjectLenientSync(path: string) {
   try {
     const value = JSON.parse(readFileSync(path, 'utf8')) as unknown;
     return isRecord(value) ? value : null;
@@ -100,18 +100,18 @@ function isValidLocalApiToken(value: unknown) {
   return typeof value === 'string' && /^[A-Za-z0-9_-]{32,}$/.test(value);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-async function writeJsonAtomic(path: string, value: unknown) {
+export async function writeJsonAtomic(path: string, value: unknown) {
   await mkdir(dirname(path), { recursive: true });
   const tempPath = temporaryJsonPath(path);
   await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
   await rename(tempPath, path);
 }
 
-function writeJsonAtomicSync(path: string, value: unknown) {
+export function writeJsonAtomicSync(path: string, value: unknown) {
   mkdirSync(dirname(path), { recursive: true });
   const tempPath = temporaryJsonPath(path);
   writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');

@@ -1,5 +1,6 @@
 {
   "$schema": "./dashboard.schema.json",
+  "schemaVersion": 1,
   "display": {
     "preset": "xeneon-edge",
     "width": 2560,
