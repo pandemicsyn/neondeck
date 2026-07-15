@@ -66,8 +66,8 @@
             },
             "readyDurationMs": {
               "type": "integer",
-              "default": 6000,
-              "description": "Automatically dismiss ready toasts after this many milliseconds. Values are clamped from 1000 through 60000."
+              "default": 3600000,
+              "description": "Automatically dismiss ready toasts after this many milliseconds. Use 0 to keep them until dismissed. Nonzero values are clamped from 1000 through 86400000."
             },
             "maxVisible": {
               "type": "integer",
