@@ -6,10 +6,11 @@ import type {
 import { getJson, postJson } from './http';
 
 export async function getReports(
-  input: { kind?: string; limit?: number } = {},
+  input: { kind?: string; excludeKind?: string; limit?: number } = {},
 ) {
   const params = new URLSearchParams();
   if (input.kind) params.set('kind', input.kind);
+  if (input.excludeKind) params.set('excludeKind', input.excludeKind);
   if (input.limit) params.set('limit', String(input.limit));
   const query = params.toString();
   const response = await getJson<ReportsResponse>(

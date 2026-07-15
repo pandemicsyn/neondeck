@@ -62,6 +62,7 @@ export type ReviewAssistDependencies = {
     context: ReviewAssistPromptContext,
   ) => Promise<unknown> | unknown;
   prEventDependencies?: PrEventStateDependencies;
+  workflowRunId?: string;
 };
 
 type SeededFinding = {
@@ -128,6 +129,9 @@ export async function reviewPrForHuman(
   const workflowSummary = await addWorkflowSummary(
     {
       workflow: 'review-pr-for-human',
+      ...(dependencies.workflowRunId
+        ? { runId: dependencies.workflowRunId }
+        : {}),
       status: 'completed',
       summary: {
         message: `Prepared review reports for ${facts.target.repoFullName}#${facts.target.number}.`,
@@ -190,6 +194,14 @@ export async function reviewPrForHuman(
       findingCount: reviewed.output.findings.length,
       seededCount: seedResult.seeded.length,
       reportOnlyCount: seedResult.reportOnly.length,
+      reportOnlyFindings: seedResult.reportOnly.map((item) => ({
+        severity: item.finding.severity,
+        path: item.finding.path,
+        line: item.finding.line ?? null,
+        summary: item.finding.summary,
+        suggestedFix: item.finding.suggestedFix,
+        reason: item.reason,
+      })),
       skippedSeedingReason: seedResult.skippedReason,
       seededCommentIds: seedResult.seeded.map((item) => item.commentId),
       draftId: seedResult.draft?.id ?? null,
@@ -607,10 +619,10 @@ async function repoIdForFullName(fullName: string, paths: RuntimePaths) {
 
 function reviewSurfaceUrl(target: PullRequestTarget) {
   const params = new URLSearchParams({
-    prReviewRepo: target.repoFullName,
-    prReviewNumber: String(target.number),
+    repo: target.repoFullName,
+    number: String(target.number),
   });
-  return `/?${params.toString()}`;
+  return `/review?${params.toString()}`;
 }
 
 function fromPrEventFailure(result: {

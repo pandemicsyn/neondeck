@@ -172,6 +172,14 @@ function buildPullRequestQuerySpecs(login: string, repos: RepoConfig[]) {
         query: `is:pr is:open archived:false author:${login} repo:${fullName} updated:<${staleCutoff}`,
         relation: 'authored' as const,
       },
+      {
+        query: `is:pr is:open archived:false assignee:${login} repo:${fullName}`,
+        relation: 'assigned' as const,
+      },
+      {
+        query: `is:pr is:open archived:false review-requested:${login} repo:${fullName}`,
+        relation: 'review-requested' as const,
+      },
     ];
   });
 

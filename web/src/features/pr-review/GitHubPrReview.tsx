@@ -1,4 +1,5 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   useEffect,
   useMemo,
@@ -8,12 +9,16 @@ import {
 } from 'react';
 import {
   ApiError,
+  getPrReviewForTarget,
+  openPrReviewEventStream,
+  restartPrReview,
   type DiffSummary,
   type GitHubPrReviewDraft,
   type GitHubPrReviewDraftComment,
   type GitHubPrReviewVerdict,
   type GitHubPullRequest,
   type GitHubPullRequestReviewThread,
+  type PrReviewRecord,
 } from '../../api';
 import type {
   GitHubPrReviewDraftResponse,
@@ -21,7 +26,7 @@ import type {
   GitHubPrThreadMutationResponse,
 } from '../../api';
 import { Badge, MiniEmpty } from '../../components/ui';
-import { queryErrorMessage } from '../../lib/query';
+import { queryErrorMessage, queryKeys } from '../../lib/query';
 import { firstRenderablePath, patchHasContent } from '../diff-viewer/helpers';
 import { MultiFileView } from '../diff-viewer/MultiFileView';
 import type { DiffFilePatch, DiffReviewAnnotation } from '../diff-viewer/types';
@@ -65,6 +70,24 @@ export function GitHubPrReview({
   const threadsQuery = useGitHubPrReviewThreads(pr);
   const draftQuery = useGitHubPrReviewDraft(pr);
   const mutations = useGitHubPrReviewMutations(pr);
+  const queryClient = useQueryClient();
+  const reviewRecordQuery = useQuery({
+    queryKey: queryKeys.prReviewTarget(pr.repo, pr.number),
+    queryFn: () => getPrReviewForTarget({ repo: pr.repo, prNumber: pr.number }),
+  });
+  const reviewRecord = reviewRecordQuery.data ?? null;
+  const isDurableReviewReady =
+    reviewRecordQuery.isSuccess &&
+    (!reviewRecord || reviewRecord.status === 'ready');
+  const restartReview = useMutation({
+    mutationFn: (id: string) => restartPrReview(id),
+    onSuccess(result) {
+      queryClient.setQueryData(
+        queryKeys.prReviewTarget(pr.repo, pr.number),
+        result.review,
+      );
+    },
+  });
   const [activePath, setActivePath] = useState<string | null>(null);
   const [composer, setComposer] = useState<ComposerState | null>(null);
   const [composerBody, setComposerBody] = useState('');
@@ -194,6 +217,30 @@ export function GitHubPrReview({
   const patchErrorMessage = activePatchQuery?.error
     ? `Patch unavailable: ${queryErrorMessage(activePatchQuery.error)}`
     : null;
+
+  useEffect(
+    () =>
+      openPrReviewEventStream(
+        (event) => {
+          if (
+            event.review.repoFullName.toLowerCase() === pr.repo.toLowerCase() &&
+            event.review.prNumber === pr.number
+          ) {
+            queryClient.setQueryData(
+              queryKeys.prReviewTarget(pr.repo, pr.number),
+              event.review,
+            );
+          }
+        },
+        undefined,
+        () => {
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.prReviewTarget(pr.repo, pr.number),
+          });
+        },
+      ),
+    [pr.number, pr.repo, queryClient],
+  );
 
   useEffect(() => {
     if (activePath && fileList.some((file) => file.path === activePath)) return;
@@ -621,6 +668,12 @@ export function GitHubPrReview({
   };
   const submitReview = async () => {
     if (!currentHeadSha) return;
+    if (!isDurableReviewReady) {
+      setStatusMessage(
+        'Wait for the durable Neon review to be ready before submitting.',
+      );
+      return;
+    }
     setStatusMessage(null);
     try {
       const normalizedBody = normalizeReviewBody(reviewBody);
@@ -704,6 +757,7 @@ export function GitHubPrReview({
         }}
         onReanchor={(comment) => beginReanchorComment(comment.id, comment.path)}
       />
+      <ReportOnlyFindingPanel review={reviewRecord} />
     </>
   );
 
@@ -736,6 +790,20 @@ export function GitHubPrReview({
           ) : null}
           {fileStats.binary > 0 ? (
             <Badge>{fileStats.binary} binary</Badge>
+          ) : null}
+          {reviewRecord &&
+          reviewRecord.status !== 'reviewing' &&
+          currentHeadSha &&
+          reviewRecord.headSha !== currentHeadSha ? (
+            <button
+              className="pr-review-popout-button"
+              disabled={restartReview.isPending}
+              onClick={() => restartReview.mutate(reviewRecord.id)}
+              title="Run Neon again for the current PR head"
+              type="button"
+            >
+              {restartReview.isPending ? 're-reviewing' : 're-review'}
+            </button>
           ) : null}
           {isStandalone ? (
             <a
@@ -845,6 +913,7 @@ export function GitHubPrReview({
           cleanCommentCount={cleanCommentIds.length}
           draft={draft}
           isBusy={isDraftMutationPending || isThreadMutationPending}
+          isDurableReviewReady={isDurableReviewReady}
           isHeadAvailable={currentHeadSha.length > 0}
           onBodyBlur={() => {
             setIsReviewBodyFocused(false);
@@ -884,6 +953,7 @@ export function GitHubPrReview({
           staleCommentCount={blockedCommentIds.size}
           statusMessage={reviewBarStatusMessage}
           verdict={verdict}
+          trustBoundary={reviewRecord?.trustBoundary ?? null}
         />
       )}
     </section>
@@ -1176,10 +1246,42 @@ function positiveLine(value: number | null | undefined) {
   return typeof value === 'number' && value > 0 ? value : null;
 }
 
+function ReportOnlyFindingPanel({ review }: { review: PrReviewRecord | null }) {
+  if (!review?.reportOnlyFindings.length) return null;
+  return (
+    <section className="pr-review-inspector-section">
+      <div className="pr-review-inspector-heading">
+        <span>Report-only — couldn&apos;t anchor to a line</span>
+        <Badge>{review.reportOnlyFindings.length}</Badge>
+      </div>
+      <div className="divide-y divide-line border-t border-line">
+        {review.reportOnlyFindings.map((finding, index) => (
+          <article
+            className="py-2"
+            key={`${finding.path}:${finding.line}:${index}`}
+          >
+            <p className="font-mono text-[10px] text-primary">
+              {finding.severity} · {finding.path}
+              {finding.line ? `:${finding.line}` : ''}
+            </p>
+            <p className="mt-1 text-[10.5px] leading-4 text-ink">
+              {finding.summary}
+            </p>
+            <p className="mt-1 text-[10px] leading-4 text-muted">
+              Suggested fix: {finding.suggestedFix}
+            </p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function ReviewBar({
   cleanCommentCount,
   draft,
   isBusy,
+  isDurableReviewReady,
   isHeadAvailable,
   isSubmitting,
   onBodyBlur,
@@ -1193,10 +1295,12 @@ function ReviewBar({
   staleCommentCount,
   statusMessage,
   verdict,
+  trustBoundary,
 }: {
   cleanCommentCount: number;
   draft: GitHubPrReviewDraft | null;
   isBusy: boolean;
+  isDurableReviewReady: boolean;
   isHeadAvailable: boolean;
   isSubmitting: boolean;
   onBodyBlur: () => void;
@@ -1210,10 +1314,12 @@ function ReviewBar({
   staleCommentCount: number;
   statusMessage: string | null;
   verdict: GitHubPrReviewVerdict;
+  trustBoundary: string | null;
 }) {
   const hasBody = reviewBody.trim().length > 0;
   const canSubmit =
     isHeadAvailable &&
+    isDurableReviewReady &&
     !isBusy &&
     (verdict === 'approve' || cleanCommentCount > 0 || hasBody);
 
@@ -1271,6 +1377,9 @@ function ReviewBar({
           Discard
         </button>
       </div>
+      {trustBoundary ? (
+        <p className="pr-review-bar-status">{trustBoundary}</p>
+      ) : null}
       {statusMessage ? (
         <p aria-live="polite" className="pr-review-bar-status">
           {statusMessage}

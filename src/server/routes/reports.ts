@@ -9,6 +9,7 @@ export function createReportApiRoutes(paths: RuntimePaths) {
 
   routes.get('/reports', async (c) => {
     const kind = c.req.query('kind')?.trim() || undefined;
+    const excludeKind = c.req.query('excludeKind')?.trim() || undefined;
     const limitText = c.req.query('limit');
     const limit = limitText ? Number(limitText) : undefined;
     if (
@@ -30,7 +31,7 @@ export function createReportApiRoutes(paths: RuntimePaths) {
       return c.json({
         ok: true,
         action: 'reports_list',
-        items: await listReports(paths, { kind, limit }),
+        items: await listReports(paths, { kind, excludeKind, limit }),
         fetchedAt: new Date().toISOString(),
       });
     } catch (error) {

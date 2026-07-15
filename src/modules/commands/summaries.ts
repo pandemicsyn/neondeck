@@ -54,6 +54,22 @@ export function completedCommand(
   };
 }
 
+export function runningCommand(
+  command: NeonCommandName,
+  input: string,
+  message: string,
+  data: unknown,
+): NeonCommandResult {
+  return {
+    ok: true,
+    command,
+    input,
+    status: 'running',
+    message,
+    data: asJsonValue(data),
+  };
+}
+
 export function needsConfigCommand(
   command: NeonCommandName,
   input: string,

@@ -3,6 +3,7 @@ import type { WorkflowSummaryRecord } from '../app-state';
 import type { fetchGitHubLogin, fetchPullRequestQueue } from '../github';
 import type { CiFixRunInput, createCiFailureDossierReport } from '../autopilot';
 import type { PrReviewAssistInput } from '../pr-review-assist';
+import type { startPrReview } from '../pr-reviews';
 import type { addPrWatch } from '../watches';
 import * as v from 'valibot';
 
@@ -32,7 +33,7 @@ export type NeonCommandResult = {
   ok: boolean;
   command: NeonCommandName;
   input: string;
-  status: 'completed' | 'failed' | 'needs-config';
+  status: 'running' | 'completed' | 'failed' | 'needs-config';
   message: string;
   data?: JsonValue;
   errors?: string[];
@@ -46,6 +47,7 @@ export type CommandDependencies = {
   invokeReviewPrWorkflow?: (
     input: PrReviewAssistInput,
   ) => Promise<{ runId: string }>;
+  startPrReview?: typeof startPrReview;
   invokeFixCiWorkflow?: (input: CiFixRunInput) => Promise<{ runId: string }>;
   createCiFailureDossierReport?: typeof createCiFailureDossierReport;
   addPrWatch?: typeof addPrWatch;
@@ -88,7 +90,7 @@ export const commandRunOutputSchema = v.looseObject({
   ok: v.boolean(),
   command: v.string(),
   input: v.string(),
-  status: v.picklist(['completed', 'failed', 'needs-config']),
+  status: v.picklist(['running', 'completed', 'failed', 'needs-config']),
   message: v.string(),
   data: v.optional(v.unknown()),
   errors: v.optional(v.array(v.string())),

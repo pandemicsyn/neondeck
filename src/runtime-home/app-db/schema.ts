@@ -381,6 +381,50 @@ export const reports = sqliteTable(
   ],
 );
 
+export const prReviews = sqliteTable(
+  'pr_reviews',
+  {
+    id: text('id').primaryKey(),
+    ref: text('ref').notNull(),
+    repoFullName: text('repo_full_name').notNull(),
+    prNumber: integer('pr_number').notNull(),
+    title: text('title').notNull(),
+    author: text('author'),
+    prUrl: text('pr_url').notNull(),
+    status: text('status').notNull(),
+    attemptId: text('attempt_id').notNull(),
+    runId: text('run_id'),
+    headSha: text('head_sha').notNull(),
+    origin: text('origin').notNull(),
+    reviewUrl: text('review_url').notNull(),
+    reportIdsJson: text('report_ids_json').default('[]').notNull(),
+    findingCount: integer('finding_count').default(0).notNull(),
+    seededCount: integer('seeded_count').default(0).notNull(),
+    reportOnlyCount: integer('report_only_count').default(0).notNull(),
+    reportOnlyFindingsJson: text('report_only_findings_json')
+      .default('[]')
+      .notNull(),
+    trustBoundary: text('trust_boundary').notNull(),
+    verdict: text('verdict'),
+    previousVerdict: text('previous_verdict'),
+    githubReviewUrl: text('github_review_url'),
+    failureMessage: text('failure_message'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    readyAt: text('ready_at'),
+    submittedAt: text('submitted_at'),
+    failedAt: text('failed_at'),
+  },
+  (table) => [
+    uniqueIndex('idx_pr_reviews_target').on(table.repoFullName, table.prNumber),
+    uniqueIndex('idx_pr_reviews_run').on(table.runId),
+    index('idx_pr_reviews_status_updated').on(
+      table.status,
+      sql`${table.updatedAt} DESC`,
+    ),
+  ],
+);
+
 export const prReviewDrafts = sqliteTable(
   'pr_review_drafts',
   {

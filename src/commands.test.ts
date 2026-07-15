@@ -130,34 +130,83 @@ describe('Neon commands', () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
     const invocations: unknown[] = [];
+    const workflowInvocations: unknown[] = [];
 
     await expect(
       runNeonCommand({ command: '/review-pr pandemicsyn/neondeck#10' }, paths, {
         invokeReviewPrWorkflow: async (input) => {
-          invocations.push(input);
+          workflowInvocations.push(input);
           return { runId: 'review-run-1' };
+        },
+        startPrReview: async (input, _paths, startDependencies) => {
+          invocations.push(input);
+          await startDependencies?.invokeWorkflow?.({
+            ref: input.ref,
+            reviewId: 'review-1',
+            attemptId: 'attempt-1',
+          });
+          const review = {
+            id: 'review-1',
+            ref: input.ref,
+            repoFullName: 'pandemicsyn/neondeck',
+            prNumber: 10,
+            title: 'Review durable PRs',
+            author: 'contributor',
+            prUrl: 'https://github.com/pandemicsyn/neondeck/pull/10',
+            status: 'reviewing' as const,
+            runId: 'review-run-1',
+            headSha: 'head-1',
+            origin: input.origin,
+            reviewUrl: '/review?repo=pandemicsyn%2Fneondeck&number=10',
+            reportIds: [],
+            findingCount: 0,
+            seededCount: 0,
+            reportOnlyCount: 0,
+            reportOnlyFindings: [],
+            trustBoundary:
+              'Local drafts only; nothing is sent to GitHub until you submit the review.',
+            verdict: null,
+            previousVerdict: null,
+            githubReviewUrl: null,
+            failureMessage: null,
+            createdAt: '2026-07-14T20:00:00.000Z',
+            updatedAt: '2026-07-14T20:00:00.000Z',
+            readyAt: null,
+            submittedAt: null,
+            failedAt: null,
+          };
+          return { review, reviewId: review.id, runId: 'review-run-1' };
         },
       }),
     ).resolves.toMatchObject({
       ok: true,
       command: 'review-pr',
-      status: 'completed',
-      message:
-        'Queued PR review workflow review-run-1 for pandemicsyn/neondeck#10.',
+      status: 'running',
+      message: 'Reviewing pandemicsyn/neondeck#10.',
       data: {
         workflow: 'review-pr-for-human',
+        reviewId: 'review-1',
         runId: 'review-run-1',
         ref: 'pandemicsyn/neondeck#10',
         queued: true,
-        trustBoundary: expect.stringContaining('does not submit'),
+        trustBoundary: expect.stringContaining('nothing is sent to GitHub'),
       },
       workflowSummary: {
         workflow: 'command:review-pr',
         runId: 'review-run-1',
-        status: 'completed',
+        status: 'running',
       },
     });
-    expect(invocations).toEqual([{ ref: 'pandemicsyn/neondeck#10' }]);
+    expect(invocations).toEqual([
+      { ref: 'pandemicsyn/neondeck#10', origin: 'chat' },
+    ]);
+    expect(workflowInvocations).toEqual([
+      {
+        ref: 'pandemicsyn/neondeck#10',
+        reviewId: 'review-1',
+        attemptId: 'attempt-1',
+      },
+    ]);
   });
 
   it('queues explicit fix-ci refs through the bounded workflow surface without review-queue gating', async () => {

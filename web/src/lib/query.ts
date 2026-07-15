@@ -41,6 +41,9 @@ export const queryKeys = {
   neonCommands: ['neon-commands'] as const,
   autopilotState: ['autopilot-state'] as const,
   prWatches: ['pr-watches'] as const,
+  prReviews: ['pr-reviews'] as const,
+  prReviewTarget: (repo: string, prNumber: number) =>
+    ['pr-reviews', repo, prNumber] as const,
   repoHealth: ['repo-health'] as const,
   repoEditEvents: ['repo-edit-events'] as const,
   reports: ['reports'] as const,

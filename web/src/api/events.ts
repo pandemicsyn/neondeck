@@ -2,6 +2,7 @@ import type {
   ConfigChangeEvent,
   ChatSessionChangeEvent,
   NotificationChangeEvent,
+  PrReviewChangeEvent,
 } from './types';
 
 export function openConfigEventStream(
@@ -45,6 +46,23 @@ export function openChatSessionEventStream(
     parseEventData('chat-session-change', event, onEvent, onError);
   });
   if (onError) source.addEventListener('error', onError);
+
+  return () => source.close();
+}
+
+export function openPrReviewEventStream(
+  onEvent: (event: PrReviewChangeEvent) => void,
+  onError?: (error?: Error | Event) => void,
+  onOpen?: () => void,
+) {
+  if (typeof EventSource === 'undefined') return () => {};
+
+  const source = new EventSource('/api/events/reviews');
+  source.addEventListener('review-change', (event) => {
+    parseEventData('review-change', event, onEvent, onError);
+  });
+  if (onError) source.addEventListener('error', onError);
+  if (onOpen) source.addEventListener('open', onOpen);
 
   return () => source.close();
 }
