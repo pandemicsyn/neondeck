@@ -18,14 +18,8 @@ export function resolveToastConfig(
   return {
     enabled: config?.enabled ?? DEFAULT_TOAST_CONFIG.enabled,
     minimumLevel: config?.minimumLevel ?? DEFAULT_TOAST_CONFIG.minimumLevel,
-    readyDurationMs: Math.min(
-      60_000,
-      Math.max(
-        1_000,
-        Math.round(
-          config?.readyDurationMs ?? DEFAULT_TOAST_CONFIG.readyDurationMs,
-        ),
-      ),
+    readyDurationMs: clampReadyDuration(
+      config?.readyDurationMs ?? DEFAULT_TOAST_CONFIG.readyDurationMs,
     ),
     maxVisible: Math.min(
       3,
@@ -55,5 +49,12 @@ export function notificationExpiresAt(
   config: DashboardToastConfig,
   now: number,
 ) {
-  return notification.level === 'ready' ? now + config.readyDurationMs : null;
+  return notification.level === 'ready' && config.readyDurationMs > 0
+    ? now + config.readyDurationMs
+    : null;
+}
+
+function clampReadyDuration(value: number) {
+  const rounded = Math.round(value);
+  return rounded === 0 ? 0 : Math.min(86_400_000, Math.max(1_000, rounded));
 }

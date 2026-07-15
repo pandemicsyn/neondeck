@@ -179,7 +179,7 @@ function dashboardConfig(): DashboardConfig {
       toasts: {
         enabled: true,
         minimumLevel: 'ready',
-        readyDurationMs: 6_000,
+        readyDurationMs: 3_600_000,
         maxVisible: 3,
       },
     },

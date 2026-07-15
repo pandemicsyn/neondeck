@@ -14,7 +14,7 @@
     "toasts": {
       "enabled": true,
       "minimumLevel": "ready",
-      "readyDurationMs": 6000,
+      "readyDurationMs": 3600000,
       "maxVisible": 3
     }
   },

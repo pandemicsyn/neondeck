@@ -799,7 +799,7 @@ describe('runtime home', () => {
       toasts: {
         enabled: true,
         minimumLevel: 'ready',
-        readyDurationMs: 6_000,
+        readyDurationMs: 3_600_000,
         maxVisible: 3,
       },
     });
@@ -831,6 +831,27 @@ describe('runtime home', () => {
         enabled: true,
         minimumLevel: 'attention',
         readyDurationMs: 1_000,
+        maxVisible: 3,
+      },
+    });
+
+    expect(
+      parseDashboardConfig(
+        {
+          ...dashboardConfig(),
+          notifications: {
+            toasts: {
+              readyDurationMs: 0,
+            },
+          },
+        },
+        'dashboard.json',
+      ).notifications,
+    ).toEqual({
+      toasts: {
+        enabled: true,
+        minimumLevel: 'ready',
+        readyDurationMs: 0,
         maxVisible: 3,
       },
     });
