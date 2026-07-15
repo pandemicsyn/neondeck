@@ -227,6 +227,11 @@ export function submitPrReview(
   const database = openDb(paths.neondeckDatabase);
   let changed = false;
   try {
+    // The HTTP route admits submissions only from `ready`. `reviewing` is
+    // intentionally accepted here for the narrow same-head race where a
+    // re-review starts while GitHub is accepting the already-authorized submit.
+    // A different-head re-review still fails this update and the route returns
+    // its explicit "GitHub accepted, local record unsettled" reconciliation 409.
     const result = database
       .prepare(
         `UPDATE pr_reviews

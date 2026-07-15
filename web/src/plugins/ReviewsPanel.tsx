@@ -261,7 +261,7 @@ function AwaitingRow({
         </div>
         {review?.status === 'ready' && !headAdvanced ? (
           <OpenReviewButton review={review} />
-        ) : review && headAdvanced ? (
+        ) : review && review.status !== 'reviewing' && headAdvanced ? (
           <Button
             disabled={pending}
             onClick={() => onRestart(review.id)}

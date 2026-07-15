@@ -792,6 +792,7 @@ export function GitHubPrReview({
             <Badge>{fileStats.binary} binary</Badge>
           ) : null}
           {reviewRecord &&
+          reviewRecord.status !== 'reviewing' &&
           currentHeadSha &&
           reviewRecord.headSha !== currentHeadSha ? (
             <button

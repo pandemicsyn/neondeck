@@ -382,6 +382,57 @@ describe('durable PR reviews', () => {
       failureMessage: expect.stringContaining('Flue review workflow failed'),
     });
   });
+
+  it('settles a same-head submit if a re-review starts while GitHub responds', async () => {
+    const paths = await tempPaths();
+    const dependencies = {
+      resolveTarget: async () => ({
+        repoFullName: 'other/project',
+        owner: 'other',
+        repo: 'project',
+        number: 42,
+      }),
+      fetchDetail: async () => detail('head-1'),
+      invokeWorkflow: async () => ({ runId: 'submit-race-run-1' }),
+    };
+    const started = await startPrReview(
+      { ref: 'other/project#42', origin: 'api' },
+      paths,
+      dependencies,
+    );
+    completePrReview(
+      {
+        reviewId: started.reviewId,
+        runId: started.runId,
+        headSha: 'head-1',
+        reportIds: ['overview'],
+        reviewUrl: started.review.reviewUrl,
+        findingCount: 1,
+        seededCount: 1,
+        reportOnlyCount: 0,
+        reportOnlyFindings: [],
+      },
+      paths,
+    );
+    await startPrReview({ ref: 'other/project#42', origin: 'panel' }, paths, {
+      ...dependencies,
+      invokeWorkflow: async () => ({ runId: 'submit-race-run-2' }),
+    });
+
+    expect(
+      submitPrReview(
+        {
+          repoFullName: 'other/project',
+          prNumber: 42,
+          verdict: 'comment',
+          githubReviewUrl:
+            'https://github.com/other/project/pull/42#pullrequestreview-1',
+          headSha: 'head-1',
+        },
+        paths,
+      ),
+    ).toMatchObject({ status: 'submitted', verdict: 'comment' });
+  });
 });
 
 async function tempPaths() {
