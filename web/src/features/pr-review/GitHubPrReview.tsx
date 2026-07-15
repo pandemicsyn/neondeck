@@ -37,6 +37,7 @@ import {
   useGitHubPullRequestFileList,
   useGitHubPullRequestFilePatches,
   usePrefetchGitHubPullRequestFilePatch,
+  prReviewQueryKeys,
   type PullRequestFilePatchQueryState,
 } from './queries';
 import {
@@ -71,9 +72,11 @@ export function GitHubPrReview({
   const draftQuery = useGitHubPrReviewDraft(pr);
   const mutations = useGitHubPrReviewMutations(pr);
   const queryClient = useQueryClient();
+  const draftRepo = pr.repo;
+  const draftPrNumber = pr.number;
   const reviewDraftQueryKey = useMemo(
-    () => ['pr-review', 'draft', pr.repo, pr.number] as const,
-    [pr.number, pr.repo],
+    () => prReviewQueryKeys.draft({ repo: draftRepo, number: draftPrNumber }),
+    [draftPrNumber, draftRepo],
   );
   const reviewRecordQuery = useQuery({
     queryKey: queryKeys.prReviewTarget(pr.repo, pr.number),
@@ -804,7 +807,9 @@ export function GitHubPrReview({
           {fileStats.binary > 0 ? (
             <Badge>{fileStats.binary} binary</Badge>
           ) : null}
-          {reviewRecord ? (
+          {reviewRecord &&
+          (reviewRecord.status !== 'submitted' ||
+            (currentHeadSha && reviewRecord.headSha !== currentHeadSha)) ? (
             <button
               className="pr-review-popout-button"
               disabled={
@@ -823,7 +828,9 @@ export function GitHubPrReview({
             >
               {restartReview.isPending || reviewRecord.status === 'reviewing'
                 ? 'reviewing'
-                : 're-review'}
+                : reviewRecord.status === 'submitted'
+                  ? 'review new changes'
+                  : 're-review'}
             </button>
           ) : null}
           {isStandalone ? (
@@ -1392,7 +1399,7 @@ function ReviewBar({
       />
       <div className="pr-review-bar-actions">
         <button disabled={!canSubmit} onClick={onSubmit} type="button">
-          {isSubmitting ? 'Submitting' : 'Submit'}
+          {isSubmitting ? 'Submitting to GitHub…' : 'Submit'}
         </button>
         <button disabled={!draft || isBusy} onClick={onDiscard} type="button">
           Discard

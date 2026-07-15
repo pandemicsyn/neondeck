@@ -346,6 +346,15 @@ async function seedDraftComments(
       draftId: existing.id,
     });
   }
+  if (existing && existing.headSha !== facts.state.headSha) {
+    existing = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: facts.target.repoFullName,
+      prNumber: facts.target.number,
+      headSha: facts.state.headSha,
+      reanchorHeadSha: true,
+    });
+  }
   if (existing && existing.comments.length > 0) {
     return {
       draft: existing,

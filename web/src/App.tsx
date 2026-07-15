@@ -42,6 +42,11 @@ const PrReviewPopoutErrorPage = lazy(() =>
   })),
 );
 
+const defaultReviewAppearance: ReviewPopoutAppearance = {
+  density: 'comfortable',
+  textScale: 1.12,
+};
+
 if (typeof window !== 'undefined' && window.location.pathname === '/review') {
   void loadPrReviewPopout();
 }
@@ -57,6 +62,7 @@ export function App() {
   } = useQuery({
     queryKey: queryKeys.dashboardConfig,
     queryFn: getDashboardConfig,
+    enabled: isDashboardRoute,
   });
 
   useEffect(() => {
@@ -98,6 +104,41 @@ export function App() {
     return () => media.removeEventListener('change', applyTheme);
   }, [config]);
 
+  const reviewAppearance = config
+    ? resolveAppearance(config)
+    : defaultReviewAppearance;
+
+  if (reviewRoute.kind === 'target') {
+    return (
+      <main className="deck-page h-screen overflow-hidden bg-bg text-ink">
+        <Suspense
+          fallback={<ReviewPopoutLoadingPage appearance={reviewAppearance} />}
+        >
+          <PrReviewPopoutPage
+            appearance={reviewAppearance}
+            target={reviewRoute.target}
+          />
+        </Suspense>
+      </main>
+    );
+  }
+
+  if (reviewRoute.kind === 'invalid') {
+    return (
+      <main className="deck-page h-screen overflow-hidden bg-bg text-ink">
+        <Suspense
+          fallback={<ReviewPopoutLoadingPage appearance={reviewAppearance} />}
+        >
+          <PrReviewPopoutErrorPage
+            appearance={reviewAppearance}
+            detail={reviewRoute.message}
+            title="Invalid review route"
+          />
+        </Suspense>
+      </main>
+    );
+  }
+
   if (error) {
     return (
       <BootState
@@ -116,34 +157,11 @@ export function App() {
     );
   }
 
-  const appearance = resolveAppearance(config);
-
   return (
     <main className="deck-page h-screen overflow-hidden bg-bg text-ink">
-      {reviewRoute.kind === 'target' ? (
-        <Suspense
-          fallback={<ReviewPopoutLoadingPage appearance={appearance} />}
-        >
-          <PrReviewPopoutPage
-            appearance={appearance}
-            target={reviewRoute.target}
-          />
-        </Suspense>
-      ) : reviewRoute.kind === 'invalid' ? (
-        <Suspense
-          fallback={<ReviewPopoutLoadingPage appearance={appearance} />}
-        >
-          <PrReviewPopoutErrorPage
-            appearance={appearance}
-            detail={reviewRoute.message}
-            title="Invalid review route"
-          />
-        </Suspense>
-      ) : (
-        <NotificationController config={config}>
-          <DashboardShell config={config} />
-        </NotificationController>
-      )}
+      <NotificationController config={config}>
+        <DashboardShell config={config} />
+      </NotificationController>
     </main>
   );
 }

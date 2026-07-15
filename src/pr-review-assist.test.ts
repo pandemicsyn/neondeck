@@ -182,6 +182,35 @@ describe('PR review assist', () => {
     ).toEqual([]);
   });
 
+  it('reanchors an emptied Neon draft when the reviewed head advances', async () => {
+    const paths = await tempPaths();
+    const firstFacts = reviewFacts();
+    await reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+      fetchFacts: async () => firstFacts,
+      reviewer: async () => reviewOutputWithOneFinding(),
+    });
+
+    const nextFacts = {
+      ...firstFacts,
+      state: { ...firstFacts.state, headSha: 'head456' },
+    };
+    await reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+      fetchFacts: async () => nextFacts,
+      reviewer: async () => ({
+        overview: reviewOutputWithOneFinding().overview,
+        findings: [],
+      }),
+    });
+
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 10,
+      }),
+    ).toMatchObject({ headSha: 'head456', comments: [] });
+  });
+
   it('preserves a Neon finding after a human edits it', async () => {
     const paths = await tempPaths();
     await reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, {
