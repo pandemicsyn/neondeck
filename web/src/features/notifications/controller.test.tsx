@@ -171,6 +171,7 @@ function notificationEvent(): NotificationChangeEvent {
 
 function dashboardConfig(): DashboardConfig {
   return {
+    schemaVersion: 1,
     display: { width: 2560, height: 720 },
     theme: 'dark',
     appearance: { density: 'comfortable' },

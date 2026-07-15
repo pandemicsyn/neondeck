@@ -5,6 +5,7 @@ import { writeJson } from '../files';
 import { dashboardPresetSchema, type ConfigActionResult } from '../schemas';
 import {
   type DashboardConfig,
+  dashboardSchemaVersion,
   ensureRuntimeHome,
   dashboardConfigSchema,
   parseDashboardConfig,
@@ -126,6 +127,7 @@ function dashboardPresetConfig(
     return parseDashboardConfig(
       {
         $schema: './dashboard.schema.json',
+        schemaVersion: dashboardSchemaVersion,
         display: { preset: 'xeneon-edge', width: 2560, height: 720 },
         appearance: { density: 'comfortable' },
         theme: 'dark',
@@ -178,6 +180,7 @@ function dashboardPresetConfig(
   return parseDashboardConfig(
     {
       $schema: './dashboard.schema.json',
+      schemaVersion: dashboardSchemaVersion,
       display: { preset: 'xeneon-edge', width: 2560, height: 720 },
       appearance: { density: 'comfortable' },
       theme: 'dark',

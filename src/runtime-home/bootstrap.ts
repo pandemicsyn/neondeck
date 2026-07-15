@@ -10,6 +10,10 @@ import {
 import { defaultAppConfig } from './defaults.ts';
 import { defaultMcpConfig } from '../domains/mcp/schemas.ts';
 import {
+  migrateDashboardConfig,
+  migrateDashboardConfigSync,
+} from './dashboard-migrations.ts';
+import {
   copyIfMissing,
   copyIfMissingSync,
   ensureLocalApiConfig,
@@ -86,6 +90,7 @@ async function initializeRuntimeHome(paths = runtimePaths()) {
   await writeJsonIfMissing(paths.mcp, defaultMcpConfig());
   await writeJsonIfMissing(paths.repos, { repos: [] });
   await copyIfMissing(defaultDashboardPath, paths.dashboard);
+  await migrateDashboardConfig(paths.dashboard);
   await copyIfMissing(defaultDashboardSchemaPath, paths.dashboardSchema);
   await copyIfMissing(defaultSoulPath, paths.soul);
   await seedRuntimeSkills(paths);
@@ -104,6 +109,7 @@ export function ensureRuntimeHomeSync(paths = runtimePaths()) {
   writeJsonIfMissingSync(paths.mcp, defaultMcpConfig());
   writeJsonIfMissingSync(paths.repos, { repos: [] });
   copyIfMissingSync(defaultDashboardPath, paths.dashboard);
+  migrateDashboardConfigSync(paths.dashboard);
   copyIfMissingSync(defaultDashboardSchemaPath, paths.dashboardSchema);
   copyIfMissingSync(defaultSoulPath, paths.soul);
   seedRuntimeSkillsSync(paths);
