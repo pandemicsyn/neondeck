@@ -20,6 +20,7 @@ import {
 } from '../../modules/pr-events';
 import type { RuntimePaths } from '../../runtime-home';
 import {
+  beginPrReviewSubmissionAttempt,
   releasePrReviewSubmission,
   readPrReviewForTarget,
   reservePrReviewSubmission,
@@ -313,6 +314,9 @@ export function createGitHubRoutes(paths: RuntimePaths) {
         );
       }
     };
+    const endSubmissionAttempt = reserved
+      ? beginPrReviewSubmissionAttempt(reserved.id)
+      : () => {};
 
     let githubAccepted = false;
     try {
@@ -398,6 +402,8 @@ export function createGitHubRoutes(paths: RuntimePaths) {
     } catch (error) {
       if (!githubAccepted) releaseReservation();
       throw error;
+    } finally {
+      endSubmissionAttempt();
     }
   });
 

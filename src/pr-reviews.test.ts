@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  beginPrReviewSubmissionAttempt,
   completePrReview,
   failPrReview,
   readPrReviewForTarget,
@@ -453,7 +454,7 @@ describe('durable PR reviews', () => {
         { reviewId: reserved?.id ?? '', headSha: 'head-1' },
         paths,
       ),
-    ).toMatchObject({ status: 'ready' });
+    ).toMatchObject({ status: 'ready', verdict: null });
     expect(
       reservePrReviewSubmission(
         {
@@ -584,6 +585,28 @@ describe('durable PR reviews', () => {
       },
       paths,
     );
+    const endSubmissionAttempt = beginPrReviewSubmissionAttempt(
+      secondReservation?.id ?? '',
+    );
+    const active = await reconcilePrReviewSubmission(
+      { reviewId: started.reviewId },
+      paths,
+      {
+        token: 'token',
+        now: () => Date.parse(secondReservation?.updatedAt ?? '') + 30_001,
+        fetchLogin: async () => {
+          throw new Error('Active attempts must not query GitHub.');
+        },
+        fetchReviews: async () => {
+          throw new Error('Active attempts must not query GitHub.');
+        },
+      },
+    );
+    expect(active).toMatchObject({
+      outcome: 'pending',
+      review: { status: 'submitting', verdict: 'comment' },
+    });
+    endSubmissionAttempt();
     const released = await reconcilePrReviewSubmission(
       { reviewId: started.reviewId },
       paths,
@@ -596,7 +619,7 @@ describe('durable PR reviews', () => {
     );
     expect(released).toMatchObject({
       outcome: 'ready',
-      review: { status: 'ready', verdict: 'comment' },
+      review: { status: 'ready', verdict: null },
     });
   });
 });

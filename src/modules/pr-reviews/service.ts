@@ -54,6 +54,7 @@ export type ReconcilePrReviewSubmissionDependencies = {
 };
 
 const submissionReconcileGraceMs = 30_000;
+const activeSubmissionAttempts = new Set<string>();
 
 export async function startPrReview(
   input: { ref: string; origin: PrReviewOrigin },
@@ -271,7 +272,7 @@ export function releasePrReviewSubmission(
     const result = database
       .prepare(
         `UPDATE pr_reviews
-         SET status = 'ready', updated_at = ?
+         SET status = 'ready', verdict = NULL, updated_at = ?
          WHERE id = ? AND status = 'submitting' AND head_sha = ?;`,
       )
       .run(now, input.reviewId, input.headSha);
@@ -283,6 +284,16 @@ export function releasePrReviewSubmission(
   const updated = requireReview(input.reviewId, paths);
   publish(updated, 'changed');
   return updated;
+}
+
+export function beginPrReviewSubmissionAttempt(reviewId: string) {
+  activeSubmissionAttempts.add(reviewId);
+  let active = true;
+  return () => {
+    if (!active) return;
+    active = false;
+    activeSubmissionAttempts.delete(reviewId);
+  };
 }
 
 export function submitPrReview(
@@ -328,6 +339,9 @@ export async function reconcilePrReviewSubmission(
   if (!current) throw new Error('PR review not found.');
   if (current.status !== 'submitting') {
     return { outcome: 'unchanged' as const, review: current };
+  }
+  if (activeSubmissionAttempts.has(current.id)) {
+    return { outcome: 'pending' as const, review: current };
   }
   if (!current.verdict) {
     throw new Error('The reserved review is missing its submission verdict.');
