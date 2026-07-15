@@ -846,6 +846,73 @@ button:disabled {
   justify-content: center;
 }
 
+.pr-review-popout-skeleton {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: 58px minmax(0, 1fr) 82px;
+  background: var(--canvas);
+}
+
+.pr-review-popout-skeleton-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--deck-chrome) 90%, transparent);
+  padding: 10px;
+}
+
+.pr-review-popout-skeleton-line,
+.pr-review-popout-skeleton-pane,
+.pr-review-popout-skeleton-footer {
+  background: color-mix(in srgb, var(--primary) 9%, var(--field));
+  animation: nd-pulse 1.2s ease-in-out infinite;
+}
+
+.pr-review-popout-skeleton-line {
+  display: block;
+  height: 10px;
+}
+
+.pr-review-popout-skeleton-title {
+  width: min(34rem, 44vw);
+}
+
+.pr-review-popout-skeleton-badges {
+  width: min(22rem, 28vw);
+}
+
+.pr-review-popout-skeleton-workbench {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr) minmax(
+      300px,
+      380px
+    );
+}
+
+.pr-review-popout-skeleton-pane {
+  min-width: 0;
+  border-right: 1px solid var(--line);
+  background: color-mix(in srgb, var(--primary) 4%, var(--field));
+}
+
+.pr-review-popout-skeleton-pane:nth-child(2) {
+  background: color-mix(in srgb, var(--primary) 2%, var(--canvas));
+}
+
+.pr-review-popout-skeleton-pane:last-child {
+  border-right: 0;
+}
+
+.pr-review-popout-skeleton-footer {
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--primary) 5%, var(--field));
+}
+
 .pr-review-shell {
   display: grid;
   min-height: 0;

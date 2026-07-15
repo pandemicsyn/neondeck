@@ -920,6 +920,15 @@ export const entries: SafetyPolicyEntry[] = [
     'User-surface-only local API for submitting a human-authored GitHub PR review with inline comments and a verdict. Neon has no action or tool path to this route.',
   ),
   route(
+    '/api/reviews/:id/reconcile',
+    'Recover interrupted PR review submission API',
+    {
+      ...safeMutation,
+      auditTarget: 'pr_reviews/GitHub',
+    },
+    'User-surface-only local API that checks GitHub for an interrupted human-authored review submission and reconciles its app-owned durable record. Neon has no action or tool path to this route.',
+  ),
+  route(
     '/api/github/prs/:owner/:repo/:number/review-threads/:threadId/reply',
     'Reply to PR review thread API',
     unauditedSafeMutation,

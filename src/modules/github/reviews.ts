@@ -492,6 +492,7 @@ export function updatePrReviewDraftComment(options: {
             start_line = ?,
             start_side = ?,
             body = ?,
+            origin = 'human',
             updated_at = ?
         WHERE id = ?;
       `,
@@ -508,6 +509,30 @@ export function updatePrReviewDraftComment(options: {
       );
     touchDraft(database, draftId, now);
     return readDraftWithCommentsById(database, draftId);
+  } finally {
+    database.close();
+  }
+}
+
+export function clearPrReviewNeonDraftComments(options: {
+  databasePath: string;
+  draftId: string;
+}): GitHubPrReviewDraft {
+  const database = openDb(options.databasePath);
+  const now = new Date().toISOString();
+  try {
+    assertDraftIsLive(database, options.draftId);
+    const result = database
+      .prepare(
+        `
+        DELETE FROM pr_review_draft_comments
+        WHERE draft_id = ?
+          AND origin = 'neon';
+      `,
+      )
+      .run(options.draftId);
+    if (result.changes > 0) touchDraft(database, options.draftId, now);
+    return readDraftWithCommentsById(database, options.draftId);
   } finally {
     database.close();
   }

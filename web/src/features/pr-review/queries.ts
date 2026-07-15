@@ -20,6 +20,7 @@ import {
   postGitHubPrThreadReply,
   postGitHubPrThreadResolution,
   putGitHubPrReviewDraft,
+  type GitHubPrReviewDraft,
   type GitHubPullRequest,
   type GitHubPullRequestReviewThread,
 } from '../../api';
@@ -207,8 +208,9 @@ export function useGitHubPrReviewDraft(pr: GitHubPullRequest) {
 
 export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
   const queryClient = useQueryClient();
-  const invalidateDraft = () =>
-    queryClient.invalidateQueries({ queryKey: prReviewQueryKeys.draft(pr) });
+  const updateDraftCache = (draft: GitHubPrReviewDraft | null) => {
+    queryClient.setQueryData(prReviewQueryKeys.draft(pr), draft);
+  };
   const invalidateThreads = () =>
     queryClient.invalidateQueries({
       queryKey: prReviewQueryKeys.reviewThreads(pr),
@@ -249,28 +251,28 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
   return {
     saveDraft: useMutation({
       mutationFn: putGitHubPrReviewDraft,
-      onSuccess: invalidateDraft,
+      onSuccess: updateDraftCache,
     }),
     addComment: useMutation({
       mutationFn: postGitHubPrReviewDraftComment,
-      onSuccess: invalidateDraft,
+      onSuccess: updateDraftCache,
     }),
     updateComment: useMutation({
       mutationFn: patchGitHubPrReviewDraftComment,
-      onSuccess: invalidateDraft,
+      onSuccess: updateDraftCache,
     }),
     deleteComment: useMutation({
       mutationFn: deleteGitHubPrReviewDraftComment,
-      onSuccess: invalidateDraft,
+      onSuccess: updateDraftCache,
     }),
     discardDraft: useMutation({
       mutationFn: deleteGitHubPrReviewDraft,
-      onSuccess: invalidateDraft,
+      onSuccess: updateDraftCache,
     }),
     submitReview: useMutation({
       mutationFn: postGitHubPrReview,
-      onSuccess: () => {
-        void invalidateDraft();
+      onSuccess: (result) => {
+        updateDraftCache(result?.draft ?? null);
         void invalidateThreads();
       },
     }),

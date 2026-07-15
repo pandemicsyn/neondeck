@@ -35,6 +35,7 @@ export {
 } from './checks';
 export {
   addPrReviewDraftComment,
+  clearPrReviewNeonDraftComments,
   deletePrReviewNeonSeedsForComments,
   deletePrReviewDraftComment,
   discardPrReviewDraft,

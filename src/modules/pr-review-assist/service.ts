@@ -2,6 +2,7 @@ import * as v from 'valibot';
 import { addNotification, addWorkflowSummary } from '../app-state';
 import {
   addPrReviewDraftComment,
+  clearPrReviewNeonDraftComments,
   deletePrReviewNeonSeedsForComments,
   deletePrReviewDraftComment,
   readLivePrReviewDraft,
@@ -197,7 +198,7 @@ export async function reviewPrForHuman(
       reportOnlyFindings: seedResult.reportOnly.map((item) => ({
         severity: item.finding.severity,
         path: item.finding.path,
-        line: item.finding.line ?? null,
+        line: findingLine(item.finding),
         summary: item.finding.summary,
         suggestedFix: item.finding.suggestedFix,
         reason: item.reason,
@@ -312,7 +313,7 @@ async function seedDraftComments(
   paths: RuntimePaths,
   seedingBlockedReason: string | null,
 ) {
-  const existing = readLivePrReviewDraft({
+  let existing = readLivePrReviewDraft({
     databasePath: paths.neondeckDatabase,
     repo: facts.target.repoFullName,
     prNumber: facts.target.number,
@@ -339,6 +340,21 @@ async function seedDraftComments(
       skippedReason: 'existing-human-draft',
     };
   }
+  if (existing?.comments.some((comment) => comment.origin === 'neon')) {
+    existing = clearPrReviewNeonDraftComments({
+      databasePath: paths.neondeckDatabase,
+      draftId: existing.id,
+    });
+  }
+  if (existing && existing.headSha !== facts.state.headSha) {
+    existing = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: facts.target.repoFullName,
+      prNumber: facts.target.number,
+      headSha: facts.state.headSha,
+      reanchorHeadSha: true,
+    });
+  }
   if (existing && existing.comments.length > 0) {
     return {
       draft: existing,
@@ -356,6 +372,10 @@ async function seedDraftComments(
   const reportOnly: ReportOnlyFinding[] = [];
   const seedable = [];
   for (const finding of output.findings) {
+    if (finding.anchor.kind === 'report-only') {
+      reportOnly.push({ finding, reason: finding.anchor.reason });
+      continue;
+    }
     const anchor = findingAnchor(finding);
     const index = anchors.get(finding.path);
     if (!anchor || !index || !commentAnchorExists(index, anchor)) {
@@ -581,13 +601,17 @@ function anchorsByPath(files: GitHubPullRequestFile[]) {
 function findingAnchor(
   finding: ReviewAssistFinding,
 ): ReviewCommentAnchor | null {
-  if (!finding.line) return null;
+  if (finding.anchor.kind !== 'inline') return null;
   return {
-    side: finding.side ?? 'RIGHT',
-    line: finding.line,
-    startLine: finding.startLine ?? null,
-    startSide: finding.startSide ?? null,
+    side: finding.anchor.side,
+    line: finding.anchor.line,
+    startLine: finding.anchor.startLine ?? null,
+    startSide: finding.anchor.startSide ?? null,
   };
+}
+
+function findingLine(finding: ReviewAssistFinding) {
+  return finding.anchor.kind === 'inline' ? finding.anchor.line : null;
 }
 
 function seededCommentBody(finding: ReviewAssistFinding) {

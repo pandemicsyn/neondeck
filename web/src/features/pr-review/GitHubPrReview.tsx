@@ -11,7 +11,9 @@ import {
   ApiError,
   getPrReviewForTarget,
   openPrReviewEventStream,
+  reconcilePrReviewSubmission,
   restartPrReview,
+  startPrReview,
   type DiffSummary,
   type GitHubPrReviewDraft,
   type GitHubPrReviewDraftComment,
@@ -19,6 +21,7 @@ import {
   type GitHubPullRequest,
   type GitHubPullRequestReviewThread,
   type PrReviewRecord,
+  type PrReviewReportOnlyFinding,
 } from '../../api';
 import type {
   GitHubPrReviewDraftResponse,
@@ -37,6 +40,7 @@ import {
   useGitHubPullRequestFileList,
   useGitHubPullRequestFilePatches,
   usePrefetchGitHubPullRequestFilePatch,
+  prReviewQueryKeys,
   type PullRequestFilePatchQueryState,
 } from './queries';
 import {
@@ -45,7 +49,6 @@ import {
   failingCommentIdsFromError,
   normalizeReviewBody,
   patchAnchorIndexesByPath,
-  reviewDraftNeedsSubmitSave,
   reviewCommentPreview,
   staleDraftCommentIds,
   type PatchAnchorIndex,
@@ -71,6 +74,12 @@ export function GitHubPrReview({
   const draftQuery = useGitHubPrReviewDraft(pr);
   const mutations = useGitHubPrReviewMutations(pr);
   const queryClient = useQueryClient();
+  const draftRepo = pr.repo;
+  const draftPrNumber = pr.number;
+  const reviewDraftQueryKey = useMemo(
+    () => prReviewQueryKeys.draft({ repo: draftRepo, number: draftPrNumber }),
+    [draftPrNumber, draftRepo],
+  );
   const reviewRecordQuery = useQuery({
     queryKey: queryKeys.prReviewTarget(pr.repo, pr.number),
     queryFn: () => getPrReviewForTarget({ repo: pr.repo, prNumber: pr.number }),
@@ -86,6 +95,26 @@ export function GitHubPrReview({
         queryKeys.prReviewTarget(pr.repo, pr.number),
         result.review,
       );
+    },
+  });
+  const startReview = useMutation({
+    mutationFn: () =>
+      startPrReview({ ref: `${pr.repo}#${pr.number}`, origin: 'panel' }),
+    onSuccess(result) {
+      queryClient.setQueryData(
+        queryKeys.prReviewTarget(pr.repo, pr.number),
+        result.review,
+      );
+    },
+  });
+  const reconcileSubmission = useMutation({
+    mutationFn: (id: string) => reconcilePrReviewSubmission(id),
+    onSuccess(result) {
+      queryClient.setQueryData(
+        queryKeys.prReviewTarget(pr.repo, pr.number),
+        result.review,
+      );
+      setStatusMessage(result.message);
     },
   });
   const [activePath, setActivePath] = useState<string | null>(null);
@@ -104,6 +133,8 @@ export function GitHubPrReview({
   const [reanchoringCommentId, setReanchoringCommentId] = useState<
     string | null
   >(null);
+  const [anchoringFinding, setAnchoringFinding] =
+    useState<PrReviewReportOnlyFinding | null>(null);
   const [submitFailedCommentIds, setSubmitFailedCommentIds] = useState<
     Set<string>
   >(() => new Set());
@@ -206,7 +237,10 @@ export function GitHubPrReview({
         mutations.deleteComment.error ??
         mutations.discardDraft.error ??
         mutations.replyToThread.error ??
-        mutations.setThreadResolution.error,
+        mutations.setThreadResolution.error ??
+        startReview.error ??
+        restartReview.error ??
+        reconcileSubmission.error,
       draft,
     ) ?? statusMessage;
   const fileLoadMessage = filesQuery.isLoading
@@ -230,6 +264,14 @@ export function GitHubPrReview({
               queryKeys.prReviewTarget(pr.repo, pr.number),
               event.review,
             );
+            if (
+              event.review.status === 'ready' ||
+              event.review.status === 'failed'
+            ) {
+              void queryClient.invalidateQueries({
+                queryKey: reviewDraftQueryKey,
+              });
+            }
           }
         },
         undefined,
@@ -239,7 +281,7 @@ export function GitHubPrReview({
           });
         },
       ),
-    [pr.number, pr.repo, queryClient],
+    [pr.number, pr.repo, queryClient, reviewDraftQueryKey],
   );
 
   useEffect(() => {
@@ -311,6 +353,7 @@ export function GitHubPrReview({
   };
   const ensureDraft = async () => draft ?? (await saveDraft());
   const beginReanchorComment = (commentId: string, path: string | null) => {
+    setAnchoringFinding(null);
     setComposer(null);
     setComposerBody('');
     setReanchoringCommentId(commentId);
@@ -320,6 +363,20 @@ export function GitHubPrReview({
       setActivePath(firstRenderablePath(files) ?? null);
     }
     setStatusMessage('Select a new diff line to re-anchor the draft comment.');
+  };
+  const beginAnchorFinding = (finding: PrReviewReportOnlyFinding) => {
+    setComposer(null);
+    setComposerBody('');
+    setReanchoringCommentId(null);
+    setAnchoringFinding(finding);
+    if (files.some((file) => file.path === finding.path)) {
+      setActivePath(finding.path);
+    } else if (!activePath) {
+      setActivePath(firstRenderablePath(files) ?? null);
+    }
+    setStatusMessage(
+      'Choose a changed diff line or range for this report-only finding.',
+    );
   };
   const refreshDraftHead = async () => {
     if (!draft) return;
@@ -377,7 +434,10 @@ export function GitHubPrReview({
     }
     const annotation = annotationFromSelection(selection, index);
     setComposer({ path: activePath, selection, annotation });
-    setComposerBody('');
+    setComposerBody(
+      anchoringFinding ? reportOnlyFindingBody(anchoringFinding) : '',
+    );
+    setAnchoringFinding(null);
     setStatusMessage(null);
   };
   const submitComposer = async (event: FormEvent) => {
@@ -677,27 +737,12 @@ export function GitHubPrReview({
     setStatusMessage(null);
     try {
       const normalizedBody = normalizeReviewBody(reviewBody);
-      const shouldReanchorDraft = Boolean(
-        draft && draft.headSha !== currentHeadSha,
-      );
-      const savedDraft = reviewDraftNeedsSubmitSave(
-        draft,
-        normalizedBody,
-        verdict,
-        currentHeadSha,
-      )
-        ? await saveDraft({
-            body: normalizedBody,
-            verdict,
-            reanchorHeadSha: shouldReanchorDraft,
-          })
-        : draft;
-      if (!savedDraft) throw new Error('Review draft could not be saved.');
       await mutations.submitReview.mutateAsync({
         repo: pr.repo,
         number: pr.number,
-        draftId: savedDraft.id,
         headSha: currentHeadSha,
+        body: normalizedBody,
+        verdict,
         commentIds: cleanCommentIds,
       });
       setSubmitFailedCommentIds(new Set());
@@ -757,7 +802,11 @@ export function GitHubPrReview({
         }}
         onReanchor={(comment) => beginReanchorComment(comment.id, comment.path)}
       />
-      <ReportOnlyFindingPanel review={reviewRecord} />
+      <ReportOnlyFindingPanel
+        draft={draft}
+        onChooseLine={beginAnchorFinding}
+        review={reviewRecord}
+      />
     </>
   );
 
@@ -792,17 +841,56 @@ export function GitHubPrReview({
             <Badge>{fileStats.binary} binary</Badge>
           ) : null}
           {reviewRecord &&
-          reviewRecord.status !== 'reviewing' &&
-          currentHeadSha &&
-          reviewRecord.headSha !== currentHeadSha ? (
+          (reviewRecord.status !== 'submitted' ||
+            (currentHeadSha && reviewRecord.headSha !== currentHeadSha)) ? (
             <button
               className="pr-review-popout-button"
-              disabled={restartReview.isPending}
-              onClick={() => restartReview.mutate(reviewRecord.id)}
-              title="Run Neon again for the current PR head"
+              disabled={
+                restartReview.isPending ||
+                reconcileSubmission.isPending ||
+                reviewRecord.status === 'reviewing'
+              }
+              onClick={() => {
+                setStatusMessage(null);
+                if (reviewRecord.status === 'submitting') {
+                  reconcileSubmission.mutate(reviewRecord.id);
+                } else {
+                  restartReview.mutate(reviewRecord.id);
+                }
+              }}
+              title={
+                reviewRecord.status === 'submitting'
+                  ? 'Check GitHub and recover an interrupted review submission'
+                  : currentHeadSha && reviewRecord.headSha !== currentHeadSha
+                    ? 'Run Neon again for the current PR head'
+                    : 'Refresh Neon findings from current GitHub facts'
+              }
               type="button"
             >
-              {restartReview.isPending ? 're-reviewing' : 're-review'}
+              {reconcileSubmission.isPending
+                ? 'checking GitHub'
+                : reviewRecord.status === 'submitting'
+                  ? 'recover submission'
+                  : restartReview.isPending ||
+                      reviewRecord.status === 'reviewing'
+                    ? 'reviewing'
+                    : reviewRecord.status === 'submitted'
+                      ? 'review new changes'
+                      : 're-review'}
+            </button>
+          ) : null}
+          {!reviewRecord && reviewRecordQuery.isSuccess ? (
+            <button
+              className="pr-review-popout-button"
+              disabled={startReview.isPending}
+              onClick={() => {
+                setStatusMessage(null);
+                startReview.mutate();
+              }}
+              title="Run Neon review assistance for this pull request"
+              type="button"
+            >
+              {startReview.isPending ? 'starting' : 'run Neon'}
             </button>
           ) : null}
           {isStandalone ? (
@@ -830,6 +918,12 @@ export function GitHubPrReview({
         <div className="pr-review-stale-banner">
           Re-anchor mode is active. Select the new diff line or range for this
           draft comment.
+        </div>
+      ) : null}
+      {anchoringFinding ? (
+        <div className="pr-review-stale-banner">
+          Choose-line mode is active for {anchoringFinding.path}. Select a
+          changed line or range to draft the finding inline.
         </div>
       ) : null}
       {threadsQuery.error ? (
@@ -1246,7 +1340,15 @@ function positiveLine(value: number | null | undefined) {
   return typeof value === 'number' && value > 0 ? value : null;
 }
 
-function ReportOnlyFindingPanel({ review }: { review: PrReviewRecord | null }) {
+function ReportOnlyFindingPanel({
+  draft,
+  onChooseLine,
+  review,
+}: {
+  draft: GitHubPrReviewDraft | null;
+  onChooseLine: (finding: PrReviewReportOnlyFinding) => void;
+  review: PrReviewRecord | null;
+}) {
   if (!review?.reportOnlyFindings.length) return null;
   return (
     <section className="pr-review-inspector-section">
@@ -1255,26 +1357,52 @@ function ReportOnlyFindingPanel({ review }: { review: PrReviewRecord | null }) {
         <Badge>{review.reportOnlyFindings.length}</Badge>
       </div>
       <div className="divide-y divide-line border-t border-line">
-        {review.reportOnlyFindings.map((finding, index) => (
-          <article
-            className="py-2"
-            key={`${finding.path}:${finding.line}:${index}`}
-          >
-            <p className="font-mono text-[10px] text-primary">
-              {finding.severity} · {finding.path}
-              {finding.line ? `:${finding.line}` : ''}
-            </p>
-            <p className="mt-1 text-[10.5px] leading-4 text-ink">
-              {finding.summary}
-            </p>
-            <p className="mt-1 text-[10px] leading-4 text-muted">
-              Suggested fix: {finding.suggestedFix}
-            </p>
-          </article>
-        ))}
+        {review.reportOnlyFindings.map((finding, index) => {
+          const drafted = draft?.comments.some((comment) =>
+            comment.body.includes(finding.summary),
+          );
+          return (
+            <article
+              className="py-2"
+              key={`${finding.path}:${finding.line}:${index}`}
+            >
+              <p className="font-mono text-[10px] text-primary">
+                {finding.severity} · {finding.path}
+                {finding.line ? `:${finding.line}` : ''}
+              </p>
+              <p className="mt-1 text-[10.5px] leading-4 text-ink">
+                {finding.summary}
+              </p>
+              <p className="mt-1 text-[10px] leading-4 text-muted">
+                Suggested fix: {finding.suggestedFix}
+              </p>
+              <p className="mt-1 font-mono text-[9.5px] leading-4 text-muted">
+                Unanchored: {finding.reason}
+              </p>
+              <button
+                className="mt-1.5 border border-line px-1.5 py-1 font-mono text-[10px] text-muted hover:border-primary hover:text-primary disabled:opacity-50"
+                disabled={drafted}
+                onClick={() => onChooseLine(finding)}
+                type="button"
+              >
+                {drafted ? 'drafted inline' : 'choose line'}
+              </button>
+            </article>
+          );
+        })}
       </div>
     </section>
   );
+}
+
+function reportOnlyFindingBody(finding: PrReviewReportOnlyFinding) {
+  return [
+    `Neon review finding (${finding.severity}): ${finding.summary}`,
+    '',
+    `Suggested fix: ${finding.suggestedFix}`,
+    '',
+    'Manually anchored from a report-only finding. Edit or delete before submitting the review.',
+  ].join('\n');
 }
 
 function ReviewBar({
@@ -1371,7 +1499,7 @@ function ReviewBar({
       />
       <div className="pr-review-bar-actions">
         <button disabled={!canSubmit} onClick={onSubmit} type="button">
-          {isSubmitting ? 'Submitting' : 'Submit'}
+          {isSubmitting ? 'Submitting to GitHub…' : 'Submit'}
         </button>
         <button disabled={!draft || isBusy} onClick={onDiscard} type="button">
           Discard

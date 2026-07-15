@@ -100,7 +100,8 @@ export type GitHubPullRequest = {
   checkError?: string;
 };
 
-export type PrReviewStatus = 'reviewing' | 'ready' | 'submitted' | 'failed';
+export type PrReviewStatus =
+  'reviewing' | 'ready' | 'submitting' | 'submitted' | 'failed';
 
 export type PrReviewVerdict = 'comment' | 'approve' | 'request-changes';
 

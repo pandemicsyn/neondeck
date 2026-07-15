@@ -20,7 +20,10 @@ import {
 } from '../../modules/pr-events';
 import type { RuntimePaths } from '../../runtime-home';
 import {
+  beginPrReviewSubmissionAttempt,
+  releasePrReviewSubmission,
   readPrReviewForTarget,
+  reservePrReviewSubmission,
   submitPrReview,
 } from '../../modules/pr-reviews';
 import { queryNumber, safeJsonBody } from '../http';
@@ -261,47 +264,147 @@ export function createGitHubRoutes(paths: RuntimePaths) {
         409,
       );
     }
-    const result = await postGitHubPrReview(
-      target.input,
-      reviewInput as Parameters<typeof postGitHubPrReview>[1],
-      paths,
-    );
-    if (result.ok) {
-      const data = objectField(result.data);
-      const draft = objectField(data.draft);
-      const review = objectField(data.review);
-      const verdict = draft.verdict;
-      if (
-        verdict === 'comment' ||
-        verdict === 'approve' ||
-        verdict === 'request-changes'
-      ) {
-        const submitted = submitPrReview(
+    const verdict = reviewInputObject.verdict;
+    if (
+      verdict !== 'comment' &&
+      verdict !== 'approve' &&
+      verdict !== 'request-changes'
+    ) {
+      return c.json(
+        {
+          ok: false,
+          action: 'github_pr_review_post',
+          changed: false,
+          message: 'A review verdict is required.',
+        },
+        400,
+      );
+    }
+
+    const reserved = durableReview
+      ? reservePrReviewSubmission(
           {
             repoFullName: target.input.repo,
             prNumber: target.input.prNumber,
+            headSha: requestedHeadSha ?? '',
             verdict,
-            githubReviewUrl: typeof review.url === 'string' ? review.url : null,
-            headSha: typeof draft.headSha === 'string' ? draft.headSha : null,
           },
           paths,
-        );
-        if (durableReview && !submitted) {
-          return c.json(
-            {
-              ok: false,
-              action: 'github_pr_review_post',
-              changed: true,
-              message:
-                'GitHub accepted the review, but Neondeck could not settle its durable review record.',
-              data: result.data,
-            },
-            409,
-          );
-        }
-      }
+        )
+      : null;
+    if (durableReview && !reserved) {
+      return c.json(
+        {
+          ok: false,
+          action: 'github_pr_review_post',
+          changed: false,
+          message:
+            'The durable review changed before submission could be reserved. Refresh and try again.',
+          data: { reviewId: durableReview.id },
+        },
+        409,
+      );
     }
-    return c.json(result, result.ok ? 200 : 400);
+
+    const releaseReservation = () => {
+      if (reserved) {
+        releasePrReviewSubmission(
+          { reviewId: reserved.id, headSha: reserved.headSha },
+          paths,
+        );
+      }
+    };
+    const endSubmissionAttempt = reserved
+      ? beginPrReviewSubmissionAttempt(reserved.id)
+      : () => {};
+
+    let githubAccepted = false;
+    try {
+      const savedDraftResult = await putGitHubPrReviewDraft(
+        target.input,
+        {
+          headSha: requestedHeadSha ?? '',
+          body:
+            typeof reviewInputObject.body === 'string'
+              ? reviewInputObject.body
+              : null,
+          verdict,
+          reanchorHeadSha: true,
+        },
+        paths,
+      );
+      if (!savedDraftResult.ok) {
+        releaseReservation();
+        return c.json(savedDraftResult, 400);
+      }
+      const savedDraft = objectField(objectField(savedDraftResult.data).draft);
+      if (typeof savedDraft.id !== 'string') {
+        releaseReservation();
+        return c.json(
+          {
+            ok: false,
+            action: 'github_pr_review_post',
+            changed: false,
+            message: 'Review draft could not be saved before submission.',
+          },
+          409,
+        );
+      }
+
+      const result = await postGitHubPrReview(
+        target.input,
+        {
+          draftId: savedDraft.id,
+          headSha: requestedHeadSha ?? '',
+          commentIds: Array.isArray(reviewInputObject.commentIds)
+            ? reviewInputObject.commentIds.filter(
+                (id): id is string => typeof id === 'string',
+              )
+            : undefined,
+        },
+        paths,
+      );
+      if (!result.ok) {
+        releaseReservation();
+        return c.json(result, 400);
+      }
+      githubAccepted = true;
+
+      const data = objectField(result.data);
+      const draft = objectField(data.draft);
+      const review = objectField(data.review);
+      const submittedVerdict = prReviewVerdict(draft.verdict) ?? verdict;
+      const submitted = reserved
+        ? submitPrReview(
+            {
+              reviewId: reserved.id,
+              verdict: submittedVerdict,
+              githubReviewUrl:
+                typeof review.url === 'string' ? review.url : null,
+            },
+            paths,
+          )
+        : null;
+      if (reserved && !submitted) {
+        return c.json(
+          {
+            ok: false,
+            action: 'github_pr_review_post',
+            changed: true,
+            message:
+              'GitHub accepted the review, but Neondeck could not settle its reserved durable review record.',
+            data: result.data,
+          },
+          409,
+        );
+      }
+      return c.json(result, 200);
+    } catch (error) {
+      if (!githubAccepted) releaseReservation();
+      throw error;
+    } finally {
+      endSubmissionAttempt();
+    }
   });
 
   routes.post(
@@ -414,6 +517,14 @@ function objectField(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function prReviewVerdict(value: unknown) {
+  return value === 'comment' ||
+    value === 'approve' ||
+    value === 'request-changes'
+    ? value
+    : null;
 }
 
 function prTargetFromParams(owner: string, repo: string, numberText: string) {

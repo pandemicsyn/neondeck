@@ -88,6 +88,7 @@ export async function fetchPullRequestEventState(options: {
     checkSuiteDetails,
     checkRunDetails,
     branchPermissions,
+    behindBy,
   ] = await Promise.all([
     fetchPullRequestCommitsWithMetadata(options),
     fetchPullRequestReviewsWithMetadata(options),
@@ -110,6 +111,7 @@ export async function fetchPullRequestEventState(options: {
       repo: options.repo,
       detail,
     }),
+    fetchPullRequestBehindBy(options, detail).catch(() => null),
   ]);
   const requestedChangesState = requestedChangesStateFromReviews(
     reviewDetails.reviews,
@@ -148,7 +150,7 @@ export async function fetchPullRequestEventState(options: {
     checkRuns: checkRunDetails.checkRuns,
     checkRunsTruncated: checkRunDetails.truncated,
     branchPermissions,
-    isOutOfDate: isOutOfDateMergeState(detail.mergeableState),
+    isOutOfDate: isOutOfDateState(behindBy, detail.mergeableState),
     fetchedAt: new Date().toISOString(),
   };
 }
@@ -280,8 +282,33 @@ async function fetchRepositoryPermissions(token: string, fullName: string) {
   return v.parse(githubRepositoryApiResponseSchema, await response.json());
 }
 
-function isOutOfDateMergeState(value: string | null | undefined) {
-  return value === 'behind' || value === 'dirty' || value === 'blocked';
+export function isOutOfDateMergeState(value: string | null | undefined) {
+  return value === 'behind';
+}
+
+export function isOutOfDateState(
+  behindBy: number | null,
+  mergeableState: string | null | undefined,
+) {
+  return behindBy === null
+    ? isOutOfDateMergeState(mergeableState)
+    : behindBy > 0;
+}
+
+async function fetchPullRequestBehindBy(
+  options: { token: string; owner: string; repo: string },
+  detail: GitHubPullRequestDetail,
+) {
+  if (!detail.baseSha || !detail.headSha) return null;
+  const response = await githubFetch(
+    options.token,
+    `https://api.github.com/repos/${encodePathSegment(options.owner)}/${encodePathSegment(options.repo)}/compare/${encodePathSegment(detail.baseSha)}...${encodePathSegment(detail.headSha)}`,
+  );
+  const comparison = v.parse(
+    v.object({ behind_by: v.pipe(v.number(), v.integer(), v.minValue(0)) }),
+    await response.json(),
+  );
+  return comparison.behind_by;
 }
 
 function normalizePullRequestFile(

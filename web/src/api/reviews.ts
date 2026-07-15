@@ -43,3 +43,10 @@ export function restartPrReview(id: string) {
     {},
   );
 }
+
+export function reconcilePrReviewSubmission(id: string) {
+  return postJson<PrReviewMutationResponse>(
+    `/api/reviews/${encodeURIComponent(id)}/reconcile`,
+    {},
+  );
+}
