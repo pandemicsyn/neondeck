@@ -161,6 +161,22 @@ GITHUB_LOGIN=...</code></pre>
           plugin config. The checked-in dashboard config and schema are copied into
           new runtime homes as defaults.
         </p>
+        <pre><code>&#123;
+  "notifications": &#123;
+    "toasts": &#123;
+      "enabled": true,
+      "minimumLevel": "ready",
+      "readyDurationMs": 3600000,
+      "maxVisible": 3
+    &#125;
+  &#125;
+&#125;</code></pre>
+        <p>
+          Ready notifications remain visible for one hour by default. Set
+          <code>readyDurationMs</code> to <code>0</code> to keep them visible until
+          dismissed, or choose a nonzero duration from 1 second through 24 hours.
+          Attention and urgent notifications do not auto-timeout.
+        </p>
 
         <h2>Schedules and watches</h2>
         <p>
