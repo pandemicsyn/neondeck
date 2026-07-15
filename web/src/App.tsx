@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import {
   getDashboardConfig,
@@ -15,10 +15,9 @@ import type { DeckArrangement } from './lib/deck-profile';
 import { useDeckProfile } from './lib/deck-profile';
 import { queryErrorMessage, queryKeys } from './lib/query';
 import { pluginRegistry, resolvePluginConfig } from './plugins/registry';
-import {
-  PrReviewPopoutErrorPage,
-  PrReviewPopoutPage,
-  type ReviewPopoutTarget,
+import type {
+  ReviewPopoutAppearance,
+  ReviewPopoutTarget,
 } from './features/pr-review/PrReviewPopoutPage';
 import { NotificationController } from './features/notifications/controller';
 import type {
@@ -30,8 +29,32 @@ import type {
   DashboardTheme,
 } from './types';
 
+const loadPrReviewPopout = () =>
+  import('./features/pr-review/PrReviewPopoutPage');
+const PrReviewPopoutPage = lazy(() =>
+  loadPrReviewPopout().then((module) => ({
+    default: module.PrReviewPopoutPage,
+  })),
+);
+const PrReviewPopoutErrorPage = lazy(() =>
+  loadPrReviewPopout().then((module) => ({
+    default: module.PrReviewPopoutErrorPage,
+  })),
+);
+
+const defaultReviewAppearance: ReviewPopoutAppearance = {
+  density: 'comfortable',
+  textScale: 1.12,
+};
+
+if (typeof window !== 'undefined' && window.location.pathname === '/review') {
+  void loadPrReviewPopout();
+}
+
 export function App() {
   const queryClient = useQueryClient();
+  const reviewRoute = useMemo(readReviewPopoutRoute, []);
+  const isDashboardRoute = reviewRoute.kind === 'none';
   const {
     data: config,
     error,
@@ -39,9 +62,11 @@ export function App() {
   } = useQuery({
     queryKey: queryKeys.dashboardConfig,
     queryFn: getDashboardConfig,
+    enabled: isDashboardRoute,
   });
 
   useEffect(() => {
+    if (!isDashboardRoute) return;
     return openConfigEventStream((event) => {
       dispatchConfigChangeEvent(event);
       if (
@@ -53,9 +78,10 @@ export function App() {
         });
       }
     });
-  }, [queryClient]);
+  }, [isDashboardRoute, queryClient]);
 
   useEffect(() => {
+    if (!isDashboardRoute) return;
     return openChatSessionEventStream(() => {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.neonSession,
@@ -64,7 +90,7 @@ export function App() {
         queryKey: queryKeys.chatSessions,
       });
     });
-  }, [queryClient]);
+  }, [isDashboardRoute, queryClient]);
 
   useEffect(() => {
     if (!config) return;
@@ -77,6 +103,41 @@ export function App() {
     media.addEventListener('change', applyTheme);
     return () => media.removeEventListener('change', applyTheme);
   }, [config]);
+
+  const reviewAppearance = config
+    ? resolveAppearance(config)
+    : defaultReviewAppearance;
+
+  if (reviewRoute.kind === 'target') {
+    return (
+      <main className="deck-page h-screen overflow-hidden bg-bg text-ink">
+        <Suspense
+          fallback={<ReviewPopoutLoadingPage appearance={reviewAppearance} />}
+        >
+          <PrReviewPopoutPage
+            appearance={reviewAppearance}
+            target={reviewRoute.target}
+          />
+        </Suspense>
+      </main>
+    );
+  }
+
+  if (reviewRoute.kind === 'invalid') {
+    return (
+      <main className="deck-page h-screen overflow-hidden bg-bg text-ink">
+        <Suspense
+          fallback={<ReviewPopoutLoadingPage appearance={reviewAppearance} />}
+        >
+          <PrReviewPopoutErrorPage
+            appearance={reviewAppearance}
+            detail={reviewRoute.message}
+            title="Invalid review route"
+          />
+        </Suspense>
+      </main>
+    );
+  }
 
   if (error) {
     return (
@@ -96,27 +157,11 @@ export function App() {
     );
   }
 
-  const reviewRoute = readReviewPopoutRoute();
-  const appearance = resolveAppearance(config);
-
   return (
     <main className="deck-page h-screen overflow-hidden bg-bg text-ink">
-      {reviewRoute.kind === 'target' ? (
-        <PrReviewPopoutPage
-          appearance={appearance}
-          target={reviewRoute.target}
-        />
-      ) : reviewRoute.kind === 'invalid' ? (
-        <PrReviewPopoutErrorPage
-          appearance={appearance}
-          detail={reviewRoute.message}
-          title="Invalid review route"
-        />
-      ) : (
-        <NotificationController config={config}>
-          <DashboardShell config={config} />
-        </NotificationController>
-      )}
+      <NotificationController config={config}>
+        <DashboardShell config={config} />
+      </NotificationController>
     </main>
   );
 }
@@ -492,6 +537,43 @@ type ReviewPopoutRoute =
   | { kind: 'none' }
   | { kind: 'invalid'; message: string }
   | { kind: 'target'; target: ReviewPopoutTarget };
+
+function ReviewPopoutLoadingPage({
+  appearance,
+}: {
+  appearance: ReviewPopoutAppearance;
+}) {
+  const style = {
+    '--deck-text-scale': appearance.textScale.toString(),
+  } as CSSProperties;
+  return (
+    <section
+      className={`dashboard-grid deck-density-${appearance.density} pr-review-popout-page`}
+      data-deck-arrangement="review-popout"
+      data-deck-profile="review-popout"
+      data-display-preset="review-popout"
+      style={style}
+    >
+      <output
+        aria-label="Loading PR review workbench"
+        aria-live="polite"
+        className="pr-review-popout-skeleton"
+      >
+        <div className="pr-review-popout-skeleton-header">
+          <span className="pr-review-popout-skeleton-line pr-review-popout-skeleton-title" />
+          <span className="pr-review-popout-skeleton-line pr-review-popout-skeleton-badges" />
+        </div>
+        <div className="pr-review-popout-skeleton-workbench">
+          <span className="pr-review-popout-skeleton-pane" />
+          <span className="pr-review-popout-skeleton-pane" />
+          <span className="pr-review-popout-skeleton-pane" />
+        </div>
+        <div className="pr-review-popout-skeleton-footer" />
+        <span className="sr-only">Loading the review workbench.</span>
+      </output>
+    </section>
+  );
+}
 
 function readReviewPopoutRoute(): ReviewPopoutRoute {
   if (window.location.pathname !== '/review') return { kind: 'none' };

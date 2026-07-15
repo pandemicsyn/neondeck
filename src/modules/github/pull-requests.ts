@@ -280,8 +280,8 @@ async function fetchRepositoryPermissions(token: string, fullName: string) {
   return v.parse(githubRepositoryApiResponseSchema, await response.json());
 }
 
-function isOutOfDateMergeState(value: string | null | undefined) {
-  return value === 'behind' || value === 'dirty' || value === 'blocked';
+export function isOutOfDateMergeState(value: string | null | undefined) {
+  return value === 'behind';
 }
 
 function normalizePullRequestFile(

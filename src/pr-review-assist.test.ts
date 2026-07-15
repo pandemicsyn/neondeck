@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   addPrReviewDraftComment,
   readLivePrReviewDraft,
+  updatePrReviewDraftComment,
   upsertPrReviewDraft,
   type GitHubDiffSummary,
   type GitHubPullRequestEventState,
@@ -138,6 +139,122 @@ describe('PR review assist', () => {
     );
     expect(html?.html).toContain('Risk contains &lt;b&gt;markup&lt;/b&gt;');
     expect(html?.html).not.toContain('<script>alert(1)</script>');
+  });
+
+  it('replaces prior Neon findings on re-review', async () => {
+    const paths = await tempPaths();
+    const facts = reviewFacts();
+    await reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+      fetchFacts: async () => facts,
+      reviewer: async () => reviewOutputWithOneFinding(),
+    });
+
+    const firstDraft = readLivePrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 10,
+    });
+    expect(firstDraft?.comments).toHaveLength(1);
+
+    const refreshed = await reviewPrForHuman(
+      { ref: 'pandemicsyn/neondeck#10' },
+      paths,
+      {
+        fetchFacts: async () => facts,
+        reviewer: async () => ({
+          overview: reviewOutputWithOneFinding().overview,
+          findings: [],
+        }),
+      },
+    );
+
+    expect(requireReviewAssistOk(refreshed).data).toMatchObject({
+      findingCount: 0,
+      seededCount: 0,
+      reportOnlyCount: 0,
+    });
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 10,
+      })?.comments,
+    ).toEqual([]);
+  });
+
+  it('reanchors an emptied Neon draft when the reviewed head advances', async () => {
+    const paths = await tempPaths();
+    const firstFacts = reviewFacts();
+    await reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+      fetchFacts: async () => firstFacts,
+      reviewer: async () => reviewOutputWithOneFinding(),
+    });
+
+    const nextFacts = {
+      ...firstFacts,
+      state: { ...firstFacts.state, headSha: 'head456' },
+    };
+    await reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+      fetchFacts: async () => nextFacts,
+      reviewer: async () => ({
+        overview: reviewOutputWithOneFinding().overview,
+        findings: [],
+      }),
+    });
+
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 10,
+      }),
+    ).toMatchObject({ headSha: 'head456', comments: [] });
+  });
+
+  it('preserves a Neon finding after a human edits it', async () => {
+    const paths = await tempPaths();
+    await reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+      fetchFacts: async () => reviewFacts(),
+      reviewer: async () => reviewOutputWithOneFinding(),
+    });
+    const firstDraft = readLivePrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 10,
+    });
+    const comment = firstDraft?.comments[0];
+    if (!comment) throw new Error('Expected a Neon draft comment.');
+    const edited = updatePrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      commentId: comment.id,
+      body: 'Human-edited finding',
+    });
+    expect(edited.comments[0]).toMatchObject({
+      body: 'Human-edited finding',
+      origin: 'human',
+    });
+
+    const refreshed = await reviewPrForHuman(
+      { ref: 'pandemicsyn/neondeck#10' },
+      paths,
+      {
+        fetchFacts: async () => reviewFacts(),
+        reviewer: async () => reviewOutputWithOneFinding(),
+      },
+    );
+
+    expect(requireReviewAssistOk(refreshed).data).toMatchObject({
+      seededCount: 0,
+      reportOnlyCount: 1,
+      skippedSeedingReason: 'existing-human-draft',
+    });
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 10,
+      })?.comments,
+    ).toEqual([expect.objectContaining({ body: 'Human-edited finding' })]);
   });
 
   it('does not overwrite or append to an existing human draft', async () => {
