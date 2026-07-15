@@ -343,6 +343,23 @@ export async function reconcilePrReviewSubmission(
   if (activeSubmissionAttempts.has(current.id)) {
     return { outcome: 'pending' as const, review: current };
   }
+  const endReconciliation = beginPrReviewSubmissionAttempt(current.id);
+  try {
+    return await reconcileInactivePrReviewSubmission(
+      current,
+      paths,
+      dependencies,
+    );
+  } finally {
+    endReconciliation();
+  }
+}
+
+async function reconcileInactivePrReviewSubmission(
+  current: PrReviewRecord,
+  paths: RuntimePaths,
+  dependencies: ReconcilePrReviewSubmissionDependencies,
+) {
   if (!current.verdict) {
     throw new Error('The reserved review is missing its submission verdict.');
   }

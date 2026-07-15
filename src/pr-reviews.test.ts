@@ -607,16 +607,48 @@ describe('durable PR reviews', () => {
       review: { status: 'submitting', verdict: 'comment' },
     });
     endSubmissionAttempt();
-    const released = await reconcilePrReviewSubmission(
+    let signalFirstLookup!: () => void;
+    const firstLookupStarted = new Promise<void>((resolve) => {
+      signalFirstLookup = resolve;
+    });
+    let allowFirstLookup!: () => void;
+    const firstLookupGate = new Promise<void>((resolve) => {
+      allowFirstLookup = resolve;
+    });
+    const firstRecovery = reconcilePrReviewSubmission(
       { reviewId: started.reviewId },
       paths,
       {
         token: 'token',
         now: () => Date.parse(secondReservation?.updatedAt ?? '') + 30_001,
-        fetchLogin: async () => 'reviewer',
+        fetchLogin: async () => {
+          signalFirstLookup();
+          await firstLookupGate;
+          return 'reviewer';
+        },
         fetchReviews: async () => [],
       },
     );
+    await firstLookupStarted;
+    const concurrentRecovery = await reconcilePrReviewSubmission(
+      { reviewId: started.reviewId },
+      paths,
+      {
+        token: 'token',
+        fetchLogin: async () => {
+          throw new Error('Concurrent recovery must not query GitHub.');
+        },
+        fetchReviews: async () => {
+          throw new Error('Concurrent recovery must not query GitHub.');
+        },
+      },
+    );
+    expect(concurrentRecovery).toMatchObject({
+      outcome: 'pending',
+      review: { status: 'submitting', verdict: 'comment' },
+    });
+    allowFirstLookup();
+    const released = await firstRecovery;
     expect(released).toMatchObject({
       outcome: 'ready',
       review: { status: 'ready', verdict: null },
