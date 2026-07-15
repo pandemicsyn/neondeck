@@ -17,6 +17,12 @@ describe('PR review artifacts overlay', () => {
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
+    HTMLDialogElement.prototype.showModal = function showModal() {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function close() {
+      this.removeAttribute('open');
+    };
   });
 
   afterEach(() => {
@@ -46,6 +52,9 @@ describe('PR review artifacts overlay', () => {
     const iframe = document.querySelector('iframe');
     expect(iframe?.title).toBe('overview report for owner/repo#1');
     act(() => iframe?.dispatchEvent(new Event('load')));
-    expect(document.querySelector('[role="status"]')).toBeNull();
+    expect(document.querySelector('output')).toBeNull();
+    expect(document.body.textContent).not.toContain(
+      'overview is taking longer than expected',
+    );
   });
 });

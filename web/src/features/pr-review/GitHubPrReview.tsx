@@ -11,6 +11,7 @@ import {
   ApiError,
   getPrReviewForTarget,
   openPrReviewEventStream,
+  reconcilePrReviewSubmission,
   restartPrReview,
   startPrReview,
   type DiffSummary,
@@ -104,6 +105,16 @@ export function GitHubPrReview({
         queryKeys.prReviewTarget(pr.repo, pr.number),
         result.review,
       );
+    },
+  });
+  const reconcileSubmission = useMutation({
+    mutationFn: (id: string) => reconcilePrReviewSubmission(id),
+    onSuccess(result) {
+      queryClient.setQueryData(
+        queryKeys.prReviewTarget(pr.repo, pr.number),
+        result.review,
+      );
+      setStatusMessage(result.message);
     },
   });
   const [activePath, setActivePath] = useState<string | null>(null);
@@ -228,7 +239,8 @@ export function GitHubPrReview({
         mutations.replyToThread.error ??
         mutations.setThreadResolution.error ??
         startReview.error ??
-        restartReview.error,
+        restartReview.error ??
+        reconcileSubmission.error,
       draft,
     ) ?? statusMessage;
   const fileLoadMessage = filesQuery.isLoading
@@ -835,29 +847,36 @@ export function GitHubPrReview({
               className="pr-review-popout-button"
               disabled={
                 restartReview.isPending ||
-                reviewRecord.status === 'reviewing' ||
-                reviewRecord.status === 'submitting'
+                reconcileSubmission.isPending ||
+                reviewRecord.status === 'reviewing'
               }
               onClick={() => {
                 setStatusMessage(null);
-                restartReview.mutate(reviewRecord.id);
+                if (reviewRecord.status === 'submitting') {
+                  reconcileSubmission.mutate(reviewRecord.id);
+                } else {
+                  restartReview.mutate(reviewRecord.id);
+                }
               }}
               title={
-                currentHeadSha && reviewRecord.headSha !== currentHeadSha
-                  ? 'Run Neon again for the current PR head'
-                  : 'Refresh Neon findings from current GitHub facts'
+                reviewRecord.status === 'submitting'
+                  ? 'Check GitHub and recover an interrupted review submission'
+                  : currentHeadSha && reviewRecord.headSha !== currentHeadSha
+                    ? 'Run Neon again for the current PR head'
+                    : 'Refresh Neon findings from current GitHub facts'
               }
               type="button"
             >
-              {restartReview.isPending ||
-              reviewRecord.status === 'reviewing' ||
-              reviewRecord.status === 'submitting'
-                ? reviewRecord.status === 'submitting'
-                  ? 'submitting'
-                  : 'reviewing'
-                : reviewRecord.status === 'submitted'
-                  ? 'review new changes'
-                  : 're-review'}
+              {reconcileSubmission.isPending
+                ? 'checking GitHub'
+                : reviewRecord.status === 'submitting'
+                  ? 'recover submission'
+                  : restartReview.isPending ||
+                      reviewRecord.status === 'reviewing'
+                    ? 'reviewing'
+                    : reviewRecord.status === 'submitted'
+                      ? 'review new changes'
+                      : 're-review'}
             </button>
           ) : null}
           {!reviewRecord && reviewRecordQuery.isSuccess ? (

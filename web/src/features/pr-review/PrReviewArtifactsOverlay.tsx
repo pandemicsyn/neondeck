@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 type PrReviewArtifactsOverlayProps = {
@@ -16,6 +16,7 @@ export function PrReviewArtifactsOverlay({
   reviewLabel,
   reviewUrl,
 }: PrReviewArtifactsOverlayProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const [activeIndex, setActiveIndex] = useState(initialReportIndex);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
@@ -23,12 +24,23 @@ export function PrReviewArtifactsOverlay({
 
   useEffect(() => {
     setActiveIndex(Math.min(initialReportIndex, reportIds.length - 1));
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+  }, [initialReportIndex, reportIds.length]);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    const previouslyFocused = document.activeElement;
+    if (!dialog) return;
+    if (!dialog.open) dialog.showModal();
+    return () => {
+      if (dialog.open) dialog.close();
+      if (
+        previouslyFocused instanceof HTMLElement &&
+        previouslyFocused.isConnected
+      ) {
+        previouslyFocused.focus();
+      }
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [initialReportIndex, onClose, reportIds.length]);
+  }, []);
 
   const reportId = reportIds[Math.max(0, activeIndex)] ?? reportIds[0] ?? null;
   const loadKey = reportId ? `${reportId}:${loadAttempt}` : null;
@@ -51,13 +63,12 @@ export function PrReviewArtifactsOverlay({
   return createPortal(
     <dialog
       aria-label={`Review artifacts for ${reviewLabel}`}
-      aria-modal="true"
       className="fixed inset-0 z-[100] m-0 flex h-full max-h-none w-full max-w-none items-center justify-center border-0 bg-black/80 p-3 sm:p-6"
       onCancel={(event) => {
         event.preventDefault();
         onClose();
       }}
-      open
+      ref={dialogRef}
     >
       <section className="flex h-[min(92vh,980px)] w-[min(96vw,1440px)] flex-col border border-line bg-panel shadow-2xl">
         <header className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2">

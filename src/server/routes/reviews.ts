@@ -6,6 +6,7 @@ import {
 import {
   readPrReview,
   readPrReviewForTarget,
+  reconcilePrReviewSubmission,
   recentPrReviews,
   startPrReview,
   type PrReviewOrigin,
@@ -160,6 +161,46 @@ export function createReviewRoutes(paths: RuntimePaths) {
           message: errorMessage(error),
         },
         400,
+      );
+    }
+  });
+
+  routes.post('/reviews/:id/reconcile', async (c) => {
+    try {
+      const result = await reconcilePrReviewSubmission(
+        { reviewId: c.req.param('id') },
+        paths,
+      );
+      const message =
+        result.outcome === 'submitted'
+          ? 'Recovered the submitted review from GitHub.'
+          : result.outcome === 'ready'
+            ? 'GitHub has no matching review; the local draft is ready to submit again.'
+            : result.outcome === 'pending'
+              ? 'GitHub has not reported the review yet. Wait a moment, then check again.'
+              : `The review is already ${result.review.status}.`;
+      return c.json(
+        {
+          ok: true,
+          action: 'pr_review_submission_reconcile',
+          changed: result.outcome === 'submitted' || result.outcome === 'ready',
+          message,
+          review: result.review,
+          reviewId: result.review.id,
+          runId: result.review.runId ?? '',
+        },
+        result.outcome === 'pending' ? 202 : 200,
+      );
+    } catch (error) {
+      const message = errorMessage(error);
+      return c.json(
+        {
+          ok: false,
+          action: 'pr_review_submission_reconcile',
+          changed: false,
+          message,
+        },
+        message === 'GITHUB_TOKEN is not configured.' ? 503 : 502,
       );
     }
   });

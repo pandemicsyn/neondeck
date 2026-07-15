@@ -286,6 +286,7 @@ export function createGitHubRoutes(paths: RuntimePaths) {
             repoFullName: target.input.repo,
             prNumber: target.input.prNumber,
             headSha: requestedHeadSha ?? '',
+            verdict,
           },
           paths,
         )

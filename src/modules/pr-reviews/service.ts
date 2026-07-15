@@ -6,7 +6,10 @@ import {
   type RuntimePaths,
 } from '../../runtime-home';
 import {
+  fetchGitHubLogin,
   fetchPullRequestDetail,
+  fetchPullRequestReviews,
+  type GitHubPullRequestReview,
   type GitHubPullRequestDetail,
 } from '../github';
 import { resolvePullRequestTarget, type PullRequestTarget } from '../pr-events';
@@ -37,6 +40,20 @@ export type StartPrReviewDependencies = {
     attemptId: string;
   }) => Promise<{ runId: string }>;
 };
+
+export type ReconcilePrReviewSubmissionDependencies = {
+  token?: string;
+  now?: () => number;
+  fetchLogin?: (token: string) => Promise<string>;
+  fetchReviews?: (input: {
+    token: string;
+    owner: string;
+    repo: string;
+    number: number;
+  }) => Promise<GitHubPullRequestReview[]>;
+};
+
+const submissionReconcileGraceMs = 30_000;
 
 export async function startPrReview(
   input: { ref: string; origin: PrReviewOrigin },
@@ -212,6 +229,7 @@ export function reservePrReviewSubmission(
     repoFullName: string;
     prNumber: number;
     headSha: string;
+    verdict: PrReviewVerdict;
   },
   paths = runtimePaths(),
 ) {
@@ -228,10 +246,10 @@ export function reservePrReviewSubmission(
     const result = database
       .prepare(
         `UPDATE pr_reviews
-         SET status = 'submitting', updated_at = ?
+         SET status = 'submitting', verdict = ?, updated_at = ?
          WHERE id = ? AND status = 'ready' AND head_sha = ?;`,
       )
-      .run(now, current.id, input.headSha);
+      .run(input.verdict, now, current.id, input.headSha);
     changed = result.changes === 1;
   } finally {
     database.close();
@@ -300,11 +318,121 @@ export function submitPrReview(
   return updated;
 }
 
+export async function reconcilePrReviewSubmission(
+  input: { reviewId: string },
+  paths = runtimePaths(),
+  dependencies: ReconcilePrReviewSubmissionDependencies = {},
+) {
+  await ensureRuntimeHome(paths);
+  const current = readPrReview(input.reviewId, paths);
+  if (!current) throw new Error('PR review not found.');
+  if (current.status !== 'submitting') {
+    return { outcome: 'unchanged' as const, review: current };
+  }
+  if (!current.verdict) {
+    throw new Error('The reserved review is missing its submission verdict.');
+  }
+
+  const token = dependencies.token ?? process.env.GITHUB_TOKEN;
+  if (!token) throw new Error('GITHUB_TOKEN is not configured.');
+  const [owner, repo] = splitRepoFullName(current.repoFullName);
+  const [login, reviews] = await Promise.all([
+    (dependencies.fetchLogin ?? fetchGitHubLogin)(token),
+    (dependencies.fetchReviews ?? fetchPullRequestReviews)({
+      token,
+      owner,
+      repo,
+      number: current.prNumber,
+    }),
+  ]);
+  const submittedReview = matchingSubmittedReview(current, login, reviews);
+  if (submittedReview) {
+    const submitted = submitPrReview(
+      {
+        reviewId: current.id,
+        verdict: current.verdict,
+        githubReviewUrl: submittedReview.url,
+      },
+      paths,
+    );
+    if (submitted) {
+      return { outcome: 'submitted' as const, review: submitted };
+    }
+    const settled = readPrReview(current.id, paths);
+    if (settled?.status === 'submitted') {
+      return { outcome: 'submitted' as const, review: settled };
+    }
+    throw new Error('Could not settle the recovered GitHub review locally.');
+  }
+
+  const now = (dependencies.now ?? Date.now)();
+  const reservedAt = Date.parse(current.updatedAt);
+  if (
+    Number.isFinite(reservedAt) &&
+    now - reservedAt < submissionReconcileGraceMs
+  ) {
+    return { outcome: 'pending' as const, review: current };
+  }
+
+  const released = releasePrReviewSubmission(
+    { reviewId: current.id, headSha: current.headSha },
+    paths,
+  );
+  if (released) return { outcome: 'ready' as const, review: released };
+  const settled = readPrReview(current.id, paths);
+  if (settled) return { outcome: 'unchanged' as const, review: settled };
+  throw new Error('Could not release the interrupted submission locally.');
+}
+
 export function recentPrReviews(paths = runtimePaths()) {
   const submittedSince = new Date(
     Date.now() - 7 * 24 * 60 * 60 * 1000,
   ).toISOString();
   return listPrReviews(paths, { submittedSince });
+}
+
+function matchingSubmittedReview(
+  current: PrReviewRecord,
+  login: string,
+  reviews: GitHubPullRequestReview[],
+) {
+  const reservedAt = Date.parse(current.updatedAt);
+  const earliestSubmittedAt = Number.isFinite(reservedAt)
+    ? Math.floor(reservedAt / 1_000) * 1_000
+    : 0;
+  const expectedState = githubReviewState(current.verdict);
+  return reviews
+    .filter((review) => {
+      const submittedAt = review.submittedAt
+        ? Date.parse(review.submittedAt)
+        : Number.NaN;
+      return (
+        review.authorLogin?.toLowerCase() === login.toLowerCase() &&
+        review.commitId === current.headSha &&
+        review.state === expectedState &&
+        Number.isFinite(submittedAt) &&
+        submittedAt >= earliestSubmittedAt
+      );
+    })
+    .sort(
+      (left, right) =>
+        Date.parse(right.submittedAt ?? '') -
+        Date.parse(left.submittedAt ?? ''),
+    )[0];
+}
+
+function githubReviewState(verdict: PrReviewVerdict | null) {
+  if (verdict === 'approve') return 'APPROVED';
+  if (verdict === 'request-changes') return 'CHANGES_REQUESTED';
+  return 'COMMENTED';
+}
+
+function splitRepoFullName(repoFullName: string): [string, string] {
+  const [owner, repo, ...rest] = repoFullName.split('/');
+  if (!owner || !repo || rest.length > 0) {
+    throw new Error(`Invalid GitHub repository name: ${repoFullName}`);
+  }
+  return [owner, repo];
 }
 
 function upsertReviewingRecord(

@@ -6,6 +6,7 @@ import {
   completePrReview,
   failPrReview,
   readPrReviewForTarget,
+  reconcilePrReviewSubmission,
   releasePrReviewSubmission,
   reservePrReviewSubmission,
   startPrReview,
@@ -128,6 +129,7 @@ describe('durable PR reviews', () => {
         repoFullName: 'other/project',
         prNumber: 42,
         headSha: 'head-1',
+        verdict: 'approve',
       },
       paths,
     );
@@ -434,6 +436,7 @@ describe('durable PR reviews', () => {
         repoFullName: 'other/project',
         prNumber: 42,
         headSha: 'head-1',
+        verdict: 'comment',
       },
       paths,
     );
@@ -457,6 +460,7 @@ describe('durable PR reviews', () => {
           repoFullName: 'other/project',
           prNumber: 42,
           headSha: 'head-1',
+          verdict: 'comment',
         },
         paths,
       ),
@@ -473,6 +477,127 @@ describe('durable PR reviews', () => {
         paths,
       ),
     ).toMatchObject({ status: 'submitted', verdict: 'comment' });
+  });
+
+  it('reconciles interrupted submissions from GitHub or releases a stale reservation', async () => {
+    const paths = await tempPaths();
+    const dependencies = {
+      resolveTarget: async () => ({
+        repoFullName: 'other/project',
+        owner: 'other',
+        repo: 'project',
+        number: 42,
+      }),
+      fetchDetail: async () => detail('head-1'),
+      invokeWorkflow: async () => ({ runId: 'reconcile-run-1' }),
+    };
+    const started = await startPrReview(
+      { ref: 'other/project#42', origin: 'api' },
+      paths,
+      dependencies,
+    );
+    completePrReview(
+      {
+        reviewId: started.reviewId,
+        runId: started.runId,
+        headSha: 'head-1',
+        reportIds: ['overview'],
+        reviewUrl: started.review.reviewUrl,
+        findingCount: 1,
+        seededCount: 1,
+        reportOnlyCount: 0,
+        reportOnlyFindings: [],
+      },
+      paths,
+    );
+    const reserved = reservePrReviewSubmission(
+      {
+        repoFullName: 'other/project',
+        prNumber: 42,
+        headSha: 'head-1',
+        verdict: 'approve',
+      },
+      paths,
+    );
+    expect(reserved).toMatchObject({
+      status: 'submitting',
+      verdict: 'approve',
+    });
+
+    const recovered = await reconcilePrReviewSubmission(
+      { reviewId: started.reviewId },
+      paths,
+      {
+        token: 'token',
+        fetchLogin: async () => 'reviewer',
+        fetchReviews: async () => [
+          {
+            id: 7,
+            nodeId: 'review-node',
+            state: 'APPROVED',
+            authorLogin: 'Reviewer',
+            submittedAt: reserved?.updatedAt ?? null,
+            commitId: 'head-1',
+            url: 'https://github.com/other/project/pull/42#pullrequestreview-7',
+          },
+        ],
+      },
+    );
+    expect(recovered).toMatchObject({
+      outcome: 'submitted',
+      review: {
+        status: 'submitted',
+        verdict: 'approve',
+        githubReviewUrl:
+          'https://github.com/other/project/pull/42#pullrequestreview-7',
+      },
+    });
+
+    const restarted = await startPrReview(
+      { ref: 'other/project#42', origin: 'panel' },
+      paths,
+      {
+        ...dependencies,
+        invokeWorkflow: async () => ({ runId: 'reconcile-run-2' }),
+      },
+    );
+    completePrReview(
+      {
+        reviewId: restarted.reviewId,
+        runId: restarted.runId,
+        headSha: 'head-1',
+        reportIds: ['overview-2'],
+        reviewUrl: restarted.review.reviewUrl,
+        findingCount: 0,
+        seededCount: 0,
+        reportOnlyCount: 0,
+        reportOnlyFindings: [],
+      },
+      paths,
+    );
+    const secondReservation = reservePrReviewSubmission(
+      {
+        repoFullName: 'other/project',
+        prNumber: 42,
+        headSha: 'head-1',
+        verdict: 'comment',
+      },
+      paths,
+    );
+    const released = await reconcilePrReviewSubmission(
+      { reviewId: started.reviewId },
+      paths,
+      {
+        token: 'token',
+        now: () => Date.parse(secondReservation?.updatedAt ?? '') + 30_001,
+        fetchLogin: async () => 'reviewer',
+        fetchReviews: async () => [],
+      },
+    );
+    expect(released).toMatchObject({
+      outcome: 'ready',
+      review: { status: 'ready', verdict: 'comment' },
+    });
   });
 });
 

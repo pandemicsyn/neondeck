@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import {
   getPrReviews,
   openPrReviewEventStream,
+  reconcilePrReviewSubmission,
   restartPrReview,
   startPrReview,
   type PrReviewAwaitingItem,
@@ -42,6 +43,15 @@ export const ReviewsPanelPlugin = {
     });
     const restartMutation = useMutation({
       mutationFn: (id: string) => restartPrReview(id),
+      onSuccess(result) {
+        queryClient.setQueryData<PrReviewsResponse>(
+          queryKeys.prReviews,
+          (current) => applyPrReviewChange(current, result.review),
+        );
+      },
+    });
+    const reconcileMutation = useMutation({
+      mutationFn: (id: string) => reconcilePrReviewSubmission(id),
       onSuccess(result) {
         queryClient.setQueryData<PrReviewsResponse>(
           queryKeys.prReviews,
@@ -114,9 +124,15 @@ export const ReviewsPanelPlugin = {
             </Button>
           </form>
         ) : null}
-        {startMutation.error || restartMutation.error ? (
+        {startMutation.error ||
+        restartMutation.error ||
+        reconcileMutation.error ? (
           <p className="border-b border-accent/60 px-3 py-1.5 font-mono text-[10px] text-accent">
-            {queryErrorMessage(startMutation.error ?? restartMutation.error)}
+            {queryErrorMessage(
+              startMutation.error ??
+                restartMutation.error ??
+                reconcileMutation.error,
+            )}
           </p>
         ) : null}
         {isLoading ? (
@@ -155,7 +171,12 @@ export const ReviewsPanelPlugin = {
                 title="IN PROGRESS"
               >
                 {data.groups.inProgress.map((review) => (
-                  <ReviewRow key={review.id} review={review} />
+                  <ReviewRow
+                    key={review.id}
+                    onReconcile={(id) => reconcileMutation.mutate(id)}
+                    pending={reconcileMutation.isPending}
+                    review={review}
+                  />
                 ))}
               </ReviewSection>
               <ReviewSection
@@ -293,10 +314,12 @@ function AwaitingRow({
 }
 
 function ReviewRow({
+  onReconcile,
   onRestart,
   pending = false,
   review,
 }: {
+  onReconcile?: (id: string) => void;
   onRestart?: (id: string) => void;
   pending?: boolean;
   review: PrReviewRecord;
@@ -348,6 +371,15 @@ function ReviewRow({
             type="button"
           >
             retry
+          </Button>
+        ) : null}
+        {review.status === 'submitting' && onReconcile ? (
+          <Button
+            disabled={pending}
+            onClick={() => onReconcile(review.id)}
+            type="button"
+          >
+            {pending ? 'checking' : 'recover submission'}
           </Button>
         ) : null}
       </div>
