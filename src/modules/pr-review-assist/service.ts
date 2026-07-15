@@ -198,7 +198,7 @@ export async function reviewPrForHuman(
       reportOnlyFindings: seedResult.reportOnly.map((item) => ({
         severity: item.finding.severity,
         path: item.finding.path,
-        line: item.finding.line ?? null,
+        line: findingLine(item.finding),
         summary: item.finding.summary,
         suggestedFix: item.finding.suggestedFix,
         reason: item.reason,
@@ -372,6 +372,10 @@ async function seedDraftComments(
   const reportOnly: ReportOnlyFinding[] = [];
   const seedable = [];
   for (const finding of output.findings) {
+    if (finding.anchor.kind === 'report-only') {
+      reportOnly.push({ finding, reason: finding.anchor.reason });
+      continue;
+    }
     const anchor = findingAnchor(finding);
     const index = anchors.get(finding.path);
     if (!anchor || !index || !commentAnchorExists(index, anchor)) {
@@ -597,13 +601,17 @@ function anchorsByPath(files: GitHubPullRequestFile[]) {
 function findingAnchor(
   finding: ReviewAssistFinding,
 ): ReviewCommentAnchor | null {
-  if (!finding.line) return null;
+  if (finding.anchor.kind !== 'inline') return null;
   return {
-    side: finding.side ?? 'RIGHT',
-    line: finding.line,
-    startLine: finding.startLine ?? null,
-    startSide: finding.startSide ?? null,
+    side: finding.anchor.side,
+    line: finding.anchor.line,
+    startLine: finding.anchor.startLine ?? null,
+    startSide: finding.anchor.startSide ?? null,
   };
+}
+
+function findingLine(finding: ReviewAssistFinding) {
+  return finding.anchor.kind === 'inline' ? finding.anchor.line : null;
 }
 
 function seededCommentBody(finding: ReviewAssistFinding) {

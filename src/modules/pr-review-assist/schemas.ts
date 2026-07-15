@@ -11,16 +11,26 @@ export const prReviewAssistInputSchema = v.object({
 
 const reviewSeveritySchema = v.picklist(['critical', 'major', 'minor', 'nit']);
 const reviewSideSchema = v.picklist(['RIGHT', 'LEFT']);
+const reviewAnchorSchema = v.variant('kind', [
+  v.object({
+    kind: v.literal('inline'),
+    side: reviewSideSchema,
+    line: v.pipe(v.number(), v.integer(), v.minValue(1)),
+    startLine: v.optional(
+      v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1))),
+    ),
+    startSide: v.optional(v.nullable(reviewSideSchema)),
+  }),
+  v.object({
+    kind: v.literal('report-only'),
+    reason: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(1_000)),
+  }),
+]);
 
 export const reviewAssistFindingSchema = v.object({
   severity: reviewSeveritySchema,
   path: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(1_000)),
-  side: v.optional(reviewSideSchema),
-  line: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
-  startLine: v.optional(
-    v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1))),
-  ),
-  startSide: v.optional(v.nullable(reviewSideSchema)),
+  anchor: reviewAnchorSchema,
   summary: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(1_000)),
   suggestedFix: v.pipe(
     v.string(),

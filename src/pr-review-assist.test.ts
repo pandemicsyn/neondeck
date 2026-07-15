@@ -86,8 +86,7 @@ describe('PR review assist', () => {
             {
               severity: 'major',
               path: 'src/app.ts',
-              side: 'RIGHT',
-              line: 2,
+              anchor: { kind: 'inline', side: 'RIGHT', line: 2 },
               summary: 'Validate the new branch.',
               suggestedFix: 'Add an explicit guard.',
               confidence: 'high',
@@ -95,8 +94,10 @@ describe('PR review assist', () => {
             {
               severity: 'minor',
               path: 'src/app.ts',
-              side: 'RIGHT',
-              line: 200,
+              anchor: {
+                kind: 'report-only',
+                reason: 'The supplied patch does not prove a changed line.',
+              },
               summary: 'This cannot be anchored.',
               suggestedFix: 'Keep it report-only.',
             },
@@ -652,8 +653,7 @@ function reviewOutputWithOneFinding() {
       {
         severity: 'major',
         path: 'src/app.ts',
-        side: 'RIGHT',
-        line: 2,
+        anchor: { kind: 'inline', side: 'RIGHT', line: 2 },
         summary: 'Validate the new branch.',
         suggestedFix: 'Add an explicit guard.',
       },

@@ -6,6 +6,8 @@ import {
   completePrReview,
   failPrReview,
   readPrReviewForTarget,
+  releasePrReviewSubmission,
+  reservePrReviewSubmission,
   startPrReview,
   submitPrReview,
   subscribePrReviewEvents,
@@ -121,6 +123,16 @@ describe('durable PR reviews', () => {
       ),
     ).toBeNull();
 
+    expect(
+      reservePrReviewSubmission(
+        {
+          repoFullName: 'other/project',
+          prNumber: 42,
+          headSha: 'head-1',
+        },
+        paths,
+      ),
+    ).toMatchObject({ status: 'submitting' });
     const submitted = submitPrReview(
       {
         repoFullName: 'other/project',
@@ -388,7 +400,7 @@ describe('durable PR reviews', () => {
     });
   });
 
-  it('settles a same-head submit if a re-review starts while GitHub responds', async () => {
+  it('reserves a submit against concurrent re-review and can release failures', async () => {
     const paths = await tempPaths();
     const dependencies = {
       resolveTarget: async () => ({
@@ -419,10 +431,38 @@ describe('durable PR reviews', () => {
       },
       paths,
     );
-    await startPrReview({ ref: 'other/project#42', origin: 'panel' }, paths, {
-      ...dependencies,
-      invokeWorkflow: async () => ({ runId: 'submit-race-run-2' }),
-    });
+    const reserved = reservePrReviewSubmission(
+      {
+        repoFullName: 'other/project',
+        prNumber: 42,
+        headSha: 'head-1',
+      },
+      paths,
+    );
+    expect(reserved).toMatchObject({ status: 'submitting' });
+    await expect(
+      startPrReview({ ref: 'other/project#42', origin: 'panel' }, paths, {
+        ...dependencies,
+        invokeWorkflow: async () => ({ runId: 'submit-race-run-2' }),
+      }),
+    ).rejects.toThrow(/being submitted/);
+
+    expect(
+      releasePrReviewSubmission(
+        { reviewId: reserved?.id ?? '', headSha: 'head-1' },
+        paths,
+      ),
+    ).toMatchObject({ status: 'ready' });
+    expect(
+      reservePrReviewSubmission(
+        {
+          repoFullName: 'other/project',
+          prNumber: 42,
+          headSha: 'head-1',
+        },
+        paths,
+      ),
+    ).toMatchObject({ status: 'submitting' });
 
     expect(
       submitPrReview(

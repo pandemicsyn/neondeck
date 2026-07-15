@@ -12,6 +12,13 @@ describe('ReviewsPanel review events', () => {
       { id: 'review-1', status: 'ready' },
     ]);
 
+    response = applyPrReviewChange(response, review('submitting'));
+    expect(response.items).toHaveLength(1);
+    expect(response.groups.needsAction).toEqual([]);
+    expect(response.groups.inProgress).toMatchObject([
+      { id: 'review-1', status: 'submitting' },
+    ]);
+
     response = applyPrReviewChange(response, review('submitted'));
     expect(response.items).toHaveLength(1);
     expect(response.groups.needsAction).toEqual([]);
@@ -29,7 +36,10 @@ function responseWith(record: PrReviewRecord): PrReviewsResponse {
     items: [record],
     groups: {
       awaiting: [],
-      inProgress: record.status === 'reviewing' ? [record] : [],
+      inProgress:
+        record.status === 'reviewing' || record.status === 'submitting'
+          ? [record]
+          : [],
       needsAction: [],
       submitted: [],
     },

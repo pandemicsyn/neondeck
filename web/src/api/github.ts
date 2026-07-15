@@ -206,16 +206,18 @@ export async function deleteGitHubPrReviewDraft(input: {
 export async function postGitHubPrReview(input: {
   repo: string;
   number: number;
-  draftId: string;
   headSha: string;
+  body: string | null;
+  verdict: GitHubPrReviewVerdict;
   commentIds?: string[];
 }) {
   const [owner, name] = parseRepo(input.repo);
   const response = await postJson<GitHubPrReviewSubmitResponse>(
     `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/reviews`,
     {
-      draftId: input.draftId,
       headSha: input.headSha,
+      body: input.body,
+      verdict: input.verdict,
       commentIds: input.commentIds,
     },
   );

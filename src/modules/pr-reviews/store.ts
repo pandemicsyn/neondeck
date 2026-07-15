@@ -124,6 +124,7 @@ function numberValue(value: unknown) {
 
 function statusValue(value: unknown): PrReviewStatus {
   return value === 'ready' ||
+    value === 'submitting' ||
     value === 'submitted' ||
     value === 'failed' ||
     value === 'reviewing'

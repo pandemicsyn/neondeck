@@ -207,6 +207,66 @@ export function failPrReview(
   return updated;
 }
 
+export function reservePrReviewSubmission(
+  input: {
+    repoFullName: string;
+    prNumber: number;
+    headSha: string;
+  },
+  paths = runtimePaths(),
+) {
+  const current = readPrReviewForTarget(
+    input.repoFullName,
+    input.prNumber,
+    paths,
+  );
+  if (!current) return null;
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+  let changed = false;
+  try {
+    const result = database
+      .prepare(
+        `UPDATE pr_reviews
+         SET status = 'submitting', updated_at = ?
+         WHERE id = ? AND status = 'ready' AND head_sha = ?;`,
+      )
+      .run(now, current.id, input.headSha);
+    changed = result.changes === 1;
+  } finally {
+    database.close();
+  }
+  if (!changed) return null;
+  const updated = requireReview(current.id, paths);
+  publish(updated, 'changed');
+  return updated;
+}
+
+export function releasePrReviewSubmission(
+  input: { reviewId: string; headSha: string },
+  paths = runtimePaths(),
+) {
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+  let changed = false;
+  try {
+    const result = database
+      .prepare(
+        `UPDATE pr_reviews
+         SET status = 'ready', updated_at = ?
+         WHERE id = ? AND status = 'submitting' AND head_sha = ?;`,
+      )
+      .run(now, input.reviewId, input.headSha);
+    changed = result.changes === 1;
+  } finally {
+    database.close();
+  }
+  if (!changed) return null;
+  const updated = requireReview(input.reviewId, paths);
+  publish(updated, 'changed');
+  return updated;
+}
+
 export function submitPrReview(
   input: {
     repoFullName: string;
@@ -227,17 +287,12 @@ export function submitPrReview(
   const database = openDb(paths.neondeckDatabase);
   let changed = false;
   try {
-    // The HTTP route admits submissions only from `ready`. `reviewing` is
-    // intentionally accepted here for the narrow same-head race where a
-    // re-review starts while GitHub is accepting the already-authorized submit.
-    // A different-head re-review still fails this update and the route returns
-    // its explicit "GitHub accepted, local record unsettled" reconciliation 409.
     const result = database
       .prepare(
         `UPDATE pr_reviews
          SET status = 'submitted', verdict = ?, github_review_url = ?,
              submitted_at = ?, updated_at = ?
-         WHERE id = ? AND status IN ('ready', 'reviewing')
+         WHERE id = ? AND status = 'submitting'
            AND (? IS NULL OR head_sha = ?);`,
       )
       .run(
@@ -282,9 +337,9 @@ function upsertReviewingRecord(
     input.target.number,
     paths,
   );
-  if (existing?.status === 'reviewing') {
+  if (existing?.status === 'reviewing' || existing?.status === 'submitting') {
     throw new Error(
-      `A review is already in progress for ${repoFullName}#${input.target.number}.`,
+      `A review is already ${existing.status === 'submitting' ? 'being submitted' : 'in progress'} for ${repoFullName}#${input.target.number}.`,
     );
   }
   const id = existing?.id ?? randomUUID();

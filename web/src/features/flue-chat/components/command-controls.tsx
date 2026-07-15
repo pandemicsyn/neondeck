@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   getPrReview,
   openPrReviewEventStream,
@@ -8,6 +8,7 @@ import {
 } from '../../../api';
 import { Badge, Button } from '../../../components/ui';
 import { queryErrorMessage } from '../../../lib/query';
+import { PrReviewArtifactsOverlay } from '../../pr-review/PrReviewArtifactsOverlay';
 import type { FlueChatCommand } from '../types';
 
 export function CommandResultSummary({
@@ -116,35 +117,37 @@ function PrReviewCommandCard({
 }
 
 function ReviewCommandResult({ review }: { review: PrReviewRecord }) {
+  const [artifactIndex, setArtifactIndex] = useState<number | null>(null);
   return (
     <div className="mt-1.5">
       <p className="text-muted">
         {review.status === 'reviewing'
           ? 'Neon is reviewing the pull request.'
-          : review.status === 'ready'
-            ? `${review.findingCount} findings · ${review.seededCount} local drafts${review.reportOnlyCount ? ` · ${review.reportOnlyCount} report-only` : ''}`
-            : review.status === 'submitted'
-              ? `Submitted as ${review.verdict ?? 'review'}.`
-              : review.failureMessage || 'Review failed.'}
+          : review.status === 'submitting'
+            ? 'Submitting the review to GitHub…'
+            : review.status === 'ready'
+              ? `${review.findingCount} findings · ${review.seededCount} local drafts${review.reportOnlyCount ? ` · ${review.reportOnlyCount} report-only` : ''}`
+              : review.status === 'submitted'
+                ? `Submitted as ${review.verdict ?? 'review'}.`
+                : review.failureMessage || 'Review failed.'}
       </p>
       {review.status === 'ready' ? (
         <p className="mt-1 text-muted">{review.trustBoundary}</p>
       ) : null}
       <div className="mt-1.5 flex flex-wrap justify-end gap-1.5 font-mono text-[10px]">
         {review.reportIds.map((reportId, index) => (
-          <a
+          <button
             className="border border-line px-1.5 py-1 text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-            href={`/reports/${encodeURIComponent(reportId)}`}
             key={reportId}
-            rel="noreferrer"
-            target="_blank"
+            onClick={() => setArtifactIndex(index)}
+            type="button"
           >
             {index === 0
               ? 'overview'
               : index === 1
                 ? 'issues'
                 : `report ${index + 1}`}
-          </a>
+          </button>
         ))}
         {(review.status === 'ready' || review.status === 'submitted') && (
           <a
@@ -157,6 +160,14 @@ function ReviewCommandResult({ review }: { review: PrReviewRecord }) {
           </a>
         )}
       </div>
+      <PrReviewArtifactsOverlay
+        initialReportIndex={artifactIndex ?? 0}
+        onClose={() => setArtifactIndex(null)}
+        open={artifactIndex !== null}
+        reportIds={review.reportIds}
+        reviewLabel={`${review.repoFullName}#${review.prNumber}`}
+        reviewUrl={review.reviewUrl}
+      />
     </div>
   );
 }

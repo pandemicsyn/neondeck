@@ -176,7 +176,10 @@ function groupReviews(
 ) {
   return {
     awaiting,
-    inProgress: reviews.filter((review) => review.status === 'reviewing'),
+    inProgress: reviews.filter(
+      (review) =>
+        review.status === 'reviewing' || review.status === 'submitting',
+    ),
     needsAction: reviews.filter(
       (review) => review.status === 'ready' || review.status === 'failed',
     ),
