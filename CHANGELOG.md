@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.0-beta.9
+
+### Patch Changes
+
+- [#118](https://github.com/pandemicsyn/neondeck/pull/118) [`df66b2c`](https://github.com/pandemicsyn/neondeck/commit/df66b2c3b4e1dc75a97534cdc0db99396245062f) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep ready dashboard notifications visible for one hour by default and allow configuring them to remain until dismissed.
+
+- [#115](https://github.com/pandemicsyn/neondeck/pull/115) [`1e692f4`](https://github.com/pandemicsyn/neondeck/commit/1e692f44819715e102135ef2bd896c208786d310) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Correct PR branch freshness findings, replace stale Neon-generated review artifacts on re-review while preserving human edits, and speed up the focused review pop-out loading path.
+
+- [#116](https://github.com/pandemicsyn/neondeck/pull/116) [`8c972c0`](https://github.com/pandemicsyn/neondeck/commit/8c972c0e1898b5e0462d59d69badfc4e08f87dba) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Complete the PR review workbench with in-dashboard artifacts, explicit finding anchors, manual report-only anchoring, workbench-started Neon reviews, reliable behind detection, and reserved whole-review submission.
+
+- [#117](https://github.com/pandemicsyn/neondeck/pull/117) [`fc0618d`](https://github.com/pandemicsyn/neondeck/commit/fc0618dc456c67aa5362baf772ef2499a95d55ad) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add the Reviews tab once to existing dashboard work regions while preserving the configured default tab and respecting later user removal.
+
 ## 1.0.0-beta.8
 
 ### Minor Changes
