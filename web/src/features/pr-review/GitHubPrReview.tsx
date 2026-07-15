@@ -71,6 +71,10 @@ export function GitHubPrReview({
   const draftQuery = useGitHubPrReviewDraft(pr);
   const mutations = useGitHubPrReviewMutations(pr);
   const queryClient = useQueryClient();
+  const reviewDraftQueryKey = useMemo(
+    () => ['pr-review', 'draft', pr.repo, pr.number] as const,
+    [pr.number, pr.repo],
+  );
   const reviewRecordQuery = useQuery({
     queryKey: queryKeys.prReviewTarget(pr.repo, pr.number),
     queryFn: () => getPrReviewForTarget({ repo: pr.repo, prNumber: pr.number }),
@@ -206,7 +210,8 @@ export function GitHubPrReview({
         mutations.deleteComment.error ??
         mutations.discardDraft.error ??
         mutations.replyToThread.error ??
-        mutations.setThreadResolution.error,
+        mutations.setThreadResolution.error ??
+        restartReview.error,
       draft,
     ) ?? statusMessage;
   const fileLoadMessage = filesQuery.isLoading
@@ -230,6 +235,14 @@ export function GitHubPrReview({
               queryKeys.prReviewTarget(pr.repo, pr.number),
               event.review,
             );
+            if (
+              event.review.status === 'ready' ||
+              event.review.status === 'failed'
+            ) {
+              void queryClient.invalidateQueries({
+                queryKey: reviewDraftQueryKey,
+              });
+            }
           }
         },
         undefined,
@@ -239,7 +252,7 @@ export function GitHubPrReview({
           });
         },
       ),
-    [pr.number, pr.repo, queryClient],
+    [pr.number, pr.repo, queryClient, reviewDraftQueryKey],
   );
 
   useEffect(() => {
@@ -791,18 +804,26 @@ export function GitHubPrReview({
           {fileStats.binary > 0 ? (
             <Badge>{fileStats.binary} binary</Badge>
           ) : null}
-          {reviewRecord &&
-          reviewRecord.status !== 'reviewing' &&
-          currentHeadSha &&
-          reviewRecord.headSha !== currentHeadSha ? (
+          {reviewRecord ? (
             <button
               className="pr-review-popout-button"
-              disabled={restartReview.isPending}
-              onClick={() => restartReview.mutate(reviewRecord.id)}
-              title="Run Neon again for the current PR head"
+              disabled={
+                restartReview.isPending || reviewRecord.status === 'reviewing'
+              }
+              onClick={() => {
+                setStatusMessage(null);
+                restartReview.mutate(reviewRecord.id);
+              }}
+              title={
+                currentHeadSha && reviewRecord.headSha !== currentHeadSha
+                  ? 'Run Neon again for the current PR head'
+                  : 'Refresh Neon findings from current GitHub facts'
+              }
               type="button"
             >
-              {restartReview.isPending ? 're-reviewing' : 're-review'}
+              {restartReview.isPending || reviewRecord.status === 'reviewing'
+                ? 'reviewing'
+                : 're-review'}
             </button>
           ) : null}
           {isStandalone ? (

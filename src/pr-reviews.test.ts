@@ -168,6 +168,11 @@ describe('durable PR reviews', () => {
       headSha: 'head-2',
       verdict: null,
       previousVerdict: 'approve',
+      reportIds: [],
+      findingCount: 0,
+      seededCount: 0,
+      reportOnlyCount: 0,
+      reportOnlyFindings: [],
     });
     expect(readPrReviewForTarget('OTHER/PROJECT', 42, paths)).toMatchObject({
       id: started.reviewId,

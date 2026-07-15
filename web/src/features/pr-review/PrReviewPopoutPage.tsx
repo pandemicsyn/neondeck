@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { lazy, Suspense, type CSSProperties } from 'react';
+import type { CSSProperties } from 'react';
 import {
   getGitHubPullRequest,
   type DashboardDensity,
@@ -7,12 +7,7 @@ import {
 } from '../../api';
 import { EmptyState } from '../../components/ui';
 import { queryErrorMessage, queryKeys } from '../../lib/query';
-
-const GitHubPrReview = lazy(() =>
-  import('./GitHubPrReview').then((module) => ({
-    default: module.GitHubPrReview,
-  })),
-);
+import { GitHubPrReview } from './GitHubPrReview';
 
 export type ReviewPopoutTarget = {
   repo: string;
@@ -59,16 +54,7 @@ export function PrReviewPopoutPage({
           title="GitHub PR detail unavailable"
         />
       ) : null}
-      <Suspense
-        fallback={
-          <ReviewPopoutState
-            detail="Loading the review workbench."
-            title="Loading PR review"
-          />
-        }
-      >
-        <GitHubPrReview mode="standalone" pr={pullRequest} />
-      </Suspense>
+      <GitHubPrReview mode="standalone" pr={pullRequest} />
     </section>
   );
 }

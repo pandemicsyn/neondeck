@@ -2,6 +2,7 @@ import * as v from 'valibot';
 import { addNotification, addWorkflowSummary } from '../app-state';
 import {
   addPrReviewDraftComment,
+  clearPrReviewNeonDraftComments,
   deletePrReviewNeonSeedsForComments,
   deletePrReviewDraftComment,
   readLivePrReviewDraft,
@@ -312,7 +313,7 @@ async function seedDraftComments(
   paths: RuntimePaths,
   seedingBlockedReason: string | null,
 ) {
-  const existing = readLivePrReviewDraft({
+  let existing = readLivePrReviewDraft({
     databasePath: paths.neondeckDatabase,
     repo: facts.target.repoFullName,
     prNumber: facts.target.number,
@@ -338,6 +339,12 @@ async function seedDraftComments(
       })),
       skippedReason: 'existing-human-draft',
     };
+  }
+  if (existing?.comments.some((comment) => comment.origin === 'neon')) {
+    existing = clearPrReviewNeonDraftComments({
+      databasePath: paths.neondeckDatabase,
+      draftId: existing.id,
+    });
   }
   if (existing && existing.comments.length > 0) {
     return {
