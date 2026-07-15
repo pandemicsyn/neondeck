@@ -321,9 +321,11 @@ export const dashboardToastConfigSchema = v.looseObject({
     v.pipe(
       v.number(),
       v.integer(),
-      v.transform((value) => Math.min(60_000, Math.max(1_000, value))),
+      v.transform((value) =>
+        value === 0 ? 0 : Math.min(86_400_000, Math.max(1_000, value)),
+      ),
     ),
-    6_000,
+    3_600_000,
   ),
   maxVisible: v.optional(
     v.pipe(
@@ -337,6 +339,7 @@ export const dashboardToastConfigSchema = v.looseObject({
 
 export const dashboardConfigSchema = v.looseObject({
   $schema: v.optional(v.string()),
+  schemaVersion: v.pipe(v.number(), v.integer(), v.minValue(1)),
   display: v.object({
     preset: v.optional(nonEmptyStringSchema),
     width: positiveIntegerSchema,
@@ -354,7 +357,7 @@ export const dashboardConfigSchema = v.looseObject({
       toasts: v.optional(dashboardToastConfigSchema, {
         enabled: true,
         minimumLevel: 'ready',
-        readyDurationMs: 6_000,
+        readyDurationMs: 3_600_000,
         maxVisible: 3,
       }),
     }),
@@ -362,7 +365,7 @@ export const dashboardConfigSchema = v.looseObject({
       toasts: {
         enabled: true,
         minimumLevel: 'ready',
-        readyDurationMs: 6_000,
+        readyDurationMs: 3_600_000,
         maxVisible: 3,
       },
     },

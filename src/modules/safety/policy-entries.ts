@@ -915,9 +915,18 @@ export const entries: SafetyPolicyEntry[] = [
     'Submit PR review API',
     {
       ...safeMutation,
-      auditTarget: 'workflow_summaries/GitHub',
+      auditTarget: 'workflow_summaries/pr_reviews/GitHub',
     },
     'User-surface-only local API for submitting a human-authored GitHub PR review with inline comments and a verdict. Neon has no action or tool path to this route.',
+  ),
+  route(
+    '/api/reviews/:id/reconcile',
+    'Recover interrupted PR review submission API',
+    {
+      ...safeMutation,
+      auditTarget: 'pr_reviews/GitHub',
+    },
+    'User-surface-only local API that checks GitHub for an interrupted human-authored review submission and reconciles its app-owned durable record. Neon has no action or tool path to this route.',
   ),
   route(
     '/api/github/prs/:owner/:repo/:number/review-threads/:threadId/reply',
@@ -1819,6 +1828,36 @@ export const entries: SafetyPolicyEntry[] = [
     'Serves one local HTML report artifact by durable report id behind local-access checks.',
   ),
   route(
+    'GET /api/reviews',
+    'PR review inbox API',
+    readOnly,
+    'Reads durable local PR review lifecycle records and review-requested queue entries.',
+  ),
+  route(
+    'GET /api/reviews/:id',
+    'PR review record API',
+    readOnly,
+    'Reads one durable local PR review lifecycle record.',
+  ),
+  route(
+    'POST /api/reviews',
+    'Start PR review API',
+    {
+      ...safeMutation,
+      auditTarget: 'pr_reviews/workflow_summaries/workflow_events',
+    },
+    'Creates or resets one local PR review record and admits the bounded review-pr-for-human workflow without submitting anything to GitHub.',
+  ),
+  route(
+    'POST /api/reviews/:id/review',
+    'Re-review PR API',
+    {
+      ...safeMutation,
+      auditTarget: 'pr_reviews/workflow_summaries/workflow_events',
+    },
+    'Reuses one durable local PR review record for a new head and preserves its previous verdict audit field.',
+  ),
+  route(
     '/api/runtime/status',
     'Runtime status API',
     readOnly,
@@ -1835,6 +1874,12 @@ export const entries: SafetyPolicyEntry[] = [
     'Notification event stream API',
     readOnly,
     'Streams notification inbox changes to dashboard surfaces without browser notification APIs.',
+  ),
+  route(
+    '/api/events/reviews',
+    'PR review event stream API',
+    readOnly,
+    'Streams durable PR review lifecycle changes to chat and dashboard surfaces.',
   ),
   route(
     '/api/events/sessions',

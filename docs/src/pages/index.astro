@@ -5,15 +5,30 @@ import SiteNav from '../components/SiteNav.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
 
 const dashboardConfig = `{
+  "schemaVersion": 1,
   "display": { "width": 2560, "height": 720 },
   "theme": "dark",
+  "statusline": { "position": "top", "pluginId": "host-metrics" },
   "layout": {
     "columns": 12,
-    "rows": 6,
+    "rows": 5,
     "regions": [
-      { "id": "statusline", "pluginId": "host-metrics", "columnSpan": 12 },
-      { "id": "github", "pluginId": "github-pr-list", "columnSpan": 4 },
-      { "id": "chat", "pluginId": "flue-chat", "columnSpan": 8 }
+      {
+        "id": "work", "title": "WORK",
+        "column": 1, "row": 1, "columnSpan": 4, "rowSpan": 5,
+        "defaultTab": "github",
+        "tabs": [
+          { "id": "github", "title": "GITHUB", "pluginId": "github-pr-list" }
+        ]
+      },
+      {
+        "id": "neon", "title": "NEON",
+        "column": 5, "row": 1, "columnSpan": 8, "rowSpan": 5,
+        "defaultTab": "chat",
+        "tabs": [
+          { "id": "chat", "title": "CHAT", "pluginId": "flue-chat" }
+        ]
+      }
     ]
   }
 }`;

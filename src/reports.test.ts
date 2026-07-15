@@ -76,6 +76,22 @@ describe('reports', () => {
     ]);
   });
 
+  it('excludes first-class report kinds before applying the list limit', async () => {
+    const paths = runtimePaths(await tempDir());
+    await writeReport(
+      reportInput('hygiene', 'linked report', '2026-07-05T12:00:00.000Z'),
+      paths,
+    );
+    await writeReport(
+      reportInput('pr-review', 'review report', '2026-07-05T13:00:00.000Z'),
+      paths,
+    );
+
+    await expect(
+      listReports(paths, { excludeKind: 'pr-review', limit: 1 }),
+    ).resolves.toMatchObject([{ kind: 'hygiene', title: 'linked report' }]);
+  });
+
   it('prunes reports by kind limit and age with matching files', async () => {
     const paths = runtimePaths(await tempDir());
     const first = await writeReport(

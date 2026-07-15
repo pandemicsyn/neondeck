@@ -2,66 +2,116 @@ import type {
   ConfigChangeEvent,
   ChatSessionChangeEvent,
   NotificationChangeEvent,
+  PrReviewChangeEvent,
 } from './types';
 
 export function openConfigEventStream(
   onEvent: (event: ConfigChangeEvent) => void,
   onError?: (error?: Error | Event) => void,
 ) {
-  if (typeof EventSource === 'undefined') return () => {};
-
-  const source = new EventSource('/api/events/config');
-  source.addEventListener('config-change', (event) => {
-    parseEventData('config-change', event, onEvent, onError);
-  });
-  if (onError) source.addEventListener('error', onError);
-
-  return () => source.close();
+  return configEvents.subscribe(onEvent, onError);
 }
 
 export function openNotificationEventStream(
   onEvent: (event: NotificationChangeEvent) => void,
   onError?: (error?: Error | Event) => void,
 ) {
-  if (typeof EventSource === 'undefined') return () => {};
-
-  const source = new EventSource('/api/events/notifications');
-  source.addEventListener('notification-change', (event) => {
-    parseEventData('notification-change', event, onEvent, onError);
-  });
-  if (onError) source.addEventListener('error', onError);
-
-  return () => source.close();
+  return notificationEvents.subscribe(onEvent, onError);
 }
 
 export function openChatSessionEventStream(
   onEvent: (event: ChatSessionChangeEvent) => void,
   onError?: (error?: Error | Event) => void,
 ) {
-  if (typeof EventSource === 'undefined') return () => {};
-
-  const source = new EventSource('/api/events/sessions');
-  source.addEventListener('chat-session-change', (event) => {
-    parseEventData('chat-session-change', event, onEvent, onError);
-  });
-  if (onError) source.addEventListener('error', onError);
-
-  return () => source.close();
+  return chatSessionEvents.subscribe(onEvent, onError);
 }
 
-function parseEventData<T>(
-  eventName: string,
-  event: MessageEvent,
-  onEvent: (event: T) => void,
+export function openPrReviewEventStream(
+  onEvent: (event: PrReviewChangeEvent) => void,
   onError?: (error?: Error | Event) => void,
+  onOpen?: () => void,
 ) {
+  return prReviewEvents.subscribe(onEvent, onError, onOpen);
+}
+
+type EventSubscriber<T> = {
+  onError?: (error?: Error | Event) => void;
+  onEvent: (event: T) => void;
+  onOpen?: () => void;
+};
+
+function createSharedEventStream<T>(url: string, eventName: string) {
+  const subscribers = new Set<EventSubscriber<T>>();
+  let source: EventSource | null = null;
+
+  const connect = () => {
+    if (source || typeof EventSource === 'undefined') return;
+    source = new EventSource(url);
+    source.addEventListener(eventName, (event) => {
+      const parsed = parseEventData<T>(eventName, event);
+      if (parsed instanceof Error) {
+        let handled = false;
+        for (const subscriber of subscribers) {
+          if (!subscriber.onError) continue;
+          handled = true;
+          subscriber.onError(parsed);
+        }
+        if (!handled) console.warn(parsed.message);
+        return;
+      }
+      for (const subscriber of subscribers) subscriber.onEvent(parsed);
+    });
+    source.addEventListener('error', (event) => {
+      for (const subscriber of subscribers) subscriber.onError?.(event);
+    });
+    source.addEventListener('open', () => {
+      for (const subscriber of subscribers) subscriber.onOpen?.();
+    });
+  };
+
+  return {
+    subscribe(
+      onEvent: (event: T) => void,
+      onError?: (error?: Error | Event) => void,
+      onOpen?: () => void,
+    ) {
+      if (typeof EventSource === 'undefined') return () => {};
+      const subscriber = { onEvent, onError, onOpen };
+      subscribers.add(subscriber);
+      connect();
+      return () => {
+        subscribers.delete(subscriber);
+        if (subscribers.size > 0) return;
+        source?.close();
+        source = null;
+      };
+    },
+  };
+}
+
+function parseEventData<T>(eventName: string, event: MessageEvent) {
   try {
-    onEvent(JSON.parse(event.data) as T);
+    return JSON.parse(event.data) as T;
   } catch (cause) {
-    const error = new Error(
+    return new Error(
       `Invalid ${eventName} event payload: ${cause instanceof Error ? cause.message : String(cause)}`,
     );
-    if (onError) onError(error);
-    else console.warn(error.message);
   }
 }
+
+const configEvents = createSharedEventStream<ConfigChangeEvent>(
+  '/api/events/config',
+  'config-change',
+);
+const notificationEvents = createSharedEventStream<NotificationChangeEvent>(
+  '/api/events/notifications',
+  'notification-change',
+);
+const chatSessionEvents = createSharedEventStream<ChatSessionChangeEvent>(
+  '/api/events/sessions',
+  'chat-session-change',
+);
+const prReviewEvents = createSharedEventStream<PrReviewChangeEvent>(
+  '/api/events/reviews',
+  'review-change',
+);

@@ -171,6 +171,7 @@ function notificationEvent(): NotificationChangeEvent {
 
 function dashboardConfig(): DashboardConfig {
   return {
+    schemaVersion: 1,
     display: { width: 2560, height: 720 },
     theme: 'dark',
     appearance: { density: 'comfortable' },
@@ -178,7 +179,7 @@ function dashboardConfig(): DashboardConfig {
       toasts: {
         enabled: true,
         minimumLevel: 'ready',
-        readyDurationMs: 6_000,
+        readyDurationMs: 3_600_000,
         maxVisible: 3,
       },
     },

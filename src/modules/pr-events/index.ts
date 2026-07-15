@@ -43,3 +43,4 @@ export {
   refreshPrWatchEventState,
   listPrWatchEventWatermarks,
 } from './service';
+export { resolvePullRequestTarget } from './target';

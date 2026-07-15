@@ -70,13 +70,12 @@ describe('github foundation', () => {
         'is:pr is:open archived:false author:pandemicsyn repo:pandemicsyn/flue',
       ]),
     );
-    expect(queries.every((query) => query.includes('author:pandemicsyn'))).toBe(
-      true,
-    );
     expect(queries.every((query) => query.includes('repo:'))).toBe(true);
-    expect(queries.some((query) => query.includes('assignee:'))).toBe(false);
+    expect(
+      queries.some((query) => query.includes('assignee:pandemicsyn')),
+    ).toBe(true);
     expect(queries.some((query) => query.includes('review-requested:'))).toBe(
-      false,
+      true,
     );
     expect(
       queries.some((query) =>
@@ -222,7 +221,7 @@ describe('github foundation', () => {
       buildPullRequestQueries('pandemicsyn', repos).filter((query) =>
         query.includes('repo:pandemicsyn/neondeck'),
       ),
-    ).toHaveLength(2);
+    ).toHaveLength(4);
     expect(new Set(buildPullRequestQueries('pandemicsyn', repos)).size).toEqual(
       buildPullRequestQueries('pandemicsyn', repos).length,
     );

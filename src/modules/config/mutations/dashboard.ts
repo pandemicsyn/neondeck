@@ -5,6 +5,7 @@ import { writeJson } from '../files';
 import { dashboardPresetSchema, type ConfigActionResult } from '../schemas';
 import {
   type DashboardConfig,
+  dashboardSchemaVersion,
   ensureRuntimeHome,
   dashboardConfigSchema,
   parseDashboardConfig,
@@ -126,6 +127,7 @@ function dashboardPresetConfig(
     return parseDashboardConfig(
       {
         $schema: './dashboard.schema.json',
+        schemaVersion: dashboardSchemaVersion,
         display: { preset: 'xeneon-edge', width: 2560, height: 720 },
         appearance: { density: 'comfortable' },
         theme: 'dark',
@@ -146,8 +148,9 @@ function dashboardPresetConfig(
               row: 1,
               columnSpan: 4,
               rowSpan: 5,
-              defaultTab: 'github',
+              defaultTab: 'reviews',
               tabs: [
+                reviewsTab(),
                 {
                   id: 'github',
                   title: 'GITHUB',
@@ -177,6 +180,7 @@ function dashboardPresetConfig(
   return parseDashboardConfig(
     {
       $schema: './dashboard.schema.json',
+      schemaVersion: dashboardSchemaVersion,
       display: { preset: 'xeneon-edge', width: 2560, height: 720 },
       appearance: { density: 'comfortable' },
       theme: 'dark',
@@ -197,8 +201,9 @@ function dashboardPresetConfig(
             row: 1,
             columnSpan: 4,
             rowSpan: 5,
-            defaultTab: 'github',
+            defaultTab: 'reviews',
             tabs: [
+              reviewsTab(),
               {
                 id: 'github',
                 title: 'GITHUB',
@@ -284,6 +289,15 @@ function reportsTab() {
     title: 'REPORTS',
     pluginId: 'reports-panel',
     config: { limit: 12, refreshSeconds: 60 },
+  };
+}
+
+function reviewsTab() {
+  return {
+    id: 'reviews',
+    title: 'REVIEWS',
+    pluginId: 'reviews-panel',
+    config: {},
   };
 }
 

@@ -6,6 +6,7 @@ export {
   type RepoGuardrailsConfig,
 } from './guardrails.ts';
 export { ensureRuntimeHome, ensureRuntimeHomeSync } from './bootstrap.ts';
+export { dashboardSchemaVersion } from './dashboard-migrations.ts';
 export {
   readRuntimeJson,
   readRuntimeJsonSync,

@@ -284,6 +284,35 @@ describe('app API safety routes', () => {
     await reader!.cancel();
   });
 
+  it('serves durable PR reviews and their local event stream', async () => {
+    const listResponse = await app.request('http://localhost/api/reviews', {
+      headers: { host: 'localhost' },
+    });
+    const list = (await listResponse.json()) as {
+      ok: boolean;
+      groups: { inProgress: unknown[]; needsAction: unknown[] };
+    };
+    expect(listResponse.status).toBe(200);
+    expect(list).toMatchObject({
+      ok: true,
+      groups: { inProgress: [], needsAction: [] },
+    });
+
+    const eventResponse = await app.request(
+      'http://localhost/api/events/reviews',
+      { headers: { host: 'localhost' } },
+    );
+    expect(eventResponse.status).toBe(200);
+    expect(eventResponse.headers.get('content-type')).toContain(
+      'text/event-stream',
+    );
+    const reader = eventResponse.body?.getReader();
+    expect(reader).toBeDefined();
+    const chunk = await reader!.read();
+    expect(new TextDecoder().decode(chunk.value)).toContain(': connected');
+    await reader!.cancel();
+  });
+
   it('serves session events as a local server-sent event stream', async () => {
     const response = await app.request('http://localhost/api/events/sessions', {
       headers: { host: 'localhost' },

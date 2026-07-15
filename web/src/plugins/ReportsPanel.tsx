@@ -26,7 +26,8 @@ export const ReportsPanelPlugin = {
   Component({ config }) {
     const { data, error, isLoading } = useQuery({
       queryKey: [...queryKeys.reports, config.limit] as const,
-      queryFn: () => getReports({ limit: config.limit }),
+      queryFn: () =>
+        getReports({ excludeKind: 'pr-review', limit: config.limit }),
       refetchInterval: Math.max(10, config.refreshSeconds) * 1000,
     });
 
@@ -55,7 +56,7 @@ export const ReportsPanelPlugin = {
         {reports.length === 0 ? (
           <EmptyState
             title="No reports"
-            detail="Review, CI, drift, triage, and hygiene reports will appear here."
+            detail="Unlinked CI, drift, triage, and hygiene reports will appear here. Review artifacts stay with their review."
           />
         ) : (
           <ScrollArea className="flex-1">

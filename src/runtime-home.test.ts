@@ -117,6 +117,7 @@ describe('runtime home', () => {
       parseDashboardConfig,
     );
     expect(dashboard).toMatchObject({
+      schemaVersion: 1,
       display: { width: 2560, height: 720 },
       statusline: { position: 'top', pluginId: 'host-metrics' },
       layout: { columns: 12, rows: 5 },
@@ -128,7 +129,7 @@ describe('runtime home', () => {
     ).toContain('reports-panel');
   });
 
-  it('does not mutate an existing dashboard during bootstrap', async () => {
+  it('adds Reviews once without changing an existing dashboard default', async () => {
     const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
     tempRoots.push(root);
     const paths = runtimePaths(root);
@@ -188,16 +189,101 @@ describe('runtime home', () => {
     );
 
     await ensureRuntimeHome(paths);
-    await ensureRuntimeHome(paths);
 
-    const dashboard = await readRuntimeJson(
+    const migrated = await readRuntimeJson(
       paths.dashboard,
       parseDashboardConfig,
     );
-    const work = dashboard.layout.regions.find(
+    const work = migrated.layout.regions.find((region) => region.id === 'work');
+    expect(migrated.schemaVersion).toBe(1);
+    expect(work?.defaultTab).toBe('github');
+    expect(work?.tabs.map((tab) => tab.id)).toEqual(['github', 'reviews']);
+
+    await writeFile(
+      paths.dashboard,
+      `${JSON.stringify(
+        {
+          ...migrated,
+          layout: {
+            ...migrated.layout,
+            regions: migrated.layout.regions.map((region) =>
+              region.id === 'work'
+                ? {
+                    ...region,
+                    tabs: region.tabs.filter((tab) => tab.id !== 'reviews'),
+                  }
+                : region,
+            ),
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    await ensureRuntimeHome(paths);
+    const customized = await readRuntimeJson(
+      paths.dashboard,
+      parseDashboardConfig,
+    );
+    const customizedWork = customized.layout.regions.find(
       (region) => region.id === 'work',
     );
-    expect(work?.tabs.map((tab) => tab.id)).toEqual(['github']);
+    expect(customizedWork?.defaultTab).toBe('github');
+    expect(customizedWork?.tabs.map((tab) => tab.id)).toEqual(['github']);
+  });
+
+  it('appends Reviews to the first region when a layout has no standard work region', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
+    tempRoots.push(root);
+    const paths = runtimePaths(root);
+
+    await writeFile(
+      paths.dashboard,
+      JSON.stringify(
+        {
+          display: { preset: 'xeneon-edge', width: 2560, height: 720 },
+          theme: 'dark',
+          layout: {
+            columns: 12,
+            rows: 5,
+            regions: [
+              {
+                id: 'custom',
+                title: 'CUSTOM',
+                column: 1,
+                row: 1,
+                columnSpan: 12,
+                rowSpan: 5,
+                defaultTab: 'chat',
+                tabs: [
+                  {
+                    id: 'chat',
+                    title: 'CHAT',
+                    pluginId: 'flue-chat',
+                    config: {},
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await ensureRuntimeHome(paths);
+    const migrated = await readRuntimeJson(
+      paths.dashboard,
+      parseDashboardConfig,
+    );
+    expect(migrated.schemaVersion).toBe(1);
+    expect(migrated.layout.regions[0]?.defaultTab).toBe('chat');
+    expect(migrated.layout.regions[0]?.tabs.map((tab) => tab.id)).toEqual([
+      'chat',
+      'reviews',
+    ]);
   });
 
   it('does not rerun database bootstrap after initial runtime setup', async () => {
@@ -677,6 +763,7 @@ describe('runtime home', () => {
 
   it('enforces the dashboard frontend config contract', () => {
     const dashboardConfig = () => ({
+      schemaVersion: 1 as const,
       display: { preset: 'xeneon-edge', width: 2560, height: 720 },
       appearance: { density: 'comfortable', textScale: 1.12 },
       theme: 'dark',
@@ -712,10 +799,17 @@ describe('runtime home', () => {
       toasts: {
         enabled: true,
         minimumLevel: 'ready',
-        readyDurationMs: 6_000,
+        readyDurationMs: 3_600_000,
         maxVisible: 3,
       },
     });
+
+    expect(
+      parseDashboardConfig(
+        { ...dashboardConfig(), schemaVersion: 2 },
+        'dashboard.json',
+      ).schemaVersion,
+    ).toBe(2);
 
     expect(
       parseDashboardConfig(
@@ -737,6 +831,27 @@ describe('runtime home', () => {
         enabled: true,
         minimumLevel: 'attention',
         readyDurationMs: 1_000,
+        maxVisible: 3,
+      },
+    });
+
+    expect(
+      parseDashboardConfig(
+        {
+          ...dashboardConfig(),
+          notifications: {
+            toasts: {
+              readyDurationMs: 0,
+            },
+          },
+        },
+        'dashboard.json',
+      ).notifications,
+    ).toEqual({
+      toasts: {
+        enabled: true,
+        minimumLevel: 'ready',
+        readyDurationMs: 0,
         maxVisible: 3,
       },
     });

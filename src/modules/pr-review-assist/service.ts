@@ -2,6 +2,7 @@ import * as v from 'valibot';
 import { addNotification, addWorkflowSummary } from '../app-state';
 import {
   addPrReviewDraftComment,
+  clearPrReviewNeonDraftComments,
   deletePrReviewNeonSeedsForComments,
   deletePrReviewDraftComment,
   readLivePrReviewDraft,
@@ -62,6 +63,7 @@ export type ReviewAssistDependencies = {
     context: ReviewAssistPromptContext,
   ) => Promise<unknown> | unknown;
   prEventDependencies?: PrEventStateDependencies;
+  workflowRunId?: string;
 };
 
 type SeededFinding = {
@@ -128,6 +130,9 @@ export async function reviewPrForHuman(
   const workflowSummary = await addWorkflowSummary(
     {
       workflow: 'review-pr-for-human',
+      ...(dependencies.workflowRunId
+        ? { runId: dependencies.workflowRunId }
+        : {}),
       status: 'completed',
       summary: {
         message: `Prepared review reports for ${facts.target.repoFullName}#${facts.target.number}.`,
@@ -190,6 +195,14 @@ export async function reviewPrForHuman(
       findingCount: reviewed.output.findings.length,
       seededCount: seedResult.seeded.length,
       reportOnlyCount: seedResult.reportOnly.length,
+      reportOnlyFindings: seedResult.reportOnly.map((item) => ({
+        severity: item.finding.severity,
+        path: item.finding.path,
+        line: findingLine(item.finding),
+        summary: item.finding.summary,
+        suggestedFix: item.finding.suggestedFix,
+        reason: item.reason,
+      })),
       skippedSeedingReason: seedResult.skippedReason,
       seededCommentIds: seedResult.seeded.map((item) => item.commentId),
       draftId: seedResult.draft?.id ?? null,
@@ -300,7 +313,7 @@ async function seedDraftComments(
   paths: RuntimePaths,
   seedingBlockedReason: string | null,
 ) {
-  const existing = readLivePrReviewDraft({
+  let existing = readLivePrReviewDraft({
     databasePath: paths.neondeckDatabase,
     repo: facts.target.repoFullName,
     prNumber: facts.target.number,
@@ -327,6 +340,21 @@ async function seedDraftComments(
       skippedReason: 'existing-human-draft',
     };
   }
+  if (existing?.comments.some((comment) => comment.origin === 'neon')) {
+    existing = clearPrReviewNeonDraftComments({
+      databasePath: paths.neondeckDatabase,
+      draftId: existing.id,
+    });
+  }
+  if (existing && existing.headSha !== facts.state.headSha) {
+    existing = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: facts.target.repoFullName,
+      prNumber: facts.target.number,
+      headSha: facts.state.headSha,
+      reanchorHeadSha: true,
+    });
+  }
   if (existing && existing.comments.length > 0) {
     return {
       draft: existing,
@@ -344,6 +372,10 @@ async function seedDraftComments(
   const reportOnly: ReportOnlyFinding[] = [];
   const seedable = [];
   for (const finding of output.findings) {
+    if (finding.anchor.kind === 'report-only') {
+      reportOnly.push({ finding, reason: finding.anchor.reason });
+      continue;
+    }
     const anchor = findingAnchor(finding);
     const index = anchors.get(finding.path);
     if (!anchor || !index || !commentAnchorExists(index, anchor)) {
@@ -569,13 +601,17 @@ function anchorsByPath(files: GitHubPullRequestFile[]) {
 function findingAnchor(
   finding: ReviewAssistFinding,
 ): ReviewCommentAnchor | null {
-  if (!finding.line) return null;
+  if (finding.anchor.kind !== 'inline') return null;
   return {
-    side: finding.side ?? 'RIGHT',
-    line: finding.line,
-    startLine: finding.startLine ?? null,
-    startSide: finding.startSide ?? null,
+    side: finding.anchor.side,
+    line: finding.anchor.line,
+    startLine: finding.anchor.startLine ?? null,
+    startSide: finding.anchor.startSide ?? null,
   };
+}
+
+function findingLine(finding: ReviewAssistFinding) {
+  return finding.anchor.kind === 'inline' ? finding.anchor.line : null;
 }
 
 function seededCommentBody(finding: ReviewAssistFinding) {
@@ -607,10 +643,10 @@ async function repoIdForFullName(fullName: string, paths: RuntimePaths) {
 
 function reviewSurfaceUrl(target: PullRequestTarget) {
   const params = new URLSearchParams({
-    prReviewRepo: target.repoFullName,
-    prReviewNumber: String(target.number),
+    repo: target.repoFullName,
+    number: String(target.number),
   });
-  return `/?${params.toString()}`;
+  return `/review?${params.toString()}`;
 }
 
 function fromPrEventFailure(result: {

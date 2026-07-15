@@ -117,11 +117,14 @@ export async function writeReport(
 
 export async function listReports(
   paths = runtimePaths(),
-  options: { kind?: string; limit?: number } = {},
+  options: { kind?: string; excludeKind?: string; limit?: number } = {},
 ) {
   await ensureRuntimeHome(paths);
   const limit = clampLimit(options.limit);
   const kind = options.kind ? normalizeReportKind(options.kind) : null;
+  const excludeKind = options.excludeKind
+    ? normalizeReportKind(options.excludeKind)
+    : null;
   const database = openDb(paths.neondeckDatabase);
   try {
     const rows = kind
@@ -136,16 +139,28 @@ export async function listReports(
           `,
           )
           .all(kind, limit)
-      : database
-          .prepare(
-            `
+      : excludeKind
+        ? database
+            .prepare(
+              `
+              SELECT *
+              FROM reports
+              WHERE kind != ?
+              ORDER BY created_at DESC
+              LIMIT ?;
+            `,
+            )
+            .all(excludeKind, limit)
+        : database
+            .prepare(
+              `
             SELECT *
             FROM reports
             ORDER BY created_at DESC
             LIMIT ?;
           `,
-          )
-          .all(limit);
+            )
+            .all(limit);
     return rows.map(readReportRow);
   } finally {
     database.close();
