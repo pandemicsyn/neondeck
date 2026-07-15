@@ -6,7 +6,10 @@ import {
   type RuntimePaths,
 } from '../../runtime-home';
 import {
+  fetchGitHubLogin,
   fetchPullRequestDetail,
+  fetchPullRequestReviews,
+  type GitHubPullRequestReview,
   type GitHubPullRequestDetail,
 } from '../github';
 import { resolvePullRequestTarget, type PullRequestTarget } from '../pr-events';
@@ -37,6 +40,21 @@ export type StartPrReviewDependencies = {
     attemptId: string;
   }) => Promise<{ runId: string }>;
 };
+
+export type ReconcilePrReviewSubmissionDependencies = {
+  token?: string;
+  now?: () => number;
+  fetchLogin?: (token: string) => Promise<string>;
+  fetchReviews?: (input: {
+    token: string;
+    owner: string;
+    repo: string;
+    number: number;
+  }) => Promise<GitHubPullRequestReview[]>;
+};
+
+const submissionReconcileGraceMs = 30_000;
+const activeSubmissionAttempts = new Set<string>();
 
 export async function startPrReview(
   input: { ref: string; origin: PrReviewOrigin },
@@ -207,13 +225,12 @@ export function failPrReview(
   return updated;
 }
 
-export function submitPrReview(
+export function reservePrReviewSubmission(
   input: {
     repoFullName: string;
     prNumber: number;
+    headSha: string;
     verdict: PrReviewVerdict;
-    githubReviewUrl: string | null;
-    headSha?: string | null;
   },
   paths = runtimePaths(),
 ) {
@@ -227,28 +244,13 @@ export function submitPrReview(
   const database = openDb(paths.neondeckDatabase);
   let changed = false;
   try {
-    // The HTTP route admits submissions only from `ready`. `reviewing` is
-    // intentionally accepted here for the narrow same-head race where a
-    // re-review starts while GitHub is accepting the already-authorized submit.
-    // A different-head re-review still fails this update and the route returns
-    // its explicit "GitHub accepted, local record unsettled" reconciliation 409.
     const result = database
       .prepare(
         `UPDATE pr_reviews
-         SET status = 'submitted', verdict = ?, github_review_url = ?,
-             submitted_at = ?, updated_at = ?
-         WHERE id = ? AND status IN ('ready', 'reviewing')
-           AND (? IS NULL OR head_sha = ?);`,
+         SET status = 'submitting', verdict = ?, updated_at = ?
+         WHERE id = ? AND status = 'ready' AND head_sha = ?;`,
       )
-      .run(
-        input.verdict,
-        input.githubReviewUrl,
-        now,
-        now,
-        current.id,
-        input.headSha ?? null,
-        input.headSha ?? null,
-      );
+      .run(input.verdict, now, current.id, input.headSha);
     changed = result.changes === 1;
   } finally {
     database.close();
@@ -259,11 +261,209 @@ export function submitPrReview(
   return updated;
 }
 
+export function releasePrReviewSubmission(
+  input: { reviewId: string; headSha: string },
+  paths = runtimePaths(),
+) {
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+  let changed = false;
+  try {
+    const result = database
+      .prepare(
+        `UPDATE pr_reviews
+         SET status = 'ready', verdict = NULL, updated_at = ?
+         WHERE id = ? AND status = 'submitting' AND head_sha = ?;`,
+      )
+      .run(now, input.reviewId, input.headSha);
+    changed = result.changes === 1;
+  } finally {
+    database.close();
+  }
+  if (!changed) return null;
+  const updated = requireReview(input.reviewId, paths);
+  publish(updated, 'changed');
+  return updated;
+}
+
+export function beginPrReviewSubmissionAttempt(reviewId: string) {
+  activeSubmissionAttempts.add(reviewId);
+  let active = true;
+  return () => {
+    if (!active) return;
+    active = false;
+    activeSubmissionAttempts.delete(reviewId);
+  };
+}
+
+export function submitPrReview(
+  input: {
+    reviewId: string;
+    verdict: PrReviewVerdict;
+    githubReviewUrl: string | null;
+  },
+  paths = runtimePaths(),
+) {
+  const current = readPrReview(input.reviewId, paths);
+  if (!current) return null;
+  if (current.status === 'submitted') return current;
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+  let changed = false;
+  try {
+    const result = database
+      .prepare(
+        `UPDATE pr_reviews
+         SET status = 'submitted', verdict = ?, github_review_url = ?,
+             submitted_at = ?, updated_at = ?
+         WHERE id = ? AND status = 'submitting';`,
+      )
+      .run(input.verdict, input.githubReviewUrl, now, now, current.id);
+    changed = result.changes === 1;
+  } finally {
+    database.close();
+  }
+  if (!changed) return null;
+  const updated = requireReview(current.id, paths);
+  publish(updated, 'changed');
+  return updated;
+}
+
+export async function reconcilePrReviewSubmission(
+  input: { reviewId: string },
+  paths = runtimePaths(),
+  dependencies: ReconcilePrReviewSubmissionDependencies = {},
+) {
+  await ensureRuntimeHome(paths);
+  const current = readPrReview(input.reviewId, paths);
+  if (!current) throw new Error('PR review not found.');
+  if (current.status !== 'submitting') {
+    return { outcome: 'unchanged' as const, review: current };
+  }
+  if (activeSubmissionAttempts.has(current.id)) {
+    return { outcome: 'pending' as const, review: current };
+  }
+  const endReconciliation = beginPrReviewSubmissionAttempt(current.id);
+  try {
+    return await reconcileInactivePrReviewSubmission(
+      current,
+      paths,
+      dependencies,
+    );
+  } finally {
+    endReconciliation();
+  }
+}
+
+async function reconcileInactivePrReviewSubmission(
+  current: PrReviewRecord,
+  paths: RuntimePaths,
+  dependencies: ReconcilePrReviewSubmissionDependencies,
+) {
+  if (!current.verdict) {
+    throw new Error('The reserved review is missing its submission verdict.');
+  }
+
+  const token = dependencies.token ?? process.env.GITHUB_TOKEN;
+  if (!token) throw new Error('GITHUB_TOKEN is not configured.');
+  const [owner, repo] = splitRepoFullName(current.repoFullName);
+  const [login, reviews] = await Promise.all([
+    (dependencies.fetchLogin ?? fetchGitHubLogin)(token),
+    (dependencies.fetchReviews ?? fetchPullRequestReviews)({
+      token,
+      owner,
+      repo,
+      number: current.prNumber,
+    }),
+  ]);
+  const submittedReview = matchingSubmittedReview(current, login, reviews);
+  if (submittedReview) {
+    const submitted = submitPrReview(
+      {
+        reviewId: current.id,
+        verdict: current.verdict,
+        githubReviewUrl: submittedReview.url,
+      },
+      paths,
+    );
+    if (submitted) {
+      return { outcome: 'submitted' as const, review: submitted };
+    }
+    const settled = readPrReview(current.id, paths);
+    if (settled?.status === 'submitted') {
+      return { outcome: 'submitted' as const, review: settled };
+    }
+    throw new Error('Could not settle the recovered GitHub review locally.');
+  }
+
+  const now = (dependencies.now ?? Date.now)();
+  const reservedAt = Date.parse(current.updatedAt);
+  if (
+    Number.isFinite(reservedAt) &&
+    now - reservedAt < submissionReconcileGraceMs
+  ) {
+    return { outcome: 'pending' as const, review: current };
+  }
+
+  const released = releasePrReviewSubmission(
+    { reviewId: current.id, headSha: current.headSha },
+    paths,
+  );
+  if (released) return { outcome: 'ready' as const, review: released };
+  const settled = readPrReview(current.id, paths);
+  if (settled) return { outcome: 'unchanged' as const, review: settled };
+  throw new Error('Could not release the interrupted submission locally.');
+}
+
 export function recentPrReviews(paths = runtimePaths()) {
   const submittedSince = new Date(
     Date.now() - 7 * 24 * 60 * 60 * 1000,
   ).toISOString();
   return listPrReviews(paths, { submittedSince });
+}
+
+function matchingSubmittedReview(
+  current: PrReviewRecord,
+  login: string,
+  reviews: GitHubPullRequestReview[],
+) {
+  const reservedAt = Date.parse(current.updatedAt);
+  const earliestSubmittedAt = Number.isFinite(reservedAt)
+    ? Math.floor(reservedAt / 1_000) * 1_000
+    : 0;
+  const expectedState = githubReviewState(current.verdict);
+  return reviews
+    .filter((review) => {
+      const submittedAt = review.submittedAt
+        ? Date.parse(review.submittedAt)
+        : Number.NaN;
+      return (
+        review.authorLogin?.toLowerCase() === login.toLowerCase() &&
+        review.commitId === current.headSha &&
+        review.state === expectedState &&
+        Number.isFinite(submittedAt) &&
+        submittedAt >= earliestSubmittedAt
+      );
+    })
+    .sort(
+      (left, right) =>
+        Date.parse(right.submittedAt ?? '') -
+        Date.parse(left.submittedAt ?? ''),
+    )[0];
+}
+
+function githubReviewState(verdict: PrReviewVerdict | null) {
+  if (verdict === 'approve') return 'APPROVED';
+  if (verdict === 'request-changes') return 'CHANGES_REQUESTED';
+  return 'COMMENTED';
+}
+
+function splitRepoFullName(repoFullName: string): [string, string] {
+  const [owner, repo, ...rest] = repoFullName.split('/');
+  if (!owner || !repo || rest.length > 0) {
+    throw new Error(`Invalid GitHub repository name: ${repoFullName}`);
+  }
+  return [owner, repo];
 }
 
 function upsertReviewingRecord(
@@ -282,9 +482,9 @@ function upsertReviewingRecord(
     input.target.number,
     paths,
   );
-  if (existing?.status === 'reviewing') {
+  if (existing?.status === 'reviewing' || existing?.status === 'submitting') {
     throw new Error(
-      `A review is already in progress for ${repoFullName}#${input.target.number}.`,
+      `A review is already ${existing.status === 'submitting' ? 'being submitted' : 'in progress'} for ${repoFullName}#${input.target.number}.`,
     );
   }
   const id = existing?.id ?? randomUUID();

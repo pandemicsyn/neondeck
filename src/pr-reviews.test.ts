@@ -3,9 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  beginPrReviewSubmissionAttempt,
   completePrReview,
   failPrReview,
   readPrReviewForTarget,
+  reconcilePrReviewSubmission,
+  releasePrReviewSubmission,
+  reservePrReviewSubmission,
   startPrReview,
   submitPrReview,
   subscribePrReviewEvents,
@@ -121,10 +125,19 @@ describe('durable PR reviews', () => {
       ),
     ).toBeNull();
 
-    const submitted = submitPrReview(
+    const reserved = reservePrReviewSubmission(
       {
         repoFullName: 'other/project',
         prNumber: 42,
+        headSha: 'head-1',
+        verdict: 'approve',
+      },
+      paths,
+    );
+    expect(reserved).toMatchObject({ status: 'submitting' });
+    const submitted = submitPrReview(
+      {
+        reviewId: reserved?.id ?? '',
         verdict: 'approve',
         githubReviewUrl: 'https://github.com/other/project/pull/42#review',
       },
@@ -388,7 +401,7 @@ describe('durable PR reviews', () => {
     });
   });
 
-  it('settles a same-head submit if a re-review starts while GitHub responds', async () => {
+  it('reserves a submit against concurrent re-review and can release failures', async () => {
     const paths = await tempPaths();
     const dependencies = {
       resolveTarget: async () => ({
@@ -419,24 +432,227 @@ describe('durable PR reviews', () => {
       },
       paths,
     );
-    await startPrReview({ ref: 'other/project#42', origin: 'panel' }, paths, {
-      ...dependencies,
-      invokeWorkflow: async () => ({ runId: 'submit-race-run-2' }),
-    });
+    const reserved = reservePrReviewSubmission(
+      {
+        repoFullName: 'other/project',
+        prNumber: 42,
+        headSha: 'head-1',
+        verdict: 'comment',
+      },
+      paths,
+    );
+    expect(reserved).toMatchObject({ status: 'submitting' });
+    await expect(
+      startPrReview({ ref: 'other/project#42', origin: 'panel' }, paths, {
+        ...dependencies,
+        invokeWorkflow: async () => ({ runId: 'submit-race-run-2' }),
+      }),
+    ).rejects.toThrow(/being submitted/);
+
+    expect(
+      releasePrReviewSubmission(
+        { reviewId: reserved?.id ?? '', headSha: 'head-1' },
+        paths,
+      ),
+    ).toMatchObject({ status: 'ready', verdict: null });
+    expect(
+      reservePrReviewSubmission(
+        {
+          repoFullName: 'other/project',
+          prNumber: 42,
+          headSha: 'head-1',
+          verdict: 'comment',
+        },
+        paths,
+      ),
+    ).toMatchObject({ status: 'submitting' });
 
     expect(
       submitPrReview(
         {
-          repoFullName: 'other/project',
-          prNumber: 42,
+          reviewId: reserved?.id ?? '',
           verdict: 'comment',
           githubReviewUrl:
             'https://github.com/other/project/pull/42#pullrequestreview-1',
-          headSha: 'head-1',
         },
         paths,
       ),
     ).toMatchObject({ status: 'submitted', verdict: 'comment' });
+  });
+
+  it('reconciles interrupted submissions from GitHub or releases a stale reservation', async () => {
+    const paths = await tempPaths();
+    const dependencies = {
+      resolveTarget: async () => ({
+        repoFullName: 'other/project',
+        owner: 'other',
+        repo: 'project',
+        number: 42,
+      }),
+      fetchDetail: async () => detail('head-1'),
+      invokeWorkflow: async () => ({ runId: 'reconcile-run-1' }),
+    };
+    const started = await startPrReview(
+      { ref: 'other/project#42', origin: 'api' },
+      paths,
+      dependencies,
+    );
+    completePrReview(
+      {
+        reviewId: started.reviewId,
+        runId: started.runId,
+        headSha: 'head-1',
+        reportIds: ['overview'],
+        reviewUrl: started.review.reviewUrl,
+        findingCount: 1,
+        seededCount: 1,
+        reportOnlyCount: 0,
+        reportOnlyFindings: [],
+      },
+      paths,
+    );
+    const reserved = reservePrReviewSubmission(
+      {
+        repoFullName: 'other/project',
+        prNumber: 42,
+        headSha: 'head-1',
+        verdict: 'approve',
+      },
+      paths,
+    );
+    expect(reserved).toMatchObject({
+      status: 'submitting',
+      verdict: 'approve',
+    });
+
+    const recovered = await reconcilePrReviewSubmission(
+      { reviewId: started.reviewId },
+      paths,
+      {
+        token: 'token',
+        fetchLogin: async () => 'reviewer',
+        fetchReviews: async () => [
+          {
+            id: 7,
+            nodeId: 'review-node',
+            state: 'APPROVED',
+            authorLogin: 'Reviewer',
+            submittedAt: reserved?.updatedAt ?? null,
+            commitId: 'head-1',
+            url: 'https://github.com/other/project/pull/42#pullrequestreview-7',
+          },
+        ],
+      },
+    );
+    expect(recovered).toMatchObject({
+      outcome: 'submitted',
+      review: {
+        status: 'submitted',
+        verdict: 'approve',
+        githubReviewUrl:
+          'https://github.com/other/project/pull/42#pullrequestreview-7',
+      },
+    });
+
+    const restarted = await startPrReview(
+      { ref: 'other/project#42', origin: 'panel' },
+      paths,
+      {
+        ...dependencies,
+        invokeWorkflow: async () => ({ runId: 'reconcile-run-2' }),
+      },
+    );
+    completePrReview(
+      {
+        reviewId: restarted.reviewId,
+        runId: restarted.runId,
+        headSha: 'head-1',
+        reportIds: ['overview-2'],
+        reviewUrl: restarted.review.reviewUrl,
+        findingCount: 0,
+        seededCount: 0,
+        reportOnlyCount: 0,
+        reportOnlyFindings: [],
+      },
+      paths,
+    );
+    const secondReservation = reservePrReviewSubmission(
+      {
+        repoFullName: 'other/project',
+        prNumber: 42,
+        headSha: 'head-1',
+        verdict: 'comment',
+      },
+      paths,
+    );
+    const endSubmissionAttempt = beginPrReviewSubmissionAttempt(
+      secondReservation?.id ?? '',
+    );
+    const active = await reconcilePrReviewSubmission(
+      { reviewId: started.reviewId },
+      paths,
+      {
+        token: 'token',
+        now: () => Date.parse(secondReservation?.updatedAt ?? '') + 30_001,
+        fetchLogin: async () => {
+          throw new Error('Active attempts must not query GitHub.');
+        },
+        fetchReviews: async () => {
+          throw new Error('Active attempts must not query GitHub.');
+        },
+      },
+    );
+    expect(active).toMatchObject({
+      outcome: 'pending',
+      review: { status: 'submitting', verdict: 'comment' },
+    });
+    endSubmissionAttempt();
+    let signalFirstLookup!: () => void;
+    const firstLookupStarted = new Promise<void>((resolve) => {
+      signalFirstLookup = resolve;
+    });
+    let allowFirstLookup!: () => void;
+    const firstLookupGate = new Promise<void>((resolve) => {
+      allowFirstLookup = resolve;
+    });
+    const firstRecovery = reconcilePrReviewSubmission(
+      { reviewId: started.reviewId },
+      paths,
+      {
+        token: 'token',
+        now: () => Date.parse(secondReservation?.updatedAt ?? '') + 30_001,
+        fetchLogin: async () => {
+          signalFirstLookup();
+          await firstLookupGate;
+          return 'reviewer';
+        },
+        fetchReviews: async () => [],
+      },
+    );
+    await firstLookupStarted;
+    const concurrentRecovery = await reconcilePrReviewSubmission(
+      { reviewId: started.reviewId },
+      paths,
+      {
+        token: 'token',
+        fetchLogin: async () => {
+          throw new Error('Concurrent recovery must not query GitHub.');
+        },
+        fetchReviews: async () => {
+          throw new Error('Concurrent recovery must not query GitHub.');
+        },
+      },
+    );
+    expect(concurrentRecovery).toMatchObject({
+      outcome: 'pending',
+      review: { status: 'submitting', verdict: 'comment' },
+    });
+    allowFirstLookup();
+    const released = await firstRecovery;
+    expect(released).toMatchObject({
+      outcome: 'ready',
+      review: { status: 'ready', verdict: null },
+    });
   });
 });
 

@@ -1,4 +1,5 @@
-export type PrReviewStatus = 'reviewing' | 'ready' | 'submitted' | 'failed';
+export type PrReviewStatus =
+  'reviewing' | 'ready' | 'submitting' | 'submitted' | 'failed';
 
 export type PrReviewOrigin = 'chat' | 'panel' | 'api';
 

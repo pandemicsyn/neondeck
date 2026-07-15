@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import {
   getPrReviews,
   openPrReviewEventStream,
+  reconcilePrReviewSubmission,
   restartPrReview,
   startPrReview,
   type PrReviewAwaitingItem,
@@ -10,6 +11,7 @@ import {
   type PrReviewsResponse,
 } from '../api';
 import { Badge, Button, EmptyState, ScrollArea } from '../components/ui';
+import { PrReviewArtifactsOverlay } from '../features/pr-review/PrReviewArtifactsOverlay';
 import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
@@ -41,6 +43,15 @@ export const ReviewsPanelPlugin = {
     });
     const restartMutation = useMutation({
       mutationFn: (id: string) => restartPrReview(id),
+      onSuccess(result) {
+        queryClient.setQueryData<PrReviewsResponse>(
+          queryKeys.prReviews,
+          (current) => applyPrReviewChange(current, result.review),
+        );
+      },
+    });
+    const reconcileMutation = useMutation({
+      mutationFn: (id: string) => reconcilePrReviewSubmission(id),
       onSuccess(result) {
         queryClient.setQueryData<PrReviewsResponse>(
           queryKeys.prReviews,
@@ -113,9 +124,15 @@ export const ReviewsPanelPlugin = {
             </Button>
           </form>
         ) : null}
-        {startMutation.error || restartMutation.error ? (
+        {startMutation.error ||
+        restartMutation.error ||
+        reconcileMutation.error ? (
           <p className="border-b border-accent/60 px-3 py-1.5 font-mono text-[10px] text-accent">
-            {queryErrorMessage(startMutation.error ?? restartMutation.error)}
+            {queryErrorMessage(
+              startMutation.error ??
+                restartMutation.error ??
+                reconcileMutation.error,
+            )}
           </p>
         ) : null}
         {isLoading ? (
@@ -154,7 +171,12 @@ export const ReviewsPanelPlugin = {
                 title="IN PROGRESS"
               >
                 {data.groups.inProgress.map((review) => (
-                  <ReviewRow key={review.id} review={review} />
+                  <ReviewRow
+                    key={review.id}
+                    onReconcile={(id) => reconcileMutation.mutate(id)}
+                    pending={reconcileMutation.isPending}
+                    review={review}
+                  />
                 ))}
               </ReviewSection>
               <ReviewSection
@@ -254,14 +276,19 @@ function AwaitingRow({
               ? `Neon draft ready · ${review.seededCount}`
               : review?.status === 'reviewing'
                 ? 'Neon is reviewing…'
-                : headAdvanced
-                  ? 'New commits since your review'
-                  : 'No Neon draft yet'}
+                : review?.status === 'submitting'
+                  ? 'Submitting review to GitHub…'
+                  : headAdvanced
+                    ? 'New commits since your review'
+                    : 'No Neon draft yet'}
           </p>
         </div>
         {review?.status === 'ready' && !headAdvanced ? (
           <OpenReviewButton review={review} />
-        ) : review && review.status !== 'reviewing' && headAdvanced ? (
+        ) : review &&
+          review.status !== 'reviewing' &&
+          review.status !== 'submitting' &&
+          headAdvanced ? (
           <Button
             disabled={pending}
             onClick={() => onRestart(review.id)}
@@ -269,8 +296,9 @@ function AwaitingRow({
           >
             re-review
           </Button>
-        ) : review?.status === 'reviewing' ? (
-          <Badge>reviewing</Badge>
+        ) : review?.status === 'reviewing' ||
+          review?.status === 'submitting' ? (
+          <Badge>{review.status}</Badge>
         ) : (
           <Button
             disabled={pending}
@@ -286,14 +314,17 @@ function AwaitingRow({
 }
 
 function ReviewRow({
+  onReconcile,
   onRestart,
   pending = false,
   review,
 }: {
+  onReconcile?: (id: string) => void;
   onRestart?: (id: string) => void;
   pending?: boolean;
   review: PrReviewRecord;
 }) {
+  const [artifactIndex, setArtifactIndex] = useState<number | null>(null);
   return (
     <article className="px-3 py-2">
       <div className="flex items-start justify-between gap-3">
@@ -317,19 +348,18 @@ function ReviewRow({
       </div>
       <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1.5 font-mono text-[10px]">
         {review.reportIds.map((reportId, index) => (
-          <a
+          <button
             className="border border-line px-1.5 py-1 text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-            href={`/reports/${encodeURIComponent(reportId)}`}
             key={reportId}
-            rel="noreferrer"
-            target="_blank"
+            onClick={() => setArtifactIndex(index)}
+            type="button"
           >
             {index === 0
               ? 'overview'
               : index === 1
                 ? 'issues'
                 : `report ${index + 1}`}
-          </a>
+          </button>
         ))}
         {review.status === 'ready' || review.status === 'submitted' ? (
           <OpenReviewButton review={review} />
@@ -343,7 +373,25 @@ function ReviewRow({
             retry
           </Button>
         ) : null}
+        {review.status === 'submitting' && onReconcile ? (
+          <Button
+            disabled={pending}
+            onClick={() => onReconcile(review.id)}
+            type="button"
+          >
+            {pending ? 'checking' : 'recover submission'}
+          </Button>
+        ) : null}
       </div>
+      {artifactIndex !== null ? (
+        <PrReviewArtifactsOverlay
+          initialReportIndex={artifactIndex}
+          onClose={() => setArtifactIndex(null)}
+          reportIds={review.reportIds}
+          reviewLabel={`${review.repoFullName}#${review.prNumber}`}
+          reviewUrl={review.reviewUrl}
+        />
+      ) : null}
     </article>
   );
 }
@@ -363,6 +411,7 @@ function OpenReviewButton({ review }: { review: PrReviewRecord }) {
 
 function reviewStatusLine(review: PrReviewRecord) {
   if (review.status === 'reviewing') return 'reviewing…';
+  if (review.status === 'submitting') return 'submitting to GitHub…';
   if (review.status === 'failed')
     return review.failureMessage ?? 'Review failed.';
   if (review.status === 'submitted') {
@@ -394,7 +443,9 @@ export function applyPrReviewChange(
     items,
     groups: {
       awaiting,
-      inProgress: items.filter((item) => item.status === 'reviewing'),
+      inProgress: items.filter(
+        (item) => item.status === 'reviewing' || item.status === 'submitting',
+      ),
       needsAction: items.filter(
         (item) => item.status === 'ready' || item.status === 'failed',
       ),
