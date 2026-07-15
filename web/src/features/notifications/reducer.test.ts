@@ -16,7 +16,7 @@ describe('toast reducer and policy', () => {
 
     const ready = reduce(info, event('created', note({ id: 'ready' })));
     expect(ready.items).toHaveLength(1);
-    expect(ready.items[0]?.expiresAt).toBe(7_000);
+    expect(ready.items[0]?.expiresAt).toBe(3_601_000);
   });
 
   it('deduplicates creation and reconciles content in place', () => {
@@ -45,7 +45,7 @@ describe('toast reducer and policy', () => {
     expect(reconciled.items[0]?.notification.title).toBe('Updated');
     expect(reconciled.items[0]?.notification.occurrenceCount).toBe(3);
     expect(reconciled.items[0]?.admittedAt).toBe(1_000);
-    expect(reconciled.items[0]?.expiresAt).toBe(9_000);
+    expect(reconciled.items[0]?.expiresAt).toBe(3_603_000);
   });
 
   it('admits unread qualifying reconciliations and rejects read ones', () => {
@@ -166,6 +166,41 @@ describe('toast reducer and policy', () => {
       readyDurationMs: 1_000,
       maxVisible: 3,
     });
+
+    expect(
+      resolveToastConfig({
+        enabled: true,
+        minimumLevel: 'ready',
+        readyDurationMs: 0,
+        maxVisible: 3,
+      }).readyDurationMs,
+    ).toBe(0);
+
+    expect(
+      resolveToastConfig({
+        enabled: true,
+        minimumLevel: 'ready',
+        readyDurationMs: 172_800_000,
+        maxVisible: 3,
+      }).readyDurationMs,
+    ).toBe(86_400_000);
+  });
+
+  it('keeps ready notifications until dismissed when the duration is zero', () => {
+    const persistentConfig = resolveToastConfig({
+      enabled: true,
+      minimumLevel: 'ready',
+      readyDurationMs: 0,
+      maxVisible: 3,
+    });
+    const persistent = toastReducer(initialToastState, {
+      type: 'notification-event',
+      event: event('created', note({ id: 'persistent-ready' })),
+      config: persistentConfig,
+      now: 1_000,
+    });
+
+    expect(persistent.items[0]?.expiresAt).toBeNull();
   });
 });
 
