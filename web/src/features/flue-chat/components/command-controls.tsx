@@ -160,14 +160,15 @@ function ReviewCommandResult({ review }: { review: PrReviewRecord }) {
           </a>
         )}
       </div>
-      <PrReviewArtifactsOverlay
-        initialReportIndex={artifactIndex ?? 0}
-        onClose={() => setArtifactIndex(null)}
-        open={artifactIndex !== null}
-        reportIds={review.reportIds}
-        reviewLabel={`${review.repoFullName}#${review.prNumber}`}
-        reviewUrl={review.reviewUrl}
-      />
+      {artifactIndex !== null ? (
+        <PrReviewArtifactsOverlay
+          initialReportIndex={artifactIndex}
+          onClose={() => setArtifactIndex(null)}
+          reportIds={review.reportIds}
+          reviewLabel={`${review.repoFullName}#${review.prNumber}`}
+          reviewUrl={review.reviewUrl}
+        />
+      ) : null}
     </div>
   );
 }

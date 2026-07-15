@@ -269,20 +269,15 @@ export function releasePrReviewSubmission(
 
 export function submitPrReview(
   input: {
-    repoFullName: string;
-    prNumber: number;
+    reviewId: string;
     verdict: PrReviewVerdict;
     githubReviewUrl: string | null;
-    headSha?: string | null;
   },
   paths = runtimePaths(),
 ) {
-  const current = readPrReviewForTarget(
-    input.repoFullName,
-    input.prNumber,
-    paths,
-  );
+  const current = readPrReview(input.reviewId, paths);
   if (!current) return null;
+  if (current.status === 'submitted') return current;
   const now = new Date().toISOString();
   const database = openDb(paths.neondeckDatabase);
   let changed = false;
@@ -292,18 +287,9 @@ export function submitPrReview(
         `UPDATE pr_reviews
          SET status = 'submitted', verdict = ?, github_review_url = ?,
              submitted_at = ?, updated_at = ?
-         WHERE id = ? AND status = 'submitting'
-           AND (? IS NULL OR head_sha = ?);`,
+         WHERE id = ? AND status = 'submitting';`,
       )
-      .run(
-        input.verdict,
-        input.githubReviewUrl,
-        now,
-        now,
-        current.id,
-        input.headSha ?? null,
-        input.headSha ?? null,
-      );
+      .run(input.verdict, input.githubReviewUrl, now, now, current.id);
     changed = result.changes === 1;
   } finally {
     database.close();

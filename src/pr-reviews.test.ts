@@ -123,20 +123,18 @@ describe('durable PR reviews', () => {
       ),
     ).toBeNull();
 
-    expect(
-      reservePrReviewSubmission(
-        {
-          repoFullName: 'other/project',
-          prNumber: 42,
-          headSha: 'head-1',
-        },
-        paths,
-      ),
-    ).toMatchObject({ status: 'submitting' });
-    const submitted = submitPrReview(
+    const reserved = reservePrReviewSubmission(
       {
         repoFullName: 'other/project',
         prNumber: 42,
+        headSha: 'head-1',
+      },
+      paths,
+    );
+    expect(reserved).toMatchObject({ status: 'submitting' });
+    const submitted = submitPrReview(
+      {
+        reviewId: reserved?.id ?? '',
         verdict: 'approve',
         githubReviewUrl: 'https://github.com/other/project/pull/42#review',
       },
@@ -467,12 +465,10 @@ describe('durable PR reviews', () => {
     expect(
       submitPrReview(
         {
-          repoFullName: 'other/project',
-          prNumber: 42,
+          reviewId: reserved?.id ?? '',
           verdict: 'comment',
           githubReviewUrl:
             'https://github.com/other/project/pull/42#pullrequestreview-1',
-          headSha: 'head-1',
         },
         paths,
       ),

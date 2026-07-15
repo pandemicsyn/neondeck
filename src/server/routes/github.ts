@@ -313,6 +313,7 @@ export function createGitHubRoutes(paths: RuntimePaths) {
       }
     };
 
+    let githubAccepted = false;
     try {
       const savedDraftResult = await putGitHubPrReviewDraft(
         target.input,
@@ -362,24 +363,24 @@ export function createGitHubRoutes(paths: RuntimePaths) {
         releaseReservation();
         return c.json(result, 400);
       }
+      githubAccepted = true;
 
       const data = objectField(result.data);
       const draft = objectField(data.draft);
       const review = objectField(data.review);
-      const submitted = durableReview
+      const submittedVerdict = prReviewVerdict(draft.verdict) ?? verdict;
+      const submitted = reserved
         ? submitPrReview(
             {
-              repoFullName: target.input.repo,
-              prNumber: target.input.prNumber,
-              verdict,
+              reviewId: reserved.id,
+              verdict: submittedVerdict,
               githubReviewUrl:
                 typeof review.url === 'string' ? review.url : null,
-              headSha: typeof draft.headSha === 'string' ? draft.headSha : null,
             },
             paths,
           )
         : null;
-      if (durableReview && !submitted) {
+      if (reserved && !submitted) {
         return c.json(
           {
             ok: false,
@@ -394,7 +395,7 @@ export function createGitHubRoutes(paths: RuntimePaths) {
       }
       return c.json(result, 200);
     } catch (error) {
-      releaseReservation();
+      if (!githubAccepted) releaseReservation();
       throw error;
     }
   });
@@ -509,6 +510,14 @@ function objectField(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function prReviewVerdict(value: unknown) {
+  return value === 'comment' ||
+    value === 'approve' ||
+    value === 'request-changes'
+    ? value
+    : null;
 }
 
 function prTargetFromParams(owner: string, repo: string, numberText: string) {

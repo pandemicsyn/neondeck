@@ -4,7 +4,6 @@ import { createPortal } from 'react-dom';
 type PrReviewArtifactsOverlayProps = {
   initialReportIndex?: number;
   onClose: () => void;
-  open: boolean;
   reportIds: string[];
   reviewLabel: string;
   reviewUrl: string;
@@ -13,26 +12,41 @@ type PrReviewArtifactsOverlayProps = {
 export function PrReviewArtifactsOverlay({
   initialReportIndex = 0,
   onClose,
-  open,
   reportIds,
   reviewLabel,
   reviewUrl,
 }: PrReviewArtifactsOverlayProps) {
   const [activeIndex, setActiveIndex] = useState(initialReportIndex);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const [stalledKey, setStalledKey] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!open) return;
     setActiveIndex(Math.min(initialReportIndex, reportIds.length - 1));
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [initialReportIndex, onClose, open, reportIds.length]);
+  }, [initialReportIndex, onClose, reportIds.length]);
 
-  if (!open || reportIds.length === 0) return null;
-  const reportId = reportIds[Math.max(0, activeIndex)] ?? reportIds[0];
+  const reportId = reportIds[Math.max(0, activeIndex)] ?? reportIds[0] ?? null;
+  const loadKey = reportId ? `${reportId}:${loadAttempt}` : null;
+
+  useEffect(() => {
+    if (!loadKey) return;
+    const timeout = window.setTimeout(() => setStalledKey(loadKey), 6_000);
+    return () => window.clearTimeout(timeout);
+  }, [loadKey]);
+
+  if (!reportId || !loadKey) return null;
   const reportUrl = `/reports/${encodeURIComponent(reportId)}`;
+  const loadState =
+    loadedKey === loadKey
+      ? 'loaded'
+      : stalledKey === loadKey
+        ? 'stalled'
+        : 'loading';
 
   return createPortal(
     <dialog
@@ -100,12 +114,57 @@ export function PrReviewArtifactsOverlay({
             </button>
           </div>
         </header>
-        <iframe
-          className="min-h-0 flex-1 border-0 bg-canvas"
-          key={reportId}
-          src={reportUrl}
-          title={`${reportLabel(activeIndex)} report for ${reviewLabel}`}
-        />
+        <div className="relative min-h-0 flex-1 bg-canvas">
+          <iframe
+            className="h-full w-full border-0 bg-canvas"
+            key={loadKey}
+            onLoad={() => setLoadedKey(loadKey)}
+            src={reportUrl}
+            title={`${reportLabel(activeIndex)} report for ${reviewLabel}`}
+          />
+          {loadState !== 'loaded' ? (
+            <output
+              aria-live="polite"
+              className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-canvas px-4 text-center"
+            >
+              <div className="miami-accent h-1 w-12" />
+              <p className="text-[13px] font-semibold text-ink">
+                {loadState === 'stalled'
+                  ? `${reportLabel(activeIndex)} is taking longer than expected`
+                  : `Loading ${reportLabel(activeIndex)}`}
+              </p>
+              <p className="max-w-[38ch] text-xs leading-5 text-muted">
+                {loadState === 'stalled'
+                  ? 'The local report has not finished opening. Retry it here or open it in a separate window.'
+                  : 'Opening the local review report.'}
+              </p>
+              {loadState === 'stalled' ? (
+                <div className="mt-1 flex items-center gap-2 font-mono text-[10px]">
+                  <button
+                    className="border border-primary px-2 py-1 text-primary"
+                    onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+                    type="button"
+                  >
+                    retry
+                  </button>
+                  <button
+                    className="border border-line px-2 py-1 text-muted hover:border-primary hover:text-primary"
+                    onClick={() =>
+                      window.open(
+                        reportUrl,
+                        `neondeck-pr-report-${reportId}`,
+                        'popup,width=1180,height=860',
+                      )
+                    }
+                    type="button"
+                  >
+                    pop out
+                  </button>
+                </div>
+              ) : null}
+            </output>
+          ) : null}
+        </div>
       </section>
     </dialog>,
     document.body,
