@@ -20,9 +20,13 @@ export async function getReports(
   return response;
 }
 
-export async function getReport(id: string) {
+export async function getReport(
+  id: string,
+  options: { signal?: AbortSignal } = {},
+) {
   const response = await getJson<ReportResponse>(
     `/api/reports/${encodeURIComponent(id)}`,
+    options,
   );
   if (!response.ok) throw new Error(response.message ?? 'Report unavailable.');
   return response;

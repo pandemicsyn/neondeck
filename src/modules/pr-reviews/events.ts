@@ -31,7 +31,6 @@ export function subscribePrReviewEvents(listener: PrReviewEventListener) {
 
 export function formatPrReviewServerSentEvent(event: PrReviewEvent) {
   return [
-    `id: ${event.id}:${event.changedAt}`,
     'event: review-change',
     `data: ${JSON.stringify(event)}`,
     '',

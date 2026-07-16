@@ -5,6 +5,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DashboardConfig, NotificationChangeEvent } from '../../api';
+import { dashboardEventHub } from '../../api/event-hub';
 import { queryKeys } from '../../lib/query';
 import { dispatchPluginNavigation, NotificationController } from './controller';
 
@@ -27,6 +28,7 @@ describe('NotificationController integration', () => {
 
   afterEach(() => {
     act(() => root.unmount());
+    dashboardEventHub.close();
     container.remove();
     document
       .querySelectorAll('.notification-toast-viewport')

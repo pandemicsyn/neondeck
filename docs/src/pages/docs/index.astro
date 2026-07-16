@@ -65,9 +65,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           Corsair Xeneon Edge to custom layouts for the size and constraints you
           want. Dashboard layout is driven by runtime JSON config, measured
           panel size, and typed actions Neon can use to adapt the surface. Local
-          dashboard surfaces subscribe to
-          <code>/api/events/config</code> so config actions and explicit config reloads
-          refresh affected panels without a browser reload.
+          dashboard surfaces subscribe to one multiplexed
+          <code>/api/events</code> stream whose named config, notification, session,
+          and review events refresh affected panels without a browser reload.
         </p>
 
         <h2 id="runtime-home">Runtime home</h2>

@@ -203,8 +203,8 @@ describe('app API safety routes', () => {
     });
   });
 
-  it('serves config events as a local server-sent event stream', async () => {
-    const response = await app.request('http://localhost/api/events/config', {
+  it('serves app events as one local server-sent event stream', async () => {
+    const response = await app.request('http://localhost/api/events', {
       headers: { host: 'localhost' },
     });
 
@@ -240,7 +240,7 @@ describe('app API safety routes', () => {
     publishConfigEvent(previousEvent);
     publishConfigEvent(missedEvent);
 
-    const response = await app.request('http://localhost/api/events/config', {
+    const response = await app.request('http://localhost/api/events', {
       headers: {
         host: 'localhost',
         'last-event-id': previousEvent.id,
@@ -266,25 +266,7 @@ describe('app API safety routes', () => {
     await reader!.cancel();
   });
 
-  it('serves notification events as a local server-sent event stream', async () => {
-    const response = await app.request(
-      'http://localhost/api/events/notifications',
-      {
-        headers: { host: 'localhost' },
-      },
-    );
-
-    expect(response.status).toBe(200);
-    expect(response.headers.get('content-type')).toContain('text/event-stream');
-
-    const reader = response.body?.getReader();
-    expect(reader).toBeDefined();
-    const chunk = await reader!.read();
-    expect(new TextDecoder().decode(chunk.value)).toContain(': connected');
-    await reader!.cancel();
-  });
-
-  it('serves durable PR reviews and their local event stream', async () => {
+  it('serves durable PR reviews', async () => {
     const listResponse = await app.request('http://localhost/api/reviews', {
       headers: { host: 'localhost' },
     });
@@ -297,35 +279,6 @@ describe('app API safety routes', () => {
       ok: true,
       groups: { inProgress: [], needsAction: [] },
     });
-
-    const eventResponse = await app.request(
-      'http://localhost/api/events/reviews',
-      { headers: { host: 'localhost' } },
-    );
-    expect(eventResponse.status).toBe(200);
-    expect(eventResponse.headers.get('content-type')).toContain(
-      'text/event-stream',
-    );
-    const reader = eventResponse.body?.getReader();
-    expect(reader).toBeDefined();
-    const chunk = await reader!.read();
-    expect(new TextDecoder().decode(chunk.value)).toContain(': connected');
-    await reader!.cancel();
-  });
-
-  it('serves session events as a local server-sent event stream', async () => {
-    const response = await app.request('http://localhost/api/events/sessions', {
-      headers: { host: 'localhost' },
-    });
-
-    expect(response.status).toBe(200);
-    expect(response.headers.get('content-type')).toContain('text/event-stream');
-
-    const reader = response.body?.getReader();
-    expect(reader).toBeDefined();
-    const chunk = await reader!.read();
-    expect(new TextDecoder().decode(chunk.value)).toContain(': connected');
-    await reader!.cancel();
   });
 
   it('rejects cross-origin app API mutations', async () => {
