@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import {
   markNotificationRead,
   resolveExecutionApproval,
@@ -36,6 +36,7 @@ export function RuntimeSection({
   title: string;
   tone: 'primary' | 'accent' | 'violet';
 }) {
+  const headingId = useId();
   const toneClass =
     tone === 'primary'
       ? 'text-primary'
@@ -44,9 +45,14 @@ export function RuntimeSection({
         : 'text-violet';
 
   return (
-    <section>
+    <section aria-labelledby={headingId}>
       <div className="mb-1.5 flex items-center justify-between font-mono text-[10px] tracking-[0.12em]">
-        <span className={toneClass}>{title}</span>
+        <h3
+          className={`m-0 text-[inherit] font-[inherit] ${toneClass}`}
+          id={headingId}
+        >
+          {title}
+        </h3>
         <span className="text-muted">{count}</span>
       </div>
       {children}

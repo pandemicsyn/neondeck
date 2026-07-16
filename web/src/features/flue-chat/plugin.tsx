@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import {
   archiveChatSession,
   createChatSession,
@@ -39,6 +39,8 @@ export const FlueChatPlugin = {
     const [renaming, setRenaming] = useState(false);
     const [referenceDismissed, setReferenceDismissed] = useState(false);
     const [referenceDraft, setReferenceDraft] = useState<string>();
+    const renameFormId = useId();
+    const renameInputId = useId();
     const {
       data: sessionState,
       error: sessionError,
@@ -222,78 +224,85 @@ export const FlueChatPlugin = {
     );
 
     return (
-      <div className="flex h-full min-h-0 flex-col">
-        <header className="panel-header flex h-8 items-center justify-between border-b border-line px-4 font-mono text-[11px] tracking-[0.14em]">
-          <span className="flex items-center gap-2 text-primary">
+      <div className="flue-chat-panel flex h-full min-h-0 flex-col">
+        <header className="flue-chat-header panel-header border-b border-line px-4 font-mono text-[11px] tracking-[0.14em]">
+          <h2 className="flue-chat-title m-0 flex items-center gap-2 text-[inherit] font-[inherit] text-primary">
             <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />
             FLUE AGENT · {config.agentName}
-          </span>
-          <div className="flex min-w-0 items-center gap-2">
-            <SessionSelect
-              activeSessionId={activeSession?.id}
-              disabled={switchSessionMutation.isPending}
-              onSelect={switchToSession}
-              sessions={sessions}
-            />
-            <Button
-              className="h-5 border-transparent bg-transparent px-1.5 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
-              disabled={!activeRecord || sessionMetadataMutation.isPending}
-              onClick={() => setRenaming((value) => !value)}
-              type="button"
-            >
-              {renaming ? 'Cancel' : 'Rename'}
-            </Button>
-            <Button
-              className="h-5 border-transparent bg-transparent px-1.5 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
-              disabled={!activeRecord || sessionMetadataMutation.isPending}
-              onClick={() =>
-                activeRecord &&
-                sessionMetadataMutation.mutate({
-                  action: 'pin',
-                  session: activeRecord,
-                })
-              }
-              type="button"
-            >
-              {activeRecord?.pinned ? 'Unpin' : 'Pin'}
-            </Button>
-            <Button
-              className="h-5 border-transparent bg-transparent px-1.5 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
-              disabled={!activeRecord || sessionMetadataMutation.isPending}
-              onClick={() =>
-                activeRecord &&
-                sessionMetadataMutation.mutate({
-                  action: activeRecord.archivedAt ? 'restore' : 'archive',
-                  session: activeRecord,
-                })
-              }
-              type="button"
-            >
-              {activeRecord?.archivedAt ? 'Restore' : 'Archive'}
-            </Button>
-            <Button
-              className="h-5 border-transparent bg-transparent px-1.5 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
-              disabled={!activeRecord || referenceMutation.isPending}
-              onClick={() =>
-                activeRecord && referenceMutation.mutate(activeRecord)
-              }
-              type="button"
-            >
-              {referenceMutation.isPending ? 'Ref...' : 'Ref'}
-            </Button>
-            <Button
-              className="h-5 border-transparent bg-transparent px-2 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
-              disabled={startSessionMutation.isPending}
-              onClick={() => void startFreshSession()}
-              type="button"
-            >
-              {startSessionMutation.isPending ? 'Starting' : 'New'}
-            </Button>
-            <span
-              className={sessionState?.stale ? 'text-accent' : 'text-muted'}
-            >
-              {sessionState?.stale ? 'stale ctx' : 'durable ctx'}
-            </span>
+          </h2>
+          <div className="flue-chat-controls">
+            <div className="flue-chat-primary-controls">
+              <SessionSelect
+                activeSessionId={activeSession?.id}
+                disabled={switchSessionMutation.isPending}
+                onSelect={switchToSession}
+                sessions={sessions}
+              />
+              <Button
+                className="h-5 border-transparent bg-transparent px-2 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
+                disabled={startSessionMutation.isPending}
+                onClick={() => void startFreshSession()}
+                title="Start a new chat session"
+                type="button"
+              >
+                {startSessionMutation.isPending ? 'Starting' : 'New'}
+              </Button>
+              <span
+                className={sessionState?.stale ? 'text-accent' : 'text-muted'}
+              >
+                {sessionState?.stale ? 'stale ctx' : 'durable ctx'}
+              </span>
+            </div>
+            <div className="flue-chat-secondary-controls">
+              <Button
+                aria-controls={renameFormId}
+                aria-expanded={renaming}
+                className="h-5 border-transparent bg-transparent px-1.5 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
+                disabled={!activeRecord || sessionMetadataMutation.isPending}
+                onClick={() => setRenaming((value) => !value)}
+                type="button"
+              >
+                {renaming ? 'Cancel' : 'Rename'}
+              </Button>
+              <Button
+                className="h-5 border-transparent bg-transparent px-1.5 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
+                disabled={!activeRecord || sessionMetadataMutation.isPending}
+                onClick={() =>
+                  activeRecord &&
+                  sessionMetadataMutation.mutate({
+                    action: 'pin',
+                    session: activeRecord,
+                  })
+                }
+                type="button"
+              >
+                {activeRecord?.pinned ? 'Unpin' : 'Pin'}
+              </Button>
+              <Button
+                className="h-5 border-transparent bg-transparent px-1.5 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
+                disabled={!activeRecord || sessionMetadataMutation.isPending}
+                onClick={() =>
+                  activeRecord &&
+                  sessionMetadataMutation.mutate({
+                    action: activeRecord.archivedAt ? 'restore' : 'archive',
+                    session: activeRecord,
+                  })
+                }
+                type="button"
+              >
+                {activeRecord?.archivedAt ? 'Restore' : 'Archive'}
+              </Button>
+              <Button
+                className="h-5 border-transparent bg-transparent px-1.5 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
+                disabled={!activeRecord || referenceMutation.isPending}
+                onClick={() =>
+                  activeRecord && referenceMutation.mutate(activeRecord)
+                }
+                type="button"
+              >
+                {referenceMutation.isPending ? 'Ref...' : 'Ref'}
+              </Button>
+            </div>
           </div>
         </header>
         {sessionError ||
@@ -302,7 +311,10 @@ export const FlueChatPlugin = {
         switchSessionMutation.error ||
         sessionMetadataMutation.error ||
         referenceMutation.error ? (
-          <div className="border-b border-accent/60 bg-soft px-4 py-1.5 text-[11px] text-accent">
+          <div
+            className="border-b border-accent/60 bg-soft px-4 py-1.5 text-[11px] text-accent"
+            role="alert"
+          >
             {queryErrorMessage(
               sessionError ??
                 sessionIndexError ??
@@ -316,15 +328,19 @@ export const FlueChatPlugin = {
         {renaming && activeRecord ? (
           <form
             className="flex items-center gap-2 border-b border-line bg-field px-4 py-1.5 font-mono text-[10.5px]"
+            id={renameFormId}
             onSubmit={(event) => {
               event.preventDefault();
               renameActiveSession();
             }}
           >
-            <span className="text-muted">title</span>
+            <label className="text-muted" htmlFor={renameInputId}>
+              title
+            </label>
             <input
               className="min-w-0 flex-1 border border-line bg-panel px-2 py-1 text-ink outline-none focus:border-primary"
               disabled={sessionMetadataMutation.isPending}
+              id={renameInputId}
               onChange={(event) => setRenameDraft(event.target.value)}
               value={renameDraft}
             />
@@ -339,7 +355,10 @@ export const FlueChatPlugin = {
         ) : null}
         {activeRecord ? <LinkedContextStrip session={activeRecord} /> : null}
         {showReferenceNotice && referenceMutation.data?.session ? (
-          <div className="flex items-center justify-between gap-3 border-b border-line bg-soft px-4 py-1.5 text-[11px] text-muted">
+          <output
+            aria-live="polite"
+            className="flex items-center justify-between gap-3 border-b border-line bg-soft px-4 py-1.5 text-[11px] text-muted"
+          >
             <span className="min-w-0 truncate">
               Reference ready · {referenceMutation.data.session.id} ·{' '}
               {referenceMutation.data.session.summary ??
@@ -352,7 +371,7 @@ export const FlueChatPlugin = {
             >
               Dismiss
             </Button>
-          </div>
+          </output>
         ) : null}
         <FlueChatSessionView
           activeRecord={activeRecord}

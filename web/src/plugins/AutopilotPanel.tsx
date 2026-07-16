@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { lazy, Suspense, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useId, useState, type ReactNode } from 'react';
 import {
   getAutopilotState,
   getAutopilotRecoveryOptions,
@@ -86,12 +86,19 @@ export const AutopilotPanelPlugin = {
         <EmptyState
           title="Autopilot unavailable"
           detail={queryErrorMessage(error)}
+          tone="alert"
         />
       );
     }
 
     if (!data) {
-      return <EmptyState title="Autopilot unavailable" detail="No data." />;
+      return (
+        <EmptyState
+          title="Autopilot unavailable"
+          detail="No data."
+          tone="alert"
+        />
+      );
     }
 
     return <AutopilotView config={config} state={data} />;
@@ -116,7 +123,9 @@ function AutopilotView({
   return (
     <div className="autopilot-panel flex h-full min-h-0 flex-col">
       <header className="panel-header flex h-8 items-center justify-between border-b border-line px-3 font-mono text-[10.5px] tracking-[0.12em]">
-        <span className="text-primary">AUTOPILOT</span>
+        <h2 className="m-0 text-[inherit] font-[inherit] text-primary">
+          AUTOPILOT
+        </h2>
         <div className="flex items-center gap-1.5">
           <Badge>{state.modeLabels[state.policies.global.mode]}</Badge>
           <Badge>{state.summary.queuedItems} queue</Badge>
@@ -125,7 +134,7 @@ function AutopilotView({
       <NeedsAttentionBanner state={state} />
       <ScrollArea className="flex-1">
         <div className="autopilot-grid grid gap-2 p-3">
-          <section className="min-w-0 space-y-2">
+          <div className="min-w-0 space-y-2">
             <SummaryStrip state={state} />
             <PanelSection
               count={state.queue.length}
@@ -164,8 +173,8 @@ function AutopilotView({
                 />
               ))}
             </PanelSection>
-          </section>
-          <section className="min-w-0 space-y-2">
+          </div>
+          <div className="min-w-0 space-y-2">
             <PolicyBlock
               repoPolicies={repoPolicies}
               state={state}
@@ -203,7 +212,7 @@ function AutopilotView({
                 </p>
               ))}
             </PanelSection>
-          </section>
+          </div>
         </div>
       </ScrollArea>
     </div>
@@ -269,10 +278,13 @@ function PanelSection({
   empty: string;
   title: string;
 }) {
+  const headingId = useId();
   return (
-    <section>
+    <section aria-labelledby={headingId}>
       <div className="mb-1 flex items-center justify-between font-mono text-[10px] tracking-[0.12em] text-muted">
-        <span>{title.toUpperCase()}</span>
+        <h3 className="m-0 text-[inherit] font-[inherit]" id={headingId}>
+          {title.toUpperCase()}
+        </h3>
         <span>{count}</span>
       </div>
       <div className="space-y-1.5">
@@ -480,12 +492,18 @@ function PreparedDiffRecoveryControls({
         </Button>
       ))}
       {mutation.data ? (
-        <p className="basis-full text-[10px] leading-4 text-muted">
+        <output
+          aria-live="polite"
+          className="block basis-full text-[10px] leading-4 text-muted"
+        >
           {mutation.data.message}
-        </p>
+        </output>
       ) : null}
       {mutation.error ? (
-        <p className="basis-full text-[10px] leading-4 text-accent">
+        <p
+          className="basis-full text-[10px] leading-4 text-accent"
+          role="alert"
+        >
           {queryErrorMessage(mutation.error)}
         </p>
       ) : null}
@@ -664,14 +682,17 @@ function ApprovalRow({
         </span>
       </div>
       {mutation.error ? (
-        <p className="mt-1 text-[10px] leading-4 text-accent">
+        <p className="mt-1 text-[10px] leading-4 text-accent" role="alert">
           {queryErrorMessage(mutation.error)}
         </p>
       ) : null}
       {mutation.data ? (
-        <p className="mt-1 text-[10px] leading-4 text-muted">
+        <output
+          aria-live="polite"
+          className="mt-1 block text-[10px] leading-4 text-muted"
+        >
           {mutation.data.message}
-        </p>
+        </output>
       ) : null}
       {isComposingRevision ? (
         <RevisionComposer
@@ -723,6 +744,7 @@ function RevisionComposer({
   requireReason: boolean;
   showRunNow: boolean;
 }) {
+  const reasonId = useId();
   const [reason, setReason] = useState(defaultReason);
   const [runRevisionNow, setRunRevisionNow] = useState(true);
   const reasonRequired = requireReason && (!showRunNow || runRevisionNow);
@@ -730,8 +752,12 @@ function RevisionComposer({
 
   return (
     <div className="mt-2 border border-accent/50 bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
+      <label className="sr-only" htmlFor={reasonId}>
+        Revision reason
+      </label>
       <textarea
         className="min-h-[64px] w-full resize-y border border-line bg-panel px-2 py-1.5 text-[11px] leading-4 text-ink outline-none focus:border-accent"
+        id={reasonId}
         onChange={(event) => setReason(event.target.value)}
         placeholder="Revision note"
         value={reason}

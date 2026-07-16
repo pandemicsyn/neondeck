@@ -99,6 +99,7 @@ export const GitHubPrListPlugin = {
           <EmptyState
             title="GitHub unavailable"
             detail={`${queryErrorMessage(error)}. Set GITHUB_TOKEN in .env to show authored, assigned, and review-requested PRs.`}
+            tone="alert"
           />
         ) : null}
         {data && items.length === 0 ? (

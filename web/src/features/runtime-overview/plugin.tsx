@@ -151,13 +151,20 @@ export const RuntimeOverviewPlugin = {
         <EmptyState
           title="Runtime unavailable"
           detail={queryErrorMessage(statusQuery.error)}
+          tone="alert"
         />
       );
     }
 
     const status = statusQuery.data;
     if (!status) {
-      return <EmptyState title="Runtime unavailable" detail="No data." />;
+      return (
+        <EmptyState
+          title="Runtime unavailable"
+          detail="No data."
+          tone="alert"
+        />
+      );
     }
 
     const snapshot = runtimeSnapshotFromQueries(status, {
@@ -178,7 +185,13 @@ export const RuntimeOverviewPlugin = {
     });
 
     if (!snapshot) {
-      return <EmptyState title="Runtime unavailable" detail="No data." />;
+      return (
+        <EmptyState
+          title="Runtime unavailable"
+          detail="No data."
+          tone="alert"
+        />
+      );
     }
 
     return (

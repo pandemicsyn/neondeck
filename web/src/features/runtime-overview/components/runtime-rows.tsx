@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useId, useState } from 'react';
 import { SessionReferenceButton } from '../../../components/SessionReferenceButton';
 import { Badge, Button, MiniEmpty } from '../../../components/ui';
 import {
@@ -223,6 +223,7 @@ export function McpApprovalRow({
 
 export function RepoEditEventRow({ event }: { event: RepoEditEvent }) {
   const [isViewingDiff, setIsViewingDiff] = useState(false);
+  const diffPanelId = useId();
   const paths = event.paths.length > 0 ? event.paths.join(', ') : 'no paths';
   const canViewDiff = event.diffPatch || event.paths.length > 0;
 
@@ -247,6 +248,8 @@ export function RepoEditEventRow({ event }: { event: RepoEditEvent }) {
         <span className="flex shrink-0 items-center gap-1.5">
           {canViewDiff ? (
             <Button
+              aria-controls={diffPanelId}
+              aria-expanded={isViewingDiff}
               className="min-h-[24px] px-2 py-0 font-mono text-[10px]"
               onClick={() => setIsViewingDiff((current) => !current)}
               type="button"
@@ -258,7 +261,7 @@ export function RepoEditEventRow({ event }: { event: RepoEditEvent }) {
         </span>
       </div>
       {isViewingDiff ? (
-        <div className="mt-1.5">
+        <div className="mt-1.5" id={diffPanelId}>
           <Suspense fallback={<MiniEmpty label="Loading diff viewer." />}>
             <RepoEditEventDiffReview event={event} />
           </Suspense>
@@ -270,6 +273,7 @@ export function RepoEditEventRow({ event }: { event: RepoEditEvent }) {
 
 export function KiloTaskRow({ task }: { task: KiloTaskRecord }) {
   const [isViewingDiff, setIsViewingDiff] = useState(false);
+  const diffPanelId = useId();
   const changed =
     task.diff && task.diff.ok
       ? `${task.diff.fileCount} files +${task.diff.additions} -${task.diff.deletions}`
@@ -325,6 +329,8 @@ export function KiloTaskRow({ task }: { task: KiloTaskRecord }) {
             }}
           />
           <Button
+            aria-controls={diffPanelId}
+            aria-expanded={isViewingDiff}
             className="min-h-[24px] px-2 py-0 font-mono text-[10px]"
             onClick={() => setIsViewingDiff((current) => !current)}
             type="button"
@@ -335,7 +341,7 @@ export function KiloTaskRow({ task }: { task: KiloTaskRecord }) {
         </span>
       </div>
       {isViewingDiff ? (
-        <div className="mt-1.5">
+        <div className="mt-1.5" id={diffPanelId}>
           <Suspense fallback={<MiniEmpty label="Loading diff viewer." />}>
             <KiloTaskDiffReview task={task} />
           </Suspense>

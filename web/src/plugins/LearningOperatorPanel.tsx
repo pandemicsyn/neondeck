@@ -1,5 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { lazy, Suspense, useMemo, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useId,
+  useMemo,
+  useState,
+  type KeyboardEvent,
+} from 'react';
 import {
   decideLearningCandidate,
   getLearningOperatorState,
@@ -90,12 +97,19 @@ export const LearningOperatorPanelPlugin = {
         <EmptyState
           title="Learning unavailable"
           detail={queryErrorMessage(error)}
+          tone="alert"
         />
       );
     }
 
     if (!state) {
-      return <EmptyState title="Learning unavailable" detail="No data." />;
+      return (
+        <EmptyState
+          title="Learning unavailable"
+          detail="No data."
+          tone="alert"
+        />
+      );
     }
 
     return (
@@ -132,6 +146,8 @@ function LearningOperatorView({
   state: LearningOperatorState;
   tab: LearningTab;
 }) {
+  const tabs: LearningTab[] = ['reviews', 'candidates', 'audit'];
+  const tabIdPrefix = useId();
   const candidates = useMemo(() => {
     const source =
       candidateFilter === 'all'
@@ -148,7 +164,9 @@ function LearningOperatorView({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="panel-header flex h-8 items-center justify-between border-b border-line px-3 font-mono text-[10.5px] tracking-[0.12em]">
-        <span className="text-violet">LEARNING</span>
+        <h2 className="m-0 text-[inherit] font-[inherit] text-violet">
+          LEARNING
+        </h2>
         <Badge
           className={
             state.summary.pendingDecisions > 0
@@ -166,44 +184,68 @@ function LearningOperatorView({
           <Metric label="memory" value={state.summary.activeMemories} />
           <Metric label="PR events" value={state.summary.handledPrEvents} />
         </div>
-        <div className="mt-2 grid grid-cols-3 gap-1">
-          {(['reviews', 'candidates', 'audit'] as LearningTab[]).map(
-            (option) => (
-              <button
-                className={tabClass(tab === option)}
-                key={option}
-                onClick={() => onTabChange(option)}
-                type="button"
-              >
-                {option}
-              </button>
-            ),
-          )}
+        <div
+          aria-label="Learning views"
+          className="mt-2 grid grid-cols-3 gap-1"
+          role="tablist"
+        >
+          {tabs.map((option, index) => (
+            <button
+              aria-controls={`${tabIdPrefix}-${option}-panel`}
+              aria-selected={tab === option}
+              className={tabClass(tab === option)}
+              id={`${tabIdPrefix}-${option}-tab`}
+              key={option}
+              onClick={() => onTabChange(option)}
+              onKeyDown={(event) =>
+                handleLearningTabKeyDown({
+                  event,
+                  index,
+                  onTabChange,
+                  tabIdPrefix,
+                  tabs,
+                })
+              }
+              role="tab"
+              tabIndex={tab === option ? 0 : -1}
+              type="button"
+            >
+              {option}
+            </button>
+          ))}
         </div>
       </div>
-      {tab === 'candidates' ? (
-        <>
-          <CandidateFilterBar
-            filter={candidateFilter}
-            onFilterChange={onCandidateFilterChange}
-          />
-          <CandidateTargetFilterBar
-            filter={candidateTargetFilter}
-            onFilterChange={onCandidateTargetFilterChange}
-          />
-        </>
-      ) : null}
-      <ScrollArea className="flex-1">
-        <div className="space-y-1.5 p-3">
-          {tab === 'reviews' ? (
-            <ReviewsTab reviews={state.reviews.slice(0, limit)} />
-          ) : null}
-          {tab === 'candidates' ? (
-            <CandidatesTab candidates={candidates} />
-          ) : null}
-          {tab === 'audit' ? <AuditTab events={audits} /> : null}
-        </div>
-      </ScrollArea>
+      <div
+        aria-labelledby={`${tabIdPrefix}-${tab}-tab`}
+        className="flex min-h-0 flex-1 flex-col"
+        id={`${tabIdPrefix}-${tab}-panel`}
+        role="tabpanel"
+        tabIndex={0}
+      >
+        {tab === 'candidates' ? (
+          <>
+            <CandidateFilterBar
+              filter={candidateFilter}
+              onFilterChange={onCandidateFilterChange}
+            />
+            <CandidateTargetFilterBar
+              filter={candidateTargetFilter}
+              onFilterChange={onCandidateTargetFilterChange}
+            />
+          </>
+        ) : null}
+        <ScrollArea className="flex-1">
+          <div className="space-y-1.5 p-3">
+            {tab === 'reviews' ? (
+              <ReviewsTab reviews={state.reviews.slice(0, limit)} />
+            ) : null}
+            {tab === 'candidates' ? (
+              <CandidatesTab candidates={candidates} />
+            ) : null}
+            {tab === 'audit' ? <AuditTab events={audits} /> : null}
+          </div>
+        </ScrollArea>
+      </div>
       <LearningActions />
     </div>
   );
@@ -224,9 +266,13 @@ function CandidateFilterBar({
     'archived',
   ];
   return (
-    <div className="grid grid-cols-5 gap-1 border-b border-line px-3 py-2">
+    <fieldset
+      aria-label="Candidate status"
+      className="m-0 grid min-w-0 grid-cols-5 gap-1 border-0 border-b border-line px-3 py-2"
+    >
       {filters.map((option) => (
         <button
+          aria-pressed={filter === option}
           className={tabClass(filter === option)}
           key={option}
           onClick={() => onFilterChange(option)}
@@ -235,7 +281,7 @@ function CandidateFilterBar({
           {option}
         </button>
       ))}
-    </div>
+    </fieldset>
   );
 }
 
@@ -248,9 +294,13 @@ function CandidateTargetFilterBar({
 }) {
   const filters: CandidateTargetFilter[] = ['all', 'memory', 'skill'];
   return (
-    <div className="grid grid-cols-3 gap-1 border-b border-line px-3 py-2">
+    <fieldset
+      aria-label="Candidate target"
+      className="m-0 grid min-w-0 grid-cols-3 gap-1 border-0 border-b border-line px-3 py-2"
+    >
       {filters.map((option) => (
         <button
+          aria-pressed={filter === option}
           className={tabClass(filter === option)}
           key={option}
           onClick={() => onFilterChange(option)}
@@ -259,7 +309,7 @@ function CandidateTargetFilterBar({
           {option}
         </button>
       ))}
-    </div>
+    </fieldset>
   );
 }
 
@@ -307,6 +357,7 @@ function ReviewRow({ review }: { review: LearningReviewRecord }) {
 
 function CandidateRow({ candidate }: { candidate: LearningCandidate }) {
   const [isViewingDiff, setIsViewingDiff] = useState(false);
+  const diffPanelId = useId();
   const queryClient = useQueryClient();
   const decide = useMutation({
     mutationFn: (decision: 'approve' | 'reject') =>
@@ -348,6 +399,8 @@ function CandidateRow({ candidate }: { candidate: LearningCandidate }) {
       {patch?.diff ? (
         <div className="mt-1.5">
           <Button
+            aria-controls={diffPanelId}
+            aria-expanded={isViewingDiff}
             className="h-6 px-2 py-0 font-mono text-[10px]"
             onClick={() => setIsViewingDiff((current) => !current)}
             type="button"
@@ -355,7 +408,7 @@ function CandidateRow({ candidate }: { candidate: LearningCandidate }) {
             {isViewingDiff ? 'hide diff' : 'view diff'}
           </Button>
           {isViewingDiff ? (
-            <div className="mt-1.5">
+            <div className="mt-1.5" id={diffPanelId}>
               <Suspense fallback={<MiniEmpty label="Loading diff viewer." />}>
                 <SkillPatchDiffReview
                   patch={patch.diff}
@@ -463,6 +516,37 @@ function tabClass(active: boolean) {
   return active
     ? 'border border-primary bg-soft px-1.5 py-1 font-mono text-[10px] text-primary'
     : 'border border-line bg-soft px-1.5 py-1 font-mono text-[10px] text-muted hover:border-primary hover:text-primary';
+}
+
+function handleLearningTabKeyDown({
+  event,
+  index,
+  onTabChange,
+  tabIdPrefix,
+  tabs,
+}: {
+  event: KeyboardEvent<HTMLButtonElement>;
+  index: number;
+  onTabChange: (tab: LearningTab) => void;
+  tabIdPrefix: string;
+  tabs: LearningTab[];
+}) {
+  let nextIndex: number | undefined;
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+    nextIndex = (index + 1) % tabs.length;
+  } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+    nextIndex = (index - 1 + tabs.length) % tabs.length;
+  } else if (event.key === 'Home') {
+    nextIndex = 0;
+  } else if (event.key === 'End') {
+    nextIndex = tabs.length - 1;
+  }
+  if (nextIndex === undefined) return;
+  const nextTab = tabs[nextIndex];
+  if (!nextTab) return;
+  event.preventDefault();
+  onTabChange(nextTab);
+  document.getElementById(`${tabIdPrefix}-${nextTab}-tab`)?.focus();
 }
 
 function statusClass(status: string) {

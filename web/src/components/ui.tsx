@@ -120,12 +120,18 @@ export function MiniEmpty({ label }: { label: string }) {
 export function EmptyState({
   title,
   detail,
+  tone = 'status',
 }: {
   title: string;
   detail: string;
+  tone?: 'status' | 'alert';
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col items-center justify-center gap-2 px-4 text-center">
+    <div
+      aria-live={tone === 'alert' ? 'assertive' : 'polite'}
+      className="flex h-full min-h-0 flex-col items-center justify-center gap-2 px-4 text-center"
+      role={tone}
+    >
       <div className="miami-accent h-1 w-12" />
       <p className="text-[13px] font-semibold text-ink">{title}</p>
       <p className="max-w-[34ch] text-xs leading-5 text-muted">{detail}</p>
@@ -136,13 +142,19 @@ export function EmptyState({
 export function BootState({
   title,
   detail,
+  tone = 'status',
 }: {
   title: string;
   detail: string;
+  tone?: 'status' | 'alert';
 }) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-bg text-ink">
-      <section className="border border-line bg-panel px-5 py-4">
+      <section
+        aria-live={tone === 'alert' ? 'assertive' : 'polite'}
+        className="border border-line bg-panel px-5 py-4"
+        role={tone}
+      >
         <h1 className="text-base font-semibold">{title}</h1>
         <p className="mt-1 text-sm text-muted">{detail}</p>
       </section>

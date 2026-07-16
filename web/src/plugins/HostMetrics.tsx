@@ -49,12 +49,19 @@ export const HostMetricsPlugin = {
         <EmptyState
           title="Metrics unavailable"
           detail={queryErrorMessage(error)}
+          tone="alert"
         />
       );
     }
 
     if (!metrics) {
-      return <EmptyState title="Metrics unavailable" detail="No data." />;
+      return (
+        <EmptyState
+          title="Metrics unavailable"
+          detail="No data."
+          tone="alert"
+        />
+      );
     }
 
     const memoryPercent = Math.round(metrics.memory.usedRatio * 100);

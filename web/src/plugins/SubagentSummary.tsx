@@ -70,12 +70,19 @@ export const SubagentSummaryPlugin = {
         <EmptyState
           title="Subagents unavailable"
           detail={queryErrorMessage(runtime.error ?? workflows.error)}
+          tone="alert"
         />
       );
     }
 
     if (!runtime.data || !workflows.data) {
-      return <EmptyState title="Subagents unavailable" detail="No data." />;
+      return (
+        <EmptyState
+          title="Subagents unavailable"
+          detail="No data."
+          tone="alert"
+        />
+      );
     }
 
     return (
