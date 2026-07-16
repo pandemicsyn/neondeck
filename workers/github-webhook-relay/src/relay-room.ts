@@ -1,27 +1,28 @@
 import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
-import { verifiedGithubWebhookSchema } from "./github-webhook";
 import { jsonError } from "./http";
-import { parseWebSocketRoute } from "./routes";
+import {
+  createGithubWebhookEnvelope,
+  encodeServerFrame,
+  parseClientControlFrame,
+  pingFrameText,
+  pongFrameText,
+  relayBroadcastInputSchema,
+} from "./protocol";
+import { channelSchema, parseWebSocketRoute } from "./routes";
 
 const connectionAttachmentSchema = z.object({
   version: z.literal(1),
   channel: z.string().min(1).max(64),
   connectionId: z.string().uuid(),
   connectedAt: z.string().datetime(),
-});
-
-const relaySocketMessageSchema = z.object({
-  deliveryId: z.string().uuid(),
-  event: z.string().min(1),
-  payload: z.record(z.unknown()),
-});
+}).strict();
 
 export const broadcastResultSchema = z.object({
   connectedClients: z.number().int().nonnegative(),
   deliveredClients: z.number().int().nonnegative(),
   failedClients: z.number().int().nonnegative(),
-});
+}).strict();
 
 const socketFrameSchema = z.union([z.string(), z.instanceof(ArrayBuffer)]);
 
@@ -29,15 +30,18 @@ export class RelayRoom extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.ctx.setWebSocketAutoResponse(
-      new WebSocketRequestResponsePair('{"type":"ping"}', '{"type":"pong"}'),
+      new WebSocketRequestResponsePair(pingFrameText, pongFrameText),
     );
   }
 
   override async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const route = parseWebSocketRoute(url.pathname);
+    const roomChannel = channelSchema.safeParse(this.ctx.id.name);
     if (
       !route ||
+      !roomChannel.success ||
+      route.channel !== roomChannel.data ||
       request.method !== "GET" ||
       request.headers.get("upgrade")?.toLowerCase() !== "websocket"
     ) {
@@ -49,25 +53,25 @@ export class RelayRoom extends DurableObject<Env> {
     const server = pair[1];
     const attachment = connectionAttachmentSchema.parse({
       version: 1,
-      channel: route.channel,
+      channel: roomChannel.data,
       connectionId: crypto.randomUUID(),
       connectedAt: new Date().toISOString(),
     });
 
     server.serializeAttachment(attachment);
-    this.ctx.acceptWebSocket(server, [`channel:${route.channel}`]);
+    this.ctx.acceptWebSocket(server, [`channel:${roomChannel.data}`]);
 
     return new Response(null, { status: 101, webSocket: client });
   }
 
   async broadcast(input: unknown): Promise<z.infer<typeof broadcastResultSchema>> {
-    const webhook = verifiedGithubWebhookSchema.parse(input);
-    const frame = JSON.stringify(
-      relaySocketMessageSchema.parse({
-        deliveryId: webhook.deliveryId,
-        event: webhook.event,
-        payload: webhook.payload,
-      }),
+    const broadcast = relayBroadcastInputSchema.parse(input);
+    const roomChannel = channelSchema.parse(this.ctx.id.name);
+    if (broadcast.channel !== roomChannel) {
+      throw new Error("Relay channel does not match Durable Object identity.");
+    }
+    const frame = encodeServerFrame(
+      createGithubWebhookEnvelope(roomChannel, broadcast.webhook),
     );
     const sockets = this.ctx.getWebSockets();
     let deliveredClients = 0;
@@ -106,7 +110,18 @@ export class RelayRoom extends DurableObject<Env> {
       return;
     }
 
-    ws.close(1008, "Client messages are not supported.");
+    const controlFrame = parseClientControlFrame(parsedMessage.data);
+    if (!controlFrame.ok) {
+      ws.close(
+        controlFrame.reason === "too_large" ? 1009 : 1008,
+        controlFrame.reason === "too_large"
+          ? "Client message is too large."
+          : "Unsupported client message.",
+      );
+      return;
+    }
+
+    ws.send(encodeServerFrame({ version: 1, type: "pong" }));
   }
 
   override webSocketClose(
