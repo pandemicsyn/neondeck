@@ -49,6 +49,7 @@ import {
   filterCommands,
   mergeCommandCatalog,
 } from '../lib/commands';
+import { upsertCommandEvent } from '../lib/command-events';
 import { chatMessagesForRender } from '../lib/messages';
 import {
   sessionActivityForLinkedWatch,
@@ -356,7 +357,7 @@ export function FlueChatSessionView({
   }
 
   function appendCommandEvent(event: CommandEvent) {
-    setCommandEvents((events) => [...events, event].slice(-30));
+    setCommandEvents((events) => upsertCommandEvent(events, event));
   }
 
   function updateCommandEvent(id: string, patch: Partial<CommandEvent>) {

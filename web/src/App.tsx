@@ -11,6 +11,7 @@ import {
 import type { CSSProperties } from 'react';
 import {
   getDashboardConfig,
+  openChatSessionCommandEventStream,
   openChatSessionEventStream,
   openConfigEventStream,
 } from './api';
@@ -106,11 +107,17 @@ export function App() {
         queryKey: queryKeys.chatSessions,
       });
     };
-    return openChatSessionEventStream(
+    const closeSessionEvents = openChatSessionEventStream(
       refreshSessions,
       undefined,
       refreshSessions,
     );
+    const closeCommandEvents =
+      openChatSessionCommandEventStream(refreshSessions);
+    return () => {
+      closeCommandEvents();
+      closeSessionEvents();
+    };
   }, [isDashboardRoute, queryClient]);
 
   useEffect(() => {
