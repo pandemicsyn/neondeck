@@ -65,6 +65,11 @@
               "type": "boolean",
               "default": true
             },
+            "soundEnabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Plays a brief chime for newly created notifications that meet the toast policy. Browsers may require an initial interaction before allowing audio."
+            },
             "minimumLevel": {
               "enum": ["info", "ready", "attention", "urgent"],
               "default": "ready"

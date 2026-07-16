@@ -30,6 +30,7 @@ export type DashboardConfig = {
 
 export type DashboardToastConfig = {
   enabled: boolean;
+  soundEnabled: boolean;
   minimumLevel: NotificationLevel;
   readyDurationMs: number;
   maxVisible: number;
