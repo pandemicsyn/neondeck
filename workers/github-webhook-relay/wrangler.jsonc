@@ -10,6 +10,20 @@
   "vars": {
     "MAX_WEBHOOK_BYTES": 1048576,
   },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "RELAY_ROOMS",
+        "class_name": "RelayRoom",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RelayRoom"],
+    },
+  ],
   "observability": {
     "enabled": true,
     "logs": {

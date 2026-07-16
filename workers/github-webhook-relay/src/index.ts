@@ -1,8 +1,11 @@
 import { z } from "zod";
 import { verifyGithubWebhook } from "./github-webhook";
 import { jsonError } from "./http";
+import { broadcastResultSchema, RelayRoom } from "./relay-room";
 import { parseGithubWebhookRoute, parseWebSocketRoute } from "./routes";
 import { authenticateWebSocketRequest } from "./websocket-auth";
+
+export { RelayRoom };
 
 const requestTargetSchema = z.object({
   method: z.string(),
@@ -18,6 +21,19 @@ const healthResponseSchema = z.object({
   ok: z.literal(true),
   service: z.literal("github-webhook-relay"),
 });
+
+const webhookRelayResponseSchema = z.object({
+  relayed: z.literal(true),
+  deliveryId: z.string().uuid(),
+  deliveredClients: z.number().int().nonnegative(),
+});
+
+const webSocketUpgradeResponseSchema = z.custom<Response>(
+  (value) =>
+    value instanceof Response &&
+    value.status === 101 &&
+    value.webSocket instanceof WebSocket,
+);
 
 export default {
   async fetch(request, env): Promise<Response> {
@@ -49,19 +65,41 @@ export default {
         return jsonError(result.status, result.code, result.error);
       }
 
-      console.warn(
-        JSON.stringify({
-          message: "verified webhook cannot be relayed yet",
-          channel: webhookRoute.channel,
-          deliveryId: result.webhook.deliveryId,
-          event: result.webhook.event,
-        }),
-      );
-      return jsonError(
-        503,
-        "relay_unavailable",
-        "Webhook relay is unavailable.",
-      );
+      try {
+        const room = env.RELAY_ROOMS.getByName(webhookRoute.channel);
+        const broadcast = broadcastResultSchema.parse(
+          await room.broadcast(result.webhook),
+        );
+        console.log(
+          JSON.stringify({
+            message: "GitHub webhook relayed",
+            channel: webhookRoute.channel,
+            deliveryId: result.webhook.deliveryId,
+            event: result.webhook.event,
+            connectedClients: broadcast.connectedClients,
+            deliveredClients: broadcast.deliveredClients,
+            failedClients: broadcast.failedClients,
+          }),
+        );
+        return Response.json(
+          webhookRelayResponseSchema.parse({
+            relayed: true,
+            deliveryId: result.webhook.deliveryId,
+            deliveredClients: broadcast.deliveredClients,
+          }),
+          { status: 200 },
+        );
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            message: "GitHub webhook relay failed",
+            channel: webhookRoute.channel,
+            deliveryId: result.webhook.deliveryId,
+            error: error instanceof Error ? error.message : "Unknown relay error",
+          }),
+        );
+        return jsonError(503, "relay_unavailable", "Webhook relay is unavailable.");
+      }
     }
 
     const webSocketRoute = parseWebSocketRoute(target.pathname);
@@ -82,17 +120,29 @@ export default {
         });
       }
 
-      console.warn(
-        JSON.stringify({
-          message: "authenticated WebSocket cannot connect yet",
-          channel: webSocketRoute.channel,
-        }),
-      );
-      return jsonError(
-        503,
-        "relay_unavailable",
-        "WebSocket relay is unavailable.",
-      );
+      try {
+        const room = env.RELAY_ROOMS.getByName(webSocketRoute.channel);
+        const headers = new Headers({ Upgrade: "websocket" });
+        const internalRequest = new Request(
+          `https://relay.internal/channels/${encodeURIComponent(webSocketRoute.channel)}/ws`,
+          { headers },
+        );
+        const response = await room.fetch(internalRequest);
+        return webSocketUpgradeResponseSchema.parse(response);
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            message: "WebSocket relay connection failed",
+            channel: webSocketRoute.channel,
+            error: error instanceof Error ? error.message : "Unknown relay error",
+          }),
+        );
+        return jsonError(
+          503,
+          "relay_unavailable",
+          "WebSocket relay is unavailable.",
+        );
+      }
     }
 
     return jsonError(404, "not_found", "Not found.");
