@@ -41,6 +41,7 @@ import {
   type ReviewAssistFinding,
   type ReviewAssistStructuredOutput,
 } from './schemas';
+import { buildReviewReportDecks } from './report-deck';
 
 export type ReviewAssistFacts = {
   target: PullRequestTarget;
@@ -480,11 +481,24 @@ async function writeReviewReports(input: {
   const { facts, output, repoId, seedResult, paths } = input;
   const sourceRef = `${facts.target.repoFullName}#${facts.target.number}`;
   const generatedAt = new Date();
+  const generatedAtIso = generatedAt.toISOString();
+  const decks = buildReviewReportDecks({
+    sourceRef,
+    state: facts.state,
+    files: facts.files,
+    output,
+    seededFindings: seedResult.seeded.map((item) => ({
+      finding: item.finding,
+      line: item.anchor.line,
+    })),
+    reportOnlyFindings: seedResult.reportOnly,
+    generatedAt: generatedAtIso,
+  });
   const overviewDocument: ReportDocument = {
     eyebrow: 'PR REVIEW',
     title: `PR Overview: ${sourceRef}`,
     summary: output.overview.summary,
-    generatedAt: generatedAt.toISOString(),
+    generatedAt: generatedAtIso,
     sections: [
       {
         title: 'Pull Request',
@@ -535,6 +549,8 @@ async function writeReviewReports(input: {
         prNumber: facts.target.number,
         headSha: facts.state.headSha,
         findingCount: output.findings.length,
+        deck: decks.overview.document,
+        deckOverflow: decks.overview.overflowUsed,
         document: overviewDocument,
       },
       html: renderReportHtml(overviewDocument),
@@ -548,7 +564,7 @@ async function writeReviewReports(input: {
       output.findings.length === 0
         ? 'No structured review findings were produced.'
         : `${output.findings.length} structured finding${output.findings.length === 1 ? '' : 's'}; ${seedResult.seeded.length} seeded as local draft comment${seedResult.seeded.length === 1 ? '' : 's'}.`,
-    generatedAt: generatedAt.toISOString(),
+    generatedAt: generatedAtIso,
     sections: [
       {
         title: 'Seeded Draft Comments',
@@ -597,6 +613,8 @@ async function writeReviewReports(input: {
         findingCount: output.findings.length,
         seededCount: seedResult.seeded.length,
         reportOnlyCount: seedResult.reportOnly.length,
+        deck: decks.issues.document,
+        deckOverflow: decks.issues.overflowUsed,
         document: issuesDocument,
       },
       html: renderReportHtml(issuesDocument),

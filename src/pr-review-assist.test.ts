@@ -20,6 +20,7 @@ import { upsertMemory } from './modules/memory';
 import { listReports, readReportHtml } from './modules/reports';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import { reportDocumentFromSummary } from '../shared/report-document';
+import { reportDeckFromSummary } from '../shared/report-deck';
 
 const tempRoots: string[] = [];
 
@@ -142,6 +143,39 @@ describe('PR review assist', () => {
         expect.objectContaining({ title: 'Change Map' }),
       ]),
     });
+    const overviewDeck = reportDeckFromSummary(overview?.summary);
+    expect(overviewDeck).toMatchObject({
+      version: 2,
+      summaryMarkdown: 'Review <script>alert(1)</script>',
+    });
+    expect(overviewDeck?.slides).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'summary', title: 'Review brief' }),
+        expect.objectContaining({ kind: 'facts', title: 'PR facts' }),
+        expect.objectContaining({
+          kind: 'change-map',
+          items: expect.any(Array),
+        }),
+      ]),
+    );
+    const issues = reports.find((report) =>
+      report.title.startsWith('Review Issues:'),
+    );
+    const issuesDeck = reportDeckFromSummary(issues?.summary);
+    expect(issuesDeck).toMatchObject({ version: 2 });
+    expect(issuesDeck?.slides).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'summary', title: 'Review brief' }),
+        expect.objectContaining({
+          kind: 'findings',
+          disposition: 'seeded',
+        }),
+        expect.objectContaining({
+          kind: 'findings',
+          disposition: 'report-only',
+        }),
+      ]),
+    );
     const html = await readReportHtml(overview!.id, paths);
     expect(html?.html).toContain(
       'Review &lt;script&gt;alert(1)&lt;/script&gt;',

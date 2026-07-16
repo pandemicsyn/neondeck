@@ -44,24 +44,32 @@ export const reviewAssistFindingSchema = v.object({
 export const reviewAssistStructuredOutputSchema = v.object({
   overview: v.object({
     summary: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(4_000)),
-    changeMap: v.array(
-      v.object({
-        path: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(1_000)),
-        summary: v.pipe(
-          v.string(),
-          v.trim(),
-          v.minLength(1),
-          v.maxLength(2_000),
-        ),
-        risk: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(1_000))),
-      }),
+    changeMap: v.pipe(
+      v.array(
+        v.object({
+          path: v.pipe(
+            v.string(),
+            v.trim(),
+            v.minLength(1),
+            v.maxLength(1_000),
+          ),
+          summary: v.pipe(
+            v.string(),
+            v.trim(),
+            v.minLength(1),
+            v.maxLength(2_000),
+          ),
+          risk: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(1_000))),
+        }),
+      ),
+      v.maxLength(4_096),
     ),
     risks: v.pipe(
-      v.array(v.pipe(v.string(), v.trim(), v.minLength(1))),
+      v.array(v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(4_000))),
       v.maxLength(20),
     ),
     checks: v.pipe(
-      v.array(v.pipe(v.string(), v.trim(), v.minLength(1))),
+      v.array(v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(4_000))),
       v.maxLength(20),
     ),
   }),
