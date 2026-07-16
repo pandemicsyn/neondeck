@@ -798,6 +798,7 @@ describe('runtime home', () => {
     ).toEqual({
       toasts: {
         enabled: true,
+        soundEnabled: true,
         minimumLevel: 'ready',
         readyDurationMs: 3_600_000,
         maxVisible: 3,
@@ -829,6 +830,7 @@ describe('runtime home', () => {
     ).toEqual({
       toasts: {
         enabled: true,
+        soundEnabled: true,
         minimumLevel: 'attention',
         readyDurationMs: 1_000,
         maxVisible: 3,
@@ -850,6 +852,7 @@ describe('runtime home', () => {
     ).toEqual({
       toasts: {
         enabled: true,
+        soundEnabled: true,
         minimumLevel: 'ready',
         readyDurationMs: 0,
         maxVisible: 3,

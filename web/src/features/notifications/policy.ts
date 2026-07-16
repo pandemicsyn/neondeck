@@ -17,6 +17,7 @@ export function resolveToastConfig(
 ): DashboardToastConfig {
   return {
     enabled: config?.enabled ?? DEFAULT_TOAST_CONFIG.enabled,
+    soundEnabled: config?.soundEnabled ?? DEFAULT_TOAST_CONFIG.soundEnabled,
     minimumLevel: config?.minimumLevel ?? DEFAULT_TOAST_CONFIG.minimumLevel,
     readyDurationMs: clampReadyDuration(
       config?.readyDurationMs ?? DEFAULT_TOAST_CONFIG.readyDurationMs,

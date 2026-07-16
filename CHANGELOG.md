@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0-beta.10
+
+### Minor Changes
+
+- [#122](https://github.com/pandemicsyn/neondeck/pull/122) [`b7a9b29`](https://github.com/pandemicsyn/neondeck/commit/b7a9b2996f806bc86e2571d5d2f01484612d553b) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Play a configurable two-note chime when a new in-app notification arrives.
+
+### Patch Changes
+
+- [#120](https://github.com/pandemicsyn/neondeck/pull/120) [`61bae11`](https://github.com/pandemicsyn/neondeck/commit/61bae114525bda27a5c900c4ecc7282d0bba8c33) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Multiplex dashboard domain events over one shared connection and render PR review reports inline so active streams cannot starve report loading.
+
 ## 1.0.0-beta.9
 
 ### Patch Changes

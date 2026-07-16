@@ -16,7 +16,9 @@ describe('NotificationController integration', () => {
 
   beforeEach(() => {
     FakeEventSource.instances = [];
+    FakeAudioContext.startedNotes = 0;
     vi.stubGlobal('EventSource', FakeEventSource);
+    vi.stubGlobal('AudioContext', FakeAudioContext);
     (
       globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
     ).IS_REACT_ACT_ENVIRONMENT = true;
@@ -52,6 +54,7 @@ describe('NotificationController integration', () => {
     act(() => FakeEventSource.instances[0]!.emit(notificationEvent()));
 
     expect(document.querySelectorAll('.notification-toast')).toHaveLength(1);
+    expect(FakeAudioContext.startedNotes).toBe(2);
     expect(invalidate).toHaveBeenCalledTimes(3);
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: queryKeys.chatSessionActivityRoot,
@@ -73,6 +76,24 @@ describe('NotificationController integration', () => {
     expect(FakeEventSource.instances).toHaveLength(1);
     act(() => FakeEventSource.instances[0]!.emit(notificationEvent()));
     expect(document.querySelectorAll('.notification-toast')).toHaveLength(0);
+    expect(FakeAudioContext.startedNotes).toBe(0);
+  });
+
+  it('keeps visual toasts when notification sound is disabled', () => {
+    const config = dashboardConfig();
+    config.notifications!.toasts!.soundEnabled = false;
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <NotificationController config={config}>
+            <div>Dashboard</div>
+          </NotificationController>
+        </QueryClientProvider>,
+      ),
+    );
+    act(() => FakeEventSource.instances[0]!.emit(notificationEvent()));
+    expect(document.querySelectorAll('.notification-toast')).toHaveLength(1);
+    expect(FakeAudioContext.startedNotes).toBe(0);
   });
 
   it('updates one toast for a reconciled retry', () => {
@@ -91,6 +112,7 @@ describe('NotificationController integration', () => {
     reconciled.notification.title = 'Verification retry still failing';
     reconciled.notification.occurrenceCount = 2;
     act(() => FakeEventSource.instances[0]!.emit(reconciled));
+    expect(FakeAudioContext.startedNotes).toBe(2);
     expect(document.querySelectorAll('.notification-toast')).toHaveLength(1);
     expect(document.querySelector('.notification-toast h2')?.textContent).toBe(
       'Verification retry still failing',
@@ -149,6 +171,44 @@ class FakeEventSource {
   }
 }
 
+class FakeAudioContext {
+  static startedNotes = 0;
+  currentTime = 0;
+  destination = {};
+  state: AudioContextState = 'running';
+
+  createOscillator() {
+    return {
+      type: 'sine',
+      frequency: { setValueAtTime() {} },
+      connect() {},
+      disconnect() {},
+      onended: null as (() => void) | null,
+      start() {
+        FakeAudioContext.startedNotes += 1;
+      },
+      stop() {},
+    };
+  }
+
+  createGain() {
+    return {
+      gain: {
+        setValueAtTime() {},
+        exponentialRampToValueAtTime() {},
+      },
+      connect() {},
+      disconnect() {},
+    };
+  }
+
+  async resume() {}
+
+  async close() {
+    this.state = 'closed';
+  }
+}
+
 function notificationEvent(): NotificationChangeEvent {
   return {
     id: 'note-1',
@@ -180,6 +240,7 @@ function dashboardConfig(): DashboardConfig {
     notifications: {
       toasts: {
         enabled: true,
+        soundEnabled: true,
         minimumLevel: 'ready',
         readyDurationMs: 3_600_000,
         maxVisible: 3,
