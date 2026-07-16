@@ -4,7 +4,8 @@ import {
   reportDocumentFromSummary,
   type ReportDocument,
 } from '../../../../shared/report-document';
-import { getReport } from '../../api/reports';
+import { getReport, getReportHtml } from '../../api/reports';
+import { reportDocumentFromLegacyHtml } from './legacy-report-document';
 
 type PrReviewArtifactsOverlayProps = {
   initialReportIndex?: number;
@@ -67,10 +68,16 @@ export function PrReviewArtifactsOverlay({
     }, 6_000);
 
     void getReport(reportId, { signal: controller.signal })
-      .then((response) => {
-        const document = reportDocumentFromSummary(response.item?.summary);
+      .then(async (response) => {
+        let document = reportDocumentFromSummary(response.item?.summary);
         if (!document) {
-          throw new Error('This report has no structured content to display.');
+          const html = await getReportHtml(reportId, {
+            signal: controller.signal,
+          });
+          document = reportDocumentFromLegacyHtml(html);
+        }
+        if (!document) {
+          throw new Error('This report could not be converted for display.');
         }
         setLoadState({ document, key: loadKey, status: 'loaded' });
       })

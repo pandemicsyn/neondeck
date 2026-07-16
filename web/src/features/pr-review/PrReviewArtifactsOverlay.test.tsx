@@ -3,14 +3,16 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getReport } from '../../api/reports';
+import { getReport, getReportHtml } from '../../api/reports';
 import { PrReviewArtifactsOverlay } from './PrReviewArtifactsOverlay';
 
 vi.mock('../../api/reports', () => ({
   getReport: vi.fn<typeof getReport>(),
+  getReportHtml: vi.fn<typeof getReportHtml>(),
 }));
 
 const getReportMock = vi.mocked(getReport);
+const getReportHtmlMock = vi.mocked(getReportHtml);
 
 describe('PR review artifacts overlay', () => {
   let container: HTMLDivElement;
@@ -71,6 +73,26 @@ describe('PR review artifacts overlay', () => {
     expect(button('retry')).toBeDefined();
     expect(button('pop out')).toBeDefined();
   });
+
+  it('converts retained HTML reports into safe inline content', async () => {
+    getReportMock.mockResolvedValue({
+      ...reportResponse(),
+      item: {
+        ...reportResponse().item!,
+        summary: { report: 'overview', workflow: 'review-pr-for-human' },
+      },
+    });
+    getReportHtmlMock.mockResolvedValue(legacyReportHtml());
+    renderOverlay(root);
+
+    await act(async () => Promise.resolve());
+    expect(getReportHtmlMock).toHaveBeenCalledWith('report-1', {
+      signal: expect.any(AbortSignal),
+    });
+    expect(document.body.textContent).toContain('Legacy overview');
+    expect(document.body.textContent).toContain('Legacy risk');
+    expect(document.querySelector('iframe')).toBeNull();
+  });
 });
 
 function renderOverlay(root: ReturnType<typeof createRoot>) {
@@ -122,4 +144,20 @@ function button(label: string) {
   return [...document.querySelectorAll('button')].find(
     (item) => item.textContent?.trim() === label,
   );
+}
+
+function legacyReportHtml() {
+  return `<!doctype html>
+    <html><body><main>
+      <header>
+        <p class="eyebrow">PR REVIEW</p>
+        <h1>PR Overview: owner/repo#1</h1>
+        <p class="summary">Legacy overview</p>
+        <p class="meta">generated 2026-07-14T00:00:00.000Z</p>
+      </header>
+      <section>
+        <h2>Checks And Risks</h2>
+        <dl><dt>risk 1</dt><dd>Legacy risk</dd></dl>
+      </section>
+    </main></body></html>`;
 }

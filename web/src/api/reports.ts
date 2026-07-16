@@ -3,7 +3,7 @@ import type {
   ReportResponse,
   ReportsResponse,
 } from './types';
-import { getJson, postJson } from './http';
+import { ApiError, getJson, postJson } from './http';
 
 export async function getReports(
   input: { kind?: string; excludeKind?: string; limit?: number } = {},
@@ -30,6 +30,23 @@ export async function getReport(
   );
   if (!response.ok) throw new Error(response.message ?? 'Report unavailable.');
   return response;
+}
+
+export async function getReportHtml(
+  id: string,
+  options: { signal?: AbortSignal } = {},
+) {
+  const url = `/reports/${encodeURIComponent(id)}`;
+  const response = await fetch(url, { signal: options.signal });
+  if (!response.ok) {
+    throw new ApiError(
+      `Report request failed with ${response.status}.`,
+      response.status,
+      url,
+      null,
+    );
+  }
+  return response.text();
 }
 
 export async function stageDocsDriftFix(reportId: string) {
