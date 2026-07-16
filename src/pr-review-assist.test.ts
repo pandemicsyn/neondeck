@@ -19,6 +19,7 @@ import {
 import { upsertMemory } from './modules/memory';
 import { listReports, readReportHtml } from './modules/reports';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
+import { reportDocumentFromSummary } from '../shared/report-document';
 
 const tempRoots: string[] = [];
 
@@ -134,6 +135,13 @@ describe('PR review assist', () => {
       report.title.startsWith('PR Overview:'),
     );
     expect(overview).toBeTruthy();
+    expect(reportDocumentFromSummary(overview?.summary)).toMatchObject({
+      title: 'PR Overview: pandemicsyn/neondeck#10',
+      summary: 'Review <script>alert(1)</script>',
+      sections: expect.arrayContaining([
+        expect.objectContaining({ title: 'Change Map' }),
+      ]),
+    });
     const html = await readReportHtml(overview!.id, paths);
     expect(html?.html).toContain(
       'Review &lt;script&gt;alert(1)&lt;/script&gt;',

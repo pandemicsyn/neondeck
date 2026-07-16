@@ -49,7 +49,6 @@ export function subscribeChatSessionEvents(listener: ChatSessionEventListener) {
 
 export function formatChatSessionServerSentEvent(event: ChatSessionEvent) {
   return [
-    `id: ${event.id}:${event.changedAt}`,
     'event: chat-session-change',
     `data: ${JSON.stringify(event)}`,
     '',

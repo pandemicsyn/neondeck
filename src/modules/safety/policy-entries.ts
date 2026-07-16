@@ -1864,28 +1864,10 @@ export const entries: SafetyPolicyEntry[] = [
     'Reads readiness facts for the dashboard and local API clients.',
   ),
   route(
-    '/api/events/config',
-    'Config event stream API',
+    '/api/events',
+    'Dashboard event stream API',
     readOnly,
-    'Streams local config change and reload notifications to dashboard surfaces.',
-  ),
-  route(
-    '/api/events/notifications',
-    'Notification event stream API',
-    readOnly,
-    'Streams notification inbox changes to dashboard surfaces without browser notification APIs.',
-  ),
-  route(
-    '/api/events/reviews',
-    'PR review event stream API',
-    readOnly,
-    'Streams durable PR review lifecycle changes to chat and dashboard surfaces.',
-  ),
-  route(
-    '/api/events/sessions',
-    'Session event stream API',
-    readOnly,
-    'Streams chat session metadata and active-surface changes to dashboard and future TUI clients.',
+    'Multiplexes config, notification, PR review, and chat session changes over one local dashboard stream.',
   ),
   route(
     '/api/config/reload',

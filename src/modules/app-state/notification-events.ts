@@ -36,7 +36,6 @@ export function subscribeNotificationEvents(
 
 export function formatNotificationServerSentEvent(event: NotificationEvent) {
   return [
-    `id: ${event.id}`,
     'event: notification-change',
     `data: ${JSON.stringify(event)}`,
     '',

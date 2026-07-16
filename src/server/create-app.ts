@@ -17,10 +17,7 @@ import {
   type RuntimePaths,
   runtimePaths,
 } from '../runtime-home';
-import { createConfigEventRoutes } from './events/config-stream';
-import { createNotificationEventRoutes } from './events/notification-stream';
-import { createReviewEventRoutes } from './events/review-stream';
-import { createSessionEventRoutes } from './events/session-stream';
+import { createEventStreamRoutes } from './events/event-stream';
 import {
   displayAssistantLearningMiddleware,
   installFlueObservationHandlers,
@@ -98,10 +95,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.use('/reports/*', requireLocalApiAccess);
 
   app.route('/api', createRuntimeRoutes(paths));
-  app.route('/api/events', createConfigEventRoutes());
-  app.route('/api/events', createNotificationEventRoutes());
-  app.route('/api/events', createReviewEventRoutes());
-  app.route('/api/events', createSessionEventRoutes());
+  app.route('/api/events', createEventStreamRoutes());
   app.route('/api/safety', createSafetyRoutes(paths));
   app.route('/api/execution', createExecutionRoutes(paths));
   app.route('/api', createSessionRoutes(paths));

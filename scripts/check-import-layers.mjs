@@ -73,6 +73,19 @@ const violations = [];
 
 for (const file of files) {
   const text = readFileSync(file, 'utf8');
+  const sourceRel = normalize(relative(root, file));
+  if (
+    sourceRel.startsWith('web/src/') &&
+    sourceRel !== 'web/src/api/event-hub.ts' &&
+    /\bnew\s+(?:(?:globalThis|window)\.)?EventSource\s*\(/u.test(text)
+  ) {
+    violations.push({
+      source: sourceRel,
+      target: 'EventSource',
+      reason:
+        'dashboard EventSource connections must be created by web/src/api/event-hub.ts',
+    });
+  }
   for (const match of text.matchAll(importPattern)) {
     const specifier = match[1] ?? match[2];
     if (!specifier?.startsWith('.')) continue;
@@ -80,7 +93,6 @@ for (const file of files) {
     const target = resolveImport(dirname(file), specifier);
     if (!target) continue;
 
-    const sourceRel = normalize(relative(root, file));
     const targetRel = normalize(relative(root, target));
     if (sourceRel.startsWith('src/')) {
       checkBackendImport(sourceRel, targetRel);

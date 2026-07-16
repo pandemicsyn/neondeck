@@ -33,6 +33,7 @@ import {
   commentAnchorExists,
   type ReviewCommentAnchor,
 } from '../../../shared/patch-anchors';
+import type { ReportDocument } from '../../../shared/report-document';
 import {
   prReviewAssistInputSchema,
   reviewAssistStructuredOutputSchema,
@@ -479,6 +480,47 @@ async function writeReviewReports(input: {
   const { facts, output, repoId, seedResult, paths } = input;
   const sourceRef = `${facts.target.repoFullName}#${facts.target.number}`;
   const generatedAt = new Date();
+  const overviewDocument: ReportDocument = {
+    eyebrow: 'PR REVIEW',
+    title: `PR Overview: ${sourceRef}`,
+    summary: output.overview.summary,
+    generatedAt: generatedAt.toISOString(),
+    sections: [
+      {
+        title: 'Pull Request',
+        body: null,
+        items: [
+          { label: 'title', value: facts.state.title },
+          { label: 'state', value: facts.state.state },
+          { label: 'base', value: facts.state.baseRef },
+          { label: 'head', value: facts.state.headSha },
+          { label: 'url', value: facts.state.url },
+        ],
+      },
+      {
+        title: 'Change Map',
+        body: null,
+        items: output.overview.changeMap.map((item) => ({
+          label: item.path,
+          value: [item.summary, item.risk].filter(Boolean).join('\n'),
+        })),
+      },
+      {
+        title: 'Checks And Risks',
+        body: null,
+        items: [
+          ...output.overview.checks.map((check, index) => ({
+            label: `check ${index + 1}`,
+            value: check,
+          })),
+          ...output.overview.risks.map((risk, index) => ({
+            label: `risk ${index + 1}`,
+            value: risk,
+          })),
+        ],
+      },
+    ],
+  };
   const overview = await writeReport(
     {
       kind: 'pr-review',
@@ -493,48 +535,52 @@ async function writeReviewReports(input: {
         prNumber: facts.target.number,
         headSha: facts.state.headSha,
         findingCount: output.findings.length,
+        document: overviewDocument,
       },
-      html: renderReportHtml({
-        eyebrow: 'PR REVIEW',
-        title: `PR Overview: ${sourceRef}`,
-        summary: output.overview.summary,
-        generatedAt,
-        sections: [
-          {
-            title: 'Pull Request',
-            items: [
-              { label: 'title', value: facts.state.title },
-              { label: 'state', value: facts.state.state },
-              { label: 'base', value: facts.state.baseRef },
-              { label: 'head', value: facts.state.headSha },
-              { label: 'url', value: facts.state.url },
-            ],
-          },
-          {
-            title: 'Change Map',
-            items: output.overview.changeMap.map((item) => ({
-              label: item.path,
-              value: [item.summary, item.risk].filter(Boolean).join('\n'),
-            })),
-          },
-          {
-            title: 'Checks And Risks',
-            items: [
-              ...output.overview.checks.map((check, index) => ({
-                label: `check ${index + 1}`,
-                value: check,
-              })),
-              ...output.overview.risks.map((risk, index) => ({
-                label: `risk ${index + 1}`,
-                value: risk,
-              })),
-            ],
-          },
-        ],
-      }),
+      html: renderReportHtml(overviewDocument),
     },
     paths,
   );
+  const issuesDocument: ReportDocument = {
+    eyebrow: 'PR REVIEW',
+    title: `Review Issues: ${sourceRef}`,
+    summary:
+      output.findings.length === 0
+        ? 'No structured review findings were produced.'
+        : `${output.findings.length} structured finding${output.findings.length === 1 ? '' : 's'}; ${seedResult.seeded.length} seeded as local draft comment${seedResult.seeded.length === 1 ? '' : 's'}.`,
+    generatedAt: generatedAt.toISOString(),
+    sections: [
+      {
+        title: 'Seeded Draft Comments',
+        body: seedResult.skippedReason
+          ? `Draft seeding skipped: ${seedResult.skippedReason}.`
+          : null,
+        items:
+          seedResult.seeded.length > 0
+            ? seedResult.seeded.map((item) => ({
+                label: `${item.finding.severity} ${item.finding.path}:${item.anchor.line}`,
+                value: item.finding.summary,
+              }))
+            : [{ label: 'seeded', value: 'No findings were seeded.' }],
+      },
+      {
+        title: 'Report-Only Findings',
+        body: null,
+        items:
+          seedResult.reportOnly.length > 0
+            ? seedResult.reportOnly.map((item) => ({
+                label: `${item.finding.severity} ${item.finding.path}`,
+                value: `${item.reason}\n${item.finding.summary}\nSuggested fix: ${item.finding.suggestedFix}`,
+              }))
+            : [
+                {
+                  label: 'report-only',
+                  value: 'No report-only findings.',
+                },
+              ],
+      },
+    ],
+  };
   const issues = await writeReport(
     {
       kind: 'pr-review',
@@ -551,41 +597,9 @@ async function writeReviewReports(input: {
         findingCount: output.findings.length,
         seededCount: seedResult.seeded.length,
         reportOnlyCount: seedResult.reportOnly.length,
+        document: issuesDocument,
       },
-      html: renderReportHtml({
-        eyebrow: 'PR REVIEW',
-        title: `Review Issues: ${sourceRef}`,
-        summary:
-          output.findings.length === 0
-            ? 'No structured review findings were produced.'
-            : `${output.findings.length} structured finding${output.findings.length === 1 ? '' : 's'}; ${seedResult.seeded.length} seeded as local draft comment${seedResult.seeded.length === 1 ? '' : 's'}.`,
-        generatedAt,
-        sections: [
-          {
-            title: 'Seeded Draft Comments',
-            body: seedResult.skippedReason
-              ? `Draft seeding skipped: ${seedResult.skippedReason}.`
-              : null,
-            items:
-              seedResult.seeded.length > 0
-                ? seedResult.seeded.map((item) => ({
-                    label: `${item.finding.severity} ${item.finding.path}:${item.anchor.line}`,
-                    value: item.finding.summary,
-                  }))
-                : [{ label: 'seeded', value: 'No findings were seeded.' }],
-          },
-          {
-            title: 'Report-Only Findings',
-            items:
-              seedResult.reportOnly.length > 0
-                ? seedResult.reportOnly.map((item) => ({
-                    label: `${item.finding.severity} ${item.finding.path}`,
-                    value: `${item.reason}\n${item.finding.summary}\nSuggested fix: ${item.finding.suggestedFix}`,
-                  }))
-                : [{ label: 'report-only', value: 'No report-only findings.' }],
-          },
-        ],
-      }),
+      html: renderReportHtml(issuesDocument),
     },
     paths,
   );
