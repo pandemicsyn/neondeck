@@ -75,6 +75,7 @@ export type WatchAutopilotPolicy = {
 export type AutopilotQueueItem = {
   id: string;
   source: 'admission' | 'watch' | 'worktree' | 'workflow' | 'approval';
+  watchId: string | null;
   status: AutopilotQueueStatus;
   priority: AutopilotPriority;
   repoId: string;
@@ -270,6 +271,7 @@ export const queueItemSchema = v.object({
     'workflow',
     'approval',
   ]),
+  watchId: v.nullable(v.string()),
   status: v.picklist([
     'watching',
     'queued',

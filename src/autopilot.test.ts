@@ -108,6 +108,7 @@ describe('autopilot operator state', () => {
     expect(state.queue).toEqual([
       expect.objectContaining({
         source: 'watch',
+        watchId: 'pandemicsyn/neondeck#42',
         mode: 'notify-only',
         status: 'watching',
       }),
