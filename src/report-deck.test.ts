@@ -12,13 +12,20 @@ import {
   hostileReportMarkdownFixtures,
   representativeReportDeckFixture,
 } from '../shared/report-deck-fixtures';
+import { reportDocumentToDeck } from '../shared/report-document-to-deck';
 import { ReportMarkdown } from '../shared/report-markdown';
 import {
   REPORT_MARKDOWN_LIMITS,
   safeReportUrl,
 } from '../shared/report-markdown-policy';
 import { buildReviewReportDecks } from './modules/pr-review-assist/report-deck';
-import type { ReviewAssistStructuredOutput } from './modules/pr-review-assist/schemas';
+import {
+  parseReviewPresentationPlan,
+  REVIEW_PRESENTATION_LIMITS,
+  type ReviewAssistStructuredOutput,
+} from './modules/pr-review-assist/schemas';
+import { REPORT_DECK_CONTROLLER_SOURCE } from './lib/report-deck-controller';
+import { renderReportDeckHtml } from './lib/report-deck-html';
 
 describe('report deck contract', () => {
   it('parses the representative v2 fixture from report metadata', () => {
@@ -148,6 +155,108 @@ describe('report Markdown policy', () => {
   });
 });
 
+describe('report deck rendering', () => {
+  it('renders a self-contained deck with the exact static controller source', () => {
+    const html = renderReportDeckHtml(representativeReportDeckFixture);
+
+    expect(html).toContain('data-report-deck=""');
+    expect(html).toContain('<strong>brief</strong>');
+    expect(html).toContain(
+      '<script>' + REPORT_DECK_CONTROLLER_SOURCE + '</script>',
+    );
+    expect(html).toContain('@media print');
+    expect(html).not.toContain('dangerouslySetInnerHTML');
+  });
+
+  it('shares Markdown link budgets across fields, slides, and the artifact', () => {
+    const links = (prefix: string) =>
+      Array.from(
+        { length: REPORT_MARKDOWN_LIMITS.linksPerSlide },
+        (_, index) =>
+          `[${prefix} ${index}](https://example.com/${prefix}-${index})`,
+      ).join(' ');
+    const deck: ReportDeckDocument = {
+      version: 2,
+      eyebrow: 'PR REVIEW',
+      title: 'Bounded links',
+      summaryMarkdown: 'Summary',
+      generatedAt: '2026-07-15T12:00:00.000Z',
+      links: [],
+      slides: [
+        {
+          kind: 'summary',
+          title: 'Review brief',
+          facts: [],
+          emptyStateMarkdown: null,
+        },
+        {
+          kind: 'columns',
+          title: 'Shared slide budget',
+          columns: [
+            {
+              title: 'First field',
+              tone: 'neutral',
+              items: [links('column-a'), links('column-b')],
+            },
+          ],
+        },
+        ...['one', 'two', 'three', 'last'].map<ReportDeckSlide>((prefix) => ({
+          kind: 'markdown',
+          title: prefix,
+          markdown: links(prefix),
+          tone: 'neutral',
+        })),
+      ],
+    };
+    expect(parseReportDeckDocument(deck)).toEqual(deck);
+
+    const html = renderReportDeckHtml(deck);
+    expect((html.match(/<a /gu) ?? []).length).toBe(
+      REPORT_MARKDOWN_LIMITS.linksPerArtifact,
+    );
+    expect(
+      (html.match(/href="https:\/\/example\.com\/column-/gu) ?? []).length,
+    ).toBe(REPORT_MARKDOWN_LIMITS.linksPerSlide);
+    expect(html).not.toContain('href="https://example.com/last-');
+    expect(html).toContain('last 31');
+  });
+
+  it('adapts retained v1 report documents into bounded v2 decks', () => {
+    const deck = reportDocumentToDeck({
+      eyebrow: 'PR REVIEW',
+      title: 'Legacy overview',
+      summary: 'Literal **Markdown** from the old report.',
+      generatedAt: '2026-07-15T12:00:00.000Z',
+      sections: [
+        {
+          title: 'Checks',
+          body: 'Run `npm test`.',
+          items: Array.from({ length: 25 }, (_, index) => ({
+            label: `check ${index + 1}`,
+            value: `value [${index + 1}]`,
+          })),
+        },
+      ],
+    });
+
+    expect(deck).toMatchObject({
+      version: 2,
+      title: 'Legacy overview',
+      summaryMarkdown: 'Literal \\*\\*Markdown\\*\\* from the old report\\.',
+    });
+    expect(deck?.slides[0]).toMatchObject({
+      kind: 'summary',
+      title: 'Review brief',
+    });
+    expect(deck?.slides.at(-1)).toMatchObject({
+      kind: 'facts',
+      title: 'Checks · part 2 of 2',
+      items: expect.any(Array),
+    });
+    expect(parseReportDeckDocument(deck)).toEqual(deck);
+  });
+});
+
 describe('default PR review deck builder', () => {
   it('paginates change maps and moves overflow into the final appendix', () => {
     const changeMap = Array.from({ length: 280 }, (_, index) => ({
@@ -219,6 +328,176 @@ describe('default PR review deck builder', () => {
         emptyStateMarkdown: expect.stringContaining('nothing to triage'),
       }),
     ]);
+  });
+
+  it('honors bounded slide intent and restores omitted required data', () => {
+    const result = buildReviewReportDecks({
+      sourceRef: 'pandemicsyn/neondeck#125',
+      state: reviewState(),
+      files: [reviewFile('src/app.ts', 'https://example.com/src/app.ts')],
+      output: {
+        overview: {
+          summary: 'Summary',
+          changeMap: [{ path: 'src/app.ts', summary: 'Changes the app.' }],
+          checks: ['Run unit tests.'],
+          risks: ['Confirm retained report behavior.'],
+        },
+        findings: [],
+        presentation: {
+          overview: [
+            {
+              kind: 'markdown',
+              title: 'Why this matters',
+              markdown: 'The agent can shape **bounded** narrative slides.',
+              tone: 'correctness',
+            },
+            {
+              kind: 'source',
+              source: 'risks',
+              layout: 'columns',
+              title: 'Watch closely',
+            },
+            { kind: 'source', source: 'pr-facts', layout: 'facts' },
+          ],
+          issues: [],
+        },
+      },
+      seededFindings: [],
+      reportOnlyFindings: [],
+      generatedAt: '2026-07-15T12:00:00.000Z',
+    });
+
+    expect(result.overview.document.slides).toEqual([
+      expect.objectContaining({ kind: 'summary' }),
+      expect.objectContaining({
+        kind: 'markdown',
+        title: 'Why this matters',
+        tone: 'correctness',
+      }),
+      expect.objectContaining({ kind: 'columns', title: 'Watch closely' }),
+      expect.objectContaining({ kind: 'facts', title: 'PR facts' }),
+      expect.objectContaining({ kind: 'change-map' }),
+    ]);
+    expect(result.presentationWarnings).toContain(
+      'overview: appended required change-map data omitted by the presentation plan.',
+    );
+  });
+
+  it('falls back when presentation source and layout semantics conflict', () => {
+    const input: Parameters<typeof buildReviewReportDecks>[0] = {
+      sourceRef: 'pandemicsyn/neondeck#125',
+      state: reviewState(),
+      files: [],
+      output: {
+        overview: {
+          summary: 'Summary',
+          changeMap: [],
+          checks: ['Run tests.'],
+          risks: [],
+        },
+        findings: [],
+      },
+      seededFindings: [],
+      reportOnlyFindings: [],
+      generatedAt: '2026-07-15T12:00:00.000Z',
+    };
+    const fallback = buildReviewReportDecks(input);
+    const planned = buildReviewReportDecks({
+      ...input,
+      output: {
+        ...input.output,
+        presentation: {
+          overview: [{ kind: 'source', source: 'checks', layout: 'findings' }],
+          issues: [],
+        },
+      },
+    });
+
+    expect(planned.overview.document).toEqual(fallback.overview.document);
+    expect(planned.presentationWarnings).toContain(
+      'overview: unsupported checks/findings presentation source. The deterministic overview layout was used.',
+    );
+  });
+
+  it('does not let presentation intent omit known findings', () => {
+    const finding = {
+      severity: 'major' as const,
+      path: 'src/app.ts',
+      anchor: { kind: 'inline' as const, side: 'RIGHT' as const, line: 8 },
+      summary: 'A known correctness finding.',
+      suggestedFix: 'Add the missing guard.',
+      confidence: 'high' as const,
+    };
+    const result = buildReviewReportDecks({
+      sourceRef: 'pandemicsyn/neondeck#125',
+      state: reviewState(),
+      files: [reviewFile('src/app.ts', 'https://example.com/src/app.ts')],
+      output: {
+        overview: { summary: 'Summary', changeMap: [], checks: [], risks: [] },
+        findings: [finding],
+        presentation: {
+          overview: [],
+          issues: [
+            {
+              kind: 'markdown',
+              title: 'Context',
+              markdown: 'Useful context, but not a replacement for findings.',
+            },
+          ],
+        },
+      },
+      seededFindings: [{ finding, line: 8 }],
+      reportOnlyFindings: [],
+      generatedAt: '2026-07-15T12:00:00.000Z',
+    });
+
+    expect(result.issues.document.slides).toEqual([
+      expect.objectContaining({ kind: 'summary' }),
+      expect.objectContaining({ kind: 'markdown', title: 'Context' }),
+      expect.objectContaining({
+        kind: 'findings',
+        disposition: 'seeded',
+      }),
+    ]);
+    expect(result.presentationWarnings).toContain(
+      'issues: appended required seeded-comments data omitted by the presentation plan.',
+    );
+  });
+
+  it('rejects presentation plans beyond the Markdown bounds', () => {
+    expect(
+      parseReviewPresentationPlan({
+        overview: [
+          {
+            kind: 'markdown',
+            title: 'Oversized',
+            markdown: 'x'.repeat(6_001),
+          },
+        ],
+        issues: [],
+      }),
+    ).toBeNull();
+
+    expect(
+      parseReviewPresentationPlan({
+        overview: Array.from(
+          { length: REVIEW_PRESENTATION_LIMITS.markdownSlidesPerArtifact },
+          (_, index) => ({
+            kind: 'markdown',
+            title: `Overview ${index}`,
+            markdown: 'x'.repeat(6_000),
+          }),
+        ),
+        issues: Array.from(
+          { length: REVIEW_PRESENTATION_LIMITS.markdownSlidesPerArtifact },
+          (_, index) => ({
+            kind: 'markdown',
+            title: `Issues ${index}`,
+            markdown: 'y'.repeat(6_000),
+          }),
+        ),
+      }),
+    ).not.toBeNull();
   });
 });
 

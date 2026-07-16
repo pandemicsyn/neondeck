@@ -13,17 +13,24 @@ import {
 export type ReportMarkdownProps = {
   children?: string;
   className?: string;
+  linkBudget?: ReportMarkdownLinkBudget;
+};
+
+export type ReportMarkdownLinkBudget = {
+  artifact: { count: number; max: number };
+  slide: { count: number; max: number };
 };
 
 export function ReportMarkdown({
   children = '',
   className,
+  linkBudget,
 }: ReportMarkdownProps) {
   return (
     <div className={className ?? 'report-markdown'}>
       <ReactMarkdown
         allowedElements={REPORT_MARKDOWN_ALLOWED_ELEMENTS}
-        allowElement={createReportMarkdownAllowElement()}
+        allowElement={createReportMarkdownAllowElement(linkBudget)}
         components={reportMarkdownComponents}
         remarkPlugins={[remarkGfm]}
         skipHtml
@@ -114,15 +121,28 @@ const reportMarkdownComponents: Components = {
   },
 };
 
-function createReportMarkdownAllowElement(): AllowElement {
-  let links = 0;
+function createReportMarkdownAllowElement(
+  linkBudget?: ReportMarkdownLinkBudget,
+): AllowElement {
+  const fallbackBudget = {
+    artifact: { count: 0, max: REPORT_MARKDOWN_LIMITS.linksPerArtifact },
+    slide: { count: 0, max: REPORT_MARKDOWN_LIMITS.linksPerSlide },
+  };
+  const budget = linkBudget ?? fallbackBudget;
   const blocked = new WeakSet<object>();
 
   return (element) => {
     if (blocked.has(element)) return false;
     if (element.tagName === 'a') {
-      links += 1;
-      return links <= REPORT_MARKDOWN_LIMITS.linksPerSlide;
+      if (
+        budget.slide.count >= budget.slide.max ||
+        budget.artifact.count >= budget.artifact.max
+      ) {
+        return false;
+      }
+      budget.slide.count += 1;
+      budget.artifact.count += 1;
+      return true;
     }
     if (element.tagName === 'table' && !tableIsWithinBounds(element)) {
       blockDescendants(element, blocked);

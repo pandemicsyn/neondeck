@@ -22,7 +22,7 @@ import {
   loadAutomationLearningMemoryContext,
   type AutomationLearningMemoryContext,
 } from '../learning';
-import { renderReportHtml } from '../../lib/report-html';
+import { renderReportDeckHtml } from '../../lib/report-deck-html';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
@@ -551,9 +551,10 @@ async function writeReviewReports(input: {
         findingCount: output.findings.length,
         deck: decks.overview.document,
         deckOverflow: decks.overview.overflowUsed,
+        presentationWarnings: decks.presentationWarnings,
         document: overviewDocument,
       },
-      html: renderReportHtml(overviewDocument),
+      html: renderReportDeckHtml(decks.overview.document),
     },
     paths,
   );
@@ -615,9 +616,10 @@ async function writeReviewReports(input: {
         reportOnlyCount: seedResult.reportOnly.length,
         deck: decks.issues.document,
         deckOverflow: decks.issues.overflowUsed,
+        presentationWarnings: decks.presentationWarnings,
         document: issuesDocument,
       },
-      html: renderReportHtml(issuesDocument),
+      html: renderReportDeckHtml(decks.issues.document),
     },
     paths,
   );

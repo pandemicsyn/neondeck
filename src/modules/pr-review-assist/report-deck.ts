@@ -18,7 +18,10 @@ import type {
 import type {
   ReviewAssistFinding,
   ReviewAssistStructuredOutput,
+  ReviewPresentationPlan,
+  ReviewPresentationSlide,
 } from './schemas';
+import { parseReviewPresentationPlan } from './schemas';
 
 export type ReviewReportDeckInput = {
   sourceRef: string;
@@ -46,9 +49,57 @@ export function buildReviewReportDecks(input: ReviewReportDeckInput) {
     input.files.map((file) => [file.path, safeReportUrl(file.htmlUrl)]),
   );
   const links = primaryLinks(input.state.url);
-  const overview = buildOverviewDeck(input, fileUrls, links);
-  const issues = buildIssuesDeck(input, fileUrls, links);
-  return { overview, issues };
+  const fallbackOverview = buildOverviewDeck(input, fileUrls, links);
+  const fallbackIssues = buildIssuesDeck(input, fileUrls, links);
+  if (input.output.presentation === undefined) {
+    return {
+      overview: fallbackOverview,
+      issues: fallbackIssues,
+      presentationWarnings: [] as string[],
+    };
+  }
+
+  const presentation = parseReviewPresentationPlan(input.output.presentation);
+  if (!presentation) {
+    return {
+      overview: fallbackOverview,
+      issues: fallbackIssues,
+      presentationWarnings: [
+        'The agent presentation plan was invalid; deterministic deck layouts were used.',
+      ],
+    };
+  }
+
+  const overviewResult = applyOverviewPresentation(
+    input,
+    fallbackOverview,
+    presentation.overview,
+    links,
+  );
+  const issuesResult = applyIssuesPresentation(
+    input,
+    fallbackIssues,
+    presentation.issues,
+    links,
+  );
+  if (overviewResult.rejected || issuesResult.rejected) {
+    return {
+      overview: fallbackOverview,
+      issues: fallbackIssues,
+      presentationWarnings: [
+        ...(overviewResult.rejected ? overviewResult.warnings : []),
+        ...(issuesResult.rejected ? issuesResult.warnings : []),
+      ],
+    };
+  }
+  return {
+    overview: overviewResult.deck,
+    issues: issuesResult.deck,
+    presentationWarnings: [
+      ...overviewResult.warnings,
+      ...issuesResult.warnings,
+    ],
+  };
 }
 
 function buildOverviewDeck(
@@ -353,6 +404,348 @@ function sortFindings(findings: ReportDeckFindingItem[]) {
     .map(({ finding }) => finding);
 }
 
+type PresentationResult = {
+  deck: BuiltReviewReportDeck;
+  rejected: boolean;
+  warnings: string[];
+};
+
+function applyOverviewPresentation(
+  input: ReviewReportDeckInput,
+  fallback: BuiltReviewReportDeck,
+  entries: ReviewPresentationPlan['overview'],
+  links: ReportDeckDocument['links'],
+): PresentationResult {
+  const requiredSources = [
+    ...(input.output.overview.changeMap.length > 0
+      ? (['change-map'] as const)
+      : []),
+    ...(input.output.overview.risks.length > 0 ? (['risks'] as const) : []),
+  ];
+  return applyPresentation({
+    artifact: 'overview',
+    entries,
+    fallback,
+    links,
+    requiredSources,
+    resolveSource: (source) => overviewSlidesForSource(source, input, fallback),
+  });
+}
+
+function applyIssuesPresentation(
+  input: ReviewReportDeckInput,
+  fallback: BuiltReviewReportDeck,
+  entries: ReviewPresentationPlan['issues'],
+  links: ReportDeckDocument['links'],
+): PresentationResult {
+  const requiredSources = [
+    ...(input.seededFindings.length > 0 ? (['seeded-comments'] as const) : []),
+    ...(input.reportOnlyFindings.length > 0
+      ? (['report-only-findings'] as const)
+      : []),
+  ];
+  return applyPresentation({
+    artifact: 'issues',
+    entries,
+    fallback,
+    links,
+    requiredSources,
+    resolveSource: (source) => issuesSlidesForSource(source, fallback),
+  });
+}
+
+function applyPresentation(input: {
+  artifact: 'overview' | 'issues';
+  entries: ReviewPresentationSlide[];
+  fallback: BuiltReviewReportDeck;
+  links: ReportDeckDocument['links'];
+  requiredSources: string[];
+  resolveSource: (source: string) => ReportDeckSlide[] | null;
+}): PresentationResult {
+  const warnings: string[] = [];
+  const selectedSources = new Set<string>();
+  const plannedSlides: ReportDeckSlide[] = [];
+  const hasCombinedFindings = input.entries.some(
+    (entry) => entry.kind === 'source' && entry.source === 'findings',
+  );
+
+  for (const entry of input.entries) {
+    if (entry.kind === 'markdown') {
+      plannedSlides.push({
+        kind: 'markdown',
+        title: entry.title,
+        markdown: entry.markdown,
+        tone: entry.tone,
+      });
+      continue;
+    }
+    if (
+      hasCombinedFindings &&
+      (entry.source === 'seeded-comments' ||
+        entry.source === 'report-only-findings')
+    ) {
+      warnings.push(
+        `${input.artifact}: ignored duplicate ${entry.source} source because findings already includes it.`,
+      );
+      continue;
+    }
+    if (selectedSources.has(entry.source)) {
+      warnings.push(
+        `${input.artifact}: ignored duplicate ${entry.source} source.`,
+      );
+      continue;
+    }
+    const expectedLayout = presentationLayout(entry.source);
+    const sourceSlides = input.resolveSource(entry.source);
+    if (entry.layout !== expectedLayout || sourceSlides === null) {
+      return fallbackPresentation(
+        input,
+        `${input.artifact}: unsupported ${entry.source}/${entry.layout} presentation source.`,
+      );
+    }
+    selectedSources.add(entry.source);
+    plannedSlides.push(...retitleSlides(sourceSlides, entry.title));
+  }
+
+  for (const requiredSource of input.requiredSources) {
+    if (sourceCovers(selectedSources, requiredSource)) continue;
+    const sourceSlides = input.resolveSource(requiredSource);
+    if (sourceSlides === null) {
+      return fallbackPresentation(
+        input,
+        `${input.artifact}: could not restore required ${requiredSource} data.`,
+      );
+    }
+    selectedSources.add(requiredSource);
+    plannedSlides.push(...sourceSlides);
+    warnings.push(
+      `${input.artifact}: appended required ${requiredSource} data omitted by the presentation plan.`,
+    );
+  }
+
+  const slides = normalizeAppendices([
+    input.fallback.document.slides[0]!,
+    ...plannedSlides,
+  ]);
+  if (slides.length > REPORT_DECK_LIMITS.slides) {
+    return fallbackPresentation(
+      input,
+      `${input.artifact}: resolved presentation exceeded the deck slide bound.`,
+    );
+  }
+
+  try {
+    const document = parseBuiltDeck({
+      ...input.fallback.document,
+      slides: withBoundedLinks(slides, input.links.length),
+    });
+    return {
+      deck: {
+        document,
+        overflowUsed:
+          input.fallback.overflowUsed ||
+          document.slides.some((slide) => slide.kind === 'appendix'),
+      },
+      rejected: false,
+      warnings,
+    };
+  } catch {
+    return fallbackPresentation(
+      input,
+      `${input.artifact}: resolved presentation was invalid.`,
+    );
+  }
+}
+
+function fallbackPresentation(
+  input: Pick<PresentationResultInput, 'fallback'> & { artifact: string },
+  warning: string,
+): PresentationResult {
+  return {
+    deck: input.fallback,
+    rejected: true,
+    warnings: [
+      `${warning} The deterministic ${input.artifact} layout was used.`,
+    ],
+  };
+}
+
+type PresentationResultInput = Parameters<typeof applyPresentation>[0];
+
+function overviewSlidesForSource(
+  source: string,
+  input: ReviewReportDeckInput,
+  fallback: BuiltReviewReportDeck,
+): ReportDeckSlide[] | null {
+  switch (source) {
+    case 'pr-facts':
+      return fallback.document.slides.filter((slide) => slide.kind === 'facts');
+    case 'checks':
+      return singleColumnSlide(
+        'Checks',
+        'Checks',
+        'check',
+        input.output.overview.checks,
+      );
+    case 'risks':
+      return singleColumnSlide(
+        'Risks',
+        'Risks',
+        'risk',
+        input.output.overview.risks,
+      );
+    case 'next-actions':
+      return singleColumnSlide(
+        'Next actions',
+        'Next actions',
+        'check',
+        input.output.overview.checks,
+      );
+    case 'change-map':
+      return slidesForKind(fallback, 'change-map');
+    default:
+      return null;
+  }
+}
+
+function issuesSlidesForSource(
+  source: string,
+  fallback: BuiltReviewReportDeck,
+): ReportDeckSlide[] | null {
+  switch (source) {
+    case 'findings':
+      return slidesForKind(fallback, 'findings');
+    case 'seeded-comments':
+      return findingSlidesForDisposition(fallback, 'seeded');
+    case 'report-only-findings':
+      return findingSlidesForDisposition(fallback, 'report-only');
+    default:
+      return null;
+  }
+}
+
+function slidesForKind(
+  deck: BuiltReviewReportDeck,
+  kind: 'change-map' | 'findings',
+) {
+  const slides = deck.document.slides.filter((slide) => slide.kind === kind);
+  const groups = deck.document.slides.flatMap((slide) =>
+    slide.kind === 'appendix'
+      ? slide.groups.filter((group) => group.kind === kind)
+      : [],
+  );
+  return groups.length > 0
+    ? [
+        ...slides,
+        {
+          kind: 'appendix' as const,
+          title:
+            kind === 'change-map' ? 'Change map appendix' : 'Findings appendix',
+          bodyMarkdown: 'Remaining deterministic review data.',
+          groups,
+        },
+      ]
+    : slides;
+}
+
+function findingSlidesForDisposition(
+  deck: BuiltReviewReportDeck,
+  disposition: 'seeded' | 'report-only',
+) {
+  const slides = deck.document.slides.filter(
+    (slide): slide is Extract<ReportDeckSlide, { kind: 'findings' }> =>
+      slide.kind === 'findings' && slide.disposition === disposition,
+  );
+  const groups = deck.document.slides.flatMap((slide) =>
+    slide.kind === 'appendix'
+      ? slide.groups.filter(
+          (group) =>
+            group.kind === 'findings' && group.disposition === disposition,
+        )
+      : [],
+  );
+  return groups.length > 0
+    ? [
+        ...slides,
+        {
+          kind: 'appendix' as const,
+          title: 'Findings appendix',
+          bodyMarkdown: 'Remaining deterministic review findings.',
+          groups,
+        },
+      ]
+    : slides;
+}
+
+function singleColumnSlide(
+  title: string,
+  columnTitle: string,
+  tone: 'check' | 'risk',
+  items: string[],
+): ReportDeckSlide[] {
+  return items.length > 0
+    ? [
+        {
+          kind: 'columns',
+          title,
+          columns: [{ title: columnTitle, tone, items }],
+        },
+      ]
+    : [];
+}
+
+function retitleSlides(slides: ReportDeckSlide[], title?: string) {
+  return title ? slides.map((slide) => ({ ...slide, title })) : slides;
+}
+
+function normalizeAppendices(slides: ReportDeckSlide[]) {
+  const normalSlides = slides.filter((slide) => slide.kind !== 'appendix');
+  const appendices = slides.filter(
+    (slide): slide is Extract<ReportDeckSlide, { kind: 'appendix' }> =>
+      slide.kind === 'appendix',
+  );
+  if (appendices.length === 0) return normalSlides;
+  const groups = appendices.flatMap((slide) => slide.groups);
+  return [
+    ...normalSlides,
+    {
+      kind: 'appendix' as const,
+      title: appendices[0]!.title,
+      bodyMarkdown:
+        'Remaining deterministic review data is collected here so the deck stays within its slide limit.',
+      groups,
+    },
+  ];
+}
+
+function sourceCovers(sources: Set<string>, requiredSource: string) {
+  return (
+    sources.has(requiredSource) ||
+    (sources.has('findings') &&
+      (requiredSource === 'seeded-comments' ||
+        requiredSource === 'report-only-findings'))
+  );
+}
+
+function presentationLayout(source: string) {
+  switch (source) {
+    case 'pr-facts':
+      return 'facts';
+    case 'checks':
+    case 'risks':
+    case 'next-actions':
+      return 'columns';
+    case 'change-map':
+      return 'change-map';
+    case 'seeded-comments':
+    case 'report-only-findings':
+    case 'findings':
+      return 'findings';
+    default:
+      return null;
+  }
+}
+
 function withBoundedLinks(
   slides: ReportDeckSlide[],
   globalLinkCount: number,
@@ -410,7 +803,7 @@ function withBoundedLinks(
         return {
           ...slide,
           groups: slide.groups.map((group) =>
-            group.kind === 'change-map'
+            group.kind === 'facts'
               ? {
                   ...group,
                   items: group.items.map((item) => ({
@@ -418,16 +811,25 @@ function withBoundedLinks(
                     href: keepHref(item.href, slideLinks),
                   })),
                 }
-              : {
-                  ...group,
-                  items: group.items.map((item) => ({
-                    ...item,
-                    href: keepHref(item.href, slideLinks),
-                  })),
-                },
+              : group.kind === 'change-map'
+                ? {
+                    ...group,
+                    items: group.items.map((item) => ({
+                      ...item,
+                      href: keepHref(item.href, slideLinks),
+                    })),
+                  }
+                : {
+                    ...group,
+                    items: group.items.map((item) => ({
+                      ...item,
+                      href: keepHref(item.href, slideLinks),
+                    })),
+                  },
           ),
         };
       case 'columns':
+      case 'markdown':
         return slide;
     }
   });

@@ -104,6 +104,16 @@ describe('PR review assist', () => {
               suggestedFix: 'Keep it report-only.',
             },
           ],
+          presentation: {
+            overview: [
+              {
+                kind: 'source',
+                source: 'change-map',
+                layout: 'facts',
+              },
+            ],
+            issues: [],
+          },
         }),
       },
     );
@@ -158,6 +168,11 @@ describe('PR review assist', () => {
         }),
       ]),
     );
+    expect(overview?.summary).toMatchObject({
+      presentationWarnings: [
+        expect.stringContaining('deterministic overview layout was used'),
+      ],
+    });
     const issues = reports.find((report) =>
       report.title.startsWith('Review Issues:'),
     );
@@ -177,11 +192,11 @@ describe('PR review assist', () => {
       ]),
     );
     const html = await readReportHtml(overview!.id, paths);
-    expect(html?.html).toContain(
-      'Review &lt;script&gt;alert(1)&lt;/script&gt;',
-    );
-    expect(html?.html).toContain('Risk contains &lt;b&gt;markup&lt;/b&gt;');
+    expect(html?.html).toContain('data-report-deck=""');
+    expect(html?.html).toContain('Review alert(1)');
+    expect(html?.html).toContain('Risk contains markup');
     expect(html?.html).not.toContain('<script>alert(1)</script>');
+    expect(html?.html).not.toContain('<b>markup</b>');
   });
 
   it('replaces prior Neon findings on re-review', async () => {

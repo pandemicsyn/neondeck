@@ -113,6 +113,18 @@ const reportDeckColumnsSlideSchema = v.object({
   ),
 });
 
+const reportDeckMarkdownSlideSchema = v.object({
+  kind: v.literal('markdown'),
+  title: titleSchema,
+  markdown: v.pipe(
+    v.string(),
+    v.trim(),
+    v.minLength(1),
+    v.maxLength(REPORT_MARKDOWN_LIMITS.freeformCharacters),
+  ),
+  tone: v.picklist(['neutral', 'correctness', 'security', 'positive']),
+});
+
 const reportDeckChangeMapSlideSchema = v.object({
   kind: v.literal('change-map'),
   title: titleSchema,
@@ -139,6 +151,15 @@ const reportDeckFindingsSlideSchema = v.object({
 });
 
 const reportDeckAppendixGroupSchema = v.variant('kind', [
+  v.object({
+    kind: v.literal('facts'),
+    title: titleSchema,
+    items: v.pipe(
+      v.array(reportDeckFactSchema),
+      v.minLength(1),
+      v.maxLength(REPORT_DECK_LIMITS.appendixItems),
+    ),
+  }),
   v.object({
     kind: v.literal('change-map'),
     title: titleSchema,
@@ -175,6 +196,7 @@ export const reportDeckSlideSchema = v.variant('kind', [
   reportDeckSummarySlideSchema,
   reportDeckFactsSlideSchema,
   reportDeckColumnsSlideSchema,
+  reportDeckMarkdownSlideSchema,
   reportDeckChangeMapSlideSchema,
   reportDeckFindingsSlideSchema,
   reportDeckAppendixSlideSchema,
@@ -279,6 +301,8 @@ function linksInSlide(slide: ReportDeckSlide) {
     case 'change-map':
     case 'findings':
       return slide.items.filter((item) => item.href !== null).length;
+    case 'markdown':
+      return 0;
     case 'appendix':
       return slide.groups.reduce(
         (count, group) =>

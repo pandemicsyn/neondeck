@@ -3,6 +3,7 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { representativeReportDeckFixture } from '../../../../shared/report-deck-fixtures';
 import { getReport, getReportHtml } from '../../api/reports';
 import { PrReviewArtifactsOverlay } from './PrReviewArtifactsOverlay';
 
@@ -92,6 +93,57 @@ describe('PR review artifacts overlay', () => {
     expect(document.body.textContent).toContain('Legacy overview');
     expect(document.body.textContent).toContain('Legacy risk');
     expect(document.querySelector('iframe')).toBeNull();
+  });
+
+  it('renders v2 decks with accessible navigation and bounded keyboard controls', async () => {
+    getReportMock.mockResolvedValue({
+      ...reportResponse(),
+      item: {
+        ...reportResponse().item!,
+        summary: { deck: representativeReportDeckFixture },
+      },
+    });
+    renderOverlay(root);
+
+    await act(async () => Promise.resolve());
+    const deck = document.querySelector<HTMLElement>('[data-report-deck]')!;
+    const slides = [
+      ...document.querySelectorAll<HTMLElement>('[data-deck-slide-index]'),
+    ];
+    expect(deck.getAttribute('aria-label')).toContain('report deck');
+    expect(slides[0]?.hidden).toBe(false);
+    expect(slides[1]?.hidden).toBe(true);
+    expect(
+      document
+        .querySelector('[data-deck-dot-index="1"]')
+        ?.getAttribute('aria-label'),
+    ).toBe('Go to slide 2: PR facts');
+    expect(document.querySelector('[aria-live="polite"]')).not.toBeNull();
+
+    act(() => button('next')!.click());
+    expect(slides[0]?.hidden).toBe(true);
+    expect(slides[1]?.hidden).toBe(false);
+
+    act(() =>
+      deck.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: 'End' }),
+      ),
+    );
+    expect(slides.at(-1)?.hidden).toBe(false);
+
+    act(() =>
+      deck.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: 'Home' }),
+      ),
+    );
+    const link = document.querySelector<HTMLAnchorElement>('.report-deck a')!;
+    act(() =>
+      link.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' }),
+      ),
+    );
+    expect(slides[0]?.hidden).toBe(false);
+    expect(slides[1]?.hidden).toBe(true);
   });
 });
 

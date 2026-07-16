@@ -79,9 +79,13 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           comments survive reloads and stale anchors are skipped until the human
           re-anchors them. Compact layouts keep the deck glanceable; use the
           review pop-out control or <code>neondeck open</code> when a full PR review
-          needs the wider controls. These review actions are dashboard-only controls;
-          Neon does not get a model-callable action or tool for submitting PR reviews,
-          verdicts, thread replies, or thread resolution.
+          needs the wider controls. Generated overview and issues artifacts open as
+          keyboard-navigable slide decks that lead with the agent's review brief,
+          render a bounded safe Markdown subset, and preserve overflow in a final
+          appendix. Retained report artifacts are adapted into the same view. These
+          review actions are dashboard-only controls; Neon does not get a model-callable
+          action or tool for submitting PR reviews, verdicts, thread replies, or thread
+          resolution.
         </p>
         <p>
           Work rows can open linked chat sessions without a side-by-side chat
