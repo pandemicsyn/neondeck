@@ -162,6 +162,7 @@ describe('toast reducer and policy', () => {
       }),
     ).toEqual({
       enabled: true,
+      soundEnabled: true,
       minimumLevel: 'attention',
       readyDurationMs: 1_000,
       maxVisible: 3,

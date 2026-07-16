@@ -13,6 +13,7 @@
   "notifications": {
     "toasts": {
       "enabled": true,
+      "soundEnabled": true,
       "minimumLevel": "ready",
       "readyDurationMs": 3600000,
       "maxVisible": 3

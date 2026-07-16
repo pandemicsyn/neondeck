@@ -6,6 +6,7 @@ import type {
 
 export const DEFAULT_TOAST_CONFIG: DashboardToastConfig = {
   enabled: true,
+  soundEnabled: true,
   minimumLevel: 'ready',
   readyDurationMs: 3_600_000,
   maxVisible: 3,

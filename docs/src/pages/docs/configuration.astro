@@ -165,6 +165,7 @@ GITHUB_LOGIN=...</code></pre>
   "notifications": &#123;
     "toasts": &#123;
       "enabled": true,
+      "soundEnabled": true,
       "minimumLevel": "ready",
       "readyDurationMs": 3600000,
       "maxVisible": 3
@@ -175,7 +176,11 @@ GITHUB_LOGIN=...</code></pre>
           Ready notifications remain visible for one hour by default. Set
           <code>readyDurationMs</code> to <code>0</code> to keep them visible until
           dismissed, or choose a nonzero duration from 1 second through 24 hours.
-          Attention and urgent notifications do not auto-timeout.
+          Attention and urgent notifications do not auto-timeout. Newly created notifications
+          play a brief chime by default when they meet the toast policy. Set <code
+            >soundEnabled</code
+          > to <code>false</code> to mute it. A browser may require one click or keypress
+          before it allows audio.
         </p>
 
         <h2>Schedules and watches</h2>

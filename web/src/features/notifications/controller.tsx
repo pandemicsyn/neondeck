@@ -15,8 +15,9 @@ import {
   type DashboardConfig,
 } from '../../api';
 import { queryKeys } from '../../lib/query';
-import { resolveToastConfig } from './policy';
+import { notificationQualifies, resolveToastConfig } from './policy';
 import { initialToastState, toastReducer } from './reducer';
+import { createNotificationChime } from './sound';
 import { resolveNotificationTarget } from './targets';
 import { ToastViewport } from './toast-viewport';
 import type { ToastItem } from './types';
@@ -43,6 +44,9 @@ export function NotificationController({
   );
   const toastConfigRef = useRef(toastConfig);
   const previousToastConfigRef = useRef(toastConfig);
+  const notificationChimeRef = useRef<ReturnType<
+    typeof createNotificationChime
+  > | null>(null);
 
   useEffect(() => {
     toastConfigRef.current = toastConfig;
@@ -53,7 +57,25 @@ export function NotificationController({
   }, [toastConfig]);
 
   useEffect(() => {
+    if (!toastConfig.soundEnabled) return;
+    const chime = createNotificationChime();
+    const unlock = () => chime.unlock();
+    notificationChimeRef.current = chime;
+    window.addEventListener('pointerdown', unlock, { passive: true });
+    window.addEventListener('keydown', unlock);
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+      if (notificationChimeRef.current === chime) {
+        notificationChimeRef.current = null;
+      }
+      chime.close();
+    };
+  }, [toastConfig.soundEnabled]);
+
+  useEffect(() => {
     return openNotificationEventStream((event) => {
+      const currentToastConfig = toastConfigRef.current;
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.notifications }),
         queryClient.invalidateQueries({ queryKey: queryKeys.runtimeStatus }),
@@ -61,10 +83,17 @@ export function NotificationController({
           queryKey: queryKeys.chatSessionActivityRoot,
         }),
       ]);
+      if (
+        event.action === 'created' &&
+        currentToastConfig.soundEnabled &&
+        notificationQualifies(event.notification, currentToastConfig)
+      ) {
+        notificationChimeRef.current?.play();
+      }
       dispatch({
         type: 'notification-event',
         event,
-        config: toastConfigRef.current,
+        config: currentToastConfig,
         now: Date.now(),
       });
     });

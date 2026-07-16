@@ -313,6 +313,7 @@ export const dashboardRegionSchema = v.looseObject({
 
 export const dashboardToastConfigSchema = v.looseObject({
   enabled: v.optional(v.boolean(), true),
+  soundEnabled: v.optional(v.boolean(), true),
   minimumLevel: v.optional(
     v.picklist(['info', 'ready', 'attention', 'urgent']),
     'ready',
@@ -356,6 +357,7 @@ export const dashboardConfigSchema = v.looseObject({
     v.looseObject({
       toasts: v.optional(dashboardToastConfigSchema, {
         enabled: true,
+        soundEnabled: true,
         minimumLevel: 'ready',
         readyDurationMs: 3_600_000,
         maxVisible: 3,
@@ -364,6 +366,7 @@ export const dashboardConfigSchema = v.looseObject({
     {
       toasts: {
         enabled: true,
+        soundEnabled: true,
         minimumLevel: 'ready',
         readyDurationMs: 3_600_000,
         maxVisible: 3,
