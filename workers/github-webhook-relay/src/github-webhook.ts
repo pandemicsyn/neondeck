@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { jsonObjectSchema } from "./json";
 
 const maximumBufferedPayloadBytes = 5 * 1024 * 1024;
 
@@ -21,6 +22,7 @@ const githubHeadersSchema = z.object({
   contentType: z.string().regex(/^application\/json(?:\s*;.*)?$/i),
   deliveryId: z.string().uuid(),
   event: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
+  hookId: z.string().regex(/^\d+$/),
   signature: z.string().regex(/^sha256=[0-9a-f]{64}$/),
 });
 
@@ -36,13 +38,23 @@ export const githubPayloadSchema = z
       .passthrough()
       .optional(),
   })
-  .passthrough();
+  .passthrough()
+  .superRefine((value, context) => {
+    if (!jsonObjectSchema.safeParse(value).success) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "GitHub payload must be a finite, acyclic JSON object.",
+      });
+    }
+  });
 
 export const verifiedGithubWebhookSchema = z.object({
   deliveryId: z.string().uuid(),
   event: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
+  hookId: z.string().regex(/^\d+$/),
+  receivedAt: z.string().datetime(),
   payload: githubPayloadSchema,
-});
+}).strict();
 
 export type VerifiedGithubWebhook = z.infer<
   typeof verifiedGithubWebhookSchema
@@ -72,6 +84,7 @@ export async function verifyGithubWebhook(
     contentType: request.headers.get("content-type"),
     deliveryId: request.headers.get("x-github-delivery"),
     event: request.headers.get("x-github-event"),
+    hookId: request.headers.get("x-github-hook-id"),
     signature: request.headers.get("x-hub-signature-256"),
   });
   if (!parsedHeaders.success) {
@@ -133,6 +146,8 @@ export async function verifyGithubWebhook(
     webhook: verifiedGithubWebhookSchema.parse({
       deliveryId: parsedHeaders.data.deliveryId,
       event: parsedHeaders.data.event,
+      hookId: parsedHeaders.data.hookId,
+      receivedAt: new Date().toISOString(),
       payload: parsedPayload.data,
     }),
   };

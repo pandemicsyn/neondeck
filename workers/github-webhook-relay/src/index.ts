@@ -24,6 +24,7 @@ const healthResponseSchema = z.object({
 
 const webhookRelayResponseSchema = z.object({
   relayed: z.literal(true),
+  protocolVersion: z.literal(1),
   deliveryId: z.string().uuid(),
   deliveredClients: z.number().int().nonnegative(),
 });
@@ -68,7 +69,10 @@ export default {
       try {
         const room = env.RELAY_ROOMS.getByName(webhookRoute.channel);
         const broadcast = broadcastResultSchema.parse(
-          await room.broadcast(result.webhook),
+          await room.broadcast({
+            channel: webhookRoute.channel,
+            webhook: result.webhook,
+          }),
         );
         console.log(
           JSON.stringify({
@@ -84,6 +88,7 @@ export default {
         return Response.json(
           webhookRelayResponseSchema.parse({
             relayed: true,
+            protocolVersion: 1,
             deliveryId: result.webhook.deliveryId,
             deliveredClients: broadcast.deliveredClients,
           }),
