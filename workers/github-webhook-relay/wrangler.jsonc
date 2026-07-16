@@ -5,17 +5,20 @@
   "compatibility_date": "2026-07-16",
   "compatibility_flags": ["nodejs_compat"],
   "secrets": {
-    "required": ["GITHUB_WEBHOOK_SECRET", "WS_CLIENT_SECRET"]
+    "required": ["GITHUB_WEBHOOK_SECRET", "WS_CLIENT_SECRET"],
+  },
+  "vars": {
+    "MAX_WEBHOOK_BYTES": 1048576,
   },
   "observability": {
     "enabled": true,
     "logs": {
       "enabled": true,
-      "head_sampling_rate": 1
+      "head_sampling_rate": 1,
     },
     "traces": {
       "enabled": true,
-      "head_sampling_rate": 0.01
-    }
-  }
+      "head_sampling_rate": 0.01,
+    },
+  },
 }
