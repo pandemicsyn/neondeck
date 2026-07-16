@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { defaultCommandCatalog } from '../types';
-import { filterCommands, mergeCommandCatalog } from './commands';
+import {
+  clampCommandIndex,
+  filterCommands,
+  mergeCommandCatalog,
+} from './commands';
 
 describe('chat command catalog', () => {
   it('keeps review-pr available in the offline fallback catalog', () => {
@@ -52,5 +56,11 @@ describe('chat command catalog', () => {
         { label: 'Local command', command: '/local-command' },
       ]),
     ).toContainEqual({ label: 'Local command', command: '/local-command' });
+  });
+
+  it('clamps the active command index when suggestions shrink', () => {
+    expect(clampCommandIndex(5, 2)).toBe(1);
+    expect(clampCommandIndex(-1, 2)).toBe(0);
+    expect(clampCommandIndex(2, 0)).toBe(0);
   });
 });

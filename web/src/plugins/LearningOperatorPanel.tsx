@@ -148,6 +148,7 @@ function LearningOperatorView({
 }) {
   const tabs: LearningTab[] = ['reviews', 'candidates', 'audit'];
   const tabIdPrefix = useId();
+  const tabPanelId = `${tabIdPrefix}-panel`;
   const candidates = useMemo(() => {
     const source =
       candidateFilter === 'all'
@@ -191,7 +192,7 @@ function LearningOperatorView({
         >
           {tabs.map((option, index) => (
             <button
-              aria-controls={`${tabIdPrefix}-${option}-panel`}
+              aria-controls={tabPanelId}
               aria-selected={tab === option}
               className={tabClass(tab === option)}
               id={`${tabIdPrefix}-${option}-tab`}
@@ -218,7 +219,7 @@ function LearningOperatorView({
       <div
         aria-labelledby={`${tabIdPrefix}-${tab}-tab`}
         className="flex min-h-0 flex-1 flex-col"
-        id={`${tabIdPrefix}-${tab}-panel`}
+        id={tabPanelId}
         role="tabpanel"
         tabIndex={0}
       >

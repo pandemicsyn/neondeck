@@ -1,5 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { CSSProperties } from 'react';
 import {
   getDashboardConfig,
@@ -326,10 +334,11 @@ function DashboardPanel({
   const initialTabId = region.defaultTab ?? region.tabs[0]?.id ?? '';
   const [activeTabId, setActiveTabId] = useState(initialTabId);
   const [focusPulse, setFocusPulse] = useState(false);
+  const tabIdPrefix = useId();
   const defaultTabRef = useRef({ regionId: region.id, tabId: initialTabId });
   const activeTab =
     region.tabs.find((tab) => tab.id === activeTabId) ?? region.tabs[0];
-  const tabPanelId = `dashboard-tabpanel-${safeDomId(region.id)}`;
+  const tabPanelId = `${tabIdPrefix}-panel`;
   const role = regionPrimaryRole(region);
   const style: CSSProperties =
     arrangement === 'grid'
@@ -415,13 +424,17 @@ function DashboardPanel({
           onChange={setActiveTabId}
           panelId={tabPanelId}
           regionId={region.id}
+          tabIdPrefix={tabIdPrefix}
           tabs={region.tabs}
         />
         <div
           aria-label={region.tabs.length <= 1 ? activeTab.title : undefined}
           aria-labelledby={
             region.tabs.length > 1
-              ? dashboardTabId(region.id, activeTab.id)
+              ? dashboardTabId(
+                  tabIdPrefix,
+                  region.tabs.findIndex((tab) => tab.id === activeTab.id),
+                )
               : undefined
           }
           className="min-h-0 flex-1"
@@ -455,6 +468,7 @@ function DashboardPanel({
           onChange={setActiveTabId}
           panelId={tabPanelId}
           regionId={region.id}
+          tabIdPrefix={tabIdPrefix}
           tabs={region.tabs}
         />
         <ConfigIssues issues={resolvedConfig.issues} />
@@ -462,7 +476,10 @@ function DashboardPanel({
           aria-label={region.tabs.length <= 1 ? activeTab.title : undefined}
           aria-labelledby={
             region.tabs.length > 1
-              ? dashboardTabId(region.id, activeTab.id)
+              ? dashboardTabId(
+                  tabIdPrefix,
+                  region.tabs.findIndex((tab) => tab.id === activeTab.id),
+                )
               : undefined
           }
           className="min-h-0 flex-1"
@@ -498,12 +515,14 @@ function RegionTabs({
   onChange,
   panelId,
   regionId,
+  tabIdPrefix,
   tabs,
 }: {
   activeTabId: string;
   onChange: (id: string) => void;
   panelId: string;
   regionId: string;
+  tabIdPrefix: string;
   tabs: DashboardTab[];
 }) {
   if (tabs.length <= 1) return null;
@@ -523,7 +542,7 @@ function RegionTabs({
               ? 'shrink-0 border border-primary px-2 py-0.5 text-primary'
               : 'shrink-0 border border-transparent px-2 py-0.5 text-muted hover:border-line hover:text-ink'
           }
-          id={dashboardTabId(regionId, tab.id)}
+          id={dashboardTabId(tabIdPrefix, index)}
           key={tab.id}
           onClick={() => onChange(tab.id)}
           onKeyDown={(event) => {
@@ -543,7 +562,7 @@ function RegionTabs({
             if (!nextTab) return;
             onChange(nextTab.id);
             document
-              .getElementById(dashboardTabId(regionId, nextTab.id))
+              .getElementById(dashboardTabId(tabIdPrefix, nextIndex))
               ?.focus();
           }}
           role="tab"
@@ -572,7 +591,7 @@ function PanelFrame({
   title: string;
   variant: string;
 }) {
-  const headingId = `dashboard-panel-heading-${safeDomId(variant)}`;
+  const headingId = `${useId()}-heading`;
   if (variant === 'statusline') {
     return (
       <Card
@@ -610,12 +629,8 @@ function PanelFrame({
   );
 }
 
-function safeDomId(value: string) {
-  return value.replace(/[^a-zA-Z0-9_-]+/g, '-');
-}
-
-function dashboardTabId(regionId: string, tabId: string) {
-  return `dashboard-tab-${safeDomId(regionId)}-${safeDomId(tabId)}`;
+function dashboardTabId(tabIdPrefix: string, index: number) {
+  return `${tabIdPrefix}-tab-${index}`;
 }
 
 function resolveTheme(theme: DashboardTheme) {

@@ -43,6 +43,7 @@ import {
   renderMessagePart,
 } from './message-parts';
 import {
+  clampCommandIndex,
   commandQueryFromInput,
   filterCommands,
   mergeCommandCatalog,
@@ -79,7 +80,7 @@ export function FlueChatSessionView({
   const [commandEvents, setCommandEvents] = useState<CommandEvent[]>([]);
   const [runningCommand, setRunningCommand] = useState<string>();
   const [commandSubmitting, setCommandSubmitting] = useState(false);
-  const [activeCommandIndex, setActiveCommandIndex] = useState(0);
+  const [requestedCommandIndex, setRequestedCommandIndex] = useState(0);
   const [dismissedCommandInput, setDismissedCommandInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [submitError, setSubmitError] = useState<string>();
@@ -119,8 +120,11 @@ export function FlueChatSessionView({
     commandQuery !== undefined &&
     dismissedCommandInput !== input &&
     visibleCommands.length > 0;
-  const activeCommand =
-    visibleCommands[Math.min(activeCommandIndex, visibleCommands.length - 1)];
+  const activeCommandIndex = clampCommandIndex(
+    requestedCommandIndex,
+    visibleCommands.length,
+  );
+  const activeCommand = visibleCommands[activeCommandIndex];
   const historyInputBlocked =
     pendingHistoryRefresh || Boolean(historyRefreshError);
   const commandBusy = commandSubmitting || Boolean(runningCommand);
@@ -150,7 +154,7 @@ export function FlueChatSessionView({
   const timelineItems = sessionTimelineItems(messages, activity);
 
   useEffect(() => {
-    setActiveCommandIndex(0);
+    setRequestedCommandIndex(0);
   }, [commandQuery]);
 
   useEffect(() => {
@@ -453,14 +457,16 @@ export function FlueChatSessionView({
     if (commandMenuOpen && activeCommand) {
       if (event.key === 'ArrowDown') {
         event.preventDefault();
-        setActiveCommandIndex((index) => (index + 1) % visibleCommands.length);
+        setRequestedCommandIndex(
+          (activeCommandIndex + 1) % visibleCommands.length,
+        );
         return;
       }
       if (event.key === 'ArrowUp') {
         event.preventDefault();
-        setActiveCommandIndex(
-          (index) =>
-            (index - 1 + visibleCommands.length) % visibleCommands.length,
+        setRequestedCommandIndex(
+          (activeCommandIndex - 1 + visibleCommands.length) %
+            visibleCommands.length,
         );
         return;
       }
