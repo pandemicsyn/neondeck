@@ -1,0 +1,1253 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Neondeck frontend static review</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0c0d12;
+        --canvas: #0a0b10;
+        --panel: #10131a;
+        --field: #070810;
+        --line: rgba(215, 247, 255, 0.16);
+        --line-strong: rgba(215, 247, 255, 0.28);
+        --ink: #d7f7ff;
+        --muted: #9db5bd;
+        --faint: #799099;
+        --cyan: #69e6ff;
+        --teal: #32cfdd;
+        --pink: #ff70c3;
+        --violet: #b59cff;
+        --amber: #ffc76b;
+        --green: #8fe3a3;
+        --red: #ff778c;
+        --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+        --sans: "IBM Plex Sans", Inter, system-ui, -apple-system, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 15px;
+        line-height: 1.58;
+      }
+
+      a {
+        color: var(--cyan);
+        text-decoration-color: rgba(105, 230, 255, 0.42);
+        text-underline-offset: 3px;
+      }
+
+      a:hover,
+      a:focus-visible {
+        color: var(--ink);
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button:focus-visible,
+      input:focus-visible,
+      a:focus-visible,
+      summary:focus-visible {
+        outline: 2px solid var(--cyan);
+        outline-offset: 2px;
+      }
+
+      .skip-link {
+        position: fixed;
+        z-index: 100;
+        top: 8px;
+        left: 8px;
+        transform: translateY(-150%);
+        border: 1px solid var(--cyan);
+        background: var(--field);
+        padding: 8px 12px;
+      }
+
+      .skip-link:focus {
+        transform: translateY(0);
+      }
+
+      .shell {
+        width: min(1520px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 30px 0 80px;
+      }
+
+      header.hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 24px;
+        align-items: end;
+        border-top: 3px solid var(--pink);
+        border-bottom: 1px solid var(--line-strong);
+        padding: 26px 0 24px;
+      }
+
+      .eyebrow,
+      .meta,
+      .label,
+      .source,
+      th,
+      nav a,
+      .chip,
+      .score-label {
+        font-family: var(--mono);
+      }
+
+      .eyebrow {
+        margin: 0 0 8px;
+        color: var(--pink);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 20ch;
+        margin-bottom: 12px;
+        font-size: clamp(34px, 5vw, 68px);
+        line-height: 0.98;
+        letter-spacing: -0.035em;
+        text-wrap: balance;
+      }
+
+      .lede {
+        max-width: 78ch;
+        margin: 0;
+        color: var(--muted);
+        font-size: 17px;
+      }
+
+      .head-score {
+        min-width: 210px;
+        border-left: 1px solid var(--line-strong);
+        padding-left: 24px;
+        text-align: right;
+      }
+
+      .head-score strong {
+        display: block;
+        color: var(--cyan);
+        font-family: var(--mono);
+        font-size: 46px;
+        line-height: 1;
+      }
+
+      .head-score span {
+        color: var(--muted);
+      }
+
+      .meta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 20px;
+        border-bottom: 1px solid var(--line);
+        padding: 12px 0;
+        color: var(--faint);
+        font-size: 12px;
+      }
+
+      nav {
+        position: sticky;
+        z-index: 20;
+        top: 0;
+        display: flex;
+        gap: 2px;
+        overflow-x: auto;
+        border-bottom: 1px solid var(--line-strong);
+        background: rgba(12, 13, 18, 0.97);
+        padding: 8px 0;
+      }
+
+      nav a {
+        flex: none;
+        min-height: 36px;
+        border: 1px solid transparent;
+        padding: 7px 10px;
+        color: var(--muted);
+        font-size: 12px;
+        text-decoration: none;
+      }
+
+      nav a:hover,
+      nav a:focus-visible {
+        border-color: var(--line-strong);
+        color: var(--cyan);
+      }
+
+      section {
+        scroll-margin-top: 66px;
+        padding-top: 42px;
+      }
+
+      .section-head {
+        display: flex;
+        gap: 18px;
+        align-items: baseline;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--line-strong);
+        margin-bottom: 18px;
+        padding-bottom: 10px;
+      }
+
+      h2 {
+        margin-bottom: 0;
+        font-size: 27px;
+        line-height: 1.15;
+        text-wrap: balance;
+      }
+
+      h3 {
+        margin-bottom: 8px;
+        font-size: 18px;
+      }
+
+      .section-note {
+        max-width: 72ch;
+        color: var(--muted);
+      }
+
+      .gate {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 14px;
+        border: 1px solid rgba(139, 77, 255, 0.52);
+        background: rgba(139, 77, 255, 0.06);
+        margin-top: 24px;
+        padding: 16px;
+      }
+
+      .gate-mark {
+        color: var(--amber);
+        font-family: var(--mono);
+        font-size: 15px;
+      }
+
+      .gate p {
+        margin-bottom: 0;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        border-top: 1px solid var(--line);
+        border-left: 1px solid var(--line);
+        margin-top: 24px;
+      }
+
+      .stat {
+        min-height: 104px;
+        border-right: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        background: var(--canvas);
+        padding: 14px;
+      }
+
+      .stat strong {
+        display: block;
+        margin-top: 8px;
+        font-family: var(--mono);
+        font-size: 30px;
+        line-height: 1;
+      }
+
+      .stat .label {
+        color: var(--faint);
+        font-size: 11px;
+      }
+
+      .p0 { color: var(--red); }
+      .p1 { color: var(--pink); }
+      .p2 { color: var(--amber); }
+      .p3 { color: var(--violet); }
+      .good { color: var(--green); }
+
+      .architecture {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        border: 1px solid var(--line-strong);
+        background: var(--canvas);
+      }
+
+      .architecture > div {
+        position: relative;
+        min-height: 148px;
+        border-right: 1px solid var(--line);
+        padding: 16px;
+      }
+
+      .architecture > div:last-child {
+        border-right: 0;
+      }
+
+      .architecture h3 {
+        color: var(--cyan);
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+
+      .architecture p {
+        margin-bottom: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .architecture .arrow {
+        position: absolute;
+        z-index: 2;
+        top: 18px;
+        right: -9px;
+        color: var(--pink);
+        font-family: var(--mono);
+      }
+
+      .health-table,
+      .compact-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--canvas);
+      }
+
+      th,
+      td {
+        border: 1px solid var(--line);
+        padding: 10px 12px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--cyan);
+        font-size: 11px;
+        letter-spacing: 0.04em;
+      }
+
+      td {
+        color: var(--muted);
+      }
+
+      td strong {
+        color: var(--ink);
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) auto;
+        gap: 12px;
+        border: 1px solid var(--line);
+        background: var(--canvas);
+        margin: 18px 0;
+        padding: 12px;
+      }
+
+      .search-label {
+        display: grid;
+        gap: 5px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      input[type="search"] {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid var(--line-strong);
+        border-radius: 0;
+        background: var(--field);
+        padding: 8px 10px;
+        color: var(--ink);
+      }
+
+      .filter-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: end;
+      }
+
+      .filter-row button {
+        min-height: 42px;
+        border: 1px solid var(--line-strong);
+        border-radius: 0;
+        background: var(--field);
+        padding: 7px 10px;
+        color: var(--muted);
+        cursor: pointer;
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .filter-row button[aria-pressed="true"] {
+        border-color: var(--cyan);
+        color: var(--cyan);
+      }
+
+      .finding-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      details.finding {
+        border: 1px solid var(--line);
+        background: var(--canvas);
+      }
+
+      details.finding[open] {
+        border-color: var(--line-strong);
+      }
+
+      details.finding[hidden] {
+        display: none;
+      }
+
+      summary {
+        display: grid;
+        grid-template-columns: 62px minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: start;
+        min-height: 50px;
+        padding: 13px 14px;
+        cursor: pointer;
+        list-style: none;
+      }
+
+      summary::-webkit-details-marker {
+        display: none;
+      }
+
+      summary::after {
+        content: "+";
+        color: var(--faint);
+        font-family: var(--mono);
+      }
+
+      details[open] summary::after {
+        content: "−";
+        color: var(--cyan);
+      }
+
+      .severity {
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .finding-title {
+        color: var(--ink);
+        font-weight: 650;
+      }
+
+      .finding-body {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+        gap: 18px;
+        border-top: 1px solid var(--line);
+        padding: 16px 88px 18px;
+      }
+
+      .finding-body p:last-child,
+      .finding-body ul:last-child {
+        margin-bottom: 0;
+      }
+
+      .finding-body h3 {
+        color: var(--cyan);
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0.04em;
+      }
+
+      .source {
+        overflow-wrap: anywhere;
+        color: var(--violet);
+        font-size: 12px;
+      }
+
+      code {
+        background: rgba(105, 230, 255, 0.07);
+        color: var(--ink);
+        font-family: var(--mono);
+        font-size: 0.9em;
+        overflow-wrap: anywhere;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        border: 1px solid var(--line);
+        padding: 2px 6px;
+        color: var(--muted);
+        font-size: 10px;
+      }
+
+      .score-grid,
+      .two-col,
+      .three-col {
+        display: grid;
+        gap: 12px;
+      }
+
+      .score-grid {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+      }
+
+      .two-col {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .three-col {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .panel-block {
+        border: 1px solid var(--line);
+        background: var(--canvas);
+        padding: 16px;
+      }
+
+      .panel-block p:last-child,
+      .panel-block ul:last-child,
+      .panel-block ol:last-child {
+        margin-bottom: 0;
+      }
+
+      .score-value {
+        display: block;
+        margin: 8px 0 5px;
+        color: var(--cyan);
+        font-family: var(--mono);
+        font-size: 30px;
+        line-height: 1;
+      }
+
+      .score-label {
+        color: var(--faint);
+        font-size: 11px;
+      }
+
+      .callout {
+        border: 1px solid rgba(139, 77, 255, 0.38);
+        background: rgba(139, 77, 255, 0.06);
+        padding: 14px 16px;
+      }
+
+      .ordered {
+        counter-reset: item;
+        list-style: none;
+        padding: 0;
+      }
+
+      .ordered li {
+        position: relative;
+        min-height: 42px;
+        border-top: 1px solid var(--line);
+        padding: 10px 10px 10px 48px;
+      }
+
+      .ordered li::before {
+        position: absolute;
+        top: 10px;
+        left: 8px;
+        content: counter(item, decimal-leading-zero);
+        counter-increment: item;
+        color: var(--pink);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .empty-filter {
+        display: none;
+        border: 1px solid var(--line);
+        padding: 18px;
+        color: var(--muted);
+      }
+
+      footer {
+        border-top: 1px solid var(--line-strong);
+        margin-top: 52px;
+        padding-top: 16px;
+        color: var(--faint);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      @media (max-width: 980px) {
+        header.hero {
+          grid-template-columns: 1fr;
+        }
+
+        .head-score {
+          border-top: 1px solid var(--line);
+          border-left: 0;
+          padding-top: 16px;
+          padding-left: 0;
+          text-align: left;
+        }
+
+        .stats,
+        .score-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .architecture {
+          grid-template-columns: 1fr;
+        }
+
+        .architecture > div {
+          min-height: auto;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .architecture .arrow {
+          top: auto;
+          right: 14px;
+          bottom: -13px;
+          transform: rotate(90deg);
+        }
+
+        .finding-body,
+        .two-col,
+        .three-col {
+          grid-template-columns: 1fr;
+        }
+
+        .finding-body {
+          padding: 16px;
+        }
+      }
+
+      @media (max-width: 680px) {
+        .shell {
+          width: min(100% - 20px, 1520px);
+          padding-top: 10px;
+        }
+
+        h1 {
+          font-size: 38px;
+        }
+
+        .stats,
+        .score-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .controls {
+          grid-template-columns: 1fr;
+        }
+
+        summary {
+          grid-template-columns: 50px minmax(0, 1fr) auto;
+          gap: 8px;
+        }
+
+        th,
+        td {
+          padding: 8px;
+        }
+
+        .table-scroll {
+          overflow-x: auto;
+        }
+      }
+
+      @media print {
+        :root {
+          color-scheme: light;
+          --bg: #fff;
+          --canvas: #fff;
+          --panel: #f6f8fa;
+          --field: #f0f3f5;
+          --line: #c8d1d7;
+          --line-strong: #84939c;
+          --ink: #172129;
+          --muted: #3e4e58;
+          --faint: #526570;
+          --cyan: #00677a;
+          --pink: #a41462;
+          --violet: #5131a5;
+          --amber: #795100;
+          --green: #146c2e;
+          --red: #a1112d;
+        }
+
+        nav,
+        .controls,
+        .skip-link {
+          display: none;
+        }
+
+        .shell {
+          width: 100%;
+          padding: 0;
+        }
+
+        details.finding {
+          break-inside: avoid;
+        }
+
+        details.finding > .finding-body {
+          display: grid !important;
+        }
+
+        summary::after {
+          display: none;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to report</a>
+    <div class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">NEONDECK / FRONTEND STATIC REVIEW / 2026-07-15</p>
+          <h1>Bug hunt and performance review</h1>
+          <p class="lede">
+            Four independent static reviews of the React dashboard, API and Flue boundary,
+            UI/UX system, and render/query performance. Performance is reported first and
+            deliberately left unmodified for discussion.
+          </p>
+        </div>
+        <div class="head-score" aria-label="Consolidated audit health score 12 out of 20">
+          <strong>12/20</strong>
+          <span>Acceptable · significant work needed</span>
+        </div>
+      </header>
+
+      <div class="meta-row meta">
+        <span>HEAD e51337e · v1.0.0-beta.10</span>
+        <span>origin/main · detached · clean tree</span>
+        <span>22,434 frontend LOC</span>
+        <span>45 TSX · 73 TS modules</span>
+        <span>static only · no tests/builds/runtime profiling</span>
+      </div>
+
+      <nav aria-label="Report sections">
+        <a href="#summary">Summary</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#performance">Performance first</a>
+        <a href="#health">Health score</a>
+        <a href="#findings">All findings</a>
+        <a href="#hunk">Hunk lessons</a>
+        <a href="#actions">Actions</a>
+        <a href="#method">Method</a>
+      </nav>
+
+      <main id="main">
+        <section id="summary" aria-labelledby="summary-title">
+          <div class="section-head">
+            <h2 id="summary-title">Executive summary</h2>
+            <span class="chip">32 evidence-backed findings</span>
+          </div>
+
+          <div class="gate">
+            <div class="gate-mark">DISCUSS</div>
+            <p>
+              <strong>Performance gate:</strong> no optimization has been implemented. The six
+              performance findings are high-confidence static risks, but each recommendation is
+              measurement-gated. Agree on fixtures and budgets before changing query topology,
+              Pierre rendering, or bundle boundaries.
+            </p>
+          </div>
+
+          <div class="stats" aria-label="Finding counts by severity">
+            <div class="stat"><span class="label">P0 BLOCKING</span><strong class="p0">0</strong></div>
+            <div class="stat"><span class="label">P1 MAJOR</span><strong class="p1">11</strong></div>
+            <div class="stat"><span class="label">P2 MINOR</span><strong class="p2">16</strong></div>
+            <div class="stat"><span class="label">P3 POLISH</span><strong class="p3">5</strong></div>
+            <div class="stat"><span class="label">ANTI-PATTERN VERDICT</span><strong class="good">PASS</strong></div>
+          </div>
+
+          <div class="three-col" style="margin-top: 14px">
+            <article class="panel-block">
+              <h3>Release risks</h3>
+              <p>
+                Light-theme semantic text and placeholders fail WCAG AA; compact review hides
+                verdict and summary while keeping Submit; narrow chat can clip core actions.
+              </p>
+            </article>
+            <article class="panel-block">
+              <h3>Correctness risks</h3>
+              <p>
+                Session operations can settle into the wrong session, durable command events can
+                stay stale, PR review state can remain submit-ready, and Autopilot confirmations
+                can outlive server authorization.
+              </p>
+            </article>
+            <article class="panel-block">
+              <h3>Performance risks</h3>
+              <p>
+                Large patches are not virtualized, review open can fan out patch requests, chat
+                typing rerenders the full Markdown timeline, and Runtime polls fifteen endpoints.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="architecture" aria-labelledby="architecture-title">
+          <div class="section-head">
+            <h2 id="architecture-title">How the frontend works</h2>
+            <span class="chip">targeting map used before delegation</span>
+          </div>
+          <p class="section-note">
+            The review scopes were chosen from this flow. The dashboard is not a route-heavy SPA;
+            it is a config-driven plugin shell with two server-state transports and one focused PR
+            review route.
+          </p>
+          <div class="architecture" aria-label="Frontend architecture flow">
+            <div>
+              <span class="arrow" aria-hidden="true">→</span>
+              <h3>1 · Root providers</h3>
+              <p><code>main.tsx</code> creates one TanStack Query client and one Flue SDK client mounted at <code>/api/flue</code>.</p>
+            </div>
+            <div>
+              <span class="arrow" aria-hidden="true">→</span>
+              <h3>2 · Shell + config</h3>
+              <p><code>App.tsx</code> loads dashboard JSON, applies theme/density, classifies the measured deck, and renders regions.</p>
+            </div>
+            <div>
+              <span class="arrow" aria-hidden="true">→</span>
+              <h3>3 · Plugin registry</h3>
+              <p>Each active region mounts one typed plugin. Inactive tabs unmount; the registry itself eagerly imports every plugin.</p>
+            </div>
+            <div>
+              <span class="arrow" aria-hidden="true">→</span>
+              <h3>4 · Server state</h3>
+              <p>TanStack Query owns app reads/mutations; a singleton SSE hub multiplexes config, notification, session, and review events.</p>
+            </div>
+            <div>
+              <h3>5 · Agent + diffs</h3>
+              <p><code>@flue/react</code> owns live agent sessions. Heavy PR/diff surfaces lazy-load Pierre React workers and renderers.</p>
+            </div>
+          </div>
+
+          <div class="callout" style="margin-top: 14px">
+            <strong>Diff lens.</strong> The working tree has no diff. The performance reviewer used
+            <code>8c972c0^..HEAD</code> instead: 20 frontend files and about 1,325 added lines across
+            the PR workbench, Reviews backfill, multiplexed events/report overlays, and notification
+            sound.
+          </div>
+        </section>
+
+        <section id="performance" aria-labelledby="performance-title">
+          <div class="section-head">
+            <h2 id="performance-title">Performance first: discussion report</h2>
+            <span class="chip p1">3 P1 · 3 P2</span>
+          </div>
+          <p class="section-note">
+            These are static call-path findings, not measured regressions. The proposed changes are
+            intentionally framed as experiments with success metrics.
+          </p>
+
+          <div class="finding-list">
+            <details class="finding" data-severity="p1" data-category="performance" open>
+              <summary><span class="severity p1">P1</span><span class="finding-title">Large Pierre patches render without virtualization or a client cap</span></summary>
+              <div class="finding-body">
+                <div><h3>Impact and trigger</h3><p>Opening a very large file or long wrapped patch can mount excessive DOM and syntax-highlight work, degrading scroll, resize, memory, and open-to-highlight latency. CSS overflow creates a scroll container but does not reduce mounted rows.</p><h3>Recommendation after measurement</h3><p>Benchmark Pierre React's native virtualizer and a clearly disclosed patch-size cap/truncation path. Measure DOM nodes, heap, long tasks, scroll frames, resize cost, and open-to-highlight first.</p></div>
+                <div><h3>Evidence</h3><p class="source">web/src/features/diff-viewer/DiffViewer.tsx:78-91<br />web/src/styles.css:770-775<br />web/src/features/pr-review/queries.ts:130-139<br />web/src/api/github.ts:50-66<br />src/server/routes/github.ts:88-98</p><span class="chip">confidence: high</span></div>
+              </div>
+            </details>
+
+            <details class="finding" data-severity="p1" data-category="performance" open>
+              <summary><span class="severity p1">P1</span><span class="finding-title">Review open can fan out patch requests across every unresolved-thread and draft path</span></summary>
+              <div class="finding-body">
+                <div><h3>Impact and trigger</h3><p>Many unresolved threads or draft comments across large files create a burst of independent, uncancelled requests. Every response rebuilds maps, merged file arrays, and anchor indexes, increasing network, backend, CPU, and cache cost.</p><h3>Recommendation after measurement</h3><p>Separate active/adjacent display patches from non-visible anchor validation; pass AbortSignals and byte caps; cache anchors per patch identity; evaluate batched server validation.</p></div>
+                <div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx:155-179, 1057-1073, 1099-1120<br />web/src/features/pr-review/queries.ts:108-168<br />shared/patch-anchors.ts:11-56</p><span class="chip">confidence: high</span></div>
+              </div>
+            </details>
+
+            <details class="finding" data-severity="p1" data-category="performance" open>
+              <summary><span class="severity p1">P1</span><span class="finding-title">Chat typing rerenders and reparses the full non-windowed Markdown timeline</span></summary>
+              <div class="finding-body">
+                <div><h3>Impact and trigger</h3><p>Composer state shares a component with the complete durable timeline. Each keystroke remaps the timeline and revisits every Markdown message; fresh Markdown config props defeat cheap memo boundaries. Latency and GC scale with history length.</p><h3>Recommendation after measurement</h3><p>Profile 10/100/500-message sessions, then isolate composer state, stabilize Markdown configuration and callbacks, memoize message subtrees/timeline derivation, and only then evaluate paging or virtualization.</p></div>
+                <div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/components/session-view.tsx:74, 93-145, 580-639<br />web/src/components/MarkdownMessage.tsx:10-27<br />web/src/features/flue-chat/lib/timeline.ts:27-47</p><span class="chip">confidence: high</span></div>
+              </div>
+            </details>
+
+            <details class="finding" data-severity="p2" data-category="performance">
+              <summary><span class="severity p2">P2</span><span class="finding-title">Runtime Overview creates synchronized polling and invalidation bursts</span></summary>
+              <div class="finding-body">
+                <div><h3>Impact and trigger</h3><p>The active Runtime tab registers fifteen queries: fourteen at 30 seconds and one at 15 seconds. Any config event invalidates the whole set, while default stale time is zero. This causes idle network bursts and repeated full snapshot commits.</p><h3>Recommendation after measurement</h3><p>Capture a five-minute active/inactive trace. Compare an aggregate endpoint, event-specific invalidation, staggered polling, suitable stale times, and memoized sections.</p></div>
+                <div><h3>Evidence</h3><p class="source">web/src/features/runtime-overview/plugin.tsx:41-141<br />web/src/features/runtime-overview/queries.ts:40-172<br />web/src/lib/query.ts:5-11</p><span class="chip">confidence: high</span></div>
+              </div>
+            </details>
+
+            <details class="finding" data-severity="p2" data-category="performance">
+              <summary><span class="severity p2">P2</span><span class="finding-title">Standalone review mounts two copies of its detail panels</span></summary>
+              <div class="finding-body">
+                <div><h3>Impact and trigger</h3><p>Inspector and compact copies of threads, stale drafts, and report findings both remain mounted; CSS only hides one. Large review metadata therefore doubles DOM, handlers, and reconciliation.</p><h3>Recommendation after measurement</h3><p>Quantify both layouts, then mount one subtree and move/reflow it responsively or select one host with a media-query hook.</p></div>
+                <div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx:785-811, 968-1001<br />web/src/styles.css:1010-1012, 1333-1348</p><span class="chip">confidence: high</span></div>
+              </div>
+            </details>
+
+            <details class="finding" data-severity="p2" data-category="performance">
+              <summary><span class="severity p2">P2</span><span class="finding-title">The eager plugin registry undermines route and configuration code splitting</span></summary>
+              <div class="finding-body">
+                <div><h3>Impact and trigger</h3><p>Every cold dashboard and focused review loads the static registry, which imports all plugins. Flue Chat pulls Markdown/GFM transitively even when chat is not configured or active.</p><h3>Recommendation after measurement</h3><p>Compare production dashboard and <code>/review</code> chunks, compressed transfer, parse/evaluation, and baseline heap. Prototype lazy registry component loaders and split route shells only if budgets are missed.</p></div>
+                <div><h3>Evidence</h3><p class="source">web/src/App.tsx:17<br />web/src/plugins/registry.tsx:1-32<br />web/src/components/MarkdownMessage.tsx:1-2</p><span class="chip">confidence: high</span></div>
+              </div>
+            </details>
+          </div>
+
+          <h3 style="margin-top: 24px">Measurement plan before implementation</h3>
+          <ol class="ordered">
+            <li><strong>Diff:</strong> typical, 180-file, 50,000-line, long-wrapped-line, and 50-thread fixtures; open-to-highlight, switch p50/p95, request concurrency/bytes, long tasks, nodes, heap, anchors, workers.</li>
+            <li><strong>Chat:</strong> 10, 100, and 500 messages with code and tables; typing INP/p95, commit duration, Markdown render count, nodes, heap, and history network reads.</li>
+            <li><strong>Runtime:</strong> five-minute active and inactive traces; requests/minute, concurrency, CPU, React commits, config-event bursts, and remount refetches.</li>
+            <li><strong>Bundle:</strong> dashboard and focused-review compressed chunks, parse/evaluation, and baseline heap before and after a lazy-registry spike.</li>
+            <li><strong>Responsive review:</strong> desktop and narrow profiles with many threads to quantify the duplicated subtree and hidden-control behavior together.</li>
+          </ol>
+        </section>
+
+        <section id="health" aria-labelledby="health-title">
+          <div class="section-head">
+            <h2 id="health-title">Consolidated audit health</h2>
+            <span class="chip">12 / 20 · Acceptable</span>
+          </div>
+          <p class="section-note">
+            The UI specialist scored 13/20 in isolation. The dedicated performance review lowers
+            Performance from 3 to 2 because large-patch and long-chat risks are systemic, producing
+            the consolidated 12/20 score.
+          </p>
+          <div class="score-grid">
+            <div class="panel-block"><span class="score-label">ACCESSIBILITY</span><strong class="score-value">2/4</strong><p>Contrast, names, tabs, status messages, and landmarks have major gaps.</p></div>
+            <div class="panel-block"><span class="score-label">PERFORMANCE</span><strong class="score-value">2/4</strong><p>Good lazy/worker foundations, but non-windowed scale and render coupling remain.</p></div>
+            <div class="panel-block"><span class="score-label">RESPONSIVE</span><strong class="score-value">2/4</strong><p>Narrow chat clips controls; compact review hides consequential state.</p></div>
+            <div class="panel-block"><span class="score-label">THEMING</span><strong class="score-value">2/4</strong><p>Centralized tokens are applied consistently, but several roles fail AA.</p></div>
+            <div class="panel-block"><span class="score-label">ANTI-PATTERNS</span><strong class="score-value">4/4</strong><p>Distinctive, restrained cockpit; no generic AI-dashboard tells.</p></div>
+          </div>
+
+          <div class="callout" style="margin-top: 14px">
+            <strong>Anti-pattern verdict: PASS.</strong> Neondeck consistently preserves flat,
+            zero-radius surfaces, restrained signal color, no decorative glass/shadows, and a clear
+            mono-chrome versus prose vocabulary. The visual direction should be repaired, not replaced.
+          </div>
+        </section>
+
+        <section id="findings" aria-labelledby="findings-title">
+          <div class="section-head">
+            <h2 id="findings-title">All non-performance findings</h2>
+            <span class="chip">26 findings</span>
+          </div>
+          <p class="section-note">
+            Use search and severity controls to narrow the report. P1 findings open by default;
+            every item includes impact, source evidence, and a concrete next step.
+          </p>
+
+          <div class="controls" aria-label="Finding filters">
+            <label class="search-label">SEARCH FINDINGS<input id="finding-search" type="search" placeholder="Try: session, contrast, tabs, review…" /></label>
+            <div class="filter-row" role="group" aria-label="Filter by severity">
+              <button type="button" data-filter="all" aria-pressed="true">All</button>
+              <button type="button" data-filter="p1" aria-pressed="false">P1</button>
+              <button type="button" data-filter="p2" aria-pressed="false">P2</button>
+              <button type="button" data-filter="p3" aria-pressed="false">P3</button>
+            </div>
+          </div>
+
+          <p id="filter-count" class="meta" aria-live="polite">Showing 26 findings.</p>
+          <div id="nonperf-findings" class="finding-list">
+            <details class="finding" data-severity="p1" data-category="ui theming accessibility" open>
+              <summary><span class="severity p1">P1</span><span class="finding-title">Semantic colors and placeholder tokens fail AA in both themes</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Small labels, links, errors, statuses, placeholders, and some focus indicators are difficult to read, especially in light theme.</p><h3>Measured ratios</h3><p>Light primary 3.31:1 on panel / 2.97:1 on field; strong primary 2.21:1 / 1.98:1; accent 4.17:1 / 3.74:1; light faint placeholder 2.83:1; dark faint 3.46:1; dark violet 4.31:1.</p><h3>Recommendation</h3><p>Darken light cyan/strong/accent and dark violet, create a separate AA placeholder token, and verify every semantic token on panel, field, soft, and tinted surfaces. WCAG 1.4.3 and 1.4.11.</p></div><div><h3>Evidence</h3><p class="source">web/src/styles.css:25-91, 420-426, 1247-1250, 1521-1523<br />web/src/features/runtime-overview/components/runtime-view.tsx:87-97<br />web/src/plugins/AutopilotPanel.tsx:245-254</p><span class="chip">$impeccable colorize</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p1" data-category="ui accessibility" open>
+              <summary><span class="severity p1">P1</span><span class="finding-title">Chat, rename, and Autopilot revision fields have no accessible name</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Screen-reader and voice-control users encounter unnamed textboxes; placeholder text is not a persistent label.</p><h3>Recommendation</h3><p>Add associated labels or exact accessible names: “Message Neon,” “Session title,” and “Revision reason.” WCAG 1.3.1, 3.3.2, 4.1.2.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/components/session-view.tsx:628-647<br />web/src/features/flue-chat/plugin.tsx:317-330<br />web/src/plugins/AutopilotPanel.tsx:727-734</p><span class="chip">$impeccable harden</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p1" data-category="ui accessibility" open>
+              <summary><span class="severity p1">P1</span><span class="finding-title">Slash-command autocomplete is not exposed as a combobox/listbox</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Keyboard behavior exists, but assistive technology cannot discover the suggestion popup, active option, or selection state.</p><h3>Recommendation</h3><p>Implement the ARIA combobox pattern with <code>aria-controls</code>, <code>aria-expanded</code>, <code>aria-activedescendant</code>, listbox/option roles, stable IDs, and <code>aria-selected</code>.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/components/session-view.tsx:630-647<br />web/src/features/flue-chat/components/command-controls.tsx:191-233</p><span class="chip">WCAG 1.3.1 / 4.1.2</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p1" data-category="ui accessibility" open>
+              <summary><span class="severity p1">P1</span><span class="finding-title">Tabs and stateful filters expose selection only visually</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Screen-reader users cannot determine the active dashboard tab or filter; dashboard tabs also lack tab-to-panel relations and standard arrow/Home/End behavior.</p><h3>Recommendation</h3><p>Use tablist/tab/tabpanel semantics and roving focus for tabs; use named groups with <code>aria-pressed</code> or radio semantics for filters.</p></div><div><h3>Evidence</h3><p class="source">web/src/App.tsx:454-483<br />web/src/plugins/LearningOperatorPanel.tsx:169-180<br />web/src/plugins/WorkflowObservabilityPanel.tsx:139-153</p><span class="chip">WCAG 1.3.1 / 4.1.2</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p1" data-category="ui accessibility" open>
+              <summary><span class="severity p1">P1</span><span class="finding-title">Major panels and runtime sections lack navigable semantic structure</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Generic div/span labels do not create headings or landmarks, so screen-reader users cannot jump among Work, Neon, Runtime, Config, Approvals, Memory, and other areas.</p><h3>Recommendation</h3><p>Add a hidden dashboard h1; make panel frames named sections/regions; render plugin titles as h2 and nested titles as h3 while preserving visuals.</p></div><div><h3>Evidence</h3><p class="source">web/src/App.tsx:485-526<br />web/src/features/runtime-overview/components/runtime-view.tsx:85-98<br />web/src/features/runtime-overview/components/setup-rows.tsx:28-54<br />web/src/plugins/AutopilotPanel.tsx:260-287</p><span class="chip">WCAG 1.3.1 / 2.4.6</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p1" data-category="ui accessibility state" open>
+              <summary><span class="severity p1">P1</span><span class="finding-title">Action feedback is inconsistent, sometimes silent, and often unannounced</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>The shared “session” mutation can fail as an apparent no-op. Screen-reader users may miss chat errors, save confirmations, and generic loading/error transitions.</p><h3>Recommendation</h3><p>Create one inline feedback primitive: alert for errors, polite status for progress/success. Render row-local errors and keep actions retryable. WCAG 3.3.1 and 4.1.3.</p></div><div><h3>Evidence</h3><p class="source">web/src/components/SessionReferenceButton.tsx:28-68<br />web/src/features/flue-chat/plugin.tsx:299-315<br />web/src/features/flue-chat/components/session-view.tsx:623-627<br />web/src/components/ui.tsx:112-133</p><span class="chip">$impeccable harden</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p1" data-category="ui responsive" open>
+              <summary><span class="severity p1">P1</span><span class="finding-title">Flue chat clips essential controls in supported narrow layouts</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>The fixed header must fit session selection plus Rename, Pin, Archive, Ref, New, and context state in one clipped row. The composer can collapse or overflow, blocking a core task.</p><h3>Recommendation</h3><p>Keep session selection/New, move secondary actions into a standard overflow or second row, allow header growth, add <code>min-width: 0</code> to the textarea, and provide a compact Send control.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/plugin.tsx:224-298<br />web/src/features/flue-chat/components/session-view.tsx:615-674<br />web/src/App.tsx:514-525<br />web/src/lib/deck-profile.ts:26-69</p><span class="chip">$impeccable adapt</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p1" data-category="ui responsive review" open>
+              <summary><span class="severity p1">P1</span><span class="finding-title">Compact PR review hides verdict and summary while leaving Submit active</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Users cannot inspect or change the verdict/body immediately before a consequential GitHub submission and can submit hidden stale state.</p><h3>Recommendation</h3><p>Keep verdict and summary in the stacked footer, expose them in an explicit Review details disclosure, or require the focused review surface for submission.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx:1471-1506<br />web/src/styles.css:1323-1331</p><span class="chip">$impeccable adapt</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p2" data-category="ui accessibility">
+              <summary><span class="severity p2">P2</span><span class="finding-title">Important operational text is irreversibly truncated without disclosure</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Tool details, commands, paths, and memory values disappear exactly when needed for diagnosis; some are hard-trimmed before CSS, so resizing cannot recover them.</p><h3>Recommendation</h3><p>Add selective expandable detail/copy affordances and tooltips for truly truncated identifiers, not every obvious text button.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/components/message-parts.tsx:39-57, 124-140<br />web/src/features/runtime-overview/components/setup-rows.tsx:343-365<br />web/src/features/runtime-overview/components/runtime-rows.tsx:396-419<br />web/src/plugins/MemoryPanel.tsx:84-98</p><span class="chip">$impeccable clarify</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p2" data-category="ui accessibility flue">
+              <summary><span class="severity p2">P2</span><span class="finding-title">Repeated controls have ambiguous, context-free accessible names</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Button-list navigation presents repeated “session” controls; “Ref” is jargon; approval action “session” does not communicate permission scope.</p><h3>Recommendation</h3><p>Use row-specific accessible names, display “Reference,” and rename approvals to “Allow once,” “Allow for session,” “Always allow,” and “Deny.”</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/plugin.tsx:274-283<br />web/src/components/SessionReferenceButton.tsx:58-67<br />web/src/features/runtime-overview/components/setup-rows.tsx:367-400</p><span class="chip">$impeccable clarify</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p2" data-category="ui accessibility">
+              <summary><span class="severity p2">P2</span><span class="finding-title">Disclosure controls omit expanded state and controlled-content relationships</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Text changes visually, but assistive technology gets no durable expanded/collapsed state or relationship to the revealed diff/editor.</p><h3>Recommendation</h3><p>Add stable panel IDs, <code>aria-expanded</code>, and <code>aria-controls</code>; move focus only when it improves the workflow.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/runtime-overview/components/runtime-rows.tsx:243-266, 327-343<br />web/src/plugins/LearningOperatorPanel.tsx:348-367<br />web/src/features/flue-chat/plugin.tsx:238-245</p><span class="chip">WCAG 4.1.2</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p2" data-category="ui responsive accessibility">
+              <summary><span class="severity p2">P2</span><span class="finding-title">Coarse-pointer targets stop at 40px and tab strips clip the override</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>The touchscreen companion surface receives targets below the stronger 44px comfort target; 28–36px clipped tab strips can reduce effective size further.</p><h3>Recommendation</h3><p>Use at least 44px for consequential controls on coarse pointers, raise the tab-strip token at the same breakpoint, and make overflow horizontally scrollable with visible focus.</p></div><div><h3>Evidence</h3><p class="source">web/src/components/ui.tsx:33-45<br />web/src/styles.css:132-137, 346-404<br />web/src/App.tsx:465-481</p><span class="chip">WCAG 2.5.5 comfort target</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p2" data-category="state review">
+              <summary><span class="severity p2">P2</span><span class="finding-title">Successful review submission can leave the workbench pre-submit cache state</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>If the review SSE event is missed, the durable review remains cached as <code>ready</code>, controls stay enabled, and a second submit reaches a backend state guard.</p><h3>Recommendation</h3><p>On submit success invalidate the durable review target and review inbox, in addition to draft/thread caches.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/pr-review/queries.ts:272-277<br />web/src/features/pr-review/GitHubPrReview.tsx:83-90, 729-750</p><span class="chip">correctness</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p2" data-category="state review">
+              <summary><span class="severity p2">P2</span><span class="finding-title">Switching editors during a mutation can erase newly entered text</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Submit a reply/edit on item A, start item B while A is pending, and A’s completion unconditionally closes and clears B’s shared editor state.</p><h3>Recommendation</h3><p>Disable other editor entry while pending or store drafts per entity and clear only when the completed request still matches the open entity ID.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx:470-500, 600-609, 642-696</p><span class="chip">race condition</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p2" data-category="state autopilot">
+              <summary><span class="severity p2">P2</span><span class="finding-title">Autopilot confirmation can execute after the server withdraws the option</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>A cleanup/revision action stays confirmable after refreshed recovery options remove it. The backend may reject it, but the UI represents stale authority.</p><h3>Recommendation</h3><p>Reconcile confirmation/revision state against the latest option IDs and close any action no longer present; keep backend rejection.</p></div><div><h3>Evidence</h3><p class="source">web/src/plugins/AutopilotPanel.tsx:426-449, 488-548</p><span class="chip">trust boundary</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p2" data-category="state api events flue">
+              <summary><span class="severity p2">P2</span><span class="finding-title">Chat/session caches do not resynchronize after SSE reconnect</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Session changes or messages missed during disconnect can remain absent until a later chat event. Config replays; review refetches on open; chat has neither mechanism.</p><h3>Recommendation</h3><p>Expose <code>onOpen</code> for the chat stream and invalidate session/index plus refresh active history once at the app-level subscriber.</p></div><div><h3>Evidence</h3><p class="source">web/src/api/events.ts:23-27<br />web/src/App.tsx:83-93<br />web/src/features/flue-chat/components/session-view.tsx:162-175<br />src/server/events/event-stream.ts:63-81</p><span class="chip">reconnect convergence</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p2" data-category="api flue performance">
+              <summary><span class="severity p2">P2</span><span class="finding-title">Manual history reads duplicate useFlueAgent and can block a healthy chat</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Every attach hydrates through the hook and then materializes full history again. Metadata events retrigger the read; a transient redundant-read error disables sending; length-based arbitration can prefer an older same-length snapshot.</p><h3>Recommendation</h3><p>Remove the second transcript owner and manual history cycle. Render <code>agent.messages</code> and use <code>historyReady</code>, status, and error from the installed Flue hook contract.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/components/session-view.tsx:85-97, 119-128, 151-217, 365-371<br />web/src/features/flue-chat/lib/messages.ts:5<br />@flue/sdk docs/guide/react.md:81-85</p><span class="chip">Flue primitive misuse</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p2" data-category="api flue ui correctness">
+              <summary><span class="severity p2">P2</span><span class="finding-title">“Ref” always references the active session into itself</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Clicking Ref supplies the same ID as source and target, records an audited self-reference, and pastes the current session’s own summary back into itself.</p><h3>Recommendation</h3><p>Move Reference to a session browser that chooses a non-active target. Until target selection exists, remove or disable the active-session action.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/plugin.tsx:132-161<br />src/modules/sessions/references.ts:64</p><span class="chip">app integration</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p2" data-category="api flue state">
+              <summary><span class="severity p2">P2</span><span class="finding-title">In-flight sends/workflows leak operation state across session switches</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Start a slow command in A, switch to B, and B inherits A’s busy/input/error state. A’s completion can clear B’s draft or show A’s error.</p><h3>Recommendation</h3><p>Key the session view by agent/session ID, fence async completion against a current-session ref, and abort the UI wait on unmount when supported.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/plugin.tsx:232, 357-365<br />web/src/features/flue-chat/components/session-view.tsx:151-156, 219-444</p><span class="chip">session identity</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p2" data-category="api flue events state">
+              <summary><span class="severity p2">P2</span><span class="finding-title">Server-created command events never converge into the mounted dashboard</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Approval nudges and background workflows create/update durable command rows without publishing an event. With no polling, the open dashboard stays stale until remount or an unrelated session event.</p><h3>Recommendation</h3><p>Publish a typed <code>chat-session-command-change</code> event through the multiplex hub and invalidate only the affected session command-event key.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/components/session-view.tsx:130-174<br />src/modules/sessions/service.ts:572, 653-759<br />src/modules/sessions/approval-nudges.ts:62<br />src/workflows/briefing.ts:31</p><span class="chip">durable state convergence</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p2" data-category="api performance tanstack">
+              <summary><span class="severity p2">P2</span><span class="finding-title">TanStack query cancellation is systematically discarded</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Close or switch a heavy diff/runtime surface and abandoned reads continue transferring, doing backend work, and populating unused cache entries.</p><h3>Recommendation</h3><p>Standardize API read options with AbortSignal and use <code>queryFn: ({ signal }) =&gt; apiCall(input, { signal })</code>, starting with patches, diffs, runtime fan-out, session activity, and PR records.</p></div><div><h3>Evidence</h3><p class="source">web/src/api/http.ts:13<br />web/src/features/diff-viewer/queries.ts:32<br />web/src/features/pr-review/queries.ts:76<br />web/src/features/runtime-overview/plugin.tsx:59<br />web/src/api/github.ts:31</p><span class="chip">TanStack Query 5.101.2</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p3" data-category="ui polish">
+              <summary><span class="severity p3">P3</span><span class="finding-title">Shared live metrics do not consistently use tabular numerals</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Refetched counts subtly change width and create jitter, contrary to the design system’s Tabular-Numbers Rule.</p><h3>Recommendation</h3><p>Add tabular numerals to Metric and numeric StatusPill values.</p></div><div><h3>Evidence</h3><p class="source">web/src/components/ui.tsx:86-109<br />web/src/features/runtime-overview/components/runtime-view.tsx:500-524<br />web/src/plugins/WorkflowObservabilityPanel.tsx:132-138</p><span class="chip">$impeccable polish</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p3" data-category="state review">
+              <summary><span class="severity p3">P3</span><span class="finding-title">Old mutation errors permanently mask later success messages</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>A failed operation’s persistent mutation error wins over later success status, making correct state look broken.</p><h3>Recommendation</h3><p>Reset superseded mutation errors or use one operation-scoped status/error channel.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx:231-245, 343-353, 443-503</p><span class="chip">status ownership</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p3" data-category="state review">
+              <summary><span class="severity p3">P3</span><span class="finding-title">Report-only findings use body substring matching as identity</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Overlapping summaries can mark unrelated findings drafted; editing generated text can make a drafted finding appear available again.</p><h3>Recommendation</h3><p>Persist a stable source-finding ID; until then match the exact generated template plus path.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx:1360-1388</p><span class="chip">identity</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p3" data-category="state ui">
+              <summary><span class="severity p3">P3</span><span class="finding-title">Navigation highlight timers race and survive panel unmount</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Rapid navigation lets the first timeout clear the second highlight early; stale timers survive unmount.</p><h3>Recommendation</h3><p>Store the timer ID in a ref, clear before rescheduling, and clean up on effect teardown.</p></div><div><h3>Evidence</h3><p class="source">web/src/App.tsx:349-371</p><span class="chip">timer cleanup</span></div></div>
+            </details>
+
+            <details class="finding" data-severity="p3" data-category="api flue config">
+              <summary><span class="severity p3">P3</span><span class="finding-title">Config accepts agent names incompatible with the session model and exposed routes</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Set another agent name and the selector still supplies display-assistant session IDs; history appears missing and sends fail because other agents are not exposed.</p><h3>Recommendation</h3><p>Validate the literal <code>display-assistant</code> or remove the option until agent identity is modeled in session selection and routing.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/config.ts:16<br />web/src/features/flue-chat/plugin.tsx:359<br />src/modules/sessions/active-session.ts:18<br />src/agents/display-assistant.ts:49</p><span class="chip">config contract</span></div></div>
+            </details>
+          </div>
+          <div id="empty-filter" class="empty-filter">No findings match this filter.</div>
+        </section>
+
+        <section id="hunk" aria-labelledby="hunk-title">
+          <div class="section-head">
+            <h2 id="hunk-title">What Neondeck can learn from Hunk</h2>
+            <span class="chip">comparative evidence</span>
+          </div>
+          <div class="callout">
+            Hunk uses <code>@pierre/diffs</code> core 1.2.2 with OpenTUI; Neondeck uses
+            Pierre React 1.2.12. The rendering implementations are not equivalent. Transfer the
+            discipline: benchmarks, identity stability, and prefetch policy, not terminal-specific code.
+          </div>
+          <div class="two-col" style="margin-top: 14px">
+            <article class="panel-block">
+              <h3>Transferable patterns</h3>
+              <ul>
+                <li>Benchmark realistic tiers: Hunk includes 180×120 and 1,000-file/300-line fixtures plus a 50,000-line file.</li>
+                <li>Measure selected-file startup, next-file readiness, and adjacent readiness separately.</li>
+                <li>Track cold/warm first frame, windowed scroll ticks, interaction latency, and memory.</li>
+                <li>Use explicit file/row geometry and spacer preservation when windowing.</li>
+                <li>Keep callbacks stable at memoized section/row boundaries using latest-value refs and caches.</li>
+              </ul>
+            </article>
+            <article class="panel-block">
+              <h3>Neondeck already aligns</h3>
+              <ul>
+                <li>First and adjacent PR patch prefetch is already present.</li>
+                <li>Pierre worker configuration is module-scoped and stable.</li>
+                <li>Heavy review/diff surfaces have targeted lazy boundaries.</li>
+                <li>Artifact overlay aborts superseded/unmounted fetches.</li>
+                <li>App-domain EventSource traffic is multiplexed without replacing Flue realtime.</li>
+              </ul>
+            </article>
+          </div>
+          <div class="table-scroll" style="margin-top: 14px">
+            <table class="compact-table">
+              <thead><tr><th>Hunk evidence</th><th>Lesson</th></tr></thead>
+              <tbody>
+                <tr><td class="source">benchmarks/README.md:3-23, 97-103</td><td>Define scale tiers and budgets before optimizing.</td></tr>
+                <tr><td class="source">benchmarks/highlight-prefetch.ts:101-154</td><td>Separate selected, next, and adjacent readiness metrics.</td></tr>
+                <tr><td class="source">benchmarks/large-stream.ts:84-123</td><td>Measure cold, warm, and scrolling paths.</td></tr>
+                <tr><td class="source">src/ui/diff/rowWindowing.ts:16-175</td><td>Binary-search visible rows and preserve geometry with spacers.</td></tr>
+                <tr><td class="source">src/ui/components/panes/DiffSection.tsx:147-180</td><td>Use deliberate memo boundaries and stable upstream identities.</td></tr>
+                <tr><td class="source">src/ui/components/panes/DiffPane.tsx:303-347</td><td>Cache per-file callbacks while reading latest handlers through refs.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="actions" aria-labelledby="actions-title">
+          <div class="section-head">
+            <h2 id="actions-title">Recommended sequence</h2>
+            <span class="chip">report → discuss → implement</span>
+          </div>
+          <ol class="ordered">
+            <li><strong>P1 · Accessibility hardening:</strong> accessible names, combobox, tabs/filters/disclosures, panel landmarks, and shared status/error feedback. Suggested command: <code>$impeccable harden</code>.</li>
+            <li><strong>P1 · Color repair:</strong> correct semantic and placeholder contrast in both themes, then validate focus non-text contrast. Suggested command: <code>$impeccable colorize</code>.</li>
+            <li><strong>P1 · Responsive task completion:</strong> preserve PR verdict/summary and restructure narrow chat controls. Suggested command: <code>$impeccable adapt</code>.</li>
+            <li><strong>P2 · Flue/session correctness:</strong> remove duplicate history ownership, key async state by session, fix self-reference, and publish typed command-change events.</li>
+            <li><strong>P2 · Query correctness:</strong> pass AbortSignals, repair reconnect convergence, invalidate durable review state, and reconcile stale Autopilot confirmations.</li>
+            <li><strong>Performance measurement gate:</strong> run the five-part plan, agree budgets, then choose Pierre virtualization/caps, chat isolation, Runtime topology, and lazy registry based on data. Suggested command after agreement: <code>$impeccable optimize</code>.</li>
+            <li><strong>P2 · Copy/disclosure:</strong> row-specific action names and full-value affordances for operational text. Suggested command: <code>$impeccable clarify</code>.</li>
+            <li><strong>P3 · Final pass:</strong> tabular metrics, timer cleanup, operation-scoped status, stable finding IDs, and config tightening. Suggested command: <code>$impeccable polish</code>.</li>
+            <li><strong>Re-audit:</strong> repeat the static audit, then run focused runtime and accessibility checks against the agreed fixtures.</li>
+          </ol>
+          <p class="section-note">
+            You can ask to run these one at a time, all at once, or in any order. Re-run
+            <code>$impeccable audit</code> after fixes to see the score improve.
+          </p>
+        </section>
+
+        <section id="method" aria-labelledby="method-title">
+          <div class="section-head">
+            <h2 id="method-title">Method, scope, and positives</h2>
+            <span class="chip">static-only</span>
+          </div>
+          <div class="two-col">
+            <article class="panel-block">
+              <h3>Independent assignments</h3>
+              <ul>
+                <li><strong>State/correctness:</strong> async effects, races, identity, mutation/cache behavior, cleanup.</li>
+                <li><strong>API/Flue:</strong> installed beta.9 docs/types, SDK hooks, route boundary, SSE, Query contracts.</li>
+                <li><strong>UI/UX:</strong> Impeccable audit criteria, PRODUCT/DESIGN, WCAG, themes, semantics, responsive tasks.</li>
+                <li><strong>Performance:</strong> recent frontend delta, Pierre/diff path, React render coupling, Query fan-out, bundle and Hunk comparison.</li>
+              </ul>
+            </article>
+            <article class="panel-block">
+              <h3>Limits</h3>
+              <ul>
+                <li>No tests, linters, builds, formatters, benchmarks, dev server, browser trace, or app commands were run.</li>
+                <li>No product source was edited; this standalone report is the only artifact.</li>
+                <li>Performance severity is based on static scale paths; implementation is gated on runtime measurement.</li>
+                <li>Contrast ratios were computed from committed sRGB tokens and alpha compositing.</li>
+                <li>Review target is clean <code>e51337e</code>; recent commits substitute for a missing working diff.</li>
+              </ul>
+            </article>
+          </div>
+
+          <h3 style="margin-top: 24px">Practices worth preserving</h3>
+          <div class="three-col">
+            <article class="panel-block"><h3>Architecture</h3><p>Correct <code>/api/flue</code> client mount, one provider, app-owned multiplexed SSE, revision-aware PR keys, typed plugin parsing, separate Flue/app event responsibilities.</p></article>
+            <article class="panel-block"><h3>Interaction</h3><p>Strong notification semantics and timer pause behavior, native review dialog focus restoration, named PR comment inputs, visible focus, and global reduced motion.</p></article>
+            <article class="panel-block"><h3>Performance foundations</h3><p>Inactive tabs unmount, heavy diff surfaces lazy-load, workers are stable, adjacent patches prefetch, artifact fetches abort, and deck ResizeObserver commits only threshold changes.</p></article>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        Generated from four independent static reviews · Neondeck e51337e · report artifact only · 2026-07-15 America/Chicago
+      </footer>
+    </div>
+
+    <script>
+      const search = document.querySelector('#finding-search');
+      const buttons = [...document.querySelectorAll('[data-filter]')];
+      const findings = [...document.querySelectorAll('#nonperf-findings .finding')];
+      const count = document.querySelector('#filter-count');
+      const empty = document.querySelector('#empty-filter');
+      let activeSeverity = 'all';
+
+      function applyFilters() {
+        const query = search.value.trim().toLowerCase();
+        let visible = 0;
+        for (const finding of findings) {
+          const severityMatches = activeSeverity === 'all' || finding.dataset.severity === activeSeverity;
+          const textMatches = !query || finding.textContent.toLowerCase().includes(query);
+          finding.hidden = !(severityMatches && textMatches);
+          if (!finding.hidden) visible += 1;
+        }
+        count.textContent = `Showing ${visible} finding${visible === 1 ? '' : 's'}.`;
+        empty.style.display = visible === 0 ? 'block' : 'none';
+      }
+
+      for (const button of buttons) {
+        button.addEventListener('click', () => {
+          activeSeverity = button.dataset.filter;
+          for (const item of buttons) item.setAttribute('aria-pressed', String(item === button));
+          applyFilters();
+        });
+      }
+      search.addEventListener('input', applyFilters);
+    </script>
+  </body>
+</html>
