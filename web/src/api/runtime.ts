@@ -4,20 +4,20 @@ import type {
   RuntimeSkillsResponse,
   HostMetrics,
 } from './types';
-import { getJson } from './http';
+import { getJson, type ApiRequestOptions } from './http';
 
-export async function getRuntimeHealth() {
-  return getJson<RuntimeHealth>('/api/health');
+export async function getRuntimeHealth(options: ApiRequestOptions = {}) {
+  return getJson<RuntimeHealth>('/api/health', options);
 }
 
-export async function getRuntimeStatus() {
-  return getJson<RuntimeStatus>('/api/runtime/status');
+export async function getRuntimeStatus(options: ApiRequestOptions = {}) {
+  return getJson<RuntimeStatus>('/api/runtime/status', options);
 }
 
-export async function getRuntimeSkills() {
-  return getJson<RuntimeSkillsResponse>('/api/skills');
+export async function getRuntimeSkills(options: ApiRequestOptions = {}) {
+  return getJson<RuntimeSkillsResponse>('/api/skills', options);
 }
 
-export async function getHostMetrics() {
-  return getJson<HostMetrics>('/api/metrics/host');
+export async function getHostMetrics(options: ApiRequestOptions = {}) {
+  return getJson<HostMetrics>('/api/metrics/host', options);
 }

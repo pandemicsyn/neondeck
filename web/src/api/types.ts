@@ -1422,6 +1422,14 @@ export type ChatSessionChangeEvent = {
   changedAt: string;
 };
 
+export type ChatSessionCommandChangeEvent = {
+  id: string;
+  action: 'created' | 'updated';
+  sessionId: string;
+  event: ChatSessionCommandEvent;
+  changedAt: string;
+};
+
 export type WorkflowEventRecord = {
   id: number;
   runId: string | null;

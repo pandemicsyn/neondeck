@@ -27,7 +27,7 @@ export const ReviewsPanelPlugin = {
     const [ref, setRef] = useState('');
     const { data, error, isLoading } = useQuery({
       queryKey: queryKeys.prReviews,
-      queryFn: () => getPrReviews(),
+      queryFn: ({ signal }) => getPrReviews({}, { signal }),
     });
     const startMutation = useMutation({
       mutationFn: (reviewRef: string) =>

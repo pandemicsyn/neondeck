@@ -8,17 +8,18 @@ import type {
   ChatSessionMutationResponse,
   NeonCommandResult,
 } from './types';
-import { getJson, postJson } from './http';
+import { getJson, postJson, type ApiRequestOptions } from './http';
 
-export async function getNeonSession() {
-  return getJson<NeonSessionState>('/api/session');
+export async function getNeonSession(options: ApiRequestOptions = {}) {
+  return getJson<NeonSessionState>('/api/session', options);
 }
 
 export async function getChatSessions(
   input: { includeArchived?: boolean } = {},
+  options: ApiRequestOptions = {},
 ) {
   const query = input.includeArchived ? '?includeArchived=1' : '';
-  return getJson<ChatSessionListResponse>(`/api/sessions${query}`);
+  return getJson<ChatSessionListResponse>(`/api/sessions${query}`, options);
 }
 
 export async function createChatSession(
@@ -105,15 +106,23 @@ export async function restoreChatSession(id: string) {
   });
 }
 
-export async function getChatSessionCommandEvents(id: string) {
+export async function getChatSessionCommandEvents(
+  id: string,
+  options: ApiRequestOptions = {},
+) {
   return getJson<ChatSessionCommandEventListResponse>(
     `/api/sessions/${id}/command-events`,
+    options,
   );
 }
 
-export async function getChatSessionActivity(id: string) {
+export async function getChatSessionActivity(
+  id: string,
+  options: ApiRequestOptions = {},
+) {
   return getJson<ChatSessionActivityListResponse>(
     `/api/sessions/${id}/activity`,
+    options,
   );
 }
 

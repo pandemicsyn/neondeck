@@ -23,6 +23,7 @@ import {
   getChatSessionActivity,
   getChatSessionCommandEvents,
   getNeonCommands,
+  openChatSessionCommandEventStream,
   openChatSessionEventStream,
   runBriefing,
   updateChatSessionCommandEvent,
@@ -92,15 +93,7 @@ export function FlueChatSessionView({
     name: agentName,
     id: session?.id,
   });
-  const [canonicalMessages, setCanonicalMessages] =
-    useState<typeof agent.messages>();
-  const [pendingHistoryRefresh, setPendingHistoryRefresh] = useState(false);
-  const [historyRefreshError, setHistoryRefreshError] = useState<string>();
-  const messages = chatMessagesForRender(
-    agent.messages,
-    canonicalMessages,
-    agent.status,
-  );
+  const messages = chatMessagesForRender(agent.messages);
   const commandsQuery = useQuery({
     queryKey: queryKeys.neonCommands,
     queryFn: getNeonCommands,
@@ -125,25 +118,24 @@ export function FlueChatSessionView({
     visibleCommands.length,
   );
   const activeCommand = visibleCommands[activeCommandIndex];
-  const historyInputBlocked =
-    pendingHistoryRefresh || Boolean(historyRefreshError);
+  const historyInputBlocked = Boolean(session?.id) && !agent.historyReady;
   const commandBusy = commandSubmitting || Boolean(runningCommand);
   const inputPlaceholder = !session
     ? 'Resolving active session...'
-    : historyRefreshError
-      ? 'Retry session history before sending...'
-      : pendingHistoryRefresh
-        ? 'Loading session history...'
-        : session.placeholder;
+    : historyInputBlocked
+      ? 'Loading session history...'
+      : session.placeholder;
   const linkedWatchId = activeRecord?.linkedWatchId;
   const commandEventsQuery = useQuery({
     queryKey: queryKeys.chatSessionCommandEvents(session?.id),
-    queryFn: () => getChatSessionCommandEvents(session?.id ?? ''),
+    queryFn: ({ signal }) =>
+      getChatSessionCommandEvents(session?.id ?? '', { signal }),
     enabled: Boolean(session?.id),
   });
   const activityQuery = useQuery({
     queryKey: queryKeys.chatSessionActivity(session?.id, linkedWatchId),
-    queryFn: () => getChatSessionActivity(session?.id ?? ''),
+    queryFn: ({ signal }) =>
+      getChatSessionActivity(session?.id ?? '', { signal }),
     enabled: Boolean(session?.id && linkedWatchId),
     refetchInterval: 30_000,
   });
@@ -158,9 +150,6 @@ export function FlueChatSessionView({
   }, [commandQuery]);
 
   useEffect(() => {
-    setCanonicalMessages(undefined);
-    setPendingHistoryRefresh(Boolean(session?.id));
-    setHistoryRefreshError(undefined);
     setCommandEvents([]);
   }, [agentName, session?.id]);
 
@@ -170,17 +159,31 @@ export function FlueChatSessionView({
 
   useEffect(() => {
     if (!session?.id) return;
-    return openChatSessionEventStream((event) => {
-      if (event.session.id !== session.id) return;
-      setCanonicalMessages(undefined);
-      setPendingHistoryRefresh(true);
+    const refreshCommandEvents = () => {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.chatSessionCommandEvents(session.id),
       });
+    };
+    const refreshSessionQueries = () => {
+      refreshCommandEvents();
       void queryClient.invalidateQueries({
         queryKey: queryKeys.chatSessionActivity(session.id, linkedWatchId),
       });
+    };
+    const closeSessionEvents = openChatSessionEventStream(
+      (event) => {
+        if (event.session.id === session.id) refreshSessionQueries();
+      },
+      undefined,
+      refreshSessionQueries,
+    );
+    const closeCommandEvents = openChatSessionCommandEventStream((event) => {
+      if (event.sessionId === session.id) refreshCommandEvents();
     });
+    return () => {
+      closeCommandEvents();
+      closeSessionEvents();
+    };
   }, [linkedWatchId, queryClient, session?.id]);
 
   useEffect(() => {
@@ -190,40 +193,6 @@ export function FlueChatSessionView({
     );
     onReferenceDraftConsumed?.();
   }, [onReferenceDraftConsumed, referenceDraft]);
-
-  useEffect(() => {
-    if (!pendingHistoryRefresh) return;
-    if (agent.status === 'error') {
-      setPendingHistoryRefresh(false);
-      return;
-    }
-    if (!session?.id || agent.status !== 'idle') return;
-
-    let cancelled = false;
-    void flue.agents
-      .history(agentName, session.id)
-      .then((history) => {
-        if (cancelled) return;
-        setCanonicalMessages(history.messages);
-        setPendingHistoryRefresh(false);
-        setHistoryRefreshError(undefined);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        if (isMissingHistoryError(error)) {
-          setCanonicalMessages([]);
-          setHistoryRefreshError(undefined);
-          setPendingHistoryRefresh(false);
-          return;
-        }
-        setHistoryRefreshError(errorMessage(error));
-        setPendingHistoryRefresh(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [agent.status, agentName, flue, pendingHistoryRefresh, session?.id]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -279,7 +248,6 @@ export function FlueChatSessionView({
             });
           }
           setInput('');
-          setCanonicalMessages(undefined);
           return;
         }
 
@@ -372,22 +340,15 @@ export function FlueChatSessionView({
       return;
     }
     if (historyInputBlocked) {
-      setSubmitError(
-        historyRefreshError
-          ? 'Refresh session history before sending.'
-          : 'Session history is still loading.',
-      );
+      setSubmitError('Session history is still loading.');
       return;
     }
 
     setSendingMessage(true);
     try {
-      setCanonicalMessages(undefined);
       await agent.sendMessage(message);
-      setPendingHistoryRefresh(true);
       setInput('');
     } catch (error) {
-      setPendingHistoryRefresh(false);
       setSubmitError(errorMessage(error));
     } finally {
       setSendingMessage(false);
@@ -422,11 +383,8 @@ export function FlueChatSessionView({
       .join('\n');
     setSendingMessage(true);
     try {
-      setCanonicalMessages(undefined);
       await agent.sendMessage(message);
-      setPendingHistoryRefresh(true);
     } catch (error) {
-      setPendingHistoryRefresh(false);
       setSubmitError(errorMessage(error));
     } finally {
       setSendingMessage(false);
@@ -531,25 +489,15 @@ export function FlueChatSessionView({
               </p>
             </div>
           ) : null}
-          {historyRefreshError ? (
+          {agent.error ? (
             <div
               className="border border-accent/60 bg-soft px-2.5 py-2 text-[10.5px] leading-4 text-muted"
               role="alert"
             >
               <div className="flex items-center justify-between gap-2 font-mono">
-                <span className="text-accent">HISTORY REFRESH FAILED</span>
-                <Button
-                  className="min-h-[24px] border-accent bg-transparent px-1.5 py-0 text-[10px] text-accent"
-                  onClick={() => {
-                    setHistoryRefreshError(undefined);
-                    setPendingHistoryRefresh(Boolean(session?.id));
-                  }}
-                  type="button"
-                >
-                  retry
-                </Button>
+                <span className="text-accent">SESSION CONNECTION FAILED</span>
               </div>
-              <p className="mt-1 line-clamp-2">{historyRefreshError}</p>
+              <p className="mt-1 line-clamp-2">{agent.error.message}</p>
             </div>
           ) : null}
           {commandEventsQuery.error ? (
@@ -743,9 +691,4 @@ function commandFailureResult(
 function commandNameFromInput(command: string): NeonCommandResult['command'] {
   const name = command.replace(/^\//, '').split(/\s+/, 1)[0];
   return name || 'unknown';
-}
-
-function isMissingHistoryError(error: unknown) {
-  const message = errorMessage(error).toLowerCase();
-  return message.includes('404') && message.includes('stream_not_found');
 }

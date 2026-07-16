@@ -75,29 +75,42 @@ export function App() {
 
   useEffect(() => {
     if (!isDashboardRoute) return;
-    return openConfigEventStream((event) => {
-      dispatchConfigChangeEvent(event);
-      if (
-        event.action === 'config_reload' ||
-        configEventTouchesFile(event, 'dashboard.json')
-      ) {
+    return openConfigEventStream(
+      (event) => {
+        dispatchConfigChangeEvent(event);
+        if (
+          event.action === 'config_reload' ||
+          configEventTouchesFile(event, 'dashboard.json')
+        ) {
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.dashboardConfig,
+          });
+        }
+      },
+      undefined,
+      () => {
         void queryClient.invalidateQueries({
           queryKey: queryKeys.dashboardConfig,
         });
-      }
-    });
+      },
+    );
   }, [isDashboardRoute, queryClient]);
 
   useEffect(() => {
     if (!isDashboardRoute) return;
-    return openChatSessionEventStream(() => {
+    const refreshSessions = () => {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.neonSession,
       });
       void queryClient.invalidateQueries({
         queryKey: queryKeys.chatSessions,
       });
-    });
+    };
+    return openChatSessionEventStream(
+      refreshSessions,
+      undefined,
+      refreshSessions,
+    );
   }, [isDashboardRoute, queryClient]);
 
   useEffect(() => {

@@ -85,7 +85,7 @@ export const RuntimeOverviewPlugin = {
         },
         {
           queryKey: queryKeys.memories,
-          queryFn: () => getMemories(),
+          queryFn: ({ signal }) => getMemories({}, { signal }),
           refetchInterval: 30_000,
         },
         {
@@ -95,7 +95,8 @@ export const RuntimeOverviewPlugin = {
         },
         {
           queryKey: queryKeys.executionApprovals,
-          queryFn: () => getExecutionApprovals({ includeResolved: true }),
+          queryFn: ({ signal }) =>
+            getExecutionApprovals({ includeResolved: true }, { signal }),
           refetchInterval: 30_000,
         },
         {
@@ -105,7 +106,8 @@ export const RuntimeOverviewPlugin = {
         },
         {
           queryKey: queryKeys.mcpApprovals,
-          queryFn: () => getMcpApprovals({ includeResolved: true }),
+          queryFn: ({ signal }) =>
+            getMcpApprovals({ includeResolved: true }, { signal }),
           refetchInterval: 30_000,
         },
         {

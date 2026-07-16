@@ -32,7 +32,7 @@ export function PrReviewPopoutPage({
 }) {
   const prQuery = useQuery({
     queryKey: queryKeys.githubPr(target.repo, target.number),
-    queryFn: () => getGitHubPullRequest(target),
+    queryFn: ({ signal }) => getGitHubPullRequest(target, { signal }),
     refetchInterval: 5 * 60_000,
   });
   const pullRequest = prQuery.data ?? optimisticPullRequest(target);

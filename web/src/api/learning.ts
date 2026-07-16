@@ -1,5 +1,5 @@
 import type { LearningCandidateStatus, LearningOperatorState } from './types';
-import { getJson, postJson } from './http';
+import { getJson, postJson, type ApiRequestOptions } from './http';
 
 export async function getLearningOperatorState(
   input: {
@@ -7,8 +7,12 @@ export async function getLearningOperatorState(
     candidateStatus?: LearningCandidateStatus;
     candidateTarget?: 'memory' | 'skill';
   } = {},
+  options: ApiRequestOptions = {},
 ) {
-  return getJson<LearningOperatorState>(learningOperatorStateUrl(input));
+  return getJson<LearningOperatorState>(
+    learningOperatorStateUrl(input),
+    options,
+  );
 }
 
 export function learningOperatorStateUrl(

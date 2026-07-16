@@ -77,7 +77,8 @@ function PrReviewCommandCard({
   const queryKey = ['pr-review', reviewId] as const;
   const { data, error } = useQuery({
     queryKey,
-    queryFn: async () => (await getPrReview(reviewId)).review,
+    queryFn: async ({ signal }) =>
+      (await getPrReview(reviewId, { signal })).review,
   });
 
   useEffect(

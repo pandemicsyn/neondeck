@@ -1,8 +1,8 @@
 import type { NotificationResponse } from './types';
-import { getJson, postJson } from './http';
+import { getJson, postJson, type ApiRequestOptions } from './http';
 
-export async function getNotifications() {
-  return getJson<NotificationResponse>('/api/notifications');
+export async function getNotifications(options: ApiRequestOptions = {}) {
+  return getJson<NotificationResponse>('/api/notifications', options);
 }
 
 export async function markNotificationRead(id: string) {

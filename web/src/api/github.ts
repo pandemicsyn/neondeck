@@ -9,70 +9,93 @@ import type {
   GitHubPullRequestFilesResponse,
   GitHubPullRequestResponse,
 } from './types';
-import { deleteJson, getJson, patchJson, postJson, putJson } from './http';
+import {
+  deleteJson,
+  getJson,
+  patchJson,
+  postJson,
+  putJson,
+  type ApiRequestOptions,
+} from './http';
 
-export async function getGitHubPullRequests() {
-  return getJson<GitHubPullRequestResponse>('/api/github/prs');
+export async function getGitHubPullRequests(options: ApiRequestOptions = {}) {
+  return getJson<GitHubPullRequestResponse>('/api/github/prs', options);
 }
 
-export async function getGitHubPullRequest(input: {
-  repo: string;
-  number: number;
-}) {
+export async function getGitHubPullRequest(
+  input: {
+    repo: string;
+    number: number;
+  },
+  options: ApiRequestOptions = {},
+) {
   const [owner, name] = parseRepo(input.repo);
   const response = await getJson<GitHubPullRequestDetailResponse>(
     `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}`,
+    options,
   );
   const pullRequest = response.data?.pullRequest;
   if (!pullRequest) throw new Error(response.message);
   return pullRequest;
 }
 
-export async function getGitHubPullRequestFiles(input: {
-  repo: string;
-  number: number;
-  headSha?: string | null;
-  baseSha?: string | null;
-  baseRef?: string | null;
-  patches?: 'all' | 'none';
-  source?: 'auto' | 'local' | 'github';
-}) {
+export async function getGitHubPullRequestFiles(
+  input: {
+    repo: string;
+    number: number;
+    headSha?: string | null;
+    baseSha?: string | null;
+    baseRef?: string | null;
+    patches?: 'all' | 'none';
+    source?: 'auto' | 'local' | 'github';
+  },
+  options: ApiRequestOptions = {},
+) {
   const [owner, name] = parseRepo(input.repo);
   const query = prFilesQuery(input);
 
   const response = await getJson<GitHubPullRequestFilesResponse>(
     `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/files${query}`,
+    options,
   );
   if (!response.data) throw new Error(response.message);
   return response.data;
 }
 
-export async function getGitHubPullRequestFileDiff(input: {
-  repo: string;
-  number: number;
-  path: string;
-  headSha?: string | null;
-  baseSha?: string | null;
-  baseRef?: string | null;
-  source?: 'auto' | 'local' | 'github';
-}) {
+export async function getGitHubPullRequestFileDiff(
+  input: {
+    repo: string;
+    number: number;
+    path: string;
+    headSha?: string | null;
+    baseSha?: string | null;
+    baseRef?: string | null;
+    source?: 'auto' | 'local' | 'github';
+  },
+  options: ApiRequestOptions = {},
+) {
   const [owner, name] = parseRepo(input.repo);
   const query = prFilesQuery({ ...input, patches: undefined });
   const separator = query ? '&' : '?';
   const response = await getJson<GitHubPullRequestFileDiffResponse>(
     `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/files/diff${query}${separator}path=${encodeURIComponent(input.path)}`,
+    options,
   );
   if (!response.data) throw new Error(response.message);
   return response.data;
 }
 
-export async function getGitHubPrReviewThreads(input: {
-  repo: string;
-  number: number;
-}) {
+export async function getGitHubPrReviewThreads(
+  input: {
+    repo: string;
+    number: number;
+  },
+  options: ApiRequestOptions = {},
+) {
   const response = await postJson<GitHubPrReviewThreadsResponse>(
     '/api/github/prs/review-threads',
     { repo: input.repo, prNumber: input.number },
+    options,
   );
   return {
     reviewThreads: response.data?.reviewThreads ?? [],
@@ -81,13 +104,17 @@ export async function getGitHubPrReviewThreads(input: {
   };
 }
 
-export async function getGitHubPrReviewDraft(input: {
-  repo: string;
-  number: number;
-}) {
+export async function getGitHubPrReviewDraft(
+  input: {
+    repo: string;
+    number: number;
+  },
+  options: ApiRequestOptions = {},
+) {
   const [owner, name] = parseRepo(input.repo);
   const response = await getJson<GitHubPrReviewDraftResponse>(
     `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/review-draft`,
+    options,
   );
   return response.data?.draft ?? null;
 }

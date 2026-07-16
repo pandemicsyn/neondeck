@@ -26,7 +26,8 @@ export function usePrReviewRecord(
   );
   const query = useQuery({
     queryKey: reviewQueryKey,
-    queryFn: () => getPrReviewForTarget({ repo, prNumber: number }),
+    queryFn: ({ signal }) =>
+      getPrReviewForTarget({ repo, prNumber: number }, { signal }),
   });
   const review = query.data ?? null;
   const updateReview = (nextReview: NonNullable<typeof query.data>) => {

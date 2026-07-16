@@ -3,6 +3,7 @@ import {
   useQueries,
   useQuery,
   useQueryClient,
+  type QueryClient,
   type UseQueryResult,
 } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
@@ -76,14 +77,17 @@ export const prReviewQueryKeys = {
 export function useGitHubPullRequestFiles(pr: GitHubPullRequest) {
   return useQuery({
     queryKey: prReviewQueryKeys.files(pr),
-    queryFn: () =>
-      getGitHubPullRequestFiles({
-        repo: pr.repo,
-        number: pr.number,
-        headSha: pr.headSha,
-        baseSha: pr.baseSha,
-        baseRef: pr.baseRef,
-      }),
+    queryFn: ({ signal }) =>
+      getGitHubPullRequestFiles(
+        {
+          repo: pr.repo,
+          number: pr.number,
+          headSha: pr.headSha,
+          baseSha: pr.baseSha,
+          baseRef: pr.baseRef,
+        },
+        { signal },
+      ),
     enabled: pr.repo.length > 0 && pr.number > 0,
   });
 }
@@ -91,16 +95,19 @@ export function useGitHubPullRequestFiles(pr: GitHubPullRequest) {
 export function useGitHubPullRequestFileList(pr: GitHubPullRequest) {
   return useQuery({
     queryKey: prReviewQueryKeys.fileList(pr),
-    queryFn: () =>
-      getGitHubPullRequestFiles({
-        repo: pr.repo,
-        number: pr.number,
-        headSha: pr.headSha,
-        baseSha: pr.baseSha,
-        baseRef: pr.baseRef,
-        patches: 'none',
-        source: 'auto',
-      }),
+    queryFn: ({ signal }) =>
+      getGitHubPullRequestFiles(
+        {
+          repo: pr.repo,
+          number: pr.number,
+          headSha: pr.headSha,
+          baseSha: pr.baseSha,
+          baseRef: pr.baseRef,
+          patches: 'none',
+          source: 'auto',
+        },
+        { signal },
+      ),
     enabled: pr.repo.length > 0 && pr.number > 0,
   });
 }
@@ -127,16 +134,19 @@ export function useGitHubPullRequestFilePatches(
           baseRef ?? null,
           path,
         ] as const,
-        queryFn: () =>
-          getGitHubPullRequestFileDiff({
-            repo,
-            number,
-            path,
-            headSha,
-            baseSha,
-            baseRef,
-            source: 'auto' as const,
-          }),
+        queryFn: ({ signal }: { signal: AbortSignal }) =>
+          getGitHubPullRequestFileDiff(
+            {
+              repo,
+              number,
+              path,
+              headSha,
+              baseSha,
+              baseRef,
+              source: 'auto' as const,
+            },
+            { signal },
+          ),
         enabled: repo.length > 0 && number > 0 && path.length > 0,
       })),
     [baseRef, baseSha, headSha, number, paths, repo],
@@ -174,16 +184,19 @@ export function usePrefetchGitHubPullRequestFilePatch(pr: GitHubPullRequest) {
     (path: string) =>
       queryClient.prefetchQuery({
         queryKey: prReviewQueryKeys.filePatch(pr, path),
-        queryFn: () =>
-          getGitHubPullRequestFileDiff({
-            repo: pr.repo,
-            number: pr.number,
-            path,
-            headSha: pr.headSha,
-            baseSha: pr.baseSha,
-            baseRef: pr.baseRef,
-            source: 'auto',
-          }),
+        queryFn: ({ signal }) =>
+          getGitHubPullRequestFileDiff(
+            {
+              repo: pr.repo,
+              number: pr.number,
+              path,
+              headSha: pr.headSha,
+              baseSha: pr.baseSha,
+              baseRef: pr.baseRef,
+              source: 'auto',
+            },
+            { signal },
+          ),
       }),
     [pr, queryClient],
   );
@@ -192,8 +205,11 @@ export function usePrefetchGitHubPullRequestFilePatch(pr: GitHubPullRequest) {
 export function useGitHubPrReviewThreads(pr: GitHubPullRequest) {
   return useQuery({
     queryKey: prReviewQueryKeys.reviewThreads(pr),
-    queryFn: () =>
-      getGitHubPrReviewThreads({ repo: pr.repo, number: pr.number }),
+    queryFn: ({ signal }) =>
+      getGitHubPrReviewThreads(
+        { repo: pr.repo, number: pr.number },
+        { signal },
+      ),
     enabled: pr.repo.length > 0 && pr.number > 0,
   });
 }
@@ -201,7 +217,8 @@ export function useGitHubPrReviewThreads(pr: GitHubPullRequest) {
 export function useGitHubPrReviewDraft(pr: GitHubPullRequest) {
   return useQuery({
     queryKey: prReviewQueryKeys.draft(pr),
-    queryFn: () => getGitHubPrReviewDraft({ repo: pr.repo, number: pr.number }),
+    queryFn: ({ signal }) =>
+      getGitHubPrReviewDraft({ repo: pr.repo, number: pr.number }, { signal }),
     enabled: pr.repo.length > 0 && pr.number > 0,
   });
 }
@@ -274,6 +291,7 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
       onSuccess: (result) => {
         updateDraftCache(result?.draft ?? null);
         void invalidateThreads();
+        void invalidateSubmittedReviewQueries(queryClient, pr);
       },
     }),
     replyToThread: useMutation({
@@ -287,6 +305,22 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
     refetchPullRequestHeadSha,
     invalidateReviewSources,
   };
+}
+
+export function invalidateSubmittedReviewQueries(
+  queryClient: QueryClient,
+  pr: Pick<GitHubPullRequest, 'number' | 'repo'>,
+) {
+  return Promise.all([
+    queryClient.invalidateQueries({
+      exact: true,
+      queryKey: queryKeys.prReviewTarget(pr.repo, pr.number),
+    }),
+    queryClient.invalidateQueries({
+      exact: true,
+      queryKey: queryKeys.prReviews,
+    }),
+  ]);
 }
 
 export function upsertReviewThread(

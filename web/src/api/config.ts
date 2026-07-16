@@ -4,10 +4,10 @@ import type {
   AgentModelUpdate,
   ProviderUpdate,
 } from './types';
-import { getJson, postJson } from './http';
+import { getJson, postJson, type ApiRequestOptions } from './http';
 
-export async function getDashboardConfig() {
-  return getJson<DashboardConfig>('/api/dashboard/config');
+export async function getDashboardConfig(options: ApiRequestOptions = {}) {
+  return getJson<DashboardConfig>('/api/dashboard/config', options);
 }
 
 export async function updateDashboardConfig(input: DashboardConfig) {

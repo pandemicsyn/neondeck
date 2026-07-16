@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   archiveChatSession,
   createChatSession,
@@ -37,8 +37,12 @@ export const FlueChatPlugin = {
     const queryClient = useQueryClient();
     const [renameDraft, setRenameDraft] = useState('');
     const [renaming, setRenaming] = useState(false);
+    const [referencing, setReferencing] = useState(false);
+    const [referenceTargetId, setReferenceTargetId] = useState('');
     const [referenceDismissed, setReferenceDismissed] = useState(false);
     const [referenceDraft, setReferenceDraft] = useState<string>();
+    const activeSessionIdRef = useRef<string | undefined>(undefined);
+    const referenceFormId = useId();
     const renameFormId = useId();
     const renameInputId = useId();
     const {
@@ -56,7 +60,8 @@ export const FlueChatPlugin = {
       refetch: refreshSessionIndex,
     } = useQuery({
       queryKey: queryKeys.chatSessions,
-      queryFn: () => getChatSessions({ includeArchived: true }),
+      queryFn: ({ signal }) =>
+        getChatSessions({ includeArchived: true }, { signal }),
       refetchInterval: 30_000,
     });
     const startSessionMutation = useMutation({
@@ -132,23 +137,32 @@ export const FlueChatPlugin = {
       },
     });
     const referenceMutation = useMutation({
-      async mutationFn(session: ChatSessionRecord) {
-        if (session.summaryStatus !== 'fresh') {
-          const refreshed = await refreshChatSessionSummary(session.id, {
+      async mutationFn(targetSession: ChatSessionRecord) {
+        const referencedFromSessionId = sessionState?.activeSessionId;
+        if (targetSession.summaryStatus !== 'fresh') {
+          const refreshed = await refreshChatSessionSummary(targetSession.id, {
             surface: 'dashboard',
-            reason: 'dashboard-reference-active-session',
+            reason: 'dashboard-reference-session',
           });
           if (!refreshed.ok) throw new Error(refreshed.message);
         }
-        const result = await referenceChatSession(session.id, {
+        const result = await referenceChatSession(targetSession.id, {
           fromSessionId: sessionState?.activeSessionId,
           surface: 'dashboard',
-          reason: 'dashboard-reference-active-session',
+          reason: 'dashboard-reference-session',
         });
         if (!result.ok) throw new Error(result.message);
-        return result;
+        return { ...result, referencedFromSessionId };
       },
       onSuccess(result) {
+        setReferencing(false);
+        if (result.referencedFromSessionId !== activeSessionIdRef.current) {
+          setReferenceDismissed(true);
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.chatSessions,
+          });
+          return;
+        }
         setReferenceDismissed(false);
         const summary =
           result.session?.summary ?? 'Prepared cross-session reference.';
@@ -160,13 +174,20 @@ export const FlueChatPlugin = {
         });
       },
     });
-    const sessions = sessionIndex?.sessions ?? sessionState?.sessions ?? [];
+    const sessions = useMemo(
+      () => sessionIndex?.sessions ?? sessionState?.sessions ?? [],
+      [sessionIndex?.sessions, sessionState?.sessions],
+    );
     const activeRecord =
       sessions.find(
         (session) => session.id === sessionState?.activeSessionId,
       ) ?? sessionState?.activeChatSession;
     const activeRecordId = activeRecord?.id;
     const activeRecordTitle = activeRecord?.title;
+    const referenceOptions = useMemo(
+      () => referenceableChatSessions(sessions, activeRecord?.id),
+      [activeRecord?.id, sessions],
+    );
     const activeSession = sessionState
       ? {
           id: sessionState.activeSessionId,
@@ -176,6 +197,7 @@ export const FlueChatPlugin = {
             fallbackSession.placeholder,
         }
       : undefined;
+    activeSessionIdRef.current = activeSession?.id;
 
     function startFreshSession() {
       startSessionMutation.mutate();
@@ -209,6 +231,16 @@ export const FlueChatPlugin = {
       setRenameDraft(activeRecordTitle);
       setRenaming(false);
     }, [activeRecordId, activeRecordTitle]);
+
+    useEffect(() => {
+      if (
+        referenceTargetId &&
+        referenceOptions.some((session) => session.id === referenceTargetId)
+      ) {
+        return;
+      }
+      setReferenceTargetId(referenceOptions[0]?.id ?? '');
+    }, [referenceOptions, referenceTargetId]);
 
     useEffect(() => {
       if (!referenceMutation.data?.session || referenceDismissed) return;
@@ -293,18 +325,60 @@ export const FlueChatPlugin = {
                 {activeRecord?.archivedAt ? 'Restore' : 'Archive'}
               </Button>
               <Button
+                aria-controls={referenceFormId}
+                aria-expanded={referencing}
                 className="h-5 border-transparent bg-transparent px-1.5 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
-                disabled={!activeRecord || referenceMutation.isPending}
-                onClick={() =>
-                  activeRecord && referenceMutation.mutate(activeRecord)
+                disabled={
+                  !activeRecord ||
+                  referenceOptions.length === 0 ||
+                  referenceMutation.isPending
                 }
+                onClick={() => setReferencing((value) => !value)}
                 type="button"
               >
-                {referenceMutation.isPending ? 'Ref...' : 'Ref'}
+                {referencing ? 'Cancel' : 'Reference'}
               </Button>
             </div>
           </div>
         </header>
+        {referencing && activeRecord ? (
+          <form
+            className="flex items-center gap-2 border-b border-line bg-field px-4 py-1.5 font-mono text-[10.5px]"
+            id={referenceFormId}
+            onSubmit={(event) => {
+              event.preventDefault();
+              const target = referenceOptions.find(
+                (session) => session.id === referenceTargetId,
+              );
+              if (target) referenceMutation.mutate(target);
+            }}
+          >
+            <label className="text-muted" htmlFor={`${referenceFormId}-select`}>
+              Reference session
+            </label>
+            <select
+              className="min-w-0 flex-1 border border-line bg-panel px-2 py-1 text-ink outline-none focus:border-primary"
+              disabled={referenceMutation.isPending}
+              id={`${referenceFormId}-select`}
+              onChange={(event) => setReferenceTargetId(event.target.value)}
+              value={referenceTargetId}
+            >
+              {referenceOptions.map((session) => (
+                <option key={session.id} value={session.id}>
+                  {session.title}
+                  {session.archivedAt ? ' (archived)' : ''}
+                </option>
+              ))}
+            </select>
+            <Button
+              className="min-h-[28px] px-2 py-1 text-[10px]"
+              disabled={!referenceTargetId || referenceMutation.isPending}
+              type="submit"
+            >
+              {referenceMutation.isPending ? 'Preparing' : 'Add reference'}
+            </Button>
+          </form>
+        ) : null}
         {sessionError ||
         sessionIndexError ||
         startSessionMutation.error ||
@@ -376,6 +450,7 @@ export const FlueChatPlugin = {
         <FlueChatSessionView
           activeRecord={activeRecord}
           agentName={config.agentName}
+          key={`${config.agentName}:${activeSession?.id ?? 'resolving'}`}
           quickCommands={config.quickCommands}
           referenceDraft={referenceDraft}
           onReferenceDraftConsumed={() => setReferenceDraft(undefined)}
@@ -386,6 +461,13 @@ export const FlueChatPlugin = {
     );
   },
 } satisfies DisplayPlugin<FlueChatConfig>;
+
+export function referenceableChatSessions<T extends { id: string }>(
+  sessions: T[],
+  activeSessionId: string | undefined,
+) {
+  return sessions.filter((session) => session.id !== activeSessionId);
+}
 
 function LinkedContextStrip({ session }: { session: ChatSessionRecord }) {
   const label = linkedContextLabel(session);

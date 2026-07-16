@@ -2,13 +2,14 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished } from 'vitest';
 import { updateAgentModels } from './modules/config';
 import { addNotification, resolveNotification } from './modules/app-state';
 import { archiveMemory, rewriteMemory, upsertMemory } from './modules/memory';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   archiveChatSession,
+  type ChatSessionCommandChangeEvent,
   type ChatSessionRecord,
   createApprovalResolutionNudge,
   createChatSessionCommandEvent,
@@ -28,6 +29,7 @@ import {
   searchChatSessions,
   sessionContextInstructionsForAgentSync,
   switchChatSession,
+  subscribeChatSessionCommandEvents,
   updateChatSessionCommandEvent,
 } from './modules/sessions';
 
@@ -791,6 +793,11 @@ describe('session actions', () => {
     const paths = runtimePaths(await tempDir());
     const created = await createChatSession({ title: 'Commands' }, paths);
     const sessionId = (created as { session: ChatSessionRecord }).session.id;
+    const changes: ChatSessionCommandChangeEvent[] = [];
+    const unsubscribe = subscribeChatSessionCommandEvents((change) =>
+      changes.push(change),
+    );
+    onTestFinished(unsubscribe);
 
     const event = await createChatSessionCommandEvent(
       {
@@ -845,6 +852,11 @@ describe('session actions', () => {
         }),
       },
     });
+    unsubscribe();
+    expect(changes).toEqual([
+      expect.objectContaining({ action: 'created', sessionId }),
+      expect.objectContaining({ action: 'updated', sessionId }),
+    ]);
 
     await expect(
       listChatSessionCommandEvents({ sessionId }, paths),

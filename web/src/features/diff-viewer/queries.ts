@@ -32,7 +32,7 @@ export const diffViewerQueryKeys = {
 export function usePreparedDiffFiles(preparedDiffId: string) {
   return useQuery({
     queryKey: diffViewerQueryKeys.preparedDiffFiles(preparedDiffId),
-    queryFn: () => getPreparedDiffFiles(preparedDiffId),
+    queryFn: ({ signal }) => getPreparedDiffFiles(preparedDiffId, { signal }),
     enabled: preparedDiffId.length > 0,
   });
 }
@@ -43,12 +43,15 @@ export function usePreparedDiffFilePatch(
 ) {
   return useQuery({
     queryKey: diffViewerQueryKeys.preparedDiffFile(preparedDiffId, path),
-    queryFn: () =>
-      getPreparedDiffFileDiff({
-        preparedDiffId,
-        path: path ?? '',
-        maxPatchBytes,
-      }),
+    queryFn: ({ signal }) =>
+      getPreparedDiffFileDiff(
+        {
+          preparedDiffId,
+          path: path ?? '',
+          maxPatchBytes,
+        },
+        { signal },
+      ),
     enabled: preparedDiffId.length > 0 && Boolean(path),
   });
 }
@@ -56,7 +59,7 @@ export function usePreparedDiffFilePatch(
 export function useKiloTaskDiff(taskId: string) {
   return useQuery({
     queryKey: diffViewerQueryKeys.kiloTaskDiff(taskId),
-    queryFn: () => getKiloTaskDiff(taskId),
+    queryFn: ({ signal }) => getKiloTaskDiff(taskId, { signal }),
     enabled: taskId.length > 0,
   });
 }
@@ -69,14 +72,17 @@ export function useRepoDiff(input: {
 }) {
   return useQuery({
     queryKey: diffViewerQueryKeys.repoDiff(input),
-    queryFn: () =>
-      getRepoDiff({
-        repoId: input.repoId,
-        worktreeId: input.worktreeId,
-        paths: input.paths,
-        includePatch: true,
-        maxPatchBytes,
-      }),
+    queryFn: ({ signal }) =>
+      getRepoDiff(
+        {
+          repoId: input.repoId,
+          worktreeId: input.worktreeId,
+          paths: input.paths,
+          includePatch: true,
+          maxPatchBytes,
+        },
+        { signal },
+      ),
     enabled: (input.enabled ?? true) && input.repoId.length > 0,
   });
 }
