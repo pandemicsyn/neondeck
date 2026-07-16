@@ -1,0 +1,2 @@
+GITHUB_WEBHOOK_SECRET=replace-with-a-local-webhook-secret
+WS_CLIENT_SECRET=replace-with-a-local-client-secret
