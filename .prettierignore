@@ -10,6 +10,7 @@ research-repos
 .plans/*.html
 .flue-vite
 package-lock.json
+workers/github-webhook-relay/worker-configuration.d.ts
 
 .env
 .env.*

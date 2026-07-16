@@ -5,12 +5,14 @@
   "description": "Standalone Cloudflare Worker that relays signed GitHub webhooks to authenticated WebSocket clients.",
   "type": "module",
   "scripts": {
-    "check": "npm run lint && npm run types:check && npm run typecheck && npm run test && npm run deploy:dry-run",
+    "check": "npm run format:check && npm run lint && npm run types:check && npm run typecheck && npm run test && npm run deploy:dry-run",
     "deploy": "wrangler deploy",
     "deploy:dry-run": "wrangler deploy --dry-run",
     "dev": "wrangler dev",
-    "lint": "oxlint src test --deny-warnings --no-error-on-unmatched-pattern",
-    "test": "vitest run --passWithNoTests",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "oxlint src test --deny typescript/no-floating-promises --deny-warnings --no-error-on-unmatched-pattern",
+    "test": "cross-env GITHUB_WEBHOOK_SECRET=\"It's a Secret to Everybody\" WS_CLIENT_SECRET=test-client-secret-0123456789 vitest run",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "types": "wrangler types",
     "types:check": "wrangler types --check"
@@ -21,7 +23,9 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.5",
     "@types/node": "26.1.1",
+    "cross-env": "10.1.0",
     "oxlint": "1.73.0",
+    "prettier": "3.9.4",
     "typescript": "6.0.3",
     "vitest": "4.1.10",
     "wrangler": "4.111.0"

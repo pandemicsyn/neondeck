@@ -33,13 +33,13 @@ Use `deliveryId` as the idempotency key.
 
 The canonical client ping is:
 
-```json
+```text
 {"version":1,"type":"ping"}
 ```
 
 The response is:
 
-```json
+```text
 {"version":1,"type":"pong"}
 ```
 

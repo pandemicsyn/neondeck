@@ -1,12 +1,12 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 export const errorCodeSchema = z.enum([
-  "invalid_request",
-  "not_found",
-  "payload_too_large",
-  "relay_unavailable",
-  "unauthorized",
-  "upgrade_required",
+  'invalid_request',
+  'not_found',
+  'payload_too_large',
+  'relay_unavailable',
+  'unauthorized',
+  'upgrade_required',
 ]);
 
 export const errorResponseSchema = z.object({

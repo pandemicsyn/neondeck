@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 export const channelSchema = z
   .string()
@@ -14,9 +14,7 @@ const githubWebhookRouteSchema = z.object({
   channel: channelSchema,
 });
 
-const webSocketPathSchema = z
-  .string()
-  .regex(/^\/channels\/[^/]+\/ws$/);
+const webSocketPathSchema = z.string().regex(/^\/channels\/[^/]+\/ws$/);
 
 const webSocketRouteSchema = z.object({
   channel: channelSchema,
@@ -27,7 +25,7 @@ export function parseGithubWebhookRoute(
 ): z.infer<typeof githubWebhookRouteSchema> | null {
   if (!githubWebhookPathSchema.safeParse(pathname).success) return null;
 
-  const encodedChannel = pathname.split("/")[2];
+  const encodedChannel = pathname.split('/')[2];
   if (!encodedChannel) return null;
 
   try {
@@ -44,7 +42,7 @@ export function parseWebSocketRoute(
 ): z.infer<typeof webSocketRouteSchema> | null {
   if (!webSocketPathSchema.safeParse(pathname).success) return null;
 
-  const encodedChannel = pathname.split("/")[2];
+  const encodedChannel = pathname.split('/')[2];
   if (!encodedChannel) return null;
 
   try {
