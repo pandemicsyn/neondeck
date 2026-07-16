@@ -1057,7 +1057,8 @@ export type AutopilotConcurrencyPolicy = {
 
 export type AutopilotQueueItem = {
   id: string;
-  source: 'watch' | 'worktree' | 'workflow' | 'approval';
+  source: 'admission' | 'watch' | 'worktree' | 'workflow' | 'approval';
+  watchId: string | null;
   status:
     | 'watching'
     | 'queued'

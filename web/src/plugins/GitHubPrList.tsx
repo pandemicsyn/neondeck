@@ -12,6 +12,7 @@ import {
   type WorkflowObservability,
 } from '../api';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
+import { StopPrWatchButton } from '../components/StopPrWatchButton';
 import {
   Badge,
   EmptyState,
@@ -459,21 +460,25 @@ function WatchPrButton({ item }: { item: GitHubPullRequest }) {
   });
   const watched = Boolean(activeExistingWatch || mutation.data);
 
+  if (activeExistingWatch) {
+    return (
+      <StopPrWatchButton label="stop watch" watchId={activeExistingWatch.id} />
+    );
+  }
+
   return (
     <Button
       className="min-h-[28px] shrink-0 border-line bg-transparent px-2 py-1 text-[10px] text-muted"
-      disabled={mutation.isPending || Boolean(activeExistingWatch)}
+      disabled={mutation.isPending}
       onClick={() => mutation.mutate()}
       title={
         mutation.error
           ? queryErrorMessage(mutation.error)
-          : activeExistingWatch
-            ? `Watching ${activeExistingWatch.id}`
-            : existingWatch
-              ? `Re-watch ${existingWatch.id}`
-              : mutation.data
-                ? `${mutation.data.message} · run ${mutation.data.flueRunId}`
-                : 'Watch this PR until checks are green'
+          : existingWatch
+            ? `Re-watch ${existingWatch.id}`
+            : mutation.data
+              ? `${mutation.data.message} · run ${mutation.data.flueRunId}`
+              : 'Watch this PR until checks are green'
       }
       type="button"
     >

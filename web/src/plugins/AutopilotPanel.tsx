@@ -17,6 +17,7 @@ import {
   type KiloTaskRecord,
 } from '../api';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
+import { StopPrWatchButton } from '../components/StopPrWatchButton';
 import {
   Badge,
   Button,
@@ -323,6 +324,9 @@ function QueueRow({ item }: { item: AutopilotQueueItem }) {
               status: item.status,
             }}
           />
+          {item.source === 'watch' && item.watchId ? (
+            <StopPrWatchButton watchId={item.watchId} />
+          ) : null}
           {item.mode}
         </span>
       </div>

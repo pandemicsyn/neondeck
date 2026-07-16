@@ -146,6 +146,7 @@ export async function readAutopilotState(
     ...admissions.map((admission) => ({
       id: admission.id,
       source: 'admission' as const,
+      watchId: admission.watchId,
       status:
         admission.state === 'prepared'
           ? ('prepared' as const)

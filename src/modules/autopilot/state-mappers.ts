@@ -136,6 +136,7 @@ export function queueItemFromWatch(
   return {
     id: `watch:${watch.id}`,
     source: 'watch',
+    watchId: watch.id,
     status,
     priority: watchPriority(watch.status, mode),
     repoId: watch.repoId,
@@ -159,6 +160,7 @@ export function queueItemFromWorktree(
   return {
     id: `worktree:${worktree.id}`,
     source: 'worktree',
+    watchId: null,
     status,
     priority:
       worktree.lifecycleStatus === 'failed' ||
@@ -188,6 +190,7 @@ export function queueItemFromWorkflow(
   return {
     id: `workflow:${run.run_id}`,
     source: 'workflow',
+    watchId: null,
     status: 'running',
     priority: run.workflow === 'push_pr_autofix' ? 'high' : 'normal',
     repoId: related?.repoId ?? 'unknown',
@@ -209,6 +212,7 @@ export function queueItemFromApproval(
   return {
     id: `approval:${approval.id}`,
     source: 'approval',
+    watchId: null,
     status: 'waiting-approval',
     priority: 'high',
     repoId: approval.repoId ?? 'unknown',
@@ -257,6 +261,7 @@ export function queueItemFromPreparedDiff(
   return {
     id: `prepared-diff:${record.id}`,
     source: 'worktree',
+    watchId: null,
     status: runningRevision
       ? 'running'
       : waitingApproval
