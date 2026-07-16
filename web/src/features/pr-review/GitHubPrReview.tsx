@@ -1,38 +1,19 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import {
-  useEffect,
-  useMemo,
-  useState,
-  type FormEvent,
-  type ReactNode,
-} from 'react';
-import {
-  ApiError,
-  getPrReviewForTarget,
-  openPrReviewEventStream,
-  reconcilePrReviewSubmission,
-  restartPrReview,
-  startPrReview,
-  type DiffSummary,
-  type GitHubPrReviewDraft,
   type GitHubPrReviewDraftComment,
   type GitHubPrReviewVerdict,
   type GitHubPullRequest,
-  type GitHubPullRequestReviewThread,
-  type PrReviewRecord,
   type PrReviewReportOnlyFinding,
 } from '../../api';
-import type {
-  GitHubPrReviewDraftResponse,
-  GitHubPrReviewSubmitResponse,
-  GitHubPrThreadMutationResponse,
-} from '../../api';
 import { Badge, MiniEmpty } from '../../components/ui';
-import { queryErrorMessage, queryKeys } from '../../lib/query';
-import { firstRenderablePath, patchHasContent } from '../diff-viewer/helpers';
-import { MultiFileView } from '../diff-viewer/MultiFileView';
+import { queryErrorMessage } from '../../lib/query';
+import { firstRenderablePath } from '../diff-viewer/helpers';
 import type { DiffFilePatch, DiffReviewAnnotation } from '../diff-viewer/types';
+import { PrReviewCommentComposer } from './PrReviewCommentComposer';
+import { PrReviewDiffPane } from './PrReviewDiffPane';
+import { reportOnlyFindingBody } from './PrReviewFindingsSidebar';
+import { PrReviewSubmitBar } from './PrReviewSubmitBar';
 import {
   useGitHubPrReviewDraft,
   useGitHubPrReviewMutations,
@@ -40,8 +21,6 @@ import {
   useGitHubPullRequestFileList,
   useGitHubPullRequestFilePatches,
   usePrefetchGitHubPullRequestFilePatch,
-  prReviewQueryKeys,
-  type PullRequestFilePatchQueryState,
 } from './queries';
 import {
   commentAnchorExists,
@@ -49,10 +28,26 @@ import {
   failingCommentIdsFromError,
   normalizeReviewBody,
   patchAnchorIndexesByPath,
-  reviewCommentPreview,
   staleDraftCommentIds,
-  type PatchAnchorIndex,
 } from './review-helpers';
+import {
+  annotationFromSelection,
+  annotationsFromComposer,
+  annotationsFromDraft,
+  annotationsFromThreads,
+  checkBadgeClass,
+  checkLabel,
+  draftCommentIdsWithUnknownPatch,
+  firstReviewablePath,
+  mergeAnnotations,
+  mergePatchResults,
+  mutationErrorMessage,
+  prDetail,
+  reviewFileStats,
+  reviewPatchPaths,
+  summaryLabel,
+} from './review-view-model';
+import { usePrReviewRecord } from './usePrReviewRecord';
 
 type ComposerState = {
   path: string;
@@ -73,50 +68,14 @@ export function GitHubPrReview({
   const threadsQuery = useGitHubPrReviewThreads(pr);
   const draftQuery = useGitHubPrReviewDraft(pr);
   const mutations = useGitHubPrReviewMutations(pr);
-  const queryClient = useQueryClient();
-  const draftRepo = pr.repo;
-  const draftPrNumber = pr.number;
-  const reviewDraftQueryKey = useMemo(
-    () => prReviewQueryKeys.draft({ repo: draftRepo, number: draftPrNumber }),
-    [draftPrNumber, draftRepo],
-  );
-  const reviewRecordQuery = useQuery({
-    queryKey: queryKeys.prReviewTarget(pr.repo, pr.number),
-    queryFn: () => getPrReviewForTarget({ repo: pr.repo, prNumber: pr.number }),
-  });
-  const reviewRecord = reviewRecordQuery.data ?? null;
-  const isDurableReviewReady =
-    reviewRecordQuery.isSuccess &&
-    (!reviewRecord || reviewRecord.status === 'ready');
-  const restartReview = useMutation({
-    mutationFn: (id: string) => restartPrReview(id),
-    onSuccess(result) {
-      queryClient.setQueryData(
-        queryKeys.prReviewTarget(pr.repo, pr.number),
-        result.review,
-      );
-    },
-  });
-  const startReview = useMutation({
-    mutationFn: () =>
-      startPrReview({ ref: `${pr.repo}#${pr.number}`, origin: 'panel' }),
-    onSuccess(result) {
-      queryClient.setQueryData(
-        queryKeys.prReviewTarget(pr.repo, pr.number),
-        result.review,
-      );
-    },
-  });
-  const reconcileSubmission = useMutation({
-    mutationFn: (id: string) => reconcilePrReviewSubmission(id),
-    onSuccess(result) {
-      queryClient.setQueryData(
-        queryKeys.prReviewTarget(pr.repo, pr.number),
-        result.review,
-      );
-      setStatusMessage(result.message);
-    },
-  });
+  const {
+    isDurableReviewReady,
+    query: reviewRecordQuery,
+    reconcileSubmission,
+    restart: restartReview,
+    review: reviewRecord,
+    start: startReview,
+  } = usePrReviewRecord(pr);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [composer, setComposer] = useState<ComposerState | null>(null);
   const [composerBody, setComposerBody] = useState('');
@@ -213,10 +172,6 @@ export function GitHubPrReview({
       ),
     [blockedCommentIds, composer, draft, reviewThreads],
   );
-  const selectedThreads = useMemo(
-    () => threadsForPath(reviewThreads, activePath),
-    [activePath, reviewThreads],
-  );
   const fileStats = useMemo(() => reviewFileStats(files), [files]);
   const isDraftMutationPending =
     mutations.saveDraft.isPending ||
@@ -251,38 +206,6 @@ export function GitHubPrReview({
   const patchErrorMessage = activePatchQuery?.error
     ? `Patch unavailable: ${queryErrorMessage(activePatchQuery.error)}`
     : null;
-
-  useEffect(
-    () =>
-      openPrReviewEventStream(
-        (event) => {
-          if (
-            event.review.repoFullName.toLowerCase() === pr.repo.toLowerCase() &&
-            event.review.prNumber === pr.number
-          ) {
-            queryClient.setQueryData(
-              queryKeys.prReviewTarget(pr.repo, pr.number),
-              event.review,
-            );
-            if (
-              event.review.status === 'ready' ||
-              event.review.status === 'failed'
-            ) {
-              void queryClient.invalidateQueries({
-                queryKey: reviewDraftQueryKey,
-              });
-            }
-          }
-        },
-        undefined,
-        () => {
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.prReviewTarget(pr.repo, pr.number),
-          });
-        },
-      ),
-    [pr.number, pr.repo, queryClient, reviewDraftQueryKey],
-  );
 
   useEffect(() => {
     if (activePath && fileList.some((file) => file.path === activePath)) return;
@@ -502,230 +425,71 @@ export function GitHubPrReview({
       // React Query owns the visible error state.
     }
   };
-  const renderAnnotation = (annotation: DiffReviewAnnotation) => {
-    const metadata = annotation.metadata;
-    if (metadata.kind === 'composer') {
-      return (
-        <form
-          className="pr-review-composer"
-          data-neondeck-review-annotation=""
-          onSubmit={submitComposer}
-        >
-          <label className="sr-only" htmlFor="pr-review-new-comment">
-            Draft review comment
-          </label>
-          <textarea
-            id="pr-review-new-comment"
-            onChange={(event) => setComposerBody(event.currentTarget.value)}
-            placeholder="Draft an inline review comment"
-            value={composerBody}
-          />
-          <div className="pr-review-composer-actions">
-            <button
-              disabled={
-                composerBody.trim().length === 0 ||
-                mutations.addComment.isPending ||
-                mutations.saveDraft.isPending
-              }
-              type="submit"
-            >
-              {mutations.addComment.isPending || mutations.saveDraft.isPending
-                ? 'Saving'
-                : 'Save'}
-            </button>
-            <button
-              onClick={() => {
-                setComposer(null);
-                setComposerBody('');
-              }}
-              type="button"
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      );
-    }
-
-    if (metadata.kind === 'draft') {
-      const comment = draft?.comments.find((item) => item.id === metadata.id);
-      const isEditing = editingCommentId === metadata.id;
-      const origin = comment?.origin === 'neon' ? 'neon draft' : 'draft';
-      return (
-        <div
-          className={metadata.isStale ? 'pr-review-draft-stale' : undefined}
-          data-neondeck-review-annotation=""
-        >
-          <div data-neondeck-review-annotation-title="">
-            <span>
-              {metadata.isStale ? `stale ${origin}` : origin} · {metadata.title}
-            </span>
-          </div>
-          {isEditing ? (
-            <form className="pr-review-composer" onSubmit={submitEdit}>
-              <textarea
-                aria-label="Edit draft review comment"
-                onChange={(event) => setEditingBody(event.currentTarget.value)}
-                value={editingBody}
-              />
-              <div className="pr-review-composer-actions">
-                <button
-                  disabled={
-                    editingBody.trim().length === 0 ||
-                    mutations.updateComment.isPending
-                  }
-                  type="submit"
-                >
-                  {mutations.updateComment.isPending ? 'Saving' : 'Save'}
-                </button>
-                <button
-                  onClick={() => {
-                    setEditingCommentId(null);
-                    setEditingBody('');
-                  }}
-                  type="button"
-                >
-                  Cancel
-                </button>
-              </div>
-              {reanchoringCommentId === metadata.id ? (
-                <p className="pr-review-inline-hint">
-                  Select a new diff line to re-anchor this comment.
-                </p>
-              ) : null}
-            </form>
-          ) : (
-            <>
-              <p>{metadata.body}</p>
-              <div className="pr-review-inline-actions">
-                <button
-                  onClick={() => {
-                    setEditingCommentId(metadata.id);
-                    setEditingBody(comment?.body ?? metadata.body);
-                  }}
-                  type="button"
-                >
-                  Edit
-                </button>
-                <button
-                  disabled={mutations.deleteComment.isPending}
-                  onClick={() => {
-                    setStatusMessage(null);
-                    mutations.deleteComment.mutate({
-                      repo: pr.repo,
-                      number: pr.number,
-                      id: metadata.id,
-                    });
-                  }}
-                  type="button"
-                >
-                  {mutations.deleteComment.isPending ? 'Deleting' : 'Delete'}
-                </button>
-                {metadata.isStale ? (
-                  <button
-                    disabled={mutations.updateComment.isPending}
-                    onClick={() =>
-                      beginReanchorComment(metadata.id, comment?.path ?? null)
-                    }
-                    type="button"
-                  >
-                    Re-anchor
-                  </button>
-                ) : null}
-              </div>
-            </>
-          )}
-        </div>
-      );
-    }
-
-    const thread = reviewThreads.find((item) => item.id === metadata.id);
-    const isReplying = replyingThreadId === metadata.id;
-    const threadAuthorLabel = metadata.authorLogin
-      ? `@${metadata.authorLogin}`
-      : 'review';
-    return (
-      <div data-neondeck-review-annotation="">
-        <div data-neondeck-review-annotation-title="">
-          <span>
-            {threadAuthorLabel} · {metadata.title}
-          </span>
-        </div>
-        <p>{metadata.body}</p>
-        {isReplying ? (
-          <form
-            className="pr-review-composer"
-            onSubmit={(event) => submitReply(metadata.id, event)}
-          >
-            <textarea
-              aria-label="Reply to this thread"
-              onChange={(event) => setReplyBody(event.currentTarget.value)}
-              placeholder="Reply to this thread"
-              value={replyBody}
-            />
-            <div className="pr-review-composer-actions">
-              <button
-                disabled={
-                  replyBody.trim().length === 0 ||
-                  mutations.replyToThread.isPending
-                }
-                type="submit"
-              >
-                {mutations.replyToThread.isPending ? 'Replying' : 'Reply'}
-              </button>
-              <button
-                onClick={() => {
-                  setReplyingThreadId(null);
-                  setReplyBody('');
-                }}
-                type="button"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        ) : (
-          <div className="pr-review-inline-actions">
-            <button
-              onClick={() => {
-                setReplyingThreadId(metadata.id);
-                setReplyBody('');
-              }}
-              type="button"
-            >
-              Reply
-            </button>
-            {thread ? (
-              <button
-                disabled={mutations.setThreadResolution.isPending}
-                onClick={() => {
-                  setStatusMessage(null);
-                  mutations.setThreadResolution.mutate({
-                    repo: pr.repo,
-                    number: pr.number,
-                    threadId: thread.id,
-                    resolved: !thread.isResolved,
-                  });
-                }}
-                type="button"
-              >
-                {mutations.setThreadResolution.isPending
-                  ? 'Updating'
-                  : thread.isResolved
-                    ? 'Unresolve'
-                    : 'Resolve'}
-              </button>
-            ) : null}
-            {metadata.url ? (
-              <a href={metadata.url} rel="noreferrer" target="_blank">
-                open thread
-              </a>
-            ) : null}
-          </div>
-        )}
-      </div>
-    );
-  };
+  const renderAnnotation = (annotation: DiffReviewAnnotation) => (
+    <PrReviewCommentComposer
+      annotation={annotation}
+      composerBody={composerBody}
+      draft={draft}
+      editingBody={editingBody}
+      editingCommentId={editingCommentId}
+      isAddingComment={mutations.addComment.isPending}
+      isDeletingComment={mutations.deleteComment.isPending}
+      isReplyingToThread={mutations.replyToThread.isPending}
+      isResolvingThread={mutations.setThreadResolution.isPending}
+      isSavingDraft={mutations.saveDraft.isPending}
+      isUpdatingComment={mutations.updateComment.isPending}
+      onCancelComposer={() => {
+        setComposer(null);
+        setComposerBody('');
+      }}
+      onCancelEdit={() => {
+        setEditingCommentId(null);
+        setEditingBody('');
+      }}
+      onCancelReply={() => {
+        setReplyingThreadId(null);
+        setReplyBody('');
+      }}
+      onComposerBodyChange={setComposerBody}
+      onDeleteComment={(commentId) => {
+        setStatusMessage(null);
+        mutations.deleteComment.mutate({
+          repo: pr.repo,
+          number: pr.number,
+          id: commentId,
+        });
+      }}
+      onEditingBodyChange={setEditingBody}
+      onReanchorComment={(comment) =>
+        beginReanchorComment(comment.id, comment.path)
+      }
+      onReplyBodyChange={setReplyBody}
+      onSetThreadResolution={(thread) => {
+        setStatusMessage(null);
+        mutations.setThreadResolution.mutate({
+          repo: pr.repo,
+          number: pr.number,
+          threadId: thread.id,
+          resolved: !thread.isResolved,
+        });
+      }}
+      onStartEdit={(commentId, body) => {
+        setEditingCommentId(commentId);
+        setEditingBody(body);
+      }}
+      onStartReply={(threadId) => {
+        setReplyingThreadId(threadId);
+        setReplyBody('');
+      }}
+      onSubmitComposer={submitComposer}
+      onSubmitEdit={submitEdit}
+      onSubmitReply={submitReply}
+      reanchoringCommentId={reanchoringCommentId}
+      replyingThreadId={replyingThreadId}
+      replyBody={replyBody}
+      reviewThreads={reviewThreads}
+    />
+  );
   const submitReview = async () => {
     if (!currentHeadSha) return;
     if (!isDurableReviewReady) {
@@ -782,33 +546,30 @@ export function GitHubPrReview({
     );
   };
   const isStandalone = mode === 'standalone';
-  const reviewPanels = (
-    <>
-      <ReviewThreadPanel
-        activePath={activePath}
-        isLoading={threadsQuery.isLoading}
-        threads={selectedThreads}
-      />
-      <StaleDraftCommentPanel
-        comments={staleDraftComments}
-        isDeleting={mutations.deleteComment.isPending}
-        onDelete={(commentId) => {
-          setStatusMessage(null);
-          mutations.deleteComment.mutate({
-            repo: pr.repo,
-            number: pr.number,
-            id: commentId,
-          });
-        }}
-        onReanchor={(comment) => beginReanchorComment(comment.id, comment.path)}
-      />
-      <ReportOnlyFindingPanel
-        draft={draft}
-        onChooseLine={beginAnchorFinding}
-        review={reviewRecord}
-      />
-    </>
-  );
+  const findingsSidebar = {
+    activePath,
+    cleanCommentCount: cleanCommentIds.length,
+    draft,
+    files,
+    isDeleting: mutations.deleteComment.isPending,
+    isLoadingThreads: threadsQuery.isLoading,
+    onChooseLine: beginAnchorFinding,
+    onDelete: (commentId: string) => {
+      setStatusMessage(null);
+      mutations.deleteComment.mutate({
+        repo: pr.repo,
+        number: pr.number,
+        id: commentId,
+      });
+    },
+    onReanchor: (comment: GitHubPrReviewDraftComment) =>
+      beginReanchorComment(comment.id, comment.path),
+    review: reviewRecord,
+    reviewThreads,
+    staleCommentCount: blockedCommentIds.size,
+    staleDraftComments,
+    unresolvedThreads,
+  };
 
   return (
     <section
@@ -853,7 +614,9 @@ export function GitHubPrReview({
               onClick={() => {
                 setStatusMessage(null);
                 if (reviewRecord.status === 'submitting') {
-                  reconcileSubmission.mutate(reviewRecord.id);
+                  reconcileSubmission.mutate(reviewRecord.id, {
+                    onSuccess: (result) => setStatusMessage(result.message),
+                  });
                 } else {
                   restartReview.mutate(reviewRecord.id);
                 }
@@ -952,58 +715,26 @@ export function GitHubPrReview({
           </button>
         </div>
       ) : null}
-      {fileLoadMessage ? (
-        <div className="pr-review-load-state">
-          <MiniEmpty label={fileLoadMessage} />
-        </div>
-      ) : (
-        <>
-          <MultiFileView
-            activePath={activePath}
-            annotationsByPath={annotationsByPath}
-            detail={prDetail(pr, summary)}
-            emptyLabel="No PR file patches available."
-            files={files}
-            footer={isStandalone ? null : reviewPanels}
-            inspector={
-              isStandalone ? (
-                <ReviewInspector
-                  activePath={activePath}
-                  cleanCommentCount={cleanCommentIds.length}
-                  draft={draft}
-                  files={files}
-                  reviewThreads={reviewThreads}
-                  staleCommentCount={blockedCommentIds.size}
-                  unresolvedThreads={unresolvedThreads}
-                >
-                  {reviewPanels}
-                </ReviewInspector>
-              ) : undefined
-            }
-            inspectorLabel="PR review inspector"
-            isLoadingPatch={Boolean(activePatchQuery?.isLoading)}
-            onSelectedLinesChange={onSelectionChange}
-            onActivePathChange={setActivePath}
-            patchError={patchErrorMessage}
-            renderAnnotation={renderAnnotation}
-            selectedLines={
-              composer?.path === activePath ? composer.selection : null
-            }
-            title={pr.title}
-            tone="primary"
-          />
-          {isStandalone ? (
-            <div
-              aria-label="Collapsed PR review details"
-              className="pr-review-compact-panels"
-            >
-              {reviewPanels}
-            </div>
-          ) : null}
-        </>
-      )}
+      <PrReviewDiffPane
+        activePath={activePath}
+        annotationsByPath={annotationsByPath}
+        detail={prDetail(pr, summary)}
+        fileLoadMessage={fileLoadMessage}
+        files={files}
+        findingsSidebar={findingsSidebar}
+        isLoadingPatch={Boolean(activePatchQuery?.isLoading)}
+        isStandalone={isStandalone}
+        onActivePathChange={setActivePath}
+        onSelectedLinesChange={onSelectionChange}
+        patchError={patchErrorMessage}
+        renderAnnotation={renderAnnotation}
+        selectedLines={
+          composer?.path === activePath ? composer.selection : null
+        }
+        title={pr.title}
+      />
       {fileLoadMessage ? null : (
-        <ReviewBar
+        <PrReviewSubmitBar
           cleanCommentCount={cleanCommentIds.length}
           draft={draft}
           isBusy={isDraftMutationPending || isThreadMutationPending}
@@ -1054,682 +785,4 @@ export function GitHubPrReview({
   );
 }
 
-function mergePatchResults(
-  files: DiffFilePatch[],
-  patchQueryByPath: Map<string, PullRequestFilePatchQueryState>,
-) {
-  if (patchQueryByPath.size === 0) return files;
-  return files.map((file) => {
-    const patched = patchQueryByPath.get(file.path)?.file;
-    return patched
-      ? {
-          ...file,
-          message: patched.message ?? file.message,
-          patch: patched.patch,
-          truncated: patched.truncated ?? file.truncated,
-        }
-      : file;
-  });
-}
-
-function draftCommentIdsWithUnknownPatch(
-  draft: GitHubPrReviewDraft | null,
-  files: DiffFilePatch[],
-  patchQueryByPath: Map<string, PullRequestFilePatchQueryState>,
-) {
-  const unknown = new Set<string>();
-  for (const comment of draft?.comments ?? []) {
-    const file = files.find((item) => item.path === comment.path);
-    if (patchHasContent(file?.patch)) continue;
-    const query = patchQueryByPath.get(comment.path);
-    if (query && (query.isLoading || query.isError || !query.hasData)) {
-      unknown.add(comment.id);
-    }
-  }
-  return unknown;
-}
-
-function firstReviewablePath(files: DiffFilePatch[]) {
-  return (
-    files.find((file) => !file.binary && !file.truncated)?.path ??
-    files[0]?.path
-  );
-}
-
-function reviewPatchPaths({
-  activePath,
-  draft,
-  files,
-  unresolvedThreads,
-}: {
-  activePath: string | null;
-  draft: GitHubPrReviewDraft | null;
-  files: DiffFilePatch[];
-  unresolvedThreads: GitHubPullRequestReviewThread[];
-}) {
-  const availablePaths = new Set(files.map((file) => file.path));
-  const paths = [
-    activePath,
-    ...(draft?.comments.map((comment) => comment.path) ?? []),
-    ...unresolvedThreads
-      .map(threadPath)
-      .filter((path): path is string => Boolean(path)),
-  ];
-  return [...new Set(paths)].filter((path): path is string =>
-    Boolean(path && availablePaths.has(path)),
-  );
-}
-
-function ReviewInspector({
-  activePath,
-  children,
-  cleanCommentCount,
-  draft,
-  files,
-  reviewThreads,
-  staleCommentCount,
-  unresolvedThreads,
-}: {
-  activePath: string | null;
-  children: ReactNode;
-  cleanCommentCount: number;
-  draft: GitHubPrReviewDraft | null;
-  files: DiffFilePatch[];
-  reviewThreads: GitHubPullRequestReviewThread[];
-  staleCommentCount: number;
-  unresolvedThreads: GitHubPullRequestReviewThread[];
-}) {
-  const reviewedFileCount = new Set([
-    ...reviewThreads
-      .map(threadPath)
-      .filter((path): path is string => Boolean(path)),
-    ...(draft?.comments.map((comment) => comment.path) ?? []),
-  ]).size;
-  return (
-    <div className="pr-review-inspector">
-      <section className="pr-review-inspector-section">
-        <div className="pr-review-inspector-heading">
-          <span>Review focus</span>
-          <span>{activePath ? 'active file' : 'no file'}</span>
-        </div>
-        <p className="pr-review-inspector-path">
-          {activePath ?? 'Select a changed file to review.'}
-        </p>
-        <div className="pr-review-inspector-metrics">
-          <span>{files.length} files</span>
-          <span>{reviewedFileCount} touched</span>
-          <span>
-            {unresolvedThreads.length}/{reviewThreads.length} threads
-          </span>
-          <span>{cleanCommentCount} pending</span>
-          {staleCommentCount > 0 ? (
-            <span>{staleCommentCount} stale</span>
-          ) : null}
-        </div>
-      </section>
-      <section className="pr-review-inspector-section">
-        <div className="pr-review-inspector-heading">
-          <span>Line review</span>
-          <span>select diff lines</span>
-        </div>
-        <p className="pr-review-inspector-copy">
-          Select a changed line or range in the diff to draft an inline review
-          comment. Saved drafts stay local until the review is submitted.
-        </p>
-      </section>
-      {children}
-    </div>
-  );
-}
-
-function annotationsFromThreads(threads: GitHubPullRequestReviewThread[]) {
-  const annotations: Record<string, DiffReviewAnnotation[]> = {};
-  for (const thread of threads) {
-    const path = threadPath(thread);
-    if (!path) continue;
-    const annotation = annotationFromThread(thread);
-    if (annotation.lineNumber < 1) continue;
-    annotations[path] = [...(annotations[path] ?? []), annotation];
-  }
-  return annotations;
-}
-
-function annotationFromThread(
-  thread: GitHubPullRequestReviewThread,
-): DiffReviewAnnotation {
-  const comment = latestComment(thread);
-  const anchor = threadAnchor(thread);
-  return {
-    ...anchor,
-    metadata: {
-      id: thread.id,
-      kind: 'thread',
-      title: `${thread.comments.length} review comment${thread.comments.length === 1 ? '' : 's'}`,
-      body: reviewCommentPreview(comment?.body ?? 'Review thread'),
-      authorLogin: comment?.authorLogin ?? null,
-      url: comment?.url ?? null,
-      isResolved: thread.isResolved,
-      isOutdated: thread.isOutdated,
-    },
-  };
-}
-
-function annotationsFromDraft(
-  draft: GitHubPrReviewDraft | null,
-  staleCommentIds: Set<string>,
-) {
-  const annotations: Record<string, DiffReviewAnnotation[]> = {};
-  for (const comment of draft?.comments ?? []) {
-    const annotation = annotationFromDraftComment(
-      comment,
-      staleCommentIds.has(comment.id),
-    );
-    annotations[comment.path] = [
-      ...(annotations[comment.path] ?? []),
-      annotation,
-    ];
-  }
-  return annotations;
-}
-
-function annotationsFromComposer(composer: ComposerState | null) {
-  if (!composer) return {};
-  return { [composer.path]: [composer.annotation] };
-}
-
-function annotationFromDraftComment(
-  comment: GitHubPrReviewDraftComment,
-  isStale: boolean,
-): DiffReviewAnnotation {
-  return {
-    side: comment.side === 'LEFT' ? 'deletions' : 'additions',
-    lineNumber: comment.line,
-    metadata: {
-      id: comment.id,
-      kind: 'draft',
-      title: commentAnchorLabel(comment),
-      body: reviewCommentPreview(comment.body),
-      isStale,
-    },
-  };
-}
-
-function mergeAnnotations(
-  ...groups: Array<Record<string, DiffReviewAnnotation[]> | null | undefined>
-) {
-  const merged: Record<string, DiffReviewAnnotation[]> = {};
-  for (const group of groups) {
-    for (const [path, annotations] of Object.entries(group ?? {})) {
-      merged[path] = [...(merged[path] ?? []), ...annotations];
-    }
-  }
-  return merged;
-}
-
-function annotationFromSelection(
-  selection: SelectedLineRange,
-  index?: PatchAnchorIndex,
-): DiffReviewAnnotation {
-  const input = commentInputFromSelection(selection, index);
-  return {
-    side: input.side === 'LEFT' ? 'deletions' : 'additions',
-    lineNumber: input.line,
-    metadata: {
-      id: 'composer',
-      kind: 'composer',
-      title: selectionLabel(selection, index),
-      body: '',
-    },
-  };
-}
-
-function selectionLabel(
-  selection: SelectedLineRange,
-  index?: Parameters<typeof commentInputFromSelection>[1],
-) {
-  const input = commentInputFromSelection(selection, index);
-  if (input.startLine) {
-    return `${input.startSide} L${input.startLine} -> ${input.side} L${input.line}`;
-  }
-  return `${input.side} L${input.line}`;
-}
-
-function commentAnchorLabel(comment: GitHubPrReviewDraftComment) {
-  if (comment.startLine) {
-    return `${comment.startSide ?? comment.side} L${comment.startLine} -> ${comment.side} L${comment.line}`;
-  }
-  return `${comment.side} L${comment.line}`;
-}
-
-function threadAnchor(thread: GitHubPullRequestReviewThread) {
-  const side: DiffReviewAnnotation['side'] =
-    thread.diffSide === 'LEFT' ? 'deletions' : 'additions';
-  if (side === 'deletions') {
-    const line =
-      positiveLine(thread.originalLine) ??
-      positiveLine(latestComment(thread)?.originalLine) ??
-      positiveLine(thread.line) ??
-      positiveLine(latestComment(thread)?.line);
-    return { side, lineNumber: line ?? 0 };
-  }
-
-  const line =
-    positiveLine(thread.line) ?? positiveLine(latestComment(thread)?.line);
-  return { side, lineNumber: line ?? 0 };
-}
-
-function threadsForPath(
-  threads: GitHubPullRequestReviewThread[],
-  path: string | null,
-) {
-  if (!path) return [];
-  return threads.filter((thread) => threadPath(thread) === path);
-}
-
-function threadPath(thread: GitHubPullRequestReviewThread) {
-  return (
-    thread.path ?? thread.comments.find((comment) => comment.path)?.path ?? null
-  );
-}
-
-function latestComment(thread: GitHubPullRequestReviewThread) {
-  return thread.comments.at(-1) ?? thread.comments[0] ?? null;
-}
-
-function positiveLine(value: number | null | undefined) {
-  return typeof value === 'number' && value > 0 ? value : null;
-}
-
-function ReportOnlyFindingPanel({
-  draft,
-  onChooseLine,
-  review,
-}: {
-  draft: GitHubPrReviewDraft | null;
-  onChooseLine: (finding: PrReviewReportOnlyFinding) => void;
-  review: PrReviewRecord | null;
-}) {
-  if (!review?.reportOnlyFindings.length) return null;
-  return (
-    <section className="pr-review-inspector-section">
-      <div className="pr-review-inspector-heading">
-        <span>Report-only — couldn&apos;t anchor to a line</span>
-        <Badge>{review.reportOnlyFindings.length}</Badge>
-      </div>
-      <div className="divide-y divide-line border-t border-line">
-        {review.reportOnlyFindings.map((finding, index) => {
-          const drafted = draft?.comments.some((comment) =>
-            comment.body.includes(finding.summary),
-          );
-          return (
-            <article
-              className="py-2"
-              key={`${finding.path}:${finding.line}:${index}`}
-            >
-              <p className="font-mono text-[10px] text-primary">
-                {finding.severity} · {finding.path}
-                {finding.line ? `:${finding.line}` : ''}
-              </p>
-              <p className="mt-1 text-[10.5px] leading-4 text-ink">
-                {finding.summary}
-              </p>
-              <p className="mt-1 text-[10px] leading-4 text-muted">
-                Suggested fix: {finding.suggestedFix}
-              </p>
-              <p className="mt-1 font-mono text-[9.5px] leading-4 text-muted">
-                Unanchored: {finding.reason}
-              </p>
-              <button
-                className="mt-1.5 border border-line px-1.5 py-1 font-mono text-[10px] text-muted hover:border-primary hover:text-primary disabled:opacity-50"
-                disabled={drafted}
-                onClick={() => onChooseLine(finding)}
-                type="button"
-              >
-                {drafted ? 'drafted inline' : 'choose line'}
-              </button>
-            </article>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function reportOnlyFindingBody(finding: PrReviewReportOnlyFinding) {
-  return [
-    `Neon review finding (${finding.severity}): ${finding.summary}`,
-    '',
-    `Suggested fix: ${finding.suggestedFix}`,
-    '',
-    'Manually anchored from a report-only finding. Edit or delete before submitting the review.',
-  ].join('\n');
-}
-
-function ReviewBar({
-  cleanCommentCount,
-  draft,
-  isBusy,
-  isDurableReviewReady,
-  isHeadAvailable,
-  isSubmitting,
-  onBodyBlur,
-  onBodyChange,
-  onBodyFocus,
-  onDiscard,
-  onPendingCountClick,
-  onSubmit,
-  onVerdictChange,
-  reviewBody,
-  staleCommentCount,
-  statusMessage,
-  verdict,
-  trustBoundary,
-}: {
-  cleanCommentCount: number;
-  draft: GitHubPrReviewDraft | null;
-  isBusy: boolean;
-  isDurableReviewReady: boolean;
-  isHeadAvailable: boolean;
-  isSubmitting: boolean;
-  onBodyBlur: () => void;
-  onBodyChange: (value: string) => void;
-  onBodyFocus: () => void;
-  onDiscard: () => void;
-  onPendingCountClick: () => void;
-  onSubmit: () => void;
-  onVerdictChange: (value: GitHubPrReviewVerdict) => void;
-  reviewBody: string;
-  staleCommentCount: number;
-  statusMessage: string | null;
-  verdict: GitHubPrReviewVerdict;
-  trustBoundary: string | null;
-}) {
-  const hasBody = reviewBody.trim().length > 0;
-  const canSubmit =
-    isHeadAvailable &&
-    isDurableReviewReady &&
-    !isBusy &&
-    (verdict === 'approve' || cleanCommentCount > 0 || hasBody);
-
-  return (
-    <aside aria-busy={isBusy} className="pr-review-bar">
-      <div className="pr-review-bar-main">
-        <button
-          className="pr-review-count"
-          disabled={cleanCommentCount === 0}
-          onClick={onPendingCountClick}
-          title="Cycle through pending draft comments"
-          type="button"
-        >
-          {cleanCommentCount} pending
-        </button>
-        {staleCommentCount > 0 ? (
-          <span className="pr-review-stale-count">
-            {staleCommentCount} stale skipped
-          </span>
-        ) : null}
-        <fieldset className="pr-review-verdicts">
-          <legend className="sr-only">Review verdict</legend>
-          {(['comment', 'approve', 'request-changes'] as const).map((item) => (
-            <button
-              aria-pressed={verdict === item}
-              disabled={!isHeadAvailable || isBusy}
-              key={item}
-              onClick={() => onVerdictChange(item)}
-              type="button"
-            >
-              {verdictLabel(item)}
-            </button>
-          ))}
-        </fieldset>
-      </div>
-      <label className="sr-only" htmlFor="pr-review-summary-body">
-        Review summary
-      </label>
-      <textarea
-        id="pr-review-summary-body"
-        disabled={!isHeadAvailable}
-        onBlur={onBodyBlur}
-        onChange={(event) => onBodyChange(event.currentTarget.value)}
-        onFocus={onBodyFocus}
-        placeholder={
-          isHeadAvailable ? 'Review summary' : 'PR head SHA unavailable'
-        }
-        value={reviewBody}
-      />
-      <div className="pr-review-bar-actions">
-        <button disabled={!canSubmit} onClick={onSubmit} type="button">
-          {isSubmitting ? 'Submitting to GitHub…' : 'Submit'}
-        </button>
-        <button disabled={!draft || isBusy} onClick={onDiscard} type="button">
-          Discard
-        </button>
-      </div>
-      {trustBoundary ? (
-        <p className="pr-review-bar-status">{trustBoundary}</p>
-      ) : null}
-      {statusMessage ? (
-        <p aria-live="polite" className="pr-review-bar-status">
-          {statusMessage}
-        </p>
-      ) : null}
-    </aside>
-  );
-}
-
-function verdictLabel(value: GitHubPrReviewVerdict) {
-  if (value === 'approve') return 'Approve';
-  if (value === 'request-changes') return 'Request changes';
-  return 'Comment';
-}
-
-function mutationErrorMessage(
-  error: unknown,
-  draft: GitHubPrReviewDraft | null,
-) {
-  if (error instanceof ApiError) {
-    const data = error.data as
-      | GitHubPrReviewDraftResponse
-      | GitHubPrReviewSubmitResponse
-      | GitHubPrThreadMutationResponse
-      | undefined;
-    const details = [
-      ...(data?.errors ?? []),
-      ...(data?.requires?.length
-        ? [`Requires: ${data.requires.join(', ')}`]
-        : []),
-      ...(data?.data &&
-      'failingCommentIds' in data.data &&
-      Array.isArray(data.data.failingCommentIds) &&
-      data.data.failingCommentIds.length > 0
-        ? [
-            `Failing comments: ${failingCommentLabels(data.data.failingCommentIds, draft).join(', ')}`,
-          ]
-        : []),
-    ];
-    return details.length > 0
-      ? `${error.message} ${details.join(' ')}`
-      : error.message;
-  }
-  return error ? queryErrorMessage(error) : null;
-}
-
-function failingCommentLabels(
-  ids: string[],
-  draft: GitHubPrReviewDraft | null,
-) {
-  return ids.map((id) => {
-    const comment = draft?.comments.find((item) => item.id === id);
-    if (!comment) return id.slice(0, 8);
-    return `${comment.path} ${commentAnchorLabel(comment)}`;
-  });
-}
-
-function ReviewThreadPanel({
-  activePath,
-  isLoading,
-  threads,
-}: {
-  activePath: string | null;
-  isLoading: boolean;
-  threads: GitHubPullRequestReviewThread[];
-}) {
-  if (isLoading) {
-    return (
-      <p
-        aria-live="polite"
-        className="border-x border-b border-line bg-field px-2 py-1 font-mono text-[10px] text-muted"
-      >
-        Loading review threads...
-      </p>
-    );
-  }
-
-  if (!activePath || threads.length === 0) {
-    return (
-      <p className="border-x border-b border-line bg-field px-2 py-1 font-mono text-[10px] text-muted">
-        No review threads for this file.
-      </p>
-    );
-  }
-
-  return (
-    <div className="border-x border-b border-line bg-field">
-      <div className="flex items-center justify-between border-b border-line px-2 py-1 font-mono text-[10px] text-muted">
-        <span>review threads</span>
-        <span className="text-primary">
-          {threads.filter((thread) => !thread.isResolved).length}/
-          {threads.length} unresolved
-        </span>
-      </div>
-      <ul className="max-h-40 overflow-auto">
-        {threads.map((thread) => {
-          const comment = latestComment(thread);
-          return (
-            <li
-              className="border-b border-line px-2 py-2 last:border-b-0"
-              key={thread.id}
-            >
-              <div className="mb-1 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
-                <span>
-                  {comment?.authorLogin ? `@${comment.authorLogin}` : 'review'}
-                </span>
-                <span>
-                  {thread.line
-                    ? `L${thread.line}`
-                    : comment?.originalLine
-                      ? `old L${comment.originalLine}`
-                      : 'file'}
-                </span>
-              </div>
-              <p className="line-clamp-3 text-[11px] leading-4 text-ink">
-                {reviewCommentPreview(comment?.body ?? 'Review thread')}
-              </p>
-              {comment?.url ? (
-                <a
-                  className="mt-1 inline-flex font-mono text-[10px] text-primary hover:text-primary-strong focus:outline-none focus:ring-1 focus:ring-primary"
-                  href={comment.url}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  open thread
-                </a>
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-function StaleDraftCommentPanel({
-  comments,
-  isDeleting,
-  onDelete,
-  onReanchor,
-}: {
-  comments: GitHubPrReviewDraftComment[];
-  isDeleting: boolean;
-  onDelete: (commentId: string) => void;
-  onReanchor: (comment: GitHubPrReviewDraftComment) => void;
-}) {
-  if (comments.length === 0) return null;
-
-  return (
-    <div className="border-x border-b border-line bg-field">
-      <div className="flex items-center justify-between border-b border-line px-2 py-1 font-mono text-[10px] text-muted">
-        <span>stale draft comments</span>
-        <span className="text-accent">{comments.length} skipped</span>
-      </div>
-      <ul className="max-h-40 overflow-auto">
-        {comments.map((comment) => (
-          <li
-            className="border-b border-line px-2 py-2 last:border-b-0"
-            key={comment.id}
-          >
-            <div className="mb-1 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
-              <span className="min-w-0 truncate">
-                {comment.origin === 'neon' ? 'neon · ' : ''}
-                {comment.path}
-              </span>
-              <span className="shrink-0">{commentAnchorLabel(comment)}</span>
-            </div>
-            <p className="line-clamp-2 text-[11px] leading-4 text-ink">
-              {reviewCommentPreview(comment.body)}
-            </p>
-            <div className="pr-review-inline-actions mt-1.5">
-              <button onClick={() => onReanchor(comment)} type="button">
-                Re-anchor
-              </button>
-              <button
-                disabled={isDeleting}
-                onClick={() => onDelete(comment.id)}
-                type="button"
-              >
-                {isDeleting ? 'Deleting' : 'Delete'}
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function prDetail(pr: GitHubPullRequest, summary: DiffSummary | undefined) {
-  const sha = pr.headSha ? pr.headSha.slice(0, 7) : 'head unknown';
-  const files = summary ? `${summary.files} files` : 'files';
-  return `${pr.baseRef ?? 'base'} <- ${sha} - ${files}`;
-}
-
-function summaryLabel(summary: DiffSummary) {
-  return `+${summary.additions} -${summary.deletions}`;
-}
-
-function reviewFileStats(files: DiffFilePatch[]) {
-  return {
-    binary: files.filter((file) => file.binary).length,
-    truncated: files.filter((file) => file.truncated).length,
-  };
-}
-
-function checkLabel(pr: GitHubPullRequest) {
-  if (pr.checkError) return 'checks unknown';
-  if (!pr.checks) return 'checks unknown';
-  if (pr.checks.status === 'success') return 'checks pass';
-  if (pr.checks.status === 'failure') return `${pr.checks.failed} failed`;
-  if (pr.checks.status === 'pending') return `${pr.checks.pending} pending`;
-  return 'no checks';
-}
-
-function checkBadgeClass(pr: GitHubPullRequest) {
-  if (pr.checks?.status === 'failure') return 'border-accent text-accent';
-  if (pr.checks?.status === 'pending') return 'border-violet text-violet';
-  if (pr.checks?.status === 'success') return 'border-primary text-primary';
-  return '';
-}
-
-export function hasRenderablePrPatch(files: DiffFilePatch[]) {
-  return files.some((file) => patchHasContent(file.patch));
-}
+export { hasRenderablePrPatch } from './review-view-model';
