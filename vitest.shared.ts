@@ -3,6 +3,7 @@ export const baseExclude = [
   '**/dist/**',
   '**/.astro/**',
   '**/research-repos/**',
+  'workers/github-webhook-relay/**',
 ];
 
 export const integrationTestFiles = [

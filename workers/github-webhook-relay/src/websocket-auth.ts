@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 const bearerTokenSchema = z
   .string()
@@ -13,14 +13,14 @@ const webSocketEnvironmentSchema = z.object({
 const upgradeHeaderSchema = z
   .string()
   .transform((value) => value.toLowerCase())
-  .pipe(z.literal("websocket"));
+  .pipe(z.literal('websocket'));
 
 const authorizationHeaderSchema = z
   .string()
   .min(1)
   .max(263)
   .regex(/^Bearer [\x21-\x7e]+$/i)
-  .transform((value) => value.slice(value.indexOf(" ") + 1))
+  .transform((value) => value.slice(value.indexOf(' ') + 1))
   .pipe(bearerTokenSchema);
 
 export type WebSocketAuthenticationResult =
@@ -28,7 +28,7 @@ export type WebSocketAuthenticationResult =
   | {
       ok: false;
       status: 401 | 426 | 500;
-      code: "invalid_request" | "unauthorized" | "upgrade_required";
+      code: 'invalid_request' | 'unauthorized' | 'upgrade_required';
       error: string;
     };
 
@@ -38,21 +38,25 @@ export async function authenticateWebSocketRequest(
 ): Promise<WebSocketAuthenticationResult> {
   const parsedEnvironment = webSocketEnvironmentSchema.safeParse(env);
   if (!parsedEnvironment.success) {
-    return failure(500, "invalid_request", "WebSocket configuration is invalid.");
+    return failure(
+      500,
+      'invalid_request',
+      'WebSocket configuration is invalid.',
+    );
   }
 
   const parsedUpgrade = upgradeHeaderSchema.safeParse(
-    request.headers.get("upgrade"),
+    request.headers.get('upgrade'),
   );
   if (!parsedUpgrade.success) {
-    return failure(426, "upgrade_required", "WebSocket upgrade is required.");
+    return failure(426, 'upgrade_required', 'WebSocket upgrade is required.');
   }
 
   const parsedAuthorization = authorizationHeaderSchema.safeParse(
-    request.headers.get("authorization"),
+    request.headers.get('authorization'),
   );
   if (!parsedAuthorization.success) {
-    return failure(401, "unauthorized", "WebSocket authentication failed.");
+    return failure(401, 'unauthorized', 'WebSocket authentication failed.');
   }
 
   const [providedHash, expectedHash] = await Promise.all([
@@ -60,19 +64,19 @@ export async function authenticateWebSocketRequest(
     hashSecret(parsedEnvironment.data.WS_CLIENT_SECRET),
   ]);
   if (!crypto.subtle.timingSafeEqual(providedHash, expectedHash)) {
-    return failure(401, "unauthorized", "WebSocket authentication failed.");
+    return failure(401, 'unauthorized', 'WebSocket authentication failed.');
   }
 
   return { ok: true };
 }
 
 async function hashSecret(value: string): Promise<ArrayBuffer> {
-  return crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
 }
 
 function failure(
   status: 401 | 426 | 500,
-  code: "invalid_request" | "unauthorized" | "upgrade_required",
+  code: 'invalid_request' | 'unauthorized' | 'upgrade_required',
   error: string,
 ): Exclude<WebSocketAuthenticationResult, { ok: true }> {
   return { ok: false, status, code, error };

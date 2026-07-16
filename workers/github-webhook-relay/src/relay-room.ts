@@ -1,6 +1,6 @@
-import { DurableObject } from "cloudflare:workers";
-import { z } from "zod";
-import { jsonError } from "./http";
+import { DurableObject } from 'cloudflare:workers';
+import { z } from 'zod';
+import { jsonError } from './http';
 import {
   createGithubWebhookEnvelope,
   encodeServerFrame,
@@ -8,21 +8,25 @@ import {
   pingFrameText,
   pongFrameText,
   relayBroadcastInputSchema,
-} from "./protocol";
-import { channelSchema, parseWebSocketRoute } from "./routes";
+} from './protocol';
+import { channelSchema, parseWebSocketRoute } from './routes';
 
-const connectionAttachmentSchema = z.object({
-  version: z.literal(1),
-  channel: z.string().min(1).max(64),
-  connectionId: z.string().uuid(),
-  connectedAt: z.string().datetime(),
-}).strict();
+const connectionAttachmentSchema = z
+  .object({
+    version: z.literal(1),
+    channel: z.string().min(1).max(64),
+    connectionId: z.string().uuid(),
+    connectedAt: z.string().datetime(),
+  })
+  .strict();
 
-export const broadcastResultSchema = z.object({
-  connectedClients: z.number().int().nonnegative(),
-  deliveredClients: z.number().int().nonnegative(),
-  failedClients: z.number().int().nonnegative(),
-}).strict();
+export const broadcastResultSchema = z
+  .object({
+    connectedClients: z.number().int().nonnegative(),
+    deliveredClients: z.number().int().nonnegative(),
+    failedClients: z.number().int().nonnegative(),
+  })
+  .strict();
 
 const socketFrameSchema = z.union([z.string(), z.instanceof(ArrayBuffer)]);
 
@@ -42,10 +46,14 @@ export class RelayRoom extends DurableObject<Env> {
       !route ||
       !roomChannel.success ||
       route.channel !== roomChannel.data ||
-      request.method !== "GET" ||
-      request.headers.get("upgrade")?.toLowerCase() !== "websocket"
+      request.method !== 'GET' ||
+      request.headers.get('upgrade')?.toLowerCase() !== 'websocket'
     ) {
-      return jsonError(400, "invalid_request", "Invalid relay connection request.");
+      return jsonError(
+        400,
+        'invalid_request',
+        'Invalid relay connection request.',
+      );
     }
 
     const pair = new WebSocketPair();
@@ -64,11 +72,13 @@ export class RelayRoom extends DurableObject<Env> {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  async broadcast(input: unknown): Promise<z.infer<typeof broadcastResultSchema>> {
+  async broadcast(
+    input: unknown,
+  ): Promise<z.infer<typeof broadcastResultSchema>> {
     const broadcast = relayBroadcastInputSchema.parse(input);
     const roomChannel = channelSchema.parse(this.ctx.id.name);
     if (broadcast.channel !== roomChannel) {
-      throw new Error("Relay channel does not match Durable Object identity.");
+      throw new Error('Relay channel does not match Durable Object identity.');
     }
     const frame = encodeServerFrame(
       createGithubWebhookEnvelope(roomChannel, broadcast.webhook),
@@ -84,7 +94,7 @@ export class RelayRoom extends DurableObject<Env> {
         deliveredClients += 1;
       } catch {
         failedClients += 1;
-        socket.close(1011, "Relay delivery failed.");
+        socket.close(1011, 'Relay delivery failed.');
       }
     }
 
@@ -95,10 +105,13 @@ export class RelayRoom extends DurableObject<Env> {
     });
   }
 
-  override webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void {
+  override webSocketMessage(
+    ws: WebSocket,
+    message: string | ArrayBuffer,
+  ): void {
     const parsedMessage = socketFrameSchema.safeParse(message);
     if (!parsedMessage.success || parsedMessage.data instanceof ArrayBuffer) {
-      ws.close(1003, "Text frames only.");
+      ws.close(1003, 'Text frames only.');
       return;
     }
 
@@ -106,22 +119,22 @@ export class RelayRoom extends DurableObject<Env> {
       ws.deserializeAttachment(),
     );
     if (!attachment.success) {
-      ws.close(1011, "Connection state is invalid.");
+      ws.close(1011, 'Connection state is invalid.');
       return;
     }
 
     const controlFrame = parseClientControlFrame(parsedMessage.data);
     if (!controlFrame.ok) {
       ws.close(
-        controlFrame.reason === "too_large" ? 1009 : 1008,
-        controlFrame.reason === "too_large"
-          ? "Client message is too large."
-          : "Unsupported client message.",
+        controlFrame.reason === 'too_large' ? 1009 : 1008,
+        controlFrame.reason === 'too_large'
+          ? 'Client message is too large.'
+          : 'Unsupported client message.',
       );
       return;
     }
 
-    ws.send(encodeServerFrame({ version: 1, type: "pong" }));
+    ws.send(encodeServerFrame({ version: 1, type: 'pong' }));
   }
 
   override webSocketClose(
@@ -144,7 +157,7 @@ export class RelayRoom extends DurableObject<Env> {
 
     console.log(
       JSON.stringify({
-        message: "relay WebSocket closed",
+        message: 'relay WebSocket closed',
         channel: attachment.data.channel,
         connectionId: attachment.data.connectionId,
         code: closeEvent.data.code,
@@ -159,12 +172,11 @@ export class RelayRoom extends DurableObject<Env> {
     );
     console.error(
       JSON.stringify({
-        message: "relay WebSocket error",
+        message: 'relay WebSocket error',
         channel: attachment.success ? attachment.data.channel : null,
-        connectionId: attachment.success
-          ? attachment.data.connectionId
-          : null,
-        error: error instanceof Error ? error.message : "Unknown WebSocket error",
+        connectionId: attachment.success ? attachment.data.connectionId : null,
+        error:
+          error instanceof Error ? error.message : 'Unknown WebSocket error',
       }),
     );
   }

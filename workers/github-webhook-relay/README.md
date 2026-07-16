@@ -12,11 +12,11 @@ this package enables or configures a Neondeck client.
 
 The Worker exposes three routes:
 
-| Method | Route | Purpose |
-| --- | --- | --- |
-| `GET` | `/healthz` | Unauthenticated liveness check. |
-| `POST` | `/channels/:channel/webhooks/github` | Signed GitHub webhook ingress. |
-| `GET` | `/channels/:channel/ws` | Authenticated WebSocket upgrade. |
+| Method | Route                                | Purpose                          |
+| ------ | ------------------------------------ | -------------------------------- |
+| `GET`  | `/healthz`                           | Unauthenticated liveness check.  |
+| `POST` | `/channels/:channel/webhooks/github` | Signed GitHub webhook ingress.   |
+| `GET`  | `/channels/:channel/ws`              | Authenticated WebSocket upgrade. |
 
 Channels are public routing identifiers containing 1–64 ASCII letters, digits,
 underscores, or hyphens. A channel is not a credential. The same channel name
@@ -111,30 +111,30 @@ processed the event.
 `GET /healthz` returns `200` with:
 
 ```json
-{"ok":true,"service":"github-webhook-relay"}
+{ "ok": true, "service": "github-webhook-relay" }
 ```
 
 All HTTP error bodies use this schema:
 
 ```json
-{"error":"Human-readable message.","code":"machine_readable_code"}
+{ "error": "Human-readable message.", "code": "machine_readable_code" }
 ```
 
-| Route | Status | Meaning |
-| --- | --- | --- |
-| Webhook | `200` | Synchronous best-effort fan-out completed. |
-| Webhook | `400` | Required headers, length, UTF-8, JSON, or payload shape is invalid. |
-| Webhook | `401` | HMAC signature is invalid. |
-| Webhook | `413` | Declared or streamed body exceeds the configured limit. |
-| Webhook | `500` | Required Worker configuration is invalid. |
-| Webhook | `503` | Durable Object lookup, validation, or broadcast failed. |
-| WebSocket | `101` | Authenticated upgrade succeeded. |
-| WebSocket | `401` | Bearer authentication failed; includes `WWW-Authenticate`. |
-| WebSocket | `426` | `Upgrade: websocket` is missing; includes `Upgrade`. |
-| WebSocket | `500` | Required Worker configuration is invalid. |
-| WebSocket | `503` | Durable Object lookup or upgrade failed. |
-| Either channel route | `405` | Wrong method; includes the route's `Allow` header. |
-| Unknown or invalid route | `404` | Route or channel name is not recognized. |
+| Route                    | Status | Meaning                                                             |
+| ------------------------ | ------ | ------------------------------------------------------------------- |
+| Webhook                  | `200`  | Synchronous best-effort fan-out completed.                          |
+| Webhook                  | `400`  | Required headers, length, UTF-8, JSON, or payload shape is invalid. |
+| Webhook                  | `401`  | HMAC signature is invalid.                                          |
+| Webhook                  | `413`  | Declared or streamed body exceeds the configured limit.             |
+| Webhook                  | `500`  | Required Worker configuration is invalid.                           |
+| Webhook                  | `503`  | Durable Object lookup, validation, or broadcast failed.             |
+| WebSocket                | `101`  | Authenticated upgrade succeeded.                                    |
+| WebSocket                | `401`  | Bearer authentication failed; includes `WWW-Authenticate`.          |
+| WebSocket                | `426`  | `Upgrade: websocket` is missing; includes `Upgrade`.                |
+| WebSocket                | `500`  | Required Worker configuration is invalid.                           |
+| WebSocket                | `503`  | Durable Object lookup or upgrade failed.                            |
+| Either channel route     | `405`  | Wrong method; includes the route's `Allow` header.                  |
+| Unknown or invalid route | `404`  | Route or channel name is not recognized.                            |
 
 ## WebSocket clients
 

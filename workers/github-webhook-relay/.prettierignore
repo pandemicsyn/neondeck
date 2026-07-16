@@ -1,0 +1,5 @@
+node_modules
+.wrangler
+package-lock.json
+worker-configuration.d.ts
+worker-startup.cpuprofile
