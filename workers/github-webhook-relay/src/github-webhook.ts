@@ -38,11 +38,15 @@ export const githubPayloadSchema = z
   })
   .passthrough();
 
-export type VerifiedGithubWebhook = {
-  deliveryId: string;
-  event: string;
-  payload: z.infer<typeof githubPayloadSchema>;
-};
+export const verifiedGithubWebhookSchema = z.object({
+  deliveryId: z.string().uuid(),
+  event: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
+  payload: githubPayloadSchema,
+});
+
+export type VerifiedGithubWebhook = z.infer<
+  typeof verifiedGithubWebhookSchema
+>;
 
 export type GithubWebhookFailure = {
   ok: false;
@@ -126,11 +130,11 @@ export async function verifyGithubWebhook(
 
   return {
     ok: true,
-    webhook: {
+    webhook: verifiedGithubWebhookSchema.parse({
       deliveryId: parsedHeaders.data.deliveryId,
       event: parsedHeaders.data.event,
       payload: parsedPayload.data,
-    },
+    }),
   };
 }
 
