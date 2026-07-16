@@ -14,6 +14,14 @@ const githubWebhookRouteSchema = z.object({
   channel: channelSchema,
 });
 
+const webSocketPathSchema = z
+  .string()
+  .regex(/^\/channels\/[^/]+\/ws$/);
+
+const webSocketRouteSchema = z.object({
+  channel: channelSchema,
+});
+
 export function parseGithubWebhookRoute(
   pathname: string,
 ): z.infer<typeof githubWebhookRouteSchema> | null {
@@ -24,6 +32,23 @@ export function parseGithubWebhookRoute(
 
   try {
     return githubWebhookRouteSchema.parse({
+      channel: decodeURIComponent(encodedChannel),
+    });
+  } catch {
+    return null;
+  }
+}
+
+export function parseWebSocketRoute(
+  pathname: string,
+): z.infer<typeof webSocketRouteSchema> | null {
+  if (!webSocketPathSchema.safeParse(pathname).success) return null;
+
+  const encodedChannel = pathname.split("/")[2];
+  if (!encodedChannel) return null;
+
+  try {
+    return webSocketRouteSchema.parse({
       channel: decodeURIComponent(encodedChannel),
     });
   } catch {

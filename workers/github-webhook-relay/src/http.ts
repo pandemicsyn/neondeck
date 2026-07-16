@@ -6,6 +6,7 @@ export const errorCodeSchema = z.enum([
   "payload_too_large",
   "relay_unavailable",
   "unauthorized",
+  "upgrade_required",
 ]);
 
 export const errorResponseSchema = z.object({

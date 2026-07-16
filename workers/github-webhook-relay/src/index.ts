@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { verifyGithubWebhook } from "./github-webhook";
 import { jsonError } from "./http";
-import { parseGithubWebhookRoute } from "./routes";
+import { parseGithubWebhookRoute, parseWebSocketRoute } from "./routes";
+import { authenticateWebSocketRequest } from "./websocket-auth";
 
 const requestTargetSchema = z.object({
   method: z.string(),
@@ -60,6 +61,37 @@ export default {
         503,
         "relay_unavailable",
         "Webhook relay is unavailable.",
+      );
+    }
+
+    const webSocketRoute = parseWebSocketRoute(target.pathname);
+    if (webSocketRoute) {
+      if (target.method !== "GET") {
+        return jsonError(405, "invalid_request", "Method not allowed.", {
+          Allow: "GET",
+        });
+      }
+
+      const result = await authenticateWebSocketRequest(request, env);
+      if (!result.ok) {
+        return jsonError(result.status, result.code, result.error, {
+          ...(result.status === 426 ? { Upgrade: "websocket" } : {}),
+          ...(result.status === 401
+            ? { "WWW-Authenticate": 'Bearer realm="github-webhook-relay"' }
+            : {}),
+        });
+      }
+
+      console.warn(
+        JSON.stringify({
+          message: "authenticated WebSocket cannot connect yet",
+          channel: webSocketRoute.channel,
+        }),
+      );
+      return jsonError(
+        503,
+        "relay_unavailable",
+        "WebSocket relay is unavailable.",
       );
     }
 
