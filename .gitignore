@@ -3,6 +3,8 @@
 node_modules/
 dist/
 web/dist/
+web/dist-perf/
+benchmarks/results/
 .flue-vite/
 .playwright-mcp/
 .release/

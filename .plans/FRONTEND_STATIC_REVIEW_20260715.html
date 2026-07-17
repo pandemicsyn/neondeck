@@ -491,6 +491,10 @@
         background: var(--panel);
       }
 
+      .finding[data-status="measured"] {
+        border-left: 3px solid var(--cyan);
+      }
+
       .finding-body {
         display: grid;
         grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
@@ -772,7 +776,8 @@
           <p class="lede">
             Four independent static reviews of the React dashboard, API and Flue boundary,
             UI/UX system, and render/query performance. Performance is reported first and
-            deliberately left unmodified for discussion.
+            deliberately left unmodified for discussion. A 2026-07-16 measurement supplement
+            now adds repeatable fixture results and direct Chrome traces.
           </p>
         </div>
         <div class="head-score" aria-label="Consolidated audit health score 12 out of 20">
@@ -786,7 +791,7 @@
         <span>origin/main · detached · clean tree</span>
         <span>22,434 frontend LOC</span>
         <span>45 TSX · 73 TS modules</span>
-        <span>static only · no tests/builds/runtime profiling</span>
+        <span>static baseline · 3-sample harness · direct Chrome traces</span>
       </div>
 
       <nav aria-label="Report sections">
@@ -808,12 +813,24 @@
           </div>
 
           <div class="gate">
-            <div class="gate-mark">DISCUSS</div>
+            <div class="gate-mark">MEASURED</div>
             <p>
-              <strong>Performance gate:</strong> no optimization has been implemented. The six
-              performance findings are high-confidence static risks, but each recommendation is
-              measurement-gated. Agree on fixtures and budgets before changing query topology,
-              Pierre rendering, or bundle boundaries.
+              <strong>Performance gate:</strong> the fixture and trace pass is complete; no
+              production optimization has been implemented. The data strongly confirms the
+              large-diff and chat findings, confirms duplicated review DOM at low present cost,
+              and lowers the urgency of Runtime query topology. Discuss the priorities below
+              before changing Pierre rendering, React ownership, or bundle boundaries.
+            </p>
+          </div>
+
+          <div class="gate completion-note">
+            <div class="gate-mark">COMPLETE</div>
+            <p>
+              <strong>Measurement status:</strong> the retained five-part plan ran against a
+              production-built React/Pierre fixture lab with three samples per scenario, React's
+              profiling renderer, DOM/shadow-DOM and heap probes, accelerated Query polling, and
+              direct Chrome performance traces. Backend request concurrency remains modeled
+              rather than end-to-end measured.
             </p>
           </div>
 
@@ -921,67 +938,104 @@
             <span class="chip p1">3 P1 · 3 P2</span>
           </div>
           <p class="section-note">
-            These are static call-path findings, not measured regressions. The proposed changes are
-            intentionally framed as experiments with success metrics.
+            These began as static call-path findings. The 2026-07-16 supplement measures the
+            highest-risk paths without changing production behavior. Times are machine-local
+            medians from three isolated Chromium contexts unless identified as a direct trace;
+            they are decision evidence, not CI budgets.
           </p>
 
+          <div class="callout" style="margin-bottom: 14px">
+            <strong>Decision snapshot.</strong> Prioritize chat render isolation and a guarded
+            Pierre virtualization/cap design. Keep Runtime aggregation and review-subtree
+            consolidation behind real workload evidence. The native Pierre virtualizer is highly
+            effective at mount cost but misses the 16.7 ms scroll-frame target in this prototype,
+            so it is a promising direction rather than a drop-in answer.
+          </div>
+
+          <div class="table-scroll" style="margin-bottom: 18px">
+            <table class="compact-table">
+              <thead>
+                <tr><th>Fixture</th><th>Ready / commit</th><th>DOM / heap</th><th>Interaction / evidence</th><th>Verdict</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Pierre · 400 changed lines</td><td>114.3 ms · 7.0 ms mount</td><td>7,299 nodes · 18.2 MiB</td><td>8.5 ms scroll p95 · no long task</td><td>Within exploratory target</td></tr>
+                <tr><td>Pierre · 5,000 changed lines</td><td>285.9 ms · 9.6 ms mount</td><td>20,099 nodes · 20.3 MiB</td><td>204 ms total long tasks</td><td>DOM pressure begins</td></tr>
+                <tr><td>Pierre · 10,000 changed lines</td><td>492.6 ms · 12.7 ms mount</td><td>40,099 nodes · 22.6 MiB</td><td>401 ms total long tasks · 10.8 ms scroll p95</td><td>Confirmed bottleneck</td></tr>
+                <tr><td>Pierre · 10,000 virtualized</td><td>110.5 ms · 12.9 ms mount</td><td>1,202 nodes · 13.6 MiB</td><td>0 long tasks · 18.4 ms scroll p95</td><td>97% fewer nodes; tune scrolling</td></tr>
+                <tr><td>Chat · 10 / 100 / 500 messages</td><td>11.3 / 44.6 / 105.2 ms typing commit p95</td><td>214 / 1,834 / 9,034 nodes</td><td>110 / 1,100 / 5,500 Markdown renders for 11 keys</td><td>Confirmed linear rerender</td></tr>
+                <tr><td>Runtime · 1 / 2 / 4 panels</td><td>0.6 / 0.8 / 1.1 ms poll commit p95</td><td>79 / 128 / 226 nodes</td><td>49 accelerated requests in every case</td><td>Query dedupe holds</td></tr>
+                <tr><td>Review · 50 threads</td><td>20.9 ms ready · 1.8 ms mount</td><td>942 total · 469 hidden</td><td>455 nodes in each mounted detail copy</td><td>Confirmed, low measured cost</td></tr>
+                <tr><td>Production initial preload</td><td>194.6 kB gzip</td><td>157.7 kB entry · 21.6 kB ccount</td><td>Focused-review wrapper 0.77 kB gzip</td><td>Track; no budget miss declared</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="callout" style="margin-bottom: 18px">
+            <strong>Direct Chrome evidence.</strong> The 10,000-line baseline reached 40,089
+            browser-reported elements, one parent with 10,000 children, a 119 ms layout, and 143
+            ms plus 107 ms style recalculations. The 500-message typing trace measured 159 ms INP:
+            5 ms input delay, 151 ms processing, and 3 ms presentation. The 400-line baseline had
+            a 7 ms forced reflow in Pierre's custom-element connection path; Chrome estimated no
+            user-visible savings from that isolated event.
+          </div>
+
           <div class="finding-list">
-            <details class="finding" data-severity="p1" data-category="performance" open>
+            <details class="finding" data-severity="p1" data-category="performance" data-status="measured" open>
               <summary><span class="severity p1">P1</span><span class="finding-title">Large Pierre patches render without virtualization or a client cap</span></summary>
               <div class="finding-body">
-                <div><h3>Impact and trigger</h3><p>Opening a very large file or long wrapped patch can mount excessive DOM and syntax-highlight work, degrading scroll, resize, memory, and open-to-highlight latency. CSS overflow creates a scroll container but does not reduce mounted rows.</p><h3>Recommendation after measurement</h3><p>Benchmark Pierre React's native virtualizer and a clearly disclosed patch-size cap/truncation path. Measure DOM nodes, heap, long tasks, scroll frames, resize cost, and open-to-highlight first.</p></div>
-                <div><h3>Evidence</h3><p class="source">web/src/features/diff-viewer/DiffViewer.tsx:78-91<br />web/src/styles.css:770-775<br />web/src/features/pr-review/queries.ts:130-139<br />web/src/api/github.ts:50-66<br />src/server/routes/github.ts:88-98</p><span class="chip">confidence: high</span></div>
+                <div><h3>Impact and trigger</h3><p>Opening a very large file or long wrapped patch can mount excessive DOM and syntax-highlight work, degrading scroll, resize, memory, and open-to-highlight latency. CSS overflow creates a scroll container but does not reduce mounted rows.</p><h3>Measurement result</h3><p><strong>Confirmed.</strong> The 10,000-line baseline mounted 40,099 harness-counted nodes, accumulated 401 ms of long tasks, and reached ready state in 492.6 ms. Chrome independently reported 40,089 elements, 119 ms layout, and two style recalculations over 100 ms. Pierre's native virtualizer reduced nodes 97.0%, ready time 77.6%, heap 39.7%, and removed mount long tasks, but raised scroll p95 from 10.8 to 18.4 ms.</p><h3>Recommendation after measurement</h3><p>Prototype native virtualization with overscan/row-geometry tuning and a clearly disclosed cap for extreme patches. Keep a 16.7 ms scroll-frame budget and test annotations, wrapping, selection, and anchor jumps before production adoption.</p></div>
+                <div><h3>Evidence</h3><p class="source">web/src/features/diff-viewer/DiffViewer.tsx:78-91<br />web/src/styles.css:770-775<br />web/src/features/pr-review/queries.ts:130-139<br />benchmarks/frontend-performance.mjs<br />web/src/perf/benchmark-app.tsx</p><span class="chip">measured: strong</span> <span class="chip">priority: first wave</span></div>
               </div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="performance" open>
+            <details class="finding" data-severity="p1" data-category="performance" data-status="measured" open>
               <summary><span class="severity p1">P1</span><span class="finding-title">Review open can fan out patch requests across every unresolved-thread and draft path</span></summary>
               <div class="finding-body">
-                <div><h3>Impact and trigger</h3><p>Many unresolved threads or draft comments across large files create a burst of independent, uncancelled requests. Every response rebuilds maps, merged file arrays, and anchor indexes, increasing network, backend, CPU, and cache cost.</p><h3>Recommendation after measurement</h3><p>Separate active/adjacent display patches from non-visible anchor validation; pass AbortSignals and byte caps; cache anchors per patch identity; evaluate batched server validation.</p></div>
-                <div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx:155-179, 1057-1073, 1099-1120<br />web/src/features/pr-review/queries.ts:108-168<br />shared/patch-anchors.ts:11-56</p><span class="chip">confidence: high</span></div>
+                <div><h3>Impact and trigger</h3><p>Many unresolved threads or draft comments across large files create a burst of independent requests. Every response rebuilds maps, merged file arrays, and anchor indexes, increasing network, backend, CPU, and cache cost. AbortSignals are now passed after the correctness PR, so the original “uncancelled” detail is retained as historical context but no longer applies.</p><h3>Measurement result</h3><p><strong>Modeled, not backend-traced.</strong> <code>reviewPatchPaths()</code> deduplicates by path, then <code>useQueries()</code> creates one query per distinct active, draft-comment, or unresolved-thread path. A 50-thread fixture on 50 paths therefore models 50 patch queries; latency, bytes, and backend concurrency still depend on real repositories and caches.</p><h3>Recommendation after measurement</h3><p>Run the existing large-PR timing plan against a registered repository before restructuring this path. Preserve cancellation; then compare active/adjacent loading, batched anchor validation, and per-patch identity caching.</p></div>
+                <div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx:107-129<br />web/src/features/pr-review/review-view-model.ts:72-94<br />web/src/features/pr-review/queries.ts:108-168<br />.plans/PR_REVIEW_PERF_PLAN.md</p><span class="chip">measured: approximation</span> <span class="chip">needs backend trace</span></div>
               </div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="performance" open>
+            <details class="finding" data-severity="p1" data-category="performance" data-status="measured" open>
               <summary><span class="severity p1">P1</span><span class="finding-title">Chat typing rerenders and reparses the full non-windowed Markdown timeline</span></summary>
               <div class="finding-body">
-                <div><h3>Impact and trigger</h3><p>Composer state shares a component with the complete durable timeline. Each keystroke remaps the timeline and revisits every Markdown message; fresh Markdown config props defeat cheap memo boundaries. Latency and GC scale with history length.</p><h3>Recommendation after measurement</h3><p>Profile 10/100/500-message sessions, then isolate composer state, stabilize Markdown configuration and callbacks, memoize message subtrees/timeline derivation, and only then evaluate paging or virtualization.</p></div>
-                <div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/components/session-view.tsx:74, 93-145, 580-639<br />web/src/components/MarkdownMessage.tsx:10-27<br />web/src/features/flue-chat/lib/timeline.ts:27-47</p><span class="chip">confidence: high</span></div>
+                <div><h3>Impact and trigger</h3><p>Composer state shares a component with the complete durable timeline. Each keystroke remaps the timeline and revisits every Markdown message; fresh Markdown config props defeat cheap memo boundaries. Latency and GC scale with history length.</p><h3>Measurement result</h3><p><strong>Confirmed and highest confidence.</strong> Eleven typed characters caused 110, 1,100, and 5,500 Markdown renders at 10, 100, and 500 messages. Typing commit p95 rose from 11.3 to 44.6 to 105.2 ms; the 500-message direct Chrome trace measured 159 ms INP with 151 ms in event processing.</p><h3>Recommendation after measurement</h3><p>First isolate composer state and memoize stable message subtrees/configuration. Re-run the same fixture before considering timeline paging or virtualization; the immediate problem is avoidable reconciliation, not scrolling.</p></div>
+                <div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/components/session-view.tsx:74, 93-145, 580-639<br />web/src/components/MarkdownMessage.tsx:10-27<br />web/src/features/flue-chat/lib/timeline.ts:27-47<br />web/src/perf/benchmark-app.tsx:184-224</p><span class="chip">measured: strong</span> <span class="chip">priority: first wave</span></div>
               </div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="performance">
+            <details class="finding" data-severity="p2" data-category="performance" data-status="measured">
               <summary><span class="severity p2">P2</span><span class="finding-title">Runtime Overview creates synchronized polling and invalidation bursts</span></summary>
               <div class="finding-body">
-                <div><h3>Impact and trigger</h3><p>The active Runtime tab registers fifteen queries: fourteen at 30 seconds and one at 15 seconds. Any config event invalidates the whole set, while default stale time is zero. This causes idle network bursts and repeated full snapshot commits.</p><h3>Recommendation after measurement</h3><p>Capture a five-minute active/inactive trace. Compare an aggregate endpoint, event-specific invalidation, staggered polling, suitable stale times, and memoized sections.</p></div>
-                <div><h3>Evidence</h3><p class="source">web/src/features/runtime-overview/plugin.tsx:41-141<br />web/src/features/runtime-overview/queries.ts:40-172<br />web/src/lib/query.ts:5-11</p><span class="chip">confidence: high</span></div>
+                <div><h3>Impact and trigger</h3><p>The active Runtime tab registers fifteen queries: fourteen at 30 seconds and one at 15 seconds. Any config event invalidates the whole set, while default stale time is zero. This creates synchronized idle traffic and snapshot commits.</p><h3>Measurement result</h3><p><strong>Partly softened.</strong> A 100×-accelerated 1.2-second window produced 49 requests with one, two, or four identical panels: TanStack Query deduplicated shared keys. Poll-update commit p95 stayed at 0.6/0.8/1.1 ms with no long tasks. The real cadence is an initial 15 requests followed by about 32 requests per active minute; endpoint cost and config-event invalidation were not represented.</p><h3>Recommendation after measurement</h3><p>Do not build an aggregate endpoint from this fixture alone. Capture real endpoint duration/bytes and config-event bursts first; favor event-specific invalidation or staggered polling only if those traces miss an agreed idle budget.</p></div>
+                <div><h3>Evidence</h3><p class="source">web/src/features/runtime-overview/plugin.tsx:41-141<br />web/src/features/runtime-overview/queries.ts:40-172<br />web/src/lib/query.ts:5-11<br />web/src/perf/benchmark-app.tsx:226-358</p><span class="chip">measured: accelerated</span> <span class="chip">priority: monitor</span></div>
               </div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="performance">
+            <details class="finding" data-severity="p2" data-category="performance" data-status="measured">
               <summary><span class="severity p2">P2</span><span class="finding-title">Standalone review mounts two copies of its detail panels</span></summary>
               <div class="finding-body">
-                <div><h3>Impact and trigger</h3><p>Inspector and compact copies of threads, stale drafts, and report findings both remain mounted; CSS only hides one. Large review metadata therefore doubles DOM, handlers, and reconciliation.</p><h3>Recommendation after measurement</h3><p>Quantify both layouts, then mount one subtree and move/reflow it responsively or select one host with a media-query hook.</p></div>
-                <div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx:785-811, 968-1001<br />web/src/styles.css:1010-1012, 1333-1348</p><span class="chip">confidence: high</span></div>
+                <div><h3>Impact and trigger</h3><p>Inspector and compact copies of threads, stale drafts, and report findings both remain mounted; CSS only hides one. Large review metadata therefore doubles DOM, handlers, and reconciliation.</p><h3>Measurement result</h3><p><strong>Confirmed, but cheap at 50 threads.</strong> Desktop and narrow layouts both mounted 942 nodes; 469 were hidden. Each detail copy contained 455 nodes, with CSS switching visibility between them. Ready time was about 20.9 ms, mount commit p95 1.8 ms, and no long task appeared.</p><h3>Recommendation after measurement</h3><p>Keep this as a cleanup target, not a first-wave optimization. Revisit if real reviews carry substantially heavier Markdown, handlers, or hundreds of threads; otherwise the responsive simplicity may be worth the small measured cost.</p></div>
+                <div><h3>Evidence</h3><p class="source">web/src/features/pr-review/PrReviewDiffPane.tsx:56-81<br />web/src/features/pr-review/PrReviewFindingsSidebar.tsx:34-74<br />web/src/styles.css:1089, 1421-1431<br />web/src/perf/benchmark-app.tsx:268-326</p><span class="chip">measured: strong</span> <span class="chip">priority: defer</span></div>
               </div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="performance">
+            <details class="finding" data-severity="p2" data-category="performance" data-status="measured">
               <summary><span class="severity p2">P2</span><span class="finding-title">The eager plugin registry undermines route and configuration code splitting</span></summary>
               <div class="finding-body">
-                <div><h3>Impact and trigger</h3><p>Every cold dashboard and focused review loads the static registry, which imports all plugins. Flue Chat pulls Markdown/GFM transitively even when chat is not configured or active.</p><h3>Recommendation after measurement</h3><p>Compare production dashboard and <code>/review</code> chunks, compressed transfer, parse/evaluation, and baseline heap. Prototype lazy registry component loaders and split route shells only if budgets are missed.</p></div>
-                <div><h3>Evidence</h3><p class="source">web/src/App.tsx:17<br />web/src/plugins/registry.tsx:1-32<br />web/src/components/MarkdownMessage.tsx:1-2</p><span class="chip">confidence: high</span></div>
+                <div><h3>Impact and trigger</h3><p>Every cold dashboard and focused review loads the static registry, which imports all plugins. Flue Chat pulls Markdown/GFM transitively even when chat is not configured or active.</p><h3>Measurement result</h3><p><strong>Confirmed structure; budget undecided.</strong> The production HTML preloads about 194.6 kB gzip: 157.7 kB entry, 21.6 kB <code>ccount</code>, 11.1 kB CSS, 3.2 kB review support, and small runtime/Kilo chunks. The focused-review wrapper is only 0.77 kB gzip while review symbols remain in the entry. Heavy Pierre <code>MultiFileView</code> and worker payloads remain correctly lazy at 197.1 and 299.7 kB gzip.</p><h3>Recommendation after measurement</h3><p>Set a cold-shell transfer/parse budget before changing the registry. A lazy plugin spike is justified if 194.6 kB gzip or its evaluation time misses that budget; retain the existing Pierre lazy boundary regardless.</p></div>
+                <div><h3>Evidence</h3><p class="source">web/src/App.tsx:17<br />web/src/plugins/registry.tsx:1-32<br />web/src/components/MarkdownMessage.tsx:1-2<br />web/dist/index.html (measured build)<br />benchmarks/frontend-performance.mjs</p><span class="chip">measured: build output</span> <span class="chip">needs budget</span></div>
               </div>
             </details>
           </div>
 
           <h3 style="margin-top: 24px">Measurement plan before implementation</h3>
           <ol class="ordered">
-            <li><strong>Diff:</strong> typical, 180-file, 50,000-line, long-wrapped-line, and 50-thread fixtures; open-to-highlight, switch p50/p95, request concurrency/bytes, long tasks, nodes, heap, anchors, workers.</li>
-            <li><strong>Chat:</strong> 10, 100, and 500 messages with code and tables; typing INP/p95, commit duration, Markdown render count, nodes, heap, and history network reads.</li>
-            <li><strong>Runtime:</strong> five-minute active and inactive traces; requests/minute, concurrency, CPU, React commits, config-event bursts, and remount refetches.</li>
-            <li><strong>Bundle:</strong> dashboard and focused-review compressed chunks, parse/evaluation, and baseline heap before and after a lazy-registry spike.</li>
-            <li><strong>Responsive review:</strong> desktop and narrow profiles with many threads to quantify the duplicated subtree and hidden-control behavior together.</li>
+            <li class="completed-action"><span class="completion">COMPLETED · FIXTURE PASS</span> <strong>Diff:</strong> typical, 180-file, 10,000-line baseline/native-virtualizer pair, long-wrapped-line, and 50-thread fixtures; ready time, scroll p95, long tasks, nodes, heap, workers, and direct Chrome layout/style evidence. The hazardous 50,000-line baseline remains opt-in, and backend request bytes/concurrency remain covered by the separate large-PR plan.</li>
+            <li class="completed-action"><span class="completion">COMPLETED · DIRECT TRACE</span> <strong>Chat:</strong> 10, 100, and 500 messages with code and tables; typing INP/p95, React commit duration, Markdown render count, nodes, and heap.</li>
+            <li class="completed-action"><span class="completion">COMPLETED · APPROXIMATION</span> <strong>Runtime:</strong> 100×-accelerated polling with one, two, and four panels; request deduplication, React commits, DOM, heap, and long tasks. Real endpoint bytes and config-event bursts remain follow-up evidence, not an optimization prerequisite.</li>
+            <li class="completed-action"><span class="completion">COMPLETED · BUILD OUTPUT</span> <strong>Bundle:</strong> production dashboard entry/preloads, focused-review wrapper, compressed chunks, and retained lazy Pierre worker/viewer boundaries. No lazy-registry implementation was made.</li>
+            <li class="completed-action"><span class="completion">COMPLETED · TWO VIEWPORTS</span> <strong>Responsive review:</strong> desktop and 430 px profiles with 50 threads quantify total, hidden, and per-copy nodes plus mount cost.</li>
           </ol>
         </section>
 
@@ -1223,7 +1277,7 @@
             <li class="completed-action"><span class="completion">COMPLETED · PR 1</span> <strong>P1 · Responsive task completion:</strong> preserve PR verdict/summary and restructure narrow chat controls. Suggested command: <code>$impeccable adapt</code>.</li>
             <li class="completed-action"><span class="completion">COMPLETED · PR 2</span> <strong>P2 · Flue/session correctness:</strong> remove duplicate history ownership, key async state by session, fix self-reference, and publish typed command-change events.</li>
             <li class="completed-action"><span class="completion">COMPLETED · PR 2</span> <strong>P2 · Query correctness:</strong> pass AbortSignals, repair reconnect convergence, invalidate durable review state, and reconcile stale Autopilot confirmations.</li>
-            <li><strong>Performance measurement gate:</strong> run the five-part plan, agree budgets, then choose Pierre virtualization/caps, chat isolation, Runtime topology, and lazy registry based on data. Suggested command after agreement: <code>$impeccable optimize</code>.</li>
+            <li class="completed-action"><span class="completion">COMPLETED · MEASUREMENT</span> <strong>Performance measurement gate:</strong> the five-part local/approximation pass is complete. Discuss and agree budgets next; current evidence favors chat isolation first, then a tuned Pierre virtualization/cap prototype, while Runtime topology, duplicate review DOM, and lazy registry should wait for workload/budget evidence. Suggested command after agreement: <code>$impeccable optimize</code>.</li>
             <li><strong>P2 · Copy/disclosure:</strong> row-specific action names and full-value affordances for operational text. Suggested command: <code>$impeccable clarify</code>.</li>
             <li><strong>P3 · Final pass:</strong> tabular metrics, timer cleanup, operation-scoped status, stable finding IDs, and config tightening. Suggested command: <code>$impeccable polish</code>.</li>
             <li><strong>Re-audit:</strong> repeat the static audit, then run focused runtime and accessibility checks against the agreed fixtures.</li>
@@ -1237,7 +1291,7 @@
         <section id="method" aria-labelledby="method-title">
           <div class="section-head">
             <h2 id="method-title">Method, scope, and positives</h2>
-            <span class="chip">static-only</span>
+            <span class="chip">static baseline + measured supplement</span>
           </div>
           <div class="two-col">
             <article class="panel-block">
@@ -1252,11 +1306,13 @@
             <article class="panel-block">
               <h3>Limits</h3>
               <ul>
-                <li>No tests, linters, builds, formatters, benchmarks, dev server, browser trace, or app commands were run.</li>
-                <li>No product source was edited; this standalone report is the only artifact.</li>
-                <li>Performance severity is based on static scale paths; implementation is gated on runtime measurement.</li>
+                <li>The original 2026-07-15 review was static-only. The 2026-07-16 supplement ran a production build, deterministic browser fixtures, React profiling, and direct Chrome traces.</li>
+                <li>The harness imports real Neondeck/Pierre components but uses mock patches, messages, queries, and review threads; it is not a live GitHub/backend end-to-end test.</li>
+                <li>Backend patch concurrency/bytes are modeled from query descriptors. Real repository timing remains in <code>.plans/PR_REVIEW_PERF_PLAN.md</code>.</li>
+                <li>The 50,000-line unvirtualized fixture remains opt-in because it can exhaust local memory; the repeatable matrix stops at 10,000 lines and includes the 50,000-line generator.</li>
+                <li>No production optimization was implemented. Harness code and this retained report are the only product-repository changes in the measurement branch.</li>
                 <li>Contrast ratios were computed from committed sRGB tokens and alpha compositing.</li>
-                <li>Review target is clean <code>e51337e</code>; recent commits substitute for a missing working diff.</li>
+                <li>The static baseline targeted clean <code>e51337e</code>; measurement ran after the two corrective PRs merged to <code>main</code>.</li>
               </ul>
             </article>
           </div>
