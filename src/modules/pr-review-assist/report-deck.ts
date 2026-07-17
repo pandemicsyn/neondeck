@@ -129,7 +129,7 @@ function buildOverviewDeck(
       { label: 'Head', value: input.state.headSha, href: null },
       {
         label: 'Files',
-        value: String(input.output.overview.changeMap.length),
+        value: String(input.files.length),
         href: null,
       },
     ],
@@ -141,7 +141,7 @@ function buildOverviewDeck(
       riskMarkdown: item.risk || null,
       href: fileUrls.get(item.path) ?? null,
     }));
-  const columnsSlide = buildChecksAndRisksSlide(input.output);
+  const columnsSlide = buildReviewGuidanceSlide(input.output);
   const trailingSlides = columnsSlide ? [columnsSlide] : [];
   const availableChangeSlides =
     REPORT_DECK_LIMITS.slides - 2 - trailingSlides.length;
@@ -328,9 +328,10 @@ function buildIssuesDeck(
   };
 }
 
-function buildChecksAndRisksSlide(
+function buildReviewGuidanceSlide(
   output: ReviewAssistStructuredOutput,
 ): ReportDeckSlide | null {
+  const nextActions = output.overview.nextActions ?? [];
   const columns = [
     ...(output.overview.checks.length > 0
       ? [
@@ -350,9 +351,18 @@ function buildChecksAndRisksSlide(
           },
         ]
       : []),
+    ...(nextActions.length > 0
+      ? [
+          {
+            title: 'Next actions',
+            tone: 'positive' as const,
+            items: nextActions,
+          },
+        ]
+      : []),
   ];
   return columns.length > 0
-    ? { kind: 'columns', title: 'Checks and risks', columns }
+    ? { kind: 'columns', title: 'Review guidance', columns }
     : null;
 }
 
@@ -598,8 +608,8 @@ function overviewSlidesForSource(
       return singleColumnSlide(
         'Next actions',
         'Next actions',
-        'check',
-        input.output.overview.checks,
+        'positive',
+        input.output.overview.nextActions ?? [],
       );
     case 'change-map':
       return slidesForKind(fallback, 'change-map');
@@ -680,7 +690,7 @@ function findingSlidesForDisposition(
 function singleColumnSlide(
   title: string,
   columnTitle: string,
-  tone: 'check' | 'risk',
+  tone: 'check' | 'positive' | 'risk',
   items: string[],
 ): ReportDeckSlide[] {
   return items.length > 0

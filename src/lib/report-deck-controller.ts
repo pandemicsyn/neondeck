@@ -53,7 +53,7 @@ export const REPORT_DECK_CONTROLLER_SOURCE = String.raw`(() => {
 
   const interactiveTarget = (target) =>
     target instanceof Element &&
-    Boolean(target.closest('a, button, input, select, textarea, [contenteditable]:not([contenteditable="false"])'));
+    Boolean(target.closest('a, button, input, select, textarea, [data-deck-scroll-region], [contenteditable]:not([contenteditable="false"])'));
 
   root.addEventListener('click', (event) => {
     if (!(event.target instanceof Element)) return;

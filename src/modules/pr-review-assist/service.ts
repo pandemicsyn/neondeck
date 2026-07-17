@@ -520,7 +520,7 @@ async function writeReviewReports(input: {
         })),
       },
       {
-        title: 'Checks And Risks',
+        title: 'Checks, Risks, And Next Actions',
         body: null,
         items: [
           ...output.overview.checks.map((check, index) => ({
@@ -530,6 +530,10 @@ async function writeReviewReports(input: {
           ...output.overview.risks.map((risk, index) => ({
             label: `risk ${index + 1}`,
             value: risk,
+          })),
+          ...(output.overview.nextActions ?? []).map((action, index) => ({
+            label: `next action ${index + 1}`,
+            value: action,
           })),
         ],
       },

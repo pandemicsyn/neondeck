@@ -45,6 +45,16 @@ describe('standalone report deck controller', () => {
 
   it('supports deck keyboard navigation and ignores interactive targets', () => {
     const deck = document.querySelector<HTMLElement>('[data-report-deck]')!;
+    const scrollRegion = document.querySelector<HTMLElement>(
+      '[data-deck-scroll-region]',
+    )!;
+    expect(scrollRegion.tabIndex).toBe(0);
+    expect(scrollRegion.getAttribute('role')).toBe('region');
+    scrollRegion.dispatchEvent(
+      new KeyboardEvent('keydown', { bubbles: true, key: 'PageDown' }),
+    );
+    expect(location.hash).toBe('');
+
     deck.dispatchEvent(
       new KeyboardEvent('keydown', { bubbles: true, key: 'End' }),
     );

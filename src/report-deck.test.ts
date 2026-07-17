@@ -164,7 +164,9 @@ describe('report deck rendering', () => {
     expect(html).toContain(
       '<script>' + REPORT_DECK_CONTROLLER_SOURCE + '</script>',
     );
-    expect(html).toContain('@media print');
+    expect(html).toContain(
+      '@media print { html, body { height: auto; overflow: visible; } }',
+    );
     expect(html).not.toContain('dangerouslySetInnerHTML');
   });
 
@@ -328,6 +330,68 @@ describe('default PR review deck builder', () => {
         emptyStateMarkdown: expect.stringContaining('nothing to triage'),
       }),
     ]);
+  });
+
+  it('uses trusted file facts and keeps next actions distinct from checks', () => {
+    const result = buildReviewReportDecks({
+      sourceRef: 'pandemicsyn/neondeck#125',
+      state: reviewState(),
+      files: [
+        reviewFile('src/app.ts', 'https://example.com/src/app.ts'),
+        reviewFile('src/extra.ts', 'https://example.com/src/extra.ts'),
+      ],
+      output: {
+        overview: {
+          summary: 'Summary',
+          changeMap: [{ path: 'src/app.ts', summary: 'Changes the app.' }],
+          checks: ['Run unit tests.'],
+          risks: [],
+          nextActions: ['Add a regression fixture.'],
+        },
+        findings: [],
+        presentation: {
+          overview: [
+            { kind: 'source', source: 'pr-facts', layout: 'facts' },
+            { kind: 'source', source: 'checks', layout: 'columns' },
+            {
+              kind: 'source',
+              source: 'next-actions',
+              layout: 'columns',
+            },
+          ],
+          issues: [],
+        },
+      },
+      seededFindings: [],
+      reportOnlyFindings: [],
+      generatedAt: '2026-07-15T12:00:00.000Z',
+    });
+
+    const facts = result.overview.document.slides.find(
+      (slide) => slide.kind === 'facts',
+    );
+    expect(facts).toMatchObject({
+      kind: 'facts',
+      items: expect.arrayContaining([
+        expect.objectContaining({ label: 'Files', value: '2' }),
+      ]),
+    });
+    expect(result.overview.document.slides).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'columns',
+          title: 'Checks',
+          columns: [expect.objectContaining({ items: ['Run unit tests.'] })],
+        }),
+        expect.objectContaining({
+          kind: 'columns',
+          title: 'Next actions',
+          columns: [
+            expect.objectContaining({ items: ['Add a regression fixture.'] }),
+          ],
+        }),
+      ]),
+    );
   });
 
   it('honors bounded slide intent and restores omitted required data', () => {

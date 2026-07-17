@@ -119,6 +119,20 @@ describe('PR review artifacts overlay', () => {
         ?.getAttribute('aria-label'),
     ).toBe('Go to slide 2: PR facts');
     expect(document.querySelector('[aria-live="polite"]')).not.toBeNull();
+    const scrollRegion = slides[0]!.querySelector<HTMLElement>(
+      '[data-deck-scroll-region]',
+    )!;
+    expect(scrollRegion.tabIndex).toBe(0);
+    expect(scrollRegion.getAttribute('aria-label')).toBe(
+      'Review brief content',
+    );
+    act(() =>
+      scrollRegion.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: 'PageDown' }),
+      ),
+    );
+    expect(slides[0]?.hidden).toBe(false);
+    expect(slides[1]?.hidden).toBe(true);
 
     act(() => button('next')!.click());
     expect(slides[0]?.hidden).toBe(true);

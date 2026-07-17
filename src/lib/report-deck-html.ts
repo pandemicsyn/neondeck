@@ -18,6 +18,7 @@ export function renderReportDeckHtml(document: ReportDeckDocument) {
   <title>${escapeHtml(document.title)}</title>
   <style>
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    @media print { html, body { height: auto; overflow: visible; } }
     body { background: #0a0b10; }
     ${REPORT_DECK_CSS}
   </style>

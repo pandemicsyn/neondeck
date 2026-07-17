@@ -143,6 +143,14 @@ const reviewAssistStructuredOutputEntries = {
       v.array(v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(4_000))),
       v.maxLength(20),
     ),
+    nextActions: v.optional(
+      v.pipe(
+        v.array(
+          v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(4_000)),
+        ),
+        v.maxLength(20),
+      ),
+    ),
   }),
   findings: v.pipe(v.array(reviewAssistFindingSchema), v.maxLength(100)),
 } as const;

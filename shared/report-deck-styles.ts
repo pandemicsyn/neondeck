@@ -214,6 +214,11 @@ export const REPORT_DECK_CSS = String.raw`
   scrollbar-gutter: stable;
 }
 
+.report-deck-slide-body:focus-visible {
+  outline: 2px solid var(--rd-primary);
+  outline-offset: -2px;
+}
+
 .report-deck-summary-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(220px, 0.55fr);

@@ -136,7 +136,13 @@ export function ReportDeck({
                     </span>
                   ) : null}
                 </header>
-                <div className="report-deck-slide-body">
+                <div
+                  aria-label={`${slide.title} content`}
+                  className="report-deck-slide-body"
+                  data-deck-scroll-region=""
+                  role="region"
+                  tabIndex={0}
+                >
                   <ReportDeckSlideContent
                     document={document}
                     linkBudget={linkBudget}
@@ -499,7 +505,7 @@ function isInteractiveTarget(target: EventTarget | null) {
     target instanceof Element &&
     Boolean(
       target.closest(
-        'a, button, input, select, textarea, [contenteditable]:not([contenteditable="false"])',
+        'a, button, input, select, textarea, [data-deck-scroll-region], [contenteditable]:not([contenteditable="false"])',
       ),
     )
   );
