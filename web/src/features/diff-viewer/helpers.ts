@@ -1,6 +1,7 @@
 import type { DiffFilePatch } from './types';
 
 const diffGitHeader = /^diff --git a\/(.+?) b\/(.+)$/gm;
+const changedPatchLine = /^(?:\+(?!\+\+(?:\s|$))|-(?!--(?:\s|$)))/gm;
 
 export function patchHasContent(patch: string | null | undefined) {
   return Boolean(patch && patch.trim().length > 0);
@@ -14,6 +15,13 @@ export function patchFilePaths(patch: string | null | undefined) {
     if (path) paths.push(path);
   }
   return [...new Set(paths)];
+}
+
+export function patchChangedLineCount(patch: string | null | undefined) {
+  if (!patch) return 0;
+  let count = 0;
+  for (const _match of patch.matchAll(changedPatchLine)) count += 1;
+  return count;
 }
 
 export function joinFilePatches(files: DiffFilePatch[]) {

@@ -1,5 +1,8 @@
-import type { PatchDiffProps } from '@pierre/diffs/react';
-import type { ThemeTypes } from '@pierre/diffs/react';
+import type {
+  CodeViewProps,
+  PatchDiffProps,
+  ThemeTypes,
+} from '@pierre/diffs/react';
 
 export type ResolvedDiffTheme = Extract<ThemeTypes, 'light' | 'dark'>;
 
@@ -24,6 +27,23 @@ export function neondeckDiffOptions(themeType: ResolvedDiffTheme) {
     ...baseDiffOptions,
     themeType,
   } satisfies NonNullable<PatchDiffProps<undefined>['options']>;
+}
+
+export function neondeckCodeViewOptions(
+  themeType: ResolvedDiffTheme,
+  textScale = 1.12,
+) {
+  const { stickyHeader, ...options } = baseDiffOptions;
+  const lineHeight = 10.5 * 1.55 * textScale;
+  return {
+    ...options,
+    itemMetrics: {
+      diffHeaderHeight: lineHeight + 24,
+      lineHeight,
+    },
+    stickyHeaders: stickyHeader,
+    themeType,
+  } satisfies NonNullable<CodeViewProps<undefined>['options']>;
 }
 
 export const neondeckDiffUnsafeCss = `

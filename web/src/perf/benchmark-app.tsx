@@ -3,7 +3,8 @@ import {
   QueryClientProvider,
   useQueries,
 } from '@tanstack/react-query';
-import { Virtualizer } from '@pierre/diffs/react';
+import { getSingularPatch } from '@pierre/diffs';
+import { CodeView, Virtualizer, type CodeViewItem } from '@pierre/diffs/react';
 import { memo, Profiler, useMemo, useState, type ChangeEvent } from 'react';
 import { Badge, Card } from '../components/ui';
 import { MarkdownMessage } from '../components/MarkdownMessage';
@@ -12,6 +13,10 @@ import {
   UnifiedPatchView,
 } from '../features/diff-viewer/DiffViewer';
 import { MultiFileView } from '../features/diff-viewer/MultiFileView';
+import {
+  neondeckCodeViewOptions,
+  neondeckDiffUnsafeCss,
+} from '../features/diff-viewer/theme';
 import type { DiffReviewAnnotation } from '../features/diff-viewer/types';
 import {
   createChatMessages,
@@ -161,19 +166,49 @@ function DiffBenchmark({ tier, variant }: { tier: string; variant: string }) {
   }
 
   const fixture = useMemo(() => createDiffFixture(diffPreset(tier)), [tier]);
+  const codeViewItems = useMemo(
+    () =>
+      [
+        {
+          id: 'benchmark-diff',
+          type: 'diff',
+          fileDiff: getSingularPatch(fixture.patch),
+          annotations: fixture.annotations,
+        },
+      ] satisfies CodeViewItem<DiffReviewAnnotation['metadata']>[],
+    [fixture],
+  );
   const content = (
     <UnifiedPatchView
       detail={`${fixture.changedLines.toLocaleString()} changed lines · ${fixture.fileCount} files`}
+      codeViewTextScale={1}
       lineAnnotations={fixture.annotations}
       patch={fixture.patch}
       renderAnnotation={renderBenchmarkAnnotation}
+      selectedLines={
+        variant === 'auto' ? { start: 1, end: 2, side: 'deletions' } : undefined
+      }
+      onSelectedLinesChange={variant === 'auto' ? () => {} : undefined}
       title="Pierre patch fixture"
+      virtualizeLargePatches={variant === 'auto'}
     />
   );
 
   return (
     <DiffWorkerProvider>
-      {variant === 'virtualized' ? (
+      {variant === 'codeview' ? (
+        <CodeView<DiffReviewAnnotation['metadata']>
+          className="perf-code-view"
+          items={codeViewItems}
+          options={{
+            ...neondeckCodeViewOptions('dark'),
+            unsafeCSS: neondeckDiffUnsafeCss,
+          }}
+          renderAnnotation={(annotation) =>
+            renderBenchmarkAnnotation(annotation as DiffReviewAnnotation)
+          }
+        />
+      ) : variant === 'virtualized' ? (
         <Virtualizer
           className="perf-virtualizer perf-virtualized"
           config={{ overscrollSize: 600 }}
@@ -387,6 +422,14 @@ function renderBenchmarkAnnotation(annotation: DiffReviewAnnotation) {
 }
 
 function diffPreset(tier: string) {
+  if (tier === 'large-threads') {
+    return {
+      changedLines: 5_000,
+      fileCount: 1,
+      lineWidth: 72,
+      annotationCount: 50,
+    };
+  }
   if (tier === 'large') {
     return {
       changedLines: 5_000,
