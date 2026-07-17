@@ -20,7 +20,6 @@ import {
   useGitHubPrReviewThreads,
   useGitHubPullRequestFileList,
   useGitHubPullRequestFilePatches,
-  usePrefetchGitHubPullRequestFilePatch,
 } from './queries';
 import {
   commentAnchorExists,
@@ -35,6 +34,7 @@ import {
   annotationsFromComposer,
   annotationsFromDraft,
   annotationsFromThreads,
+  backgroundReviewPatchPaths,
   checkBadgeClass,
   checkLabel,
   draftCommentIdsWithUnknownPatch,
@@ -44,7 +44,7 @@ import {
   mutationErrorMessage,
   prDetail,
   reviewFileStats,
-  reviewPatchPaths,
+  reviewPatchQuerySettled,
   summaryLabel,
 } from './review-view-model';
 import { usePrReviewRecord } from './usePrReviewRecord';
@@ -118,9 +118,20 @@ export function GitHubPrReview({
     [threadsQuery.data?.unresolvedReviewThreads],
   );
   const draft = draftQuery.data ?? null;
-  const eagerPatchPaths = useMemo(
+  const activePatchPaths = useMemo(
+    () => (activePath ? [activePath] : []),
+    [activePath],
+  );
+  const activePatchQueries = useGitHubPullRequestFilePatches(
+    pr,
+    activePatchPaths,
+  );
+  const activePatchQuery = activePath
+    ? activePatchQueries.byPath.get(activePath)
+    : undefined;
+  const backgroundPatchCandidates = useMemo(
     () =>
-      reviewPatchPaths({
+      backgroundReviewPatchPaths({
         activePath,
         draft,
         files: fileList,
@@ -128,24 +139,45 @@ export function GitHubPrReview({
       }),
     [activePath, draft, fileList, unresolvedThreads],
   );
-  const patchQueries = useGitHubPullRequestFilePatches(pr, eagerPatchPaths);
-  const patchQueryByPath = patchQueries.byPath;
+  const shouldLoadBackgroundPatches = reviewPatchQuerySettled(activePatchQuery);
+  const backgroundPatchPaths = useMemo(
+    () => (shouldLoadBackgroundPatches ? backgroundPatchCandidates : []),
+    [backgroundPatchCandidates, shouldLoadBackgroundPatches],
+  );
+  const deferredPatchPaths = useMemo(
+    () =>
+      shouldLoadBackgroundPatches
+        ? new Set<string>()
+        : new Set(backgroundPatchCandidates),
+    [backgroundPatchCandidates, shouldLoadBackgroundPatches],
+  );
+  const backgroundPatchQueries = useGitHubPullRequestFilePatches(
+    pr,
+    backgroundPatchPaths,
+  );
+  const patchQueryByPath = useMemo(
+    () =>
+      new Map([...backgroundPatchQueries.byPath, ...activePatchQueries.byPath]),
+    [activePatchQueries.byPath, backgroundPatchQueries.byPath],
+  );
   const files = useMemo(
     () => mergePatchResults(fileList, patchQueryByPath),
     [fileList, patchQueryByPath],
   );
-  const activePatchQuery = activePath
-    ? patchQueryByPath.get(activePath)
-    : undefined;
-  const prefetchPatch = usePrefetchGitHubPullRequestFilePatch(pr);
   const currentHeadSha = pr.headSha ?? '';
   const patchIndexesByPath = useMemo(
     () => patchAnchorIndexesByPath(files),
     [files],
   );
   const unknownDraftPatchCommentIds = useMemo(
-    () => draftCommentIdsWithUnknownPatch(draft, files, patchQueryByPath),
-    [draft, files, patchQueryByPath],
+    () =>
+      draftCommentIdsWithUnknownPatch(
+        draft,
+        files,
+        patchQueryByPath,
+        deferredPatchPaths,
+      ),
+    [deferredPatchPaths, draft, files, patchQueryByPath],
   );
   const staleCommentIds = useMemo(() => {
     const stale = staleDraftCommentIds(draft, patchIndexesByPath);
@@ -218,20 +250,6 @@ export function GitHubPrReview({
     if (activePath && fileList.some((file) => file.path === activePath)) return;
     setActivePath(firstReviewablePath(fileList) ?? null);
   }, [activePath, fileList]);
-
-  useEffect(() => {
-    const firstPath = firstReviewablePath(fileList);
-    if (firstPath) void prefetchPatch(firstPath);
-  }, [fileList, prefetchPatch]);
-
-  useEffect(() => {
-    if (!activePath) return;
-    const index = fileList.findIndex((file) => file.path === activePath);
-    if (index < 0) return;
-    for (const file of [fileList[index - 1], fileList[index + 1]]) {
-      if (file?.path) void prefetchPatch(file.path);
-    }
-  }, [activePath, fileList, prefetchPatch]);
 
   useEffect(() => {
     const nextDraftId = draft?.id ?? null;

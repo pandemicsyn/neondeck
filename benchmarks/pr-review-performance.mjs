@@ -91,7 +91,7 @@ try {
 }
 
 const output = {
-  version: 1,
+  version: 2,
   generatedAt: new Date().toISOString(),
   environment: {
     platform: process.platform,
@@ -333,6 +333,9 @@ async function measureBrowserReview(
           0,
         ),
         patchRequestCount: patchRequests.length,
+        patchRequestsStartedBeforeFirstPatch: patchRequests.filter(
+          (entry) => entry.startTime < state.firstPatchMs,
+        ).length,
         abortedPatchRequestCount: patchRequests.filter(
           (entry) => entry.transferSize === 0,
         ).length,
@@ -377,6 +380,7 @@ function aggregateBrowserSamples(browserResults) {
       'threadRequestCount',
       'threadTransferBytes',
       'patchRequestCount',
+      'patchRequestsStartedBeforeFirstPatch',
       'abortedPatchRequestCount',
       'lastApiResponseMs',
     ].map((key) => [

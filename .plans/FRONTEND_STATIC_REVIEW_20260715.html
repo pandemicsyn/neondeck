@@ -820,9 +820,10 @@
               updates and route patches with at least 2,000 changed rows through Pierre CodeView.
               The retained baselines strongly confirm the original large-diff and chat findings,
               confirm duplicated review DOM at low present cost, and lower the urgency of Runtime
-              query topology. A real 1,019-file PR trace now confirms request-identity churn and
-              repeated local metadata work in the review path; fixes remain behind discussion.
-              Runtime and bundle changes remain deferred pending workload evidence.
+              query topology. A real 1,019-file PR trace confirmed request-identity churn,
+              repeated local metadata work, and active-patch contention in the review path. The
+              approved request-path and active-priority fixes are complete; cold-object fetch,
+              Runtime, and bundle changes remain deferred pending separate workload evidence.
             </p>
           </div>
 
@@ -861,14 +862,15 @@
           </div>
 
           <div class="gate completion-note">
-            <div class="gate-mark">REAL PR MEASURED</div>
+            <div class="gate-mark">REAL PR OPTIMIZED</div>
             <p>
               <strong>Review-path status:</strong> the production app was measured against open
               <code>Kilo-Org/kilocode#12204</code> with 1,019 files and 47 review threads. Warm
               browser tree, first-patch, and threads medians were 869 ms, 1,971 ms, and 2,183 ms;
-              all miss the original targets despite healthy 876 ms LCP, 0.0012 CLS, and zero long
-              tasks. Every sample started the review-threads request twice. Candidate fixes are
-              documented but intentionally not implemented before discussion.
+              all missed the original targets despite healthy 876 ms LCP, 0.0012 CLS, and zero
+              long tasks. That baseline remains retained. Stable thread identity, local metadata
+              reuse, and active-patch-first scheduling now produce one thread request, zero
+              abandoned patches, and a 798 ms first-patch median that passes all three samples.
             </p>
           </div>
 
@@ -1017,6 +1019,8 @@
                 <tr><td>Real PR · remediated backend</td><td>90 ms list · 303 ms sequential patch</td><td>Same 1,019-file complete metadata</td><td>Four concurrent patches: 1,055 ms wall</td><td>Approved backend fixes completed</td></tr>
                 <tr><td>Real PR · remediated browser</td><td>622 ms tree · 1,195 ms first patch</td><td>628 ms LCP · 0.0012 CLS</td><td>1,946 ms threads · zero long tasks</td><td>Faster; active patch still 195 ms over target</td></tr>
                 <tr><td>Real PR · request stability</td><td>1 thread request · 0 aborted patches</td><td>381 kB thread · 743 kB total API</td><td>Last API response: 2,782 ms</td><td>Duplicate and settlement churn eliminated</td></tr>
+                <tr><td>Real PR · active-patch priority</td><td>612 ms tree · 798 ms first patch</td><td>620 ms LCP · 0.0012 CLS</td><td>1,724 ms threads · zero long tasks</td><td>Completed · first patch passes all samples</td></tr>
+                <tr><td>Real PR · prioritized requests</td><td>1 thread request · 4 patch requests</td><td>381 kB thread · 724 kB total API</td><td>0 aborted · last API response 2,021 ms</td><td>Active read settles before background fanout</td></tr>
                 <tr><td>Real PR · cold local / GitHub</td><td>4,978 / 3,894 ms</td><td>295 / 765 kB metadata</td><td>0 / 1 truncated files</td><td>Both miss cold target; local is complete</td></tr>
                 <tr><td>Production initial preload</td><td>194.6 kB gzip</td><td>157.7 kB entry · 21.6 kB ccount</td><td>Focused-review wrapper 0.77 kB gzip</td><td>Track; no budget miss declared</td></tr>
               </tbody>
@@ -1040,7 +1044,9 @@
             After the two approved remediations, the same three-sample run produced exactly one
             thread request and zero aborted patch reads in every sample. A final direct trace
             measured 551 ms LCP, 0.00 CLS, and the same 39 ms total Pierre forced reflow with no
-            estimated savings.
+            estimated savings. After active-patch prioritization, the browser median reached 798
+            ms to first patch and a direct trace measured 498 ms LCP, 0.00 CLS, and 36 ms total
+            Pierre forced reflow with no estimated savings.
           </div>
 
           <div class="finding-list">
@@ -1052,11 +1058,11 @@
               </div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="performance" data-status="measured" open>
-              <summary><span class="severity p1">P1</span><span class="finding-title">Review open can fan out patch requests across every unresolved-thread and draft path</span> <span class="chip">APPROVED FIXES COMPLETED</span></summary>
+            <details class="finding" data-severity="p1" data-category="performance" data-status="completed" open>
+              <summary><span class="severity p1">P1</span><span class="finding-title">Review open can fan out patch requests across every unresolved-thread and draft path</span> <span class="chip">COMPLETED</span></summary>
               <div class="finding-body">
-                <div><h3>Impact and trigger</h3><p>Many unresolved threads or draft comments across large files create a burst of independent requests. Every response rebuilds maps, merged file arrays, and anchor indexes, increasing network, backend, CPU, and cache cost. AbortSignals are now passed after the correctness PR, so the original “uncancelled” detail is retained as historical context but no longer applies.</p><h3>Measurement result</h3><p><strong>Confirmed and refined with a real trace.</strong> Open <code>Kilo-Org/kilocode#12204</code> had 1,019 files, 47 threads, and only two unresolved paths, so it did not reproduce the modeled 50-path maximum. It exposed two stronger costs. First, every scripted browser sample started two review-thread requests because the optimistic and authoritative PR records have different <code>updatedAt</code>-based query keys; one run transferred both 381 kB payloads, and complete traces abandoned then reissued two unresolved-path reads. Second, every local patch request recomputed metadata for all 1,019 files before the path diff. A sequential patch took 643 ms median while four real active/neighbor/unresolved paths took 1,952 ms concurrently. Production medians were 869 ms to tree, 1,971 ms to first patch, and 2,183 ms to threads.</p><h3>Recommendation after measurement</h3><p>Do not broaden the patch cap yet. First prevent optimistic-to-authoritative review-thread key churn while retaining explicit invalidation. Then cache or single-flight immutable local metadata by repo/merge-base/head and remeasure. Only if the active patch still loses to background work should neighbor and unresolved-path prefetch wait for it to settle. Cold local object fetch also missed its target at 4.98 seconds, but should be separated from repeat-path work before changing fetch behavior or the budget.</p><h3>Completed remediation</h3><p>Review threads now use a stable PR-scoped query key while mutations and later authoritative activity changes explicitly refresh it. Metadata-only local diffs use a bounded 10-minute, eight-revision LRU keyed by repo path, merge-base, and head; concurrent misses single-flight and failed reads are not cached. Patch text remains on demand. On the same target, warm metadata fell from 311 to 90 ms, sequential patch from 643 to 303 ms, four-path wall time from 1,952 to 1,055 ms, and browser first patch from 1,971 to 1,195 ms. Every final sample made one thread request and abandoned zero patches.</p><h3>Remaining discussion</h3><p>The original broad many-path risk is retained. This real target still starts background active, neighbor, and unresolved-path reads, and first patch remains 195 ms over the browser budget. Discuss delaying neighbor and unresolved prefetch until the active patch settles; revisit the cold object fetch separately.</p></div>
-                <div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx<br />web/src/features/pr-review/PrReviewPopoutPage.tsx<br />web/src/features/pr-review/queries.ts<br />src/modules/pr-local-diffs/index.ts<br />src/pr-local-diffs.test.ts<br />benchmarks/pr-review-performance.mjs<br />.plans/PR_REVIEW_PERF_PLAN.md<br />benchmarks/results/pr-12204-real-local.json (gitignored baseline)<br />benchmarks/results/pr-12204-remediation-local.json (gitignored remediation)</p><span class="chip">measured: strong</span> <span class="chip">status: approved fixes completed · prioritization pending discussion</span></div>
+                <div><h3>Impact and trigger</h3><p>Many unresolved threads or draft comments across large files create a burst of independent requests. Every response rebuilds maps, merged file arrays, and anchor indexes, increasing network, backend, CPU, and cache cost. AbortSignals are now passed after the correctness PR, so the original “uncancelled” detail is retained as historical context but no longer applies.</p><h3>Measurement result</h3><p><strong>Confirmed and refined with a real trace.</strong> Open <code>Kilo-Org/kilocode#12204</code> had 1,019 files, 47 threads, and only two unresolved paths, so it did not reproduce the modeled 50-path maximum. It exposed two stronger costs. First, every scripted browser sample started two review-thread requests because the optimistic and authoritative PR records had different <code>updatedAt</code>-based query keys; one run transferred both 381 kB payloads, and complete traces abandoned then reissued two unresolved-path reads. Second, every local patch request recomputed metadata for all 1,019 files before the path diff. A sequential patch took 643 ms median while four real active/neighbor/unresolved paths took 1,952 ms concurrently. Production medians were 869 ms to tree, 1,971 ms to first patch, and 2,183 ms to threads.</p><h3>Recommendation after measurement</h3><p>Do not broaden the patch cap yet. First prevent optimistic-to-authoritative review-thread key churn while retaining explicit invalidation. Then cache or single-flight immutable local metadata by repo/merge-base/head and remeasure. Only if the active patch still loses to background work should neighbor and unresolved-path prefetch wait for it to settle. Cold local object fetch also missed its target at 4.98 seconds, but should be separated from repeat-path work before changing fetch behavior or the budget.</p><h3>Completed remediation</h3><p>Review threads now use a stable PR-scoped query key while mutations and later authoritative activity changes explicitly refresh it. Metadata-only local diffs use a bounded 10-minute, eight-revision LRU keyed by repo path, merge-base, and head; concurrent misses single-flight and failed reads are not cached. Patch text remains on demand. The active patch now runs separately; neighbor, draft-comment, and unresolved-thread reads wait until it settles and remain cancellable on selection changes. Deferred draft anchors stay unknown without masking removed-file staleness. On the retained target, browser first patch improved from 1,195 to 798 ms and passed all three samples, patch reads fell from six to four, the last API response moved from 2,782 to 2,021 ms, and every sample retained one thread request and zero abandoned patches.</p><h3>Retained follow-up</h3><p>The original broad many-path risk remains in this audit history, but it no longer competes with the initial selected patch. The one-time 4.98-second cold object fetch, 612 ms tree median, and 1,724 ms thread median remain separate measurement decisions rather than blockers for this completed item.</p></div>
+                <div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx<br />web/src/features/pr-review/GitHubPrReview.test.ts<br />web/src/features/pr-review/PrReviewPopoutPage.tsx<br />web/src/features/pr-review/queries.ts<br />web/src/features/pr-review/review-view-model.ts<br />src/modules/pr-local-diffs/index.ts<br />src/pr-local-diffs.test.ts<br />benchmarks/pr-review-performance.mjs<br />.plans/PR_REVIEW_PERF_PLAN.md<br />benchmarks/results/pr-12204-real-local.json (gitignored baseline)<br />benchmarks/results/pr-12204-remediation-local.json (gitignored remediation)<br />benchmarks/results/pr-12204-active-priority-local.json (gitignored active-priority run)</p><span class="chip">measured: strong</span> <span class="chip">status: completed</span></div>
               </div>
             </details>
 
@@ -1344,7 +1350,7 @@
             <li class="completed-action"><span class="completion">COMPLETED · PR 2</span> <strong>P2 · Query correctness:</strong> pass AbortSignals, repair reconnect convergence, invalidate durable review state, and reconcile stale Autopilot confirmations.</li>
             <li class="completed-action"><span class="completion">COMPLETED · MEASUREMENT + FIRST WAVE</span> <strong>Performance measurement gate:</strong> the five-part fixture pass, chat isolation, thresholded Pierre CodeView, and real registered-PR trace are complete. Runtime topology, duplicate review DOM, and lazy registry remain deferred behind workload/budget evidence.</li>
             <li class="completed-action"><span class="completion">COMPLETED · REQUEST-PATH REMEDIATION</span> <strong>P1 · Real PR request path:</strong> discuss the measured duplicate review-thread identity and repeated local metadata work, then implement only the approved fixes and repeat <code>npm run bench:pr-review</code>. The stable thread key and bounded revision-metadata cache are implemented and verified on the retained target.</li>
-            <li><strong>P1 · Active patch priority:</strong> discuss whether neighbor and unresolved-path prefetch should wait for the active patch. The remediated real-PR trace is 39.4% faster but still 195 ms over the first-patch browser target. Suggested command after agreement: <code>$impeccable optimize</code>.</li>
+            <li class="completed-action"><span class="completion">COMPLETED · ACTIVE PATCH PRIORITY</span> <strong>P1 · Active patch priority:</strong> discuss whether neighbor and unresolved-path prefetch should wait for the active patch. The retained remediated trace was 195 ms over target; the implemented active-first schedule now reaches a 798 ms median and passes all three samples while preserving zero abandoned reads.</li>
             <li><strong>P2 · Copy/disclosure:</strong> row-specific action names and full-value affordances for operational text. Suggested command: <code>$impeccable clarify</code>.</li>
             <li><strong>P3 · Final pass:</strong> tabular metrics, timer cleanup, operation-scoped status, stable finding IDs, and config tightening. Suggested command: <code>$impeccable polish</code>.</li>
             <li><strong>Re-audit:</strong> repeat the static audit, then run focused runtime and accessibility checks against the agreed fixtures.</li>

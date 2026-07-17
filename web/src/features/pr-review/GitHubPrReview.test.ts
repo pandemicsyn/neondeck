@@ -1,6 +1,11 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
 import { describe, expect, it } from 'vitest';
-import { ApiError, type GitHubPrReviewDraft } from '../../api';
+import {
+  ApiError,
+  type GitHubPrReviewDraft,
+  type GitHubPullRequestReviewThread,
+} from '../../api';
+import type { DiffFilePatch } from '../diff-viewer/types';
 import {
   buildPatchAnchorIndex,
   commentAnchorExists,
@@ -11,6 +16,11 @@ import {
   reviewCommentPreview,
   staleDraftCommentIds,
 } from './review-helpers';
+import {
+  backgroundReviewPatchPaths,
+  draftCommentIdsWithUnknownPatch,
+  reviewPatchQuerySettled,
+} from './review-view-model';
 import capturedReviewPatch from './fixtures/captured-review.patch?raw';
 
 describe('GitHubPrReview helpers', () => {
@@ -271,6 +281,68 @@ describe('GitHubPrReview helpers', () => {
       ),
     ).toBe('Suggested change Use safeValue here Keep fallbacks explicit');
   });
+
+  it('keeps active patch work separate from neighbor and review background paths', () => {
+    const files = reviewFiles([
+      'src/previous.ts',
+      'src/active.ts',
+      'src/next.ts',
+      'src/draft.ts',
+      'src/thread.ts',
+    ]);
+    const draft = draftWithComments([
+      draftComment('active', 'src/active.ts'),
+      draftComment('draft', 'src/draft.ts'),
+      draftComment('missing', 'src/missing.ts'),
+    ]);
+
+    expect(
+      backgroundReviewPatchPaths({
+        activePath: 'src/active.ts',
+        draft,
+        files,
+        unresolvedThreads: [
+          reviewThread('active-thread', 'src/active.ts'),
+          reviewThread('thread', 'src/thread.ts'),
+          reviewThread('missing-thread', 'src/missing.ts'),
+        ],
+      }),
+    ).toEqual([
+      'src/previous.ts',
+      'src/next.ts',
+      'src/draft.ts',
+      'src/thread.ts',
+    ]);
+  });
+
+  it('releases background patch work only after the active query settles', () => {
+    expect(reviewPatchQuerySettled(undefined)).toBe(false);
+    expect(reviewPatchQuerySettled(patchQueryState({ isLoading: true }))).toBe(
+      false,
+    );
+    expect(reviewPatchQuerySettled(patchQueryState({ hasData: true }))).toBe(
+      true,
+    );
+    expect(reviewPatchQuerySettled(patchQueryState({ isError: true }))).toBe(
+      true,
+    );
+  });
+
+  it('keeps deferred draft anchors unknown without hiding removed-file staleness', () => {
+    const draft = draftWithComments([
+      draftComment('deferred', 'src/deferred.ts'),
+      draftComment('removed', 'src/removed.ts'),
+    ]);
+
+    expect(
+      draftCommentIdsWithUnknownPatch(
+        draft,
+        reviewFiles(['src/deferred.ts']),
+        new Map(),
+        new Set(['src/deferred.ts']),
+      ),
+    ).toEqual(new Set(['deferred']));
+  });
 });
 
 function selection(input: { side: 'additions' | 'deletions'; line: number }) {
@@ -335,5 +407,57 @@ function draftWithComments(
       createdAt: '2026-07-05T00:00:00Z',
       updatedAt: '2026-07-05T00:00:00Z',
     })),
+  };
+}
+
+function draftComment(id: string, path: string) {
+  return {
+    id,
+    path,
+    side: 'RIGHT' as const,
+    line: 1,
+    startLine: null,
+    startSide: null,
+  };
+}
+
+function reviewFiles(paths: string[]): DiffFilePatch[] {
+  return paths.map((path) => ({
+    path,
+    status: 'modified',
+    additions: 1,
+    deletions: 0,
+  }));
+}
+
+function reviewThread(id: string, path: string): GitHubPullRequestReviewThread {
+  return {
+    id,
+    isResolved: false,
+    isOutdated: false,
+    path,
+    line: 1,
+    originalLine: null,
+    diffSide: 'RIGHT',
+    pullRequestRepo: 'pandemicsyn/neondeck',
+    pullRequestNumber: 123,
+    comments: [],
+  };
+}
+
+function patchQueryState(
+  input: Partial<{
+    hasData: boolean;
+    isError: boolean;
+    isLoading: boolean;
+  }>,
+) {
+  return {
+    file: null,
+    hasData: false,
+    isError: false,
+    isLoading: false,
+    error: null,
+    ...input,
   };
 }

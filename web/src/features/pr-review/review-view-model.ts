@@ -49,13 +49,17 @@ export function draftCommentIdsWithUnknownPatch(
   draft: GitHubPrReviewDraft | null,
   files: DiffFilePatch[],
   patchQueryByPath: Map<string, PullRequestFilePatchQueryState>,
+  deferredPatchPaths: ReadonlySet<string> = new Set(),
 ) {
   const unknown = new Set<string>();
   for (const comment of draft?.comments ?? []) {
     const file = files.find((item) => item.path === comment.path);
     if (patchHasContent(file?.patch)) continue;
     const query = patchQueryByPath.get(comment.path);
-    if (query && (query.isLoading || query.isError || !query.hasData)) {
+    if (
+      deferredPatchPaths.has(comment.path) ||
+      (query && (query.isLoading || query.isError || !query.hasData))
+    ) {
       unknown.add(comment.id);
     }
   }
@@ -69,7 +73,13 @@ export function firstReviewablePath(files: DiffFilePatch[]) {
   );
 }
 
-export function reviewPatchPaths({
+export function reviewPatchQuerySettled(
+  query: PullRequestFilePatchQueryState | undefined,
+) {
+  return Boolean(query?.hasData || query?.isError);
+}
+
+export function backgroundReviewPatchPaths({
   activePath,
   draft,
   files,
@@ -81,15 +91,19 @@ export function reviewPatchPaths({
   unresolvedThreads: GitHubPullRequestReviewThread[];
 }) {
   const availablePaths = new Set(files.map((file) => file.path));
+  const activeIndex = activePath
+    ? files.findIndex((file) => file.path === activePath)
+    : -1;
   const paths = [
-    activePath,
+    activeIndex >= 0 ? files[activeIndex - 1]?.path : null,
+    activeIndex >= 0 ? files[activeIndex + 1]?.path : null,
     ...(draft?.comments.map((comment) => comment.path) ?? []),
     ...unresolvedThreads
       .map(threadPath)
       .filter((path): path is string => Boolean(path)),
   ];
   return [...new Set(paths)].filter((path): path is string =>
-    Boolean(path && availablePaths.has(path)),
+    Boolean(path && path !== activePath && availablePaths.has(path)),
   );
 }
 
