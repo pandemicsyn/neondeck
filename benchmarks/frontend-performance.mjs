@@ -36,6 +36,12 @@ const scenarios = [
   scenario('chat/10', 'chat', '10'),
   scenario('chat/100', 'chat', '100'),
   scenario('chat/500', 'chat', '500', { timeoutMs: 60_000 }),
+  scenario('chat/10/isolated', 'chat', '10', { variant: 'isolated' }),
+  scenario('chat/100/isolated', 'chat', '100', { variant: 'isolated' }),
+  scenario('chat/500/isolated', 'chat', '500', {
+    variant: 'isolated',
+    timeoutMs: 60_000,
+  }),
   scenario('runtime/1', 'runtime', '1'),
   scenario('runtime/2', 'runtime', '2'),
   scenario('runtime/4', 'runtime', '4'),

@@ -37,12 +37,8 @@ import {
 } from '../../../components/ui';
 import { queryKeys } from '../../../lib/query';
 import { CommandResultSummary, CommandTypeahead } from './command-controls';
-import { SessionActivityRow } from './session-activity-row';
-import {
-  ChatPartEvent,
-  errorMessage,
-  renderMessagePart,
-} from './message-parts';
+import { ChatTimelineItems } from './chat-timeline';
+import { errorMessage } from './message-parts';
 import {
   clampCommandIndex,
   commandQueryFromInput,
@@ -94,7 +90,10 @@ export function FlueChatSessionView({
     name: agentName,
     id: session?.id,
   });
-  const messages = chatMessagesForRender(agent.messages);
+  const messages = useMemo(
+    () => chatMessagesForRender(agent.messages),
+    [agent.messages],
+  );
   const commandsQuery = useQuery({
     queryKey: queryKeys.neonCommands,
     queryFn: getNeonCommands,
@@ -140,11 +139,15 @@ export function FlueChatSessionView({
     enabled: Boolean(session?.id && linkedWatchId),
     refetchInterval: 30_000,
   });
-  const activity = sessionActivityForLinkedWatch(
-    linkedWatchId,
-    activityQuery.data?.items,
+  const activity = useMemo(
+    () =>
+      sessionActivityForLinkedWatch(linkedWatchId, activityQuery.data?.items),
+    [activityQuery.data?.items, linkedWatchId],
   );
-  const timelineItems = sessionTimelineItems(messages, activity);
+  const timelineItems = useMemo(
+    () => sessionTimelineItems(messages, activity),
+    [activity, messages],
+  );
 
   useEffect(() => {
     setRequestedCommandIndex(0);
@@ -538,54 +541,10 @@ export function FlueChatSessionView({
               }
             />
           ))}
-          {timelineItems.length === 0 ? (
-            <div className="flex flex-1 items-center justify-center text-center text-[13px] text-muted">
-              <div className="max-w-[42ch]">
-                <div className="miami-accent mx-auto mb-2 h-1.5 w-12" />
-                <p className="font-medium text-ink">
-                  {session ? 'Session ready' : 'Resolving session'}
-                </p>
-                <p className="mt-1 leading-5">
-                  {session
-                    ? 'Messages persist through the local Flue SQLite store.'
-                    : 'Chat will attach when the active durable session is available.'}
-                </p>
-              </div>
-            </div>
-          ) : (
-            timelineItems.map((item) => {
-              if (item.kind === 'activity') {
-                return (
-                  <SessionActivityRow activity={item.activity} key={item.id} />
-                );
-              }
-
-              const message = item.message;
-              return (
-                <article
-                  className={`chat-message chat-message-${message.role} space-y-1.5`}
-                  key={item.id}
-                >
-                  <p className="font-mono text-[10px] font-semibold text-muted">
-                    {message.role}
-                  </p>
-                  <div className="space-y-2 text-[13px] leading-[1.55] text-ink">
-                    {message.parts.length > 0 ? (
-                      message.parts.map((part, index) =>
-                        renderMessagePart(part, `${message.id}-${index}`),
-                      )
-                    ) : (
-                      <ChatPartEvent
-                        kind="event"
-                        name="assistant message"
-                        preview="No visible message parts were returned."
-                      />
-                    )}
-                  </div>
-                </article>
-              );
-            })
-          )}
+          <ChatTimelineItems
+            hasSession={Boolean(session)}
+            items={timelineItems}
+          />
         </div>
       </ScrollArea>
       <div className="relative shrink-0 border-t border-line bg-field">

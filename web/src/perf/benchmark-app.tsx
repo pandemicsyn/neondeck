@@ -4,7 +4,7 @@ import {
   useQueries,
 } from '@tanstack/react-query';
 import { Virtualizer } from '@pierre/diffs/react';
-import { Profiler, useMemo, useState, type ChangeEvent } from 'react';
+import { memo, Profiler, useMemo, useState, type ChangeEvent } from 'react';
 import { Badge, Card } from '../components/ui';
 import { MarkdownMessage } from '../components/MarkdownMessage';
 import {
@@ -85,6 +85,7 @@ function renderSurface(config: BenchmarkConfig) {
     return (
       <ChatBenchmark
         count={config.count ?? positiveInteger(config.tier) ?? 100}
+        variant={config.variant}
       />
     );
   }
@@ -187,22 +188,16 @@ function DiffBenchmark({ tier, variant }: { tier: string; variant: string }) {
   );
 }
 
-function ChatBenchmark({ count }: { count: number }) {
+function ChatBenchmark({ count, variant }: { count: number; variant: string }) {
   const messages = useMemo(() => createChatMessages(count), [count]);
   const [input, setInput] = useState('');
   return (
     <div className="perf-chat-shell">
-      <div className="perf-chat-timeline">
-        {messages.map((message) => (
-          <article
-            className={`chat-message chat-message-${message.role}`}
-            key={message.id}
-          >
-            <p className="perf-message-role">{message.role}</p>
-            <MeasuredMarkdownMessage>{message.body}</MeasuredMarkdownMessage>
-          </article>
-        ))}
-      </div>
+      {variant === 'isolated' ? (
+        <IsolatedChatTimeline messages={messages} />
+      ) : (
+        <ChatTimeline messages={messages} />
+      )}
       <label className="perf-composer">
         <span>Benchmark composer</span>
         <textarea
@@ -214,6 +209,28 @@ function ChatBenchmark({ count }: { count: number }) {
           value={input}
         />
       </label>
+    </div>
+  );
+}
+
+const IsolatedChatTimeline = memo(ChatTimeline);
+
+function ChatTimeline({
+  messages,
+}: {
+  messages: ReturnType<typeof createChatMessages>;
+}) {
+  return (
+    <div className="perf-chat-timeline">
+      {messages.map((message) => (
+        <article
+          className={`chat-message chat-message-${message.role}`}
+          key={message.id}
+        >
+          <p className="perf-message-role">{message.role}</p>
+          <MeasuredMarkdownMessage>{message.body}</MeasuredMarkdownMessage>
+        </article>
+      ))}
     </div>
   );
 }
