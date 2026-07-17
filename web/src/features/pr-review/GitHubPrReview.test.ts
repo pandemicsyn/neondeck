@@ -21,6 +21,7 @@ import {
   draftCommentIdsWithUnknownPatch,
   reviewPatchQuerySettled,
 } from './review-view-model';
+import { clearCompletedEditor } from './review-ui-helpers';
 import capturedReviewPatch from './fixtures/captured-review.patch?raw';
 
 describe('GitHubPrReview helpers', () => {
@@ -342,6 +343,28 @@ describe('GitHubPrReview helpers', () => {
         new Set(['src/deferred.ts']),
       ),
     ).toEqual(new Set(['deferred']));
+  });
+
+  it('clears only the editor instance whose mutation completed', () => {
+    const submitted = { body: 'First draft', commentId: 'comment-1', token: 1 };
+    const newerComment = {
+      body: 'Do not erase this draft',
+      commentId: 'comment-2',
+      token: 2,
+    };
+    const reopenedComment = {
+      body: 'A newer draft for the same comment',
+      commentId: 'comment-1',
+      token: 3,
+    };
+
+    expect(clearCompletedEditor(submitted, submitted.token)).toBeNull();
+    expect(clearCompletedEditor(newerComment, submitted.token)).toBe(
+      newerComment,
+    );
+    expect(clearCompletedEditor(reopenedComment, submitted.token)).toBe(
+      reopenedComment,
+    );
   });
 });
 
