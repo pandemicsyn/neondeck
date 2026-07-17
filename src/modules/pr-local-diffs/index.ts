@@ -1,5 +1,9 @@
 import { runExecFile } from '../../lib/exec';
-import { gitDiff, type RepoDiffFile } from '../../repo-edit/git';
+import {
+  gitDiff,
+  type RepoDiffFile,
+  type RepoDiffResult,
+} from '../../repo-edit/git';
 import {
   ensureRuntimeHome,
   parseRepoRegistry,
@@ -37,6 +41,22 @@ export type LocalPullRequestDiffInput = {
 };
 
 const fetchFlights = new Map<string, Promise<void>>();
+const metadataFlights = new Map<string, Promise<CachedRevisionMetadata>>();
+const metadataCache = new Map<string, CachedRevisionMetadata>();
+const metadataCacheMaxEntries = 8;
+const metadataCacheTtlMs = 10 * 60 * 1_000;
+
+type LocalPullRequestRevision = {
+  repo: RepoConfig;
+  head: string;
+  mergeBase: string;
+};
+
+type CachedRevisionMetadata = {
+  diff: RepoDiffResult;
+  fetchedAt: string;
+  expiresAt: number;
+};
 
 export async function readLocalPullRequestFiles(
   input: LocalPullRequestDiffInput,
@@ -44,22 +64,7 @@ export async function readLocalPullRequestFiles(
 ): Promise<GitHubPullRequestFiles> {
   const repo = await resolveRegisteredRepo(input, paths);
   const refs = await resolveLocalPullRequestRefs(repo, input);
-
-  const diff = await gitDiff(repo.path, {
-    base: refs.mergeBase,
-    head: refs.head,
-    paths: input.paths,
-    includePatch: input.includePatches ?? false,
-    maxPatchBytes: input.maxPatchBytes,
-  });
-  const files = diff.files.map(toPullRequestFile);
-  return {
-    repo: repoFullName(repo),
-    number: input.number,
-    files,
-    diffSummary: diff.summary,
-    fetchedAt: new Date().toISOString(),
-  };
+  return readResolvedPullRequestFiles(input, { repo, ...refs });
 }
 
 export async function readLocalPullRequestFileDiff(
@@ -71,13 +76,16 @@ export async function readLocalPullRequestFileDiff(
   diffSummary: GitHubDiffSummary;
   fetchedAt: string;
 }> {
-  const metadata = await readLocalPullRequestFiles(
+  const repo = await resolveRegisteredRepo(input, paths);
+  const refs = await resolveLocalPullRequestRefs(repo, input);
+  const revision = { repo, ...refs };
+  const metadata = await readResolvedPullRequestFiles(
     {
       ...input,
       paths: undefined,
       includePatches: false,
     },
-    paths,
+    revision,
   );
   const metadataFile =
     metadata.files.find((item) => item.path === input.path) ?? null;
@@ -85,13 +93,13 @@ export async function readLocalPullRequestFileDiff(
     ...(metadataFile?.previousPath ? [metadataFile.previousPath] : []),
     input.path,
   ];
-  const diff = await readLocalPullRequestFiles(
+  const diff = await readResolvedPullRequestFiles(
     {
       ...input,
       paths: pathspec,
       includePatches: true,
     },
-    paths,
+    revision,
   );
   const file =
     diff.files.find((item) => item.path === input.path) ?? metadataFile;
@@ -101,6 +109,81 @@ export async function readLocalPullRequestFileDiff(
     diffSummary: diff.diffSummary,
     fetchedAt: diff.fetchedAt,
   };
+}
+
+async function readResolvedPullRequestFiles(
+  input: LocalPullRequestDiffInput,
+  revision: LocalPullRequestRevision,
+): Promise<GitHubPullRequestFiles> {
+  const metadataOnly = !(input.includePatches ?? false) && !input.paths?.length;
+  const result = metadataOnly
+    ? await readRevisionMetadata(revision)
+    : {
+        diff: await gitDiff(revision.repo.path, {
+          base: revision.mergeBase,
+          head: revision.head,
+          paths: input.paths,
+          includePatch: input.includePatches ?? false,
+          maxPatchBytes: input.maxPatchBytes,
+        }),
+        fetchedAt: new Date().toISOString(),
+      };
+  return {
+    repo: repoFullName(revision.repo),
+    number: input.number,
+    files: result.diff.files.map(toPullRequestFile),
+    diffSummary: { ...result.diff.summary },
+    fetchedAt: result.fetchedAt,
+  };
+}
+
+function readRevisionMetadata(revision: LocalPullRequestRevision) {
+  const key = metadataKey(revision);
+  const cached = metadataCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    metadataCache.delete(key);
+    metadataCache.set(key, cached);
+    return Promise.resolve(cached);
+  }
+  if (cached) metadataCache.delete(key);
+
+  const existing = metadataFlights.get(key);
+  if (existing) return existing;
+  const promise = gitDiff(revision.repo.path, {
+    base: revision.mergeBase,
+    head: revision.head,
+    includePatch: false,
+  })
+    .then((diff) => {
+      const value = {
+        diff,
+        fetchedAt: new Date().toISOString(),
+        expiresAt: Date.now() + metadataCacheTtlMs,
+      };
+      storeRevisionMetadata(key, value);
+      return value;
+    })
+    .finally(() => metadataFlights.delete(key));
+  metadataFlights.set(key, promise);
+  return promise;
+}
+
+function storeRevisionMetadata(key: string, value: CachedRevisionMetadata) {
+  const now = Date.now();
+  for (const [cachedKey, cached] of metadataCache) {
+    if (cached.expiresAt <= now) metadataCache.delete(cachedKey);
+  }
+  metadataCache.delete(key);
+  metadataCache.set(key, value);
+  while (metadataCache.size > metadataCacheMaxEntries) {
+    const oldestKey = metadataCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    metadataCache.delete(oldestKey);
+  }
+}
+
+function metadataKey(revision: LocalPullRequestRevision) {
+  return [revision.repo.path, revision.mergeBase, revision.head].join('\u0000');
 }
 
 async function resolveRegisteredRepo(

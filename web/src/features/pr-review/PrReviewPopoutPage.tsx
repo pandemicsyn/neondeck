@@ -54,7 +54,11 @@ export function PrReviewPopoutPage({
           title="GitHub PR detail unavailable"
         />
       ) : null}
-      <GitHubPrReview mode="standalone" pr={pullRequest} />
+      <GitHubPrReview
+        mode="standalone"
+        pr={pullRequest}
+        reviewThreadsActivityVersion={prQuery.data?.updatedAt ?? null}
+      />
     </section>
   );
 }

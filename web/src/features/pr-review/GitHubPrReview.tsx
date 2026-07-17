@@ -60,12 +60,19 @@ type GitHubPrReviewMode = 'embedded' | 'standalone';
 export function GitHubPrReview({
   mode = 'embedded',
   pr,
+  reviewThreadsActivityVersion,
 }: {
   mode?: GitHubPrReviewMode;
   pr: GitHubPullRequest;
+  reviewThreadsActivityVersion?: string | null;
 }) {
   const filesQuery = useGitHubPullRequestFileList(pr);
-  const threadsQuery = useGitHubPrReviewThreads(pr);
+  const threadsQuery = useGitHubPrReviewThreads(
+    pr,
+    reviewThreadsActivityVersion === undefined
+      ? pr.updatedAt
+      : reviewThreadsActivityVersion,
+  );
   const draftQuery = useGitHubPrReviewDraft(pr);
   const mutations = useGitHubPrReviewMutations(pr);
   const {
