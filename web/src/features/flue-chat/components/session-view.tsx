@@ -1,7 +1,11 @@
+// The multiline composer intentionally implements the WAI-ARIA combobox
+// pattern; replacing it with a single-line input would remove message editing.
+/* oxlint-disable jsx-a11y/prefer-tag-over-role */
 import { useFlueAgent, useFlueClient } from '@flue/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -39,6 +43,7 @@ import {
   renderMessagePart,
 } from './message-parts';
 import {
+  clampCommandIndex,
   commandQueryFromInput,
   filterCommands,
   mergeCommandCatalog,
@@ -75,11 +80,12 @@ export function FlueChatSessionView({
   const [commandEvents, setCommandEvents] = useState<CommandEvent[]>([]);
   const [runningCommand, setRunningCommand] = useState<string>();
   const [commandSubmitting, setCommandSubmitting] = useState(false);
-  const [activeCommandIndex, setActiveCommandIndex] = useState(0);
+  const [requestedCommandIndex, setRequestedCommandIndex] = useState(0);
   const [dismissedCommandInput, setDismissedCommandInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [submitError, setSubmitError] = useState<string>();
   const commandSubmitLockRef = useRef(false);
+  const commandTypeaheadId = useId();
   const queryClient = useQueryClient();
   const flue = useFlueClient();
   const agent = useFlueAgent({
@@ -114,8 +120,11 @@ export function FlueChatSessionView({
     commandQuery !== undefined &&
     dismissedCommandInput !== input &&
     visibleCommands.length > 0;
-  const activeCommand =
-    visibleCommands[Math.min(activeCommandIndex, visibleCommands.length - 1)];
+  const activeCommandIndex = clampCommandIndex(
+    requestedCommandIndex,
+    visibleCommands.length,
+  );
+  const activeCommand = visibleCommands[activeCommandIndex];
   const historyInputBlocked =
     pendingHistoryRefresh || Boolean(historyRefreshError);
   const commandBusy = commandSubmitting || Boolean(runningCommand);
@@ -145,7 +154,7 @@ export function FlueChatSessionView({
   const timelineItems = sessionTimelineItems(messages, activity);
 
   useEffect(() => {
-    setActiveCommandIndex(0);
+    setRequestedCommandIndex(0);
   }, [commandQuery]);
 
   useEffect(() => {
@@ -448,14 +457,16 @@ export function FlueChatSessionView({
     if (commandMenuOpen && activeCommand) {
       if (event.key === 'ArrowDown') {
         event.preventDefault();
-        setActiveCommandIndex((index) => (index + 1) % visibleCommands.length);
+        setRequestedCommandIndex(
+          (activeCommandIndex + 1) % visibleCommands.length,
+        );
         return;
       }
       if (event.key === 'ArrowUp') {
         event.preventDefault();
-        setActiveCommandIndex(
-          (index) =>
-            (index - 1 + visibleCommands.length) % visibleCommands.length,
+        setRequestedCommandIndex(
+          (activeCommandIndex - 1 + visibleCommands.length) %
+            visibleCommands.length,
         );
         return;
       }
@@ -491,7 +502,11 @@ export function FlueChatSessionView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <ScrollArea className="chat-log flex-1">
+      <ScrollArea
+        aria-label="Chat transcript"
+        aria-live="polite"
+        className="chat-log flex-1"
+      >
         <div className="flex min-h-full flex-col gap-3 px-[18px] py-3.5">
           <div className="flex items-center justify-between font-mono text-[10.5px] text-muted">
             <span className="text-primary">
@@ -500,7 +515,10 @@ export function FlueChatSessionView({
             <Badge>{agent.status}</Badge>
           </div>
           {sessionState?.stale ? (
-            <div className="border border-accent/60 bg-soft px-2.5 py-2 text-[10.5px] leading-4 text-muted">
+            <div
+              className="border border-accent/60 bg-soft px-2.5 py-2 text-[10.5px] leading-4 text-muted"
+              role="alert"
+            >
               <div className="flex items-center justify-between gap-2 font-mono">
                 <span className="text-accent">CONTEXT STALE</span>
                 <Badge className="border-accent text-accent">
@@ -514,7 +532,10 @@ export function FlueChatSessionView({
             </div>
           ) : null}
           {historyRefreshError ? (
-            <div className="border border-accent/60 bg-soft px-2.5 py-2 text-[10.5px] leading-4 text-muted">
+            <div
+              className="border border-accent/60 bg-soft px-2.5 py-2 text-[10.5px] leading-4 text-muted"
+              role="alert"
+            >
               <div className="flex items-center justify-between gap-2 font-mono">
                 <span className="text-accent">HISTORY REFRESH FAILED</span>
                 <Button
@@ -532,13 +553,19 @@ export function FlueChatSessionView({
             </div>
           ) : null}
           {commandEventsQuery.error ? (
-            <div className="border border-accent/60 bg-soft px-2.5 py-2 font-mono text-[10.5px] leading-4 text-accent">
+            <div
+              className="border border-accent/60 bg-soft px-2.5 py-2 font-mono text-[10.5px] leading-4 text-accent"
+              role="alert"
+            >
               COMMAND HISTORY UNAVAILABLE ·{' '}
               {errorMessage(commandEventsQuery.error)}
             </div>
           ) : null}
           {linkedWatchId && activityQuery.error ? (
-            <div className="border border-accent/60 bg-soft px-2.5 py-2 font-mono text-[10.5px] leading-4 text-accent">
+            <div
+              className="border border-accent/60 bg-soft px-2.5 py-2 font-mono text-[10.5px] leading-4 text-accent"
+              role="alert"
+            >
               SESSION ACTIVITY UNAVAILABLE · {errorMessage(activityQuery.error)}
             </div>
           ) : null}
@@ -617,21 +644,34 @@ export function FlueChatSessionView({
           activeCommand={activeCommand}
           activeCommandIndex={activeCommandIndex}
           commands={visibleCommands}
+          id={commandTypeaheadId}
           open={commandMenuOpen}
           onSelect={completeCommand}
         />
         {submitError ? (
-          <div className="border-b border-accent/50 px-4 py-1 font-mono text-[10.5px] leading-4 text-accent">
+          <div
+            className="border-b border-accent/50 px-4 py-1 font-mono text-[10.5px] leading-4 text-accent"
+            role="alert"
+          >
             {submitError}
           </div>
         ) : null}
-        <form className="flex h-11 items-center gap-2.5 px-4" onSubmit={submit}>
+        <form
+          className="flue-chat-composer flex min-h-11 items-center gap-2.5 px-4"
+          onSubmit={submit}
+        >
           <span className="font-mono text-[13px] text-accent">›</span>
           <Textarea
+            aria-activedescendant={
+              commandMenuOpen
+                ? `${commandTypeaheadId}-option-${activeCommandIndex}`
+                : undefined
+            }
             aria-autocomplete="list"
-            aria-controls="flue-command-typeahead"
+            aria-controls={commandTypeaheadId}
             aria-expanded={commandMenuOpen}
-            className="dashboard-input h-7 flex-1 overflow-hidden px-0 py-1 font-mono text-[13px] leading-5 caret-primary"
+            aria-label="Message Neon"
+            className="dashboard-input h-7 min-w-0 flex-1 overflow-hidden px-0 py-1 font-mono text-[13px] leading-5 caret-primary"
             onChange={(event) => {
               setInput(event.target.value);
               setDismissedCommandInput('');
@@ -640,12 +680,13 @@ export function FlueChatSessionView({
             onKeyDown={handleKeyDown}
             placeholder={inputPlaceholder}
             rows={1}
+            role="combobox"
             disabled={
               !session || historyInputBlocked || sendingMessage || commandBusy
             }
             value={input}
           />
-          <Kbd>
+          <Kbd className="flue-chat-composer-hint">
             {commandMenuOpen
               ? 'Tab complete'
               : historyInputBlocked
@@ -659,7 +700,7 @@ export function FlueChatSessionView({
                       : '/ commands | Enter send'}
           </Kbd>
           <Button
-            className="sr-only"
+            className="flue-chat-send min-h-[28px] shrink-0 bg-transparent px-2 py-1 font-mono text-[10px]"
             disabled={
               !session ||
               historyInputBlocked ||

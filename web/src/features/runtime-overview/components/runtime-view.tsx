@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { Badge, ScrollArea } from '../../../components/ui';
 import type { RuntimeStatus } from '../../../api';
 import {
@@ -85,7 +86,9 @@ export function RuntimeView({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="panel-header flex h-8 items-center justify-between border-b border-line px-3 font-mono text-[10.5px] tracking-[0.12em]">
-        <span className="text-violet">RUNTIME</span>
+        <h2 className="m-0 text-[inherit] font-[inherit] text-violet">
+          RUNTIME
+        </h2>
         <Badge
           className={
             snapshot.status.ok
@@ -475,6 +478,7 @@ function RuntimeHome({
   status: RuntimeStatus;
   repoCount: number;
 }) {
+  const headingId = useId();
   const model = status.models.displayAssistant;
   const provider = providerStatusSummary(
     status,
@@ -485,12 +489,18 @@ function RuntimeHome({
     ? status.models.utility
     : `${status.models.utility} fallback`;
   return (
-    <section className="border border-line bg-soft p-2.5">
+    <section
+      aria-labelledby={headingId}
+      className="border border-line bg-soft p-2.5"
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="font-mono text-[10px] tracking-[0.12em] text-muted">
+          <h3
+            className="m-0 font-mono text-[10px] font-normal tracking-[0.12em] text-muted"
+            id={headingId}
+          >
             NEONDECK_HOME
-          </p>
+          </h3>
           <p className="mt-1 truncate font-mono text-[11px] text-ink">
             {shortPath(status.home)}
           </p>

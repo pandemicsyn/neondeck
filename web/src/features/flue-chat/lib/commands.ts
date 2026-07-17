@@ -66,6 +66,11 @@ export function filterCommands(
   });
 }
 
+export function clampCommandIndex(index: number, commandCount: number) {
+  if (commandCount <= 0) return 0;
+  return Math.min(Math.max(index, 0), commandCount - 1);
+}
+
 function commandFromDefinition(
   definition: NeonCommandDefinition,
 ): FlueChatCommand {

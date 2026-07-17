@@ -93,7 +93,7 @@ function ReviewPopoutState({
 }) {
   return (
     <div className="pr-review-popout-state">
-      <EmptyState detail={detail} title={title} />
+      <EmptyState detail={detail} title={title} tone="alert" />
     </div>
   );
 }

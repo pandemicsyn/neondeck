@@ -62,6 +62,8 @@ export function RuntimeConfigControls({
   const skipProviderSyncForStatus = useRef<string | null>(null);
   const [modelMessage, setModelMessage] = useState<string | null>(null);
   const [providerMessage, setProviderMessage] = useState<string | null>(null);
+  const [modelMessageIsError, setModelMessageIsError] = useState(false);
+  const [providerMessageIsError, setProviderMessageIsError] = useState(false);
   const [savingModels, setSavingModels] = useState(false);
   const [savingProvider, setSavingProvider] = useState(false);
 
@@ -110,6 +112,7 @@ export function RuntimeConfigControls({
     event.preventDefault();
     setSavingModels(true);
     setModelMessage(null);
+    setModelMessageIsError(false);
 
     try {
       const input = modelUpdateInput(status, {
@@ -136,6 +139,7 @@ export function RuntimeConfigControls({
       setModelDirty(false);
       onRefresh();
     } catch (cause) {
+      setModelMessageIsError(true);
       setModelMessage(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setSavingModels(false);
@@ -146,6 +150,7 @@ export function RuntimeConfigControls({
     event.preventDefault();
     setSavingProvider(true);
     setProviderMessage(null);
+    setProviderMessageIsError(false);
 
     try {
       const result = await updateProvider(providerId, {
@@ -160,6 +165,7 @@ export function RuntimeConfigControls({
       setProviderDirty(false);
       onRefresh();
     } catch (cause) {
+      setProviderMessageIsError(true);
       setProviderMessage(
         cause instanceof Error ? cause.message : String(cause),
       );
@@ -282,7 +288,9 @@ export function RuntimeConfigControls({
           options={thinkingLevelOptions}
           value={releaseThinking}
         />
-        {modelMessage ? <ConfigMessage message={modelMessage} /> : null}
+        {modelMessage ? (
+          <ConfigMessage error={modelMessageIsError} message={modelMessage} />
+        ) : null}
       </form>
       <form
         className="space-y-2 border border-line bg-soft px-2.5 py-2"
@@ -349,7 +357,12 @@ export function RuntimeConfigControls({
           Environment variable references only. Provider registration changes
           apply after server restart.
         </p>
-        {providerMessage ? <ConfigMessage message={providerMessage} /> : null}
+        {providerMessage ? (
+          <ConfigMessage
+            error={providerMessageIsError}
+            message={providerMessage}
+          />
+        ) : null}
       </form>
     </div>
   );
@@ -557,9 +570,19 @@ export function providerStatusSummary(status: RuntimeStatus, provider: string) {
   };
 }
 
-function ConfigMessage({ message }: { message: string }) {
+function ConfigMessage({
+  error,
+  message,
+}: {
+  error: boolean;
+  message: string;
+}) {
   return (
-    <p className="line-clamp-2 border border-line bg-field px-2 py-1 text-[10.5px] leading-4 text-muted">
+    <p
+      aria-live={error ? 'assertive' : 'polite'}
+      className={`line-clamp-2 border border-line bg-field px-2 py-1 text-[10.5px] leading-4 ${error ? 'text-accent' : 'text-muted'}`}
+      role={error ? 'alert' : 'status'}
+    >
       {message}
     </p>
   );

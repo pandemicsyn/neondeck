@@ -85,12 +85,19 @@ export const WorkflowObservabilityPanelPlugin = {
         <EmptyState
           title="Workflows unavailable"
           detail={queryErrorMessage(error)}
+          tone="alert"
         />
       );
     }
 
     if (!workflows) {
-      return <EmptyState title="Workflows unavailable" detail="No data." />;
+      return (
+        <EmptyState
+          title="Workflows unavailable"
+          detail="No data."
+          tone="alert"
+        />
+      );
     }
 
     return (
@@ -124,7 +131,9 @@ function WorkflowObservabilityView({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="panel-header flex h-8 items-center justify-between border-b border-line px-3 font-mono text-[10.5px] tracking-[0.12em]">
-        <span className="text-violet">WORKFLOWS</span>
+        <h2 className="m-0 text-[inherit] font-[inherit] text-violet">
+          WORKFLOWS
+        </h2>
         <Badge className={counts.failed > 0 ? 'border-accent text-accent' : ''}>
           {counts.active} active · {counts.failed} failed
         </Badge>
@@ -136,9 +145,13 @@ function WorkflowObservabilityView({
           <Metric label="events" value={counts.events} />
           <Metric label="runs" value={counts.active} />
         </div>
-        <div className="mt-2 grid grid-cols-5 gap-1">
+        <fieldset
+          aria-label="Workflow observations"
+          className="m-0 mt-2 grid min-w-0 grid-cols-5 gap-1 border-0 p-0"
+        >
           {filters.map((option) => (
             <button
+              aria-pressed={option.id === filter}
               className={
                 option.id === filter
                   ? 'border border-primary bg-soft px-1.5 py-1 font-mono text-[10px] text-primary'
@@ -151,7 +164,7 @@ function WorkflowObservabilityView({
               {option.label}
             </button>
           ))}
-        </div>
+        </fieldset>
       </div>
       <ScrollArea className="flex-1">
         <div className="space-y-1.5 p-3">

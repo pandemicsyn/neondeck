@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useId } from 'react';
 import { getMemories, type MemoryRecord, type MemoryScope } from '../api';
 import { Badge, EmptyState, MiniEmpty, ScrollArea } from '../components/ui';
 import { queryErrorMessage, queryKeys } from '../lib/query';
@@ -38,6 +39,7 @@ export const MemoryPanelPlugin = {
         <EmptyState
           title="Memory unavailable"
           detail={queryErrorMessage(error)}
+          tone="alert"
         />
       );
     }
@@ -53,17 +55,25 @@ function MemoryView({
   limit: number;
   memories: MemoryRecord[];
 }) {
+  const headingId = useId();
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="panel-header flex h-8 items-center justify-between border-b border-line px-3 font-mono text-[10.5px] tracking-[0.12em]">
-        <span className="text-violet">MEMORY</span>
+        <h2 className="m-0 text-[inherit] font-[inherit] text-violet">
+          MEMORY
+        </h2>
         <Badge>{memories.length} entries</Badge>
       </header>
       <ScrollArea className="flex-1">
         <div className="space-y-2.5 p-3">
-          <section>
+          <section aria-labelledby={headingId}>
             <div className="mb-1.5 flex items-center justify-between font-mono text-[10px] tracking-[0.12em]">
-              <span className="text-primary">DURABLE NOTES</span>
+              <h3
+                className="m-0 text-[inherit] font-[inherit] text-primary"
+                id={headingId}
+              >
+                DURABLE NOTES
+              </h3>
               <span className="text-muted">{memories.length}</span>
             </div>
             <div className="space-y-1.5">

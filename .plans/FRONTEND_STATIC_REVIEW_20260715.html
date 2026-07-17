@@ -249,6 +249,15 @@
         margin-bottom: 0;
       }
 
+      .completion-note {
+        border-color: var(--green);
+        background: var(--panel);
+      }
+
+      .completion-note .gate-mark {
+        color: var(--green);
+      }
+
       .stats {
         display: grid;
         grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -459,6 +468,29 @@
         font-weight: 650;
       }
 
+      .completion {
+        display: inline-flex;
+        align-items: center;
+        min-height: 22px;
+        border: 1px solid var(--green);
+        background: var(--panel);
+        padding: 2px 8px;
+        color: var(--green);
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+      }
+
+      .finding[data-status="completed"] {
+        border-color: var(--green);
+      }
+
+      .finding[data-status="completed"] summary {
+        background: var(--panel);
+      }
+
       .finding-body {
         display: grid;
         grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
@@ -576,6 +608,11 @@
         color: var(--pink);
         font-family: var(--mono);
         font-size: 11px;
+      }
+
+      .ordered li.completed-action {
+        border-color: var(--green);
+        background: var(--panel);
       }
 
       .empty-filter {
@@ -780,6 +817,16 @@
             </p>
           </div>
 
+          <div class="gate completion-note">
+            <div class="gate-mark">DELIVERED</div>
+            <p>
+              <strong>Implementation status:</strong> recommended steps 1–3 are complete in the
+              UI-hardening pull request. The original findings remain below as the audit baseline
+              and are marked completed; severity counts and score are intentionally unchanged
+              until the planned re-audit.
+            </p>
+          </div>
+
           <div class="stats" aria-label="Finding counts by severity">
             <div class="stat"><span class="label">P0 BLOCKING</span><strong class="p0">0</strong></div>
             <div class="stat"><span class="label">P1 MAJOR</span><strong class="p1">11</strong></div>
@@ -976,43 +1023,43 @@
 
           <p id="filter-count" class="meta" aria-live="polite">Showing 26 findings.</p>
           <div id="nonperf-findings" class="finding-list">
-            <details class="finding" data-severity="p1" data-category="ui theming accessibility" open>
-              <summary><span class="severity p1">P1</span><span class="finding-title">Semantic colors and placeholder tokens fail AA in both themes</span></summary>
+            <details class="finding" data-severity="p1" data-category="ui theming accessibility" data-status="completed" open>
+              <summary><span class="severity p1">P1</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Semantic colors and placeholder tokens fail AA in both themes</span></summary>
               <div class="finding-body"><div><h3>Impact</h3><p>Small labels, links, errors, statuses, placeholders, and some focus indicators are difficult to read, especially in light theme.</p><h3>Measured ratios</h3><p>Light primary 3.31:1 on panel / 2.97:1 on field; strong primary 2.21:1 / 1.98:1; accent 4.17:1 / 3.74:1; light faint placeholder 2.83:1; dark faint 3.46:1; dark violet 4.31:1.</p><h3>Recommendation</h3><p>Darken light cyan/strong/accent and dark violet, create a separate AA placeholder token, and verify every semantic token on panel, field, soft, and tinted surfaces. WCAG 1.4.3 and 1.4.11.</p></div><div><h3>Evidence</h3><p class="source">web/src/styles.css:25-91, 420-426, 1247-1250, 1521-1523<br />web/src/features/runtime-overview/components/runtime-view.tsx:87-97<br />web/src/plugins/AutopilotPanel.tsx:245-254</p><span class="chip">$impeccable colorize</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="ui accessibility" open>
-              <summary><span class="severity p1">P1</span><span class="finding-title">Chat, rename, and Autopilot revision fields have no accessible name</span></summary>
+            <details class="finding" data-severity="p1" data-category="ui accessibility" data-status="completed" open>
+              <summary><span class="severity p1">P1</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Chat, rename, and Autopilot revision fields have no accessible name</span></summary>
               <div class="finding-body"><div><h3>Impact</h3><p>Screen-reader and voice-control users encounter unnamed textboxes; placeholder text is not a persistent label.</p><h3>Recommendation</h3><p>Add associated labels or exact accessible names: “Message Neon,” “Session title,” and “Revision reason.” WCAG 1.3.1, 3.3.2, 4.1.2.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/components/session-view.tsx:628-647<br />web/src/features/flue-chat/plugin.tsx:317-330<br />web/src/plugins/AutopilotPanel.tsx:727-734</p><span class="chip">$impeccable harden</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="ui accessibility" open>
-              <summary><span class="severity p1">P1</span><span class="finding-title">Slash-command autocomplete is not exposed as a combobox/listbox</span></summary>
+            <details class="finding" data-severity="p1" data-category="ui accessibility" data-status="completed" open>
+              <summary><span class="severity p1">P1</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Slash-command autocomplete is not exposed as a combobox/listbox</span></summary>
               <div class="finding-body"><div><h3>Impact</h3><p>Keyboard behavior exists, but assistive technology cannot discover the suggestion popup, active option, or selection state.</p><h3>Recommendation</h3><p>Implement the ARIA combobox pattern with <code>aria-controls</code>, <code>aria-expanded</code>, <code>aria-activedescendant</code>, listbox/option roles, stable IDs, and <code>aria-selected</code>.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/components/session-view.tsx:630-647<br />web/src/features/flue-chat/components/command-controls.tsx:191-233</p><span class="chip">WCAG 1.3.1 / 4.1.2</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="ui accessibility" open>
-              <summary><span class="severity p1">P1</span><span class="finding-title">Tabs and stateful filters expose selection only visually</span></summary>
+            <details class="finding" data-severity="p1" data-category="ui accessibility" data-status="completed" open>
+              <summary><span class="severity p1">P1</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Tabs and stateful filters expose selection only visually</span></summary>
               <div class="finding-body"><div><h3>Impact</h3><p>Screen-reader users cannot determine the active dashboard tab or filter; dashboard tabs also lack tab-to-panel relations and standard arrow/Home/End behavior.</p><h3>Recommendation</h3><p>Use tablist/tab/tabpanel semantics and roving focus for tabs; use named groups with <code>aria-pressed</code> or radio semantics for filters.</p></div><div><h3>Evidence</h3><p class="source">web/src/App.tsx:454-483<br />web/src/plugins/LearningOperatorPanel.tsx:169-180<br />web/src/plugins/WorkflowObservabilityPanel.tsx:139-153</p><span class="chip">WCAG 1.3.1 / 4.1.2</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="ui accessibility" open>
-              <summary><span class="severity p1">P1</span><span class="finding-title">Major panels and runtime sections lack navigable semantic structure</span></summary>
+            <details class="finding" data-severity="p1" data-category="ui accessibility" data-status="completed" open>
+              <summary><span class="severity p1">P1</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Major panels and runtime sections lack navigable semantic structure</span></summary>
               <div class="finding-body"><div><h3>Impact</h3><p>Generic div/span labels do not create headings or landmarks, so screen-reader users cannot jump among Work, Neon, Runtime, Config, Approvals, Memory, and other areas.</p><h3>Recommendation</h3><p>Add a hidden dashboard h1; make panel frames named sections/regions; render plugin titles as h2 and nested titles as h3 while preserving visuals.</p></div><div><h3>Evidence</h3><p class="source">web/src/App.tsx:485-526<br />web/src/features/runtime-overview/components/runtime-view.tsx:85-98<br />web/src/features/runtime-overview/components/setup-rows.tsx:28-54<br />web/src/plugins/AutopilotPanel.tsx:260-287</p><span class="chip">WCAG 1.3.1 / 2.4.6</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="ui accessibility state" open>
-              <summary><span class="severity p1">P1</span><span class="finding-title">Action feedback is inconsistent, sometimes silent, and often unannounced</span></summary>
+            <details class="finding" data-severity="p1" data-category="ui accessibility state" data-status="completed" open>
+              <summary><span class="severity p1">P1</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Action feedback is inconsistent, sometimes silent, and often unannounced</span></summary>
               <div class="finding-body"><div><h3>Impact</h3><p>The shared “session” mutation can fail as an apparent no-op. Screen-reader users may miss chat errors, save confirmations, and generic loading/error transitions.</p><h3>Recommendation</h3><p>Create one inline feedback primitive: alert for errors, polite status for progress/success. Render row-local errors and keep actions retryable. WCAG 3.3.1 and 4.1.3.</p></div><div><h3>Evidence</h3><p class="source">web/src/components/SessionReferenceButton.tsx:28-68<br />web/src/features/flue-chat/plugin.tsx:299-315<br />web/src/features/flue-chat/components/session-view.tsx:623-627<br />web/src/components/ui.tsx:112-133</p><span class="chip">$impeccable harden</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="ui responsive" open>
-              <summary><span class="severity p1">P1</span><span class="finding-title">Flue chat clips essential controls in supported narrow layouts</span></summary>
+            <details class="finding" data-severity="p1" data-category="ui responsive" data-status="completed" open>
+              <summary><span class="severity p1">P1</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Flue chat clips essential controls in supported narrow layouts</span></summary>
               <div class="finding-body"><div><h3>Impact</h3><p>The fixed header must fit session selection plus Rename, Pin, Archive, Ref, New, and context state in one clipped row. The composer can collapse or overflow, blocking a core task.</p><h3>Recommendation</h3><p>Keep session selection/New, move secondary actions into a standard overflow or second row, allow header growth, add <code>min-width: 0</code> to the textarea, and provide a compact Send control.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/plugin.tsx:224-298<br />web/src/features/flue-chat/components/session-view.tsx:615-674<br />web/src/App.tsx:514-525<br />web/src/lib/deck-profile.ts:26-69</p><span class="chip">$impeccable adapt</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="ui responsive review" open>
-              <summary><span class="severity p1">P1</span><span class="finding-title">Compact PR review hides verdict and summary while leaving Submit active</span></summary>
+            <details class="finding" data-severity="p1" data-category="ui responsive review" data-status="completed" open>
+              <summary><span class="severity p1">P1</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Compact PR review hides verdict and summary while leaving Submit active</span></summary>
               <div class="finding-body"><div><h3>Impact</h3><p>Users cannot inspect or change the verdict/body immediately before a consequential GitHub submission and can submit hidden stale state.</p><h3>Recommendation</h3><p>Keep verdict and summary in the stacked footer, expose them in an explicit Review details disclosure, or require the focused review surface for submission.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx:1471-1506<br />web/src/styles.css:1323-1331</p><span class="chip">$impeccable adapt</span></div></div>
             </details>
 
@@ -1026,13 +1073,13 @@
               <div class="finding-body"><div><h3>Impact</h3><p>Button-list navigation presents repeated “session” controls; “Ref” is jargon; approval action “session” does not communicate permission scope.</p><h3>Recommendation</h3><p>Use row-specific accessible names, display “Reference,” and rename approvals to “Allow once,” “Allow for session,” “Always allow,” and “Deny.”</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/plugin.tsx:274-283<br />web/src/components/SessionReferenceButton.tsx:58-67<br />web/src/features/runtime-overview/components/setup-rows.tsx:367-400</p><span class="chip">$impeccable clarify</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="ui accessibility">
-              <summary><span class="severity p2">P2</span><span class="finding-title">Disclosure controls omit expanded state and controlled-content relationships</span></summary>
+            <details class="finding" data-severity="p2" data-category="ui accessibility" data-status="completed">
+              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Disclosure controls omit expanded state and controlled-content relationships</span></summary>
               <div class="finding-body"><div><h3>Impact</h3><p>Text changes visually, but assistive technology gets no durable expanded/collapsed state or relationship to the revealed diff/editor.</p><h3>Recommendation</h3><p>Add stable panel IDs, <code>aria-expanded</code>, and <code>aria-controls</code>; move focus only when it improves the workflow.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/runtime-overview/components/runtime-rows.tsx:243-266, 327-343<br />web/src/plugins/LearningOperatorPanel.tsx:348-367<br />web/src/features/flue-chat/plugin.tsx:238-245</p><span class="chip">WCAG 4.1.2</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="ui responsive accessibility">
-              <summary><span class="severity p2">P2</span><span class="finding-title">Coarse-pointer targets stop at 40px and tab strips clip the override</span></summary>
+            <details class="finding" data-severity="p2" data-category="ui responsive accessibility" data-status="completed">
+              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Coarse-pointer targets stop at 40px and tab strips clip the override</span></summary>
               <div class="finding-body"><div><h3>Impact</h3><p>The touchscreen companion surface receives targets below the stronger 44px comfort target; 28–36px clipped tab strips can reduce effective size further.</p><h3>Recommendation</h3><p>Use at least 44px for consequential controls on coarse pointers, raise the tab-strip token at the same breakpoint, and make overflow horizontally scrollable with visible focus.</p></div><div><h3>Evidence</h3><p class="source">web/src/components/ui.tsx:33-45<br />web/src/styles.css:132-137, 346-404<br />web/src/App.tsx:465-481</p><span class="chip">WCAG 2.5.5 comfort target</span></div></div>
             </details>
 
@@ -1162,9 +1209,9 @@
             <span class="chip">report → discuss → implement</span>
           </div>
           <ol class="ordered">
-            <li><strong>P1 · Accessibility hardening:</strong> accessible names, combobox, tabs/filters/disclosures, panel landmarks, and shared status/error feedback. Suggested command: <code>$impeccable harden</code>.</li>
-            <li><strong>P1 · Color repair:</strong> correct semantic and placeholder contrast in both themes, then validate focus non-text contrast. Suggested command: <code>$impeccable colorize</code>.</li>
-            <li><strong>P1 · Responsive task completion:</strong> preserve PR verdict/summary and restructure narrow chat controls. Suggested command: <code>$impeccable adapt</code>.</li>
+            <li class="completed-action"><span class="completion">COMPLETED · PR 1</span> <strong>P1 · Accessibility hardening:</strong> accessible names, combobox, tabs/filters/disclosures, panel landmarks, and shared status/error feedback. Suggested command: <code>$impeccable harden</code>.</li>
+            <li class="completed-action"><span class="completion">COMPLETED · PR 1</span> <strong>P1 · Color repair:</strong> correct semantic and placeholder contrast in both themes, then validate focus non-text contrast. Suggested command: <code>$impeccable colorize</code>.</li>
+            <li class="completed-action"><span class="completion">COMPLETED · PR 1</span> <strong>P1 · Responsive task completion:</strong> preserve PR verdict/summary and restructure narrow chat controls. Suggested command: <code>$impeccable adapt</code>.</li>
             <li><strong>P2 · Flue/session correctness:</strong> remove duplicate history ownership, key async state by session, fix self-reference, and publish typed command-change events.</li>
             <li><strong>P2 · Query correctness:</strong> pass AbortSignals, repair reconnect convergence, invalidate durable review state, and reconcile stale Autopilot confirmations.</li>
             <li><strong>Performance measurement gate:</strong> run the five-part plan, agree budgets, then choose Pierre virtualization/caps, chat isolation, Runtime topology, and lazy registry based on data. Suggested command after agreement: <code>$impeccable optimize</code>.</li>

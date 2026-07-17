@@ -42,6 +42,7 @@ export const ReportsPanelPlugin = {
         <EmptyState
           title="Reports unavailable"
           detail={queryErrorMessage(error)}
+          tone="alert"
         />
       );
     }

@@ -114,6 +114,7 @@ export const BriefingPanelPlugin = {
         <EmptyState
           title="Briefing unavailable"
           detail={queryErrorMessage(error ?? 'No briefing state returned.')}
+          tone="alert"
         />
       );
     }

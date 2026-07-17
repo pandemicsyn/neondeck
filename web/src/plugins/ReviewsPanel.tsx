@@ -145,6 +145,7 @@ export const ReviewsPanelPlugin = {
           <EmptyState
             title="Reviews unavailable"
             detail={queryErrorMessage(error)}
+            tone="alert"
           />
         ) : null}
         {data ? (

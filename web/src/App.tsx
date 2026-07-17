@@ -1,5 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { CSSProperties } from 'react';
 import {
   getDashboardConfig,
@@ -144,6 +152,7 @@ export function App() {
       <BootState
         title="Dashboard config failed"
         detail={queryErrorMessage(error)}
+        tone="alert"
       />
     );
   }
@@ -187,9 +196,13 @@ function DashboardShell({ config }: { config: DashboardConfig }) {
 
   return (
     <section
+      aria-labelledby="neondeck-dashboard-title"
       ref={shellRef}
       className="deck-shell h-screen w-screen overflow-hidden bg-bg p-0"
     >
+      <h1 className="sr-only" id="neondeck-dashboard-title">
+        Neondeck developer cockpit
+      </h1>
       <div
         className={`dashboard-grid deck-density-${appearance.density} grid h-full w-full gap-0 border-0 bg-canvas p-0`}
         data-display-preset={displayPreset}
@@ -284,6 +297,7 @@ function StatuslinePanel({
         <EmptyState
           title="Plugin unavailable"
           detail={`No plugin registered for ${statusline.pluginId}.`}
+          tone="alert"
         />
       </PanelFrame>
     );
@@ -320,9 +334,11 @@ function DashboardPanel({
   const initialTabId = region.defaultTab ?? region.tabs[0]?.id ?? '';
   const [activeTabId, setActiveTabId] = useState(initialTabId);
   const [focusPulse, setFocusPulse] = useState(false);
+  const tabIdPrefix = useId();
   const defaultTabRef = useRef({ regionId: region.id, tabId: initialTabId });
   const activeTab =
     region.tabs.find((tab) => tab.id === activeTabId) ?? region.tabs[0];
+  const tabPanelId = `${tabIdPrefix}-panel`;
   const role = regionPrimaryRole(region);
   const style: CSSProperties =
     arrangement === 'grid'
@@ -385,7 +401,11 @@ function DashboardPanel({
         title={region.title}
         variant={region.id}
       >
-        <EmptyState title="Region unavailable" detail="No tabs configured." />
+        <EmptyState
+          title="Region unavailable"
+          detail="No tabs configured."
+          tone="alert"
+        />
       </PanelFrame>
     );
   }
@@ -402,12 +422,31 @@ function DashboardPanel({
         <RegionTabs
           activeTabId={activeTab.id}
           onChange={setActiveTabId}
+          panelId={tabPanelId}
+          regionId={region.id}
+          tabIdPrefix={tabIdPrefix}
           tabs={region.tabs}
         />
-        <EmptyState
-          title="Plugin unavailable"
-          detail={`No plugin registered for ${activeTab.pluginId}.`}
-        />
+        <div
+          aria-label={region.tabs.length <= 1 ? activeTab.title : undefined}
+          aria-labelledby={
+            region.tabs.length > 1
+              ? dashboardTabId(
+                  tabIdPrefix,
+                  region.tabs.findIndex((tab) => tab.id === activeTab.id),
+                )
+              : undefined
+          }
+          className="min-h-0 flex-1"
+          id={tabPanelId}
+          role="tabpanel"
+        >
+          <EmptyState
+            title="Plugin unavailable"
+            detail={`No plugin registered for ${activeTab.pluginId}.`}
+            tone="alert"
+          />
+        </div>
       </PanelFrame>
     );
   }
@@ -427,10 +466,27 @@ function DashboardPanel({
         <RegionTabs
           activeTabId={activeTab.id}
           onChange={setActiveTabId}
+          panelId={tabPanelId}
+          regionId={region.id}
+          tabIdPrefix={tabIdPrefix}
           tabs={region.tabs}
         />
         <ConfigIssues issues={resolvedConfig.issues} />
-        <div className="min-h-0 flex-1">
+        <div
+          aria-label={region.tabs.length <= 1 ? activeTab.title : undefined}
+          aria-labelledby={
+            region.tabs.length > 1
+              ? dashboardTabId(
+                  tabIdPrefix,
+                  region.tabs.findIndex((tab) => tab.id === activeTab.id),
+                )
+              : undefined
+          }
+          className="min-h-0 flex-1"
+          id={tabPanelId}
+          role="tabpanel"
+          tabIndex={0}
+        >
           <PluginComponent
             config={resolvedConfig.config}
             region={tabRegion(region, activeTab)}
@@ -445,7 +501,10 @@ function ConfigIssues({ issues }: { issues: string[] }) {
   if (issues.length === 0) return null;
 
   return (
-    <div className="border-b border-accent bg-field px-2 py-1 font-mono text-[10px] leading-4 text-accent">
+    <div
+      className="border-b border-accent bg-field px-2 py-1 font-mono text-[10px] leading-4 text-accent"
+      role="alert"
+    >
       Invalid panel config ignored: {issues.join(' ')}
     </div>
   );
@@ -454,25 +513,60 @@ function ConfigIssues({ issues }: { issues: string[] }) {
 function RegionTabs({
   activeTabId,
   onChange,
+  panelId,
+  regionId,
+  tabIdPrefix,
   tabs,
 }: {
   activeTabId: string;
   onChange: (id: string) => void;
+  panelId: string;
+  regionId: string;
+  tabIdPrefix: string;
   tabs: DashboardTab[];
 }) {
   if (tabs.length <= 1) return null;
 
   return (
-    <div className="flex h-7 shrink-0 items-center gap-1 overflow-hidden border-b border-line bg-field px-2 font-mono text-[10px] tracking-[0.08em]">
-      {tabs.map((tab) => (
+    <div
+      aria-label={`${regionId} views`}
+      className="flex h-7 shrink-0 items-center gap-1 overflow-x-auto border-b border-line bg-field px-2 font-mono text-[10px] tracking-[0.08em]"
+      role="tablist"
+    >
+      {tabs.map((tab, index) => (
         <button
+          aria-controls={panelId}
+          aria-selected={tab.id === activeTabId}
           className={
             tab.id === activeTabId
               ? 'shrink-0 border border-primary px-2 py-0.5 text-primary'
               : 'shrink-0 border border-transparent px-2 py-0.5 text-muted hover:border-line hover:text-ink'
           }
+          id={dashboardTabId(tabIdPrefix, index)}
           key={tab.id}
           onClick={() => onChange(tab.id)}
+          onKeyDown={(event) => {
+            let nextIndex: number | undefined;
+            if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+              nextIndex = (index + 1) % tabs.length;
+            } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+              nextIndex = (index - 1 + tabs.length) % tabs.length;
+            } else if (event.key === 'Home') {
+              nextIndex = 0;
+            } else if (event.key === 'End') {
+              nextIndex = tabs.length - 1;
+            }
+            if (nextIndex === undefined) return;
+            event.preventDefault();
+            const nextTab = tabs[nextIndex];
+            if (!nextTab) return;
+            onChange(nextTab.id);
+            document
+              .getElementById(dashboardTabId(tabIdPrefix, nextIndex))
+              ?.focus();
+          }}
+          role="tab"
+          tabIndex={tab.id === activeTabId ? 0 : -1}
           type="button"
         >
           {tab.title}
@@ -497,6 +591,7 @@ function PanelFrame({
   title: string;
   variant: string;
 }) {
+  const headingId = `${useId()}-heading`;
   if (variant === 'statusline') {
     return (
       <Card
@@ -506,7 +601,12 @@ function PanelFrame({
         data-region-role={regionRole}
         style={style}
       >
-        {children}
+        <section aria-labelledby={headingId} className="h-full min-h-0">
+          <h2 className="sr-only" id={headingId}>
+            {title}
+          </h2>
+          {children}
+        </section>
       </Card>
     );
   }
@@ -519,11 +619,18 @@ function PanelFrame({
       data-region-role={regionRole}
       style={style}
     >
-      <div aria-label={title} className="h-full min-h-0">
+      <section aria-labelledby={headingId} className="h-full min-h-0">
+        <h2 className="sr-only" id={headingId}>
+          {title}
+        </h2>
         {children}
-      </div>
+      </section>
     </Card>
   );
+}
+
+function dashboardTabId(tabIdPrefix: string, index: number) {
+  return `${tabIdPrefix}-tab-${index}`;
 }
 
 function resolveTheme(theme: DashboardTheme) {

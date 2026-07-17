@@ -47,7 +47,11 @@ export function PrReviewSubmitBar({
     (verdict === 'approve' || cleanCommentCount > 0 || hasBody);
 
   return (
-    <aside aria-busy={isBusy} className="pr-review-bar">
+    <aside
+      aria-busy={isBusy}
+      aria-label="Review submission controls"
+      className="pr-review-bar"
+    >
       <div className="pr-review-bar-main">
         <button
           className="pr-review-count"
