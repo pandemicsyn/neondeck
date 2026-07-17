@@ -11,6 +11,7 @@ import {
   type RuntimeStatusCheck,
   type SafetyPolicyEntry,
 } from '../../../api';
+import { OperationalValue } from '../../../components/OperationalValue';
 import { Badge } from '../../../components/ui';
 import { queryKeys } from '../../../lib/query';
 import { notificationDisplayMessage } from '../../../lib/watch-status';
@@ -323,6 +324,22 @@ export function ExecutionApprovalRow({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const detailPreview = [
+    approval.backend,
+    approval.risk,
+    approval.cwd ? shortPath(approval.cwd) : null,
+    approval.error,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const fullDetail = [
+    approval.backend,
+    approval.risk,
+    approval.cwd,
+    approval.error,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   async function resolve(
     decision: 'allow-once' | 'allow-session' | 'allow-always' | 'deny',
@@ -349,62 +366,70 @@ export function ExecutionApprovalRow({
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate font-mono text-[11px] text-ink">
-            {approval.command}
-          </p>
-          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
-            {approval.backend} · {approval.risk}
-            {approval.cwd ? ` · ${shortPath(approval.cwd)}` : ''}
-            {approval.error ? ` · ${approval.error}` : ''}
-          </p>
+        <div className="min-w-0 flex-1">
+          <OperationalValue
+            label={`command for approval ${approval.id}`}
+            previewClassName="truncate font-mono text-[11px] text-ink"
+            value={approval.command}
+          />
+          <OperationalValue
+            className="mt-0.5"
+            label={`details for approval ${approval.id}`}
+            preview={detailPreview}
+            previewClassName="line-clamp-2 text-[10.5px] leading-4 text-muted"
+            value={fullDetail}
+          />
         </div>
         <Badge className={executionApprovalClass(approval)}>
           {approval.status}
         </Badge>
       </div>
-      <div className="mt-1.5 flex items-center gap-1.5 font-mono text-[10px] text-muted">
-        <span className="min-w-0 flex-1 truncate">
+      <div className="mt-1.5 font-mono text-[10px] text-muted">
+        <p className="truncate">
           {approval.status === 'approved' && !approval.usedAt
             ? `approved ${relativeTime(approval.resolvedAt ?? approval.updatedAt)} · not yet used`
             : relativeTime(approval.updatedAt)}
           {approval.exitCode !== null ? ` · exit ${approval.exitCode}` : ''}
-        </span>
+        </p>
         {approval.status === 'pending' ? (
-          <>
+          <div className="mt-1.5 flex flex-wrap justify-end gap-1">
             <button
+              aria-label={`Allow command once: ${approval.command}`}
               className="shrink-0 border border-line px-1.5 py-0.5 text-muted disabled:opacity-50"
               disabled={!!busy}
               onClick={() => void resolve('allow-once')}
               type="button"
             >
-              once
+              Allow once
             </button>
             <button
+              aria-label={`Allow command for this session: ${approval.command}`}
               className="shrink-0 border border-line px-1.5 py-0.5 text-muted disabled:opacity-50"
               disabled={!!busy}
               onClick={() => void resolve('allow-session')}
               type="button"
             >
-              session
+              Allow for session
             </button>
             <button
+              aria-label={`Always allow command: ${approval.command}`}
               className="shrink-0 border border-line px-1.5 py-0.5 text-muted disabled:opacity-50"
               disabled={!!busy}
               onClick={() => void resolve('allow-always')}
               type="button"
             >
-              preapprove
+              Always allow
             </button>
             <button
+              aria-label={`Deny command: ${approval.command}`}
               className="shrink-0 border border-accent px-1.5 py-0.5 text-accent disabled:opacity-50"
               disabled={!!busy}
               onClick={() => void resolve('deny')}
               type="button"
             >
-              deny
+              Deny
             </button>
-          </>
+          </div>
         ) : null}
       </div>
       {error ? (

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { MarkdownMessage } from '../../../components/MarkdownMessage';
+import { OperationalValue } from '../../../components/OperationalValue';
 
 export function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -41,7 +42,10 @@ export function ChatPartEvent({
         <span className="shrink-0 font-mono text-[9.5px] font-semibold uppercase text-primary">
           {kind}
         </span>
-        <span className="min-w-0 truncate font-mono text-[11px] text-ink">
+        <span
+          className="min-w-0 truncate font-mono text-[11px] text-ink"
+          title={name}
+        >
           {name}
         </span>
         {status ? (
@@ -51,9 +55,13 @@ export function ChatPartEvent({
         ) : null}
       </div>
       {preview ? (
-        <code className="mt-1 block truncate font-mono text-[10.5px] leading-4 text-muted">
-          {preview}
-        </code>
+        <OperationalValue
+          className="mt-1"
+          label={`${name} ${kind} details`}
+          preview={preview.replace(/\s+/g, ' ').trim()}
+          previewClassName="truncate font-mono text-[10.5px] leading-4 text-muted"
+          value={preview}
+        />
       ) : null}
     </div>
   );
@@ -123,21 +131,16 @@ function partPreview(record: Record<string, unknown> | undefined) {
 
 function stringifyPreview(value: unknown) {
   if (value === undefined || value === null) return undefined;
-  if (typeof value === 'string') return trimPreview(value);
+  if (typeof value === 'string') return value.trim() ? value : undefined;
   if (typeof value === 'number' || typeof value === 'boolean') {
     return String(value);
   }
 
   try {
-    return trimPreview(JSON.stringify(value));
+    return JSON.stringify(value);
   } catch {
     return undefined;
   }
-}
-
-function trimPreview(value: string) {
-  const compact = value.replace(/\s+/g, ' ').trim();
-  return compact.length > 180 ? `${compact.slice(0, 177)}...` : compact;
 }
 
 function humanizePartType(type: string) {

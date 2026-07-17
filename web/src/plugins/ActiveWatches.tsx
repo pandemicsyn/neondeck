@@ -140,7 +140,6 @@ function WatchRow({ watch }: { watch: PrWatch }) {
         <span className="flex shrink-0 gap-1.5">
           <SessionReferenceButton
             kind="watch"
-            label="session"
             linkedRepoId={watch.repoId}
             linkedWatchId={watch.id}
             summary={`${watch.repoFullName}#${watch.prNumber} watch is ${watch.status} until ${watch.desiredTerminalState}. ${watch.title ?? 'Untitled PR'}.`}

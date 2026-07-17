@@ -328,7 +328,6 @@ function QueueRow({ item }: { item: AutopilotQueueItem }) {
         <span className="flex shrink-0 items-center gap-1.5">
           <SessionReferenceButton
             kind="task"
-            label="session"
             linkedRepoId={item.repoId}
             linkedTaskId={item.id}
             summary={`${item.title}: ${item.reason} Next step: ${item.nextStep}. Mode ${item.mode}; status ${item.status}.`}
@@ -407,7 +406,6 @@ function PreparedDiffRow({ diff }: { diff: AutopilotPreparedDiff }) {
         </Button>
         <SessionReferenceButton
           kind="task"
-          label="session"
           linkedRepoId={diff.repoId}
           linkedTaskId={diff.id}
           summary={`${diff.title}: ${diff.summary}. Prepared diff ${diff.status} in ${diff.localPath}.`}
@@ -949,7 +947,6 @@ function ActivityRow({ item }: { item: AutopilotActivity }) {
       <div className="mt-1.5 flex justify-end font-mono text-[10px]">
         <SessionReferenceButton
           kind="task"
-          label="session"
           linkedRepoId={item.repoId}
           linkedTaskId={item.id}
           summary={`${item.title}: ${item.message}`}

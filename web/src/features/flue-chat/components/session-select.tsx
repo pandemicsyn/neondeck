@@ -21,7 +21,7 @@ export function SessionSelect({
 
   return (
     <select
-      aria-label="Chat session"
+      aria-label="Switch chat session"
       className="h-5 max-w-[22ch] border border-line bg-field px-1 font-mono text-[10.5px] tracking-normal text-ink outline-none hover:border-primary"
       disabled={disabled || sessions.length === 0}
       onChange={(event) => onSelect(event.target.value)}

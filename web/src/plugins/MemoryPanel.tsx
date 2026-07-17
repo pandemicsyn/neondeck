@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useId } from 'react';
 import { getMemories, type MemoryRecord, type MemoryScope } from '../api';
+import { OperationalValue } from '../components/OperationalValue';
 import { Badge, EmptyState, MiniEmpty, ScrollArea } from '../components/ui';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
@@ -92,16 +93,23 @@ function MemoryView({
 }
 
 function MemoryRow({ memory }: { memory: MemoryRecord }) {
+  const value = memoryPreview(memory.value);
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate font-mono text-[11px] text-ink">
+        <div className="min-w-0 flex-1">
+          <p
+            className="truncate font-mono text-[11px] text-ink"
+            title={`${memory.scope}:${memory.key}`}
+          >
             {memory.scope}:{memory.key}
           </p>
-          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
-            {memoryPreview(memory.value)}
-          </p>
+          <OperationalValue
+            className="mt-0.5"
+            label={`value for memory ${memory.scope}:${memory.key}`}
+            previewClassName="line-clamp-2 text-[10.5px] leading-4 text-muted"
+            value={value}
+          />
         </div>
         <Badge className={scopeClass(memory.scope)}>{memory.scope}</Badge>
       </div>
@@ -115,7 +123,7 @@ function memoryPreview(value: unknown) {
     return String(value);
   }
   if (value === null || value === undefined) return '';
-  return JSON.stringify(value);
+  return JSON.stringify(value) ?? String(value);
 }
 
 function scopeClass(scope: MemoryScope) {

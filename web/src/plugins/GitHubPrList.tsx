@@ -184,7 +184,6 @@ function PrRow({
           </Button>
           <SessionReferenceButton
             kind="task"
-            label="session"
             linkedRepoId={repoId ?? null}
             linkedTaskId={`github-pr:${item.repo}#${item.number}`}
             summary={`${item.repo}#${item.number}: ${item.title}. ${checkLabel(item)}; relation ${relationLabel(item)}.`}
