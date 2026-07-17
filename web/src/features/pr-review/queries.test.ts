@@ -1,9 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { QueryClient } from '@tanstack/react-query';
+import { describe, expect, it, vi } from 'vitest';
 import type {
   GitHubPullRequest,
   GitHubPullRequestReviewThread,
 } from '../../api';
-import { prReviewQueryKeys, upsertReviewThread } from './queries';
+import {
+  invalidateSubmittedReviewQueries,
+  prReviewQueryKeys,
+  upsertReviewThread,
+} from './queries';
 
 describe('prReviewQueryKeys', () => {
   it('keys files by diff inputs and threads by PR activity', () => {
@@ -62,6 +67,22 @@ describe('prReviewQueryKeys', () => {
       reviewThreads: [updated, other],
       reviewThreadsTruncated: false,
       unresolvedReviewThreads: [other],
+    });
+  });
+
+  it('invalidates durable review state and the review inbox after submit', async () => {
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+
+    await invalidateSubmittedReviewQueries(client, pullRequest());
+
+    expect(invalidate).toHaveBeenCalledWith({
+      exact: true,
+      queryKey: ['pr-reviews', 'pandemicsyn/neondeck', 66],
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      exact: true,
+      queryKey: ['pr-reviews'],
     });
   });
 });

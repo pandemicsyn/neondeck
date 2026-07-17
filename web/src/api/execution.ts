@@ -1,12 +1,14 @@
 import type { ExecutionApproval, ExecutionApprovalsResponse } from './types';
-import { getJson, postJson } from './http';
+import { getJson, postJson, type ApiRequestOptions } from './http';
 
 export async function getExecutionApprovals(
   input: { includeResolved?: boolean } = {},
+  options: ApiRequestOptions = {},
 ) {
   const query = input.includeResolved ? '?includeResolved=1' : '';
   return getJson<ExecutionApprovalsResponse>(
     `/api/execution/approvals${query}`,
+    options,
   );
 }
 

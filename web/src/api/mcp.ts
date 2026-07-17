@@ -4,17 +4,18 @@ import type {
   McpLoginResponse,
   McpServersResponse,
 } from './types';
-import { getJson, postJson } from './http';
+import { getJson, postJson, type ApiRequestOptions } from './http';
 
-export async function getMcpServers() {
-  return getJson<McpServersResponse>('/api/mcp/servers');
+export async function getMcpServers(options: ApiRequestOptions = {}) {
+  return getJson<McpServersResponse>('/api/mcp/servers', options);
 }
 
 export async function getMcpApprovals(
   input: { includeResolved?: boolean } = {},
+  options: ApiRequestOptions = {},
 ) {
   const query = input.includeResolved ? '?includeResolved=1' : '';
-  return getJson<McpApprovalsResponse>(`/api/mcp/approvals${query}`);
+  return getJson<McpApprovalsResponse>(`/api/mcp/approvals${query}`, options);
 }
 
 export async function startMcpLogin(id: string) {

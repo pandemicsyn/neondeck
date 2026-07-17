@@ -1,5 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { lazy, Suspense, useId, useState, type ReactNode } from 'react';
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   getAutopilotState,
   getAutopilotRecoveryOptions,
@@ -445,7 +453,8 @@ function PreparedDiffRecoveryControls({
   const queryClient = useQueryClient();
   const { data } = useQuery({
     queryKey: ['autopilot-recovery-options', preparedDiffId],
-    queryFn: () => getAutopilotRecoveryOptions(preparedDiffId),
+    queryFn: ({ signal }) =>
+      getAutopilotRecoveryOptions(preparedDiffId, { signal }),
     refetchInterval: 30_000,
   });
   const mutation = useMutation({
@@ -459,9 +468,21 @@ function PreparedDiffRecoveryControls({
       });
     },
   });
-  const options = (data?.options ?? []).filter((option) =>
-    visibleRecoveryAction(option.id),
+  const options = useMemo(
+    () =>
+      (data?.options ?? []).filter((option) =>
+        visibleRecoveryAction(option.id),
+      ),
+    [data?.options],
   );
+  useEffect(() => {
+    setConfirmAction((current) =>
+      recoveryOptionStillAvailable(current, options) ? current : undefined,
+    );
+    setRevisionAction((current) =>
+      recoveryOptionStillAvailable(current, options) ? current : undefined,
+    );
+  }, [options]);
   if (options.length === 0) return null;
 
   return (
@@ -585,6 +606,13 @@ function visibleRecoveryAction(id: AutopilotRecoveryActionId) {
     'run-revision',
     'cleanup-worktree',
   ].includes(id);
+}
+
+export function recoveryOptionStillAvailable(
+  selection: AutopilotRecoveryOption | undefined,
+  options: AutopilotRecoveryOption[],
+) {
+  return !selection || options.some((option) => option.id === selection.id);
 }
 
 function recoveryButtonLabel(id: AutopilotRecoveryActionId) {

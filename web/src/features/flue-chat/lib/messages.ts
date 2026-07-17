@@ -2,17 +2,7 @@ import type { FlueConversationMessage } from '@flue/react';
 
 const briefingInputMarker = '[NEONDECK_INTERNAL_BRIEFING_INPUT v1 trigger=';
 
-export function chatMessagesForRender(
-  liveMessages: FlueConversationMessage[],
-  canonicalMessages: FlueConversationMessage[] | undefined,
-  status: string,
-) {
-  const messages =
-    status === 'idle' &&
-    canonicalMessages &&
-    canonicalMessages.length >= liveMessages.length
-      ? canonicalMessages
-      : liveMessages;
+export function chatMessagesForRender(messages: FlueConversationMessage[]) {
   return messages.some(isInternalBriefingInput)
     ? messages.map(compactInternalBriefingInput)
     : messages;

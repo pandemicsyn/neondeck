@@ -827,6 +827,15 @@
             </p>
           </div>
 
+          <div class="gate completion-note">
+            <div class="gate-mark">STACKED</div>
+            <p>
+              <strong>Correctness status:</strong> recommended steps 4–5 are complete in the
+              stacked Flue/session and query-correctness pull request. Its original findings are
+              retained and marked completed below; the performance gate remains unchanged.
+            </p>
+          </div>
+
           <div class="stats" aria-label="Finding counts by severity">
             <div class="stat"><span class="label">P0 BLOCKING</span><strong class="p0">0</strong></div>
             <div class="stat"><span class="label">P1 MAJOR</span><strong class="p1">11</strong></div>
@@ -1083,8 +1092,8 @@
               <div class="finding-body"><div><h3>Impact</h3><p>The touchscreen companion surface receives targets below the stronger 44px comfort target; 28–36px clipped tab strips can reduce effective size further.</p><h3>Recommendation</h3><p>Use at least 44px for consequential controls on coarse pointers, raise the tab-strip token at the same breakpoint, and make overflow horizontally scrollable with visible focus.</p></div><div><h3>Evidence</h3><p class="source">web/src/components/ui.tsx:33-45<br />web/src/styles.css:132-137, 346-404<br />web/src/App.tsx:465-481</p><span class="chip">WCAG 2.5.5 comfort target</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="state review">
-              <summary><span class="severity p2">P2</span><span class="finding-title">Successful review submission can leave the workbench pre-submit cache state</span></summary>
+            <details class="finding" data-severity="p2" data-category="state review" data-status="completed">
+              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 2</span><span class="finding-title">Successful review submission can leave the workbench pre-submit cache state</span></summary>
               <div class="finding-body"><div><h3>Impact</h3><p>If the review SSE event is missed, the durable review remains cached as <code>ready</code>, controls stay enabled, and a second submit reaches a backend state guard.</p><h3>Recommendation</h3><p>On submit success invalidate the durable review target and review inbox, in addition to draft/thread caches.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/pr-review/queries.ts:272-277<br />web/src/features/pr-review/GitHubPrReview.tsx:83-90, 729-750</p><span class="chip">correctness</span></div></div>
             </details>
 
@@ -1093,38 +1102,38 @@
               <div class="finding-body"><div><h3>Impact</h3><p>Submit a reply/edit on item A, start item B while A is pending, and A’s completion unconditionally closes and clears B’s shared editor state.</p><h3>Recommendation</h3><p>Disable other editor entry while pending or store drafts per entity and clear only when the completed request still matches the open entity ID.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx:470-500, 600-609, 642-696</p><span class="chip">race condition</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="state autopilot">
-              <summary><span class="severity p2">P2</span><span class="finding-title">Autopilot confirmation can execute after the server withdraws the option</span></summary>
+            <details class="finding" data-severity="p2" data-category="state autopilot" data-status="completed">
+              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 2</span><span class="finding-title">Autopilot confirmation can execute after the server withdraws the option</span></summary>
               <div class="finding-body"><div><h3>Impact</h3><p>A cleanup/revision action stays confirmable after refreshed recovery options remove it. The backend may reject it, but the UI represents stale authority.</p><h3>Recommendation</h3><p>Reconcile confirmation/revision state against the latest option IDs and close any action no longer present; keep backend rejection.</p></div><div><h3>Evidence</h3><p class="source">web/src/plugins/AutopilotPanel.tsx:426-449, 488-548</p><span class="chip">trust boundary</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="state api events flue">
-              <summary><span class="severity p2">P2</span><span class="finding-title">Chat/session caches do not resynchronize after SSE reconnect</span></summary>
+            <details class="finding" data-severity="p2" data-category="state api events flue" data-status="completed">
+              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 2</span><span class="finding-title">Chat/session caches do not resynchronize after SSE reconnect</span></summary>
               <div class="finding-body"><div><h3>Impact</h3><p>Session changes or messages missed during disconnect can remain absent until a later chat event. Config replays; review refetches on open; chat has neither mechanism.</p><h3>Recommendation</h3><p>Expose <code>onOpen</code> for the chat stream and invalidate session/index plus refresh active history once at the app-level subscriber.</p></div><div><h3>Evidence</h3><p class="source">web/src/api/events.ts:23-27<br />web/src/App.tsx:83-93<br />web/src/features/flue-chat/components/session-view.tsx:162-175<br />src/server/events/event-stream.ts:63-81</p><span class="chip">reconnect convergence</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="api flue performance">
-              <summary><span class="severity p2">P2</span><span class="finding-title">Manual history reads duplicate useFlueAgent and can block a healthy chat</span></summary>
+            <details class="finding" data-severity="p2" data-category="api flue performance" data-status="completed">
+              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 2</span><span class="finding-title">Manual history reads duplicate useFlueAgent and can block a healthy chat</span></summary>
               <div class="finding-body"><div><h3>Impact</h3><p>Every attach hydrates through the hook and then materializes full history again. Metadata events retrigger the read; a transient redundant-read error disables sending; length-based arbitration can prefer an older same-length snapshot.</p><h3>Recommendation</h3><p>Remove the second transcript owner and manual history cycle. Render <code>agent.messages</code> and use <code>historyReady</code>, status, and error from the installed Flue hook contract.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/components/session-view.tsx:85-97, 119-128, 151-217, 365-371<br />web/src/features/flue-chat/lib/messages.ts:5<br />@flue/sdk docs/guide/react.md:81-85</p><span class="chip">Flue primitive misuse</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="api flue ui correctness">
-              <summary><span class="severity p2">P2</span><span class="finding-title">“Ref” always references the active session into itself</span></summary>
+            <details class="finding" data-severity="p2" data-category="api flue ui correctness" data-status="completed">
+              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 2</span><span class="finding-title">“Ref” always references the active session into itself</span></summary>
               <div class="finding-body"><div><h3>Impact</h3><p>Clicking Ref supplies the same ID as source and target, records an audited self-reference, and pastes the current session’s own summary back into itself.</p><h3>Recommendation</h3><p>Move Reference to a session browser that chooses a non-active target. Until target selection exists, remove or disable the active-session action.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/plugin.tsx:132-161<br />src/modules/sessions/references.ts:64</p><span class="chip">app integration</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="api flue state">
-              <summary><span class="severity p2">P2</span><span class="finding-title">In-flight sends/workflows leak operation state across session switches</span></summary>
+            <details class="finding" data-severity="p2" data-category="api flue state" data-status="completed">
+              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 2</span><span class="finding-title">In-flight sends/workflows leak operation state across session switches</span></summary>
               <div class="finding-body"><div><h3>Impact</h3><p>Start a slow command in A, switch to B, and B inherits A’s busy/input/error state. A’s completion can clear B’s draft or show A’s error.</p><h3>Recommendation</h3><p>Key the session view by agent/session ID, fence async completion against a current-session ref, and abort the UI wait on unmount when supported.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/plugin.tsx:232, 357-365<br />web/src/features/flue-chat/components/session-view.tsx:151-156, 219-444</p><span class="chip">session identity</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="api flue events state">
-              <summary><span class="severity p2">P2</span><span class="finding-title">Server-created command events never converge into the mounted dashboard</span></summary>
+            <details class="finding" data-severity="p2" data-category="api flue events state" data-status="completed">
+              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 2</span><span class="finding-title">Server-created command events never converge into the mounted dashboard</span></summary>
               <div class="finding-body"><div><h3>Impact</h3><p>Approval nudges and background workflows create/update durable command rows without publishing an event. With no polling, the open dashboard stays stale until remount or an unrelated session event.</p><h3>Recommendation</h3><p>Publish a typed <code>chat-session-command-change</code> event through the multiplex hub and invalidate only the affected session command-event key.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/components/session-view.tsx:130-174<br />src/modules/sessions/service.ts:572, 653-759<br />src/modules/sessions/approval-nudges.ts:62<br />src/workflows/briefing.ts:31</p><span class="chip">durable state convergence</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="api performance tanstack">
-              <summary><span class="severity p2">P2</span><span class="finding-title">TanStack query cancellation is systematically discarded</span></summary>
+            <details class="finding" data-severity="p2" data-category="api performance tanstack" data-status="completed">
+              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 2</span><span class="finding-title">TanStack query cancellation is systematically discarded</span></summary>
               <div class="finding-body"><div><h3>Impact</h3><p>Close or switch a heavy diff/runtime surface and abandoned reads continue transferring, doing backend work, and populating unused cache entries.</p><h3>Recommendation</h3><p>Standardize API read options with AbortSignal and use <code>queryFn: ({ signal }) =&gt; apiCall(input, { signal })</code>, starting with patches, diffs, runtime fan-out, session activity, and PR records.</p></div><div><h3>Evidence</h3><p class="source">web/src/api/http.ts:13<br />web/src/features/diff-viewer/queries.ts:32<br />web/src/features/pr-review/queries.ts:76<br />web/src/features/runtime-overview/plugin.tsx:59<br />web/src/api/github.ts:31</p><span class="chip">TanStack Query 5.101.2</span></div></div>
             </details>
 
@@ -1212,8 +1221,8 @@
             <li class="completed-action"><span class="completion">COMPLETED · PR 1</span> <strong>P1 · Accessibility hardening:</strong> accessible names, combobox, tabs/filters/disclosures, panel landmarks, and shared status/error feedback. Suggested command: <code>$impeccable harden</code>.</li>
             <li class="completed-action"><span class="completion">COMPLETED · PR 1</span> <strong>P1 · Color repair:</strong> correct semantic and placeholder contrast in both themes, then validate focus non-text contrast. Suggested command: <code>$impeccable colorize</code>.</li>
             <li class="completed-action"><span class="completion">COMPLETED · PR 1</span> <strong>P1 · Responsive task completion:</strong> preserve PR verdict/summary and restructure narrow chat controls. Suggested command: <code>$impeccable adapt</code>.</li>
-            <li><strong>P2 · Flue/session correctness:</strong> remove duplicate history ownership, key async state by session, fix self-reference, and publish typed command-change events.</li>
-            <li><strong>P2 · Query correctness:</strong> pass AbortSignals, repair reconnect convergence, invalidate durable review state, and reconcile stale Autopilot confirmations.</li>
+            <li class="completed-action"><span class="completion">COMPLETED · PR 2</span> <strong>P2 · Flue/session correctness:</strong> remove duplicate history ownership, key async state by session, fix self-reference, and publish typed command-change events.</li>
+            <li class="completed-action"><span class="completion">COMPLETED · PR 2</span> <strong>P2 · Query correctness:</strong> pass AbortSignals, repair reconnect convergence, invalidate durable review state, and reconcile stale Autopilot confirmations.</li>
             <li><strong>Performance measurement gate:</strong> run the five-part plan, agree budgets, then choose Pierre virtualization/caps, chat isolation, Runtime topology, and lazy registry based on data. Suggested command after agreement: <code>$impeccable optimize</code>.</li>
             <li><strong>P2 · Copy/disclosure:</strong> row-specific action names and full-value affordances for operational text. Suggested command: <code>$impeccable clarify</code>.</li>
             <li><strong>P3 · Final pass:</strong> tabular metrics, timer cleanup, operation-scoped status, stable finding IDs, and config tightening. Suggested command: <code>$impeccable polish</code>.</li>

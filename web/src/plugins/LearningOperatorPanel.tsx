@@ -77,12 +77,15 @@ export const LearningOperatorPanelPlugin = {
         ...queryKeys.learningState,
         { candidateStatus, candidateTarget, limit: config.limit },
       ],
-      queryFn: () =>
-        getLearningOperatorState({
-          candidateStatus,
-          candidateTarget,
-          limit: config.limit,
-        }),
+      queryFn: ({ signal }) =>
+        getLearningOperatorState(
+          {
+            candidateStatus,
+            candidateTarget,
+            limit: config.limit,
+          },
+          { signal },
+        ),
       refetchInterval: Math.max(10, config.refreshSeconds) * 1000,
     });
 

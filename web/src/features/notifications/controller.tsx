@@ -74,8 +74,7 @@ export function NotificationController({
   }, [toastConfig.soundEnabled]);
 
   useEffect(() => {
-    return openNotificationEventStream((event) => {
-      const currentToastConfig = toastConfigRef.current;
+    const refreshNotificationQueries = () =>
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.notifications }),
         queryClient.invalidateQueries({ queryKey: queryKeys.runtimeStatus }),
@@ -83,20 +82,27 @@ export function NotificationController({
           queryKey: queryKeys.chatSessionActivityRoot,
         }),
       ]);
-      if (
-        event.action === 'created' &&
-        currentToastConfig.soundEnabled &&
-        notificationQualifies(event.notification, currentToastConfig)
-      ) {
-        notificationChimeRef.current?.play();
-      }
-      dispatch({
-        type: 'notification-event',
-        event,
-        config: currentToastConfig,
-        now: Date.now(),
-      });
-    });
+    return openNotificationEventStream(
+      (event) => {
+        const currentToastConfig = toastConfigRef.current;
+        refreshNotificationQueries();
+        if (
+          event.action === 'created' &&
+          currentToastConfig.soundEnabled &&
+          notificationQualifies(event.notification, currentToastConfig)
+        ) {
+          notificationChimeRef.current?.play();
+        }
+        dispatch({
+          type: 'notification-event',
+          event,
+          config: currentToastConfig,
+          now: Date.now(),
+        });
+      },
+      undefined,
+      refreshNotificationQueries,
+    );
   }, [queryClient]);
 
   const dismiss = useCallback((item: ToastItem) => {

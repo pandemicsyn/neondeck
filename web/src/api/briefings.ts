@@ -3,10 +3,10 @@ import type {
   BriefingProfile,
   BriefingStateResponse,
 } from './types';
-import { getJson, postJson, putJson } from './http';
+import { getJson, postJson, putJson, type ApiRequestOptions } from './http';
 
-export async function getBriefingState() {
-  return getJson<BriefingStateResponse>('/api/briefings');
+export async function getBriefingState(options: ApiRequestOptions = {}) {
+  return getJson<BriefingStateResponse>('/api/briefings', options);
 }
 
 export async function updateBriefingProfile(

@@ -13,18 +13,22 @@ import {
   subscribePrReviewEvents,
 } from '../../modules/pr-reviews';
 import {
+  formatChatSessionCommandServerSentEvent,
   formatChatSessionServerSentEvent,
+  subscribeChatSessionCommandEvents,
   subscribeChatSessionEvents,
 } from '../../modules/sessions';
 
 const eventStreamHeartbeatMs = 25_000;
 
 export type EventStreamDependencies = {
+  formatChatSessionCommandServerSentEvent: typeof formatChatSessionCommandServerSentEvent;
   formatChatSessionServerSentEvent: typeof formatChatSessionServerSentEvent;
   formatConfigServerSentEvent: typeof formatConfigServerSentEvent;
   formatNotificationServerSentEvent: typeof formatNotificationServerSentEvent;
   formatPrReviewServerSentEvent: typeof formatPrReviewServerSentEvent;
   replayConfigEventsAfter: typeof replayConfigEventsAfter;
+  subscribeChatSessionCommandEvents: typeof subscribeChatSessionCommandEvents;
   subscribeChatSessionEvents: typeof subscribeChatSessionEvents;
   subscribeConfigEvents: typeof subscribeConfigEvents;
   subscribeNotificationEvents: typeof subscribeNotificationEvents;
@@ -32,11 +36,13 @@ export type EventStreamDependencies = {
 };
 
 const defaultDependencies: EventStreamDependencies = {
+  formatChatSessionCommandServerSentEvent,
   formatChatSessionServerSentEvent,
   formatConfigServerSentEvent,
   formatNotificationServerSentEvent,
   formatPrReviewServerSentEvent,
   replayConfigEventsAfter,
+  subscribeChatSessionCommandEvents,
   subscribeChatSessionEvents,
   subscribeConfigEvents,
   subscribeNotificationEvents,
@@ -69,6 +75,9 @@ export function createEventStreamRoutes(
           }),
           dependencies.subscribeChatSessionEvents((event) => {
             send(dependencies.formatChatSessionServerSentEvent(event));
+          }),
+          dependencies.subscribeChatSessionCommandEvents((event) => {
+            send(dependencies.formatChatSessionCommandServerSentEvent(event));
           }),
           dependencies.subscribePrReviewEvents((event) => {
             send(dependencies.formatPrReviewServerSentEvent(event));

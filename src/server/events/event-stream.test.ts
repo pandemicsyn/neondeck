@@ -14,7 +14,9 @@ import {
   type PrReviewEvent,
 } from '../../modules/pr-reviews';
 import {
+  formatChatSessionCommandServerSentEvent,
   formatChatSessionServerSentEvent,
+  type ChatSessionCommandChangeEvent,
   type ChatSessionEvent,
 } from '../../modules/sessions';
 import {
@@ -48,6 +50,7 @@ describe('dashboard event stream', () => {
     expect(output).toContain('event: config-change');
     expect(output).toContain('event: notification-change');
     expect(output).toContain('event: chat-session-change');
+    expect(output).toContain('event: chat-session-command-change');
     expect(output).toContain('event: review-change');
 
     await reader!.cancel();
@@ -87,8 +90,11 @@ function eventHarness() {
   let configListener: ((event: ConfigChangeEvent) => void) | undefined;
   let notificationListener: ((event: NotificationEvent) => void) | undefined;
   let sessionListener: ((event: ChatSessionEvent) => void) | undefined;
+  let commandListener:
+    ((event: ChatSessionCommandChangeEvent) => void) | undefined;
   let reviewListener: ((event: PrReviewEvent) => void) | undefined;
   const unsubscribers = [
+    vi.fn<() => void>(),
     vi.fn<() => void>(),
     vi.fn<() => void>(),
     vi.fn<() => void>(),
@@ -98,11 +104,16 @@ function eventHarness() {
     (lastEventId: string | null | undefined) => ConfigChangeEvent[]
   >(() => []);
   const dependencies: EventStreamDependencies = {
+    formatChatSessionCommandServerSentEvent,
     formatChatSessionServerSentEvent,
     formatConfigServerSentEvent,
     formatNotificationServerSentEvent,
     formatPrReviewServerSentEvent,
     replayConfigEventsAfter: replay,
+    subscribeChatSessionCommandEvents(listener) {
+      commandListener = listener;
+      return unsubscribers[3]!;
+    },
     subscribeChatSessionEvents(listener) {
       sessionListener = listener;
       return unsubscribers[2]!;
@@ -117,7 +128,7 @@ function eventHarness() {
     },
     subscribePrReviewEvents(listener) {
       reviewListener = listener;
-      return unsubscribers[3]!;
+      return unsubscribers[4]!;
     },
   };
 
@@ -129,6 +140,7 @@ function eventHarness() {
       configListener?.(configEvent());
       notificationListener?.(notificationEvent());
       sessionListener?.(sessionEvent());
+      commandListener?.(commandEvent());
       reviewListener?.(reviewEvent());
     },
     emitConfigAndNotification() {
@@ -205,6 +217,28 @@ function sessionEvent(): ChatSessionEvent {
       createdAt: timestamp,
       updatedAt: timestamp,
       lastActiveAt: timestamp,
+    },
+  };
+}
+
+function commandEvent(): ChatSessionCommandChangeEvent {
+  const timestamp = '2026-07-15T00:00:00.000Z';
+  return {
+    id: 'command-1',
+    action: 'updated',
+    sessionId: 'session-1',
+    changedAt: timestamp,
+    event: {
+      id: 'command-1',
+      sessionId: 'session-1',
+      input: '/briefing',
+      status: 'completed',
+      result: null,
+      flueRunId: null,
+      workflowSummaryId: null,
+      createdAt: timestamp,
+      completedAt: timestamp,
+      updatedAt: timestamp,
     },
   };
 }

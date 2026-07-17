@@ -12,7 +12,7 @@ import {
 } from '../../runtime-home';
 import { suggestUtilitySessionTitle } from '../runtime';
 import { failedSessionResult } from './utils';
-import { publishSessionEvent } from './events';
+import { publishSessionCommandEvent, publishSessionEvent } from './events';
 import { readNeonSessionState } from './active-session';
 import {
   findChatSession,
@@ -641,6 +641,8 @@ export async function createChatSessionCommandEvent(
     database.close();
   }
 
+  if (event) publishSessionCommandEvent('created', event);
+
   return {
     ok: true,
     action: 'session_command_event_create',
@@ -749,6 +751,8 @@ export async function updateChatSessionCommandEvent(
   } finally {
     database.close();
   }
+
+  if (event) publishSessionCommandEvent('updated', event);
 
   return {
     ok: true,

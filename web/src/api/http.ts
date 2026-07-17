@@ -10,10 +10,9 @@ export class ApiError extends Error {
   }
 }
 
-export async function getJson<T>(
-  url: string,
-  options: { signal?: AbortSignal } = {},
-) {
+export type ApiRequestOptions = { signal?: AbortSignal };
+
+export async function getJson<T>(url: string, options: ApiRequestOptions = {}) {
   const response = await fetch(url, { signal: options.signal });
   return readJsonResponse<T>(response, url);
 }
@@ -21,7 +20,7 @@ export async function getJson<T>(
 export async function postJson<T>(
   url: string,
   body: unknown,
-  options: { signal?: AbortSignal } = {},
+  options: ApiRequestOptions = {},
 ) {
   const response = await fetch(url, {
     method: 'POST',
@@ -35,7 +34,7 @@ export async function postJson<T>(
 export async function putJson<T>(
   url: string,
   body: unknown,
-  options: { signal?: AbortSignal } = {},
+  options: ApiRequestOptions = {},
 ) {
   const response = await fetch(url, {
     method: 'PUT',
@@ -49,7 +48,7 @@ export async function putJson<T>(
 export async function patchJson<T>(
   url: string,
   body: unknown,
-  options: { signal?: AbortSignal } = {},
+  options: ApiRequestOptions = {},
 ) {
   const response = await fetch(url, {
     method: 'PATCH',
@@ -62,7 +61,7 @@ export async function patchJson<T>(
 
 export async function deleteJson<T>(
   url: string,
-  options: { signal?: AbortSignal } = {},
+  options: ApiRequestOptions = {},
 ) {
   const response = await fetch(url, {
     method: 'DELETE',

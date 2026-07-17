@@ -1,8 +1,8 @@
 import type { PrWatchMutationResponse, PrWatchResponse } from './types';
-import { getJson, postJson } from './http';
+import { getJson, postJson, type ApiRequestOptions } from './http';
 
-export async function getPrWatches() {
-  return getJson<PrWatchResponse>('/api/watches');
+export async function getPrWatches(options: ApiRequestOptions = {}) {
+  return getJson<PrWatchResponse>('/api/watches', options);
 }
 
 export async function addPrWatch(input: {

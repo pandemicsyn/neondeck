@@ -26,8 +26,11 @@ export const ReportsPanelPlugin = {
   Component({ config }) {
     const { data, error, isLoading } = useQuery({
       queryKey: [...queryKeys.reports, config.limit] as const,
-      queryFn: () =>
-        getReports({ excludeKind: 'pr-review', limit: config.limit }),
+      queryFn: ({ signal }) =>
+        getReports(
+          { excludeKind: 'pr-review', limit: config.limit },
+          { signal },
+        ),
       refetchInterval: Math.max(10, config.refreshSeconds) * 1000,
     });
 

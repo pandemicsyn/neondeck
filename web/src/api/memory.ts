@@ -4,7 +4,7 @@ import type {
   MemoryRecord,
   MemoryResponse,
 } from './types';
-import { getJson, postJson } from './http';
+import { getJson, postJson, type ApiRequestOptions } from './http';
 
 export async function getMemories(
   input: {
@@ -12,13 +12,17 @@ export async function getMemories(
     status?: 'active' | 'archived';
     includeArchived?: boolean;
   } = {},
+  options: ApiRequestOptions = {},
 ) {
   const params = new URLSearchParams();
   if (input.scope) params.set('scope', input.scope);
   if (input.status) params.set('status', input.status);
   if (input.includeArchived) params.set('includeArchived', 'true');
   const query = params.toString();
-  return getJson<MemoryResponse>(`/api/memories${query ? `?${query}` : ''}`);
+  return getJson<MemoryResponse>(
+    `/api/memories${query ? `?${query}` : ''}`,
+    options,
+  );
 }
 
 export async function upsertMemory(input: {

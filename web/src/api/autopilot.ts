@@ -6,35 +6,47 @@ import type {
   PreparedDiffFileDiffResponse,
   PreparedDiffFilesResponse,
 } from './types';
-import { getJson, postJson } from './http';
+import { getJson, postJson, type ApiRequestOptions } from './http';
 
-export async function getAutopilotState() {
-  return getJson<AutopilotState>('/api/autopilot/state');
+export async function getAutopilotState(options: ApiRequestOptions = {}) {
+  return getJson<AutopilotState>('/api/autopilot/state', options);
 }
 
-export async function getAutopilotRecoveryOptions(preparedDiffId: string) {
+export async function getAutopilotRecoveryOptions(
+  preparedDiffId: string,
+  options: ApiRequestOptions = {},
+) {
   return getJson<AutopilotRecoveryResponse>(
     `/api/prepared-diffs/${encodeURIComponent(preparedDiffId)}/recovery`,
+    options,
   );
 }
 
-export async function getPreparedDiffFiles(preparedDiffId: string) {
+export async function getPreparedDiffFiles(
+  preparedDiffId: string,
+  options: ApiRequestOptions = {},
+) {
   return getJson<PreparedDiffFilesResponse>(
     `/api/prepared-diffs/${encodeURIComponent(preparedDiffId)}/files`,
+    options,
   );
 }
 
-export async function getPreparedDiffFileDiff(input: {
-  preparedDiffId: string;
-  path: string;
-  maxPatchBytes?: number;
-}) {
+export async function getPreparedDiffFileDiff(
+  input: {
+    preparedDiffId: string;
+    path: string;
+    maxPatchBytes?: number;
+  },
+  options: ApiRequestOptions = {},
+) {
   const params = new URLSearchParams({ path: input.path });
   if (input.maxPatchBytes) {
     params.set('maxPatchBytes', String(input.maxPatchBytes));
   }
   return getJson<PreparedDiffFileDiffResponse>(
     `/api/prepared-diffs/${encodeURIComponent(input.preparedDiffId)}/files/diff?${params.toString()}`,
+    options,
   );
 }
 

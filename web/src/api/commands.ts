@@ -1,6 +1,6 @@
-import { getJson } from './http';
+import { getJson, type ApiRequestOptions } from './http';
 import type { NeonCommandsResponse } from './types';
 
-export function getNeonCommands() {
-  return getJson<NeonCommandsResponse>('/api/commands');
+export function getNeonCommands(options: ApiRequestOptions = {}) {
+  return getJson<NeonCommandsResponse>('/api/commands', options);
 }

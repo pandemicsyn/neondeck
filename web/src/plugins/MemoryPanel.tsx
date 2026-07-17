@@ -24,7 +24,7 @@ export const MemoryPanelPlugin = {
   Component({ config }) {
     const { data, error, isLoading } = useQuery({
       queryKey: queryKeys.memories,
-      queryFn: () => getMemories(),
+      queryFn: ({ signal }) => getMemories({}, { signal }),
       refetchInterval: 30_000,
     });
 
