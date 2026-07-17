@@ -6,7 +6,7 @@ import {
   type QueryClient,
   type UseQueryResult,
 } from '@tanstack/react-query';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   deleteGitHubPrReviewDraft,
   deleteGitHubPrReviewDraftComment,
@@ -63,13 +63,8 @@ export const prReviewQueryKeys = {
       ...prReviewQueryKeys.revision(pr),
       path,
     ] as const,
-  reviewThreads: (pr: GitHubPullRequest) =>
-    [
-      'pr-review',
-      'review-threads',
-      ...prReviewQueryKeys.revision(pr),
-      pr.updatedAt,
-    ] as const,
+  reviewThreads: (pr: Pick<GitHubPullRequest, 'number' | 'repo'>) =>
+    ['pr-review', 'review-threads', pr.repo, pr.number] as const,
   draft: (pr: Pick<GitHubPullRequest, 'repo' | 'number'>) =>
     ['pr-review', 'draft', pr.repo, pr.number] as const,
 };
@@ -202,16 +197,55 @@ export function usePrefetchGitHubPullRequestFilePatch(pr: GitHubPullRequest) {
   );
 }
 
-export function useGitHubPrReviewThreads(pr: GitHubPullRequest) {
-  return useQuery({
-    queryKey: prReviewQueryKeys.reviewThreads(pr),
-    queryFn: ({ signal }) =>
-      getGitHubPrReviewThreads(
-        { repo: pr.repo, number: pr.number },
-        { signal },
-      ),
-    enabled: pr.repo.length > 0 && pr.number > 0,
+type ReviewThreadsRefreshState = {
+  repo: string;
+  number: number;
+  activityVersion: string | null;
+};
+
+export function useGitHubPrReviewThreads(
+  pr: GitHubPullRequest,
+  activityVersion: string | null = pr.updatedAt,
+) {
+  const queryClient = useQueryClient();
+  const repo = pr.repo;
+  const number = pr.number;
+  const queryKey = useMemo(
+    () => prReviewQueryKeys.reviewThreads({ repo, number }),
+    [number, repo],
+  );
+  const refreshState = useRef<ReviewThreadsRefreshState>({
+    repo,
+    number,
+    activityVersion,
   });
+  useEffect(() => {
+    const current = { repo, number, activityVersion };
+    const previous = refreshState.current;
+    refreshState.current = current;
+    if (!shouldRefreshReviewThreads(previous, current)) return;
+    void queryClient.invalidateQueries({ exact: true, queryKey });
+  }, [activityVersion, number, queryClient, queryKey, repo]);
+
+  return useQuery({
+    queryKey,
+    queryFn: ({ signal }) =>
+      getGitHubPrReviewThreads({ repo, number }, { signal }),
+    enabled: repo.length > 0 && number > 0,
+  });
+}
+
+export function shouldRefreshReviewThreads(
+  previous: ReviewThreadsRefreshState,
+  current: ReviewThreadsRefreshState,
+) {
+  return (
+    previous.repo === current.repo &&
+    previous.number === current.number &&
+    previous.activityVersion !== null &&
+    current.activityVersion !== null &&
+    previous.activityVersion !== current.activityVersion
+  );
 }
 
 export function useGitHubPrReviewDraft(pr: GitHubPullRequest) {

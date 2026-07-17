@@ -7,11 +7,12 @@ import type {
 import {
   invalidateSubmittedReviewQueries,
   prReviewQueryKeys,
+  shouldRefreshReviewThreads,
   upsertReviewThread,
 } from './queries';
 
 describe('prReviewQueryKeys', () => {
-  it('keys files by diff inputs and threads by PR activity', () => {
+  it('keys files by diff inputs and mutable threads by PR identity', () => {
     const pr = pullRequest();
     const activityUpdated = {
       ...pr,
@@ -32,10 +33,10 @@ describe('prReviewQueryKeys', () => {
     expect(prReviewQueryKeys.filePatch(pr, 'src/app.ts')).not.toEqual(
       prReviewQueryKeys.filePatch(baseUpdated, 'src/app.ts'),
     );
-    expect(prReviewQueryKeys.reviewThreads(pr)).not.toEqual(
+    expect(prReviewQueryKeys.reviewThreads(pr)).toEqual(
       prReviewQueryKeys.reviewThreads(headUpdated),
     );
-    expect(prReviewQueryKeys.reviewThreads(pr)).not.toEqual(
+    expect(prReviewQueryKeys.reviewThreads(pr)).toEqual(
       prReviewQueryKeys.reviewThreads(activityUpdated),
     );
     expect(prReviewQueryKeys.files(pr)).toEqual(
@@ -47,6 +48,36 @@ describe('prReviewQueryKeys', () => {
     expect(prReviewQueryKeys.draft(pr)).toEqual(
       prReviewQueryKeys.draft(activityUpdated),
     );
+  });
+
+  it('refreshes threads only after authoritative activity changes', () => {
+    const initial = {
+      repo: 'pandemicsyn/neondeck',
+      number: 66,
+      activityVersion: null,
+    };
+    const authoritative = {
+      ...initial,
+      activityVersion: '2026-07-05T02:00:00.000Z',
+    };
+    const activityUpdated = {
+      ...authoritative,
+      activityVersion: '2026-07-05T02:30:00.000Z',
+    };
+
+    expect(shouldRefreshReviewThreads(initial, authoritative)).toBe(false);
+    expect(shouldRefreshReviewThreads(authoritative, authoritative)).toBe(
+      false,
+    );
+    expect(shouldRefreshReviewThreads(authoritative, activityUpdated)).toBe(
+      true,
+    );
+    expect(
+      shouldRefreshReviewThreads(authoritative, {
+        ...activityUpdated,
+        number: 67,
+      }),
+    ).toBe(false);
   });
 
   it('splices returned review threads into cached thread data', () => {

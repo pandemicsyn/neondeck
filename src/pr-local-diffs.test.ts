@@ -3,17 +3,28 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   readLocalPullRequestFileDiff,
   readLocalPullRequestFiles,
 } from './modules/pr-local-diffs';
 import { runtimePaths, type RuntimePaths } from './runtime-home';
 
+const gitDiffMock = vi.hoisted(() =>
+  vi.fn<typeof import('./repo-edit/git').gitDiff>(),
+);
+
+vi.mock('./repo-edit/git', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./repo-edit/git')>();
+  gitDiffMock.mockImplementation(original.gitDiff);
+  return { ...original, gitDiff: gitDiffMock };
+});
+
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
 
 afterEach(async () => {
+  gitDiffMock.mockClear();
   await Promise.all(
     tempRoots
       .splice(0)
@@ -77,6 +88,65 @@ describe('local PR diffs', () => {
       patch: expect.stringContaining('+export const value = 2;'),
     });
     expect(patch.diff).toContain('diff --git a/src/app.ts b/src/app.ts');
+    expect(metadataDiffCalls()).toHaveLength(1);
+    expect(patchDiffCalls()).toHaveLength(1);
+  });
+
+  it('single-flights metadata across concurrent per-file patch reads', async () => {
+    const { baseSha, headSha, paths } = await fixture();
+
+    const patches = await Promise.all(
+      ['src/app.ts', 'src/added.ts'].map((path) =>
+        readLocalPullRequestFileDiff(
+          {
+            owner: 'example',
+            repo: 'sample',
+            number: 42,
+            headSha,
+            baseSha,
+            baseRef: 'main',
+            path,
+          },
+          paths,
+        ),
+      ),
+    );
+
+    expect(patches.map((patch) => patch.file?.path)).toEqual([
+      'src/app.ts',
+      'src/added.ts',
+    ]);
+    expect(metadataDiffCalls()).toHaveLength(1);
+    expect(patchDiffCalls()).toHaveLength(2);
+  });
+
+  it('does not reuse metadata across immutable revision keys', async () => {
+    const { baseSha, headSha, paths, repo } = await fixture();
+    const input = {
+      owner: 'example',
+      repo: 'sample',
+      number: 42,
+      baseSha,
+      baseRef: 'main',
+      includePatches: false,
+    } as const;
+
+    await readLocalPullRequestFiles({ ...input, headSha }, paths);
+    await readLocalPullRequestFiles({ ...input, headSha }, paths);
+    await writeFile(join(repo, 'src/next.ts'), 'export const next = true;\n');
+    await commitAll(repo, 'next head');
+    const nextHeadSha = await git(repo, ['rev-parse', 'HEAD']);
+    const next = await readLocalPullRequestFiles(
+      { ...input, headSha: nextHeadSha },
+      paths,
+    );
+
+    expect(next.files).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: 'src/next.ts', status: 'added' }),
+      ]),
+    );
+    expect(metadataDiffCalls()).toHaveLength(2);
   });
 
   it('keeps renamed files with edits keyed by destination path', async () => {
@@ -209,7 +279,7 @@ async function fixture() {
       ],
     })}\n`,
   );
-  return { baseSha, headSha, paths };
+  return { baseSha, headSha, paths, repo };
 }
 
 async function renameFixture() {
@@ -350,4 +420,18 @@ async function writeRepoRegistry(paths: RuntimePaths, repo: string) {
 async function git(repo: string, args: string[]) {
   const { stdout } = await execFileAsync('git', args, { cwd: repo });
   return stdout.trim();
+}
+
+function metadataDiffCalls() {
+  return gitDiffMock.mock.calls.filter(([, input]) => {
+    const value = input as { includePatch?: boolean; paths?: string[] };
+    return value.includePatch === false && value.paths === undefined;
+  });
+}
+
+function patchDiffCalls() {
+  return gitDiffMock.mock.calls.filter(([, input]) => {
+    const value = input as { includePatch?: boolean; paths?: string[] };
+    return value.includePatch === true && Boolean(value.paths?.length);
+  });
 }

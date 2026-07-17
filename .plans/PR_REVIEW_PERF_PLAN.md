@@ -1,6 +1,6 @@
 # PR Review / File Tree Performance Plan
 
-Status: phases 1–5 implemented; real-PR verification complete; remediation pending discussion
+Status: phases 1–5 implemented; real-PR verification and two approved remediations complete; active-patch prioritization pending discussion
 Prior art: `.plans/archived/DIFF_UI_PLAN.md`, `.plans/archived/DIFF_REVIEW.md`
 
 ## 2026-07-17 reconciliation
@@ -16,7 +16,9 @@ Phase 6 has now been run against a real registered repository and production
 browser build. The intended architecture is sound, but the end-user tree,
 first-patch, threads, and cold-fetch targets did not all pass. No production
 optimization was made during this measurement pass; the candidate fixes remain
-behind the performance discussion gate.
+behind the performance discussion gate. A later 2026-07-17 remediation pass,
+documented below without removing the baseline, implemented the two approved
+request-path fixes and repeated the same real-PR harness.
 
 ## Original problem (retained for history)
 
@@ -187,30 +189,74 @@ aborted one copy after it started. A complete trace also reproduced two aborted
 unresolved-thread patch reads followed by two replacements, with the last API
 response completing around 3.7 seconds.
 
-## Confirmed follow-up candidates — discuss before implementation
+## 2026-07-17 approved remediation result
 
-1. **Stabilize review-thread identity.** `reviewThreads(pr)` still includes
-   `pr.updatedAt`. The popout's synthetic timestamp and later authoritative
-   timestamp create two query identities for the same revision. Avoid that
-   optimistic-to-authoritative key churn while preserving explicit SSE,
-   mutation, and refresh invalidation for real thread changes.
-2. **Reuse immutable local metadata.** `readLocalPullRequestFileDiff()` first
-   recomputes metadata for all 1,019 files, then runs the path-scoped diff.
-   Active, neighbor, draft, and unresolved paths repeat that full work in
-   parallel. Cache or single-flight metadata by `(repo, mergeBase, head)` and
-   share it with per-file reads before considering a broad concurrency cap.
-3. **Prioritize the active patch.** Re-run after metadata reuse. If neighbor
+The follow-up kept the local object architecture and changed only the two
+measured repeat-path causes:
+
+- Review threads now use their actual server contract as the query identity:
+  `(repo, PR number)`. File data remains revision-keyed. Mutations still update
+  or invalidate the stable thread entry, and a later authoritative PR
+  `updatedAt` change explicitly invalidates it. The initial
+  optimistic-to-authoritative settlement establishes the refresh baseline
+  without starting a second request.
+- Metadata-only local diffs are cached for 10 minutes in an eight-revision LRU
+  keyed by `(repo path, merge-base, head)`. Concurrent misses single-flight;
+  failures are not cached. Per-file reads also reuse one registry/ref resolution
+  within the request. Patch text is not cached.
+
+The production server was restarted before the final run, so `initial auto` is
+an empty in-process metadata-cache measurement with already-present git
+objects, not a second cold-object fetch. The immutable PR target, browser,
+machine, and three-sample method are otherwise unchanged.
+
+| Path                              |                Baseline |       Remediated | Change / verdict                                   |
+| --------------------------------- | ----------------------: | ---------------: | -------------------------------------------------- |
+| Warm local metadata               |                  311 ms |            90 ms | 71.2% faster; pass                                 |
+| Warm sequential first patch       |                  643 ms |           303 ms | 52.9% faster; pass                                 |
+| Four concurrent local patches     |                1,952 ms |         1,055 ms | 46.0% faster                                       |
+| Production tree visible           |                  869 ms |           622 ms | 28.4% faster; still 122 ms over target             |
+| Production first patch visible    |                1,971 ms |         1,195 ms | 39.4% faster; still 195 ms over target             |
+| Production threads visible        |                2,183 ms |         1,946 ms | 10.9% faster; GitHub thread request remains 917 ms |
+| Review-thread requests per sample |                       2 |                1 | duplicate eliminated in all samples                |
+| Aborted patch reads               | 2 in the complete trace | 0 in all samples | optimistic settlement no longer churns paths       |
+| Last API response                 |                3,631 ms |         2,782 ms | 23.4% earlier                                      |
+
+The duplicate full-transfer baseline sample used 762,488 bytes for threads and
+1,122,324 bytes for all APIs. Every remediated sample used 381,244 thread bytes
+and 742,850 total API bytes: 50% less thread transfer and 33.8% less total API
+transfer than that reproduced duplicate case. The final direct DevTools trace
+measured 551 ms LCP, 0.00 CLS, and the same 39 ms Pierre forced reflow with no
+estimated savings. The result confirms the request/backend path, rather than
+React or Pierre rendering, remains the next decision point.
+
+## Confirmed follow-up candidates and remediation status
+
+1. **Completed — stabilize review-thread identity.** `reviewThreads(pr)`
+   included `pr.updatedAt`. The popout's synthetic timestamp and later
+   authoritative timestamp created two query identities for the same revision.
+   The stable PR-scoped key plus explicit mutation/activity invalidation now
+   produces one request per sample and no settlement-driven patch abandonment.
+2. **Completed — reuse immutable local metadata.**
+   `readLocalPullRequestFileDiff()` recomputed metadata for all 1,019 files,
+   then ran the path-scoped diff. The bounded revision cache and concurrent
+   single-flight reduced the sequential patch median from 643 to 303 ms and
+   four-path wall time from 1,952 to 1,055 ms.
+3. **Discuss next — prioritize the active patch.** Re-running after metadata
+   reuse still leaves first patch 195 ms over the browser target. If neighbor
    prefetch still competes with first-patch latency, start adjacent and
    unresolved background reads only after the active patch settles.
-4. **Revisit cold fetch last.** The 4.98-second object fetch misses the target,
+4. **Discuss later — revisit cold fetch.** The 4.98-second object fetch misses the target,
    but it is a one-time revision cost. Separate network fetch time from local
    metadata time before changing refspecs or the `<3s` budget.
 
-Acceptance for a follow-up PR is the same real target with no duplicate thread
-request, no abandoned patch request caused by PR-detail settlement, tree under
-500 ms, first patch under 1 second, and no regression to fallback completeness.
-Raw results are gitignored at
-`benchmarks/results/pr-12204-real-local.json`.
+Acceptance is partial on the same real target: duplicate thread requests and
+settlement-driven abandoned patch reads are eliminated, backend targets pass,
+and fallback code is unchanged. The tree and first-patch browser budgets still
+miss, so active-patch prioritization remains behind the performance discussion
+gate. Raw baseline and remediation results are gitignored at
+`benchmarks/results/pr-12204-real-local.json` and
+`benchmarks/results/pr-12204-remediation-local.json`.
 
 ## Risks / notes
 
