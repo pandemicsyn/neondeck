@@ -1,8 +1,20 @@
+import { createHash } from 'node:crypto';
 import { Hono } from 'hono';
+import { REPORT_DECK_CONTROLLER_SOURCE } from '../../lib/report-deck-controller';
 import { stageDocsDriftFix } from '../../modules/docs-drift';
 import { listReports, readReport, readReportHtml } from '../../modules/reports';
 import type { RuntimePaths } from '../../runtime-home';
 import { safeJsonObject } from '../http';
+
+export const REPORT_DECK_CONTROLLER_HASH = createHash('sha256')
+  .update(REPORT_DECK_CONTROLLER_SOURCE)
+  .digest('base64');
+
+const reportContentSecurityPolicy = [
+  "default-src 'none'",
+  "style-src 'unsafe-inline'",
+  `script-src 'sha256-${REPORT_DECK_CONTROLLER_HASH}'`,
+].join('; ');
 
 export function createReportApiRoutes(paths: RuntimePaths) {
   const routes = new Hono();
@@ -115,8 +127,7 @@ export function createReportFileRoutes(paths: RuntimePaths) {
       const result = await readReportHtml(id, paths);
       if (!result) return c.text('Not found', 404);
       return c.html(result.html, 200, {
-        'content-security-policy':
-          "default-src 'none'; style-src 'unsafe-inline';",
+        'content-security-policy': reportContentSecurityPolicy,
         'x-content-type-options': 'nosniff',
       });
     } catch {

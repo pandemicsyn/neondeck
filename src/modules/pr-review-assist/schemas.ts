@@ -41,32 +41,129 @@ export const reviewAssistFindingSchema = v.object({
   confidence: v.optional(v.picklist(['high', 'medium', 'low'])),
 });
 
-export const reviewAssistStructuredOutputSchema = v.object({
+export const REVIEW_PRESENTATION_LIMITS = {
+  slidesPerArtifact: 12,
+  markdownSlidesPerArtifact: 4,
+  markdownCharacters: 24_000,
+} as const;
+
+const reviewPresentationSourceSchema = v.picklist([
+  'pr-facts',
+  'checks',
+  'risks',
+  'change-map',
+  'seeded-comments',
+  'report-only-findings',
+  'findings',
+  'next-actions',
+]);
+
+const reviewPresentationSourceSlideSchema = v.object({
+  kind: v.literal('source'),
+  source: reviewPresentationSourceSchema,
+  layout: v.picklist(['facts', 'columns', 'change-map', 'findings']),
+  title: v.optional(
+    v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(120)),
+  ),
+});
+
+const reviewPresentationMarkdownSlideSchema = v.object({
+  kind: v.literal('markdown'),
+  title: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(120)),
+  markdown: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(6_000)),
+  tone: v.optional(
+    v.picklist(['neutral', 'correctness', 'security', 'positive']),
+    'neutral',
+  ),
+});
+
+const reviewPresentationArtifactSchema = v.pipe(
+  v.array(
+    v.variant('kind', [
+      reviewPresentationSourceSlideSchema,
+      reviewPresentationMarkdownSlideSchema,
+    ]),
+  ),
+  v.maxLength(REVIEW_PRESENTATION_LIMITS.slidesPerArtifact),
+  v.check(
+    (slides) =>
+      slides.filter((slide) => slide.kind === 'markdown').length <=
+      REVIEW_PRESENTATION_LIMITS.markdownSlidesPerArtifact,
+    `Presentation artifacts can include at most ${REVIEW_PRESENTATION_LIMITS.markdownSlidesPerArtifact} Markdown slides.`,
+  ),
+);
+
+export const reviewPresentationPlanSchema = v.pipe(
+  v.object({
+    overview: reviewPresentationArtifactSchema,
+    issues: reviewPresentationArtifactSchema,
+  }),
+  v.check(
+    (plan) =>
+      [plan.overview, plan.issues].every(
+        (artifact) =>
+          artifact.reduce(
+            (total, slide) =>
+              total + (slide.kind === 'markdown' ? slide.markdown.length : 0),
+            0,
+          ) <= REVIEW_PRESENTATION_LIMITS.markdownCharacters,
+      ),
+    `Each presentation artifact can include at most ${REVIEW_PRESENTATION_LIMITS.markdownCharacters} Markdown characters.`,
+  ),
+);
+
+const reviewAssistStructuredOutputEntries = {
   overview: v.object({
     summary: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(4_000)),
-    changeMap: v.array(
-      v.object({
-        path: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(1_000)),
-        summary: v.pipe(
-          v.string(),
-          v.trim(),
-          v.minLength(1),
-          v.maxLength(2_000),
-        ),
-        risk: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(1_000))),
-      }),
+    changeMap: v.pipe(
+      v.array(
+        v.object({
+          path: v.pipe(
+            v.string(),
+            v.trim(),
+            v.minLength(1),
+            v.maxLength(1_000),
+          ),
+          summary: v.pipe(
+            v.string(),
+            v.trim(),
+            v.minLength(1),
+            v.maxLength(2_000),
+          ),
+          risk: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(1_000))),
+        }),
+      ),
+      v.maxLength(4_096),
     ),
     risks: v.pipe(
-      v.array(v.pipe(v.string(), v.trim(), v.minLength(1))),
+      v.array(v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(4_000))),
       v.maxLength(20),
     ),
     checks: v.pipe(
-      v.array(v.pipe(v.string(), v.trim(), v.minLength(1))),
+      v.array(v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(4_000))),
       v.maxLength(20),
+    ),
+    nextActions: v.optional(
+      v.pipe(
+        v.array(
+          v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(4_000)),
+        ),
+        v.maxLength(20),
+      ),
     ),
   }),
   findings: v.pipe(v.array(reviewAssistFindingSchema), v.maxLength(100)),
+} as const;
+
+export const reviewAssistStructuredOutputSchema = v.looseObject({
+  ...reviewAssistStructuredOutputEntries,
+  presentation: v.optional(v.unknown()),
 });
+
+export function parseReviewPresentationPlan(value: unknown) {
+  const result = v.safeParse(reviewPresentationPlanSchema, value);
+  return result.success ? result.output : null;
+}
 
 export const prReviewAssistOutputSchema = v.looseObject({
   ok: v.boolean(),
@@ -84,3 +181,8 @@ export type ReviewAssistStructuredOutput = v.InferOutput<
 export type ReviewAssistFinding = v.InferOutput<
   typeof reviewAssistFindingSchema
 >;
+export type ReviewPresentationPlan = v.InferOutput<
+  typeof reviewPresentationPlanSchema
+>;
+export type ReviewPresentationSlide =
+  ReviewPresentationPlan['overview'][number];

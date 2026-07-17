@@ -1,9 +1,13 @@
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile, readdir, rm, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
+import { representativeReportDeckFixture } from '../shared/report-deck-fixtures';
+import { REPORT_DECK_CONTROLLER_SOURCE } from './lib/report-deck-controller';
+import { renderReportDeckHtml } from './lib/report-deck-html';
 import { renderReportHtml } from './lib/report-html';
 import {
   listReports,
@@ -13,6 +17,7 @@ import {
   writeReport,
 } from './modules/reports';
 import { createApp } from './server/create-app';
+import { REPORT_DECK_CONTROLLER_HASH } from './server/routes/reports';
 import { runtimePaths } from './runtime-home';
 
 const tempRoots: string[] = [];
@@ -228,6 +233,45 @@ describe('reports', () => {
       { headers: { host: 'example.com' } },
     );
     expect(blockedResponse.status).toBe(404);
+  });
+
+  it('serves standalone decks with an exact controller CSP hash', async () => {
+    const paths = runtimePaths(await tempDir());
+    const html = renderReportDeckHtml(representativeReportDeckFixture);
+    const report = await writeReport(
+      {
+        kind: 'pr-review',
+        title: representativeReportDeckFixture.title,
+        html,
+        summary: { deck: representativeReportDeckFixture },
+        createdBy: 'test',
+        createdAt: representativeReportDeckFixture.generatedAt,
+      },
+      paths,
+    );
+    const app = await createApp({
+      paths,
+      scheduler: false,
+      staticRoot: join(paths.home, 'missing-static'),
+    });
+
+    const response = await app.request(
+      `http://localhost/reports/${report.id}`,
+      { headers: { host: 'localhost' } },
+    );
+    const servedHtml = await response.text();
+    const expectedHash = createHash('sha256')
+      .update(REPORT_DECK_CONTROLLER_SOURCE)
+      .digest('base64');
+
+    expect(response.status).toBe(200);
+    expect(REPORT_DECK_CONTROLLER_HASH).toBe(expectedHash);
+    expect(response.headers.get('content-security-policy')).toBe(
+      `default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-${expectedHash}'`,
+    );
+    expect(servedHtml).toContain(
+      `<script>${REPORT_DECK_CONTROLLER_SOURCE}</script>`,
+    );
   });
 
   it('keeps report paths under the runtime reports root', async () => {

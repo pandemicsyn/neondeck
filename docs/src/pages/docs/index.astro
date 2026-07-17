@@ -186,8 +186,13 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           Reports are local HTML artifacts for PR review assistance, CI failure
           dossiers, docs drift, issue triage, and hygiene. The dashboard lists
           them in the Reports panel and serves individual artifacts from
-          <code>/reports/:id</code>. Scheduled tasks are durable local work
-          managed through <code>/api/scheduled-tasks</code> and typed task actions.
+          <code>/reports/:id</code>. PR review artifacts are self-contained
+          slide decks with a plain-language review brief first, bounded Markdown
+          and links, keyboard navigation, print layouts, and the same typed
+          document model in the standalone report and dashboard overlay.
+          Scheduled tasks are durable local work managed through <code
+            >/api/scheduled-tasks</code
+          > and typed task actions.
         </p>
 
         <h2 id="flue">Flue actions and workflows</h2>
