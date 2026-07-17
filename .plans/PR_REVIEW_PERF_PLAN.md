@@ -1,6 +1,6 @@
 # PR Review / File Tree Performance Plan
 
-Status: phases 1–5 implemented; real-PR verification and two approved remediations complete; active-patch prioritization pending discussion
+Status: phases 1–5 implemented; real-PR verification, request-path remediation, and active-patch prioritization complete; cold-fetch decision remains
 Prior art: `.plans/archived/DIFF_UI_PLAN.md`, `.plans/archived/DIFF_REVIEW.md`
 
 ## 2026-07-17 reconciliation
@@ -19,6 +19,8 @@ optimization was made during this measurement pass; the candidate fixes remain
 behind the performance discussion gate. A later 2026-07-17 remediation pass,
 documented below without removing the baseline, implemented the two approved
 request-path fixes and repeated the same real-PR harness.
+The agreed active-patch pass then delayed neighbor, draft, and unresolved-file
+reads until the selected patch settled and repeated the immutable target again.
 
 ## Original problem (retained for history)
 
@@ -230,6 +232,40 @@ measured 551 ms LCP, 0.00 CLS, and the same 39 ms Pierre forced reflow with no
 estimated savings. The result confirms the request/backend path, rather than
 React or Pierre rendering, remains the next decision point.
 
+## 2026-07-17 active-patch priority result
+
+The selected patch now owns the initial patch-request slot. Neighbor,
+draft-comment, and unresolved-thread patch queries are derived separately and
+start only after the active query has data or has failed. Moving neighbor
+warming into that same TanStack Query group also makes those reads cancellable
+when selection changes.
+Deferred draft anchors remain unknown until their background patches start;
+comments on files that disappeared from the revision still become stale.
+
+The production server and browser harness were restarted, while the same
+immutable revision and already-present git objects were retained. Current
+backend diagnostics were 63 ms for warm metadata, 153 ms for a sequential
+patch, and 528 ms for four concurrent paths. Those machine-local values are
+reported as run context rather than attributed to the frontend scheduling
+change.
+
+| Path                                      | Request-path remediation | Active priority | Change / verdict                                   |
+| ----------------------------------------- | -----------------------: | --------------: | -------------------------------------------------- |
+| Production tree visible                   |                   622 ms |          612 ms | 1.6% faster; still 112 ms over target              |
+| Production first patch visible            |                 1,195 ms |          798 ms | 33.2% faster; passes all three samples             |
+| Production threads visible                |                 1,946 ms |        1,724 ms | 11.4% faster; GitHub thread fetch remains dominant |
+| Patch requests per browser sample         |                        6 |               4 | 33.3% fewer                                        |
+| Patch requests started before first paint |             not recorded |        1 median | only the active read in the median sample          |
+| Aborted patch reads                       |                        0 |               0 | stable in all samples                              |
+| Last API response                         |                 2,782 ms |        2,021 ms | 27.4% earlier                                      |
+
+The three first-patch samples were 771, 798, and 948 ms. The resource-order
+probe counted only the active request before Pierre's first line in two runs;
+in one run, the first background read launched after the active query settled
+but before the custom element painted. A direct DevTools trace measured 498 ms
+LCP, 0.00 CLS, and a 36 ms Pierre forced-reflow total with no estimated
+user-visible savings.
+
 ## Confirmed follow-up candidates and remediation status
 
 1. **Completed — stabilize review-thread identity.** `reviewThreads(pr)`
@@ -242,21 +278,24 @@ React or Pierre rendering, remains the next decision point.
    then ran the path-scoped diff. The bounded revision cache and concurrent
    single-flight reduced the sequential patch median from 643 to 303 ms and
    four-path wall time from 1,952 to 1,055 ms.
-3. **Discuss next — prioritize the active patch.** Re-running after metadata
-   reuse still leaves first patch 195 ms over the browser target. If neighbor
-   prefetch still competes with first-patch latency, start adjacent and
-   unresolved background reads only after the active patch settles.
+3. **Completed — prioritize the active patch.** The retained remediation result
+   left first patch 195 ms over the browser target. Active patch work is now
+   isolated from adjacent, draft, and unresolved background reads until it
+   settles. The next run reached a 798 ms median and passed the target in all
+   three samples without abandoned reads.
 4. **Discuss later — revisit cold fetch.** The 4.98-second object fetch misses the target,
    but it is a one-time revision cost. Separate network fetch time from local
    metadata time before changing refspecs or the `<3s` budget.
 
 Acceptance is partial on the same real target: duplicate thread requests and
-settlement-driven abandoned patch reads are eliminated, backend targets pass,
-and fallback code is unchanged. The tree and first-patch browser budgets still
-miss, so active-patch prioritization remains behind the performance discussion
-gate. Raw baseline and remediation results are gitignored at
+settlement-driven abandoned patch reads are eliminated, the first-patch browser
+budget now passes, backend targets pass, and fallback code is unchanged. The
+tree, threads, and one-time cold-object budgets still miss and remain separate
+follow-ups. Raw baseline, remediation, and active-priority results are
+gitignored at
 `benchmarks/results/pr-12204-real-local.json` and
-`benchmarks/results/pr-12204-remediation-local.json`.
+`benchmarks/results/pr-12204-remediation-local.json`, and
+`benchmarks/results/pr-12204-active-priority-local.json`.
 
 ## Risks / notes
 

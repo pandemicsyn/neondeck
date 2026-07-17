@@ -142,6 +142,7 @@ export function useGitHubPullRequestFilePatches(
             },
             { signal },
           ),
+        staleTime: Infinity,
         enabled: repo.length > 0 && number > 0 && path.length > 0,
       })),
     [baseRef, baseSha, headSha, number, paths, repo],
@@ -171,30 +172,6 @@ export function useGitHubPullRequestFilePatches(
     queries,
     combine: combinePatchQueries,
   });
-}
-
-export function usePrefetchGitHubPullRequestFilePatch(pr: GitHubPullRequest) {
-  const queryClient = useQueryClient();
-  return useCallback(
-    (path: string) =>
-      queryClient.prefetchQuery({
-        queryKey: prReviewQueryKeys.filePatch(pr, path),
-        queryFn: ({ signal }) =>
-          getGitHubPullRequestFileDiff(
-            {
-              repo: pr.repo,
-              number: pr.number,
-              path,
-              headSha: pr.headSha,
-              baseSha: pr.baseSha,
-              baseRef: pr.baseRef,
-              source: 'auto',
-            },
-            { signal },
-          ),
-      }),
-    [pr, queryClient],
-  );
 }
 
 type ReviewThreadsRefreshState = {
