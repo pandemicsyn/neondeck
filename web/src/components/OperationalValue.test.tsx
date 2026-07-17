@@ -41,10 +41,30 @@ describe('OperationalValue', () => {
     );
 
     expect(html).toContain('<details');
-    expect(html).toContain('aria-label="Show full diagnostic command"');
+    expect(html).not.toContain('aria-label="Show full diagnostic command"');
+    expect(html).toContain('aria-labelledby=');
     expect(html).toContain('…');
     expect(html).not.toContain('tail-marker');
     expect(html).not.toContain('aria-label="Copy diagnostic command"');
+  });
+
+  it('names a disclosure with both its action and operational preview', () => {
+    const value = `npm run diagnostic -- ${'x'.repeat(100)}`;
+
+    act(() =>
+      root.render(
+        <OperationalValue label="diagnostic command" value={value} />,
+      ),
+    );
+
+    const summary = container.querySelector('summary') as HTMLElement;
+    const labelledBy = summary.getAttribute('aria-labelledby')?.split(' ');
+    const accessibleName = labelledBy
+      ?.map((id) => document.getElementById(id)?.textContent)
+      .join(' ');
+
+    expect(accessibleName).toContain('Show full diagnostic command.');
+    expect(accessibleName).toContain('npm run diagnostic --');
   });
 
   it('copies the complete value and announces success', async () => {

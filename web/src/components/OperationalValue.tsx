@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { cn } from '../lib/cn';
 
 const defaultDisclosureThreshold = 84;
@@ -20,6 +20,8 @@ export function OperationalValue({
   preview = value,
   previewClassName,
 }: OperationalValueProps) {
+  const actionLabelId = useId();
+  const previewLabelId = useId();
   const [isOpen, setIsOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>(
     'idle',
@@ -59,11 +61,17 @@ export function OperationalValue({
       onToggle={(event) => setIsOpen(event.currentTarget.open)}
     >
       <summary
-        aria-label={`${isOpen ? 'Hide' : 'Show'} full ${label}`}
+        aria-labelledby={`${actionLabelId} ${previewLabelId}`}
         className="flex min-w-0 cursor-pointer list-none items-baseline gap-1 [&::-webkit-details-marker]:hidden"
         title={value.length <= disclosureThreshold * 2 ? value : undefined}
       >
-        <span className={cn('min-w-0 flex-1', previewClassName)}>
+        <span className="sr-only" id={actionLabelId}>
+          {isOpen ? 'Hide' : 'Show'} full {label}.
+        </span>
+        <span
+          className={cn('min-w-0 flex-1', previewClassName)}
+          id={previewLabelId}
+        >
           {summaryPreview}
         </span>
         <span
