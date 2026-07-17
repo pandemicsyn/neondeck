@@ -49,3 +49,29 @@ take minutes or exhaust memory:
 ```sh
 npm run bench:frontend -- --samples 1 --include-fifty-k
 ```
+
+## Real PR review
+
+Run the production server with the target repository registered in
+`NEONDECK_HOME`, then point the real-PR harness at a specific immutable
+revision:
+
+```sh
+npm run bench:pr-review -- \
+  --origin http://127.0.0.1:3000 \
+  --repo owner/name \
+  --number 123 \
+  --head <head-sha> \
+  --base <base-sha> \
+  --base-ref main \
+  --title "PR title" \
+  --samples 3
+```
+
+The harness measures the initial and warm local file-list calls, a sequential
+first patch, the real unresolved-thread fanout, and production-browser time to
+tree, threads, and first patch. It also records duplicate/aborted requests and
+API transfer bytes. Add `--include-github-fallback` only when the extra GitHub
+API traffic is intentional. The initial local call is a valid cold measurement
+only if the target head/base objects were absent before the run. Results default
+to the ignored `benchmarks/results/pr-review-real-local.json`.

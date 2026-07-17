@@ -1,15 +1,30 @@
 # PR Review / File Tree Performance Plan
 
-Status: proposed
+Status: phases 1–5 implemented; real-PR verification complete; remediation pending discussion
 Prior art: `.plans/archived/DIFF_UI_PLAN.md`, `.plans/archived/DIFF_REVIEW.md`
 
-## Problem
+## 2026-07-17 reconciliation
+
+PR #84 implemented phases 1–5 plus the original synthetic 305-file harness.
+The old problem statement and findings remain below for audit history; they no
+longer describe the current architecture. The current path uses registered
+local git objects, a metadata-only file list, per-file patch reads, an
+optimistic popout target, and a review-threads-only endpoint. PR #115 later
+hardened refresh and popout loading behavior.
+
+Phase 6 has now been run against a real registered repository and production
+browser build. The intended architecture is sound, but the end-user tree,
+first-patch, threads, and cold-fetch targets did not all pass. No production
+optimization was made during this measurement pass; the candidate fixes remain
+behind the performance discussion gate.
+
+## Original problem (retained for history)
 
 Opening the PR review popout on a large PR has a noticeable delay before the
 file tree and first diff render. The whole review surface is fed by the GitHub
 REST API, serially, with all patch text shipped up front.
 
-## Current data path (findings)
+## Original data path (retained findings)
 
 1. **Popout boot waterfall.** `openPopout` opens a fresh window at
    `/review?repo=&number=` (`web/src/features/pr-review/GitHubPrReview.tsx:626`).
@@ -65,7 +80,7 @@ instant local reads, with no truncation.
 
 ## Phases
 
-### Phase 1 — Local PR diff provider (backend)
+### Phase 1 — Local PR diff provider (backend) — completed in PR #84
 
 - New module `src/modules/pr-local-diffs/`:
   - Resolve the PR repo to a registered `RepoConfig` by `github.owner/name`.
@@ -84,7 +99,7 @@ instant local reads, with no truncation.
 - Fallback: unregistered repo, missing remote, or any git failure → the
   existing GitHub API path, unchanged.
 
-### Phase 2 — API split: file tree vs patches
+### Phase 2 — API split: file tree vs patches — completed in PR #84
 
 - `GET /prs/:o/:r/:n/files` gains `patches=all|none` (default `all` for
   compatibility) and `source=auto|local|github` (`auto`: local when the repo is
@@ -95,7 +110,7 @@ instant local reads, with no truncation.
   source, git _is_ the cache (optionally memoize merge-base per
   `(repo, baseSha, headSha)`).
 
-### Phase 3 — Frontend lazy patch loading
+### Phase 3 — Frontend lazy patch loading — completed in PR #84
 
 - Split queries: `useGitHubPullRequestFileList` (metadata only — renders
   `FileTreePane` immediately) and `useGitHubPullRequestFilePatch(path)` for the
@@ -109,7 +124,10 @@ instant local reads, with no truncation.
   Rather than blocking on everything, fetch patches eagerly only for files that
   carry draft comments or unresolved threads (a small set), lazily for the rest.
 
-### Phase 4 — Kill the popout waterfall
+### Phase 4 — Kill the popout waterfall — completed in PR #84
+
+The URL-priming path shipped. The conditional bootstrap endpoint was not needed
+for that implementation and remains deferred.
 
 - Put `headSha` (and title) in the popout URL. The popout can then start the
   file-list query immediately, in parallel with the PR detail query, and paint
@@ -118,13 +136,13 @@ instant local reads, with no truncation.
   returning detail + file list in one round trip. Start with the URL-param
   approach; it's nearly free.
 
-### Phase 5 — Slim the review-threads fetch
+### Phase 5 — Slim the review-threads fetch — completed in PR #84
 
 - Add a threads-only fetcher (just the review-threads calls) and use it for
   the review surface. Keep the full `fetchPullRequestEventState` for watchers
   and autopilot triage, which actually need commits/checks/permissions.
 
-### Phase 6 — Verification and targets
+### Phase 6 — Verification and targets — measured 2026-07-17
 
 - Add a timing harness against a large fixture PR (300+ files) covering: tree
   visible, first patch rendered, threads visible.
@@ -134,6 +152,65 @@ instant local reads, with no truncation.
 - Extend existing tests: `src/repo-edit` git tests for the `head` ref support,
   pr-file-cache tests for the `patches=none` shape,
   `GitHubPrReview.test.ts` for lazy patch states.
+
+The implementation tests and synthetic 305-file harness shipped with PR #84.
+The new `npm run bench:pr-review` command measures the actual API and production
+browser path against an immutable PR revision. Results remain local evidence,
+not timing assertions in the unit suite.
+
+## Real registered PR result
+
+Target: open `Kilo-Org/kilocode#12204` at head
+`3e0d20c03d43124ac1bc7841ba4ba6aa503d96bd`, with 1,019 files, 45,053
+additions, 23,744 deletions, 47 review threads, and two unresolved threads on
+two paths. Both head and base objects were absent before the first local call,
+so the initial auto result is a genuine cold measurement.
+
+| Path                           |                                           Result |                         Budget | Verdict                                   |
+| ------------------------------ | -----------------------------------------------: | -----------------------------: | ----------------------------------------- |
+| Cold local metadata            | 4,978 ms; 295,250 B; 1,019 files; zero truncated |                     < 3,000 ms | Miss                                      |
+| Warm local metadata            |                                    311 ms median |    < 500 ms backend diagnostic | Pass                                      |
+| Warm sequential first patch    |                                    643 ms median |  < 1,000 ms backend diagnostic | Pass                                      |
+| Production tree visible        |                     869 ms median (852–1,057 ms) |                       < 500 ms | Miss                                      |
+| Production first patch visible |                 1,971 ms median (1,944–2,244 ms) |                     < 1,000 ms | Miss                                      |
+| Production threads visible     |                 2,183 ms median (2,065–2,495 ms) |        < 500 ms harness target | Miss                                      |
+| Production LCP / CLS           |                    876 ms median / 0.0012 median |                    exploratory | Healthy                                   |
+| Four concurrent local patches  |                                    1,952 ms wall | compare with 643 ms sequential | Contention confirmed                      |
+| GitHub fallback, cold          |          3,894 ms; 764,826 B; one truncated file |       no worse than prior path | Faster cold, incomplete and 2.6× metadata |
+| GitHub fallback, cached        |                                 24 ms; 764,826 B |       no worse than prior path | Fast cache hit, larger response           |
+
+The three-sample production-browser run had no long tasks. Median FCP was 464
+ms. Every sample started two review-thread requests after optimistic PR state
+was replaced by authoritative detail. One sample fully transferred both copies
+(762,488 B of thread JSON and 1,122,324 B total API transfer); the other samples
+aborted one copy after it started. A complete trace also reproduced two aborted
+unresolved-thread patch reads followed by two replacements, with the last API
+response completing around 3.7 seconds.
+
+## Confirmed follow-up candidates — discuss before implementation
+
+1. **Stabilize review-thread identity.** `reviewThreads(pr)` still includes
+   `pr.updatedAt`. The popout's synthetic timestamp and later authoritative
+   timestamp create two query identities for the same revision. Avoid that
+   optimistic-to-authoritative key churn while preserving explicit SSE,
+   mutation, and refresh invalidation for real thread changes.
+2. **Reuse immutable local metadata.** `readLocalPullRequestFileDiff()` first
+   recomputes metadata for all 1,019 files, then runs the path-scoped diff.
+   Active, neighbor, draft, and unresolved paths repeat that full work in
+   parallel. Cache or single-flight metadata by `(repo, mergeBase, head)` and
+   share it with per-file reads before considering a broad concurrency cap.
+3. **Prioritize the active patch.** Re-run after metadata reuse. If neighbor
+   prefetch still competes with first-patch latency, start adjacent and
+   unresolved background reads only after the active patch settles.
+4. **Revisit cold fetch last.** The 4.98-second object fetch misses the target,
+   but it is a one-time revision cost. Separate network fetch time from local
+   metadata time before changing refspecs or the `<3s` budget.
+
+Acceptance for a follow-up PR is the same real target with no duplicate thread
+request, no abandoned patch request caused by PR-detail settlement, tree under
+500 ms, first patch under 1 second, and no regression to fallback completeness.
+Raw results are gitignored at
+`benchmarks/results/pr-12204-real-local.json`.
 
 ## Risks / notes
 
