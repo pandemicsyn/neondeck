@@ -75,7 +75,8 @@ body {
 
 .perf-surface > .diff-viewer-shell,
 .perf-surface > .diff-multi-file,
-.perf-virtualizer {
+.perf-virtualizer,
+.perf-code-view {
   height: calc(100vh - 116px);
   max-height: none;
 }
@@ -86,6 +87,12 @@ body {
 
 .perf-virtualizer {
   overflow: auto;
+}
+
+.perf-code-view {
+  min-height: 0;
+  overflow: auto;
+  background: var(--field);
 }
 
 .perf-virtualized .diff-viewer-shell,

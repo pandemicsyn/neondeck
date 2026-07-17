@@ -22,6 +22,8 @@ surface, tier, and experimental harness-only variant, for example:
 ```text
 /perf.html?surface=diff&tier=huge
 /perf.html?surface=diff&tier=huge&variant=virtualized
+/perf.html?surface=diff&tier=huge&variant=codeview
+/perf.html?surface=diff&tier=huge&variant=auto
 /perf.html?surface=chat&tier=500
 /perf.html?surface=chat&tier=500&variant=isolated
 /perf.html?surface=runtime&tier=4
@@ -37,6 +39,9 @@ default to the ignored `benchmarks/results/frontend-performance-local.json`.
 The chat `isolated` variant keeps the original fixture mounted while applying
 the same stable timeline boundary as production, so the default and isolated
 rows remain a repeatable before/after pair.
+The diff `codeview` variant measures Pierre CodeView directly, while `auto`
+exercises Neondeck's production threshold and selection adapter. The original
+baseline and lower-level `virtualized` variants remain as comparison controls.
 
 The 50,000-line Pierre tier is opt-in because the unvirtualized baseline can
 take minutes or exhaust memory:

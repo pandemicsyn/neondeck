@@ -1,13 +1,22 @@
 import {
+  CodeView,
   PatchDiff,
   WorkerPoolContextProvider,
+  type CodeViewItem,
   type SelectedLineRange,
 } from '@pierre/diffs/react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { getSingularPatch } from '@pierre/diffs';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Badge, MiniEmpty } from '../../components/ui';
 import { cn } from '../../lib/cn';
-import { diffFileCountLabel, patchFilePaths, patchHasContent } from './helpers';
 import {
+  diffFileCountLabel,
+  patchChangedLineCount,
+  patchFilePaths,
+  patchHasContent,
+} from './helpers';
+import {
+  neondeckCodeViewOptions,
   neondeckDiffOptions,
   neondeckDiffUnsafeCss,
   type ResolvedDiffTheme,
@@ -30,7 +39,12 @@ type UnifiedPatchViewProps = {
   renderAnnotation?: (annotation: DiffReviewAnnotation) => ReactNode;
   selectedLines?: SelectedLineRange | null;
   onSelectedLinesChange?: (selection: SelectedLineRange | null) => void;
+  virtualizeLargePatches?: boolean;
+  codeViewTextScale?: number;
 };
+
+const codeViewChangedLineThreshold = 2_000;
+const codeViewItemId = 'active-diff';
 
 export function DiffWorkerProvider({ children }: { children: ReactNode }) {
   return (
@@ -54,8 +68,27 @@ export function UnifiedPatchView({
   renderAnnotation,
   selectedLines,
   onSelectedLinesChange,
+  virtualizeLargePatches = true,
+  codeViewTextScale,
 }: UnifiedPatchViewProps) {
   const themeType = useResolvedDiffTheme();
+  const useCodeView =
+    virtualizeLargePatches &&
+    patchChangedLineCount(patch) >= codeViewChangedLineThreshold;
+  const codeViewItems = useMemo(
+    () =>
+      useCodeView && patch
+        ? ([
+            {
+              id: codeViewItemId,
+              type: 'diff',
+              fileDiff: getSingularPatch(patch),
+              annotations: lineAnnotations,
+            },
+          ] satisfies CodeViewItem<DiffReviewAnnotationMetadata>[])
+        : [],
+    [lineAnnotations, patch, useCodeView],
+  );
 
   if (!patchHasContent(patch)) {
     return <MiniEmpty label="No patch content available." />;
@@ -75,20 +108,50 @@ export function UnifiedPatchView({
           <Badge>{diffFileCountLabel(fileCount || 1)}</Badge>
         </div>
       </header>
-      <PatchDiff<DiffReviewAnnotationMetadata>
-        className="diff-patch"
-        lineAnnotations={lineAnnotations}
-        options={{
-          ...neondeckDiffOptions(themeType),
-          controlledSelection: selectedLines !== undefined,
-          enableLineSelection: Boolean(onSelectedLinesChange),
-          onLineSelectionEnd: onSelectedLinesChange,
-          unsafeCSS: neondeckDiffUnsafeCss,
-        }}
-        patch={patch ?? ''}
-        renderAnnotation={renderAnnotation}
-        selectedLines={selectedLines}
-      />
+      {useCodeView ? (
+        <CodeView<DiffReviewAnnotationMetadata>
+          className="diff-patch diff-code-view"
+          items={codeViewItems}
+          onSelectedLinesChange={
+            onSelectedLinesChange
+              ? (selection) => onSelectedLinesChange(selection?.range ?? null)
+              : undefined
+          }
+          options={{
+            ...neondeckCodeViewOptions(themeType, codeViewTextScale),
+            enableLineSelection: Boolean(onSelectedLinesChange),
+            unsafeCSS: neondeckDiffUnsafeCss,
+          }}
+          renderAnnotation={
+            renderAnnotation
+              ? (annotation) =>
+                  renderAnnotation(annotation as DiffReviewAnnotation)
+              : undefined
+          }
+          selectedLines={
+            selectedLines === undefined
+              ? undefined
+              : selectedLines
+                ? { id: codeViewItemId, range: selectedLines }
+                : null
+          }
+        />
+      ) : (
+        <PatchDiff<DiffReviewAnnotationMetadata>
+          className="diff-patch"
+          lineAnnotations={lineAnnotations}
+          options={{
+            ...neondeckDiffOptions(themeType),
+            controlledSelection: selectedLines !== undefined,
+            enableLineSelection: Boolean(onSelectedLinesChange),
+            onLineSelectionEnd: onSelectedLinesChange,
+            unsafeCSS: neondeckDiffUnsafeCss,
+          }}
+          patch={patch ?? ''}
+          renderAnnotation={renderAnnotation}
+          selectedLines={selectedLines}
+        />
+      )}
     </section>
   );
 }

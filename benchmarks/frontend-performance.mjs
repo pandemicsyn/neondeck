@@ -24,15 +24,40 @@ const baseUrl = 'http://127.0.0.1:4179';
 
 const scenarios = [
   scenario('diff/typical/baseline', 'diff', 'typical'),
+  scenario('diff/typical/codeview', 'diff', 'typical', {
+    variant: 'codeview',
+  }),
   scenario('diff/large/baseline', 'diff', 'large', { timeoutMs: 60_000 }),
+  scenario('diff/large/codeview', 'diff', 'large', {
+    variant: 'codeview',
+    timeoutMs: 60_000,
+  }),
   scenario('diff/huge/baseline', 'diff', 'huge', { timeoutMs: 90_000 }),
   scenario('diff/huge/virtualized', 'diff', 'huge', {
     variant: 'virtualized',
     timeoutMs: 90_000,
   }),
+  scenario('diff/huge/codeview', 'diff', 'huge', {
+    variant: 'codeview',
+    timeoutMs: 90_000,
+  }),
+  scenario('diff/huge/auto', 'diff', 'huge', {
+    variant: 'auto',
+    timeoutMs: 90_000,
+  }),
   scenario('diff/tree/baseline', 'diff', 'tree', { timeoutMs: 60_000 }),
   scenario('diff/threads/baseline', 'diff', 'threads'),
+  scenario('diff/threads/codeview', 'diff', 'threads', {
+    variant: 'codeview',
+  }),
+  scenario('diff/large-threads/auto', 'diff', 'large-threads', {
+    variant: 'auto',
+    timeoutMs: 60_000,
+  }),
   scenario('diff/wrapped/baseline', 'diff', 'wrapped'),
+  scenario('diff/wrapped/codeview', 'diff', 'wrapped', {
+    variant: 'codeview',
+  }),
   scenario('chat/10', 'chat', '10'),
   scenario('chat/100', 'chat', '100'),
   scenario('chat/500', 'chat', '500', { timeoutMs: 60_000 }),
@@ -171,10 +196,13 @@ async function measureScenario(browser, definition, sampleIndex) {
       timeout: definition.timeoutMs,
     });
     if (definition.surface === 'diff') {
-      await page.locator('.diff-patch, .diff-tree-host').first().waitFor({
-        state: 'attached',
-        timeout: definition.timeoutMs,
-      });
+      await page
+        .locator('.diff-patch, .diff-tree-host, .perf-code-view')
+        .first()
+        .waitFor({
+          state: 'attached',
+          timeout: definition.timeoutMs,
+        });
       await page.locator('[data-line-type]').first().waitFor({
         state: 'attached',
         timeout: definition.timeoutMs,
@@ -254,9 +282,15 @@ async function measureTyping(page, text) {
 
 async function measureScroll(page, variant) {
   const result = await page.evaluate(async (selectedVariant) => {
-    const target = document.querySelector(
-      selectedVariant === 'virtualized' ? '.perf-virtualizer' : '.diff-patch',
-    );
+    const selector =
+      selectedVariant === 'virtualized'
+        ? '.perf-virtualizer'
+        : selectedVariant === 'codeview'
+          ? '.perf-code-view'
+          : selectedVariant === 'auto'
+            ? '.diff-code-view'
+            : '.diff-patch';
+    const target = document.querySelector(selector);
     if (!(target instanceof HTMLElement)) return null;
     const maxScroll = Math.max(0, target.scrollHeight - target.clientHeight);
     const durations = [];

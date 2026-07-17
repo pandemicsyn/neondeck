@@ -1,12 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import {
   joinFilePatches,
+  patchChangedLineCount,
   patchFilePaths,
   patchHasContent,
   splitUnifiedPatchFiles,
 } from './helpers';
 
 describe('diff viewer patch helpers', () => {
+  it('counts changed rows without treating file headers as changes', () => {
+    expect(
+      patchChangedLineCount(
+        [
+          '--- a/src/example.ts',
+          '+++ b/src/example.ts',
+          '@@ -1,2 +1,2 @@',
+          '-before',
+          '+after',
+          ' context',
+          '++++content-that-starts-with-plus-markers',
+        ].join('\n'),
+      ),
+    ).toBe(3);
+    expect(patchChangedLineCount(undefined)).toBe(0);
+  });
+
   it('treats empty and whitespace-only patches as absent', () => {
     expect(patchHasContent('')).toBe(false);
     expect(patchHasContent('  \n')).toBe(false);
