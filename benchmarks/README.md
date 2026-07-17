@@ -23,6 +23,7 @@ surface, tier, and experimental harness-only variant, for example:
 /perf.html?surface=diff&tier=huge
 /perf.html?surface=diff&tier=huge&variant=virtualized
 /perf.html?surface=chat&tier=500
+/perf.html?surface=chat&tier=500&variant=isolated
 /perf.html?surface=runtime&tier=4
 /perf.html?surface=review&tier=50
 ```
@@ -33,6 +34,9 @@ request counts, and production bundle sizes. Results are machine-local evidence,
 not CI gates. The fixture entry uses React's production profiling renderer so
 Profiler callbacks remain enabled; the application entry is unchanged. Results
 default to the ignored `benchmarks/results/frontend-performance-local.json`.
+The chat `isolated` variant keeps the original fixture mounted while applying
+the same stable timeline boundary as production, so the default and isolated
+rows remain a repeatable before/after pair.
 
 The 50,000-line Pierre tier is opt-in because the unvirtualized baseline can
 take minutes or exhaust memory:

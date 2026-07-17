@@ -815,11 +815,12 @@
           <div class="gate">
             <div class="gate-mark">MEASURED</div>
             <p>
-              <strong>Performance gate:</strong> the fixture and trace pass is complete; no
-              production optimization has been implemented. The data strongly confirms the
-              large-diff and chat findings, confirms duplicated review DOM at low present cost,
-              and lowers the urgency of Runtime query topology. Discuss the priorities below
-              before changing Pierre rendering, React ownership, or bundle boundaries.
+              <strong>Performance gate:</strong> the fixture and trace pass is complete, and the
+              first production optimization now isolates stable chat history from composer
+              updates. The retained baseline strongly confirms the large-diff and chat findings,
+              confirms duplicated review DOM at low present cost, and lowers the urgency of
+              Runtime query topology. Pierre rendering remains behind its measured comparison
+              gate; Runtime and bundle changes remain deferred pending workload evidence.
             </p>
           </div>
 
@@ -831,6 +832,17 @@
               profiling renderer, DOM/shadow-DOM and heap probes, accelerated Query polling, and
               direct Chrome performance traces. Backend request concurrency remains modeled
               rather than end-to-end measured.
+            </p>
+          </div>
+
+          <div class="gate completion-note">
+            <div class="gate-mark">CHAT OPTIMIZED</div>
+            <p>
+              <strong>First-wave performance status:</strong> chat render isolation is complete.
+              At 500 messages, eleven typed characters now cause zero historical Markdown
+              renders instead of 5,500; median React commit p95 fell from 102.9 ms to 0.5 ms and
+              typing p95 fell from 109.6 ms to 8.6 ms while retaining the same 9,034-node fixture.
+              The original finding and baseline remain below for audit history.
             </p>
           </div>
 
@@ -945,11 +957,11 @@
           </p>
 
           <div class="callout" style="margin-bottom: 14px">
-            <strong>Decision snapshot.</strong> Prioritize chat render isolation and a guarded
-            Pierre virtualization/cap design. Keep Runtime aggregation and review-subtree
-            consolidation behind real workload evidence. The native Pierre virtualizer is highly
-            effective at mount cost but misses the 16.7 ms scroll-frame target in this prototype,
-            so it is a promising direction rather than a drop-in answer.
+            <strong>Decision snapshot.</strong> Chat render isolation is implemented and verified;
+            the guarded Pierre virtualization/cap design is next. Keep Runtime aggregation and
+            review-subtree consolidation behind real workload evidence. The lower-level Pierre
+            virtualizer is highly effective at mount cost but misses the 16.7 ms scroll-frame
+            target in this prototype, so compare it with Pierre CodeView before production use.
           </div>
 
           <div class="table-scroll" style="margin-bottom: 18px">
@@ -963,6 +975,7 @@
                 <tr><td>Pierre · 10,000 changed lines</td><td>492.6 ms · 12.7 ms mount</td><td>40,099 nodes · 22.6 MiB</td><td>401 ms total long tasks · 10.8 ms scroll p95</td><td>Confirmed bottleneck</td></tr>
                 <tr><td>Pierre · 10,000 virtualized</td><td>110.5 ms · 12.9 ms mount</td><td>1,202 nodes · 13.6 MiB</td><td>0 long tasks · 18.4 ms scroll p95</td><td>97% fewer nodes; tune scrolling</td></tr>
                 <tr><td>Chat · 10 / 100 / 500 messages</td><td>11.3 / 44.6 / 105.2 ms typing commit p95</td><td>214 / 1,834 / 9,034 nodes</td><td>110 / 1,100 / 5,500 Markdown renders for 11 keys</td><td>Confirmed linear rerender</td></tr>
+                <tr><td>Chat isolated · 10 / 100 / 500 messages</td><td>0.4 / 0.4 / 0.5 ms typing commit p95</td><td>214 / 1,834 / 9,034 nodes</td><td>0 / 0 / 0 historical Markdown renders for 11 keys</td><td>Completed · scale-independent typing</td></tr>
                 <tr><td>Runtime · 1 / 2 / 4 panels</td><td>0.6 / 0.8 / 1.1 ms poll commit p95</td><td>79 / 128 / 226 nodes</td><td>49 accelerated requests in every case</td><td>Query dedupe holds</td></tr>
                 <tr><td>Review · 50 threads</td><td>20.9 ms ready · 1.8 ms mount</td><td>942 total · 469 hidden</td><td>455 nodes in each mounted detail copy</td><td>Confirmed, low measured cost</td></tr>
                 <tr><td>Production initial preload</td><td>194.6 kB gzip</td><td>157.7 kB entry · 21.6 kB ccount</td><td>Focused-review wrapper 0.77 kB gzip</td><td>Track; no budget miss declared</td></tr>
@@ -996,11 +1009,11 @@
               </div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="performance" data-status="measured" open>
-              <summary><span class="severity p1">P1</span><span class="finding-title">Chat typing rerenders and reparses the full non-windowed Markdown timeline</span></summary>
+            <details class="finding" data-severity="p1" data-category="performance" data-status="completed" open>
+              <summary><span class="severity p1">P1</span><span class="finding-title">Chat typing rerenders and reparses the full non-windowed Markdown timeline</span> <span class="chip">COMPLETED</span></summary>
               <div class="finding-body">
-                <div><h3>Impact and trigger</h3><p>Composer state shares a component with the complete durable timeline. Each keystroke remaps the timeline and revisits every Markdown message; fresh Markdown config props defeat cheap memo boundaries. Latency and GC scale with history length.</p><h3>Measurement result</h3><p><strong>Confirmed and highest confidence.</strong> Eleven typed characters caused 110, 1,100, and 5,500 Markdown renders at 10, 100, and 500 messages. Typing commit p95 rose from 11.3 to 44.6 to 105.2 ms; the 500-message direct Chrome trace measured 159 ms INP with 151 ms in event processing.</p><h3>Recommendation after measurement</h3><p>First isolate composer state and memoize stable message subtrees/configuration. Re-run the same fixture before considering timeline paging or virtualization; the immediate problem is avoidable reconciliation, not scrolling.</p></div>
-                <div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/components/session-view.tsx:74, 93-145, 580-639<br />web/src/components/MarkdownMessage.tsx:10-27<br />web/src/features/flue-chat/lib/timeline.ts:27-47<br />web/src/perf/benchmark-app.tsx:184-224</p><span class="chip">measured: strong</span> <span class="chip">priority: first wave</span></div>
+                <div><h3>Impact and trigger</h3><p>Composer state shared a component with the complete durable timeline. Each keystroke remapped the timeline and revisited every Markdown message; fresh Markdown config props defeated cheap memo boundaries. Latency and GC scaled with history length. This original condition is retained for audit history.</p><h3>Measurement result</h3><p><strong>Confirmed, then fixed.</strong> The retained baseline still produces 110, 1,100, and 5,500 Markdown renders at 10, 100, and 500 messages. The isolated production-shaped fixture produces zero historical Markdown renders at every tier. At 500 messages, median typing p95 fell from 109.6 ms to 8.6 ms (92.2%) and React commit p95 fell from 102.9 ms to 0.5 ms (99.5%), with the mounted transcript unchanged at 9,034 nodes.</p><h3>Completed implementation</h3><p>Stable message, activity, and timeline derivations are memoized; the timeline and each message row now have stable memo boundaries. A regression test verifies identical parent renders skip all messages and appending one message renders only the new row. Timeline paging or TanStack virtualization remains unnecessary unless a separate mount or scroll profile justifies it.</p></div>
+                <div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/components/session-view.tsx<br />web/src/features/flue-chat/components/chat-timeline.tsx<br />web/src/features/flue-chat/components/chat-timeline.test.tsx<br />web/src/features/flue-chat/lib/timeline.ts<br />web/src/perf/benchmark-app.tsx<br />benchmarks/results/chat-render-isolation-local.json (gitignored local evidence)</p><span class="chip">measured: strong</span> <span class="chip">status: completed</span></div>
               </div>
             </details>
 
