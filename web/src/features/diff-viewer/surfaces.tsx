@@ -140,6 +140,7 @@ export function PreparedDiffReview({
     filesQuery.data?.revision ?? source.revision,
   );
   const hasAvailableRevision = Boolean(
+    !filesQuery.error &&
     appliedRevisionKey &&
     latestRevisionKey &&
     appliedRevisionKey !== latestRevisionKey,
@@ -167,7 +168,13 @@ export function PreparedDiffReview({
   );
   const applyAvailableRevision = useCallback(() => {
     const next = filesQuery.data;
-    if (!next || !hasAvailableRevision || isApplyingRevision) return;
+    if (
+      filesQuery.error ||
+      !next ||
+      !hasAvailableRevision ||
+      isApplyingRevision
+    )
+      return;
     setIsApplyingRevision(true);
     const nextFiles = next.files ?? [];
     const nextSource = preparedDiffReviewSource(diff, nextFiles, next.revision);
@@ -194,6 +201,7 @@ export function PreparedDiffReview({
     activePath,
     diff,
     filesQuery.data,
+    filesQuery.error,
     findingReview,
     hasAvailableRevision,
     isApplyingRevision,
