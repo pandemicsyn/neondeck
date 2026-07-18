@@ -35,6 +35,34 @@ export type ReviewNavigationPublication = {
 
 export type ReviewNavigationAuthority = 'automatic' | 'explicit';
 
+type ImperativeReviewPathJumpControls = {
+  setActivePath: (path: string | null) => void;
+  setNavigationAnnouncement: (announcement: string) => void;
+  setNavigationAnnotationId: (annotationId: null) => void;
+  setNavigationAuthority: (authority: ReviewNavigationAuthority) => void;
+  setNavigationBoundary: (boundary: null) => void;
+  setNavigationSelection: (selection: null) => void;
+  setNavigationStatus: (status: null) => void;
+  setNavigationTargetKey: (targetKey: null) => void;
+  setPendingHunkNavigation: (pending: null) => void;
+};
+
+export function createImperativeReviewPathJump(
+  controls: ImperativeReviewPathJumpControls,
+) {
+  return (path: string | null) => {
+    controls.setPendingHunkNavigation(null);
+    controls.setNavigationTargetKey(null);
+    controls.setNavigationAuthority('automatic');
+    controls.setNavigationSelection(null);
+    controls.setNavigationAnnotationId(null);
+    controls.setNavigationBoundary(null);
+    controls.setNavigationStatus(null);
+    controls.setNavigationAnnouncement('');
+    controls.setActivePath(path);
+  };
+}
+
 export type PrReviewNavigationData = {
   anchors: ReadonlyMap<string, ReviewNavigationAnchor>;
   model: ReviewNavigationModel;

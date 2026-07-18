@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   reconcileReviewCursor,
   reviewCursorTargets,
@@ -10,6 +10,7 @@ import type {
 } from '../../api';
 import type { DiffFilePatch } from '../diff-viewer/types';
 import {
+  createImperativeReviewPathJump,
   createPrReviewNavigationData,
   moveReviewCursorFromPath,
   resolveHunkTraversal,
@@ -22,6 +23,57 @@ import {
 } from './review-navigation';
 
 describe('focused PR review navigation wiring', () => {
+  it.each([
+    ['pending comment', 'src/pending.ts'],
+    ['re-anchor flow', 'src/reanchored.ts'],
+  ])(
+    'clears an explicit cursor before an imperative %s path jump',
+    (_label, path) => {
+      const calls: string[] = [];
+      const controls = {
+        setActivePath: vi.fn<(value: string | null) => void>((value) =>
+          calls.push(`path:${value ?? 'none'}`),
+        ),
+        setNavigationAnnouncement: vi.fn<(value: string) => void>(() =>
+          calls.push('announcement'),
+        ),
+        setNavigationAnnotationId: vi.fn<(value: null) => void>(() =>
+          calls.push('annotation'),
+        ),
+        setNavigationAuthority: vi.fn<
+          (value: 'automatic' | 'explicit') => void
+        >(() => calls.push('authority')),
+        setNavigationBoundary: vi.fn<(value: null) => void>(() =>
+          calls.push('boundary'),
+        ),
+        setNavigationSelection: vi.fn<(value: null) => void>(() =>
+          calls.push('selection'),
+        ),
+        setNavigationStatus: vi.fn<(value: null) => void>(() =>
+          calls.push('status'),
+        ),
+        setNavigationTargetKey: vi.fn<(value: null) => void>(() =>
+          calls.push('target'),
+        ),
+        setPendingHunkNavigation: vi.fn<(value: null) => void>(() =>
+          calls.push('pending'),
+        ),
+      };
+
+      createImperativeReviewPathJump(controls)(path);
+
+      expect(controls.setPendingHunkNavigation).toHaveBeenCalledWith(null);
+      expect(controls.setNavigationTargetKey).toHaveBeenCalledWith(null);
+      expect(controls.setNavigationAuthority).toHaveBeenCalledWith('automatic');
+      expect(controls.setNavigationSelection).toHaveBeenCalledWith(null);
+      expect(controls.setNavigationAnnotationId).toHaveBeenCalledWith(null);
+      expect(controls.setNavigationBoundary).toHaveBeenCalledWith(null);
+      expect(controls.setNavigationStatus).toHaveBeenCalledWith(null);
+      expect(controls.setActivePath).toHaveBeenCalledWith(path);
+      expect(calls.at(-1)).toBe(`path:${path}`);
+    },
+  );
+
   it('builds file, hunk, thread, draft, finding, and attention targets from workbench state', () => {
     const data = createPrReviewNavigationData({
       draft: reviewDraft(),

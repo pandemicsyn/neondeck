@@ -70,6 +70,7 @@ import {
 } from './review-ui-helpers';
 import { usePrReviewRecord } from './usePrReviewRecord';
 import {
+  createImperativeReviewPathJump,
   createPrReviewNavigationData,
   moveReviewCursorFromPath,
   resolveHunkTraversal,
@@ -441,17 +442,28 @@ export function GitHubPrReview({
         : files,
     [fileFilter.paths, files],
   );
-  const selectPathFromWorkbench = useCallback((path: string) => {
-    setPendingHunkNavigation(null);
-    setActivePath(path);
-    setNavigationTargetKey(null);
-    setNavigationAuthority('automatic');
-    setNavigationSelection(null);
-    setNavigationAnnotationId(null);
-    setNavigationBoundary(null);
-    setNavigationStatus(null);
-    setNavigationAnnouncement(`${path}, file selected from the file tree.`);
-  }, []);
+  const jumpToReviewPath = useMemo(
+    () =>
+      createImperativeReviewPathJump({
+        setActivePath,
+        setNavigationAnnouncement,
+        setNavigationAnnotationId,
+        setNavigationAuthority,
+        setNavigationBoundary,
+        setNavigationSelection,
+        setNavigationStatus,
+        setNavigationTargetKey,
+        setPendingHunkNavigation,
+      }),
+    [],
+  );
+  const selectPathFromWorkbench = useCallback(
+    (path: string) => {
+      jumpToReviewPath(path);
+      setNavigationAnnouncement(`${path}, file selected from the file tree.`);
+    },
+    [jumpToReviewPath],
+  );
   const handleFileFilterChange = useCallback(
     (query: string | null, paths: string[] | null) => {
       setFileFilter((current) => {
@@ -774,22 +786,22 @@ export function GitHubPrReview({
     setAnchoringFinding(null);
     setComposer(null);
     setReanchoringCommentId(commentId);
-    if (path && files.some((file) => file.path === path)) {
-      setActivePath(path);
-    } else if (!activePath) {
-      setActivePath(firstRenderablePath(files) ?? null);
-    }
+    jumpToReviewPath(
+      path && files.some((file) => file.path === path)
+        ? path
+        : (activePath ?? firstRenderablePath(files) ?? null),
+    );
     setStatusMessage('Select a new diff line to re-anchor the draft comment.');
   };
   const beginAnchorFinding = (finding: PrReviewReportOnlyFinding) => {
     setComposer(null);
     setReanchoringCommentId(null);
     setAnchoringFinding(finding);
-    if (files.some((file) => file.path === finding.path)) {
-      setActivePath(finding.path);
-    } else if (!activePath) {
-      setActivePath(firstRenderablePath(files) ?? null);
-    }
+    jumpToReviewPath(
+      files.some((file) => file.path === finding.path)
+        ? finding.path
+        : (activePath ?? firstRenderablePath(files) ?? null),
+    );
     setStatusMessage(
       'Choose a changed diff line or range for this report-only finding.',
     );
@@ -1082,7 +1094,7 @@ export function GitHubPrReview({
       (comment) => comment.path === activePath,
     );
     const next = comments[(currentIndex + 1) % comments.length] ?? comments[0];
-    setActivePath(next.path);
+    jumpToReviewPath(next.path);
     setStatusMessage(`Showing draft comment on ${next.path} L${next.line}.`);
   };
   const openPopout = () => {
