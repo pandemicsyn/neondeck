@@ -1,6 +1,6 @@
 # PR Review / File Tree Performance Plan
 
-Status: phases 1–5 implemented; real-PR verification, request-path remediation, and active-patch prioritization complete; cold-fetch decision remains
+Status: phases 1–5 implemented; real-PR verification, request-path remediation, active-patch prioritization, and warm review-thread remediation complete; tree and cold-fetch decisions remain
 Prior art: `.plans/archived/DIFF_UI_PLAN.md`, `.plans/archived/DIFF_REVIEW.md`
 
 ## 2026-07-17 reconciliation
@@ -266,6 +266,59 @@ but before the custom element painted. A direct DevTools trace measured 498 ms
 LCP, 0.00 CLS, and a 36 ms Pierre forced-reflow total with no estimated
 user-visible savings.
 
+## 2026-07-18 review-thread surface result
+
+A production-only follow-up isolated the remaining thread delay. The previous
+1,724 ms result is retained above, but the rerun found that its browser origin
+included the Vite development client despite being described as production.
+React Strict Mode could start and abort an initial request in that mode. The
+benchmark now detects Vite development mode and refuses it unless
+`--allow-development` is explicit. It also records failed and aborted API
+requests plus thread request start, response end, duration, bytes, and
+post-response render time.
+
+The clean production baseline still missed: one 381 KB thread response took
+about 810 ms directly and thread visibility measured 1,644 ms median. Three
+instrumented reloads showed a roughly 362 ms request start, 1,011 ms request
+duration, and only 11 ms of React work after the response. This confirmed the
+GitHub GraphQL path, not TanStack Query, React, or Pierre rendering, as the
+bottleneck.
+
+The review surface now uses a dedicated GitHub query that omits diff hunks,
+review/database ids, and pull-request backreferences that the UI does not read.
+The full Flue action continues using the full-fidelity query. The HTTP response
+also omits duplicate unresolved-thread and unresolved-comment collections; the
+client derives unresolved threads from the canonical list. The lean uncached
+run reduced thread transfer from 381,244 B to 58,240 B, but still measured
+1,511 ms thread visibility because the GitHub request remained 906–1,119 ms.
+
+Because the lean query could not reach the warm budget alone, it is backed by a
+small in-process cache: 15-second TTL, 16 entries, token-scoped keys, and
+explicit invalidation after review submission, thread reply, and
+resolve/unresolve. Reads invalidated while in flight are not stored. In-flight
+requests are not shared, so one browser cancellation cannot cancel another
+caller's work. Browser cancellation is propagated through the GraphQL request
+to GitHub.
+
+| Path                           | Active priority | Lean, no cache | Lean + warm cache | Change / verdict                      |
+| ------------------------------ | --------------: | -------------: | ----------------: | ------------------------------------- |
+| Production tree visible        |          612 ms |         639 ms |            642 ms | Still misses; separate tree follow-up |
+| Production first patch visible |          798 ms |         924 ms |            934 ms | Median passes                         |
+| Production threads visible     |        1,724 ms |       1,511 ms |            459 ms | 73.4% faster; median passes           |
+| Initial backend thread read    |          917 ms |         684 ms |            655 ms | Cold GitHub round trip remains        |
+| Warm backend thread read       |    not recorded | not applicable |            6.8 ms | Short-lived in-process reuse          |
+| Thread transfer per sample     |       381,244 B |       58,240 B |          58,240 B | 84.7% smaller                         |
+| Total API transfer per sample  |       742,850 B |      400,821 B |         400,821 B | 46.0% smaller                         |
+| Thread render after response   |    not recorded |        16.8 ms |            6.5 ms | Rendering remains negligible          |
+| Aborted or failed API requests |               0 |              0 |                 0 | Stable production path                |
+
+The final three thread samples were 608, 452, and 459 ms. The first sample's
+604 ms FCP made a sub-500 ms thread paint impossible even though its cached
+thread request took 23 ms; the median satisfies the warm harness target. A
+separate final DevTools trace measured 530 ms LCP, 0.00 CLS, one successful
+thread request, and zero estimated FCP/LCP savings from render-blocking
+resources. The cold first read remains explicitly outside the warm-cache pass.
+
 ## Confirmed follow-up candidates and remediation status
 
 1. **Completed — stabilize review-thread identity.** `reviewThreads(pr)`
@@ -283,15 +336,21 @@ user-visible savings.
    isolated from adjacent, draft, and unresolved background reads until it
    settles. The next run reached a 798 ms median and passed the target in all
    three samples without abandoned reads.
-4. **Discuss later — revisit cold fetch.** The 4.98-second object fetch misses the target,
+4. **Completed — slim and briefly reuse review-surface threads.** The web path
+   now uses an 84.7% smaller query response plus a bounded 15-second cache with
+   mutation invalidation and race protection. Production thread visibility is
+   459 ms median, while the full-fidelity Flue action is unchanged.
+5. **Discuss later — revisit cold fetch.** The 4.98-second object fetch misses the target,
    but it is a one-time revision cost. Separate network fetch time from local
    metadata time before changing refspecs or the `<3s` budget.
 
 Acceptance is partial on the same real target: duplicate thread requests and
 settlement-driven abandoned patch reads are eliminated, the first-patch browser
-budget now passes, backend targets pass, and fallback code is unchanged. The
-tree, threads, and one-time cold-object budgets still miss and remain separate
-follow-ups. Raw baseline, remediation, and active-priority results are
+budget now passes, warm thread visibility passes on the median, backend targets
+pass, and fallback code is unchanged. The tree and one-time cold-object budgets
+still miss and remain separate follow-ups; a cold GitHub thread read also
+remains slower than the warm UI budget. Raw baseline, remediation, and
+active-priority results are
 gitignored at
 `benchmarks/results/pr-12204-real-local.json` and
 `benchmarks/results/pr-12204-remediation-local.json`, and

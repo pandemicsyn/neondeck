@@ -319,6 +319,25 @@ describe('PR event state watermarks', () => {
         ],
       },
     });
+    const surfaceResult = await getGitHubPrReviewThreads(
+      { repo: 'neondeck', prNumber: 123 },
+      paths,
+      dependencies,
+      { surface: true },
+    );
+    expect(surfaceResult).toMatchObject({
+      ok: true,
+      data: {
+        reviewThreads: [
+          expect.objectContaining({ id: 'thread-1' }),
+          expect.objectContaining({ id: 'thread-2' }),
+        ],
+        reviewThreadsTruncated: false,
+      },
+    });
+    expect(surfaceResult.data).not.toHaveProperty('target');
+    expect(surfaceResult.data).not.toHaveProperty('unresolvedReviewThreads');
+    expect(surfaceResult.data).not.toHaveProperty('unresolvedReviewComments');
     await expect(
       getGitHubPrRequestedChanges(
         { repo: 'neondeck', prNumber: 123 },

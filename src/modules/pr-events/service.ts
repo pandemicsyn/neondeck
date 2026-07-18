@@ -9,9 +9,11 @@ import {
   fetchPullRequestEventState,
   fetchPullRequestFiles,
   fetchPullRequestFilesWithCache,
+  fetchPullRequestReviewSurfaceThreadsWithMetadata,
   fetchPullRequestReviewThreadsWithMetadata,
   fetchPullRequestReviewThread,
   GitHubPrReviewSubmitError,
+  invalidatePullRequestReviewSurfaceThreadCache,
   postPullRequestComment,
   pullRequestEventStateTruncation,
   readLivePrReviewDraft,
@@ -109,6 +111,10 @@ export async function getGitHubPrReviewThreads(
   input: v.InferInput<typeof prEventTargetInputSchema>,
   paths: RuntimePaths = runtimePaths(),
   dependencies: PrEventStateDependencies = {},
+  options: {
+    signal?: AbortSignal;
+    surface?: boolean;
+  } = {},
 ): Promise<PrEventActionResult> {
   const action = 'github_pr_review_threads_get';
   await ensureRuntimeHome(paths);
@@ -134,12 +140,15 @@ export async function getGitHubPrReviewThreads(
   try {
     const fetcher =
       dependencies.fetchPullRequestReviewThreads ??
-      fetchPullRequestReviewThreadsWithMetadata;
+      (options.surface
+        ? fetchPullRequestReviewSurfaceThreadsWithMetadata
+        : fetchPullRequestReviewThreadsWithMetadata);
     const result = await fetcher({
       token,
       owner: resolved.target.owner,
       repo: resolved.target.repo,
       number: resolved.target.number,
+      signal: options.signal,
     });
     threads = result.reviewThreads;
     truncated =
@@ -165,14 +174,19 @@ export async function getGitHubPrReviewThreads(
     action,
     false,
     `Fetched ${threads.length} review thread(s) for ${resolved.target.repoFullName}#${resolved.target.number}.`,
-    {
-      target: eventTargetJson(resolved.target),
-      reviewThreads: threads as unknown as JsonValue,
-      reviewThreadsTruncated: truncated,
-      unresolvedReviewThreads: unresolvedThreads as unknown as JsonValue,
-      unresolvedReviewComments:
-        unresolvedReviewComments as unknown as JsonValue,
-    },
+    options.surface
+      ? {
+          reviewThreads: threads as unknown as JsonValue,
+          reviewThreadsTruncated: truncated,
+        }
+      : {
+          target: eventTargetJson(resolved.target),
+          reviewThreads: threads as unknown as JsonValue,
+          reviewThreadsTruncated: truncated,
+          unresolvedReviewThreads: unresolvedThreads as unknown as JsonValue,
+          unresolvedReviewComments:
+            unresolvedReviewComments as unknown as JsonValue,
+        },
   );
 }
 
@@ -860,6 +874,11 @@ export async function postGitHubPrReview(
       commentIds: parsedReview.output.commentIds,
       fetchHeadSha: dependencies.fetchPullRequestHeadSha,
     });
+    invalidatePullRequestReviewSurfaceThreadCache({
+      owner: resolved.target.owner,
+      repo: resolved.target.repo,
+      number: resolved.target.number,
+    });
     return okResult(
       'github_pr_review_post',
       true,
@@ -1030,6 +1049,11 @@ export async function postGitHubPrThreadReply(
       threadId,
       body: parsed.output.text,
     });
+    invalidatePullRequestReviewSurfaceThreadCache({
+      owner: resolved.target.owner,
+      repo: resolved.target.repo,
+      number: resolved.target.number,
+    });
     return okResult(action, true, 'Posted review thread reply.', {
       thread: thread as unknown as JsonValue,
     });
@@ -1104,6 +1128,11 @@ export async function postGitHubPrThreadResolution(
       : (dependencies.unresolvePullRequestReviewThread ??
         unresolvePullRequestReviewThread);
     const thread = await mutator({ token, threadId });
+    invalidatePullRequestReviewSurfaceThreadCache({
+      owner: target.target.owner,
+      repo: target.target.repo,
+      number: target.target.number,
+    });
     return okResult(
       action,
       true,

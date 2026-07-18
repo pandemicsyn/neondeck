@@ -22,10 +22,12 @@ export async function githubGraphqlFetch(
   token: string,
   query: string,
   variables: Record<string, unknown>,
+  options: { signal?: AbortSignal } = {},
 ) {
   const response = await githubFetch(token, 'https://api.github.com/graphql', {
     method: 'POST',
     body: JSON.stringify({ query, variables }),
+    signal: options.signal,
   });
   const data = await response.json();
   const parsed = v.parse(githubGraphqlBaseResponseSchema, data);
@@ -44,6 +46,7 @@ export async function githubFetch(
   init: RequestInit = {},
 ) {
   let response: Response;
+  const timeoutSignal = AbortSignal.timeout(githubRequestTimeoutMs);
   try {
     response = await fetch(url, {
       ...init,
@@ -55,10 +58,16 @@ export async function githubFetch(
         'User-Agent': 'neondeck',
         'X-GitHub-Api-Version': '2022-11-28',
       },
-      signal: AbortSignal.timeout(githubRequestTimeoutMs),
+      signal: init.signal
+        ? AbortSignal.any([init.signal, timeoutSignal])
+        : timeoutSignal,
     });
   } catch (error) {
-    if (isRequestTimeout(error)) {
+    if (
+      timeoutSignal.aborted &&
+      !init.signal?.aborted &&
+      isRequestTimeout(error)
+    ) {
       throw new Error(
         `GitHub request timed out after ${Math.round(githubRequestTimeoutMs / 1000)}s`,
       );

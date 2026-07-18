@@ -6,14 +6,17 @@ import {
   addPrReviewDraftComment,
   buildPullRequestQueries,
   clearGitHubPullRequestQueueCache,
+  clearPullRequestReviewSurfaceThreadCache,
   deletePrReviewNeonSeedsForComments,
   fetchFailingCheckFacts,
   fetchGitHubIssues,
   fetchCheckSummary,
   fetchPullRequestFiles,
+  fetchPullRequestReviewSurfaceThreadsWithMetadata,
   fetchPullRequestReviewThreads,
   fetchPullRequestReviewThreadsWithMetadata,
   fetchPullRequestQueue,
+  invalidatePullRequestReviewSurfaceThreadCache,
   postPullRequestComment,
   readLivePrReviewDraft,
   recordPrReviewNeonSeed,
@@ -35,6 +38,7 @@ const tempRoots: string[] = [];
 afterEach(async () => {
   globalThis.fetch = originalFetch;
   clearGitHubPullRequestQueueCache();
+  clearPullRequestReviewSurfaceThreadCache();
   vi.restoreAllMocks();
   await Promise.all(
     tempRoots
@@ -784,6 +788,185 @@ describe('github foundation', () => {
       reviewThreads: [expect.objectContaining({ id: 'thread-1' })],
       truncated: true,
     });
+  });
+
+  it('uses a lean review-thread query for the interactive review surface', async () => {
+    const fetchedBodies: Array<{ query?: string }> = [];
+    const controller = new AbortController();
+    const requestSignals: AbortSignal[] = [];
+    globalThis.fetch = vi.fn<typeof fetch>(async (_input, init) => {
+      if (init?.signal) requestSignals.push(init.signal);
+      fetchedBodies.push(JSON.parse(String(init?.body ?? '{}')));
+      return jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: 'thread-1',
+                    isResolved: false,
+                    isOutdated: false,
+                    path: 'src/app.ts',
+                    line: 12,
+                    originalLine: null,
+                    diffSide: 'RIGHT',
+                    comments: {
+                      pageInfo: { hasNextPage: false, endCursor: null },
+                      nodes: [
+                        {
+                          id: 'comment-1',
+                          body: 'Surface comment',
+                          url: 'https://example.test/comment-1',
+                          author: { login: 'reviewer' },
+                          createdAt: '2026-06-30T20:05:00Z',
+                          updatedAt: '2026-06-30T20:05:00Z',
+                          path: 'src/app.ts',
+                          line: 12,
+                          originalLine: null,
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+    });
+
+    await expect(
+      fetchPullRequestReviewSurfaceThreadsWithMetadata({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+        signal: controller.signal,
+      }),
+    ).resolves.toMatchObject({
+      reviewThreads: [
+        {
+          id: 'thread-1',
+          pullRequestRepo: null,
+          pullRequestNumber: null,
+          comments: [
+            {
+              id: 'comment-1',
+              databaseId: null,
+              diffHunk: null,
+              reviewId: null,
+            },
+          ],
+        },
+      ],
+      truncated: false,
+    });
+    controller.abort();
+    expect(requestSignals[0]?.aborted).toBe(true);
+    await fetchPullRequestReviewSurfaceThreadsWithMetadata({
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    invalidatePullRequestReviewSurfaceThreadCache({
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+    });
+    await fetchPullRequestReviewSurfaceThreadsWithMetadata({
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    expect(fetchedBodies[0]?.query).toContain(
+      'NeondeckPullRequestReviewSurfaceThreads',
+    );
+    expect(fetchedBodies[0]?.query).not.toContain('diffHunk');
+    expect(fetchedBodies[0]?.query).not.toContain('pullRequestReview');
+    expect(fetchedBodies[0]?.query).not.toContain('databaseId');
+  });
+
+  it('does not cache a review-thread read invalidated while in flight', async () => {
+    const body = {
+      data: {
+        repository: {
+          pullRequest: {
+            reviewThreads: {
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes: [],
+            },
+          },
+        },
+      },
+    };
+    let resolveFirst!: (response: Response) => void;
+    let calls = 0;
+    globalThis.fetch = vi.fn<typeof fetch>(async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Promise<Response>((resolve) => {
+          resolveFirst = resolve;
+        });
+      }
+      return jsonResponse(body);
+    });
+
+    const first = fetchPullRequestReviewSurfaceThreadsWithMetadata({
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+    });
+    await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+    invalidatePullRequestReviewSurfaceThreadCache({
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+    });
+    resolveFirst(jsonResponse(body));
+    await first;
+    await fetchPullRequestReviewSurfaceThreadsWithMetadata({
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves caller cancellation instead of reporting a GitHub timeout', async () => {
+    globalThis.fetch = vi.fn<typeof fetch>(async (_input, init) => {
+      const signal = init?.signal;
+      if (!signal) throw new Error('Expected a request signal.');
+      return new Promise<Response>((_resolve, reject) => {
+        if (signal.aborted) {
+          reject(signal.reason);
+          return;
+        }
+        signal.addEventListener('abort', () => reject(signal.reason), {
+          once: true,
+        });
+      });
+    });
+    const controller = new AbortController();
+    const request = fetchPullRequestReviewSurfaceThreadsWithMetadata({
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 124,
+      signal: controller.signal,
+    });
+
+    controller.abort();
+
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' });
   });
 
   it('logs when review thread pagination reaches the page cap', async () => {

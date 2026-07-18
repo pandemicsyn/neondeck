@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import * as v from 'valibot';
 import { encodePathSegment, githubFetch, githubGraphqlFetch } from './client';
 import {
@@ -6,6 +7,7 @@ import {
   githubReviewThreadCommentsGraphqlResponseSchema,
   githubReviewThreadsGraphqlResponseSchema,
   pullRequestReviewThreadNodeQuery,
+  pullRequestReviewSurfaceThreadsQuery,
   pullRequestReviewThreadsQuery,
   reviewThreadCommentsQuery,
 } from './schemas';
@@ -16,6 +18,22 @@ import type {
   GitHubReviewThreadCommentGraphqlNode,
   GitHubReviewThreadGraphqlNode,
 } from './schemas';
+
+const reviewSurfaceCacheTtlMs = 15_000;
+const reviewSurfaceCacheMaxEntries = 16;
+const reviewSurfaceCache = new Map<string, CachedReviewSurfaceThreads>();
+const reviewSurfaceTargetEpochs = new Map<string, number>();
+
+type ReviewThreadsWithMetadata = {
+  reviewThreads: GitHubPullRequestReviewThread[];
+  truncated: boolean;
+};
+
+type CachedReviewSurfaceThreads = {
+  targetKey: string;
+  expiresAt: number;
+  value: ReviewThreadsWithMetadata;
+};
 
 export async function postPullRequestComment(options: {
   token: string;
@@ -53,6 +71,7 @@ export async function fetchPullRequestReviewThreads(options: {
   owner: string;
   repo: string;
   number: number;
+  signal?: AbortSignal;
 }): Promise<GitHubPullRequestReviewThread[]> {
   return (await fetchPullRequestReviewThreadsWithMetadata(options))
     .reviewThreads;
@@ -63,7 +82,109 @@ export async function fetchPullRequestReviewThreadsWithMetadata(options: {
   owner: string;
   repo: string;
   number: number;
+  signal?: AbortSignal;
 }): Promise<{
+  reviewThreads: GitHubPullRequestReviewThread[];
+  truncated: boolean;
+}> {
+  return fetchReviewThreadsWithQuery(options, pullRequestReviewThreadsQuery);
+}
+
+export async function fetchPullRequestReviewSurfaceThreadsWithMetadata(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+  signal?: AbortSignal;
+}): Promise<ReviewThreadsWithMetadata> {
+  const targetKey = reviewSurfaceTargetKey(options);
+  const cacheKey = `${targetKey}\u0000${tokenFingerprint(options.token)}`;
+  const cached = reviewSurfaceCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    reviewSurfaceCache.delete(cacheKey);
+    reviewSurfaceCache.set(cacheKey, cached);
+    return cached.value;
+  }
+  if (cached) reviewSurfaceCache.delete(cacheKey);
+
+  const targetEpoch = reviewSurfaceTargetEpochs.get(targetKey) ?? 0;
+  const value = await fetchReviewThreadsWithQuery(
+    options,
+    pullRequestReviewSurfaceThreadsQuery,
+  );
+  if ((reviewSurfaceTargetEpochs.get(targetKey) ?? 0) === targetEpoch) {
+    storeReviewSurfaceThreads(cacheKey, {
+      targetKey,
+      expiresAt: Date.now() + reviewSurfaceCacheTtlMs,
+      value,
+    });
+  }
+  return value;
+}
+
+export function invalidatePullRequestReviewSurfaceThreadCache(options: {
+  owner: string;
+  repo: string;
+  number: number;
+}) {
+  const targetKey = reviewSurfaceTargetKey(options);
+  reviewSurfaceTargetEpochs.set(
+    targetKey,
+    (reviewSurfaceTargetEpochs.get(targetKey) ?? 0) + 1,
+  );
+  for (const [key, cached] of reviewSurfaceCache) {
+    if (cached.targetKey === targetKey) reviewSurfaceCache.delete(key);
+  }
+}
+
+export function clearPullRequestReviewSurfaceThreadCache() {
+  reviewSurfaceCache.clear();
+  reviewSurfaceTargetEpochs.clear();
+}
+
+function storeReviewSurfaceThreads(
+  key: string,
+  value: CachedReviewSurfaceThreads,
+) {
+  const now = Date.now();
+  for (const [cachedKey, cached] of reviewSurfaceCache) {
+    if (cached.expiresAt <= now) reviewSurfaceCache.delete(cachedKey);
+  }
+  reviewSurfaceCache.delete(key);
+  reviewSurfaceCache.set(key, value);
+  while (reviewSurfaceCache.size > reviewSurfaceCacheMaxEntries) {
+    const oldestKey = reviewSurfaceCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    reviewSurfaceCache.delete(oldestKey);
+  }
+}
+
+function reviewSurfaceTargetKey(options: {
+  owner: string;
+  repo: string;
+  number: number;
+}) {
+  return [
+    options.owner.toLowerCase(),
+    options.repo.toLowerCase(),
+    options.number,
+  ].join('\u0000');
+}
+
+function tokenFingerprint(token: string) {
+  return createHash('sha256').update(token).digest('base64url').slice(0, 16);
+}
+
+async function fetchReviewThreadsWithQuery(
+  options: {
+    token: string;
+    owner: string;
+    repo: string;
+    number: number;
+    signal?: AbortSignal;
+  },
+  query: string,
+): Promise<{
   reviewThreads: GitHubPullRequestReviewThread[];
   truncated: boolean;
 }> {
@@ -74,19 +195,22 @@ export async function fetchPullRequestReviewThreadsWithMetadata(options: {
   for (let page = 0; page < 5; page += 1) {
     const data = await githubGraphqlFetch(
       options.token,
-      pullRequestReviewThreadsQuery,
+      query,
       {
         owner: options.owner,
         name: options.repo,
         number: options.number,
         after: cursor,
       },
+      { signal: options.signal },
     );
     const parsed = v.parse(githubReviewThreadsGraphqlResponseSchema, data);
     const pullRequest = parsed.data.repository?.pullRequest;
     if (!pullRequest) break;
     for (const thread of pullRequest.reviewThreads.nodes ?? []) {
-      threads.push(await normalizeReviewThread(options.token, thread));
+      threads.push(
+        await normalizeReviewThread(options.token, thread, options.signal),
+      );
     }
 
     if (!pullRequest.reviewThreads.pageInfo.hasNextPage) break;
@@ -110,11 +234,13 @@ export async function fetchPullRequestReviewThreadsWithMetadata(options: {
 export async function fetchPullRequestReviewThread(options: {
   token: string;
   threadId: string;
+  signal?: AbortSignal;
 }): Promise<GitHubPullRequestReviewThread> {
   const data = await githubGraphqlFetch(
     options.token,
     pullRequestReviewThreadNodeQuery,
     { threadId: options.threadId },
+    { signal: options.signal },
   );
   const parsed = v.parse(githubReviewThreadNodeGraphqlResponseSchema, data);
   const thread = parsed.data.node;
@@ -123,14 +249,15 @@ export async function fetchPullRequestReviewThread(options: {
       `GitHub review thread "${options.threadId}" was not found.`,
     );
   }
-  return normalizeReviewThread(options.token, thread);
+  return normalizeReviewThread(options.token, thread, options.signal);
 }
 
 async function normalizeReviewThread(
   token: string,
   thread: GitHubReviewThreadGraphqlNode,
+  signal?: AbortSignal,
 ): Promise<GitHubPullRequestReviewThread> {
-  const comments = await fetchAllReviewThreadComments(token, thread);
+  const comments = await fetchAllReviewThreadComments(token, thread, signal);
   return {
     id: thread.id,
     isResolved: thread.isResolved,
@@ -151,6 +278,7 @@ async function normalizeReviewThread(
 async function fetchAllReviewThreadComments(
   token: string,
   thread: GitHubReviewThreadGraphqlNode,
+  signal?: AbortSignal,
 ) {
   const comments = [...(thread.comments.nodes ?? [])];
   let cursor = thread.comments.pageInfo.endCursor;
@@ -163,10 +291,15 @@ async function fetchAllReviewThreadComments(
       truncated = true;
       break;
     }
-    const data = await githubGraphqlFetch(token, reviewThreadCommentsQuery, {
-      threadId: thread.id,
-      after: cursor,
-    });
+    const data = await githubGraphqlFetch(
+      token,
+      reviewThreadCommentsQuery,
+      {
+        threadId: thread.id,
+        after: cursor,
+      },
+      { signal },
+    );
     const parsed = v.parse(
       githubReviewThreadCommentsGraphqlResponseSchema,
       data,

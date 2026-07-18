@@ -478,6 +478,8 @@ export function createGitHubRoutes(paths: RuntimePaths) {
     const result = await getGitHubPrReviewThreads(
       (await safeJsonBody(c)) as Parameters<typeof getGitHubPrReviewThreads>[0],
       paths,
+      {},
+      { signal: c.req.raw.signal, surface: true },
     );
     return c.json(result, result.ok ? 200 : 400);
   });

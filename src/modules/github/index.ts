@@ -63,10 +63,13 @@ export type {
   GitHubPrReviewVerdict,
 } from './reviews';
 export {
+  clearPullRequestReviewSurfaceThreadCache,
   fetchPullRequestReviewThread,
+  fetchPullRequestReviewSurfaceThreadsWithMetadata,
   fetchPullRequestReviewThreads,
   postPullRequestComment,
   fetchPullRequestReviewThreadsWithMetadata,
+  invalidatePullRequestReviewSurfaceThreadCache,
 } from './comments';
 export type {
   GitHubBranchPushPermissions,
