@@ -4,7 +4,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { listWorkflowSummaries } from './modules/app-state';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
@@ -29,11 +37,30 @@ import {
 import { lockWorktree, releaseWorktreeLock } from './modules/worktrees';
 import { approvePreparedDiffPushWithDispatch } from './server/autopilot-push-dispatch';
 import { runWithFlueExecutionContextForTests } from './modules/flue/execution-context';
+import {
+  createSeededGitRepository,
+  type SeededGitRepository,
+} from './testing/git-repository-fixture';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
+let repositorySeed: SeededGitRepository | undefined;
 
 vi.setConfig({ testTimeout: 60_000 });
+
+beforeAll(async () => {
+  repositorySeed = await createSeededGitRepository({
+    initialCommitMessage: 'main',
+    initialFiles: { 'src/app.ts': 'export const value = 1;\n' },
+    feature: {
+      files: { 'src/app.ts': 'export const value = 2;\n' },
+    },
+  });
+});
+
+afterAll(async () => {
+  await repositorySeed?.dispose();
+});
 
 afterEach(async () => {
   await Promise.all(
@@ -2106,25 +2133,19 @@ describe('PR event autopilot', () => {
 
 async function fixture(options: { remote?: boolean } = {}) {
   const home = await mkdtemp(join(tmpdir(), 'neondeck-autopilot-home-'));
-  const repo = await mkdtemp(join(tmpdir(), 'neondeck-autopilot-repo-'));
+  const repoRoot = await mkdtemp(join(tmpdir(), 'neondeck-autopilot-repo-'));
+  const repo = join(repoRoot, 'repository');
   const remote = options.remote
     ? await mkdtemp(join(tmpdir(), 'neondeck-autopilot-remote-'))
     : null;
-  tempRoots.push(...[home, repo, remote].filter((path) => path !== null));
+  tempRoots.push(...[home, repoRoot, remote].filter((path) => path !== null));
   const paths = runtimePaths(home);
 
-  await git(repo, ['init', '-b', 'main']);
-  await git(repo, ['config', 'user.name', 'Test']);
-  await git(repo, ['config', 'user.email', 'test@example.com']);
-  await mkdir(join(repo, 'src'), { recursive: true });
-  await writeFile(join(repo, 'src/app.ts'), 'export const value = 1;\n');
-  await git(repo, ['add', '-A']);
-  await git(repo, ['commit', '-m', 'main']);
-  await git(repo, ['checkout', '-b', 'feature']);
-  await writeFile(join(repo, 'src/app.ts'), 'export const value = 2;\n');
-  await git(repo, ['commit', '-am', 'feature']);
-  const featureSha = await gitOutput(repo, ['rev-parse', 'HEAD']);
-  await git(repo, ['checkout', 'main']);
+  if (!repositorySeed?.featureSha) {
+    throw new Error('Autopilot Git repository seed is unavailable.');
+  }
+  await repositorySeed.copyTo(repo);
+  const featureSha = repositorySeed.featureSha;
   if (remote) {
     await git(remote, ['init', '--bare']);
     await git(repo, ['remote', 'add', 'origin', remote]);
@@ -2163,7 +2184,7 @@ async function fixture(options: { remote?: boolean } = {}) {
     )}\n`,
   );
 
-  return { paths, repo, featureSha: featureSha.trim(), remote };
+  return { paths, repo, featureSha, remote };
 }
 
 async function preparePreparedWorktree(

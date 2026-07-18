@@ -1,17 +1,17 @@
-import { execFile, spawn } from 'node:child_process';
-import {
-  chmod,
-  mkdir,
-  mkdtemp,
-  realpath,
-  rm,
-  writeFile,
-} from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { chmod, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { promisify } from 'node:util';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { listNotifications } from './modules/app-state';
 import { runningProcesses } from './modules/kilo/process';
 import {
@@ -29,12 +29,26 @@ import {
   type RuntimePaths,
 } from './runtime-home';
 import { createWorktree } from './modules/worktrees';
-
-const execFileAsync = promisify(execFile);
+import {
+  createSeededGitRepository,
+  type SeededGitRepository,
+} from './testing/git-repository-fixture';
 
 const tempRoots: string[] = [];
+let repositorySeed: SeededGitRepository | undefined;
 
 vi.setConfig({ testTimeout: 180_000 });
+
+beforeAll(async () => {
+  repositorySeed = await createSeededGitRepository({
+    initialCommitMessage: 'init',
+    initialFiles: { 'README.md': '# sample\n' },
+  });
+});
+
+afterAll(async () => {
+  await repositorySeed?.dispose();
+});
 
 afterEach(async () => {
   await waitForTrackedKiloProcesses();
@@ -405,8 +419,10 @@ async function fixture(input: { script: string; concurrency?: number }) {
   const paths = runtimePaths(home);
   await ensureRuntimeHome(paths);
   const repo = join(home, 'repo');
-  await mkdir(repo, { recursive: true });
-  await setupGitRepo(repo);
+  if (!repositorySeed) {
+    throw new Error('Kilo Git repository seed is unavailable.');
+  }
+  await repositorySeed.copyTo(repo);
   const kilo = join(home, 'fake-kilo.mjs');
   await writeFile(kilo, input.script);
   await chmod(kilo, 0o755);
@@ -443,22 +459,6 @@ async function fixture(input: { script: string; concurrency?: number }) {
     ),
   );
   return { paths, repo, kilo };
-}
-
-async function setupGitRepo(repo: string) {
-  await writeFile(join(repo, 'README.md'), '# sample\n');
-  await execFileAsync('git', ['init', '-b', 'main'], { cwd: repo });
-  await execFileAsync('git', ['config', 'user.email', 'neon@example.test'], {
-    cwd: repo,
-  });
-  await execFileAsync('git', ['config', 'user.name', 'Neon Test'], {
-    cwd: repo,
-  });
-  await execFileAsync('git', ['config', 'commit.gpgsign', 'false'], {
-    cwd: repo,
-  });
-  await execFileAsync('git', ['add', 'README.md'], { cwd: repo });
-  await execFileAsync('git', ['commit', '-m', 'init'], { cwd: repo });
 }
 
 function completedKiloScript() {

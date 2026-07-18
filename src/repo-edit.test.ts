@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   listRepoEditEvents,
   patchRepoFiles,
@@ -22,9 +22,25 @@ import {
 } from './repo-edit';
 import { gitDiff, gitWorktreeRevision } from './repo-edit/git';
 import { runtimePaths } from './runtime-home';
+import {
+  createSeededGitRepository,
+  type SeededGitRepository,
+} from './testing/git-repository-fixture';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
+let repositorySeed: SeededGitRepository | undefined;
+
+beforeAll(async () => {
+  repositorySeed = await createSeededGitRepository({
+    initialCommitMessage: 'init',
+    initialFiles: { 'src/app.ts': 'export const value = 1;\n' },
+  });
+});
+
+afterAll(async () => {
+  await repositorySeed?.dispose();
+});
 
 afterEach(async () => {
   await Promise.all(
@@ -550,26 +566,14 @@ describe('repo edit actions', () => {
 
 async function fixture() {
   const home = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
-  const repo = await mkdtemp(join(tmpdir(), 'neondeck-repo-'));
-  tempRoots.push(home, repo);
+  const repoRoot = await mkdtemp(join(tmpdir(), 'neondeck-repo-'));
+  const repo = join(repoRoot, 'repository');
+  tempRoots.push(home, repoRoot);
   const paths = runtimePaths(home);
-  await mkdir(join(repo, 'src'), { recursive: true });
-  await writeFile(join(repo, 'src/app.ts'), 'export const value = 1;\n');
-  await execFileAsync('git', ['init'], { cwd: repo });
-  await execFileAsync('git', ['add', '-A'], { cwd: repo });
-  await execFileAsync(
-    'git',
-    [
-      '-c',
-      'user.name=Test',
-      '-c',
-      'user.email=test@example.com',
-      'commit',
-      '-m',
-      'init',
-    ],
-    { cwd: repo },
-  );
+  if (!repositorySeed) {
+    throw new Error('Repo edit Git repository seed is unavailable.');
+  }
+  await repositorySeed.copyTo(repo);
   await mkdir(paths.home, { recursive: true });
   await writeFile(
     paths.repos,

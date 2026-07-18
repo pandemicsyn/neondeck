@@ -1,10 +1,18 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import {
   abandonPreparedDiff,
   ensurePreparedDiffForWorktree,
@@ -28,11 +36,29 @@ import {
   lockWorktree,
   releaseWorktreeLock,
 } from './modules/worktrees';
+import {
+  createSeededGitRepository,
+  type SeededGitRepository,
+} from './testing/git-repository-fixture';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
+let repositorySeed: SeededGitRepository | undefined;
 
 vi.setConfig({ testTimeout: 60_000 });
+
+beforeAll(async () => {
+  repositorySeed = await createSeededGitRepository({
+    initialFiles: { 'src/app.ts': 'export const value = 1;\n' },
+    feature: {
+      files: { 'src/app.ts': 'export const value = 2;\n' },
+    },
+  });
+});
+
+afterAll(async () => {
+  await repositorySeed?.dispose();
+});
 
 afterEach(async () => {
   await Promise.all(
@@ -695,11 +721,15 @@ describe('prepared diff lifecycle', () => {
 
 async function fixture() {
   const home = await mkdtemp(join(tmpdir(), 'neondeck-prepared-diff-'));
-  const repo = await mkdtemp(join(tmpdir(), 'neondeck-prepared-source-'));
-  tempRoots.push(home, repo);
+  const repoRoot = await mkdtemp(join(tmpdir(), 'neondeck-prepared-source-'));
+  const repo = join(repoRoot, 'repository');
+  tempRoots.push(home, repoRoot);
   const paths = runtimePaths(home);
   await ensureRuntimeHome(paths);
-  await createRepo(repo);
+  if (!repositorySeed) {
+    throw new Error('Prepared diff Git repository seed is unavailable.');
+  }
+  await repositorySeed.copyTo(repo);
   await writeFile(
     paths.repos,
     `${JSON.stringify(
@@ -718,20 +748,6 @@ async function fixture() {
     )}\n`,
   );
   return { paths, repo };
-}
-
-async function createRepo(repo: string) {
-  await mkdir(join(repo, 'src'), { recursive: true });
-  await git(repo, ['init', '-b', 'main']);
-  await git(repo, ['config', 'user.email', 'test@example.com']);
-  await git(repo, ['config', 'user.name', 'Neondeck Test']);
-  await writeFile(join(repo, 'src/app.ts'), 'export const value = 1;\n');
-  await git(repo, ['add', '.']);
-  await git(repo, ['commit', '-m', 'initial']);
-  await git(repo, ['checkout', '-b', 'feature']);
-  await writeFile(join(repo, 'src/app.ts'), 'export const value = 2;\n');
-  await git(repo, ['commit', '-am', 'feature']);
-  await git(repo, ['checkout', 'main']);
 }
 
 async function preparedFixture(paths: ReturnType<typeof runtimePaths>) {
