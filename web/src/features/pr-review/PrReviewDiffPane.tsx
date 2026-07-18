@@ -2,7 +2,11 @@ import type { SelectedLineRange } from '@pierre/diffs/react';
 import type { ReactNode } from 'react';
 import { MiniEmpty } from '../../components/ui';
 import { MultiFileView } from '../diff-viewer/MultiFileView';
-import type { DiffFilePatch, DiffReviewAnnotation } from '../diff-viewer/types';
+import type {
+  DiffFilePatch,
+  DiffReviewAnnotation,
+  FileReviewMapEntry,
+} from '../diff-viewer/types';
 import type { ReviewSourceSnapshot } from '../../../../shared/review-source';
 import {
   PrReviewFindingsSidebar,
@@ -23,6 +27,7 @@ export function PrReviewDiffPane({
   patchError,
   renderAnnotation,
   selectedLines,
+  reviewMapByPath,
   source,
   title,
 }: {
@@ -39,6 +44,7 @@ export function PrReviewDiffPane({
   patchError: string | null;
   renderAnnotation: (annotation: DiffReviewAnnotation) => ReactNode;
   selectedLines: SelectedLineRange | null;
+  reviewMapByPath: ReadonlyMap<string, FileReviewMapEntry>;
   source: ReviewSourceSnapshot;
   title: string;
 }) {
@@ -74,6 +80,7 @@ export function PrReviewDiffPane({
         onSelectedLinesChange={onSelectedLinesChange}
         patchError={patchError}
         renderAnnotation={renderAnnotation}
+        reviewMapByPath={reviewMapByPath}
         selectedLines={selectedLines}
         source={source}
         title={title}

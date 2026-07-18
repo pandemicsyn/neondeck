@@ -1,7 +1,23 @@
 # PR Review / File Tree Performance Plan
 
-Status: phases 1–5 implemented; real-PR verification, request-path remediation, active-patch prioritization, and warm review-thread remediation complete; tree and cold-fetch decisions remain
+Status: complete for now; phases 1–5, real-PR verification, request-path remediation, active-patch prioritization, and warm review-thread remediation are complete; the missed tree, cold-object-fetch, and cold-thread budgets are explicitly deferred below
 Prior art: `.plans/archived/DIFF_UI_PLAN.md`, `.plans/archived/DIFF_REVIEW.md`
+
+## 2026-07-18 completion-for-now decision
+
+This specialized workstream is complete for now, not complete against every
+retained budget. The production tree median remains 642 ms against the <500 ms
+target. The one-time cold local object fetch remains 4,978 ms against the
+<3,000 ms target. The uncached lean review-thread surface remained 1,511 ms,
+and its initial GitHub-backed read remained 655 ms, outside the warm UI path
+that reached a passing 459 ms median through bounded 15-second reuse. These
+misses are deferred future performance work; none is reclassified as passing.
+
+The implemented data path, immutable measurements, and completed remediation
+items remain active foundations for the broader diff plan. Phase B can proceed
+because the remaining misses are now explicit, measured deferrals rather than
+unreconciled acceptance gaps. Future work should remeasure the same immutable
+target before changing implementation or relaxing a retained budget.
 
 ## 2026-07-18 shared Phase A fixture baseline
 
@@ -351,16 +367,26 @@ resources. The cold first read remains explicitly outside the warm-cache pass.
    now uses an 84.7% smaller query response plus a bounded 15-second cache with
    mutation invalidation and race protection. Production thread visibility is
    459 ms median, while the full-fidelity Flue action is unchanged.
-5. **Discuss later — revisit cold fetch.** The 4.98-second object fetch misses the target,
+5. **Deferred — revisit cold fetch.** The 4.98-second object fetch misses the target,
    but it is a one-time revision cost. Separate network fetch time from local
    metadata time before changing refspecs or the `<3s` budget.
+6. **Deferred — revisit production tree visibility.** The final 642 ms median
+   remains 142 ms over the `<500 ms` budget even though the warm backend
+   diagnostic passes. Profile the production boot/query/render boundary before
+   changing Pierre or the tree budget.
+7. **Deferred — revisit uncached review-thread latency.** Bounded warm reuse
+   brings the median to 459 ms, but the uncached lean surface remained 1,511 ms
+   and the initial GitHub-backed read remained 655 ms. Preserve mutation
+   invalidation and cancellation while evaluating any more durable reuse or
+   GitHub query-path change.
 
-Acceptance is partial on the same real target: duplicate thread requests and
+Acceptance remains partial on the same real target: duplicate thread requests and
 settlement-driven abandoned patch reads are eliminated, the first-patch browser
 budget now passes, warm thread visibility passes on the median, backend targets
 pass, and fallback code is unchanged. The tree and one-time cold-object budgets
-still miss and remain separate follow-ups; a cold GitHub thread read also
-remains slower than the warm UI budget. Raw baseline, remediation, and
+still miss and are explicitly deferred; a cold GitHub thread read also remains
+slower than the warm UI budget and is explicitly deferred. The workstream is
+complete for now on that basis. Raw baseline, remediation, and
 active-priority results are
 gitignored at
 `benchmarks/results/pr-12204-real-local.json` and

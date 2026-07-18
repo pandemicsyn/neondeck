@@ -15,6 +15,13 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-07-18 - Diff Review Performance Reconciliation
+
+- Roadmap item: Diff Improvements Plan / transition from Phase A to Phase B
+- Decision: Mark the specialized PR review performance plan complete for now and unpause Phase B while explicitly deferring the production tree median (642 ms versus <500 ms), one-time cold local object fetch (4,978 ms versus <3,000 ms), and uncached review-thread surface/read latency (1,511 ms surface and 655 ms initial GitHub-backed read versus the warm path's <500 ms target). Retain the specialized plan in place instead of archiving it while those measured misses remain.
+- Reason: Stable query identity, bounded immutable metadata reuse, active-patch prioritization, and bounded warm thread reuse delivered passing warm first-patch and thread medians and removed duplicate/abandoned work. The remaining misses are measured, isolated follow-ups that do not require overlapping changes in the Phase B review-map/cursor seam, but they must not be represented as passing or erased.
+- Follow-up: Reprofile the production tree boot/query/render boundary; separate cold network object-fetch time from local metadata before changing refspecs or the <3-second budget; and evaluate uncached GitHub thread latency without weakening cancellation or mutation invalidation. Remeasure the retained immutable real PR before changing any budget, then archive `.plans/PR_REVIEW_PERF_PLAN.md` only after these deferrals are reconciled.
+
 ## 2026-07-17 - Diff Review Phase A Sequencing
 
 - Roadmap item: Diff Improvements Plan / transition from Phase A to Phase B

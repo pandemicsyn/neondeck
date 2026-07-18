@@ -1,5 +1,5 @@
 import { FileTree, useFileTree } from '@pierre/trees/react';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import {
   prepareFileTreeInput,
   type FileTreeInitialExpansion,
@@ -7,7 +7,7 @@ import {
   type GitStatusEntry,
 } from '@pierre/trees';
 import { diffStatsLabel } from './helpers';
-import type { DiffFilePatch } from './types';
+import type { DiffFilePatch, FileReviewMapEntry } from './types';
 
 const expandedTreeFileLimit = 120;
 
@@ -15,12 +15,14 @@ type FileTreePaneProps = {
   files: DiffFilePatch[];
   selectedPath: string | null;
   onSelectPath: (path: string) => void;
+  reviewMapByPath?: ReadonlyMap<string, FileReviewMapEntry>;
 };
 
 export function FileTreePane({
   files,
   selectedPath,
   onSelectPath,
+  reviewMapByPath,
 }: FileTreePaneProps) {
   const paths = useMemo(() => files.map((file) => file.path), [files]);
   const gitStatus = useMemo(
@@ -46,6 +48,7 @@ export function FileTreePane({
       onSelectPath={onSelectPath}
       paths={paths}
       preparedInput={preparedInput}
+      reviewMapByPath={reviewMapByPath}
       selectedPath={selectedPath}
     />
   );
@@ -58,6 +61,7 @@ function FileTreePaneModel({
   onSelectPath,
   paths,
   preparedInput,
+  reviewMapByPath,
   selectedPath,
 }: FileTreePaneProps & {
   gitStatus: GitStatusEntry[];
@@ -65,6 +69,8 @@ function FileTreePaneModel({
   paths: string[];
   preparedInput: FileTreePreparedInput;
 }) {
+  const reviewMapRef = useRef(reviewMapByPath);
+  reviewMapRef.current = reviewMapByPath;
   const filePathSet = useMemo(() => new Set(paths), [paths]);
   const { model } = useFileTree({
     flattenEmptyDirectories: true,
@@ -79,6 +85,16 @@ function FileTreePaneModel({
       if (nextPath) onSelectPath(nextPath);
     },
     preparedInput,
+    renderRowDecoration({ item }) {
+      if (item.kind !== 'file') return null;
+      const entry = reviewMapRef.current?.get(item.path);
+      return entry && fileReviewMapHasStatus(entry)
+        ? {
+            text: fileReviewMapDecoration(entry),
+            title: fileReviewMapStatusLabel(entry),
+          }
+        : null;
+    },
     search: true,
     searchBlurBehavior: 'retain',
     unsafeCSS: treeUnsafeCss,
@@ -98,31 +114,109 @@ function FileTreePaneModel({
     model.setGitStatus(gitStatus);
   }, [gitStatus, model]);
 
+  useEffect(() => {
+    model.setComposition(model.getComposition());
+  }, [model, reviewMapByPath]);
+
+  const selectedReviewStatus = selectedPath
+    ? reviewMapByPath?.get(selectedPath)
+    : null;
+
   return (
     <div className="diff-tree-host">
       <FileTree
-        aria-label="Changed files"
-        header={<TreeHeader files={files} />}
+        aria-label={
+          reviewMapByPath ? 'Changed files with review status' : 'Changed files'
+        }
+        header={<TreeHeader files={files} reviewMapByPath={reviewMapByPath} />}
         model={model}
         style={{ height: '100%' }}
       />
+      {selectedReviewStatus ? (
+        <p aria-live="polite" className="sr-only">
+          {fileReviewMapStatusLabel(selectedReviewStatus, true)}
+        </p>
+      ) : null}
     </div>
   );
 }
 
-function TreeHeader({ files }: { files: DiffFilePatch[] }) {
+function TreeHeader({
+  files,
+  reviewMapByPath,
+}: {
+  files: DiffFilePatch[];
+  reviewMapByPath?: ReadonlyMap<string, FileReviewMapEntry>;
+}) {
   const additions = files.reduce((sum, file) => sum + (file.additions ?? 0), 0);
   const deletions = files.reduce((sum, file) => sum + (file.deletions ?? 0), 0);
   const largeSet = files.length > expandedTreeFileLimit;
+  const hasReviewStatus = [...(reviewMapByPath?.values() ?? [])].some(
+    fileReviewMapHasStatus,
+  );
   return (
-    <div className="flex items-center justify-between gap-2 border-b border-line px-2 py-1.5 font-mono text-[10px] text-muted">
-      <span>files</span>
-      <span className="text-primary">
-        +{additions} -{deletions}
-        {largeSet ? <span className="text-muted"> - large set</span> : null}
-      </span>
+    <div className="border-b border-line px-2 py-1.5 font-mono text-[10px] text-muted">
+      <div className="flex items-center justify-between gap-2">
+        <span>files</span>
+        <span className="text-primary">
+          +{additions} -{deletions}
+          {largeSet ? <span className="text-muted"> - large set</span> : null}
+        </span>
+      </div>
+      {hasReviewStatus ? (
+        <p
+          className="mt-1 truncate text-[9px] text-muted"
+          title="Review map: T unresolved threads, D local drafts, S stale drafts, N Neon findings"
+        >
+          review map · T threads · D drafts · S stale · N Neon
+        </p>
+      ) : null}
     </div>
   );
+}
+
+export function fileReviewMapHasStatus(entry: FileReviewMapEntry) {
+  return (
+    entry.unresolvedThreadCount > 0 ||
+    entry.draftCount > 0 ||
+    entry.staleDraftCount > 0 ||
+    entry.findingCount > 0
+  );
+}
+
+export function fileReviewMapDecoration(entry: FileReviewMapEntry) {
+  return [
+    entry.unresolvedThreadCount > 0 ? `T${entry.unresolvedThreadCount}` : null,
+    entry.draftCount > 0 ? `D${entry.draftCount}` : null,
+    entry.staleDraftCount > 0 ? `S${entry.staleDraftCount}` : null,
+    entry.findingCount > 0 ? `N${entry.findingCount}` : null,
+    entry.findingCount > 0 ? entry.highestFindingSeverity : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+export function fileReviewMapStatusLabel(
+  entry: FileReviewMapEntry,
+  includePath = false,
+) {
+  const status = [
+    countLabel(entry.unresolvedThreadCount, 'unresolved review thread'),
+    countLabel(entry.draftCount, 'local draft'),
+    countLabel(entry.staleDraftCount, 'stale draft'),
+    countLabel(entry.findingCount, 'Neon finding'),
+    entry.findingCount > 0 && entry.highestFindingSeverity
+      ? `highest severity ${entry.highestFindingSeverity}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
+  const label = status || 'no review items';
+  return includePath ? `${entry.path}: ${label}.` : label;
+}
+
+function countLabel(count: number, label: string) {
+  return count > 0 ? `${count} ${label}${count === 1 ? '' : 's'}` : null;
 }
 
 function gitStatusEntry(file: DiffFilePatch): GitStatusEntry | null {
@@ -173,6 +267,10 @@ const treeUnsafeCss = `
   input:focus {
     outline: 1px solid var(--trees-selected-bg-override);
     outline-offset: 0;
+  }
+  [data-item-section='decoration'] {
+    color: var(--trees-fg-override);
+    font-variant-numeric: tabular-nums;
   }
 `;
 

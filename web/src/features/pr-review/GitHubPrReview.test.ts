@@ -19,6 +19,7 @@ import {
 import {
   backgroundReviewPatchPaths,
   draftCommentIdsWithUnknownPatch,
+  prReviewMapByPath,
   reviewPatchQuerySettled,
 } from './review-view-model';
 import {
@@ -350,6 +351,63 @@ describe('GitHubPrReview helpers', () => {
         new Set(['src/deferred.ts']),
       ),
     ).toEqual(new Set(['deferred']));
+  });
+
+  it('builds per-file review counts without reading patch bodies', () => {
+    const files = reviewFiles(['src/a.ts', 'src/new.ts']);
+    files[1]!.previousPath = 'src/old.ts';
+    const draft = draftWithComments([
+      draftComment('draft-a', 'src/a.ts'),
+      draftComment('stale-renamed', 'src/old.ts'),
+      draftComment('removed', 'src/removed.ts'),
+    ]);
+    const map = prReviewMapByPath({
+      draft,
+      files,
+      findings: [
+        {
+          sourceId: 'finding-minor',
+          severity: 'minor',
+          path: 'src/a.ts',
+          line: null,
+          summary: 'Minor finding',
+          suggestedFix: 'Fix it.',
+          reason: 'unanchorable',
+        },
+        {
+          sourceId: 'finding-critical',
+          severity: 'critical',
+          path: 'src/a.ts',
+          line: null,
+          summary: 'Critical finding',
+          suggestedFix: 'Fix it first.',
+          reason: 'unanchorable',
+        },
+      ],
+      staleCommentIds: new Set(['stale-renamed', 'removed']),
+      unresolvedThreads: [
+        reviewThread('thread-a', 'src/a.ts'),
+        reviewThread('thread-renamed', 'src/old.ts'),
+        reviewThread('thread-removed', 'src/removed.ts'),
+      ],
+    });
+
+    expect(map.get('src/a.ts')).toEqual({
+      draftCount: 1,
+      findingCount: 2,
+      highestFindingSeverity: 'critical',
+      path: 'src/a.ts',
+      staleDraftCount: 0,
+      unresolvedThreadCount: 1,
+    });
+    expect(map.get('src/new.ts')).toEqual({
+      draftCount: 1,
+      findingCount: 0,
+      highestFindingSeverity: null,
+      path: 'src/new.ts',
+      staleDraftCount: 1,
+      unresolvedThreadCount: 1,
+    });
   });
 
   it('clears only the editor instance whose mutation completed', () => {

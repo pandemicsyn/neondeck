@@ -1,10 +1,10 @@
 # Diff Improvements Plan
 
-Status: active; Phase A implementation is complete in PR #143, Phase B is paused, and the specialized PR review performance workstream has resumed
+Status: active; Phase A implementation is complete in PR #143, Phase B is active, and the specialized PR review performance workstream is complete for now with measured misses explicitly deferred
 
-Progress note (2026-07-18): the specialized large-PR work now has real registered-PR measurements, stable review-thread identity, bounded local metadata reuse, active-patch priority, and a passing first-patch browser budget. Reconciliation after Phase A found that production tree visibility, review-thread visibility, and the one-time cold-object fetch still miss their retained budgets in `.plans/PR_REVIEW_PERF_PLAN.md`.
+Progress note (2026-07-18): the specialized large-PR work now has real registered-PR measurements, stable review-thread identity, bounded local metadata reuse, active-patch priority, and passing first-patch and warm review-thread browser budgets. The workstream is complete for now. Production tree visibility, the one-time cold-object fetch, and uncached review-thread latency still miss their retained budgets and remain explicit future follow-ups in `.plans/PR_REVIEW_PERF_PLAN.md`; those misses have not been reclassified as passes.
 
-Sequencing correction (2026-07-17): retain the completed Phase A foundation and PR #143, but do not advance into Phase B yet. Phase A was selected while the specialized performance plan still had partial acceptance; that ordering change was not an implicit deferral of the remaining measured misses. Resume the real registered-PR performance work first, beginning with review-thread latency, then reconcile tree visibility and the cold-fetch decision. Phase B remains paused until those items pass or are explicitly deferred with recorded rationale.
+Historical sequencing correction (2026-07-17): retain the completed Phase A foundation and PR #143, but do not advance into Phase B yet. Phase A was selected while the specialized performance plan still had partial acceptance; that ordering change was not an implicit deferral of the remaining measured misses. Resume the real registered-PR performance work first, beginning with review-thread latency, then reconcile tree visibility and the cold-fetch decision. This pause was lifted on 2026-07-18 after the remaining misses were explicitly deferred with recorded rationale; the original correction remains here for audit history.
 
 Contract note (2026-07-18): `shared/review-source.ts` now defines the versioned source, revision, repository, capability, ordered-file, and explicit patch-state vocabulary used by every current web diff surface. GitHub PRs use head SHA identity; prepared and Kilo/repo worktree views receive content-addressed changed-path fingerprints from metadata reads; skill patches and historical repo-edit events use retained content hashes. Missing identities remain explicitly unavailable rather than falling back to timestamps. The current viewers expose source/revision metadata on their mounted roots, ready for the Phase A registration and navigation event layer. On a synthetic 305-file changed worktree, metadata plus revision identity measured 335.5 ms median versus 243.0 ms for metadata alone (92.5 ms added), within the 500 ms warm-tree budget.
 
@@ -14,7 +14,7 @@ Fixture note (2026-07-18): `npm run bench:review-fixtures` now builds determinis
 
 Related plans:
 
-- `.plans/PR_REVIEW_PERF_PLAN.md` — active large-PR data-path and performance workstream
+- `.plans/PR_REVIEW_PERF_PLAN.md` — complete-for-now large-PR data-path and performance workstream with explicit deferred misses
 - `.plans/OTHER_PEOPLE_PR_REVIEW.md` — current human PR review workflow
 - `.plans/archived/DIFF_UI_PLAN.md` — landed Pierre diff/tree adoption
 - `.plans/archived/DIFF_REVIEW.md` — earlier diff review research and interaction planning
@@ -545,7 +545,7 @@ before relaxing a gate.
 
 ### Phase B — Guided review
 
-1. Add review-map decorations and pure cross-file cursors.
+1. **Completed —** Add review-map decorations and pure cross-file cursors.
 2. Add visible navigation controls, scoped shortcuts, and help.
 3. Add typed Neon finding application and inline rendering with provenance.
 4. Add explicit promote-to-draft and promote-to-revision flows.
@@ -637,8 +637,9 @@ before relaxing a gate.
 - Add a changeset for each user-facing implementation phase.
 - Record deviations or deferrals in `.plans/DEVIATIONS.md` when implementation changes this priority
   order, trust boundary, performance gate, or surface coverage.
-- Keep `.plans/PR_REVIEW_PERF_PLAN.md` as the specialized performance implementation plan until that
-  work lands; then archive it and preserve this document as the broader diff product roadmap.
+- Retain `.plans/PR_REVIEW_PERF_PLAN.md` as the specialized performance implementation record while
+  its measured tree, cold-fetch, and uncached-thread misses remain deferred; archive it only after
+  those follow-ups are reconciled, and preserve this document as the broader diff product roadmap.
 
 ## Definition of Done
 
