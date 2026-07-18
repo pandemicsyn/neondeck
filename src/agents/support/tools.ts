@@ -20,6 +20,7 @@ import { neondeckMcpTools } from '../../domains/mcp';
 import { neondeckPrEventTools } from '../../modules/pr-events';
 import { neondeckPreparedDiffTools } from '../../modules/prepared-diffs';
 import { neondeckRepoEditTools } from '../../repo-edit';
+import { neondeckReviewSurfaceTools } from '../../modules/review-surfaces';
 import {
   listRepoStatus,
   listRuntimeSkills,
@@ -339,6 +340,7 @@ export const neondeckFactTools = [
   safetyPolicyTool,
   executionPolicyTool,
   ...neondeckPrEventTools,
+  ...neondeckReviewSurfaceTools,
   ...neondeckRepoEditTools,
   ...neondeckWorktreeTools,
   ...neondeckKiloTools,

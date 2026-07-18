@@ -1,4 +1,5 @@
 import type { ReviewSourceSnapshot } from './review-source';
+import type { ReviewSurfaceFindingChange } from './review-finding';
 
 export const reviewSurfaceSchemaVersion = 1 as const;
 
@@ -62,11 +63,18 @@ export type ReviewSurfaceNavigationAck = {
 
 export type ReviewSurfaceChangeEvent = {
   id: string;
-  action: 'registered' | 'updated' | 'removed' | 'navigation' | 'acknowledged';
+  action:
+    | 'registered'
+    | 'updated'
+    | 'removed'
+    | 'navigation'
+    | 'acknowledged'
+    | 'findings-changed';
   surfaceId: string;
   changedAt: string;
   surface: ActiveReviewSurface | null;
   navigation: ReviewSurfaceNavigationCommand | null;
   acknowledgement: ReviewSurfaceNavigationAck | null;
+  findings: ReviewSurfaceFindingChange | null;
   reason: 'closed' | 'expired' | null;
 };

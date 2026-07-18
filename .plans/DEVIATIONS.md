@@ -22,6 +22,13 @@ Use this format:
 - Reason: Stable query identity, bounded immutable metadata reuse, active-patch prioritization, and bounded warm thread reuse delivered passing warm first-patch and thread medians and removed duplicate/abandoned work. The remaining misses are measured, isolated follow-ups that do not require overlapping changes in the Phase B review-map/cursor seam, but they must not be represented as passing or erased.
 - Follow-up: Reprofile the production tree boot/query/render boundary; separate cold network object-fetch time from local metadata before changing refspecs or the <3-second budget; and evaluate uncached GitHub thread latency without weakening cancellation or mutation invalidation. Remeasure the retained immutable real PR before changing any budget, then archive `.plans/PR_REVIEW_PERF_PLAN.md` only after these deferrals are reconciled.
 
+## 2026-07-18 - Diff Review Phase B Finding Backend Split
+
+- Roadmap item: Diff Improvements Plan / Phase B typed Neon finding application and inline rendering
+- Decision: Land the versioned finding contract, process-ephemeral review-surface state, bounded local APIs, targeted events, and Flue tools/actions separately from Pierre/React rendering and explicit promotion into GitHub drafts or prepared-diff revision requests. The shared lifecycle vocabulary includes `resolved` and `promoted`, but this backend slice exposes only apply, read, dismiss, clear, automatic staling, and cleanup transitions.
+- Reason: Diff Improvements Phase B is split across parallel backend and review-UI workstreams. Keeping promotion out of the finding application path preserves the trust boundary that applying local context cannot mutate GitHub or prepared diffs.
+- Follow-up: The review-surface UI workstream should render these findings inline, add navigation and explicit user-owned promotion controls, and transition resolved/promoted lifecycle state only through the existing typed GitHub draft and prepared-diff revision workflows.
+
 ## 2026-07-17 - Diff Review Phase A Sequencing
 
 - Roadmap item: Diff Improvements Plan / transition from Phase A to Phase B
