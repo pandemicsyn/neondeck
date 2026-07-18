@@ -82,8 +82,15 @@ async function tempHome() {
 
 function runCli(home: string, args: string[]) {
   return execFileAsync(
-    tsxBin(),
-    ['src/cli/index.ts', '--home', home, ...args],
+    process.execPath,
+    [
+      '--import',
+      import.meta.resolve('tsx'),
+      'src/cli/index.ts',
+      '--home',
+      home,
+      ...args,
+    ],
     {
       cwd: resolve('.'),
       env: {
@@ -91,13 +98,5 @@ function runCli(home: string, args: string[]) {
         NEONDECK_DISABLE_SCHEDULER: '1',
       },
     },
-  );
-}
-
-function tsxBin() {
-  return resolve(
-    'node_modules',
-    '.bin',
-    process.platform === 'win32' ? 'tsx.cmd' : 'tsx',
   );
 }

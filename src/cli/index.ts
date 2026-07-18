@@ -1,4 +1,4 @@
-#!/usr/bin/env -S tsx
+#!/usr/bin/env -S node --import=tsx
 import { Command } from 'commander';
 import { runInit } from './onboarding';
 import { decideLearningCandidateCli } from './learning';
