@@ -1,4 +1,4 @@
-import { FileTree, useFileTree } from '@pierre/trees/react';
+import { FileTree, useFileTree, useFileTreeSearch } from '@pierre/trees/react';
 import { useEffect, useMemo, useRef } from 'react';
 import {
   prepareFileTreeInput,
@@ -13,6 +13,8 @@ const expandedTreeFileLimit = 120;
 
 type FileTreePaneProps = {
   files: DiffFilePatch[];
+  filterQuery?: string | null;
+  onFilterChange?: (query: string | null, paths: string[] | null) => void;
   selectedPath: string | null;
   onSelectPath: (path: string) => void;
   reviewMapByPath?: ReadonlyMap<string, FileReviewMapEntry>;
@@ -20,6 +22,8 @@ type FileTreePaneProps = {
 
 export function FileTreePane({
   files,
+  filterQuery,
+  onFilterChange,
   selectedPath,
   onSelectPath,
   reviewMapByPath,
@@ -42,10 +46,12 @@ export function FileTreePane({
   return (
     <FileTreePaneModel
       files={files}
+      filterQuery={filterQuery}
       gitStatus={gitStatus}
       initialExpansion={initialExpansion}
       key={treeKey}
       onSelectPath={onSelectPath}
+      onFilterChange={onFilterChange}
       paths={paths}
       preparedInput={preparedInput}
       reviewMapByPath={reviewMapByPath}
@@ -56,9 +62,11 @@ export function FileTreePane({
 
 function FileTreePaneModel({
   files,
+  filterQuery,
   gitStatus,
   initialExpansion,
   onSelectPath,
+  onFilterChange,
   paths,
   preparedInput,
   reviewMapByPath,
@@ -99,6 +107,66 @@ function FileTreePaneModel({
     searchBlurBehavior: 'retain',
     unsafeCSS: treeUnsafeCss,
   });
+  const search = useFileTreeSearch(model);
+  const appliedFilterQuery = useRef<{
+    initialized: boolean;
+    value: string | null | undefined;
+  }>({ initialized: false, value: undefined });
+  const pendingExternalFilter = useRef<{
+    active: boolean;
+    value: string | null;
+  }>({ active: false, value: null });
+
+  useEffect(() => {
+    if (
+      appliedFilterQuery.current.initialized &&
+      appliedFilterQuery.current.value === filterQuery
+    ) {
+      return;
+    }
+    appliedFilterQuery.current = { initialized: true, value: filterQuery };
+    const currentQuery = search.value.trim() || null;
+    if (filterQuery === undefined || filterQuery === currentQuery) return;
+    pendingExternalFilter.current = {
+      active: true,
+      value: filterQuery?.trim() || null,
+    };
+    search.setValue(filterQuery);
+  }, [filterQuery, search]);
+
+  useEffect(() => {
+    if (!onFilterChange) return;
+    const query = search.value.trim() || null;
+    if (pendingExternalFilter.current.active) {
+      if (pendingExternalFilter.current.value !== query) return;
+      pendingExternalFilter.current.active = false;
+    }
+    if (!query) {
+      onFilterChange(null, null);
+      return;
+    }
+    const normalized = query.toLocaleLowerCase();
+    const matchingPaths = new Set(
+      search.matchingPaths.filter((path) => filePathSet.has(path)),
+    );
+    for (const file of files) {
+      if (file.previousPath?.toLocaleLowerCase().includes(normalized)) {
+        matchingPaths.add(file.path);
+      }
+    }
+    onFilterChange(
+      query,
+      paths.filter((path) => matchingPaths.has(path)),
+    );
+  }, [
+    filePathSet,
+    files,
+    filterQuery,
+    onFilterChange,
+    paths,
+    search.matchingPaths,
+    search.value,
+  ]);
 
   useEffect(() => {
     if (!selectedPath) return;

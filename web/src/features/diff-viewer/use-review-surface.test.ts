@@ -21,6 +21,9 @@ describe('review surface context', () => {
         start: 12,
         end: 10,
       },
+      selectedAnnotationId: 'draft-2',
+      fileFilter: 'src/',
+      reviewOrder: ['src/other.ts', 'src/app.ts'],
       source,
       surfaceId: 'surface-1',
     });
@@ -34,7 +37,9 @@ describe('review surface context', () => {
         startLine: 10,
         endLine: 12,
       },
-      reviewOrder: ['src/app.ts', 'src/other.ts'],
+      selectedAnnotationId: 'draft-2',
+      fileFilter: 'src/',
+      reviewOrder: ['src/other.ts', 'src/app.ts'],
       viewMode: 'file',
       presentationMode: 'unified',
     });

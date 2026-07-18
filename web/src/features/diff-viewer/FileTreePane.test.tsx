@@ -94,6 +94,52 @@ describe('FileTreePane review map', () => {
     expect(onSelectPath).toHaveBeenCalledWith('src/b.ts');
   });
 
+  it('shares Pierre search state with review navigation, including previous paths', async () => {
+    const onFilterChange =
+      vi.fn<(query: string | null, paths: string[] | null) => void>();
+    const files = reviewFiles();
+    files[0]!.previousPath = 'src/old-a.ts';
+
+    await act(async () => {
+      root.render(
+        <FileTreePane
+          files={files}
+          filterQuery="old-a"
+          onFilterChange={onFilterChange}
+          onSelectPath={vi.fn<(path: string) => void>()}
+          selectedPath="src/a.ts"
+        />,
+      );
+    });
+
+    expect(onFilterChange).toHaveBeenLastCalledWith('old-a', ['src/a.ts']);
+
+    const input = searchInput();
+    expect(input).not.toBeNull();
+    await act(async () => {
+      if (!input) return;
+      input.value = 'src/b';
+      input.dispatchEvent(
+        new Event('input', { bubbles: true, composed: true }),
+      );
+    });
+    expect(onFilterChange).toHaveBeenLastCalledWith('src/b', ['src/b.ts']);
+
+    await act(async () => {
+      root.render(
+        <FileTreePane
+          files={files}
+          filterQuery={null}
+          onFilterChange={onFilterChange}
+          onSelectPath={vi.fn<(path: string) => void>()}
+          selectedPath="src/a.ts"
+        />,
+      );
+    });
+    await act(async () => Promise.resolve());
+    expect(onFilterChange).toHaveBeenLastCalledWith(null, null);
+  });
+
   function treeHost() {
     return container.querySelector('file-tree-container');
   }
@@ -102,6 +148,10 @@ describe('FileTreePane review map', () => {
     return treeHost()?.shadowRoot?.querySelector<HTMLButtonElement>(
       `[data-item-path="${path}"]`,
     );
+  }
+
+  function searchInput() {
+    return treeHost()?.shadowRoot?.querySelector<HTMLInputElement>('input');
   }
 
   function selectedPaths() {

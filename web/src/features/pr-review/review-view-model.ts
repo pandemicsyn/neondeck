@@ -210,10 +210,12 @@ export function backgroundReviewPatchPaths({
 
 export function annotationsFromThreads(
   threads: GitHubPullRequestReviewThread[],
+  files: DiffFilePatch[] = [],
 ) {
   const annotations: Record<string, DiffReviewAnnotation[]> = {};
   for (const thread of threads) {
-    const path = threadPath(thread);
+    const requestedPath = threadPath(thread);
+    const path = resolveReviewFilePath(files, requestedPath) ?? requestedPath;
     if (!path) continue;
     const annotation = annotationFromThread(thread);
     if (annotation.lineNumber < 1) continue;
@@ -245,6 +247,7 @@ function annotationFromThread(
 export function annotationsFromDraft(
   draft: GitHubPrReviewDraft | null,
   staleCommentIds: Set<string>,
+  files: DiffFilePatch[] = [],
 ) {
   const annotations: Record<string, DiffReviewAnnotation[]> = {};
   for (const comment of draft?.comments ?? []) {
@@ -252,12 +255,19 @@ export function annotationsFromDraft(
       comment,
       staleCommentIds.has(comment.id),
     );
-    annotations[comment.path] = [
-      ...(annotations[comment.path] ?? []),
-      annotation,
-    ];
+    const path = resolveReviewFilePath(files, comment.path) ?? comment.path;
+    annotations[path] = [...(annotations[path] ?? []), annotation];
   }
   return annotations;
+}
+
+export function resolveReviewFilePath(
+  files: DiffFilePatch[],
+  path: string | null,
+) {
+  if (!path) return null;
+  if (files.some((file) => file.path === path)) return path;
+  return reviewMapPathAliases(files).get(path) ?? null;
 }
 
 export function annotationsFromComposer(

@@ -36,6 +36,7 @@ export type PrReviewCommentComposerProps = {
   replyingThreadId: string | null;
   replyBody: string;
   reviewThreads: GitHubPullRequestReviewThread[];
+  selected?: boolean;
 };
 
 export function PrReviewCommentComposer({
@@ -68,6 +69,7 @@ export function PrReviewCommentComposer({
   replyingThreadId,
   replyBody,
   reviewThreads,
+  selected = false,
 }: PrReviewCommentComposerProps) {
   const metadata = annotation.metadata;
   if (metadata.kind === 'composer') {
@@ -93,8 +95,16 @@ export function PrReviewCommentComposer({
     const origin = comment?.origin === 'neon' ? 'neon draft' : 'draft';
     return (
       <div
-        className={metadata.isStale ? 'pr-review-draft-stale' : undefined}
+        className={
+          [
+            metadata.isStale ? 'pr-review-draft-stale' : null,
+            selected ? 'pr-review-annotation-selected' : null,
+          ]
+            .filter(Boolean)
+            .join(' ') || undefined
+        }
         data-neondeck-review-annotation=""
+        data-navigation-selected={selected ? '' : undefined}
       >
         <div data-neondeck-review-annotation-title="">
           <span>
@@ -157,7 +167,11 @@ export function PrReviewCommentComposer({
     ? `@${metadata.authorLogin}`
     : 'review';
   return (
-    <div data-neondeck-review-annotation="">
+    <div
+      className={selected ? 'pr-review-annotation-selected' : undefined}
+      data-neondeck-review-annotation=""
+      data-navigation-selected={selected ? '' : undefined}
+    >
       <div data-neondeck-review-annotation-title="">
         <span>
           {threadAuthorLabel} · {metadata.title}
@@ -232,6 +246,7 @@ function CommentForm({
   return (
     <form
       className="pr-review-composer"
+      data-review-shortcuts="off"
       {...(isAnnotationRoot ? { 'data-neondeck-review-annotation': '' } : {})}
       onSubmit={onSubmit}
     >

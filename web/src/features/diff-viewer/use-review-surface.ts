@@ -21,7 +21,10 @@ let fallbackSurfaceId = 0;
 
 type UseReviewSurfaceInput = {
   activePath: string | null;
+  fileFilter?: string | null;
   onNavigatePath?: (path: string, focus: boolean) => void;
+  reviewOrder?: readonly string[];
+  selectedAnnotationId?: string | null;
   selection?: SelectedLineRange | null;
   source: ReviewSourceSnapshot;
 };
@@ -33,6 +36,9 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
   }
   const surfaceId = surfaceIdRef.current;
   const activePath = input?.activePath ?? null;
+  const fileFilter = input?.fileFilter ?? null;
+  const reviewOrder = input?.reviewOrder;
+  const selectedAnnotationId = input?.selectedAnnotationId ?? null;
   const selection = input?.selection;
   const source = input?.source ?? null;
   const snapshot = useMemo(
@@ -40,12 +46,23 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
       source && surfaceId
         ? createReviewSurfaceSnapshot({
             activePath,
+            fileFilter,
+            reviewOrder,
+            selectedAnnotationId,
             selection,
             source,
             surfaceId,
           })
         : null,
-    [activePath, selection, source, surfaceId],
+    [
+      activePath,
+      fileFilter,
+      reviewOrder,
+      selectedAnnotationId,
+      selection,
+      source,
+      surfaceId,
+    ],
   );
   const snapshotRef = useRef(snapshot);
   const navigateRef = useRef(input?.onNavigatePath);
@@ -144,9 +161,11 @@ export function createReviewSurfaceSnapshot(
             endSide: input.selection.endSide ?? null,
           }
         : null,
-    selectedAnnotationId: null,
-    fileFilter: null,
-    reviewOrder: input.source.files.map((file) => file.path),
+    selectedAnnotationId: input.selectedAnnotationId ?? null,
+    fileFilter: input.fileFilter?.trim() || null,
+    reviewOrder: input.reviewOrder
+      ? [...input.reviewOrder]
+      : input.source.files.map((file) => file.path),
     viewMode: 'file',
     presentationMode: 'unified',
     annotationVisibility: ['threads', 'drafts', 'findings'],

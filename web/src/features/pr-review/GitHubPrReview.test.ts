@@ -17,6 +17,8 @@ import {
   staleDraftCommentIds,
 } from './review-helpers';
 import {
+  annotationsFromDraft,
+  annotationsFromThreads,
   backgroundReviewPatchPaths,
   draftCommentIdsWithUnknownPatch,
   prReviewMapByPath,
@@ -407,6 +409,22 @@ describe('GitHubPrReview helpers', () => {
       path: 'src/new.ts',
       staleDraftCount: 1,
       unresolvedThreadCount: 1,
+    });
+  });
+
+  it('mounts renamed thread and draft annotations on the canonical file path', () => {
+    const files = reviewFiles(['src/new.ts']);
+    files[0]!.previousPath = 'src/old.ts';
+    const threads = [reviewThread('thread-renamed', 'src/old.ts')];
+    const draft = draftWithComments([
+      draftComment('draft-renamed', 'src/old.ts'),
+    ]);
+
+    expect(annotationsFromThreads(threads, files)).toMatchObject({
+      'src/new.ts': [{ metadata: { id: 'thread-renamed' } }],
+    });
+    expect(annotationsFromDraft(draft, new Set(), files)).toMatchObject({
+      'src/new.ts': [{ metadata: { id: 'draft-renamed' } }],
     });
   });
 

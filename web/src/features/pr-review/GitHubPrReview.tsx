@@ -1,5 +1,19 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
+import {
+  reconcileReviewCursor,
+  reviewCursorTargets,
+  type ReviewCursorDirection,
+  type ReviewCursorKind,
+  type ReviewCursorTarget,
+} from '../../../../shared/review-navigation';
 import {
   type GitHubPrReviewDraftComment,
   type GitHubPrReviewVerdict,
@@ -8,11 +22,12 @@ import {
 } from '../../api';
 import { Badge, MiniEmpty } from '../../components/ui';
 import { queryErrorMessage } from '../../lib/query';
-import { firstRenderablePath } from '../diff-viewer/helpers';
+import { firstRenderablePath, patchHasContent } from '../diff-viewer/helpers';
 import type { DiffFilePatch, DiffReviewAnnotation } from '../diff-viewer/types';
 import { githubPrReviewSource } from '../diff-viewer/review-source';
 import { PrReviewCommentComposer } from './PrReviewCommentComposer';
 import { PrReviewDiffPane } from './PrReviewDiffPane';
+import { PrReviewNavigationBar } from './PrReviewNavigationBar';
 import { reportOnlyFindingBody } from './PrReviewFindingsSidebar';
 import { PrReviewSubmitBar } from './PrReviewSubmitBar';
 import {
@@ -54,6 +69,15 @@ import {
   isCurrentReviewOperation,
 } from './review-ui-helpers';
 import { usePrReviewRecord } from './usePrReviewRecord';
+import {
+  createPrReviewNavigationData,
+  moveReviewCursorFromPath,
+  resolveHunkTraversal,
+  reviewNavigationAnchor,
+  reviewNavigationAnnouncement,
+  reviewNavigationKindLabel,
+  type ReviewPatchNavigationState,
+} from './review-navigation';
 
 type ComposerState = {
   body: string;
@@ -77,6 +101,18 @@ type ReplyEditorState = {
 };
 
 type GitHubPrReviewMode = 'embedded' | 'standalone';
+
+type NavigationSelection = {
+  path: string;
+  selection: SelectedLineRange;
+};
+
+type PendingHunkNavigation = {
+  direction: ReviewCursorDirection;
+  remainingLoads: number;
+};
+
+const maxLazyHunkLoadsPerMove = 8;
 
 export function GitHubPrReview({
   mode = 'embedded',
@@ -127,6 +163,27 @@ export function GitHubPrReview({
     Set<string>
   >(() => new Set());
   const [statusMessage, setStatusMessageState] = useState<string | null>(null);
+  const [navigationKind, setNavigationKind] =
+    useState<ReviewCursorKind>('file');
+  const [navigationTargetKey, setNavigationTargetKey] = useState<string | null>(
+    null,
+  );
+  const [navigationSelection, setNavigationSelection] =
+    useState<NavigationSelection | null>(null);
+  const [navigationAnnotationId, setNavigationAnnotationId] = useState<
+    string | null
+  >(null);
+  const [navigationBoundary, setNavigationBoundary] = useState<
+    'start' | 'end' | null
+  >(null);
+  const [navigationAnnouncement, setNavigationAnnouncement] = useState('');
+  const [navigationStatus, setNavigationStatus] = useState<string | null>(null);
+  const [fileFilter, setFileFilter] = useState<{
+    paths: string[] | null;
+    query: string | null;
+  }>({ paths: null, query: null });
+  const [pendingHunkNavigation, setPendingHunkNavigation] =
+    useState<PendingHunkNavigation | null>(null);
   const createEditorToken = () => {
     nextEditorToken.current += 1;
     return nextEditorToken.current;
@@ -185,7 +242,8 @@ export function GitHubPrReview({
       }),
     [activePath, draft, fileList, unresolvedThreads],
   );
-  const shouldLoadBackgroundPatches = reviewPatchQuerySettled(activePatchQuery);
+  const shouldLoadBackgroundPatches =
+    !pendingHunkNavigation && reviewPatchQuerySettled(activePatchQuery);
   const backgroundPatchPaths = useMemo(
     () => (shouldLoadBackgroundPatches ? backgroundPatchCandidates : []),
     [backgroundPatchCandidates, shouldLoadBackgroundPatches],
@@ -251,11 +309,11 @@ export function GitHubPrReview({
   const annotationsByPath = useMemo(
     () =>
       mergeAnnotations(
-        annotationsFromThreads(reviewThreads),
-        annotationsFromDraft(draft, blockedCommentIds),
+        annotationsFromThreads(reviewThreads, fileList),
+        annotationsFromDraft(draft, blockedCommentIds, fileList),
         annotationsFromComposer(composer),
       ),
-    [blockedCommentIds, composer, draft, reviewThreads],
+    [blockedCommentIds, composer, draft, fileList, reviewThreads],
   );
   const reviewMapByPath = useMemo(
     () =>
@@ -274,6 +332,52 @@ export function GitHubPrReview({
       unresolvedThreads,
     ],
   );
+  const navigationData = useMemo(
+    () =>
+      createPrReviewNavigationData({
+        draft,
+        files,
+        findings: reviewRecord?.reportOnlyFindings ?? [],
+        staleCommentIds,
+        threads: reviewThreads,
+      }),
+    [
+      draft,
+      files,
+      reviewRecord?.reportOnlyFindings,
+      reviewThreads,
+      staleCommentIds,
+    ],
+  );
+  const navigationTargets = useMemo<ReviewCursorTarget[]>(() => {
+    const options = {
+      filter: fileFilter.paths ? { paths: fileFilter.paths } : undefined,
+    };
+    return navigationKind === 'attention'
+      ? [...reviewCursorTargets(navigationData.model, 'attention', options)]
+      : [...reviewCursorTargets(navigationData.model, navigationKind, options)];
+  }, [fileFilter.paths, navigationData.model, navigationKind]);
+  const selectedNavigationTarget =
+    navigationTargets.find((target) => target.key === navigationTargetKey) ??
+    null;
+  const navigationCurrentIndex = selectedNavigationTarget
+    ? navigationTargets.indexOf(selectedNavigationTarget)
+    : -1;
+  const patchNavigationState = useMemo(() => {
+    const result = new Map<string, ReviewPatchNavigationState>();
+    for (const file of files) {
+      const query = patchQueryByPath.get(file.path);
+      const state: ReviewPatchNavigationState = patchHasContent(file.patch)
+        ? 'loaded'
+        : file.binary || file.truncated || query?.isError || query?.hasData
+          ? 'unavailable'
+          : query?.isLoading
+            ? 'loading'
+            : 'unloaded';
+      result.set(file.path, state);
+    }
+    return result;
+  }, [files, patchQueryByPath]);
   const fileStats = useMemo(() => reviewFileStats(files), [files]);
   const isDraftMutationPending =
     mutations.saveDraft.isPending ||
@@ -316,6 +420,254 @@ export function GitHubPrReview({
       pr,
     ],
   );
+  const navigationFiles = useMemo(
+    () =>
+      fileFilter.paths
+        ? files.filter((file) => fileFilter.paths?.includes(file.path))
+        : files,
+    [fileFilter.paths, files],
+  );
+  const selectPathFromWorkbench = useCallback((path: string) => {
+    setPendingHunkNavigation(null);
+    setActivePath(path);
+    setNavigationTargetKey(null);
+    setNavigationSelection(null);
+    setNavigationAnnotationId(null);
+    setNavigationBoundary(null);
+    setNavigationStatus(null);
+    setNavigationAnnouncement(`${path}, file selected from the file tree.`);
+  }, []);
+  const handleFileFilterChange = useCallback(
+    (query: string | null, paths: string[] | null) => {
+      setFileFilter((current) => {
+        if (current.query === query && sameStringArray(current.paths, paths)) {
+          return current;
+        }
+        return { paths, query };
+      });
+    },
+    [],
+  );
+  const activateNavigationTarget = useCallback(
+    (
+      target: ReviewCursorTarget,
+      targets: readonly ReviewCursorTarget[],
+      status?: string | null,
+    ) => {
+      const anchor = reviewNavigationAnchor(target, navigationData.anchors);
+      const index = targets.findIndex((item) => item.key === target.key);
+      setActivePath(target.path);
+      setNavigationTargetKey(target.key);
+      setNavigationSelection(
+        anchor.selection
+          ? { path: target.path, selection: anchor.selection }
+          : null,
+      );
+      setNavigationAnnotationId(anchor.annotationId);
+      setNavigationBoundary(null);
+      setNavigationStatus(status ?? null);
+      setNavigationAnnouncement(
+        reviewNavigationAnnouncement(
+          target,
+          Math.max(0, index),
+          targets.length,
+          status,
+        ),
+      );
+    },
+    [navigationData.anchors],
+  );
+  const performHunkTraversal = useCallback(
+    (direction: ReviewCursorDirection, remainingLoads: number) => {
+      const result = resolveHunkTraversal({
+        activePath,
+        availability: patchNavigationState,
+        currentKey: navigationTargetKey,
+        direction,
+        files: navigationFiles,
+        targets: navigationTargets,
+      });
+      if (result.kind === 'target') {
+        setPendingHunkNavigation(null);
+        activateNavigationTarget(result.target, navigationTargets);
+        return;
+      }
+      if (result.kind === 'load') {
+        if (remainingLoads <= 0) {
+          setPendingHunkNavigation(null);
+          setNavigationStatus(
+            `Paused after ${maxLazyHunkLoadsPerMove} lazy patch reads; activate ${direction} again to continue.`,
+          );
+          setNavigationAnnouncement(
+            `${result.path}, hunk position unavailable, lazy traversal paused after ${maxLazyHunkLoadsPerMove} files.`,
+          );
+          return;
+        }
+        setActivePath(result.path);
+        setNavigationTargetKey(null);
+        setNavigationSelection(null);
+        setNavigationAnnotationId(null);
+        setNavigationBoundary(null);
+        setNavigationStatus(
+          `Loading hunks for ${result.path} · one patch request at a time.`,
+        );
+        setNavigationAnnouncement(
+          `${result.path}, hunk position unavailable, loading patch one file at a time.`,
+        );
+        setPendingHunkNavigation({
+          direction,
+          remainingLoads: remainingLoads - 1,
+        });
+        return;
+      }
+      setPendingHunkNavigation(null);
+      if (result.kind === 'empty') {
+        setNavigationBoundary(null);
+        setNavigationStatus('No hunk targets are available.');
+        setNavigationAnnouncement('No hunk targets are available.');
+        return;
+      }
+      setNavigationBoundary(result.boundary);
+      const boundary = `${result.boundary} boundary`;
+      setNavigationStatus(boundary);
+      if (selectedNavigationTarget) {
+        setNavigationAnnouncement(
+          reviewNavigationAnnouncement(
+            selectedNavigationTarget,
+            navigationCurrentIndex,
+            navigationTargets.length,
+            boundary,
+          ),
+        );
+      } else {
+        setNavigationAnnouncement(
+          `${activePath ?? 'Review'}, hunk position unavailable, ${boundary}.`,
+        );
+      }
+    },
+    [
+      activePath,
+      activateNavigationTarget,
+      navigationCurrentIndex,
+      navigationFiles,
+      navigationTargetKey,
+      navigationTargets,
+      patchNavigationState,
+      selectedNavigationTarget,
+    ],
+  );
+  const navigateReview = useCallback(
+    (direction: ReviewCursorDirection) => {
+      if (pendingHunkNavigation) return;
+      if (navigationKind === 'hunk') {
+        performHunkTraversal(direction, maxLazyHunkLoadsPerMove);
+        return;
+      }
+      const activeOrderIndex = activePath
+        ? navigationData.model.canonicalFilePaths.indexOf(activePath)
+        : -1;
+      const result = moveReviewCursorFromPath(
+        navigationTargets,
+        navigationTargetKey,
+        activePath,
+        activeOrderIndex,
+        direction,
+      );
+      if (!result.target) {
+        setNavigationBoundary(null);
+        const message = `No ${reviewNavigationKindLabel(navigationKind)} targets${
+          fileFilter.query ? ' match the file-tree filter' : ''
+        }.`;
+        setNavigationStatus(message);
+        setNavigationAnnouncement(message);
+        return;
+      }
+      activateNavigationTarget(result.target, navigationTargets);
+      if (result.boundary) {
+        const boundary = `${result.boundary} boundary`;
+        setNavigationBoundary(result.boundary);
+        setNavigationStatus(boundary);
+        setNavigationAnnouncement(
+          reviewNavigationAnnouncement(
+            result.target,
+            result.index,
+            result.total,
+            boundary,
+          ),
+        );
+      }
+    },
+    [
+      activePath,
+      activateNavigationTarget,
+      fileFilter.query,
+      navigationData.model.canonicalFilePaths,
+      navigationKind,
+      navigationTargetKey,
+      navigationTargets,
+      pendingHunkNavigation,
+      performHunkTraversal,
+    ],
+  );
+  const previousNavigationTargets = useRef<readonly ReviewCursorTarget[]>([]);
+
+  useEffect(() => {
+    if (navigationKind !== 'file' || !activePath) return;
+    const activeFileTarget = navigationTargets.find(
+      (target) => target.kind === 'file' && target.path === activePath,
+    );
+    if (activeFileTarget && navigationTargetKey !== activeFileTarget.key) {
+      setNavigationTargetKey(activeFileTarget.key);
+    }
+  }, [activePath, navigationKind, navigationTargetKey, navigationTargets]);
+
+  useEffect(() => {
+    const previous = previousNavigationTargets.current;
+    previousNavigationTargets.current = navigationTargets;
+    if (!navigationTargetKey) return;
+    const reconciled = reconcileReviewCursor(
+      previous,
+      navigationTargets,
+      navigationTargetKey,
+    );
+    if (reconciled.resolution === 'exact') return;
+    if (!reconciled.target) {
+      setNavigationTargetKey(null);
+      setNavigationSelection(null);
+      setNavigationAnnotationId(null);
+      setNavigationBoundary(null);
+      setNavigationStatus('The current target is outside the active filter.');
+      setNavigationAnnouncement(
+        `No ${reviewNavigationKindLabel(navigationKind)} target remains in the active filter.`,
+      );
+      return;
+    }
+    activateNavigationTarget(
+      reconciled.target,
+      navigationTargets,
+      'Nearest available target selected.',
+    );
+  }, [
+    activateNavigationTarget,
+    navigationKind,
+    navigationTargetKey,
+    navigationTargets,
+  ]);
+
+  useEffect(() => {
+    if (!pendingHunkNavigation || !activePath) return;
+    const state = patchNavigationState.get(activePath);
+    if (state !== 'loaded' && state !== 'unavailable') return;
+    performHunkTraversal(
+      pendingHunkNavigation.direction,
+      pendingHunkNavigation.remainingLoads,
+    );
+  }, [
+    activePath,
+    patchNavigationState,
+    pendingHunkNavigation,
+    performHunkTraversal,
+  ]);
 
   useEffect(() => {
     if (activePath && fileList.some((file) => file.path === activePath)) return;
@@ -634,6 +986,10 @@ export function GitHubPrReview({
       replyingThreadId={replyEditor?.threadId ?? null}
       replyBody={replyEditor?.body ?? ''}
       reviewThreads={reviewThreads}
+      selected={
+        (composer?.annotation.metadata.id ?? navigationAnnotationId) ===
+        annotation.metadata.id
+      }
     />
   );
   const submitReview = async () => {
@@ -705,6 +1061,8 @@ export function GitHubPrReview({
       beginReanchorComment(comment.id, comment.path),
     review: reviewRecord,
     reviewThreads,
+    selectedAnnotationId:
+      composer?.annotation.metadata.id ?? navigationAnnotationId,
     staleCommentCount: blockedCommentIds.size,
     staleDraftComments,
     unresolvedThreads,
@@ -826,6 +1184,38 @@ export function GitHubPrReview({
           )}
         </div>
       </header>
+      {isStandalone ? (
+        <PrReviewNavigationBar
+          announcement={navigationAnnouncement}
+          boundary={navigationBoundary}
+          canMove={
+            navigationKind === 'hunk'
+              ? navigationFiles.length > 0
+              : navigationTargets.length > 0
+          }
+          currentIndex={navigationCurrentIndex}
+          currentTarget={selectedNavigationTarget}
+          filter={fileFilter.query}
+          isBusy={Boolean(pendingHunkNavigation)}
+          kind={navigationKind}
+          onClearFilter={() => setFileFilter({ paths: null, query: null })}
+          onKindChange={(nextKind) => {
+            setPendingHunkNavigation(null);
+            setNavigationKind(nextKind);
+            setNavigationTargetKey(null);
+            setNavigationSelection(null);
+            setNavigationAnnotationId(null);
+            setNavigationBoundary(null);
+            setNavigationStatus(null);
+            setNavigationAnnouncement(
+              `${reviewNavigationKindLabel(nextKind)} traversal selected.`,
+            );
+          }}
+          onMove={navigateReview}
+          status={navigationStatus}
+          total={navigationTargets.length}
+        />
+      ) : null}
       {reanchoringCommentId ? (
         <div className="pr-review-stale-banner">
           Re-anchor mode is active. Select the new diff line or range for this
@@ -868,18 +1258,28 @@ export function GitHubPrReview({
         activePath={activePath}
         annotationsByPath={annotationsByPath}
         detail={prDetail(pr, summary)}
+        fileFilter={fileFilter.query}
         fileLoadMessage={fileLoadMessage}
         files={files}
         findingsSidebar={findingsSidebar}
         isLoadingPatch={Boolean(activePatchQuery?.isLoading)}
         isStandalone={isStandalone}
-        onActivePathChange={setActivePath}
+        onActivePathChange={selectPathFromWorkbench}
+        onFileFilterChange={handleFileFilterChange}
         onSelectedLinesChange={onSelectionChange}
         patchError={patchErrorMessage}
         renderAnnotation={renderAnnotation}
         reviewMapByPath={reviewMapByPath}
+        reviewOrder={navigationData.model.guidedFilePaths}
         selectedLines={
-          composer?.path === activePath ? composer.selection : null
+          composer?.path === activePath
+            ? composer.selection
+            : navigationSelection?.path === activePath
+              ? navigationSelection.selection
+              : null
+        }
+        selectedAnnotationId={
+          composer?.annotation.metadata.id ?? navigationAnnotationId
         }
         source={reviewSource}
         title={pr.title}
@@ -951,3 +1351,12 @@ export function GitHubPrReview({
 }
 
 export { hasRenderablePrPatch } from './review-view-model';
+
+function sameStringArray(
+  left: readonly string[] | null,
+  right: readonly string[] | null,
+) {
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
+}
