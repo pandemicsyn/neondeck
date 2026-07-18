@@ -9,6 +9,7 @@ import {
 } from '../../../shared/review-source';
 import { addNotification } from '../app-state';
 import { buildPreparedDiffAuditSummary } from '../autonomous-audit';
+import { publishReviewSourceRevision } from '../review-refresh';
 import { openDb } from '../../lib/sqlite';
 import {
   gitCurrentSha,
@@ -118,6 +119,20 @@ export async function ensurePreparedDiffForWorktree(
     abandonedAt: null,
   };
   upsertPreparedDiff(record, paths);
+  publishReviewSourceRevision({
+    action: 'source-changed',
+    source: {
+      id: `prepared-diff:${record.id}`,
+      kind: 'prepared-diff',
+      repoId: record.repoId,
+      repoFullName: record.repoFullName,
+      worktreeId: record.worktreeId,
+      prNumber: record.prNumber,
+    },
+    reason: shouldResetDecisionState
+      ? 'A prepared revision completed in the source worktree.'
+      : 'Prepared diff source metadata changed.',
+  });
   if (record.pushApprovalStatus === 'pending') {
     ensurePendingApproval(
       record,
@@ -362,6 +377,28 @@ export async function readPreparedDiffFileDiff(
   });
   const file =
     diff.files.find((item) => item.path === parsed.input.path) ?? null;
+  const metadata = await gitDiff(record.sourceWorktreePath, {
+    base: record.baseRef,
+    includePatch: false,
+  });
+  const revision = await gitWorktreeRevision(record.sourceWorktreePath, {
+    base: metadata.base,
+    files: metadata.files,
+  });
+  if (
+    parsed.input.expectedRevisionKey &&
+    parsed.input.expectedRevisionKey !== reviewRevisionKey(revision)
+  ) {
+    return {
+      ok: false,
+      action: 'prepared_diff_file_diff',
+      changed: false,
+      message: 'The prepared diff changed before this patch could be used.',
+      revision,
+      requires: ['refresh'],
+      errors: ['The requested revision is stale.'],
+    };
+  }
   return {
     ok: true,
     action: 'prepared_diff_file_diff',
@@ -370,6 +407,7 @@ export async function readPreparedDiffFileDiff(
       ? `Read diff for ${parsed.input.path}.`
       : `No diff found for ${parsed.input.path}.`,
     preparedDiff: record,
+    revision,
     file,
     diff: file?.patch ?? '',
     diffSummary: diff.summary,

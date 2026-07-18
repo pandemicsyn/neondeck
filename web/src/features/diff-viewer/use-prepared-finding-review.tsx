@@ -320,6 +320,11 @@ export function usePreparedFindingReview({
     renderAnnotation,
     reviewMapByPath,
     selectedAnnotationId,
+    refreshGuards: {
+      mutationPending: dismissMutation.isPending || promotionMutation.isPending,
+      revisionConfirmationOpen: revisionFinding !== null,
+      selectionActive: selectedAnnotationId !== null,
+    },
   };
 }
 

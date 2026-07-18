@@ -71,11 +71,16 @@ export async function fetchPullRequestFilesWithCache(options: {
   try {
     currentHeadSha = await fetchHeadSha(request);
   } catch (error) {
-    console.warn(
-      `[neondeck] Skipping GitHub PR file cache write because head verification failed for ${repoFullName}#${options.number}: ${errorMessage(error)}`,
+    throw new Error(
+      `Could not verify the current head for ${repoFullName}#${options.number}: ${errorMessage(error)}`,
     );
   }
-  if (diff.files.length > 0 && currentHeadSha === headSha) {
+  if (currentHeadSha !== headSha) {
+    throw new Error(
+      `Pull request head changed from ${headSha} to ${currentHeadSha ?? 'unavailable'} while loading files.`,
+    );
+  }
+  if (diff.files.length > 0) {
     writeCachedPullRequestFiles({
       databasePath: options.databasePath,
       repo: repoFullName,

@@ -161,6 +161,7 @@ export function createAutopilotRoutes(paths: RuntimePaths) {
       {
         preparedDiffId: c.req.param('id'),
         path: c.req.query('path'),
+        expectedRevisionKey: c.req.query('expectedRevisionKey'),
         maxPatchBytes: queryNumber(c.req.query('maxPatchBytes')),
       },
       paths,

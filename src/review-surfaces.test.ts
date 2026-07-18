@@ -9,6 +9,7 @@ import {
   reviewSourceSchemaVersion,
   resolvedReviewRevision,
 } from '../shared/review-source';
+import { createReviewRefreshStatus } from '../shared/review-refresh';
 import {
   reviewSurfaceSchemaVersion,
   type ReviewSurfaceChangeEvent,
@@ -1711,6 +1712,12 @@ function snapshot(
     viewMode: 'file',
     presentationMode: 'unified',
     annotationVisibility: ['threads', 'drafts', 'findings'],
+    refresh: createReviewRefreshStatus({
+      appliedRevision: resolvedReviewRevision({
+        kind: 'git-commit',
+        id: revisionId,
+      }),
+    }),
   };
 }
 

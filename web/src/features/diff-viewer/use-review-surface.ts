@@ -17,6 +17,10 @@ import {
   type ReviewSurfaceSnapshot,
 } from '../../../../shared/review-surface';
 import type { ReviewSourceSnapshot } from '../../../../shared/review-source';
+import {
+  createReviewRefreshStatus,
+  type ReviewRefreshStatus,
+} from '../../../../shared/review-refresh';
 
 const reviewSurfaceHeartbeatMs = 15_000;
 let fallbackSurfaceId = 0;
@@ -31,6 +35,7 @@ type UseReviewSurfaceInput = {
   selectedAnnotationId?: string | null;
   selection?: SelectedLineRange | null;
   source: ReviewSourceSnapshot;
+  refresh?: ReviewRefreshStatus;
 };
 
 export function useReviewSurface(input: UseReviewSurfaceInput | null) {
@@ -224,6 +229,9 @@ export function createReviewSurfaceSnapshot(
     viewMode: 'file',
     presentationMode: 'unified',
     annotationVisibility: ['threads', 'drafts', 'findings'],
+    refresh:
+      input.refresh ??
+      createReviewRefreshStatus({ appliedRevision: input.source.revision }),
   };
 }
 

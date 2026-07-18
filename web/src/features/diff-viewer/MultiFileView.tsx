@@ -21,6 +21,7 @@ import type { ReviewSourceSnapshot } from '../../../../shared/review-source';
 import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import { reviewSourceDataAttributes } from './review-source';
 import { useReviewSurface } from './use-review-surface';
+import type { ReviewRefreshStatus } from '../../../../shared/review-refresh';
 
 type MultiFileViewProps = {
   files: DiffFilePatch[];
@@ -51,6 +52,7 @@ type MultiFileViewProps = {
     findings: NeonReviewFinding[],
   ) => void;
   onReviewSurfaceIdChange?: (surfaceId: string | null) => void;
+  refreshStatus?: ReviewRefreshStatus;
 };
 
 export function MultiFileView({
@@ -77,6 +79,7 @@ export function MultiFileView({
   selectedAnnotationId,
   onReviewSurfaceFindingsChange,
   onReviewSurfaceIdChange,
+  refreshStatus,
   title,
   tone = 'primary',
 }: MultiFileViewProps) {
@@ -107,6 +110,7 @@ export function MultiFileView({
           selectedAnnotationId: selectedAnnotationId ?? null,
           selection: selectedLines,
           source,
+          refresh: refreshStatus,
         }
       : null,
   );

@@ -66,6 +66,11 @@ vi.mock('./queries', async () => {
       error: null,
       isLoading: false,
     }),
+    useRepoDiffFilePatch: () => ({
+      data: undefined,
+      error: null,
+      isLoading: false,
+    }),
   };
 });
 
@@ -170,6 +175,17 @@ describe('KiloTaskDiffReview findings', () => {
     expect(
       container.querySelector('button[aria-label^="Dismiss locally:"]'),
     ).not.toBeNull();
+  });
+
+  it('labels a retained Kilo result without a managed worktree as static', async () => {
+    const task = kiloTask(null);
+    task.worktreeId = null;
+    await renderTask(task);
+
+    expect(container.textContent).toContain(
+      'This retained Kilo result is static; no revision-bound live refresh is available.',
+    );
+    expect(capturedView.props?.source?.capabilities).not.toContain('refresh');
   });
 
   async function renderTask(task: KiloTaskRecord) {

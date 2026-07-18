@@ -284,6 +284,7 @@ export type GitHubPullRequestFilesResponse = {
     diffSummary: DiffSummary;
     fetchedAt: string;
     source?: 'local' | 'github';
+    revision: ReviewRevision;
   };
   requires?: string[];
   errors?: string[];
@@ -307,6 +308,7 @@ export type GitHubPullRequestFileDiffResponse = {
     diffSummary: DiffSummary;
     fetchedAt: string;
     source?: 'local' | 'github';
+    revision: ReviewRevision;
   };
   requires?: string[];
   errors?: string[];
@@ -813,6 +815,7 @@ export type PreparedDiffFileDiffResponse = {
   action: string;
   changed: boolean;
   message: string;
+  revision?: ReviewRevision;
   file?: RepoDiffFile | null;
   diff?: string;
   diffSummary?: DiffSummary;
@@ -831,6 +834,7 @@ export type RepoDiffResponse = {
   files?: RepoDiffFile[];
   diffSummary?: DiffSummary;
   errors?: string[];
+  requires?: string[];
 };
 
 export type KiloTaskDiffResponse = {

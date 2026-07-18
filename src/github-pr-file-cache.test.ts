@@ -242,7 +242,7 @@ describe('GitHub PR file cache', () => {
     ).toBe(true);
   });
 
-  it('does not cache misses when the supplied head SHA is stale', async () => {
+  it('rejects misses when the supplied head SHA is stale', async () => {
     const paths = runtimePaths(await tempHome());
     await ensureRuntimeHome(paths);
     const first = prFiles(
@@ -272,7 +272,7 @@ describe('GitHub PR file cache', () => {
         fetcher,
         fetchHeadSha: headFetcher,
       }),
-    ).resolves.toEqual(first);
+    ).rejects.toThrow('Pull request head changed');
     await expect(
       fetchPullRequestFilesWithCache({
         token: 'token',
@@ -284,22 +284,20 @@ describe('GitHub PR file cache', () => {
         fetcher,
         fetchHeadSha: headFetcher,
       }),
-    ).resolves.toEqual(second);
+    ).rejects.toThrow('Pull request head changed');
 
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(headFetcher).toHaveBeenCalledTimes(2);
     expect(readCacheRows(paths.neondeckDatabase)).toEqual([]);
   });
 
-  it('logs and skips caching when head verification fails', async () => {
+  it('rejects an unverified response when head verification fails', async () => {
     const paths = runtimePaths(await tempHome());
     await ensureRuntimeHome(paths);
     const fetched = prFiles(
       [prFile({ path: 'src/unverified.ts' })],
       '2026-07-05T14:00:00.000Z',
     );
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-
     await expect(
       fetchPullRequestFilesWithCache({
         token: 'token',
@@ -313,14 +311,9 @@ describe('GitHub PR file cache', () => {
           throw new Error('GitHub timeout');
         },
       }),
-    ).resolves.toEqual(fetched);
+    ).rejects.toThrow('Could not verify the current head');
 
     expect(readCacheRows(paths.neondeckDatabase)).toEqual([]);
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining(
-        'Skipping GitHub PR file cache write because head verification failed',
-      ),
-    );
   });
 });
 

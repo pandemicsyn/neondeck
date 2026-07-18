@@ -15,6 +15,8 @@ import {
 } from '../../modules/pr-reviews';
 import { formatReviewSurfaceServerSentEvent } from '../../modules/review-surfaces';
 import type { ReviewSurfaceChangeEvent } from '../../../shared/review-surface';
+import type { ReviewSourceRevisionEvent } from '../../../shared/review-refresh';
+import { formatReviewSourceRevisionServerSentEvent } from '../../modules/review-refresh';
 import {
   formatChatSessionCommandServerSentEvent,
   formatChatSessionServerSentEvent,
@@ -46,7 +48,7 @@ describe('dashboard event stream', () => {
     harness.emitAll();
     const output = await readUntil(
       reader!,
-      'event: review-surface-change',
+      'event: review-source-revision',
       new TextDecoder(),
     );
     expect(output).toContain('event: config-change');
@@ -55,6 +57,7 @@ describe('dashboard event stream', () => {
     expect(output).toContain('event: chat-session-command-change');
     expect(output).toContain('event: review-change');
     expect(output).toContain('event: review-surface-change');
+    expect(output).toContain('event: review-source-revision');
 
     await reader!.cancel();
     for (const unsubscribe of harness.unsubscribers) {
@@ -98,7 +101,10 @@ function eventHarness() {
   let reviewListener: ((event: PrReviewEvent) => void) | undefined;
   let reviewSurfaceListener:
     ((event: ReviewSurfaceChangeEvent) => void) | undefined;
+  let reviewSourceListener:
+    ((event: ReviewSourceRevisionEvent) => void) | undefined;
   const unsubscribers = [
+    vi.fn<() => void>(),
     vi.fn<() => void>(),
     vi.fn<() => void>(),
     vi.fn<() => void>(),
@@ -116,6 +122,7 @@ function eventHarness() {
     formatNotificationServerSentEvent,
     formatPrReviewServerSentEvent,
     formatReviewSurfaceServerSentEvent,
+    formatReviewSourceRevisionServerSentEvent,
     replayConfigEventsAfter: replay,
     subscribeChatSessionCommandEvents(listener) {
       commandListener = listener;
@@ -141,6 +148,10 @@ function eventHarness() {
       reviewSurfaceListener = listener;
       return unsubscribers[5]!;
     },
+    subscribeReviewSourceRevisionEvents(listener) {
+      reviewSourceListener = listener;
+      return unsubscribers[6]!;
+    },
   };
 
   return {
@@ -154,11 +165,30 @@ function eventHarness() {
       commandListener?.(commandEvent());
       reviewListener?.(reviewEvent());
       reviewSurfaceListener?.(reviewSurfaceEvent());
+      reviewSourceListener?.(reviewSourceEvent());
     },
     emitConfigAndNotification() {
       configListener?.(configEvent());
       notificationListener?.(notificationEvent());
     },
+  };
+}
+
+function reviewSourceEvent(): ReviewSourceRevisionEvent {
+  return {
+    id: 'review-source-event-1',
+    action: 'source-changed',
+    source: {
+      id: 'prepared-diff:1',
+      kind: 'prepared-diff',
+      repoId: 'repo-1',
+      repoFullName: 'owner/repo',
+      worktreeId: 'worktree-1',
+      prNumber: 1,
+    },
+    revision: null,
+    changedAt: '2026-07-18T00:00:00.000Z',
+    reason: 'Prepared revision changed.',
   };
 }
 

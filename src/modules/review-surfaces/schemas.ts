@@ -21,6 +21,7 @@ import {
   type ReviewSurfaceNavigationRequest,
   type ReviewSurfaceSnapshot,
 } from '../../../shared/review-surface';
+import { reviewRefreshSchemaVersion } from '../../../shared/review-refresh';
 import { isoDateStringSchema } from '../../lib/valibot';
 
 const identifierSchema = v.pipe(v.string(), v.minLength(1), v.maxLength(240));
@@ -139,6 +140,30 @@ const selectionSchema = v.object({
   endSide: v.nullable(v.picklist(['additions', 'deletions'])),
 });
 
+const refreshStatusSchema = v.object({
+  schemaVersion: v.literal(reviewRefreshSchemaVersion),
+  state: v.picklist(['current', 'available', 'applying']),
+  appliedRevisionKey: v.nullable(revisionKeySchema),
+  availableRevision: v.nullable(reviewRevisionSchema),
+  availableRevisionKey: v.nullable(revisionKeySchema),
+  pausedReasons: v.pipe(
+    v.array(
+      v.picklist([
+        'dirty-editor',
+        'active-selection',
+        'stale-draft',
+        'reanchor-active',
+        'revision-confirmation-open',
+        'mutation-pending',
+        'safety-uncertain',
+      ]),
+    ),
+    v.maxLength(7),
+  ),
+  preservation: v.nullable(v.picklist(['preserved', 'degraded', 'failed'])),
+  message: v.nullable(v.pipe(v.string(), v.maxLength(500))),
+});
+
 export const reviewSurfaceSnapshotSchema: v.GenericSchema<ReviewSurfaceSnapshot> =
   v.object({
     schemaVersion: v.literal(reviewSurfaceSchemaVersion),
@@ -155,6 +180,7 @@ export const reviewSurfaceSnapshotSchema: v.GenericSchema<ReviewSurfaceSnapshot>
       v.array(v.pipe(v.string(), v.minLength(1), v.maxLength(80))),
       v.maxLength(32),
     ),
+    refresh: refreshStatusSchema,
   });
 
 export const reviewSurfaceNavigationRequestSchema: v.GenericSchema<ReviewSurfaceNavigationRequest> =

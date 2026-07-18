@@ -1367,6 +1367,7 @@ function rewriteMergeabilityWatermark(
 function anchorValidationDependencies() {
   return {
     token: 'token',
+    fetchPullRequestHeadSha: async () => 'head123',
     fetchPullRequestFiles: async () => ({
       repo: 'pandemicsyn/neondeck',
       number: 123,

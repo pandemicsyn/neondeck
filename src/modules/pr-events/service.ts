@@ -62,6 +62,10 @@ import {
   type PullRequestTarget,
 } from './schemas';
 import {
+  resolvedReviewRevision,
+  unavailableReviewRevision,
+} from '../../../shared/review-source';
+import {
   fetchEventState,
   isConfiguredRepoTarget,
   resolvePullRequestTarget,
@@ -244,6 +248,7 @@ export async function getGitHubPrFiles(
           diffSummary: diff.diffSummary as unknown as JsonValue,
           fetchedAt: diff.fetchedAt,
           source: 'local',
+          revision: githubFileRevision(parsed.output),
         },
       );
     } catch (error) {
@@ -293,6 +298,7 @@ export async function getGitHubPrFiles(
         diffSummary: diff.diffSummary as unknown as JsonValue,
         fetchedAt: diff.fetchedAt,
         source: 'github',
+        revision: githubFileRevision(parsed.output),
       },
     );
   } catch (error) {
@@ -365,6 +371,7 @@ export async function getGitHubPrFileDiff(
           diffSummary: diff.diffSummary as unknown as JsonValue,
           fetchedAt: diff.fetchedAt,
           source: 'local',
+          revision: githubFileRevision(parsed.output),
         },
       );
     } catch (error) {
@@ -418,6 +425,7 @@ export async function getGitHubPrFileDiff(
         diffSummary: diff.diffSummary as unknown as JsonValue,
         fetchedAt: diff.fetchedAt,
         source: 'github',
+        revision: githubFileRevision(parsed.output),
       },
     );
   } catch (error) {
@@ -429,6 +437,23 @@ export async function getGitHubPrFileDiff(
       },
     );
   }
+}
+
+function githubFileRevision(input: {
+  headSha?: string | null;
+  baseSha?: string | null;
+}) {
+  const headSha = input.headSha?.trim();
+  return headSha
+    ? resolvedReviewRevision({
+        kind: 'git-commit',
+        id: headSha,
+        baseId: input.baseSha?.trim() || null,
+      })
+    : unavailableReviewRevision(
+        'git-commit',
+        'The PR file response was not requested with a head SHA.',
+      );
 }
 
 export async function getGitHubPrReviewDraft(

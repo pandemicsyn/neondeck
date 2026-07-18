@@ -40,6 +40,7 @@ import {
   createSeededGitRepository,
   type SeededGitRepository,
 } from './testing/git-repository-fixture';
+import { reviewRevisionKey } from '../shared/review-source';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
@@ -117,6 +118,35 @@ describe('prepared diff lifecycle', () => {
       kind: 'worktree-diff',
       id: expect.any(String),
       baseId: expect.any(String),
+    });
+    const revisionKey = reviewRevisionKey(files.revision!);
+    await expect(
+      readPreparedDiffFileDiff(
+        {
+          preparedDiffId: prepared.id,
+          path: 'src/app.ts',
+          expectedRevisionKey: revisionKey ?? undefined,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, revision: files.revision });
+    await writeFile(
+      join(prepared.sourceWorktreePath, 'src/app.ts'),
+      'export const value = 3;\n',
+    );
+    await expect(
+      readPreparedDiffFileDiff(
+        {
+          preparedDiffId: prepared.id,
+          path: 'src/app.ts',
+          expectedRevisionKey: revisionKey ?? undefined,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['refresh'],
+      errors: ['The requested revision is stale.'],
     });
     expect(fileDiff.diff).toContain('export const value = 2;');
   });

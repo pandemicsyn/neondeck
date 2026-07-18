@@ -30,11 +30,53 @@ import {
 } from './PrReviewFindingsSidebar';
 import {
   clearCompletedEditor,
+  githubPrReviewRefreshSafety,
   isCurrentReviewOperation,
 } from './review-ui-helpers';
 import capturedReviewPatch from './fixtures/captured-review.patch?raw';
 
 describe('GitHubPrReview helpers', () => {
+  it.each([
+    ['composer', { composerDirty: true }],
+    ['comment editor', { commentEditorDirty: true }],
+    ['reply editor', { replyEditorDirty: true }],
+    ['review body', { reviewBodyDirty: true }],
+  ])('pauses a new-head refresh for dirty %s input', (_label, dirty) => {
+    expect(
+      githubPrReviewRefreshSafety({
+        composerDirty: false,
+        commentEditorDirty: false,
+        replyEditorDirty: false,
+        reviewBodyDirty: false,
+        activeSelection: false,
+        staleDraft: false,
+        reanchorActive: false,
+        mutationPending: false,
+        safetyUncertain: false,
+        ...dirty,
+      }),
+    ).toEqual({ safe: false, reasons: ['dirty-editor'] });
+  });
+
+  it('keeps stale-draft and selection authority distinct from clean auto-refresh', () => {
+    expect(
+      githubPrReviewRefreshSafety({
+        composerDirty: false,
+        commentEditorDirty: false,
+        replyEditorDirty: false,
+        reviewBodyDirty: false,
+        activeSelection: true,
+        staleDraft: true,
+        reanchorActive: false,
+        mutationPending: false,
+        safetyUncertain: false,
+      }),
+    ).toEqual({
+      safe: false,
+      reasons: ['active-selection', 'stale-draft'],
+    });
+  });
+
   it('maps Pierre same-side selections to GitHub review comment anchors', () => {
     expect(
       commentInputFromSelection(selection({ side: 'deletions', line: 7 })),

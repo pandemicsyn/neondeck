@@ -1,4 +1,5 @@
 import { assertWorktreeMutationAllowed } from '../modules/worktrees';
+import { reviewRevisionKey } from '../../shared/review-source';
 import { ensureRuntimeHome, runtimePaths } from '../runtime-home';
 import { recordRepoEditEvent } from './audit';
 import { replaceContent } from './fuzzy-replace';
@@ -437,10 +438,32 @@ export async function readRepoDiff(rawInput: unknown, paths = runtimePaths()) {
       paths,
     );
     const result = await gitDiff(root.repoRoot, parsed.input);
+    const revisionMetadata = parsed.input.paths?.length
+      ? await gitDiff(root.repoRoot, {
+          base: parsed.input.base,
+          includePatch: false,
+        })
+      : result;
     const revision = await gitWorktreeRevision(root.repoRoot, {
-      base: result.base,
-      files: result.files,
+      base: revisionMetadata.base,
+      files: revisionMetadata.files,
     });
+    if (
+      parsed.input.expectedRevisionKey &&
+      parsed.input.expectedRevisionKey !== reviewRevisionKey(revision)
+    ) {
+      return {
+        ok: false,
+        action: 'repo_diff',
+        changed: false,
+        message: 'The worktree changed before this patch could be used.',
+        repoId: parsed.input.repoId,
+        worktreeId: parsed.input.worktreeId,
+        revision,
+        requires: ['refresh'],
+        errors: ['The requested revision is stale.'],
+      };
+    }
     return {
       ok: true,
       action: 'repo_diff',

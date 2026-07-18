@@ -2,6 +2,32 @@ import type {
   GitHubPrReviewDraftComment,
   GitHubPullRequestReviewThread,
 } from '../../api';
+import { evaluateReviewRefreshSafety } from '../../../../shared/review-refresh';
+
+export function githubPrReviewRefreshSafety(input: {
+  composerDirty: boolean;
+  commentEditorDirty: boolean;
+  replyEditorDirty: boolean;
+  reviewBodyDirty: boolean;
+  activeSelection: boolean;
+  staleDraft: boolean;
+  reanchorActive: boolean;
+  mutationPending: boolean;
+  safetyUncertain: boolean;
+}) {
+  return evaluateReviewRefreshSafety({
+    dirtyEditor:
+      input.composerDirty ||
+      input.commentEditorDirty ||
+      input.replyEditorDirty ||
+      input.reviewBodyDirty,
+    activeSelection: input.activeSelection,
+    staleDraft: input.staleDraft,
+    reanchorActive: input.reanchorActive,
+    mutationPending: input.mutationPending,
+    safetyUncertain: input.safetyUncertain,
+  });
+}
 
 export function commentAnchorLabel(comment: GitHubPrReviewDraftComment) {
   if (comment.startLine) {

@@ -21,11 +21,14 @@ import {
   writeRepoFile,
 } from './repo-edit';
 import { gitDiff, gitWorktreeRevision } from './repo-edit/git';
+import { recordRepoEditEvent } from './repo-edit/audit';
+import { subscribeReviewSourceRevisionEvents } from './modules/review-refresh';
 import { runtimePaths } from './runtime-home';
 import {
   createSeededGitRepository,
   type SeededGitRepository,
 } from './testing/git-repository-fixture';
+import { reviewRevisionKey } from '../shared/review-source';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
@@ -51,6 +54,37 @@ afterEach(async () => {
 });
 
 describe('repo edit actions', () => {
+  it('publishes a targeted worktree revision event after an applied edit', async () => {
+    const { paths } = await fixture();
+    const events: Array<{
+      source: { repoId: string | null; worktreeId: string | null };
+    }> = [];
+    const unsubscribe = subscribeReviewSourceRevisionEvents((event) =>
+      events.push(event),
+    );
+    try {
+      await recordRepoEditEvent(
+        {
+          repoId: 'sample',
+          worktreeId: 'worktree-1',
+          action: 'write',
+          status: 'applied',
+          paths: ['src/app.ts'],
+          diffPatch: '@@ -1 +1 @@\n-old\n+new\n',
+        },
+        paths,
+      );
+    } finally {
+      unsubscribe();
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.source).toMatchObject({
+      repoId: 'sample',
+      worktreeId: 'worktree-1',
+    });
+  });
+
   it('reads a file from a declared workspace and rejects traversal', async () => {
     const { paths } = await fixture();
     const result = await readRepoFile(
@@ -345,6 +379,24 @@ describe('repo edit actions', () => {
     await writeFile(join(repo, 'src/app.ts'), 'export const value = 2;\n');
     const first = await readRepoDiff({ repoId: 'sample' }, paths);
     await writeFile(join(repo, 'src/app.ts'), 'export const value = 3;\n');
+    const firstRevisionKey = first.revision
+      ? reviewRevisionKey(first.revision)
+      : null;
+    await expect(
+      readRepoDiff(
+        {
+          repoId: 'sample',
+          paths: ['src/app.ts'],
+          includePatch: true,
+          expectedRevisionKey: firstRevisionKey ?? undefined,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['refresh'],
+      errors: ['The requested revision is stale.'],
+    });
     const second = await readRepoDiff({ repoId: 'sample' }, paths);
 
     expect(first).toMatchObject({

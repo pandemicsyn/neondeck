@@ -357,6 +357,10 @@ function QueueRow({ item }: { item: AutopilotQueueItem }) {
 function PreparedDiffRow({ diff }: { diff: AutopilotPreparedDiff }) {
   const [isInspecting, setIsInspecting] = useState(false);
   const [isViewingRevisionDiff, setIsViewingRevisionDiff] = useState(false);
+  const [refreshGuard, setRefreshGuard] = useState({
+    mutationPending: false,
+    revisionConfirmationOpen: false,
+  });
   const revisionTask = revisionRunTask(diff);
 
   return (
@@ -424,7 +428,10 @@ function PreparedDiffRow({ diff }: { diff: AutopilotPreparedDiff }) {
       {isInspecting ? (
         <div className="mt-2">
           <Suspense fallback={<MiniEmpty label="Loading diff viewer." />}>
-            <PreparedDiffReview diff={diff} />
+            <PreparedDiffReview
+              diff={diff}
+              externalRefreshGuard={refreshGuard}
+            />
           </Suspense>
         </div>
       ) : null}
@@ -435,15 +442,23 @@ function PreparedDiffRow({ diff }: { diff: AutopilotPreparedDiff }) {
           </Suspense>
         </div>
       ) : null}
-      <PreparedDiffRecoveryControls diff={diff} />
+      <PreparedDiffRecoveryControls
+        diff={diff}
+        onRefreshGuardChange={setRefreshGuard}
+      />
     </article>
   );
 }
 
 function PreparedDiffRecoveryControls({
   diff,
+  onRefreshGuardChange,
 }: {
   diff: AutopilotPreparedDiff;
+  onRefreshGuardChange: (guard: {
+    mutationPending: boolean;
+    revisionConfirmationOpen: boolean;
+  }) => void;
 }) {
   const preparedDiffId = diff.id;
   const [confirmAction, setConfirmAction] = useState<AutopilotRecoveryOption>();
@@ -457,6 +472,7 @@ function PreparedDiffRecoveryControls({
     refetchInterval: 30_000,
   });
   const mutation = useMutation({
+    mutationKey: ['prepared-diff', preparedDiffId, 'recovery'],
     mutationFn: runAutopilotRecovery,
     onSuccess() {
       void queryClient.invalidateQueries({
@@ -467,6 +483,17 @@ function PreparedDiffRecoveryControls({
       });
     },
   });
+  useEffect(() => {
+    onRefreshGuardChange({
+      mutationPending: mutation.isPending,
+      revisionConfirmationOpen: Boolean(confirmAction || revisionAction),
+    });
+    return () =>
+      onRefreshGuardChange({
+        mutationPending: false,
+        revisionConfirmationOpen: false,
+      });
+  }, [confirmAction, mutation.isPending, onRefreshGuardChange, revisionAction]);
   const options = useMemo(
     () =>
       (data?.options ?? []).filter((option) =>
@@ -640,6 +667,11 @@ function ApprovalRow({
     approval.source === 'prepared-diff' && Boolean(preparedDiff),
   );
   const mutation = useMutation({
+    mutationKey: [
+      'prepared-diff',
+      approval.preparedDiffId ?? 'unavailable',
+      'approval',
+    ],
     mutationFn: (input: {
       decision: 'approve' | 'deny';
       reason?: string;
@@ -741,7 +773,13 @@ function ApprovalRow({
       {preparedDiff && isInspecting ? (
         <div className="mt-2">
           <Suspense fallback={<MiniEmpty label="Loading diff viewer." />}>
-            <PreparedDiffReview diff={preparedDiff} />
+            <PreparedDiffReview
+              diff={preparedDiff}
+              externalRefreshGuard={{
+                mutationPending: mutation.isPending,
+                revisionConfirmationOpen: isComposingRevision,
+              }}
+            />
           </Suspense>
         </div>
       ) : approval.source === 'prepared-diff' ? (

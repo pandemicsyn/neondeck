@@ -6,6 +6,7 @@ import type {
   PrReviewChangeEvent,
 } from './types';
 import { dashboardEventHub } from './event-hub';
+import type { ReviewSourceRevisionEvent } from '../../../shared/review-refresh';
 
 export function openConfigEventStream(
   onEvent: (event: ConfigChangeEvent) => void,
@@ -60,4 +61,17 @@ export function openPrReviewEventStream(
   onOpen?: () => void,
 ) {
   return dashboardEventHub.subscribe('review-change', onEvent, onError, onOpen);
+}
+
+export function openReviewSourceRevisionEventStream(
+  onEvent: (event: ReviewSourceRevisionEvent) => void,
+  onError?: (error?: Error | Event) => void,
+  onOpen?: () => void,
+) {
+  return dashboardEventHub.subscribe(
+    'review-source-revision',
+    onEvent,
+    onError,
+    onOpen,
+  );
 }

@@ -88,6 +88,16 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           resolution.
         </p>
         <p>
+          Live GitHub, prepared-diff, and worktree-backed Kilo reviews remain
+          bound to the revision shown in the viewer. When a newer revision is
+          detected, Neondeck either refreshes a clean surface or shows a
+          <strong>New revision available</strong> control with the reason an automatic
+          refresh is paused. Dirty editors and in-flight actions are never replaced.
+          An applied refresh keeps the nearest valid file and review target when possible,
+          while stale drafts and findings retain their older-revision identity instead
+          of silently moving.
+        </p>
+        <p>
           Work rows can open linked chat sessions without a side-by-side chat
           layout. PR, watch, repo, briefing, Kilo, and autopilot rows create
           context-aware sessions with compact summary metadata, and the chat

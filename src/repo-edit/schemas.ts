@@ -113,6 +113,9 @@ export const repoDiffInputSchema = v.object({
   base: v.optional(gitRefSchema),
   paths: v.optional(v.array(repoRelativePathSchema)),
   includePatch: v.optional(v.boolean()),
+  expectedRevisionKey: v.optional(
+    v.pipe(v.string(), v.minLength(1), v.maxLength(768)),
+  ),
   maxPatchBytes: v.optional(
     v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(maxPatchBytes)),
   ),
