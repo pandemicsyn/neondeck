@@ -8,6 +8,7 @@ import {
   PrReviewNeonFindingAnnotation,
   PrReviewNeonFindingsPanel,
 } from './PrReviewNeonFinding';
+import { neonFindingAnnotationId } from './review-findings';
 
 describe('Neon finding review components', () => {
   let container: HTMLDivElement;
@@ -88,7 +89,7 @@ describe('Neon finding review components', () => {
                   reason: 'This finding belongs to an old revision.',
                 }
           }
-          selectedAnnotationId="active"
+          selectedAnnotationId={neonFindingAnnotationId('active')}
         />,
       );
     });
@@ -113,6 +114,43 @@ describe('Neon finding review components', () => {
         button.textContent?.includes('Dismiss locally'),
       ),
     ).toHaveLength(2);
+    expect(
+      container
+        .querySelector('button[aria-label^="Show file:"]')
+        ?.getAttribute('aria-label'),
+    ).toBe('Show file: Avoid a null crash in src/a.ts, additions L2–3');
+    expect(
+      container
+        .querySelector('button[aria-label^="Dismiss locally:"]')
+        ?.getAttribute('aria-label'),
+    ).toBe('Dismiss locally: Avoid a null crash in src/a.ts, additions L2–3');
+  });
+
+  it('names an anchored inspector action with the finding title and location', async () => {
+    await act(async () => {
+      root.render(
+        <PrReviewNeonFindingsPanel
+          activePath="src/a.ts"
+          findings={[finding('active')]}
+          isDismissing={() => false}
+          onDismiss={vi.fn<(finding: NeonReviewFinding) => void>()}
+          onSelect={vi.fn<(finding: NeonReviewFinding) => void>()}
+          resolutionFor={() => ({
+            state: 'anchored',
+            lineNumber: 3,
+            selection: { side: 'additions', start: 2, end: 3 } as never,
+            side: 'additions',
+          })}
+          selectedAnnotationId={null}
+        />,
+      );
+    });
+
+    expect(
+      container
+        .querySelector('button[aria-label^="Show finding:"]')
+        ?.getAttribute('aria-label'),
+    ).toBe('Show finding: Avoid a null crash in src/a.ts, additions L2–3');
   });
 
   it('uses the compact embedded policy without hiding trust provenance', async () => {

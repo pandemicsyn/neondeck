@@ -18,6 +18,14 @@ export type NeonFindingAnchorResolution =
       reason: string;
     };
 
+export function neonFindingAnnotationId(findingId: string) {
+  return `neon-finding-annotation:${encodeURIComponent(findingId)}`;
+}
+
+export function neonFindingNavigationId(findingId: string) {
+  return `neon-finding-navigation:${encodeURIComponent(findingId)}`;
+}
+
 export function currentActiveNeonFindings(
   findings: readonly NeonReviewFinding[],
   sourceId: string,
@@ -161,7 +169,7 @@ export function annotationsFromNeonFindings({
       side: resolution.side,
       lineNumber: resolution.lineNumber,
       metadata: {
-        id: finding.id,
+        id: neonFindingAnnotationId(finding.id),
         kind: 'finding',
         title: finding.title,
         body: finding.explanation,

@@ -7,6 +7,7 @@ import type {
 import {
   createReviewNavigationModel,
   moveReviewCursor,
+  reviewCursorTargets,
   type ReviewCursorDirection,
   type ReviewCursorKind,
   type ReviewCursorResult,
@@ -17,6 +18,10 @@ import {
 import type { DiffFilePatch } from '../diff-viewer/types';
 import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import type { NeonFindingAnchorResolution } from './review-findings';
+import {
+  neonFindingAnnotationId,
+  neonFindingNavigationId,
+} from './review-findings';
 import { latestThreadComment, threadPath } from './review-ui-helpers';
 
 export type ReviewNavigationAnchor = {
@@ -169,15 +174,10 @@ export function createPrReviewNavigationData({
     });
   }
   for (const finding of neonFindings) {
-    if (
-      finding.lifecycle.state !== 'active' &&
-      finding.lifecycle.state !== 'stale'
-    ) {
-      continue;
-    }
+    if (finding.lifecycle.state !== 'active') continue;
     const resolution = neonFindingResolutions.get(finding.id);
     const item = {
-      id: finding.id,
+      id: neonFindingNavigationId(finding.id),
       kind: 'finding' as const,
       line:
         resolution?.state === 'anchored'
@@ -188,16 +188,12 @@ export function createPrReviewNavigationData({
             : null,
       path: finding.file,
       severity: finding.severity,
-      stale: finding.lifecycle.state === 'stale',
       summary: `${finding.title}: ${finding.explanation}`,
     };
     items.push(item);
     anchors.set(navigationTargetKey(item.kind, item.id), {
-      annotationId: finding.id,
-      selection:
-        finding.lifecycle.state === 'active' && resolution?.state === 'anchored'
-          ? resolution.selection
-          : null,
+      annotationId: neonFindingAnnotationId(finding.id),
+      selection: resolution?.state === 'anchored' ? resolution.selection : null,
     });
   }
 
@@ -217,10 +213,27 @@ export function reportOnlyFindingNavigationId(
   finding: PrReviewReportOnlyFinding,
   index: number,
 ) {
-  return (
+  const sourceId =
     finding.sourceId ??
-    `report:${index}:${finding.path}:${finding.line ?? 'file'}`
+    `synthetic:${index}:${finding.path}:${finding.line ?? 'file'}`;
+  return `report-only-finding:${encodeURIComponent(sourceId)}`;
+}
+
+export function resolveNeonFindingSelection(
+  finding: NeonReviewFinding,
+  model: ReviewNavigationModel,
+  filteredPaths: readonly string[] | null,
+) {
+  const targets = reviewCursorTargets(model, 'finding');
+  const target = targets.find(
+    (candidate) => candidate.id === neonFindingNavigationId(finding.id),
   );
+  if (!target) return null;
+  return {
+    filteredOut: Boolean(filteredPaths && !filteredPaths.includes(target.path)),
+    target,
+    targets,
+  };
 }
 
 export function reviewNavigationAnchor(

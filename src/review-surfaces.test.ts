@@ -200,7 +200,7 @@ describe('review surface registry', () => {
     expect(events.map((event) => event.action)).toEqual(['registered']);
   });
 
-  it('rejects out-of-bounds ranges and unavailable finding capability atomically', async () => {
+  it('rejects out-of-bounds ranges atomically while allowing findings to be hidden', async () => {
     const { app, registry } = harness();
     const events: ReviewSurfaceChangeEvent[] = [];
     registry.subscribe((event) => events.push(event));
@@ -224,17 +224,18 @@ describe('review surface registry', () => {
       ...snapshot('surface-a'),
       annotationVisibility: ['threads', 'drafts'],
     });
-    const unavailable = await apply(app, 'surface-a', [
+    const hidden = await apply(app, 'surface-a', [
       finding('finding-capability'),
     ]);
-    expect(unavailable.status).toBe(409);
-    expect(await unavailable.json()).toMatchObject({
-      error: { code: 'capability-unavailable' },
+    expect(hidden.status).toBe(200);
+    expect(await hidden.json()).toMatchObject({
+      ok: true,
+      findings: [{ id: 'finding-capability' }],
     });
-    expect(registry.readFindings('surface-a').count).toBe(0);
+    expect(registry.readFindings('surface-a').count).toBe(1);
     expect(
       events.filter((event) => event.action === 'findings-changed'),
-    ).toEqual([]);
+    ).toHaveLength(1);
   });
 
   it('stales active findings on a revision change and rejects the old revision', async () => {
@@ -581,6 +582,30 @@ describe('review surface registry', () => {
       error: { code: 'invalid-finding' },
     });
     expect(registry.readFindings('surface-a').count).toBe(0);
+  });
+
+  it('stores canonical parsed finding output for direct trusted calls', () => {
+    const registry = new ReviewSurfaceRegistry();
+    registries.push(registry);
+    registry.upsert(snapshot('surface-a'));
+    const input = {
+      ...finding('finding-canonical'),
+      ignoredTopLevel: 'strip this',
+      provenance: {
+        ...finding('finding-canonical').provenance,
+        ignoredNested: 'strip this too',
+      },
+    } as NeonReviewFindingDraft;
+
+    expect(
+      registry.applyFindings('surface-a', {
+        revisionKey: 'git-commit::head-sha',
+        findings: [input],
+      }),
+    ).toMatchObject({ ok: true, changed: true });
+    const stored = registry.readFindings('surface-a').findings?.[0];
+    expect(stored).not.toHaveProperty('ignoredTopLevel');
+    expect(stored?.provenance).not.toHaveProperty('ignoredNested');
   });
 
   it('pages model-facing context with bounded windows and totals', () => {

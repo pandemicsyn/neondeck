@@ -1,7 +1,7 @@
 import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import { Badge } from '../../components/ui';
 import type { NeonFindingAnchorResolution } from './review-findings';
-import { findingAnchorLabel } from './review-findings';
+import { findingAnchorLabel, neonFindingAnnotationId } from './review-findings';
 
 export function PrReviewNeonFindingAnnotation({
   compact,
@@ -87,7 +87,9 @@ export function PrReviewNeonFindingsPanel({
       <div className="divide-y divide-line border-t border-line">
         {ordered.map((finding) => {
           const resolution = resolutionFor(finding);
-          const selected = selectedAnnotationId === finding.id;
+          const selected =
+            selectedAnnotationId === neonFindingAnnotationId(finding.id);
+          const controlContext = `${finding.title} in ${finding.file}, ${findingAnchorLabel(finding)}`;
           return (
             <article
               aria-current={selected ? 'true' : undefined}
@@ -122,7 +124,15 @@ export function PrReviewNeonFindingsPanel({
               <FindingProvenance finding={finding} />
               <div className="pr-review-inline-actions">
                 {finding.lifecycle.state === 'active' ? (
-                  <button onClick={() => onSelect(finding)} type="button">
+                  <button
+                    aria-label={`${
+                      resolution.state === 'anchored'
+                        ? 'Show finding'
+                        : 'Show file'
+                    }: ${controlContext}`}
+                    onClick={() => onSelect(finding)}
+                    type="button"
+                  >
                     {resolution.state === 'anchored'
                       ? 'Show finding'
                       : 'Show file'}
@@ -131,6 +141,7 @@ export function PrReviewNeonFindingsPanel({
                 {finding.lifecycle.state === 'active' ||
                 finding.lifecycle.state === 'stale' ? (
                   <button
+                    aria-label={`Dismiss locally: ${controlContext}`}
                     disabled={isDismissing(finding.id)}
                     onClick={() => onDismiss(finding)}
                     type="button"

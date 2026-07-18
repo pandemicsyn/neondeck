@@ -82,6 +82,7 @@ import {
   reviewNavigationKindLabel,
   reviewNavigationPublication,
   reviewNavigationPublicationMatches,
+  resolveNeonFindingSelection,
   selectedReviewContext,
   type ReviewNavigationAuthority,
   type ReviewNavigationSelection,
@@ -90,6 +91,7 @@ import {
 import {
   annotationsFromNeonFindings,
   currentActiveNeonFindings,
+  neonFindingAnnotationId,
   resolveNeonFindingAnchor,
   type NeonFindingAnchorResolution,
 } from './review-findings';
@@ -442,7 +444,7 @@ export function GitHubPrReview({
         files,
         findings: reviewRecord?.reportOnlyFindings ?? [],
         neonFindingResolutions,
-        neonFindings,
+        neonFindings: activeNeonFindings,
         staleCommentIds,
         threads: reviewThreads,
       }),
@@ -450,7 +452,7 @@ export function GitHubPrReview({
       draft,
       files,
       neonFindingResolutions,
-      neonFindings,
+      activeNeonFindings,
       reviewRecord?.reportOnlyFindings,
       reviewThreads,
       staleCommentIds,
@@ -738,12 +740,22 @@ export function GitHubPrReview({
     (finding: NeonReviewFinding) => {
       setPendingHunkNavigation(null);
       setNavigationKind('finding');
-      const targets = reviewCursorTargets(navigationData.model, 'finding', {
-        filter: fileFilter.paths ? { paths: fileFilter.paths } : undefined,
-      });
-      const target = targets.find((candidate) => candidate.id === finding.id);
-      if (target) {
-        activateNavigationTarget(target, targets);
+      const selection = resolveNeonFindingSelection(
+        finding,
+        navigationData.model,
+        fileFilter.paths,
+      );
+      if (selection) {
+        if (selection.filteredOut) {
+          setFileFilter({ paths: null, query: null });
+        }
+        activateNavigationTarget(
+          selection.target,
+          selection.targets,
+          selection.filteredOut
+            ? 'Cleared the file-tree filter to show this finding.'
+            : null,
+        );
         return;
       }
       if (files.some((file) => file.path === finding.file)) {
@@ -751,7 +763,7 @@ export function GitHubPrReview({
         setNavigationTargetKey(null);
         setNavigationAuthority('explicit');
         setNavigationSelection(null);
-        setNavigationAnnotationId(finding.id);
+        setNavigationAnnotationId(neonFindingAnnotationId(finding.id));
         setNavigationBoundary(null);
         setNavigationStatus(
           'Finding anchor is not available on this revision.',
