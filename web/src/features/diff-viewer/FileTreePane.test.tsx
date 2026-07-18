@@ -94,6 +94,98 @@ describe('FileTreePane review map', () => {
     expect(onSelectPath).toHaveBeenCalledWith('src/b.ts');
   });
 
+  it('shares Pierre search state with review navigation, including previous paths', async () => {
+    const onFilterChange =
+      vi.fn<(query: string | null, paths: string[] | null) => void>();
+    const onSelectPath = vi.fn<(path: string) => void>();
+    const files = reviewFiles();
+    files[0]!.previousPath = 'src/old-a.ts';
+
+    await act(async () => {
+      root.render(
+        <FileTreePane
+          files={files}
+          filterQuery="old-a"
+          onFilterChange={onFilterChange}
+          onSelectPath={onSelectPath}
+          selectedPath="src/a.ts"
+        />,
+      );
+    });
+
+    expect(onFilterChange).toHaveBeenLastCalledWith('old-a', ['src/a.ts']);
+    expect(treeItem('src/old-a.ts')).not.toBeNull();
+    expect(treeItem('src/a.ts')).toBeNull();
+    expect(selectedPaths()).toEqual(['src/old-a.ts']);
+    expect(decorationText('src/old-a.ts')).toBe('renamed → src/a.ts');
+    await act(async () => treeItem('src/old-a.ts')?.click());
+    expect(onSelectPath).toHaveBeenCalledWith('src/a.ts');
+
+    const input = searchInput();
+    expect(input).not.toBeNull();
+    await act(async () => {
+      if (!input) return;
+      input.value = 'src/b';
+      input.dispatchEvent(
+        new Event('input', { bubbles: true, composed: true }),
+      );
+    });
+    expect(onFilterChange).toHaveBeenLastCalledWith('src/b', ['src/b.ts']);
+
+    await act(async () => {
+      root.render(
+        <FileTreePane
+          files={files}
+          filterQuery={null}
+          onFilterChange={onFilterChange}
+          onSelectPath={vi.fn<(path: string) => void>()}
+          selectedPath="src/a.ts"
+        />,
+      );
+    });
+    await act(async () => Promise.resolve());
+    expect(onFilterChange).toHaveBeenLastCalledWith(null, null);
+  });
+
+  it('keeps previous-path filtering when the synthetic alias collides with an implicit directory', async () => {
+    const onFilterChange =
+      vi.fn<(query: string | null, paths: string[] | null) => void>();
+    const files: DiffFilePatch[] = [
+      {
+        additions: 1,
+        deletions: 1,
+        path: 'src/old-a.ts/child.ts',
+        status: 'modified',
+      },
+      {
+        additions: 1,
+        deletions: 1,
+        path: 'src/a.ts',
+        previousPath: 'src/old-a.ts',
+        status: 'renamed',
+      },
+    ];
+
+    await act(async () => {
+      root.render(
+        <FileTreePane
+          files={files}
+          filterQuery="old-a"
+          onFilterChange={onFilterChange}
+          onSelectPath={vi.fn<(path: string) => void>()}
+          selectedPath="src/a.ts"
+        />,
+      );
+    });
+
+    expect(onFilterChange).toHaveBeenLastCalledWith('old-a', [
+      'src/old-a.ts/child.ts',
+      'src/a.ts',
+    ]);
+    expect(treeItem('src/old-a.ts/child.ts')).not.toBeNull();
+    expect(decorationText('src/old-a.ts')).toBeUndefined();
+  });
+
   function treeHost() {
     return container.querySelector('file-tree-container');
   }
@@ -102,6 +194,10 @@ describe('FileTreePane review map', () => {
     return treeHost()?.shadowRoot?.querySelector<HTMLButtonElement>(
       `[data-item-path="${path}"]`,
     );
+  }
+
+  function searchInput() {
+    return treeHost()?.shadowRoot?.querySelector<HTMLInputElement>('input');
   }
 
   function selectedPaths() {

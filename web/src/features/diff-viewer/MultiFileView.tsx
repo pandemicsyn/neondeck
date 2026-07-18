@@ -41,6 +41,10 @@ type MultiFileViewProps = {
   inspectorLabel?: string;
   source?: ReviewSourceSnapshot;
   reviewMapByPath?: ReadonlyMap<string, FileReviewMapEntry>;
+  fileFilter?: string | null;
+  onFileFilterChange?: (query: string | null, paths: string[] | null) => void;
+  reviewOrder?: readonly string[];
+  selectedAnnotationId?: string | null;
 };
 
 export function MultiFileView({
@@ -61,6 +65,10 @@ export function MultiFileView({
   inspectorLabel = 'Diff inspector',
   source,
   reviewMapByPath,
+  fileFilter,
+  onFileFilterChange,
+  reviewOrder,
+  selectedAnnotationId,
   title,
   tone = 'primary',
 }: MultiFileViewProps) {
@@ -83,7 +91,10 @@ export function MultiFileView({
     source
       ? {
           activePath: selectedFile?.path ?? null,
+          fileFilter: fileFilter ?? null,
           onNavigatePath: selectPath,
+          reviewOrder,
+          selectedAnnotationId: selectedAnnotationId ?? null,
           selection: selectedLines,
           source,
         }
@@ -117,7 +128,9 @@ export function MultiFileView({
     >
       <aside className="diff-tree-pane">
         <FileTreePane
+          filterQuery={fileFilter}
           files={files}
+          onFilterChange={onFileFilterChange}
           onSelectPath={selectPath}
           reviewMapByPath={reviewMapByPath}
           selectedPath={selectedFile?.path ?? null}

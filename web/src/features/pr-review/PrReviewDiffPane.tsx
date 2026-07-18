@@ -22,12 +22,16 @@ export function PrReviewDiffPane({
   findingsSidebar,
   isLoadingPatch,
   isStandalone,
+  fileFilter,
+  onFileFilterChange,
   onActivePathChange,
   onSelectedLinesChange,
   patchError,
   renderAnnotation,
   selectedLines,
+  selectedAnnotationId,
   reviewMapByPath,
+  reviewOrder,
   source,
   title,
 }: {
@@ -39,12 +43,16 @@ export function PrReviewDiffPane({
   findingsSidebar: PrReviewFindingsSidebarProps;
   isLoadingPatch: boolean;
   isStandalone: boolean;
+  fileFilter: string | null;
+  onFileFilterChange: (query: string | null, paths: string[] | null) => void;
   onActivePathChange: (path: string) => void;
   onSelectedLinesChange: (selection: SelectedLineRange | null) => void;
   patchError: string | null;
   renderAnnotation: (annotation: DiffReviewAnnotation) => ReactNode;
   selectedLines: SelectedLineRange | null;
+  selectedAnnotationId: string | null;
   reviewMapByPath: ReadonlyMap<string, FileReviewMapEntry>;
+  reviewOrder: readonly string[];
   source: ReviewSourceSnapshot;
   title: string;
 }) {
@@ -63,6 +71,7 @@ export function PrReviewDiffPane({
         annotationsByPath={annotationsByPath}
         detail={detail}
         emptyLabel="No PR file patches available."
+        fileFilter={fileFilter}
         files={files}
         footer={
           isStandalone ? null : (
@@ -77,11 +86,14 @@ export function PrReviewDiffPane({
         inspectorLabel="PR review inspector"
         isLoadingPatch={isLoadingPatch}
         onActivePathChange={onActivePathChange}
+        onFileFilterChange={onFileFilterChange}
         onSelectedLinesChange={onSelectedLinesChange}
         patchError={patchError}
         renderAnnotation={renderAnnotation}
         reviewMapByPath={reviewMapByPath}
+        reviewOrder={reviewOrder}
         selectedLines={selectedLines}
+        selectedAnnotationId={selectedAnnotationId}
         source={source}
         title={title}
         tone="primary"

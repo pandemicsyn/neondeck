@@ -1,4 +1,4 @@
-import { FileTree, useFileTree } from '@pierre/trees/react';
+import { FileTree, useFileTree, useFileTreeSearch } from '@pierre/trees/react';
 import { useEffect, useMemo, useRef } from 'react';
 import {
   prepareFileTreeInput,
@@ -13,6 +13,8 @@ const expandedTreeFileLimit = 120;
 
 type FileTreePaneProps = {
   files: DiffFilePatch[];
+  filterQuery?: string | null;
+  onFilterChange?: (query: string | null, paths: string[] | null) => void;
   selectedPath: string | null;
   onSelectPath: (path: string) => void;
   reviewMapByPath?: ReadonlyMap<string, FileReviewMapEntry>;
@@ -20,6 +22,8 @@ type FileTreePaneProps = {
 
 export function FileTreePane({
   files,
+  filterQuery,
+  onFilterChange,
   selectedPath,
   onSelectPath,
   reviewMapByPath,
@@ -42,10 +46,12 @@ export function FileTreePane({
   return (
     <FileTreePaneModel
       files={files}
+      filterQuery={filterQuery}
       gitStatus={gitStatus}
       initialExpansion={initialExpansion}
       key={treeKey}
       onSelectPath={onSelectPath}
+      onFilterChange={onFilterChange}
       paths={paths}
       preparedInput={preparedInput}
       reviewMapByPath={reviewMapByPath}
@@ -56,9 +62,11 @@ export function FileTreePane({
 
 function FileTreePaneModel({
   files,
+  filterQuery,
   gitStatus,
   initialExpansion,
   onSelectPath,
+  onFilterChange,
   paths,
   preparedInput,
   reviewMapByPath,
@@ -71,7 +79,10 @@ function FileTreePaneModel({
 }) {
   const reviewMapRef = useRef(reviewMapByPath);
   reviewMapRef.current = reviewMapByPath;
+  const previousPathAliasRef = useRef<ReadonlyMap<string, string>>(new Map());
+  const mountedPreviousPathAliases = useRef<Set<string>>(new Set());
   const filePathSet = useMemo(() => new Set(paths), [paths]);
+  const occupiedPathSet = useMemo(() => occupiedFileTreePaths(paths), [paths]);
   const { model } = useFileTree({
     flattenEmptyDirectories: true,
     gitStatus,
@@ -81,13 +92,22 @@ function FileTreePaneModel({
     onSelectionChange(selectedPaths) {
       const nextPath = [...selectedPaths]
         .reverse()
+        .map((path) => previousPathAliasRef.current.get(path) ?? path)
         .find((path) => filePathSet.has(path));
       if (nextPath) onSelectPath(nextPath);
     },
     preparedInput,
     renderRowDecoration({ item }) {
       if (item.kind !== 'file') return null;
-      const entry = reviewMapRef.current?.get(item.path);
+      const currentPath =
+        previousPathAliasRef.current.get(item.path) ?? item.path;
+      if (currentPath !== item.path) {
+        return {
+          text: `renamed → ${currentPath}`,
+          title: `${item.path} was renamed to ${currentPath}.`,
+        };
+      }
+      const entry = reviewMapRef.current?.get(currentPath);
       return entry && fileReviewMapHasStatus(entry)
         ? {
             text: fileReviewMapDecoration(entry),
@@ -99,16 +119,106 @@ function FileTreePaneModel({
     searchBlurBehavior: 'retain',
     unsafeCSS: treeUnsafeCss,
   });
+  const search = useFileTreeSearch(model);
+  const previousPathAliases = useMemo(
+    () => previousPathAliasesForSearch(files, search.value, occupiedPathSet),
+    [files, occupiedPathSet, search.value],
+  );
+  previousPathAliasRef.current = previousPathAliases;
+  const appliedFilterQuery = useRef<{
+    initialized: boolean;
+    value: string | null | undefined;
+  }>({ initialized: false, value: undefined });
+  const pendingExternalFilter = useRef<{
+    active: boolean;
+    value: string | null;
+  }>({ active: false, value: null });
+
+  useEffect(() => {
+    const desiredAliases = new Set(previousPathAliases.keys());
+    for (const path of mountedPreviousPathAliases.current) {
+      if (!desiredAliases.has(path)) model.remove(path);
+    }
+    for (const path of desiredAliases) {
+      if (
+        !mountedPreviousPathAliases.current.has(path) &&
+        !model.getItem(path)
+      ) {
+        model.add(path);
+      }
+    }
+    mountedPreviousPathAliases.current = desiredAliases;
+  }, [model, previousPathAliases]);
+
+  useEffect(() => {
+    if (
+      appliedFilterQuery.current.initialized &&
+      appliedFilterQuery.current.value === filterQuery
+    ) {
+      return;
+    }
+    appliedFilterQuery.current = { initialized: true, value: filterQuery };
+    const currentQuery = search.value.trim() || null;
+    if (filterQuery === undefined || filterQuery === currentQuery) return;
+    pendingExternalFilter.current = {
+      active: true,
+      value: filterQuery?.trim() || null,
+    };
+    search.setValue(filterQuery);
+  }, [filterQuery, search]);
+
+  useEffect(() => {
+    if (!onFilterChange) return;
+    const query = search.value.trim() || null;
+    if (pendingExternalFilter.current.active) {
+      if (pendingExternalFilter.current.value !== query) return;
+      pendingExternalFilter.current.active = false;
+    }
+    if (!query) {
+      onFilterChange(null, null);
+      return;
+    }
+    const normalized = query.toLocaleLowerCase();
+    const matchingPaths = new Set(
+      search.matchingPaths
+        .map((path) => previousPathAliases.get(path) ?? path)
+        .filter((path) => filePathSet.has(path)),
+    );
+    for (const file of files) {
+      if (file.previousPath?.toLocaleLowerCase().includes(normalized)) {
+        matchingPaths.add(file.path);
+      }
+    }
+    onFilterChange(
+      query,
+      paths.filter((path) => matchingPaths.has(path)),
+    );
+  }, [
+    filePathSet,
+    files,
+    filterQuery,
+    onFilterChange,
+    paths,
+    previousPathAliases,
+    search.matchingPaths,
+    search.value,
+  ]);
 
   useEffect(() => {
     if (!selectedPath) return;
+    const visibleSelectedPath =
+      [...previousPathAliases].find(([, path]) => path === selectedPath)?.[0] ??
+      selectedPath;
     for (const path of model.getSelectedPaths()) {
-      if (path !== selectedPath) model.getItem(path)?.deselect();
+      if (path !== visibleSelectedPath) model.getItem(path)?.deselect();
     }
-    const item = model.getItem(selectedPath);
+    const item = model.getItem(visibleSelectedPath);
     if (!item?.isSelected()) item?.select();
-    model.scrollToPath(selectedPath, { focus: false, offset: 'nearest' });
-  }, [model, selectedPath]);
+    model.scrollToPath(visibleSelectedPath, {
+      focus: false,
+      offset: 'nearest',
+    });
+  }, [model, previousPathAliases, selectedPath]);
 
   useEffect(() => {
     model.setGitStatus(gitStatus);
@@ -235,6 +345,49 @@ function gitStatusEntry(file: DiffFilePatch): GitStatusEntry | null {
   }
   if (status) return { path: file.path, status: 'modified' };
   return null;
+}
+
+function previousPathAliasesForSearch(
+  files: readonly DiffFilePatch[],
+  query: string,
+  occupiedPaths: ReadonlySet<string>,
+) {
+  const normalized = query.trim().toLocaleLowerCase();
+  const aliases = new Map<string, string>();
+  if (!normalized) return aliases;
+  for (const file of files) {
+    const previousPath = file.previousPath?.trim();
+    if (
+      !previousPath ||
+      previousPath === file.path ||
+      occupiedPaths.has(previousPath) ||
+      occupiedPaths.has(`${previousPath}/`) ||
+      file.path.toLocaleLowerCase().includes(normalized) ||
+      !previousPath.toLocaleLowerCase().includes(normalized)
+    ) {
+      continue;
+    }
+    aliases.set(previousPath, file.path);
+  }
+  return aliases;
+}
+
+function occupiedFileTreePaths(paths: readonly string[]) {
+  const occupied = new Set<string>();
+  for (const path of paths) {
+    occupied.add(path);
+    for (
+      let index = path.indexOf('/');
+      index >= 0;
+      index = path.indexOf('/', index + 1)
+    ) {
+      const directory = path.slice(0, index);
+      if (!directory) continue;
+      occupied.add(directory);
+      occupied.add(`${directory}/`);
+    }
+  }
+  return occupied;
 }
 
 const treeUnsafeCss = `

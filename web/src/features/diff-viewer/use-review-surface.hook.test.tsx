@@ -77,12 +77,47 @@ describe('useReviewSurface', () => {
 
     expect(api.register).toHaveBeenCalledTimes(1);
   });
+
+  it('publishes the active filter, guided order, annotation, and diff selection together', async () => {
+    api.open.mockImplementation((_onEvent, _onError, onOpen) => {
+      onOpen?.();
+      return vi.fn<() => void>();
+    });
+
+    await act(async () => root.render(<NavigationSurfaceHarness />));
+
+    expect(api.register).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activePath: 'src/b.ts',
+        fileFilter: 'src/b',
+        reviewOrder: ['src/b.ts', 'src/a.ts'],
+        selectedAnnotationId: 'draft-b',
+        selection: expect.objectContaining({
+          path: 'src/b.ts',
+          startLine: 8,
+          endLine: 8,
+        }),
+      }),
+    );
+  });
 });
 
 function ReviewSurfaceHarness({ source }: { source: ReviewSourceSnapshot }) {
   useReviewSurface({
     activePath: source.files[0]?.path ?? null,
     source,
+  });
+  return null;
+}
+
+function NavigationSurfaceHarness() {
+  useReviewSurface({
+    activePath: 'src/b.ts',
+    fileFilter: 'src/b',
+    reviewOrder: ['src/b.ts', 'src/a.ts'],
+    selectedAnnotationId: 'draft-b',
+    selection: { side: 'additions', start: 8, end: 8 },
+    source: reviewSource(),
   });
   return null;
 }
@@ -104,18 +139,16 @@ function reviewSource(): ReviewSourceSnapshot {
       localPath: '/tmp/repo',
       localAccess: true,
     },
-    files: [
-      {
-        path: 'src/app.ts',
-        previousPath: null,
-        status: 'modified',
-        additions: 1,
-        deletions: 1,
-        generatedLike: false,
-        patchState: 'available',
-        patchMessage: null,
-      },
-    ],
+    files: ['src/a.ts', 'src/b.ts'].map((path) => ({
+      path,
+      previousPath: null,
+      status: 'modified',
+      additions: 1,
+      deletions: 1,
+      generatedLike: false,
+      patchState: 'available',
+      patchMessage: null,
+    })),
     capabilities: ['comments', 'refresh'],
     externalUrl: 'https://github.com/example/repo/pull/42',
   };

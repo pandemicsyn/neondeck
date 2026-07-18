@@ -51,6 +51,7 @@ export function PrReviewSubmitBar({
       aria-busy={isBusy}
       aria-label="Review submission controls"
       className="pr-review-bar"
+      data-review-shortcuts="off"
     >
       <div className="pr-review-bar-main">
         <button

@@ -13,6 +13,8 @@ import {
   latestThreadComment,
   threadPath,
 } from './review-ui-helpers';
+import { resolveReviewFilePath } from './review-view-model';
+import { reportOnlyFindingNavigationId } from './review-navigation';
 
 export type PrReviewFindingsSidebarProps = {
   activePath: string | null;
@@ -26,6 +28,7 @@ export type PrReviewFindingsSidebarProps = {
   onReanchor: (comment: GitHubPrReviewDraftComment) => void;
   review: PrReviewRecord | null;
   reviewThreads: GitHubPullRequestReviewThread[];
+  selectedAnnotationId: string | null;
   staleCommentCount: number;
   staleDraftComments: GitHubPrReviewDraftComment[];
   unresolvedThreads: GitHubPullRequestReviewThread[];
@@ -75,6 +78,7 @@ export function PrReviewFindingsSidebar({
             threads
           </span>
           <span>{props.cleanCommentCount} pending</span>
+          {props.selectedAnnotationId ? <span>target selected</span> : null}
           {props.staleCommentCount > 0 ? (
             <span>{props.staleCommentCount} stale</span>
           ) : null}
@@ -101,18 +105,25 @@ function FindingsPanels(props: PrReviewFindingsSidebarProps) {
       <ReviewThreadPanel
         activePath={props.activePath}
         isLoading={props.isLoadingThreads}
-        threads={threadsForPath(props.reviewThreads, props.activePath)}
+        selectedAnnotationId={props.selectedAnnotationId}
+        threads={threadsForPath(
+          props.reviewThreads,
+          props.activePath,
+          props.files,
+        )}
       />
       <StaleDraftCommentPanel
         comments={props.staleDraftComments}
         isDeleting={props.isDeleting}
         onDelete={props.onDelete}
         onReanchor={props.onReanchor}
+        selectedAnnotationId={props.selectedAnnotationId}
       />
       <ReportOnlyFindingPanel
         draft={props.draft}
         onChooseLine={props.onChooseLine}
         review={props.review}
+        selectedAnnotationId={props.selectedAnnotationId}
       />
     </>
   );
@@ -121,10 +132,12 @@ function FindingsPanels(props: PrReviewFindingsSidebarProps) {
 function ReviewThreadPanel({
   activePath,
   isLoading,
+  selectedAnnotationId,
   threads,
 }: {
   activePath: string | null;
   isLoading: boolean;
+  selectedAnnotationId: string | null;
   threads: GitHubPullRequestReviewThread[];
 }) {
   if (isLoading) {
@@ -160,7 +173,13 @@ function ReviewThreadPanel({
           const comment = latestThreadComment(thread);
           return (
             <li
+              aria-current={
+                selectedAnnotationId === thread.id ? 'true' : undefined
+              }
               className="border-b border-line px-2 py-2 last:border-b-0"
+              data-navigation-selected={
+                selectedAnnotationId === thread.id ? '' : undefined
+              }
               key={thread.id}
             >
               <div className="mb-1 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
@@ -201,11 +220,13 @@ function StaleDraftCommentPanel({
   isDeleting,
   onDelete,
   onReanchor,
+  selectedAnnotationId,
 }: {
   comments: GitHubPrReviewDraftComment[];
   isDeleting: boolean;
   onDelete: (commentId: string) => void;
   onReanchor: (comment: GitHubPrReviewDraftComment) => void;
+  selectedAnnotationId: string | null;
 }) {
   if (comments.length === 0) return null;
 
@@ -218,7 +239,13 @@ function StaleDraftCommentPanel({
       <ul className="max-h-40 overflow-auto">
         {comments.map((comment) => (
           <li
+            aria-current={
+              selectedAnnotationId === comment.id ? 'true' : undefined
+            }
             className="border-b border-line px-2 py-2 last:border-b-0"
+            data-navigation-selected={
+              selectedAnnotationId === comment.id ? '' : undefined
+            }
             key={comment.id}
           >
             <div className="mb-1 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
@@ -254,10 +281,12 @@ function ReportOnlyFindingPanel({
   draft,
   onChooseLine,
   review,
+  selectedAnnotationId,
 }: {
   draft: GitHubPrReviewDraft | null;
   onChooseLine: (finding: PrReviewReportOnlyFinding) => void;
   review: PrReviewRecord | null;
+  selectedAnnotationId: string | null;
 }) {
   if (!review?.reportOnlyFindings.length) return null;
   return (
@@ -271,7 +300,19 @@ function ReportOnlyFindingPanel({
           const drafted = isReportOnlyFindingDrafted(draft, finding);
           return (
             <article
+              aria-current={
+                selectedAnnotationId ===
+                reportOnlyFindingNavigationId(finding, index)
+                  ? 'true'
+                  : undefined
+              }
               className="py-2"
+              data-navigation-selected={
+                selectedAnnotationId ===
+                reportOnlyFindingNavigationId(finding, index)
+                  ? ''
+                  : undefined
+              }
               key={
                 finding.sourceId ?? `${finding.path}:${finding.line}:${index}`
               }
@@ -308,9 +349,12 @@ function ReportOnlyFindingPanel({
 function threadsForPath(
   threads: GitHubPullRequestReviewThread[],
   path: string | null,
+  files: DiffFilePatch[] = [],
 ) {
   if (!path) return [];
-  return threads.filter((thread) => threadPath(thread) === path);
+  return threads.filter(
+    (thread) => resolveReviewFilePath(files, threadPath(thread)) === path,
+  );
 }
 
 export function reportOnlyFindingBody(finding: PrReviewReportOnlyFinding) {
