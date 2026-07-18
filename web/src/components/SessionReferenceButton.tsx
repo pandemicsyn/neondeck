@@ -10,7 +10,6 @@ type SessionReferenceButtonProps = {
   linkedTaskId?: string | null;
   summary?: string | null;
   uiMetadata?: unknown;
-  label?: string;
   className?: string;
 };
 
@@ -22,7 +21,6 @@ export function SessionReferenceButton({
   linkedTaskId,
   summary,
   uiMetadata,
-  label = 'session',
   className = 'inline-flex min-h-[28px] shrink-0 items-center border border-line px-2 py-1 text-muted hover:border-primary hover:text-primary disabled:opacity-50',
 }: SessionReferenceButtonProps) {
   const queryClient = useQueryClient();
@@ -58,13 +56,14 @@ export function SessionReferenceButton({
   return (
     <span className="inline-flex max-w-full flex-wrap items-center gap-1">
       <button
+        aria-label={`Reference ${title} in chat`}
         className={className}
         disabled={mutation.isPending}
         onClick={() => mutation.mutate()}
-        title="Open a linked chat session for this row"
+        title={`Reference ${title} in chat`}
         type="button"
       >
-        {mutation.isPending ? 'opening' : label}
+        {mutation.isPending ? 'Opening' : 'Reference'}
       </button>
       {mutation.error ? (
         <span
@@ -76,7 +75,7 @@ export function SessionReferenceButton({
       ) : null}
       {mutation.data ? (
         <output aria-live="polite" className="sr-only">
-          Linked chat opened.
+          Opened linked chat for {title}.
         </output>
       ) : null}
     </span>

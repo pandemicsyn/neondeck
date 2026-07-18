@@ -19,3 +19,10 @@ export function threadPath(thread: GitHubPullRequestReviewThread) {
 export function latestThreadComment(thread: GitHubPullRequestReviewThread) {
   return thread.comments.at(-1) ?? thread.comments[0] ?? null;
 }
+
+export function clearCompletedEditor<T extends { token: number }>(
+  current: T | null,
+  completedToken: number,
+) {
+  return current?.token === completedToken ? null : current;
+}

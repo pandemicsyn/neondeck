@@ -1,5 +1,5 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   type GitHubPrReviewDraftComment,
   type GitHubPrReviewVerdict,
@@ -47,12 +47,27 @@ import {
   reviewPatchQuerySettled,
   summaryLabel,
 } from './review-view-model';
+import { clearCompletedEditor } from './review-ui-helpers';
 import { usePrReviewRecord } from './usePrReviewRecord';
 
 type ComposerState = {
+  body: string;
   path: string;
   selection: SelectedLineRange;
   annotation: DiffReviewAnnotation;
+  token: number;
+};
+
+type CommentEditorState = {
+  body: string;
+  commentId: string;
+  token: number;
+};
+
+type ReplyEditorState = {
+  body: string;
+  threadId: string;
+  token: number;
 };
 
 type GitHubPrReviewMode = 'embedded' | 'standalone';
@@ -83,13 +98,13 @@ export function GitHubPrReview({
     review: reviewRecord,
     start: startReview,
   } = usePrReviewRecord(pr);
+  const nextEditorToken = useRef(0);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [composer, setComposer] = useState<ComposerState | null>(null);
-  const [composerBody, setComposerBody] = useState('');
-  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
-  const [editingBody, setEditingBody] = useState('');
-  const [replyingThreadId, setReplyingThreadId] = useState<string | null>(null);
-  const [replyBody, setReplyBody] = useState('');
+  const [commentEditor, setCommentEditor] = useState<CommentEditorState | null>(
+    null,
+  );
+  const [replyEditor, setReplyEditor] = useState<ReplyEditorState | null>(null);
   const [reviewBody, setReviewBody] = useState('');
   const [isReviewBodyFocused, setIsReviewBodyFocused] = useState(false);
   const [hasPendingReviewBodyEdit, setHasPendingReviewBodyEdit] =
@@ -105,6 +120,10 @@ export function GitHubPrReview({
     Set<string>
   >(() => new Set());
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const createEditorToken = () => {
+    nextEditorToken.current += 1;
+    return nextEditorToken.current;
+  };
   const fileList = useMemo(
     () => (filesQuery.data?.files ?? []) as DiffFilePatch[],
     [filesQuery.data?.files],
@@ -303,7 +322,6 @@ export function GitHubPrReview({
   const beginReanchorComment = (commentId: string, path: string | null) => {
     setAnchoringFinding(null);
     setComposer(null);
-    setComposerBody('');
     setReanchoringCommentId(commentId);
     if (path && files.some((file) => file.path === path)) {
       setActivePath(path);
@@ -314,7 +332,6 @@ export function GitHubPrReview({
   };
   const beginAnchorFinding = (finding: PrReviewReportOnlyFinding) => {
     setComposer(null);
-    setComposerBody('');
     setReanchoringCommentId(null);
     setAnchoringFinding(finding);
     if (files.some((file) => file.path === finding.path)) {
@@ -381,21 +398,29 @@ export function GitHubPrReview({
       return;
     }
     const annotation = annotationFromSelection(selection, index);
-    setComposer({ path: activePath, selection, annotation });
-    setComposerBody(
-      anchoringFinding ? reportOnlyFindingBody(anchoringFinding) : '',
-    );
+    setComposer({
+      annotation,
+      body: anchoringFinding ? reportOnlyFindingBody(anchoringFinding) : '',
+      path: activePath,
+      selection,
+      token: createEditorToken(),
+    });
     setAnchoringFinding(null);
     setStatusMessage(null);
   };
   const submitComposer = async (event: FormEvent) => {
     event.preventDefault();
-    if (!composer || composerBody.trim().length === 0) return;
+    const submittedComposer = composer;
+    if (!submittedComposer || submittedComposer.body.trim().length === 0)
+      return;
     setStatusMessage(null);
     try {
       const nextDraft = await ensureDraft();
-      const index = patchIndexesByPath.get(composer.path);
-      const input = commentInputFromSelection(composer.selection, index);
+      const index = patchIndexesByPath.get(submittedComposer.path);
+      const input = commentInputFromSelection(
+        submittedComposer.selection,
+        index,
+      );
       if (index && !commentAnchorExists(index, input)) {
         setStatusMessage('Selected range is not valid for the current patch.');
         return;
@@ -404,12 +429,13 @@ export function GitHubPrReview({
         repo: pr.repo,
         number: pr.number,
         draftId: nextDraft.id,
-        path: composer.path,
+        path: submittedComposer.path,
         ...input,
-        body: composerBody,
+        body: submittedComposer.body,
       });
-      setComposer(null);
-      setComposerBody('');
+      setComposer((current) =>
+        clearCompletedEditor(current, submittedComposer.token),
+      );
       setStatusMessage('Draft comment saved.');
     } catch {
       // React Query owns the visible error state.
@@ -417,34 +443,43 @@ export function GitHubPrReview({
   };
   const submitEdit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!editingCommentId || editingBody.trim().length === 0) return;
+    const submittedEditor = commentEditor;
+    if (!submittedEditor || submittedEditor.body.trim().length === 0) return;
     setStatusMessage(null);
     try {
       await mutations.updateComment.mutateAsync({
         repo: pr.repo,
         number: pr.number,
-        id: editingCommentId,
-        body: editingBody,
+        id: submittedEditor.commentId,
+        body: submittedEditor.body,
       });
-      setEditingCommentId(null);
-      setEditingBody('');
+      setCommentEditor((current) =>
+        clearCompletedEditor(current, submittedEditor.token),
+      );
     } catch {
       // React Query owns the visible error state.
     }
   };
   const submitReply = async (threadId: string, event: FormEvent) => {
     event.preventDefault();
-    if (replyBody.trim().length === 0) return;
+    const submittedEditor = replyEditor;
+    if (
+      !submittedEditor ||
+      submittedEditor.threadId !== threadId ||
+      submittedEditor.body.trim().length === 0
+    )
+      return;
     setStatusMessage(null);
     try {
       await mutations.replyToThread.mutateAsync({
         repo: pr.repo,
         number: pr.number,
         threadId,
-        text: replyBody,
+        text: submittedEditor.body,
       });
-      setReplyingThreadId(null);
-      setReplyBody('');
+      setReplyEditor((current) =>
+        clearCompletedEditor(current, submittedEditor.token),
+      );
       setStatusMessage('Thread reply posted.');
     } catch {
       // React Query owns the visible error state.
@@ -453,10 +488,10 @@ export function GitHubPrReview({
   const renderAnnotation = (annotation: DiffReviewAnnotation) => (
     <PrReviewCommentComposer
       annotation={annotation}
-      composerBody={composerBody}
+      composerBody={composer?.body ?? ''}
       draft={draft}
-      editingBody={editingBody}
-      editingCommentId={editingCommentId}
+      editingBody={commentEditor?.body ?? ''}
+      editingCommentId={commentEditor?.commentId ?? null}
       isAddingComment={mutations.addComment.isPending}
       isDeletingComment={mutations.deleteComment.isPending}
       isReplyingToThread={mutations.replyToThread.isPending}
@@ -465,17 +500,16 @@ export function GitHubPrReview({
       isUpdatingComment={mutations.updateComment.isPending}
       onCancelComposer={() => {
         setComposer(null);
-        setComposerBody('');
       }}
       onCancelEdit={() => {
-        setEditingCommentId(null);
-        setEditingBody('');
+        setCommentEditor(null);
       }}
       onCancelReply={() => {
-        setReplyingThreadId(null);
-        setReplyBody('');
+        setReplyEditor(null);
       }}
-      onComposerBodyChange={setComposerBody}
+      onComposerBodyChange={(body) =>
+        setComposer((current) => (current ? { ...current, body } : current))
+      }
       onDeleteComment={(commentId) => {
         setStatusMessage(null);
         mutations.deleteComment.mutate({
@@ -484,11 +518,17 @@ export function GitHubPrReview({
           id: commentId,
         });
       }}
-      onEditingBodyChange={setEditingBody}
+      onEditingBodyChange={(body) =>
+        setCommentEditor((current) =>
+          current ? { ...current, body } : current,
+        )
+      }
       onReanchorComment={(comment) =>
         beginReanchorComment(comment.id, comment.path)
       }
-      onReplyBodyChange={setReplyBody}
+      onReplyBodyChange={(body) =>
+        setReplyEditor((current) => (current ? { ...current, body } : current))
+      }
       onSetThreadResolution={(thread) => {
         setStatusMessage(null);
         mutations.setThreadResolution.mutate({
@@ -499,19 +539,21 @@ export function GitHubPrReview({
         });
       }}
       onStartEdit={(commentId, body) => {
-        setEditingCommentId(commentId);
-        setEditingBody(body);
+        setCommentEditor({
+          body,
+          commentId,
+          token: createEditorToken(),
+        });
       }}
       onStartReply={(threadId) => {
-        setReplyingThreadId(threadId);
-        setReplyBody('');
+        setReplyEditor({ body: '', threadId, token: createEditorToken() });
       }}
       onSubmitComposer={submitComposer}
       onSubmitEdit={submitEdit}
       onSubmitReply={submitReply}
       reanchoringCommentId={reanchoringCommentId}
-      replyingThreadId={replyingThreadId}
-      replyBody={replyBody}
+      replyingThreadId={replyEditor?.threadId ?? null}
+      replyBody={replyEditor?.body ?? ''}
       reviewThreads={reviewThreads}
     />
   );

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useId, useState } from 'react';
+import { OperationalValue } from '../../../components/OperationalValue';
 import { SessionReferenceButton } from '../../../components/SessionReferenceButton';
 import { Badge, Button, MiniEmpty } from '../../../components/ui';
 import {
@@ -313,7 +314,6 @@ export function KiloTaskRow({ task }: { task: KiloTaskRecord }) {
         <span className="flex shrink-0 items-center gap-1.5">
           <SessionReferenceButton
             kind="task"
-            label="session"
             linkedRepoId={task.repoId}
             linkedTaskId={task.id}
             summary={`${task.title}: Kilo task ${task.status}. ${task.summary ?? changed}.`}
@@ -401,24 +401,42 @@ export function KiloTaskRow({ task }: { task: KiloTaskRecord }) {
 
 export function WorktreeRow({ worktree }: { worktree: WorktreeRecord }) {
   const pr = worktree.prNumber ? `PR #${worktree.prNumber}` : 'repo work';
+  const headPreview = `${worktree.headRef}${
+    worktree.headSha ? ` · ${worktree.headSha.slice(0, 12)}` : ''
+  }`;
+  const fullHead = `${worktree.headRef}${
+    worktree.headSha ? ` · ${worktree.headSha}` : ''
+  }`;
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate font-mono text-[11px] text-ink">
+        <div className="min-w-0 flex-1">
+          <p
+            className="truncate font-mono text-[11px] text-ink"
+            title={`${worktree.repoId} · ${pr}`}
+          >
             {worktree.repoId} · {pr}
           </p>
-          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
-            {worktree.headRef}
-            {worktree.headSha ? ` · ${worktree.headSha.slice(0, 12)}` : ''}
-          </p>
+          <OperationalValue
+            className="mt-0.5"
+            label={`revision for ${worktree.repoId} worktree`}
+            preview={headPreview}
+            previewClassName="line-clamp-2 text-[10.5px] leading-4 text-muted"
+            value={fullHead}
+          />
         </div>
         <Badge className={worktreeStatusClass(worktree.lifecycleStatus)}>
           {worktree.lifecycleStatus}
         </Badge>
       </div>
-      <div className="mt-1.5 flex justify-between gap-2 font-mono text-[10px] text-muted">
-        <span className="truncate">{shortPath(worktree.localPath)}</span>
+      <div className="mt-1.5 flex items-start justify-between gap-2 font-mono text-[10px] text-muted">
+        <OperationalValue
+          className="flex-1"
+          label={`path for ${worktree.repoId} worktree`}
+          preview={shortPath(worktree.localPath)}
+          previewClassName="truncate"
+          value={worktree.localPath}
+        />
         <span className="shrink-0">
           {worktree.adopted ? 'adopted' : worktree.storageKind}
         </span>
@@ -604,7 +622,6 @@ export function RepoRow({
       <div className="mt-1.5 flex justify-end font-mono text-[10px]">
         <SessionReferenceButton
           kind="repo"
-          label="session"
           linkedRepoId={repo.id}
           summary={`${repo.id}: ${repo.github.owner}/${repo.github.name} on ${health?.branch ?? 'unknown branch'} with ${health?.changeCount ?? 0} local changes and ${scripts} package scripts. Default branch ${repo.defaultBranch}.`}
           title={`Repo ${repo.id}`}
