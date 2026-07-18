@@ -160,6 +160,7 @@ Individual checks:
 npm run lint
 npm run typecheck
 npm run test
+npm run test:git
 npm run test:integration
 npm run test:all
 npm run format:check
@@ -174,8 +175,9 @@ npm run verify
 
 `npm run check` is the fast local loop: lint, import-layer check, database
 migration check, typecheck, and the unit Vitest suite. The slower
-git/worktree/Kilo/autopilot workflow coverage lives under
-`npm run test:integration`, while `npm run test:all` runs every Vitest suite.
+serial Git/performance/docs-drift group lives under `npm run test:git`; the
+workflow-heavy worktree/Kilo/autopilot group lives under
+`npm run test:integration`. `npm run test:all` runs every Vitest suite.
 `npm run verify` keeps the full pre-release path: lint, import-layer check,
 database migration check, typecheck, all tests, production builds, npm package
 smoke checks, and format check.
@@ -253,7 +255,10 @@ Use `patch` for fixes, `minor` for features, and `major` for breaking changes.
 The private docs workspace is excluded from package versioning. The committed
 Changesets prerelease state keeps versions on the beta channel. After changesets
 reach `main`, `.github/workflows/changesets.yml` creates or updates a version PR
-containing the package version, lockfile, changelog, and consumed Changesets.
+containing the package version, changelog, and Changesets release bookkeeping.
+The exact file set depends on release mode: a prerelease update may retain the
+individual Changeset files and update `.changeset/pre.json`, while a stable
+version may consume Changesets or update lockfile metadata.
 
 Merge the version PR, pull `main`, then tag and push the exact package version:
 

@@ -69,9 +69,11 @@ the same backend state, actions, workflows, and event stream.
   changes.
 - Conversational briefings grounded in inspectable local snapshots, with
   scheduled and on-demand execution.
-- A durable PR review inbox and workbench with Neon-prepared findings, inline
-  draft comments, thread replies and resolution, and explicit human submission
-  of Comment, Approve, or Request changes verdicts.
+- A durable PR review inbox and guided workbench with cross-file navigation,
+  revision-bound Neon findings, explicit promotion into existing draft or
+  revision-request flows, inline draft comments, thread replies and resolution,
+  guarded refresh, and explicit human submission of Comment, Approve, or
+  Request changes verdicts.
 - Worktree-backed autopilot that can notify, prepare a diff, request approval,
   or push when repository policy and verification allow it.
 - Durable, context-linked Neon sessions with switching, summaries, references,

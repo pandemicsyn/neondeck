@@ -58,6 +58,7 @@ npm run dev</code></pre>
         <pre><code>npm run lint
 npm run typecheck
 npm run test
+npm run test:git
 npm run test:integration
 npm run test:all
 npm run format:check
@@ -66,8 +67,11 @@ npm run docs:build</code></pre>
         <h2>Full verification</h2>
         <pre><code>npm run verify</code></pre>
         <p>
-          Full verification runs all Vitest suites, then adds formatting and
-          production builds. Run it before broad or release-oriented changes.
+          <code>test:git</code> runs the serial Git/performance/docs-drift group;
+          <code>test:integration</code> runs the slower workflow and worktree group.
+          Full verification runs both groups plus the unit suite, then adds formatting
+          and production builds. Run it before broad or release-oriented changes,
+          not after every unrelated edit.
         </p>
 
         <h2>Code style</h2>
