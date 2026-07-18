@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { listWorkflowSummaries } from './modules/app-state';
 import { readAgentModelSelectionSync } from './modules/runtime';
 import {
@@ -18,10 +18,26 @@ import { listRepoStatus, runDevDoctor } from './modules/runtime';
 import { runtimePaths } from './runtime-home';
 import { createChatSession, readNeonSessionState } from './modules/sessions';
 import { addPrWatch } from './modules/watches';
+import {
+  createSeededGitRepository,
+  type SeededGitRepository,
+} from './testing/git-repository-fixture';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
 const originalEnv = { ...process.env };
+let repositorySeed: SeededGitRepository | undefined;
+
+beforeAll(async () => {
+  repositorySeed = await createSeededGitRepository({
+    initialCommitMessage: 'initial',
+    initialFiles: { 'README.md': '# test\n' },
+  });
+});
+
+afterAll(async () => {
+  await repositorySeed?.dispose();
+});
 
 afterEach(async () => {
   process.env = { ...originalEnv };
@@ -1042,24 +1058,12 @@ async function tempDir(prefix: string) {
 }
 
 async function tempGitRepo() {
-  const path = await tempDir('neondeck-repo-');
-  await execFileAsync('git', ['init', '-b', 'main'], { cwd: path });
-  await execFileAsync(
-    'git',
-    ['config', 'user.email', 'neondeck@example.test'],
-    {
-      cwd: path,
-    },
-  );
-  await execFileAsync('git', ['config', 'user.name', 'Neondeck Test'], {
-    cwd: path,
-  });
-  await execFileAsync('git', ['config', 'commit.gpgsign', 'false'], {
-    cwd: path,
-  });
-  await writeFile(join(path, 'README.md'), '# test\n');
-  await execFileAsync('git', ['add', 'README.md'], { cwd: path });
-  await execFileAsync('git', ['commit', '-m', 'initial'], { cwd: path });
+  const root = await tempDir('neondeck-repo-');
+  const path = join(root, 'repository');
+  if (!repositorySeed) {
+    throw new Error('Command Git repository seed is unavailable.');
+  }
+  await repositorySeed.copyTo(path);
   return path;
 }
 

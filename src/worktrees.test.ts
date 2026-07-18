@@ -13,7 +13,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { updateWorktreePolicy } from './modules/config';
 import { listRepoEditEvents, readRepoFile, writeRepoFile } from './repo-edit';
 import { runtimePaths } from './runtime-home';
@@ -28,11 +36,30 @@ import {
   revokeWorktreeLockLease,
   syncWorktree,
 } from './modules/worktrees';
+import {
+  createSeededGitRepository,
+  type SeededGitRepository,
+} from './testing/git-repository-fixture';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
+let repositorySeed: SeededGitRepository | undefined;
 
 vi.setConfig({ testTimeout: 60_000 });
+
+beforeAll(async () => {
+  repositorySeed = await createSeededGitRepository({
+    initialCommitMessage: 'main',
+    initialFiles: { 'src/app.ts': 'export const value = 1;\n' },
+    feature: {
+      files: { 'src/app.ts': 'export const value = 2;\n' },
+    },
+  });
+});
+
+afterAll(async () => {
+  await repositorySeed?.dispose();
+});
 
 afterEach(async () => {
   await Promise.all(
@@ -580,21 +607,15 @@ describe('worktree runtime foundation', () => {
 
 async function fixture(options: { worktreeRoot?: 'home' | 'repo-local' } = {}) {
   const home = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
-  const repo = await mkdtemp(join(tmpdir(), 'neondeck-repo-'));
-  tempRoots.push(home, repo);
+  const repoRoot = await mkdtemp(join(tmpdir(), 'neondeck-repo-'));
+  const repo = join(repoRoot, 'repository');
+  tempRoots.push(home, repoRoot);
   const paths = runtimePaths(home);
 
-  await git(repo, ['init', '-b', 'main']);
-  await git(repo, ['config', 'user.name', 'Test']);
-  await git(repo, ['config', 'user.email', 'test@example.com']);
-  await mkdir(join(repo, 'src'), { recursive: true });
-  await writeFile(join(repo, 'src/app.ts'), 'export const value = 1;\n');
-  await git(repo, ['add', '-A']);
-  await git(repo, ['commit', '-m', 'main']);
-  await git(repo, ['checkout', '-b', 'feature']);
-  await writeFile(join(repo, 'src/app.ts'), 'export const value = 2;\n');
-  await git(repo, ['commit', '-am', 'feature']);
-  await git(repo, ['checkout', 'main']);
+  if (!repositorySeed) {
+    throw new Error('Worktree Git repository seed is unavailable.');
+  }
+  await repositorySeed.copyTo(repo);
 
   await mkdir(paths.home, { recursive: true });
   await writeFile(

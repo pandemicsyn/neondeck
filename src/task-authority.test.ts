@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { fixPrReviewFeedbackAction } from './modules/autopilot';
 import { listExecutionApprovals } from './modules/execution';
 import { currentTaskOrigin } from './modules/flue/origin';
@@ -34,9 +34,25 @@ import {
   readWorktreeLock,
   releaseWorktreeLock,
 } from './modules/worktrees';
+import {
+  createSeededGitRepository,
+  type SeededGitRepository,
+} from './testing/git-repository-fixture';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
+let repositorySeed: SeededGitRepository | undefined;
+
+beforeAll(async () => {
+  repositorySeed = await createSeededGitRepository({
+    initialCommitMessage: 'init',
+    initialFiles: { 'src/app.ts': 'export const value = 1;\n' },
+  });
+});
+
+afterAll(async () => {
+  await repositorySeed?.dispose();
+});
 
 afterEach(async () => {
   await Promise.all(
@@ -725,32 +741,13 @@ async function fixture(): Promise<{
   sha: string;
 }> {
   const home = await mkdtemp(join(tmpdir(), 'neondeck-authority-home-'));
-  const repo = await mkdtemp(join(tmpdir(), 'neondeck-authority-repo-'));
-  tempRoots.push(home, repo);
-  await mkdir(join(repo, 'src'), { recursive: true });
-  await writeFile(join(repo, 'src/app.ts'), 'export const value = 1;\n');
-  await execFileAsync('git', ['init', '-b', 'main'], { cwd: repo });
-  await execFileAsync('git', ['add', '-A'], { cwd: repo });
-  await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: repo });
-  await execFileAsync('git', ['config', 'user.email', 'test@example.com'], {
-    cwd: repo,
-  });
-  await execFileAsync(
-    'git',
-    [
-      '-c',
-      'user.name=Test',
-      '-c',
-      'user.email=test@example.com',
-      'commit',
-      '-m',
-      'init',
-    ],
-    { cwd: repo },
-  );
-  const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], {
-    cwd: repo,
-  });
+  const repoRoot = await mkdtemp(join(tmpdir(), 'neondeck-authority-repo-'));
+  const repo = join(repoRoot, 'repository');
+  tempRoots.push(home, repoRoot);
+  if (!repositorySeed) {
+    throw new Error('Task authority Git repository seed is unavailable.');
+  }
+  await repositorySeed.copyTo(repo);
   const paths = runtimePaths(home);
   await ensureRuntimeHome(paths);
   await writeFile(
@@ -766,7 +763,7 @@ async function fixture(): Promise<{
       ],
     })}\n`,
   );
-  return { paths, repo, sha: stdout.trim() };
+  return { paths, repo, sha: repositorySeed.baseSha };
 }
 
 function fakeEventState(sha: string): GitHubPullRequestEventState {
