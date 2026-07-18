@@ -9,6 +9,10 @@ import type {
   GitHubPullRequestReviewThread,
 } from './modules/github';
 import {
+  fetchPullRequestReviewSurfaceThreadsWithMetadata,
+  invalidatePullRequestReviewSurfaceThreadCache,
+} from './modules/github';
+import {
   getGitHubPrBranchPermissions,
   getGitHubPrFiles,
   getGitHubPrRequestedChanges,
@@ -908,6 +912,66 @@ describe('PR event state watermarks', () => {
       },
     });
     expect(resolveCalls).toEqual(['fetch:thread-1', 'resolve:thread-1']);
+  });
+
+  it('invalidates cached review threads when a mutation follow-up fails', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    const token = 'mutation-cache-token';
+    const target = {
+      token,
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+    };
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls += 1;
+      return new Response(
+        JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewThreads: {
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                  nodes: [],
+                },
+              },
+            },
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    };
+
+    try {
+      await fetchPullRequestReviewSurfaceThreadsWithMetadata(target);
+      await expect(
+        postGitHubPrThreadReply(
+          { repo: 'neondeck', prNumber: 123 },
+          'thread-1',
+          { text: 'Thanks, fixed.' },
+          paths,
+          {
+            token,
+            fetchPullRequestReviewThread: async () => reviewThread(),
+            replyToPullRequestReviewThread: async () => {
+              throw new Error('Follow-up thread refresh failed.');
+            },
+          },
+        ),
+      ).resolves.toMatchObject({
+        ok: false,
+        action: 'github_pr_thread_reply_post',
+      });
+      await fetchPullRequestReviewSurfaceThreadsWithMetadata(target);
+      expect(fetchCalls).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+      invalidatePullRequestReviewSurfaceThreadCache(target);
+    }
   });
 
   it('preserves omitted review draft fields on partial saves', async () => {

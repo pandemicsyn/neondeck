@@ -1044,16 +1044,20 @@ export async function postGitHubPrThreadReply(
     const replier =
       dependencies.replyToPullRequestReviewThread ??
       replyToPullRequestReviewThread;
-    const thread = await replier({
-      token,
-      threadId,
-      body: parsed.output.text,
-    });
-    invalidatePullRequestReviewSurfaceThreadCache({
-      owner: resolved.target.owner,
-      repo: resolved.target.repo,
-      number: resolved.target.number,
-    });
+    let thread: GitHubPullRequestReviewThread;
+    try {
+      thread = await replier({
+        token,
+        threadId,
+        body: parsed.output.text,
+      });
+    } finally {
+      invalidatePullRequestReviewSurfaceThreadCache({
+        owner: resolved.target.owner,
+        repo: resolved.target.repo,
+        number: resolved.target.number,
+      });
+    }
     return okResult(action, true, 'Posted review thread reply.', {
       thread: thread as unknown as JsonValue,
     });
@@ -1127,12 +1131,16 @@ export async function postGitHubPrThreadResolution(
         resolvePullRequestReviewThread)
       : (dependencies.unresolvePullRequestReviewThread ??
         unresolvePullRequestReviewThread);
-    const thread = await mutator({ token, threadId });
-    invalidatePullRequestReviewSurfaceThreadCache({
-      owner: target.target.owner,
-      repo: target.target.repo,
-      number: target.target.number,
-    });
+    let thread: GitHubPullRequestReviewThread;
+    try {
+      thread = await mutator({ token, threadId });
+    } finally {
+      invalidatePullRequestReviewSurfaceThreadCache({
+        owner: target.target.owner,
+        repo: target.target.repo,
+        number: target.target.number,
+      });
+    }
     return okResult(
       action,
       true,
