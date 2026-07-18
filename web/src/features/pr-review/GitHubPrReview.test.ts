@@ -393,6 +393,7 @@ describe('GitHubPrReview helpers', () => {
     const comment = draft.comments[0];
     if (!comment) throw new Error('Expected draft comment fixture.');
     comment.body = 'The user edited the generated text.';
+    comment.path = 'src/another-file.ts';
     comment.sourceFindingId = finding.sourceId;
 
     expect(isReportOnlyFindingDrafted(draft, finding)).toBe(true);
@@ -404,8 +405,9 @@ describe('GitHubPrReview helpers', () => {
     ).toBe(false);
   });
 
-  it('uses exact generated text and path for legacy report-only findings', () => {
+  it('falls back to exact text and path for provenance-less legacy drafts', () => {
     const finding = {
+      sourceId: 'prf_synthesized_on_read',
       severity: 'minor' as const,
       path: 'src/review.ts',
       line: null,
@@ -419,6 +421,9 @@ describe('GitHubPrReview helpers', () => {
     comment.body = reportOnlyFindingBody(finding);
 
     expect(isReportOnlyFindingDrafted(draft, finding)).toBe(true);
+    comment.sourceFindingId = 'prf_different_finding';
+    expect(isReportOnlyFindingDrafted(draft, finding)).toBe(false);
+    comment.sourceFindingId = null;
     comment.path = 'src/other.ts';
     expect(isReportOnlyFindingDrafted(draft, finding)).toBe(false);
   });

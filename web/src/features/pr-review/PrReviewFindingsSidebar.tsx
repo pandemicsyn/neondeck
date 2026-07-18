@@ -329,12 +329,15 @@ export function isReportOnlyFindingDrafted(
 ) {
   const generatedBody = reportOnlyFindingBody(finding);
   return Boolean(
-    draft?.comments.some(
-      (comment) =>
+    draft?.comments.some((comment) => {
+      if (finding.sourceId && comment.sourceFindingId === finding.sourceId) {
+        return true;
+      }
+      return (
+        !comment.sourceFindingId &&
         comment.path === finding.path &&
-        (finding.sourceId
-          ? comment.sourceFindingId === finding.sourceId
-          : comment.body === generatedBody),
-    ),
+        comment.body === generatedBody
+      );
+    }),
   );
 }
