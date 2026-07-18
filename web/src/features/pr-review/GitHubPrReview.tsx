@@ -47,7 +47,10 @@ import {
   reviewPatchQuerySettled,
   summaryLabel,
 } from './review-view-model';
-import { clearCompletedEditor } from './review-ui-helpers';
+import {
+  clearCompletedEditor,
+  isCurrentReviewOperation,
+} from './review-ui-helpers';
 import { usePrReviewRecord } from './usePrReviewRecord';
 
 type ComposerState = {
@@ -55,6 +58,7 @@ type ComposerState = {
   path: string;
   selection: SelectedLineRange;
   annotation: DiffReviewAnnotation;
+  sourceFindingId: string | null;
   token: number;
 };
 
@@ -99,6 +103,7 @@ export function GitHubPrReview({
     start: startReview,
   } = usePrReviewRecord(pr);
   const nextEditorToken = useRef(0);
+  const nextOperationToken = useRef(0);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [composer, setComposer] = useState<ComposerState | null>(null);
   const [commentEditor, setCommentEditor] = useState<CommentEditorState | null>(
@@ -119,10 +124,30 @@ export function GitHubPrReview({
   const [submitFailedCommentIds, setSubmitFailedCommentIds] = useState<
     Set<string>
   >(() => new Set());
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [statusMessage, setStatusMessageState] = useState<string | null>(null);
   const createEditorToken = () => {
     nextEditorToken.current += 1;
     return nextEditorToken.current;
+  };
+  const beginOperation = () => {
+    nextOperationToken.current += 1;
+    setStatusMessageState(null);
+    return nextOperationToken.current;
+  };
+  const finishOperation = (token: number, message: string) => {
+    if (isCurrentReviewOperation(nextOperationToken.current, token)) {
+      setStatusMessageState(message);
+    }
+  };
+  const failOperation = (token: number, error: unknown) => {
+    if (!isCurrentReviewOperation(nextOperationToken.current, token)) return;
+    setStatusMessageState(
+      mutationErrorMessage(error, draft) ?? 'The operation failed.',
+    );
+  };
+  const setStatusMessage = (message: string | null) => {
+    nextOperationToken.current += 1;
+    setStatusMessageState(message);
   };
   const fileList = useMemo(
     () => (filesQuery.data?.files ?? []) as DiffFilePatch[],
@@ -241,21 +266,7 @@ export function GitHubPrReview({
   const isThreadMutationPending =
     mutations.replyToThread.isPending ||
     mutations.setThreadResolution.isPending;
-  const reviewBarStatusMessage =
-    mutationErrorMessage(
-      mutations.submitReview.error ??
-        mutations.saveDraft.error ??
-        mutations.addComment.error ??
-        mutations.updateComment.error ??
-        mutations.deleteComment.error ??
-        mutations.discardDraft.error ??
-        mutations.replyToThread.error ??
-        mutations.setThreadResolution.error ??
-        startReview.error ??
-        restartReview.error ??
-        reconcileSubmission.error,
-      draft,
-    ) ?? statusMessage;
+  const reviewBarStatusMessage = statusMessage;
   const fileLoadMessage = filesQuery.isLoading
     ? 'Loading PR files.'
     : filesQuery.error
@@ -307,7 +318,6 @@ export function GitHubPrReview({
     }> = {},
     headSha = currentHeadSha,
   ) => {
-    setStatusMessage(null);
     if (!headSha) throw new Error('PR head SHA is unavailable.');
     return mutations.saveDraft.mutateAsync({
       repo: pr.repo,
@@ -345,7 +355,7 @@ export function GitHubPrReview({
   };
   const refreshDraftHead = async () => {
     if (!draft) return;
-    setStatusMessage(null);
+    const operationToken = beginOperation();
     try {
       const refreshedHeadSha = await mutations
         .refetchPullRequestHeadSha()
@@ -354,9 +364,12 @@ export function GitHubPrReview({
       await saveDraft({ reanchorHeadSha: true }, nextHeadSha);
       await mutations.invalidateReviewSources();
       setSubmitFailedCommentIds(new Set());
-      setStatusMessage('Draft head updated to the current PR revision.');
-    } catch {
-      // React Query owns the visible error state.
+      finishOperation(
+        operationToken,
+        'Draft head updated to the current PR revision.',
+      );
+    } catch (error) {
+      failOperation(operationToken, error);
     }
   };
   const onSelectionChange = (selection: SelectedLineRange | null) => {
@@ -375,7 +388,7 @@ export function GitHubPrReview({
         setReanchoringCommentId(null);
         return;
       }
-      setStatusMessage(null);
+      const operationToken = beginOperation();
       mutations.updateComment
         .mutateAsync({
           repo: pr.repo,
@@ -392,9 +405,9 @@ export function GitHubPrReview({
             return next;
           });
           setReanchoringCommentId(null);
-          setStatusMessage('Draft comment re-anchored.');
+          finishOperation(operationToken, 'Draft comment re-anchored.');
         })
-        .catch(() => undefined);
+        .catch((error) => failOperation(operationToken, error));
       return;
     }
     const annotation = annotationFromSelection(selection, index);
@@ -403,6 +416,7 @@ export function GitHubPrReview({
       body: anchoringFinding ? reportOnlyFindingBody(anchoringFinding) : '',
       path: activePath,
       selection,
+      sourceFindingId: anchoringFinding?.sourceId ?? null,
       token: createEditorToken(),
     });
     setAnchoringFinding(null);
@@ -413,7 +427,7 @@ export function GitHubPrReview({
     const submittedComposer = composer;
     if (!submittedComposer || submittedComposer.body.trim().length === 0)
       return;
-    setStatusMessage(null);
+    const operationToken = beginOperation();
     try {
       const nextDraft = await ensureDraft();
       const index = patchIndexesByPath.get(submittedComposer.path);
@@ -422,7 +436,10 @@ export function GitHubPrReview({
         index,
       );
       if (index && !commentAnchorExists(index, input)) {
-        setStatusMessage('Selected range is not valid for the current patch.');
+        finishOperation(
+          operationToken,
+          'Selected range is not valid for the current patch.',
+        );
         return;
       }
       await mutations.addComment.mutateAsync({
@@ -432,20 +449,21 @@ export function GitHubPrReview({
         path: submittedComposer.path,
         ...input,
         body: submittedComposer.body,
+        sourceFindingId: submittedComposer.sourceFindingId,
       });
       setComposer((current) =>
         clearCompletedEditor(current, submittedComposer.token),
       );
-      setStatusMessage('Draft comment saved.');
-    } catch {
-      // React Query owns the visible error state.
+      finishOperation(operationToken, 'Draft comment saved.');
+    } catch (error) {
+      failOperation(operationToken, error);
     }
   };
   const submitEdit = async (event: FormEvent) => {
     event.preventDefault();
     const submittedEditor = commentEditor;
     if (!submittedEditor || submittedEditor.body.trim().length === 0) return;
-    setStatusMessage(null);
+    const operationToken = beginOperation();
     try {
       await mutations.updateComment.mutateAsync({
         repo: pr.repo,
@@ -456,8 +474,9 @@ export function GitHubPrReview({
       setCommentEditor((current) =>
         clearCompletedEditor(current, submittedEditor.token),
       );
-    } catch {
-      // React Query owns the visible error state.
+      finishOperation(operationToken, 'Draft comment updated.');
+    } catch (error) {
+      failOperation(operationToken, error);
     }
   };
   const submitReply = async (threadId: string, event: FormEvent) => {
@@ -469,7 +488,7 @@ export function GitHubPrReview({
       submittedEditor.body.trim().length === 0
     )
       return;
-    setStatusMessage(null);
+    const operationToken = beginOperation();
     try {
       await mutations.replyToThread.mutateAsync({
         repo: pr.repo,
@@ -480,10 +499,25 @@ export function GitHubPrReview({
       setReplyEditor((current) =>
         clearCompletedEditor(current, submittedEditor.token),
       );
-      setStatusMessage('Thread reply posted.');
-    } catch {
-      // React Query owns the visible error state.
+      finishOperation(operationToken, 'Thread reply posted.');
+    } catch (error) {
+      failOperation(operationToken, error);
     }
+  };
+  const deleteDraftComment = (commentId: string) => {
+    const operationToken = beginOperation();
+    mutations.deleteComment.mutate(
+      {
+        repo: pr.repo,
+        number: pr.number,
+        id: commentId,
+      },
+      {
+        onError: (error) => failOperation(operationToken, error),
+        onSuccess: () =>
+          finishOperation(operationToken, 'Draft comment deleted.'),
+      },
+    );
   };
   const renderAnnotation = (annotation: DiffReviewAnnotation) => (
     <PrReviewCommentComposer
@@ -510,14 +544,7 @@ export function GitHubPrReview({
       onComposerBodyChange={(body) =>
         setComposer((current) => (current ? { ...current, body } : current))
       }
-      onDeleteComment={(commentId) => {
-        setStatusMessage(null);
-        mutations.deleteComment.mutate({
-          repo: pr.repo,
-          number: pr.number,
-          id: commentId,
-        });
-      }}
+      onDeleteComment={deleteDraftComment}
       onEditingBodyChange={(body) =>
         setCommentEditor((current) =>
           current ? { ...current, body } : current,
@@ -530,13 +557,24 @@ export function GitHubPrReview({
         setReplyEditor((current) => (current ? { ...current, body } : current))
       }
       onSetThreadResolution={(thread) => {
-        setStatusMessage(null);
-        mutations.setThreadResolution.mutate({
-          repo: pr.repo,
-          number: pr.number,
-          threadId: thread.id,
-          resolved: !thread.isResolved,
-        });
+        const operationToken = beginOperation();
+        const resolved = !thread.isResolved;
+        mutations.setThreadResolution.mutate(
+          {
+            repo: pr.repo,
+            number: pr.number,
+            threadId: thread.id,
+            resolved,
+          },
+          {
+            onError: (error) => failOperation(operationToken, error),
+            onSuccess: () =>
+              finishOperation(
+                operationToken,
+                resolved ? 'Thread resolved.' : 'Thread reopened.',
+              ),
+          },
+        );
       }}
       onStartEdit={(commentId, body) => {
         setCommentEditor({
@@ -565,7 +603,7 @@ export function GitHubPrReview({
       );
       return;
     }
-    setStatusMessage(null);
+    const operationToken = beginOperation();
     try {
       const normalizedBody = normalizeReviewBody(reviewBody);
       await mutations.submitReview.mutateAsync({
@@ -577,13 +615,13 @@ export function GitHubPrReview({
         commentIds: cleanCommentIds,
       });
       setSubmitFailedCommentIds(new Set());
-      setStatusMessage('Review submitted.');
+      finishOperation(operationToken, 'Review submitted.');
     } catch (error) {
       const failingIds = failingCommentIdsFromError(error);
       if (failingIds.length > 0) {
         setSubmitFailedCommentIds(new Set(failingIds));
       }
-      // React Query owns the visible error state.
+      failOperation(operationToken, error);
     }
   };
   const focusNextPendingComment = () => {
@@ -621,14 +659,7 @@ export function GitHubPrReview({
     isDeleting: mutations.deleteComment.isPending,
     isLoadingThreads: threadsQuery.isLoading,
     onChooseLine: beginAnchorFinding,
-    onDelete: (commentId: string) => {
-      setStatusMessage(null);
-      mutations.deleteComment.mutate({
-        repo: pr.repo,
-        number: pr.number,
-        id: commentId,
-      });
-    },
+    onDelete: deleteDraftComment,
     onReanchor: (comment: GitHubPrReviewDraftComment) =>
       beginReanchorComment(comment.id, comment.path),
     review: reviewRecord,
@@ -679,13 +710,19 @@ export function GitHubPrReview({
                 reviewRecord.status === 'reviewing'
               }
               onClick={() => {
-                setStatusMessage(null);
+                const operationToken = beginOperation();
                 if (reviewRecord.status === 'submitting') {
                   reconcileSubmission.mutate(reviewRecord.id, {
-                    onSuccess: (result) => setStatusMessage(result.message),
+                    onError: (error) => failOperation(operationToken, error),
+                    onSuccess: (result) =>
+                      finishOperation(operationToken, result.message),
                   });
                 } else {
-                  restartReview.mutate(reviewRecord.id);
+                  restartReview.mutate(reviewRecord.id, {
+                    onError: (error) => failOperation(operationToken, error),
+                    onSuccess: () =>
+                      finishOperation(operationToken, 'Neon review restarted.'),
+                  });
                 }
               }}
               title={
@@ -714,8 +751,12 @@ export function GitHubPrReview({
               className="pr-review-popout-button"
               disabled={startReview.isPending}
               onClick={() => {
-                setStatusMessage(null);
-                startReview.mutate();
+                const operationToken = beginOperation();
+                startReview.mutate(undefined, {
+                  onError: (error) => failOperation(operationToken, error),
+                  onSuccess: () =>
+                    finishOperation(operationToken, 'Neon review started.'),
+                });
               }}
               title="Run Neon review assistance for this pull request"
               type="button"
@@ -811,9 +852,13 @@ export function GitHubPrReview({
             setIsReviewBodyFocused(false);
             const normalizedBody = normalizeReviewBody(reviewBody);
             if ((draft?.body ?? null) !== normalizedBody) {
+              const operationToken = beginOperation();
               void saveDraft({ body: normalizedBody })
-                .then(() => setHasPendingReviewBodyEdit(false))
-                .catch(() => undefined);
+                .then(() => {
+                  setHasPendingReviewBodyEdit(false);
+                  finishOperation(operationToken, 'Review summary saved.');
+                })
+                .catch((error) => failOperation(operationToken, error));
             } else {
               setHasPendingReviewBodyEdit(false);
             }
@@ -825,20 +870,30 @@ export function GitHubPrReview({
           onBodyFocus={() => setIsReviewBodyFocused(true)}
           onDiscard={() => {
             if (!draft) return;
-            setStatusMessage(null);
             const confirmed = window.confirm('Discard this PR review draft?');
             if (confirmed) {
-              mutations.discardDraft.mutate({
-                repo: pr.repo,
-                number: pr.number,
-              });
+              const operationToken = beginOperation();
+              mutations.discardDraft.mutate(
+                {
+                  repo: pr.repo,
+                  number: pr.number,
+                },
+                {
+                  onError: (error) => failOperation(operationToken, error),
+                  onSuccess: () =>
+                    finishOperation(operationToken, 'Review draft discarded.'),
+                },
+              );
             }
           }}
           onSubmit={submitReview}
           onPendingCountClick={focusNextPendingComment}
           onVerdictChange={(next) => {
             setVerdict(next);
-            void saveDraft({ verdict: next }).catch(() => undefined);
+            const operationToken = beginOperation();
+            void saveDraft({ verdict: next })
+              .then(() => finishOperation(operationToken, 'Verdict saved.'))
+              .catch((error) => failOperation(operationToken, error));
           }}
           isSubmitting={mutations.submitReview.isPending}
           reviewBody={reviewBody}

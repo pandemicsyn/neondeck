@@ -268,13 +268,13 @@ function ReportOnlyFindingPanel({
       </div>
       <div className="divide-y divide-line border-t border-line">
         {review.reportOnlyFindings.map((finding, index) => {
-          const drafted = draft?.comments.some((comment) =>
-            comment.body.includes(finding.summary),
-          );
+          const drafted = isReportOnlyFindingDrafted(draft, finding);
           return (
             <article
               className="py-2"
-              key={`${finding.path}:${finding.line}:${index}`}
+              key={
+                finding.sourceId ?? `${finding.path}:${finding.line}:${index}`
+              }
             >
               <p className="font-mono text-[10px] text-primary">
                 {finding.severity} · {finding.path}
@@ -321,4 +321,20 @@ export function reportOnlyFindingBody(finding: PrReviewReportOnlyFinding) {
     '',
     'Manually anchored from a report-only finding. Edit or delete before submitting the review.',
   ].join('\n');
+}
+
+export function isReportOnlyFindingDrafted(
+  draft: GitHubPrReviewDraft | null,
+  finding: PrReviewReportOnlyFinding,
+) {
+  const generatedBody = reportOnlyFindingBody(finding);
+  return Boolean(
+    draft?.comments.some(
+      (comment) =>
+        comment.path === finding.path &&
+        (finding.sourceId
+          ? comment.sourceFindingId === finding.sourceId
+          : comment.body === generatedBody),
+    ),
+  );
 }

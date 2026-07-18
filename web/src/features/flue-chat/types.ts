@@ -11,7 +11,7 @@ export type FlueChatCommand = {
 };
 
 export type FlueChatConfig = {
-  agentName: string;
+  agentName: 'display-assistant';
   sessions: FlueChatSession[];
   quickCommands: FlueChatCommand[];
 };

@@ -42,6 +42,7 @@ export type GitHubPrReviewDraftComment = {
   startSide: GitHubPrReviewDraftCommentSide | null;
   body: string;
   origin: GitHubPrReviewDraftCommentOrigin;
+  sourceFindingId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -146,6 +147,7 @@ const draftCommentRowSchema = v.object({
   start_side: v.nullable(reviewCommentSideSchema),
   body: v.string(),
   origin: reviewCommentOriginSchema,
+  source_finding_id: v.nullable(v.string()),
   created_at: v.string(),
   updated_at: v.string(),
 });
@@ -386,6 +388,7 @@ export function addPrReviewDraftComment(options: {
   startSide?: GitHubPrReviewDraftCommentSide | null;
   body: string;
   origin?: GitHubPrReviewDraftCommentOrigin;
+  sourceFindingId?: string | null;
 }): GitHubPrReviewDraft {
   const database = openDb(options.databasePath);
   const now = new Date().toISOString();
@@ -405,10 +408,11 @@ export function addPrReviewDraftComment(options: {
           start_side,
           body,
           origin,
+          source_finding_id,
           created_at,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `,
       )
       .run(
@@ -421,6 +425,7 @@ export function addPrReviewDraftComment(options: {
         options.startSide ?? null,
         options.body.trim(),
         options.origin ?? 'human',
+        options.sourceFindingId ?? null,
         now,
         now,
       );
@@ -1192,6 +1197,7 @@ function readDraftComments(
         startSide: parsed.start_side,
         body: parsed.body,
         origin: parsed.origin,
+        sourceFindingId: parsed.source_finding_id,
         createdAt: parsed.created_at,
         updatedAt: parsed.updated_at,
       };

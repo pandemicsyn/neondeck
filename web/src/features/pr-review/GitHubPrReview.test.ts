@@ -21,7 +21,14 @@ import {
   draftCommentIdsWithUnknownPatch,
   reviewPatchQuerySettled,
 } from './review-view-model';
-import { clearCompletedEditor } from './review-ui-helpers';
+import {
+  reportOnlyFindingBody,
+  isReportOnlyFindingDrafted,
+} from './PrReviewFindingsSidebar';
+import {
+  clearCompletedEditor,
+  isCurrentReviewOperation,
+} from './review-ui-helpers';
 import capturedReviewPatch from './fixtures/captured-review.patch?raw';
 
 describe('GitHubPrReview helpers', () => {
@@ -365,6 +372,55 @@ describe('GitHubPrReview helpers', () => {
     expect(clearCompletedEditor(reopenedComment, submitted.token)).toBe(
       reopenedComment,
     );
+  });
+
+  it('ignores status from an operation superseded by newer work', () => {
+    expect(isCurrentReviewOperation(2, 1)).toBe(false);
+    expect(isCurrentReviewOperation(2, 2)).toBe(true);
+  });
+
+  it('matches report-only drafts by persisted source identity', () => {
+    const finding = {
+      sourceId: 'prf_source_1',
+      severity: 'minor' as const,
+      path: 'src/review.ts',
+      line: null,
+      summary: 'Overlapping summary',
+      suggestedFix: 'Keep the source identity.',
+      reason: 'unanchorable',
+    };
+    const draft = draftWithComments([draftComment('generated', finding.path)]);
+    const comment = draft.comments[0];
+    if (!comment) throw new Error('Expected draft comment fixture.');
+    comment.body = 'The user edited the generated text.';
+    comment.sourceFindingId = finding.sourceId;
+
+    expect(isReportOnlyFindingDrafted(draft, finding)).toBe(true);
+    expect(
+      isReportOnlyFindingDrafted(draft, {
+        ...finding,
+        sourceId: 'prf_source_2',
+      }),
+    ).toBe(false);
+  });
+
+  it('uses exact generated text and path for legacy report-only findings', () => {
+    const finding = {
+      severity: 'minor' as const,
+      path: 'src/review.ts',
+      line: null,
+      summary: 'Shared words',
+      suggestedFix: 'Use exact matching.',
+      reason: 'unanchorable',
+    };
+    const draft = draftWithComments([draftComment('legacy', finding.path)]);
+    const comment = draft.comments[0];
+    if (!comment) throw new Error('Expected draft comment fixture.');
+    comment.body = reportOnlyFindingBody(finding);
+
+    expect(isReportOnlyFindingDrafted(draft, finding)).toBe(true);
+    comment.path = 'src/other.ts';
+    expect(isReportOnlyFindingDrafted(draft, finding)).toBe(false);
   });
 });
 

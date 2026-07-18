@@ -7,6 +7,7 @@ import type {
   PrReviewStatus,
   PrReviewVerdict,
 } from './types';
+import { prReviewFindingSourceId } from './finding-id';
 
 export function readPrReview(id: string, paths: RuntimePaths) {
   return readOne('id = ?', id.trim(), paths);
@@ -161,26 +162,46 @@ function reportOnlyFindings(value: unknown): PrReviewReportOnlyFinding[] {
   try {
     const parsed = JSON.parse(stringValue(value));
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isReportOnlyFinding);
+    return parsed.flatMap((item) => {
+      const finding = reportOnlyFinding(item);
+      return finding ? [finding] : [];
+    });
   } catch {
     return [];
   }
 }
 
-function isReportOnlyFinding(
-  value: unknown,
-): value is PrReviewReportOnlyFinding {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+function reportOnlyFinding(value: unknown): PrReviewReportOnlyFinding | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const item = value as Record<string, unknown>;
-  return (
-    (item.severity === 'critical' ||
+  if (
+    !(
+      item.severity === 'critical' ||
       item.severity === 'major' ||
       item.severity === 'minor' ||
-      item.severity === 'nit') &&
-    typeof item.path === 'string' &&
-    (item.line === null || typeof item.line === 'number') &&
-    typeof item.summary === 'string' &&
-    typeof item.suggestedFix === 'string' &&
-    typeof item.reason === 'string'
-  );
+      item.severity === 'nit'
+    ) ||
+    typeof item.path !== 'string' ||
+    !(item.line === null || typeof item.line === 'number') ||
+    typeof item.summary !== 'string' ||
+    typeof item.suggestedFix !== 'string' ||
+    typeof item.reason !== 'string'
+  ) {
+    return null;
+  }
+  const finding: Omit<PrReviewReportOnlyFinding, 'sourceId'> = {
+    severity: item.severity,
+    path: item.path,
+    line: item.line,
+    summary: item.summary,
+    suggestedFix: item.suggestedFix,
+    reason: item.reason,
+  };
+  return {
+    ...finding,
+    sourceId:
+      typeof item.sourceId === 'string' && item.sourceId.trim().length > 0
+        ? item.sourceId
+        : prReviewFindingSourceId(finding),
+  };
 }

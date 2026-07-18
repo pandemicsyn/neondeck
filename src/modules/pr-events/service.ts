@@ -583,6 +583,7 @@ export async function postGitHubPrReviewDraftComment(
       startLine: parsed.output.startLine ?? null,
       startSide: parsed.output.startSide ?? null,
       body: parsed.output.body,
+      sourceFindingId: parsed.output.sourceFindingId ?? null,
     });
     return okResult(
       'github_pr_review_draft_comment_post',

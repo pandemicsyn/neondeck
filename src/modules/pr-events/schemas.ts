@@ -159,6 +159,9 @@ export const prReviewDraftCommentInputSchema = v.object({
   ),
   startSide: v.optional(v.nullable(v.picklist(['RIGHT', 'LEFT']))),
   body: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(65_536)),
+  sourceFindingId: v.optional(
+    v.nullable(v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(128))),
+  ),
 });
 export const prReviewDraftCommentUpdateInputSchema = v.object({
   body: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(65_536)),

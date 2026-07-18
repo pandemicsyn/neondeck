@@ -42,6 +42,7 @@ import {
   type ReviewAssistStructuredOutput,
 } from './schemas';
 import { buildReviewReportDecks } from './report-deck';
+import { prReviewFindingSourceId } from '../pr-reviews/finding-id';
 
 export type ReviewAssistFacts = {
   target: PullRequestTarget;
@@ -198,6 +199,10 @@ export async function reviewPrForHuman(
       seededCount: seedResult.seeded.length,
       reportOnlyCount: seedResult.reportOnly.length,
       reportOnlyFindings: seedResult.reportOnly.map((item) => ({
+        sourceId: prReviewFindingSourceId({
+          ...item.finding,
+          line: findingLine(item.finding),
+        }),
         severity: item.finding.severity,
         path: item.finding.path,
         line: findingLine(item.finding),
@@ -417,6 +422,10 @@ async function seedDraftComments(
         startSide: item.anchor.startSide ?? null,
         body: seededCommentBody(item.finding),
         origin: 'neon',
+        sourceFindingId: prReviewFindingSourceId({
+          ...item.finding,
+          line: findingLine(item.finding),
+        }),
       });
       const added = draft.comments.find(
         (comment) => !beforeIds.has(comment.id),
