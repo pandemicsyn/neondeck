@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import {
   ensureRuntimeHome,
@@ -6,6 +6,10 @@ import {
   runtimePaths,
 } from '../runtime-home';
 import type { DiffSummary, RepoEditStatus } from './schemas';
+import {
+  resolvedReviewRevision,
+  unavailableReviewRevision,
+} from '../../shared/review-source';
 
 export type RepoEditEventInput = {
   repoId: string;
@@ -134,6 +138,7 @@ export async function listRepoEditEvents(paths: RuntimePaths = runtimePaths()) {
 
 function readRepoEditEventRow(row: unknown) {
   const item = row as Record<string, unknown>;
+  const diffPatch = nullableString(item.diff_patch);
   return {
     id: String(item.id),
     repoId: String(item.repo_id),
@@ -148,7 +153,16 @@ function readRepoEditEventRow(row: unknown) {
     paths: parseJsonArray(item.paths_json),
     inputHash: nullableString(item.input_hash),
     diffSummary: parseJson(item.diff_summary_json),
-    diffPatch: nullableString(item.diff_patch),
+    diffPatch,
+    reviewRevision: diffPatch
+      ? resolvedReviewRevision({
+          kind: 'retained-patch',
+          id: createHash('sha256').update(diffPatch).digest('hex'),
+        })
+      : unavailableReviewRevision(
+          'retained-patch',
+          'This event did not retain a patch body.',
+        ),
     error: parseJson(item.error_json),
     createdAt: String(item.created_at),
     updatedAt: String(item.updated_at),

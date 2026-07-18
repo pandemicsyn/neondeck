@@ -86,6 +86,12 @@ describe('prepared diff lifecycle', () => {
     expect(files.files).toEqual([
       expect.objectContaining({ path: 'src/app.ts', status: 'M' }),
     ]);
+    expect(files.revision).toMatchObject({
+      state: 'resolved',
+      kind: 'worktree-diff',
+      id: expect.any(String),
+      baseId: expect.any(String),
+    });
     expect(fileDiff.diff).toContain('export const value = 2;');
   });
 

@@ -6,7 +6,11 @@ import * as v from 'valibot';
 import { addNotification } from '../app-state';
 import { buildPreparedDiffAuditSummary } from '../autonomous-audit';
 import { openDb } from '../../lib/sqlite';
-import { gitCurrentSha, gitDiff, type RepoDiffFile } from '../../repo-edit/git';
+import {
+  gitCurrentSha,
+  gitDiff,
+  gitWorktreeRevision,
+} from '../../repo-edit/git';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
@@ -275,12 +279,17 @@ export async function readPreparedDiffSummary(
     base: loaded.record.baseRef,
     includePatch: false,
   });
+  const revision = await gitWorktreeRevision(loaded.record.sourceWorktreePath, {
+    base: diff.base,
+    files: diff.files,
+  });
   return {
     ok: true,
     action: 'prepared_diff_summary',
     changed: false,
     message: `Read prepared diff ${loaded.record.id}.`,
     preparedDiff: loaded.record,
+    revision,
     diffSummary: diff.summary,
     data: asJsonValue({
       sourceOfTruth: 'worktree',
@@ -307,12 +316,17 @@ export async function readPreparedDiffChangedFiles(
     base: loaded.record.baseRef,
     includePatch: false,
   });
+  const revision = await gitWorktreeRevision(loaded.record.sourceWorktreePath, {
+    base: diff.base,
+    files: diff.files,
+  });
   return {
     ok: true,
     action: 'prepared_diff_changed_files',
     changed: false,
     message: `Read ${diff.files.length} changed file(s).`,
     preparedDiff: loaded.record,
+    revision,
     files: diff.files,
     diffSummary: diff.summary,
   };

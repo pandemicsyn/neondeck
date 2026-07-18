@@ -6,6 +6,7 @@ import {
   countDiffLines,
   gitDiff,
   gitStatus,
+  gitWorktreeRevision,
   summarizeDiff,
   unifiedDiff,
 } from './git';
@@ -436,6 +437,10 @@ export async function readRepoDiff(rawInput: unknown, paths = runtimePaths()) {
       paths,
     );
     const result = await gitDiff(root.repoRoot, parsed.input);
+    const revision = await gitWorktreeRevision(root.repoRoot, {
+      base: result.base,
+      files: result.files,
+    });
     return {
       ok: true,
       action: 'repo_diff',
@@ -444,6 +449,7 @@ export async function readRepoDiff(rawInput: unknown, paths = runtimePaths()) {
       repoId: parsed.input.repoId,
       worktreeId: parsed.input.worktreeId,
       base: result.base,
+      revision,
       files: result.files,
       diffSummary: result.summary,
     };

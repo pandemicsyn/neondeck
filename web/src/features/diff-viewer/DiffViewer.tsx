@@ -22,6 +22,8 @@ import {
   type ResolvedDiffTheme,
 } from './theme';
 import { diffHighlighterOptions, diffWorkerPoolOptions } from './worker';
+import type { ReviewSourceSnapshot } from '../../../../shared/review-source';
+import { reviewSourceDataAttributes } from './review-source';
 import type {
   DiffReviewAnnotation,
   DiffReviewAnnotationMetadata,
@@ -41,6 +43,7 @@ type UnifiedPatchViewProps = {
   onSelectedLinesChange?: (selection: SelectedLineRange | null) => void;
   virtualizeLargePatches?: boolean;
   codeViewTextScale?: number;
+  source?: ReviewSourceSnapshot;
 };
 
 const codeViewChangedLineThreshold = 2_000;
@@ -70,6 +73,7 @@ export function UnifiedPatchView({
   onSelectedLinesChange,
   virtualizeLargePatches = true,
   codeViewTextScale,
+  source,
 }: UnifiedPatchViewProps) {
   const themeType = useResolvedDiffTheme();
   const useCodeView =
@@ -97,7 +101,10 @@ export function UnifiedPatchView({
   const fileCount = patchFilePaths(patch).length;
 
   return (
-    <section className={cn('diff-viewer-shell', className)}>
+    <section
+      className={cn('diff-viewer-shell', className)}
+      {...(source ? reviewSourceDataAttributes(source) : {})}
+    >
       <header className="diff-viewer-header">
         <div className="min-w-0">
           <p className={cn('diff-viewer-title', toneClass(tone))}>{title}</p>

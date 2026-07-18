@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import type { ReviewRevision } from '../../shared/review-source';
 
 export const maxReadBytes = 256 * 1024;
 export const defaultReadLimit = 400;
@@ -208,6 +209,7 @@ export type RepoEditResult = {
   files?: unknown[];
   diff?: string;
   diffSummary?: DiffSummary;
+  revision?: ReviewRevision;
   dryRun?: boolean;
   stale?: boolean | Array<{ path: string; reason: string }>;
   eventId?: string;

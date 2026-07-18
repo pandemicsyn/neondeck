@@ -16,6 +16,8 @@ import type {
   DiffReviewAnnotation,
   DiffViewTone,
 } from './types';
+import type { ReviewSourceSnapshot } from '../../../../shared/review-source';
+import { reviewSourceDataAttributes } from './review-source';
 
 type MultiFileViewProps = {
   files: DiffFilePatch[];
@@ -35,6 +37,7 @@ type MultiFileViewProps = {
   footer?: ReactNode;
   inspector?: ReactNode;
   inspectorLabel?: string;
+  source?: ReviewSourceSnapshot;
 };
 
 export function MultiFileView({
@@ -53,6 +56,7 @@ export function MultiFileView({
   footer,
   inspector,
   inspectorLabel = 'Diff inspector',
+  source,
   title,
   tone = 'primary',
 }: MultiFileViewProps) {
@@ -91,6 +95,7 @@ export function MultiFileView({
         inspector ? 'diff-multi-file-with-inspector' : undefined,
         className,
       )}
+      {...(source ? reviewSourceDataAttributes(source) : {})}
     >
       <aside className="diff-tree-pane">
         <FileTreePane

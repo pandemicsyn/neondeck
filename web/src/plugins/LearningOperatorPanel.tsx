@@ -415,6 +415,8 @@ function CandidateRow({ candidate }: { candidate: LearningCandidate }) {
             <div className="mt-1.5" id={diffPanelId}>
               <Suspense fallback={<MiniEmpty label="Loading diff viewer." />}>
                 <SkillPatchDiffReview
+                  afterHash={patch.afterHash}
+                  candidate={candidate}
                   patch={patch.diff}
                   title={candidate.skillId ?? candidate.key ?? candidate.id}
                 />
@@ -571,6 +573,7 @@ function skillPatchSummary(value: unknown) {
   return value as {
     summary?: string | null;
     diff?: string | null;
+    afterHash?: string | null;
     restoreFromAudit?: boolean;
   };
 }
