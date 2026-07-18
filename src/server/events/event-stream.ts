@@ -13,6 +13,10 @@ import {
   subscribePrReviewEvents,
 } from '../../modules/pr-reviews';
 import {
+  formatReviewSurfaceServerSentEvent,
+  reviewSurfaceRegistry,
+} from '../../modules/review-surfaces';
+import {
   formatChatSessionCommandServerSentEvent,
   formatChatSessionServerSentEvent,
   subscribeChatSessionCommandEvents,
@@ -27,12 +31,14 @@ export type EventStreamDependencies = {
   formatConfigServerSentEvent: typeof formatConfigServerSentEvent;
   formatNotificationServerSentEvent: typeof formatNotificationServerSentEvent;
   formatPrReviewServerSentEvent: typeof formatPrReviewServerSentEvent;
+  formatReviewSurfaceServerSentEvent: typeof formatReviewSurfaceServerSentEvent;
   replayConfigEventsAfter: typeof replayConfigEventsAfter;
   subscribeChatSessionCommandEvents: typeof subscribeChatSessionCommandEvents;
   subscribeChatSessionEvents: typeof subscribeChatSessionEvents;
   subscribeConfigEvents: typeof subscribeConfigEvents;
   subscribeNotificationEvents: typeof subscribeNotificationEvents;
   subscribePrReviewEvents: typeof subscribePrReviewEvents;
+  subscribeReviewSurfaceEvents: typeof reviewSurfaceRegistry.subscribe;
 };
 
 const defaultDependencies: EventStreamDependencies = {
@@ -41,12 +47,16 @@ const defaultDependencies: EventStreamDependencies = {
   formatConfigServerSentEvent,
   formatNotificationServerSentEvent,
   formatPrReviewServerSentEvent,
+  formatReviewSurfaceServerSentEvent,
   replayConfigEventsAfter,
   subscribeChatSessionCommandEvents,
   subscribeChatSessionEvents,
   subscribeConfigEvents,
   subscribeNotificationEvents,
   subscribePrReviewEvents,
+  subscribeReviewSurfaceEvents: reviewSurfaceRegistry.subscribe.bind(
+    reviewSurfaceRegistry,
+  ),
 };
 
 export function createEventStreamRoutes(
@@ -81,6 +91,9 @@ export function createEventStreamRoutes(
           }),
           dependencies.subscribePrReviewEvents((event) => {
             send(dependencies.formatPrReviewServerSentEvent(event));
+          }),
+          dependencies.subscribeReviewSurfaceEvents((event) => {
+            send(dependencies.formatReviewSurfaceServerSentEvent(event));
           }),
         ];
 

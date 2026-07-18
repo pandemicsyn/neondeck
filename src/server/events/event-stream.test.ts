@@ -13,6 +13,8 @@ import {
   prReviewTrustBoundary,
   type PrReviewEvent,
 } from '../../modules/pr-reviews';
+import { formatReviewSurfaceServerSentEvent } from '../../modules/review-surfaces';
+import type { ReviewSurfaceChangeEvent } from '../../../shared/review-surface';
 import {
   formatChatSessionCommandServerSentEvent,
   formatChatSessionServerSentEvent,
@@ -44,7 +46,7 @@ describe('dashboard event stream', () => {
     harness.emitAll();
     const output = await readUntil(
       reader!,
-      'event: review-change',
+      'event: review-surface-change',
       new TextDecoder(),
     );
     expect(output).toContain('event: config-change');
@@ -52,6 +54,7 @@ describe('dashboard event stream', () => {
     expect(output).toContain('event: chat-session-change');
     expect(output).toContain('event: chat-session-command-change');
     expect(output).toContain('event: review-change');
+    expect(output).toContain('event: review-surface-change');
 
     await reader!.cancel();
     for (const unsubscribe of harness.unsubscribers) {
@@ -93,7 +96,10 @@ function eventHarness() {
   let commandListener:
     ((event: ChatSessionCommandChangeEvent) => void) | undefined;
   let reviewListener: ((event: PrReviewEvent) => void) | undefined;
+  let reviewSurfaceListener:
+    ((event: ReviewSurfaceChangeEvent) => void) | undefined;
   const unsubscribers = [
+    vi.fn<() => void>(),
     vi.fn<() => void>(),
     vi.fn<() => void>(),
     vi.fn<() => void>(),
@@ -109,6 +115,7 @@ function eventHarness() {
     formatConfigServerSentEvent,
     formatNotificationServerSentEvent,
     formatPrReviewServerSentEvent,
+    formatReviewSurfaceServerSentEvent,
     replayConfigEventsAfter: replay,
     subscribeChatSessionCommandEvents(listener) {
       commandListener = listener;
@@ -130,6 +137,10 @@ function eventHarness() {
       reviewListener = listener;
       return unsubscribers[4]!;
     },
+    subscribeReviewSurfaceEvents(listener) {
+      reviewSurfaceListener = listener;
+      return unsubscribers[5]!;
+    },
   };
 
   return {
@@ -142,11 +153,25 @@ function eventHarness() {
       sessionListener?.(sessionEvent());
       commandListener?.(commandEvent());
       reviewListener?.(reviewEvent());
+      reviewSurfaceListener?.(reviewSurfaceEvent());
     },
     emitConfigAndNotification() {
       configListener?.(configEvent());
       notificationListener?.(notificationEvent());
     },
+  };
+}
+
+function reviewSurfaceEvent(): ReviewSurfaceChangeEvent {
+  return {
+    id: 'review-surface-event-1',
+    action: 'removed',
+    surfaceId: 'surface-1',
+    changedAt: '2026-07-18T00:00:00.000Z',
+    surface: null,
+    navigation: null,
+    acknowledgement: null,
+    reason: 'closed',
   };
 }
 
