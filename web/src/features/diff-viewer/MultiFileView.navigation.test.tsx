@@ -201,6 +201,13 @@ function reviewSource(files: DiffFilePatch[]) {
       patchMessage: null,
     })),
     capabilities: ['comments' as const],
+    promotionTargets: [
+      {
+        destination: 'github-review-draft' as const,
+        repoFullName: 'example/repo',
+        prNumber: 42,
+      },
+    ],
     externalUrl: null,
   };
 }

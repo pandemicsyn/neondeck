@@ -61,6 +61,7 @@ describe('typed Neon review findings', () => {
           state,
           changedAt: '2026-07-18T12:10:00.000Z',
           reason: `${state} reason`,
+          promotion: null,
         },
       }),
     );
@@ -107,7 +108,7 @@ function finding(
   overrides: Partial<NeonReviewFinding> = {},
 ): NeonReviewFinding {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id,
     surfaceId: 'surface-a',
     sourceId,
@@ -134,6 +135,7 @@ function finding(
       state: 'active',
       changedAt: '2026-07-18T12:00:00.000Z',
       reason: null,
+      promotion: null,
     },
     ...overrides,
   };

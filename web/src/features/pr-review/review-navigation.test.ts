@@ -226,6 +226,7 @@ describe('focused PR review navigation wiring', () => {
         state: 'stale' as const,
         changedAt: '2026-07-18T13:00:00.000Z',
         reason: 'Revision changed.',
+        promotion: null,
       },
     };
     const data = createPrReviewNavigationData({
@@ -860,7 +861,7 @@ function finding(): PrReviewReportOnlyFinding {
 
 function neonFinding(): NeonReviewFinding {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: 'typed-finding',
     surfaceId: 'surface-a',
     sourceId: 'github-pr:example/repo#42',
@@ -887,6 +888,7 @@ function neonFinding(): NeonReviewFinding {
       state: 'active',
       changedAt: '2026-07-18T12:00:00.000Z',
       reason: null,
+      promotion: null,
     },
   };
 }

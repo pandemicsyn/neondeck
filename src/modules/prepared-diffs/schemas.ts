@@ -192,6 +192,15 @@ export const requestRevisionInputSchema = v.object({
   preparedDiffId: nonEmptyStringSchema,
   reason: v.optional(v.string()),
   approverSurface: v.optional(nonEmptyStringSchema),
+  findingPromotion: v.optional(
+    v.object({
+      sourceFindingId: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+      surfaceId: v.pipe(v.string(), v.minLength(1), v.maxLength(512)),
+      sourceId: v.pipe(v.string(), v.minLength(1), v.maxLength(240)),
+      revisionKey: v.pipe(v.string(), v.minLength(1), v.maxLength(768)),
+      findingId: v.pipe(v.string(), v.minLength(1), v.maxLength(240)),
+    }),
+  ),
 });
 export const runRevisionInputSchema = v.object({
   preparedDiffId: nonEmptyStringSchema,

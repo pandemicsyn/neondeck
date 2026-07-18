@@ -1,4 +1,4 @@
-export const neonReviewFindingSchemaVersion = 1 as const;
+export const neonReviewFindingSchemaVersion = 2 as const;
 
 export const neonReviewFindingLimits = {
   maxApplyBatch: 50,
@@ -7,6 +7,8 @@ export const neonReviewFindingLimits = {
   maxExplanationLength: 2_000,
   maxSuggestedActionLength: 500,
   maxLifecycleReasonLength: 500,
+  maxPromotionRequestIdLength: 240,
+  maxPromotionTargetIdLength: 240,
   maxEventFindingIds: 50,
   maxLineNumber: 10_000_000,
   maxLineRangeSpan: 10_000,
@@ -41,10 +43,21 @@ export type NeonReviewFindingProvenance = {
   createdAt: string;
 };
 
+export type NeonReviewFindingPromotionDestination =
+  'github-review-draft' | 'prepared-diff-revision';
+
+export type NeonReviewFindingPromotion = {
+  destination: NeonReviewFindingPromotionDestination;
+  requestId: string;
+  targetId: string;
+  containerId: string | null;
+};
+
 export type NeonReviewFindingLifecycle = {
   state: NeonReviewFindingState;
   changedAt: string;
   reason: string | null;
+  promotion: NeonReviewFindingPromotion | null;
 };
 
 export type NeonReviewFinding = {
@@ -94,8 +107,25 @@ export type ReviewSurfaceFindingsClearRequest = {
   findingIds?: string[];
 };
 
+export type ReviewSurfaceFindingPromotionAnchor = {
+  side: NeonReviewFindingSide;
+  startLine: number;
+  endLine: number;
+};
+
+export type ReviewSurfaceFindingPromoteRequest = {
+  sourceId: string;
+  revisionKey: string;
+  findingId: string;
+  requestId: string;
+  destination: NeonReviewFindingPromotionDestination;
+  anchor: ReviewSurfaceFindingPromotionAnchor;
+  confirm: boolean;
+  reason: string | null;
+};
+
 export type ReviewSurfaceFindingChange = {
-  action: 'applied' | 'dismissed' | 'cleared' | 'staled';
+  action: 'applied' | 'dismissed' | 'cleared' | 'staled' | 'promoted';
   revisionKey: string | null;
   findingIds: string[];
   count: number;

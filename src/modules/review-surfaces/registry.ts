@@ -4,11 +4,14 @@ import {
   neonReviewFindingLimits,
   type NeonReviewFinding,
   type NeonReviewFindingDraft,
+  type NeonReviewFindingPromotion,
   type ReviewSurfaceFindingChange,
+  type ReviewSurfaceFindingPromoteRequest,
   type ReviewSurfaceFindingsClearRequest,
   type ReviewSurfaceFindingsDismissRequest,
 } from '../../../shared/review-finding';
 import { reviewRevisionKey } from '../../../shared/review-source';
+import type { ReviewSourcePromotionTarget } from '../../../shared/review-source';
 import type {
   ActiveReviewSurface,
   ReviewSurfaceChangeEvent,
@@ -44,7 +47,19 @@ export type ReviewSurfaceFindingErrorCode =
   | 'invalid-batch-size'
   | 'duplicate-finding-id'
   | 'finding-id-conflict'
-  | 'surface-finding-limit';
+  | 'surface-finding-limit'
+  | 'finding-unavailable'
+  | 'lifecycle-not-active'
+  | 'already-promoted'
+  | 'capability-mismatch'
+  | 'unsupported-source'
+  | 'promotion-target-unavailable'
+  | 'anchor-unavailable'
+  | 'confirmation-required'
+  | 'promotion-pending'
+  | 'promotion-request-conflict'
+  | 'promotion-target-failed'
+  | 'promotion-state-changed';
 
 export type ReviewSurfaceFindingResult = {
   ok: boolean;
@@ -60,6 +75,13 @@ export type ReviewSurfaceFindingResult = {
     code: ReviewSurfaceFindingErrorCode;
     message: string;
   };
+};
+
+export type ValidatedReviewSurfaceFindingPromotion = {
+  surface: ActiveReviewSurface;
+  finding: NeonReviewFinding;
+  target: ReviewSourcePromotionTarget;
+  request: ReviewSurfaceFindingPromoteRequest;
 };
 
 export class ReviewSurfaceRegistry {
@@ -319,6 +341,7 @@ export class ReviewSurfaceRegistry {
           state: 'dismissed',
           changedAt,
           reason: input.reason,
+          promotion: finding.lifecycle.promotion,
         },
       });
       changedIds.push(findingId);
@@ -397,6 +420,197 @@ export class ReviewSurfaceRegistry {
       revisionKey: reviewRevisionKey(surface.source.revision),
       findingIds: clearedIds,
       count: clearedIds.length,
+    };
+  }
+
+  validateFindingPromotion(
+    surfaceId: string,
+    input: ReviewSurfaceFindingPromoteRequest,
+  ):
+    | { ok: true; value: ValidatedReviewSurfaceFindingPromotion }
+    | { ok: false; result: ReviewSurfaceFindingResult } {
+    const surface = this.read(surfaceId);
+    if (!surface) {
+      return {
+        ok: false,
+        result: this.findingError(surfaceId, 'promote', 'surface-not-active'),
+      };
+    }
+    const scopeError = this.findingMutationScopeError(
+      surface,
+      'promote',
+      input.sourceId,
+      input.revisionKey,
+    );
+    if (scopeError) return { ok: false, result: scopeError };
+    const finding = this.findings.get(surfaceId)?.get(input.findingId);
+    if (!finding) {
+      return {
+        ok: false,
+        result: this.findingError(surfaceId, 'promote', 'finding-unavailable', {
+          revisionKey: reviewRevisionKey(surface.source.revision),
+        }),
+      };
+    }
+    if (
+      finding.sourceId !== input.sourceId ||
+      finding.revisionKey !== input.revisionKey
+    ) {
+      return {
+        ok: false,
+        result: this.findingError(surfaceId, 'promote', 'source-mismatch', {
+          revisionKey: reviewRevisionKey(surface.source.revision),
+        }),
+      };
+    }
+    if (finding.lifecycle.state === 'promoted') {
+      return {
+        ok: false,
+        result: this.findingError(surfaceId, 'promote', 'already-promoted', {
+          revisionKey: reviewRevisionKey(surface.source.revision),
+        }),
+      };
+    }
+    if (finding.lifecycle.state !== 'active') {
+      return {
+        ok: false,
+        result: this.findingError(
+          surfaceId,
+          'promote',
+          'lifecycle-not-active',
+          { revisionKey: reviewRevisionKey(surface.source.revision) },
+        ),
+      };
+    }
+    const supportedSource =
+      input.destination === 'github-review-draft'
+        ? surface.source.kind === 'github-pr'
+        : surface.source.kind === 'prepared-diff' ||
+          surface.source.kind === 'kilo-result';
+    if (!supportedSource) {
+      return {
+        ok: false,
+        result: this.findingError(surfaceId, 'promote', 'unsupported-source'),
+      };
+    }
+    const expectedCapability =
+      input.destination === 'github-review-draft'
+        ? 'comments'
+        : 'request-revision';
+    if (!surface.source.capabilities.includes(expectedCapability)) {
+      return {
+        ok: false,
+        result: this.findingError(surfaceId, 'promote', 'capability-mismatch'),
+      };
+    }
+    const target = surface.source.promotionTargets.find(
+      (candidate) => candidate.destination === input.destination,
+    );
+    if (!target) {
+      return {
+        ok: false,
+        result: this.findingError(
+          surfaceId,
+          'promote',
+          'promotion-target-unavailable',
+        ),
+      };
+    }
+    const file = surface.source.files.find(
+      (candidate) => candidate.path === finding.file,
+    );
+    if (
+      !file ||
+      file.patchState === 'unavailable' ||
+      file.patchState === 'truncated' ||
+      file.patchState === 'binary' ||
+      file.patchState === 'stale'
+    ) {
+      return {
+        ok: false,
+        result: this.findingError(surfaceId, 'promote', 'anchor-unavailable'),
+      };
+    }
+    if (
+      input.anchor.side !== finding.anchor.side ||
+      (finding.anchor.kind === 'line-range' &&
+        (input.anchor.startLine !== finding.anchor.startLine ||
+          input.anchor.endLine !== finding.anchor.endLine)) ||
+      (finding.anchor.kind === 'hunk' &&
+        input.anchor.startLine !== input.anchor.endLine)
+    ) {
+      return {
+        ok: false,
+        result: this.findingError(surfaceId, 'promote', 'anchor-unavailable'),
+      };
+    }
+    if (
+      input.destination === 'prepared-diff-revision' &&
+      input.confirm !== true
+    ) {
+      return {
+        ok: false,
+        result: this.findingError(
+          surfaceId,
+          'promote',
+          'confirmation-required',
+        ),
+      };
+    }
+    return { ok: true, value: { surface, finding, target, request: input } };
+  }
+
+  completeFindingPromotion(
+    surfaceId: string,
+    input: ReviewSurfaceFindingPromoteRequest,
+    promotion: NeonReviewFindingPromotion,
+  ): ReviewSurfaceFindingResult {
+    const validated = this.validateFindingPromotion(surfaceId, input);
+    if (!validated.ok) {
+      const current = this.read(surfaceId);
+      return this.findingError(
+        surfaceId,
+        'promote',
+        'promotion-state-changed',
+        {
+          revisionKey: current
+            ? reviewRevisionKey(current.source.revision)
+            : null,
+        },
+      );
+    }
+    const changedAt = this.timestamp();
+    const finding = {
+      ...validated.value.finding,
+      lifecycle: {
+        state: 'promoted' as const,
+        changedAt,
+        reason:
+          promotion.destination === 'github-review-draft'
+            ? 'Promoted to a local GitHub review draft; submission remains separate.'
+            : 'Promoted to a prepared-diff revision request; execution remains separate.',
+        promotion,
+      },
+    };
+    const next = new Map(this.findings.get(surfaceId));
+    next.set(finding.id, finding);
+    this.findings.set(surfaceId, next);
+    this.publishFindingChange(surfaceId, {
+      action: 'promoted',
+      revisionKey: input.revisionKey,
+      findingIds: [finding.id],
+      count: 1,
+    });
+    return {
+      ok: true,
+      action: 'promote',
+      changed: true,
+      message: finding.lifecycle.reason,
+      surfaceId,
+      revisionKey: input.revisionKey,
+      findings: [finding],
+      findingIds: [finding.id],
+      count: 1,
     };
   }
 
@@ -576,7 +790,12 @@ export class ReviewSurfaceRegistry {
       if (finding.lifecycle.state !== 'active') continue;
       next.set(findingId, {
         ...finding,
-        lifecycle: { state: 'stale', changedAt, reason },
+        lifecycle: {
+          state: 'stale',
+          changedAt,
+          reason,
+          promotion: finding.lifecycle.promotion,
+        },
       });
       changedIds.push(findingId);
     }
@@ -655,7 +874,12 @@ function materializeFinding(
     ...finding,
     surfaceId,
     provenance: { ...finding.provenance, createdAt },
-    lifecycle: { state: 'active', changedAt: createdAt, reason: null },
+    lifecycle: {
+      state: 'active',
+      changedAt: createdAt,
+      reason: null,
+      promotion: null,
+    },
   };
 }
 
@@ -717,6 +941,30 @@ function findingErrorMessage(code: ReviewSurfaceFindingErrorCode) {
       return 'A finding id is already associated with different content.';
     case 'surface-finding-limit':
       return `A review surface may retain at most ${neonReviewFindingLimits.maxFindingsPerSurface} ephemeral findings.`;
+    case 'finding-unavailable':
+      return 'The requested finding is not retained on this review surface.';
+    case 'lifecycle-not-active':
+      return 'Only a current active finding can be promoted.';
+    case 'already-promoted':
+      return 'This finding has already been promoted.';
+    case 'capability-mismatch':
+      return 'This review source does not support the requested promotion destination.';
+    case 'unsupported-source':
+      return 'This review source keeps findings local-only.';
+    case 'promotion-target-unavailable':
+      return 'The durable promotion destination is unavailable.';
+    case 'anchor-unavailable':
+      return 'The finding anchor is unavailable on the current revision.';
+    case 'confirmation-required':
+      return 'Prepared-diff revision promotion requires explicit confirmation.';
+    case 'promotion-pending':
+      return 'This finding promotion is already in progress.';
+    case 'promotion-request-conflict':
+      return 'This promotion request id is already bound to different input.';
+    case 'promotion-target-failed':
+      return 'The durable promotion destination could not be created.';
+    case 'promotion-state-changed':
+      return 'The finding changed while its promotion was being created.';
   }
 }
 

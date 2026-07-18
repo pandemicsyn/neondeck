@@ -27,10 +27,14 @@ export type PrReviewFindingsSidebarProps = {
   isDeleting: boolean;
   isLoadingThreads: boolean;
   isDismissingFinding: (findingId: string) => boolean;
+  isPromotingFinding: (findingId: string) => boolean;
   neonFindings: readonly NeonReviewFinding[];
   onChooseLine: (finding: PrReviewReportOnlyFinding) => void;
   onDelete: (commentId: string) => void;
   onDismissFinding: (finding: NeonReviewFinding) => void;
+  onPromoteFinding: (finding: NeonReviewFinding) => void;
+  promoteLabel: string;
+  promotionDisabledReason: (finding: NeonReviewFinding) => string | null;
   onReanchor: (comment: GitHubPrReviewDraftComment) => void;
   onSelectFinding: (finding: NeonReviewFinding) => void;
   review: PrReviewRecord | null;
@@ -139,8 +143,12 @@ function FindingsPanels(props: PrReviewFindingsSidebarProps) {
         activePath={props.activePath}
         findings={props.neonFindings}
         isDismissing={props.isDismissingFinding}
+        isPromoting={props.isPromotingFinding}
         onDismiss={props.onDismissFinding}
+        onPromote={props.onPromoteFinding}
         onSelect={props.onSelectFinding}
+        promoteLabel={props.promoteLabel}
+        promotionDisabledReason={props.promotionDisabledReason}
         resolutionFor={props.findingResolution}
         selectedAnnotationId={props.selectedAnnotationId}
       />

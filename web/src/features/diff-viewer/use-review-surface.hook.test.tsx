@@ -323,7 +323,7 @@ function ReplaceableFindingSurfaceHarness({
 
 function finding(id = 'finding-a'): NeonReviewFinding {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id,
     surfaceId: 'surface-a',
     sourceId: 'github-pr:example/repo#42',
@@ -350,6 +350,7 @@ function finding(id = 'finding-a'): NeonReviewFinding {
       state: 'active',
       changedAt: '2026-07-18T12:00:00.000Z',
       reason: null,
+      promotion: null,
     },
   };
 }
@@ -390,6 +391,13 @@ function reviewSource(): ReviewSourceSnapshot {
       patchMessage: null,
     })),
     capabilities: ['comments', 'refresh'],
+    promotionTargets: [
+      {
+        destination: 'github-review-draft',
+        repoFullName: 'example/repo',
+        prNumber: 42,
+      },
+    ],
     externalUrl: 'https://github.com/example/repo/pull/42',
   };
 }

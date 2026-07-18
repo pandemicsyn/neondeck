@@ -4,6 +4,7 @@ import {
   reviewSurfaceFindingsApplySchema,
   reviewSurfaceFindingsClearSchema,
   reviewSurfaceFindingsDismissSchema,
+  reviewSurfaceFindingPromoteSchema,
   localApiFindingProvenance,
   reviewSurfaceNavigationAckInputSchema,
   reviewSurfaceNavigationRequestSchema,
@@ -11,10 +12,12 @@ import {
   reviewSurfaceSnapshotSchema,
   stampReviewFindingSubmissions,
   type ReviewSurfaceRegistry,
+  ReviewSurfaceFindingPromotionService,
 } from '../../modules/review-surfaces';
 
 export function createReviewSurfaceRoutes(
   registry: ReviewSurfaceRegistry = reviewSurfaceRegistry,
+  promotionService = new ReviewSurfaceFindingPromotionService(registry),
 ) {
   const routes = new Hono();
 
@@ -94,6 +97,25 @@ export function createReviewSurfaceRoutes(
       registry.clearFindings(c.req.param('surfaceId'), parsed.output),
     );
   });
+
+  routes.post(
+    '/review-surfaces/:surfaceId/findings/:findingId/promote',
+    async (c) => {
+      const body = await readJson(c);
+      const parsed = v.safeParse(reviewSurfaceFindingPromoteSchema, body);
+      if (!parsed.success) return invalidInput(c, parsed.issues);
+      if (parsed.output.findingId !== c.req.param('findingId')) {
+        return c.json(
+          { ok: false, message: 'Finding id does not match the route.' },
+          400,
+        );
+      }
+      return findingResult(
+        c,
+        await promotionService.promote(c.req.param('surfaceId'), parsed.output),
+      );
+    },
+  );
 
   routes.post('/review-surfaces/:surfaceId/navigation', async (c) => {
     const body = await readJson(c);

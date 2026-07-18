@@ -15,6 +15,7 @@ import {
   type ReviewRevision,
   type ReviewSourceCapability,
   type ReviewSourceKind,
+  type ReviewSourcePromotionTarget,
   type ReviewSourceRepository,
   type ReviewSourceSnapshot,
 } from '../../../../shared/review-source';
@@ -33,6 +34,7 @@ type SourceInput = PatchStateOptions & {
   files: DiffFilePatch[];
   id: string;
   kind: ReviewSourceKind;
+  promotionTargets?: ReviewSourcePromotionTarget[];
   repository?: Partial<ReviewSourceRepository>;
   revision: ReviewRevision;
   title: string;
@@ -53,6 +55,13 @@ export function githubPrReviewSource(
       ...(options.localSource
         ? (['context-expansion', 'open-in-editor'] as const)
         : []),
+    ],
+    promotionTargets: [
+      {
+        destination: 'github-review-draft',
+        repoFullName: pr.repo,
+        prNumber: pr.number,
+      },
     ],
     externalUrl: pr.url,
     files,
@@ -90,6 +99,12 @@ export function preparedDiffReviewSource(
       'open-in-editor',
       'refresh',
     ],
+    promotionTargets: [
+      {
+        destination: 'prepared-diff-revision',
+        preparedDiffId: diff.id,
+      },
+    ],
     files,
     id: `prepared-diff:${diff.id}`,
     kind: 'prepared-diff',
@@ -124,6 +139,14 @@ export function kiloResultReviewSource(
       'open-in-editor',
       'refresh',
     ],
+    promotionTargets: task.preparedDiffId
+      ? [
+          {
+            destination: 'prepared-diff-revision',
+            preparedDiffId: task.preparedDiffId,
+          },
+        ]
+      : [],
     files,
     id: `kilo-result:${task.id}`,
     kind: 'kilo-result',
@@ -218,6 +241,7 @@ function reviewSource(input: SourceInput): ReviewSourceSnapshot {
     },
     files: input.files.map((file) => reviewFile(file, input)),
     capabilities: [...new Set(input.capabilities)],
+    promotionTargets: input.promotionTargets ?? [],
     externalUrl: input.externalUrl ?? null,
   };
 }

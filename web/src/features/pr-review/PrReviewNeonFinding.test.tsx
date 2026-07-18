@@ -127,6 +127,7 @@ describe('Neon finding review components', () => {
   });
 
   it('names an anchored inspector action with the finding title and location', async () => {
+    const onPromote = vi.fn<(finding: NeonReviewFinding) => void>();
     await act(async () => {
       root.render(
         <PrReviewNeonFindingsPanel
@@ -134,7 +135,10 @@ describe('Neon finding review components', () => {
           findings={[finding('active')]}
           isDismissing={() => false}
           onDismiss={vi.fn<(finding: NeonReviewFinding) => void>()}
+          onPromote={onPromote}
           onSelect={vi.fn<(finding: NeonReviewFinding) => void>()}
+          promoteLabel="Add to local draft"
+          promotionDisabledReason={() => null}
           resolutionFor={() => ({
             state: 'anchored',
             lineNumber: 3,
@@ -151,6 +155,51 @@ describe('Neon finding review components', () => {
         .querySelector('button[aria-label^="Show finding:"]')
         ?.getAttribute('aria-label'),
     ).toBe('Show finding: Avoid a null crash in src/a.ts, additions L2–3');
+    const promoteButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label^="Add to local draft:"]',
+    );
+    expect(promoteButton?.getAttribute('aria-label')).toBe(
+      'Add to local draft: Avoid a null crash in src/a.ts, additions L2–3',
+    );
+    await act(async () =>
+      promoteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
+    expect(onPromote).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'active' }),
+    );
+  });
+
+  it('disables promotion while an anchor is unavailable and retains destination history', async () => {
+    const promoted = finding('promoted');
+    await act(async () => {
+      root.render(
+        <PrReviewNeonFindingsPanel
+          activePath="src/a.ts"
+          findings={[finding('active'), promoted]}
+          isDismissing={() => false}
+          isPromoting={() => false}
+          onDismiss={vi.fn<(finding: NeonReviewFinding) => void>()}
+          onPromote={vi.fn<(finding: NeonReviewFinding) => void>()}
+          onSelect={vi.fn<(finding: NeonReviewFinding) => void>()}
+          promoteLabel="Request prepared revision"
+          promotionDisabledReason={() => 'The patch has not loaded.'}
+          resolutionFor={() => ({
+            state: 'pending',
+            reason: 'The patch has not loaded.',
+          })}
+          selectedAnnotationId={null}
+        />,
+      );
+    });
+
+    const control = container.querySelector<HTMLButtonElement>(
+      'button[aria-label^="Request prepared revision:"]',
+    );
+    expect(control?.disabled).toBe(true);
+    expect(control?.title).toBe('The patch has not loaded.');
+    expect(container.textContent).toContain(
+      'prepared-diff revision request (execution remains separate)',
+    );
   });
 
   it('uses the compact embedded policy without hiding trust provenance', async () => {
@@ -179,7 +228,7 @@ function finding(
   state: NeonReviewFinding['lifecycle']['state'],
 ): NeonReviewFinding {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: state,
     surfaceId: 'surface-a',
     sourceId: 'github-pr:example/repo#42',
@@ -206,6 +255,15 @@ function finding(
       state,
       changedAt: '2026-07-18T12:00:00.000Z',
       reason: state === 'active' ? null : `${state} by the operator.`,
+      promotion:
+        state === 'promoted'
+          ? {
+              destination: 'prepared-diff-revision',
+              requestId: 'request-1',
+              targetId: 'approval-1',
+              containerId: 'prepared-1',
+            }
+          : null,
     },
   };
 }

@@ -495,6 +495,25 @@ export async function requestPreparedDiffRevision(
     paths,
   );
   if (!loaded.ok) return loaded.result;
+  const existingPromotion = objectField(loaded.record.summary).findingPromotion;
+  if (
+    parsed.input.findingPromotion &&
+    objectField(existingPromotion).sourceFindingId ===
+      parsed.input.findingPromotion.sourceFindingId
+  ) {
+    return {
+      ok: true,
+      action: 'prepared_diff_request_revision',
+      changed: false,
+      message:
+        'This finding already seeded the prepared-diff revision request.',
+      preparedDiff: loaded.record,
+      approvals: listApprovalRecords(
+        { preparedDiffIds: [loaded.record.id] },
+        paths,
+      ).filter((approval) => approval.approvalType === 'revision'),
+    };
+  }
   const transition = assertTransition(
     loaded.record,
     'prepared_diff_request_revision',
@@ -509,6 +528,9 @@ export async function requestPreparedDiffRevision(
       pushApprovalStatus: 'rejected',
       summary: mergeSummary(loaded.record.summary, {
         revisionReason: parsed.input.reason,
+        ...(parsed.input.findingPromotion
+          ? { findingPromotion: parsed.input.findingPromotion }
+          : {}),
       }),
     },
     paths,
