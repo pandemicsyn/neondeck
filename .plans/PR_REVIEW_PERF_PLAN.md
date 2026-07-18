@@ -3,6 +3,17 @@
 Status: phases 1–5 implemented; real-PR verification, request-path remediation, and active-patch prioritization complete; cold-fetch decision remains
 Prior art: `.plans/archived/DIFF_UI_PLAN.md`, `.plans/archived/DIFF_REVIEW.md`
 
+## 2026-07-18 shared Phase A fixture baseline
+
+The broader diff-improvements Phase A now has deterministic 8-file, 90-file,
+and 305-file registered-repository fixtures through
+`npm run bench:review-fixtures`. The recorded five-sample warm medians were
+73.2/73.1/75.6 ms for metadata-only trees and 271.0/274.5/272.4 ms for the
+first patch, inside the existing 500 ms and 1,000 ms targets. Results are
+retained in `benchmarks/results/review-fixture-baseline.json`. This shared
+fixture evidence complements, rather than replaces, the immutable real-PR and
+production-browser evidence below.
+
 ## 2026-07-17 reconciliation
 
 PR #84 implemented phases 1–5 plus the original synthetic 305-file harness.

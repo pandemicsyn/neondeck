@@ -46,6 +46,7 @@ import {
 } from './routes/reports';
 import { createReviewRoutes } from './routes/reviews';
 import { createReposRoutes } from './routes/repos';
+import { createReviewSurfaceRoutes } from './routes/review-surfaces';
 import { createScheduledTaskRoutes } from './routes/scheduled-tasks';
 import { createRuntimeRoutes } from './routes/runtime';
 import { createSafetyRoutes } from './routes/safety';
@@ -119,6 +120,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api/commands', createCommandRoutes());
   app.route('/api', createReportApiRoutes(paths));
   app.route('/api', createReviewRoutes(paths));
+  app.route('/api', createReviewSurfaceRoutes());
   app.route('/api/workflows', createWorkflowRoutes(paths));
   app.route('/api/github', createGitHubRoutes(paths));
 

@@ -20,5 +20,6 @@ export * from './notifications';
 export * from './briefings';
 export * from './reports';
 export * from './reviews';
+export * from './review-surfaces';
 export * from './worktrees';
 export * from './watches';

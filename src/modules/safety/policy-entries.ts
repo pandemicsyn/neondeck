@@ -920,6 +920,36 @@ export const entries: SafetyPolicyEntry[] = [
     'User-surface-only local API for submitting a human-authored GitHub PR review with inline comments and a verdict. Neon has no action or tool path to this route.',
   ),
   route(
+    '/api/review-surfaces',
+    'List active review surfaces API',
+    readOnly,
+    'Reads bounded process-ephemeral review surface context. It does not read patch bodies or durable review data.',
+  ),
+  route(
+    '/api/review-surfaces/:surfaceId',
+    'Register review surface API',
+    unauditedSafeMutation,
+    'Registers, updates, reads, or closes process-ephemeral review surface context. No state is written to SQLite.',
+  ),
+  route(
+    '/api/review-surfaces/:surfaceId/heartbeat',
+    'Heartbeat review surface API',
+    unauditedSafeMutation,
+    'Extends one process-ephemeral review surface lease without rebroadcasting its context snapshot.',
+  ),
+  route(
+    '/api/review-surfaces/:surfaceId/navigation',
+    'Navigate review surface API',
+    unauditedSafeMutation,
+    'Publishes a revision-aware, file-targeted navigation command to one active review surface.',
+  ),
+  route(
+    '/api/review-surfaces/:surfaceId/navigation/:commandId/ack',
+    'Acknowledge review surface navigation API',
+    unauditedSafeMutation,
+    'Records and publishes the process-ephemeral resolution status of one review surface navigation command.',
+  ),
+  route(
     '/api/reviews/:id/reconcile',
     'Recover interrupted PR review submission API',
     {

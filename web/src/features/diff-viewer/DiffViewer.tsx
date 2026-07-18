@@ -24,6 +24,7 @@ import {
 import { diffHighlighterOptions, diffWorkerPoolOptions } from './worker';
 import type { ReviewSourceSnapshot } from '../../../../shared/review-source';
 import { reviewSourceDataAttributes } from './review-source';
+import { useReviewSurface } from './use-review-surface';
 import type {
   DiffReviewAnnotation,
   DiffReviewAnnotationMetadata,
@@ -93,6 +94,15 @@ export function UnifiedPatchView({
         : [],
     [lineAnnotations, patch, useCodeView],
   );
+  const surfaceId = useReviewSurface(
+    source
+      ? {
+          activePath: source.files[0]?.path ?? null,
+          selection: selectedLines,
+          source,
+        }
+      : null,
+  );
 
   if (!patchHasContent(patch)) {
     return <MiniEmpty label="No patch content available." />;
@@ -104,6 +114,7 @@ export function UnifiedPatchView({
     <section
       className={cn('diff-viewer-shell', className)}
       {...(source ? reviewSourceDataAttributes(source) : {})}
+      {...(surfaceId ? { 'data-review-surface-id': surfaceId } : {})}
     >
       <header className="diff-viewer-header">
         <div className="min-w-0">

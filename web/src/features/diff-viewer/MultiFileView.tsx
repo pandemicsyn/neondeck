@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
 import type { SelectedLineRange } from '@pierre/diffs/react';
 import { Badge, MiniEmpty } from '../../components/ui';
 import { cn } from '../../lib/cn';
@@ -18,6 +18,7 @@ import type {
 } from './types';
 import type { ReviewSourceSnapshot } from '../../../../shared/review-source';
 import { reviewSourceDataAttributes } from './review-source';
+import { useReviewSurface } from './use-review-surface';
 
 type MultiFileViewProps = {
   files: DiffFilePatch[];
@@ -68,6 +69,23 @@ export function MultiFileView({
   const selectedFile =
     files.find((file) => file.path === selectedPath) ?? files[0] ?? null;
   const patch = selectedFile?.patch ?? null;
+  const selectPath = useCallback(
+    (path: string) => {
+      setUncontrolledPath(path);
+      onActivePathChange?.(path);
+    },
+    [onActivePathChange],
+  );
+  const surfaceId = useReviewSurface(
+    source
+      ? {
+          activePath: selectedFile?.path ?? null,
+          onNavigatePath: selectPath,
+          selection: selectedLines,
+          source,
+        }
+      : null,
+  );
 
   useEffect(() => {
     if (selectedPath && files.some((file) => file.path === selectedPath)) {
@@ -82,10 +100,6 @@ export function MultiFileView({
     return <MiniEmpty label={emptyLabel} />;
   }
 
-  const selectPath = (path: string) => {
-    setUncontrolledPath(path);
-    onActivePathChange?.(path);
-  };
   const status = selectedFile ? filePatchStatus(selectedFile) : null;
 
   return (
@@ -96,6 +110,7 @@ export function MultiFileView({
         className,
       )}
       {...(source ? reviewSourceDataAttributes(source) : {})}
+      {...(surfaceId ? { 'data-review-surface-id': surfaceId } : {})}
     >
       <aside className="diff-tree-pane">
         <FileTreePane

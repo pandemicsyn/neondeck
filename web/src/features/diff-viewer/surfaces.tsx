@@ -45,28 +45,46 @@ export function PreparedDiffReview({ diff }: { diff: AutopilotPreparedDiff }) {
   const filePatchQuery = usePreparedDiffFilePatch(diff.id, activePath);
   const activePatch =
     filePatchQuery.data?.diff ?? filePatchQuery.data?.file?.patch;
-  const viewFiles = files.map((file) =>
-    file.path === activePath
-      ? {
-          ...file,
-          message: filePatchQuery.data?.message,
-          patch: activePatch ?? null,
-          truncated: filePatchQuery.data?.file?.truncated ?? file.truncated,
-        }
-      : file,
+  const viewFiles = useMemo(
+    () =>
+      files.map((file) =>
+        file.path === activePath
+          ? {
+              ...file,
+              message: filePatchQuery.data?.message,
+              patch: activePatch ?? null,
+              truncated: filePatchQuery.data?.file?.truncated ?? file.truncated,
+            }
+          : file,
+      ),
+    [
+      activePatch,
+      activePath,
+      filePatchQuery.data?.file?.truncated,
+      filePatchQuery.data?.message,
+      files,
+    ],
   );
-  const source = preparedDiffReviewSource(
-    diff,
-    viewFiles,
-    filesQuery.data?.revision,
-    {
-      loadingPaths:
-        activePath && filePatchQuery.isLoading
-          ? new Set([activePath])
-          : undefined,
-      unavailablePaths:
-        activePath && filePatchQuery.error ? new Set([activePath]) : undefined,
-    },
+  const source = useMemo(
+    () =>
+      preparedDiffReviewSource(diff, viewFiles, filesQuery.data?.revision, {
+        loadingPaths:
+          activePath && filePatchQuery.isLoading
+            ? new Set([activePath])
+            : undefined,
+        unavailablePaths:
+          activePath && filePatchQuery.error
+            ? new Set([activePath])
+            : undefined,
+      }),
+    [
+      activePath,
+      diff,
+      filePatchQuery.error,
+      filePatchQuery.isLoading,
+      filesQuery.data?.revision,
+      viewFiles,
+    ],
   );
 
   if (filesQuery.isLoading) {
@@ -111,7 +129,10 @@ export function SkillPatchDiffReview({
   title?: string;
 }) {
   const files = useMemo(() => splitUnifiedPatchFiles(patch), [patch]);
-  const source = skillPatchReviewSource(candidate, files, afterHash, title);
+  const source = useMemo(
+    () => skillPatchReviewSource(candidate, files, afterHash, title),
+    [afterHash, candidate, files, title],
+  );
 
   if (files.length > 1) {
     return (
@@ -146,19 +167,24 @@ export function KiloTaskDiffReview({ task }: { task: KiloTaskRecord }) {
     enabled: Boolean(task.repoId),
   });
   const kiloDiffQuery = useKiloTaskDiff(task.id);
-  const repoFiles = repoDiffQuery.data?.files ?? [];
+  const repoFiles = useMemo(
+    () => repoDiffQuery.data?.files ?? [],
+    [repoDiffQuery.data?.files],
+  );
   const fallbackFiles = useMemo(
     () => kiloSummaryFiles(kiloDiffQuery.data?.diff ?? task.diff),
     [kiloDiffQuery.data?.diff, task.diff],
   );
-  const files = repoFiles.length > 0 ? repoFiles : fallbackFiles;
+  const files = useMemo(
+    () => (repoFiles.length > 0 ? repoFiles : fallbackFiles),
+    [fallbackFiles, repoFiles],
+  );
   const summary =
     repoDiffQuery.data?.diffSummary ??
     summaryFromKilo(kiloDiffQuery.data?.diff ?? task.diff);
-  const source = kiloResultReviewSource(
-    task,
-    files,
-    repoDiffQuery.data?.revision,
+  const source = useMemo(
+    () => kiloResultReviewSource(task, files, repoDiffQuery.data?.revision),
+    [files, repoDiffQuery.data?.revision, task],
   );
 
   if (repoDiffQuery.isLoading) {
@@ -194,7 +220,10 @@ export function RepoEditEventDiffReview({ event }: { event: RepoEditEvent }) {
     () => splitUnifiedPatchFiles(event.diffPatch),
     [event.diffPatch],
   );
-  const source = repoEditEventReviewSource(event, storedFiles);
+  const source = useMemo(
+    () => repoEditEventReviewSource(event, storedFiles),
+    [event, storedFiles],
+  );
 
   if (hasStoredPatch) {
     if (storedFiles.length > 1) {

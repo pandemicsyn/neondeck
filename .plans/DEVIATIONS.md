@@ -15,6 +15,13 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-07-17 - Diff Review Phase A Sequencing
+
+- Roadmap item: Diff Improvements Plan / transition from Phase A to Phase B
+- Decision: Retain the completed Phase A implementation in PR #143, pause Phase B, and resume the specialized PR review performance workstream before advancing the broader diff roadmap.
+- Reason: Phase A was implemented before `.plans/PR_REVIEW_PERF_PLAN.md` reached full acceptance. The first-patch and warm backend targets pass, but production tree visibility, review-thread visibility, and the one-time cold-object fetch still miss their retained budgets and were not explicitly deferred as a group.
+- Follow-up: Investigate review-thread latency first, then reconcile tree visibility and separate cold network-fetch time from local metadata time. Advance to Phase B only after the remaining misses pass or are explicitly deferred with recorded rationale.
+
 ## 2026-07-06 - Learning Flywheel Wrap-Up
 
 - Roadmap item: Wrap Up the Learning Flywheel / memories in, health out, triggers verified
