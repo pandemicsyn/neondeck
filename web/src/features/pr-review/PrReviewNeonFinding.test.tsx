@@ -169,6 +169,44 @@ describe('Neon finding review components', () => {
     );
   });
 
+  it('cross-disables dismiss and promotion and keeps every promotion control locked while one is pending', async () => {
+    const first = finding('active');
+    const second = { ...finding('active'), id: 'active-second' };
+    await act(async () => {
+      root.render(
+        <PrReviewNeonFindingsPanel
+          actionsLocked={() => true}
+          activePath="src/a.ts"
+          findings={[first, second]}
+          isDismissing={(findingId) => findingId === second.id}
+          isPromoting={(findingId) => findingId === first.id}
+          onDismiss={vi.fn<(finding: NeonReviewFinding) => void>()}
+          onPromote={vi.fn<(finding: NeonReviewFinding) => void>()}
+          onSelect={vi.fn<(finding: NeonReviewFinding) => void>()}
+          promoteLabel="Request prepared revision"
+          promotionDisabledReason={() => null}
+          resolutionFor={() => ({
+            state: 'anchored',
+            lineNumber: 3,
+            selection: { side: 'additions', start: 2, end: 3 } as never,
+            side: 'additions',
+          })}
+          selectedAnnotationId={null}
+        />,
+      );
+    });
+
+    const mutationControls = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        'button[aria-label^="Dismiss locally:"], button[aria-label^="Request prepared revision:"]',
+      ),
+    ];
+    expect(mutationControls).toHaveLength(4);
+    expect(mutationControls.every((control) => control.disabled)).toBe(true);
+    expect(container.textContent).toContain('Promoting');
+    expect(container.textContent).toContain('Dismissing');
+  });
+
   it('disables promotion while an anchor is unavailable and retains destination history', async () => {
     const promoted = finding('promoted');
     await act(async () => {
@@ -260,6 +298,7 @@ function finding(
           ? {
               destination: 'prepared-diff-revision',
               requestId: 'request-1',
+              requestFingerprint: 'a'.repeat(64),
               targetId: 'approval-1',
               containerId: 'prepared-1',
             }

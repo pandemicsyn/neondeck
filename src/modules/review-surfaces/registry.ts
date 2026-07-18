@@ -87,6 +87,10 @@ export type ValidatedReviewSurfaceFindingPromotion = {
 export class ReviewSurfaceRegistry {
   private readonly findings = new Map<string, Map<string, NeonReviewFinding>>();
   private readonly listeners = new Set<ReviewSurfaceListener>();
+  private readonly pendingFindingPromotions = new Map<
+    string,
+    { requestId: string; surfaceId: string }
+  >();
   private readonly pendingNavigations = new Map<string, string>();
   private readonly records = new Map<string, ActiveReviewSurface>();
   private readonly now: () => number;
@@ -323,6 +327,12 @@ export class ReviewSurfaceRegistry {
       return this.findingError(surfaceId, 'dismiss', 'duplicate-finding-id');
     }
     const current = this.findings.get(surfaceId);
+    for (const findingId of input.findingIds) {
+      const finding = current?.get(findingId);
+      if (finding && this.isFindingPromotionPending(finding)) {
+        return this.findingError(surfaceId, 'dismiss', 'promotion-pending');
+      }
+    }
     const changedAt = this.timestamp();
     const changedIds: string[] = [];
     const next = new Map(current);
@@ -399,6 +409,12 @@ export class ReviewSurfaceRegistry {
     const clearedIds = requestedIds.filter((findingId) =>
       current?.has(findingId),
     );
+    for (const findingId of clearedIds) {
+      const finding = current?.get(findingId);
+      if (finding && this.isFindingPromotionPending(finding)) {
+        return this.findingError(surfaceId, 'clear', 'promotion-pending');
+      }
+    }
     if (clearedIds.length > 0 && current) {
       const next = new Map(current);
       for (const findingId of clearedIds) next.delete(findingId);
@@ -560,6 +576,70 @@ export class ReviewSurfaceRegistry {
     return { ok: true, value: { surface, finding, target, request: input } };
   }
 
+  replayFindingPromotion(
+    surfaceId: string,
+    input: ReviewSurfaceFindingPromoteRequest,
+    requestFingerprint: string,
+  ): ReviewSurfaceFindingResult | null {
+    const surface = this.read(surfaceId);
+    if (!surface) return null;
+    const scopeError = this.findingMutationScopeError(
+      surface,
+      'promote',
+      input.sourceId,
+      input.revisionKey,
+    );
+    if (scopeError) return scopeError;
+    const finding = this.findings.get(surfaceId)?.get(input.findingId);
+    const promotion = finding?.lifecycle.promotion;
+    if (!finding || !promotion) return null;
+    if (!promotion || promotion.requestId !== input.requestId) {
+      return this.findingError(surfaceId, 'promote', 'already-promoted', {
+        revisionKey: reviewRevisionKey(surface.source.revision),
+      });
+    }
+    if (promotion.requestFingerprint !== requestFingerprint) {
+      return this.findingError(
+        surfaceId,
+        'promote',
+        'promotion-request-conflict',
+        { revisionKey: reviewRevisionKey(surface.source.revision) },
+      );
+    }
+    return {
+      ok: true,
+      action: 'promote',
+      changed: false,
+      message: 'This finding promotion is already recorded.',
+      surfaceId,
+      revisionKey: input.revisionKey,
+      findings: [finding],
+      findingIds: [finding.id],
+      count: 1,
+    };
+  }
+
+  beginFindingPromotion(candidate: ValidatedReviewSurfaceFindingPromotion) {
+    const key = findingPromotionIdentity(candidate.finding);
+    if (this.pendingFindingPromotions.has(key)) return false;
+    this.pendingFindingPromotions.set(key, {
+      requestId: candidate.request.requestId,
+      surfaceId: candidate.surface.surfaceId,
+    });
+    return true;
+  }
+
+  finishFindingPromotion(candidate: ValidatedReviewSurfaceFindingPromotion) {
+    const key = findingPromotionIdentity(candidate.finding);
+    const pending = this.pendingFindingPromotions.get(key);
+    if (
+      pending?.requestId === candidate.request.requestId &&
+      pending.surfaceId === candidate.surface.surfaceId
+    ) {
+      this.pendingFindingPromotions.delete(key);
+    }
+  }
+
   completeFindingPromotion(
     surfaceId: string,
     input: ReviewSurfaceFindingPromoteRequest,
@@ -568,6 +648,43 @@ export class ReviewSurfaceRegistry {
     const validated = this.validateFindingPromotion(surfaceId, input);
     if (!validated.ok) {
       const current = this.read(surfaceId);
+      const retained = this.findings.get(surfaceId)?.get(input.findingId);
+      if (
+        current &&
+        retained &&
+        retained.sourceId === input.sourceId &&
+        retained.revisionKey === input.revisionKey
+      ) {
+        const finding = {
+          ...retained,
+          lifecycle: {
+            ...retained.lifecycle,
+            changedAt: this.timestamp(),
+            promotion,
+          },
+        };
+        const next = new Map(this.findings.get(surfaceId));
+        next.set(finding.id, finding);
+        this.findings.set(surfaceId, next);
+        this.publishFindingChange(surfaceId, {
+          action: 'promoted',
+          revisionKey: input.revisionKey,
+          findingIds: [finding.id],
+          count: 1,
+        });
+        return {
+          ok: true,
+          action: 'promote',
+          changed: true,
+          message:
+            'Recorded the durable promotion while retaining the finding’s newer lifecycle state.',
+          surfaceId,
+          revisionKey: input.revisionKey,
+          findings: [finding],
+          findingIds: [finding.id],
+          count: 1,
+        };
+      }
       return this.findingError(
         surfaceId,
         'promote',
@@ -612,6 +729,10 @@ export class ReviewSurfaceRegistry {
       findingIds: [finding.id],
       count: 1,
     };
+  }
+
+  private isFindingPromotionPending(finding: NeonReviewFinding) {
+    return this.pendingFindingPromotions.has(findingPromotionIdentity(finding));
   }
 
   heartbeat(surfaceId: string) {
@@ -917,6 +1038,10 @@ function sameFindingScope(
     finding.sourceId === draft.sourceId &&
     finding.revisionKey === draft.revisionKey
   );
+}
+
+function findingPromotionIdentity(finding: NeonReviewFinding) {
+  return [finding.sourceId, finding.revisionKey, finding.id].join('\0');
 }
 
 function findingErrorMessage(code: ReviewSurfaceFindingErrorCode) {

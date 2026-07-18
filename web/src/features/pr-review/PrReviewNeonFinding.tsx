@@ -4,6 +4,7 @@ import type { NeonFindingAnchorResolution } from './review-findings';
 import { findingAnchorLabel, neonFindingAnnotationId } from './review-findings';
 
 export function PrReviewNeonFindingAnnotation({
+  actionsLocked = false,
   compact,
   finding,
   isDismissing,
@@ -14,6 +15,7 @@ export function PrReviewNeonFindingAnnotation({
   promotionDisabledReason,
   selected,
 }: {
+  actionsLocked?: boolean;
   compact: boolean;
   finding: NeonReviewFinding;
   isDismissing: boolean;
@@ -52,7 +54,12 @@ export function PrReviewNeonFindingAnnotation({
           {onPromote && promoteLabel && finding.lifecycle.state === 'active' ? (
             <button
               aria-label={`${promoteLabel}: ${finding.title}`}
-              disabled={isPromoting || Boolean(promotionDisabledReason)}
+              disabled={
+                actionsLocked ||
+                isDismissing ||
+                isPromoting ||
+                Boolean(promotionDisabledReason)
+              }
               onClick={() => onPromote(finding)}
               title={promotionDisabledReason ?? undefined}
               type="button"
@@ -62,7 +69,7 @@ export function PrReviewNeonFindingAnnotation({
           ) : null}
           <button
             aria-label={`Dismiss Neon finding: ${finding.title}`}
-            disabled={isDismissing}
+            disabled={actionsLocked || isDismissing || isPromoting}
             onClick={() => onDismiss(finding)}
             type="button"
           >
@@ -75,6 +82,7 @@ export function PrReviewNeonFindingAnnotation({
 }
 
 export function PrReviewNeonFindingsPanel({
+  actionsLocked = () => false,
   activePath,
   findings,
   isDismissing,
@@ -87,6 +95,7 @@ export function PrReviewNeonFindingsPanel({
   resolutionFor,
   selectedAnnotationId,
 }: {
+  actionsLocked?: (findingId: string) => boolean;
   activePath: string | null;
   findings: readonly NeonReviewFinding[];
   isDismissing: (findingId: string) => boolean;
@@ -171,7 +180,11 @@ export function PrReviewNeonFindingsPanel({
                 finding.lifecycle.state === 'stale' ? (
                   <button
                     aria-label={`Dismiss locally: ${controlContext}`}
-                    disabled={isDismissing(finding.id)}
+                    disabled={
+                      actionsLocked(finding.id) ||
+                      isDismissing(finding.id) ||
+                      isPromoting(finding.id)
+                    }
                     onClick={() => onDismiss(finding)}
                     type="button"
                   >
@@ -186,6 +199,8 @@ export function PrReviewNeonFindingsPanel({
                   <button
                     aria-label={`${promoteLabel}: ${controlContext}`}
                     disabled={
+                      actionsLocked(finding.id) ||
+                      isDismissing(finding.id) ||
                       isPromoting(finding.id) ||
                       Boolean(promotionDisabledReason?.(finding))
                     }

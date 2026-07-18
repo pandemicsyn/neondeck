@@ -1019,6 +1019,88 @@ describe('review surface registry', () => {
     });
   });
 
+  it('replays an exact retained promotion after completed-cache eviction and rejects altered input', async () => {
+    const promoteTarget = vi.fn<ReviewSurfacePromotionTarget>(
+      async (candidate) => ({
+        ok: true,
+        promotion: {
+          destination: 'github-review-draft',
+          targetId: `comment-${candidate.finding.id}`,
+          containerId: 'draft-shared',
+        },
+      }),
+    );
+    const { promotionService, registry } = harness(promoteTarget);
+    const firstRequest = promotionRequest('finding-0', 'request-0');
+    for (let index = 0; index <= 400; index += 1) {
+      const surfaceId = `surface-cache-${index}`;
+      const findingId = `finding-${index}`;
+      registry.upsert(snapshot(surfaceId));
+      registry.applyFindings(surfaceId, {
+        revisionKey: 'git-commit::head-sha',
+        findings: [finding(findingId)],
+      });
+      await expect(
+        promotionService.promote(
+          surfaceId,
+          promotionRequest(findingId, `request-${index}`),
+        ),
+      ).resolves.toMatchObject({ ok: true, changed: true });
+    }
+
+    await expect(
+      promotionService.promote('surface-cache-0', firstRequest),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      findings: [
+        {
+          lifecycle: {
+            promotion: {
+              requestId: 'request-0',
+              requestFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+            },
+          },
+        },
+      ],
+    });
+    expect(promoteTarget).toHaveBeenCalledTimes(401);
+    await expect(
+      promotionService.promote('surface-cache-0', {
+        ...firstRequest,
+        reason: 'Altered input using the retained request id.',
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'promotion-request-conflict' },
+    });
+    expect(promoteTarget).toHaveBeenCalledTimes(401);
+  });
+
+  it('promotes a valid finding id containing a lone surrogate through the body-only route', async () => {
+    const findingId = '\ud800';
+    const promoteTarget = vi.fn<ReviewSurfacePromotionTarget>(async () => ({
+      ok: true,
+      promotion: {
+        destination: 'github-review-draft',
+        targetId: 'comment-surrogate',
+        containerId: 'draft-surrogate',
+      },
+    }));
+    const { app } = harness(promoteTarget);
+    await register(app, snapshot('surface-surrogate'));
+    await apply(app, 'surface-surrogate', [finding(findingId)]);
+
+    const response = await promote(
+      app,
+      'surface-surrogate',
+      promotionRequest(findingId, 'request-surrogate'),
+    );
+
+    expect(response.status).toBe(200);
+    expect(promoteTarget).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects mismatched or unbounded destination metadata without changing lifecycle', async () => {
     const promoteTarget = vi.fn<ReviewSurfacePromotionTarget>(async () => ({
       ok: true,
@@ -1199,12 +1281,37 @@ describe('review surface registry', () => {
     const delayedHarness = harness(delayedTarget);
     await register(delayedHarness.app, snapshot('surface-delayed'));
     await apply(delayedHarness.app, 'surface-delayed', [finding('delayed')]);
+    await register(delayedHarness.app, snapshot('surface-delayed-sibling'));
+    await apply(delayedHarness.app, 'surface-delayed-sibling', [
+      finding('delayed'),
+    ]);
     const delayedResponse = promote(
       delayedHarness.app,
       'surface-delayed',
       promotionRequest('delayed', 'delayed-request'),
     );
     await vi.waitFor(() => expect(delayedTarget).toHaveBeenCalledTimes(1));
+    const dismissal = await delayedHarness.app.request(
+      'http://localhost/api/review-surfaces/surface-delayed-sibling/findings/dismiss',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          sourceId: 'github-pr:example/repo#42',
+          revisionKey: 'git-commit::head-sha',
+          findingIds: ['delayed'],
+          reason: 'Dismiss while promotion is delayed.',
+        }),
+      },
+    );
+    expect(dismissal.status).toBe(409);
+    await expect(dismissal.json()).resolves.toMatchObject({
+      error: { code: 'promotion-pending' },
+    });
+    expect(
+      delayedHarness.registry.readFindings('surface-delayed-sibling')
+        .findings?.[0]?.lifecycle.state,
+    ).toBe('active');
     delayedHarness.registry.upsert(snapshot('surface-delayed', 'new-head'));
     target.resolve({
       ok: true,
@@ -1214,11 +1321,18 @@ describe('review surface registry', () => {
         containerId: 'draft-delayed',
       },
     });
-    expect((await delayedResponse).status).toBe(409);
+    expect((await delayedResponse).status).toBe(200);
     expect(
-      delayedHarness.registry.readFindings('surface-delayed').findings?.[0]
-        ?.lifecycle.state,
-    ).toBe('stale');
+      delayedHarness.registry.readFindings('surface-delayed').findings?.[0],
+    ).toMatchObject({
+      lifecycle: {
+        state: 'stale',
+        promotion: {
+          destination: 'github-review-draft',
+          targetId: 'comment-delayed',
+        },
+      },
+    });
   });
 
   it('seeds only the existing local GitHub draft path with the validated range and provenance', async () => {
@@ -1511,6 +1625,7 @@ function harness(promoteTarget?: ReviewSurfacePromotionTarget) {
       '/api',
       createReviewSurfaceRoutes(registry, promotionService),
     ),
+    promotionService,
     registry,
   };
 }
@@ -1696,9 +1811,8 @@ function promote(
   surfaceId: string,
   request: ReturnType<typeof promotionRequest> | Record<string, unknown>,
 ) {
-  const findingId = String(request.findingId);
   return app.request(
-    `http://localhost/api/review-surfaces/${surfaceId}/findings/${findingId}/promote`,
+    `http://localhost/api/review-surfaces/${surfaceId}/findings/promote`,
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

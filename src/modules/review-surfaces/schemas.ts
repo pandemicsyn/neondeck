@@ -288,6 +288,11 @@ export const neonReviewFindingSchema: v.GenericSchema<NeonReviewFinding> =
             v.minLength(1),
             v.maxLength(neonReviewFindingLimits.maxPromotionRequestIdLength),
           ),
+          requestFingerprint: v.pipe(
+            v.string(),
+            v.length(neonReviewFindingLimits.maxPromotionFingerprintLength),
+            v.regex(/^[a-f0-9]+$/),
+          ),
           targetId: v.pipe(
             v.string(),
             v.minLength(1),

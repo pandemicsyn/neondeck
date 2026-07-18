@@ -96,10 +96,7 @@ export function promoteReviewSurfaceFinding(
     findingIds: string[];
     count: number;
     promotion?: NeonReviewFindingPromotion;
-  }>(
-    `${reviewSurfaceUrl(surfaceId)}/findings/${encodeURIComponent(request.findingId)}/promote`,
-    request,
-  );
+  }>(`${reviewSurfaceUrl(surfaceId)}/findings/promote`, request);
 }
 
 export function navigateReviewSurface(

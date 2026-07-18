@@ -20,6 +20,7 @@ import { PrReviewNeonFindingsPanel } from './PrReviewNeonFinding';
 import type { NeonFindingAnchorResolution } from './review-findings';
 
 export type PrReviewFindingsSidebarProps = {
+  actionsLocked: (findingId: string) => boolean;
   activePath: string | null;
   cleanCommentCount: number;
   draft: GitHubPrReviewDraft | null;
@@ -140,6 +141,7 @@ function FindingsPanels(props: PrReviewFindingsSidebarProps) {
         selectedAnnotationId={props.selectedAnnotationId}
       />
       <PrReviewNeonFindingsPanel
+        actionsLocked={props.actionsLocked}
         activePath={props.activePath}
         findings={props.neonFindings}
         isDismissing={props.isDismissingFinding}

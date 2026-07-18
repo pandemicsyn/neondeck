@@ -30,7 +30,10 @@ import {
 export type ReviewSurfacePromotionTargetResult =
   | {
       ok: true;
-      promotion: Omit<NeonReviewFindingPromotion, 'requestId'>;
+      promotion: Omit<
+        NeonReviewFindingPromotion,
+        'requestId' | 'requestFingerprint'
+      >;
     }
   | { ok: false; message: string };
 
@@ -87,6 +90,13 @@ export class ReviewSurfaceFindingPromotionService {
       );
     }
 
+    const replay = this.registry.replayFindingPromotion(
+      surfaceId,
+      request,
+      fingerprint,
+    );
+    if (replay) return Promise.resolve(replay);
+
     const validated = this.registry.validateFindingPromotion(
       surfaceId,
       request,
@@ -113,6 +123,16 @@ export class ReviewSurfaceFindingPromotionService {
             ),
           );
     }
+    if (!this.registry.beginFindingPromotion(validated.value)) {
+      return Promise.resolve(
+        promotionError(
+          surfaceId,
+          request.revisionKey,
+          'promotion-pending',
+          'This finding promotion is already in progress.',
+        ),
+      );
+    }
 
     const promise = this.runPromotion(
       surfaceId,
@@ -134,6 +154,7 @@ export class ReviewSurfaceFindingPromotionService {
       ) {
         this.pending.delete(findingKey);
       }
+      this.registry.finishFindingPromotion(validated.value);
     });
     return promise;
   }
@@ -173,6 +194,7 @@ export class ReviewSurfaceFindingPromotionService {
     const result = this.registry.completeFindingPromotion(surfaceId, request, {
       ...target.promotion,
       requestId: request.requestId,
+      requestFingerprint: fingerprint,
     });
     if (result.ok) {
       this.completed.set(promotionRequestKey(surfaceId, request.requestId), {
@@ -523,24 +545,31 @@ function promotionRequestKey(surfaceId: string, requestId: string) {
 function promotionRequestFingerprint(
   request: ReviewSurfaceFindingPromoteRequest,
 ) {
-  return JSON.stringify({
-    sourceId: request.sourceId,
-    revisionKey: request.revisionKey,
-    findingId: request.findingId,
-    destination: request.destination,
-    anchor: {
-      side: request.anchor.side,
-      startLine: request.anchor.startLine,
-      endLine: request.anchor.endLine,
-    },
-    confirm: request.confirm,
-    reason: request.reason,
-  });
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        sourceId: request.sourceId,
+        revisionKey: request.revisionKey,
+        findingId: request.findingId,
+        destination: request.destination,
+        anchor: {
+          side: request.anchor.side,
+          startLine: request.anchor.startLine,
+          endLine: request.anchor.endLine,
+        },
+        confirm: request.confirm,
+        reason: request.reason,
+      }),
+    )
+    .digest('hex');
 }
 
 function validTargetPromotion(
   request: ReviewSurfaceFindingPromoteRequest,
-  promotion: Omit<NeonReviewFindingPromotion, 'requestId'>,
+  promotion: Omit<
+    NeonReviewFindingPromotion,
+    'requestId' | 'requestFingerprint'
+  >,
 ) {
   return (
     promotion.destination === request.destination &&

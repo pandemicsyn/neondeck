@@ -8,6 +8,7 @@ export const neonReviewFindingLimits = {
   maxSuggestedActionLength: 500,
   maxLifecycleReasonLength: 500,
   maxPromotionRequestIdLength: 240,
+  maxPromotionFingerprintLength: 64,
   maxPromotionTargetIdLength: 240,
   maxEventFindingIds: 50,
   maxLineNumber: 10_000_000,
@@ -49,6 +50,7 @@ export type NeonReviewFindingPromotionDestination =
 export type NeonReviewFindingPromotion = {
   destination: NeonReviewFindingPromotionDestination;
   requestId: string;
+  requestFingerprint: string;
   targetId: string;
   containerId: string | null;
 };

@@ -184,6 +184,7 @@ export function GitHubPrReview({
   const [promotingFindingIds, setPromotingFindingIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const findingActionsLocked = promotingFindingIds.size > 0;
   const [navigationKind, setNavigationKind] =
     useState<ReviewCursorKind>('file');
   const [navigationTargetKey, setNavigationTargetKey] = useState<string | null>(
@@ -1152,6 +1153,9 @@ export function GitHubPrReview({
     if (!reviewSurfaceId || !currentReviewRevisionKey) {
       return 'The focused review surface is still connecting.';
     }
+    if (findingActionsLocked && !promotingFindingIds.has(finding.id)) {
+      return 'Another finding promotion is in progress.';
+    }
     if (resolution?.state !== 'anchored') {
       return resolution?.reason ?? 'The finding anchor is unavailable.';
     }
@@ -1216,6 +1220,7 @@ export function GitHubPrReview({
   const renderAnnotation = (annotation: DiffReviewAnnotation) =>
     annotation.metadata.kind === 'finding' && annotation.metadata.finding ? (
       <PrReviewNeonFindingAnnotation
+        actionsLocked={findingActionsLocked}
         compact={!isStandalone}
         finding={annotation.metadata.finding}
         isDismissing={dismissingFindingIds.has(annotation.metadata.finding.id)}
@@ -1367,6 +1372,7 @@ export function GitHubPrReview({
     );
   };
   const findingsSidebar = {
+    actionsLocked: () => findingActionsLocked,
     activePath,
     cleanCommentCount: cleanCommentIds.length,
     draft,
