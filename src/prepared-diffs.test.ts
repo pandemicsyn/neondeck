@@ -216,6 +216,42 @@ describe('prepared diff lifecycle', () => {
     expect(gitDiffMock).toHaveBeenCalledTimes(3);
   });
 
+  it('rejects changed-file metadata when the worktree mutates during fingerprinting', async () => {
+    const { paths } = await fixture();
+    const prepared = await preparedFixture(paths);
+    const revision = resolvedReviewRevision({
+      kind: 'worktree-diff',
+      id: 'revision-b',
+      baseId: 'base',
+    });
+    const metadataA = diffMetadata('src/old.ts');
+    const metadataB = diffMetadata('src/current.ts');
+    let mutated = false;
+    const gitDiffMock = vi.fn<typeof gitDiff>(async () =>
+      mutated ? metadataB : metadataA,
+    );
+    const gitWorktreeRevisionMock = vi.fn<typeof gitWorktreeRevision>(
+      async () => {
+        mutated = true;
+        return revision;
+      },
+    );
+
+    await expect(
+      readPreparedDiffChangedFiles({ preparedDiffId: prepared.id }, paths, {
+        gitDiff: gitDiffMock,
+        gitWorktreeRevision: gitWorktreeRevisionMock,
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'prepared_diff_changed_files',
+      revision,
+      requires: ['refresh'],
+    });
+    expect(gitDiffMock).toHaveBeenCalledTimes(2);
+    expect(gitWorktreeRevisionMock).toHaveBeenCalledTimes(2);
+  });
+
   it('records approval, verification, revision, and abandon decisions without pushing', async () => {
     const { paths } = await fixture();
     const prepared = await preparedFixture(paths);
@@ -813,6 +849,28 @@ describe('prepared diff lifecycle', () => {
     });
   });
 });
+
+function diffMetadata(path: string) {
+  return {
+    base: 'HEAD',
+    files: [
+      {
+        path,
+        status: 'M',
+        additions: 1,
+        deletions: 1,
+        binary: false,
+        generatedLike: false,
+      },
+    ],
+    summary: {
+      files: 1,
+      additions: 1,
+      deletions: 1,
+      binaryFiles: 0,
+    },
+  };
+}
 
 async function fixture() {
   const home = await mkdtemp(join(tmpdir(), 'neondeck-prepared-diff-'));

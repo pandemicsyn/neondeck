@@ -286,6 +286,7 @@ export async function getGitHubPrFiles(
       databasePath: paths.neondeckDatabase,
       fetcher,
       fetchHeadSha: dependencies.fetchPullRequestHeadSha,
+      fetchRevision: dependencies.fetchPullRequestRevision,
     });
 
     return okResult(
@@ -410,6 +411,7 @@ export async function getGitHubPrFileDiff(
       databasePath: paths.neondeckDatabase,
       fetcher: dependencies.fetchPullRequestFiles ?? fetchPullRequestFiles,
       fetchHeadSha: dependencies.fetchPullRequestHeadSha,
+      fetchRevision: dependencies.fetchPullRequestRevision,
     });
     const file =
       diff.files.find((item) => item.path === parsed.output.path) ?? null;

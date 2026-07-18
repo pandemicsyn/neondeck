@@ -24,6 +24,16 @@ type PullRequestHeadShaFetcher = (options: {
   number: number;
 }) => Promise<string | null | undefined>;
 
+type PullRequestRevisionFetcher = (options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+}) => Promise<{
+  headSha: string | null | undefined;
+  baseSha: string | null | undefined;
+}>;
+
 export async function fetchPullRequestFilesWithCache(options: {
   token: string;
   owner: string;
@@ -35,10 +45,13 @@ export async function fetchPullRequestFilesWithCache(options: {
   databasePath: string;
   fetcher?: typeof fetchPullRequestFiles;
   fetchHeadSha?: PullRequestHeadShaFetcher;
+  fetchRevision?: PullRequestRevisionFetcher;
   now?: Date;
 }): Promise<GitHubPullRequestFiles> {
   const fetcher = options.fetcher ?? fetchPullRequestFiles;
   const fetchHeadSha = options.fetchHeadSha ?? fetchCurrentPullRequestHeadSha;
+  const fetchRevision =
+    options.fetchRevision ?? fetchCurrentPullRequestRevision;
   const repoFullName = `${options.owner}/${options.repo}`;
   const headSha = options.headSha?.trim() || null;
   const baseSha = options.baseSha?.trim() || null;
@@ -73,16 +86,28 @@ export async function fetchPullRequestFilesWithCache(options: {
   };
   const diff = await fetcher(request);
   let currentHeadSha: string | null | undefined = null;
+  let currentBaseSha: string | null | undefined = null;
   try {
-    currentHeadSha = await fetchHeadSha(request);
+    if (baseSha) {
+      const currentRevision = await fetchRevision(request);
+      currentHeadSha = currentRevision.headSha;
+      currentBaseSha = currentRevision.baseSha;
+    } else {
+      currentHeadSha = await fetchHeadSha(request);
+    }
   } catch (error) {
     throw new Error(
-      `Could not verify the current head for ${repoFullName}#${options.number}: ${errorMessage(error)}`,
+      `Could not verify the current revision for ${repoFullName}#${options.number}: ${errorMessage(error)}`,
     );
   }
   if (currentHeadSha !== headSha) {
     throw new Error(
       `Pull request head changed from ${headSha} to ${currentHeadSha ?? 'unavailable'} while loading files.`,
+    );
+  }
+  if (baseSha && currentBaseSha !== baseSha) {
+    throw new Error(
+      `Pull request base changed from ${baseSha} to ${currentBaseSha ?? 'unavailable'} while loading files.`,
     );
   }
   if (diff.files.length > 0 && baseSha) {
@@ -129,6 +154,16 @@ async function fetchCurrentPullRequestHeadSha(options: {
 }) {
   const detail = await fetchPullRequestDetail(options);
   return detail.headSha;
+}
+
+async function fetchCurrentPullRequestRevision(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+}) {
+  const detail = await fetchPullRequestDetail(options);
+  return { headSha: detail.headSha, baseSha: detail.baseSha };
 }
 
 export function readCachedPullRequestFiles(options: {

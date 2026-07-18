@@ -254,6 +254,24 @@ describe('revision-aware prepared and Kilo surfaces', () => {
     expect(state.viewProps?.refreshStatus?.preservation).toBe('preserved');
   });
 
+  it.each(['dismissed', 'resolved', 'stale'] as const)(
+    'reports a degraded prepared refresh after the selected finding becomes %s',
+    async (lifecycleState) => {
+      await expect(
+        expectLifecycleSelectionDegraded('prepared', lifecycleState),
+      ).resolves.toBe('degraded');
+    },
+  );
+
+  it.each(['dismissed', 'resolved', 'stale'] as const)(
+    'reports a degraded Kilo refresh after the selected finding becomes %s',
+    async (lifecycleState) => {
+      await expect(
+        expectLifecycleSelectionDegraded('kilo', lifecycleState),
+      ).resolves.toBe('degraded');
+    },
+  );
+
   it('keeps a prepared revision confirmation open and blocks refresh application', async () => {
     const externalRefreshGuard = {
       mutationPending: false,
@@ -353,6 +371,65 @@ describe('revision-aware prepared and Kilo surfaces', () => {
     await act(async () =>
       show?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
     );
+  }
+
+  async function expectLifecycleSelectionDegraded(
+    surface: 'prepared' | 'kilo',
+    lifecycleState: Extract<
+      NeonReviewFinding['lifecycle']['state'],
+      'dismissed' | 'resolved' | 'stale'
+    >,
+  ) {
+    const sourceId =
+      surface === 'prepared'
+        ? 'prepared-diff:prepared-1'
+        : 'kilo-result:kilo-1';
+    const revisionId = surface === 'prepared' ? 'prepared-a' : 'repo-a';
+    state.findings = [finding(revisionId, sourceId)];
+    await render(
+      surface === 'prepared' ? (
+        <PreparedDiffReview diff={preparedDiff()} />
+      ) : (
+        <KiloTaskDiffReview task={kiloTask()} />
+      ),
+    );
+    await selectFinding();
+    const lifecycleFinding = {
+      ...state.findings[0]!,
+      lifecycle: {
+        ...state.findings[0]!.lifecycle,
+        state: lifecycleState,
+        reason: `The finding became ${lifecycleState}.`,
+      },
+    };
+    await act(async () => {
+      state.findings = [lifecycleFinding];
+      state.viewProps?.onReviewSurfaceFindingsChange?.(
+        'surface-review',
+        state.findings,
+      );
+    });
+    expect(state.viewProps?.selectedAnnotationId).not.toBeNull();
+
+    if (surface === 'prepared') state.preparedRevision = 'prepared-b';
+    else state.repoRevision = 'repo-b';
+    await render(
+      surface === 'prepared' ? (
+        <PreparedDiffReview diff={preparedDiff()} />
+      ) : (
+        <KiloTaskDiffReview task={kiloTask()} />
+      ),
+    );
+    const apply = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Apply the available review revision"]',
+    );
+    await act(async () =>
+      apply?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
+
+    expect(state.viewProps?.selectedAnnotationId).toBeNull();
+    expect(state.viewProps?.refreshStatus?.preservation).toBe('degraded');
+    return state.viewProps?.refreshStatus?.preservation;
   }
 });
 

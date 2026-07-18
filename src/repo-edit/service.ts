@@ -14,6 +14,7 @@ import {
   summarizeDiff,
   unifiedDiff,
 } from './git';
+import { readStableDiffMetadata } from './stable-diff';
 import { withPathLocks } from './locks';
 import { resolveRepoPath } from './path-safety';
 import {
@@ -453,6 +454,28 @@ export async function readRepoDiff(
     const scopedPatch = Boolean(
       parsed.input.paths?.length && parsed.input.includePatch,
     );
+    if (!scopedPatch) {
+      const stable = await readStableDiffMetadata(
+        root.repoRoot,
+        parsed.input,
+        dependencies,
+      );
+      if (!stable.stable) {
+        return staleRepoDiffPatch(parsed.input, stable.revision);
+      }
+      return {
+        ok: true,
+        action: 'repo_diff',
+        changed: false,
+        message: `Read diff for ${parsed.input.repoId}.`,
+        repoId: parsed.input.repoId,
+        worktreeId: parsed.input.worktreeId,
+        base: stable.diff.base,
+        revision: stable.revision,
+        files: stable.diff.files,
+        diffSummary: stable.diff.summary,
+      };
+    }
     const beforeMetadata = scopedPatch
       ? await readDiff(root.repoRoot, {
           base: parsed.input.base,
@@ -515,7 +538,7 @@ function staleRepoDiffPatch(
     ok: false as const,
     action: 'repo_diff',
     changed: false,
-    message: 'The worktree changed before this patch could be used.',
+    message: 'The worktree changed before this diff could be used.',
     repoId: input.repoId,
     worktreeId: input.worktreeId,
     revision,

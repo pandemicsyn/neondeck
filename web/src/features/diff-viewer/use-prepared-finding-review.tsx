@@ -379,7 +379,18 @@ export function preparedFindingRefreshProjection(input: {
     input.source.id,
     revisionKey,
   );
-  const items = current.flatMap((finding) => {
+  const selectedFinding = input.findings.find(
+    (finding) =>
+      neonFindingAnnotationId(finding.id) === input.selectedAnnotationId,
+  );
+  const projectionFindings =
+    selectedFinding &&
+    selectedFinding.sourceId === input.source.id &&
+    selectedFinding.revisionKey === revisionKey &&
+    !current.some((finding) => finding.id === selectedFinding.id)
+      ? [...current, selectedFinding]
+      : current;
+  const items = projectionFindings.flatMap((finding) => {
     if (!filesByPath.has(finding.file)) return [];
     const resolution = resolveNeonFindingAnchor(
       finding,
@@ -407,10 +418,6 @@ export function preparedFindingRefreshProjection(input: {
   const targets = reviewCursorTargets(
     createReviewNavigationModel({ files: input.source.files, items }),
     'finding',
-  );
-  const selectedFinding = current.find(
-    (finding) =>
-      neonFindingAnnotationId(finding.id) === input.selectedAnnotationId,
   );
   return {
     currentTargetKey:

@@ -72,6 +72,15 @@ export type PrEventStateDependencies = {
     repo: string;
     number: number;
   }) => Promise<string | null | undefined>;
+  fetchPullRequestRevision?: (options: {
+    token: string;
+    owner: string;
+    repo: string;
+    number: number;
+  }) => Promise<{
+    headSha: string | null | undefined;
+    baseSha: string | null | undefined;
+  }>;
   fetchPullRequestReviewThreads?: typeof fetchPullRequestReviewThreadsWithMetadata;
   fetchPullRequestReviewThread?: typeof fetchPullRequestReviewThread;
   postPullRequestComment?: typeof postPullRequestComment;

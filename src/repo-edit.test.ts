@@ -517,6 +517,41 @@ describe('repo edit actions', () => {
     expect(gitDiffMock).toHaveBeenCalledTimes(3);
   });
 
+  it('rejects unscoped metadata when the worktree mutates during fingerprinting', async () => {
+    const { paths } = await fixture();
+    const revision = resolvedReviewRevision({
+      kind: 'worktree-diff',
+      id: 'revision-b',
+      baseId: 'base',
+    });
+    const metadataA = repoDiffMetadata('src/old.ts');
+    const metadataB = repoDiffMetadata('src/current.ts');
+    let mutated = false;
+    const gitDiffMock = vi.fn<typeof gitDiff>(async () =>
+      mutated ? metadataB : metadataA,
+    );
+    const gitWorktreeRevisionMock = vi.fn<typeof gitWorktreeRevision>(
+      async () => {
+        mutated = true;
+        return revision;
+      },
+    );
+
+    await expect(
+      readRepoDiff({ repoId: 'sample' }, paths, {
+        gitDiff: gitDiffMock,
+        gitWorktreeRevision: gitWorktreeRevisionMock,
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'repo_diff',
+      revision,
+      requires: ['refresh'],
+    });
+    expect(gitDiffMock).toHaveBeenCalledTimes(2);
+    expect(gitWorktreeRevisionMock).toHaveBeenCalledTimes(2);
+  });
+
   it('allows changed paths whose names begin with two dots', async () => {
     const { paths, repo } = await fixture();
     await writeFile(join(repo, '..notes.ts'), 'export const note = true;\n');
@@ -738,4 +773,26 @@ async function fixture() {
 async function gitOutput(repo: string, args: string[]) {
   const { stdout } = await execFileAsync('git', args, { cwd: repo });
   return stdout.trim();
+}
+
+function repoDiffMetadata(path: string) {
+  return {
+    base: 'HEAD',
+    files: [
+      {
+        path,
+        status: 'M',
+        additions: 1,
+        deletions: 1,
+        binary: false,
+        generatedLike: false,
+      },
+    ],
+    summary: {
+      files: 1,
+      additions: 1,
+      deletions: 1,
+      binaryFiles: 0,
+    },
+  };
 }

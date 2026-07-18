@@ -44,9 +44,11 @@ describe('GitHub PR file cache', () => {
         return fetched;
       },
     );
-    const headFetcher = vi.fn<() => Promise<string>>(async () => {
-      callOrder.push('head');
-      return 'head123';
+    const revisionFetcher = vi.fn<
+      () => Promise<{ headSha: string; baseSha: string }>
+    >(async () => {
+      callOrder.push('revision');
+      return { headSha: 'head123', baseSha: 'base123' };
     });
 
     const miss = await fetchPullRequestFilesWithCache({
@@ -58,13 +60,13 @@ describe('GitHub PR file cache', () => {
       baseSha: 'base123',
       databasePath: paths.neondeckDatabase,
       fetcher: missFetcher,
-      fetchHeadSha: headFetcher,
+      fetchRevision: revisionFetcher,
       now: new Date('2026-07-05T14:00:00.000Z'),
     });
 
     expect(missFetcher).toHaveBeenCalledTimes(1);
-    expect(headFetcher).toHaveBeenCalledTimes(1);
-    expect(callOrder).toEqual(['files', 'head']);
+    expect(revisionFetcher).toHaveBeenCalledTimes(1);
+    expect(callOrder).toEqual(['files', 'revision']);
     expect(miss).toEqual(fetched);
     const rows = readCacheRows(paths.neondeckDatabase);
     expect(rows).toHaveLength(1);
@@ -93,11 +95,11 @@ describe('GitHub PR file cache', () => {
       baseSha: 'base123',
       databasePath: paths.neondeckDatabase,
       fetcher: hitFetcher,
-      fetchHeadSha: headFetcher,
+      fetchRevision: revisionFetcher,
     });
 
     expect(hitFetcher).not.toHaveBeenCalled();
-    expect(headFetcher).toHaveBeenCalledTimes(1);
+    expect(revisionFetcher).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(hit.files)).toBe(rows[0]?.payload);
     expect(hit).toEqual(fetched);
   });
@@ -128,7 +130,7 @@ describe('GitHub PR file cache', () => {
       baseSha: 'base-a',
       databasePath: paths.neondeckDatabase,
       fetcher,
-      fetchHeadSha: async () => headSha,
+      fetchRevision: async () => ({ headSha, baseSha: 'base-a' }),
     });
     const second = await fetchPullRequestFilesWithCache({
       token: 'token',
@@ -139,7 +141,7 @@ describe('GitHub PR file cache', () => {
       baseSha: 'base-b',
       databasePath: paths.neondeckDatabase,
       fetcher,
-      fetchHeadSha: async () => headSha,
+      fetchRevision: async () => ({ headSha, baseSha: 'base-b' }),
     });
     const firstAgain = await fetchPullRequestFilesWithCache({
       token: 'token',
@@ -150,7 +152,7 @@ describe('GitHub PR file cache', () => {
       baseSha: 'base-a',
       databasePath: paths.neondeckDatabase,
       fetcher,
-      fetchHeadSha: async () => headSha,
+      fetchRevision: async () => ({ headSha, baseSha: 'base-a' }),
     });
 
     expect(fetcher).toHaveBeenCalledTimes(2);
@@ -167,6 +169,40 @@ describe('GitHub PR file cache', () => {
         }),
       ]),
     );
+  });
+
+  it('rejects a cache miss when the supplied base SHA is stale', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const fetched = prFiles(
+      [prFile({ path: 'src/current-base.ts', patch: 'current base patch' })],
+      '2026-07-05T14:00:00.000Z',
+    );
+    const fetcher = vi.fn<() => Promise<GitHubPullRequestFiles>>(
+      async () => fetched,
+    );
+
+    await expect(
+      fetchPullRequestFilesWithCache({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+        headSha: 'same-head',
+        baseSha: 'stale-base',
+        databasePath: paths.neondeckDatabase,
+        fetcher,
+        fetchRevision: async () => ({
+          headSha: 'same-head',
+          baseSha: 'current-base',
+        }),
+      }),
+    ).rejects.toThrow(
+      'Pull request base changed from stale-base to current-base',
+    );
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(readCacheRows(paths.neondeckDatabase)).toEqual([]);
   });
 
   it('serves patchless responses without stripping the cached payload', async () => {
@@ -191,7 +227,10 @@ describe('GitHub PR file cache', () => {
       patches: 'none',
       databasePath: paths.neondeckDatabase,
       fetcher: async () => fetched,
-      fetchHeadSha: async () => 'head123',
+      fetchRevision: async () => ({
+        headSha: 'head123',
+        baseSha: 'base123',
+      }),
       now: new Date('2026-07-05T14:00:00.000Z'),
     });
 
@@ -254,7 +293,10 @@ describe('GitHub PR file cache', () => {
       baseSha: 'empty-base',
       databasePath: paths.neondeckDatabase,
       fetcher: emptyFetcher,
-      fetchHeadSha: async () => 'empty-head',
+      fetchRevision: async () => ({
+        headSha: 'empty-head',
+        baseSha: 'empty-base',
+      }),
     });
     await fetchPullRequestFilesWithCache({
       token: 'token',
@@ -265,7 +307,10 @@ describe('GitHub PR file cache', () => {
       baseSha: 'empty-base',
       databasePath: paths.neondeckDatabase,
       fetcher: emptyFetcher,
-      fetchHeadSha: async () => 'empty-head',
+      fetchRevision: async () => ({
+        headSha: 'empty-head',
+        baseSha: 'empty-base',
+      }),
     });
 
     expect(emptyFetcher).toHaveBeenCalledTimes(2);
@@ -288,7 +333,10 @@ describe('GitHub PR file cache', () => {
         databasePath: paths.neondeckDatabase,
         fetcher: async () =>
           prFiles([prFile({ path: `src/file-${index}.ts` })], date),
-        fetchHeadSha: async () => `head-${index}`,
+        fetchRevision: async () => ({
+          headSha: `head-${index}`,
+          baseSha: 'base',
+        }),
         now: new Date('2026-07-10T00:00:00.000Z'),
       });
     }
@@ -302,7 +350,10 @@ describe('GitHub PR file cache', () => {
       databasePath: paths.neondeckDatabase,
       fetcher: async () =>
         prFiles([prFile({ path: 'src/other.ts' })], '2026-07-04T12:00:00.000Z'),
-      fetchHeadSha: async () => 'other-pr-head',
+      fetchRevision: async () => ({
+        headSha: 'other-pr-head',
+        baseSha: 'other-pr-base',
+      }),
       now: new Date('2026-07-10T00:00:00.000Z'),
     });
 
@@ -339,9 +390,12 @@ describe('GitHub PR file cache', () => {
       .fn<() => Promise<GitHubPullRequestFiles>>()
       .mockResolvedValueOnce(first)
       .mockResolvedValueOnce(second);
-    const headFetcher = vi.fn<() => Promise<string>>(
-      async () => 'current-head',
-    );
+    const revisionFetcher = vi.fn<
+      () => Promise<{ headSha: string; baseSha: string }>
+    >(async () => ({
+      headSha: 'current-head',
+      baseSha: 'base',
+    }));
 
     await expect(
       fetchPullRequestFilesWithCache({
@@ -353,7 +407,7 @@ describe('GitHub PR file cache', () => {
         baseSha: 'base',
         databasePath: paths.neondeckDatabase,
         fetcher,
-        fetchHeadSha: headFetcher,
+        fetchRevision: revisionFetcher,
       }),
     ).rejects.toThrow('Pull request head changed');
     await expect(
@@ -366,12 +420,12 @@ describe('GitHub PR file cache', () => {
         baseSha: 'base',
         databasePath: paths.neondeckDatabase,
         fetcher,
-        fetchHeadSha: headFetcher,
+        fetchRevision: revisionFetcher,
       }),
     ).rejects.toThrow('Pull request head changed');
 
     expect(fetcher).toHaveBeenCalledTimes(2);
-    expect(headFetcher).toHaveBeenCalledTimes(2);
+    expect(revisionFetcher).toHaveBeenCalledTimes(2);
     expect(readCacheRows(paths.neondeckDatabase)).toEqual([]);
   });
 
@@ -392,11 +446,11 @@ describe('GitHub PR file cache', () => {
         baseSha: 'base123',
         databasePath: paths.neondeckDatabase,
         fetcher: async () => fetched,
-        fetchHeadSha: async () => {
+        fetchRevision: async () => {
           throw new Error('GitHub timeout');
         },
       }),
-    ).rejects.toThrow('Could not verify the current head');
+    ).rejects.toThrow('Could not verify the current revision');
 
     expect(readCacheRows(paths.neondeckDatabase)).toEqual([]);
   });

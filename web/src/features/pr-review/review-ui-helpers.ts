@@ -107,33 +107,26 @@ function selectedPatchLines(
   selection: SelectedLineRange,
 ) {
   if (!patch?.trim()) return null;
+  const positions = patchPositions(patch);
+  const endSide = selection.endSide ?? selection.side;
+  if (selection.side !== endSide) {
+    const startKey = `${selection.side}:${selection.start}`;
+    const endKey = `${endSide}:${selection.end}`;
+    const startIndex = positions.findIndex((position) =>
+      position.keys.includes(startKey),
+    );
+    const endIndex = positions.findIndex((position) =>
+      position.keys.includes(endKey),
+    );
+    if (startIndex < 0 || endIndex < 0) return null;
+    return positions
+      .slice(Math.min(startIndex, endIndex), Math.max(startIndex, endIndex) + 1)
+      .map((position) => position.fingerprint);
+  }
   const requested = selectedLineKeys(selection);
   const values = new Map<string, string>();
-  let oldLine = 0;
-  let newLine = 0;
-  for (const line of patch.split('\n')) {
-    const hunk = line.match(/^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/);
-    if (hunk) {
-      oldLine = Number(hunk[1]);
-      newLine = Number(hunk[2]);
-      continue;
-    }
-    if (line.startsWith('---') || line.startsWith('+++') || oldLine === 0) {
-      continue;
-    }
-    const content = line.slice(1);
-    if (line.startsWith(' ')) {
-      values.set(`deletions:${oldLine}`, content);
-      values.set(`additions:${newLine}`, content);
-      oldLine += 1;
-      newLine += 1;
-    } else if (line.startsWith('-')) {
-      values.set(`deletions:${oldLine}`, content);
-      oldLine += 1;
-    } else if (line.startsWith('+')) {
-      values.set(`additions:${newLine}`, content);
-      newLine += 1;
-    }
+  for (const position of positions) {
+    for (const key of position.keys) values.set(key, position.content);
   }
   const selected = requested.map((key) => values.get(key));
   return selected.every((value): value is string => value !== undefined)
@@ -141,16 +134,59 @@ function selectedPatchLines(
     : null;
 }
 
+function patchPositions(patch: string) {
+  const positions: Array<{
+    keys: string[];
+    content: string;
+    fingerprint: string;
+  }> = [];
+  let oldLine = 0;
+  let newLine = 0;
+  for (const line of patch.split('\n')) {
+    const hunk = line.match(/^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/);
+    if (hunk) {
+      oldLine = Number(hunk[1]);
+      newLine = Number(hunk[2]);
+      positions.push({ keys: [], content: line, fingerprint: `hunk:${line}` });
+      continue;
+    }
+    if (line.startsWith('---') || line.startsWith('+++') || oldLine === 0) {
+      continue;
+    }
+    const content = line.slice(1);
+    if (line.startsWith(' ')) {
+      const keys = [`deletions:${oldLine}`, `additions:${newLine}`];
+      positions.push({
+        keys,
+        content,
+        fingerprint: `${keys.join('|')}:${content}`,
+      });
+      oldLine += 1;
+      newLine += 1;
+    } else if (line.startsWith('-')) {
+      const keys = [`deletions:${oldLine}`];
+      positions.push({
+        keys,
+        content,
+        fingerprint: `${keys[0]}:${content}`,
+      });
+      oldLine += 1;
+    } else if (line.startsWith('+')) {
+      const keys = [`additions:${newLine}`];
+      positions.push({
+        keys,
+        content,
+        fingerprint: `${keys[0]}:${content}`,
+      });
+      newLine += 1;
+    }
+  }
+  return positions;
+}
+
 function selectedLineKeys(selection: SelectedLineRange) {
   const start = Math.min(selection.start, selection.end);
   const end = Math.max(selection.start, selection.end);
-  const endSide = selection.endSide ?? selection.side;
-  if (selection.side !== endSide) {
-    return [
-      `${selection.side}:${selection.start}`,
-      `${endSide}:${selection.end}`,
-    ];
-  }
   return Array.from(
     { length: end - start + 1 },
     (_, index) => `${selection.side}:${start + index}`,

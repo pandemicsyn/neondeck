@@ -528,6 +528,10 @@ describe('PR event state watermarks', () => {
         {
           ...cachedFiles,
           fetchPullRequestHeadSha: async () => 'head123',
+          fetchPullRequestRevision: async () => ({
+            headSha: 'head123',
+            baseSha: 'base123',
+          }),
         },
       ),
     ).resolves.toMatchObject({ ok: true });
@@ -1383,6 +1387,10 @@ function anchorValidationDependencies() {
   return {
     token: 'token',
     fetchPullRequestHeadSha: async () => 'head123',
+    fetchPullRequestRevision: async () => ({
+      headSha: 'head123',
+      baseSha: 'base123',
+    }),
     fetchPullRequestFiles: async () => ({
       repo: 'pandemicsyn/neondeck',
       number: 123,

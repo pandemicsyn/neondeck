@@ -139,6 +139,54 @@ describe('GitHubPrReview helpers', () => {
     ).toBe(false);
   });
 
+  it.each([
+    [
+      'changes',
+      [
+        '@@ -1,3 +1,3 @@',
+        '-old start',
+        '+new first changed',
+        ' context',
+        '-old middle',
+        '+new end',
+      ].join('\n'),
+    ],
+    [
+      'disappears',
+      [
+        '@@ -1,2 +1,3 @@',
+        '-old start',
+        '+new first',
+        ' context',
+        '+new end',
+      ].join('\n'),
+    ],
+  ])(
+    'rejects a cross-side composer range when an intermediate patch position %s',
+    (_change, nextPatch) => {
+      const previousPatch = [
+        '@@ -1,3 +1,3 @@',
+        '-old start',
+        '+new first',
+        ' context',
+        '-old middle',
+        '+new end',
+      ].join('\n');
+      expect(
+        selectionAnchorMatchesPatch({
+          previousPatch,
+          nextPatch,
+          selection: {
+            side: 'deletions',
+            endSide: 'additions',
+            start: 1,
+            end: 3,
+          } as SelectedLineRange,
+        }),
+      ).toBe(false);
+    },
+  );
+
   it.each(['hunk', 'finding'] as const)(
     'retains a selected %s until its refreshed patch settles',
     (kind) => {

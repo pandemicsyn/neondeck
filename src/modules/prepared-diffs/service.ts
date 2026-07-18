@@ -17,6 +17,10 @@ import {
   gitWorktreeRevision,
 } from '../../repo-edit/git';
 import {
+  readStableDiffMetadata,
+  type StableDiffMetadataDependencies,
+} from '../../repo-edit/stable-diff';
+import {
   type RuntimePaths,
   ensureRuntimeHome,
   runtimePaths,
@@ -324,6 +328,7 @@ export async function readPreparedDiffSummary(
 export async function readPreparedDiffChangedFiles(
   rawInput: unknown,
   paths: RuntimePaths = runtimePaths(),
+  dependencies: StableDiffMetadataDependencies = {},
 ): Promise<PreparedDiffActionResult> {
   const loaded = await loadPreparedDiff(
     rawInput,
@@ -331,14 +336,16 @@ export async function readPreparedDiffChangedFiles(
     paths,
   );
   if (!loaded.ok) return loaded.result;
-  const diff = await gitDiff(loaded.record.sourceWorktreePath, {
-    base: loaded.record.baseRef,
-    includePatch: false,
-  });
-  const revision = await gitWorktreeRevision(loaded.record.sourceWorktreePath, {
-    base: diff.base,
-    files: diff.files,
-  });
+  const stable = await readStableDiffMetadata(
+    loaded.record.sourceWorktreePath,
+    {
+      base: loaded.record.baseRef,
+      includePatch: false,
+    },
+    dependencies,
+  );
+  if (!stable.stable) return stalePreparedDiffMetadata(stable.revision);
+  const { diff, revision } = stable;
   return {
     ok: true,
     action: 'prepared_diff_changed_files',
@@ -348,6 +355,21 @@ export async function readPreparedDiffChangedFiles(
     revision,
     files: diff.files,
     diffSummary: diff.summary,
+  };
+}
+
+function stalePreparedDiffMetadata(
+  revision: ReviewRevision,
+): PreparedDiffActionResult {
+  return {
+    ok: false,
+    action: 'prepared_diff_changed_files',
+    changed: false,
+    message:
+      'The prepared diff changed before its file metadata could be used.',
+    revision,
+    requires: ['refresh'],
+    errors: ['The requested revision is stale.'],
   };
 }
 
