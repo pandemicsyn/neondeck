@@ -57,6 +57,13 @@ describe('review source adapters', () => {
         'open-in-editor',
       ]),
     );
+    expect(source.promotionTargets).toEqual([
+      {
+        destination: 'github-review-draft',
+        repoFullName: 'Example/Repo',
+        prNumber: 42,
+      },
+    ]);
     expect(reviewSourceDataAttributes(source)).toMatchObject({
       'data-review-source-kind': 'github-pr',
       'data-review-revision-id': 'head-sha',
@@ -79,11 +86,23 @@ describe('review source adapters', () => {
       id: 'prepared-diff:prepared-1',
       revision: worktreeRevision,
       repository: { worktreeId: 'worktree-1', localAccess: true },
+      promotionTargets: [
+        {
+          destination: 'prepared-diff-revision',
+          preparedDiffId: 'prepared-1',
+        },
+      ],
     });
     expect(kilo).toMatchObject({
       id: 'kilo-result:kilo-1',
       revision: worktreeRevision,
       files: [{ patchState: 'available' }],
+      promotionTargets: [
+        {
+          destination: 'prepared-diff-revision',
+          preparedDiffId: 'prepared-1',
+        },
+      ],
     });
   });
 
@@ -105,6 +124,8 @@ describe('review source adapters', () => {
       id: 'repo-edit-event:event-1',
       revision: { id: 'patch-sha' },
     });
+    expect(skill.promotionTargets).toEqual([]);
+    expect(event.promotionTargets).toEqual([]);
   });
 
   it('keeps unavailable revisions explicit instead of synthesizing identities', () => {
@@ -204,6 +225,7 @@ function kiloTask(): KiloTaskRecord {
     createdAt: '2026-07-18T00:00:00.000Z',
     updatedAt: '2026-07-18T00:00:00.000Z',
     completedAt: '2026-07-18T00:00:00.000Z',
+    preparedDiffId: 'prepared-1',
   };
 }
 

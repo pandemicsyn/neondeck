@@ -16,6 +16,10 @@ Navigation note (2026-07-18): the focused PR workbench now uses the shared canon
 
 Finding note (2026-07-18): Phase B step 3 is complete. The focused PR workbench consumes the shared process-ephemeral typed finding contract and targeted surface event stream, projects only current-revision active findings into Pierre inline annotations, the canonical finding cursor, and semantic tree counts/severity, and keeps stale, resolved, dismissed, promoted, and currently unanchorable findings truthful in the inspector with full retained provenance. Local dismissal uses the existing source/revision-bound endpoint and does not create GitHub comments or prepared-diff mutations. File filtering now matches current path, previous path, and active finding title/explanation without replacing Pierre virtualization or canonical navigation order. A bounded 305-file/200-finding unit fixture emits annotations only for loaded, validated anchors. The retained Node 26.4.0 arm64 fixture harness was rerun with large-case medians of 74.9 ms for the tree, 282.5 ms for the first patch, and 0 ms for the in-process thread projection; all targets pass. Those run results are recorded here while `benchmarks/results/review-fixture-baseline.json` remains unchanged to preserve its prior historical samples. Explicit GitHub draft/prepared-revision promotion remains Phase B step 4, and broader refresh/orientation behavior remains Phase B step 5.
 
+Promotion note (2026-07-18): Phase B step 4 is complete. The versioned source and finding contracts now declare bounded destination metadata, and one source/revision/surface/finding-bound API validates lifecycle, capability, exact line or resolved-hunk anchor, confirmation, and durable target before marking a finding promoted. GitHub findings seed the existing local review draft/comment store with preserved single- or multi-line anchors and Neon provenance; submission remains a separate existing action. Prepared and prepared-backed Kilo findings reuse the existing typed prepared-diff revision request transition, retain its authority/approval/recovery path, and cannot start a revision run. Exact retries reuse the recorded destination, target failures remain retryable, delayed completions cannot regress a newer lifecycle, and only the targeted surface receives the bounded lifecycle event. The focused PR workbench and prepared/prepared-backed Kilo viewers expose descriptive, pending-safe controls and retain promoted findings as history while active counts drop; unsupported Kilo results explain that findings remain local-only. Each promotion loads at most one requested patch. Prepared promotion also recomputes the current worktree revision from changed-file identity metadata immediately before transition, without eagerly loading the changeset's patches.
+
+Current sequencing note (2026-07-18): Phase B is the stopping milestone. Complete step 5, then perform a Phase B completion audit and pause implementation. Preserve Phases C–E below as planned future work; do not treat the pause as completion or deletion of those items.
+
 Related plans:
 
 - `.plans/PR_REVIEW_PERF_PLAN.md` — complete-for-now large-PR data-path and performance workstream with explicit deferred misses
@@ -552,7 +556,7 @@ before relaxing a gate.
 1. **Completed —** Add review-map decorations and pure cross-file cursors.
 2. **Completed —** Add visible navigation controls, scoped shortcuts, and help.
 3. **Completed —** Add typed Neon finding application and inline rendering with provenance, local dismissal, finding-summary filtering, and cross-file synchronization.
-4. Add explicit promote-to-draft and promote-to-revision flows.
+4. **Completed —** Add explicit promote-to-draft and promote-to-revision flows.
 5. Add revision-aware invalidation and refresh preservation.
 
 ### Phase C — Focused changeset workbench

@@ -20,12 +20,23 @@ export {
   reviewSurfaceFindingsClearSchema,
   reviewSurfaceFindingsDismissActionSchema,
   reviewSurfaceFindingsDismissSchema,
+  reviewSurfaceFindingPromoteSchema,
   reviewSurfaceIdInputSchema,
   reviewSurfaceNavigationAckInputSchema,
   reviewSurfaceNavigateInputSchema,
   reviewSurfaceNavigationRequestSchema,
   reviewSurfaceSnapshotSchema,
 } from './schemas';
+export {
+  createDefaultReviewSurfacePromotionTarget,
+  findingReason,
+  ReviewSurfaceFindingPromotionService,
+} from './promotion';
+export type {
+  ReviewSurfacePromotionDependencies,
+  ReviewSurfacePromotionTarget,
+  ReviewSurfacePromotionTargetResult,
+} from './promotion';
 export {
   neondeckReviewSurfaceActions,
   neondeckReviewSurfaceTools,

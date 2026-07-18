@@ -4,16 +4,26 @@ import type { NeonFindingAnchorResolution } from './review-findings';
 import { findingAnchorLabel, neonFindingAnnotationId } from './review-findings';
 
 export function PrReviewNeonFindingAnnotation({
+  actionsLocked = false,
   compact,
   finding,
   isDismissing,
+  isPromoting = false,
   onDismiss,
+  onPromote,
+  promoteLabel,
+  promotionDisabledReason,
   selected,
 }: {
+  actionsLocked?: boolean;
   compact: boolean;
   finding: NeonReviewFinding;
   isDismissing: boolean;
+  isPromoting?: boolean;
   onDismiss: (finding: NeonReviewFinding) => void;
+  onPromote?: (finding: NeonReviewFinding) => void;
+  promoteLabel?: string;
+  promotionDisabledReason?: string | null;
   selected: boolean;
 }) {
   const status = findingStatusLabel(finding);
@@ -37,12 +47,29 @@ export function PrReviewNeonFindingAnnotation({
         </p>
       ) : null}
       <FindingProvenance finding={finding} />
+      <FindingPromotionHistory finding={finding} />
       {finding.lifecycle.state === 'active' ||
       finding.lifecycle.state === 'stale' ? (
         <div className="pr-review-inline-actions">
+          {onPromote && promoteLabel && finding.lifecycle.state === 'active' ? (
+            <button
+              aria-label={`${promoteLabel}: ${finding.title}`}
+              disabled={
+                actionsLocked ||
+                isDismissing ||
+                isPromoting ||
+                Boolean(promotionDisabledReason)
+              }
+              onClick={() => onPromote(finding)}
+              title={promotionDisabledReason ?? undefined}
+              type="button"
+            >
+              {isPromoting ? 'Promoting' : promoteLabel}
+            </button>
+          ) : null}
           <button
             aria-label={`Dismiss Neon finding: ${finding.title}`}
-            disabled={isDismissing}
+            disabled={actionsLocked || isDismissing || isPromoting}
             onClick={() => onDismiss(finding)}
             type="button"
           >
@@ -55,18 +82,28 @@ export function PrReviewNeonFindingAnnotation({
 }
 
 export function PrReviewNeonFindingsPanel({
+  actionsLocked = () => false,
   activePath,
   findings,
   isDismissing,
+  isPromoting = () => false,
   onDismiss,
+  onPromote,
+  promoteLabel,
+  promotionDisabledReason,
   onSelect,
   resolutionFor,
   selectedAnnotationId,
 }: {
+  actionsLocked?: (findingId: string) => boolean;
   activePath: string | null;
   findings: readonly NeonReviewFinding[];
   isDismissing: (findingId: string) => boolean;
+  isPromoting?: (findingId: string) => boolean;
   onDismiss: (finding: NeonReviewFinding) => void;
+  onPromote?: (finding: NeonReviewFinding) => void;
+  promoteLabel?: string;
+  promotionDisabledReason?: (finding: NeonReviewFinding) => string | null;
   onSelect: (finding: NeonReviewFinding) => void;
   resolutionFor: (finding: NeonReviewFinding) => NeonFindingAnchorResolution;
   selectedAnnotationId: string | null;
@@ -122,6 +159,7 @@ export function PrReviewNeonFindingsPanel({
                 </p>
               ) : null}
               <FindingProvenance finding={finding} />
+              <FindingPromotionHistory finding={finding} />
               <div className="pr-review-inline-actions">
                 {finding.lifecycle.state === 'active' ? (
                   <button
@@ -142,7 +180,11 @@ export function PrReviewNeonFindingsPanel({
                 finding.lifecycle.state === 'stale' ? (
                   <button
                     aria-label={`Dismiss locally: ${controlContext}`}
-                    disabled={isDismissing(finding.id)}
+                    disabled={
+                      actionsLocked(finding.id) ||
+                      isDismissing(finding.id) ||
+                      isPromoting(finding.id)
+                    }
                     onClick={() => onDismiss(finding)}
                     type="button"
                   >
@@ -151,12 +193,43 @@ export function PrReviewNeonFindingsPanel({
                       : 'Dismiss locally'}
                   </button>
                 ) : null}
+                {finding.lifecycle.state === 'active' &&
+                onPromote &&
+                promoteLabel ? (
+                  <button
+                    aria-label={`${promoteLabel}: ${controlContext}`}
+                    disabled={
+                      actionsLocked(finding.id) ||
+                      isDismissing(finding.id) ||
+                      isPromoting(finding.id) ||
+                      Boolean(promotionDisabledReason?.(finding))
+                    }
+                    onClick={() => onPromote(finding)}
+                    title={promotionDisabledReason?.(finding) ?? undefined}
+                    type="button"
+                  >
+                    {isPromoting(finding.id) ? 'Promoting' : promoteLabel}
+                  </button>
+                ) : null}
               </div>
             </article>
           );
         })}
       </div>
     </section>
+  );
+}
+
+function FindingPromotionHistory({ finding }: { finding: NeonReviewFinding }) {
+  const promotion = finding.lifecycle.promotion;
+  if (!promotion) return null;
+  return (
+    <p className="pr-review-neon-finding-anchor-status">
+      Destination:{' '}
+      {promotion.destination === 'github-review-draft'
+        ? 'local GitHub review draft (submission remains separate)'
+        : 'prepared-diff revision request (execution remains separate)'}
+    </p>
   );
 }
 

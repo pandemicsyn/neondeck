@@ -8,6 +8,8 @@ import type {
 } from '../../../shared/review-surface';
 import type {
   NeonReviewFinding,
+  NeonReviewFindingPromotion,
+  ReviewSurfaceFindingPromoteRequest,
   ReviewSurfaceFindingsDismissRequest,
 } from '../../../shared/review-finding';
 import { dashboardEventHub } from './event-hub';
@@ -77,6 +79,24 @@ export function dismissReviewSurfaceFindings(
     findingIds: string[];
     count: number;
   }>(`${reviewSurfaceUrl(surfaceId)}/findings/dismiss`, request);
+}
+
+export function promoteReviewSurfaceFinding(
+  surfaceId: string,
+  request: ReviewSurfaceFindingPromoteRequest,
+) {
+  return postJson<{
+    ok: true;
+    action: 'promote';
+    changed: boolean;
+    message: string;
+    surfaceId: string;
+    revisionKey: string | null;
+    findings: NeonReviewFinding[];
+    findingIds: string[];
+    count: number;
+    promotion?: NeonReviewFindingPromotion;
+  }>(`${reviewSurfaceUrl(surfaceId)}/findings/promote`, request);
 }
 
 export function navigateReviewSurface(

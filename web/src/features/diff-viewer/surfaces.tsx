@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import type {
-  AutopilotPreparedDiff,
-  DiffSummary,
-  KiloTaskRecord,
-  LearningCandidate,
-  RepoEditEvent,
+import {
+  type AutopilotPreparedDiff,
+  type DiffSummary,
+  type KiloTaskRecord,
+  type LearningCandidate,
+  type RepoEditEvent,
 } from '../../api';
 import { Badge, MiniEmpty } from '../../components/ui';
 import { queryErrorMessage } from '../../lib/query';
@@ -21,6 +21,7 @@ import {
   useRepoDiff,
 } from './queries';
 import type { DiffFilePatch } from './types';
+import { usePreparedFindingReview } from './use-prepared-finding-review';
 import { DiffWorkerProvider, UnifiedPatchView } from './DiffViewer';
 import {
   kiloResultReviewSource,
@@ -86,6 +87,12 @@ export function PreparedDiffReview({ diff }: { diff: AutopilotPreparedDiff }) {
       viewFiles,
     ],
   );
+  const findingReview = usePreparedFindingReview({
+    activePath,
+    files: viewFiles,
+    onActivePathChange: setActivePath,
+    source,
+  });
 
   if (filesQuery.isLoading) {
     return <MiniEmpty label="Loading changed files." />;
@@ -102,15 +109,25 @@ export function PreparedDiffReview({ diff }: { diff: AutopilotPreparedDiff }) {
   return (
     <MultiFileView
       activePath={activePath}
+      annotationsByPath={findingReview.annotationsByPath}
       detail={`${diff.verificationStatus} verification - ${diff.pushApprovalStatus} push`}
       emptyLabel="No prepared-diff files."
       files={viewFiles}
       isLoadingPatch={Boolean(activePath) && filePatchQuery.isLoading}
       onActivePathChange={setActivePath}
+      onReviewSurfaceFindingsChange={
+        findingReview.onReviewSurfaceFindingsChange
+      }
+      onReviewSurfaceIdChange={findingReview.onReviewSurfaceIdChange}
       patchError={
         filePatchQuery.error ? queryErrorMessage(filePatchQuery.error) : null
       }
       source={source}
+      inspector={findingReview.inspector}
+      inspectorLabel={findingReview.inspectorLabel}
+      renderAnnotation={findingReview.renderAnnotation}
+      reviewMapByPath={findingReview.reviewMapByPath}
+      selectedAnnotationId={findingReview.selectedAnnotationId}
       title={diff.title}
       tone="primary"
     />
@@ -161,6 +178,7 @@ export function SkillPatchDiffReview({
 }
 
 export function KiloTaskDiffReview({ task }: { task: KiloTaskRecord }) {
+  const [activePath, setActivePath] = useState<string | null>(null);
   const repoDiffQuery = useRepoDiff({
     repoId: task.repoId,
     worktreeId: task.worktreeId,
@@ -186,6 +204,16 @@ export function KiloTaskDiffReview({ task }: { task: KiloTaskRecord }) {
     () => kiloResultReviewSource(task, files, repoDiffQuery.data?.revision),
     [files, repoDiffQuery.data?.revision, task],
   );
+  useEffect(() => {
+    if (activePath && files.some((file) => file.path === activePath)) return;
+    setActivePath(firstRenderablePath(files) ?? null);
+  }, [activePath, files]);
+  const findingReview = usePreparedFindingReview({
+    activePath,
+    files,
+    onActivePathChange: setActivePath,
+    source,
+  });
 
   if (repoDiffQuery.isLoading) {
     return <MiniEmpty label="Loading Kilo diff." />;
@@ -201,13 +229,25 @@ export function KiloTaskDiffReview({ task }: { task: KiloTaskRecord }) {
 
   return (
     <MultiFileView
+      activePath={activePath}
+      annotationsByPath={findingReview.annotationsByPath}
       detail={summary ? summaryLabel(summary) : task.cwd}
       emptyLabel="No Kilo changes to render."
       files={files}
+      inspector={findingReview.inspector}
+      inspectorLabel={findingReview.inspectorLabel}
+      onActivePathChange={setActivePath}
+      onReviewSurfaceFindingsChange={
+        findingReview.onReviewSurfaceFindingsChange
+      }
+      onReviewSurfaceIdChange={findingReview.onReviewSurfaceIdChange}
       patchError={
         repoDiffQuery.error ? queryErrorMessage(repoDiffQuery.error) : null
       }
       source={source}
+      renderAnnotation={findingReview.renderAnnotation}
+      reviewMapByPath={findingReview.reviewMapByPath}
+      selectedAnnotationId={findingReview.selectedAnnotationId}
       title={task.title}
       tone="violet"
     />

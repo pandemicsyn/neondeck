@@ -535,6 +535,7 @@ export async function postGitHubPrReviewDraftComment(
   input: v.InferInput<typeof prReviewDraftCommentInputSchema>,
   paths: RuntimePaths = runtimePaths(),
   dependencies: PrEventStateDependencies = {},
+  metadata: { origin?: 'human' | 'neon' } = {},
 ): Promise<PrEventActionResult> {
   await ensureRuntimeHome(paths);
   const parsedTarget = v.safeParse(prEventTargetInputSchema, targetInput);
@@ -597,6 +598,7 @@ export async function postGitHubPrReviewDraftComment(
       startLine: parsed.output.startLine ?? null,
       startSide: parsed.output.startSide ?? null,
       body: parsed.output.body,
+      origin: metadata.origin,
       sourceFindingId: parsed.output.sourceFindingId ?? null,
     });
     return okResult(

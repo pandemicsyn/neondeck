@@ -4,6 +4,7 @@ import {
   reviewSurfaceFindingsApplySchema,
   reviewSurfaceFindingsClearSchema,
   reviewSurfaceFindingsDismissSchema,
+  reviewSurfaceFindingPromoteSchema,
   localApiFindingProvenance,
   reviewSurfaceNavigationAckInputSchema,
   reviewSurfaceNavigationRequestSchema,
@@ -11,10 +12,12 @@ import {
   reviewSurfaceSnapshotSchema,
   stampReviewFindingSubmissions,
   type ReviewSurfaceRegistry,
+  ReviewSurfaceFindingPromotionService,
 } from '../../modules/review-surfaces';
 
 export function createReviewSurfaceRoutes(
   registry: ReviewSurfaceRegistry = reviewSurfaceRegistry,
+  promotionService = new ReviewSurfaceFindingPromotionService(registry),
 ) {
   const routes = new Hono();
 
@@ -92,6 +95,16 @@ export function createReviewSurfaceRoutes(
     return findingResult(
       c,
       registry.clearFindings(c.req.param('surfaceId'), parsed.output),
+    );
+  });
+
+  routes.post('/review-surfaces/:surfaceId/findings/promote', async (c) => {
+    const body = await readJson(c);
+    const parsed = v.safeParse(reviewSurfaceFindingPromoteSchema, body);
+    if (!parsed.success) return invalidInput(c, parsed.issues);
+    return findingResult(
+      c,
+      await promotionService.promote(c.req.param('surfaceId'), parsed.output),
     );
   });
 

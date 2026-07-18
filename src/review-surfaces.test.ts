@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   neonReviewFindingLimits,
   neonReviewFindingSchemaVersion,
@@ -16,9 +16,12 @@ import {
 } from '../shared/review-surface';
 import {
   createReviewSurfaceContextPage,
+  createDefaultReviewSurfacePromotionTarget,
   reviewSurfaceFindingsApplyAction,
   reviewSurfaceRegistry,
   ReviewSurfaceRegistry,
+  ReviewSurfaceFindingPromotionService,
+  type ReviewSurfacePromotionTarget,
 } from './modules/review-surfaces';
 import { runWithFlueExecutionContextForTests } from './modules/flue/execution-context';
 import { createReviewSurfaceRoutes } from './server/routes/review-surfaces';
@@ -929,13 +932,715 @@ describe('review surface registry', () => {
       events.filter((event) => event.action === 'findings-changed'),
     ).toHaveLength(3);
   });
+
+  it('promotes a current GitHub finding once and publishes only to its surface', async () => {
+    const promoteTarget = vi.fn<ReviewSurfacePromotionTarget>(async () => ({
+      ok: true,
+      promotion: {
+        destination: 'github-review-draft',
+        targetId: 'comment-1',
+        containerId: 'draft-1',
+      },
+    }));
+    const { app, registry } = harness(promoteTarget);
+    const events: ReviewSurfaceChangeEvent[] = [];
+    registry.subscribe((event) => events.push(event));
+    await register(app, snapshot('surface-a'));
+    await register(app, snapshot('surface-b'));
+    await apply(app, 'surface-a', [finding('finding-a')]);
+    const request = promotionRequest('finding-a', 'request-1');
+
+    const response = await promote(app, 'surface-a', request);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      findings: [
+        {
+          id: 'finding-a',
+          lifecycle: {
+            state: 'promoted',
+            promotion: {
+              destination: 'github-review-draft',
+              requestId: 'request-1',
+              targetId: 'comment-1',
+              containerId: 'draft-1',
+            },
+          },
+        },
+      ],
+    });
+    expect(promoteTarget).toHaveBeenCalledTimes(1);
+    expect(promoteTarget.mock.calls[0]?.[0]).toMatchObject({
+      finding: {
+        file: 'src/app.ts',
+        anchor: {
+          kind: 'line-range',
+          side: 'additions',
+          startLine: 10,
+          endLine: 11,
+        },
+      },
+      request: {
+        destination: 'github-review-draft',
+        anchor: { side: 'additions', startLine: 10, endLine: 11 },
+      },
+    });
+    expect(registry.readFindings('surface-b').count).toBe(0);
+    expect(
+      events.filter((event) => event.findings?.action === 'promoted'),
+    ).toEqual([
+      expect.objectContaining({
+        surfaceId: 'surface-a',
+        findings: expect.objectContaining({ findingIds: ['finding-a'] }),
+      }),
+    ]);
+
+    const retry = await promote(app, 'surface-a', request);
+    expect(retry.status).toBe(200);
+    expect(promoteTarget).toHaveBeenCalledTimes(1);
+    const conflictingRetry = await promote(app, 'surface-a', {
+      ...request,
+      anchor: { side: 'additions', startLine: 10, endLine: 10 },
+    });
+    expect(conflictingRetry.status).toBe(409);
+    await expect(conflictingRetry.json()).resolves.toMatchObject({
+      error: { code: 'promotion-request-conflict' },
+    });
+    expect(promoteTarget).toHaveBeenCalledTimes(1);
+    const secondActivation = await promote(
+      app,
+      'surface-a',
+      promotionRequest('finding-a', 'request-2'),
+    );
+    expect(secondActivation.status).toBe(409);
+    await expect(secondActivation.json()).resolves.toMatchObject({
+      error: { code: 'already-promoted' },
+    });
+  });
+
+  it('replays an exact retained promotion after completed-cache eviction and rejects altered input', async () => {
+    const promoteTarget = vi.fn<ReviewSurfacePromotionTarget>(
+      async (candidate) => ({
+        ok: true,
+        promotion: {
+          destination: 'github-review-draft',
+          targetId: `comment-${candidate.finding.id}`,
+          containerId: 'draft-shared',
+        },
+      }),
+    );
+    const { promotionService, registry } = harness(promoteTarget);
+    const firstRequest = promotionRequest('finding-0', 'request-0');
+    for (let index = 0; index <= 400; index += 1) {
+      const surfaceId = `surface-cache-${index}`;
+      const findingId = `finding-${index}`;
+      registry.upsert(snapshot(surfaceId));
+      registry.applyFindings(surfaceId, {
+        revisionKey: 'git-commit::head-sha',
+        findings: [finding(findingId)],
+      });
+      await expect(
+        promotionService.promote(
+          surfaceId,
+          promotionRequest(findingId, `request-${index}`),
+        ),
+      ).resolves.toMatchObject({ ok: true, changed: true });
+    }
+    registry.applyFindings('surface-cache-0', {
+      revisionKey: 'git-commit::head-sha',
+      findings: [finding('finding-0-active')],
+    });
+
+    await expect(
+      promotionService.promote('surface-cache-0', {
+        ...firstRequest,
+        findingId: 'finding-0-active',
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'promotion-request-conflict' },
+    });
+    expect(promoteTarget).toHaveBeenCalledTimes(401);
+
+    await expect(
+      promotionService.promote('surface-cache-0', firstRequest),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      findings: [
+        {
+          lifecycle: {
+            promotion: {
+              requestId: 'request-0',
+              requestFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+            },
+          },
+        },
+      ],
+    });
+    expect(promoteTarget).toHaveBeenCalledTimes(401);
+    await expect(
+      promotionService.promote('surface-cache-0', {
+        ...firstRequest,
+        reason: 'Altered input using the retained request id.',
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'promotion-request-conflict' },
+    });
+    expect(promoteTarget).toHaveBeenCalledTimes(401);
+  });
+
+  it('promotes a valid finding id containing a lone surrogate through the body-only route', async () => {
+    const findingId = '\ud800';
+    const promoteTarget = vi.fn<ReviewSurfacePromotionTarget>(async () => ({
+      ok: true,
+      promotion: {
+        destination: 'github-review-draft',
+        targetId: 'comment-surrogate',
+        containerId: 'draft-surrogate',
+      },
+    }));
+    const { app } = harness(promoteTarget);
+    await register(app, snapshot('surface-surrogate'));
+    await apply(app, 'surface-surrogate', [finding(findingId)]);
+
+    const response = await promote(
+      app,
+      'surface-surrogate',
+      promotionRequest(findingId, 'request-surrogate'),
+    );
+
+    expect(response.status).toBe(200);
+    expect(promoteTarget).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects mismatched or unbounded destination metadata without changing lifecycle', async () => {
+    const promoteTarget = vi.fn<ReviewSurfacePromotionTarget>(async () => ({
+      ok: true,
+      promotion: {
+        destination: 'prepared-diff-revision',
+        targetId: 'x'.repeat(
+          neonReviewFindingLimits.maxPromotionTargetIdLength + 1,
+        ),
+        containerId: 'prepared-1',
+      },
+    }));
+    const { app, registry } = harness(promoteTarget);
+    await register(app, snapshot('surface-metadata'));
+    await apply(app, 'surface-metadata', [finding('finding-metadata')]);
+
+    const response = await promote(
+      app,
+      'surface-metadata',
+      promotionRequest('finding-metadata', 'invalid-metadata'),
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: 'promotion-target-failed' },
+    });
+    expect(
+      registry.readFindings('surface-metadata').findings?.[0]?.lifecycle.state,
+    ).toBe('active');
+  });
+
+  it('rejects stale, mismatched, unsupported, unavailable-anchor, and unconfirmed promotions before target mutation', async () => {
+    const promoteTarget = vi.fn<ReviewSurfacePromotionTarget>();
+    const { app, registry } = harness(promoteTarget);
+    await register(app, snapshot('surface-a'));
+    await apply(app, 'surface-a', [finding('finding-a')]);
+
+    const wrongSource = await promote(app, 'surface-a', {
+      ...promotionRequest('finding-a', 'wrong-source'),
+      sourceId: 'github-pr:example/other#42',
+    });
+    expect(wrongSource.status).toBe(409);
+    const wrongRevision = await promote(app, 'surface-a', {
+      ...promotionRequest('finding-a', 'wrong-revision'),
+      revisionKey: 'git-commit::other',
+    });
+    expect(wrongRevision.status).toBe(409);
+    const wrongAnchor = await promote(app, 'surface-a', {
+      ...promotionRequest('finding-a', 'wrong-anchor'),
+      anchor: { side: 'additions', startLine: 10, endLine: 10 },
+    });
+    expect(wrongAnchor.status).toBe(409);
+    await register(app, snapshot('surface-b'));
+    const wrongSurface = await promote(
+      app,
+      'surface-b',
+      promotionRequest('finding-a', 'wrong-surface'),
+    );
+    expect(wrongSurface.status).toBe(409);
+    await expect(wrongSurface.json()).resolves.toMatchObject({
+      error: { code: 'finding-unavailable' },
+    });
+
+    await register(app, snapshot('surface-stale'));
+    await apply(app, 'surface-stale', [finding('stale-finding')]);
+    registry.upsert(snapshot('surface-stale', 'new-head'));
+    const stale = await promote(
+      app,
+      'surface-stale',
+      promotionRequest('stale-finding', 'stale'),
+    );
+    expect(stale.status).toBe(409);
+    await expect(stale.json()).resolves.toMatchObject({
+      error: { code: 'stale-revision' },
+    });
+
+    registry.upsert({
+      ...snapshot('surface-a'),
+      source: {
+        ...snapshot('surface-a').source,
+        capabilities: [],
+        promotionTargets: [],
+      },
+    });
+    const capabilityMismatch = await promote(
+      app,
+      'surface-a',
+      promotionRequest('finding-a', 'capability'),
+    );
+    expect(capabilityMismatch.status).toBe(409);
+    await expect(capabilityMismatch.json()).resolves.toMatchObject({
+      error: { code: 'capability-mismatch' },
+    });
+
+    const unsupported = {
+      ...snapshot('surface-unsupported'),
+      source: {
+        ...snapshot('surface-unsupported').source,
+        id: 'repo-edit-event:event-1',
+        kind: 'repo-edit-event' as const,
+      },
+    };
+    await register(app, unsupported);
+    await apply(app, 'surface-unsupported', [
+      finding('unsupported-finding', { sourceId: unsupported.source.id }),
+    ]);
+    const unsupportedResponse = await promote(app, 'surface-unsupported', {
+      ...promotionRequest('unsupported-finding', 'unsupported'),
+      sourceId: unsupported.source.id,
+    });
+    expect(unsupportedResponse.status).toBe(409);
+    await expect(unsupportedResponse.json()).resolves.toMatchObject({
+      error: { code: 'unsupported-source' },
+      message: expect.stringContaining('local-only'),
+    });
+    expect(promoteTarget).not.toHaveBeenCalled();
+
+    const prepared = preparedSnapshot('surface-prepared');
+    await register(app, prepared);
+    await apply(
+      app,
+      'surface-prepared',
+      [
+        finding('prepared-finding', {
+          sourceId: prepared.source.id,
+          revisionKey: 'worktree-diff::diff-fingerprint',
+        }),
+      ],
+      'worktree-diff::diff-fingerprint',
+    );
+    const unconfirmed = await promote(app, 'surface-prepared', {
+      ...promotionRequest('prepared-finding', 'unconfirmed'),
+      sourceId: prepared.source.id,
+      revisionKey: 'worktree-diff::diff-fingerprint',
+      destination: 'prepared-diff-revision',
+      confirm: false,
+    });
+    expect(unconfirmed.status).toBe(409);
+    await expect(unconfirmed.json()).resolves.toMatchObject({
+      error: { code: 'confirmation-required' },
+    });
+    expect(promoteTarget).not.toHaveBeenCalled();
+  });
+
+  it('keeps target failures retryable and does not regress a newer revision after a delayed target response', async () => {
+    let attempt = 0;
+    const retryTarget = vi.fn<ReviewSurfacePromotionTarget>(async () => {
+      attempt += 1;
+      return attempt === 1
+        ? { ok: false, message: 'Temporary target failure.' }
+        : {
+            ok: true,
+            promotion: {
+              destination: 'github-review-draft',
+              targetId: 'comment-retry',
+              containerId: 'draft-retry',
+            },
+          };
+    });
+    const retryHarness = harness(retryTarget);
+    await register(retryHarness.app, snapshot('surface-retry'));
+    await apply(retryHarness.app, 'surface-retry', [finding('retry-finding')]);
+    const request = promotionRequest('retry-finding', 'retry-request');
+    const failed = await promote(retryHarness.app, 'surface-retry', request);
+    expect(failed.status).toBe(409);
+    expect(
+      retryHarness.registry.readFindings('surface-retry').findings?.[0]
+        ?.lifecycle.state,
+    ).toBe('active');
+    const retried = await promote(retryHarness.app, 'surface-retry', request);
+    expect(retried.status).toBe(200);
+    expect(retryTarget).toHaveBeenCalledTimes(2);
+
+    const target =
+      deferred<Awaited<ReturnType<ReviewSurfacePromotionTarget>>>();
+    const delayedTarget = vi.fn<ReviewSurfacePromotionTarget>(
+      () => target.promise,
+    );
+    const delayedHarness = harness(delayedTarget);
+    await register(delayedHarness.app, snapshot('surface-delayed'));
+    await apply(delayedHarness.app, 'surface-delayed', [finding('delayed')]);
+    await register(delayedHarness.app, snapshot('surface-delayed-sibling'));
+    await apply(delayedHarness.app, 'surface-delayed-sibling', [
+      finding('delayed'),
+    ]);
+    const delayedResponse = promote(
+      delayedHarness.app,
+      'surface-delayed',
+      promotionRequest('delayed', 'delayed-request'),
+    );
+    await vi.waitFor(() => expect(delayedTarget).toHaveBeenCalledTimes(1));
+    const dismissal = await delayedHarness.app.request(
+      'http://localhost/api/review-surfaces/surface-delayed-sibling/findings/dismiss',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          sourceId: 'github-pr:example/repo#42',
+          revisionKey: 'git-commit::head-sha',
+          findingIds: ['delayed'],
+          reason: 'Dismiss while promotion is delayed.',
+        }),
+      },
+    );
+    expect(dismissal.status).toBe(409);
+    await expect(dismissal.json()).resolves.toMatchObject({
+      error: { code: 'promotion-pending' },
+    });
+    expect(
+      delayedHarness.registry.readFindings('surface-delayed-sibling')
+        .findings?.[0]?.lifecycle.state,
+    ).toBe('active');
+    delayedHarness.registry.upsert(snapshot('surface-delayed', 'new-head'));
+    target.resolve({
+      ok: true,
+      promotion: {
+        destination: 'github-review-draft',
+        targetId: 'comment-delayed',
+        containerId: 'draft-delayed',
+      },
+    });
+    expect((await delayedResponse).status).toBe(200);
+    expect(
+      delayedHarness.registry.readFindings('surface-delayed').findings?.[0],
+    ).toMatchObject({
+      lifecycle: {
+        state: 'stale',
+        promotion: {
+          destination: 'github-review-draft',
+          targetId: 'comment-delayed',
+        },
+      },
+    });
+  });
+
+  it('seeds only the existing local GitHub draft path with the validated range and provenance', async () => {
+    const registry = new ReviewSurfaceRegistry();
+    registries.push(registry);
+    registry.upsert(snapshot('surface-target'));
+    registry.applyFindings('surface-target', {
+      revisionKey: 'git-commit::head-sha',
+      findings: [
+        finding('finding-range', {
+          suggestedAction: 'Keep the guard close to the read.',
+        }),
+        finding('finding-single', {
+          anchor: {
+            kind: 'line-range',
+            side: 'additions',
+            startLine: 10,
+            endLine: 10,
+          },
+        }),
+        finding('finding-unanchorable', {
+          anchor: {
+            kind: 'line-range',
+            side: 'additions',
+            startLine: 20,
+            endLine: 20,
+          },
+        }),
+      ],
+    });
+    const request = promotionRequest('finding-range', 'target-request');
+    const validated = registry.validateFindingPromotion(
+      'surface-target',
+      request,
+    );
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) throw new Error(validated.result.message);
+
+    const putDraft = vi.fn<(...args: unknown[]) => Promise<unknown>>(
+      async () => ({
+        ok: true,
+        action: 'github_pr_review_draft_put',
+        changed: true,
+        message: 'saved',
+        data: {
+          draft: { id: 'draft-1', headSha: 'head-sha', comments: [] },
+        },
+      }),
+    );
+    const postComment = vi.fn<
+      (
+        target: unknown,
+        input: Record<string, unknown>,
+        paths: unknown,
+        dependencies: unknown,
+        metadata: unknown,
+      ) => Promise<unknown>
+    >(async (_target, input, _paths, _dependencies, _metadata) => ({
+      ok: true,
+      action: 'github_pr_review_draft_comment_post',
+      changed: true,
+      message: 'saved comment',
+      data: {
+        draft: {
+          id: 'draft-1',
+          comments: [
+            {
+              id: 'comment-1',
+              sourceFindingId: input.sourceFindingId,
+            },
+          ],
+        },
+      },
+    }));
+    const target = createDefaultReviewSurfacePromotionTarget(undefined, {
+      readGitHubFileDiff: (async () => ({
+        ok: true,
+        action: 'github_pr_file_diff_get',
+        changed: false,
+        message: 'read patch',
+        data: { diff: promotionPatch() },
+      })) as never,
+      getGitHubDraft: (async () => ({
+        ok: true,
+        action: 'github_pr_review_draft_get',
+        changed: false,
+        message: 'no draft',
+        data: { draft: null },
+      })) as never,
+      putGitHubDraft: putDraft as never,
+      postGitHubDraftComment: postComment as never,
+    });
+    const result = await target(validated.value);
+
+    expect(result).toMatchObject({
+      ok: true,
+      promotion: {
+        destination: 'github-review-draft',
+        targetId: 'comment-1',
+        containerId: 'draft-1',
+      },
+    });
+    expect(putDraft).toHaveBeenCalledWith(
+      { repo: 'example/repo', prNumber: 42 },
+      { headSha: 'head-sha' },
+      expect.any(Object),
+    );
+    expect(postComment.mock.calls[0]?.[1]).toMatchObject({
+      draftId: 'draft-1',
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 11,
+      startLine: 10,
+      startSide: 'RIGHT',
+      body: expect.stringContaining('Keep the guard close to the read.'),
+      sourceFindingId: expect.stringMatching(/^neon_surface_[a-f0-9]{32}$/),
+    });
+    expect(postComment.mock.calls[0]?.[1].body).toContain(
+      'role display-assistant; model openai/gpt-5.6; run run-1',
+    );
+    expect(postComment.mock.calls[0]?.[4]).toEqual({ origin: 'neon' });
+
+    const singleRequest = {
+      ...promotionRequest('finding-single', 'single-request'),
+      anchor: { side: 'additions' as const, startLine: 10, endLine: 10 },
+    };
+    const single = registry.validateFindingPromotion(
+      'surface-target',
+      singleRequest,
+    );
+    expect(single.ok).toBe(true);
+    if (!single.ok) throw new Error(single.result.message);
+    await expect(target(single.value)).resolves.toMatchObject({ ok: true });
+    expect(postComment.mock.calls[1]?.[1]).toMatchObject({
+      line: 10,
+      startLine: null,
+      startSide: null,
+    });
+
+    const unanchorableRequest = {
+      ...promotionRequest('finding-unanchorable', 'unanchorable-request'),
+      anchor: { side: 'additions' as const, startLine: 20, endLine: 20 },
+    };
+    const unanchorable = registry.validateFindingPromotion(
+      'surface-target',
+      unanchorableRequest,
+    );
+    expect(unanchorable.ok).toBe(true);
+    if (!unanchorable.ok) throw new Error(unanchorable.result.message);
+    await expect(target(unanchorable.value)).resolves.toMatchObject({
+      ok: false,
+      message: expect.stringContaining('anchor is unavailable'),
+    });
+    expect(putDraft).toHaveBeenCalledTimes(2);
+    expect(postComment).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects an existing stale GitHub draft even when the anchor line still exists on the new head', async () => {
+    const registry = new ReviewSurfaceRegistry();
+    registries.push(registry);
+    registry.upsert(snapshot('surface-stale-draft'));
+    registry.applyFindings('surface-stale-draft', {
+      revisionKey: 'git-commit::head-sha',
+      findings: [finding('finding-same-line')],
+    });
+    const validated = registry.validateFindingPromotion(
+      'surface-stale-draft',
+      promotionRequest('finding-same-line', 'stale-draft-request'),
+    );
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) throw new Error(validated.result.message);
+    const putDraft = vi.fn<(...args: unknown[]) => Promise<unknown>>();
+    const postComment = vi.fn<(...args: unknown[]) => Promise<unknown>>();
+    const target = createDefaultReviewSurfacePromotionTarget(undefined, {
+      readGitHubFileDiff: (async () => ({
+        ok: true,
+        action: 'github_pr_file_diff_get',
+        changed: false,
+        message: 'current patch still has the same line',
+        data: { diff: promotionPatch() },
+      })) as never,
+      getGitHubDraft: (async () => ({
+        ok: true,
+        action: 'github_pr_review_draft_get',
+        changed: false,
+        message: 'old draft',
+        data: {
+          draft: {
+            id: 'draft-old',
+            headSha: 'previous-head-sha',
+            comments: [],
+          },
+        },
+      })) as never,
+      putGitHubDraft: putDraft as never,
+      postGitHubDraftComment: postComment as never,
+    });
+
+    await expect(target(validated.value)).resolves.toMatchObject({
+      ok: false,
+      message: expect.stringContaining('Refresh and re-anchor'),
+    });
+    expect(putDraft).not.toHaveBeenCalled();
+    expect(postComment).not.toHaveBeenCalled();
+  });
+
+  it('routes prepared promotion through the existing revision request service without running a revision', async () => {
+    const registry = new ReviewSurfaceRegistry();
+    registries.push(registry);
+    const prepared = preparedSnapshot('surface-prepared-target');
+    registry.upsert(prepared);
+    registry.applyFindings('surface-prepared-target', {
+      revisionKey: 'worktree-diff::diff-fingerprint',
+      findings: [
+        finding('prepared-finding', {
+          sourceId: prepared.source.id,
+          revisionKey: 'worktree-diff::diff-fingerprint',
+          suggestedAction: 'Add a focused regression test.',
+        }),
+      ],
+    });
+    const request = {
+      ...promotionRequest('prepared-finding', 'prepared-target-request'),
+      sourceId: prepared.source.id,
+      revisionKey: 'worktree-diff::diff-fingerprint',
+      destination: 'prepared-diff-revision' as const,
+      confirm: true,
+      reason: 'Please revise this guard and keep the regression test focused.',
+    };
+    const validated = registry.validateFindingPromotion(
+      'surface-prepared-target',
+      request,
+    );
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) throw new Error(validated.result.message);
+    const requestRevision = vi.fn<
+      (input: Record<string, unknown>) => Promise<unknown>
+    >(async (_input) => ({
+      ok: true,
+      action: 'prepared_diff_request_revision',
+      changed: true,
+      message: 'recorded',
+      preparedDiff: { id: 'prepared-1' },
+      approvals: [{ id: 'revision-approval', approvalType: 'revision' }],
+    }));
+    const target = createDefaultReviewSurfacePromotionTarget(undefined, {
+      readPreparedFileDiff: (async () => ({
+        ok: true,
+        action: 'prepared_diff_file_diff',
+        changed: false,
+        message: 'read patch',
+        diff: promotionPatch(),
+      })) as never,
+      requestPreparedRevision: requestRevision as never,
+    });
+
+    await expect(target(validated.value)).resolves.toMatchObject({
+      ok: true,
+      promotion: {
+        destination: 'prepared-diff-revision',
+        targetId: 'revision-approval',
+        containerId: 'prepared-1',
+      },
+    });
+    expect(requestRevision).toHaveBeenCalledTimes(1);
+    expect(requestRevision.mock.calls[0]?.[0]).toMatchObject({
+      preparedDiffId: 'prepared-1',
+      approverSurface: 'surface-prepared-target',
+      reason: expect.stringContaining('Source Neon finding'),
+      findingPromotion: {
+        surfaceId: 'surface-prepared-target',
+        sourceId: 'prepared-diff:prepared-1',
+        revisionKey: 'worktree-diff::diff-fingerprint',
+        findingId: 'prepared-finding',
+        sourceFindingId: expect.stringMatching(/^neon_surface_[a-f0-9]{32}$/),
+      },
+    });
+  });
 });
 
-function harness() {
+function harness(promoteTarget?: ReviewSurfacePromotionTarget) {
   const registry = new ReviewSurfaceRegistry();
   registries.push(registry);
+  const promotionService = new ReviewSurfaceFindingPromotionService(
+    registry,
+    promoteTarget,
+  );
   return {
-    app: new Hono().route('/api', createReviewSurfaceRoutes(registry)),
+    app: new Hono().route(
+      '/api',
+      createReviewSurfaceRoutes(registry, promotionService),
+    ),
+    promotionService,
     registry,
   };
 }
@@ -989,6 +1694,13 @@ function snapshot(
         },
       ],
       capabilities: ['comments', 'refresh'],
+      promotionTargets: [
+        {
+          destination: 'github-review-draft',
+          repoFullName: 'example/repo',
+          prNumber: 42,
+        },
+      ],
       externalUrl: 'https://github.com/example/repo/pull/42',
     },
     activePath: 'src/app.ts',
@@ -1032,6 +1744,64 @@ function finding(
   };
 }
 
+function promotionRequest(findingId: string, requestId: string) {
+  return {
+    sourceId: 'github-pr:example/repo#42',
+    revisionKey: 'git-commit::head-sha',
+    findingId,
+    requestId,
+    destination: 'github-review-draft' as const,
+    anchor: { side: 'additions' as const, startLine: 10, endLine: 11 },
+    confirm: false,
+    reason: null,
+  };
+}
+
+function preparedSnapshot(surfaceId: string): ReviewSurfaceSnapshot {
+  const base = snapshot(surfaceId);
+  return {
+    ...base,
+    source: {
+      ...base.source,
+      id: 'prepared-diff:prepared-1',
+      kind: 'prepared-diff',
+      revision: resolvedReviewRevision({
+        kind: 'worktree-diff',
+        id: 'diff-fingerprint',
+      }),
+      capabilities: ['request-revision', 'refresh'],
+      promotionTargets: [
+        {
+          destination: 'prepared-diff-revision',
+          preparedDiffId: 'prepared-1',
+        },
+      ],
+    },
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
+function promotionPatch() {
+  return [
+    'diff --git a/src/app.ts b/src/app.ts',
+    '--- a/src/app.ts',
+    '+++ b/src/app.ts',
+    '@@ -9,3 +9,3 @@',
+    ' context',
+    '-old value',
+    '+new value',
+    ' tail',
+    '',
+  ].join('\n');
+}
+
 function apply(
   app: Hono,
   surfaceId: string,
@@ -1047,6 +1817,21 @@ function apply(
         revisionKey,
         findings,
       }),
+    },
+  );
+}
+
+function promote(
+  app: Hono,
+  surfaceId: string,
+  request: ReturnType<typeof promotionRequest> | Record<string, unknown>,
+) {
+  return app.request(
+    `http://localhost/api/review-surfaces/${surfaceId}/findings/promote`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(request),
     },
   );
 }

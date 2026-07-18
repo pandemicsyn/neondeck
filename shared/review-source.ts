@@ -1,4 +1,4 @@
-export const reviewSourceSchemaVersion = 1 as const;
+export const reviewSourceSchemaVersion = 2 as const;
 
 export type ReviewSourceKind =
   | 'github-pr'
@@ -32,6 +32,17 @@ export type ReviewSourceCapability =
   | 'open-in-editor'
   | 'refresh'
   | 'external-link';
+
+export type ReviewSourcePromotionTarget =
+  | {
+      destination: 'github-review-draft';
+      repoFullName: string;
+      prNumber: number;
+    }
+  | {
+      destination: 'prepared-diff-revision';
+      preparedDiffId: string;
+    };
 
 export type ReviewFileStatus =
   | 'added'
@@ -79,6 +90,7 @@ export type ReviewSourceSnapshot = {
   repository: ReviewSourceRepository;
   files: ReviewFileMetadata[];
   capabilities: ReviewSourceCapability[];
+  promotionTargets: ReviewSourcePromotionTarget[];
   externalUrl: string | null;
 };
 

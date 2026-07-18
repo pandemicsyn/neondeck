@@ -126,6 +126,13 @@ function reviewSource(): ReviewSourceSnapshot {
       patchMessage: null,
     })),
     capabilities: ['comments', 'refresh'],
+    promotionTargets: [
+      {
+        destination: 'github-review-draft',
+        repoFullName: 'example/repo',
+        prNumber: 42,
+      },
+    ],
     externalUrl: 'https://github.com/example/repo/pull/42',
   };
 }

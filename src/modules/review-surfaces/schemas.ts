@@ -8,6 +8,7 @@ import {
   type ReviewSurfaceFindingsApplyRequest,
   type ReviewSurfaceFindingsClearRequest,
   type ReviewSurfaceFindingsDismissRequest,
+  type ReviewSurfaceFindingPromoteRequest,
 } from '../../../shared/review-finding';
 import {
   reviewSourceSchemaVersion,
@@ -110,6 +111,22 @@ const reviewSourceSchema: v.GenericSchema<ReviewSourceSnapshot> = v.object({
       ]),
     ),
     v.maxLength(16),
+  ),
+  promotionTargets: v.pipe(
+    v.array(
+      v.variant('destination', [
+        v.object({
+          destination: v.literal('github-review-draft'),
+          repoFullName: identifierSchema,
+          prNumber: v.pipe(v.number(), v.integer(), v.minValue(1)),
+        }),
+        v.object({
+          destination: v.literal('prepared-diff-revision'),
+          preparedDiffId: identifierSchema,
+        }),
+      ]),
+    ),
+    v.maxLength(4),
   ),
   externalUrl: v.nullable(v.pipe(v.string(), v.maxLength(2_048))),
 });
@@ -260,7 +277,81 @@ export const neonReviewFindingSchema: v.GenericSchema<NeonReviewFinding> =
           v.maxLength(neonReviewFindingLimits.maxLifecycleReasonLength),
         ),
       ),
+      promotion: v.nullable(
+        v.object({
+          destination: v.picklist([
+            'github-review-draft',
+            'prepared-diff-revision',
+          ]),
+          requestId: v.pipe(
+            v.string(),
+            v.minLength(1),
+            v.maxLength(neonReviewFindingLimits.maxPromotionRequestIdLength),
+          ),
+          requestFingerprint: v.pipe(
+            v.string(),
+            v.length(neonReviewFindingLimits.maxPromotionFingerprintLength),
+            v.regex(/^[a-f0-9]+$/),
+          ),
+          targetId: v.pipe(
+            v.string(),
+            v.minLength(1),
+            v.maxLength(neonReviewFindingLimits.maxPromotionTargetIdLength),
+          ),
+          containerId: v.nullable(
+            v.pipe(
+              v.string(),
+              v.minLength(1),
+              v.maxLength(neonReviewFindingLimits.maxPromotionTargetIdLength),
+            ),
+          ),
+        }),
+      ),
     }),
+  });
+
+export const reviewSurfaceFindingPromoteSchema: v.GenericSchema<ReviewSurfaceFindingPromoteRequest> =
+  v.object({
+    sourceId: identifierSchema,
+    revisionKey: revisionKeySchema,
+    findingId: identifierSchema,
+    requestId: v.pipe(
+      v.string(),
+      v.minLength(1),
+      v.maxLength(neonReviewFindingLimits.maxPromotionRequestIdLength),
+    ),
+    destination: v.picklist(['github-review-draft', 'prepared-diff-revision']),
+    anchor: v.pipe(
+      v.object({
+        side: findingSideSchema,
+        startLine: v.pipe(
+          v.number(),
+          v.integer(),
+          v.minValue(1),
+          v.maxValue(neonReviewFindingLimits.maxLineNumber),
+        ),
+        endLine: v.pipe(
+          v.number(),
+          v.integer(),
+          v.minValue(1),
+          v.maxValue(neonReviewFindingLimits.maxLineNumber),
+        ),
+      }),
+      v.check(
+        (anchor) => anchor.endLine >= anchor.startLine,
+        'Promotion end line must not precede its start line.',
+      ),
+      v.check(
+        (anchor) =>
+          anchor.endLine - anchor.startLine + 1 <=
+          neonReviewFindingLimits.maxLineRangeSpan,
+        'Promotion line range exceeds the supported span.',
+      ),
+    ),
+    confirm: v.boolean(),
+    reason: v.nullable(
+      v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(4_000)),
+    ),
   });
 
 const findingBatchSchema = v.pipe(

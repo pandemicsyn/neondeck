@@ -18,6 +18,7 @@ import { reviewRevisionKey } from '../../../../shared/review-source';
 import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import {
   dismissReviewSurfaceFindings,
+  promoteReviewSurfaceFinding,
   type GitHubPrReviewDraftComment,
   type GitHubPrReviewVerdict,
   type GitHubPullRequest,
@@ -180,6 +181,10 @@ export function GitHubPrReview({
   const [dismissingFindingIds, setDismissingFindingIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [promotingFindingIds, setPromotingFindingIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const findingActionsLocked = promotingFindingIds.size > 0;
   const [navigationKind, setNavigationKind] =
     useState<ReviewCursorKind>('file');
   const [navigationTargetKey, setNavigationTargetKey] = useState<string | null>(
@@ -1143,13 +1148,89 @@ export function GitHubPrReview({
       });
     }
   };
+  const promotionUnavailableReason = (finding: NeonReviewFinding) => {
+    const resolution = neonFindingResolutions.get(finding.id);
+    if (!reviewSurfaceId || !currentReviewRevisionKey) {
+      return 'The focused review surface is still connecting.';
+    }
+    if (findingActionsLocked && !promotingFindingIds.has(finding.id)) {
+      return 'Another finding promotion is in progress.';
+    }
+    if (resolution?.state !== 'anchored') {
+      return resolution?.reason ?? 'The finding anchor is unavailable.';
+    }
+    if (
+      composer ||
+      commentEditor ||
+      replyEditor ||
+      reanchoringCommentId ||
+      anchoringFinding
+    ) {
+      return 'Finish or cancel the open review editor before promoting this finding.';
+    }
+    return null;
+  };
+  const promoteNeonFinding = async (finding: NeonReviewFinding) => {
+    const resolution = neonFindingResolutions.get(finding.id);
+    const disabledReason = promotionUnavailableReason(finding);
+    if (
+      disabledReason ||
+      resolution?.state !== 'anchored' ||
+      !reviewSurfaceId ||
+      !currentReviewRevisionKey
+    ) {
+      setStatusMessage(disabledReason ?? 'The finding cannot be promoted.');
+      return;
+    }
+    const operationToken = beginOperation();
+    setPromotingFindingIds((current) => new Set(current).add(finding.id));
+    try {
+      const result = await promoteReviewSurfaceFinding(reviewSurfaceId, {
+        sourceId: reviewSource.id,
+        revisionKey: currentReviewRevisionKey,
+        findingId: finding.id,
+        requestId: createPromotionRequestId(),
+        destination: 'github-review-draft',
+        anchor: {
+          side: resolution.side,
+          startLine: Math.min(
+            resolution.selection.start,
+            resolution.selection.end,
+          ),
+          endLine: Math.max(
+            resolution.selection.start,
+            resolution.selection.end,
+          ),
+        },
+        confirm: false,
+        reason: null,
+      });
+      await draftQuery.refetch();
+      finishOperation(operationToken, result.message);
+    } catch (error) {
+      failOperation(operationToken, error);
+    } finally {
+      setPromotingFindingIds((current) => {
+        const next = new Set(current);
+        next.delete(finding.id);
+        return next;
+      });
+    }
+  };
   const renderAnnotation = (annotation: DiffReviewAnnotation) =>
     annotation.metadata.kind === 'finding' && annotation.metadata.finding ? (
       <PrReviewNeonFindingAnnotation
+        actionsLocked={findingActionsLocked}
         compact={!isStandalone}
         finding={annotation.metadata.finding}
         isDismissing={dismissingFindingIds.has(annotation.metadata.finding.id)}
+        isPromoting={promotingFindingIds.has(annotation.metadata.finding.id)}
         onDismiss={dismissNeonFinding}
+        onPromote={promoteNeonFinding}
+        promoteLabel="Add to local draft"
+        promotionDisabledReason={promotionUnavailableReason(
+          annotation.metadata.finding,
+        )}
         selected={
           selectedContext.selectedAnnotationId === annotation.metadata.id
         }
@@ -1291,6 +1372,7 @@ export function GitHubPrReview({
     );
   };
   const findingsSidebar = {
+    actionsLocked: () => findingActionsLocked,
     activePath,
     cleanCommentCount: cleanCommentIds.length,
     draft,
@@ -1298,6 +1380,8 @@ export function GitHubPrReview({
     isDeleting: mutations.deleteComment.isPending,
     isDismissingFinding: (findingId: string) =>
       dismissingFindingIds.has(findingId),
+    isPromotingFinding: (findingId: string) =>
+      promotingFindingIds.has(findingId),
     isLoadingThreads: threadsQuery.isLoading,
     findingResolution: (finding: NeonReviewFinding) =>
       neonFindingResolutions.get(finding.id) ?? {
@@ -1308,6 +1392,9 @@ export function GitHubPrReview({
     onChooseLine: beginAnchorFinding,
     onDelete: deleteDraftComment,
     onDismissFinding: dismissNeonFinding,
+    onPromoteFinding: promoteNeonFinding,
+    promoteLabel: 'Add to local draft',
+    promotionDisabledReason: promotionUnavailableReason,
     onReanchor: (comment: GitHubPrReviewDraftComment) =>
       beginReanchorComment(comment.id, comment.path),
     onSelectFinding: selectNeonFinding,
@@ -1608,4 +1695,10 @@ function sameStringArray(
   if (left === right) return true;
   if (!left || !right || left.length !== right.length) return false;
   return left.every((value, index) => value === right[index]);
+}
+
+function createPromotionRequestId() {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? `finding-promotion:${crypto.randomUUID()}`
+    : `finding-promotion:${Date.now().toString(36)}:${Math.random().toString(36).slice(2)}`;
 }
