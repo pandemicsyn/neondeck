@@ -15,6 +15,7 @@ import type {
   DiffFilePatch,
   DiffReviewAnnotation,
   DiffViewTone,
+  FileReviewMapEntry,
 } from './types';
 import type { ReviewSourceSnapshot } from '../../../../shared/review-source';
 import { reviewSourceDataAttributes } from './review-source';
@@ -39,6 +40,7 @@ type MultiFileViewProps = {
   inspector?: ReactNode;
   inspectorLabel?: string;
   source?: ReviewSourceSnapshot;
+  reviewMapByPath?: ReadonlyMap<string, FileReviewMapEntry>;
 };
 
 export function MultiFileView({
@@ -58,6 +60,7 @@ export function MultiFileView({
   inspector,
   inspectorLabel = 'Diff inspector',
   source,
+  reviewMapByPath,
   title,
   tone = 'primary',
 }: MultiFileViewProps) {
@@ -116,6 +119,7 @@ export function MultiFileView({
         <FileTreePane
           files={files}
           onSelectPath={selectPath}
+          reviewMapByPath={reviewMapByPath}
           selectedPath={selectedFile?.path ?? null}
         />
       </aside>

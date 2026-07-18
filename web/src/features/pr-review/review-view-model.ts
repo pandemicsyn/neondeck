@@ -6,6 +6,7 @@ import {
   type GitHubPrReviewDraftComment,
   type GitHubPullRequest,
   type GitHubPullRequestReviewThread,
+  type PrReviewReportOnlyFinding,
 } from '../../api';
 import type {
   GitHubPrReviewDraftResponse,
@@ -14,7 +15,11 @@ import type {
 } from '../../api';
 import { queryErrorMessage } from '../../lib/query';
 import { patchHasContent } from '../diff-viewer/helpers';
-import type { DiffFilePatch, DiffReviewAnnotation } from '../diff-viewer/types';
+import type {
+  DiffFilePatch,
+  DiffReviewAnnotation,
+  FileReviewMapEntry,
+} from '../diff-viewer/types';
 import type { PullRequestFilePatchQueryState } from './queries';
 import {
   commentInputFromSelection,
@@ -26,6 +31,102 @@ import {
   latestThreadComment,
   threadPath,
 } from './review-ui-helpers';
+
+const findingSeverityRank = {
+  nit: 0,
+  minor: 1,
+  major: 2,
+  critical: 3,
+} as const;
+
+export function prReviewMapByPath({
+  draft,
+  files,
+  findings,
+  staleCommentIds,
+  unresolvedThreads,
+}: {
+  draft: GitHubPrReviewDraft | null;
+  files: DiffFilePatch[];
+  findings: PrReviewReportOnlyFinding[];
+  staleCommentIds: ReadonlySet<string>;
+  unresolvedThreads: GitHubPullRequestReviewThread[];
+}) {
+  const result = new Map<string, FileReviewMapEntry>();
+  const currentPathByAlias = reviewMapPathAliases(files);
+  for (const file of files) {
+    result.set(file.path, emptyFileReviewMapEntry(file.path));
+  }
+
+  for (const thread of unresolvedThreads) {
+    if (thread.isResolved) continue;
+    const path = resolveReviewMapPath(
+      threadPath(thread),
+      result,
+      currentPathByAlias,
+    );
+    if (!path) continue;
+    const entry = result.get(path);
+    if (entry) entry.unresolvedThreadCount += 1;
+  }
+  for (const comment of draft?.comments ?? []) {
+    const path = resolveReviewMapPath(comment.path, result, currentPathByAlias);
+    if (!path) continue;
+    const entry = result.get(path);
+    if (!entry) continue;
+    entry.draftCount += 1;
+    if (staleCommentIds.has(comment.id)) entry.staleDraftCount += 1;
+  }
+  for (const finding of findings) {
+    const path = resolveReviewMapPath(finding.path, result, currentPathByAlias);
+    if (!path) continue;
+    const entry = result.get(path);
+    if (!entry) continue;
+    entry.findingCount += 1;
+    if (
+      entry.highestFindingSeverity === null ||
+      findingSeverityRank[finding.severity] >
+        findingSeverityRank[entry.highestFindingSeverity]
+    ) {
+      entry.highestFindingSeverity = finding.severity;
+    }
+  }
+  return result;
+}
+
+function emptyFileReviewMapEntry(path: string): FileReviewMapEntry {
+  return {
+    draftCount: 0,
+    findingCount: 0,
+    highestFindingSeverity: null,
+    path,
+    staleDraftCount: 0,
+    unresolvedThreadCount: 0,
+  };
+}
+
+function reviewMapPathAliases(files: DiffFilePatch[]) {
+  const aliases = new Map<string, string | null>();
+  for (const file of files) {
+    if (!file.previousPath || file.previousPath === file.path) continue;
+    const current = aliases.get(file.previousPath);
+    aliases.set(
+      file.previousPath,
+      current === undefined || current === file.path ? file.path : null,
+    );
+  }
+  return aliases;
+}
+
+function resolveReviewMapPath(
+  path: string | null,
+  entries: ReadonlyMap<string, FileReviewMapEntry>,
+  aliases: ReadonlyMap<string, string | null>,
+) {
+  if (!path) return null;
+  if (entries.has(path)) return path;
+  return aliases.get(path) ?? null;
+}
 
 export function mergePatchResults(
   files: DiffFilePatch[],

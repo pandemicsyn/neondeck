@@ -44,6 +44,7 @@ import {
   mergePatchResults,
   mutationErrorMessage,
   prDetail,
+  prReviewMapByPath,
   reviewFileStats,
   reviewPatchQuerySettled,
   summaryLabel,
@@ -255,6 +256,23 @@ export function GitHubPrReview({
         annotationsFromComposer(composer),
       ),
     [blockedCommentIds, composer, draft, reviewThreads],
+  );
+  const reviewMapByPath = useMemo(
+    () =>
+      prReviewMapByPath({
+        draft,
+        files: fileList,
+        findings: reviewRecord?.reportOnlyFindings ?? [],
+        staleCommentIds,
+        unresolvedThreads,
+      }),
+    [
+      draft,
+      fileList,
+      reviewRecord?.reportOnlyFindings,
+      staleCommentIds,
+      unresolvedThreads,
+    ],
   );
   const fileStats = useMemo(() => reviewFileStats(files), [files]);
   const isDraftMutationPending =
@@ -859,6 +877,7 @@ export function GitHubPrReview({
         onSelectedLinesChange={onSelectionChange}
         patchError={patchErrorMessage}
         renderAnnotation={renderAnnotation}
+        reviewMapByPath={reviewMapByPath}
         selectedLines={
           composer?.path === activePath ? composer.selection : null
         }
