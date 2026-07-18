@@ -142,10 +142,18 @@ neondeck open xeneon --kiosk</code></pre>
         <p>Current commands:</p>
         <pre><code>/repo-status [repo-id]
 /review-queue
+/review-pr &lt;repo#number|owner/repo#number|url&gt;
+/fix-ci [repo#number|owner/repo#number]
+/explain-ci [--report] [repo#number|owner/repo#number]
+/summarize-pr [repo#number|owner/repo#number]
+/draft-pr-description [repo-id|owner/repo]
+/prepare-pr [repo-id|owner/repo]
+/review-local [repo-id|owner/repo]
 /briefing
 /reasoning [off|minimal|low|medium|high|xhigh]
+/memory ...
 /dev-doctor
-/watch-pr neondeck#123
+/watch-pr &lt;repo#number|owner/repo#number|url&gt;
 </code></pre>
 
         <h2 id="repositories">Configure repositories</h2>

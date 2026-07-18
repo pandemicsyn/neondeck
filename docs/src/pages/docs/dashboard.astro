@@ -88,6 +88,24 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           resolution.
         </p>
         <p>
+          The focused PR workbench adds a guided review map over files, hunks,
+          unresolved threads, local drafts, and Neon findings. Visible previous
+          and next controls have keyboard parity with <code>[</code> and
+          <code>]</code>; <code>?</code> opens shortcut help. Shortcuts stay scoped
+          away from inputs, editors, dialogs, modified browser keys, and text composition.
+          The tree, diff, inspector, and active review target move together, including
+          across files, without loading every patch up front.
+        </p>
+        <p>
+          Current-revision Neon findings render inline with their severity,
+          explanation, and provenance. Dismissing one is local-only. Promotion
+          is always explicit: a GitHub finding can seed a local draft comment
+          without submitting a review, while a prepared-diff finding can request
+          a confirmed revision through the existing approval and recovery flow.
+          Unsupported or stale findings remain visible as history instead of
+          silently attaching to different code.
+        </p>
+        <p>
           Live GitHub, prepared-diff, and worktree-backed Kilo reviews remain
           bound to the revision shown in the viewer. When a newer revision is
           detected, Neondeck either refreshes a clean surface or shows a

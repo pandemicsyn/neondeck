@@ -91,10 +91,15 @@ neondeck open xeneon --kiosk</code></pre>
   --github-owner pandemicsyn \
   --github-name neondeck
 
-neondeck repo list</code></pre>
+neondeck repo list
+neondeck repo diff neondeck --base main
+neondeck repo diff neondeck --base main --patch
+neondeck edit-events</code></pre>
         <p>
           Repositories should be local git checkouts when you want local status,
-          dev doctor diagnostics, and command execution against the repo.
+          dev doctor diagnostics, and command execution against the repo. Repo
+          diffs read bounded metadata by default; <code>--patch</code> includes bounded
+          patch text. Edit events expose the recent repo-edit audit trail.
         </p>
 
         <h2>Watches</h2>
@@ -184,12 +189,17 @@ POST /api/scheduled-tasks/:id/resume</code></pre>
 
         <h2>MCP servers</h2>
         <pre><code>neondeck mcp list
+neondeck mcp status [id]
 neondeck mcp add linear --url https://mcp.linear.app/mcp --oauth
+neondeck mcp enable linear
+neondeck mcp disable linear
 neondeck mcp login linear
 neondeck mcp tools linear
 neondeck mcp approvals
 neondeck mcp approvals --resolve &lt;id&gt; --approve
-neondeck mcp logout linear --confirm</code></pre>
+neondeck mcp audit
+neondeck mcp logout linear --confirm
+neondeck mcp remove linear --confirm</code></pre>
         <p>
           MCP config lives in runtime-home <code>mcp.json</code>. Stdio servers,
           header-authenticated servers, and auto-approval policy should be
@@ -200,6 +210,7 @@ neondeck mcp logout linear --confirm</code></pre>
         <pre><code>neondeck learning status
 neondeck learning reviews
 neondeck learning candidates --status proposed
+neondeck learning events
 neondeck learning approve &lt;candidate-id&gt;
 neondeck learning reject &lt;candidate-id&gt;
 neondeck learning restore-skill-patch &lt;candidate-id&gt;</code></pre>
@@ -209,6 +220,13 @@ neondeck learning restore-skill-patch &lt;candidate-id&gt;</code></pre>
           decide memory or skill candidates through typed actions. Restore only
           works for applied skill patches whose current file still matches the
           applied audit hash.
+        </p>
+
+        <h2>Diagnostics</h2>
+        <pre><code>neondeck doctor</code></pre>
+        <p>
+          Doctor runs local readiness checks for runtime state, configured
+          repositories, credentials, services, and development prerequisites.
         </p>
 
         <h2>TUI</h2>

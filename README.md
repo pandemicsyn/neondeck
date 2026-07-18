@@ -23,8 +23,10 @@ Neon watches your PRs, prepares fixes, and keeps the busywork moving.
   prepare a fix in an isolated worktree, run checks, and hand you the diff or
   push it when repo policy allows.
 - **Review and approve PRs on the deck.** Read diffs, leave inline comments,
-  resolve threads, and submit approvals or change requests without switching to
-  github.com.
+  resolve threads, traverse files, hunks, drafts, threads, and revision-bound
+  Neon findings, and submit approvals or change requests without switching to
+  github.com. Findings can be dismissed locally or explicitly promoted into
+  the existing draft/revision workflow without silently submitting anything.
 - **Handoff, both directions.** Delegate work to agents like Kilo or Codex, then
   let the finished PR come back to Neon for checks and deployment follow-through.
 - **Conversational briefings and scheduled instructions.** Neon grounds a

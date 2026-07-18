@@ -76,7 +76,11 @@ The second major improvement is an optional **continuous changeset mode** for fo
 surfaces. It should complement, not replace, the current file-focused viewer. It must not ship until
 the large-review data path, virtualization strategy, and performance gates can support it.
 
-## Current Neondeck Baseline
+## Original Neondeck Baseline (retained for history)
+
+This section records the product state before Phases A and B. Completed gaps
+remain in their original wording for audit history; the status notes above and
+the delivery sequence below describe the current Phase B stopping point.
 
 ### Already supported
 
@@ -97,7 +101,7 @@ the large-review data path, virtualization strategy, and performance gates can s
 - Responsive dashboard profiles for ultrawide, wide, portrait, and compact windows, independent of
   a single physical display resolution.
 
-### Material gaps
+### Original material gaps
 
 - `MultiFileView` replaces the active file rather than supporting a top-to-bottom changeset stream.
 - Diff presentation is hard-coded to unified + wrapped lines; there are no focused-review controls
@@ -537,18 +541,18 @@ in implementation PR summaries. If exact numeric interaction thresholds need adj
 first harness run, record the baseline and rationale in this document or `.plans/DEVIATIONS.md`
 before relaxing a gate.
 
-## Surface Coverage
+## Surface Coverage at the Phase B Stopping Point
 
-| Capability                   | Embedded PR        | Focused PR popout       | Prepared diff              | Kilo result    | Skill/repo-edit patch | Future TUI          |
-| ---------------------------- | ------------------ | ----------------------- | -------------------------- | -------------- | --------------------- | ------------------- |
-| File-focused diff            | Yes                | Yes                     | Yes                        | Yes            | Yes                   | Contract            |
-| Review map/navigation        | Compact subset     | Full                    | Full                       | Full           | Basic                 | Full                |
-| Neon annotations             | Read/navigate      | Full + promote to draft | Full + promote to revision | Full           | Read-only/local       | Full                |
-| Continuous changeset         | No                 | Yes                     | Generic popout             | Generic popout | Optional popout       | Yes                 |
-| Live refresh                 | PR revision notice | Full                    | Full                       | Full           | Static                | Full                |
-| Context expansion            | When source exists | When source exists      | Local                      | Local          | Usually no            | Capability-based    |
-| Open in editor               | Local only         | Local only              | Yes                        | Yes            | Local only            | Capability-based    |
-| GitHub submit/thread actions | Existing subset    | Full                    | No                         | No             | No                    | Full via shared API |
+| Capability                   | Embedded PR        | Focused PR popout       | Prepared diff           | Kilo result           | Skill/repo-edit patch | Future TUI             |
+| ---------------------------- | ------------------ | ----------------------- | ----------------------- | --------------------- | --------------------- | ---------------------- |
+| File-focused diff            | Yes                | Yes                     | Yes                     | Yes                   | Yes                   | Contract               |
+| Review map/navigation        | Compact subset     | Full                    | Review map + findings   | Review map + findings | Basic                 | Planned                |
+| Neon annotations             | Read/navigate      | Full + promote to draft | Read/dismiss + revision | Read/dismiss          | Read-only/local       | Planned                |
+| Continuous changeset         | No                 | Planned in Phase C      | Planned in Phase C      | Planned Phase C       | Planned Phase C       | Planned                |
+| Live refresh                 | PR revision notice | Full                    | Full                    | Full                  | Static                | Planned                |
+| Context expansion            | Planned in Phase D | Planned in Phase D      | Planned in Phase D      | Planned Phase D       | Planned when capable  | Planned                |
+| Open in editor               | Planned in Phase D | Planned in Phase D      | Planned in Phase D      | Planned Phase D       | Planned when local    | Planned                |
+| GitHub submit/thread actions | Existing subset    | Full                    | No                      | No                    | No                    | Planned via shared API |
 
 ## Delivery Sequence
 
@@ -645,11 +649,11 @@ before relaxing a gate.
 
 ## Documentation and Plan Maintenance
 
-- Update `PRODUCT.md` so Neondeck’s product framing explicitly includes normal windows, focused
-  popouts/workbenches, companion displays, and future TUI surfaces; the current Xeneon-primary wording
-  is narrower than the implementation.
-- Update dashboard/user docs when review navigation, Neon-guided review, changeset mode, context
-  expansion, or editor handoff ships.
+- **Completed through Phase B —** update `PRODUCT.md` so Neondeck’s product framing explicitly
+  includes normal windows, focused popouts/workbenches, companion displays, and future TUI surfaces.
+- **Completed for shipped Phase B capabilities —** update dashboard/user docs for review navigation
+  and Neon-guided review. Update them again when changeset mode, context expansion, or editor
+  handoff ships in later phases.
 - Add a changeset for each user-facing implementation phase.
 - Record deviations or deferrals in `.plans/DEVIATIONS.md` when implementation changes this priority
   order, trust boundary, performance gate, or surface coverage.
