@@ -1,19 +1,41 @@
 import * as v from 'valibot';
 import {
+  neonReviewFindingLimits,
+  neonReviewFindingSchemaVersion,
+  type NeonReviewFinding,
+  type NeonReviewFindingDraft,
+  type NeonReviewFindingSubmission,
+  type ReviewSurfaceFindingsApplyRequest,
+  type ReviewSurfaceFindingsClearRequest,
+  type ReviewSurfaceFindingsDismissRequest,
+} from '../../../shared/review-finding';
+import {
   reviewSourceSchemaVersion,
   type ReviewSourceSnapshot,
 } from '../../../shared/review-source';
 import {
+  reviewSurfaceContextPageLimits,
   reviewSurfaceSchemaVersion,
+  type ReviewSurfaceContextPageRequest,
   type ReviewSurfaceNavigationRequest,
   type ReviewSurfaceSnapshot,
 } from '../../../shared/review-surface';
+import { isoDateStringSchema } from '../../lib/valibot';
 
 const identifierSchema = v.pipe(v.string(), v.minLength(1), v.maxLength(240));
 const surfaceIdSchema = v.pipe(v.string(), v.minLength(1), v.maxLength(512));
 const revisionKeySchema = v.pipe(v.string(), v.minLength(1), v.maxLength(768));
 const pathSchema = v.pipe(v.string(), v.minLength(1), v.maxLength(4_096));
 const nullableIdentifierSchema = v.nullable(identifierSchema);
+const findingIdListSchema = v.pipe(
+  v.array(identifierSchema),
+  v.minLength(1),
+  v.maxLength(neonReviewFindingLimits.maxApplyBatch),
+  v.check(
+    (findingIds) => new Set(findingIds).size === findingIds.length,
+    'Finding ids must be unique.',
+  ),
+);
 
 const reviewRevisionSchema = v.variant('state', [
   v.object({
@@ -129,4 +151,201 @@ export const reviewSurfaceNavigationAckInputSchema = v.object({
   revisionKey: v.nullable(revisionKeySchema),
   resolvedPath: v.nullable(pathSchema),
   message: v.nullable(v.pipe(v.string(), v.maxLength(500))),
+});
+
+const findingSideSchema = v.picklist(['additions', 'deletions']);
+const findingAnchorSchema = v.variant('kind', [
+  v.pipe(
+    v.object({
+      kind: v.literal('line-range'),
+      side: findingSideSchema,
+      startLine: v.pipe(v.number(), v.integer(), v.minValue(1)),
+      endLine: v.pipe(v.number(), v.integer(), v.minValue(1)),
+    }),
+    v.check(
+      (anchor) => anchor.endLine >= anchor.startLine,
+      'Finding end line must not precede its start line.',
+    ),
+  ),
+  v.object({
+    kind: v.literal('hunk'),
+    side: findingSideSchema,
+    hunkId: identifierSchema,
+  }),
+]);
+const findingSeveritySchema = v.picklist(['critical', 'major', 'minor', 'nit']);
+const findingConfidenceSchema = v.nullable(
+  v.picklist(['high', 'medium', 'low']),
+);
+const findingProvenanceInputSchema = v.object({
+  authorRole: identifierSchema,
+  model: nullableIdentifierSchema,
+  workflowRunId: nullableIdentifierSchema,
+});
+
+const neonReviewFindingSubmissionEntries = {
+  schemaVersion: v.literal(neonReviewFindingSchemaVersion),
+  id: identifierSchema,
+  sourceId: identifierSchema,
+  revisionKey: revisionKeySchema,
+  file: pathSchema,
+  anchor: findingAnchorSchema,
+  title: v.pipe(
+    v.string(),
+    v.minLength(1),
+    v.maxLength(neonReviewFindingLimits.maxTitleLength),
+  ),
+  explanation: v.pipe(
+    v.string(),
+    v.minLength(1),
+    v.maxLength(neonReviewFindingLimits.maxExplanationLength),
+  ),
+  severity: findingSeveritySchema,
+  confidence: findingConfidenceSchema,
+  suggestedAction: v.nullable(
+    v.pipe(
+      v.string(),
+      v.minLength(1),
+      v.maxLength(neonReviewFindingLimits.maxSuggestedActionLength),
+    ),
+  ),
+};
+
+export const neonReviewFindingSubmissionSchema: v.GenericSchema<NeonReviewFindingSubmission> =
+  v.object(neonReviewFindingSubmissionEntries);
+
+export const neonReviewFindingDraftSchema: v.GenericSchema<NeonReviewFindingDraft> =
+  v.object({
+    ...neonReviewFindingSubmissionEntries,
+    provenance: findingProvenanceInputSchema,
+  });
+
+export const neonReviewFindingSchema: v.GenericSchema<NeonReviewFinding> =
+  v.object({
+    ...neonReviewFindingSubmissionEntries,
+    surfaceId: surfaceIdSchema,
+    provenance: v.object({
+      ...findingProvenanceInputSchema.entries,
+      createdAt: isoDateStringSchema,
+    }),
+    lifecycle: v.object({
+      state: v.picklist([
+        'active',
+        'stale',
+        'resolved',
+        'dismissed',
+        'promoted',
+      ]),
+      changedAt: isoDateStringSchema,
+      reason: v.nullable(
+        v.pipe(
+          v.string(),
+          v.minLength(1),
+          v.maxLength(neonReviewFindingLimits.maxLifecycleReasonLength),
+        ),
+      ),
+    }),
+  });
+
+const findingBatchSchema = v.pipe(
+  v.array(neonReviewFindingSubmissionSchema),
+  v.minLength(1),
+  v.maxLength(neonReviewFindingLimits.maxApplyBatch),
+  v.check(
+    (findings) =>
+      new Set(findings.map((finding) => finding.id)).size === findings.length,
+    'Finding ids must be unique within a batch.',
+  ),
+);
+
+export const reviewSurfaceFindingsApplySchema: v.GenericSchema<ReviewSurfaceFindingsApplyRequest> =
+  v.object({
+    revisionKey: revisionKeySchema,
+    findings: findingBatchSchema,
+  });
+
+export const reviewSurfaceFindingsDismissSchema: v.GenericSchema<ReviewSurfaceFindingsDismissRequest> =
+  v.object({
+    sourceId: identifierSchema,
+    revisionKey: revisionKeySchema,
+    findingIds: findingIdListSchema,
+    reason: v.nullable(
+      v.pipe(
+        v.string(),
+        v.minLength(1),
+        v.maxLength(neonReviewFindingLimits.maxLifecycleReasonLength),
+      ),
+    ),
+  });
+
+export const reviewSurfaceFindingsClearSchema: v.GenericSchema<ReviewSurfaceFindingsClearRequest> =
+  v.object({
+    sourceId: identifierSchema,
+    revisionKey: revisionKeySchema,
+    findingIds: v.optional(findingIdListSchema),
+  });
+
+export const reviewSurfaceIdInputSchema = v.object({
+  surfaceId: surfaceIdSchema,
+});
+
+export const reviewSurfaceContextInputSchema: v.GenericSchema<ReviewSurfaceContextPageRequest> =
+  v.object({
+    surfaceId: surfaceIdSchema,
+    offset: v.optional(
+      v.pipe(
+        v.number(),
+        v.integer(),
+        v.minValue(0),
+        v.maxValue(reviewSurfaceContextPageLimits.maxOffset),
+      ),
+    ),
+    limit: v.optional(
+      v.pipe(
+        v.number(),
+        v.integer(),
+        v.minValue(1),
+        v.maxValue(reviewSurfaceContextPageLimits.maxLimit),
+      ),
+    ),
+  });
+
+export const reviewSurfaceNavigateInputSchema = v.object({
+  surfaceId: surfaceIdSchema,
+  revisionKey: v.nullable(revisionKeySchema),
+  target: v.object({ path: pathSchema, focus: v.boolean() }),
+});
+
+export const reviewSurfaceFindingsApplyActionSchema = v.object({
+  surfaceId: surfaceIdSchema,
+  revisionKey: revisionKeySchema,
+  findings: findingBatchSchema,
+});
+
+export const reviewSurfaceFindingsDismissActionSchema = v.object({
+  surfaceId: surfaceIdSchema,
+  sourceId: identifierSchema,
+  revisionKey: revisionKeySchema,
+  findingIds: findingIdListSchema,
+  reason: v.nullable(
+    v.pipe(
+      v.string(),
+      v.minLength(1),
+      v.maxLength(neonReviewFindingLimits.maxLifecycleReasonLength),
+    ),
+  ),
+});
+
+export const reviewSurfaceFindingsClearActionSchema = v.object({
+  surfaceId: surfaceIdSchema,
+  sourceId: identifierSchema,
+  revisionKey: revisionKeySchema,
+  findingIds: v.optional(findingIdListSchema),
+});
+
+export const reviewSurfaceActionOutputSchema = v.looseObject({
+  ok: v.boolean(),
+  action: v.string(),
+  changed: v.boolean(),
+  message: v.string(),
 });

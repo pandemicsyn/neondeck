@@ -1,4 +1,6 @@
-export type ReviewFindingSeverity = 'critical' | 'major' | 'minor' | 'nit';
+import type { NeonReviewFindingSeverity } from './review-finding';
+
+export type ReviewFindingSeverity = NeonReviewFindingSeverity;
 
 export type ReviewNavigationFile = {
   path: string;

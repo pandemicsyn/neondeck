@@ -171,6 +171,7 @@ function reviewSurfaceEvent(): ReviewSurfaceChangeEvent {
     surface: null,
     navigation: null,
     acknowledgement: null,
+    findings: null,
     reason: 'closed',
   };
 }

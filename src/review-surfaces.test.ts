@@ -1,6 +1,11 @@
 import { Hono } from 'hono';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  neonReviewFindingLimits,
+  neonReviewFindingSchemaVersion,
+  type NeonReviewFindingDraft,
+} from '../shared/review-finding';
+import {
   reviewSourceSchemaVersion,
   resolvedReviewRevision,
 } from '../shared/review-source';
@@ -9,7 +14,13 @@ import {
   type ReviewSurfaceChangeEvent,
   type ReviewSurfaceSnapshot,
 } from '../shared/review-surface';
-import { ReviewSurfaceRegistry } from './modules/review-surfaces';
+import {
+  createReviewSurfaceContextPage,
+  reviewSurfaceFindingsApplyAction,
+  reviewSurfaceRegistry,
+  ReviewSurfaceRegistry,
+} from './modules/review-surfaces';
+import { runWithFlueExecutionContextForTests } from './modules/flue/execution-context';
 import { createReviewSurfaceRoutes } from './server/routes/review-surfaces';
 
 const registries: ReviewSurfaceRegistry[] = [];
@@ -163,6 +174,672 @@ describe('review surface registry', () => {
       message: 'Surface id does not match the route.',
     });
   });
+
+  it('rejects an invalid finding batch atomically before applying any item', async () => {
+    const { app, registry } = harness();
+    const events: ReviewSurfaceChangeEvent[] = [];
+    registry.subscribe((event) => events.push(event));
+    await register(app, snapshot('surface-a'));
+
+    const response = await apply(app, 'surface-a', [
+      finding('finding-valid'),
+      finding('finding-invalid', { file: 'src/missing.ts' }),
+    ]);
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      error: { code: 'file-unavailable' },
+    });
+    expect(registry.readFindings('surface-a')).toMatchObject({
+      ok: true,
+      findings: [],
+      count: 0,
+    });
+    expect(events.map((event) => event.action)).toEqual(['registered']);
+  });
+
+  it('stales active findings on a revision change and rejects the old revision', async () => {
+    const { app, registry } = harness();
+    const events: ReviewSurfaceChangeEvent[] = [];
+    registry.subscribe((event) => events.push(event));
+    await register(app, snapshot('surface-a'));
+    expect((await apply(app, 'surface-a', [finding('finding-a')])).status).toBe(
+      200,
+    );
+
+    await register(app, snapshot('surface-a', 'next-head-sha'));
+
+    expect(registry.readFindings('surface-a')).toMatchObject({
+      findings: [
+        {
+          id: 'finding-a',
+          revisionKey: 'git-commit::head-sha',
+          lifecycle: {
+            state: 'stale',
+            reason: 'The review surface source or revision changed.',
+          },
+        },
+      ],
+    });
+    expect(events.at(-1)).toMatchObject({
+      action: 'findings-changed',
+      surfaceId: 'surface-a',
+      findings: {
+        action: 'staled',
+        revisionKey: 'git-commit::next-head-sha',
+        findingIds: ['finding-a'],
+        count: 1,
+      },
+    });
+    const staleResponse = await apply(app, 'surface-a', [finding('finding-b')]);
+    expect(staleResponse.status).toBe(409);
+    await expect(staleResponse.json()).resolves.toMatchObject({
+      error: { code: 'stale-revision' },
+      revisionKey: 'git-commit::next-head-sha',
+    });
+    expect(registry.readFindings('surface-a').count).toBe(1);
+  });
+
+  it('replaces a non-active stable id after the surface source and revision change', async () => {
+    const { app, registry } = harness();
+    const events: ReviewSurfaceChangeEvent[] = [];
+    registry.subscribe((event) => events.push(event));
+    await register(app, snapshot('surface-a'));
+    expect((await apply(app, 'surface-a', [finding('finding-a')])).status).toBe(
+      200,
+    );
+
+    const nextSourceId = 'github-pr:example/other#42';
+    const nextRevisionKey = 'git-commit::next-head-sha';
+    await register(app, snapshot('surface-a', 'next-head-sha', nextSourceId));
+    const response = await apply(
+      app,
+      'surface-a',
+      [
+        finding('finding-a', {
+          sourceId: nextSourceId,
+          revisionKey: nextRevisionKey,
+          title: 'Current revision finding',
+        }),
+      ],
+      nextRevisionKey,
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      findingIds: ['finding-a'],
+      count: 1,
+    });
+    expect(registry.readFindings('surface-a')).toMatchObject({
+      count: 1,
+      findings: [
+        {
+          id: 'finding-a',
+          sourceId: nextSourceId,
+          revisionKey: nextRevisionKey,
+          title: 'Current revision finding',
+          lifecycle: { state: 'active' },
+        },
+      ],
+    });
+    expect(events.at(-1)).toMatchObject({
+      action: 'findings-changed',
+      surfaceId: 'surface-a',
+      findings: {
+        action: 'applied',
+        findingIds: ['finding-a'],
+        count: 1,
+      },
+    });
+    expect(
+      events.filter((event) => event.findings?.action === 'applied'),
+    ).toHaveLength(2);
+  });
+
+  it('replaces a dismissed stable id after the surface revision changes', () => {
+    const registry = new ReviewSurfaceRegistry();
+    registries.push(registry);
+    registry.upsert(snapshot('surface-a'));
+    registry.applyFindings('surface-a', {
+      revisionKey: 'git-commit::head-sha',
+      findings: [finding('finding-a')],
+    });
+    registry.dismissFindings('surface-a', {
+      sourceId: 'github-pr:example/repo#42',
+      revisionKey: 'git-commit::head-sha',
+      findingIds: ['finding-a'],
+      reason: 'Dismissed on the prior revision.',
+    });
+    registry.upsert(snapshot('surface-a', 'next-head-sha'));
+
+    expect(
+      registry.applyFindings('surface-a', {
+        revisionKey: 'git-commit::next-head-sha',
+        findings: [
+          finding('finding-a', {
+            revisionKey: 'git-commit::next-head-sha',
+            title: 'Valid finding on the current revision',
+          }),
+        ],
+      }),
+    ).toMatchObject({ ok: true, changed: true, count: 1 });
+    expect(registry.readFindings('surface-a')).toMatchObject({
+      count: 1,
+      findings: [
+        {
+          id: 'finding-a',
+          revisionKey: 'git-commit::next-head-sha',
+          title: 'Valid finding on the current revision',
+          lifecycle: { state: 'active' },
+        },
+      ],
+    });
+  });
+
+  it('isolates findings and targeted events between surfaces for one source', async () => {
+    const { app, registry } = harness();
+    const events: ReviewSurfaceChangeEvent[] = [];
+    registry.subscribe((event) => events.push(event));
+    await register(app, snapshot('surface-a'));
+    await register(app, snapshot('surface-b'));
+
+    const response = await apply(app, 'surface-a', [finding('finding-a')]);
+
+    expect(response.status).toBe(200);
+    expect(registry.readFindings('surface-a').count).toBe(1);
+    expect(registry.readFindings('surface-b').count).toBe(0);
+    expect(
+      events.filter((event) => event.action === 'findings-changed'),
+    ).toEqual([
+      expect.objectContaining({
+        surfaceId: 'surface-a',
+        findings: expect.objectContaining({ findingIds: ['finding-a'] }),
+      }),
+    ]);
+  });
+
+  it('cleans up ephemeral findings on expiry and explicit close', () => {
+    let now = Date.parse('2026-07-18T00:00:00.000Z');
+    const registry = new ReviewSurfaceRegistry({ now: () => now, ttlMs: 100 });
+    registries.push(registry);
+    registry.upsert(snapshot('surface-expiring'));
+    expect(
+      registry.applyFindings('surface-expiring', {
+        revisionKey: 'git-commit::head-sha',
+        findings: [finding('reusable-id')],
+      }).ok,
+    ).toBe(true);
+
+    now += 101;
+    expect(registry.list()).toEqual([]);
+    registry.upsert(snapshot('surface-expiring'));
+    expect(
+      registry.applyFindings('surface-expiring', {
+        revisionKey: 'git-commit::head-sha',
+        findings: [
+          finding('reusable-id', { title: 'Content after expiry cleanup' }),
+        ],
+      }),
+    ).toMatchObject({ ok: true, changed: true, count: 1 });
+
+    registry.upsert(snapshot('surface-closed'));
+    registry.applyFindings('surface-closed', {
+      revisionKey: 'git-commit::head-sha',
+      findings: [finding('closed-id')],
+    });
+    expect(registry.remove('surface-closed')).toBe(true);
+    registry.upsert(snapshot('surface-closed'));
+    expect(
+      registry.applyFindings('surface-closed', {
+        revisionKey: 'git-commit::head-sha',
+        findings: [
+          finding('closed-id', { title: 'Content after close cleanup' }),
+        ],
+      }),
+    ).toMatchObject({ ok: true, changed: true, count: 1 });
+  });
+
+  it('enforces text and batch limits without publishing large event payloads', async () => {
+    const { app, registry } = harness();
+    const events: ReviewSurfaceChangeEvent[] = [];
+    registry.subscribe((event) => events.push(event));
+    await register(app, snapshot('surface-a'));
+    const oversizedBatch = Array.from(
+      { length: neonReviewFindingLimits.maxApplyBatch + 1 },
+      (_, index) => finding(`finding-${index}`),
+    );
+
+    const batchResponse = await apply(app, 'surface-a', oversizedBatch);
+    expect(batchResponse.status).toBe(400);
+    const textResponse = await apply(app, 'surface-a', [
+      finding('finding-long', {
+        title: 'x'.repeat(neonReviewFindingLimits.maxTitleLength + 1),
+      }),
+    ]);
+    expect(textResponse.status).toBe(400);
+    expect(registry.readFindings('surface-a').count).toBe(0);
+
+    expect(
+      (
+        await apply(app, 'surface-a', [
+          finding('finding-bounded', {
+            explanation: 'private finding explanation',
+          }),
+        ])
+      ).status,
+    ).toBe(200);
+    const event = events.at(-1)!;
+    expect(event).toMatchObject({
+      action: 'findings-changed',
+      findings: {
+        action: 'applied',
+        findingIds: ['finding-bounded'],
+        count: 1,
+      },
+    });
+    expect(JSON.stringify(event)).not.toContain('private finding explanation');
+    expect(event.surface).toBeNull();
+  });
+
+  it('server-stamps local API provenance instead of trusting caller fields', async () => {
+    const { app, registry } = harness();
+    await register(app, snapshot('surface-a'));
+
+    const response = await apply(app, 'surface-a', [
+      finding('finding-spoofed', {
+        provenance: {
+          authorRole: 'untrusted-caller',
+          model: 'spoofed-model',
+          workflowRunId: 'spoofed-run',
+        },
+      }),
+    ]);
+
+    expect(response.status).toBe(200);
+    expect(registry.readFindings('surface-a')).toMatchObject({
+      findings: [
+        {
+          id: 'finding-spoofed',
+          provenance: {
+            authorRole: 'local-api',
+            model: null,
+            workflowRunId: null,
+          },
+        },
+      ],
+    });
+    expect(
+      registry.readFindings('surface-a').findings?.[0]?.provenance.createdAt,
+    ).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('server-stamps Flue provenance from the current execution context', async () => {
+    const surfaceId = 'surface-flue-provenance';
+    reviewSurfaceRegistry.remove(surfaceId);
+    reviewSurfaceRegistry.upsert(snapshot(surfaceId));
+    try {
+      const result = await runWithFlueExecutionContextForTests(
+        { agentName: 'display-assistant', runId: 'trusted-run' },
+        () =>
+          reviewSurfaceFindingsApplyAction.run({
+            input: {
+              surfaceId,
+              revisionKey: 'git-commit::head-sha',
+              findings: [
+                finding('finding-flue-spoofed', {
+                  provenance: {
+                    authorRole: 'untrusted-caller',
+                    model: 'spoofed-model',
+                    workflowRunId: 'spoofed-run',
+                  },
+                }),
+              ],
+            },
+          } as never),
+      );
+
+      expect(result).toMatchObject({ ok: true, changed: true });
+      expect(reviewSurfaceRegistry.readFindings(surfaceId)).toMatchObject({
+        findings: [
+          {
+            provenance: {
+              authorRole: 'display-assistant',
+              model: null,
+              workflowRunId: 'trusted-run',
+            },
+          },
+        ],
+      });
+    } finally {
+      reviewSurfaceRegistry.remove(surfaceId);
+    }
+  });
+
+  it('pages model-facing context with bounded windows and totals', () => {
+    const registry = new ReviewSurfaceRegistry();
+    registries.push(registry);
+    const base = snapshot('surface-a');
+    const files = Array.from({ length: 60 }, (_, index) => ({
+      ...base.source.files[0]!,
+      path: `src/file-${index}.ts`,
+    }));
+    const surface = registry.upsert({
+      ...base,
+      source: { ...base.source, files },
+      activePath: files[0]!.path,
+      reviewOrder: files.map((file) => file.path),
+    });
+    const findings = Array.from({ length: 55 }, (_, index) =>
+      finding(`finding-${index}`, { file: files[index]!.path }),
+    );
+    registry.applyFindings('surface-a', {
+      revisionKey: 'git-commit::head-sha',
+      findings: findings.slice(0, 50),
+    });
+    registry.applyFindings('surface-a', {
+      revisionKey: 'git-commit::head-sha',
+      findings: findings.slice(50),
+    });
+    const stored = registry.readFindings('surface-a').findings ?? [];
+
+    const defaultPage = createReviewSurfaceContextPage(surface, stored);
+    expect(defaultPage.summary.counts).toEqual({
+      files: 60,
+      reviewOrder: 60,
+      findings: 55,
+    });
+    expect(defaultPage.summary.source).not.toHaveProperty('files');
+    expect(defaultPage.summary).not.toHaveProperty('reviewOrder');
+    expect(defaultPage.page.files).toMatchObject({
+      offset: 0,
+      limit: 25,
+      total: 60,
+      nextOffset: 25,
+    });
+    expect(defaultPage.page.files.items).toHaveLength(25);
+    expect(defaultPage.page.reviewOrder.items).toHaveLength(25);
+    expect(defaultPage.page.findings.items).toHaveLength(25);
+
+    const maximumPage = createReviewSurfaceContextPage(surface, stored, {
+      limit: 500,
+    });
+    expect(maximumPage.page.files).toMatchObject({
+      limit: 50,
+      total: 60,
+      nextOffset: 50,
+    });
+    expect(maximumPage.page.files.items).toHaveLength(50);
+    expect(maximumPage.page.reviewOrder.items).toHaveLength(50);
+    expect(maximumPage.page.findings.items).toHaveLength(50);
+  });
+
+  it('rejects delayed dismiss and clear requests after the mounted revision changes', () => {
+    const registry = new ReviewSurfaceRegistry();
+    registries.push(registry);
+    registry.upsert(snapshot('surface-a'));
+    registry.applyFindings('surface-a', {
+      revisionKey: 'git-commit::head-sha',
+      findings: [finding('finding-a')],
+    });
+    const delayedDismiss = {
+      sourceId: 'github-pr:example/repo#42',
+      revisionKey: 'git-commit::head-sha',
+      findingIds: ['finding-a'],
+      reason: 'Delayed dismissal.',
+    };
+    const delayedClear = {
+      sourceId: 'github-pr:example/repo#42',
+      revisionKey: 'git-commit::head-sha',
+    };
+
+    registry.upsert(snapshot('surface-a', 'next-head-sha'));
+    registry.applyFindings('surface-a', {
+      revisionKey: 'git-commit::next-head-sha',
+      findings: [
+        finding('finding-a', {
+          revisionKey: 'git-commit::next-head-sha',
+          title: 'Current revision content',
+        }),
+      ],
+    });
+
+    expect(registry.dismissFindings('surface-a', delayedDismiss)).toMatchObject(
+      {
+        ok: false,
+        changed: false,
+        error: { code: 'stale-revision' },
+      },
+    );
+    expect(registry.clearFindings('surface-a', delayedClear)).toMatchObject({
+      ok: false,
+      changed: false,
+      error: { code: 'stale-revision' },
+    });
+    expect(
+      registry.clearFindings('surface-a', {
+        sourceId: 'github-pr:example/other#42',
+        revisionKey: 'git-commit::next-head-sha',
+      }),
+    ).toMatchObject({
+      ok: false,
+      changed: false,
+      error: { code: 'source-mismatch' },
+    });
+    expect(registry.readFindings('surface-a')).toMatchObject({
+      count: 1,
+      findings: [
+        {
+          id: 'finding-a',
+          revisionKey: 'git-commit::next-head-sha',
+          title: 'Current revision content',
+          lifecycle: { state: 'active' },
+        },
+      ],
+    });
+  });
+
+  it('allows a current-revision command to dismiss a stale finding', () => {
+    const registry = new ReviewSurfaceRegistry();
+    registries.push(registry);
+    registry.upsert(snapshot('surface-a'));
+    registry.applyFindings('surface-a', {
+      revisionKey: 'git-commit::head-sha',
+      findings: [finding('finding-a')],
+    });
+    registry.upsert(snapshot('surface-a', 'next-head-sha'));
+
+    expect(
+      registry.dismissFindings('surface-a', {
+        sourceId: 'github-pr:example/repo#42',
+        revisionKey: 'git-commit::next-head-sha',
+        findingIds: ['finding-a'],
+        reason: 'Acknowledged stale finding.',
+      }),
+    ).toMatchObject({ ok: true, changed: true, findingIds: ['finding-a'] });
+    expect(registry.readFindings('surface-a')).toMatchObject({
+      findings: [{ lifecycle: { state: 'dismissed' } }],
+    });
+  });
+
+  it('caps per-surface retention and bounds bulk-change event ids', () => {
+    const registry = new ReviewSurfaceRegistry();
+    registries.push(registry);
+    const events: ReviewSurfaceChangeEvent[] = [];
+    registry.subscribe((event) => events.push(event));
+    registry.upsert(snapshot('surface-a'));
+
+    const batchCount =
+      neonReviewFindingLimits.maxFindingsPerSurface /
+      neonReviewFindingLimits.maxApplyBatch;
+    for (let batch = 0; batch < batchCount; batch += 1) {
+      const findings = Array.from(
+        { length: neonReviewFindingLimits.maxApplyBatch },
+        (_, index) => finding(`finding-${batch}-${index}`),
+      );
+      expect(
+        registry.applyFindings('surface-a', {
+          revisionKey: 'git-commit::head-sha',
+          findings,
+        }),
+      ).toMatchObject({
+        ok: true,
+        changed: true,
+        count: neonReviewFindingLimits.maxApplyBatch,
+      });
+    }
+    expect(registry.readFindings('surface-a').count).toBe(
+      neonReviewFindingLimits.maxFindingsPerSurface,
+    );
+    expect(
+      registry.applyFindings('surface-a', {
+        revisionKey: 'git-commit::head-sha',
+        findings: [finding('finding-overflow')],
+      }),
+    ).toMatchObject({
+      ok: false,
+      changed: false,
+      error: { code: 'surface-finding-limit' },
+    });
+    expect(registry.readFindings('surface-a').count).toBe(
+      neonReviewFindingLimits.maxFindingsPerSurface,
+    );
+
+    registry.upsert(snapshot('surface-a', 'next-head-sha'));
+    expect(
+      registry.applyFindings('surface-a', {
+        revisionKey: 'git-commit::next-head-sha',
+        findings: [
+          finding('finding-0-0', {
+            revisionKey: 'git-commit::next-head-sha',
+            title: 'Replacement at the surface cap',
+          }),
+        ],
+      }),
+    ).toMatchObject({ ok: true, changed: true, count: 1 });
+    expect(registry.readFindings('surface-a').count).toBe(
+      neonReviewFindingLimits.maxFindingsPerSurface,
+    );
+    expect(
+      registry.applyFindings('surface-a', {
+        revisionKey: 'git-commit::next-head-sha',
+        findings: [
+          finding('finding-current-overflow', {
+            revisionKey: 'git-commit::next-head-sha',
+          }),
+        ],
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { code: 'surface-finding-limit' },
+    });
+
+    expect(
+      registry.clearFindings('surface-a', {
+        sourceId: 'github-pr:example/repo#42',
+        revisionKey: 'git-commit::next-head-sha',
+      }),
+    ).toMatchObject({
+      ok: true,
+      changed: true,
+      count: neonReviewFindingLimits.maxFindingsPerSurface,
+    });
+    expect(events.at(-1)).toMatchObject({
+      action: 'findings-changed',
+      findings: {
+        action: 'cleared',
+        count: neonReviewFindingLimits.maxFindingsPerSurface,
+      },
+    });
+    expect(events.at(-1)?.findings?.findingIds).toHaveLength(
+      neonReviewFindingLimits.maxEventFindingIds,
+    );
+  });
+
+  it('keeps identical applies idempotent and rejects same-revision conflicts atomically', async () => {
+    const { app, registry } = harness();
+    const events: ReviewSurfaceChangeEvent[] = [];
+    registry.subscribe((event) => events.push(event));
+    await register(app, snapshot('surface-a'));
+
+    const first = await apply(app, 'surface-a', [finding('finding-a')]);
+    const second = await apply(app, 'surface-a', [finding('finding-a')]);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    await expect(second.json()).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      count: 0,
+    });
+    const conflictingBatch = await apply(app, 'surface-a', [
+      finding('finding-b'),
+      finding('finding-a', { title: 'Conflicting stable id content' }),
+    ]);
+    expect(conflictingBatch.status).toBe(409);
+    await expect(conflictingBatch.json()).resolves.toMatchObject({
+      changed: false,
+      error: { code: 'finding-id-conflict' },
+    });
+    expect(registry.readFindings('surface-a').count).toBe(1);
+    expect(
+      events.filter((event) => event.action === 'findings-changed'),
+    ).toHaveLength(1);
+
+    const dismissBody = JSON.stringify({
+      sourceId: 'github-pr:example/repo#42',
+      revisionKey: 'git-commit::head-sha',
+      findingIds: ['finding-a'],
+      reason: 'Not actionable.',
+    });
+    const dismiss = () =>
+      app.request(
+        'http://localhost/api/review-surfaces/surface-a/findings/dismiss',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: dismissBody,
+        },
+      );
+    expect((await dismiss()).status).toBe(200);
+    const duplicateDismiss = await dismiss();
+    await expect(duplicateDismiss.json()).resolves.toMatchObject({
+      changed: false,
+      count: 0,
+    });
+    expect(
+      events.filter((event) => event.action === 'findings-changed'),
+    ).toHaveLength(2);
+    expect(registry.readFindings('surface-a')).toMatchObject({
+      findings: [{ lifecycle: { state: 'dismissed' } }],
+    });
+
+    const clear = () =>
+      app.request(
+        'http://localhost/api/review-surfaces/surface-a/findings/clear',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            sourceId: 'github-pr:example/repo#42',
+            revisionKey: 'git-commit::head-sha',
+            findingIds: ['finding-a'],
+          }),
+        },
+      );
+    expect((await clear()).status).toBe(200);
+    const duplicateClear = await clear();
+    await expect(duplicateClear.json()).resolves.toMatchObject({
+      changed: false,
+      count: 0,
+    });
+    expect(registry.readFindings('surface-a').count).toBe(0);
+    expect(
+      events.filter((event) => event.action === 'findings-changed'),
+    ).toHaveLength(3);
+  });
 });
 
 function harness() {
@@ -186,18 +863,22 @@ async function register(app: Hono, value: ReviewSurfaceSnapshot) {
   expect(response.status).toBe(200);
 }
 
-function snapshot(surfaceId: string): ReviewSurfaceSnapshot {
+function snapshot(
+  surfaceId: string,
+  revisionId = 'head-sha',
+  sourceId = 'github-pr:example/repo#42',
+): ReviewSurfaceSnapshot {
   return {
     schemaVersion: reviewSurfaceSchemaVersion,
     surfaceId,
     source: {
       schemaVersion: reviewSourceSchemaVersion,
-      id: 'github-pr:example/repo#42',
+      id: sourceId,
       kind: 'github-pr',
       title: 'Review surface contract',
       revision: resolvedReviewRevision({
         kind: 'git-commit',
-        id: 'head-sha',
+        id: revisionId,
       }),
       repository: {
         repoId: 'repo-1',
@@ -230,4 +911,53 @@ function snapshot(surfaceId: string): ReviewSurfaceSnapshot {
     presentationMode: 'unified',
     annotationVisibility: ['threads', 'drafts', 'findings'],
   };
+}
+
+function finding(
+  id: string,
+  overrides: Partial<NeonReviewFindingDraft> = {},
+): NeonReviewFindingDraft {
+  return {
+    schemaVersion: neonReviewFindingSchemaVersion,
+    id,
+    sourceId: 'github-pr:example/repo#42',
+    revisionKey: 'git-commit::head-sha',
+    file: 'src/app.ts',
+    anchor: {
+      kind: 'line-range',
+      side: 'additions',
+      startLine: 10,
+      endLine: 11,
+    },
+    title: 'Check this behavior',
+    explanation: 'The behavior may not match the intended contract.',
+    severity: 'major',
+    confidence: 'high',
+    suggestedAction: null,
+    provenance: {
+      authorRole: 'display-assistant',
+      model: 'openai/gpt-5.6',
+      workflowRunId: 'run-1',
+    },
+    ...overrides,
+  };
+}
+
+function apply(
+  app: Hono,
+  surfaceId: string,
+  findings: NeonReviewFindingDraft[],
+  revisionKey = 'git-commit::head-sha',
+) {
+  return app.request(
+    `http://localhost/api/review-surfaces/${surfaceId}/findings/apply`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        revisionKey,
+        findings,
+      }),
+    },
+  );
 }

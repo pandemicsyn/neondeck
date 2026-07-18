@@ -1,10 +1,15 @@
 import { Hono } from 'hono';
 import * as v from 'valibot';
 import {
+  reviewSurfaceFindingsApplySchema,
+  reviewSurfaceFindingsClearSchema,
+  reviewSurfaceFindingsDismissSchema,
+  localApiFindingProvenance,
   reviewSurfaceNavigationAckInputSchema,
   reviewSurfaceNavigationRequestSchema,
   reviewSurfaceRegistry,
   reviewSurfaceSnapshotSchema,
+  stampReviewFindingSubmissions,
   type ReviewSurfaceRegistry,
 } from '../../modules/review-surfaces';
 
@@ -47,6 +52,47 @@ export function createReviewSurfaceRoutes(
     return surface
       ? c.json({ ok: true, expiresAt: surface.expiresAt })
       : c.json({ ok: false, message: 'Review surface is not active.' }, 404);
+  });
+
+  routes.get('/review-surfaces/:surfaceId/findings', (c) => {
+    const result = registry.readFindings(c.req.param('surfaceId'));
+    return result.ok ? c.json(result) : c.json(result, 404);
+  });
+
+  routes.post('/review-surfaces/:surfaceId/findings/apply', async (c) => {
+    const body = await readJson(c);
+    const parsed = v.safeParse(reviewSurfaceFindingsApplySchema, body);
+    if (!parsed.success) return invalidInput(c, parsed.issues);
+    return findingResult(
+      c,
+      registry.applyFindings(c.req.param('surfaceId'), {
+        revisionKey: parsed.output.revisionKey,
+        findings: stampReviewFindingSubmissions(
+          parsed.output.findings,
+          localApiFindingProvenance,
+        ),
+      }),
+    );
+  });
+
+  routes.post('/review-surfaces/:surfaceId/findings/dismiss', async (c) => {
+    const body = await readJson(c);
+    const parsed = v.safeParse(reviewSurfaceFindingsDismissSchema, body);
+    if (!parsed.success) return invalidInput(c, parsed.issues);
+    return findingResult(
+      c,
+      registry.dismissFindings(c.req.param('surfaceId'), parsed.output),
+    );
+  });
+
+  routes.post('/review-surfaces/:surfaceId/findings/clear', async (c) => {
+    const body = await readJson(c);
+    const parsed = v.safeParse(reviewSurfaceFindingsClearSchema, body);
+    if (!parsed.success) return invalidInput(c, parsed.issues);
+    return findingResult(
+      c,
+      registry.clearFindings(c.req.param('surfaceId'), parsed.output),
+    );
   });
 
   routes.post('/review-surfaces/:surfaceId/navigation', async (c) => {
@@ -104,5 +150,18 @@ function invalidInput(
       message: issues.map((issue) => issue.message).join('; '),
     },
     400,
+  );
+}
+
+function findingResult(
+  c: {
+    json: (body: unknown, status?: 200 | 404 | 409) => Response;
+  },
+  result: ReturnType<ReviewSurfaceRegistry['applyFindings']>,
+) {
+  if (result.ok) return c.json(result, 200);
+  return c.json(
+    result,
+    result.error?.code === 'surface-not-active' ? 404 : 409,
   );
 }

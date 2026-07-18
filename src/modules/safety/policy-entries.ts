@@ -219,6 +219,18 @@ export const entries: SafetyPolicyEntry[] = [
     'Reads prepared-diff records and pending decision rows without reading file patches.',
   ),
   tool(
+    'neondeck_review_surfaces_lookup',
+    'List active review surfaces',
+    readOnly,
+    'Lists concise process-ephemeral review surface identity, revision, focus, expiry, and finding counts without patch bodies or finding text.',
+  ),
+  tool(
+    'neondeck_review_surface_context_lookup',
+    'Read review surface context',
+    readOnly,
+    'Reads one bounded process-ephemeral review surface snapshot and its associated local findings without patch bodies.',
+  ),
+  tool(
     'neondeck_kilo_tasks_lookup',
     'Read Kilo handoff tasks',
     readOnly,
@@ -235,6 +247,30 @@ export const entries: SafetyPolicyEntry[] = [
     'Check host execution policy',
     readOnly,
     'Classifies a proposed local or exe.dev command against execution approval policy without running it.',
+  ),
+  action(
+    'neondeck_review_surface_navigate',
+    'Navigate active review surface',
+    unauditedSafeMutation,
+    'Publishes one revision-aware targeted navigation event to an active review surface without changing external or durable state.',
+  ),
+  action(
+    'neondeck_review_surface_findings_apply',
+    'Apply review surface findings',
+    unauditedSafeMutation,
+    'Atomically applies bounded revision-bound findings to process-ephemeral surface state. It cannot create GitHub comments or mutate prepared diffs.',
+  ),
+  action(
+    'neondeck_review_surface_findings_dismiss',
+    'Dismiss review surface findings',
+    unauditedSafeMutation,
+    'Marks selected process-ephemeral findings dismissed on one active review surface.',
+  ),
+  action(
+    'neondeck_review_surface_findings_clear',
+    'Clear review surface findings',
+    unauditedSafeMutation,
+    'Explicitly removes selected or all process-ephemeral findings from one active review surface.',
   ),
   action(
     'neondeck_execution_request_approval',
@@ -936,6 +972,30 @@ export const entries: SafetyPolicyEntry[] = [
     'Heartbeat review surface API',
     unauditedSafeMutation,
     'Extends one process-ephemeral review surface lease without rebroadcasting its context snapshot.',
+  ),
+  route(
+    '/api/review-surfaces/:surfaceId/findings',
+    'Read review surface findings API',
+    readOnly,
+    'Reads bounded process-ephemeral Neon findings for one active review surface. It does not read patch bodies or durable review data.',
+  ),
+  route(
+    '/api/review-surfaces/:surfaceId/findings/apply',
+    'Apply review surface findings API',
+    unauditedSafeMutation,
+    'Atomically applies revision-bound findings to one process-ephemeral review surface. It cannot create GitHub comments or mutate prepared diffs.',
+  ),
+  route(
+    '/api/review-surfaces/:surfaceId/findings/dismiss',
+    'Dismiss review surface findings API',
+    unauditedSafeMutation,
+    'Marks selected process-ephemeral findings dismissed on one active review surface.',
+  ),
+  route(
+    '/api/review-surfaces/:surfaceId/findings/clear',
+    'Clear review surface findings API',
+    unauditedSafeMutation,
+    'Explicitly removes selected or all process-ephemeral findings from one active review surface.',
   ),
   route(
     '/api/review-surfaces/:surfaceId/navigation',

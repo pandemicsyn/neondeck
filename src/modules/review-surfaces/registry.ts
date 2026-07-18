@@ -1,4 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import {
+  neonReviewFindingLimits,
+  type NeonReviewFinding,
+  type NeonReviewFindingDraft,
+  type ReviewSurfaceFindingChange,
+  type ReviewSurfaceFindingsClearRequest,
+  type ReviewSurfaceFindingsDismissRequest,
+} from '../../../shared/review-finding';
 import { reviewRevisionKey } from '../../../shared/review-source';
 import type {
   ActiveReviewSurface,
@@ -19,7 +27,40 @@ type ReviewSurfaceRegistryOptions = {
   ttlMs?: number;
 };
 
+type TrustedReviewSurfaceFindingsApplyRequest = {
+  revisionKey: string;
+  findings: NeonReviewFindingDraft[];
+};
+
+export type ReviewSurfaceFindingErrorCode =
+  | 'surface-not-active'
+  | 'revision-unavailable'
+  | 'stale-revision'
+  | 'source-mismatch'
+  | 'file-unavailable'
+  | 'invalid-batch-size'
+  | 'duplicate-finding-id'
+  | 'finding-id-conflict'
+  | 'surface-finding-limit';
+
+export type ReviewSurfaceFindingResult = {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  surfaceId: string;
+  revisionKey?: string | null;
+  findings?: NeonReviewFinding[];
+  findingIds?: string[];
+  count?: number;
+  error?: {
+    code: ReviewSurfaceFindingErrorCode;
+    message: string;
+  };
+};
+
 export class ReviewSurfaceRegistry {
+  private readonly findings = new Map<string, Map<string, NeonReviewFinding>>();
   private readonly listeners = new Set<ReviewSurfaceListener>();
   private readonly pendingNavigations = new Map<string, string>();
   private readonly records = new Map<string, ActiveReviewSurface>();
@@ -48,6 +89,21 @@ export class ReviewSurfaceRegistry {
       action: existing ? 'updated' : 'registered',
       surfaceId: surface.surfaceId,
     });
+    const previousRevisionKey = existing
+      ? reviewRevisionKey(existing.source.revision)
+      : null;
+    const nextRevisionKey = reviewRevisionKey(surface.source.revision);
+    if (
+      existing &&
+      (existing.source.id !== surface.source.id ||
+        previousRevisionKey !== nextRevisionKey)
+    ) {
+      this.staleActiveFindings(
+        surface.surfaceId,
+        nextRevisionKey,
+        'The review surface source or revision changed.',
+      );
+    }
     this.scheduleExpiration();
     return surface;
   }
@@ -62,6 +118,273 @@ export class ReviewSurfaceRegistry {
   read(surfaceId: string) {
     this.pruneExpired();
     return this.records.get(surfaceId) ?? null;
+  }
+
+  readFindings(surfaceId: string): ReviewSurfaceFindingResult {
+    const surface = this.read(surfaceId);
+    if (!surface)
+      return this.findingError(surfaceId, 'read', 'surface-not-active');
+    const findings = [...(this.findings.get(surfaceId)?.values() ?? [])].sort(
+      (left, right) =>
+        left.provenance.createdAt.localeCompare(right.provenance.createdAt) ||
+        left.id.localeCompare(right.id),
+    );
+    return {
+      ok: true,
+      action: 'read',
+      changed: false,
+      message: `Read ${findings.length} ephemeral review finding(s).`,
+      surfaceId,
+      revisionKey: reviewRevisionKey(surface.source.revision),
+      findings,
+      count: findings.length,
+    };
+  }
+
+  applyFindings(
+    surfaceId: string,
+    input: TrustedReviewSurfaceFindingsApplyRequest,
+  ): ReviewSurfaceFindingResult {
+    const surface = this.read(surfaceId);
+    if (!surface)
+      return this.findingError(surfaceId, 'apply', 'surface-not-active');
+    const currentRevisionKey = reviewRevisionKey(surface.source.revision);
+    if (!currentRevisionKey) {
+      return this.findingError(surfaceId, 'apply', 'revision-unavailable');
+    }
+    if (input.revisionKey !== currentRevisionKey) {
+      return this.findingError(surfaceId, 'apply', 'stale-revision', {
+        revisionKey: currentRevisionKey,
+      });
+    }
+
+    if (
+      input.findings.length === 0 ||
+      input.findings.length > neonReviewFindingLimits.maxApplyBatch
+    ) {
+      return this.findingError(surfaceId, 'apply', 'invalid-batch-size', {
+        revisionKey: currentRevisionKey,
+      });
+    }
+
+    const ids = input.findings.map((finding) => finding.id);
+    if (new Set(ids).size !== ids.length) {
+      return this.findingError(surfaceId, 'apply', 'duplicate-finding-id', {
+        revisionKey: currentRevisionKey,
+      });
+    }
+
+    const sourcePaths = new Set(surface.source.files.map((file) => file.path));
+    for (const finding of input.findings) {
+      if (
+        finding.sourceId !== surface.source.id ||
+        finding.revisionKey !== currentRevisionKey
+      ) {
+        return this.findingError(surfaceId, 'apply', 'source-mismatch', {
+          revisionKey: currentRevisionKey,
+        });
+      }
+      if (!sourcePaths.has(finding.file)) {
+        return this.findingError(surfaceId, 'apply', 'file-unavailable', {
+          revisionKey: currentRevisionKey,
+        });
+      }
+    }
+
+    const existing = this.findings.get(surfaceId) ?? new Map();
+    const findingsToApply: NeonReviewFindingDraft[] = [];
+    let addedFindingCount = 0;
+    for (const finding of input.findings) {
+      const current = existing.get(finding.id);
+      if (!current) {
+        findingsToApply.push(finding);
+        addedFindingCount += 1;
+        continue;
+      }
+      if (sameFindingScope(current, finding)) {
+        if (sameFindingDraft(current, finding)) continue;
+        return this.findingError(surfaceId, 'apply', 'finding-id-conflict', {
+          revisionKey: currentRevisionKey,
+        });
+      }
+      if (current.lifecycle.state === 'active') {
+        return this.findingError(surfaceId, 'apply', 'finding-id-conflict', {
+          revisionKey: currentRevisionKey,
+        });
+      }
+      findingsToApply.push(finding);
+    }
+
+    if (
+      existing.size + addedFindingCount >
+      neonReviewFindingLimits.maxFindingsPerSurface
+    ) {
+      return this.findingError(surfaceId, 'apply', 'surface-finding-limit', {
+        revisionKey: currentRevisionKey,
+      });
+    }
+
+    if (findingsToApply.length === 0) {
+      return {
+        ok: true,
+        action: 'apply',
+        changed: false,
+        message: 'All finding ids were already applied with identical content.',
+        surfaceId,
+        revisionKey: currentRevisionKey,
+        findings: input.findings.map((finding) => existing.get(finding.id)!),
+        findingIds: [],
+        count: 0,
+      };
+    }
+
+    const changedAt = this.timestamp();
+    const applied = findingsToApply.map((finding) =>
+      materializeFinding(surfaceId, finding, changedAt),
+    );
+    const next = new Map(existing);
+    for (const finding of applied) next.set(finding.id, finding);
+    this.findings.set(surfaceId, next);
+    this.publishFindingChange(surfaceId, {
+      action: 'applied',
+      revisionKey: currentRevisionKey,
+      findingIds: applied.map((finding) => finding.id),
+      count: applied.length,
+    });
+    return {
+      ok: true,
+      action: 'apply',
+      changed: true,
+      message: `Applied ${applied.length} ephemeral review finding(s).`,
+      surfaceId,
+      revisionKey: currentRevisionKey,
+      findings: input.findings.map((finding) => next.get(finding.id)!),
+      findingIds: applied.map((finding) => finding.id),
+      count: applied.length,
+    };
+  }
+
+  dismissFindings(
+    surfaceId: string,
+    input: ReviewSurfaceFindingsDismissRequest,
+  ): ReviewSurfaceFindingResult {
+    const surface = this.read(surfaceId);
+    if (!surface)
+      return this.findingError(surfaceId, 'dismiss', 'surface-not-active');
+    const scopeError = this.findingMutationScopeError(
+      surface,
+      'dismiss',
+      input.sourceId,
+      input.revisionKey,
+    );
+    if (scopeError) return scopeError;
+    if (
+      input.findingIds.length === 0 ||
+      input.findingIds.length > neonReviewFindingLimits.maxApplyBatch
+    ) {
+      return this.findingError(surfaceId, 'dismiss', 'invalid-batch-size');
+    }
+    if (new Set(input.findingIds).size !== input.findingIds.length) {
+      return this.findingError(surfaceId, 'dismiss', 'duplicate-finding-id');
+    }
+    const current = this.findings.get(surfaceId);
+    const changedAt = this.timestamp();
+    const changedIds: string[] = [];
+    const next = new Map(current);
+    for (const findingId of input.findingIds) {
+      const finding = next.get(findingId);
+      if (!finding || finding.lifecycle.state === 'dismissed') continue;
+      if (
+        finding.lifecycle.state !== 'active' &&
+        finding.lifecycle.state !== 'stale'
+      ) {
+        continue;
+      }
+      next.set(findingId, {
+        ...finding,
+        lifecycle: {
+          state: 'dismissed',
+          changedAt,
+          reason: input.reason,
+        },
+      });
+      changedIds.push(findingId);
+    }
+    if (changedIds.length > 0) {
+      this.findings.set(surfaceId, next);
+      this.publishFindingChange(surfaceId, {
+        action: 'dismissed',
+        revisionKey: reviewRevisionKey(surface.source.revision),
+        findingIds: changedIds,
+        count: changedIds.length,
+      });
+    }
+    return {
+      ok: true,
+      action: 'dismiss',
+      changed: changedIds.length > 0,
+      message: `Dismissed ${changedIds.length} ephemeral review finding(s).`,
+      surfaceId,
+      revisionKey: reviewRevisionKey(surface.source.revision),
+      findingIds: changedIds,
+      count: changedIds.length,
+    };
+  }
+
+  clearFindings(
+    surfaceId: string,
+    input: ReviewSurfaceFindingsClearRequest,
+  ): ReviewSurfaceFindingResult {
+    const surface = this.read(surfaceId);
+    if (!surface)
+      return this.findingError(surfaceId, 'clear', 'surface-not-active');
+    const scopeError = this.findingMutationScopeError(
+      surface,
+      'clear',
+      input.sourceId,
+      input.revisionKey,
+    );
+    if (scopeError) return scopeError;
+    if (
+      input.findingIds &&
+      (input.findingIds.length === 0 ||
+        input.findingIds.length > neonReviewFindingLimits.maxApplyBatch)
+    ) {
+      return this.findingError(surfaceId, 'clear', 'invalid-batch-size');
+    }
+    if (
+      input.findingIds &&
+      new Set(input.findingIds).size !== input.findingIds.length
+    ) {
+      return this.findingError(surfaceId, 'clear', 'duplicate-finding-id');
+    }
+    const current = this.findings.get(surfaceId);
+    const requestedIds = input.findingIds ?? [...(current?.keys() ?? [])];
+    const clearedIds = requestedIds.filter((findingId) =>
+      current?.has(findingId),
+    );
+    if (clearedIds.length > 0 && current) {
+      const next = new Map(current);
+      for (const findingId of clearedIds) next.delete(findingId);
+      if (next.size > 0) this.findings.set(surfaceId, next);
+      else this.findings.delete(surfaceId);
+      this.publishFindingChange(surfaceId, {
+        action: 'cleared',
+        revisionKey: reviewRevisionKey(surface.source.revision),
+        findingIds: clearedIds,
+        count: clearedIds.length,
+      });
+    }
+    return {
+      ok: true,
+      action: 'clear',
+      changed: clearedIds.length > 0,
+      message: `Cleared ${clearedIds.length} ephemeral review finding(s).`,
+      surfaceId,
+      revisionKey: reviewRevisionKey(surface.source.revision),
+      findingIds: clearedIds,
+      count: clearedIds.length,
+    };
   }
 
   heartbeat(surfaceId: string) {
@@ -80,6 +403,7 @@ export class ReviewSurfaceRegistry {
     const surface = this.records.get(surfaceId);
     if (!surface) return false;
     this.records.delete(surfaceId);
+    this.findings.delete(surfaceId);
     for (const [commandId, targetSurfaceId] of this.pendingNavigations) {
       if (targetSurfaceId === surfaceId)
         this.pendingNavigations.delete(commandId);
@@ -160,6 +484,7 @@ export class ReviewSurfaceRegistry {
     this.listeners.clear();
     this.pendingNavigations.clear();
     this.records.clear();
+    this.findings.clear();
   }
 
   private pruneExpired() {
@@ -195,7 +520,7 @@ export class ReviewSurfaceRegistry {
       Partial<
         Pick<
           ReviewSurfaceChangeEvent,
-          'surface' | 'navigation' | 'acknowledgement' | 'reason'
+          'surface' | 'navigation' | 'acknowledgement' | 'reason' | 'findings'
         >
       >,
   ) {
@@ -207,6 +532,7 @@ export class ReviewSurfaceRegistry {
       surface: input.surface ?? null,
       navigation: input.navigation ?? null,
       acknowledgement: input.acknowledgement ?? null,
+      findings: input.findings ?? null,
       reason: input.reason ?? null,
     };
     for (const listener of this.listeners) {
@@ -221,6 +547,161 @@ export class ReviewSurfaceRegistry {
 
   private timestamp() {
     return new Date(this.now()).toISOString();
+  }
+
+  private staleActiveFindings(
+    surfaceId: string,
+    revisionKey: string | null,
+    reason: string,
+  ) {
+    const current = this.findings.get(surfaceId);
+    if (!current) return;
+    const changedAt = this.timestamp();
+    const changedIds: string[] = [];
+    const next = new Map(current);
+    for (const [findingId, finding] of current) {
+      if (finding.lifecycle.state !== 'active') continue;
+      next.set(findingId, {
+        ...finding,
+        lifecycle: { state: 'stale', changedAt, reason },
+      });
+      changedIds.push(findingId);
+    }
+    if (changedIds.length === 0) return;
+    this.findings.set(surfaceId, next);
+    this.publishFindingChange(surfaceId, {
+      action: 'staled',
+      revisionKey,
+      findingIds: changedIds,
+      count: changedIds.length,
+    });
+  }
+
+  private publishFindingChange(
+    surfaceId: string,
+    change: ReviewSurfaceFindingChange,
+  ) {
+    this.publish({
+      action: 'findings-changed',
+      surfaceId,
+      findings: {
+        ...change,
+        findingIds: change.findingIds.slice(
+          0,
+          neonReviewFindingLimits.maxEventFindingIds,
+        ),
+      },
+    });
+  }
+
+  private findingError(
+    surfaceId: string,
+    action: string,
+    code: ReviewSurfaceFindingErrorCode,
+    extra: Pick<ReviewSurfaceFindingResult, 'revisionKey'> = {},
+  ): ReviewSurfaceFindingResult {
+    const message = findingErrorMessage(code);
+    return {
+      ok: false,
+      action,
+      changed: false,
+      message,
+      surfaceId,
+      ...extra,
+      error: { code, message },
+    };
+  }
+
+  private findingMutationScopeError(
+    surface: ActiveReviewSurface,
+    action: string,
+    sourceId: string,
+    revisionKey: string,
+  ) {
+    const currentRevisionKey = reviewRevisionKey(surface.source.revision);
+    if (sourceId !== surface.source.id) {
+      return this.findingError(surface.surfaceId, action, 'source-mismatch', {
+        revisionKey: currentRevisionKey,
+      });
+    }
+    if (revisionKey !== currentRevisionKey) {
+      return this.findingError(surface.surfaceId, action, 'stale-revision', {
+        revisionKey: currentRevisionKey,
+      });
+    }
+    return null;
+  }
+}
+
+function materializeFinding(
+  surfaceId: string,
+  finding: NeonReviewFindingDraft,
+  createdAt: string,
+): NeonReviewFinding {
+  return {
+    ...finding,
+    surfaceId,
+    provenance: { ...finding.provenance, createdAt },
+    lifecycle: { state: 'active', changedAt: createdAt, reason: null },
+  };
+}
+
+function sameFindingDraft(
+  finding: NeonReviewFinding,
+  draft: NeonReviewFindingDraft,
+) {
+  return (
+    JSON.stringify({
+      schemaVersion: finding.schemaVersion,
+      id: finding.id,
+      sourceId: finding.sourceId,
+      revisionKey: finding.revisionKey,
+      file: finding.file,
+      anchor: finding.anchor,
+      title: finding.title,
+      explanation: finding.explanation,
+      severity: finding.severity,
+      confidence: finding.confidence,
+      suggestedAction: finding.suggestedAction,
+      provenance: {
+        authorRole: finding.provenance.authorRole,
+        model: finding.provenance.model,
+        workflowRunId: finding.provenance.workflowRunId,
+      },
+    }) === JSON.stringify(draft)
+  );
+}
+
+function sameFindingScope(
+  finding: NeonReviewFinding,
+  draft: NeonReviewFindingDraft,
+) {
+  return (
+    finding.sourceId === draft.sourceId &&
+    finding.revisionKey === draft.revisionKey
+  );
+}
+
+function findingErrorMessage(code: ReviewSurfaceFindingErrorCode) {
+  switch (code) {
+    case 'surface-not-active':
+      return 'Review surface is not active.';
+    case 'revision-unavailable':
+      return 'Review surface has no resolved revision for anchored findings.';
+    case 'stale-revision':
+      return 'Finding batch revision does not match the active review surface.';
+    case 'source-mismatch':
+      return 'Every finding must match the active source and revision.';
+    case 'file-unavailable':
+      return 'Every finding must anchor to a file in the active review surface.';
+    case 'invalid-batch-size':
+      return `Finding batches must contain between 1 and ${neonReviewFindingLimits.maxApplyBatch} items.`;
+    case 'duplicate-finding-id':
+      return 'Finding ids must be unique within a batch.';
+    case 'finding-id-conflict':
+      return 'A finding id is already associated with different content.';
+    case 'surface-finding-limit':
+      return `A review surface may retain at most ${neonReviewFindingLimits.maxFindingsPerSurface} ephemeral findings.`;
   }
 }
 
