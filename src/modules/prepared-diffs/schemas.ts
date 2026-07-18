@@ -7,6 +7,7 @@ import { addNotification } from '../app-state';
 import { buildPreparedDiffAuditSummary } from '../autonomous-audit';
 import { openDb } from '../../lib/sqlite';
 import { gitCurrentSha, gitDiff, type RepoDiffFile } from '../../repo-edit/git';
+import type { ReviewRevision } from '../../../shared/review-source';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
@@ -90,6 +91,7 @@ export type PreparedDiffActionResult = {
   files?: RepoDiffFile[];
   file?: RepoDiffFile | null;
   diff?: string;
+  revision?: ReviewRevision;
   diffSummary?: {
     files: number;
     additions: number;

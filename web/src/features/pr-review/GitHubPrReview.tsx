@@ -10,6 +10,7 @@ import { Badge, MiniEmpty } from '../../components/ui';
 import { queryErrorMessage } from '../../lib/query';
 import { firstRenderablePath } from '../diff-viewer/helpers';
 import type { DiffFilePatch, DiffReviewAnnotation } from '../diff-viewer/types';
+import { githubPrReviewSource } from '../diff-viewer/review-source';
 import { PrReviewCommentComposer } from './PrReviewCommentComposer';
 import { PrReviewDiffPane } from './PrReviewDiffPane';
 import { reportOnlyFindingBody } from './PrReviewFindingsSidebar';
@@ -275,6 +276,28 @@ export function GitHubPrReview({
   const patchErrorMessage = activePatchQuery?.error
     ? `Patch unavailable: ${queryErrorMessage(activePatchQuery.error)}`
     : null;
+  const reviewSource = useMemo(
+    () =>
+      githubPrReviewSource(pr, files, {
+        localSource: filesQuery.data?.source === 'local',
+        loadingPaths:
+          activePath && activePatchQuery?.isLoading
+            ? new Set([activePath])
+            : undefined,
+        unavailablePaths:
+          activePath && activePatchQuery?.isError
+            ? new Set([activePath])
+            : undefined,
+      }),
+    [
+      activePatchQuery?.isError,
+      activePatchQuery?.isLoading,
+      activePath,
+      files,
+      filesQuery.data?.source,
+      pr,
+    ],
+  );
 
   useEffect(() => {
     if (activePath && fileList.some((file) => file.path === activePath)) return;
@@ -839,6 +862,7 @@ export function GitHubPrReview({
         selectedLines={
           composer?.path === activePath ? composer.selection : null
         }
+        source={reviewSource}
         title={pr.title}
       />
       {fileLoadMessage ? null : (

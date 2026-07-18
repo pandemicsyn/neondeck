@@ -1,8 +1,10 @@
 # Diff Improvements Plan
 
-Status: proposed; Phase A performance reconciliation is complete, and normalized source/revision contracts are next
+Status: proposed; Phase A performance reconciliation and normalized source/revision contracts are complete, and ephemeral review-surface events are next
 
-Progress note (2026-07-18): the specialized large-PR work now has real registered-PR measurements, stable review-thread identity, bounded local metadata reuse, active-patch priority, and a passing first-patch browser budget. The one-time cold-fetch decision remains deferred in `.plans/PR_REVIEW_PERF_PLAN.md`; it does not block the remaining Phase A source/revision contract work.
+Progress note (2026-07-18): the specialized large-PR work now has real registered-PR measurements, stable review-thread identity, bounded local metadata reuse, active-patch priority, and a passing first-patch browser budget. The one-time cold-fetch decision remains deferred in `.plans/PR_REVIEW_PERF_PLAN.md`; it does not block the remaining Phase A surface registration work.
+
+Contract note (2026-07-18): `shared/review-source.ts` now defines the versioned source, revision, repository, capability, ordered-file, and explicit patch-state vocabulary used by every current web diff surface. GitHub PRs use head SHA identity; prepared and Kilo/repo worktree views receive content-addressed changed-path fingerprints from metadata reads; skill patches and historical repo-edit events use retained content hashes. Missing identities remain explicitly unavailable rather than falling back to timestamps. The current viewers expose source/revision metadata on their mounted roots, ready for the Phase A registration and navigation event layer. On a synthetic 305-file changed worktree, metadata plus revision identity measured 335.5 ms median versus 243.0 ms for metadata alone (92.5 ms added), within the 500 ms warm-tree budget.
 
 Related plans:
 
@@ -530,8 +532,8 @@ before relaxing a gate.
 
 ### Phase A — Contracts and performance integration
 
-1. Reconcile with the active PR review performance work and settle shared query/source interfaces.
-2. Add the normalized review source and revision model.
+1. **Completed —** reconcile with the active PR review performance work and settle shared query/source interfaces.
+2. **Completed —** add the normalized review source and revision model.
 3. Add ephemeral review-surface registration/context/navigation events.
 4. Establish small/medium/large fixtures and record the baseline measurements.
 

@@ -3,6 +3,7 @@ import type {
   AutopilotPreparedDiff,
   DiffSummary,
   KiloTaskRecord,
+  LearningCandidate,
   RepoEditEvent,
 } from '../../api';
 import { Badge, MiniEmpty } from '../../components/ui';
@@ -21,6 +22,12 @@ import {
 } from './queries';
 import type { DiffFilePatch } from './types';
 import { DiffWorkerProvider, UnifiedPatchView } from './DiffViewer';
+import {
+  kiloResultReviewSource,
+  preparedDiffReviewSource,
+  repoEditEventReviewSource,
+  skillPatchReviewSource,
+} from './review-source';
 
 export function PreparedDiffReview({ diff }: { diff: AutopilotPreparedDiff }) {
   const filesQuery = usePreparedDiffFiles(diff.id);
@@ -48,6 +55,19 @@ export function PreparedDiffReview({ diff }: { diff: AutopilotPreparedDiff }) {
         }
       : file,
   );
+  const source = preparedDiffReviewSource(
+    diff,
+    viewFiles,
+    filesQuery.data?.revision,
+    {
+      loadingPaths:
+        activePath && filePatchQuery.isLoading
+          ? new Set([activePath])
+          : undefined,
+      unavailablePaths:
+        activePath && filePatchQuery.error ? new Set([activePath]) : undefined,
+    },
+  );
 
   if (filesQuery.isLoading) {
     return <MiniEmpty label="Loading changed files." />;
@@ -72,6 +92,7 @@ export function PreparedDiffReview({ diff }: { diff: AutopilotPreparedDiff }) {
       patchError={
         filePatchQuery.error ? queryErrorMessage(filePatchQuery.error) : null
       }
+      source={source}
       title={diff.title}
       tone="primary"
     />
@@ -79,13 +100,18 @@ export function PreparedDiffReview({ diff }: { diff: AutopilotPreparedDiff }) {
 }
 
 export function SkillPatchDiffReview({
+  afterHash,
+  candidate,
   patch,
   title = 'Skill patch',
 }: {
+  afterHash?: string | null;
+  candidate: Pick<LearningCandidate, 'id' | 'repoId' | 'skillId'>;
   patch: string | null | undefined;
   title?: string;
 }) {
   const files = useMemo(() => splitUnifiedPatchFiles(patch), [patch]);
+  const source = skillPatchReviewSource(candidate, files, afterHash, title);
 
   if (files.length > 1) {
     return (
@@ -93,6 +119,7 @@ export function SkillPatchDiffReview({
         detail="Learning candidate patch"
         emptyLabel="No patch content available."
         files={files}
+        source={source}
         title={title}
         tone="violet"
       />
@@ -104,6 +131,7 @@ export function SkillPatchDiffReview({
       <UnifiedPatchView
         detail="Learning candidate patch"
         patch={patch}
+        source={source}
         title={title}
         tone="violet"
       />
@@ -127,6 +155,11 @@ export function KiloTaskDiffReview({ task }: { task: KiloTaskRecord }) {
   const summary =
     repoDiffQuery.data?.diffSummary ??
     summaryFromKilo(kiloDiffQuery.data?.diff ?? task.diff);
+  const source = kiloResultReviewSource(
+    task,
+    files,
+    repoDiffQuery.data?.revision,
+  );
 
   if (repoDiffQuery.isLoading) {
     return <MiniEmpty label="Loading Kilo diff." />;
@@ -148,6 +181,7 @@ export function KiloTaskDiffReview({ task }: { task: KiloTaskRecord }) {
       patchError={
         repoDiffQuery.error ? queryErrorMessage(repoDiffQuery.error) : null
       }
+      source={source}
       title={task.title}
       tone="violet"
     />
@@ -160,6 +194,7 @@ export function RepoEditEventDiffReview({ event }: { event: RepoEditEvent }) {
     () => splitUnifiedPatchFiles(event.diffPatch),
     [event.diffPatch],
   );
+  const source = repoEditEventReviewSource(event, storedFiles);
 
   if (hasStoredPatch) {
     if (storedFiles.length > 1) {
@@ -168,6 +203,7 @@ export function RepoEditEventDiffReview({ event }: { event: RepoEditEvent }) {
           detail={event.reason ?? event.action}
           emptyLabel="No repo-edit patch available."
           files={storedFiles}
+          source={source}
           title={`${event.repoId} - ${event.action}`}
           tone={event.status === 'failed' ? 'accent' : 'primary'}
         />
@@ -180,6 +216,7 @@ export function RepoEditEventDiffReview({ event }: { event: RepoEditEvent }) {
           detail={event.reason ?? event.action}
           meta={<Badge>{event.status}</Badge>}
           patch={event.diffPatch}
+          source={source}
           title={`${event.repoId} - ${event.action}`}
           tone={event.status === 'failed' ? 'accent' : 'primary'}
         />

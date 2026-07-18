@@ -1,3 +1,5 @@
+import type { ReviewRevision } from '../../../shared/review-source';
+
 export type DashboardTheme = 'light' | 'dark' | 'system';
 export type DashboardDensity = 'compact' | 'comfortable' | 'large';
 export type DashboardLayoutMode = 'auto' | 'xeneon' | 'stacked';
@@ -761,6 +763,7 @@ export type RepoEditEvent = {
   inputHash: string | null;
   diffSummary: unknown;
   diffPatch: string | null;
+  reviewRevision: ReviewRevision;
   error: unknown;
   createdAt: string;
   updatedAt: string;
@@ -784,6 +787,7 @@ export type DiffSummary = {
 
 export type RepoDiffFile = {
   path: string;
+  previousPath?: string | null;
   status: string;
   additions: number;
   deletions: number;
@@ -798,6 +802,7 @@ export type PreparedDiffFilesResponse = {
   action: string;
   changed: boolean;
   message: string;
+  revision?: ReviewRevision;
   files?: RepoDiffFile[];
   diffSummary?: DiffSummary;
   errors?: string[];
@@ -822,6 +827,7 @@ export type RepoDiffResponse = {
   repoId?: string;
   worktreeId?: string | null;
   base?: string;
+  revision?: ReviewRevision;
   files?: RepoDiffFile[];
   diffSummary?: DiffSummary;
   errors?: string[];

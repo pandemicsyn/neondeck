@@ -13,13 +13,14 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  listRepoEditEvents,
   patchRepoFiles,
   readRepoDiff,
   readRepoFile,
   replaceRepoFile,
   writeRepoFile,
 } from './repo-edit';
-import { gitDiff } from './repo-edit/git';
+import { gitDiff, gitWorktreeRevision } from './repo-edit/git';
 import { runtimePaths } from './runtime-home';
 
 const execFileAsync = promisify(execFile);
@@ -319,6 +320,82 @@ describe('repo edit actions', () => {
           additions: 1,
         }),
       ]),
+    });
+  });
+
+  it('changes the worktree revision when content changes without changing line counts', async () => {
+    const { paths, repo } = await fixture();
+    const objectStateBefore = await gitOutput(repo, ['count-objects', '-v']);
+    await writeFile(join(repo, 'src/app.ts'), 'export const value = 2;\n');
+    const first = await readRepoDiff({ repoId: 'sample' }, paths);
+    await writeFile(join(repo, 'src/app.ts'), 'export const value = 3;\n');
+    const second = await readRepoDiff({ repoId: 'sample' }, paths);
+
+    expect(first).toMatchObject({
+      ok: true,
+      revision: {
+        state: 'resolved',
+        kind: 'worktree-diff',
+        id: expect.any(String),
+        baseId: expect.any(String),
+      },
+    });
+    expect(second).toMatchObject({
+      ok: true,
+      revision: { state: 'resolved', kind: 'worktree-diff' },
+    });
+    if (
+      first.revision?.state !== 'resolved' ||
+      second.revision?.state !== 'resolved'
+    ) {
+      throw new Error('Expected resolved worktree revisions.');
+    }
+    expect(second.revision.id).not.toBe(first.revision.id);
+    const currentDiff = await gitDiff(repo, {});
+    const reordered = await gitWorktreeRevision(repo, {
+      files: [...currentDiff.files].reverse(),
+    });
+    expect(reordered.id).toBe(second.revision.id);
+    await expect(gitOutput(repo, ['count-objects', '-v'])).resolves.toBe(
+      objectStateBefore,
+    );
+  });
+
+  it('allows changed paths whose names begin with two dots', async () => {
+    const { paths, repo } = await fixture();
+    await writeFile(join(repo, '..notes.ts'), 'export const note = true;\n');
+
+    const result = await readRepoDiff({ repoId: 'sample' }, paths);
+
+    expect(result).toMatchObject({
+      ok: true,
+      files: expect.arrayContaining([
+        expect.objectContaining({ path: '..notes.ts', status: 'untracked' }),
+      ]),
+      revision: { state: 'resolved', kind: 'worktree-diff' },
+    });
+  });
+
+  it('exposes a retained patch hash for historical repo-edit review', async () => {
+    const { paths } = await fixture();
+    await replaceRepoFile(
+      {
+        repoId: 'sample',
+        path: 'src/app.ts',
+        oldString: 'value = 1',
+        newString: 'value = 2',
+      },
+      paths,
+    );
+
+    const events = await listRepoEditEvents(paths);
+
+    expect(events.events[0]).toMatchObject({
+      reviewRevision: {
+        state: 'resolved',
+        kind: 'retained-patch',
+        id: expect.stringMatching(/^[a-f0-9]{64}$/),
+      },
     });
   });
 

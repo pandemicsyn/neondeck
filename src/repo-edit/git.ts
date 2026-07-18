@@ -1,9 +1,15 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { lstat, mkdtemp, readFile, readlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { runExecFile } from '../lib/exec';
 import type { DiffSummary } from './schemas';
+import {
+  resolvedReviewRevision,
+  type ResolvedReviewRevision,
+} from '../../shared/review-source';
 
 export type RepoGitStatus = {
   branch: string;
@@ -140,6 +146,115 @@ export async function gitStagedPaths(repoRoot: string) {
 
 export async function gitCurrentSha(repoRoot: string) {
   return (await git(repoRoot, ['rev-parse', 'HEAD'])).trim();
+}
+
+export async function gitWorktreeRevision(
+  repoRoot: string,
+  input: { base?: string; files: RepoDiffFile[] },
+): Promise<ResolvedReviewRevision> {
+  const base = validateRef(input.base ?? 'HEAD');
+  const baseId = (await git(repoRoot, ['rev-parse', base])).trim();
+  const files = [...input.files].sort((left, right) =>
+    left.path.localeCompare(right.path),
+  );
+  const identities = await mapConcurrent(files, 16, (file) =>
+    worktreeFileIdentity(repoRoot, file),
+  );
+  return resolvedReviewRevision({
+    kind: 'worktree-diff',
+    id: createHash('sha256').update(JSON.stringify(identities)).digest('hex'),
+    baseId,
+  });
+}
+
+async function worktreeFileIdentity(repoRoot: string, file: RepoDiffFile) {
+  const path = revisionPath(repoRoot, file.path);
+  const stats = await lstat(path).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  });
+  const common = {
+    path: file.path,
+    previousPath: file.previousPath ?? null,
+    status: file.status,
+  };
+  if (!stats) return { ...common, kind: 'missing', mode: null, hash: null };
+  if (stats.isSymbolicLink()) {
+    return {
+      ...common,
+      kind: 'symlink',
+      mode: null,
+      hash: createHash('sha256')
+        .update(await readlink(path))
+        .digest('hex'),
+    };
+  }
+  if (stats.isFile()) {
+    return {
+      ...common,
+      kind: 'file',
+      mode: stats.mode & 0o111,
+      hash: await sha256File(path),
+    };
+  }
+  if (stats.isDirectory()) {
+    const commit = await git(repoRoot, [
+      '-C',
+      file.path,
+      'rev-parse',
+      'HEAD',
+    ]).catch(() => '');
+    return {
+      ...common,
+      kind: 'directory',
+      mode: null,
+      hash: commit.trim() || null,
+    };
+  }
+  return { ...common, kind: 'other', mode: stats.mode, hash: null };
+}
+
+function revisionPath(repoRoot: string, path: string) {
+  const target = resolve(repoRoot, path);
+  const repoRelative = relative(repoRoot, target);
+  if (
+    repoRelative === '..' ||
+    repoRelative.startsWith(`..${sep}`) ||
+    isAbsolute(repoRelative)
+  ) {
+    throw new Error(`Revision path escapes the repository: ${path}`);
+  }
+  return target;
+}
+
+function sha256File(path: string) {
+  return new Promise<string>((resolveHash, reject) => {
+    const hash = createHash('sha256');
+    const stream = createReadStream(path);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('error', reject);
+    stream.on('end', () => resolveHash(hash.digest('hex')));
+  });
+}
+
+async function mapConcurrent<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>,
+) {
+  const results = Array.from({ length: items.length }) as R[];
+  let nextIndex = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        const item = items[index];
+        if (item !== undefined) results[index] = await mapper(item);
+      }
+    }),
+  );
+  return results;
 }
 
 export async function gitDiff(
