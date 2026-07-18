@@ -1047,6 +1047,21 @@ describe('review surface registry', () => {
         ),
       ).resolves.toMatchObject({ ok: true, changed: true });
     }
+    registry.applyFindings('surface-cache-0', {
+      revisionKey: 'git-commit::head-sha',
+      findings: [finding('finding-0-active')],
+    });
+
+    await expect(
+      promotionService.promote('surface-cache-0', {
+        ...firstRequest,
+        findingId: 'finding-0-active',
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'promotion-request-conflict' },
+    });
+    expect(promoteTarget).toHaveBeenCalledTimes(401);
 
     await expect(
       promotionService.promote('surface-cache-0', firstRequest),

@@ -590,33 +590,39 @@ export class ReviewSurfaceRegistry {
       input.revisionKey,
     );
     if (scopeError) return scopeError;
-    const finding = this.findings.get(surfaceId)?.get(input.findingId);
-    const promotion = finding?.lifecycle.promotion;
-    if (!finding || !promotion) return null;
-    if (!promotion || promotion.requestId !== input.requestId) {
+    const retainedFindings = this.findings.get(surfaceId);
+    const replayFinding = [...(retainedFindings?.values() ?? [])].find(
+      (finding) => finding.lifecycle.promotion?.requestId === input.requestId,
+    );
+    if (replayFinding) {
+      const promotion = replayFinding.lifecycle.promotion!;
+      if (promotion.requestFingerprint !== requestFingerprint) {
+        return this.findingError(
+          surfaceId,
+          'promote',
+          'promotion-request-conflict',
+          { revisionKey: reviewRevisionKey(surface.source.revision) },
+        );
+      }
+      return {
+        ok: true,
+        action: 'promote',
+        changed: false,
+        message: 'This finding promotion is already recorded.',
+        surfaceId,
+        revisionKey: input.revisionKey,
+        findings: [replayFinding],
+        findingIds: [replayFinding.id],
+        count: 1,
+      };
+    }
+    const finding = retainedFindings?.get(input.findingId);
+    if (finding?.lifecycle.promotion) {
       return this.findingError(surfaceId, 'promote', 'already-promoted', {
         revisionKey: reviewRevisionKey(surface.source.revision),
       });
     }
-    if (promotion.requestFingerprint !== requestFingerprint) {
-      return this.findingError(
-        surfaceId,
-        'promote',
-        'promotion-request-conflict',
-        { revisionKey: reviewRevisionKey(surface.source.revision) },
-      );
-    }
-    return {
-      ok: true,
-      action: 'promote',
-      changed: false,
-      message: 'This finding promotion is already recorded.',
-      surfaceId,
-      revisionKey: input.revisionKey,
-      findings: [finding],
-      findingIds: [finding.id],
-      count: 1,
-    };
+    return null;
   }
 
   beginFindingPromotion(candidate: ValidatedReviewSurfaceFindingPromotion) {
