@@ -290,6 +290,42 @@ describe('focused PR review navigation wiring', () => {
     ).toMatchObject({ annotationId: typed.id });
   });
 
+  it('frames lone-surrogate typed and report-only ids without throwing or colliding', () => {
+    const loneSurrogate = '\ud800';
+    const typed = { ...neonFinding(), id: loneSurrogate };
+    const report = { ...finding(), sourceId: loneSurrogate };
+
+    expect(() =>
+      createPrReviewNavigationData({
+        draft: null,
+        files: reviewFiles(),
+        findings: [report],
+        neonFindings: [typed],
+        staleCommentIds: new Set(),
+        threads: [],
+      }),
+    ).not.toThrow();
+
+    const data = createPrReviewNavigationData({
+      draft: null,
+      files: reviewFiles(),
+      findings: [report],
+      neonFindings: [typed],
+      staleCommentIds: new Set(),
+      threads: [],
+    });
+    const ids = reviewCursorTargets(data.model, 'finding').map(({ id }) => id);
+
+    expect(ids).toEqual([
+      reportOnlyFindingNavigationId(report, 0),
+      neonFindingNavigationId(loneSurrogate),
+    ]);
+    expect(new Set(ids).size).toBe(2);
+    expect(neonFindingAnnotationId(loneSurrogate)).not.toBe(
+      neonFindingNavigationId(loneSurrogate),
+    );
+  });
+
   it('resolves an inspector finding outside the active tree filter from the unfiltered cursor', () => {
     const typed = neonFinding();
     const data = createPrReviewNavigationData({

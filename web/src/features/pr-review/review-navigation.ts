@@ -19,6 +19,7 @@ import type { DiffFilePatch } from '../diff-viewer/types';
 import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import type { NeonFindingAnchorResolution } from './review-findings';
 import {
+  namespacedReviewUiId,
   neonFindingAnnotationId,
   neonFindingNavigationId,
 } from './review-findings';
@@ -213,10 +214,15 @@ export function reportOnlyFindingNavigationId(
   finding: PrReviewReportOnlyFinding,
   index: number,
 ) {
-  const sourceId =
-    finding.sourceId ??
-    `synthetic:${index}:${finding.path}:${finding.line ?? 'file'}`;
-  return `report-only-finding:${encodeURIComponent(sourceId)}`;
+  return finding.sourceId != null
+    ? namespacedReviewUiId('report-only-finding', 'source', finding.sourceId)
+    : namespacedReviewUiId(
+        'report-only-finding',
+        'synthetic',
+        index,
+        finding.path,
+        finding.line,
+      );
 }
 
 export function resolveNeonFindingSelection(

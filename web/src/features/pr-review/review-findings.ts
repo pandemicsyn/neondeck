@@ -19,11 +19,18 @@ export type NeonFindingAnchorResolution =
     };
 
 export function neonFindingAnnotationId(findingId: string) {
-  return `neon-finding-annotation:${encodeURIComponent(findingId)}`;
+  return namespacedReviewUiId('neon-finding-annotation', findingId);
 }
 
 export function neonFindingNavigationId(findingId: string) {
-  return `neon-finding-navigation:${encodeURIComponent(findingId)}`;
+  return namespacedReviewUiId('neon-finding-navigation', findingId);
+}
+
+export function namespacedReviewUiId(
+  namespace: string,
+  ...identity: Array<string | number | null>
+) {
+  return JSON.stringify([namespace, ...identity]);
 }
 
 export function currentActiveNeonFindings(
