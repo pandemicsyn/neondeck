@@ -291,6 +291,7 @@ export async function listPreparedDiffs(
 export async function readPreparedDiffSummary(
   rawInput: unknown,
   paths: RuntimePaths = runtimePaths(),
+  dependencies: StableDiffMetadataDependencies = {},
 ): Promise<PreparedDiffActionResult> {
   const loaded = await loadPreparedDiff(
     rawInput,
@@ -298,14 +299,18 @@ export async function readPreparedDiffSummary(
     paths,
   );
   if (!loaded.ok) return loaded.result;
-  const diff = await gitDiff(loaded.record.sourceWorktreePath, {
-    base: loaded.record.baseRef,
-    includePatch: false,
-  });
-  const revision = await gitWorktreeRevision(loaded.record.sourceWorktreePath, {
-    base: diff.base,
-    files: diff.files,
-  });
+  const stable = await readStableDiffMetadata(
+    loaded.record.sourceWorktreePath,
+    {
+      base: loaded.record.baseRef,
+      includePatch: false,
+    },
+    dependencies,
+  );
+  if (!stable.stable) {
+    return stalePreparedDiffMetadata('prepared_diff_summary', stable.revision);
+  }
+  const { diff, revision } = stable;
   return {
     ok: true,
     action: 'prepared_diff_summary',
@@ -344,7 +349,12 @@ export async function readPreparedDiffChangedFiles(
     },
     dependencies,
   );
-  if (!stable.stable) return stalePreparedDiffMetadata(stable.revision);
+  if (!stable.stable) {
+    return stalePreparedDiffMetadata(
+      'prepared_diff_changed_files',
+      stable.revision,
+    );
+  }
   const { diff, revision } = stable;
   return {
     ok: true,
@@ -359,14 +369,14 @@ export async function readPreparedDiffChangedFiles(
 }
 
 function stalePreparedDiffMetadata(
+  action: 'prepared_diff_summary' | 'prepared_diff_changed_files',
   revision: ReviewRevision,
 ): PreparedDiffActionResult {
   return {
     ok: false,
-    action: 'prepared_diff_changed_files',
+    action,
     changed: false,
-    message:
-      'The prepared diff changed before its file metadata could be used.',
+    message: `The prepared diff changed before its ${action === 'prepared_diff_summary' ? 'summary' : 'file metadata'} could be used.`,
     revision,
     requires: ['refresh'],
     errors: ['The requested revision is stale.'],

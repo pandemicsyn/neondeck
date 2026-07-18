@@ -252,6 +252,42 @@ describe('prepared diff lifecycle', () => {
     expect(gitWorktreeRevisionMock).toHaveBeenCalledTimes(2);
   });
 
+  it('rejects summary metadata when the worktree mutates during fingerprinting', async () => {
+    const { paths } = await fixture();
+    const prepared = await preparedFixture(paths);
+    const revision = resolvedReviewRevision({
+      kind: 'worktree-diff',
+      id: 'revision-b',
+      baseId: 'base',
+    });
+    const metadataA = diffMetadata('src/old.ts');
+    const metadataB = diffMetadata('src/current.ts');
+    let mutated = false;
+    const gitDiffMock = vi.fn<typeof gitDiff>(async () =>
+      mutated ? metadataB : metadataA,
+    );
+    const gitWorktreeRevisionMock = vi.fn<typeof gitWorktreeRevision>(
+      async () => {
+        mutated = true;
+        return revision;
+      },
+    );
+
+    await expect(
+      readPreparedDiffSummary({ preparedDiffId: prepared.id }, paths, {
+        gitDiff: gitDiffMock,
+        gitWorktreeRevision: gitWorktreeRevisionMock,
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'prepared_diff_summary',
+      revision,
+      requires: ['refresh'],
+    });
+    expect(gitDiffMock).toHaveBeenCalledTimes(2);
+    expect(gitWorktreeRevisionMock).toHaveBeenCalledTimes(2);
+  });
+
   it('records approval, verification, revision, and abandon decisions without pushing', async () => {
     const { paths } = await fixture();
     const prepared = await preparedFixture(paths);
