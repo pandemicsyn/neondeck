@@ -1,5 +1,8 @@
 import { assertWorktreeMutationAllowed } from '../modules/worktrees';
-import { reviewRevisionKey } from '../../shared/review-source';
+import {
+  reviewRevisionKey,
+  type ReviewRevision,
+} from '../../shared/review-source';
 import { ensureRuntimeHome, runtimePaths } from '../runtime-home';
 import { recordRepoEditEvent } from './audit';
 import { replaceContent } from './fuzzy-replace';
@@ -424,7 +427,14 @@ export async function replaceRepoFile(
   }
 }
 
-export async function readRepoDiff(rawInput: unknown, paths = runtimePaths()) {
+export async function readRepoDiff(
+  rawInput: unknown,
+  paths = runtimePaths(),
+  dependencies: {
+    gitDiff?: typeof gitDiff;
+    gitWorktreeRevision?: typeof gitWorktreeRevision;
+  } = {},
+) {
   const parsed = parseInput(repoDiffInputSchema, rawInput, 'repo_diff');
   if (!parsed.ok) return parsed.result;
   try {
@@ -437,32 +447,48 @@ export async function readRepoDiff(rawInput: unknown, paths = runtimePaths()) {
       },
       paths,
     );
-    const result = await gitDiff(root.repoRoot, parsed.input);
+    const readDiff = dependencies.gitDiff ?? gitDiff;
+    const readRevision =
+      dependencies.gitWorktreeRevision ?? gitWorktreeRevision;
+    const scopedPatch = Boolean(
+      parsed.input.paths?.length && parsed.input.includePatch,
+    );
+    const beforeMetadata = scopedPatch
+      ? await readDiff(root.repoRoot, {
+          base: parsed.input.base,
+          includePatch: false,
+        })
+      : null;
+    const beforeRevision = beforeMetadata
+      ? await readRevision(root.repoRoot, {
+          base: beforeMetadata.base,
+          files: beforeMetadata.files,
+        })
+      : null;
+    if (
+      beforeRevision &&
+      parsed.input.expectedRevisionKey !== reviewRevisionKey(beforeRevision)
+    ) {
+      return staleRepoDiffPatch(parsed.input, beforeRevision);
+    }
+    const result = await readDiff(root.repoRoot, parsed.input);
     const revisionMetadata = parsed.input.paths?.length
-      ? await gitDiff(root.repoRoot, {
+      ? await readDiff(root.repoRoot, {
           base: parsed.input.base,
           includePatch: false,
         })
       : result;
-    const revision = await gitWorktreeRevision(root.repoRoot, {
+    const revision = await readRevision(root.repoRoot, {
       base: revisionMetadata.base,
       files: revisionMetadata.files,
     });
     if (
-      parsed.input.expectedRevisionKey &&
-      parsed.input.expectedRevisionKey !== reviewRevisionKey(revision)
+      (parsed.input.expectedRevisionKey &&
+        parsed.input.expectedRevisionKey !== reviewRevisionKey(revision)) ||
+      (beforeRevision &&
+        reviewRevisionKey(beforeRevision) !== reviewRevisionKey(revision))
     ) {
-      return {
-        ok: false,
-        action: 'repo_diff',
-        changed: false,
-        message: 'The worktree changed before this patch could be used.',
-        repoId: parsed.input.repoId,
-        worktreeId: parsed.input.worktreeId,
-        revision,
-        requires: ['refresh'],
-        errors: ['The requested revision is stale.'],
-      };
+      return staleRepoDiffPatch(parsed.input, revision);
     }
     return {
       ok: true,
@@ -479,6 +505,23 @@ export async function readRepoDiff(rawInput: unknown, paths = runtimePaths()) {
   } catch (error) {
     return failureResult('repo_diff', error, paths, rawInput);
   }
+}
+
+function staleRepoDiffPatch(
+  input: { repoId: string; worktreeId?: string },
+  revision: ReviewRevision,
+) {
+  return {
+    ok: false as const,
+    action: 'repo_diff',
+    changed: false,
+    message: 'The worktree changed before this patch could be used.',
+    repoId: input.repoId,
+    worktreeId: input.worktreeId,
+    revision,
+    requires: ['refresh'],
+    errors: ['The requested revision is stale.'],
+  };
 }
 
 export async function readRepoCheckoutStatus(

@@ -30,6 +30,7 @@ export async function fetchPullRequestFilesWithCache(options: {
   repo: string;
   number: number;
   headSha?: string | null;
+  baseSha?: string | null;
   patches?: 'all' | 'none';
   databasePath: string;
   fetcher?: typeof fetchPullRequestFiles;
@@ -40,6 +41,7 @@ export async function fetchPullRequestFilesWithCache(options: {
   const fetchHeadSha = options.fetchHeadSha ?? fetchCurrentPullRequestHeadSha;
   const repoFullName = `${options.owner}/${options.repo}`;
   const headSha = options.headSha?.trim() || null;
+  const baseSha = options.baseSha?.trim() || null;
   if (!headSha) {
     return maybeStripPatches(
       await fetcher({
@@ -52,12 +54,15 @@ export async function fetchPullRequestFilesWithCache(options: {
     );
   }
 
-  const cached = readCachedPullRequestFiles({
-    databasePath: options.databasePath,
-    repo: repoFullName,
-    number: options.number,
-    headSha,
-  });
+  const cached = baseSha
+    ? readCachedPullRequestFiles({
+        databasePath: options.databasePath,
+        repo: repoFullName,
+        number: options.number,
+        headSha,
+        baseSha,
+      })
+    : null;
   if (cached) return maybeStripPatches(cached, options.patches);
 
   const request = {
@@ -80,12 +85,13 @@ export async function fetchPullRequestFilesWithCache(options: {
       `Pull request head changed from ${headSha} to ${currentHeadSha ?? 'unavailable'} while loading files.`,
     );
   }
-  if (diff.files.length > 0) {
+  if (diff.files.length > 0 && baseSha) {
     writeCachedPullRequestFiles({
       databasePath: options.databasePath,
       repo: repoFullName,
       number: options.number,
       headSha,
+      baseSha,
       files: diff.files,
       fetchedAt: diff.fetchedAt,
       now: options.now ?? new Date(),
@@ -130,7 +136,9 @@ export function readCachedPullRequestFiles(options: {
   repo: string;
   number: number;
   headSha: string;
+  baseSha: string;
 }): GitHubPullRequestFiles | null {
+  const revisionCacheKey = pullRequestRevisionCacheKey(options);
   const database = openDb(options.databasePath);
   try {
     const row = database
@@ -143,13 +151,16 @@ export function readCachedPullRequestFiles(options: {
             AND head_sha = ?
         `,
       )
-      .get(options.repo, options.number, options.headSha) as
+      .get(options.repo, options.number, revisionCacheKey) as
       CacheRow | undefined;
     if (!row) return null;
 
     const files = parseCachedFiles(row.payload);
     if (!files) {
-      deleteCachedPullRequestFiles(database, options);
+      deleteCachedPullRequestFiles(database, {
+        ...options,
+        revisionCacheKey,
+      });
       return null;
     }
 
@@ -170,10 +181,12 @@ function writeCachedPullRequestFiles(options: {
   repo: string;
   number: number;
   headSha: string;
+  baseSha: string;
   files: GitHubPullRequestFile[];
   fetchedAt: string;
   now: Date;
 }) {
+  const revisionCacheKey = pullRequestRevisionCacheKey(options);
   const payload = JSON.stringify(options.files);
   const database = openDb(options.databasePath);
   try {
@@ -194,7 +207,7 @@ function writeCachedPullRequestFiles(options: {
       .run(
         options.repo,
         options.number,
-        options.headSha,
+        revisionCacheKey,
         payload,
         Buffer.byteLength(payload, 'utf8'),
         options.fetchedAt,
@@ -220,7 +233,7 @@ function parseCachedFiles(payload: string): GitHubPullRequestFile[] | null {
 
 function deleteCachedPullRequestFiles(
   database: ReturnType<typeof openDb>,
-  options: { repo: string; number: number; headSha: string },
+  options: { repo: string; number: number; revisionCacheKey: string },
 ) {
   database
     .prepare(
@@ -231,7 +244,14 @@ function deleteCachedPullRequestFiles(
           AND head_sha = ?
       `,
     )
-    .run(options.repo, options.number, options.headSha);
+    .run(options.repo, options.number, options.revisionCacheKey);
+}
+
+function pullRequestRevisionCacheKey(options: {
+  baseSha: string;
+  headSha: string;
+}) {
+  return `revision-v2:${options.baseSha}:${options.headSha}`;
 }
 
 function prunePullRequestFileCache(

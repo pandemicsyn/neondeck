@@ -171,19 +171,30 @@ export function PreparedDiffReview({
     setIsApplyingRevision(true);
     const nextFiles = next.files ?? [];
     const nextSource = preparedDiffReviewSource(diff, nextFiles, next.revision);
+    const nextFindingProjection = findingReview.projectRefresh(
+      nextSource,
+      nextFiles,
+    );
     const outcome = reconcileReviewOrientation({
       previousFiles: source.files,
       nextFiles: nextSource.files,
+      previousOrder: source.files.map((file) => file.path),
+      nextOrder: nextSource.files.map((file) => file.path),
       activePath,
+      previousTargets: findingReview.refreshProjection.targets,
+      nextTargets: nextFindingProjection.targets,
+      currentTargetKey: findingReview.refreshProjection.currentTargetKey,
     });
     setAppliedData(next);
     if (outcome.activePath) setActivePath(outcome.activePath);
+    findingReview.applyRefreshTarget(outcome.target, nextSource);
     setRefreshOutcome({ status: outcome.status, message: outcome.message });
     setIsApplyingRevision(false);
   }, [
     activePath,
     diff,
     filesQuery.data,
+    findingReview,
     hasAvailableRevision,
     isApplyingRevision,
     source.files,
@@ -323,6 +334,11 @@ export function SkillPatchDiffReview({
 }
 
 export function KiloTaskDiffReview({ task }: { task: KiloTaskRecord }) {
+  const sourceIdentity = `${task.id}:${task.repoId ?? ''}:${task.worktreeId ?? ''}`;
+  return <KiloTaskDiffReviewSurface key={sourceIdentity} task={task} />;
+}
+
+function KiloTaskDiffReviewSurface({ task }: { task: KiloTaskRecord }) {
   const queryClient = useQueryClient();
   const [activePath, setActivePath] = useState<string | null>(null);
   const [isApplyingRevision, setIsApplyingRevision] = useState(false);
@@ -421,18 +437,29 @@ export function KiloTaskDiffReview({ task }: { task: KiloTaskRecord }) {
     setIsApplyingRevision(true);
     const nextFiles = next.files ?? [];
     const nextSource = kiloResultReviewSource(task, nextFiles, next.revision);
+    const nextFindingProjection = findingReview.projectRefresh(
+      nextSource,
+      nextFiles,
+    );
     const outcome = reconcileReviewOrientation({
       previousFiles: source.files,
       nextFiles: nextSource.files,
+      previousOrder: source.files.map((file) => file.path),
+      nextOrder: nextSource.files.map((file) => file.path),
       activePath,
+      previousTargets: findingReview.refreshProjection.targets,
+      nextTargets: nextFindingProjection.targets,
+      currentTargetKey: findingReview.refreshProjection.currentTargetKey,
     });
     setAppliedRepoData(next);
     if (outcome.activePath) setActivePath(outcome.activePath);
+    findingReview.applyRefreshTarget(outcome.target, nextSource);
     setRefreshOutcome({ status: outcome.status, message: outcome.message });
     setIsApplyingRevision(false);
   }, [
     activePath,
     hasAvailableRevision,
+    findingReview,
     isApplyingRevision,
     repoDiffQuery.data,
     source.files,

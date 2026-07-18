@@ -253,6 +253,7 @@ async function readReviewFacts(
       repo: target.repoFullName,
       prNumber: target.number,
       headSha: state.headSha,
+      baseSha: state.baseSha,
     },
     paths,
     dependencies.prEventDependencies,

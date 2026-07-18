@@ -510,7 +510,7 @@ describe('PR event state watermarks', () => {
     expect(posted).toBe(false);
   });
 
-  it('validates draft comment anchors from cached PR files without a token', async () => {
+  it('does not reuse base-ambiguous cached PR files for draft anchors', async () => {
     const home = await tempHome();
     const paths = runtimePaths(home);
     await writeRepoRegistry(paths.repos);
@@ -518,7 +518,12 @@ describe('PR event state watermarks', () => {
     const cachedFiles = anchorValidationDependencies();
     await expect(
       getGitHubPrFiles(
-        { repo: 'neondeck', prNumber: 123, headSha: 'head123' },
+        {
+          repo: 'neondeck',
+          prNumber: 123,
+          headSha: 'head123',
+          baseSha: 'base123',
+        },
         paths,
         {
           ...cachedFiles,
@@ -544,15 +549,6 @@ describe('PR event state watermarks', () => {
     expect(draft?.id).toEqual(expect.any(String));
 
     delete process.env.GITHUB_TOKEN;
-    const unexpectedNetwork = {
-      fetchPullRequestFiles: async () => {
-        throw new Error('Expected cached PR file facts.');
-      },
-      fetchPullRequestHeadSha: async () => {
-        throw new Error('Expected cached PR file facts.');
-      },
-    };
-
     await expect(
       postGitHubPrReviewDraftComment(
         { repo: 'neondeck', prNumber: 123 },
@@ -564,7 +560,26 @@ describe('PR event state watermarks', () => {
           body: 'Invalid cached anchor.',
         },
         paths,
-        unexpectedNetwork,
+        {},
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'github_pr_review_draft_comment_post',
+      requires: ['GITHUB_TOKEN'],
+    });
+
+    await expect(
+      postGitHubPrReviewDraftComment(
+        { repo: 'neondeck', prNumber: 123 },
+        {
+          draftId: draft?.id ?? '',
+          path: 'src/app.ts',
+          side: 'RIGHT',
+          line: 99,
+          body: 'Invalid current-base anchor.',
+        },
+        paths,
+        cachedFiles,
       ),
     ).resolves.toMatchObject({
       ok: false,
@@ -582,7 +597,7 @@ describe('PR event state watermarks', () => {
         body: 'Valid cached anchor.',
       },
       paths,
-      unexpectedNetwork,
+      cachedFiles,
     );
     expect(commentResult).toMatchObject({ ok: true });
     const commentId = (
@@ -604,7 +619,7 @@ describe('PR event state watermarks', () => {
           body: 'Moved using cached patch facts.',
         },
         paths,
-        unexpectedNetwork,
+        cachedFiles,
       ),
     ).resolves.toMatchObject({
       ok: true,

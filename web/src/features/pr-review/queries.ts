@@ -139,6 +139,33 @@ export function primeGitHubPullRequestFileList(
   });
 }
 
+export function primeGitHubPullRequestFilePatch(
+  queryClient: QueryClient,
+  pr: GitHubPullRequest,
+  path: string,
+) {
+  return queryClient.fetchQuery({
+    queryKey: prReviewQueryKeys.filePatch(pr, path),
+    queryFn: async ({ signal }) => {
+      const result = await getGitHubPullRequestFileDiff(
+        {
+          repo: pr.repo,
+          number: pr.number,
+          path,
+          headSha: pr.headSha,
+          baseSha: pr.baseSha,
+          baseRef: pr.baseRef,
+          source: 'auto',
+        },
+        { signal },
+      );
+      assertGitHubRevision(pr, result.revision);
+      return result;
+    },
+    staleTime: Infinity,
+  });
+}
+
 export function useGitHubPullRequestFilePatches(
   pr: GitHubPullRequest,
   paths: string[],

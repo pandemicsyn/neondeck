@@ -103,6 +103,82 @@ describe('review revision refresh contract', () => {
     ).toMatchObject({ status: 'degraded', activePath: 'renamed.ts' });
   });
 
+  it('follows a proven rename when the old path is reused by another file', () => {
+    const previousFiles = [file('old.ts'), file('z.ts')];
+    const nextFiles = [file('new.ts', 'old.ts'), file('old.ts'), file('z.ts')];
+    expect(
+      reconcileReviewOrientation({
+        previousFiles,
+        nextFiles,
+        activePath: 'old.ts',
+      }),
+    ).toMatchObject({ status: 'degraded', activePath: 'new.ts' });
+
+    const previousHunks = reviewCursorTargets(
+      createReviewNavigationModel({
+        files: previousFiles,
+        items: [{ kind: 'hunk', id: 'stable', path: 'old.ts', newStart: 8 }],
+      }),
+      'hunk',
+    );
+    const nextHunks = reviewCursorTargets(
+      createReviewNavigationModel({
+        files: nextFiles,
+        items: [
+          { kind: 'hunk', id: 'stable', path: 'old.ts', newStart: 8 },
+          { kind: 'hunk', id: 'stable', path: 'new.ts', newStart: 11 },
+        ],
+      }),
+      'hunk',
+    );
+    expect(
+      reconcileReviewOrientation({
+        previousFiles,
+        nextFiles,
+        activePath: 'old.ts',
+        previousTargets: previousHunks,
+        nextTargets: nextHunks,
+        currentTargetKey: previousHunks[0]!.key,
+      }),
+    ).toMatchObject({
+      status: 'degraded',
+      activePath: 'new.ts',
+      target: { id: 'stable', path: 'new.ts' },
+    });
+
+    const previousFindings = reviewCursorTargets(
+      createReviewNavigationModel({
+        files: previousFiles,
+        items: [{ kind: 'finding', id: 'selected', path: 'old.ts', line: 8 }],
+      }),
+      'finding',
+    );
+    const nextFindings = reviewCursorTargets(
+      createReviewNavigationModel({
+        files: nextFiles,
+        items: [
+          { kind: 'finding', id: 'selected', path: 'old.ts', line: 8 },
+          { kind: 'finding', id: 'nearby', path: 'new.ts', line: 11 },
+        ],
+      }),
+      'finding',
+    );
+    expect(
+      reconcileReviewOrientation({
+        previousFiles,
+        nextFiles,
+        activePath: 'old.ts',
+        previousTargets: previousFindings,
+        nextTargets: nextFindings,
+        currentTargetKey: previousFindings[0]!.key,
+      }),
+    ).toMatchObject({
+      status: 'degraded',
+      activePath: 'new.ts',
+      target: { id: 'nearby', path: 'new.ts' },
+    });
+  });
+
   it('chooses the deterministic nearest review-order neighbor when a file disappears', () => {
     expect(
       reconcileReviewOrientation({
@@ -163,6 +239,26 @@ describe('review revision refresh contract', () => {
     });
   });
 
+  it('reports an unavailable requested target as degraded instead of preserved', () => {
+    const previous = reviewCursorTargets(
+      createReviewNavigationModel({
+        files: files('a.ts'),
+        items: [{ kind: 'hunk', id: 'gone', path: 'a.ts', newStart: 4 }],
+      }),
+      'hunk',
+    );
+    expect(
+      reconcileReviewOrientation({
+        previousFiles: files('a.ts'),
+        nextFiles: files('a.ts'),
+        activePath: 'a.ts',
+        previousTargets: previous,
+        nextTargets: [],
+        currentTargetKey: previous[0]!.key,
+      }),
+    ).toMatchObject({ status: 'degraded', target: null });
+  });
+
   it('reports failure when no useful refreshed target remains', () => {
     expect(
       reconcileReviewOrientation({
@@ -200,7 +296,7 @@ describe('review revision refresh contract', () => {
     expect(reviewSourceRevisionEventMatches(second, event)).toBe(false);
   });
 
-  it('routes a PR-only event through the declared GitHub promotion target', () => {
+  it('isolates same-number PR events by repository and rejects underspecified events', () => {
     const github = source('github-pr:owner/repo#42', 'worktree-1');
     github.kind = 'github-pr';
     github.promotionTargets = [
@@ -210,23 +306,39 @@ describe('review revision refresh contract', () => {
         prNumber: 42,
       },
     ];
+    const other = source('github-pr:other/repo#42', 'worktree-2');
+    other.kind = 'github-pr';
+    other.repository.repoFullName = 'other/repo';
+    other.promotionTargets = [
+      {
+        destination: 'github-review-draft',
+        repoFullName: 'other/repo',
+        prNumber: 42,
+      },
+    ];
+    const event = {
+      id: 'event-pr',
+      action: 'revision-available',
+      source: {
+        id: null,
+        kind: null,
+        repoId: null,
+        repoFullName: 'owner/repo',
+        worktreeId: null,
+        prNumber: 42,
+      },
+      revision: null,
+      changedAt: '2026-07-18T00:00:00.000Z',
+      reason: 'PR head changed.',
+    } as const;
+    expect(reviewSourceRevisionEventMatches(github, event)).toBe(true);
+    expect(reviewSourceRevisionEventMatches(other, event)).toBe(false);
     expect(
       reviewSourceRevisionEventMatches(github, {
-        id: 'event-pr',
-        action: 'revision-available',
-        source: {
-          id: null,
-          kind: null,
-          repoId: null,
-          repoFullName: null,
-          worktreeId: null,
-          prNumber: 42,
-        },
-        revision: null,
-        changedAt: '2026-07-18T00:00:00.000Z',
-        reason: 'PR head changed.',
+        ...event,
+        source: { ...event.source, repoFullName: null },
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 });
 

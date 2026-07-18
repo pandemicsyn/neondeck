@@ -178,9 +178,7 @@ export const idInputSchema = v.object({
 export const fileDiffInputSchema = v.object({
   preparedDiffId: nonEmptyStringSchema,
   path: repoRelativePathSchema,
-  expectedRevisionKey: v.optional(
-    v.pipe(v.string(), v.minLength(1), v.maxLength(768)),
-  ),
+  expectedRevisionKey: v.pipe(v.string(), v.minLength(1), v.maxLength(768)),
   maxPatchBytes: v.optional(
     v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(256 * 1024)),
   ),

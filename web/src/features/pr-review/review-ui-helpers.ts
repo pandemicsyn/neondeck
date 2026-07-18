@@ -1,8 +1,14 @@
+import type { SelectedLineRange } from '@pierre/diffs/react';
+import type { ReviewCursorTarget } from '../../../../shared/review-navigation';
 import type {
   GitHubPrReviewDraftComment,
   GitHubPullRequestReviewThread,
 } from '../../api';
-import { evaluateReviewRefreshSafety } from '../../../../shared/review-refresh';
+import {
+  canExplicitlyApplyReviewRefresh,
+  evaluateReviewRefreshSafety,
+  type ReviewRefreshSafety,
+} from '../../../../shared/review-refresh';
 
 export function githubPrReviewRefreshSafety(input: {
   composerDirty: boolean;
@@ -58,4 +64,102 @@ export function isCurrentReviewOperation(
   completedToken: number,
 ) {
   return currentToken === completedToken;
+}
+
+export function canCommitGitHubRevisionRefresh(input: {
+  candidateRevisionKey: string;
+  currentCandidateRevisionKey: string;
+  inputSignature: string;
+  currentInputSignature: string;
+  safety: ReviewRefreshSafety;
+}) {
+  return (
+    input.candidateRevisionKey === input.currentCandidateRevisionKey &&
+    input.inputSignature === input.currentInputSignature &&
+    canExplicitlyApplyReviewRefresh(input.safety)
+  );
+}
+
+export function refreshOrientationTargetSettled(
+  target: ReviewCursorTarget | null,
+  patchState: 'loaded' | 'unavailable' | 'loading' | 'unloaded' | undefined,
+) {
+  return (
+    !target ||
+    target.kind === 'file' ||
+    patchState === 'loaded' ||
+    patchState === 'unavailable'
+  );
+}
+
+export function selectionAnchorMatchesPatch(input: {
+  previousPatch: string | null | undefined;
+  nextPatch: string | null | undefined;
+  selection: SelectedLineRange;
+}) {
+  const previous = selectedPatchLines(input.previousPatch, input.selection);
+  const next = selectedPatchLines(input.nextPatch, input.selection);
+  return Boolean(previous && next && sameStringArray(previous, next));
+}
+
+function selectedPatchLines(
+  patch: string | null | undefined,
+  selection: SelectedLineRange,
+) {
+  if (!patch?.trim()) return null;
+  const requested = selectedLineKeys(selection);
+  const values = new Map<string, string>();
+  let oldLine = 0;
+  let newLine = 0;
+  for (const line of patch.split('\n')) {
+    const hunk = line.match(/^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/);
+    if (hunk) {
+      oldLine = Number(hunk[1]);
+      newLine = Number(hunk[2]);
+      continue;
+    }
+    if (line.startsWith('---') || line.startsWith('+++') || oldLine === 0) {
+      continue;
+    }
+    const content = line.slice(1);
+    if (line.startsWith(' ')) {
+      values.set(`deletions:${oldLine}`, content);
+      values.set(`additions:${newLine}`, content);
+      oldLine += 1;
+      newLine += 1;
+    } else if (line.startsWith('-')) {
+      values.set(`deletions:${oldLine}`, content);
+      oldLine += 1;
+    } else if (line.startsWith('+')) {
+      values.set(`additions:${newLine}`, content);
+      newLine += 1;
+    }
+  }
+  const selected = requested.map((key) => values.get(key));
+  return selected.every((value): value is string => value !== undefined)
+    ? selected
+    : null;
+}
+
+function selectedLineKeys(selection: SelectedLineRange) {
+  const start = Math.min(selection.start, selection.end);
+  const end = Math.max(selection.start, selection.end);
+  const endSide = selection.endSide ?? selection.side;
+  if (selection.side !== endSide) {
+    return [
+      `${selection.side}:${selection.start}`,
+      `${endSide}:${selection.end}`,
+    ];
+  }
+  return Array.from(
+    { length: end - start + 1 },
+    (_, index) => `${selection.side}:${start + index}`,
+  );
+}
+
+function sameStringArray(left: readonly string[], right: readonly string[]) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
 }

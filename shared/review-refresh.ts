@@ -161,10 +161,18 @@ export function reviewSourceRevisionEventMatches(
     return false;
   }
   if (event.source.prNumber !== null) {
+    if (!event.source.repoFullName) return false;
     const target = source.promotionTargets.find(
       (item) => item.destination === 'github-review-draft',
     );
-    if (!target || target.prNumber !== event.source.prNumber) return false;
+    if (
+      !target ||
+      target.prNumber !== event.source.prNumber ||
+      target.repoFullName.toLowerCase() !==
+        event.source.repoFullName.toLowerCase()
+    ) {
+      return false;
+    }
   }
   return Boolean(
     event.source.kind ||
@@ -196,29 +204,34 @@ export function reconcileReviewOrientation(input: {
 
   const nextOrder = normalizeOrder(input.nextOrder, input.nextFiles);
   const nextPaths = new Set(nextOrder);
+  const renamedPath = input.activePath
+    ? unambiguousRename(input.activePath, input.nextFiles)
+    : null;
   const exactPath =
     input.activePath && nextPaths.has(input.activePath)
       ? input.activePath
       : null;
-  const renamedPath = input.activePath
-    ? unambiguousRename(input.activePath, input.nextFiles)
-    : null;
   const activePath =
-    exactPath ??
     renamedPath ??
+    exactPath ??
     nearestPath(
       input.activePath,
       normalizeOrder(input.previousOrder, input.previousFiles),
       nextOrder,
     );
 
-  const cursor = reconcileReviewCursor(
-    input.previousTargets ?? [],
-    input.nextTargets ?? [],
-    input.currentTargetKey ?? null,
-  );
-  const target = cursor.target ?? null;
-  const targetDegraded = cursor.resolution === 'nearest';
+  const targetRequested = Boolean(input.currentTargetKey);
+  const cursor = targetRequested
+    ? reconcileCursorAcrossRename({
+        previousTargets: input.previousTargets ?? [],
+        nextTargets: input.nextTargets ?? [],
+        currentTargetKey: input.currentTargetKey!,
+        previousPath: input.activePath,
+        renamedPath,
+      })
+    : null;
+  const target = cursor?.target ?? null;
+  const targetDegraded = targetRequested && cursor?.resolution !== 'exact';
   const pathDegraded = Boolean(
     input.activePath && activePath !== input.activePath,
   );
@@ -226,10 +239,76 @@ export function reconcileReviewOrientation(input: {
   const message =
     status === 'preserved'
       ? 'Review orientation preserved on the refreshed revision.'
-      : renamedPath
-        ? `Review orientation moved with the proven rename to ${renamedPath}.`
-        : `Review orientation moved to the nearest available target, ${activePath}.`;
+      : targetRequested && !target
+        ? `The previous review target is unavailable; review orientation stayed at ${activePath}.`
+        : renamedPath
+          ? `Review orientation moved with the proven rename to ${renamedPath}.`
+          : `Review orientation moved to the nearest available target, ${activePath}.`;
   return { status, activePath, target, message };
+}
+
+function reconcileCursorAcrossRename(input: {
+  previousTargets: readonly ReviewCursorTarget[];
+  nextTargets: readonly ReviewCursorTarget[];
+  currentTargetKey: string;
+  previousPath: string | null;
+  renamedPath: string | null;
+}) {
+  if (!input.previousPath || !input.renamedPath) {
+    return reconcileReviewCursor(
+      input.previousTargets,
+      input.nextTargets,
+      input.currentTargetKey,
+    );
+  }
+  const previousTarget = input.previousTargets.find(
+    (target) => target.key === input.currentTargetKey,
+  );
+  if (!previousTarget || previousTarget.path !== input.previousPath) {
+    return reconcileReviewCursor(
+      input.previousTargets,
+      input.nextTargets,
+      input.currentTargetKey,
+    );
+  }
+  const renamedTarget = input.nextTargets.find(
+    (target) =>
+      target.path === input.renamedPath &&
+      sameCursorIdentity(target, previousTarget),
+  );
+  if (renamedTarget) {
+    return reconcileReviewCursor(
+      input.previousTargets,
+      input.nextTargets,
+      renamedTarget.key,
+    );
+  }
+  const remappedTarget = {
+    ...previousTarget,
+    key: `refresh-rename:${previousTarget.key}`,
+    path: input.renamedPath,
+    previousPath: input.previousPath,
+    requestedPath: input.renamedPath,
+  };
+  return reconcileReviewCursor(
+    [
+      ...input.previousTargets.filter(
+        (target) => target.key !== input.currentTargetKey,
+      ),
+      remappedTarget,
+    ],
+    input.nextTargets,
+    remappedTarget.key,
+  );
+}
+
+function sameCursorIdentity(
+  left: ReviewCursorTarget,
+  right: ReviewCursorTarget,
+) {
+  if (left.kind !== right.kind || left.id !== right.id) return false;
+  if (left.kind !== 'attention' || right.kind !== 'attention') return true;
+  return left.attentionKind === right.attentionKind;
 }
 
 export function reviewRefreshPauseMessage(reasons: ReviewRefreshPauseReason[]) {

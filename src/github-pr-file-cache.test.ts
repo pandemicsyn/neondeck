@@ -55,6 +55,7 @@ describe('GitHub PR file cache', () => {
       repo: 'neondeck',
       number: 123,
       headSha: 'head123',
+      baseSha: 'base123',
       databasePath: paths.neondeckDatabase,
       fetcher: missFetcher,
       fetchHeadSha: headFetcher,
@@ -70,7 +71,7 @@ describe('GitHub PR file cache', () => {
     expect(rows[0]).toMatchObject({
       repo: 'pandemicsyn/neondeck',
       pr_number: 123,
-      head_sha: 'head123',
+      head_sha: 'revision-v2:base123:head123',
       fetched_at: fetched.fetchedAt,
     });
     expect(rows[0]?.payload).toBe(JSON.stringify(files));
@@ -89,6 +90,7 @@ describe('GitHub PR file cache', () => {
       repo: 'neondeck',
       number: 123,
       headSha: 'head123',
+      baseSha: 'base123',
       databasePath: paths.neondeckDatabase,
       fetcher: hitFetcher,
       fetchHeadSha: headFetcher,
@@ -98,6 +100,73 @@ describe('GitHub PR file cache', () => {
     expect(headFetcher).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(hit.files)).toBe(rows[0]?.payload);
     expect(hit).toEqual(fetched);
+  });
+
+  it('does not reuse a same-head cache entry after the base changes', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const headSha = 'same-head';
+    const baseA = prFiles(
+      [prFile({ path: 'src/base-a.ts', patch: 'base-a patch' })],
+      '2026-07-05T14:00:00.000Z',
+    );
+    const baseB = prFiles(
+      [prFile({ path: 'src/base-b.ts', patch: 'base-b patch' })],
+      '2026-07-05T14:01:00.000Z',
+    );
+    const fetcher = vi
+      .fn<() => Promise<GitHubPullRequestFiles>>()
+      .mockResolvedValueOnce(baseA)
+      .mockResolvedValueOnce(baseB);
+
+    const first = await fetchPullRequestFilesWithCache({
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+      headSha,
+      baseSha: 'base-a',
+      databasePath: paths.neondeckDatabase,
+      fetcher,
+      fetchHeadSha: async () => headSha,
+    });
+    const second = await fetchPullRequestFilesWithCache({
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+      headSha,
+      baseSha: 'base-b',
+      databasePath: paths.neondeckDatabase,
+      fetcher,
+      fetchHeadSha: async () => headSha,
+    });
+    const firstAgain = await fetchPullRequestFilesWithCache({
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+      headSha,
+      baseSha: 'base-a',
+      databasePath: paths.neondeckDatabase,
+      fetcher,
+      fetchHeadSha: async () => headSha,
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(first.files[0]?.patch).toBe('base-a patch');
+    expect(second.files[0]?.patch).toBe('base-b patch');
+    expect(firstAgain.files[0]?.patch).toBe('base-a patch');
+    expect(readCacheRows(paths.neondeckDatabase)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          head_sha: 'revision-v2:base-a:same-head',
+        }),
+        expect.objectContaining({
+          head_sha: 'revision-v2:base-b:same-head',
+        }),
+      ]),
+    );
   });
 
   it('serves patchless responses without stripping the cached payload', async () => {
@@ -118,6 +187,7 @@ describe('GitHub PR file cache', () => {
       repo: 'neondeck',
       number: 123,
       headSha: 'head123',
+      baseSha: 'base123',
       patches: 'none',
       databasePath: paths.neondeckDatabase,
       fetcher: async () => fetched,
@@ -136,6 +206,7 @@ describe('GitHub PR file cache', () => {
       repo: 'neondeck',
       number: 123,
       headSha: 'head123',
+      baseSha: 'base123',
       patches: 'none',
       databasePath: paths.neondeckDatabase,
       fetcher: async () => {
@@ -162,6 +233,7 @@ describe('GitHub PR file cache', () => {
         repo: 'neondeck',
         number: 123,
         headSha: null,
+        baseSha: 'base123',
         databasePath: paths.neondeckDatabase,
         fetcher: headlessFetcher,
       }),
@@ -179,6 +251,7 @@ describe('GitHub PR file cache', () => {
       repo: 'neondeck',
       number: 123,
       headSha: 'empty-head',
+      baseSha: 'empty-base',
       databasePath: paths.neondeckDatabase,
       fetcher: emptyFetcher,
       fetchHeadSha: async () => 'empty-head',
@@ -189,6 +262,7 @@ describe('GitHub PR file cache', () => {
       repo: 'neondeck',
       number: 123,
       headSha: 'empty-head',
+      baseSha: 'empty-base',
       databasePath: paths.neondeckDatabase,
       fetcher: emptyFetcher,
       fetchHeadSha: async () => 'empty-head',
@@ -210,6 +284,7 @@ describe('GitHub PR file cache', () => {
         repo: 'neondeck',
         number: 123,
         headSha: `head-${index}`,
+        baseSha: 'base',
         databasePath: paths.neondeckDatabase,
         fetcher: async () =>
           prFiles([prFile({ path: `src/file-${index}.ts` })], date),
@@ -223,6 +298,7 @@ describe('GitHub PR file cache', () => {
       repo: 'neondeck',
       number: 124,
       headSha: 'other-pr-head',
+      baseSha: 'other-pr-base',
       databasePath: paths.neondeckDatabase,
       fetcher: async () =>
         prFiles([prFile({ path: 'src/other.ts' })], '2026-07-04T12:00:00.000Z'),
@@ -234,10 +310,16 @@ describe('GitHub PR file cache', () => {
       readCacheRows(paths.neondeckDatabase)
         .filter((row) => row.pr_number === 123)
         .map((row) => row.head_sha),
-    ).toEqual(['head-1', 'head-2', 'head-3']);
+    ).toEqual([
+      'revision-v2:base:head-1',
+      'revision-v2:base:head-2',
+      'revision-v2:base:head-3',
+    ]);
     expect(
       readCacheRows(paths.neondeckDatabase).some(
-        (row) => row.pr_number === 124 && row.head_sha === 'other-pr-head',
+        (row) =>
+          row.pr_number === 124 &&
+          row.head_sha === 'revision-v2:other-pr-base:other-pr-head',
       ),
     ).toBe(true);
   });
@@ -268,6 +350,7 @@ describe('GitHub PR file cache', () => {
         repo: 'neondeck',
         number: 123,
         headSha: 'stale-head',
+        baseSha: 'base',
         databasePath: paths.neondeckDatabase,
         fetcher,
         fetchHeadSha: headFetcher,
@@ -280,6 +363,7 @@ describe('GitHub PR file cache', () => {
         repo: 'neondeck',
         number: 123,
         headSha: 'stale-head',
+        baseSha: 'base',
         databasePath: paths.neondeckDatabase,
         fetcher,
         fetchHeadSha: headFetcher,
@@ -305,6 +389,7 @@ describe('GitHub PR file cache', () => {
         repo: 'neondeck',
         number: 123,
         headSha: 'head123',
+        baseSha: 'base123',
         databasePath: paths.neondeckDatabase,
         fetcher: async () => fetched,
         fetchHeadSha: async () => {

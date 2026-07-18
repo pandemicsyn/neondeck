@@ -22,6 +22,7 @@ import {
   type ReviewFileMetadata,
 } from '../../../../shared/review-source';
 import {
+  canExplicitlyApplyReviewRefresh,
   createReviewRefreshStatus,
   reconcileReviewOrientation,
   type ReviewRefreshSafety,
@@ -53,6 +54,7 @@ import {
   useGitHubPrReviewThreads,
   useGitHubPullRequestFileList,
   useGitHubPullRequestFilePatches,
+  primeGitHubPullRequestFilePatch,
   primeGitHubPullRequestFileList,
 } from './queries';
 import {
@@ -83,9 +85,12 @@ import {
   summaryLabel,
 } from './review-view-model';
 import {
+  canCommitGitHubRevisionRefresh,
   clearCompletedEditor,
   githubPrReviewRefreshSafety,
   isCurrentReviewOperation,
+  refreshOrientationTargetSettled,
+  selectionAnchorMatchesPatch,
 } from './review-ui-helpers';
 import { usePrReviewRecord } from './usePrReviewRecord';
 import {
@@ -241,7 +246,15 @@ export function GitHubPrReview({
     order: readonly string[];
     targets: readonly ReviewCursorTarget[];
     targetKey: string | null;
+    target: ReviewCursorTarget | null;
+    nextPath: string | null;
     revisionKey: string;
+  } | null>(null);
+  const refreshLiveStateRef = useRef<{
+    candidateRevisionKey: string;
+    hasAvailableRevision: boolean;
+    inputSignature: string;
+    safety: ReviewRefreshSafety;
   } | null>(null);
   const createEditorToken = () => {
     nextEditorToken.current += 1;
@@ -575,7 +588,6 @@ export function GitHubPrReview({
           isDraftMutationPending ||
           isThreadMutationPending ||
           findingActionsLocked ||
-          isApplyingRevision ||
           restartReview.isPending ||
           reconcileSubmission.isPending ||
           startReview.isPending,
@@ -591,7 +603,6 @@ export function GitHubPrReview({
       hasAvailableRevision,
       hasPendingReviewBodyEdit,
       incomingPr.headSha,
-      isApplyingRevision,
       isDraftMutationPending,
       isThreadMutationPending,
       reanchoringCommentId,
@@ -603,6 +614,23 @@ export function GitHubPrReview({
       startReview.isPending,
     ],
   );
+  const refreshInputSignature = JSON.stringify([
+    activePath,
+    navigationTargetKey,
+    navigationSelection,
+    navigationAnnotationId,
+    composer?.token ?? null,
+    commentEditor?.token ?? null,
+    replyEditor?.token ?? null,
+    reanchoringCommentId,
+    anchoringFinding?.sourceId ?? null,
+  ]);
+  refreshLiveStateRef.current = {
+    candidateRevisionKey: incomingPrRevisionKey,
+    hasAvailableRevision,
+    inputSignature: refreshInputSignature,
+    safety: refreshSafety,
+  };
   const refreshStatus = useMemo(
     () =>
       createReviewRefreshStatus({
@@ -893,19 +921,101 @@ export function GitHubPrReview({
     [activateNavigationTarget, fileFilter.paths, files, navigationData.model],
   );
   const applyAvailableRevision = useCallback(async () => {
-    if (!hasAvailableRevision || isApplyingRevision) return;
+    if (
+      !hasAvailableRevision ||
+      isApplyingRevision ||
+      !canExplicitlyApplyReviewRefresh(refreshSafety)
+    ) {
+      return;
+    }
+    const candidateRevisionKey = incomingPrRevisionKey;
+    const inputSignature = refreshInputSignature;
+    const target =
+      navigationTargets.find((item) => item.key === navigationTargetKey) ??
+      null;
+    const savedOrientation = {
+      activePath,
+      files: reviewSource.files,
+      order: navigationData.model.guidedFilePaths,
+      targets: navigationTargets,
+      targetKey: navigationTargetKey,
+      target,
+    };
+    const savedComposer = composer;
     setIsApplyingRevision(true);
     setStatusMessage('Loading the available PR revision.');
     try {
-      await primeGitHubPullRequestFileList(queryClient, incomingPr);
+      const nextFileList = await primeGitHubPullRequestFileList(
+        queryClient,
+        incomingPr,
+      );
+      const nextPath = refreshPathForRevision(
+        savedOrientation.activePath,
+        savedOrientation.files,
+        nextFileList.files,
+      );
+      const targetNeedsPatch = Boolean(
+        savedComposer || (target && target.kind !== 'file'),
+      );
+      const nextPatch =
+        targetNeedsPatch && nextPath
+          ? await primeGitHubPullRequestFilePatch(
+              queryClient,
+              incomingPr,
+              nextPath,
+            )
+          : null;
+      if (savedComposer) {
+        const nextComposerPath = refreshPathForRevision(
+          savedComposer.path,
+          savedOrientation.files,
+          nextFileList.files,
+        );
+        if (
+          !nextComposerPath ||
+          nextComposerPath !== nextPath ||
+          !selectionAnchorMatchesPatch({
+            previousPatch: filesByPath.get(savedComposer.path)?.patch,
+            nextPatch: nextPatch?.file?.patch ?? nextPatch?.diff,
+            selection: savedComposer.selection,
+          })
+        ) {
+          setStatusMessage(
+            'The open comment range could not be proven on the available revision. The older revision remains mounted.',
+          );
+          return;
+        }
+      }
+      const current = refreshLiveStateRef.current;
+      if (
+        !current ||
+        !current.hasAvailableRevision ||
+        !canCommitGitHubRevisionRefresh({
+          candidateRevisionKey,
+          currentCandidateRevisionKey: current.candidateRevisionKey,
+          inputSignature,
+          currentInputSignature: current.inputSignature,
+          safety: current.safety,
+        })
+      ) {
+        setStatusMessage(
+          'Refresh paused because the available revision or editor state changed while it was loading.',
+        );
+        return;
+      }
       refreshOrientationRef.current = {
-        activePath,
-        files: reviewSource.files,
-        order: navigationData.model.guidedFilePaths,
-        targets: navigationTargets,
-        targetKey: navigationTargetKey,
-        revisionKey: incomingPrRevisionKey,
+        ...savedOrientation,
+        nextPath,
+        revisionKey: candidateRevisionKey,
       };
+      if (savedComposer && nextPath !== savedComposer.path) {
+        setComposer((currentComposer) =>
+          currentComposer?.token === savedComposer.token
+            ? { ...currentComposer, path: nextPath! }
+            : currentComposer,
+        );
+      }
+      if (nextPath) setActivePath(nextPath);
       setAppliedPr(incomingPr);
     } catch (error) {
       setStatusMessage(
@@ -916,6 +1026,8 @@ export function GitHubPrReview({
     }
   }, [
     activePath,
+    composer,
+    filesByPath,
     hasAvailableRevision,
     incomingPr,
     incomingPrRevisionKey,
@@ -924,6 +1036,8 @@ export function GitHubPrReview({
     navigationTargetKey,
     navigationTargets,
     queryClient,
+    refreshInputSignature,
+    refreshSafety,
     reviewSource.files,
   ]);
   const previousNavigationTargets = useRef<readonly ReviewCursorTarget[]>([]);
@@ -949,6 +1063,9 @@ export function GitHubPrReview({
   ]);
 
   useEffect(() => {
+    if (refreshOrientationRef.current?.revisionKey === appliedPrRevisionKey) {
+      return;
+    }
     if (navigationKind !== 'file' || !activePath) return;
     const activeFileTarget = navigationTargets.find(
       (target) => target.kind === 'file' && target.path === activePath,
@@ -956,9 +1073,18 @@ export function GitHubPrReview({
     if (activeFileTarget && navigationTargetKey !== activeFileTarget.key) {
       setNavigationTargetKey(activeFileTarget.key);
     }
-  }, [activePath, navigationKind, navigationTargetKey, navigationTargets]);
+  }, [
+    activePath,
+    appliedPrRevisionKey,
+    navigationKind,
+    navigationTargetKey,
+    navigationTargets,
+  ]);
 
   useEffect(() => {
+    if (refreshOrientationRef.current?.revisionKey === appliedPrRevisionKey) {
+      return;
+    }
     const previous = previousNavigationTargets.current;
     previousNavigationTargets.current = navigationTargets;
     if (!navigationTargetKey) return;
@@ -1012,6 +1138,7 @@ export function GitHubPrReview({
     );
   }, [
     activePath,
+    appliedPrRevisionKey,
     activateNavigationTarget,
     navigationAnnotationId,
     navigationData.anchors,
@@ -1042,7 +1169,13 @@ export function GitHubPrReview({
     if (
       !previous ||
       previous.revisionKey !== appliedPrRevisionKey ||
-      filesQuery.isLoading
+      filesQuery.isLoading ||
+      !refreshOrientationTargetSettled(
+        previous.target,
+        previous.nextPath
+          ? patchNavigationState.get(previous.nextPath)
+          : undefined,
+      )
     ) {
       return;
     }
@@ -1066,6 +1199,13 @@ export function GitHubPrReview({
       );
     } else if (outcome.activePath) {
       setActivePath(outcome.activePath);
+      if (previous.targetKey) {
+        setNavigationTargetKey(null);
+        setNavigationAuthority('automatic');
+        setNavigationSelection(null);
+        setNavigationAnnotationId(null);
+        setNavigationBoundary(null);
+      }
     }
     setNavigationStatus(outcome.message);
     setNavigationAnnouncement(outcome.message);
@@ -1078,14 +1218,18 @@ export function GitHubPrReview({
     navigationAuthority,
     navigationData.model.guidedFilePaths,
     navigationTargets,
+    patchNavigationState,
     reviewSource.files,
   ]);
 
   useEffect(() => {
+    if (refreshOrientationRef.current?.revisionKey === appliedPrRevisionKey) {
+      return;
+    }
     if (filesQuery.isLoading) return;
     if (activePath && fileList.some((file) => file.path === activePath)) return;
     setActivePath(firstReviewablePath(fileList) ?? null);
-  }, [activePath, fileList, filesQuery.isLoading]);
+  }, [activePath, appliedPrRevisionKey, fileList, filesQuery.isLoading]);
 
   useEffect(() => {
     const nextDraftId = draft?.id ?? null;
@@ -1937,4 +2081,22 @@ function githubPullRequestRevision(pr: GitHubPullRequest) {
 
 function githubPullRequestRevisionKey(pr: GitHubPullRequest) {
   return reviewRevisionKey(githubPullRequestRevision(pr)) ?? 'unavailable';
+}
+
+function refreshPathForRevision(
+  activePath: string | null,
+  previousFiles: readonly { path: string; previousPath?: string | null }[],
+  nextFiles: readonly { path: string; previousPath?: string | null }[],
+) {
+  return reconcileReviewOrientation({
+    previousFiles: previousFiles.map((file) => ({
+      path: file.path,
+      previousPath: file.previousPath ?? null,
+    })),
+    nextFiles: nextFiles.map((file) => ({
+      path: file.path,
+      previousPath: file.previousPath ?? null,
+    })),
+    activePath,
+  }).activePath;
 }

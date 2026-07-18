@@ -1,19 +1,19 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, type ReactNode } from 'react';
+import { act, useEffect, useRef, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReviewRefreshStatus } from '../../../../shared/review-refresh';
-import type { ReviewSourceSnapshot } from '../../../../shared/review-source';
+import {
+  reviewRevisionKey,
+  type ReviewSourceSnapshot,
+} from '../../../../shared/review-source';
+import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import type { AutopilotPreparedDiff, KiloTaskRecord } from '../../api';
 
 const state = vi.hoisted(() => ({
-  guards: {
-    mutationPending: false,
-    revisionConfirmationOpen: false,
-    selectionActive: false,
-  },
+  findings: [] as NeonReviewFinding[],
   preparedRevision: 'prepared-a',
   repoRevision: 'repo-a',
   fileCount: 2,
@@ -28,6 +28,11 @@ type ViewProps = {
   refreshStatus?: ReviewRefreshStatus;
   selectedAnnotationId?: string | null;
   source?: ReviewSourceSnapshot;
+  onReviewSurfaceFindingsChange?: (
+    surfaceId: string,
+    findings: NeonReviewFinding[],
+  ) => void;
+  onReviewSurfaceIdChange?: (surfaceId: string | null) => void;
 };
 
 vi.mock('../../api', async (importOriginal) => ({
@@ -38,12 +43,12 @@ vi.mock('../../api', async (importOriginal) => ({
 vi.mock('./queries', async () => {
   const { resolvedReviewRevision } =
     await import('../../../../shared/review-source');
-  const files = () =>
+  const files = (prefix = 'src') =>
     Array.from({ length: state.fileCount }, (_, index) => ({
       additions: 1,
       binary: false,
       deletions: 1,
-      path: `src/file-${index.toString().padStart(3, '0')}.ts`,
+      path: `${prefix}/file-${index.toString().padStart(3, '0')}.ts`,
       patch: null,
       status: 'M',
       truncated: false,
@@ -76,7 +81,7 @@ vi.mock('./queries', async () => {
       error: null,
       isLoading: false,
     }),
-    useRepoDiff: () => ({
+    useRepoDiff: (input: { worktreeId?: string | null }) => ({
       data: {
         diffSummary: {
           additions: state.fileCount,
@@ -84,7 +89,7 @@ vi.mock('./queries', async () => {
           deletions: state.fileCount,
           files: state.fileCount,
         },
-        files: files(),
+        files: files(input.worktreeId === 'worktree-2' ? 'next' : 'src'),
         revision: revision(state.repoRevision),
       },
       error: null,
@@ -110,28 +115,22 @@ vi.mock('./queries', async () => {
   };
 });
 
-vi.mock('./use-prepared-finding-review', () => ({
-  usePreparedFindingReview: () => ({
-    annotationsByPath: {},
-    inspector: (
-      <div data-testid="continuity">Approval and recovery context</div>
-    ),
-    inspectorLabel: 'Findings',
-    onReviewSurfaceFindingsChange: () => undefined,
-    onReviewSurfaceIdChange: () => undefined,
-    refreshGuards: state.guards,
-    renderAnnotation: () => null,
-    reviewMapByPath: new Map(),
-    selectedAnnotationId: state.guards.selectionActive
-      ? 'finding:selected'
-      : null,
-  }),
-}));
-
 vi.mock('./MultiFileView', () => ({
   MultiFileView(props: ViewProps) {
     state.viewProps = props;
-    return <div data-testid="mounted-view">{props.inspector}</div>;
+    const publishedRevision = useRef<string | null>(null);
+    useEffect(() => {
+      const key = `${props.source?.id}:${props.source ? reviewRevisionKey(props.source.revision) : null}`;
+      if (!props.source || publishedRevision.current === key) return;
+      publishedRevision.current = key;
+      props.onReviewSurfaceIdChange?.('surface-review');
+      props.onReviewSurfaceFindingsChange?.('surface-review', state.findings);
+    }, [props]);
+    return (
+      <div data-testid="mounted-view">
+        <div data-testid="continuity">{props.inspector}</div>
+      </div>
+    );
   },
 }));
 
@@ -146,11 +145,7 @@ describe('revision-aware prepared and Kilo surfaces', () => {
     (
       globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
     ).IS_REACT_ACT_ENVIRONMENT = true;
-    state.guards = {
-      mutationPending: false,
-      revisionConfirmationOpen: false,
-      selectionActive: false,
-    };
+    state.findings = [];
     state.preparedRevision = 'prepared-a';
     state.repoRevision = 'repo-a';
     state.fileCount = 2;
@@ -170,13 +165,24 @@ describe('revision-aware prepared and Kilo surfaces', () => {
     container.remove();
   });
 
-  it('distinguishes availability from application and preserves a selected finding explicitly', async () => {
-    state.guards.selectionActive = true;
+  it('retains an old-revision finding as history and degrades a vanished selection', async () => {
+    state.findings = [finding('prepared-a', 'prepared-diff:prepared-1')];
     await render(<PreparedDiffReview diff={preparedDiff()} />);
+    await selectFinding();
     const mountedContext = container.querySelector(
       '[data-testid="continuity"]',
     );
 
+    state.findings = [
+      {
+        ...state.findings[0]!,
+        lifecycle: {
+          ...state.findings[0]!.lifecycle,
+          state: 'stale',
+          reason: 'The prepared worktree changed.',
+        },
+      },
+    ];
     state.preparedRevision = 'prepared-b';
     await render(<PreparedDiffReview diff={preparedDiff()} />);
 
@@ -199,11 +205,53 @@ describe('revision-aware prepared and Kilo surfaces', () => {
     expect(state.viewProps?.source?.revision).toMatchObject({
       id: 'prepared-b',
     });
-    expect(state.viewProps?.selectedAnnotationId).toBe('finding:selected');
-    expect(state.viewProps?.refreshStatus?.preservation).toBe('preserved');
+    expect(state.viewProps?.selectedAnnotationId).toBeNull();
+    expect(state.viewProps?.refreshStatus?.preservation).toBe('degraded');
+    expect(container.textContent).toContain('Not attached');
     expect(container.querySelector('[data-testid="continuity"]')).toBe(
       mountedContext,
     );
+  });
+
+  it('preserves a selected finding only when the same target exists on the next revision', async () => {
+    const current = finding('prepared-a', 'prepared-diff:prepared-1');
+    const next = finding('prepared-b', 'prepared-diff:prepared-1');
+    state.findings = [current];
+    await render(<PreparedDiffReview diff={preparedDiff()} />);
+    await selectFinding();
+    await act(async () => {
+      state.findings = [current, next];
+      state.viewProps?.onReviewSurfaceFindingsChange?.(
+        'surface-review',
+        state.findings,
+      );
+    });
+    state.findings = [
+      {
+        ...current,
+        lifecycle: {
+          ...current.lifecycle,
+          state: 'stale',
+          reason: 'The prepared worktree changed.',
+        },
+      },
+      next,
+    ];
+
+    state.preparedRevision = 'prepared-b';
+    await render(<PreparedDiffReview diff={preparedDiff()} />);
+    const apply = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Apply the available review revision"]',
+    );
+    await act(async () =>
+      apply?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
+
+    expect(state.viewProps?.source?.revision).toMatchObject({
+      id: 'prepared-b',
+    });
+    expect(state.viewProps?.selectedAnnotationId).not.toBeNull();
+    expect(state.viewProps?.refreshStatus?.preservation).toBe('preserved');
   });
 
   it('keeps a prepared revision confirmation open and blocks refresh application', async () => {
@@ -238,8 +286,9 @@ describe('revision-aware prepared and Kilo surfaces', () => {
 
   it('keeps a 305-file Kilo refresh lazy and reuses the surrounding surface', async () => {
     state.fileCount = 305;
-    state.guards.selectionActive = true;
+    state.findings = [finding('repo-a', 'kilo-result:kilo-1')];
     await render(<KiloTaskDiffReview task={kiloTask()} />);
+    await selectFinding();
     const mountedView = container.querySelector('[data-testid="mounted-view"]');
 
     state.repoRevision = 'repo-b';
@@ -263,12 +312,47 @@ describe('revision-aware prepared and Kilo surfaces', () => {
     expect(state.viewProps?.source?.revision).toMatchObject({ id: 'repo-b' });
   });
 
+  it('never publishes task B with task A files or revision during a source switch', async () => {
+    await render(<KiloTaskDiffReview task={kiloTask()} />);
+    expect(state.viewProps?.source).toMatchObject({
+      id: 'kilo-result:kilo-1',
+      revision: { id: 'repo-a' },
+    });
+    expect(state.viewProps?.files[0]?.path).toBe('src/file-000.ts');
+
+    state.repoRevision = 'repo-b';
+    await render(
+      <KiloTaskDiffReview
+        task={kiloTask({ id: 'kilo-2', worktreeId: 'worktree-2' })}
+      />,
+    );
+
+    expect(state.viewProps?.source).toMatchObject({
+      id: 'kilo-result:kilo-2',
+      revision: { id: 'repo-b' },
+    });
+    expect(state.viewProps?.files[0]?.path).toBe('next/file-000.ts');
+    expect(
+      state.viewProps?.files.some((file) => file.path.startsWith('src/')),
+    ).toBe(false);
+  });
+
   async function render(node: ReactNode) {
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>,
       );
     });
+  }
+
+  async function selectFinding() {
+    const show = container.querySelector<HTMLButtonElement>(
+      'button[aria-label^="Show finding:"]',
+    );
+    expect(show).not.toBeNull();
+    await act(async () =>
+      show?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
   }
 });
 
@@ -291,14 +375,50 @@ function preparedDiff(): AutopilotPreparedDiff {
   };
 }
 
-function kiloTask(): KiloTaskRecord {
+function finding(revisionId: string, sourceId: string): NeonReviewFinding {
   return {
-    id: 'kilo-1',
+    schemaVersion: 2,
+    id: 'selected',
+    surfaceId: 'surface-review',
+    sourceId,
+    revisionKey: `worktree-diff:base-sha:${revisionId}`,
+    file: 'src/file-000.ts',
+    anchor: {
+      kind: 'line-range',
+      side: 'additions',
+      startLine: 1,
+      endLine: 1,
+    },
+    title: 'Selected finding',
+    explanation: 'Keep this finding tied to its revision.',
+    severity: 'major',
+    confidence: 'high',
+    suggestedAction: 'Review the changed line.',
+    provenance: {
+      authorRole: 'display-assistant',
+      model: 'openai/gpt-5',
+      workflowRunId: 'run-1',
+      createdAt: '2026-07-18T12:00:00.000Z',
+    },
+    lifecycle: {
+      state: 'active',
+      changedAt: '2026-07-18T12:00:00.000Z',
+      reason: null,
+      promotion: null,
+    },
+  };
+}
+
+function kiloTask(
+  overrides: Partial<Pick<KiloTaskRecord, 'id' | 'worktreeId'>> = {},
+): KiloTaskRecord {
+  return {
+    id: overrides.id ?? 'kilo-1',
     title: 'Kilo result',
     prompt: 'Change it.',
     repoId: 'repo-1',
     repoFullName: 'example/repo',
-    worktreeId: 'worktree-1',
+    worktreeId: overrides.worktreeId ?? 'worktree-1',
     lockId: null,
     cwd: '/tmp/worktree-1',
     mode: 'direct-edit',

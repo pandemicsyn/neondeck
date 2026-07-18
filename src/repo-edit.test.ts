@@ -11,7 +11,15 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import {
   listRepoEditEvents,
   patchRepoFiles,
@@ -28,7 +36,10 @@ import {
   createSeededGitRepository,
   type SeededGitRepository,
 } from './testing/git-repository-fixture';
-import { reviewRevisionKey } from '../shared/review-source';
+import {
+  resolvedReviewRevision,
+  reviewRevisionKey,
+} from '../shared/review-source';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
@@ -427,6 +438,83 @@ describe('repo edit actions', () => {
     await expect(gitOutput(repo, ['count-objects', '-v'])).resolves.toBe(
       objectStateBefore,
     );
+  });
+
+  it('requires a revision key and rejects a scoped patch changed during its read', async () => {
+    const { paths } = await fixture();
+    await expect(
+      readRepoDiff(
+        {
+          repoId: 'sample',
+          paths: ['src/app.ts'],
+          includePatch: true,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+
+    const before = resolvedReviewRevision({
+      kind: 'worktree-diff',
+      id: 'revision-a',
+      baseId: 'base',
+    });
+    const after = resolvedReviewRevision({
+      kind: 'worktree-diff',
+      id: 'revision-b',
+      baseId: 'base',
+    });
+    const metadata = {
+      base: 'HEAD',
+      files: [
+        {
+          path: 'src/app.ts',
+          status: 'M',
+          additions: 1,
+          deletions: 1,
+          binary: false,
+          generatedLike: false,
+        },
+      ],
+      summary: {
+        files: 1,
+        additions: 1,
+        deletions: 1,
+        binaryFiles: 0,
+      },
+    };
+    const gitDiffMock = vi
+      .fn<typeof gitDiff>()
+      .mockResolvedValueOnce(metadata)
+      .mockResolvedValueOnce({
+        ...metadata,
+        files: [{ ...metadata.files[0]!, patch: 'patch from revision-a' }],
+      })
+      .mockResolvedValueOnce(metadata);
+    const gitWorktreeRevisionMock = vi
+      .fn<typeof gitWorktreeRevision>()
+      .mockResolvedValueOnce(before)
+      .mockResolvedValueOnce(after);
+
+    await expect(
+      readRepoDiff(
+        {
+          repoId: 'sample',
+          paths: ['src/app.ts'],
+          includePatch: true,
+          expectedRevisionKey: reviewRevisionKey(before),
+        },
+        paths,
+        {
+          gitDiff: gitDiffMock,
+          gitWorktreeRevision: gitWorktreeRevisionMock,
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      revision: after,
+      requires: ['refresh'],
+    });
+    expect(gitDiffMock).toHaveBeenCalledTimes(3);
   });
 
   it('allows changed paths whose names begin with two dots', async () => {
