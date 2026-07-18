@@ -1,7 +1,16 @@
 import type { ReviewSourceSnapshot } from './review-source';
-import type { ReviewSurfaceFindingChange } from './review-finding';
+import type {
+  NeonReviewFinding,
+  ReviewSurfaceFindingChange,
+} from './review-finding';
 
 export const reviewSurfaceSchemaVersion = 1 as const;
+
+export const reviewSurfaceContextPageLimits = {
+  defaultLimit: 25,
+  maxLimit: 50,
+  maxOffset: 5_000,
+} as const;
 
 export type ReviewSurfaceSelection = {
   path: string;
@@ -30,6 +39,38 @@ export type ActiveReviewSurface = ReviewSurfaceSnapshot & {
   updatedAt: string;
   expiresAt: string;
   lastNavigationAck: ReviewSurfaceNavigationAck | null;
+};
+
+export type ReviewSurfaceContextPageRequest = {
+  surfaceId: string;
+  offset?: number;
+  limit?: number;
+};
+
+export type ReviewSurfaceContextWindow<T> = {
+  items: T[];
+  offset: number;
+  limit: number;
+  total: number;
+  nextOffset: number | null;
+};
+
+export type ReviewSurfaceContextSummary = Omit<
+  ActiveReviewSurface,
+  'source' | 'reviewOrder'
+> & {
+  source: Omit<ReviewSourceSnapshot, 'files'>;
+  counts: {
+    files: number;
+    reviewOrder: number;
+    findings: number;
+  };
+};
+
+export type ReviewSurfaceContextPage = {
+  files: ReviewSurfaceContextWindow<ReviewSourceSnapshot['files'][number]>;
+  reviewOrder: ReviewSurfaceContextWindow<string>;
+  findings: ReviewSurfaceContextWindow<NeonReviewFinding>;
 };
 
 export type ReviewSurfaceNavigationTarget = {

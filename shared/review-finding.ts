@@ -69,17 +69,26 @@ export type NeonReviewFindingDraft = Omit<
   provenance: Omit<NeonReviewFindingProvenance, 'createdAt'>;
 };
 
+export type NeonReviewFindingSubmission = Omit<
+  NeonReviewFindingDraft,
+  'provenance'
+>;
+
 export type ReviewSurfaceFindingsApplyRequest = {
   revisionKey: string;
-  findings: NeonReviewFindingDraft[];
+  findings: NeonReviewFindingSubmission[];
 };
 
 export type ReviewSurfaceFindingsDismissRequest = {
+  sourceId: string;
+  revisionKey: string;
   findingIds: string[];
   reason: string | null;
 };
 
 export type ReviewSurfaceFindingsClearRequest = {
+  sourceId: string;
+  revisionKey: string;
   findingIds?: string[];
 };
 

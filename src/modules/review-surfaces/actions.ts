@@ -1,13 +1,18 @@
 import { defineAction, defineTool } from '@flue/runtime';
 import * as v from 'valibot';
 import { currentFlueExecutionContext } from '../flue';
+import { createReviewSurfaceContextPage } from './context';
+import {
+  flueFindingProvenance,
+  stampReviewFindingSubmissions,
+} from './provenance';
 import { reviewSurfaceRegistry } from './registry';
 import {
   reviewSurfaceActionOutputSchema,
+  reviewSurfaceContextInputSchema,
   reviewSurfaceFindingsApplyActionSchema,
   reviewSurfaceFindingsClearActionSchema,
   reviewSurfaceFindingsDismissActionSchema,
-  reviewSurfaceIdInputSchema,
   reviewSurfaceNavigateInputSchema,
 } from './schemas';
 
@@ -43,8 +48,8 @@ export const reviewSurfacesLookupTool = defineTool({
 export const reviewSurfaceContextLookupTool = defineTool({
   name: 'neondeck_review_surface_context_lookup',
   description:
-    'Read one active review surface and its bounded process-ephemeral Neon findings. This does not load patch bodies.',
-  input: reviewSurfaceIdInputSchema,
+    'Read a paged summary of one active review surface and its process-ephemeral Neon findings. Files, review order, and findings share an offset and bounded page limit; patch bodies are never loaded.',
+  input: reviewSurfaceContextInputSchema,
   output: lookupOutputSchema,
   async run({ input }) {
     const surface = reviewSurfaceRegistry.read(input.surfaceId);
@@ -55,10 +60,12 @@ export const reviewSurfaceContextLookupTool = defineTool({
         surfaceId: input.surfaceId,
       };
     }
-    return {
-      ...reviewSurfaceRegistry.readFindings(input.surfaceId),
+    const findingResult = reviewSurfaceRegistry.readFindings(input.surfaceId);
+    return createReviewSurfaceContextPage(
       surface,
-    };
+      findingResult.findings ?? [],
+      input,
+    );
   },
 });
 
@@ -101,16 +108,13 @@ export const reviewSurfaceFindingsApplyAction = defineAction({
   input: reviewSurfaceFindingsApplyActionSchema,
   output: reviewSurfaceActionOutputSchema,
   async run({ input }) {
-    const workflowRunId = currentFlueExecutionContext()?.runId ?? null;
+    const context = currentFlueExecutionContext();
     return reviewSurfaceRegistry.applyFindings(input.surfaceId, {
       revisionKey: input.revisionKey,
-      findings: input.findings.map((finding) => ({
-        ...finding,
-        provenance: {
-          ...finding.provenance,
-          workflowRunId: workflowRunId ?? finding.provenance.workflowRunId,
-        },
-      })),
+      findings: stampReviewFindingSubmissions(
+        input.findings,
+        flueFindingProvenance(context),
+      ),
     });
   },
 });
@@ -118,11 +122,13 @@ export const reviewSurfaceFindingsApplyAction = defineAction({
 export const reviewSurfaceFindingsDismissAction = defineAction({
   name: 'neondeck_review_surface_findings_dismiss',
   description:
-    'Explicitly dismiss selected process-ephemeral Neon findings on one active review surface.',
+    'Explicitly dismiss selected process-ephemeral Neon findings on one active review surface when the expected source and revision are still mounted.',
   input: reviewSurfaceFindingsDismissActionSchema,
   output: reviewSurfaceActionOutputSchema,
   async run({ input }) {
     return reviewSurfaceRegistry.dismissFindings(input.surfaceId, {
+      sourceId: input.sourceId,
+      revisionKey: input.revisionKey,
       findingIds: input.findingIds,
       reason: input.reason,
     });
@@ -132,11 +138,13 @@ export const reviewSurfaceFindingsDismissAction = defineAction({
 export const reviewSurfaceFindingsClearAction = defineAction({
   name: 'neondeck_review_surface_findings_clear',
   description:
-    'Explicitly remove selected or all process-ephemeral Neon findings from one active review surface.',
+    'Explicitly remove selected or all process-ephemeral Neon findings from one active review surface when the expected source and revision are still mounted.',
   input: reviewSurfaceFindingsClearActionSchema,
   output: reviewSurfaceActionOutputSchema,
   async run({ input }) {
     return reviewSurfaceRegistry.clearFindings(input.surfaceId, {
+      sourceId: input.sourceId,
+      revisionKey: input.revisionKey,
       findingIds: input.findingIds,
     });
   },

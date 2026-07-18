@@ -4,6 +4,7 @@ import {
   neonReviewFindingSchemaVersion,
   type NeonReviewFinding,
   type NeonReviewFindingDraft,
+  type NeonReviewFindingSubmission,
   type ReviewSurfaceFindingsApplyRequest,
   type ReviewSurfaceFindingsClearRequest,
   type ReviewSurfaceFindingsDismissRequest,
@@ -13,7 +14,9 @@ import {
   type ReviewSourceSnapshot,
 } from '../../../shared/review-source';
 import {
+  reviewSurfaceContextPageLimits,
   reviewSurfaceSchemaVersion,
+  type ReviewSurfaceContextPageRequest,
   type ReviewSurfaceNavigationRequest,
   type ReviewSurfaceSnapshot,
 } from '../../../shared/review-surface';
@@ -180,7 +183,7 @@ const findingProvenanceInputSchema = v.object({
   workflowRunId: nullableIdentifierSchema,
 });
 
-const neonReviewFindingDraftEntries = {
+const neonReviewFindingSubmissionEntries = {
   schemaVersion: v.literal(neonReviewFindingSchemaVersion),
   id: identifierSchema,
   sourceId: identifierSchema,
@@ -206,15 +209,20 @@ const neonReviewFindingDraftEntries = {
       v.maxLength(neonReviewFindingLimits.maxSuggestedActionLength),
     ),
   ),
-  provenance: findingProvenanceInputSchema,
 };
 
+export const neonReviewFindingSubmissionSchema: v.GenericSchema<NeonReviewFindingSubmission> =
+  v.object(neonReviewFindingSubmissionEntries);
+
 export const neonReviewFindingDraftSchema: v.GenericSchema<NeonReviewFindingDraft> =
-  v.object(neonReviewFindingDraftEntries);
+  v.object({
+    ...neonReviewFindingSubmissionEntries,
+    provenance: findingProvenanceInputSchema,
+  });
 
 export const neonReviewFindingSchema: v.GenericSchema<NeonReviewFinding> =
   v.object({
-    ...neonReviewFindingDraftEntries,
+    ...neonReviewFindingSubmissionEntries,
     surfaceId: surfaceIdSchema,
     provenance: v.object({
       ...findingProvenanceInputSchema.entries,
@@ -240,7 +248,7 @@ export const neonReviewFindingSchema: v.GenericSchema<NeonReviewFinding> =
   });
 
 const findingBatchSchema = v.pipe(
-  v.array(neonReviewFindingDraftSchema),
+  v.array(neonReviewFindingSubmissionSchema),
   v.minLength(1),
   v.maxLength(neonReviewFindingLimits.maxApplyBatch),
   v.check(
@@ -258,6 +266,8 @@ export const reviewSurfaceFindingsApplySchema: v.GenericSchema<ReviewSurfaceFind
 
 export const reviewSurfaceFindingsDismissSchema: v.GenericSchema<ReviewSurfaceFindingsDismissRequest> =
   v.object({
+    sourceId: identifierSchema,
+    revisionKey: revisionKeySchema,
     findingIds: findingIdListSchema,
     reason: v.nullable(
       v.pipe(
@@ -270,12 +280,35 @@ export const reviewSurfaceFindingsDismissSchema: v.GenericSchema<ReviewSurfaceFi
 
 export const reviewSurfaceFindingsClearSchema: v.GenericSchema<ReviewSurfaceFindingsClearRequest> =
   v.object({
+    sourceId: identifierSchema,
+    revisionKey: revisionKeySchema,
     findingIds: v.optional(findingIdListSchema),
   });
 
 export const reviewSurfaceIdInputSchema = v.object({
   surfaceId: surfaceIdSchema,
 });
+
+export const reviewSurfaceContextInputSchema: v.GenericSchema<ReviewSurfaceContextPageRequest> =
+  v.object({
+    surfaceId: surfaceIdSchema,
+    offset: v.optional(
+      v.pipe(
+        v.number(),
+        v.integer(),
+        v.minValue(0),
+        v.maxValue(reviewSurfaceContextPageLimits.maxOffset),
+      ),
+    ),
+    limit: v.optional(
+      v.pipe(
+        v.number(),
+        v.integer(),
+        v.minValue(1),
+        v.maxValue(reviewSurfaceContextPageLimits.maxLimit),
+      ),
+    ),
+  });
 
 export const reviewSurfaceNavigateInputSchema = v.object({
   surfaceId: surfaceIdSchema,
@@ -291,6 +324,8 @@ export const reviewSurfaceFindingsApplyActionSchema = v.object({
 
 export const reviewSurfaceFindingsDismissActionSchema = v.object({
   surfaceId: surfaceIdSchema,
+  sourceId: identifierSchema,
+  revisionKey: revisionKeySchema,
   findingIds: findingIdListSchema,
   reason: v.nullable(
     v.pipe(
@@ -303,6 +338,8 @@ export const reviewSurfaceFindingsDismissActionSchema = v.object({
 
 export const reviewSurfaceFindingsClearActionSchema = v.object({
   surfaceId: surfaceIdSchema,
+  sourceId: identifierSchema,
+  revisionKey: revisionKeySchema,
   findingIds: v.optional(findingIdListSchema),
 });
 

@@ -4,10 +4,12 @@ import {
   reviewSurfaceFindingsApplySchema,
   reviewSurfaceFindingsClearSchema,
   reviewSurfaceFindingsDismissSchema,
+  localApiFindingProvenance,
   reviewSurfaceNavigationAckInputSchema,
   reviewSurfaceNavigationRequestSchema,
   reviewSurfaceRegistry,
   reviewSurfaceSnapshotSchema,
+  stampReviewFindingSubmissions,
   type ReviewSurfaceRegistry,
 } from '../../modules/review-surfaces';
 
@@ -63,7 +65,13 @@ export function createReviewSurfaceRoutes(
     if (!parsed.success) return invalidInput(c, parsed.issues);
     return findingResult(
       c,
-      registry.applyFindings(c.req.param('surfaceId'), parsed.output),
+      registry.applyFindings(c.req.param('surfaceId'), {
+        revisionKey: parsed.output.revisionKey,
+        findings: stampReviewFindingSubmissions(
+          parsed.output.findings,
+          localApiFindingProvenance,
+        ),
+      }),
     );
   });
 

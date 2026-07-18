@@ -10,8 +10,10 @@ export type {
 } from './registry';
 export {
   neonReviewFindingDraftSchema,
+  neonReviewFindingSubmissionSchema,
   neonReviewFindingSchema,
   reviewSurfaceActionOutputSchema,
+  reviewSurfaceContextInputSchema,
   reviewSurfaceFindingsApplyActionSchema,
   reviewSurfaceFindingsApplySchema,
   reviewSurfaceFindingsClearActionSchema,
@@ -34,3 +36,9 @@ export {
   reviewSurfaceNavigateAction,
   reviewSurfacesLookupTool,
 } from './actions';
+export { createReviewSurfaceContextPage } from './context';
+export {
+  flueFindingProvenance,
+  localApiFindingProvenance,
+  stampReviewFindingSubmissions,
+} from './provenance';
