@@ -232,7 +232,7 @@ export function PreparedDiffReview({
     return <MiniEmpty label="Loading changed files." />;
   }
 
-  if (filesQuery.error) {
+  if (filesQuery.error && !appliedData) {
     return (
       <MiniEmpty
         label={`Prepared diff unavailable: ${queryErrorMessage(filesQuery.error)}`}
@@ -242,6 +242,11 @@ export function PreparedDiffReview({
 
   return (
     <>
+      {filesQuery.error ? (
+        <MiniEmpty
+          label={`Prepared diff refresh unavailable: ${queryErrorMessage(filesQuery.error)}`}
+        />
+      ) : null}
       {hasAvailableRevision ? (
         <ReviewRefreshNotice
           availableLabel="The prepared worktree changed. The approval and recovery context will remain open."

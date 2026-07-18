@@ -14,6 +14,7 @@ import type { AutopilotPreparedDiff, KiloTaskRecord } from '../../api';
 
 const state = vi.hoisted(() => ({
   findings: [] as NeonReviewFinding[],
+  preparedError: false,
   preparedRevision: 'prepared-a',
   repoRevision: 'repo-a',
   fileCount: 2,
@@ -67,7 +68,9 @@ vi.mock('./queries', async () => {
     useKiloTaskDiff: () => ({ data: null, error: null, isLoading: false }),
     usePreparedDiffFiles: () => ({
       data: { files: files(), revision: revision(state.preparedRevision) },
-      error: null,
+      error: state.preparedError
+        ? new Error('Prepared metadata refresh failed.')
+        : null,
       isLoading: false,
     }),
     usePreparedDiffFilePatch: (
@@ -146,6 +149,7 @@ describe('revision-aware prepared and Kilo surfaces', () => {
       globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
     ).IS_REACT_ACT_ENVIRONMENT = true;
     state.findings = [];
+    state.preparedError = false;
     state.preparedRevision = 'prepared-a';
     state.repoRevision = 'repo-a';
     state.fileCount = 2;
@@ -297,6 +301,24 @@ describe('revision-aware prepared and Kilo surfaces', () => {
         'button[aria-label="Apply the available review revision"]',
       )?.disabled,
     ).toBe(true);
+    expect(state.viewProps?.source?.revision).toMatchObject({
+      id: 'prepared-a',
+    });
+  });
+
+  it('keeps the applied prepared review mounted when a metadata refresh fails', async () => {
+    await render(<PreparedDiffReview diff={preparedDiff()} />);
+    const mountedView = container.querySelector('[data-testid="mounted-view"]');
+
+    state.preparedError = true;
+    await render(<PreparedDiffReview diff={preparedDiff()} />);
+
+    expect(container.textContent).toContain(
+      'Prepared diff refresh unavailable: Prepared metadata refresh failed.',
+    );
+    expect(container.querySelector('[data-testid="mounted-view"]')).toBe(
+      mountedView,
+    );
     expect(state.viewProps?.source?.revision).toMatchObject({
       id: 'prepared-a',
     });

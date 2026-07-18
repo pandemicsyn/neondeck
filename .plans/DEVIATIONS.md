@@ -15,6 +15,20 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-07-18 - Diff Review Phase B Completion Audit
+
+- Roadmap item: Diff Improvements Plan / Phase B guided review completion audit
+- Decision: Mark Phase B complete after independently reconciling the shared contracts and all three live review surfaces. Correct the one bounded gap found by keeping the applied prepared-diff review and its approval/recovery context mounted when a background metadata refresh fails, while showing the refresh error. Stop implementation at Phase B; do not start Phases C–E.
+- Reason: The merged source/revision, navigation, finding, promotion, and refresh work satisfies the Phase B acceptance criteria, but the prepared surface's unconditional refresh-error return violated the availability-versus-application contract even though the Kilo surface already preserved applied data.
+- Follow-up: Phases C–E remain later work exactly as recorded in `.plans/DIFF_IMPROVEMENTS_PLAN.md`.
+
+## 2026-07-18 - Worktree Fingerprint Poll Content Bound
+
+- Roadmap item: Diff Improvements Plan / Phase B revision-aware live refresh performance
+- Decision: Describe the 30-second prepared/Kilo fingerprint poll as cadence- and query-scope-bounded only. Retain the current full-content hashing in `gitWorktreeRevision`; do not add caching or a hard byte/time bound during this audit.
+- Reason: The poll does not load patch bodies, but it hashes every changed regular file in full and is therefore byte- and time-unbounded for pathological huge changed files. Changing that behavior affects revision identity and freshness guarantees and requires lead/user discussion rather than a risky audit-time optimization.
+- Follow-up: Discuss fingerprint caching or explicit byte/time policy before implementation; until then, retain this as a known deferred performance limitation and do not claim byte-bounded content work.
+
 ## 2026-07-18 - Diff Review Performance Reconciliation
 
 - Roadmap item: Diff Improvements Plan / transition from Phase A to Phase B

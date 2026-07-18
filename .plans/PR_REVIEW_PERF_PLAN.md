@@ -30,6 +30,43 @@ retained in `benchmarks/results/review-fixture-baseline.json`. This shared
 fixture evidence complements, rather than replaces, the immutable real-PR and
 production-browser evidence below.
 
+## 2026-07-18 final Phase B audit evidence
+
+The lead reran `npm run bench:review-fixtures` on Node 26.4.0. The large
+committed-PR fixture recorded 41.9 ms tree, 163.7 ms first-patch, and 0 ms
+in-process thread-projection medians, inside the retained 500/1,000/500 ms
+fixture budgets. This deterministic harness exercises `pr-local-diffs` only;
+it does not replace the retained production-browser misses below.
+
+A dedicated exact-head 305-changed-file worktree approximation on Node
+26.4.0/arm64 exercised the production Phase B step 5 functions. The fixture
+contained 120 modified, 30 deleted, 25 renamed, and 130 added files. Five warm
+samples produced:
+
+| Production B5 path           |   Median | Range          | Retained budget / verdict |
+| ---------------------------- | -------: | -------------- | ------------------------- |
+| Repo unscoped metadata       | 140.9 ms | 134.8–143.4 ms | tree <500 ms / pass       |
+| Prepared unscoped metadata   | 137.0 ms | 134.4–139.0 ms | tree <500 ms / pass       |
+| Repo scoped active patch     | 179.1 ms | 177.7–188.1 ms | patch <1,000 ms / pass    |
+| Prepared scoped active patch | 177.2 ms | 173.9–181.1 ms | patch <1,000 ms / pass    |
+
+The approximation exercised `readRepoDiff`,
+`readPreparedDiffChangedFiles`, `readStableDiffMetadata`,
+`gitWorktreeRevision`, and expected-revision checks before and after scoped
+patch reads in `readRepoDiff` and `readPreparedDiffFileDiff`. The final PR #154
+commit after the measurement changed only prepared-summary stable-read code
+and coverage, not those measured paths. Machine-local raw evidence was retained
+at `/private/tmp/neondeck-pr154-b5-results-exact-aa87167.json`.
+
+The mounted prepared/Kilo 30-second fingerprint polling cadence and changed-path
+metadata query are bounded, and patch bodies are not loaded by the poll.
+Content work is not byte- or time-bounded: `gitWorktreeRevision` hashes the full
+content of every changed regular file. Pathological huge changed files can
+therefore make a poll expensive. No caching or hard byte/time bound was added
+during the Phase B audit because that changes revision identity and freshness
+semantics; it remains an explicit deferred performance limitation for lead/user
+discussion.
+
 ## 2026-07-17 reconciliation
 
 PR #84 implemented phases 1–5 plus the original synthetic 305-file harness.
