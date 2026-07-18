@@ -896,6 +896,22 @@
             </p>
           </div>
 
+          <div class="gate completion-note">
+            <div class="gate-mark">PHASE B COMPLETE</div>
+            <p>
+              <strong>Guided-review outcome (2026-07-18):</strong> PRs #145, #146, #150, #152,
+              #153, and #154 now provide one revision-bound review model, visible and keyboard
+              navigation, typed inline Neon findings, explicit promotion into existing draft or
+              revision-request workflows, and guarded live refresh across the focused GitHub PR,
+              prepared-diff, and prepared-backed Kilo/worktree surfaces. The final audit corrected
+              one remaining availability/application gap: a failed background prepared-diff
+              metadata refresh now reports the error without unmounting the applied review or its
+              approval/recovery context. PR #149 supplied the sandbox-safe test runner used by the
+              landed test coverage. Phase B is the stopping milestone; Phases C–E remain later and
+              were not started.
+            </p>
+          </div>
+
           <div class="stats" aria-label="Finding counts by severity">
             <div class="stat"><span class="label">P0 BLOCKING</span><strong class="p0">0</strong></div>
             <div class="stat"><span class="label">P1 MAJOR</span><strong class="p1">11</strong></div>
@@ -1029,10 +1045,22 @@
                 <tr><td>Real PR · prioritized requests</td><td>1 thread request · 4 patch requests</td><td>381 kB thread · 724 kB total API</td><td>0 aborted · last API response 2,021 ms</td><td>Active read settles before background fanout</td></tr>
                 <tr><td>Real PR · lean threads, uncached</td><td>639 ms tree · 924 ms first patch</td><td>58 kB thread · 401 kB total API</td><td>1,511 ms threads · 16.8 ms post-response render</td><td>Payload fixed; GitHub latency remains</td></tr>
                 <tr><td>Real PR · lean threads, warm</td><td>642 ms tree · 934 ms first patch</td><td>530 ms traced LCP · 0.00 CLS</td><td>459 ms threads · 6.8 ms backend cache hit</td><td>Completed · warm thread target passes</td></tr>
+                <tr><td>Phase B fixture · large committed PR</td><td>41.9 ms tree · 163.7 ms first patch</td><td>305-file deterministic fixture</td><td>0 ms in-process thread projection</td><td>Pass · <code>pr-local-diffs</code> harness only</td></tr>
+                <tr><td>Phase B B5 · repo worktree</td><td>140.9 ms metadata · 179.1 ms active patch</td><td>305 changed files · five warm samples</td><td>Expected-revision pre/post checks</td><td>Pass · production B5 functions</td></tr>
+                <tr><td>Phase B B5 · prepared worktree</td><td>137.0 ms metadata · 177.2 ms active patch</td><td>120 modified · 30 deleted · 25 renamed · 130 added</td><td>Stable metadata + full-content fingerprint</td><td>Pass · production B5 functions</td></tr>
                 <tr><td>Real PR · cold local / GitHub</td><td>4,978 / 3,894 ms</td><td>295 / 765 kB metadata</td><td>0 / 1 truncated files</td><td>Both miss cold target; local is complete</td></tr>
                 <tr><td>Production initial preload</td><td>194.6 kB gzip</td><td>157.7 kB entry · 21.6 kB ccount</td><td>Focused-review wrapper 0.77 kB gzip</td><td>Track; no budget miss declared</td></tr>
               </tbody>
             </table>
+          </div>
+
+          <div class="callout" style="margin-bottom: 18px">
+            <strong>Phase B fingerprint limitation.</strong> The prepared/Kilo poll is bounded to a
+            30-second cadence and changed-path metadata query, and it does not load patch bodies.
+            Its content work is not byte- or time-bounded: <code>gitWorktreeRevision</code> hashes
+            every changed regular file in full. Pathological huge changed files remain an explicit
+            deferred performance limitation; caching or a hard bound requires lead/product-owner
+            discussion because it changes revision identity and freshness semantics.
           </div>
 
           <div class="callout" style="margin-bottom: 18px">
@@ -1367,6 +1395,7 @@
             <li class="completed-action"><span class="completion">COMPLETED · PR #140</span> <strong>P2 · Editor state ownership:</strong> keep new-comment, draft-edit, and thread-reply bodies scoped to their editor generation so older async completions cannot clear newer work.</li>
             <li class="completed-action"><span class="completion">COMPLETED · FINAL PASS</span> <strong>P3 · Final pass:</strong> tabular metrics, timer cleanup, operation-scoped status, stable finding IDs, and config tightening. Suggested command: <code>$impeccable polish</code>.</li>
             <li class="completed-action"><span class="completion">COMPLETED · CLOSING GATE</span> <strong>Re-audit:</strong> repeat the static audit, then run focused runtime and accessibility checks against the agreed fixtures.</li>
+            <li class="completed-action"><span class="completion">COMPLETED · DIFF PHASE B AUDIT</span> <strong>Guided review stopping handoff:</strong> reconcile source/revision consistency, navigation and accessibility, typed finding trust, explicit promotion, and guarded refresh across GitHub, prepared, and prepared-backed Kilo surfaces; retain measured misses and pause before Phases C–E.</li>
           </ol>
           <p class="section-note">
             You can ask to run these one at a time, all at once, or in any order. Re-run

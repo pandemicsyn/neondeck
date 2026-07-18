@@ -140,6 +140,7 @@ export function PreparedDiffReview({
     filesQuery.data?.revision ?? source.revision,
   );
   const hasAvailableRevision = Boolean(
+    !filesQuery.error &&
     appliedRevisionKey &&
     latestRevisionKey &&
     appliedRevisionKey !== latestRevisionKey,
@@ -167,7 +168,13 @@ export function PreparedDiffReview({
   );
   const applyAvailableRevision = useCallback(() => {
     const next = filesQuery.data;
-    if (!next || !hasAvailableRevision || isApplyingRevision) return;
+    if (
+      filesQuery.error ||
+      !next ||
+      !hasAvailableRevision ||
+      isApplyingRevision
+    )
+      return;
     setIsApplyingRevision(true);
     const nextFiles = next.files ?? [];
     const nextSource = preparedDiffReviewSource(diff, nextFiles, next.revision);
@@ -194,6 +201,7 @@ export function PreparedDiffReview({
     activePath,
     diff,
     filesQuery.data,
+    filesQuery.error,
     findingReview,
     hasAvailableRevision,
     isApplyingRevision,
@@ -232,7 +240,7 @@ export function PreparedDiffReview({
     return <MiniEmpty label="Loading changed files." />;
   }
 
-  if (filesQuery.error) {
+  if (filesQuery.error && !appliedData) {
     return (
       <MiniEmpty
         label={`Prepared diff unavailable: ${queryErrorMessage(filesQuery.error)}`}
@@ -242,6 +250,11 @@ export function PreparedDiffReview({
 
   return (
     <>
+      {filesQuery.error ? (
+        <MiniEmpty
+          label={`Prepared diff refresh unavailable: ${queryErrorMessage(filesQuery.error)}`}
+        />
+      ) : null}
       {hasAvailableRevision ? (
         <ReviewRefreshNotice
           availableLabel="The prepared worktree changed. The approval and recovery context will remain open."

@@ -706,7 +706,7 @@ describe('app API safety routes', () => {
             merge_commit_sha: null,
             updated_at: '2026-07-05T14:00:00Z',
             head: { sha: 'head123' },
-            base: { ref: 'main' },
+            base: { ref: 'main', sha: 'base123' },
           }),
           { status: 200, headers: { 'content-type': 'application/json' } },
         );
@@ -732,7 +732,7 @@ describe('app API safety routes', () => {
     globalThis.fetch = fetchMock;
     try {
       const response = await app.request(
-        'http://localhost/api/github/prs/pandemicsyn/neondeck/123/files?head=head123',
+        'http://localhost/api/github/prs/pandemicsyn/neondeck/123/files?head=head123&base=base123',
         { headers: { host: 'localhost' } },
       );
       const body = (await response.json()) as {
@@ -740,7 +740,7 @@ describe('app API safety routes', () => {
         data?: { files?: Array<{ path?: string; patch?: string | null }> };
       };
       const cachedResponse = await app.request(
-        'http://localhost/api/github/prs/pandemicsyn/neondeck/123/files?head=head123',
+        'http://localhost/api/github/prs/pandemicsyn/neondeck/123/files?head=head123&base=base123',
         { headers: { host: 'localhost' } },
       );
       const cachedBody = (await cachedResponse.json()) as typeof body;

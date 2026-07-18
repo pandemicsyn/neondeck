@@ -14,6 +14,8 @@ import type { AutopilotPreparedDiff, KiloTaskRecord } from '../../api';
 
 const state = vi.hoisted(() => ({
   findings: [] as NeonReviewFinding[],
+  preparedError: false,
+  preparedHasData: true,
   preparedRevision: 'prepared-a',
   repoRevision: 'repo-a',
   fileCount: 2,
@@ -66,8 +68,12 @@ vi.mock('./queries', async () => {
     },
     useKiloTaskDiff: () => ({ data: null, error: null, isLoading: false }),
     usePreparedDiffFiles: () => ({
-      data: { files: files(), revision: revision(state.preparedRevision) },
-      error: null,
+      data: state.preparedHasData
+        ? { files: files(), revision: revision(state.preparedRevision) }
+        : undefined,
+      error: state.preparedError
+        ? new Error('Prepared metadata refresh failed.')
+        : null,
       isLoading: false,
     }),
     usePreparedDiffFilePatch: (
@@ -146,6 +152,8 @@ describe('revision-aware prepared and Kilo surfaces', () => {
       globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
     ).IS_REACT_ACT_ENVIRONMENT = true;
     state.findings = [];
+    state.preparedError = false;
+    state.preparedHasData = true;
     state.preparedRevision = 'prepared-a';
     state.repoRevision = 'repo-a';
     state.fileCount = 2;
@@ -300,6 +308,80 @@ describe('revision-aware prepared and Kilo surfaces', () => {
     expect(state.viewProps?.source?.revision).toMatchObject({
       id: 'prepared-a',
     });
+  });
+
+  it('rejects a retained prepared candidate until metadata refresh succeeds', async () => {
+    const guardedRefresh = {
+      mutationPending: false,
+      revisionConfirmationOpen: true,
+    };
+    await render(
+      <PreparedDiffReview
+        diff={preparedDiff()}
+        externalRefreshGuard={guardedRefresh}
+      />,
+    );
+    const mountedView = container.querySelector('[data-testid="mounted-view"]');
+
+    state.preparedRevision = 'prepared-b';
+    await render(
+      <PreparedDiffReview
+        diff={preparedDiff()}
+        externalRefreshGuard={guardedRefresh}
+      />,
+    );
+    const retainedApply = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Apply the available review revision"]',
+    );
+    expect(retainedApply).not.toBeNull();
+    expect(retainedApply?.disabled).toBe(true);
+
+    state.preparedError = true;
+    await render(<PreparedDiffReview diff={preparedDiff()} />);
+
+    expect(container.textContent).toContain(
+      'Prepared diff refresh unavailable: Prepared metadata refresh failed.',
+    );
+    expect(container.querySelector('[data-testid="mounted-view"]')).toBe(
+      mountedView,
+    );
+    expect(
+      container.querySelector(
+        'button[aria-label="Apply the available review revision"]',
+      ),
+    ).toBeNull();
+    expect(state.viewProps?.refreshStatus).toMatchObject({
+      availableRevision: null,
+      state: 'current',
+    });
+    expect(state.viewProps?.source?.revision).toMatchObject({
+      id: 'prepared-a',
+    });
+
+    await act(async () =>
+      retainedApply?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
+    expect(state.viewProps?.source?.revision).toMatchObject({
+      id: 'prepared-a',
+    });
+
+    state.preparedError = false;
+    await render(<PreparedDiffReview diff={preparedDiff()} />);
+    expect(state.viewProps?.source?.revision).toMatchObject({
+      id: 'prepared-b',
+    });
+  });
+
+  it('shows an unavailable state when initial prepared metadata loading fails', async () => {
+    state.preparedHasData = false;
+    state.preparedError = true;
+
+    await render(<PreparedDiffReview diff={preparedDiff()} />);
+
+    expect(container.textContent).toContain(
+      'Prepared diff unavailable: Prepared metadata refresh failed.',
+    );
+    expect(container.querySelector('[data-testid="mounted-view"]')).toBeNull();
   });
 
   it('keeps a 305-file Kilo refresh lazy and reuses the surrounding surface', async () => {
