@@ -38,10 +38,11 @@ in-process thread-projection medians, inside the retained 500/1,000/500 ms
 fixture budgets. This deterministic harness exercises `pr-local-diffs` only;
 it does not replace the retained production-browser misses below.
 
-A dedicated 305-changed-file worktree approximation measured at PR #154 head
-`aa8716783874fdf9c38bfa5fdd396b00df779788` on Node 26.4.0/arm64 exercised the
-production Phase B step 5 functions. The fixture contained 120 modified, 30
-deleted, 25 renamed, and 130 added files. Five warm samples produced:
+A dedicated 305-changed-file worktree approximation measured at the pre-final
+PR #154 measurement commit `aa8716783874fdf9c38bfa5fdd396b00df779788` on Node
+26.4.0/arm64 exercised the production Phase B step 5 functions. The fixture
+contained 120 modified, 30 deleted, 25 renamed, and 130 added files. Five warm
+samples produced:
 
 | Production B5 path           |   Median | Range          | Retained budget / verdict |
 | ---------------------------- | -------: | -------------- | ------------------------- |
