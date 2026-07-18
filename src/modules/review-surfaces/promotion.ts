@@ -8,6 +8,7 @@ import {
 import type { ReviewSourcePromotionTarget } from '../../../shared/review-source';
 import {
   getGitHubPrFileDiff,
+  getGitHubPrReviewDraft,
   postGitHubPrReviewDraftComment,
   putGitHubPrReviewDraft,
 } from '../pr-events';
@@ -38,6 +39,7 @@ export type ReviewSurfacePromotionTarget = (
 ) => Promise<ReviewSurfacePromotionTargetResult>;
 
 export type ReviewSurfacePromotionDependencies = {
+  getGitHubDraft?: typeof getGitHubPrReviewDraft;
   putGitHubDraft?: typeof putGitHubPrReviewDraft;
   postGitHubDraftComment?: typeof postGitHubPrReviewDraftComment;
   readGitHubFileDiff?: typeof getGitHubPrFileDiff;
@@ -252,16 +254,34 @@ async function promoteToGitHubDraft(
         : patchResult.message,
     };
   }
-  const draftResult = await (
-    dependencies.putGitHubDraft ?? putGitHubPrReviewDraft
-  )(targetInput, { headSha: revision.id }, paths);
-  if (!draftResult.ok) return { ok: false, message: draftResult.message };
-  const draft = objectField(objectField(draftResult.data).draft);
+  const currentDraftResult = await (
+    dependencies.getGitHubDraft ?? getGitHubPrReviewDraft
+  )(targetInput, paths);
+  if (!currentDraftResult.ok) {
+    return { ok: false, message: currentDraftResult.message };
+  }
+  let draft = objectField(objectField(currentDraftResult.data).draft);
+  if (stringField(draft.id)) {
+    if (stringField(draft.headSha) !== revision.id) {
+      return {
+        ok: false,
+        message:
+          'The local GitHub review draft is for an older PR head. Refresh and re-anchor the draft, then retry promotion.',
+      };
+    }
+  } else {
+    const draftResult = await (
+      dependencies.putGitHubDraft ?? putGitHubPrReviewDraft
+    )(targetInput, { headSha: revision.id }, paths);
+    if (!draftResult.ok) return { ok: false, message: draftResult.message };
+    draft = objectField(objectField(draftResult.data).draft);
+  }
   const draftId = stringField(draft.id);
-  if (!draftId)
+  if (!draftId || stringField(draft.headSha) !== revision.id)
     return {
       ok: false,
-      message: 'The local GitHub review draft was not created.',
+      message:
+        'The local GitHub review draft is not anchored to the current PR head. Refresh and re-anchor the draft, then retry promotion.',
     };
   const sourceFindingId = durableFindingSourceId(candidate);
   const existing = arrayField(draft.comments)

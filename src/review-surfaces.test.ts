@@ -1263,7 +1263,9 @@ describe('review surface registry', () => {
         action: 'github_pr_review_draft_put',
         changed: true,
         message: 'saved',
-        data: { draft: { id: 'draft-1', comments: [] } },
+        data: {
+          draft: { id: 'draft-1', headSha: 'head-sha', comments: [] },
+        },
       }),
     );
     const postComment = vi.fn<
@@ -1298,6 +1300,13 @@ describe('review surface registry', () => {
         changed: false,
         message: 'read patch',
         data: { diff: promotionPatch() },
+      })) as never,
+      getGitHubDraft: (async () => ({
+        ok: true,
+        action: 'github_pr_review_draft_get',
+        changed: false,
+        message: 'no draft',
+        data: { draft: null },
       })) as never,
       putGitHubDraft: putDraft as never,
       postGitHubDraftComment: postComment as never,
@@ -1365,6 +1374,55 @@ describe('review surface registry', () => {
     });
     expect(putDraft).toHaveBeenCalledTimes(2);
     expect(postComment).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects an existing stale GitHub draft even when the anchor line still exists on the new head', async () => {
+    const registry = new ReviewSurfaceRegistry();
+    registries.push(registry);
+    registry.upsert(snapshot('surface-stale-draft'));
+    registry.applyFindings('surface-stale-draft', {
+      revisionKey: 'git-commit::head-sha',
+      findings: [finding('finding-same-line')],
+    });
+    const validated = registry.validateFindingPromotion(
+      'surface-stale-draft',
+      promotionRequest('finding-same-line', 'stale-draft-request'),
+    );
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) throw new Error(validated.result.message);
+    const putDraft = vi.fn<(...args: unknown[]) => Promise<unknown>>();
+    const postComment = vi.fn<(...args: unknown[]) => Promise<unknown>>();
+    const target = createDefaultReviewSurfacePromotionTarget(undefined, {
+      readGitHubFileDiff: (async () => ({
+        ok: true,
+        action: 'github_pr_file_diff_get',
+        changed: false,
+        message: 'current patch still has the same line',
+        data: { diff: promotionPatch() },
+      })) as never,
+      getGitHubDraft: (async () => ({
+        ok: true,
+        action: 'github_pr_review_draft_get',
+        changed: false,
+        message: 'old draft',
+        data: {
+          draft: {
+            id: 'draft-old',
+            headSha: 'previous-head-sha',
+            comments: [],
+          },
+        },
+      })) as never,
+      putGitHubDraft: putDraft as never,
+      postGitHubDraftComment: postComment as never,
+    });
+
+    await expect(target(validated.value)).resolves.toMatchObject({
+      ok: false,
+      message: expect.stringContaining('Refresh and re-anchor'),
+    });
+    expect(putDraft).not.toHaveBeenCalled();
+    expect(postComment).not.toHaveBeenCalled();
   });
 
   it('routes prepared promotion through the existing revision request service without running a revision', async () => {

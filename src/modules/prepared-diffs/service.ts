@@ -3,6 +3,10 @@ import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../lib/action-result';
 import { randomUUID } from 'node:crypto';
 import * as v from 'valibot';
+import {
+  reviewRevisionKey,
+  type ReviewRevision,
+} from '../../../shared/review-source';
 import { addNotification } from '../app-state';
 import { buildPreparedDiffAuditSummary } from '../autonomous-audit';
 import { openDb } from '../../lib/sqlite';
@@ -482,6 +486,11 @@ export async function approvePreparedDiffPush(
 export async function requestPreparedDiffRevision(
   rawInput: unknown,
   paths: RuntimePaths = runtimePaths(),
+  dependencies: {
+    readCurrentRevision?: (
+      record: PreparedDiffRecord,
+    ) => Promise<ReviewRevision>;
+  } = {},
 ): Promise<PreparedDiffActionResult> {
   const parsed = parseInput(
     requestRevisionInputSchema,
@@ -513,6 +522,29 @@ export async function requestPreparedDiffRevision(
         paths,
       ).filter((approval) => approval.approvalType === 'revision'),
     };
+  }
+  const expectedRevisionKey = parsed.input.findingPromotion?.revisionKey;
+  if (expectedRevisionKey) {
+    let currentRevision: ReviewRevision;
+    try {
+      currentRevision = await (
+        dependencies.readCurrentRevision ?? preparedDiffWorktreeRevision
+      )(loaded.record);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return failure(
+        'prepared_diff_request_revision',
+        `Could not verify the current prepared-diff revision: ${message}`,
+        'PREPARED_DIFF_REVISION_UNAVAILABLE',
+      );
+    }
+    if (reviewRevisionKey(currentRevision) !== expectedRevisionKey) {
+      return failure(
+        'prepared_diff_request_revision',
+        'The prepared worktree changed after this finding was created. Refresh the diff and retry with a current finding.',
+        'PREPARED_DIFF_STALE_REVISION',
+      );
+    }
   }
   const transition = assertTransition(
     loaded.record,
@@ -561,6 +593,17 @@ export async function requestPreparedDiffRevision(
     preparedDiff: updated,
     approvals: [approval],
   };
+}
+
+async function preparedDiffWorktreeRevision(record: PreparedDiffRecord) {
+  const diff = await gitDiff(record.sourceWorktreePath, {
+    base: record.baseRef,
+    includePatch: false,
+  });
+  return gitWorktreeRevision(record.sourceWorktreePath, {
+    base: diff.base,
+    files: diff.files,
+  });
 }
 
 export async function abandonPreparedDiff(
