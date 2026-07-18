@@ -1,6 +1,6 @@
 {
   "name": "neondeck",
-  "version": "1.0.0-beta.10",
+  "version": "1.0.0-beta.11",
   "description": "Local companion-display dashboard and Flue agent server for neondeck.",
   "homepage": "https://neondeck.dev",
   "bin": {

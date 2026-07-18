@@ -1,5 +1,47 @@
 # Changelog
 
+## 1.0.0-beta.11
+
+### Minor Changes
+
+- [#153](https://github.com/pandemicsyn/neondeck/pull/153) [`8089982`](https://github.com/pandemicsyn/neondeck/commit/8089982bb7bda786b4f7eb91308cdd88fdd45875) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Promote current Neon findings into local GitHub review drafts or confirmed prepared-diff revision requests without bypassing submission, authority, or execution boundaries.
+
+- [#154](https://github.com/pandemicsyn/neondeck/pull/154) [`3bf9f2c`](https://github.com/pandemicsyn/neondeck/commit/3bf9f2c3124416d70927dcf5977d8812efe59869) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep GitHub, prepared-diff, and Kilo review surfaces revision-consistent with guarded live refresh, preserved review orientation, targeted cache invalidation, and truthful stale draft and finding state.
+
+- [#130](https://github.com/pandemicsyn/neondeck/pull/130) [`d5659f5`](https://github.com/pandemicsyn/neondeck/commit/d5659f5636e96b41ac5e6a23e626c34fee4ddd7d) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Render generated PR review artifacts as secure, accessible slide decks with a Markdown review brief, clickable safe links, responsive standalone and dashboard views, retained-report compatibility, and bounded agent-authored presentation intent.
+
+### Patch Changes
+
+- [#145](https://github.com/pandemicsyn/neondeck/pull/145) [`b4ffc1d`](https://github.com/pandemicsyn/neondeck/commit/b4ffc1dd32ac4b9d9347e28c494fc800bb148d15) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Show per-file PR review status in the changed-file tree and add a shared cross-file cursor foundation for files, hunks, threads, drafts, findings, and combined attention items.
+
+- [#140](https://github.com/pandemicsyn/neondeck/pull/140) [`fba1de5`](https://github.com/pandemicsyn/neondeck/commit/fba1de5a19316da34322900108cf07ef58569582) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Preserve complete operational values behind on-demand copyable disclosures and clarify linked-chat and execution approval actions.
+
+- [#150](https://github.com/pandemicsyn/neondeck/pull/150) [`fd1b000`](https://github.com/pandemicsyn/neondeck/commit/fd1b000f48872f95719a9225de52c759681635fb) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add focused PR review traversal controls, scoped keyboard shortcuts, accessible help, synchronized target state, and bounded lazy cross-file hunk navigation.
+
+- [#141](https://github.com/pandemicsyn/neondeck/pull/141) [`1bc3626`](https://github.com/pandemicsyn/neondeck/commit/1bc3626260921fbe4c482eff010a4cb72b5c1b3d) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Close the frontend review with stable PR-finding provenance, operation-scoped review feedback, stricter Flue chat configuration, and final dashboard polish.
+
+- [#136](https://github.com/pandemicsyn/neondeck/pull/136) [`66f7c4e`](https://github.com/pandemicsyn/neondeck/commit/66f7c4edc0f6aa94bd732d17c7089ecb35dd5557) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Virtualize large Pierre diffs with CodeView while keeping the lower-overhead renderer for ordinary patches.
+
+- [#152](https://github.com/pandemicsyn/neondeck/pull/152) [`1eba740`](https://github.com/pandemicsyn/neondeck/commit/1eba740082f08cc5938e8329230d87dc0fd4d20c) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Render revision-bound Neon findings inline with provenance, local dismissal, finding-aware file filtering, and cross-file review navigation.
+
+- [#131](https://github.com/pandemicsyn/neondeck/pull/131) [`d54fae5`](https://github.com/pandemicsyn/neondeck/commit/d54fae55df55c68797cd52ace0bfaecef0466ca3) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Improve dashboard accessibility, theme contrast, and compact chat and review layouts.
+
+- [#135](https://github.com/pandemicsyn/neondeck/pull/135) [`85bfd30`](https://github.com/pandemicsyn/neondeck/commit/85bfd30ac0e714aa068f30e83bc39585e85792ff) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep chat composer updates isolated from stable Markdown history so typing stays responsive in long sessions.
+
+- [#139](https://github.com/pandemicsyn/neondeck/pull/139) [`e209a3d`](https://github.com/pandemicsyn/neondeck/commit/e209a3d2f2224ba9955cec5cb350e17a69593dc0) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Prioritize the selected pull request patch before loading neighboring, draft-comment, and unresolved-thread diffs.
+
+- [#144](https://github.com/pandemicsyn/neondeck/pull/144) [`5479b58`](https://github.com/pandemicsyn/neondeck/commit/5479b588b8b5875a41250a2f4f9bf6646fd2a279) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Load PR review threads through a lean cancellable GitHub query and a short-lived mutation-aware cache so warm review surfaces open within the performance budget.
+
+- [#128](https://github.com/pandemicsyn/neondeck/pull/128) [`860cccf`](https://github.com/pandemicsyn/neondeck/commit/860cccfec81dac0c9d9b6adb57c6979bffa18d93) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Allow watched pull requests to be stopped from Autopilot and open PR rows, including after a watch has reached a terminal state.
+
+- [#155](https://github.com/pandemicsyn/neondeck/pull/155) [`0a661c9`](https://github.com/pandemicsyn/neondeck/commit/0a661c949f34feb45130f533d02e5c0bfa803fc1) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep an applied prepared-diff review and its approval context visible when a background revision metadata refresh fails.
+
+- [#132](https://github.com/pandemicsyn/neondeck/pull/132) [`f55c598`](https://github.com/pandemicsyn/neondeck/commit/f55c598568a5c200fecb020fb75f59b570c91134) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep Flue sessions, command events, and dashboard query caches synchronized across switches and reconnects.
+
+- [#138](https://github.com/pandemicsyn/neondeck/pull/138) [`a71fb3f`](https://github.com/pandemicsyn/neondeck/commit/a71fb3ff8da6e4399acda836da98bba28f9aa963) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Speed up large registered PR reviews by reusing immutable local diff metadata and preventing optimistic review state from duplicating thread and patch requests.
+
+- [#146](https://github.com/pandemicsyn/neondeck/pull/146) [`04a785f`](https://github.com/pandemicsyn/neondeck/commit/04a785f2f85dd269db6c5e60b1fd8da35ea3f65d) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add a revision-bound ephemeral Neon finding contract with targeted review-surface APIs, events, and Flue capabilities.
+
 ## 1.0.0-beta.10
 
 ### Minor Changes
