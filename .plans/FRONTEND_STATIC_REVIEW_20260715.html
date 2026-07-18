@@ -992,9 +992,10 @@
             CodeView are implemented and verified. The real large-PR backend/browser trace is also
             complete. The two approved request-path fixes are now implemented and remeasured:
             review-thread identity is stable and immutable local PR metadata is reused across
-            patch reads. Active-patch prioritization remains the next performance discussion;
-            keep cold-fetch changes, Runtime aggregation, review-subtree consolidation, and
-            registry splitting behind workload and budget evidence.
+            patch reads. Active-patch prioritization is also implemented and remeasured: the
+            selected patch now passes the one-second target in all three retained samples. Keep
+            cold-fetch changes, Runtime aggregation, review-subtree consolidation, and registry
+            splitting behind workload and budget evidence.
           </div>
 
           <div class="table-scroll" style="margin-bottom: 18px">
@@ -1262,29 +1263,29 @@
               <div class="finding-body"><div><h3>Impact</h3><p>Close or switch a heavy diff/runtime surface and abandoned reads continue transferring, doing backend work, and populating unused cache entries.</p><h3>Recommendation</h3><p>Standardize API read options with AbortSignal and use <code>queryFn: ({ signal }) =&gt; apiCall(input, { signal })</code>, starting with patches, diffs, runtime fan-out, session activity, and PR records.</p></div><div><h3>Evidence</h3><p class="source">web/src/api/http.ts:13<br />web/src/features/diff-viewer/queries.ts:32<br />web/src/features/pr-review/queries.ts:76<br />web/src/features/runtime-overview/plugin.tsx:59<br />web/src/api/github.ts:31</p><span class="chip">TanStack Query 5.101.2</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p3" data-category="ui polish">
-              <summary><span class="severity p3">P3</span><span class="finding-title">Shared live metrics do not consistently use tabular numerals</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Refetched counts subtly change width and create jitter, contrary to the design system’s Tabular-Numbers Rule.</p><h3>Recommendation</h3><p>Add tabular numerals to Metric and numeric StatusPill values.</p></div><div><h3>Evidence</h3><p class="source">web/src/components/ui.tsx:86-109<br />web/src/features/runtime-overview/components/runtime-view.tsx:500-524<br />web/src/plugins/WorkflowObservabilityPanel.tsx:132-138</p><span class="chip">$impeccable polish</span></div></div>
+            <details class="finding" data-severity="p3" data-category="ui polish" data-status="completed" open>
+              <summary><span class="severity p3">P3</span><span class="completion">COMPLETED · FINAL PASS</span><span class="finding-title">Shared live metrics do not consistently use tabular numerals</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Refetched counts subtly change width and create jitter, contrary to the design system’s Tabular-Numbers Rule.</p><h3>Recommendation</h3><p>Add tabular numerals to Metric and numeric StatusPill values.</p><h3>Implemented</h3><p>The shared Metric and StatusPill value slots now use tabular numerals, covering Runtime Overview and Workflow Observability without one-off caller styles.</p></div><div><h3>Evidence</h3><p class="source">web/src/components/ui.tsx<br />web/src/components/ui.test.tsx</p><span class="chip">$impeccable polish</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p3" data-category="state review">
-              <summary><span class="severity p3">P3</span><span class="finding-title">Old mutation errors permanently mask later success messages</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>A failed operation’s persistent mutation error wins over later success status, making correct state look broken.</p><h3>Recommendation</h3><p>Reset superseded mutation errors or use one operation-scoped status/error channel.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx:231-245, 343-353, 443-503</p><span class="chip">status ownership</span></div></div>
+            <details class="finding" data-severity="p3" data-category="state review" data-status="completed" open>
+              <summary><span class="severity p3">P3</span><span class="completion">COMPLETED · FINAL PASS</span><span class="finding-title">Old mutation errors permanently mask later success messages</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>A failed operation’s persistent mutation error wins over later success status, making correct state look broken.</p><h3>Recommendation</h3><p>Reset superseded mutation errors or use one operation-scoped status/error channel.</p><h3>Implemented</h3><p>The review workbench now owns one generation-scoped status channel. Starting newer work supersedes older status, and late success or failure callbacks update the UI only when their operation generation is still current.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx<br />web/src/features/pr-review/review-ui-helpers.ts<br />web/src/features/pr-review/GitHubPrReview.test.ts</p><span class="chip">status ownership</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p3" data-category="state review">
-              <summary><span class="severity p3">P3</span><span class="finding-title">Report-only findings use body substring matching as identity</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Overlapping summaries can mark unrelated findings drafted; editing generated text can make a drafted finding appear available again.</p><h3>Recommendation</h3><p>Persist a stable source-finding ID; until then match the exact generated template plus path.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx:1360-1388</p><span class="chip">identity</span></div></div>
+            <details class="finding" data-severity="p3" data-category="state review" data-status="completed" open>
+              <summary><span class="severity p3">P3</span><span class="completion">COMPLETED · FINAL PASS</span><span class="finding-title">Report-only findings use body substring matching as identity</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Overlapping summaries can mark unrelated findings drafted; editing generated text can make a drafted finding appear available again.</p><h3>Recommendation</h3><p>Persist a stable source-finding ID; until then match the exact generated template plus path.</p><h3>Implemented</h3><p>Review assist now assigns a deterministic source ID to each finding and persists it on generated draft comments. The sidebar compares that provenance rather than display text; legacy records use exact generated-body plus path matching.</p></div><div><h3>Evidence</h3><p class="source">src/modules/pr-reviews/finding-id.ts<br />src/modules/pr-review-assist/service.ts<br />src/modules/github/reviews.ts<br />src/runtime-home/app-db/schema.ts<br />web/src/features/pr-review/PrReviewFindingsSidebar.tsx</p><span class="chip">identity</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p3" data-category="state ui">
-              <summary><span class="severity p3">P3</span><span class="finding-title">Navigation highlight timers race and survive panel unmount</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Rapid navigation lets the first timeout clear the second highlight early; stale timers survive unmount.</p><h3>Recommendation</h3><p>Store the timer ID in a ref, clear before rescheduling, and clean up on effect teardown.</p></div><div><h3>Evidence</h3><p class="source">web/src/App.tsx:349-371</p><span class="chip">timer cleanup</span></div></div>
+            <details class="finding" data-severity="p3" data-category="state ui" data-status="completed" open>
+              <summary><span class="severity p3">P3</span><span class="completion">COMPLETED · FINAL PASS</span><span class="finding-title">Navigation highlight timers race and survive panel unmount</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Rapid navigation lets the first timeout clear the second highlight early; stale timers survive unmount.</p><h3>Recommendation</h3><p>Store the timer ID in a ref, clear before rescheduling, and clean up on effect teardown.</p><h3>Implemented</h3><p>The tab-region navigation effect now keeps the pulse timer in a ref, cancels the previous timer before rescheduling, and clears the timer during effect teardown.</p></div><div><h3>Evidence</h3><p class="source">web/src/App.tsx</p><span class="chip">timer cleanup</span></div></div>
             </details>
 
-            <details class="finding" data-severity="p3" data-category="api flue config">
-              <summary><span class="severity p3">P3</span><span class="finding-title">Config accepts agent names incompatible with the session model and exposed routes</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Set another agent name and the selector still supplies display-assistant session IDs; history appears missing and sends fail because other agents are not exposed.</p><h3>Recommendation</h3><p>Validate the literal <code>display-assistant</code> or remove the option until agent identity is modeled in session selection and routing.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/config.ts:16<br />web/src/features/flue-chat/plugin.tsx:359<br />src/modules/sessions/active-session.ts:18<br />src/agents/display-assistant.ts:49</p><span class="chip">config contract</span></div></div>
+            <details class="finding" data-severity="p3" data-category="api flue config" data-status="completed" open>
+              <summary><span class="severity p3">P3</span><span class="completion">COMPLETED · FINAL PASS</span><span class="finding-title">Config accepts agent names incompatible with the session model and exposed routes</span></summary>
+              <div class="finding-body"><div><h3>Impact</h3><p>Set another agent name and the selector still supplies display-assistant session IDs; history appears missing and sends fail because other agents are not exposed.</p><h3>Recommendation</h3><p>Validate the literal <code>display-assistant</code> or remove the option until agent identity is modeled in session selection and routing.</p><h3>Implemented</h3><p>The Flue chat config type and parser now accept only <code>display-assistant</code>. Unsupported values produce a visible config issue and safely fall back to the routed agent.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/config.ts<br />web/src/features/flue-chat/config.test.ts<br />web/src/features/flue-chat/types.ts</p><span class="chip">config contract</span></div></div>
             </details>
           </div>
           <div id="empty-filter" class="empty-filter">No findings match this filter.</div>
@@ -1353,8 +1354,8 @@
             <li class="completed-action"><span class="completion">COMPLETED · ACTIVE PATCH PRIORITY</span> <strong>P1 · Active patch priority:</strong> discuss whether neighbor and unresolved-path prefetch should wait for the active patch. The retained remediated trace was 195 ms over target; the implemented active-first schedule now reaches a 798 ms median and passes all three samples while preserving zero abandoned reads.</li>
             <li class="completed-action"><span class="completion">COMPLETED · COPY/DISCLOSURE</span> <strong>P2 · Copy/disclosure:</strong> row-specific action names and full-value affordances for operational text. Suggested command: <code>$impeccable clarify</code>.</li>
             <li class="completed-action"><span class="completion">COMPLETED · PR #140</span> <strong>P2 · Editor state ownership:</strong> keep new-comment, draft-edit, and thread-reply bodies scoped to their editor generation so older async completions cannot clear newer work.</li>
-            <li><strong>P3 · Final pass:</strong> tabular metrics, timer cleanup, operation-scoped status, stable finding IDs, and config tightening. Suggested command: <code>$impeccable polish</code>.</li>
-            <li><strong>Re-audit:</strong> repeat the static audit, then run focused runtime and accessibility checks against the agreed fixtures.</li>
+            <li class="completed-action"><span class="completion">COMPLETED · FINAL PASS</span> <strong>P3 · Final pass:</strong> tabular metrics, timer cleanup, operation-scoped status, stable finding IDs, and config tightening. Suggested command: <code>$impeccable polish</code>.</li>
+            <li class="completed-action"><span class="completion">COMPLETED · CLOSING GATE</span> <strong>Re-audit:</strong> repeat the static audit, then run focused runtime and accessibility checks against the agreed fixtures.</li>
           </ol>
           <p class="section-note">
             You can ask to run these one at a time, all at once, or in any order. Re-run

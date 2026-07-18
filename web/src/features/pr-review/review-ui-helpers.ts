@@ -26,3 +26,10 @@ export function clearCompletedEditor<T extends { token: number }>(
 ) {
   return current?.token === completedToken ? null : current;
 }
+
+export function isCurrentReviewOperation(
+  currentToken: number,
+  completedToken: number,
+) {
+  return currentToken === completedToken;
+}

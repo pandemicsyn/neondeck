@@ -465,6 +465,7 @@ export const prReviewDraftComments = sqliteTable(
     startSide: text('start_side'),
     body: text('body').notNull(),
     origin: text('origin').default('human').notNull(),
+    sourceFindingId: text('source_finding_id'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },

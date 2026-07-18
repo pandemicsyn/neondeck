@@ -86,7 +86,7 @@ export function Kbd({ className, ...props }: HTMLAttributes<HTMLElement>) {
 export function Metric({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="border border-line bg-field px-2 py-1">
-      <span className="text-primary">{value}</span>
+      <span className="tabular-nums text-primary">{value}</span>
       <span className="ml-1">{label}</span>
     </div>
   );
@@ -103,7 +103,9 @@ export function StatusPill({
 }) {
   return (
     <div className="border border-line bg-field px-2 py-1">
-      <span className={ok ? 'text-primary' : 'text-accent'}>{value}</span>
+      <span className={cn('tabular-nums', ok ? 'text-primary' : 'text-accent')}>
+        {value}
+      </span>
       <span className="ml-1">{label}</span>
     </div>
   );

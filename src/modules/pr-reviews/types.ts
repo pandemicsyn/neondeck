@@ -6,6 +6,7 @@ export type PrReviewOrigin = 'chat' | 'panel' | 'api';
 export type PrReviewVerdict = 'comment' | 'approve' | 'request-changes';
 
 export type PrReviewReportOnlyFinding = {
+  sourceId?: string;
   severity: 'critical' | 'major' | 'minor' | 'nit';
   path: string;
   line: number | null;

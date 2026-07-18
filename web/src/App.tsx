@@ -354,6 +354,7 @@ function DashboardPanel({
   const initialTabId = region.defaultTab ?? region.tabs[0]?.id ?? '';
   const [activeTabId, setActiveTabId] = useState(initialTabId);
   const [focusPulse, setFocusPulse] = useState(false);
+  const focusPulseTimeoutRef = useRef<number | null>(null);
   const tabIdPrefix = useId();
   const defaultTabRef = useRef({ regionId: region.id, tabId: initialTabId });
   const activeTab =
@@ -395,7 +396,13 @@ function DashboardPanel({
       detail.handled = true;
       setActiveTabId(tab.id);
       setFocusPulse(true);
-      window.setTimeout(() => setFocusPulse(false), 900);
+      if (focusPulseTimeoutRef.current !== null) {
+        window.clearTimeout(focusPulseTimeoutRef.current);
+      }
+      focusPulseTimeoutRef.current = window.setTimeout(() => {
+        focusPulseTimeoutRef.current = null;
+        setFocusPulse(false);
+      }, 900);
     }
 
     window.addEventListener('neondeck:navigate', handleNavigation);
@@ -405,6 +412,15 @@ function DashboardPanel({
       window.removeEventListener('neondeck:focus-chat', handleNavigation);
     };
   }, [region.tabs]);
+
+  useEffect(() => {
+    return () => {
+      if (focusPulseTimeoutRef.current !== null) {
+        window.clearTimeout(focusPulseTimeoutRef.current);
+        focusPulseTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // In column mode an error frame must stay visible, not be capped under the
   // data band's max-height. Promote the failing region to the agent role so it

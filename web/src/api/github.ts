@@ -155,6 +155,7 @@ export async function postGitHubPrReviewDraftComment(input: {
   startLine?: number | null;
   startSide?: 'RIGHT' | 'LEFT' | null;
   body: string;
+  sourceFindingId?: string | null;
 }) {
   const [owner, name] = parseRepo(input.repo);
   const response = await postJson<GitHubPrReviewDraftResponse>(
@@ -167,6 +168,7 @@ export async function postGitHubPrReviewDraftComment(input: {
       startLine: input.startLine ?? null,
       startSide: input.startSide ?? null,
       body: input.body,
+      sourceFindingId: input.sourceFindingId ?? null,
     },
   );
   if (!response.data?.draft) throw new Error(response.message);

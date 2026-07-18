@@ -1,4 +1,4 @@
-import { nonEmptyString, plainConfigRecord } from '../../plugins/config';
+import { plainConfigRecord } from '../../plugins/config';
 import {
   flueChatDefaultConfig,
   type FlueChatCommand,
@@ -13,17 +13,20 @@ export function parseFlueChatConfig(
 
   return {
     config: {
-      agentName: nonEmptyString(
-        source.agentName,
-        flueChatDefaultConfig.agentName,
-        'agentName',
-        issues,
-      ),
+      agentName: parseAgentName(source.agentName, issues),
       sessions: parseSessions(source.sessions, issues),
       quickCommands: parseQuickCommands(source.quickCommands, issues),
     },
     issues,
   };
+}
+
+function parseAgentName(value: unknown, issues: string[]) {
+  if (value === undefined || value === flueChatDefaultConfig.agentName) {
+    return flueChatDefaultConfig.agentName;
+  }
+  issues.push('agentName must be "display-assistant".');
+  return flueChatDefaultConfig.agentName;
 }
 
 function parseSessions(value: unknown, issues: string[]) {

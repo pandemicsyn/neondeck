@@ -1,6 +1,8 @@
 # Diff Improvements Plan
 
-Status: proposed
+Status: proposed; Phase A performance reconciliation is complete, and normalized source/revision contracts are next
+
+Progress note (2026-07-18): the specialized large-PR work now has real registered-PR measurements, stable review-thread identity, bounded local metadata reuse, active-patch priority, and a passing first-patch browser budget. The one-time cold-fetch decision remains deferred in `.plans/PR_REVIEW_PERF_PLAN.md`; it does not block the remaining Phase A source/revision contract work.
 
 Related plans:
 

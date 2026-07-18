@@ -107,6 +107,7 @@ export type PrReviewStatus =
 export type PrReviewVerdict = 'comment' | 'approve' | 'request-changes';
 
 export type PrReviewReportOnlyFinding = {
+  sourceId?: string;
   severity: 'critical' | 'major' | 'minor' | 'nit';
   path: string;
   line: number | null;
@@ -349,6 +350,7 @@ export type GitHubPrReviewDraftComment = {
   startSide: 'RIGHT' | 'LEFT' | null;
   body: string;
   origin: 'human' | 'neon';
+  sourceFindingId?: string | null;
   createdAt: string;
   updatedAt: string;
 };
