@@ -1,6 +1,14 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
 import { describe, expect, it } from 'vitest';
 import {
+  createReviewNavigationModel,
+  reviewCursorTargets,
+} from '../../../../shared/review-navigation';
+import {
+  evaluateReviewRefreshSafety,
+  reconcileReviewOrientation,
+} from '../../../../shared/review-refresh';
+import {
   ApiError,
   type GitHubPrReviewDraft,
   type GitHubPullRequestReviewThread,
@@ -29,12 +37,184 @@ import {
   isReportOnlyFindingDrafted,
 } from './PrReviewFindingsSidebar';
 import {
+  canCommitGitHubRevisionRefresh,
   clearCompletedEditor,
+  githubPrReviewRefreshSafety,
   isCurrentReviewOperation,
+  refreshOrientationTargetSettled,
+  selectionAnchorMatchesPatch,
 } from './review-ui-helpers';
 import capturedReviewPatch from './fixtures/captured-review.patch?raw';
 
 describe('GitHubPrReview helpers', () => {
+  it.each([
+    ['composer', { composerDirty: true }],
+    ['comment editor', { commentEditorDirty: true }],
+    ['reply editor', { replyEditorDirty: true }],
+    ['review body', { reviewBodyDirty: true }],
+  ])('pauses a new-head refresh for dirty %s input', (_label, dirty) => {
+    expect(
+      githubPrReviewRefreshSafety({
+        composerDirty: false,
+        commentEditorDirty: false,
+        replyEditorDirty: false,
+        reviewBodyDirty: false,
+        activeSelection: false,
+        staleDraft: false,
+        reanchorActive: false,
+        mutationPending: false,
+        safetyUncertain: false,
+        ...dirty,
+      }),
+    ).toEqual({ safe: false, reasons: ['dirty-editor'] });
+  });
+
+  it('keeps stale-draft and selection authority distinct from clean auto-refresh', () => {
+    expect(
+      githubPrReviewRefreshSafety({
+        composerDirty: false,
+        commentEditorDirty: false,
+        replyEditorDirty: false,
+        reviewBodyDirty: false,
+        activeSelection: true,
+        staleDraft: true,
+        reanchorActive: false,
+        mutationPending: false,
+        safetyUncertain: false,
+      }),
+    ).toEqual({
+      safe: false,
+      reasons: ['active-selection', 'stale-draft'],
+    });
+  });
+
+  it('rechecks the candidate and editor identity after an asynchronous prime', () => {
+    const safety = evaluateReviewRefreshSafety({ activeSelection: true });
+    expect(
+      canCommitGitHubRevisionRefresh({
+        candidateRevisionKey: 'git-commit:base:head-b',
+        currentCandidateRevisionKey: 'git-commit:base:head-b',
+        inputSignature: 'no-editor',
+        currentInputSignature: 'no-editor',
+        safety,
+      }),
+    ).toBe(true);
+    expect(
+      canCommitGitHubRevisionRefresh({
+        candidateRevisionKey: 'git-commit:base:head-b',
+        currentCandidateRevisionKey: 'git-commit:base:head-b',
+        inputSignature: 'no-editor',
+        currentInputSignature: 'composer-opened',
+        safety,
+      }),
+    ).toBe(false);
+  });
+
+  it('preserves a composer only when the selected patch lines remain identical', () => {
+    const previous = '@@ -1,2 +1,2 @@\n context\n+selected\n';
+    const stable = '@@ -1,2 +1,2 @@\n context\n+selected\n';
+    const shifted = '@@ -1,2 +1,3 @@\n+prefix\n context\n+selected\n';
+    const removed = '@@ -1,2 +1 @@\n context\n';
+    const selected = selection({ side: 'additions', line: 2 });
+    expect(
+      selectionAnchorMatchesPatch({
+        previousPatch: previous,
+        nextPatch: stable,
+        selection: selected,
+      }),
+    ).toBe(true);
+    expect(
+      selectionAnchorMatchesPatch({
+        previousPatch: previous,
+        nextPatch: shifted,
+        selection: selected,
+      }),
+    ).toBe(false);
+    expect(
+      selectionAnchorMatchesPatch({
+        previousPatch: previous,
+        nextPatch: removed,
+        selection: selected,
+      }),
+    ).toBe(false);
+  });
+
+  it.each([
+    [
+      'changes',
+      [
+        '@@ -1,3 +1,3 @@',
+        '-old start',
+        '+new first changed',
+        ' context',
+        '-old middle',
+        '+new end',
+      ].join('\n'),
+    ],
+    [
+      'disappears',
+      [
+        '@@ -1,2 +1,3 @@',
+        '-old start',
+        '+new first',
+        ' context',
+        '+new end',
+      ].join('\n'),
+    ],
+  ])(
+    'rejects a cross-side composer range when an intermediate patch position %s',
+    (_change, nextPatch) => {
+      const previousPatch = [
+        '@@ -1,3 +1,3 @@',
+        '-old start',
+        '+new first',
+        ' context',
+        '-old middle',
+        '+new end',
+      ].join('\n');
+      expect(
+        selectionAnchorMatchesPatch({
+          previousPatch,
+          nextPatch,
+          selection: {
+            side: 'deletions',
+            endSide: 'additions',
+            start: 1,
+            end: 3,
+          } as SelectedLineRange,
+        }),
+      ).toBe(false);
+    },
+  );
+
+  it.each(['hunk', 'finding'] as const)(
+    'retains a selected %s until its refreshed patch settles',
+    (kind) => {
+      const model = createReviewNavigationModel({
+        files: [{ path: 'src/app.ts' }],
+        items: [
+          kind === 'hunk'
+            ? { kind, id: 'selected', path: 'src/app.ts', newStart: 2 }
+            : { kind, id: 'selected', path: 'src/app.ts', line: 2 },
+        ],
+      });
+      const target = reviewCursorTargets(model, kind)[0]!;
+      expect(refreshOrientationTargetSettled(target, 'loading')).toBe(false);
+      expect(refreshOrientationTargetSettled(target, 'loaded')).toBe(true);
+      expect(refreshOrientationTargetSettled(target, 'unavailable')).toBe(true);
+      expect(
+        reconcileReviewOrientation({
+          previousFiles: [{ path: 'src/app.ts', previousPath: null }],
+          nextFiles: [{ path: 'src/app.ts', previousPath: null }],
+          activePath: 'src/app.ts',
+          previousTargets: [target],
+          nextTargets: [],
+          currentTargetKey: target.key,
+        }),
+      ).toMatchObject({ status: 'degraded', target: null });
+    },
+  );
+
   it('maps Pierre same-side selections to GitHub review comment anchors', () => {
     expect(
       commentInputFromSelection(selection({ side: 'deletions', line: 7 })),

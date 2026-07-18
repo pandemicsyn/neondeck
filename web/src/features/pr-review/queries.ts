@@ -7,6 +7,7 @@ import {
   type UseQueryResult,
 } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { assertReviewRevisionCurrent } from '../../../../shared/review-refresh';
 import {
   deleteGitHubPrReviewDraft,
   deleteGitHubPrReviewDraftComment,
@@ -72,8 +73,8 @@ export const prReviewQueryKeys = {
 export function useGitHubPullRequestFiles(pr: GitHubPullRequest) {
   return useQuery({
     queryKey: prReviewQueryKeys.files(pr),
-    queryFn: ({ signal }) =>
-      getGitHubPullRequestFiles(
+    queryFn: async ({ signal }) => {
+      const result = await getGitHubPullRequestFiles(
         {
           repo: pr.repo,
           number: pr.number,
@@ -82,7 +83,10 @@ export function useGitHubPullRequestFiles(pr: GitHubPullRequest) {
           baseRef: pr.baseRef,
         },
         { signal },
-      ),
+      );
+      assertGitHubRevision(pr, result.revision);
+      return result;
+    },
     enabled: pr.repo.length > 0 && pr.number > 0,
   });
 }
@@ -90,8 +94,8 @@ export function useGitHubPullRequestFiles(pr: GitHubPullRequest) {
 export function useGitHubPullRequestFileList(pr: GitHubPullRequest) {
   return useQuery({
     queryKey: prReviewQueryKeys.fileList(pr),
-    queryFn: ({ signal }) =>
-      getGitHubPullRequestFiles(
+    queryFn: async ({ signal }) => {
+      const result = await getGitHubPullRequestFiles(
         {
           repo: pr.repo,
           number: pr.number,
@@ -102,8 +106,63 @@ export function useGitHubPullRequestFileList(pr: GitHubPullRequest) {
           source: 'auto',
         },
         { signal },
-      ),
+      );
+      assertGitHubRevision(pr, result.revision);
+      return result;
+    },
     enabled: pr.repo.length > 0 && pr.number > 0,
+  });
+}
+
+export function primeGitHubPullRequestFileList(
+  queryClient: QueryClient,
+  pr: GitHubPullRequest,
+) {
+  return queryClient.fetchQuery({
+    queryKey: prReviewQueryKeys.fileList(pr),
+    queryFn: async ({ signal }) => {
+      const result = await getGitHubPullRequestFiles(
+        {
+          repo: pr.repo,
+          number: pr.number,
+          headSha: pr.headSha,
+          baseSha: pr.baseSha,
+          baseRef: pr.baseRef,
+          patches: 'none',
+          source: 'auto',
+        },
+        { signal },
+      );
+      assertGitHubRevision(pr, result.revision);
+      return result;
+    },
+  });
+}
+
+export function primeGitHubPullRequestFilePatch(
+  queryClient: QueryClient,
+  pr: GitHubPullRequest,
+  path: string,
+) {
+  return queryClient.fetchQuery({
+    queryKey: prReviewQueryKeys.filePatch(pr, path),
+    queryFn: async ({ signal }) => {
+      const result = await getGitHubPullRequestFileDiff(
+        {
+          repo: pr.repo,
+          number: pr.number,
+          path,
+          headSha: pr.headSha,
+          baseSha: pr.baseSha,
+          baseRef: pr.baseRef,
+          source: 'auto',
+        },
+        { signal },
+      );
+      assertGitHubRevision(pr, result.revision);
+      return result;
+    },
+    staleTime: Infinity,
   });
 }
 
@@ -129,8 +188,8 @@ export function useGitHubPullRequestFilePatches(
           baseRef ?? null,
           path,
         ] as const,
-        queryFn: ({ signal }: { signal: AbortSignal }) =>
-          getGitHubPullRequestFileDiff(
+        queryFn: async ({ signal }: { signal: AbortSignal }) => {
+          const result = await getGitHubPullRequestFileDiff(
             {
               repo,
               number,
@@ -141,7 +200,10 @@ export function useGitHubPullRequestFilePatches(
               source: 'auto' as const,
             },
             { signal },
-          ),
+          );
+          assertGitHubRevision({ headSha, baseSha }, result.revision);
+          return result;
+        },
         staleTime: Infinity,
         enabled: repo.length > 0 && number > 0 && path.length > 0,
       })),
@@ -172,6 +234,20 @@ export function useGitHubPullRequestFilePatches(
     queries,
     combine: combinePatchQueries,
   });
+}
+
+function assertGitHubRevision(
+  expected: Pick<GitHubPullRequest, 'headSha' | 'baseSha'>,
+  received: PullRequestFilePatchResponse['revision'],
+) {
+  const expectedKey = expected.headSha
+    ? `git-commit:${expected.baseSha ?? ''}:${expected.headSha}`
+    : null;
+  assertReviewRevisionCurrent(
+    expectedKey,
+    received,
+    'The PR revision changed while loading review data.',
+  );
 }
 
 type ReviewThreadsRefreshState = {

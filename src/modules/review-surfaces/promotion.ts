@@ -384,6 +384,7 @@ async function promoteToPreparedDiffRevision(
     {
       preparedDiffId: target.preparedDiffId,
       path: candidate.finding.file,
+      expectedRevisionKey: candidate.finding.revisionKey,
     },
     paths,
   );

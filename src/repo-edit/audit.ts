@@ -10,6 +10,7 @@ import {
   resolvedReviewRevision,
   unavailableReviewRevision,
 } from '../../shared/review-source';
+import { publishReviewSourceRevision } from '../modules/review-refresh';
 
 export type RepoEditEventInput = {
   repoId: string;
@@ -103,6 +104,17 @@ export async function recordRepoEditEvent(
       );
   } finally {
     database.close();
+  }
+
+  if (record.status === 'applied' && record.worktreeId && record.diffPatch) {
+    publishReviewSourceRevision({
+      action: 'source-changed',
+      source: {
+        repoId: record.repoId,
+        worktreeId: record.worktreeId,
+      },
+      reason: `Repo edit ${record.action} changed the mounted worktree.`,
+    });
   }
 
   return record;

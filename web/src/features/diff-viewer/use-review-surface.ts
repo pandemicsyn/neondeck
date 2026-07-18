@@ -17,6 +17,10 @@ import {
   type ReviewSurfaceSnapshot,
 } from '../../../../shared/review-surface';
 import type { ReviewSourceSnapshot } from '../../../../shared/review-source';
+import {
+  createReviewRefreshStatus,
+  type ReviewRefreshStatus,
+} from '../../../../shared/review-refresh';
 
 const reviewSurfaceHeartbeatMs = 15_000;
 let fallbackSurfaceId = 0;
@@ -31,6 +35,7 @@ type UseReviewSurfaceInput = {
   selectedAnnotationId?: string | null;
   selection?: SelectedLineRange | null;
   source: ReviewSourceSnapshot;
+  refresh?: ReviewRefreshStatus;
 };
 
 export function useReviewSurface(input: UseReviewSurfaceInput | null) {
@@ -42,6 +47,7 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
   const activePath = input?.activePath ?? null;
   const fileFilter = input?.fileFilter ?? null;
   const reviewOrder = input?.reviewOrder;
+  const refresh = input?.refresh;
   const selectedAnnotationId = input?.selectedAnnotationId ?? null;
   const selection = input?.selection;
   const source = input?.source ?? null;
@@ -51,6 +57,7 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
         ? createReviewSurfaceSnapshot({
             activePath,
             fileFilter,
+            refresh,
             reviewOrder,
             selectedAnnotationId,
             selection,
@@ -61,6 +68,7 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
     [
       activePath,
       fileFilter,
+      refresh,
       reviewOrder,
       selectedAnnotationId,
       selection,
@@ -224,6 +232,9 @@ export function createReviewSurfaceSnapshot(
     viewMode: 'file',
     presentationMode: 'unified',
     annotationVisibility: ['threads', 'drafts', 'findings'],
+    refresh:
+      input.refresh ??
+      createReviewRefreshStatus({ appliedRevision: input.source.revision }),
   };
 }
 

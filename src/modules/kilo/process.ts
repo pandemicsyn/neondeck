@@ -36,6 +36,7 @@ import {
   ciFixRunWorktreeReleaseStatusForKiloTask,
   reconcileCiFixRunForKiloTask,
 } from './ci-fix-run-reconcile';
+import { publishReviewSourceRevision } from '../review-refresh';
 
 const execFileAsync = promisify(execFile);
 export const runningProcesses = new Map<string, RunningProcess>();
@@ -176,6 +177,17 @@ export function attachProcessHandlers(
         const diff = await taskDiffSummary(current ?? task);
         observedDiff = diff;
         if (diff.ok && diff.fileCount > 0) {
+          publishReviewSourceRevision({
+            action: 'source-changed',
+            source: {
+              id: `kilo-result:${taskId}`,
+              kind: 'kilo-result',
+              repoId: current?.repoId ?? task.repoId,
+              repoFullName: current?.repoFullName ?? task.repoFullName,
+              worktreeId: current?.worktreeId ?? task.worktreeId,
+            },
+            reason: 'Kilo completed with a changed worktree revision.',
+          });
           const ciFixReleaseStatus =
             await ciFixRunWorktreeReleaseStatusForKiloTask(
               { task: current ?? task, status, diff },

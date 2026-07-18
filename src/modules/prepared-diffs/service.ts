@@ -9,12 +9,17 @@ import {
 } from '../../../shared/review-source';
 import { addNotification } from '../app-state';
 import { buildPreparedDiffAuditSummary } from '../autonomous-audit';
+import { publishReviewSourceRevision } from '../review-refresh';
 import { openDb } from '../../lib/sqlite';
 import {
   gitCurrentSha,
   gitDiff,
   gitWorktreeRevision,
 } from '../../repo-edit/git';
+import {
+  readStableDiffMetadata,
+  type StableDiffMetadataDependencies,
+} from '../../repo-edit/stable-diff';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
@@ -118,6 +123,20 @@ export async function ensurePreparedDiffForWorktree(
     abandonedAt: null,
   };
   upsertPreparedDiff(record, paths);
+  publishReviewSourceRevision({
+    action: 'source-changed',
+    source: {
+      id: `prepared-diff:${record.id}`,
+      kind: 'prepared-diff',
+      repoId: record.repoId,
+      repoFullName: record.repoFullName,
+      worktreeId: record.worktreeId,
+      prNumber: record.prNumber,
+    },
+    reason: shouldResetDecisionState
+      ? 'A prepared revision completed in the source worktree.'
+      : 'Prepared diff source metadata changed.',
+  });
   if (record.pushApprovalStatus === 'pending') {
     ensurePendingApproval(
       record,
@@ -272,6 +291,7 @@ export async function listPreparedDiffs(
 export async function readPreparedDiffSummary(
   rawInput: unknown,
   paths: RuntimePaths = runtimePaths(),
+  dependencies: StableDiffMetadataDependencies = {},
 ): Promise<PreparedDiffActionResult> {
   const loaded = await loadPreparedDiff(
     rawInput,
@@ -279,14 +299,18 @@ export async function readPreparedDiffSummary(
     paths,
   );
   if (!loaded.ok) return loaded.result;
-  const diff = await gitDiff(loaded.record.sourceWorktreePath, {
-    base: loaded.record.baseRef,
-    includePatch: false,
-  });
-  const revision = await gitWorktreeRevision(loaded.record.sourceWorktreePath, {
-    base: diff.base,
-    files: diff.files,
-  });
+  const stable = await readStableDiffMetadata(
+    loaded.record.sourceWorktreePath,
+    {
+      base: loaded.record.baseRef,
+      includePatch: false,
+    },
+    dependencies,
+  );
+  if (!stable.stable) {
+    return stalePreparedDiffMetadata('prepared_diff_summary', stable.revision);
+  }
+  const { diff, revision } = stable;
   return {
     ok: true,
     action: 'prepared_diff_summary',
@@ -309,6 +333,7 @@ export async function readPreparedDiffSummary(
 export async function readPreparedDiffChangedFiles(
   rawInput: unknown,
   paths: RuntimePaths = runtimePaths(),
+  dependencies: StableDiffMetadataDependencies = {},
 ): Promise<PreparedDiffActionResult> {
   const loaded = await loadPreparedDiff(
     rawInput,
@@ -316,14 +341,21 @@ export async function readPreparedDiffChangedFiles(
     paths,
   );
   if (!loaded.ok) return loaded.result;
-  const diff = await gitDiff(loaded.record.sourceWorktreePath, {
-    base: loaded.record.baseRef,
-    includePatch: false,
-  });
-  const revision = await gitWorktreeRevision(loaded.record.sourceWorktreePath, {
-    base: diff.base,
-    files: diff.files,
-  });
+  const stable = await readStableDiffMetadata(
+    loaded.record.sourceWorktreePath,
+    {
+      base: loaded.record.baseRef,
+      includePatch: false,
+    },
+    dependencies,
+  );
+  if (!stable.stable) {
+    return stalePreparedDiffMetadata(
+      'prepared_diff_changed_files',
+      stable.revision,
+    );
+  }
+  const { diff, revision } = stable;
   return {
     ok: true,
     action: 'prepared_diff_changed_files',
@@ -336,9 +368,28 @@ export async function readPreparedDiffChangedFiles(
   };
 }
 
+function stalePreparedDiffMetadata(
+  action: 'prepared_diff_summary' | 'prepared_diff_changed_files',
+  revision: ReviewRevision,
+): PreparedDiffActionResult {
+  return {
+    ok: false,
+    action,
+    changed: false,
+    message: `The prepared diff changed before its ${action === 'prepared_diff_summary' ? 'summary' : 'file metadata'} could be used.`,
+    revision,
+    requires: ['refresh'],
+    errors: ['The requested revision is stale.'],
+  };
+}
+
 export async function readPreparedDiffFileDiff(
   rawInput: unknown,
   paths: RuntimePaths = runtimePaths(),
+  dependencies: {
+    gitDiff?: typeof gitDiff;
+    gitWorktreeRevision?: typeof gitWorktreeRevision;
+  } = {},
 ): Promise<PreparedDiffActionResult> {
   const parsed = parseInput(
     fileDiffInputSchema,
@@ -354,7 +405,20 @@ export async function readPreparedDiffFileDiff(
       'PREPARED_DIFF_NOT_FOUND',
     );
   }
-  const diff = await gitDiff(record.sourceWorktreePath, {
+  const readDiff = dependencies.gitDiff ?? gitDiff;
+  const readRevision = dependencies.gitWorktreeRevision ?? gitWorktreeRevision;
+  const beforeMetadata = await readDiff(record.sourceWorktreePath, {
+    base: record.baseRef,
+    includePatch: false,
+  });
+  const beforeRevision = await readRevision(record.sourceWorktreePath, {
+    base: beforeMetadata.base,
+    files: beforeMetadata.files,
+  });
+  if (parsed.input.expectedRevisionKey !== reviewRevisionKey(beforeRevision)) {
+    return stalePreparedDiffPatch(beforeRevision);
+  }
+  const diff = await readDiff(record.sourceWorktreePath, {
     base: record.baseRef,
     paths: [parsed.input.path],
     includePatch: true,
@@ -362,6 +426,20 @@ export async function readPreparedDiffFileDiff(
   });
   const file =
     diff.files.find((item) => item.path === parsed.input.path) ?? null;
+  const afterMetadata = await readDiff(record.sourceWorktreePath, {
+    base: record.baseRef,
+    includePatch: false,
+  });
+  const revision = await readRevision(record.sourceWorktreePath, {
+    base: afterMetadata.base,
+    files: afterMetadata.files,
+  });
+  if (
+    parsed.input.expectedRevisionKey !== reviewRevisionKey(revision) ||
+    reviewRevisionKey(beforeRevision) !== reviewRevisionKey(revision)
+  ) {
+    return stalePreparedDiffPatch(revision);
+  }
   return {
     ok: true,
     action: 'prepared_diff_file_diff',
@@ -370,9 +448,24 @@ export async function readPreparedDiffFileDiff(
       ? `Read diff for ${parsed.input.path}.`
       : `No diff found for ${parsed.input.path}.`,
     preparedDiff: record,
+    revision,
     file,
     diff: file?.patch ?? '',
     diffSummary: diff.summary,
+  };
+}
+
+function stalePreparedDiffPatch(
+  revision: ReviewRevision,
+): PreparedDiffActionResult {
+  return {
+    ok: false,
+    action: 'prepared_diff_file_diff',
+    changed: false,
+    message: 'The prepared diff changed before this patch could be used.',
+    revision,
+    requires: ['refresh'],
+    errors: ['The requested revision is stale.'],
   };
 }
 

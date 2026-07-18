@@ -36,11 +36,15 @@ export async function getPreparedDiffFileDiff(
   input: {
     preparedDiffId: string;
     path: string;
+    expectedRevisionKey?: string;
     maxPatchBytes?: number;
   },
   options: ApiRequestOptions = {},
 ) {
   const params = new URLSearchParams({ path: input.path });
+  if (input.expectedRevisionKey) {
+    params.set('expectedRevisionKey', input.expectedRevisionKey);
+  }
   if (input.maxPatchBytes) {
     params.set('maxPatchBytes', String(input.maxPatchBytes));
   }

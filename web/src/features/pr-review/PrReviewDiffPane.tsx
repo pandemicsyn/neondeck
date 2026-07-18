@@ -9,6 +9,7 @@ import type {
 } from '../diff-viewer/types';
 import type { ReviewSourceSnapshot } from '../../../../shared/review-source';
 import type { NeonReviewFinding } from '../../../../shared/review-finding';
+import type { ReviewRefreshStatus } from '../../../../shared/review-refresh';
 import {
   PrReviewFindingsSidebar,
   type PrReviewFindingsSidebarProps,
@@ -35,6 +36,7 @@ export function PrReviewDiffPane({
   selectedAnnotationId,
   reviewMapByPath,
   reviewOrder,
+  refreshStatus,
   source,
   title,
 }: {
@@ -61,6 +63,7 @@ export function PrReviewDiffPane({
   selectedAnnotationId: string | null;
   reviewMapByPath: ReadonlyMap<string, FileReviewMapEntry>;
   reviewOrder: readonly string[];
+  refreshStatus: ReviewRefreshStatus;
   source: ReviewSourceSnapshot;
   title: string;
 }) {
@@ -102,6 +105,7 @@ export function PrReviewDiffPane({
         renderAnnotation={renderAnnotation}
         reviewMapByPath={reviewMapByPath}
         reviewOrder={reviewOrder}
+        refreshStatus={refreshStatus}
         selectedLines={selectedLines}
         selectedAnnotationId={selectedAnnotationId}
         source={source}

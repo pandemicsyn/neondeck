@@ -17,7 +17,6 @@ import {
   postPullRequestComment,
   pullRequestEventStateTruncation,
   readLivePrReviewDraft,
-  readCachedPullRequestFiles,
   readPrReviewDraft,
   readPrReviewDraftForComment,
   replyToPullRequestReviewThread,
@@ -61,6 +60,10 @@ import {
   type PrEventStateDependencies,
   type PullRequestTarget,
 } from './schemas';
+import {
+  resolvedReviewRevision,
+  unavailableReviewRevision,
+} from '../../../shared/review-source';
 import {
   fetchEventState,
   isConfiguredRepoTarget,
@@ -244,6 +247,7 @@ export async function getGitHubPrFiles(
           diffSummary: diff.diffSummary as unknown as JsonValue,
           fetchedAt: diff.fetchedAt,
           source: 'local',
+          revision: githubFileRevision(parsed.output),
         },
       );
     } catch (error) {
@@ -277,10 +281,12 @@ export async function getGitHubPrFiles(
       repo: resolved.target.repo,
       number: resolved.target.number,
       headSha: parsed.output.headSha ?? null,
+      baseSha: parsed.output.baseSha ?? null,
       patches,
       databasePath: paths.neondeckDatabase,
       fetcher,
       fetchHeadSha: dependencies.fetchPullRequestHeadSha,
+      fetchRevision: dependencies.fetchPullRequestRevision,
     });
 
     return okResult(
@@ -293,6 +299,7 @@ export async function getGitHubPrFiles(
         diffSummary: diff.diffSummary as unknown as JsonValue,
         fetchedAt: diff.fetchedAt,
         source: 'github',
+        revision: githubFileRevision(parsed.output),
       },
     );
   } catch (error) {
@@ -365,6 +372,7 @@ export async function getGitHubPrFileDiff(
           diffSummary: diff.diffSummary as unknown as JsonValue,
           fetchedAt: diff.fetchedAt,
           source: 'local',
+          revision: githubFileRevision(parsed.output),
         },
       );
     } catch (error) {
@@ -398,10 +406,12 @@ export async function getGitHubPrFileDiff(
       repo: resolved.target.repo,
       number: resolved.target.number,
       headSha: parsed.output.headSha ?? null,
+      baseSha: parsed.output.baseSha ?? null,
       patches: 'all',
       databasePath: paths.neondeckDatabase,
       fetcher: dependencies.fetchPullRequestFiles ?? fetchPullRequestFiles,
       fetchHeadSha: dependencies.fetchPullRequestHeadSha,
+      fetchRevision: dependencies.fetchPullRequestRevision,
     });
     const file =
       diff.files.find((item) => item.path === parsed.output.path) ?? null;
@@ -418,6 +428,7 @@ export async function getGitHubPrFileDiff(
         diffSummary: diff.diffSummary as unknown as JsonValue,
         fetchedAt: diff.fetchedAt,
         source: 'github',
+        revision: githubFileRevision(parsed.output),
       },
     );
   } catch (error) {
@@ -429,6 +440,23 @@ export async function getGitHubPrFileDiff(
       },
     );
   }
+}
+
+function githubFileRevision(input: {
+  headSha?: string | null;
+  baseSha?: string | null;
+}) {
+  const headSha = input.headSha?.trim();
+  return headSha
+    ? resolvedReviewRevision({
+        kind: 'git-commit',
+        id: headSha,
+        baseId: input.baseSha?.trim() || null,
+      })
+    : unavailableReviewRevision(
+        'git-commit',
+        'The PR file response was not requested with a head SHA.',
+      );
 }
 
 export async function getGitHubPrReviewDraft(
@@ -938,14 +966,8 @@ async function validateDraftCommentAnchor(
   dependencies: PrEventStateDependencies,
 ): Promise<PrEventActionResult | null> {
   try {
-    const cached = readCachedPullRequestFiles({
-      databasePath: paths.neondeckDatabase,
-      repo: target.repoFullName,
-      number: target.number,
-      headSha: draft.headSha,
-    });
     const token = dependencies.token ?? process.env.GITHUB_TOKEN;
-    if (!cached && !token) {
+    if (!token) {
       return failResult(
         action,
         'GITHUB_TOKEN is required to validate anchors.',
@@ -955,18 +977,18 @@ async function validateDraftCommentAnchor(
       );
     }
 
-    const diff =
-      cached ??
-      (await fetchPullRequestFilesWithCache({
-        token: token!,
-        owner: target.owner,
-        repo: target.repo,
-        number: target.number,
-        headSha: draft.headSha,
-        databasePath: paths.neondeckDatabase,
-        fetcher: dependencies.fetchPullRequestFiles ?? fetchPullRequestFiles,
-        fetchHeadSha: dependencies.fetchPullRequestHeadSha,
-      }));
+    // Drafts bind the head but do not persist an authoritative base SHA. Fetch
+    // live instead of consulting a cache entry whose base identity is unknown.
+    const diff = await fetchPullRequestFilesWithCache({
+      token: token!,
+      owner: target.owner,
+      repo: target.repo,
+      number: target.number,
+      headSha: draft.headSha,
+      databasePath: paths.neondeckDatabase,
+      fetcher: dependencies.fetchPullRequestFiles ?? fetchPullRequestFiles,
+      fetchHeadSha: dependencies.fetchPullRequestHeadSha,
+    });
     const file = diff.files.find((item) => item.path === anchor.path);
     if (
       !file ||

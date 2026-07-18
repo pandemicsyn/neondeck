@@ -3,8 +3,9 @@ import type {
   NeonReviewFinding,
   ReviewSurfaceFindingChange,
 } from './review-finding';
+import type { ReviewRefreshStatus } from './review-refresh';
 
-export const reviewSurfaceSchemaVersion = 1 as const;
+export const reviewSurfaceSchemaVersion = 2 as const;
 
 export const reviewSurfaceContextPageLimits = {
   defaultLimit: 25,
@@ -32,6 +33,7 @@ export type ReviewSurfaceSnapshot = {
   viewMode: 'file' | 'changeset';
   presentationMode: 'unified' | 'split' | 'auto';
   annotationVisibility: string[];
+  refresh: ReviewRefreshStatus;
 };
 
 export type ActiveReviewSurface = ReviewSurfaceSnapshot & {

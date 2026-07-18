@@ -4,13 +4,25 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
-import { reviewRevisionKey } from '../shared/review-source';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  reviewRevisionKey,
+  reviewSourceSchemaVersion,
+  type ReviewRevision,
+  type ReviewSourceKind,
+} from '../shared/review-source';
+import { reviewSurfaceSchemaVersion } from '../shared/review-surface';
+import { createReviewRefreshStatus } from '../shared/review-refresh';
 import {
   ensurePreparedDiffForWorktree,
   readPreparedDiffChangedFiles,
   requestPreparedDiffRevision,
 } from './modules/prepared-diffs';
+import {
+  createDefaultReviewSurfacePromotionTarget,
+  type ReviewSurfacePromotionDependencies,
+} from './modules/review-surfaces';
+import type { ValidatedReviewSurfaceFindingPromotion } from './modules/review-surfaces/registry';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 
 const roots: string[] = [];
@@ -138,6 +150,51 @@ describe('prepared-diff finding promotion', () => {
       ? reviewRevisionKey(currentRevision.revision)
       : null;
     expect(currentRevisionKey).toBeTruthy();
+    const requestRevision = vi.fn<
+      NonNullable<ReviewSurfacePromotionDependencies['requestPreparedRevision']>
+    >(async () => ({
+      ok: true,
+      action: 'prepared_diff_request_revision',
+      changed: true,
+      message: 'recorded',
+      preparedDiff: prepared,
+      approvals: [
+        {
+          id: 'revision-approval',
+          preparedDiffId: prepared.id,
+          worktreeId: prepared.worktreeId,
+          approvalType: 'revision',
+          status: 'rejected',
+          targetSha: null,
+          policyHash: null,
+          policyDecision: null,
+          reason: null,
+          approverSurface: null,
+          requestedAt: now,
+          resolvedAt: now,
+          updatedAt: now,
+        },
+      ],
+    }));
+    const promote = createDefaultReviewSurfacePromotionTarget(paths, {
+      requestPreparedRevision: requestRevision,
+    });
+    for (const sourceKind of ['prepared-diff', 'kilo-result'] as const) {
+      await expect(
+        promote(
+          promotionCandidate({
+            sourceKind,
+            preparedDiffId: prepared.id,
+            revision: currentRevision.revision!,
+            revisionKey: currentRevisionKey!,
+          }),
+        ),
+      ).resolves.toMatchObject({
+        ok: true,
+        promotion: { targetId: 'revision-approval' },
+      });
+    }
+    expect(requestRevision).toHaveBeenCalledTimes(2);
     const currentFindingPromotion = {
       ...findingPromotion,
       revisionKey: currentRevisionKey!,
@@ -170,6 +227,120 @@ describe('prepared-diff finding promotion', () => {
     expect(retry.approvals).toHaveLength(1);
   });
 });
+
+function promotionCandidate(input: {
+  sourceKind: Extract<ReviewSourceKind, 'prepared-diff' | 'kilo-result'>;
+  preparedDiffId: string;
+  revision: ReviewRevision;
+  revisionKey: string;
+}): ValidatedReviewSurfaceFindingPromotion {
+  const sourceId =
+    input.sourceKind === 'prepared-diff'
+      ? `prepared-diff:${input.preparedDiffId}`
+      : 'kilo-result:task-1';
+  const surfaceId = `surface:${input.sourceKind}`;
+  const finding = {
+    schemaVersion: 2 as const,
+    id: `finding:${input.sourceKind}`,
+    surfaceId,
+    sourceId,
+    revisionKey: input.revisionKey,
+    file: 'example.ts',
+    anchor: {
+      kind: 'line-range' as const,
+      side: 'additions' as const,
+      startLine: 2,
+      endLine: 2,
+    },
+    title: 'Keep the current anchor',
+    explanation: 'The finding must be validated against its own revision.',
+    severity: 'major' as const,
+    confidence: 'high' as const,
+    suggestedAction: null,
+    provenance: {
+      authorRole: 'display-assistant',
+      model: 'openai/gpt-5.6',
+      workflowRunId: 'run-1',
+      createdAt: '2026-07-18T12:00:00.000Z',
+    },
+    lifecycle: {
+      state: 'active' as const,
+      changedAt: '2026-07-18T12:00:00.000Z',
+      reason: null,
+      promotion: null,
+    },
+  };
+  return {
+    surface: {
+      schemaVersion: reviewSurfaceSchemaVersion,
+      surfaceId,
+      source: {
+        schemaVersion: reviewSourceSchemaVersion,
+        id: sourceId,
+        kind: input.sourceKind,
+        title: 'Prepared promotion fixture',
+        revision: input.revision,
+        repository: {
+          repoId: 'repo-1',
+          repoFullName: 'example/repo',
+          worktreeId: 'worktree-1',
+          localPath: null,
+          localAccess: true,
+        },
+        files: [
+          {
+            path: 'example.ts',
+            previousPath: null,
+            status: 'modified',
+            additions: 1,
+            deletions: 1,
+            generatedLike: false,
+            patchState: 'available',
+            patchMessage: null,
+          },
+        ],
+        capabilities: ['request-revision', 'refresh'],
+        promotionTargets: [
+          {
+            destination: 'prepared-diff-revision',
+            preparedDiffId: input.preparedDiffId,
+          },
+        ],
+        externalUrl: null,
+      },
+      activePath: 'example.ts',
+      selection: null,
+      selectedAnnotationId: finding.id,
+      fileFilter: null,
+      reviewOrder: ['example.ts'],
+      viewMode: 'file',
+      presentationMode: 'unified',
+      annotationVisibility: ['findings'],
+      refresh: createReviewRefreshStatus({
+        appliedRevision: input.revision,
+      }),
+      registeredAt: '2026-07-18T12:00:00.000Z',
+      updatedAt: '2026-07-18T12:00:00.000Z',
+      expiresAt: '2026-07-18T12:01:00.000Z',
+      lastNavigationAck: null,
+    },
+    finding,
+    target: {
+      destination: 'prepared-diff-revision',
+      preparedDiffId: input.preparedDiffId,
+    },
+    request: {
+      sourceId,
+      revisionKey: input.revisionKey,
+      findingId: finding.id,
+      requestId: `request:${input.sourceKind}`,
+      destination: 'prepared-diff-revision',
+      anchor: { side: 'additions', startLine: 2, endLine: 2 },
+      confirm: true,
+      reason: 'Apply the finding.',
+    },
+  };
+}
 
 function readPreparedStatus(
   paths: ReturnType<typeof runtimePaths>,

@@ -31,6 +31,7 @@ import {
 import { reconcilePreparedDiffRevisionResult } from './modules/kilo';
 import type { KiloTaskRecord } from './modules/kilo';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
+import { gitDiff, gitWorktreeRevision } from './repo-edit/git';
 import {
   createWorktree,
   lockWorktree,
@@ -40,6 +41,10 @@ import {
   createSeededGitRepository,
   type SeededGitRepository,
 } from './testing/git-repository-fixture';
+import {
+  resolvedReviewRevision,
+  reviewRevisionKey,
+} from '../shared/review-source';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
@@ -82,11 +87,6 @@ describe('prepared diff lifecycle', () => {
       { preparedDiffId: prepared.id },
       paths,
     );
-    const fileDiff = await readPreparedDiffFileDiff(
-      { preparedDiffId: prepared.id, path: 'src/app.ts' },
-      paths,
-    );
-
     expect(listed).toMatchObject({
       ok: true,
       preparedDiffs: [
@@ -118,7 +118,174 @@ describe('prepared diff lifecycle', () => {
       id: expect.any(String),
       baseId: expect.any(String),
     });
+    const revisionKey = reviewRevisionKey(files.revision!);
+    const fileDiff = await readPreparedDiffFileDiff(
+      {
+        preparedDiffId: prepared.id,
+        path: 'src/app.ts',
+        expectedRevisionKey: revisionKey ?? '',
+      },
+      paths,
+    );
+    expect(fileDiff).toMatchObject({ ok: true, revision: files.revision });
+    await writeFile(
+      join(prepared.sourceWorktreePath, 'src/app.ts'),
+      'export const value = 3;\n',
+    );
+    await expect(
+      readPreparedDiffFileDiff(
+        {
+          preparedDiffId: prepared.id,
+          path: 'src/app.ts',
+          expectedRevisionKey: revisionKey ?? '',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['refresh'],
+      errors: ['The requested revision is stale.'],
+    });
     expect(fileDiff.diff).toContain('export const value = 2;');
+  });
+
+  it('rejects a prepared patch when the worktree changes during its read', async () => {
+    const { paths } = await fixture();
+    const prepared = await preparedFixture(paths);
+    const before = resolvedReviewRevision({
+      kind: 'worktree-diff',
+      id: 'revision-a',
+      baseId: 'base',
+    });
+    const after = resolvedReviewRevision({
+      kind: 'worktree-diff',
+      id: 'revision-b',
+      baseId: 'base',
+    });
+    const metadata = {
+      base: 'HEAD',
+      files: [
+        {
+          path: 'src/app.ts',
+          status: 'M',
+          additions: 1,
+          deletions: 1,
+          binary: false,
+          generatedLike: false,
+        },
+      ],
+      summary: {
+        files: 1,
+        additions: 1,
+        deletions: 1,
+        binaryFiles: 0,
+      },
+    };
+    const patch = {
+      ...metadata,
+      files: [{ ...metadata.files[0]!, patch: 'patch from revision-a' }],
+    };
+    const gitDiffMock = vi
+      .fn<typeof gitDiff>()
+      .mockResolvedValueOnce(metadata)
+      .mockResolvedValueOnce(patch)
+      .mockResolvedValueOnce(metadata);
+    const gitWorktreeRevisionMock = vi
+      .fn<typeof gitWorktreeRevision>()
+      .mockResolvedValueOnce(before)
+      .mockResolvedValueOnce(after);
+
+    await expect(
+      readPreparedDiffFileDiff(
+        {
+          preparedDiffId: prepared.id,
+          path: 'src/app.ts',
+          expectedRevisionKey: reviewRevisionKey(before)!,
+        },
+        paths,
+        {
+          gitDiff: gitDiffMock,
+          gitWorktreeRevision: gitWorktreeRevisionMock,
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      revision: after,
+      requires: ['refresh'],
+    });
+    expect(gitDiffMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('rejects changed-file metadata when the worktree mutates during fingerprinting', async () => {
+    const { paths } = await fixture();
+    const prepared = await preparedFixture(paths);
+    const revision = resolvedReviewRevision({
+      kind: 'worktree-diff',
+      id: 'revision-b',
+      baseId: 'base',
+    });
+    const metadataA = diffMetadata('src/old.ts');
+    const metadataB = diffMetadata('src/current.ts');
+    let mutated = false;
+    const gitDiffMock = vi.fn<typeof gitDiff>(async () =>
+      mutated ? metadataB : metadataA,
+    );
+    const gitWorktreeRevisionMock = vi.fn<typeof gitWorktreeRevision>(
+      async () => {
+        mutated = true;
+        return revision;
+      },
+    );
+
+    await expect(
+      readPreparedDiffChangedFiles({ preparedDiffId: prepared.id }, paths, {
+        gitDiff: gitDiffMock,
+        gitWorktreeRevision: gitWorktreeRevisionMock,
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'prepared_diff_changed_files',
+      revision,
+      requires: ['refresh'],
+    });
+    expect(gitDiffMock).toHaveBeenCalledTimes(2);
+    expect(gitWorktreeRevisionMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects summary metadata when the worktree mutates during fingerprinting', async () => {
+    const { paths } = await fixture();
+    const prepared = await preparedFixture(paths);
+    const revision = resolvedReviewRevision({
+      kind: 'worktree-diff',
+      id: 'revision-b',
+      baseId: 'base',
+    });
+    const metadataA = diffMetadata('src/old.ts');
+    const metadataB = diffMetadata('src/current.ts');
+    let mutated = false;
+    const gitDiffMock = vi.fn<typeof gitDiff>(async () =>
+      mutated ? metadataB : metadataA,
+    );
+    const gitWorktreeRevisionMock = vi.fn<typeof gitWorktreeRevision>(
+      async () => {
+        mutated = true;
+        return revision;
+      },
+    );
+
+    await expect(
+      readPreparedDiffSummary({ preparedDiffId: prepared.id }, paths, {
+        gitDiff: gitDiffMock,
+        gitWorktreeRevision: gitWorktreeRevisionMock,
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'prepared_diff_summary',
+      revision,
+      requires: ['refresh'],
+    });
+    expect(gitDiffMock).toHaveBeenCalledTimes(2);
+    expect(gitWorktreeRevisionMock).toHaveBeenCalledTimes(2);
   });
 
   it('records approval, verification, revision, and abandon decisions without pushing', async () => {
@@ -718,6 +885,28 @@ describe('prepared diff lifecycle', () => {
     });
   });
 });
+
+function diffMetadata(path: string) {
+  return {
+    base: 'HEAD',
+    files: [
+      {
+        path,
+        status: 'M',
+        additions: 1,
+        deletions: 1,
+        binary: false,
+        generatedLike: false,
+      },
+    ],
+    summary: {
+      files: 1,
+      additions: 1,
+      deletions: 1,
+      binaryFiles: 0,
+    },
+  };
+}
 
 async function fixture() {
   const home = await mkdtemp(join(tmpdir(), 'neondeck-prepared-diff-'));

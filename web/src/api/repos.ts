@@ -26,6 +26,7 @@ export async function getRepoDiff(
     paths?: string[];
     includePatch?: boolean;
     maxPatchBytes?: number;
+    expectedRevisionKey?: string;
   },
   options: ApiRequestOptions = {},
 ) {

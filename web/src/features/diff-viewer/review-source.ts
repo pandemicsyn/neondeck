@@ -131,13 +131,14 @@ export function kiloResultReviewSource(
   revision: ReviewRevision | undefined,
   options: PatchStateOptions = {},
 ) {
+  const liveWorktree = Boolean(task.repoId && task.worktreeId);
   return reviewSource({
     ...options,
     capabilities: [
       ...(task.preparedDiffId ? (['request-revision'] as const) : []),
-      'context-expansion',
-      'open-in-editor',
-      'refresh',
+      ...(liveWorktree
+        ? (['context-expansion', 'open-in-editor', 'refresh'] as const)
+        : []),
     ],
     promotionTargets: task.preparedDiffId
       ? [

@@ -1,7 +1,8 @@
-import { useQuery } from '@tanstack/react-query';
-import type { CSSProperties } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, type CSSProperties } from 'react';
 import {
   getGitHubPullRequest,
+  openPrReviewEventStream,
   type DashboardDensity,
   type GitHubPullRequest,
 } from '../../api';
@@ -30,11 +31,29 @@ export function PrReviewPopoutPage({
   appearance: ReviewPopoutAppearance;
   target: ReviewPopoutTarget;
 }) {
+  const queryClient = useQueryClient();
   const prQuery = useQuery({
     queryKey: queryKeys.githubPr(target.repo, target.number),
     queryFn: ({ signal }) => getGitHubPullRequest(target, { signal }),
     refetchInterval: 5 * 60_000,
   });
+  useEffect(
+    () =>
+      openPrReviewEventStream((event) => {
+        if (
+          event.review.repoFullName.toLowerCase() !==
+            target.repo.toLowerCase() ||
+          event.review.prNumber !== target.number
+        ) {
+          return;
+        }
+        void queryClient.invalidateQueries({
+          exact: true,
+          queryKey: queryKeys.githubPr(target.repo, target.number),
+        });
+      }),
+    [queryClient, target.number, target.repo],
+  );
   const pullRequest = prQuery.data ?? optimisticPullRequest(target);
   const style = {
     '--deck-text-scale': appearance.textScale.toString(),

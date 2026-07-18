@@ -107,16 +107,28 @@ export const repoPatchInputSchema = v.object({
   reason: v.optional(v.string()),
 });
 
-export const repoDiffInputSchema = v.object({
-  repoId: repoIdSchema,
-  worktreeId: v.optional(nonEmptyStringSchema),
-  base: v.optional(gitRefSchema),
-  paths: v.optional(v.array(repoRelativePathSchema)),
-  includePatch: v.optional(v.boolean()),
-  maxPatchBytes: v.optional(
-    v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(maxPatchBytes)),
+export const repoDiffInputSchema = v.pipe(
+  v.object({
+    repoId: repoIdSchema,
+    worktreeId: v.optional(nonEmptyStringSchema),
+    base: v.optional(gitRefSchema),
+    paths: v.optional(v.array(repoRelativePathSchema)),
+    includePatch: v.optional(v.boolean()),
+    expectedRevisionKey: v.optional(
+      v.pipe(v.string(), v.minLength(1), v.maxLength(768)),
+    ),
+    maxPatchBytes: v.optional(
+      v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(maxPatchBytes)),
+    ),
+  }),
+  v.check(
+    (input) =>
+      !input.paths?.length ||
+      input.includePatch !== true ||
+      Boolean(input.expectedRevisionKey),
+    'expectedRevisionKey is required for a scoped patch read.',
   ),
-});
+);
 
 export const repoStatusInputSchema = v.object({
   repoId: repoIdSchema,

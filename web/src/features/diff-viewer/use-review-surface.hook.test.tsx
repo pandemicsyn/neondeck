@@ -11,6 +11,7 @@ import {
 import { useReviewSurface } from './use-review-surface';
 import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import type { ReviewSurfaceSnapshot } from '../../../../shared/review-surface';
+import { createReviewRefreshStatus } from '../../../../shared/review-refresh';
 
 const api = vi.hoisted(() => ({
   acknowledge: vi.fn<() => Promise<undefined>>(),
@@ -113,6 +114,42 @@ describe('useReviewSurface', () => {
           endLine: 8,
         }),
       }),
+    );
+  });
+
+  it('registers and updates a non-current refresh status', async () => {
+    api.open.mockImplementation((_onEvent, _onError, onOpen) => {
+      onOpen?.();
+      return vi.fn<() => void>();
+    });
+    const source = reviewSource();
+    const availableRevision = resolvedReviewRevision({
+      kind: 'git-commit',
+      id: 'next-head-sha',
+    });
+    const available = createReviewRefreshStatus({
+      appliedRevision: source.revision,
+      availableRevision,
+      safety: { safe: false, reasons: ['active-selection'] },
+      state: 'available',
+    });
+
+    await act(async () =>
+      root.render(
+        <RefreshSurfaceHarness refresh={available} source={source} />,
+      ),
+    );
+    expect(api.register).toHaveBeenLastCalledWith(
+      expect.objectContaining({ refresh: available }),
+    );
+
+    const applying = { ...available, state: 'applying' as const };
+    await act(async () =>
+      root.render(<RefreshSurfaceHarness refresh={applying} source={source} />),
+    );
+    expect(api.register).toHaveBeenCalledTimes(2);
+    expect(api.register).toHaveBeenLastCalledWith(
+      expect.objectContaining({ refresh: applying }),
     );
   });
 
@@ -278,6 +315,21 @@ function NavigationSurfaceHarness() {
     selectedAnnotationId: 'draft-b',
     selection: { side: 'additions', start: 8, end: 8 },
     source: reviewSource(),
+  });
+  return null;
+}
+
+function RefreshSurfaceHarness({
+  refresh,
+  source,
+}: {
+  refresh: ReviewSurfaceSnapshot['refresh'];
+  source: ReviewSourceSnapshot;
+}) {
+  useReviewSurface({
+    activePath: source.files[0]?.path ?? null,
+    refresh,
+    source,
   });
   return null;
 }
