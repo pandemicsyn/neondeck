@@ -5,8 +5,10 @@ import {
   heartbeatReviewSurface,
   openReviewSurfaceEventStream,
   registerReviewSurface,
+  readReviewSurfaceFindings,
   removeReviewSurface,
 } from '../../api';
+import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import { reviewRevisionKey } from '../../../../shared/review-source';
 import {
   reviewSurfaceSchemaVersion,
@@ -23,6 +25,8 @@ type UseReviewSurfaceInput = {
   activePath: string | null;
   fileFilter?: string | null;
   onNavigatePath?: (path: string, focus: boolean) => void;
+  onFindingsChange?: (surfaceId: string, findings: NeonReviewFinding[]) => void;
+  onSurfaceIdChange?: (surfaceId: string | null) => void;
   reviewOrder?: readonly string[];
   selectedAnnotationId?: string | null;
   selection?: SelectedLineRange | null;
@@ -66,9 +70,18 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
   );
   const snapshotRef = useRef(snapshot);
   const navigateRef = useRef(input?.onNavigatePath);
+  const findingsChangeRef = useRef(input?.onFindingsChange);
+  const surfaceIdChangeRef = useRef(input?.onSurfaceIdChange);
   const eventStreamReadyRef = useRef(false);
   snapshotRef.current = snapshot;
   navigateRef.current = input?.onNavigatePath;
+  findingsChangeRef.current = input?.onFindingsChange;
+  surfaceIdChangeRef.current = input?.onSurfaceIdChange;
+
+  useEffect(() => {
+    surfaceIdChangeRef.current?.(surfaceId);
+    return () => surfaceIdChangeRef.current?.(null);
+  }, [surfaceId]);
 
   useEffect(() => {
     if (!snapshot) {
@@ -76,7 +89,9 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
       return;
     }
     if (eventStreamReadyRef.current) {
-      void registerReviewSurface(snapshot).catch(() => undefined);
+      void registerReviewSurface(snapshot)
+        .then(() => syncReviewSurfaceFindings(snapshot.surfaceId))
+        .catch(() => undefined);
     }
   }, [snapshot, surfaceId]);
 
@@ -104,6 +119,12 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
       (event) => {
         const command = event.navigation;
         if (
+          event.surfaceId === surfaceId &&
+          event.action === 'findings-changed'
+        ) {
+          void syncReviewSurfaceFindings(surfaceId);
+        }
+        if (
           event.action !== 'navigation' ||
           event.surfaceId !== surfaceId ||
           !command
@@ -130,7 +151,9 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
         eventStreamReadyRef.current = true;
         const current = snapshotRef.current;
         if (current) {
-          void registerReviewSurface(current).catch(() => undefined);
+          void registerReviewSurface(current)
+            .then(() => syncReviewSurfaceFindings(surfaceId))
+            .catch(() => undefined);
         }
       },
     );
@@ -141,6 +164,13 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
   }, [surfaceId]);
 
   return surfaceId;
+
+  function syncReviewSurfaceFindings(targetSurfaceId: string) {
+    if (!findingsChangeRef.current) return Promise.resolve();
+    return readReviewSurfaceFindings(targetSurfaceId).then((result) => {
+      findingsChangeRef.current?.(targetSurfaceId, result.findings);
+    });
+  }
 }
 
 export function createReviewSurfaceSnapshot(

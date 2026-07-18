@@ -200,6 +200,43 @@ describe('review surface registry', () => {
     expect(events.map((event) => event.action)).toEqual(['registered']);
   });
 
+  it('rejects out-of-bounds ranges and unavailable finding capability atomically', async () => {
+    const { app, registry } = harness();
+    const events: ReviewSurfaceChangeEvent[] = [];
+    registry.subscribe((event) => events.push(event));
+    await register(app, snapshot('surface-a'));
+
+    const outOfBounds = await apply(app, 'surface-a', [
+      finding('finding-valid'),
+      finding('finding-range-too-large', {
+        anchor: {
+          kind: 'line-range',
+          side: 'additions',
+          startLine: 1,
+          endLine: neonReviewFindingLimits.maxLineRangeSpan + 1,
+        },
+      }),
+    ]);
+    expect(outOfBounds.status).toBe(400);
+    expect(registry.readFindings('surface-a').count).toBe(0);
+
+    registry.upsert({
+      ...snapshot('surface-a'),
+      annotationVisibility: ['threads', 'drafts'],
+    });
+    const unavailable = await apply(app, 'surface-a', [
+      finding('finding-capability'),
+    ]);
+    expect(unavailable.status).toBe(409);
+    expect(await unavailable.json()).toMatchObject({
+      error: { code: 'capability-unavailable' },
+    });
+    expect(registry.readFindings('surface-a').count).toBe(0);
+    expect(
+      events.filter((event) => event.action === 'findings-changed'),
+    ).toEqual([]);
+  });
+
   it('stales active findings on a revision change and rejects the old revision', async () => {
     const { app, registry } = harness();
     const events: ReviewSurfaceChangeEvent[] = [];
@@ -517,6 +554,33 @@ describe('review surface registry', () => {
     } finally {
       reviewSurfaceRegistry.remove(surfaceId);
     }
+  });
+
+  it('validates the complete trusted finding schema in the service before applying a batch', () => {
+    const registry = new ReviewSurfaceRegistry();
+    registries.push(registry);
+    registry.upsert(snapshot('surface-a'));
+
+    expect(
+      registry.applyFindings('surface-a', {
+        revisionKey: 'git-commit::head-sha',
+        findings: [
+          finding('finding-valid'),
+          finding('finding-invalid-provenance', {
+            provenance: {
+              authorRole: '',
+              model: null,
+              workflowRunId: null,
+            },
+          }),
+        ],
+      }),
+    ).toMatchObject({
+      ok: false,
+      changed: false,
+      error: { code: 'invalid-finding' },
+    });
+    expect(registry.readFindings('surface-a').count).toBe(0);
   });
 
   it('pages model-facing context with bounded windows and totals', () => {

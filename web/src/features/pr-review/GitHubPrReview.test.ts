@@ -397,6 +397,7 @@ describe('GitHubPrReview helpers', () => {
     expect(map.get('src/a.ts')).toEqual({
       draftCount: 1,
       findingCount: 2,
+      findingSummaries: ['Minor finding', 'Critical finding'],
       highestFindingSeverity: 'critical',
       path: 'src/a.ts',
       staleDraftCount: 0,
@@ -405,6 +406,7 @@ describe('GitHubPrReview helpers', () => {
     expect(map.get('src/new.ts')).toEqual({
       draftCount: 1,
       findingCount: 0,
+      findingSummaries: [],
       highestFindingSeverity: null,
       path: 'src/new.ts',
       staleDraftCount: 1,

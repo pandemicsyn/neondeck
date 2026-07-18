@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react';
+import { act, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -9,6 +9,8 @@ import {
   type ReviewSourceSnapshot,
 } from '../../../../shared/review-source';
 import { useReviewSurface } from './use-review-surface';
+import type { NeonReviewFinding } from '../../../../shared/review-finding';
+import type { ReviewSurfaceSnapshot } from '../../../../shared/review-surface';
 
 const api = vi.hoisted(() => ({
   acknowledge: vi.fn<() => Promise<undefined>>(),
@@ -20,7 +22,8 @@ const api = vi.hoisted(() => ({
       onOpen?: () => void,
     ) => () => void
   >(),
-  register: vi.fn<() => Promise<undefined>>(),
+  register: vi.fn<(snapshot: ReviewSurfaceSnapshot) => Promise<undefined>>(),
+  readFindings: vi.fn<() => Promise<{ findings: NeonReviewFinding[] }>>(),
   remove: vi.fn<() => Promise<undefined>>(),
 }));
 
@@ -29,6 +32,7 @@ vi.mock('../../api', () => ({
   heartbeatReviewSurface: api.heartbeat,
   openReviewSurfaceEventStream: api.open,
   registerReviewSurface: api.register,
+  readReviewSurfaceFindings: api.readFindings,
   removeReviewSurface: api.remove,
 }));
 
@@ -46,6 +50,7 @@ describe('useReviewSurface', () => {
     api.acknowledge.mockResolvedValue(undefined);
     api.heartbeat.mockResolvedValue(undefined);
     api.register.mockResolvedValue(undefined);
+    api.readFindings.mockResolvedValue({ findings: [] });
     api.remove.mockResolvedValue(undefined);
   });
 
@@ -100,6 +105,44 @@ describe('useReviewSurface', () => {
       }),
     );
   });
+
+  it('refreshes only targeted finding metadata without re-registering or loading patches', async () => {
+    let onEvent: ((event: unknown) => void) | undefined;
+    api.open.mockImplementation((handleEvent, _onError, onOpen) => {
+      onEvent = handleEvent;
+      onOpen?.();
+      return vi.fn<() => void>();
+    });
+    api.readFindings.mockResolvedValue({ findings: [finding()] });
+
+    await act(async () => root.render(<FindingSurfaceHarness />));
+    const surfaceId = api.register.mock.calls[0]?.[0]?.surfaceId as string;
+    expect(container.textContent).toBe('1');
+    expect(api.register).toHaveBeenCalledTimes(1);
+
+    api.readFindings.mockClear();
+    await act(async () => {
+      onEvent?.({
+        action: 'findings-changed',
+        surfaceId: 'another-surface',
+        navigation: null,
+      });
+      await Promise.resolve();
+    });
+    expect(api.readFindings).not.toHaveBeenCalled();
+
+    await act(async () => {
+      onEvent?.({
+        action: 'findings-changed',
+        surfaceId,
+        navigation: null,
+      });
+      await Promise.resolve();
+    });
+    expect(api.readFindings).toHaveBeenCalledTimes(1);
+    expect(api.readFindings).toHaveBeenCalledWith(surfaceId);
+    expect(api.register).toHaveBeenCalledTimes(1);
+  });
 });
 
 function ReviewSurfaceHarness({ source }: { source: ReviewSourceSnapshot }) {
@@ -120,6 +163,50 @@ function NavigationSurfaceHarness() {
     source: reviewSource(),
   });
   return null;
+}
+
+function FindingSurfaceHarness() {
+  const [findings, setFindings] = useState<NeonReviewFinding[]>([]);
+  const source = useMemo(reviewSource, []);
+  useReviewSurface({
+    activePath: 'src/a.ts',
+    onFindingsChange: (_surfaceId, next) => setFindings(next),
+    source,
+  });
+  return <span>{findings.length}</span>;
+}
+
+function finding(): NeonReviewFinding {
+  return {
+    schemaVersion: 1,
+    id: 'finding-a',
+    surfaceId: 'surface-a',
+    sourceId: 'github-pr:example/repo#42',
+    revisionKey: 'git-commit::head-sha',
+    file: 'src/a.ts',
+    anchor: {
+      kind: 'line-range',
+      side: 'additions',
+      startLine: 1,
+      endLine: 1,
+    },
+    title: 'Finding title',
+    explanation: 'Finding explanation.',
+    severity: 'major',
+    confidence: 'high',
+    suggestedAction: null,
+    provenance: {
+      authorRole: 'display-assistant',
+      model: 'openai/gpt-5',
+      workflowRunId: 'run-1',
+      createdAt: '2026-07-18T12:00:00.000Z',
+    },
+    lifecycle: {
+      state: 'active',
+      changedAt: '2026-07-18T12:00:00.000Z',
+      reason: null,
+    },
+  };
 }
 
 function reviewSource(): ReviewSourceSnapshot {

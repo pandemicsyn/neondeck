@@ -13,6 +13,7 @@ import type {
   GitHubPrReviewSubmitResponse,
   GitHubPrThreadMutationResponse,
 } from '../../api';
+import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import { queryErrorMessage } from '../../lib/query';
 import { patchHasContent } from '../diff-viewer/helpers';
 import type {
@@ -43,12 +44,14 @@ export function prReviewMapByPath({
   draft,
   files,
   findings,
+  neonFindings = [],
   staleCommentIds,
   unresolvedThreads,
 }: {
   draft: GitHubPrReviewDraft | null;
   files: DiffFilePatch[];
   findings: PrReviewReportOnlyFinding[];
+  neonFindings?: readonly NeonReviewFinding[];
   staleCommentIds: ReadonlySet<string>;
   unresolvedThreads: GitHubPullRequestReviewThread[];
 }) {
@@ -83,6 +86,22 @@ export function prReviewMapByPath({
     const entry = result.get(path);
     if (!entry) continue;
     entry.findingCount += 1;
+    entry.findingSummaries.push(finding.summary);
+    if (
+      entry.highestFindingSeverity === null ||
+      findingSeverityRank[finding.severity] >
+        findingSeverityRank[entry.highestFindingSeverity]
+    ) {
+      entry.highestFindingSeverity = finding.severity;
+    }
+  }
+  for (const finding of neonFindings) {
+    const path = resolveReviewMapPath(finding.file, result, currentPathByAlias);
+    if (!path) continue;
+    const entry = result.get(path);
+    if (!entry) continue;
+    entry.findingCount += 1;
+    entry.findingSummaries.push(finding.title, finding.explanation);
     if (
       entry.highestFindingSeverity === null ||
       findingSeverityRank[finding.severity] >
@@ -99,6 +118,7 @@ function emptyFileReviewMapEntry(path: string): FileReviewMapEntry {
     draftCount: 0,
     findingCount: 0,
     highestFindingSeverity: null,
+    findingSummaries: [],
     path,
     staleDraftCount: 0,
     unresolvedThreadCount: 0,

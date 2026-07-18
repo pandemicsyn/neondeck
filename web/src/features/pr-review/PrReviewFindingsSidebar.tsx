@@ -5,6 +5,7 @@ import type {
   PrReviewRecord,
   PrReviewReportOnlyFinding,
 } from '../../api';
+import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import { Badge } from '../../components/ui';
 import type { DiffFilePatch } from '../diff-viewer/types';
 import { reviewCommentPreview } from './review-helpers';
@@ -15,6 +16,8 @@ import {
 } from './review-ui-helpers';
 import { resolveReviewFilePath } from './review-view-model';
 import { reportOnlyFindingNavigationId } from './review-navigation';
+import { PrReviewNeonFindingsPanel } from './PrReviewNeonFinding';
+import type { NeonFindingAnchorResolution } from './review-findings';
 
 export type PrReviewFindingsSidebarProps = {
   activePath: string | null;
@@ -23,15 +26,22 @@ export type PrReviewFindingsSidebarProps = {
   files: DiffFilePatch[];
   isDeleting: boolean;
   isLoadingThreads: boolean;
+  isDismissingFinding: (findingId: string) => boolean;
+  neonFindings: readonly NeonReviewFinding[];
   onChooseLine: (finding: PrReviewReportOnlyFinding) => void;
   onDelete: (commentId: string) => void;
+  onDismissFinding: (finding: NeonReviewFinding) => void;
   onReanchor: (comment: GitHubPrReviewDraftComment) => void;
+  onSelectFinding: (finding: NeonReviewFinding) => void;
   review: PrReviewRecord | null;
   reviewThreads: GitHubPullRequestReviewThread[];
   selectedAnnotationId: string | null;
   staleCommentCount: number;
   staleDraftComments: GitHubPrReviewDraftComment[];
   unresolvedThreads: GitHubPullRequestReviewThread[];
+  findingResolution: (
+    finding: NeonReviewFinding,
+  ) => NeonFindingAnchorResolution;
 };
 
 export function PrReviewFindingsSidebar({
@@ -123,6 +133,15 @@ function FindingsPanels(props: PrReviewFindingsSidebarProps) {
         draft={props.draft}
         onChooseLine={props.onChooseLine}
         review={props.review}
+        selectedAnnotationId={props.selectedAnnotationId}
+      />
+      <PrReviewNeonFindingsPanel
+        activePath={props.activePath}
+        findings={props.neonFindings}
+        isDismissing={props.isDismissingFinding}
+        onDismiss={props.onDismissFinding}
+        onSelect={props.onSelectFinding}
+        resolutionFor={props.findingResolution}
         selectedAnnotationId={props.selectedAnnotationId}
       />
     </>

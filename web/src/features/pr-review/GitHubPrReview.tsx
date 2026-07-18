@@ -14,7 +14,10 @@ import {
   type ReviewCursorKind,
   type ReviewCursorTarget,
 } from '../../../../shared/review-navigation';
+import { reviewRevisionKey } from '../../../../shared/review-source';
+import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import {
+  dismissReviewSurfaceFindings,
   type GitHubPrReviewDraftComment,
   type GitHubPrReviewVerdict,
   type GitHubPullRequest,
@@ -28,6 +31,7 @@ import { githubPrReviewSource } from '../diff-viewer/review-source';
 import { PrReviewCommentComposer } from './PrReviewCommentComposer';
 import { PrReviewDiffPane } from './PrReviewDiffPane';
 import { PrReviewNavigationBar } from './PrReviewNavigationBar';
+import { PrReviewNeonFindingAnnotation } from './PrReviewNeonFinding';
 import { reportOnlyFindingBody } from './PrReviewFindingsSidebar';
 import { PrReviewSubmitBar } from './PrReviewSubmitBar';
 import {
@@ -83,6 +87,12 @@ import {
   type ReviewNavigationSelection,
   type ReviewPatchNavigationState,
 } from './review-navigation';
+import {
+  annotationsFromNeonFindings,
+  currentActiveNeonFindings,
+  resolveNeonFindingAnchor,
+  type NeonFindingAnchorResolution,
+} from './review-findings';
 
 type ComposerState = {
   body: string;
@@ -163,6 +173,11 @@ export function GitHubPrReview({
     Set<string>
   >(() => new Set());
   const [statusMessage, setStatusMessageState] = useState<string | null>(null);
+  const [reviewSurfaceId, setReviewSurfaceId] = useState<string | null>(null);
+  const [neonFindings, setNeonFindings] = useState<NeonReviewFinding[]>([]);
+  const [dismissingFindingIds, setDismissingFindingIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [navigationKind, setNavigationKind] =
     useState<ReviewCursorKind>('file');
   const [navigationTargetKey, setNavigationTargetKey] = useState<string | null>(
@@ -223,6 +238,7 @@ export function GitHubPrReview({
     [threadsQuery.data?.unresolvedReviewThreads],
   );
   const draft = draftQuery.data ?? null;
+  const isStandalone = mode === 'standalone';
   const activePatchPaths = useMemo(
     () => (activePath ? [activePath] : []),
     [activePath],
@@ -275,6 +291,81 @@ export function GitHubPrReview({
     () => patchAnchorIndexesByPath(files),
     [files],
   );
+  const filesByPath = useMemo(
+    () => new Map(files.map((file) => [file.path, file])),
+    [files],
+  );
+  const reviewSource = useMemo(
+    () =>
+      githubPrReviewSource(pr, files, {
+        localSource: filesQuery.data?.source === 'local',
+        loadingPaths:
+          activePath && activePatchQuery?.isLoading
+            ? new Set([activePath])
+            : undefined,
+        unavailablePaths:
+          activePath && activePatchQuery?.isError
+            ? new Set([activePath])
+            : undefined,
+      }),
+    [
+      activePatchQuery?.isError,
+      activePatchQuery?.isLoading,
+      activePath,
+      files,
+      filesQuery.data?.source,
+      pr,
+    ],
+  );
+  const currentReviewRevisionKey = reviewRevisionKey(reviewSource.revision);
+  const activeNeonFindings = useMemo(
+    () =>
+      currentActiveNeonFindings(
+        neonFindings,
+        reviewSource.id,
+        currentReviewRevisionKey,
+      ),
+    [currentReviewRevisionKey, neonFindings, reviewSource.id],
+  );
+  const neonFindingResolutions = useMemo(() => {
+    const result = new Map<string, NeonFindingAnchorResolution>();
+    for (const finding of neonFindings) {
+      result.set(
+        finding.id,
+        resolveNeonFindingAnchor(
+          finding,
+          filesByPath.get(finding.file),
+          patchIndexesByPath.get(finding.file),
+          reviewSource.id,
+          currentReviewRevisionKey,
+        ),
+      );
+    }
+    return result;
+  }, [
+    currentReviewRevisionKey,
+    filesByPath,
+    neonFindings,
+    patchIndexesByPath,
+    reviewSource.id,
+  ]);
+  const neonAnnotationsByPath = useMemo(
+    () =>
+      annotationsFromNeonFindings({
+        files,
+        findings: neonFindings,
+        indexes: patchIndexesByPath,
+        revisionKey: currentReviewRevisionKey,
+        sourceId: reviewSource.id,
+      }),
+    [
+      currentReviewRevisionKey,
+      files,
+      neonFindings,
+      patchIndexesByPath,
+      reviewSource.id,
+    ],
+  );
   const unknownDraftPatchCommentIds = useMemo(
     () =>
       draftCommentIdsWithUnknownPatch(
@@ -314,8 +405,16 @@ export function GitHubPrReview({
         annotationsFromThreads(reviewThreads, fileList),
         annotationsFromDraft(draft, blockedCommentIds, fileList),
         annotationsFromComposer(composer),
+        neonAnnotationsByPath,
       ),
-    [blockedCommentIds, composer, draft, fileList, reviewThreads],
+    [
+      blockedCommentIds,
+      composer,
+      draft,
+      fileList,
+      neonAnnotationsByPath,
+      reviewThreads,
+    ],
   );
   const reviewMapByPath = useMemo(
     () =>
@@ -323,6 +422,7 @@ export function GitHubPrReview({
         draft,
         files: fileList,
         findings: reviewRecord?.reportOnlyFindings ?? [],
+        neonFindings: activeNeonFindings,
         staleCommentIds,
         unresolvedThreads,
       }),
@@ -330,6 +430,7 @@ export function GitHubPrReview({
       draft,
       fileList,
       reviewRecord?.reportOnlyFindings,
+      activeNeonFindings,
       staleCommentIds,
       unresolvedThreads,
     ],
@@ -340,12 +441,16 @@ export function GitHubPrReview({
         draft,
         files,
         findings: reviewRecord?.reportOnlyFindings ?? [],
+        neonFindingResolutions,
+        neonFindings,
         staleCommentIds,
         threads: reviewThreads,
       }),
     [
       draft,
       files,
+      neonFindingResolutions,
+      neonFindings,
       reviewRecord?.reportOnlyFindings,
       reviewThreads,
       staleCommentIds,
@@ -413,28 +518,6 @@ export function GitHubPrReview({
   const patchErrorMessage = activePatchQuery?.error
     ? `Patch unavailable: ${queryErrorMessage(activePatchQuery.error)}`
     : null;
-  const reviewSource = useMemo(
-    () =>
-      githubPrReviewSource(pr, files, {
-        localSource: filesQuery.data?.source === 'local',
-        loadingPaths:
-          activePath && activePatchQuery?.isLoading
-            ? new Set([activePath])
-            : undefined,
-        unavailablePaths:
-          activePath && activePatchQuery?.isError
-            ? new Set([activePath])
-            : undefined,
-      }),
-    [
-      activePatchQuery?.isError,
-      activePatchQuery?.isLoading,
-      activePath,
-      files,
-      filesQuery.data?.source,
-      pr,
-    ],
-  );
   const navigationFiles = useMemo(
     () =>
       fileFilter.paths
@@ -472,6 +555,19 @@ export function GitHubPrReview({
         }
         return { paths, query };
       });
+    },
+    [],
+  );
+  const handleReviewSurfaceIdChange = useCallback(
+    (surfaceId: string | null) => {
+      setReviewSurfaceId(surfaceId);
+      if (!surfaceId) setNeonFindings([]);
+    },
+    [],
+  );
+  const handleReviewSurfaceFindingsChange = useCallback(
+    (_surfaceId: string, findings: NeonReviewFinding[]) => {
+      setNeonFindings(findings);
     },
     [],
   );
@@ -637,6 +733,35 @@ export function GitHubPrReview({
       pendingHunkNavigation,
       performHunkTraversal,
     ],
+  );
+  const selectNeonFinding = useCallback(
+    (finding: NeonReviewFinding) => {
+      setPendingHunkNavigation(null);
+      setNavigationKind('finding');
+      const targets = reviewCursorTargets(navigationData.model, 'finding', {
+        filter: fileFilter.paths ? { paths: fileFilter.paths } : undefined,
+      });
+      const target = targets.find((candidate) => candidate.id === finding.id);
+      if (target) {
+        activateNavigationTarget(target, targets);
+        return;
+      }
+      if (files.some((file) => file.path === finding.file)) {
+        setActivePath(finding.file);
+        setNavigationTargetKey(null);
+        setNavigationAuthority('explicit');
+        setNavigationSelection(null);
+        setNavigationAnnotationId(finding.id);
+        setNavigationBoundary(null);
+        setNavigationStatus(
+          'Finding anchor is not available on this revision.',
+        );
+        setNavigationAnnouncement(
+          `${finding.file}, Neon finding ${finding.lifecycle.state}, anchor unavailable on this revision.`,
+        );
+      }
+    },
+    [activateNavigationTarget, fileFilter.paths, files, navigationData.model],
   );
   const previousNavigationTargets = useRef<readonly ReviewCursorTarget[]>([]);
 
@@ -979,83 +1104,125 @@ export function GitHubPrReview({
       },
     );
   };
-  const renderAnnotation = (annotation: DiffReviewAnnotation) => (
-    <PrReviewCommentComposer
-      annotation={annotation}
-      composerBody={composer?.body ?? ''}
-      draft={draft}
-      editingBody={commentEditor?.body ?? ''}
-      editingCommentId={commentEditor?.commentId ?? null}
-      isAddingComment={mutations.addComment.isPending}
-      isDeletingComment={mutations.deleteComment.isPending}
-      isReplyingToThread={mutations.replyToThread.isPending}
-      isResolvingThread={mutations.setThreadResolution.isPending}
-      isSavingDraft={mutations.saveDraft.isPending}
-      isUpdatingComment={mutations.updateComment.isPending}
-      onCancelComposer={() => {
-        setComposer(null);
-      }}
-      onCancelEdit={() => {
-        setCommentEditor(null);
-      }}
-      onCancelReply={() => {
-        setReplyEditor(null);
-      }}
-      onComposerBodyChange={(body) =>
-        setComposer((current) => (current ? { ...current, body } : current))
-      }
-      onDeleteComment={deleteDraftComment}
-      onEditingBodyChange={(body) =>
-        setCommentEditor((current) =>
-          current ? { ...current, body } : current,
-        )
-      }
-      onReanchorComment={(comment) =>
-        beginReanchorComment(comment.id, comment.path)
-      }
-      onReplyBodyChange={(body) =>
-        setReplyEditor((current) => (current ? { ...current, body } : current))
-      }
-      onSetThreadResolution={(thread) => {
-        const operationToken = beginOperation();
-        const resolved = !thread.isResolved;
-        mutations.setThreadResolution.mutate(
-          {
-            repo: pr.repo,
-            number: pr.number,
-            threadId: thread.id,
-            resolved,
-          },
-          {
-            onError: (error) => failOperation(operationToken, error),
-            onSuccess: () =>
-              finishOperation(
-                operationToken,
-                resolved ? 'Thread resolved.' : 'Thread reopened.',
-              ),
-          },
-        );
-      }}
-      onStartEdit={(commentId, body) => {
-        setCommentEditor({
-          body,
-          commentId,
-          token: createEditorToken(),
-        });
-      }}
-      onStartReply={(threadId) => {
-        setReplyEditor({ body: '', threadId, token: createEditorToken() });
-      }}
-      onSubmitComposer={submitComposer}
-      onSubmitEdit={submitEdit}
-      onSubmitReply={submitReply}
-      reanchoringCommentId={reanchoringCommentId}
-      replyingThreadId={replyEditor?.threadId ?? null}
-      replyBody={replyEditor?.body ?? ''}
-      reviewThreads={reviewThreads}
-      selected={selectedContext.selectedAnnotationId === annotation.metadata.id}
-    />
-  );
+  const dismissNeonFinding = async (finding: NeonReviewFinding) => {
+    if (!reviewSurfaceId || !currentReviewRevisionKey) {
+      setStatusMessage(
+        'The focused review surface is not ready for dismissal.',
+      );
+      return;
+    }
+    const operationToken = beginOperation();
+    setDismissingFindingIds((current) => new Set(current).add(finding.id));
+    try {
+      const result = await dismissReviewSurfaceFindings(reviewSurfaceId, {
+        sourceId: reviewSource.id,
+        revisionKey: currentReviewRevisionKey,
+        findingIds: [finding.id],
+        reason: 'Dismissed locally from the focused PR review workbench.',
+      });
+      finishOperation(operationToken, result.message);
+    } catch (error) {
+      failOperation(operationToken, error);
+    } finally {
+      setDismissingFindingIds((current) => {
+        const next = new Set(current);
+        next.delete(finding.id);
+        return next;
+      });
+    }
+  };
+  const renderAnnotation = (annotation: DiffReviewAnnotation) =>
+    annotation.metadata.kind === 'finding' && annotation.metadata.finding ? (
+      <PrReviewNeonFindingAnnotation
+        compact={!isStandalone}
+        finding={annotation.metadata.finding}
+        isDismissing={dismissingFindingIds.has(annotation.metadata.finding.id)}
+        onDismiss={dismissNeonFinding}
+        selected={
+          selectedContext.selectedAnnotationId === annotation.metadata.id
+        }
+      />
+    ) : (
+      <PrReviewCommentComposer
+        annotation={annotation}
+        composerBody={composer?.body ?? ''}
+        draft={draft}
+        editingBody={commentEditor?.body ?? ''}
+        editingCommentId={commentEditor?.commentId ?? null}
+        isAddingComment={mutations.addComment.isPending}
+        isDeletingComment={mutations.deleteComment.isPending}
+        isReplyingToThread={mutations.replyToThread.isPending}
+        isResolvingThread={mutations.setThreadResolution.isPending}
+        isSavingDraft={mutations.saveDraft.isPending}
+        isUpdatingComment={mutations.updateComment.isPending}
+        onCancelComposer={() => {
+          setComposer(null);
+        }}
+        onCancelEdit={() => {
+          setCommentEditor(null);
+        }}
+        onCancelReply={() => {
+          setReplyEditor(null);
+        }}
+        onComposerBodyChange={(body) =>
+          setComposer((current) => (current ? { ...current, body } : current))
+        }
+        onDeleteComment={deleteDraftComment}
+        onEditingBodyChange={(body) =>
+          setCommentEditor((current) =>
+            current ? { ...current, body } : current,
+          )
+        }
+        onReanchorComment={(comment) =>
+          beginReanchorComment(comment.id, comment.path)
+        }
+        onReplyBodyChange={(body) =>
+          setReplyEditor((current) =>
+            current ? { ...current, body } : current,
+          )
+        }
+        onSetThreadResolution={(thread) => {
+          const operationToken = beginOperation();
+          const resolved = !thread.isResolved;
+          mutations.setThreadResolution.mutate(
+            {
+              repo: pr.repo,
+              number: pr.number,
+              threadId: thread.id,
+              resolved,
+            },
+            {
+              onError: (error) => failOperation(operationToken, error),
+              onSuccess: () =>
+                finishOperation(
+                  operationToken,
+                  resolved ? 'Thread resolved.' : 'Thread reopened.',
+                ),
+            },
+          );
+        }}
+        onStartEdit={(commentId, body) => {
+          setCommentEditor({
+            body,
+            commentId,
+            token: createEditorToken(),
+          });
+        }}
+        onStartReply={(threadId) => {
+          setReplyEditor({ body: '', threadId, token: createEditorToken() });
+        }}
+        onSubmitComposer={submitComposer}
+        onSubmitEdit={submitEdit}
+        onSubmitReply={submitReply}
+        reanchoringCommentId={reanchoringCommentId}
+        replyingThreadId={replyEditor?.threadId ?? null}
+        replyBody={replyEditor?.body ?? ''}
+        reviewThreads={reviewThreads}
+        selected={
+          selectedContext.selectedAnnotationId === annotation.metadata.id
+        }
+      />
+    );
   const submitReview = async () => {
     if (!currentHeadSha) return;
     if (!isDurableReviewReady) {
@@ -1111,18 +1278,27 @@ export function GitHubPrReview({
       'popup,width=1440,height=940',
     );
   };
-  const isStandalone = mode === 'standalone';
   const findingsSidebar = {
     activePath,
     cleanCommentCount: cleanCommentIds.length,
     draft,
     files,
     isDeleting: mutations.deleteComment.isPending,
+    isDismissingFinding: (findingId: string) =>
+      dismissingFindingIds.has(findingId),
     isLoadingThreads: threadsQuery.isLoading,
+    findingResolution: (finding: NeonReviewFinding) =>
+      neonFindingResolutions.get(finding.id) ?? {
+        state: 'unavailable' as const,
+        reason: 'Finding anchor metadata is unavailable.',
+      },
+    neonFindings,
     onChooseLine: beginAnchorFinding,
     onDelete: deleteDraftComment,
+    onDismissFinding: dismissNeonFinding,
     onReanchor: (comment: GitHubPrReviewDraftComment) =>
       beginReanchorComment(comment.id, comment.path),
+    onSelectFinding: selectNeonFinding,
     review: reviewRecord,
     reviewThreads,
     selectedAnnotationId: selectedContext.selectedAnnotationId,
@@ -1155,6 +1331,9 @@ export function GitHubPrReview({
             {unresolvedThreads.length}/{reviewThreads.length} threads
           </Badge>
           {summary ? <Badge>{summaryLabel(summary)}</Badge> : null}
+          {activeNeonFindings.length > 0 ? (
+            <Badge>{activeNeonFindings.length} Neon findings</Badge>
+          ) : null}
           {fileStats.truncated > 0 ? (
             <Badge>{fileStats.truncated} truncated</Badge>
           ) : null}
@@ -1330,6 +1509,8 @@ export function GitHubPrReview({
         isStandalone={isStandalone}
         onActivePathChange={selectPathFromWorkbench}
         onFileFilterChange={handleFileFilterChange}
+        onReviewSurfaceFindingsChange={handleReviewSurfaceFindingsChange}
+        onReviewSurfaceIdChange={handleReviewSurfaceIdChange}
         onSelectedLinesChange={onSelectionChange}
         patchError={patchErrorMessage}
         renderAnnotation={renderAnnotation}

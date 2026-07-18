@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import * as v from 'valibot';
 import {
   neonReviewFindingLimits,
   type NeonReviewFinding,
@@ -17,6 +18,7 @@ import type {
   ReviewSurfaceNavigationRequest,
   ReviewSurfaceSnapshot,
 } from '../../../shared/review-surface';
+import { neonReviewFindingDraftSchema } from './schemas';
 
 export const reviewSurfaceTtlMs = 45_000;
 
@@ -38,6 +40,8 @@ export type ReviewSurfaceFindingErrorCode =
   | 'stale-revision'
   | 'source-mismatch'
   | 'file-unavailable'
+  | 'capability-unavailable'
+  | 'invalid-finding'
   | 'invalid-batch-size'
   | 'duplicate-finding-id'
   | 'finding-id-conflict'
@@ -154,6 +158,21 @@ export class ReviewSurfaceRegistry {
     }
     if (input.revisionKey !== currentRevisionKey) {
       return this.findingError(surfaceId, 'apply', 'stale-revision', {
+        revisionKey: currentRevisionKey,
+      });
+    }
+    if (!surface.annotationVisibility.includes('findings')) {
+      return this.findingError(surfaceId, 'apply', 'capability-unavailable', {
+        revisionKey: currentRevisionKey,
+      });
+    }
+    if (
+      input.findings.some(
+        (finding) =>
+          !v.safeParse(neonReviewFindingDraftSchema, finding).success,
+      )
+    ) {
+      return this.findingError(surfaceId, 'apply', 'invalid-finding', {
         revisionKey: currentRevisionKey,
       });
     }
@@ -694,6 +713,10 @@ function findingErrorMessage(code: ReviewSurfaceFindingErrorCode) {
       return 'Every finding must match the active source and revision.';
     case 'file-unavailable':
       return 'Every finding must anchor to a file in the active review surface.';
+    case 'capability-unavailable':
+      return 'The review surface does not expose local finding annotations.';
+    case 'invalid-finding':
+      return 'Every finding must satisfy the complete anchor, content, and provenance schema.';
     case 'invalid-batch-size':
       return `Finding batches must contain between 1 and ${neonReviewFindingLimits.maxApplyBatch} items.`;
     case 'duplicate-finding-id':

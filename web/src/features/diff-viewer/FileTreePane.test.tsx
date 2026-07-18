@@ -125,10 +125,7 @@ describe('FileTreePane review map', () => {
     expect(input).not.toBeNull();
     await act(async () => {
       if (!input) return;
-      input.value = 'src/b';
-      input.dispatchEvent(
-        new Event('input', { bubbles: true, composed: true }),
-      );
+      setInputValue(input, 'src/b');
     });
     expect(onFilterChange).toHaveBeenLastCalledWith('src/b', ['src/b.ts']);
 
@@ -186,6 +183,49 @@ describe('FileTreePane review map', () => {
     expect(decorationText('src/old-a.ts')).toBeUndefined();
   });
 
+  it('filters canonical rows by Neon finding summary without changing Pierre selection', async () => {
+    const onFilterChange =
+      vi.fn<(query: string | null, paths: string[] | null) => void>();
+    const files = reviewFiles();
+    const reviewMap = new Map([
+      [
+        'src/b.ts',
+        reviewEntry({
+          findingCount: 1,
+          findingSummaries: [
+            'Possible authorization bypass in the fallback branch',
+          ],
+          highestFindingSeverity: 'major',
+        }),
+      ],
+    ]);
+
+    await act(async () => {
+      root.render(
+        <FileTreePane
+          files={files}
+          onFilterChange={onFilterChange}
+          onSelectPath={vi.fn<(path: string) => void>()}
+          reviewMapByPath={reviewMap}
+          selectedPath="src/b.ts"
+        />,
+      );
+    });
+    const input = searchInput();
+    await act(async () => {
+      if (!input) return;
+      setInputValue(input, 'authorization bypass');
+    });
+
+    expect(onFilterChange).toHaveBeenLastCalledWith('authorization bypass', [
+      'src/b.ts',
+    ]);
+    expect(treeItem('src/b.ts')).not.toBeNull();
+    expect(treeItem('src/a.ts')).toBeNull();
+    expect(selectedPaths()).toEqual(['src/b.ts']);
+    expect(decorationText('src/b.ts')).toBe('N1 major');
+  });
+
   function treeHost() {
     return container.querySelector('file-tree-container');
   }
@@ -197,7 +237,11 @@ describe('FileTreePane review map', () => {
   }
 
   function searchInput() {
-    return treeHost()?.shadowRoot?.querySelector<HTMLInputElement>('input');
+    return (
+      container.querySelector<HTMLInputElement>('.diff-tree-filter') ??
+      treeHost()?.shadowRoot?.querySelector<HTMLInputElement>('input') ??
+      null
+    );
   }
 
   function selectedPaths() {
@@ -216,6 +260,14 @@ describe('FileTreePane review map', () => {
   }
 });
 
+function setInputValue(input: HTMLInputElement, value: string) {
+  Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    'value',
+  )?.set?.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+}
+
 function reviewFiles(): DiffFilePatch[] {
   return ['src/a.ts', 'src/b.ts'].map((path) => ({
     additions: 1,
@@ -231,6 +283,7 @@ function reviewEntry(
   return {
     draftCount: 0,
     findingCount: 0,
+    findingSummaries: [],
     highestFindingSeverity: null,
     path: 'src/a.ts',
     staleDraftCount: 0,

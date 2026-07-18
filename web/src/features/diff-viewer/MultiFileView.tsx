@@ -18,6 +18,7 @@ import type {
   FileReviewMapEntry,
 } from './types';
 import type { ReviewSourceSnapshot } from '../../../../shared/review-source';
+import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import { reviewSourceDataAttributes } from './review-source';
 import { useReviewSurface } from './use-review-surface';
 
@@ -45,6 +46,11 @@ type MultiFileViewProps = {
   onFileFilterChange?: (query: string | null, paths: string[] | null) => void;
   reviewOrder?: readonly string[];
   selectedAnnotationId?: string | null;
+  onReviewSurfaceFindingsChange?: (
+    surfaceId: string,
+    findings: NeonReviewFinding[],
+  ) => void;
+  onReviewSurfaceIdChange?: (surfaceId: string | null) => void;
 };
 
 export function MultiFileView({
@@ -69,6 +75,8 @@ export function MultiFileView({
   onFileFilterChange,
   reviewOrder,
   selectedAnnotationId,
+  onReviewSurfaceFindingsChange,
+  onReviewSurfaceIdChange,
   title,
   tone = 'primary',
 }: MultiFileViewProps) {
@@ -93,6 +101,8 @@ export function MultiFileView({
           activePath: selectedFile?.path ?? null,
           fileFilter: fileFilter ?? null,
           onNavigatePath: selectPath,
+          onFindingsChange: onReviewSurfaceFindingsChange,
+          onSurfaceIdChange: onReviewSurfaceIdChange,
           reviewOrder,
           selectedAnnotationId: selectedAnnotationId ?? null,
           selection: selectedLines,

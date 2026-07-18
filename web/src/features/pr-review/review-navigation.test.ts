@@ -9,6 +9,7 @@ import type {
   PrReviewReportOnlyFinding,
 } from '../../api';
 import type { DiffFilePatch } from '../diff-viewer/types';
+import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import {
   createImperativeReviewPathJump,
   createPrReviewNavigationData,
@@ -153,6 +154,55 @@ describe('focused PR review navigation wiring', () => {
         side: 'deletions',
         end: 8,
         endSide: 'additions',
+      },
+    });
+  });
+
+  it('publishes one cross-file typed finding target for tree, diff, inline annotation, inspector, and surface state', () => {
+    const typedFinding = neonFinding();
+    const data = createPrReviewNavigationData({
+      draft: null,
+      files: reviewFiles(),
+      findings: [finding()],
+      neonFindings: [typedFinding],
+      neonFindingResolutions: new Map([
+        [
+          typedFinding.id,
+          {
+            state: 'anchored' as const,
+            lineNumber: 4,
+            side: 'additions' as const,
+            selection: {
+              side: 'additions',
+              start: 4,
+              end: 5,
+            } as never,
+          },
+        ],
+      ]),
+      staleCommentIds: new Set(),
+      threads: [],
+    });
+    const targets = reviewCursorTargets(data.model, 'finding');
+    const result = moveReviewCursorFromPath(
+      targets,
+      targets[0]!.key,
+      targets[0]!.path,
+      targets[0]!.orderIndex,
+      'next',
+    );
+
+    expect(result.target).toMatchObject({
+      id: 'typed-finding',
+      path: 'src/c.ts',
+      severity: 'critical',
+    });
+    expect(reviewNavigationPublication(result.target!, data.anchors)).toEqual({
+      activePath: 'src/c.ts',
+      annotationId: 'typed-finding',
+      selection: {
+        path: 'src/c.ts',
+        selection: { side: 'additions', start: 4, end: 5 },
       },
     });
   });
@@ -632,6 +682,39 @@ function finding(): PrReviewReportOnlyFinding {
     summary: 'Unsafe fallback',
     suggestedFix: 'Return an explicit result.',
     reason: 'unanchorable',
+  };
+}
+
+function neonFinding(): NeonReviewFinding {
+  return {
+    schemaVersion: 1,
+    id: 'typed-finding',
+    surfaceId: 'surface-a',
+    sourceId: 'github-pr:example/repo#42',
+    revisionKey: 'git-commit::head-sha',
+    file: 'src/c.ts',
+    anchor: {
+      kind: 'line-range',
+      side: 'additions',
+      startLine: 4,
+      endLine: 5,
+    },
+    title: 'Critical finding',
+    explanation: 'The fallback crosses a trust boundary.',
+    severity: 'critical',
+    confidence: 'high',
+    suggestedAction: 'Reject the untrusted input.',
+    provenance: {
+      authorRole: 'display-assistant',
+      model: 'openai/gpt-5',
+      workflowRunId: 'run-42',
+      createdAt: '2026-07-18T12:00:00.000Z',
+    },
+    lifecycle: {
+      state: 'active',
+      changedAt: '2026-07-18T12:00:00.000Z',
+      reason: null,
+    },
   };
 }
 

@@ -15,6 +15,8 @@ import {
   type ReviewNavigationModel,
 } from '../../../../shared/review-navigation';
 import type { DiffFilePatch } from '../diff-viewer/types';
+import type { NeonReviewFinding } from '../../../../shared/review-finding';
+import type { NeonFindingAnchorResolution } from './review-findings';
 import { latestThreadComment, threadPath } from './review-ui-helpers';
 
 export type ReviewNavigationAnchor = {
@@ -84,12 +86,16 @@ export function createPrReviewNavigationData({
   draft,
   files,
   findings,
+  neonFindingResolutions = new Map(),
+  neonFindings = [],
   staleCommentIds,
   threads,
 }: {
   draft: GitHubPrReviewDraft | null;
   files: DiffFilePatch[];
   findings: PrReviewReportOnlyFinding[];
+  neonFindingResolutions?: ReadonlyMap<string, NeonFindingAnchorResolution>;
+  neonFindings?: readonly NeonReviewFinding[];
   staleCommentIds: ReadonlySet<string>;
   threads: GitHubPullRequestReviewThread[];
 }): PrReviewNavigationData {
@@ -160,6 +166,38 @@ export function createPrReviewNavigationData({
     anchors.set(navigationTargetKey(item.kind, item.id), {
       annotationId: item.id,
       selection: null,
+    });
+  }
+  for (const finding of neonFindings) {
+    if (
+      finding.lifecycle.state !== 'active' &&
+      finding.lifecycle.state !== 'stale'
+    ) {
+      continue;
+    }
+    const resolution = neonFindingResolutions.get(finding.id);
+    const item = {
+      id: finding.id,
+      kind: 'finding' as const,
+      line:
+        resolution?.state === 'anchored'
+          ? resolution.lineNumber
+          : finding.lifecycle.state === 'active' &&
+              finding.anchor.kind === 'line-range'
+            ? finding.anchor.endLine
+            : null,
+      path: finding.file,
+      severity: finding.severity,
+      stale: finding.lifecycle.state === 'stale',
+      summary: `${finding.title}: ${finding.explanation}`,
+    };
+    items.push(item);
+    anchors.set(navigationTargetKey(item.kind, item.id), {
+      annotationId: finding.id,
+      selection:
+        finding.lifecycle.state === 'active' && resolution?.state === 'anchored'
+          ? resolution.selection
+          : null,
     });
   }
 

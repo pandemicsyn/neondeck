@@ -8,6 +8,7 @@ import type {
   FileReviewMapEntry,
 } from '../diff-viewer/types';
 import type { ReviewSourceSnapshot } from '../../../../shared/review-source';
+import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import {
   PrReviewFindingsSidebar,
   type PrReviewFindingsSidebarProps,
@@ -24,6 +25,8 @@ export function PrReviewDiffPane({
   isStandalone,
   fileFilter,
   onFileFilterChange,
+  onReviewSurfaceFindingsChange,
+  onReviewSurfaceIdChange,
   onActivePathChange,
   onSelectedLinesChange,
   patchError,
@@ -45,6 +48,11 @@ export function PrReviewDiffPane({
   isStandalone: boolean;
   fileFilter: string | null;
   onFileFilterChange: (query: string | null, paths: string[] | null) => void;
+  onReviewSurfaceFindingsChange: (
+    surfaceId: string,
+    findings: NeonReviewFinding[],
+  ) => void;
+  onReviewSurfaceIdChange: (surfaceId: string | null) => void;
   onActivePathChange: (path: string) => void;
   onSelectedLinesChange: (selection: SelectedLineRange | null) => void;
   patchError: string | null;
@@ -87,6 +95,8 @@ export function PrReviewDiffPane({
         isLoadingPatch={isLoadingPatch}
         onActivePathChange={onActivePathChange}
         onFileFilterChange={onFileFilterChange}
+        onReviewSurfaceFindingsChange={onReviewSurfaceFindingsChange}
+        onReviewSurfaceIdChange={onReviewSurfaceIdChange}
         onSelectedLinesChange={onSelectedLinesChange}
         patchError={patchError}
         renderAnnotation={renderAnnotation}
