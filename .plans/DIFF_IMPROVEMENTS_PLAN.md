@@ -1,8 +1,10 @@
 # Diff Improvements Plan
 
-Status: active; Phase A is complete, and Phase B guided review is next
+Status: active; Phase A implementation is complete in PR #143, Phase B is paused, and the specialized PR review performance workstream has resumed
 
-Progress note (2026-07-18): the specialized large-PR work now has real registered-PR measurements, stable review-thread identity, bounded local metadata reuse, active-patch priority, and a passing first-patch browser budget. The one-time cold-fetch decision remains deferred in `.plans/PR_REVIEW_PERF_PLAN.md`; it does not block Phase B guided-review work.
+Progress note (2026-07-18): the specialized large-PR work now has real registered-PR measurements, stable review-thread identity, bounded local metadata reuse, active-patch priority, and a passing first-patch browser budget. Reconciliation after Phase A found that production tree visibility, review-thread visibility, and the one-time cold-object fetch still miss their retained budgets in `.plans/PR_REVIEW_PERF_PLAN.md`.
+
+Sequencing correction (2026-07-17): retain the completed Phase A foundation and PR #143, but do not advance into Phase B yet. Phase A was selected while the specialized performance plan still had partial acceptance; that ordering change was not an implicit deferral of the remaining measured misses. Resume the real registered-PR performance work first, beginning with review-thread latency, then reconcile tree visibility and the cold-fetch decision. Phase B remains paused until those items pass or are explicitly deferred with recorded rationale.
 
 Contract note (2026-07-18): `shared/review-source.ts` now defines the versioned source, revision, repository, capability, ordered-file, and explicit patch-state vocabulary used by every current web diff surface. GitHub PRs use head SHA identity; prepared and Kilo/repo worktree views receive content-addressed changed-path fingerprints from metadata reads; skill patches and historical repo-edit events use retained content hashes. Missing identities remain explicitly unavailable rather than falling back to timestamps. The current viewers expose source/revision metadata on their mounted roots, ready for the Phase A registration and navigation event layer. On a synthetic 305-file changed worktree, metadata plus revision identity measured 335.5 ms median versus 243.0 ms for metadata alone (92.5 ms added), within the 500 ms warm-tree budget.
 
