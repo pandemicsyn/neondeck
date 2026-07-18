@@ -6,6 +6,7 @@ export type ReviewNavigationFile = {
 };
 
 type ReviewNavigationItemBase = {
+  /** Globally stable within its target kind. Hunk ids are file-local instead. */
   id: string;
   path: string;
   summary?: string | null;
@@ -14,6 +15,8 @@ type ReviewNavigationItemBase = {
 
 export type ReviewHunkNavigationItem = ReviewNavigationItemBase & {
   kind: 'hunk';
+  /** Hunk ids need only be unique within `path`; normalized keys include both. */
+  id: string;
   oldStart?: number | null;
   newStart?: number | null;
 };
@@ -58,7 +61,8 @@ export type ReviewNavigationTarget = {
   path: string;
   requestedPath: string;
   previousPath: string | null;
-  fileIndex: number;
+  /** File position in the order used to produce this target projection. */
+  orderIndex: number;
   position: number;
   summary: string | null;
   severity: ReviewFindingSeverity | null;
@@ -132,12 +136,12 @@ export function createReviewNavigationModel(
   );
   const seenKeys = new Set<string>();
   const targets: ReviewNavigationTarget[] = canonicalFilePaths.map(
-    (path, fileIndex) => ({
-      fileIndex,
+    (path, orderIndex) => ({
       id: path,
       key: targetKey('file', path),
       kind: 'file',
       missing: false,
+      orderIndex,
       path,
       position: 0,
       previousPath: previousPathByPath.get(path) ?? null,
@@ -152,14 +156,14 @@ export function createReviewNavigationModel(
   const unavailableTargets: ReviewNavigationTarget[] = [];
   for (const [inputIndex, item] of (input.items ?? []).entries()) {
     if (item.kind === 'review-thread' && item.resolved) continue;
-    const key = targetKey(item.kind, item.id);
-    if (seenKeys.has(key)) continue;
-    seenKeys.add(key);
     const resolvedPath = resolvePath(item.path, fileIndexByPath, aliasToPath);
     const missing = resolvedPath === null;
     const path = resolvedPath ?? item.path;
+    const key = navigationItemKey(item, path);
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
     const target: ReviewNavigationTarget = {
-      fileIndex: resolvedPath
+      orderIndex: resolvedPath
         ? (fileIndexByPath.get(resolvedPath) ?? canonicalFilePaths.length)
         : canonicalFilePaths.length,
       id: item.id,
@@ -180,7 +184,7 @@ export function createReviewNavigationModel(
     if (missing) unavailableTargets.push(target);
   }
 
-  targets.sort(targetComparator(fileIndexByPath));
+  targets.sort(targetComparator);
   const attentionTargets = targets
     .filter(
       (
@@ -242,7 +246,11 @@ export function reviewCursorTargets(
   const filter = options.filter;
   return source
     .filter((target) => matchesFilter(target, kind, filter))
-    .sort(targetComparator(fileIndexByPath));
+    .map((target) => ({
+      ...target,
+      orderIndex: fileIndexByPath.get(target.path) ?? fileOrder.length,
+    }))
+    .sort(targetComparator);
 }
 
 export function moveReviewCursor(
@@ -377,19 +385,20 @@ function targetKey(kind: ReviewNavigationTargetKind, id: string) {
   return `${kind}:${id}`;
 }
 
-function targetComparator(fileIndexByPath: ReadonlyMap<string, number>) {
-  return (left: ReviewCursorTarget, right: ReviewCursorTarget) => {
-    const leftFileIndex =
-      fileIndexByPath.get(left.path) ?? Number.MAX_SAFE_INTEGER;
-    const rightFileIndex =
-      fileIndexByPath.get(right.path) ?? Number.MAX_SAFE_INTEGER;
-    return (
-      leftFileIndex - rightFileIndex ||
-      left.position - right.position ||
-      cursorKindOrder(left) - cursorKindOrder(right) ||
-      left.key.localeCompare(right.key)
-    );
-  };
+function navigationItemKey(item: ReviewNavigationItem, resolvedPath: string) {
+  if (item.kind === 'hunk') {
+    return `hunk:${JSON.stringify([resolvedPath, item.id])}`;
+  }
+  return targetKey(item.kind, item.id);
+}
+
+function targetComparator(left: ReviewCursorTarget, right: ReviewCursorTarget) {
+  return (
+    left.orderIndex - right.orderIndex ||
+    left.position - right.position ||
+    cursorKindOrder(left) - cursorKindOrder(right) ||
+    left.key.localeCompare(right.key)
+  );
 }
 
 function cursorKindOrder(target: ReviewCursorTarget) {
@@ -451,8 +460,8 @@ function nearestTargetIndex(
   let bestScore: readonly number[] | null = null;
   for (const [index, target] of targets.entries()) {
     const sameFile = targetMatchesPath(target, anchor.path) ? 0 : 1;
-    const fileDistance = Math.abs(target.fileIndex - anchor.fileIndex);
-    const preferFollowingFile = target.fileIndex >= anchor.fileIndex ? 0 : 1;
+    const fileDistance = Math.abs(target.orderIndex - anchor.orderIndex);
+    const preferFollowingFile = target.orderIndex >= anchor.orderIndex ? 0 : 1;
     const positionDistance = Math.abs(target.position - anchor.position);
     const preferFollowingPosition = target.position >= anchor.position ? 0 : 1;
     const score = [

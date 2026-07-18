@@ -74,6 +74,38 @@ describe('review navigation model', () => {
     ]);
   });
 
+  it('scopes file-local hunk ids without ambiguous key collisions', () => {
+    const model = createReviewNavigationModel({
+      files: [{ path: 'src/a:b.ts' }, { path: 'src/a.ts' }],
+      items: [
+        {
+          kind: 'hunk',
+          id: 'shared:hunk',
+          path: 'src/a:b.ts',
+          newStart: 1,
+        },
+        {
+          kind: 'hunk',
+          id: 'shared:hunk',
+          path: 'src/a.ts',
+          newStart: 2,
+        },
+      ],
+    });
+    const targets = reviewCursorTargets(model, 'hunk');
+
+    expect(targets).toHaveLength(2);
+    expect(targets.map((target) => target.id)).toEqual([
+      'shared:hunk',
+      'shared:hunk',
+    ]);
+    expect(new Set(targets.map((target) => target.key)).size).toBe(2);
+    expect(targets.map((target) => target.key)).toEqual([
+      'hunk:["src/a:b.ts","shared:hunk"]',
+      'hunk:["src/a.ts","shared:hunk"]',
+    ]);
+  });
+
   it('resolves targets on previous paths to renamed files', () => {
     const model = createReviewNavigationModel({
       files: [{ path: 'src/new.ts', previousPath: 'src/old.ts' }],
@@ -284,6 +316,48 @@ describe('review navigation model', () => {
     ).toMatchObject({
       resolution: 'nearest',
       target: { path: 'src/c.ts' },
+    });
+  });
+
+  it('falls forward in guided order when the active target is removed', () => {
+    const before = createReviewNavigationModel({
+      files: [{ path: 'src/a.ts' }, { path: 'src/b.ts' }, { path: 'src/c.ts' }],
+      guidedOrder: ['src/c.ts', 'src/b.ts', 'src/a.ts'],
+      items: [
+        { kind: 'local-draft', id: 'draft-a', path: 'src/a.ts', line: 1 },
+        { kind: 'local-draft', id: 'draft-b', path: 'src/b.ts', line: 1 },
+        { kind: 'local-draft', id: 'draft-c', path: 'src/c.ts', line: 1 },
+      ],
+    });
+    const after = createReviewNavigationModel({
+      files: [{ path: 'src/a.ts' }, { path: 'src/c.ts' }],
+      guidedOrder: ['src/c.ts', 'src/a.ts'],
+      items: [
+        { kind: 'local-draft', id: 'draft-a', path: 'src/a.ts', line: 1 },
+        { kind: 'local-draft', id: 'draft-c', path: 'src/c.ts', line: 1 },
+      ],
+    });
+    const previousTargets = reviewCursorTargets(before, 'local-draft', {
+      order: 'guided',
+    });
+    const nextTargets = reviewCursorTargets(after, 'local-draft', {
+      order: 'guided',
+    });
+
+    expect(previousTargets.map((target) => target.path)).toEqual([
+      'src/c.ts',
+      'src/b.ts',
+      'src/a.ts',
+    ]);
+    expect(
+      reconcileReviewCursor(
+        previousTargets,
+        nextTargets,
+        'local-draft:draft-b',
+      ),
+    ).toMatchObject({
+      resolution: 'nearest',
+      target: { id: 'draft-a', orderIndex: 1, path: 'src/a.ts' },
     });
   });
 });
