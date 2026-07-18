@@ -79,6 +79,8 @@ function FileTreePaneModel({
 }) {
   const reviewMapRef = useRef(reviewMapByPath);
   reviewMapRef.current = reviewMapByPath;
+  const previousPathAliasRef = useRef<ReadonlyMap<string, string>>(new Map());
+  const mountedPreviousPathAliases = useRef<Set<string>>(new Set());
   const filePathSet = useMemo(() => new Set(paths), [paths]);
   const { model } = useFileTree({
     flattenEmptyDirectories: true,
@@ -89,13 +91,22 @@ function FileTreePaneModel({
     onSelectionChange(selectedPaths) {
       const nextPath = [...selectedPaths]
         .reverse()
+        .map((path) => previousPathAliasRef.current.get(path) ?? path)
         .find((path) => filePathSet.has(path));
       if (nextPath) onSelectPath(nextPath);
     },
     preparedInput,
     renderRowDecoration({ item }) {
       if (item.kind !== 'file') return null;
-      const entry = reviewMapRef.current?.get(item.path);
+      const currentPath =
+        previousPathAliasRef.current.get(item.path) ?? item.path;
+      if (currentPath !== item.path) {
+        return {
+          text: `renamed → ${currentPath}`,
+          title: `${item.path} was renamed to ${currentPath}.`,
+        };
+      }
+      const entry = reviewMapRef.current?.get(currentPath);
       return entry && fileReviewMapHasStatus(entry)
         ? {
             text: fileReviewMapDecoration(entry),
@@ -108,6 +119,11 @@ function FileTreePaneModel({
     unsafeCSS: treeUnsafeCss,
   });
   const search = useFileTreeSearch(model);
+  const previousPathAliases = useMemo(
+    () => previousPathAliasesForSearch(files, search.value, filePathSet),
+    [filePathSet, files, search.value],
+  );
+  previousPathAliasRef.current = previousPathAliases;
   const appliedFilterQuery = useRef<{
     initialized: boolean;
     value: string | null | undefined;
@@ -116,6 +132,17 @@ function FileTreePaneModel({
     active: boolean;
     value: string | null;
   }>({ active: false, value: null });
+
+  useEffect(() => {
+    const desiredAliases = new Set(previousPathAliases.keys());
+    for (const path of mountedPreviousPathAliases.current) {
+      if (!desiredAliases.has(path)) model.remove(path);
+    }
+    for (const path of desiredAliases) {
+      if (!mountedPreviousPathAliases.current.has(path)) model.add(path);
+    }
+    mountedPreviousPathAliases.current = desiredAliases;
+  }, [model, previousPathAliases]);
 
   useEffect(() => {
     if (
@@ -147,7 +174,9 @@ function FileTreePaneModel({
     }
     const normalized = query.toLocaleLowerCase();
     const matchingPaths = new Set(
-      search.matchingPaths.filter((path) => filePathSet.has(path)),
+      search.matchingPaths
+        .map((path) => previousPathAliases.get(path) ?? path)
+        .filter((path) => filePathSet.has(path)),
     );
     for (const file of files) {
       if (file.previousPath?.toLocaleLowerCase().includes(normalized)) {
@@ -164,19 +193,26 @@ function FileTreePaneModel({
     filterQuery,
     onFilterChange,
     paths,
+    previousPathAliases,
     search.matchingPaths,
     search.value,
   ]);
 
   useEffect(() => {
     if (!selectedPath) return;
+    const visibleSelectedPath =
+      [...previousPathAliases].find(([, path]) => path === selectedPath)?.[0] ??
+      selectedPath;
     for (const path of model.getSelectedPaths()) {
-      if (path !== selectedPath) model.getItem(path)?.deselect();
+      if (path !== visibleSelectedPath) model.getItem(path)?.deselect();
     }
-    const item = model.getItem(selectedPath);
+    const item = model.getItem(visibleSelectedPath);
     if (!item?.isSelected()) item?.select();
-    model.scrollToPath(selectedPath, { focus: false, offset: 'nearest' });
-  }, [model, selectedPath]);
+    model.scrollToPath(visibleSelectedPath, {
+      focus: false,
+      offset: 'nearest',
+    });
+  }, [model, previousPathAliases, selectedPath]);
 
   useEffect(() => {
     model.setGitStatus(gitStatus);
@@ -303,6 +339,30 @@ function gitStatusEntry(file: DiffFilePatch): GitStatusEntry | null {
   }
   if (status) return { path: file.path, status: 'modified' };
   return null;
+}
+
+function previousPathAliasesForSearch(
+  files: readonly DiffFilePatch[],
+  query: string,
+  currentPaths: ReadonlySet<string>,
+) {
+  const normalized = query.trim().toLocaleLowerCase();
+  const aliases = new Map<string, string>();
+  if (!normalized) return aliases;
+  for (const file of files) {
+    const previousPath = file.previousPath?.trim();
+    if (
+      !previousPath ||
+      previousPath === file.path ||
+      currentPaths.has(previousPath) ||
+      file.path.toLocaleLowerCase().includes(normalized) ||
+      !previousPath.toLocaleLowerCase().includes(normalized)
+    ) {
+      continue;
+    }
+    aliases.set(previousPath, file.path);
+  }
+  return aliases;
 }
 
 const treeUnsafeCss = `

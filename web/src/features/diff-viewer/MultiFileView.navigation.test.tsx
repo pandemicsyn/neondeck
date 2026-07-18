@@ -74,6 +74,11 @@ describe('MultiFileView navigation synchronization', () => {
 
   it('keeps tree, diff anchor, inspector, and review-surface snapshot on one active target', () => {
     const onActivePathChange = vi.fn<(path: string) => void>();
+    const initialSelection = {
+      side: 'additions',
+      start: 3,
+      end: 3,
+    } as SelectedLineRange;
     const selection = {
       side: 'additions',
       start: 8,
@@ -84,13 +89,37 @@ describe('MultiFileView navigation synchronization', () => {
     act(() =>
       root.render(
         <MultiFileView
+          activePath="src/a.ts"
+          fileFilter="src/"
+          files={files}
+          inspector={<p>Inspector target: draft-stable on src/a.ts</p>}
+          onActivePathChange={onActivePathChange}
+          reviewOrder={['src/b.ts', 'src/a.ts']}
+          selectedAnnotationId="draft-stable"
+          selectedLines={initialSelection}
+          source={reviewSource(files)}
+          title="Navigation synchronization"
+        />,
+      ),
+    );
+
+    expect(capture.tree).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selectedPath: 'src/a.ts' }),
+    );
+    expect(capture.diff).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selectedLines: initialSelection }),
+    );
+
+    act(() =>
+      root.render(
+        <MultiFileView
           activePath="src/b.ts"
           fileFilter="src/b"
           files={files}
-          inspector={<p>Inspector target: draft-b</p>}
+          inspector={<p>Inspector target: draft-stable on src/b.ts</p>}
           onActivePathChange={onActivePathChange}
           reviewOrder={['src/b.ts', 'src/a.ts']}
-          selectedAnnotationId="draft-b"
+          selectedAnnotationId="draft-stable"
           selectedLines={selection}
           source={reviewSource(files)}
           title="Navigation synchronization"
@@ -115,11 +144,13 @@ describe('MultiFileView navigation synchronization', () => {
         activePath: 'src/b.ts',
         fileFilter: 'src/b',
         reviewOrder: ['src/b.ts', 'src/a.ts'],
-        selectedAnnotationId: 'draft-b',
+        selectedAnnotationId: 'draft-stable',
         selection,
       }),
     );
-    expect(container.textContent).toContain('Inspector target: draft-b');
+    expect(container.textContent).toContain(
+      'Inspector target: draft-stable on src/b.ts',
+    );
     expect(
       container
         .querySelector('.diff-multi-file')

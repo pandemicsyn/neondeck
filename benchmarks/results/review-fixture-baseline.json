@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-07-18T16:29:14.688Z",
+  "generatedAt": "2026-07-18T04:23:21.378Z",
   "environment": {
     "platform": "darwin",
     "arch": "arm64",
@@ -22,27 +22,27 @@
       "draftCount": 1,
       "findingCount": 0,
       "treeVisibleMs": {
-        "median": 83.8,
-        "min": 77.9,
-        "max": 85,
+        "median": 73.2,
+        "min": 63.1,
+        "max": 76,
         "samples": [
-          77.9,
-          84.2,
-          85,
-          81.7,
-          83.8
+          76,
+          72.2,
+          63.1,
+          73.2,
+          74.2
         ]
       },
       "firstPatchMs": {
-        "median": 306.3,
-        "min": 303.6,
-        "max": 324.3,
+        "median": 271,
+        "min": 259.2,
+        "max": 282.3,
         "samples": [
-          303.6,
-          309.9,
-          324.3,
-          306.3,
-          305.5
+          271,
+          259.2,
+          270.6,
+          282.3,
+          281.6
         ]
       },
       "threadsVisibleMs": {
@@ -71,27 +71,27 @@
       "draftCount": 4,
       "findingCount": 5,
       "treeVisibleMs": {
-        "median": 82,
-        "min": 80.2,
-        "max": 84,
+        "median": 73.1,
+        "min": 72.3,
+        "max": 74,
         "samples": [
-          82.3,
-          84,
-          82,
-          80.2,
-          81.2
+          72.5,
+          73.1,
+          73.2,
+          72.3,
+          74
         ]
       },
       "firstPatchMs": {
-        "median": 309.4,
-        "min": 303.5,
-        "max": 318.7,
+        "median": 274.5,
+        "min": 263.3,
+        "max": 279.3,
         "samples": [
-          318.7,
-          316.7,
-          309.4,
-          307.6,
-          303.5
+          274.5,
+          279.3,
+          263.3,
+          275.5,
+          272.9
         ]
       },
       "threadsVisibleMs": {
@@ -120,27 +120,27 @@
       "draftCount": 12,
       "findingCount": 16,
       "treeVisibleMs": {
-        "median": 81.1,
-        "min": 80.8,
-        "max": 82.9,
+        "median": 75.6,
+        "min": 74.2,
+        "max": 78.6,
         "samples": [
-          80.8,
-          82.9,
-          81,
-          82.2,
-          81.1
+          74.2,
+          75.8,
+          75.1,
+          75.6,
+          78.6
         ]
       },
       "firstPatchMs": {
-        "median": 308.7,
-        "min": 301.4,
-        "max": 315.8,
+        "median": 272.4,
+        "min": 269.7,
+        "max": 275,
         "samples": [
-          308.7,
-          315.8,
-          304,
-          301.4,
-          311.6
+          272.4,
+          272.5,
+          272,
+          275,
+          269.7
         ]
       },
       "threadsVisibleMs": {

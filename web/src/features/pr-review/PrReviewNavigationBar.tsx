@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   ReviewCursorDirection,
   ReviewCursorKind,
@@ -47,6 +47,25 @@ export function PrReviewNavigationBar({
   const [helpOpen, setHelpOpen] = useState(false);
   const helpButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const helpInvokerRef = useRef<HTMLElement | null>(null);
+
+  const openHelp = useCallback((invoker: HTMLElement | null) => {
+    helpInvokerRef.current = invoker;
+    setHelpOpen(true);
+  }, []);
+
+  const closeHelp = useCallback(() => {
+    setHelpOpen(false);
+    window.requestAnimationFrame(() => {
+      const invoker = helpInvokerRef.current;
+      helpInvokerRef.current = null;
+      if (invoker?.isConnected) {
+        invoker.focus();
+        return;
+      }
+      helpButtonRef.current?.focus();
+    });
+  }, []);
 
   useEffect(() => {
     if (helpOpen) closeButtonRef.current?.focus();
@@ -57,7 +76,8 @@ export function PrReviewNavigationBar({
       if (shouldSuppressReviewShortcut(event)) return;
       if (event.key === '?') {
         event.preventDefault();
-        setHelpOpen(true);
+        const activeElement = deepActiveElement();
+        openHelp(activeElement instanceof HTMLElement ? activeElement : null);
         return;
       }
       if (event.key !== '[' && event.key !== ']') return;
@@ -66,12 +86,7 @@ export function PrReviewNavigationBar({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onMove]);
-
-  const closeHelp = () => {
-    setHelpOpen(false);
-    window.requestAnimationFrame(() => helpButtonRef.current?.focus());
-  };
+  }, [onMove, openHelp]);
   const positionText = navigationPositionText({
     boundary,
     canMove,
@@ -140,7 +155,7 @@ export function PrReviewNavigationBar({
         <button
           aria-keyshortcuts="?"
           className="pr-review-navigation-help"
-          onClick={() => setHelpOpen(true)}
+          onClick={(event) => openHelp(event.currentTarget)}
           ref={helpButtonRef}
           title="Review navigation keyboard help (?)"
           type="button"

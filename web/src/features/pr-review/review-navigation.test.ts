@@ -15,6 +15,9 @@ import {
   resolveHunkTraversal,
   reviewNavigationAnchor,
   reviewNavigationAnnouncement,
+  reviewNavigationPublication,
+  reviewNavigationPublicationMatches,
+  selectedReviewContext,
   type ReviewPatchNavigationState,
 } from './review-navigation';
 
@@ -62,6 +65,70 @@ describe('focused PR review navigation wiring', () => {
     expect(reviewNavigationAnnouncement(draftTarget, 0, 1)).toBe(
       'src/a.ts, local draft, 1 of 1, stale.',
     );
+    const findingTarget = reviewCursorTargets(data.model, 'finding')[0]!;
+    expect(reviewNavigationAnchor(findingTarget, data.anchors)).toEqual({
+      annotationId: 'finding-a',
+      selection: null,
+    });
+  });
+
+  it('preserves multi-line and cross-side draft ranges', () => {
+    const draft = reviewDraft();
+    draft.comments[0] = {
+      ...draft.comments[0]!,
+      line: 8,
+      side: 'RIGHT',
+      startLine: 4,
+      startSide: 'LEFT',
+    };
+    const data = createPrReviewNavigationData({
+      draft,
+      files: reviewFiles(),
+      findings: [],
+      staleCommentIds: new Set(),
+      threads: [],
+    });
+
+    expect(
+      reviewNavigationAnchor(
+        reviewCursorTargets(data.model, 'local-draft')[0]!,
+        data.anchors,
+      ),
+    ).toEqual({
+      annotationId: 'draft-a',
+      selection: {
+        start: 4,
+        side: 'deletions',
+        end: 8,
+        endSide: 'additions',
+      },
+    });
+  });
+
+  it('uses the deletion side for deletion-only hunk headers', () => {
+    const files: DiffFilePatch[] = [
+      {
+        additions: 0,
+        deletions: 2,
+        path: 'src/deleted-lines.ts',
+        status: 'modified',
+        patch: '@@ -20,2 +19,0 @@\n-old\n-lines',
+      },
+    ];
+    const data = createPrReviewNavigationData({
+      draft: null,
+      files,
+      findings: [],
+      staleCommentIds: new Set(),
+      threads: [],
+    });
+
+    expect(
+      reviewNavigationAnchor(
+        reviewCursorTargets(data.model, 'hunk')[0]!,
+        data.anchors,
+      ).selection,
+    ).toEqual({ start: 20, end: 20, side: 'deletions' });
   });
 
   it('uses the active path for initial traversal and preserves cursor boundaries', () => {
@@ -152,6 +219,30 @@ describe('focused PR review navigation wiring', () => {
         targets,
       }),
     ).toEqual({ boundary: 'end', kind: 'boundary' });
+  });
+
+  it('starts filtered hunk traversal at the directional edge when the active path is filtered out', () => {
+    const files = reviewFiles().slice(1);
+    const data = createPrReviewNavigationData({
+      draft: null,
+      files,
+      findings: [],
+      staleCommentIds: new Set(),
+      threads: [],
+    });
+    expect(
+      resolveHunkTraversal({
+        activePath: 'src/a.ts',
+        availability: patchStates({
+          'src/b.ts': 'unloaded',
+          'src/c.ts': 'loaded',
+        }),
+        currentKey: null,
+        direction: 'next',
+        files,
+        targets: reviewCursorTargets(data.model, 'hunk'),
+      }),
+    ).toEqual({ kind: 'load', path: 'src/b.ts' });
   });
 
   it('preserves a filtered target and deterministically falls forward when it disappears', () => {
@@ -245,6 +336,117 @@ describe('focused PR review navigation wiring', () => {
     ).toMatchObject({
       resolution: 'nearest',
       target: { id: 'finding-a', path: 'src/b.ts' },
+    });
+  });
+
+  it('refreshes the published path and anchor when an exact stable target moves', () => {
+    const before = createPrReviewNavigationData({
+      draft: reviewDraft(),
+      files: reviewFiles(),
+      findings: [],
+      staleCommentIds: new Set(),
+      threads: [],
+    });
+    const movedDraft = reviewDraft();
+    movedDraft.comments[0] = {
+      ...movedDraft.comments[0]!,
+      path: 'src/c.ts',
+      line: 12,
+    };
+    const after = createPrReviewNavigationData({
+      draft: movedDraft,
+      files: reviewFiles(),
+      findings: [],
+      staleCommentIds: new Set(),
+      threads: [],
+    });
+    const oldTarget = reviewCursorTargets(before.model, 'local-draft')[0]!;
+    const nextTargets = reviewCursorTargets(after.model, 'local-draft');
+    const reconciled = reconcileReviewCursor(
+      reviewCursorTargets(before.model, 'local-draft'),
+      nextTargets,
+      oldTarget.key,
+    );
+    const publication = reviewNavigationPublication(
+      reconciled.target!,
+      after.anchors,
+    );
+
+    expect(reconciled.resolution).toBe('exact');
+    expect(publication).toEqual({
+      activePath: 'src/c.ts',
+      annotationId: 'draft-a',
+      selection: {
+        path: 'src/c.ts',
+        selection: { start: 12, end: 12, side: 'deletions' },
+      },
+    });
+    expect(
+      reviewNavigationPublicationMatches(
+        {
+          activePath: 'src/a.ts',
+          annotationId: 'draft-a',
+          selection: {
+            path: 'src/a.ts',
+            selection: { start: 7, end: 7, side: 'deletions' },
+          },
+        },
+        publication,
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps navigation authoritative over a dirty composer on same-file and cross-file moves', () => {
+    const composer = {
+      annotationId: 'composer-dirty',
+      path: 'src/a.ts',
+      selection: { start: 4, end: 5, side: 'additions' as const },
+    };
+    const sameFileSelection = {
+      path: 'src/a.ts',
+      selection: { start: 20, end: 20, side: 'additions' as const },
+    };
+    expect(
+      selectedReviewContext({
+        activePath: 'src/a.ts',
+        composer,
+        navigationAnnotationId: 'thread-a',
+        navigationSelection: sameFileSelection,
+        navigationTargetSelected: true,
+      }),
+    ).toEqual({
+      selectedAnnotationId: 'thread-a',
+      selectedLines: sameFileSelection.selection,
+    });
+
+    const crossFileSelection = {
+      path: 'src/c.ts',
+      selection: { start: 4, end: 4, side: 'additions' as const },
+    };
+    expect(
+      selectedReviewContext({
+        activePath: 'src/c.ts',
+        composer,
+        navigationAnnotationId: 'thread-c',
+        navigationSelection: crossFileSelection,
+        navigationTargetSelected: true,
+      }),
+    ).toEqual({
+      selectedAnnotationId: 'thread-c',
+      selectedLines: crossFileSelection.selection,
+    });
+
+    expect(
+      selectedReviewContext({
+        activePath: 'src/a.ts',
+        composer,
+        navigationAnnotationId: null,
+        navigationSelection: null,
+        navigationTargetSelected: false,
+      }),
+    ).toEqual({
+      selectedAnnotationId: 'composer-dirty',
+      selectedLines: composer.selection,
     });
   });
 

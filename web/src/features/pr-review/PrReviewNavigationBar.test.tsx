@@ -125,9 +125,12 @@ describe('PR review navigation controls', () => {
   it('opens accessible help from pointer or keyboard, focuses it intentionally, and restores focus', () => {
     renderBar(root, onMove);
     const help = button('Shortcuts');
-    help.focus();
+    const outside = document.createElement('button');
+    outside.textContent = 'Outside invoker';
+    document.body.append(outside);
+    outside.focus();
 
-    act(() => dispatchKey(help, '?', { shiftKey: true }));
+    act(() => dispatchKey(outside, '?', { shiftKey: true }));
     const dialog = container.querySelector<HTMLDialogElement>('dialog')!;
     expect(dialog.getAttribute('aria-modal')).toBe('true');
     expect(dialog.textContent).toContain('Shortcuts are off while a field');
@@ -135,10 +138,16 @@ describe('PR review navigation controls', () => {
 
     act(() => dispatchKey(dialog, 'Escape'));
     expect(container.querySelector('dialog')).toBeNull();
-    expect(document.activeElement).toBe(help);
+    expect(document.activeElement).toBe(outside);
+
+    act(() => dispatchKey(outside, '?', { shiftKey: true }));
+    act(() => button('Close').click());
+    expect(container.querySelector('dialog')).toBeNull();
+    expect(document.activeElement).toBe(outside);
 
     act(() => help.click());
     expect(container.querySelector('dialog')).not.toBeNull();
+    outside.remove();
   });
 
   it('keeps empty and loading states in ordinary text and disables unavailable actions', () => {

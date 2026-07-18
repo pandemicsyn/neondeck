@@ -73,9 +73,12 @@ import {
   createPrReviewNavigationData,
   moveReviewCursorFromPath,
   resolveHunkTraversal,
-  reviewNavigationAnchor,
   reviewNavigationAnnouncement,
   reviewNavigationKindLabel,
+  reviewNavigationPublication,
+  reviewNavigationPublicationMatches,
+  selectedReviewContext,
+  type ReviewNavigationSelection,
   type ReviewPatchNavigationState,
 } from './review-navigation';
 
@@ -101,11 +104,6 @@ type ReplyEditorState = {
 };
 
 type GitHubPrReviewMode = 'embedded' | 'standalone';
-
-type NavigationSelection = {
-  path: string;
-  selection: SelectedLineRange;
-};
 
 type PendingHunkNavigation = {
   direction: ReviewCursorDirection;
@@ -169,7 +167,7 @@ export function GitHubPrReview({
     null,
   );
   const [navigationSelection, setNavigationSelection] =
-    useState<NavigationSelection | null>(null);
+    useState<ReviewNavigationSelection | null>(null);
   const [navigationAnnotationId, setNavigationAnnotationId] = useState<
     string | null
   >(null);
@@ -360,6 +358,19 @@ export function GitHubPrReview({
   const selectedNavigationTarget =
     navigationTargets.find((target) => target.key === navigationTargetKey) ??
     null;
+  const selectedContext = selectedReviewContext({
+    activePath,
+    composer: composer
+      ? {
+          annotationId: composer.annotation.metadata.id,
+          path: composer.path,
+          selection: composer.selection,
+        }
+      : null,
+    navigationAnnotationId,
+    navigationSelection,
+    navigationTargetSelected: navigationTargetKey !== null,
+  });
   const navigationCurrentIndex = selectedNavigationTarget
     ? navigationTargets.indexOf(selectedNavigationTarget)
     : -1;
@@ -454,16 +465,15 @@ export function GitHubPrReview({
       targets: readonly ReviewCursorTarget[],
       status?: string | null,
     ) => {
-      const anchor = reviewNavigationAnchor(target, navigationData.anchors);
-      const index = targets.findIndex((item) => item.key === target.key);
-      setActivePath(target.path);
-      setNavigationTargetKey(target.key);
-      setNavigationSelection(
-        anchor.selection
-          ? { path: target.path, selection: anchor.selection }
-          : null,
+      const publication = reviewNavigationPublication(
+        target,
+        navigationData.anchors,
       );
-      setNavigationAnnotationId(anchor.annotationId);
+      const index = targets.findIndex((item) => item.key === target.key);
+      setActivePath(publication.activePath);
+      setNavigationTargetKey(target.key);
+      setNavigationSelection(publication.selection);
+      setNavigationAnnotationId(publication.annotationId);
       setNavigationBoundary(null);
       setNavigationStatus(status ?? null);
       setNavigationAnnouncement(
@@ -630,7 +640,30 @@ export function GitHubPrReview({
       navigationTargets,
       navigationTargetKey,
     );
-    if (reconciled.resolution === 'exact') return;
+    if (reconciled.resolution === 'exact' && reconciled.target) {
+      const publication = reviewNavigationPublication(
+        reconciled.target,
+        navigationData.anchors,
+      );
+      if (
+        reviewNavigationPublicationMatches(
+          {
+            activePath,
+            annotationId: navigationAnnotationId,
+            selection: navigationSelection,
+          },
+          publication,
+        )
+      ) {
+        return;
+      }
+      activateNavigationTarget(
+        reconciled.target,
+        navigationTargets,
+        'Target location updated.',
+      );
+      return;
+    }
     if (!reconciled.target) {
       setNavigationTargetKey(null);
       setNavigationSelection(null);
@@ -648,8 +681,12 @@ export function GitHubPrReview({
       'Nearest available target selected.',
     );
   }, [
+    activePath,
     activateNavigationTarget,
+    navigationAnnotationId,
+    navigationData.anchors,
     navigationKind,
+    navigationSelection,
     navigationTargetKey,
     navigationTargets,
   ]);
@@ -767,6 +804,12 @@ export function GitHubPrReview({
   };
   const onSelectionChange = (selection: SelectedLineRange | null) => {
     if (!selection || !activePath) return;
+    setPendingHunkNavigation(null);
+    setNavigationTargetKey(null);
+    setNavigationSelection(null);
+    setNavigationAnnotationId(null);
+    setNavigationBoundary(null);
+    setNavigationStatus(null);
     const index = patchIndexesByPath.get(activePath);
     const input = commentInputFromSelection(selection, index);
     if (index && !commentAnchorExists(index, input)) {
@@ -986,10 +1029,7 @@ export function GitHubPrReview({
       replyingThreadId={replyEditor?.threadId ?? null}
       replyBody={replyEditor?.body ?? ''}
       reviewThreads={reviewThreads}
-      selected={
-        (composer?.annotation.metadata.id ?? navigationAnnotationId) ===
-        annotation.metadata.id
-      }
+      selected={selectedContext.selectedAnnotationId === annotation.metadata.id}
     />
   );
   const submitReview = async () => {
@@ -1061,8 +1101,7 @@ export function GitHubPrReview({
       beginReanchorComment(comment.id, comment.path),
     review: reviewRecord,
     reviewThreads,
-    selectedAnnotationId:
-      composer?.annotation.metadata.id ?? navigationAnnotationId,
+    selectedAnnotationId: selectedContext.selectedAnnotationId,
     staleCommentCount: blockedCommentIds.size,
     staleDraftComments,
     unresolvedThreads,
@@ -1271,16 +1310,8 @@ export function GitHubPrReview({
         renderAnnotation={renderAnnotation}
         reviewMapByPath={reviewMapByPath}
         reviewOrder={navigationData.model.guidedFilePaths}
-        selectedLines={
-          composer?.path === activePath
-            ? composer.selection
-            : navigationSelection?.path === activePath
-              ? navigationSelection.selection
-              : null
-        }
-        selectedAnnotationId={
-          composer?.annotation.metadata.id ?? navigationAnnotationId
-        }
+        selectedLines={selectedContext.selectedLines}
+        selectedAnnotationId={selectedContext.selectedAnnotationId}
         source={reviewSource}
         title={pr.title}
       />

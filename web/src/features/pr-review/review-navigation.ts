@@ -22,6 +22,17 @@ export type ReviewNavigationAnchor = {
   selection: SelectedLineRange | null;
 };
 
+export type ReviewNavigationSelection = {
+  path: string;
+  selection: SelectedLineRange;
+};
+
+export type ReviewNavigationPublication = {
+  activePath: string;
+  annotationId: string | null;
+  selection: ReviewNavigationSelection | null;
+};
+
 export type PrReviewNavigationData = {
   anchors: ReadonlyMap<string, ReviewNavigationAnchor>;
   model: ReviewNavigationModel;
@@ -102,10 +113,7 @@ export function createPrReviewNavigationData({
     items.push(item);
     anchors.set(navigationTargetKey(item.kind, item.id), {
       annotationId: item.id,
-      selection: lineSelection(
-        comment.side === 'LEFT' ? 'deletions' : 'additions',
-        comment.line,
-      ),
+      selection: draftCommentSelection(comment),
     });
   }
   for (const [index, finding] of findings.entries()) {
@@ -121,7 +129,7 @@ export function createPrReviewNavigationData({
     items.push(item);
     anchors.set(navigationTargetKey(item.kind, item.id), {
       annotationId: item.id,
-      selection: finding.line ? lineSelection('additions', finding.line) : null,
+      selection: null,
     });
   }
 
@@ -158,6 +166,68 @@ export function reviewNavigationAnchor(
       selection: null,
     }
   );
+}
+
+export function reviewNavigationPublication(
+  target: ReviewCursorTarget,
+  anchors: ReadonlyMap<string, ReviewNavigationAnchor>,
+): ReviewNavigationPublication {
+  const anchor = reviewNavigationAnchor(target, anchors);
+  return {
+    activePath: target.path,
+    annotationId: anchor.annotationId,
+    selection: anchor.selection
+      ? { path: target.path, selection: anchor.selection }
+      : null,
+  };
+}
+
+export function reviewNavigationPublicationMatches(
+  current: {
+    activePath: string | null;
+    annotationId: string | null;
+    selection: ReviewNavigationSelection | null;
+  },
+  next: ReviewNavigationPublication,
+) {
+  return (
+    current.activePath === next.activePath &&
+    current.annotationId === next.annotationId &&
+    navigationSelectionEquals(current.selection, next.selection)
+  );
+}
+
+export function selectedReviewContext({
+  activePath,
+  composer,
+  navigationAnnotationId,
+  navigationSelection,
+  navigationTargetSelected,
+}: {
+  activePath: string | null;
+  composer: {
+    annotationId: string;
+    path: string;
+    selection: SelectedLineRange;
+  } | null;
+  navigationAnnotationId: string | null;
+  navigationSelection: ReviewNavigationSelection | null;
+  navigationTargetSelected: boolean;
+}) {
+  if (navigationTargetSelected) {
+    return {
+      selectedAnnotationId: navigationAnnotationId,
+      selectedLines:
+        navigationSelection?.path === activePath
+          ? navigationSelection.selection
+          : null,
+    };
+  }
+  return {
+    selectedAnnotationId:
+      composer?.path === activePath ? composer.annotationId : null,
+    selectedLines: composer?.path === activePath ? composer.selection : null,
+  };
 }
 
 export function moveReviewCursorFromPath(
@@ -210,10 +280,19 @@ export function resolveHunkTraversal({
   const currentTarget = currentKey
     ? (targets.find((target) => target.key === currentKey) ?? null)
     : null;
-  const startPath = currentTarget?.path ?? activePath ?? files[0]?.path ?? null;
+  const requestedStartPath =
+    currentTarget?.path ?? activePath ?? files[0]?.path ?? null;
+  const requestedStartIndex = requestedStartPath
+    ? files.findIndex((file) => file.path === requestedStartPath)
+    : -1;
+  const startIndex =
+    requestedStartIndex >= 0
+      ? requestedStartIndex
+      : direction === 'next'
+        ? 0
+        : files.length - 1;
+  const startPath = files[startIndex]?.path ?? null;
   if (!startPath) return { kind: 'empty' };
-  const startIndex = files.findIndex((file) => file.path === startPath);
-  if (startIndex < 0) return { kind: 'empty' };
   const sameFileTargets = targets.filter((target) => target.path === startPath);
   if (currentTarget) {
     const currentIndex = sameFileTargets.findIndex(
@@ -305,7 +384,9 @@ function patchHunks(file: DiffFilePatch) {
     const match = line.match(hunkHeader);
     if (!match) continue;
     const oldStart = Number(match[1]);
+    const oldCount = match[2] === undefined ? 1 : Number(match[2]);
     const newStart = Number(match[3]);
+    const newCount = match[4] === undefined ? 1 : Number(match[4]);
     const id = `${index}:${oldStart}:${newStart}`;
     const item = {
       id,
@@ -322,9 +403,12 @@ function patchHunks(file: DiffFilePatch) {
       anchor: {
         annotationId: null,
         selection:
-          newStart > 0
+          newCount > 0
             ? lineSelection('additions', newStart)
-            : lineSelection('deletions', Math.max(1, oldStart)),
+            : lineSelection(
+                'deletions',
+                Math.max(1, oldCount > 0 ? oldStart : newStart),
+              ),
       },
     });
     index += 1;
@@ -345,6 +429,36 @@ function lineSelection(
   line: number,
 ): SelectedLineRange {
   return { side, start: line, end: line } as SelectedLineRange;
+}
+
+function draftCommentSelection(
+  comment: GitHubPrReviewDraft['comments'][number],
+): SelectedLineRange {
+  const endSide = comment.side === 'LEFT' ? 'deletions' : 'additions';
+  if (!comment.startLine) return lineSelection(endSide, comment.line);
+  return {
+    start: comment.startLine,
+    side:
+      (comment.startSide ?? comment.side) === 'LEFT'
+        ? 'deletions'
+        : 'additions',
+    end: comment.line,
+    endSide,
+  } as SelectedLineRange;
+}
+
+function navigationSelectionEquals(
+  left: ReviewNavigationSelection | null,
+  right: ReviewNavigationSelection | null,
+) {
+  if (left === right) return true;
+  if (!left || !right || left.path !== right.path) return false;
+  return (
+    left.selection.start === right.selection.start &&
+    left.selection.end === right.selection.end &&
+    left.selection.side === right.selection.side &&
+    left.selection.endSide === right.selection.endSide
+  );
 }
 
 function positiveLine(value: number | null | undefined) {

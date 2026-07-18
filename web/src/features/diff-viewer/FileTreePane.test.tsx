@@ -97,6 +97,7 @@ describe('FileTreePane review map', () => {
   it('shares Pierre search state with review navigation, including previous paths', async () => {
     const onFilterChange =
       vi.fn<(query: string | null, paths: string[] | null) => void>();
+    const onSelectPath = vi.fn<(path: string) => void>();
     const files = reviewFiles();
     files[0]!.previousPath = 'src/old-a.ts';
 
@@ -106,13 +107,19 @@ describe('FileTreePane review map', () => {
           files={files}
           filterQuery="old-a"
           onFilterChange={onFilterChange}
-          onSelectPath={vi.fn<(path: string) => void>()}
+          onSelectPath={onSelectPath}
           selectedPath="src/a.ts"
         />,
       );
     });
 
     expect(onFilterChange).toHaveBeenLastCalledWith('old-a', ['src/a.ts']);
+    expect(treeItem('src/old-a.ts')).not.toBeNull();
+    expect(treeItem('src/a.ts')).toBeNull();
+    expect(selectedPaths()).toEqual(['src/old-a.ts']);
+    expect(decorationText('src/old-a.ts')).toBe('renamed → src/a.ts');
+    await act(async () => treeItem('src/old-a.ts')?.click());
+    expect(onSelectPath).toHaveBeenCalledWith('src/a.ts');
 
     const input = searchInput();
     expect(input).not.toBeNull();
