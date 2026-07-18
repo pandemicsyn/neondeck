@@ -712,6 +712,49 @@ export const pullRequestReviewThreadsQuery = `
   }
 `;
 
+export const pullRequestReviewSurfaceThreadsQuery = `
+  query NeondeckPullRequestReviewSurfaceThreads($owner: String!, $name: String!, $number: Int!, $after: String) {
+    repository(owner: $owner, name: $name) {
+      pullRequest(number: $number) {
+        reviewThreads(first: 100, after: $after) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            id
+            isResolved
+            isOutdated
+            path
+            line
+            originalLine
+            diffSide
+            comments(first: 100) {
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+              nodes {
+                id
+                body
+                url
+                author {
+                  login
+                }
+                createdAt
+                updatedAt
+                path
+                line
+                originalLine
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 export const reviewThreadCommentsQuery = `
   query NeondeckPullRequestReviewThreadComments($threadId: ID!, $after: String) {
     node(id: $threadId) {

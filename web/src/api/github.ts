@@ -97,10 +97,13 @@ export async function getGitHubPrReviewThreads(
     { repo: input.repo, prNumber: input.number },
     options,
   );
+  const reviewThreads = response.data?.reviewThreads ?? [];
   return {
-    reviewThreads: response.data?.reviewThreads ?? [],
+    reviewThreads,
     reviewThreadsTruncated: response.data?.reviewThreadsTruncated ?? false,
-    unresolvedReviewThreads: response.data?.unresolvedReviewThreads ?? [],
+    unresolvedReviewThreads:
+      response.data?.unresolvedReviewThreads ??
+      reviewThreads.filter((thread) => !thread.isResolved),
   };
 }
 

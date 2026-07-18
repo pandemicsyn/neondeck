@@ -14,6 +14,7 @@ const baseRef = readStringArg('--base-ref', 'main');
 const title = readStringArg('--title', `${repo}#${number}`);
 const samples = readPositiveIntegerArg('--samples', 3);
 const includeGitHubFallback = args.includes('--include-github-fallback');
+const allowDevelopment = args.includes('--allow-development');
 const outPath = readStringArg(
   '--out',
   'benchmarks/results/pr-review-real-local.json',
@@ -21,7 +22,12 @@ const outPath = readStringArg(
 const [owner, name] = parseRepo(repo);
 const target = { repo, number, head, base, baseRef, title };
 
-await assertServerAvailable(origin);
+const serverMode = await inspectServer(origin);
+if (serverMode === 'development' && !allowDevelopment) {
+  throw new Error(
+    `${origin} is serving the Vite development client. Run npm run build:dashboard followed by npm start, or pass --allow-development for a diagnostic run.`,
+  );
+}
 
 const initialAuto = await measureJson(fileListUrl('auto'));
 const files = initialAuto.json.data?.files ?? [];
@@ -41,13 +47,27 @@ const activeIndex = files.findIndex((file) => file.path === activeFile.path);
 const warmFirstPatch = await repeat(samples, () =>
   measureJson(fileDiffUrl(activeFile.path, 'auto')),
 );
-const threads = await measureJson(`${origin}/api/github/prs/review-threads`, {
-  method: 'POST',
-  headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ repo, prNumber: number }),
-});
-const threadData = threads.json.data ?? {};
-const unresolvedPaths = (threadData.unresolvedReviewThreads ?? [])
+const initialThreads = await measureJson(
+  `${origin}/api/github/prs/review-threads`,
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ repo, prNumber: number }),
+  },
+);
+const warmReviewThreads = await repeat(samples, () =>
+  measureJson(`${origin}/api/github/prs/review-threads`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ repo, prNumber: number }),
+  }),
+);
+const threadData = initialThreads.json.data ?? {};
+const reviewThreads = threadData.reviewThreads ?? [];
+const unresolvedReviewThreads =
+  threadData.unresolvedReviewThreads ??
+  reviewThreads.filter((thread) => !thread.isResolved);
+const unresolvedPaths = unresolvedReviewThreads
   .map((thread) => thread.path ?? thread.comments?.[0]?.path)
   .filter(Boolean);
 const fanoutPaths = [
@@ -83,7 +103,7 @@ try {
     measureBrowserReview(browser, {
       origin,
       target,
-      threadCount: threadData.reviewThreads?.length ?? 0,
+      threadCount: reviewThreads.length,
     }),
   );
 } finally {
@@ -91,7 +111,7 @@ try {
 }
 
 const output = {
-  version: 2,
+  version: 3,
   generatedAt: new Date().toISOString(),
   environment: {
     platform: process.platform,
@@ -99,6 +119,7 @@ const output = {
     node: process.version,
     browser: 'Playwright Chromium',
     origin,
+    serverMode,
     samples,
     note: 'Machine-local real-PR evidence; not a CI performance gate.',
   },
@@ -107,8 +128,8 @@ const output = {
     fileCount: files.length,
     additions: initialAuto.json.data?.diffSummary?.additions ?? null,
     deletions: initialAuto.json.data?.diffSummary?.deletions ?? null,
-    reviewThreads: threadData.reviewThreads?.length ?? 0,
-    unresolvedReviewThreads: threadData.unresolvedReviewThreads?.length ?? 0,
+    reviewThreads: reviewThreads.length,
+    unresolvedReviewThreads: unresolvedReviewThreads.length,
   },
   budgets: {
     warmTreeVisibleMs: 500,
@@ -128,9 +149,14 @@ const output = {
       ...aggregateRequests(warmFirstPatch),
     },
     reviewThreads: {
-      ...requestSummary(threads),
-      total: threadData.reviewThreads?.length ?? 0,
-      unresolved: threadData.unresolvedReviewThreads?.length ?? 0,
+      initial: {
+        ...requestSummary(initialThreads),
+        warning:
+          'This is cold only when the in-process review-thread cache was empty before the run.',
+      },
+      warm: aggregateRequests(warmReviewThreads),
+      total: reviewThreads.length,
+      unresolved: unresolvedReviewThreads.length,
       unresolvedPaths: [...new Set(unresolvedPaths)],
     },
     concurrentFanout,
@@ -208,6 +234,14 @@ async function measureBrowserReview(
     colorScheme: 'dark',
   });
   const page = await context.newPage();
+  const failedApiRequests = [];
+  page.on('requestfailed', (request) => {
+    if (!request.url().includes('/api/github/')) return;
+    failedApiRequests.push({
+      url: request.url(),
+      errorText: request.failure()?.errorText ?? 'unknown',
+    });
+  });
   const url = new URL('/review', browserOrigin);
   url.searchParams.set('repo', browserTarget.repo);
   url.searchParams.set('number', String(browserTarget.number));
@@ -296,7 +330,7 @@ async function measureBrowserReview(
       { timeout: 15_000 },
     );
     await page.waitForTimeout(3_000);
-    return await page.evaluate(() => {
+    const browserResult = await page.evaluate(() => {
       const state = window.__NEONDECK_REAL_PR_PERF__;
       const resources = performance
         .getEntriesByType('resource')
@@ -310,6 +344,10 @@ async function measureBrowserReview(
       const firstContentfulPaint = performance.getEntriesByName(
         'first-contentful-paint',
       )[0];
+      const threadResponseEndMs = Math.max(
+        0,
+        ...threadRequests.map((entry) => entry.responseEnd),
+      );
       return {
         treeVisibleMs: state.treeVisibleMs,
         firstPatchMs: state.firstPatchMs,
@@ -332,12 +370,26 @@ async function measureBrowserReview(
           (sum, entry) => sum + entry.transferSize,
           0,
         ),
+        threadEncodedBodyBytes: threadRequests.reduce(
+          (sum, entry) => sum + entry.encodedBodySize,
+          0,
+        ),
+        threadRequestStartMs:
+          threadRequests.length > 0
+            ? Math.min(...threadRequests.map((entry) => entry.startTime))
+            : 0,
+        threadResponseEndMs,
+        threadRequestDurationMs: Math.max(
+          0,
+          ...threadRequests.map((entry) => entry.duration),
+        ),
+        threadRenderAfterResponseMs:
+          threadResponseEndMs > 0
+            ? Math.max(0, state.threadsVisibleMs - threadResponseEndMs)
+            : 0,
         patchRequestCount: patchRequests.length,
         patchRequestsStartedBeforeFirstPatch: patchRequests.filter(
           (entry) => entry.startTime < state.firstPatchMs,
-        ).length,
-        abortedPatchRequestCount: patchRequests.filter(
-          (entry) => entry.transferSize === 0,
         ).length,
         lastApiResponseMs: Math.max(
           0,
@@ -345,6 +397,20 @@ async function measureBrowserReview(
         ),
       };
     });
+    const abortedRequests = failedApiRequests.filter((request) =>
+      request.errorText.includes('ERR_ABORTED'),
+    );
+    return {
+      ...browserResult,
+      failedApiRequestCount: failedApiRequests.length,
+      abortedApiRequestCount: abortedRequests.length,
+      abortedThreadRequestCount: abortedRequests.filter((request) =>
+        request.url.endsWith('/review-threads'),
+      ).length,
+      abortedPatchRequestCount: abortedRequests.filter((request) =>
+        request.url.includes('/files/diff?'),
+      ).length,
+    };
   } finally {
     await context.close();
   }
@@ -379,8 +445,16 @@ function aggregateBrowserSamples(browserResults) {
       'apiTransferBytes',
       'threadRequestCount',
       'threadTransferBytes',
+      'threadEncodedBodyBytes',
+      'threadRequestStartMs',
+      'threadResponseEndMs',
+      'threadRequestDurationMs',
+      'threadRenderAfterResponseMs',
       'patchRequestCount',
       'patchRequestsStartedBeforeFirstPatch',
+      'failedApiRequestCount',
+      'abortedApiRequestCount',
+      'abortedThreadRequestCount',
       'abortedPatchRequestCount',
       'lastApiResponseMs',
     ].map((key) => [
@@ -423,11 +497,13 @@ async function repeat(count, fn) {
   return values;
 }
 
-async function assertServerAvailable(serverOrigin) {
+async function inspectServer(serverOrigin) {
   const response = await fetch(serverOrigin);
   if (!response.ok) {
     throw new Error(`${serverOrigin} returned ${response.status}.`);
   }
+  const html = await response.text();
+  return html.includes('/@vite/client') ? 'development' : 'production';
 }
 
 function parseRepo(value) {

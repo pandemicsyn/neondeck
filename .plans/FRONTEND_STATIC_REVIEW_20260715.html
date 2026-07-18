@@ -871,6 +871,9 @@
               long tasks. That baseline remains retained. Stable thread identity, local metadata
               reuse, and active-patch-first scheduling now produce one thread request, zero
               abandoned patches, and a 798 ms first-patch median that passes all three samples.
+              The final thread-surface pass keeps the full Flue action intact while using an
+              84.7% smaller web query plus a bounded 15-second cache; warm thread visibility now
+              measures 459 ms median and passes its target. The original results remain retained.
             </p>
           </div>
 
@@ -920,10 +923,10 @@
             <article class="panel-block">
               <h3>Performance risks</h3>
               <p>
-                The large-patch and chat render bottlenecks are now mitigated. Remaining risks are
-                duplicate review-thread reads, repeated full local metadata work for each patch,
-                Runtime endpoint cost and invalidation bursts, and the eager plugin registry
-                pending explicit budgets.
+                The large-patch, chat render, repeated metadata, and warm review-thread
+                bottlenecks are now mitigated. Remaining risks are the 642 ms tree median,
+                one-time cold object/thread reads, Runtime endpoint cost and invalidation bursts,
+                and the eager plugin registry pending explicit budgets.
               </p>
             </article>
           </div>
@@ -993,7 +996,9 @@
             complete. The two approved request-path fixes are now implemented and remeasured:
             review-thread identity is stable and immutable local PR metadata is reused across
             patch reads. Active-patch prioritization is also implemented and remeasured: the
-            selected patch now passes the one-second target in all three retained samples. Keep
+            selected patch now passes the one-second target in all three retained samples. The
+            production-only thread pass is complete: a lean cancellable query and short-lived
+            mutation-aware cache reduce warm thread visibility to 459 ms median. Keep tree and
             cold-fetch changes, Runtime aggregation, review-subtree consolidation, and registry
             splitting behind workload and budget evidence.
           </div>
@@ -1022,6 +1027,8 @@
                 <tr><td>Real PR · request stability</td><td>1 thread request · 0 aborted patches</td><td>381 kB thread · 743 kB total API</td><td>Last API response: 2,782 ms</td><td>Duplicate and settlement churn eliminated</td></tr>
                 <tr><td>Real PR · active-patch priority</td><td>612 ms tree · 798 ms first patch</td><td>620 ms LCP · 0.0012 CLS</td><td>1,724 ms threads · zero long tasks</td><td>Completed · first patch passes all samples</td></tr>
                 <tr><td>Real PR · prioritized requests</td><td>1 thread request · 4 patch requests</td><td>381 kB thread · 724 kB total API</td><td>0 aborted · last API response 2,021 ms</td><td>Active read settles before background fanout</td></tr>
+                <tr><td>Real PR · lean threads, uncached</td><td>639 ms tree · 924 ms first patch</td><td>58 kB thread · 401 kB total API</td><td>1,511 ms threads · 16.8 ms post-response render</td><td>Payload fixed; GitHub latency remains</td></tr>
+                <tr><td>Real PR · lean threads, warm</td><td>642 ms tree · 934 ms first patch</td><td>530 ms traced LCP · 0.00 CLS</td><td>459 ms threads · 6.8 ms backend cache hit</td><td>Completed · warm thread target passes</td></tr>
                 <tr><td>Real PR · cold local / GitHub</td><td>4,978 / 3,894 ms</td><td>295 / 765 kB metadata</td><td>0 / 1 truncated files</td><td>Both miss cold target; local is complete</td></tr>
                 <tr><td>Production initial preload</td><td>194.6 kB gzip</td><td>157.7 kB entry · 21.6 kB ccount</td><td>Focused-review wrapper 0.77 kB gzip</td><td>Track; no budget miss declared</td></tr>
               </tbody>
@@ -1047,7 +1054,10 @@
             measured 551 ms LCP, 0.00 CLS, and the same 39 ms total Pierre forced reflow with no
             estimated savings. After active-patch prioritization, the browser median reached 798
             ms to first patch and a direct trace measured 498 ms LCP, 0.00 CLS, and 36 ms total
-            Pierre forced reflow with no estimated savings.
+            Pierre forced reflow with no estimated savings. The final production-only thread
+            pass measured 459 ms median thread visibility, 58 kB per thread response, 6.5 ms
+            post-response rendering, zero aborted/failed API requests, 530 ms traced LCP, and
+            0.00 CLS. Its initial uncached GitHub read remains outside the warm target.
           </div>
 
           <div class="finding-list">
@@ -1352,6 +1362,7 @@
             <li class="completed-action"><span class="completion">COMPLETED · MEASUREMENT + FIRST WAVE</span> <strong>Performance measurement gate:</strong> the five-part fixture pass, chat isolation, thresholded Pierre CodeView, and real registered-PR trace are complete. Runtime topology, duplicate review DOM, and lazy registry remain deferred behind workload/budget evidence.</li>
             <li class="completed-action"><span class="completion">COMPLETED · REQUEST-PATH REMEDIATION</span> <strong>P1 · Real PR request path:</strong> discuss the measured duplicate review-thread identity and repeated local metadata work, then implement only the approved fixes and repeat <code>npm run bench:pr-review</code>. The stable thread key and bounded revision-metadata cache are implemented and verified on the retained target.</li>
             <li class="completed-action"><span class="completion">COMPLETED · ACTIVE PATCH PRIORITY</span> <strong>P1 · Active patch priority:</strong> discuss whether neighbor and unresolved-path prefetch should wait for the active patch. The retained remediated trace was 195 ms over target; the implemented active-first schedule now reaches a 798 ms median and passes all three samples while preserving zero abandoned reads.</li>
+            <li class="completed-action"><span class="completion">COMPLETED · WARM THREAD PATH</span> <strong>P1 · Review-thread latency:</strong> correct the harness's production-mode detection, measure request versus render cost, slim the web-only GitHub query, and add only a bounded 15-second mutation-aware cache after the lean query remained too slow. Warm thread visibility now reaches 459 ms median with an 84.7% smaller response; cold GitHub latency remains explicit.</li>
             <li class="completed-action"><span class="completion">COMPLETED · COPY/DISCLOSURE</span> <strong>P2 · Copy/disclosure:</strong> row-specific action names and full-value affordances for operational text. Suggested command: <code>$impeccable clarify</code>.</li>
             <li class="completed-action"><span class="completion">COMPLETED · PR #140</span> <strong>P2 · Editor state ownership:</strong> keep new-comment, draft-edit, and thread-reply bodies scoped to their editor generation so older async completions cannot clear newer work.</li>
             <li class="completed-action"><span class="completion">COMPLETED · FINAL PASS</span> <strong>P3 · Final pass:</strong> tabular metrics, timer cleanup, operation-scoped status, stable finding IDs, and config tightening. Suggested command: <code>$impeccable polish</code>.</li>
