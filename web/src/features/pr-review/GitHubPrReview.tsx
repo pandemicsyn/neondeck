@@ -78,6 +78,7 @@ import {
   reviewNavigationPublication,
   reviewNavigationPublicationMatches,
   selectedReviewContext,
+  type ReviewNavigationAuthority,
   type ReviewNavigationSelection,
   type ReviewPatchNavigationState,
 } from './review-navigation';
@@ -166,6 +167,8 @@ export function GitHubPrReview({
   const [navigationTargetKey, setNavigationTargetKey] = useState<string | null>(
     null,
   );
+  const [navigationAuthority, setNavigationAuthority] =
+    useState<ReviewNavigationAuthority>('automatic');
   const [navigationSelection, setNavigationSelection] =
     useState<ReviewNavigationSelection | null>(null);
   const [navigationAnnotationId, setNavigationAnnotationId] = useState<
@@ -367,9 +370,9 @@ export function GitHubPrReview({
           selection: composer.selection,
         }
       : null,
+    navigationAuthority,
     navigationAnnotationId,
     navigationSelection,
-    navigationTargetSelected: navigationTargetKey !== null,
   });
   const navigationCurrentIndex = selectedNavigationTarget
     ? navigationTargets.indexOf(selectedNavigationTarget)
@@ -442,6 +445,7 @@ export function GitHubPrReview({
     setPendingHunkNavigation(null);
     setActivePath(path);
     setNavigationTargetKey(null);
+    setNavigationAuthority('automatic');
     setNavigationSelection(null);
     setNavigationAnnotationId(null);
     setNavigationBoundary(null);
@@ -464,6 +468,7 @@ export function GitHubPrReview({
       target: ReviewCursorTarget,
       targets: readonly ReviewCursorTarget[],
       status?: string | null,
+      selectionAuthority: ReviewNavigationAuthority = 'explicit',
     ) => {
       const publication = reviewNavigationPublication(
         target,
@@ -472,6 +477,7 @@ export function GitHubPrReview({
       const index = targets.findIndex((item) => item.key === target.key);
       setActivePath(publication.activePath);
       setNavigationTargetKey(target.key);
+      setNavigationAuthority(selectionAuthority);
       setNavigationSelection(publication.selection);
       setNavigationAnnotationId(publication.annotationId);
       setNavigationBoundary(null);
@@ -570,6 +576,7 @@ export function GitHubPrReview({
     (direction: ReviewCursorDirection) => {
       if (pendingHunkNavigation) return;
       if (navigationKind === 'hunk') {
+        setNavigationAuthority('explicit');
         performHunkTraversal(direction, maxLazyHunkLoadsPerMove);
         return;
       }
@@ -661,11 +668,13 @@ export function GitHubPrReview({
         reconciled.target,
         navigationTargets,
         'Target location updated.',
+        navigationAuthority,
       );
       return;
     }
     if (!reconciled.target) {
       setNavigationTargetKey(null);
+      setNavigationAuthority('automatic');
       setNavigationSelection(null);
       setNavigationAnnotationId(null);
       setNavigationBoundary(null);
@@ -679,6 +688,7 @@ export function GitHubPrReview({
       reconciled.target,
       navigationTargets,
       'Nearest available target selected.',
+      navigationAuthority,
     );
   }, [
     activePath,
@@ -686,6 +696,7 @@ export function GitHubPrReview({
     navigationAnnotationId,
     navigationData.anchors,
     navigationKind,
+    navigationAuthority,
     navigationSelection,
     navigationTargetKey,
     navigationTargets,
@@ -806,6 +817,7 @@ export function GitHubPrReview({
     if (!selection || !activePath) return;
     setPendingHunkNavigation(null);
     setNavigationTargetKey(null);
+    setNavigationAuthority('automatic');
     setNavigationSelection(null);
     setNavigationAnnotationId(null);
     setNavigationBoundary(null);
@@ -1242,6 +1254,7 @@ export function GitHubPrReview({
             setPendingHunkNavigation(null);
             setNavigationKind(nextKind);
             setNavigationTargetKey(null);
+            setNavigationAuthority('automatic');
             setNavigationSelection(null);
             setNavigationAnnotationId(null);
             setNavigationBoundary(null);

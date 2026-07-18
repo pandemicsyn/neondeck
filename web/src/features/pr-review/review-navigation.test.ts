@@ -396,7 +396,7 @@ describe('focused PR review navigation wiring', () => {
     ).toBe(false);
   });
 
-  it('keeps navigation authoritative over a dirty composer on same-file and cross-file moves', () => {
+  it('keeps explicit traversal authoritative while an automatic file cursor leaves a new composer published', () => {
     const composer = {
       annotationId: 'composer-dirty',
       path: 'src/a.ts',
@@ -410,9 +410,9 @@ describe('focused PR review navigation wiring', () => {
       selectedReviewContext({
         activePath: 'src/a.ts',
         composer,
+        navigationAuthority: 'explicit',
         navigationAnnotationId: 'thread-a',
         navigationSelection: sameFileSelection,
-        navigationTargetSelected: true,
       }),
     ).toEqual({
       selectedAnnotationId: 'thread-a',
@@ -427,9 +427,9 @@ describe('focused PR review navigation wiring', () => {
       selectedReviewContext({
         activePath: 'src/c.ts',
         composer,
+        navigationAuthority: 'explicit',
         navigationAnnotationId: 'thread-c',
         navigationSelection: crossFileSelection,
-        navigationTargetSelected: true,
       }),
     ).toEqual({
       selectedAnnotationId: 'thread-c',
@@ -440,13 +440,26 @@ describe('focused PR review navigation wiring', () => {
       selectedReviewContext({
         activePath: 'src/a.ts',
         composer,
+        navigationAuthority: 'automatic',
         navigationAnnotationId: null,
         navigationSelection: null,
-        navigationTargetSelected: false,
       }),
     ).toEqual({
       selectedAnnotationId: 'composer-dirty',
       selectedLines: composer.selection,
+    });
+
+    expect(
+      selectedReviewContext({
+        activePath: 'src/a.ts',
+        composer,
+        navigationAuthority: 'explicit',
+        navigationAnnotationId: null,
+        navigationSelection: null,
+      }),
+    ).toEqual({
+      selectedAnnotationId: null,
+      selectedLines: null,
     });
   });
 

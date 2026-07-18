@@ -33,6 +33,8 @@ export type ReviewNavigationPublication = {
   selection: ReviewNavigationSelection | null;
 };
 
+export type ReviewNavigationAuthority = 'automatic' | 'explicit';
+
 export type PrReviewNavigationData = {
   anchors: ReadonlyMap<string, ReviewNavigationAnchor>;
   model: ReviewNavigationModel;
@@ -200,9 +202,9 @@ export function reviewNavigationPublicationMatches(
 export function selectedReviewContext({
   activePath,
   composer,
+  navigationAuthority,
   navigationAnnotationId,
   navigationSelection,
-  navigationTargetSelected,
 }: {
   activePath: string | null;
   composer: {
@@ -210,11 +212,11 @@ export function selectedReviewContext({
     path: string;
     selection: SelectedLineRange;
   } | null;
+  navigationAuthority: ReviewNavigationAuthority;
   navigationAnnotationId: string | null;
   navigationSelection: ReviewNavigationSelection | null;
-  navigationTargetSelected: boolean;
 }) {
-  if (navigationTargetSelected) {
+  if (navigationAuthority === 'explicit') {
     return {
       selectedAnnotationId: navigationAnnotationId,
       selectedLines:

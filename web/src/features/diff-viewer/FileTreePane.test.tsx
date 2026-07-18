@@ -147,6 +147,45 @@ describe('FileTreePane review map', () => {
     expect(onFilterChange).toHaveBeenLastCalledWith(null, null);
   });
 
+  it('keeps previous-path filtering when the synthetic alias collides with an implicit directory', async () => {
+    const onFilterChange =
+      vi.fn<(query: string | null, paths: string[] | null) => void>();
+    const files: DiffFilePatch[] = [
+      {
+        additions: 1,
+        deletions: 1,
+        path: 'src/old-a.ts/child.ts',
+        status: 'modified',
+      },
+      {
+        additions: 1,
+        deletions: 1,
+        path: 'src/a.ts',
+        previousPath: 'src/old-a.ts',
+        status: 'renamed',
+      },
+    ];
+
+    await act(async () => {
+      root.render(
+        <FileTreePane
+          files={files}
+          filterQuery="old-a"
+          onFilterChange={onFilterChange}
+          onSelectPath={vi.fn<(path: string) => void>()}
+          selectedPath="src/a.ts"
+        />,
+      );
+    });
+
+    expect(onFilterChange).toHaveBeenLastCalledWith('old-a', [
+      'src/old-a.ts/child.ts',
+      'src/a.ts',
+    ]);
+    expect(treeItem('src/old-a.ts/child.ts')).not.toBeNull();
+    expect(decorationText('src/old-a.ts')).toBeUndefined();
+  });
+
   function treeHost() {
     return container.querySelector('file-tree-container');
   }

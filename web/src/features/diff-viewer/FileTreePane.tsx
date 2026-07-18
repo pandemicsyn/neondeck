@@ -82,6 +82,7 @@ function FileTreePaneModel({
   const previousPathAliasRef = useRef<ReadonlyMap<string, string>>(new Map());
   const mountedPreviousPathAliases = useRef<Set<string>>(new Set());
   const filePathSet = useMemo(() => new Set(paths), [paths]);
+  const occupiedPathSet = useMemo(() => occupiedFileTreePaths(paths), [paths]);
   const { model } = useFileTree({
     flattenEmptyDirectories: true,
     gitStatus,
@@ -120,8 +121,8 @@ function FileTreePaneModel({
   });
   const search = useFileTreeSearch(model);
   const previousPathAliases = useMemo(
-    () => previousPathAliasesForSearch(files, search.value, filePathSet),
-    [filePathSet, files, search.value],
+    () => previousPathAliasesForSearch(files, search.value, occupiedPathSet),
+    [files, occupiedPathSet, search.value],
   );
   previousPathAliasRef.current = previousPathAliases;
   const appliedFilterQuery = useRef<{
@@ -139,7 +140,12 @@ function FileTreePaneModel({
       if (!desiredAliases.has(path)) model.remove(path);
     }
     for (const path of desiredAliases) {
-      if (!mountedPreviousPathAliases.current.has(path)) model.add(path);
+      if (
+        !mountedPreviousPathAliases.current.has(path) &&
+        !model.getItem(path)
+      ) {
+        model.add(path);
+      }
     }
     mountedPreviousPathAliases.current = desiredAliases;
   }, [model, previousPathAliases]);
@@ -344,7 +350,7 @@ function gitStatusEntry(file: DiffFilePatch): GitStatusEntry | null {
 function previousPathAliasesForSearch(
   files: readonly DiffFilePatch[],
   query: string,
-  currentPaths: ReadonlySet<string>,
+  occupiedPaths: ReadonlySet<string>,
 ) {
   const normalized = query.trim().toLocaleLowerCase();
   const aliases = new Map<string, string>();
@@ -354,7 +360,8 @@ function previousPathAliasesForSearch(
     if (
       !previousPath ||
       previousPath === file.path ||
-      currentPaths.has(previousPath) ||
+      occupiedPaths.has(previousPath) ||
+      occupiedPaths.has(`${previousPath}/`) ||
       file.path.toLocaleLowerCase().includes(normalized) ||
       !previousPath.toLocaleLowerCase().includes(normalized)
     ) {
@@ -363,6 +370,24 @@ function previousPathAliasesForSearch(
     aliases.set(previousPath, file.path);
   }
   return aliases;
+}
+
+function occupiedFileTreePaths(paths: readonly string[]) {
+  const occupied = new Set<string>();
+  for (const path of paths) {
+    occupied.add(path);
+    for (
+      let index = path.indexOf('/');
+      index >= 0;
+      index = path.indexOf('/', index + 1)
+    ) {
+      const directory = path.slice(0, index);
+      if (!directory) continue;
+      occupied.add(directory);
+      occupied.add(`${directory}/`);
+    }
+  }
+  return occupied;
 }
 
 const treeUnsafeCss = `
