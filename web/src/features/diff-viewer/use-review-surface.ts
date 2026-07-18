@@ -49,7 +49,7 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
   );
   const snapshotRef = useRef(snapshot);
   const navigateRef = useRef(input?.onNavigatePath);
-  const eventOpenCountRef = useRef(0);
+  const eventStreamReadyRef = useRef(false);
   snapshotRef.current = snapshot;
   navigateRef.current = input?.onNavigatePath;
 
@@ -58,17 +58,21 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
       if (surfaceId) void removeReviewSurface(surfaceId).catch(() => undefined);
       return;
     }
-    void registerReviewSurface(snapshot).catch(() => undefined);
+    if (eventStreamReadyRef.current) {
+      void registerReviewSurface(snapshot).catch(() => undefined);
+    }
   }, [snapshot, surfaceId]);
 
   useEffect(() => {
     if (!surfaceId) return;
     const heartbeat = window.setInterval(() => {
       const current = snapshotRef.current;
-      if (current) {
-        void heartbeatReviewSurface(surfaceId).catch(() =>
-          registerReviewSurface(current).catch(() => undefined),
-        );
+      if (current && eventStreamReadyRef.current) {
+        void heartbeatReviewSurface(surfaceId).catch(() => {
+          if (eventStreamReadyRef.current) {
+            return registerReviewSurface(current).catch(() => undefined);
+          }
+        });
       }
     }, reviewSurfaceHeartbeatMs);
     return () => {
@@ -79,7 +83,7 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
 
   useEffect(() => {
     if (!surfaceId) return;
-    return openReviewSurfaceEventStream(
+    const unsubscribe = openReviewSurfaceEventStream(
       (event) => {
         const command = event.navigation;
         if (
@@ -102,16 +106,21 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
           ...result,
         }).catch(() => undefined);
       },
-      undefined,
       () => {
-        eventOpenCountRef.current += 1;
-        if (eventOpenCountRef.current === 1) return;
+        eventStreamReadyRef.current = false;
+      },
+      () => {
+        eventStreamReadyRef.current = true;
         const current = snapshotRef.current;
         if (current) {
           void registerReviewSurface(current).catch(() => undefined);
         }
       },
     );
+    return () => {
+      eventStreamReadyRef.current = false;
+      unsubscribe();
+    };
   }, [surfaceId]);
 
   return surfaceId;
