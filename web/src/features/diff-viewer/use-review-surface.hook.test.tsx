@@ -65,9 +65,14 @@ describe('useReviewSurface', () => {
     api.remove.mockResolvedValue(undefined);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     act(() => root.unmount());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
     container.remove();
+    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
@@ -92,6 +97,74 @@ describe('useReviewSurface', () => {
     await act(async () => onOpen?.());
 
     expect(api.register).toHaveBeenCalledTimes(1);
+  });
+
+  it('serializes snapshot updates and removes the surface only after pending writes', async () => {
+    const firstWrite = deferred<undefined>();
+    const secondWrite = deferred<undefined>();
+    api.register
+      .mockImplementationOnce(() => firstWrite.promise)
+      .mockImplementationOnce(() => secondWrite.promise);
+    api.open.mockImplementation((_onEvent, _onError, onOpen) => {
+      onOpen?.();
+      return vi.fn<() => void>();
+    });
+
+    const firstSource = reviewSource();
+    await act(async () =>
+      root.render(<OptionalSurfaceHarness source={firstSource} />),
+    );
+    const nextSource = reviewSource();
+    nextSource.revision = resolvedReviewRevision({
+      kind: 'git-commit',
+      id: 'next-head-sha',
+    });
+    await act(async () =>
+      root.render(<OptionalSurfaceHarness source={nextSource} />),
+    );
+    await act(async () =>
+      root.render(<OptionalSurfaceHarness source={null} />),
+    );
+
+    expect(api.register).toHaveBeenCalledTimes(1);
+    expect(api.remove).not.toHaveBeenCalled();
+
+    await act(async () => {
+      firstWrite.resolve(undefined);
+      await firstWrite.promise;
+    });
+    expect(api.register).toHaveBeenCalledTimes(2);
+    expect(api.remove).not.toHaveBeenCalled();
+
+    await act(async () => {
+      secondWrite.resolve(undefined);
+      await secondWrite.promise;
+    });
+    expect(api.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps heartbeats active while SSE is disconnected', async () => {
+    vi.useFakeTimers();
+    let onError: ((error?: Error | Event) => void) | undefined;
+    api.open.mockImplementation((_onEvent, handleError, onOpen) => {
+      onError = handleError;
+      onOpen?.();
+      return vi.fn<() => void>();
+    });
+
+    await act(async () =>
+      root.render(<ReviewSurfaceHarness source={reviewSource()} />),
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    act(() => onError?.(new Event('error')));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+
+    expect(api.heartbeat).toHaveBeenCalledTimes(1);
   });
 
   it('publishes the active filter, guided order, annotation, and diff selection together', async () => {
@@ -304,6 +377,22 @@ function ReviewSurfaceHarness({ source }: { source: ReviewSourceSnapshot }) {
     activePath: source.files[0]?.path ?? null,
     source,
   });
+  return null;
+}
+
+function OptionalSurfaceHarness({
+  source,
+}: {
+  source: ReviewSourceSnapshot | null;
+}) {
+  useReviewSurface(
+    source
+      ? {
+          activePath: source.files[0]?.path ?? null,
+          source,
+        }
+      : null,
+  );
   return null;
 }
 

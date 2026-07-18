@@ -39,6 +39,7 @@ import {
 import { Badge, MiniEmpty } from '../../components/ui';
 import { queryErrorMessage } from '../../lib/query';
 import { firstRenderablePath, patchHasContent } from '../diff-viewer/helpers';
+import type { DiffNavigationScrollRequest } from '../diff-viewer/DiffViewer';
 import { GitHubPrRevisionNotice } from './GitHubPrRevisionNotice';
 import type { DiffFilePatch, DiffReviewAnnotation } from '../diff-viewer/types';
 import { githubPrReviewSource } from '../diff-viewer/review-source';
@@ -224,6 +225,9 @@ export function GitHubPrReview({
   const [navigationAnnotationId, setNavigationAnnotationId] = useState<
     string | null
   >(null);
+  const [navigationScroll, setNavigationScroll] =
+    useState<DiffNavigationScrollRequest | null>(null);
+  const navigationScrollTokenRef = useRef(0);
   const [navigationBoundary, setNavigationBoundary] = useState<
     'start' | 'end' | null
   >(null);
@@ -587,6 +591,7 @@ export function GitHubPrReview({
         mutationPending: Boolean(
           isDraftMutationPending ||
           isThreadMutationPending ||
+          dismissingFindingIds.size > 0 ||
           findingActionsLocked ||
           restartReview.isPending ||
           reconcileSubmission.isPending ||
@@ -599,6 +604,7 @@ export function GitHubPrReview({
       commentEditor,
       composer?.body,
       draft,
+      dismissingFindingIds,
       findingActionsLocked,
       hasAvailableRevision,
       hasPendingReviewBodyEdit,
@@ -735,6 +741,17 @@ export function GitHubPrReview({
       setNavigationAuthority(selectionAuthority);
       setNavigationSelection(publication.selection);
       setNavigationAnnotationId(publication.annotationId);
+      setNavigationScroll({
+        token: ++navigationScrollTokenRef.current,
+        line:
+          publication.selection?.selection.end ??
+          (target.kind !== 'file' &&
+          target.position > 0 &&
+          target.position < 1_000_000_000
+            ? target.position
+            : null),
+        selection: publication.selection?.selection ?? null,
+      });
       setNavigationBoundary(null);
       setNavigationStatus(status ?? null);
       setNavigationAnnouncement(
@@ -1968,6 +1985,7 @@ export function GitHubPrReview({
         findingsSidebar={findingsSidebar}
         isLoadingPatch={Boolean(activePatchQuery?.isLoading)}
         isStandalone={isStandalone}
+        navigationScroll={navigationScroll}
         onActivePathChange={selectPathFromWorkbench}
         onFileFilterChange={handleFileFilterChange}
         onReviewSurfaceFindingsChange={handleReviewSurfaceFindingsChange}

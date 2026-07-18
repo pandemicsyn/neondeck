@@ -203,7 +203,34 @@ describe('prepared-diff finding promotion', () => {
       ...input,
       findingPromotion: currentFindingPromotion,
     };
-    const first = await requestPreparedDiffRevision(currentInput, paths);
+    let revisionChecks = 0;
+    const bothRevisionChecksStarted = deferred<void>();
+    const checkedRevision = async () => {
+      revisionChecks += 1;
+      if (revisionChecks === 2) bothRevisionChecksStarted.resolve();
+      await bothRevisionChecksStarted.promise;
+      return currentRevision.revision!;
+    };
+    const firstPromise = requestPreparedDiffRevision(currentInput, paths, {
+      readCurrentRevision: checkedRevision,
+    });
+    const competingPromise = requestPreparedDiffRevision(
+      {
+        ...currentInput,
+        reason: 'A competing finding requested another revision.',
+        findingPromotion: {
+          ...currentFindingPromotion,
+          sourceFindingId: 'neon_surface_competing',
+          findingId: 'finding-competing',
+        },
+      },
+      paths,
+      { readCurrentRevision: checkedRevision },
+    );
+    const [first, competing] = await Promise.all([
+      firstPromise,
+      competingPromise,
+    ]);
     const retry = await requestPreparedDiffRevision(currentInput, paths);
 
     expect(first).toMatchObject({
@@ -223,6 +250,11 @@ describe('prepared-diff finding promotion', () => {
       changed: false,
       preparedDiff: { status: 'revision-requested' },
       approvals: [{ approvalType: 'revision' }],
+    });
+    expect(competing).toMatchObject({
+      ok: false,
+      changed: false,
+      error: { code: 'INVALID_TRANSITION' },
     });
     expect(retry.approvals).toHaveLength(1);
   });
@@ -355,6 +387,14 @@ function readPreparedStatus(
   } finally {
     database.close();
   }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
 }
 
 async function runGit(cwd: string, args: string[]) {

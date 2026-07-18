@@ -639,19 +639,47 @@ export async function requestPreparedDiffRevision(
       );
     }
   }
+  // Revision verification above is asynchronous. Reload before validating the
+  // transition so a concurrent request cannot apply a decision to the stale
+  // pre-verification record and overwrite its finding-promotion provenance.
+  const current = requirePreparedDiff(
+    parsed.input.preparedDiffId,
+    'prepared_diff_request_revision',
+    paths,
+  );
+  if (!current.ok) return current.result;
+  const currentPromotion = objectField(current.record.summary).findingPromotion;
+  if (
+    parsed.input.findingPromotion &&
+    objectField(currentPromotion).sourceFindingId ===
+      parsed.input.findingPromotion.sourceFindingId
+  ) {
+    return {
+      ok: true,
+      action: 'prepared_diff_request_revision',
+      changed: false,
+      message:
+        'This finding already seeded the prepared-diff revision request.',
+      preparedDiff: current.record,
+      approvals: listApprovalRecords(
+        { preparedDiffIds: [current.record.id] },
+        paths,
+      ).filter((approval) => approval.approvalType === 'revision'),
+    };
+  }
   const transition = assertTransition(
-    loaded.record,
+    current.record,
     'prepared_diff_request_revision',
     'request-revision',
     ['prepared', 'verification-requested', 'push-approved', 'push-blocked'],
   );
   if (!transition.ok) return transition.result;
   const updated = updatePreparedDiffState(
-    loaded.record.id,
+    current.record.id,
     {
       status: 'revision-requested',
       pushApprovalStatus: 'rejected',
-      summary: mergeSummary(loaded.record.summary, {
+      summary: mergeSummary(current.record.summary, {
         revisionReason: parsed.input.reason,
         ...(parsed.input.findingPromotion
           ? { findingPromotion: parsed.input.findingPromotion }

@@ -47,6 +47,7 @@ export function PrReviewNavigationBar({
   const [helpOpen, setHelpOpen] = useState(false);
   const helpButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const helpInvokerRef = useRef<HTMLElement | null>(null);
 
   const openHelp = useCallback((invoker: HTMLElement | null) => {
@@ -56,6 +57,9 @@ export function PrReviewNavigationBar({
 
   const closeHelp = useCallback(() => {
     setHelpOpen(false);
+  }, []);
+
+  const restoreHelpFocus = useCallback(() => {
     window.requestAnimationFrame(() => {
       const invoker = helpInvokerRef.current;
       helpInvokerRef.current = null;
@@ -68,11 +72,19 @@ export function PrReviewNavigationBar({
   }, []);
 
   useEffect(() => {
-    if (helpOpen) closeButtonRef.current?.focus();
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (helpOpen) {
+      if (!dialog.open) dialog.showModal();
+      closeButtonRef.current?.focus();
+    } else if (dialog.open) {
+      dialog.close();
+    }
   }, [helpOpen]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (helpOpen) return;
       if (shouldSuppressReviewShortcut(event)) return;
       if (event.key === '?') {
         event.preventDefault();
@@ -86,7 +98,7 @@ export function PrReviewNavigationBar({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onMove, openHelp]);
+  }, [helpOpen, onMove, openHelp]);
   const positionText = navigationPositionText({
     boundary,
     canMove,
@@ -166,63 +178,56 @@ export function PrReviewNavigationBar({
       <p aria-atomic="true" aria-live="polite" className="sr-only">
         {announcement}
       </p>
-      {helpOpen ? (
-        <dialog
-          aria-labelledby="pr-review-shortcuts-title"
-          aria-modal="true"
-          className="pr-review-shortcuts-dialog"
-          data-review-shortcuts="off"
-          open
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              event.preventDefault();
-              closeHelp();
-            } else if (event.key === 'Tab') {
-              event.preventDefault();
-              closeButtonRef.current?.focus();
-            }
-          }}
-        >
-          <div className="pr-review-shortcuts-panel">
-            <div className="pr-review-shortcuts-heading">
-              <h2 id="pr-review-shortcuts-title">Review navigation</h2>
-              <button
-                onClick={closeHelp}
-                ref={closeButtonRef}
-                title="Close keyboard help"
-                type="button"
-              >
-                Close
-              </button>
-            </div>
-            <dl>
-              <div>
-                <dt>
-                  <kbd>[</kbd>
-                </dt>
-                <dd>Previous target in the selected traversal kind.</dd>
-              </div>
-              <div>
-                <dt>
-                  <kbd>]</kbd>
-                </dt>
-                <dd>Next target in the selected traversal kind.</dd>
-              </div>
-              <div>
-                <dt>
-                  <kbd>?</kbd>
-                </dt>
-                <dd>Open this keyboard help.</dd>
-              </div>
-            </dl>
-            <p>
-              Shortcuts are off while a field, comment composer, editable
-              region, or dialog owns focus. Browser and modified-key shortcuts
-              are left unchanged.
-            </p>
+      <dialog
+        aria-labelledby="pr-review-shortcuts-title"
+        className="pr-review-shortcuts-dialog"
+        data-review-shortcuts="off"
+        onCancel={(event) => {
+          event.preventDefault();
+          closeHelp();
+        }}
+        onClose={restoreHelpFocus}
+        ref={dialogRef}
+      >
+        <div className="pr-review-shortcuts-panel">
+          <div className="pr-review-shortcuts-heading">
+            <h2 id="pr-review-shortcuts-title">Review navigation</h2>
+            <button
+              onClick={closeHelp}
+              ref={closeButtonRef}
+              title="Close keyboard help"
+              type="button"
+            >
+              Close
+            </button>
           </div>
-        </dialog>
-      ) : null}
+          <dl>
+            <div>
+              <dt>
+                <kbd>[</kbd>
+              </dt>
+              <dd>Previous target in the selected traversal kind.</dd>
+            </div>
+            <div>
+              <dt>
+                <kbd>]</kbd>
+              </dt>
+              <dd>Next target in the selected traversal kind.</dd>
+            </div>
+            <div>
+              <dt>
+                <kbd>?</kbd>
+              </dt>
+              <dd>Open this keyboard help.</dd>
+            </div>
+          </dl>
+          <p>
+            Shortcuts are off while a field, comment composer, editable region,
+            or dialog owns focus. Browser and modified-key shortcuts are left
+            unchanged.
+          </p>
+        </div>
+      </dialog>
     </>
   );
 }

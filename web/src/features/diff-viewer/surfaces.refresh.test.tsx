@@ -18,6 +18,8 @@ const state = vi.hoisted(() => ({
   preparedHasData: true,
   preparedRevision: 'prepared-a',
   repoRevision: 'repo-a',
+  repoPatchError: false,
+  repoPatchLoading: false,
   fileCount: 2,
   patchPaths: [] as Array<string | null>,
   viewProps: null as ViewProps | null,
@@ -104,18 +106,19 @@ vi.mock('./queries', async () => {
     useRepoDiffFilePatch: (input: { path: string | null }) => {
       state.patchPaths.push(input.path);
       return {
-        data: input.path
-          ? {
-              files: [
-                {
-                  path: input.path,
-                  patch: `@@ -1 +1 @@\n-old\n+${input.path}\n`,
-                },
-              ],
-            }
-          : undefined,
-        error: null,
-        isLoading: false,
+        data:
+          input.path && !state.repoPatchLoading && !state.repoPatchError
+            ? {
+                files: [
+                  {
+                    path: input.path,
+                    patch: `@@ -1 +1 @@\n-old\n+${input.path}\n`,
+                  },
+                ],
+              }
+            : undefined,
+        error: state.repoPatchError ? new Error('Patch unavailable.') : null,
+        isLoading: state.repoPatchLoading,
       };
     },
   };
@@ -156,6 +159,8 @@ describe('revision-aware prepared and Kilo surfaces', () => {
     state.preparedHasData = true;
     state.preparedRevision = 'prepared-a';
     state.repoRevision = 'repo-a';
+    state.repoPatchError = false;
+    state.repoPatchLoading = false;
     state.fileCount = 2;
     state.patchPaths = [];
     state.viewProps = null;
@@ -410,6 +415,25 @@ describe('revision-aware prepared and Kilo surfaces', () => {
       mountedView,
     );
     expect(state.viewProps?.source?.revision).toMatchObject({ id: 'repo-b' });
+  });
+
+  it('publishes truthful Kilo patch loading and failure states', async () => {
+    state.repoPatchLoading = true;
+    await render(<KiloTaskDiffReview task={kiloTask()} />);
+
+    expect(state.viewProps?.source?.files[0]).toMatchObject({
+      path: 'src/file-000.ts',
+      patchState: 'loading',
+    });
+
+    state.repoPatchLoading = false;
+    state.repoPatchError = true;
+    await render(<KiloTaskDiffReview task={kiloTask()} />);
+
+    expect(state.viewProps?.source?.files[0]).toMatchObject({
+      path: 'src/file-000.ts',
+      patchState: 'unavailable',
+    });
   });
 
   it('never publishes task B with task A files or revision during a source switch', async () => {

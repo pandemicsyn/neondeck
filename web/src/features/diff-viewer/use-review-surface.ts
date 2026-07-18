@@ -82,6 +82,8 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
   const findingsRequestGenerationRef = useRef(0);
   const surfaceIdChangeRef = useRef(input?.onSurfaceIdChange);
   const eventStreamReadyRef = useRef(false);
+  const registeredRef = useRef(false);
+  const surfaceWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   snapshotRef.current = snapshot;
   navigateRef.current = input?.onNavigatePath;
   findingsChangeRef.current = input?.onFindingsChange;
@@ -95,11 +97,11 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
   useEffect(() => {
     if (!snapshot) {
       findingsRequestGenerationRef.current += 1;
-      if (surfaceId) void removeReviewSurface(surfaceId).catch(() => undefined);
+      if (surfaceId) enqueueSurfaceRemoval(surfaceId);
       return;
     }
     if (eventStreamReadyRef.current) {
-      void registerReviewSurface(snapshot).catch(() => undefined);
+      enqueueSurfaceRegistration(snapshot);
     }
   }, [snapshot, surfaceId]);
 
@@ -107,19 +109,15 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
     if (!surfaceId) return;
     const heartbeat = window.setInterval(() => {
       const current = snapshotRef.current;
-      if (current && eventStreamReadyRef.current) {
+      if (current && (registeredRef.current || eventStreamReadyRef.current)) {
         void heartbeatReviewSurface(surfaceId).catch(() => {
-          if (eventStreamReadyRef.current) {
-            return registerReviewSurface(current)
-              .then(() => syncReviewSurfaceFindings(surfaceId))
-              .catch(() => undefined);
-          }
+          enqueueSurfaceRegistration(current, true);
         });
       }
     }, reviewSurfaceHeartbeatMs);
     return () => {
       window.clearInterval(heartbeat);
-      void removeReviewSurface(surfaceId).catch(() => undefined);
+      enqueueSurfaceRemoval(surfaceId);
     };
   }, [surfaceId]);
 
@@ -161,9 +159,7 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
         eventStreamReadyRef.current = true;
         const current = snapshotRef.current;
         if (current) {
-          void registerReviewSurface(current)
-            .then(() => syncReviewSurfaceFindings(surfaceId))
-            .catch(() => undefined);
+          enqueueSurfaceRegistration(current, true);
         }
       },
     );
@@ -175,6 +171,31 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
   }, [surfaceId]);
 
   return surfaceId;
+
+  function enqueueSurfaceRegistration(
+    nextSnapshot: ReviewSurfaceSnapshot,
+    syncFindings = false,
+  ) {
+    enqueueSurfaceWrite(async () => {
+      await registerReviewSurface(nextSnapshot);
+      registeredRef.current = true;
+      if (syncFindings) await syncReviewSurfaceFindings(nextSnapshot.surfaceId);
+    });
+  }
+
+  function enqueueSurfaceRemoval(targetSurfaceId: string) {
+    enqueueSurfaceWrite(async () => {
+      await removeReviewSurface(targetSurfaceId);
+      registeredRef.current = false;
+    });
+  }
+
+  function enqueueSurfaceWrite(write: () => Promise<void>) {
+    surfaceWriteQueueRef.current = surfaceWriteQueueRef.current
+      .catch(() => undefined)
+      .then(write)
+      .catch(() => undefined);
+  }
 
   function syncReviewSurfaceFindings(targetSurfaceId: string) {
     if (!findingsChangeRef.current) return Promise.resolve();

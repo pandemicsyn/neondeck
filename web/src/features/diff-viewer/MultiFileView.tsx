@@ -10,7 +10,11 @@ import {
   patchHasContent,
 } from './helpers';
 import { FileTreePane } from './FileTreePane';
-import { DiffWorkerProvider, UnifiedPatchView } from './DiffViewer';
+import {
+  DiffWorkerProvider,
+  UnifiedPatchView,
+  type DiffNavigationScrollRequest,
+} from './DiffViewer';
 import type {
   DiffFilePatch,
   DiffReviewAnnotation,
@@ -53,6 +57,7 @@ type MultiFileViewProps = {
   ) => void;
   onReviewSurfaceIdChange?: (surfaceId: string | null) => void;
   refreshStatus?: ReviewRefreshStatus;
+  navigationScroll?: DiffNavigationScrollRequest | null;
 };
 
 export function MultiFileView({
@@ -80,6 +85,7 @@ export function MultiFileView({
   onReviewSurfaceFindingsChange,
   onReviewSurfaceIdChange,
   refreshStatus,
+  navigationScroll,
   title,
   tone = 'primary',
 }: MultiFileViewProps) {
@@ -185,6 +191,7 @@ export function MultiFileView({
                 <Badge>{diffFileCountLabel(files.length)}</Badge>
               )
             }
+            navigationScroll={navigationScroll}
             patch={patchHasContent(patch) ? patch : null}
             renderAnnotation={renderAnnotation}
             selectedLines={selectedLines}
