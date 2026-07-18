@@ -159,12 +159,28 @@ const findingAnchorSchema = v.variant('kind', [
     v.object({
       kind: v.literal('line-range'),
       side: findingSideSchema,
-      startLine: v.pipe(v.number(), v.integer(), v.minValue(1)),
-      endLine: v.pipe(v.number(), v.integer(), v.minValue(1)),
+      startLine: v.pipe(
+        v.number(),
+        v.integer(),
+        v.minValue(1),
+        v.maxValue(neonReviewFindingLimits.maxLineNumber),
+      ),
+      endLine: v.pipe(
+        v.number(),
+        v.integer(),
+        v.minValue(1),
+        v.maxValue(neonReviewFindingLimits.maxLineNumber),
+      ),
     }),
     v.check(
       (anchor) => anchor.endLine >= anchor.startLine,
       'Finding end line must not precede its start line.',
+    ),
+    v.check(
+      (anchor) =>
+        anchor.endLine - anchor.startLine + 1 <=
+        neonReviewFindingLimits.maxLineRangeSpan,
+      'Finding line range exceeds the supported span.',
     ),
   ),
   v.object({

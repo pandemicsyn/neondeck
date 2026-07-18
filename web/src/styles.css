@@ -883,6 +883,28 @@ button:disabled {
   min-height: 0;
 }
 
+.diff-tree-filter {
+  width: 100%;
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--primary) 7%, var(--field));
+  padding: 4px 6px;
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+}
+
+.diff-tree-filter::placeholder {
+  color: var(--muted);
+}
+
+.diff-tree-filter:focus-visible {
+  border-color: var(--primary);
+  outline: 1px solid var(--primary);
+  outline-offset: 0;
+}
+
 .diff-file-column {
   display: flex;
   min-width: 0;
@@ -1543,6 +1565,91 @@ button:disabled {
   background: color-mix(in srgb, var(--primary) 10%, var(--field));
   outline: 1px solid var(--primary);
   outline-offset: -1px;
+}
+
+.pr-review-neon-finding,
+.pr-review-neon-finding-summary {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--primary) 5%, var(--field));
+  padding: 8px;
+  color: var(--ink);
+}
+
+.pr-review-neon-finding-summary {
+  border: 0;
+  padding: 10px 8px;
+}
+
+.pr-review-neon-finding-heading {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--deck-text-scale));
+}
+
+.pr-review-neon-finding-title {
+  min-width: 0;
+  color: var(--primary-strong);
+  font-weight: 600;
+}
+
+.pr-review-neon-finding-state {
+  flex: none;
+  color: var(--ink);
+  font-size: calc(9px * var(--deck-text-scale));
+  font-variant-numeric: tabular-nums;
+}
+
+.pr-review-neon-finding-copy,
+.pr-review-neon-finding-action,
+.pr-review-neon-finding-location,
+.pr-review-neon-finding-anchor-status,
+.pr-review-neon-finding-provenance {
+  margin: 0;
+  font-size: calc(10.5px * var(--deck-text-scale));
+  line-height: 1.45;
+}
+
+.pr-review-neon-finding-action,
+.pr-review-neon-finding-location,
+.pr-review-neon-finding-anchor-status,
+.pr-review-neon-finding-provenance {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: calc(9.5px * var(--deck-text-scale));
+}
+
+.pr-review-neon-finding-action span,
+.pr-review-neon-finding-anchor-status {
+  color: var(--ink);
+}
+
+.pr-review-neon-finding-provenance {
+  overflow-wrap: anywhere;
+}
+
+.pr-review-neon-finding-compact {
+  gap: 4px;
+  padding: 6px;
+}
+
+.pr-review-neon-finding-compact .pr-review-neon-finding-copy,
+.pr-review-neon-finding-compact .pr-review-neon-finding-action {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.pr-review-neon-finding-compact .pr-review-neon-finding-provenance {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
 }
 
 [data-deck-profile='portrait'] .pr-review-header,

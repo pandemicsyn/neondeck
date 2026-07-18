@@ -8,6 +8,8 @@ export const neonReviewFindingLimits = {
   maxSuggestedActionLength: 500,
   maxLifecycleReasonLength: 500,
   maxEventFindingIds: 50,
+  maxLineNumber: 10_000_000,
+  maxLineRangeSpan: 10_000,
 } as const;
 
 export type NeonReviewFindingSeverity = 'critical' | 'major' | 'minor' | 'nit';

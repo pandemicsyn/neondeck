@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import * as v from 'valibot';
 import {
   neonReviewFindingLimits,
   type NeonReviewFinding,
@@ -17,6 +18,7 @@ import type {
   ReviewSurfaceNavigationRequest,
   ReviewSurfaceSnapshot,
 } from '../../../shared/review-surface';
+import { neonReviewFindingDraftSchema } from './schemas';
 
 export const reviewSurfaceTtlMs = 45_000;
 
@@ -38,6 +40,7 @@ export type ReviewSurfaceFindingErrorCode =
   | 'stale-revision'
   | 'source-mismatch'
   | 'file-unavailable'
+  | 'invalid-finding'
   | 'invalid-batch-size'
   | 'duplicate-finding-id'
   | 'finding-id-conflict'
@@ -157,7 +160,6 @@ export class ReviewSurfaceRegistry {
         revisionKey: currentRevisionKey,
       });
     }
-
     if (
       input.findings.length === 0 ||
       input.findings.length > neonReviewFindingLimits.maxApplyBatch
@@ -167,7 +169,18 @@ export class ReviewSurfaceRegistry {
       });
     }
 
-    const ids = input.findings.map((finding) => finding.id);
+    const parsedFindings: NeonReviewFindingDraft[] = [];
+    for (const finding of input.findings) {
+      const parsed = v.safeParse(neonReviewFindingDraftSchema, finding);
+      if (!parsed.success) {
+        return this.findingError(surfaceId, 'apply', 'invalid-finding', {
+          revisionKey: currentRevisionKey,
+        });
+      }
+      parsedFindings.push(parsed.output);
+    }
+
+    const ids = parsedFindings.map((finding) => finding.id);
     if (new Set(ids).size !== ids.length) {
       return this.findingError(surfaceId, 'apply', 'duplicate-finding-id', {
         revisionKey: currentRevisionKey,
@@ -175,7 +188,7 @@ export class ReviewSurfaceRegistry {
     }
 
     const sourcePaths = new Set(surface.source.files.map((file) => file.path));
-    for (const finding of input.findings) {
+    for (const finding of parsedFindings) {
       if (
         finding.sourceId !== surface.source.id ||
         finding.revisionKey !== currentRevisionKey
@@ -194,7 +207,7 @@ export class ReviewSurfaceRegistry {
     const existing = this.findings.get(surfaceId) ?? new Map();
     const findingsToApply: NeonReviewFindingDraft[] = [];
     let addedFindingCount = 0;
-    for (const finding of input.findings) {
+    for (const finding of parsedFindings) {
       const current = existing.get(finding.id);
       if (!current) {
         findingsToApply.push(finding);
@@ -232,7 +245,7 @@ export class ReviewSurfaceRegistry {
         message: 'All finding ids were already applied with identical content.',
         surfaceId,
         revisionKey: currentRevisionKey,
-        findings: input.findings.map((finding) => existing.get(finding.id)!),
+        findings: parsedFindings.map((finding) => existing.get(finding.id)!),
         findingIds: [],
         count: 0,
       };
@@ -258,7 +271,7 @@ export class ReviewSurfaceRegistry {
       message: `Applied ${applied.length} ephemeral review finding(s).`,
       surfaceId,
       revisionKey: currentRevisionKey,
-      findings: input.findings.map((finding) => next.get(finding.id)!),
+      findings: parsedFindings.map((finding) => next.get(finding.id)!),
       findingIds: applied.map((finding) => finding.id),
       count: applied.length,
     };
@@ -694,6 +707,8 @@ function findingErrorMessage(code: ReviewSurfaceFindingErrorCode) {
       return 'Every finding must match the active source and revision.';
     case 'file-unavailable':
       return 'Every finding must anchor to a file in the active review surface.';
+    case 'invalid-finding':
+      return 'Every finding must satisfy the complete anchor, content, and provenance schema.';
     case 'invalid-batch-size':
       return `Finding batches must contain between 1 and ${neonReviewFindingLimits.maxApplyBatch} items.`;
     case 'duplicate-finding-id':

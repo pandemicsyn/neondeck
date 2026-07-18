@@ -7,6 +7,7 @@ import type {
 import {
   createReviewNavigationModel,
   moveReviewCursor,
+  reviewCursorTargets,
   type ReviewCursorDirection,
   type ReviewCursorKind,
   type ReviewCursorResult,
@@ -15,6 +16,13 @@ import {
   type ReviewNavigationModel,
 } from '../../../../shared/review-navigation';
 import type { DiffFilePatch } from '../diff-viewer/types';
+import type { NeonReviewFinding } from '../../../../shared/review-finding';
+import type { NeonFindingAnchorResolution } from './review-findings';
+import {
+  namespacedReviewUiId,
+  neonFindingAnnotationId,
+  neonFindingNavigationId,
+} from './review-findings';
 import { latestThreadComment, threadPath } from './review-ui-helpers';
 
 export type ReviewNavigationAnchor = {
@@ -84,12 +92,16 @@ export function createPrReviewNavigationData({
   draft,
   files,
   findings,
+  neonFindingResolutions = new Map(),
+  neonFindings = [],
   staleCommentIds,
   threads,
 }: {
   draft: GitHubPrReviewDraft | null;
   files: DiffFilePatch[];
   findings: PrReviewReportOnlyFinding[];
+  neonFindingResolutions?: ReadonlyMap<string, NeonFindingAnchorResolution>;
+  neonFindings?: readonly NeonReviewFinding[];
   staleCommentIds: ReadonlySet<string>;
   threads: GitHubPullRequestReviewThread[];
 }): PrReviewNavigationData {
@@ -162,6 +174,29 @@ export function createPrReviewNavigationData({
       selection: null,
     });
   }
+  for (const finding of neonFindings) {
+    if (finding.lifecycle.state !== 'active') continue;
+    const resolution = neonFindingResolutions.get(finding.id);
+    const item = {
+      id: neonFindingNavigationId(finding.id),
+      kind: 'finding' as const,
+      line:
+        resolution?.state === 'anchored'
+          ? resolution.lineNumber
+          : finding.lifecycle.state === 'active' &&
+              finding.anchor.kind === 'line-range'
+            ? finding.anchor.endLine
+            : null,
+      path: finding.file,
+      severity: finding.severity,
+      summary: `${finding.title}: ${finding.explanation}`,
+    };
+    items.push(item);
+    anchors.set(navigationTargetKey(item.kind, item.id), {
+      annotationId: neonFindingAnnotationId(finding.id),
+      selection: resolution?.state === 'anchored' ? resolution.selection : null,
+    });
+  }
 
   return {
     anchors,
@@ -179,10 +214,32 @@ export function reportOnlyFindingNavigationId(
   finding: PrReviewReportOnlyFinding,
   index: number,
 ) {
-  return (
-    finding.sourceId ??
-    `report:${index}:${finding.path}:${finding.line ?? 'file'}`
+  return finding.sourceId != null
+    ? namespacedReviewUiId('report-only-finding', 'source', finding.sourceId)
+    : namespacedReviewUiId(
+        'report-only-finding',
+        'synthetic',
+        index,
+        finding.path,
+        finding.line,
+      );
+}
+
+export function resolveNeonFindingSelection(
+  finding: NeonReviewFinding,
+  model: ReviewNavigationModel,
+  filteredPaths: readonly string[] | null,
+) {
+  const targets = reviewCursorTargets(model, 'finding');
+  const target = targets.find(
+    (candidate) => candidate.id === neonFindingNavigationId(finding.id),
   );
+  if (!target) return null;
+  return {
+    filteredOut: Boolean(filteredPaths && !filteredPaths.includes(target.path)),
+    target,
+    targets,
+  };
 }
 
 export function reviewNavigationAnchor(

@@ -9,11 +9,14 @@ import type {
   PrReviewReportOnlyFinding,
 } from '../../api';
 import type { DiffFilePatch } from '../diff-viewer/types';
+import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import {
   createImperativeReviewPathJump,
   createPrReviewNavigationData,
   moveReviewCursorFromPath,
+  reportOnlyFindingNavigationId,
   resolveHunkTraversal,
+  resolveNeonFindingSelection,
   reviewNavigationAnchor,
   reviewNavigationAnnouncement,
   reviewNavigationPublication,
@@ -21,6 +24,10 @@ import {
   selectedReviewContext,
   type ReviewPatchNavigationState,
 } from './review-navigation';
+import {
+  neonFindingAnnotationId,
+  neonFindingNavigationId,
+} from './review-findings';
 
 describe('focused PR review navigation wiring', () => {
   it.each([
@@ -101,7 +108,11 @@ describe('focused PR review navigation wiring', () => {
       { id: 'draft-a', stale: true },
     ]);
     expect(reviewCursorTargets(data.model, 'finding')).toMatchObject([
-      { id: 'finding-a', path: 'src/b.ts', severity: 'major' },
+      {
+        id: reportOnlyFindingNavigationId(finding(), 0),
+        path: 'src/b.ts',
+        severity: 'major',
+      },
     ]);
     expect(
       reviewCursorTargets(data.model, 'attention').map(
@@ -119,7 +130,7 @@ describe('focused PR review navigation wiring', () => {
     );
     const findingTarget = reviewCursorTargets(data.model, 'finding')[0]!;
     expect(reviewNavigationAnchor(findingTarget, data.anchors)).toEqual({
-      annotationId: 'finding-a',
+      annotationId: reportOnlyFindingNavigationId(finding(), 0),
       selection: null,
     });
   });
@@ -153,6 +164,212 @@ describe('focused PR review navigation wiring', () => {
         side: 'deletions',
         end: 8,
         endSide: 'additions',
+      },
+    });
+  });
+
+  it('publishes one cross-file typed finding target for tree, diff, inline annotation, inspector, and surface state', () => {
+    const typedFinding = neonFinding();
+    const data = createPrReviewNavigationData({
+      draft: null,
+      files: reviewFiles(),
+      findings: [finding()],
+      neonFindings: [typedFinding],
+      neonFindingResolutions: new Map([
+        [
+          typedFinding.id,
+          {
+            state: 'anchored' as const,
+            lineNumber: 4,
+            side: 'additions' as const,
+            selection: {
+              side: 'additions',
+              start: 4,
+              end: 5,
+            } as never,
+          },
+        ],
+      ]),
+      staleCommentIds: new Set(),
+      threads: [],
+    });
+    const targets = reviewCursorTargets(data.model, 'finding');
+    const result = moveReviewCursorFromPath(
+      targets,
+      targets[0]!.key,
+      targets[0]!.path,
+      targets[0]!.orderIndex,
+      'next',
+    );
+
+    expect(result.target).toMatchObject({
+      id: neonFindingNavigationId('typed-finding'),
+      path: 'src/c.ts',
+      severity: 'critical',
+    });
+    expect(reviewNavigationPublication(result.target!, data.anchors)).toEqual({
+      activePath: 'src/c.ts',
+      annotationId: neonFindingAnnotationId('typed-finding'),
+      selection: {
+        path: 'src/c.ts',
+        selection: { side: 'additions', start: 4, end: 5 },
+      },
+    });
+  });
+
+  it('keeps stale Neon history out of current finding and attention cursors', () => {
+    const active = neonFinding();
+    const stale = {
+      ...neonFinding(),
+      id: 'stale-finding',
+      lifecycle: {
+        state: 'stale' as const,
+        changedAt: '2026-07-18T13:00:00.000Z',
+        reason: 'Revision changed.',
+      },
+    };
+    const data = createPrReviewNavigationData({
+      draft: null,
+      files: reviewFiles(),
+      findings: [],
+      neonFindings: [active, stale],
+      staleCommentIds: new Set(),
+      threads: [],
+    });
+
+    expect(
+      reviewCursorTargets(data.model, 'finding').map(({ id }) => id),
+    ).toEqual([neonFindingNavigationId(active.id)]);
+    expect(
+      reviewCursorTargets(data.model, 'attention').map(({ id }) => id),
+    ).toEqual([neonFindingNavigationId(active.id)]);
+  });
+
+  it('uses collision-safe typed finding cursor and annotation identities', () => {
+    const typed = neonFinding();
+    const report = { ...finding(), sourceId: typed.id };
+    const thread = { ...reviewThread(), id: typed.id };
+    const data = createPrReviewNavigationData({
+      draft: null,
+      files: reviewFiles(),
+      findings: [report],
+      neonFindings: [typed],
+      neonFindingResolutions: new Map([
+        [
+          typed.id,
+          {
+            state: 'anchored' as const,
+            lineNumber: 4,
+            side: 'additions' as const,
+            selection: {
+              side: 'additions',
+              start: 4,
+              end: 5,
+            } as never,
+          },
+        ],
+      ]),
+      staleCommentIds: new Set(),
+      threads: [thread],
+    });
+    const findingTargets = reviewCursorTargets(data.model, 'finding');
+    const typedTarget = findingTargets.find(
+      ({ id }) => id === neonFindingNavigationId(typed.id),
+    );
+
+    expect(new Set(findingTargets.map(({ key }) => key)).size).toBe(2);
+    expect(typedTarget).toBeDefined();
+    expect(reviewNavigationAnchor(typedTarget!, data.anchors)).toMatchObject({
+      annotationId: neonFindingAnnotationId(typed.id),
+    });
+    expect(
+      reviewNavigationAnchor(
+        reviewCursorTargets(data.model, 'review-thread')[0]!,
+        data.anchors,
+      ),
+    ).toMatchObject({ annotationId: typed.id });
+  });
+
+  it('frames lone-surrogate typed and report-only ids without throwing or colliding', () => {
+    const loneSurrogate = '\ud800';
+    const typed = { ...neonFinding(), id: loneSurrogate };
+    const report = { ...finding(), sourceId: loneSurrogate };
+
+    expect(() =>
+      createPrReviewNavigationData({
+        draft: null,
+        files: reviewFiles(),
+        findings: [report],
+        neonFindings: [typed],
+        staleCommentIds: new Set(),
+        threads: [],
+      }),
+    ).not.toThrow();
+
+    const data = createPrReviewNavigationData({
+      draft: null,
+      files: reviewFiles(),
+      findings: [report],
+      neonFindings: [typed],
+      staleCommentIds: new Set(),
+      threads: [],
+    });
+    const ids = reviewCursorTargets(data.model, 'finding').map(({ id }) => id);
+
+    expect(ids).toEqual([
+      reportOnlyFindingNavigationId(report, 0),
+      neonFindingNavigationId(loneSurrogate),
+    ]);
+    expect(new Set(ids).size).toBe(2);
+    expect(neonFindingAnnotationId(loneSurrogate)).not.toBe(
+      neonFindingNavigationId(loneSurrogate),
+    );
+  });
+
+  it('resolves an inspector finding outside the active tree filter from the unfiltered cursor', () => {
+    const typed = neonFinding();
+    const data = createPrReviewNavigationData({
+      draft: null,
+      files: reviewFiles(),
+      findings: [],
+      neonFindings: [typed],
+      neonFindingResolutions: new Map([
+        [
+          typed.id,
+          {
+            state: 'anchored' as const,
+            lineNumber: 4,
+            side: 'additions' as const,
+            selection: {
+              side: 'additions',
+              start: 4,
+              end: 5,
+            } as never,
+          },
+        ],
+      ]),
+      staleCommentIds: new Set(),
+      threads: [],
+    });
+    const selection = resolveNeonFindingSelection(typed, data.model, [
+      'src/a.ts',
+    ]);
+
+    expect(selection).toMatchObject({
+      filteredOut: true,
+      target: {
+        id: neonFindingNavigationId(typed.id),
+        path: 'src/c.ts',
+      },
+    });
+    expect(
+      reviewNavigationPublication(selection!.target, data.anchors),
+    ).toEqual({
+      activePath: 'src/c.ts',
+      annotationId: neonFindingAnnotationId(typed.id),
+      selection: {
+        path: 'src/c.ts',
+        selection: { side: 'additions', start: 4, end: 5 },
       },
     });
   });
@@ -319,7 +536,10 @@ describe('focused PR review navigation wiring', () => {
     });
     expect(reconcileReviewCursor(all, onlyFinding, all[1]!.key)).toMatchObject({
       resolution: 'nearest',
-      target: { id: 'finding-a', path: 'src/b.ts' },
+      target: {
+        id: reportOnlyFindingNavigationId(finding(), 0),
+        path: 'src/b.ts',
+      },
     });
   });
 
@@ -387,7 +607,10 @@ describe('focused PR review navigation wiring', () => {
       ),
     ).toMatchObject({
       resolution: 'nearest',
-      target: { id: 'finding-a', path: 'src/b.ts' },
+      target: {
+        id: reportOnlyFindingNavigationId(finding(), 0),
+        path: 'src/b.ts',
+      },
     });
   });
 
@@ -632,6 +855,39 @@ function finding(): PrReviewReportOnlyFinding {
     summary: 'Unsafe fallback',
     suggestedFix: 'Return an explicit result.',
     reason: 'unanchorable',
+  };
+}
+
+function neonFinding(): NeonReviewFinding {
+  return {
+    schemaVersion: 1,
+    id: 'typed-finding',
+    surfaceId: 'surface-a',
+    sourceId: 'github-pr:example/repo#42',
+    revisionKey: 'git-commit::head-sha',
+    file: 'src/c.ts',
+    anchor: {
+      kind: 'line-range',
+      side: 'additions',
+      startLine: 4,
+      endLine: 5,
+    },
+    title: 'Critical finding',
+    explanation: 'The fallback crosses a trust boundary.',
+    severity: 'critical',
+    confidence: 'high',
+    suggestedAction: 'Reject the untrusted input.',
+    provenance: {
+      authorRole: 'display-assistant',
+      model: 'openai/gpt-5',
+      workflowRunId: 'run-42',
+      createdAt: '2026-07-18T12:00:00.000Z',
+    },
+    lifecycle: {
+      state: 'active',
+      changedAt: '2026-07-18T12:00:00.000Z',
+      reason: null,
+    },
   };
 }
 

@@ -6,6 +6,10 @@ import type {
   ReviewSurfaceNavigationRequest,
   ReviewSurfaceSnapshot,
 } from '../../../shared/review-surface';
+import type {
+  NeonReviewFinding,
+  ReviewSurfaceFindingsDismissRequest,
+} from '../../../shared/review-finding';
 import { dashboardEventHub } from './event-hub';
 import { getJson, postJson, putJson } from './http';
 
@@ -40,6 +44,39 @@ export function heartbeatReviewSurface(surfaceId: string) {
     `${reviewSurfaceUrl(surfaceId)}/heartbeat`,
     {},
   );
+}
+
+export type ReviewSurfaceFindingsResponse = {
+  ok: true;
+  action: string;
+  changed: boolean;
+  message: string;
+  surfaceId: string;
+  revisionKey: string | null;
+  findings: NeonReviewFinding[];
+  count: number;
+};
+
+export function readReviewSurfaceFindings(surfaceId: string) {
+  return getJson<ReviewSurfaceFindingsResponse>(
+    `${reviewSurfaceUrl(surfaceId)}/findings`,
+  );
+}
+
+export function dismissReviewSurfaceFindings(
+  surfaceId: string,
+  request: ReviewSurfaceFindingsDismissRequest,
+) {
+  return postJson<{
+    ok: true;
+    action: 'dismiss';
+    changed: boolean;
+    message: string;
+    surfaceId: string;
+    revisionKey: string | null;
+    findingIds: string[];
+    count: number;
+  }>(`${reviewSurfaceUrl(surfaceId)}/findings/dismiss`, request);
 }
 
 export function navigateReviewSurface(
