@@ -30,12 +30,12 @@ or manual workflow handoff:
    readiness, and asks whether current feedback should be processed.
 3. A meaningful PR event creates one durable admission. Existing feedback is
    processed when requested; the first poll does not silently discard it.
-4. On the first actionable event, Neondeck creates one PR-owner Neon session and
+4. On the first actionable event, Neondeck creates one PR-owner Neon agent instance and
    one isolated managed worktree at the exact PR head SHA. Both are durably bound
    to the watch and the primary checkout is never edited.
-5. Neondeck dispatches a bounded event turn to that same session with a factual,
+5. Neondeck dispatches a bounded event turn to that same agent instance with a factual,
    authoritative environment envelope. Later feedback, CI changes, and PR state
-   changes are dispatched to the same session and workspace rather than creating
+   changes are dispatched to the same agent instance and workspace rather than creating
    another agent.
 6. The coordinator creates a prepared diff, applies mode and guardrail policy,
    runs configured checks, obtains approval when required, pushes only when safe,
@@ -53,14 +53,14 @@ explicit setup
   → watch watermark / initial event
   → admission
   → triage
-  → create/reuse PR-owner session and exact-SHA worktree
-  → bounded event turn in that same session
+  → create/reuse PR-owner agent instance and exact-SHA worktree
+  → bounded event turn in that same agent instance
   → prepared diff
   → policy and verification
   → approval or safe push
   → PR result delivery
-  → wait for the next event in the same session
-  → on terminal PR state: archive session / cleanup workspace
+  → wait for the next event in the same agent instance
+  → on terminal PR state: archive agent instance / cleanup workspace
 ```
 
 ## Current Baseline
@@ -94,12 +94,12 @@ patch, verifies its result, or advances the admission to delivery.
 
 Add one `advanceAutopilotAdmission(admissionId)` service. It is the only component
 allowed to select and reserve the next stage. Scheduler code, workflow observation
-handlers, owner-session reconciliation, approval routes, and recovery actions may request
+handlers, owner-instance reconciliation, approval routes, and recovery actions may request
 advancement, but must not directly invoke the next workflow.
 
 Deterministic stages are bounded Flue workflows with run ids and typed terminal
 results. Agent work is a bounded, correlated dispatch into the watch's continuing
-PR-owner Flue session. Every state transition is committed in Neondeck SQLite
+PR-owner Flue agent instance. Every state transition is committed in Neondeck SQLite
 before an external effect is started. A compare-and-swap state/version update
 prevents duplicate observers from dispatching the same next stage or agent turn.
 
@@ -107,31 +107,51 @@ Remove the two current triage-to-prepare continuation paths from
 `src/modules/scheduler/pr-watch-events.ts` and `src/server/learning-hooks.ts` after
 the coordinator owns that transition.
 
-### One continuing Neon session owns each Autopilot PR
+### One continuing Neon agent instance owns each Autopilot PR
 
 Create a private `pr-autopilot-owner` Flue agent definition with a narrow
-capability set. Each configured Autopilot watch gets one addressable session id for
-that agent. The durable PR controller/state machine owns policy and progression;
-the continuing session owns reasoning continuity about the PR.
+capability set. Each configured Autopilot watch gets one addressable Flue **agent
+instance** id for that agent. The durable PR controller/state machine owns policy
+and progression; the continuing instance owns reasoning continuity about the PR.
 
-The owner row may be created during setup, but its Flue session and managed
+Terminology: the `id` passed to `dispatch({ agent, id, input })` is the stable Flue
+**agent instance** id: a persistent, addressable dispatch target whose canonical
+conversation stream accumulates across dispatches. It is never the per-operation
+`DispatchReceipt.dispatchId`. Flue sessions are named conversation branches within
+a harness and are a distinct concept; only `chat_session_id` intentionally names
+Neondeck's app-owned chat metadata. The durable field that stores this target is
+therefore `flue_instance_id` throughout this plan; the stage-attempt row stores the
+separate per-dispatch `dispatch_id` returned by Flue.
+
+The owner row may be created during setup, but its Flue instance and managed
 worktree are created lazily on the first actionable event. The initial dispatch
 contains the full PR, mode, environment, workspace, capability, and event brief.
-Every later actionable event is dispatched with the same agent and session id:
+Every later actionable event is dispatched with the same agent and instance id:
 
 ```ts
 dispatch({
   agent: 'pr-autopilot-owner',
-  id: owner.flueSessionId,
+  id: owner.flueInstanceId,
   input: authoritativeEventEnvelope,
 });
 ```
 
-This is the same continuing-session pattern already used by scheduled instruction
-dispatch and recurring briefing sessions. An event turn is bounded and audited;
-the PR-owner session is not recreated at the end of the turn.
+This is the same continuing-instance pattern already used by scheduled instruction
+dispatch and recurring briefings. An event turn is bounded and audited;
+the PR-owner instance is not recreated at the end of the turn.
 
-Implementation should reuse the established dispatch/session seams in
+For installed `@flue/runtime` `1.0.0-beta.9`, configure the agent's `compaction`
+field with `CompactionConfig`: `reserveTokens` reserves headroom in the model context
+window and threshold compaction begins when used tokens exceed
+`contextWindow - reserveTokens`; `keepRecentTokens` leaves that recent portion
+unsummarized, while older model-visible messages are folded into a summary. This
+bounds model input for a turn, not the persisted canonical instance stream, Flue's
+transcript storage, or replay/storage cost. The instance must still be able to
+outlive a long PR, and any retained-stream/replay-cost policy is a separate explicit
+product decision. This is also separate from Neondeck's `staleReasons`
+grounding-drift signal (see rotation rules below).
+
+Implementation should reuse the established dispatch and chat-metadata seams in
 `src/modules/scheduled-tasks/dispatch.ts`, `src/modules/briefings/service.ts`, and
 `src/modules/sessions/service.ts` rather than inventing a second agent runtime or a
 new ephemeral `harness.session()` for every admission.
@@ -146,23 +166,88 @@ facts.
 
 Kilo remains an explicit or repo-policy-opted delegated worker. The automatic
 watched-PR path must not silently choose Kilo. When Kilo is selected, the same
-PR-owner Neon session supervises the handoff, and Kilo completion re-enters the
-same owner/admission coordinator before the result is sent back to that session.
+PR-owner Neon agent instance supervises the handoff, and Kilo completion re-enters
+the same owner/admission coordinator before the result is sent back to that instance.
 
 ### Same-PR turns are serialized and coalesced
 
 Only one reasoning/mutation turn may be active for a PR owner. Events that arrive
 while it is busy are durably queued. On settlement, the controller recomputes the
 current PR delta, supersedes facts already addressed by the completed turn, and
-dispatches one coalesced follow-up envelope to the same session. Two separate PRs
+dispatches one coalesced follow-up envelope to the same agent instance. Two separate PRs
 may progress concurrently within the configured global and per-repo limits.
 
-Ordinary feedback, CI, commit, and mergeability changes never rotate the session.
-Session rotation is an explicit recovery path only: corrupted/unavailable session,
+Ordinary feedback, CI, commit, and mergeability changes never rotate the instance.
+Instance rotation is an explicit recovery path only: corrupted/unavailable instance,
 operator request, or a proven context-limit failure. Rotation archives the old
-session, increments `generation`, creates a replacement, and seeds it with an
+instance, increments `generation`, creates a replacement, and seeds it with an
 audited compact handoff plus current authoritative facts. It is visible in the
 operator history and must not happen silently.
+
+#### Grounding drift (`staleReasons`) must re-ground safely, not rotate by default
+
+Extract `readStaleReasons` from `src/modules/sessions/store.ts` into a shared,
+baseline-aware `src/modules/sessions/stale-reasons.ts` service. It accepts a database,
+one or more source cursors, and the exact `contextMemoryIds` included in the caller's
+grounding; it returns the same typed reasons for chat metadata and Autopilot owners.
+The chat row reader delegates to it, while the owner reader supplies its own persisted
+cursors. This avoids duplicating the current private query and makes its
+relevant-memory filter implementable for both consumers.
+
+The signal is orthogonal to model-visible context length. For Autopilot, it scans and
+classifies **every** `config_history` row after `grounding_config_history_id`, ordered
+by its stable integer id, and every relevant `memory_events` row after the persisted
+`(created_at, id)` cursor, ordered by that pair. It must not look only at the latest
+row: a later benign change must never hide an earlier post-baseline model/provider/
+skill/soul or unknown-config change. It stays stale until a later accepted dispatch
+actually carries a replacement grounding snapshot.
+
+Add `grounding_memory_ids_json` to the owner row. The deterministic envelope builder
+must use the same memory-selection service as chat context, include those selected
+memory facts and ids in the authoritative envelope, and record an immutable
+`groundingSnapshot` artifact containing: the `config_history` high-water **id**, the
+selected memory ids, the relevant-memory `(created_at, id)` high-water cursor, and an
+envelope hash. Persist the snapshot artifact id/hash on the reserved stage attempt
+before dispatch, and link the returned receipt's `dispatch_id` to that same attempt.
+It may never claim to re-ground memory whose ids were not in that envelope.
+
+After Flue accepts the dispatch and returns the per-operation `dispatch_id`, perform a
+CAS update keyed by owner id, generation, stage attempt, snapshot artifact id/hash,
+and receipt `dispatch_id`. It advances `grounding_config_history_id`, the relevant
+memory cursor, and `grounding_memory_ids_json` together to the snapshot values. Do not
+use wall-clock settlement time or collapse the sources into one timestamp: a config or
+memory change arriving after its source snapshot remains stale for the next turn. If
+dispatch is rejected, the receipt cannot be durably linked, or the CAS fails, retain
+the prior cursors; recovery must recompute drift and reconcile the reserved attempt.
+The snapshot, receipt link, and baseline update are audited.
+
+The PR owner must not reuse the briefings throw-on-stale reuse gate. Branch on a
+classified reason and envelope coverage instead:
+
+- `memory` drift re-grounds in the same agent instance only when the next envelope
+  includes the selected current memory facts and ids described above.
+- `repo` drift re-grounds in the same agent instance only for an explicit recognized
+  `config_history` action/target mapping whose affected repository, Autopilot mode,
+  policy, workspace, and push-target facts are present in the envelope. The initial
+  mapping includes `config_add_repo`, `config_update_repo`,
+  `config_update_repo_autopilot_policy`, and `config_remove_repo`; an affected or
+  deleted owner repo blocks rather than dispatching. The Autopilot mode mutation is
+  `config_update_repo_autopilot_policy`, not `config_update_repo`. For that mapping,
+  a mode/policy decrease or stop applies immediately and blocks any later external
+  effect; an increase cannot become effective through re-grounding or the baseline
+  CAS. It requires the separately recorded operator decision and applies only to a
+  later admission, preserving the active admission's mode snapshot.
+- Generic `config` drift re-grounds in place only when an explicit registry classifies
+  that action/target and the envelope declares every affected authoritative fact.
+  Unknown or future `config_history` actions, missing coverage, or an unclassifiable
+  target must conservatively block with a recovery choice or perform an audited
+  instance rotation; they must never be silently cleared merely because an envelope
+  was sent.
+- `model`, `provider`, `skill`, and `soul` drift alter fundamental capabilities and
+  trigger an audited instance rotation with a compact handoff and current facts.
+
+A bare `staleReasons.length > 0` check is never a rotation trigger, and no drift type
+may clear the baseline before the applicable authoritative envelope is accepted.
 
 ### The model proposes; deterministic services enforce
 
@@ -252,10 +337,15 @@ watch_id                     unique
 repo_id
 pr_number
 flue_agent                   pr-autopilot-owner
-flue_session_id              nullable until first actionable event; unique
+flue_instance_id             nullable until first actionable event; unique stable
+                             Flue agent-instance dispatch target, never dispatch_id
 chat_session_id              nullable link to app-owned session metadata
 worktree_id                  nullable until first actionable event
 generation                   starts at 1; increments only on explicit rotation
+grounding_config_history_id  last fully grounded config_history integer id
+grounding_memory_event_at    last fully grounded relevant memory-event timestamp
+grounding_memory_event_id    tie-breaker id for the memory-event cursor
+grounding_memory_ids_json    exact relevant memory ids included in the baseline
 status                       awaiting-event | active | draining | archived | failed
 current_head_sha
 last_dispatched_sequence
@@ -267,10 +357,15 @@ archived_at
 ```
 
 Setup creates the owner row in `awaiting-event`. The first actionable event creates
-and persists the Flue/chat session and managed worktree transactionally around
-idempotent creation. Restart recovery reads this mapping and reuses it; it never
-guesses ownership from a title or starts a replacement session merely because the
-process restarted.
+and persists the Flue instance/chat session and managed worktree transactionally
+around idempotent creation. Restart recovery reads this mapping and reuses it; it
+never guesses ownership from a title or starts a replacement instance merely because
+the process restarted.
+
+The config and relevant-memory cursors plus `grounding_memory_ids_json` mirror the
+app-owned chat metadata semantics without reusing a chat row as the owner baseline.
+They are advanced only together by the accepted-dispatch CAS contract in the
+grounding-drift rules above.
 
 ### Extend `autopilot_admissions`
 
@@ -326,10 +421,10 @@ stage
 attempt_number
 workflow
 run_id
-flue_session_id              populated for agent turns
+flue_instance_id             stable owner target populated for agent turns
 owner_generation             populated for agent turns
 event_sequence               populated for agent turns
-dispatch_id                  populated when returned by Flue
+dispatch_id                  per-operation Flue DispatchReceipt id; unique when present
 status                       reserved | running | completed | blocked | failed | cancelled
 input_fingerprint
 artifact_json                bounded ids, SHAs, summaries, and policy facts
@@ -346,7 +441,7 @@ This table is the durable bridge between Flue observations and admission state. 
 also prevents a late terminal observation from an older attempt from advancing a
 newer retry.
 
-The session id is expected to repeat across ordinary admissions; the attempt id
+The instance id is expected to repeat across ordinary admissions; the attempt id
 and event sequence are what distinguish bounded turns. `artifact_json` stores only
 bounded result ids, SHAs, summaries, and policy facts.
 
@@ -397,17 +492,20 @@ Required invariants:
 - Exactly one active mutating stage or agent turn per PR owner.
 - Every admission belongs to the watch's current owner and receives a monotonic
   event sequence.
-- Ordinary new feedback reuses the recorded Flue session and managed worktree;
-  only the explicit rotation path may change the session id/generation.
+- Ordinary new feedback reuses the recorded Flue instance and managed worktree;
+  only explicit instance rotation may change the instance id/generation. Grounding
+  drift re-grounds only under the classified, complete-envelope rules above;
+  `model`/`provider`/`skill`/`soul` drift rotates, while unknown generic config drift
+  blocks or rotates and is never silently cleared.
 - A workflow cannot advance an admission unless its run id matches the active
   stage attempt.
 - Admission mode is snapshotted at creation. A later authority increase applies
   only after an explicit operator decision; a decrease or stop applies
   immediately.
 - New PR commits supersede an unpushed stale attempt and create/reconcile a new
-  admission in the same owner session rather than patching against the wrong SHA.
+  admission in the same owner agent instance rather than patching against the wrong SHA.
 - Events received during an active turn remain queued and are coalesced against
-  fresh PR facts before the next dispatch to that same session.
+  fresh PR facts before the next dispatch to that same agent instance.
 - A stage may be retried only when its recorded artifact proves the previous
   external effect did not complete, or when that effect is idempotent.
 - Push and comment delivery have idempotency keys based on admission, commit SHA,
@@ -435,7 +533,7 @@ Build every envelope deterministically in
 `src/modules/autopilot/owner/envelope.ts`. The first envelope is a complete
 bootstrap brief; later envelopes contain new facts plus enough current state to
 invalidate anything stale in the transcript. Every envelope begins with owner,
-watch, admission, attempt, session generation, event sequence, policy version, and
+watch, admission, attempt, owner generation, event sequence, policy version, and
 current-head identifiers, and explicitly says that it is authoritative over older
 mutable facts. It must include:
 
@@ -538,7 +636,7 @@ The first actionable event creates the owner worktree. Later events reuse it: ta
 the PR-owner lock, require a clean or durably known Neondeck state, fetch the new
 head, and synchronize to the exact SHA before dispatch. If the workspace is
 unrecoverable, a recovery action may replace the worktree while retaining the same
-Neon session; the next envelope must identify the new path and why it changed.
+Neon agent instance; the next envelope must identify the new path and why it changed.
 
 ## Readiness And Credential Contract
 
@@ -619,10 +717,10 @@ mode must clearly report which later stage will block.
 - Adopted or user-created worktrees are never automatically deleted.
 - A merged or closed PR moves the owner to `draining`. Once configured post-merge
   checks have settled, Neondeck disables/removes the watch, archives the owner
-  session metadata, and removes an eligible Neondeck-owned worktree after the
+  agent instance and its optional app-owned chat metadata, and removes an eligible Neondeck-owned worktree after the
   configured grace period.
 - Explicit stop may also archive the owner and clean its worktree. Cleanup failure
-  remains visible and retryable; it never causes a replacement PR-owner session.
+  remains visible and retryable; it never causes a replacement PR-owner agent instance.
 
 ## Pause, Stop, Supersession, And Recovery
 
@@ -641,7 +739,7 @@ Stop means:
 6. supersede pending approvals;
 7. retain or clean the worktree according to an explicit confirmation;
 8. move active admissions to `stopped`, mark the owner `draining`, and archive its
-   session after active effects have settled.
+   agent instance after active effects have settled.
 
 Recovery API and UI must expose, when valid:
 
@@ -657,7 +755,7 @@ Recovery API and UI must expose, when valid:
 - abandon;
 - manual follow-up;
 - cleanup;
-- rotate a failed/corrupt owner session with an audited handoff;
+- rotate a failed/corrupt owner agent instance with an audited handoff;
 - stop Autopilot.
 
 Recovery-option query errors render as errors, never as an empty control area.
@@ -671,7 +769,7 @@ Recovery-option query errors render as errors, never as an empty control area.
   mode changes, processing existing feedback, pause, stop, and status.
 - Export the missing watch-list action.
 - Return a single setup summary containing watch id, mode, process-existing choice,
-  PR-owner status/session id when allocated, readiness, first planned action, and
+  PR-owner status/agent-instance id when allocated, readiness, first planned action, and
   confirmation requirements.
 
 ### CLI
@@ -704,13 +802,13 @@ Keep `watch-pr` as the notify-only shorthand.
 - Autopilot opens a mode/process-existing/readiness confirmation rather than
   issuing a hidden command string.
 - Active Watches shows effective mode, polling state, last poll, last actionable
-  event, PR-owner session/generation, active admission, and pause/resume/stop.
+  event, PR-owner agent instance/generation, active admission, and pause/resume/stop.
 - Notifications deep-link to the exact admission, prepared diff, approval, or
   recovery action.
 
 ### Canonical Autopilot panel
 
-The active queue is derived from active admissions only. Join PR owner/session,
+The active queue is derived from active admissions only. Join PR owner/agent instance,
 worktree, prepared-diff, workflow, check, approval, and notification facts onto
 that row; do not append each source as another queue item.
 
@@ -719,8 +817,8 @@ Provide:
 - one active row per admission/PR event;
 - stage, mode, priority, poll state, attempt count, next retry, and block reason;
 - direct links to the guarded Flue run, worktree, prepared diff, checks, and PR;
-- one stable owner-session link, generation, busy/queued event state, and explicit
-  rotation history;
+- one stable owner-agent-instance link, generation, busy/queued event state, and
+  explicit instance-rotation history;
 - valid controls for the current state;
 - paginated active and history views;
 - separate totals for active, waiting approval, blocked, failed, and completed;
@@ -812,12 +910,12 @@ Deliverables:
 Exit gate: no unattended git operation can prompt indefinitely, and setup predicts
 the same credential outcome as the later push gate.
 
-### Package 4: continuing Neon PR-owner session
+### Package 4: continuing Neon PR-owner agent instance
 
 Primary files:
 
 - new `src/agents/pr-autopilot-owner.ts`
-- new `src/modules/autopilot/owner/session.ts`
+- new `src/modules/autopilot/owner/instance.ts`
 - new `src/modules/autopilot/owner/dispatch.ts`
 - new `src/modules/autopilot/owner/envelope.ts`
 - new `src/modules/autopilot/owner/queue.ts`
@@ -828,21 +926,35 @@ Primary files:
 
 Deliverables:
 
-- lazy, idempotent session creation and durable watch/owner/session linkage;
+- lazy, idempotent instance creation and durable watch/owner/instance linkage;
+- `compaction: CompactionConfig` set on the `pr-autopilot-owner` agent with explicit
+  `reserveTokens` and `keepRecentTokens`, plus tests that it bounds model-visible
+  input only and does not claim to bound persisted canonical stream or replay cost;
 - deterministic initial brief and authoritative continuation envelopes;
 - bounded agent capability set with serialized/coalesced event turns;
 - one-time submit-fix action;
 - review and CI event envelopes grounded in complete facts;
 - prepared-diff creation and mode-specific commit behavior;
+- shared baseline-aware stale-reason service that scans all post-cursor config and
+  relevant-memory events; persisted separate config and memory cursors plus relevant
+  memory ids; snapshot artifact-to-attempt/receipt linkage; `memory` and explicitly
+  classified/covered `repo` or generic `config` drift re-ground in place through the
+  accepted-dispatch CAS, while unknown generic config drift blocks or rotates and
+  `model`/`provider`/`skill`/`soul` drift rotates;
 - no-op, truncated facts, out-of-policy patch, stale SHA, missing submission, model
   failure, and late-result tests;
-- restart-safe same-session dispatch, explicit generation/rotation recovery, and
-  guarded session/turn inspection links for operators.
+- restart-safe same-instance dispatch, explicit generation/rotation recovery, and
+  guarded instance/turn inspection links for operators.
 
 Exit gate: two sequential fixture-backed feedback events produce scoped prepared
-diffs through the same Flue session id and owner worktree, including across a
-Neondeck restart. No caller supplies the patch to the top-level product request,
-and no second session is created for ordinary feedback.
+diffs through the same Flue instance id and owner worktree, including across a
+Neondeck restart, and including when a `config_update_repo_autopilot_policy` mode
+change lands
+between the two events (the second event re-grounds in place and does not rotate).
+The fixture also proves that a selected-memory change is re-grounded with its id,
+while an unknown config-history action blocks or rotates without advancing the
+baseline. No caller supplies the patch to the top-level product request, and no
+second instance is created for ordinary feedback.
 
 ### Package 5: verification, approval, push, comment, and cleanup continuation
 
@@ -889,7 +1001,7 @@ Primary files:
 Deliverables:
 
 - composite setup contract across chat/API/CLI/UI that creates the awaiting-event
-  owner binding but lazily allocates session/worktree;
+  owner binding but lazily allocates agent instance/worktree;
 - stable per-watch override mutation and authority confirmation ranking;
 - watch list/pause/resume/stop/status/retry entry points;
 - process-existing choice and readiness summary;
@@ -913,9 +1025,9 @@ Primary files:
 Deliverables:
 
 - one canonical admission row rather than reconstructed duplicates, joined to its
-  stable owner session;
+  stable owner agent instance;
 - pagination/history, accurate counts, mode and poll state;
-- complete recovery/explicit-session-rotation controls and visible query errors;
+- complete recovery/explicit-instance-rotation controls and visible query errors;
 - real pause/stop/supersession semantics;
 - normalized notification attention accounting;
 - accessible labels, live state, timestamps, links, and touch targets.
@@ -936,7 +1048,7 @@ Primary files:
 
 Deliverables:
 
-- one production-shaped watcher→continuing-owner-session→delivery harness;
+- one production-shaped watcher→continuing-owner-agent-instance→delivery harness;
 - restart, retry, idempotency, concurrency, fork, auth, stop, and mode matrix;
 - optional credentialed smoke against a disposable test repo;
 - accurate setup, modes, permissions, storage, recovery, and disable docs;
@@ -956,8 +1068,14 @@ scenario below has an automated test or an explicit manual credentialed check.
 - retry classification, backoff, max attempts, stale turn, stop, supersession;
 - initial/continuation envelope completeness, authority precedence, and
   secret/redaction rules;
-- one-session-per-owner creation, reuse, restart recovery, event serialization,
+- one-instance-per-owner creation, reuse, restart recovery, event serialization,
   coalescing, and explicit rotation generation;
+- grounding-drift scanning, snapshot/receipt CAS, and races: all post-cursor config
+  rows and relevant-memory events are classified; relevant-memory ids and separate
+  config/memory cursors are persisted; `memory` and explicitly classified/covered
+  `repo` or generic `config` drift re-ground in place; unknown generic config blocks
+  or rotates; `model`/`provider`/`skill`/`soul` drift rotates; a bare
+  `staleReasons.length > 0` never forces rotation;
 - submit-fix nonce, admission, worktree, SHA, path, and policy binding;
 - event body/comment preservation and per-item fingerprinting;
 - approval lifecycle and pushed-SHA comment freshness;
@@ -967,7 +1085,7 @@ scenario below has an automated test or an explicit manual credentialed check.
 
 Use temporary runtime homes, source repos, bare remotes, worktrees, fake GitHub
 facts/mutations, fake credential helpers, fake execution, and a production-shaped
-continuing-session fixture. Exercise the coordinator and real Flue dispatch
+continuing-agent-instance fixture. Exercise the coordinator and real Flue dispatch
 adapters.
 
 Required cases:
@@ -975,7 +1093,7 @@ Required cases:
 1. Existing requested changes with `processExisting=true` produce one fix.
 2. Existing state with `processExisting=false` is only baselined.
 3. Feedback arriving before first poll is not lost.
-4. Review body-only request reaches the PR-owner session verbatim.
+4. Review body-only request reaches the PR-owner agent instance verbatim.
 5. Conversation-comment change request triggers once.
 6. Replying to one thread does not re-admit every old thread.
 7. Same-repo and fork head SHAs are fetched before worktree creation.
@@ -989,16 +1107,29 @@ Required cases:
 15. Permanent auth failure backs off/blocks rather than polling forever.
 16. Pause prevents new admissions; stop prevents all later external effects.
 17. Cleanup removes only eligible Neondeck-owned worktrees.
-18. Queue/history show one canonical admission, its stable owner session, and all
+18. Queue/history show one canonical admission, its stable owner agent instance, and all
     valid controls.
-19. A second actionable event uses the first event's session id and worktree id.
-20. Restart recovery preserves that session/worktree mapping.
+19. A second actionable event uses the first event's instance id and worktree id.
+20. Restart recovery preserves that instance/worktree mapping.
 21. Events arriving while the owner is busy are serialized and coalesced before
-    another turn; they never create a second session.
-22. Explicit session rotation archives generation N, seeds generation N+1 with an
-    audited handoff, and is the only ordinary way the session id changes.
-23. Merge/close plus configured settled checks archives the owner/session and then
+    another turn; they never create a second instance.
+22. Explicit instance rotation archives generation N, seeds generation N+1 with an
+    audited handoff, and is the only ordinary way the instance id changes.
+23. Merge/close plus configured settled checks archives the owner/instance and then
     cleans the eligible managed worktree.
+24. A `config_update_repo_autopilot_policy` mode decrease between two events
+    re-grounds the same instance without rotation and blocks later external effects;
+    its mode increase cannot take effect without a recorded operator decision and a
+    later admission. A `model`/`provider`/`skill`/`soul` change between events rotates
+    with an audited handoff.
+25. A selected-memory change records its ids in the accepted envelope snapshot and
+    re-grounds the same instance; an unknown config-history action or missing
+    envelope coverage cannot advance the baseline and instead blocks or rotates.
+26. Mixed drift order cannot be masked: a model/provider/skill/soul or unknown
+    config-history row followed by a benign row still rotates or blocks. A config
+    change between the config snapshot and a later memory event, and a receipt before
+    snapshot persistence, retain the prior cursors and are reconciled without
+    clearing either source's drift.
 
 ### Smoke tests
 
@@ -1010,7 +1141,7 @@ workflow unit fixtures. It should:
 3. inject actionable feedback or a failed check;
 4. run the scheduler/watch dispatcher;
 5. wait through the first bounded turn, inject a second event, and assert both
-   turns use the same owner session and workspace;
+   turns use the same owner agent instance and workspace;
 6. assert prepared diff, verification, approval or push, result delivery,
    notifications, admission history, and cleanup disposition;
 7. fail if any stage required a manual raw-API invocation.
@@ -1027,14 +1158,14 @@ Autopilot is usable when all of these statements are true:
 - Current feedback is never silently discarded by first-poll baseline behavior.
 - The exact PR head SHA is available before worktree creation, including supported
   fork PRs.
-- The first actionable event starts exactly one Neon PR-owner session and managed
+- The first actionable event starts exactly one Neon PR-owner agent instance and managed
   worktree; later events and process restarts reuse both.
-- Each turn receives a complete authoritative event envelope, while session
+- Each turn receives a complete authoritative event envelope, while agent-instance
   history preserves reasoning continuity across feedback cycles.
 - The PR owner cannot edit the primary checkout, push, comment, or expand
   authority.
 - Review bodies, new/changed threads, conversation comments, and CI failures reach
-  the same PR-owner session with stable ids and complete bounded content.
+  the same PR-owner agent instance with stable ids and complete bounded content.
 - `prepare-only` produces a reviewable diff; approval mode waits; safe mode pushes
   only after all gates pass.
 - Verification, approval, push, comments, and cleanup continue automatically when
@@ -1046,10 +1177,16 @@ Autopilot is usable when all of these statements are true:
   historical duplicates as active work.
 - A restart or duplicate observer cannot repeat a mutation.
 - Same-PR events are serialized/coalesced; ordinary events never create another
-  Neon session. Rotation is explicit, audited, and carries forward a compact
+  Neon instance. Rotation is explicit, audited, and carries forward a compact
   handoff plus fresh authoritative state.
+- Agent `compaction: CompactionConfig` bounds model-visible input at the configured
+  threshold; it does not claim to compact/bound the persisted canonical stream,
+  transcript storage, or replay cost. Grounding drift re-grounds only through the
+  accepted-dispatch snapshot/CAS: `memory` and explicitly classified/covered
+  `repo`/generic-`config` drift stay in the instance; unknown generic config drift
+  blocks or rotates; `model`/`provider`/`skill`/`soul` drift rotates.
 - Merge/close plus configured settled checks disables the watch, archives the
-  PR-owner session, and cleans its eligible managed workspace after the grace
+  PR-owner agent instance and optional chat metadata, and cleans its eligible managed workspace after the grace
   period.
 - The production-path integration test and smoke test prove the whole chain.
 - README, roadmap, public docs, onboarding, runtime guidance, and UI copy describe
@@ -1085,8 +1222,8 @@ These are not required to close the reviewed Autopilot product loop:
   scheduler is running.
 - Force push.
 - A second full agent runtime or raw host shell for the PR owner.
-- Per-event Neon session creation or automatic routine session rotation; one
-  continuing PR-owner session is the default lifecycle.
+- Per-event Neon agent-instance creation or automatic routine instance rotation; one
+  continuing PR-owner agent instance is the default lifecycle.
 - Automatic Kilo selection without explicit user/repo policy.
 - Managed `kilo serve` SDK migration.
 - Automatic resolution of review threads without an explicit repo policy.
