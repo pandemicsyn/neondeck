@@ -206,7 +206,7 @@ describe('exe.dev checkout sync', () => {
     expect(calls.map((call) => call.command)).toEqual([
       "mkdir -p '/home/user/neondeck/checkouts'",
       "git -C '/home/user/neondeck/checkouts/pandemicsyn-neondeck-repo' rev-parse --is-inside-work-tree",
-      "git -C '/home/user/neondeck/checkouts/pandemicsyn-neondeck-repo' fetch --all --prune",
+      `GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=Never SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-\${GIT_SSH:-ssh}} -oBatchMode=yes -oConnectTimeout=15" git -C '/home/user/neondeck/checkouts/pandemicsyn-neondeck-repo' fetch --all --prune`,
       "git -C '/home/user/neondeck/checkouts/pandemicsyn-neondeck-repo' checkout --detach 'origin/main'",
       "git -C '/home/user/neondeck/checkouts/pandemicsyn-neondeck-repo' rev-parse HEAD",
     ]);
@@ -247,8 +247,8 @@ describe('exe.dev checkout sync', () => {
     expect(calls.map((call) => call.command)).toEqual([
       "mkdir -p '/home/user/neondeck/checkouts'",
       "git -C '/home/user/neondeck/checkouts/pandemicsyn-neondeck-pr-7' rev-parse --is-inside-work-tree",
-      "git -C '/home/user/neondeck/checkouts/pandemicsyn-neondeck-pr-7' fetch --all --prune",
-      "git -C '/home/user/neondeck/checkouts/pandemicsyn-neondeck-pr-7' fetch 'https://github.com/contributor/neondeck-fork.git' 'feature'",
+      `GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=Never SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-\${GIT_SSH:-ssh}} -oBatchMode=yes -oConnectTimeout=15" git -C '/home/user/neondeck/checkouts/pandemicsyn-neondeck-pr-7' fetch --all --prune`,
+      `GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=Never SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-\${GIT_SSH:-ssh}} -oBatchMode=yes -oConnectTimeout=15" git -C '/home/user/neondeck/checkouts/pandemicsyn-neondeck-pr-7' fetch 'https://github.com/contributor/neondeck-fork.git' 'feature'`,
       "git -C '/home/user/neondeck/checkouts/pandemicsyn-neondeck-pr-7' checkout --detach 'FETCH_HEAD'",
       "git -C '/home/user/neondeck/checkouts/pandemicsyn-neondeck-pr-7' rev-parse HEAD",
     ]);
@@ -297,7 +297,7 @@ describe('exe.dev checkout sync', () => {
     expect(calls.map((call) => call.command)).toEqual([
       "mkdir -p '/home/user/neondeck/checkouts'",
       "git -C '/home/user/neondeck/checkouts/pandemicsyn-neondeck-pr-7' rev-parse --is-inside-work-tree",
-      "git -C '/home/user/neondeck/checkouts/pandemicsyn-neondeck-pr-7' fetch --all --prune",
+      `GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=Never SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-\${GIT_SSH:-ssh}} -oBatchMode=yes -oConnectTimeout=15" git -C '/home/user/neondeck/checkouts/pandemicsyn-neondeck-pr-7' fetch --all --prune`,
       "git -C '/home/user/neondeck/checkouts/pandemicsyn-neondeck-pr-7' cat-file -e 'abc123^{commit}'",
     ]);
   });

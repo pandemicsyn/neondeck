@@ -148,7 +148,9 @@ export async function syncExeDevCheckout(
     if (!exists) {
       const clone = await runStep(
         'clone',
-        `git clone ${shellArg(target.remoteUrl)} ${shellArg(target.remotePath)}`,
+        unattendedRemoteGit(
+          `git clone ${shellArg(target.remoteUrl)} ${shellArg(target.remotePath)}`,
+        ),
       );
       if (!clone.ok) return blocked('clone', clone, target, steps);
     }
@@ -156,7 +158,9 @@ export async function syncExeDevCheckout(
     if (exists && input.fetch !== false) {
       const fetch = await runStep(
         'fetch',
-        `git -C ${shellArg(target.remotePath)} fetch --all --prune`,
+        unattendedRemoteGit(
+          `git -C ${shellArg(target.remotePath)} fetch --all --prune`,
+        ),
       );
       if (!fetch.ok) return blocked('fetch', fetch, target, steps);
     }
@@ -164,9 +168,11 @@ export async function syncExeDevCheckout(
     if (target.worktree && shouldFetchWorktreeHead(target)) {
       const fetchHead = await runStep(
         'fetch-worktree-head',
-        `git -C ${shellArg(target.remotePath)} fetch ${shellArg(
-          worktreeHeadRemoteUrl(target),
-        )} ${shellArg(target.worktree.headRef)}`,
+        unattendedRemoteGit(
+          `git -C ${shellArg(target.remotePath)} fetch ${shellArg(
+            worktreeHeadRemoteUrl(target),
+          )} ${shellArg(target.worktree.headRef)}`,
+        ),
       );
       if (!fetchHead.ok) {
         return blocked('fetch-worktree-head', fetchHead, target, steps);
@@ -220,6 +226,10 @@ export async function syncExeDevCheckout(
       'exe.dev',
     ]);
   }
+}
+
+function unattendedRemoteGit(command: string) {
+  return `GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=Never SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-\${GIT_SSH:-ssh}} -oBatchMode=yes -oConnectTimeout=15" ${command}`;
 }
 
 function blocked(

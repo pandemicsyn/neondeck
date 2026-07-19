@@ -1,4 +1,4 @@
-import { runExecFile } from '../../lib/exec';
+import { runUnattendedGit } from '../../lib/git';
 
 export type ExactPrHeadFetch = {
   baseRemote: string;
@@ -9,45 +9,31 @@ export type ExactPrHeadFetch = {
   fork: boolean;
 };
 
-export async function fetchExactPullRequestHead(
-  input: {
-    sourceRepoPath: string;
-    baseRepoFullName: string;
+export type ExactPrHeadTarget = Omit<ExactPrHeadFetch, 'resolvedSha'>;
+
+type ExactPrHeadInput = {
+  sourceRepoPath: string;
+  baseRepoFullName: string;
+  headRepoFullName: string;
+  prNumber: number;
+  headRef: string;
+  headSha: string;
+};
+
+type ExactPrHeadDependencies = {
+  runGit?: (cwd: string, args: string[]) => Promise<string>;
+  resolveForkRemote?: (input: {
+    originUrl: string;
     headRepoFullName: string;
-    prNumber: number;
-    headRef: string;
-    headSha: string;
-  },
-  dependencies: {
-    runGit?: (cwd: string, args: string[]) => Promise<string>;
-    resolveForkRemote?: (input: {
-      originUrl: string;
-      headRepoFullName: string;
-    }) => string;
-  } = {},
+  }) => string;
+};
+
+export async function fetchExactPullRequestHead(
+  input: ExactPrHeadInput,
+  dependencies: ExactPrHeadDependencies = {},
 ): Promise<ExactPrHeadFetch> {
   const runGit = dependencies.runGit ?? boundedNoninteractiveGit;
-  assertSafePullRequestHeadInput(input);
-  const fork =
-    input.baseRepoFullName.toLowerCase() !==
-    input.headRepoFullName.toLowerCase();
-  const baseRemote = await resolveRegisteredRepositoryRemote(
-    input.sourceRepoPath,
-    input.baseRepoFullName,
-    runGit,
-  );
-  const fetchSource = fork
-    ? (dependencies.resolveForkRemote?.({
-        originUrl: baseRemote.url,
-        headRepoFullName: input.headRepoFullName,
-      }) ?? deriveForkRemote(baseRemote.url, input.headRepoFullName))
-    : baseRemote.name;
-  if (fork) assertSafeResolvedForkRemote(fetchSource);
-  else assertSafeRemoteName(fetchSource);
-  const fetchRef = fork
-    ? `refs/heads/${input.headRef}`
-    : `refs/pull/${input.prNumber}/head`;
-  const temporaryRef = `refs/neondeck/autopilot/pr-${input.prNumber}`;
+  const target = await resolveExactPullRequestHeadTarget(input, dependencies);
 
   try {
     await runGit(input.sourceRepoPath, [
@@ -55,21 +41,21 @@ export async function fetchExactPullRequestHead(
       '--no-tags',
       '--force',
       '--',
-      fetchSource,
-      `${fetchRef}:${temporaryRef}`,
+      target.fetchSource,
+      `${target.fetchRef}:${target.temporaryRef}`,
     ]);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const redactedSource = redactRemote(fetchSource);
+    const redactedSource = redactRemote(target.fetchSource);
     throw new Error(
-      `Could not fetch exact PR head from ${redactedSource}: ${redactCredentialedUrls(message.replaceAll(fetchSource, redactedSource))}`,
+      `Could not fetch exact PR head from ${redactedSource}: ${redactCredentialedUrls(message.replaceAll(target.fetchSource, redactedSource))}`,
     );
   }
   const [fetchedSha, expectedObjectSha] = await Promise.all([
     runGit(input.sourceRepoPath, [
       'rev-parse',
       '--verify',
-      `${temporaryRef}^{commit}`,
+      `${target.temporaryRef}^{commit}`,
     ]),
     runGit(input.sourceRepoPath, [
       'rev-parse',
@@ -88,11 +74,66 @@ export async function fetchExactPullRequestHead(
   }
 
   return {
-    baseRemote: baseRemote.name,
-    fetchSource: redactRemote(fetchSource),
-    fetchRef,
-    temporaryRef,
+    ...target,
     resolvedSha,
+  };
+}
+
+export async function probeExactPullRequestHead(
+  input: ExactPrHeadInput,
+  dependencies: ExactPrHeadDependencies = {},
+) {
+  const runGit = dependencies.runGit ?? boundedNoninteractiveGit;
+  const target = await resolveExactPullRequestHeadTarget(input, dependencies);
+  const output = await runGit(input.sourceRepoPath, [
+    'ls-remote',
+    '--exit-code',
+    '--refs',
+    '--',
+    target.fetchSource,
+    target.fetchRef,
+  ]);
+  const resolvedSha = output
+    .split(/\r?\n/)
+    .map((line) => line.trim().split(/\s+/))
+    .find(([, ref]) => ref === target.fetchRef)?.[0];
+  if (resolvedSha !== input.headSha) {
+    throw new Error(
+      `Remote PR head ${resolvedSha ?? 'unknown'} does not match GitHub head ${input.headSha}.`,
+    );
+  }
+  return { ...target, resolvedSha };
+}
+
+export async function resolveExactPullRequestHeadTarget(
+  input: ExactPrHeadInput,
+  dependencies: ExactPrHeadDependencies = {},
+): Promise<ExactPrHeadTarget> {
+  const runGit = dependencies.runGit ?? boundedNoninteractiveGit;
+  assertSafePullRequestHeadInput(input);
+  const fork =
+    input.baseRepoFullName.toLowerCase() !==
+    input.headRepoFullName.toLowerCase();
+  const baseRemote = await resolveRegisteredRepositoryRemote(
+    input.sourceRepoPath,
+    input.baseRepoFullName,
+    runGit,
+  );
+  const fetchSource = fork
+    ? (dependencies.resolveForkRemote?.({
+        originUrl: baseRemote.url,
+        headRepoFullName: input.headRepoFullName,
+      }) ?? deriveForkRemote(baseRemote.url, input.headRepoFullName))
+    : baseRemote.name;
+  if (fork) assertSafeResolvedForkRemote(fetchSource);
+  else assertSafeRemoteName(fetchSource);
+  return {
+    baseRemote: baseRemote.name,
+    fetchSource,
+    fetchRef: fork
+      ? `refs/heads/${input.headRef}`
+      : `refs/pull/${input.prNumber}/head`,
+    temporaryRef: `refs/neondeck/autopilot/pr-${input.prNumber}`,
     fork,
   };
 }
@@ -301,16 +342,8 @@ function assertSafeResolvedForkRemote(remote: string) {
   }
 }
 
-const exactHeadFetchTimeoutMs = 30_000;
-
 async function boundedNoninteractiveGit(cwd: string, args: string[]) {
-  const result = await runExecFile('git', args, {
-    cwd,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-    timeoutMs: exactHeadFetchTimeoutMs,
-    maxBuffer: 10 * 1024 * 1024,
-  });
-  return result.stdout;
+  return runUnattendedGit(cwd, args);
 }
 
 export function deriveForkRemote(originUrl: string, headRepoFullName: string) {

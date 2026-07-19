@@ -78,6 +78,7 @@ export async function runInit(options: { home?: string }) {
     `openai    ${status.providers.credentials.openai ? 'configured' : 'missing'}`,
     `anthropic ${status.providers.credentials.anthropic ? 'configured' : 'missing'}`,
     `repos     ${status.counts.repos}`,
+    `autopilot ${status.autopilot ? `${status.autopilot.status} (${status.autopilot.repoId})` : 'needs a repo'}`,
   ];
   if (failedChecks.length > 0) {
     statusLines.push(
@@ -91,6 +92,11 @@ export async function runInit(options: { home?: string }) {
     'Next:',
     '  npm run dev',
     '  open http://127.0.0.1:5173/',
+    ...(status.autopilot
+      ? [
+          `  neondeck doctor --repo ${status.autopilot.repoId} --pr <number> --mode <mode>`,
+        ]
+      : []),
   );
   note(
     statusLines.join('\n'),

@@ -1,4 +1,4 @@
-import { runExecFile } from '../../lib/exec';
+import { runUnattendedGit } from '../../lib/git';
 import {
   gitDiff,
   type RepoDiffFile,
@@ -398,11 +398,9 @@ async function singleFlight(key: string, fn: () => Promise<void>) {
 
 async function git(cwd: string, args: string[]) {
   try {
-    const { stdout } = await runExecFile('git', args, {
-      cwd,
+    return await runUnattendedGit(cwd, args, {
       maxBuffer: 16 * 1024 * 1024,
     });
-    return stdout;
   } catch (error) {
     throw unavailable(errorMessage(error));
   }

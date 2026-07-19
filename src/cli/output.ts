@@ -381,6 +381,9 @@ export function printStatus(status: RuntimeStatus) {
   console.log(`repos     ${status.counts.repos}`);
   console.log(`skills    ${status.counts.activeSkills}`);
   console.log(`watches   ${status.counts.activeWatches}`);
+  console.log(
+    `autopilot ${status.autopilot ? `${status.autopilot.status} (${status.autopilot.repoId})` : 'needs a repo'}`,
+  );
   const attention = status.checks.filter((check) => !check.ok);
   if (attention.length > 0) {
     console.log('');

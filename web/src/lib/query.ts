@@ -40,6 +40,17 @@ export const queryKeys = {
     ] as const,
   neonCommands: ['neon-commands'] as const,
   autopilotState: ['autopilot-state'] as const,
+  autopilotReadiness: (
+    repoId: string | undefined,
+    prNumber: number | undefined,
+    mode: string | undefined,
+  ) =>
+    [
+      'autopilot-readiness',
+      repoId ?? 'none',
+      prNumber ?? 'none',
+      mode ?? 'none',
+    ] as const,
   prWatches: ['pr-watches'] as const,
   prReviews: ['pr-reviews'] as const,
   prReviewTarget: (repo: string, prNumber: number) =>

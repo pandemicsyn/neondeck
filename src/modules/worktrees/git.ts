@@ -1,6 +1,6 @@
 import { realpath } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
-import { runExecFile } from '../../lib/exec';
+import { runUnattendedGit } from '../../lib/git';
 
 export async function gitCommonDir(cwd: string) {
   const raw = (await git(cwd, ['rev-parse', '--git-common-dir'])).trim();
@@ -40,9 +40,5 @@ export async function isGitClean(localPath: string) {
 }
 
 export async function git(cwd: string, args: string[]) {
-  const { stdout } = await runExecFile('git', args, {
-    cwd,
-    maxBuffer: 10 * 1024 * 1024,
-  });
-  return stdout;
+  return runUnattendedGit(cwd, args);
 }

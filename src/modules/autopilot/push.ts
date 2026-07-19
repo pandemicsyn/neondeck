@@ -10,6 +10,7 @@ import {
   type GitHubPullRequestDetail,
   type GitHubPullRequestEventState,
   fetchPullRequestEventState,
+  fetchGitHubLogin,
   fetchCheckSummary,
   fetchFailingCheckFacts,
   fetchPullRequestDetail,
@@ -77,6 +78,8 @@ import {
   readManagedWorktree,
   readWorktreeStatus,
   releaseWorktreeLock,
+  pushTargetForWorktree,
+  resolvePrPushTargetForCheckout,
   syncWorktree,
   type WorktreeRecord,
 } from '../worktrees';
@@ -139,7 +142,6 @@ import {
   pushNotReadyResult,
   pushReadinessGates,
   recoveryOptionsForPushBlock,
-  remoteForPush,
 } from './push-support';
 import {
   addressedFeedback,
@@ -324,6 +326,7 @@ export async function pushPrAutofix(
     );
     const status = await gitStatus(worktree.localPath);
     const currentSha = await gitCurrentSha(worktree.localPath);
+    const expectedRemoteSha = preparedDiff.headSha ?? worktree.headSha;
     const branchPermissions = objectField(
       objectField(permissions, 'data'),
       'branchPermissions',
@@ -469,6 +472,13 @@ export async function pushPrAutofix(
           : 'No committed diff remains to push.',
       },
       {
+        gate: 'remote-head-sha',
+        ok: expectedRemoteSha !== null,
+        reason: expectedRemoteSha
+          ? `Expected remote PR head is ${expectedRemoteSha}.`
+          : 'Neither the prepared diff nor managed worktree records the original PR head SHA.',
+      },
+      {
         gate: 'force-push',
         ok: input.force !== true,
         reason:
@@ -477,7 +487,7 @@ export async function pushPrAutofix(
             : 'Force-push is not requested.',
       },
     ];
-    const failedGates = gates.filter((gate) => !gate.ok);
+    let failedGates = gates.filter((gate) => !gate.ok);
     if (failedGates.length > 0) {
       return blockPushAttempt(
         preparedDiff.id,
@@ -492,8 +502,49 @@ export async function pushPrAutofix(
       );
     }
 
-    const remote = remoteForPush(worktree, branchPermissions);
-    const branch = worktree.headRef || preparedDiff.headRef;
+    const apiLogin = dependencies.pushGit
+      ? null
+      : await resolvePushApiLogin(dependencies);
+    const identityGate = {
+      gate: 'git-api-identity',
+      ok: dependencies.pushGit !== undefined || apiLogin !== null,
+      reason: dependencies.pushGit
+        ? 'The injected push adapter owns its credential identity gate.'
+        : apiLogin
+          ? `The immediate Git gate requires API actor ${apiLogin}.`
+          : 'GitHub API identity is unavailable for the immediate Git credential gate.',
+    };
+    gates.push(identityGate);
+    failedGates = identityGate.ok ? [] : [identityGate];
+    if (failedGates.length > 0) {
+      return blockPushAttempt(
+        preparedDiff.id,
+        worktree.id,
+        'Prepared diff is blocked from push-back.',
+        {
+          gates,
+          paths,
+          recoveryOptions: recoveryOptionsForPushBlock(failedGates),
+          data: { policy, permissions, status, currentSha, concurrency },
+        },
+      );
+    }
+
+    const pushTarget = dependencies.pushGit
+      ? pushTargetForWorktree(worktree, branchPermissions)
+      : await resolvePrPushTargetForCheckout({
+          sourceRepoPath: worktree.localPath,
+          baseRepoFullName: worktree.repoFullName,
+          headRepoFullName:
+            stringField(branchPermissions, 'headRepoFullName') ??
+            (worktree.headOwner && worktree.headName
+              ? `${worktree.headOwner}/${worktree.headName}`
+              : worktree.repoFullName),
+          headRef: worktree.headRef,
+          branchPermissions,
+        });
+    const remote = pushTarget.remote;
+    const branch = pushTarget.branch;
     assertWorktreeMutationAllowed(
       {
         repoId: worktree.repoId,
@@ -509,6 +560,10 @@ export async function pushPrAutofix(
         branch,
         sha: currentSha,
         force: false,
+        expectedAccess: apiLogin
+          ? { apiLogin, requireBoundIdentity: true }
+          : undefined,
+        expectedRemoteSha: expectedRemoteSha ?? undefined,
       },
     );
     pushedSideEffect = {
@@ -571,6 +626,7 @@ export async function pushPrAutofix(
         permissions,
         status,
         currentSha,
+        pushTarget,
         nextWorkflow: 'comment_pr_autofix_result',
         commentsDeferred: true,
       }),
@@ -667,5 +723,15 @@ export async function pushPrAutofix(
         paths,
       ).catch(() => undefined);
     }
+  }
+}
+
+async function resolvePushApiLogin(dependencies: AutopilotDependencies) {
+  const token = dependencies.token ?? process.env.GITHUB_TOKEN;
+  if (!token) return null;
+  try {
+    return await (dependencies.fetchGitHubLogin ?? fetchGitHubLogin)(token);
+  } catch {
+    return null;
   }
 }

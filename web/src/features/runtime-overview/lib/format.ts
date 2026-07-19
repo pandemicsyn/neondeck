@@ -205,6 +205,14 @@ export function setupStep(check: RuntimeStatusCheck): SetupStep {
       detail:
         'Enable at least one execution backend and keep approval policy explicit.',
     },
+    'autopilot-local-readiness': {
+      action: 'neondeck doctor --repo <id> --pr <number> --mode <mode>',
+      docsHref: `${docsBase}#repositories`,
+      docsLabel: 'repos',
+      surface: 'shell',
+      detail:
+        'Run target-specific readiness to verify API, exact-head fetch, git credentials, identity, checks, comments, and gh separately.',
+    },
     repos: {
       action: 'neondeck_config_add_repo',
       docsHref: `${docsBase}#repositories`,

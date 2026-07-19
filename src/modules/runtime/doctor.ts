@@ -21,6 +21,10 @@ import {
 } from '../repos';
 import { requiredModelProviders } from './status';
 import {
+  readAutopilotReadiness,
+  type AutopilotReadiness,
+} from './autopilot-readiness';
+import {
   type RuntimePaths,
   ensureRuntimeHome,
   parseAppConfig,
@@ -46,12 +50,23 @@ export type DevDoctorResult = {
   status: DoctorStatus;
   message: string;
   checks: DoctorCheck[];
+  autopilot: AutopilotReadiness | null;
   summary: {
     attention: number;
     repos: number;
     envMissing: string[];
     portsOpen: number;
   };
+};
+
+export type DevDoctorInput = {
+  repoId?: string;
+  prNumber?: number;
+  mode?:
+    | 'notify-only'
+    | 'prepare-only'
+    | 'autofix-with-approval'
+    | 'autofix-push-when-safe';
 };
 
 type PackageSnapshot = {
@@ -82,17 +97,29 @@ const devDoctorOutputSchema = v.looseObject({
   action: v.string(),
   changed: v.boolean(),
 });
+const devDoctorInputSchema = v.object({
+  repoId: v.optional(v.pipe(v.string(), v.minLength(1))),
+  prNumber: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+  mode: v.optional(
+    v.picklist([
+      'notify-only',
+      'prepare-only',
+      'autofix-with-approval',
+      'autofix-push-when-safe',
+    ]),
+  ),
+});
 
 export const devDoctorRunAction = defineAction({
   name: 'neondeck_dev_doctor_run',
   description:
     'Run deterministic local development health checks for configured repos, scripts, env, ports, runtime databases, and Node version.',
-  input: v.object({}),
+  input: devDoctorInputSchema,
   output: devDoctorOutputSchema,
-  async run({ log }) {
+  async run({ input, log }) {
     log.info('Dev doctor requested');
 
-    const result = await runDevDoctor();
+    const result = await runDevDoctor(runtimePaths(), input);
     const payload = {
       status: result.status,
       message: result.message,
@@ -125,7 +152,9 @@ export const neondeckDevDoctorActions = [devDoctorRunAction];
 
 export async function runDevDoctor(
   paths: RuntimePaths = runtimePaths(),
+  rawInput: DevDoctorInput = {},
 ): Promise<DevDoctorResult> {
+  const input = v.parse(devDoctorInputSchema, rawInput);
   await ensureRuntimeHome(paths);
   const databases = databaseCheck(paths);
   const [repos, localEnv, rootPackage, ports, appConfig] = await Promise.all([
@@ -143,6 +172,21 @@ export async function runDevDoctor(
   );
 
   const envResult = envCheck(localEnv, appConfig, repos);
+  const readinessRepoId = input.repoId ?? repos.repos[0]?.id;
+  const autopilot = readinessRepoId
+    ? await readAutopilotReadiness(
+        {
+          repoId: readinessRepoId,
+          prNumber: input.prNumber,
+          mode: input.mode,
+        },
+        paths,
+        {
+          env: mergedEnv(localEnv),
+          remoteChecks: input.prNumber !== undefined,
+        },
+      )
+    : null;
   const checks = [
     repoHealthCheck(repos),
     packageScriptsCheck(rootPackage, repoPackages),
@@ -151,6 +195,7 @@ export async function runDevDoctor(
     portsCheck(ports),
     await serverHealthCheck(),
     databases,
+    autopilotDoctorCheck(autopilot, input.prNumber !== undefined),
   ];
   const attention = checks.filter((check) => check.status === 'attention');
 
@@ -164,6 +209,7 @@ export async function runDevDoctor(
         ? `Dev doctor found ${attention.length} item${attention.length === 1 ? '' : 's'} needing attention.`
         : 'Dev doctor found no local issues.',
     checks,
+    autopilot,
     summary: {
       attention: attention.length,
       repos: repos.count,
@@ -186,6 +232,39 @@ export async function listRepoStatus(paths: RuntimePaths = runtimePaths()) {
     attention: repos
       .filter((repo) => repo.dirty || repo.error || (repo.behind ?? 0) > 0)
       .map(asJsonValue),
+  };
+}
+
+function autopilotDoctorCheck(
+  readiness: AutopilotReadiness | null,
+  targetSpecific: boolean,
+): DoctorCheck {
+  if (!readiness) {
+    return {
+      id: 'autopilot-readiness',
+      label: 'Autopilot readiness',
+      status: targetSpecific ? 'attention' : 'ok',
+      message: targetSpecific
+        ? 'Autopilot readiness could not be evaluated for the requested target.'
+        : 'Configure a repository, then pass --repo and --pr for live Autopilot credential checks.',
+    };
+  }
+  const attention =
+    readiness.blocking.length > 0 ||
+    (targetSpecific && readiness.warnings.length > 0);
+  return {
+    id: 'autopilot-readiness',
+    label: 'Autopilot readiness',
+    status: attention ? 'attention' : 'ok',
+    message: readiness.message,
+    data: asJsonValue({
+      repoId: readiness.repoId,
+      prNumber: readiness.prNumber,
+      mode: readiness.mode,
+      blocking: readiness.blocking,
+      warnings: readiness.warnings,
+      facts: readiness.facts,
+    }),
   };
 }
 

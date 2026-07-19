@@ -82,6 +82,21 @@ export function parseOptionalPositiveIntegerFlag(
   return parsed;
 }
 
+export function parseAutopilotModeFlag(value: string | undefined) {
+  if (value === undefined) return undefined;
+  if (
+    value === 'notify-only' ||
+    value === 'prepare-only' ||
+    value === 'autofix-with-approval' ||
+    value === 'autofix-push-when-safe'
+  ) {
+    return value;
+  }
+  throw new Error(
+    '--mode must be notify-only, prepare-only, autofix-with-approval, or autofix-push-when-safe',
+  );
+}
+
 export function parseCandidateStatus(value: string | undefined) {
   if (value === undefined) return undefined;
   if (

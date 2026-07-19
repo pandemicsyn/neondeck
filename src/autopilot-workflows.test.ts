@@ -2054,6 +2054,42 @@ describe('PR event autopilot', () => {
     });
   });
 
+  it('blocks the production push before its side effect when API identity is unavailable', async () => {
+    const { paths, featureSha, remote } = await fixture({ remote: true });
+    const remotePath = requireRemote(remote);
+    const prepared = await prepareReviewPreparedDiff(paths, featureSha);
+    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
+    const preparedDiffId = stringPath(prepared, ['data', 'preparedDiff', 'id']);
+    await approvePreparedDiffPushWithPolicy(
+      { preparedDiffId, confirm: true },
+      paths,
+    );
+    await verifyPrWorktree(
+      { worktreeId, checks: ['npm run check'], lock: false },
+      paths,
+      { runExecution: successfulExecution },
+    );
+    const before = await gitOutput(remotePath, [
+      'rev-parse',
+      'refs/heads/feature',
+    ]);
+
+    const result = await pushPrAutofix({ preparedDiffId }, paths, {
+      token: '',
+      getBranchPermissions: pushAllowedPermissions,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      changed: true,
+      action: 'autopilot_push_pr_autofix',
+      requires: ['git-api-identity'],
+    });
+    await expect(
+      gitOutput(remotePath, ['rev-parse', 'refs/heads/feature']),
+    ).resolves.toBe(before);
+  });
+
   it('invalidates a SHA-matching approval after the effective policy changes', async () => {
     const { paths, featureSha, remote } = await fixture({ remote: true });
     const prepared = await prepareReviewPreparedDiff(paths, featureSha);
