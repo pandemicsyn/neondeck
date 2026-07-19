@@ -149,3 +149,11 @@ export type {
 export * from '../autopilot-policy';
 export * from './notifications';
 export * from './recovery';
+export {
+  configureAutopilotWatch,
+  controlAutopilotWatch,
+  configureAutopilotWatchAction,
+  controlAutopilotWatchAction,
+  autopilotSetupInputSchema,
+  autopilotControlInputSchema,
+} from './setup';

@@ -9,9 +9,8 @@ import {
   addRefWatch,
   listPrWatches,
   listRefWatches,
-  removePrWatch,
-  setPrWatchPolling,
 } from '../../modules/watches';
+import { controlAutopilotWatch } from '../../modules/autopilot';
 import { safeJsonBody, safeJsonObject } from '../http';
 
 export function createWatchRoutes(paths: RuntimePaths) {
@@ -61,17 +60,25 @@ export function createWatchRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/watches/:id/polling', async (c) => {
-    const input = {
-      ...(await safeJsonObject(c)),
-      id: c.req.param('id'),
-    } as Parameters<typeof setPrWatchPolling>[0];
-    const result = await setPrWatchPolling(input, paths);
+    const body = await safeJsonObject(c);
+    const result = await controlAutopilotWatch(
+      {
+        operation: body.enabled === true ? 'resume' : 'pause',
+        watchId: c.req.param('id'),
+      },
+      paths,
+    );
     return c.json(result, result.ok ? 200 : 400);
   });
 
   routes.post('/watches/:id', async (c) => {
-    const result = await removePrWatch(
-      { ...(await safeJsonObject(c)), id: c.req.param('id') },
+    const body = await safeJsonObject(c);
+    const result = await controlAutopilotWatch(
+      {
+        operation: 'stop',
+        watchId: c.req.param('id'),
+        confirm: body.confirm === true,
+      },
       paths,
     );
     return c.json(result, result.ok ? 200 : 400);

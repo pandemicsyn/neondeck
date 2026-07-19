@@ -4,6 +4,12 @@ export async function configActionsModule() {
   ) as Promise<typeof import('../modules/config')>;
 }
 
+export async function autopilotModule() {
+  return import(
+    new URL('../modules/autopilot/index.ts', import.meta.url).href
+  ) as Promise<typeof import('../modules/autopilot')>;
+}
+
 export async function githubModule() {
   return import(
     new URL('../modules/github/index.ts', import.meta.url).href

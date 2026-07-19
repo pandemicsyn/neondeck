@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
+  controlAutopilotWatch,
+  getAutopilotState,
   getPrWatches,
-  removePrWatch,
-  setPrWatchPolling,
   type PrWatch,
 } from '../api';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
@@ -35,6 +35,11 @@ export const ActiveWatchesPlugin = {
     const { data, error, isLoading } = useQuery({
       queryKey: queryKeys.prWatches,
       queryFn: getPrWatches,
+      refetchInterval: 30_000,
+    });
+    const { data: autopilot } = useQuery({
+      queryKey: queryKeys.autopilotState,
+      queryFn: getAutopilotState,
       refetchInterval: 30_000,
     });
 
@@ -74,7 +79,21 @@ export const ActiveWatchesPlugin = {
                 detail="PR watches will appear here after they are created."
               />
             ) : (
-              visible.map((watch) => <WatchRow key={watch.id} watch={watch} />)
+              visible.map((watch) => (
+                <WatchRow
+                  admission={autopilot?.queue.find(
+                    (item) =>
+                      item.source === 'admission' && item.watchId === watch.id,
+                  )}
+                  key={watch.id}
+                  mode={
+                    autopilot?.policies.watches.find(
+                      (policy) => policy.watchId === watch.id,
+                    )?.mode
+                  }
+                  watch={watch}
+                />
+              ))
             )}
           </div>
         </ScrollArea>
@@ -83,11 +102,24 @@ export const ActiveWatchesPlugin = {
   },
 } satisfies DisplayPlugin<ActiveWatchesConfig>;
 
-function WatchRow({ watch }: { watch: PrWatch }) {
+function WatchRow({
+  watch,
+  mode,
+  admission,
+}: {
+  watch: PrWatch;
+  mode: string | undefined;
+  admission: { id: string; status: string; updatedAt: string } | undefined;
+}) {
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const queryClient = useQueryClient();
   const removeMutation = useMutation({
-    mutationFn: () => removePrWatch(watch.id),
+    mutationFn: () =>
+      controlAutopilotWatch({
+        operation: 'stop',
+        watchId: watch.id,
+        confirm: true,
+      }),
     onSuccess() {
       setConfirmingRemove(false);
       void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
@@ -98,9 +130,26 @@ function WatchRow({ watch }: { watch: PrWatch }) {
   });
   const pollingEnabled = watch.pollingEnabled !== false;
   const pollingMutation = useMutation({
-    mutationFn: () => setPrWatchPolling(watch.id, !pollingEnabled),
+    mutationFn: () =>
+      controlAutopilotWatch({
+        operation: pollingEnabled ? 'pause' : 'resume',
+        watchId: watch.id,
+      }),
     onSuccess() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
+    },
+  });
+  const retryMutation = useMutation({
+    mutationFn: () =>
+      controlAutopilotWatch({
+        operation: 'retry',
+        watchId: watch.id,
+        ...(admission ? { admissionId: admission.id } : {}),
+      }),
+    onSuccess() {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.autopilotState,
+      });
     },
   });
   const checkedLabel = watch.lastCheckedAt
@@ -129,6 +178,12 @@ function WatchRow({ watch }: { watch: PrWatch }) {
               why · {attentionReason}
             </p>
           ) : null}
+          <p className="mt-1 font-mono text-[10px] text-muted">
+            autopilot · {mode ?? 'notify-only'}
+            {admission
+              ? ` · ${admission.status} · updated ${relativeTime(admission.updatedAt)}`
+              : ' · awaiting event'}
+          </p>
         </div>
         <Badge className={statusClass(watch.status)}>{watch.status}</Badge>
       </div>
@@ -195,12 +250,24 @@ function WatchRow({ watch }: { watch: PrWatch }) {
           >
             stop
           </Button>
+          {admission ? (
+            <Button
+              className="min-h-[28px] border-line bg-transparent px-2 py-1 text-[10px] text-muted"
+              disabled={retryMutation.isPending}
+              onClick={() => retryMutation.mutate()}
+              type="button"
+            >
+              {retryMutation.isPending ? 'retrying' : 'retry'}
+            </Button>
+          ) : null}
         </span>
       </div>
       {confirmingRemove ? (
         <div className="mt-2 border border-accent/50 bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-accent">Remove this watch?</span>
+            <span className="text-accent">
+              Stop this watch and active Autopilot work?
+            </span>
             <span className="flex gap-1.5">
               <Button
                 className="min-h-[28px] border-accent bg-transparent px-2 py-1 text-[10px] text-accent"

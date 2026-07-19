@@ -12,6 +12,8 @@ import {
   runPreparedDiffRevision,
   triagePrEvent,
   verifyPrWorktree,
+  configureAutopilotWatch,
+  controlAutopilotWatch,
 } from '../../modules/autopilot';
 import {
   readAutopilotRecoveryOptions,
@@ -45,6 +47,16 @@ import {
 
 export function createAutopilotRoutes(paths: RuntimePaths) {
   const routes = new Hono();
+
+  routes.post('/autopilot/watches/configure', async (c) => {
+    const result = await configureAutopilotWatch(await safeJsonBody(c), paths);
+    return c.json(result, result.ok ? 200 : 400);
+  });
+
+  routes.post('/autopilot/watches/control', async (c) => {
+    const result = await controlAutopilotWatch(await safeJsonBody(c), paths);
+    return c.json(result, result.ok ? 200 : 400);
+  });
 
   routes.get('/autopilot/owners/:id', async (c) => {
     const inspection = await readAutopilotOwnerInspection(

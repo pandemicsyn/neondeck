@@ -1,6 +1,6 @@
 # Autopilot Product-Closure Implementation Plan
 
-Status: in progress; Packages 1–4 implemented, Packages 5–8 not started
+Status: in progress; Packages 1–4 and 6 implemented, Packages 5, 7–8 not started
 
 Companion audit: `.plans/AUTOPILOT_END_TO_END_REVIEW.html`
 
@@ -1056,6 +1056,13 @@ Exit gate: all four mode rows in the mode table pass integration tests, includin
 real non-force push to a temporary bare remote and comment-delivery fixture.
 
 ### Package 6: explicit setup and control surfaces
+
+Status: implemented (2026-07-19). The shared setup contract configures a
+watch, stable per-watch override, awaiting-event owner binding, process-existing
+choice, and readiness result without allocating a Flue instance or worktree.
+Chat action, HTTP API, CLI, PR list, watch controls, and recommended presets
+use the same service. Verification/delivery and canonical operator history stay
+with Packages 5 and 7.
 
 Primary files:
 

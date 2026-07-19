@@ -20,11 +20,13 @@ import {
   parseRepoRegistry,
   readRuntimeJson,
   runtimePaths,
+  type RuntimePaths,
 } from '../../../runtime-home';
 import {
   addRepoInputSchema,
   removeRepoInputSchema,
   updateRepoAutopilotPolicyInputSchema,
+  updateRepoAutopilotWatchOverrideInputSchema,
   updateRepoInputSchema,
   type ConfigActionResult,
 } from '../schemas';
@@ -365,6 +367,148 @@ export async function updateRepoAutopilotPolicy(
       data: { repo: nextRepo, policy: nextPolicy },
     },
   );
+}
+
+/**
+ * Upsert one watch override by its stable watch id.  This deliberately avoids
+ * exposing the repository's complete override array to callers: two setup
+ * surfaces configuring different PRs must not erase one another.
+ */
+export async function updateRepoAutopilotWatchOverride(
+  rawInput: v.InferInput<typeof updateRepoAutopilotWatchOverrideInputSchema>,
+  paths = runtimePaths(),
+): Promise<ConfigActionResult> {
+  return withRepoOverrideLock(paths.repos, () =>
+    updateRepoAutopilotWatchOverrideUnlocked(rawInput, paths),
+  );
+}
+
+async function updateRepoAutopilotWatchOverrideUnlocked(
+  rawInput: v.InferInput<typeof updateRepoAutopilotWatchOverrideInputSchema>,
+  paths: RuntimePaths,
+): Promise<ConfigActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsed = parseActionInput(
+    updateRepoAutopilotWatchOverrideInputSchema,
+    rawInput,
+    'config_update_repo_autopilot_watch_override',
+    paths,
+    [paths.repos, paths.config],
+  );
+  if (!parsed.ok) return parsed.result;
+
+  const [registry, appConfig] = await Promise.all([
+    readRuntimeJson(paths.repos, parseRepoRegistry),
+    readRuntimeJson(paths.config, parseAppConfig),
+  ]);
+  const index = registry.repos.findIndex(
+    (repo) => repo.id === parsed.input.repoId,
+  );
+  if (index === -1) {
+    return failResult(
+      'config_update_repo_autopilot_watch_override',
+      paths,
+      [paths.repos, paths.config],
+      {
+        message: `Repository "${parsed.input.repoId}" does not exist.`,
+      },
+    );
+  }
+  const current = registry.repos[index];
+  const currentOverride = readAutopilotMetadata(current);
+  const existingOverrides = currentOverride.watchOverrides ?? [];
+  const existingIndex = existingOverrides.findIndex(
+    (override) => override.watchId === parsed.input.watchId,
+  );
+  const nextWatchOverride = {
+    watchId: parsed.input.watchId,
+    prNumber: parsed.input.prNumber,
+    mode: parsed.input.mode,
+    ...(parsed.input.reason ? { reason: parsed.input.reason } : {}),
+  };
+  const nextOverrides =
+    existingIndex === -1
+      ? [...existingOverrides, nextWatchOverride]
+      : existingOverrides.with(existingIndex, nextWatchOverride);
+  const nextOverride = { ...currentOverride, watchOverrides: nextOverrides };
+  const nextRepo: RepoConfig = {
+    ...current,
+    metadata: { ...current.metadata, autopilot: nextOverride },
+  };
+  const currentPolicy = repoAutopilotPolicy(current, appConfig);
+  const nextPolicy = repoAutopilotPolicy(nextRepo, appConfig);
+  const currentWatchMode =
+    existingOverrides[existingIndex]?.mode ?? currentPolicy.mode;
+  if (
+    modeRank(parsed.input.mode) > modeRank(currentWatchMode) &&
+    parsed.input.confirm !== true
+  ) {
+    return failResult(
+      'config_update_repo_autopilot_watch_override',
+      paths,
+      [paths.repos, paths.config],
+      {
+        message:
+          "Increasing this watch's autopilot authority requires explicit confirmation.",
+        requires: ['confirm'],
+      },
+    );
+  }
+  const changed = JSON.stringify(current) !== JSON.stringify(nextRepo);
+  if (changed) {
+    const next = parseRepoRegistry(
+      { ...registry, repos: registry.repos.with(index, nextRepo) },
+      paths.repos,
+    );
+    await writeJson(paths.repos, next);
+    recordConfigChange(paths, {
+      action: 'config_update_repo_autopilot_watch_override',
+      file: paths.repos,
+      target: `${parsed.input.repoId}:${parsed.input.watchId}`,
+      before: registry,
+      after: next,
+    });
+  }
+  return okResult(
+    'config_update_repo_autopilot_watch_override',
+    changed,
+    paths,
+    [paths.repos, paths.config],
+    {
+      message: changed
+        ? `Updated Autopilot mode for watch "${parsed.input.watchId}".`
+        : `Autopilot mode for watch "${parsed.input.watchId}" already matched the requested values.`,
+      data: {
+        repo: nextRepo,
+        policy: nextPolicy,
+        watchOverride: nextWatchOverride,
+      },
+    },
+  );
+}
+
+const repoOverrideLocks = new Map<string, Promise<void>>();
+
+async function withRepoOverrideLock<T>(
+  path: string,
+  operation: () => Promise<T>,
+) {
+  const previous = repoOverrideLocks.get(path) ?? Promise.resolve();
+  let release!: () => void;
+  const next = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  repoOverrideLocks.set(
+    path,
+    previous.then(() => next),
+  );
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (repoOverrideLocks.get(path) === next) repoOverrideLocks.delete(path);
+  }
 }
 
 function hasAutopilotMetadata(metadata: Record<string, unknown> | undefined) {

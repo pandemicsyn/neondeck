@@ -1265,7 +1265,7 @@ Must-haves:
 
 ### Phase 19: PR Event Autopilot
 
-- Status: incomplete after Autopilot Package 4. The production watcher now progresses through durable triage/worktree preparation into one continuing, compacting, private Neon PR-owner instance per watch. Complete authoritative review/CI/readiness/authority/workspace envelopes, immutable grounding/receipt linkage, explicit monotonic memory/config cursors, trusted revision-bound read/fix capabilities, baseline-aware in-place re-grounding or audited capability rotation, serialized/byte-bounded coalesced turns, durable stop/supersession mutation epochs, under-lock live-head/identity/policy/effect checks, owner-specific restart reconciliation, bounded one-time submission persistence, idempotent handled-PR learning evidence, and restart-safe deterministic prepared-diff submission are implemented. Focused fixture coverage runs two real sequential review fixes against the same instance/worktree across reconstructed service closures and a real policy downgrade. Verification, approval/push, result delivery, terminal cleanup, explicit setup/control UX, and full product-path integration/smoke remain open in Packages 5–8. The source-of-truth closure plan is `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`; the evidence audit is `.plans/AUTOPILOT_END_TO_END_REVIEW.html`.
+- Status: incomplete after Autopilot Packages 4 and 6. The production watcher now progresses through durable triage/worktree preparation into one continuing, compacting, private Neon PR-owner instance per watch. Complete authoritative review/CI/readiness/authority/workspace envelopes, immutable grounding/receipt linkage, explicit monotonic memory/config cursors, trusted revision-bound read/fix capabilities, baseline-aware in-place re-grounding or audited capability rotation, serialized/byte-bounded coalesced turns, durable stop/supersession mutation epochs, under-lock live-head/identity/policy/effect checks, owner-specific restart reconciliation, bounded one-time submission persistence, idempotent handled-PR learning evidence, and restart-safe deterministic prepared-diff submission are implemented. Explicit watch-plus-mode setup now creates an awaiting-event owner binding, offers current-feedback processing, presents truthful readiness, and is available through chat action, API, CLI, dashboard, and recommended layouts. Verification, approval/push, result delivery, terminal cleanup, canonical operator state, and full product-path integration/smoke remain open in Packages 5, 7, and 8. The source-of-truth closure plan is `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`; the evidence audit is `.plans/AUTOPILOT_END_TO_END_REVIEW.html`.
 
 - [x] Complete PR event watermarks for commits, review threads, requested-changes review bodies, general PR conversation comments, check suites/runs, mergeability, out-of-date state, and per-item new/changed fingerprints.
 - [x] Add a `triage_pr_event` workflow that classifies deltas into no-op, notify-only, explain-only, prepare-only, autofix-with-approval, or autofix-push-when-safe.
@@ -1307,14 +1307,14 @@ Must-haves:
 
 ### Phase 20: Autopilot Policy And UX Hardening
 
-- Status: incomplete. Policy, guardrails, prepared-diff records, central readiness, and most deterministic recovery primitives have landed. Explicit watch-plus-mode setup, fresh-install discoverability, approval semantics, canonical operator state, pause/stop behavior, complete recovery UX, and accurate end-to-end docs remain open under `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`.
+- Status: incomplete. Policy, guardrails, prepared-diff records, central readiness, stable per-watch setup, shared controls, and recommended-layout discoverability have landed. Approval semantics, canonical operator state/history, full recovery UX, and complete end-to-end docs remain open under `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`.
 
 - [x] Add repo-level autopilot config with explicit modes:
   - `notify-only`
   - `prepare-only`
   - `autofix-with-approval`
   - `autofix-push-when-safe`
-- [ ] Complete stable watch-rule override mutation and expose an explicit watch-plus-mode setup contract across chat, CLI, API, and dashboard.
+- [x] Complete stable watch-rule override mutation and expose an explicit watch-plus-mode setup contract across chat, CLI, API, and dashboard.
 - [x] Add policy limits:
   - maximum files changed
   - maximum lines changed
@@ -1348,7 +1348,7 @@ Must-haves:
   - open worktree path
   - run verification
 - [x] Keep git/diff operations in backend services and actions; UI clients should not implement git logic.
-- [ ] Make the Autopilot dashboard panel available in recommended fresh-install layouts and base it on canonical admissions with accurate state and controls.
+- [ ] Make the Autopilot dashboard panel available in recommended fresh-install layouts and base it on canonical admissions with accurate state and controls. Package 6 adds it to recommended layouts; canonical admissions and complete controls remain Package 7.
 - [x] Add human-readable audit summaries for autonomous workflows, suitable for PR comments and timeline UI.
 - [ ] Expose all bounded prepared-diff recovery actions and query failures in the primary operator UI:
   - inspect retained worktree

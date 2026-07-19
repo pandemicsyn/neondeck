@@ -77,6 +77,16 @@ export const updateRepoAutopilotPolicyInputSchema = v.strictObject({
   confirm: v.optional(v.boolean()),
 });
 
+/** Update one PR's durable policy override without replacing sibling watches. */
+export const updateRepoAutopilotWatchOverrideInputSchema = v.strictObject({
+  repoId: nonEmptyStringSchema,
+  watchId: nonEmptyStringSchema,
+  prNumber: v.pipe(v.number(), v.integer(), v.minValue(1)),
+  mode: modeSchema,
+  reason: v.optional(nonEmptyStringSchema),
+  confirm: v.optional(v.boolean()),
+});
+
 export const removeRepoInputSchema = v.object({
   id: nonEmptyStringSchema,
   confirm: v.optional(v.boolean()),

@@ -28,6 +28,10 @@ import { fixPrReviewFeedback } from './review-feedback';
 import { commentPrAutofixResult } from './comments';
 import { approvePreparedDiffPushWithPolicy } from './approvals';
 import { approvePushInputSchema } from '../prepared-diffs';
+import {
+  configureAutopilotWatchAction,
+  controlAutopilotWatchAction,
+} from './setup';
 
 export const approvePreparedDiffPushAction = defineAction({
   name: 'neondeck_prepared_diff_approve_push',
@@ -166,6 +170,8 @@ export const commentPrAutofixResultAction = defineAction({
 });
 
 export const neondeckAutopilotActions = [
+  configureAutopilotWatchAction,
+  controlAutopilotWatchAction,
   approvePreparedDiffPushAction,
   triagePrEventAction,
   preparePrWorktreeAction,

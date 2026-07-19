@@ -24,6 +24,21 @@ export type WatchPrOptions = {
   json?: boolean;
 };
 
+export type AutopilotOptions = {
+  mode?: string;
+  processExisting?: boolean;
+  interval?: string;
+  reason?: string;
+  confirm?: boolean;
+  json?: boolean;
+};
+
+export type AutopilotControlOptions = {
+  admission?: string;
+  confirm?: boolean;
+  json?: boolean;
+};
+
 export type HandoffNoteOptions = {
   repo?: string;
   pr?: string;

@@ -110,6 +110,23 @@ neondeck watch-pr https://github.com/pandemicsyn/neondeck/pull/521
           PR watches persist in SQLite and poll GitHub for merge/check changes.
         </p>
 
+        <h2>Autopilot setup</h2>
+        <pre><code>neondeck autopilot pandemicsyn/neondeck#521 --mode prepare-only --confirm
+neondeck autopilot pandemicsyn/neondeck#521 --mode prepare-only --process-existing --confirm
+neondeck autopilot-control status pandemicsyn/neondeck#521
+neondeck autopilot-control retry pandemicsyn/neondeck#521 --admission autopilot-admission:…</code></pre>
+        <p>
+          This shared setup operation creates or updates the PR watch, stores a
+          stable per-watch mode override, creates its durable
+          <code>awaiting-event</code> owner, and reports readiness. It does not create
+          a Flue instance or worktree until a meaningful event arrives. Use <code
+            >--process-existing</code
+          > to process current actionable feedback on the first poll; otherwise that
+          state is baselined. Any authority increase requires <code
+            >--confirm</code
+          >.
+        </p>
+
         <h2>External agent handoff</h2>
         <pre><code>neondeck register-pr pandemicsyn/neondeck#521 \
   --from codex \

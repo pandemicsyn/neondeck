@@ -514,6 +514,7 @@ describe('config actions', () => {
     expect(dashboard.layout.regions[0].tabs.map((tab) => tab.id)).toEqual([
       'reviews',
       'github',
+      'autopilot',
       'reports',
     ]);
     expect(dashboard.layout.regions[1]).toMatchObject({
@@ -575,6 +576,7 @@ describe('config actions', () => {
       'reviews',
       'github',
       'watches',
+      'autopilot',
       'reports',
     ]);
     expect(dashboard.layout.regions[1].tabs.map((tab) => tab.id)).toEqual([

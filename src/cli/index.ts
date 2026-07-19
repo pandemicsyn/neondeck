@@ -5,6 +5,7 @@ import { decideLearningCandidateCli } from './learning';
 import { registerMcpCommands } from './mcp';
 import {
   appDbModule,
+  autopilotModule,
   configActionsModule,
   devDoctorModule,
   handoffModule,
@@ -51,6 +52,8 @@ import type {
   ServiceInstallOptions,
   ServeOptions,
   WatchPrOptions,
+  AutopilotOptions,
+  AutopilotControlOptions,
 } from './types';
 
 const program = new Command()
@@ -467,6 +470,88 @@ program
     );
     printActionResult(result);
   });
+
+program
+  .command('autopilot <ref>')
+  .description(
+    'Configure one PR watch with an explicit per-watch Autopilot mode.',
+  )
+  .requiredOption(
+    '--mode <mode>',
+    'notify-only, prepare-only, autofix-with-approval, or autofix-push-when-safe',
+  )
+  .option(
+    '--process-existing',
+    'process current actionable feedback on the first poll',
+  )
+  .option('--interval <seconds>', 'poll interval in seconds')
+  .option('--reason <text>', 'operator-visible reason for this watch override')
+  .option('--confirm', 'confirm an Autopilot authority increase')
+  .option('--json', 'print machine-readable JSON')
+  .action(async (ref: string, options: AutopilotOptions) => {
+    applyCommandJsonOption(options);
+    const { configureAutopilotWatch } = await autopilotModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
+    const mode = parseAutopilotModeFlag(options.mode);
+    if (!mode) throw new Error('--mode is required');
+    const intervalSeconds = parseOptionalIntervalSeconds(options.interval);
+    printActionResult(
+      await configureAutopilotWatch(
+        {
+          ref,
+          mode,
+          ...(options.processExisting ? { processExisting: true } : {}),
+          ...(intervalSeconds !== undefined ? { intervalSeconds } : {}),
+          ...(options.reason ? { reason: options.reason } : {}),
+          ...(options.confirm ? { confirm: true } : {}),
+        },
+        paths,
+      ),
+    );
+  });
+
+program
+  .command('autopilot-control <operation> [watchId]')
+  .description(
+    'List, inspect, pause, resume, stop, or retry an Autopilot watch.',
+  )
+  .option('--admission <id>', 'retry only this durable admission')
+  .option('--confirm', 'confirm stopping a watch and its active work')
+  .option('--json', 'print machine-readable JSON')
+  .action(
+    async (
+      operation: string,
+      watchId: string | undefined,
+      options: AutopilotControlOptions,
+    ) => {
+      applyCommandJsonOption(options);
+      if (
+        !['list', 'status', 'pause', 'resume', 'stop', 'retry'].includes(
+          operation,
+        )
+      ) {
+        throw new Error(
+          'operation must be list, status, pause, resume, stop, or retry',
+        );
+      }
+      const { controlAutopilotWatch } = await autopilotModule();
+      const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+      loadEnvForPaths(paths);
+      printActionResult(
+        await controlAutopilotWatch(
+          {
+            operation: operation as
+              'list' | 'status' | 'pause' | 'resume' | 'stop' | 'retry',
+            ...(watchId ? { watchId } : {}),
+            ...(options.admission ? { admissionId: options.admission } : {}),
+            ...(options.confirm ? { confirm: true } : {}),
+          },
+          paths,
+        ),
+      );
+    },
+  );
 
 program
   .command('note <text...>')

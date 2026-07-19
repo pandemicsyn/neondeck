@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useId, useState } from 'react';
 import {
   getPrWatches,
+  configureAutopilotWatch,
+  getAutopilotReadiness,
   getGitHubPullRequests,
   getRepoRegistry,
   getWorkflowObservability,
@@ -201,6 +203,7 @@ function PrRow({
           <NeonReviewButton item={item} />
           {isCiFixCandidate(item) ? <FixCiButton item={item} /> : null}
           <WatchPrButton item={item} />
+          <AutopilotButton item={item} repoId={repoId} />
           <a
             className="inline-flex min-h-[28px] shrink-0 items-center border border-line px-2 py-1 text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
             href={item.url}
@@ -484,6 +487,128 @@ function WatchPrButton({ item }: { item: GitHubPullRequest }) {
     >
       {mutation.isPending ? 'watching' : watched ? 'watched' : 'watch'}
     </Button>
+  );
+}
+
+function AutopilotButton({
+  item,
+  repoId,
+}: {
+  item: GitHubPullRequest;
+  repoId: string | undefined;
+}) {
+  const queryClient = useQueryClient();
+  const [processExisting, setProcessExisting] = useState(false);
+  const [mode, setMode] = useState<
+    'prepare-only' | 'autofix-with-approval' | 'autofix-push-when-safe'
+  >('prepare-only');
+  const [confirmed, setConfirmed] = useState(false);
+  const readiness = useQuery({
+    queryKey: ['autopilot-readiness', repoId, item.number, mode],
+    queryFn: () =>
+      getAutopilotReadiness({ repoId: repoId!, prNumber: item.number, mode }),
+    enabled: Boolean(repoId),
+    staleTime: 30_000,
+  });
+  const mutation = useMutation({
+    mutationFn: () =>
+      configureAutopilotWatch({
+        ref: `${item.repo}#${item.number}`,
+        mode,
+        processExisting,
+        confirm: confirmed,
+        reason: 'Enabled from the GitHub PR list.',
+      }),
+    onSuccess() {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.autopilotState,
+      });
+    },
+  });
+  // The service decides whether this is an authority increase; the UI always
+  // makes the operator take a deliberate second click before persisting a mode.
+  const requiresConfirmation = !confirmed;
+  const label = processExisting ? 'process now' : 'later changes';
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      <label className="sr-only" htmlFor={`autopilot-mode-${item.id}`}>
+        Autopilot mode for {item.repo}#{item.number}
+      </label>
+      <select
+        className="min-h-[28px] border border-line bg-field px-1 font-mono text-[10px] text-ink focus:outline-none focus:ring-1 focus:ring-primary"
+        id={`autopilot-mode-${item.id}`}
+        onChange={(event) => {
+          setMode(event.target.value as typeof mode);
+          setConfirmed(false);
+        }}
+        value={mode}
+      >
+        <option value="prepare-only">prepare</option>
+        <option value="autofix-with-approval">fix + approve</option>
+        <option value="autofix-push-when-safe">fix + safe push</option>
+      </select>
+      <Button
+        aria-pressed={processExisting}
+        className="min-h-[28px] border-line bg-transparent px-2 py-1 text-[10px] text-muted"
+        onClick={() => setProcessExisting((value) => !value)}
+        title={
+          processExisting
+            ? 'Current feedback will be processed on the first poll.'
+            : 'Current feedback will be baselined; only later changes will run.'
+        }
+        type="button"
+      >
+        {processExisting ? 'now' : 'later'}
+      </Button>
+      <Button
+        className="min-h-[28px] shrink-0 border-primary/60 bg-transparent px-2 py-1 text-[10px] text-primary hover:border-primary hover:text-primary"
+        disabled={mutation.isPending || !repoId || readiness.isLoading}
+        onClick={() => {
+          if (requiresConfirmation) {
+            setConfirmed(true);
+            return;
+          }
+          mutation.mutate();
+        }}
+        title={
+          mutation.error
+            ? queryErrorMessage(mutation.error)
+            : `Configure ${mode}: ${processExisting ? 'process current feedback on the first poll' : 'baseline current feedback and act on later changes'}.`
+        }
+        type="button"
+      >
+        {mutation.isPending
+          ? 'configuring'
+          : requiresConfirmation
+            ? 'confirm mode'
+            : `autopilot · ${label}`}
+      </Button>
+      {readiness.data ? (
+        <span
+          className={
+            readiness.data.ready
+              ? 'text-[10px] text-muted'
+              : 'text-[10px] text-accent'
+          }
+          role="status"
+        >
+          {readiness.data.ready
+            ? 'ready'
+            : `${readiness.data.status} · ${(readiness.data.blocking ?? []).join(', ')}`}
+        </span>
+      ) : null}
+      {mutation.data && !mutation.data.ok ? (
+        <span className="text-[10px] text-accent" role="alert">
+          {mutation.data.message}
+        </span>
+      ) : null}
+      {mutation.error ? (
+        <span className="text-[10px] text-accent" role="alert">
+          {queryErrorMessage(mutation.error)}
+        </span>
+      ) : null}
+    </span>
   );
 }
 

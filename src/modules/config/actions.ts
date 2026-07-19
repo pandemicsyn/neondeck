@@ -13,6 +13,7 @@ import {
   updateLearningConfigInputSchema,
   updateProviderInputSchema,
   updateRepoAutopilotPolicyInputSchema,
+  updateRepoAutopilotWatchOverrideInputSchema,
   updateRepoInputSchema,
   updateSkillRootsInputSchema,
   updateWorktreePolicyInputSchema,
@@ -39,6 +40,7 @@ import {
   removeRepo,
   updateRepo,
   updateRepoAutopilotPolicy,
+  updateRepoAutopilotWatchOverride,
 } from './mutations/repos';
 
 export const configReadAction = defineAction({
@@ -221,6 +223,17 @@ export const updateRepoAutopilotPolicyAction = defineAction({
   },
 });
 
+export const updateRepoAutopilotWatchOverrideAction = defineAction({
+  name: 'neondeck_config_update_repo_autopilot_watch_override',
+  description:
+    'Set one PR watch’s stable Autopilot mode override without replacing other watch overrides. Explicit confirmation is required only when this watch gains authority.',
+  input: updateRepoAutopilotWatchOverrideInputSchema,
+  output: configActionOutputSchema,
+  async run({ input }) {
+    return updateRepoAutopilotWatchOverride(input);
+  },
+});
+
 export const removeRepoAction = defineAction({
   name: 'neondeck_config_remove_repo',
   description:
@@ -249,5 +262,6 @@ export const neondeckConfigActions = [
   addRepoAction,
   updateRepoAction,
   updateRepoAutopilotPolicyAction,
+  updateRepoAutopilotWatchOverrideAction,
   removeRepoAction,
 ];

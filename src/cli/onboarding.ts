@@ -550,12 +550,12 @@ export async function configureDashboard(paths: RuntimePaths) {
       {
         value: 'cockpit',
         label: 'Cockpit',
-        hint: 'Work queue, chat, watches, briefing, runtime.',
+        hint: 'Work queue, chat, watches, Autopilot, briefing, runtime.',
       },
       {
         value: 'classic',
         label: 'Classic',
-        hint: 'GitHub left, Neon right.',
+        hint: 'GitHub, Autopilot, and Neon.',
       },
     ],
   });
