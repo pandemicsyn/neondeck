@@ -535,6 +535,55 @@ export type RuntimeStatusCheck = {
   message: string;
 };
 
+export type AutopilotReadinessFact = {
+  id:
+    | 'runtime-home'
+    | 'worktree-root'
+    | 'source-repo'
+    | 'api'
+    | 'fetch'
+    | 'git-push'
+    | 'comment'
+    | 'identity'
+    | 'check-commands'
+    | 'gh';
+  label: string;
+  status: 'ready' | 'blocked' | 'warning' | 'not-required' | 'not-checked';
+  required: boolean;
+  message: string;
+  action: string | null;
+  details?: Record<string, unknown>;
+};
+
+export type AutopilotReadiness = {
+  ok: true;
+  action: 'autopilot_readiness_read';
+  changed: false;
+  ready: boolean;
+  status: 'ready' | 'blocked' | 'warning';
+  message: string;
+  repoId: string;
+  repoFullName: string;
+  prNumber: number | null;
+  mode:
+    | 'notify-only'
+    | 'prepare-only'
+    | 'autofix-with-approval'
+    | 'autofix-push-when-safe';
+  facts: Record<AutopilotReadinessFact['id'], AutopilotReadinessFact>;
+  blocking: AutopilotReadinessFact['id'][];
+  warnings: AutopilotReadinessFact['id'][];
+  pushTarget: {
+    repoFullName: string;
+    remote: string;
+    branch: string;
+    fork: boolean;
+    maintainerCanModify: boolean;
+    canLikelyPush: boolean | null;
+  } | null;
+  checkedAt: string;
+};
+
 export type RuntimeStatus = {
   ok: boolean;
   status: 'ready' | 'needs-config' | 'attention';
@@ -601,6 +650,7 @@ export type RuntimeStatus = {
     unattended: string;
     preapprovedCommandCount: number;
   };
+  autopilot: AutopilotReadiness | null;
   session: {
     id: string;
     label: string;

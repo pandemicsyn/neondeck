@@ -19,6 +19,7 @@ import { executionPolicyFromConfig } from '../execution-policy';
 import { readNeonSessionState } from '../sessions';
 import { listRuntimeSkills } from './skills';
 import { inspectAppDatabase, inspectFlueDatabase } from './status-database';
+import { readAutopilotReadiness } from './autopilot-readiness';
 import {
   type RuntimeStatus,
   type RuntimeStatusCheck,
@@ -39,6 +40,15 @@ export async function readRuntimeStatus(
     safeRead(() => readNeonSessionState(paths)),
   ]);
   const mcpServers = mcpStatusFromConfig(paths, mcpConfig);
+  const readinessRepo = repos.ok ? repos.value.repos[0] : undefined;
+  const autopilot = readinessRepo
+    ? await safeRead(() =>
+        readAutopilotReadiness({ repoId: readinessRepo.id }, paths, {
+          env,
+          remoteChecks: false,
+        }),
+      )
+    : null;
   const appDatabase = inspectAppDatabase(paths);
   const flueDatabase = inspectFlueDatabase(paths);
   const models = resolveAgentModelSelection(
@@ -186,6 +196,19 @@ export async function readRuntimeStatus(
         : 'Repository config could not be read.',
     ),
     check(
+      'autopilot-local-readiness',
+      'Autopilot local preflight',
+      !autopilot || (autopilot.ok && autopilot.value.blocking.length === 0),
+      'needs-config',
+      !autopilot
+        ? 'Configure a repository before checking Autopilot readiness.'
+        : autopilot.ok
+          ? autopilot.value.blocking.length === 0
+            ? `Local preflight passed for ${autopilot.value.repoId}; use target-specific doctor/API readiness for live API, fetch, and push credential checks.`
+            : autopilot.value.message
+          : autopilot.error,
+    ),
+    check(
       'flue-errors',
       'Recent Flue failures',
       appDatabase.counts.recentFailedWorkflowSummaries === 0 &&
@@ -326,6 +349,7 @@ export async function readRuntimeStatus(
       unattended: executionPolicy.unattended,
       preapprovedCommandCount: executionPolicy.preapprovedCommands.length,
     },
+    autopilot: autopilot?.ok ? autopilot.value : null,
     session: session.ok
       ? {
           id: session.value.activeChatSession.id,

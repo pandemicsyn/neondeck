@@ -1,6 +1,6 @@
 # Autopilot Product-Closure Implementation Plan
 
-Status: in progress; Packages 1–2 implemented, Packages 3–8 not started
+Status: in progress; Packages 1–3 implemented, Packages 4–8 not started
 
 Companion audit: `.plans/AUTOPILOT_END_TO_END_REVIEW.html`
 
@@ -928,6 +928,22 @@ Deliverables:
 
 Exit gate: no unattended git operation can prompt indefinitely, and setup predicts
 the same credential outcome as the later push gate.
+
+Implementation status: complete. `readAutopilotReadiness` now emits typed,
+separate local, GitHub API, exact-fetch, Git-push, comment, author/committer,
+check-command, and `gh` facts through runtime status, targeted doctor/CLI, the
+read-only local API, onboarding guidance, and Runtime Overview. One shared Git
+runner bounds and disables prompts for worktree sync, exact PR fetch, local diff
+fetch, repo-edit push, scheduler/docs Git, and exe.dev remote checkout commands.
+HTTPS readiness proves helper/askpass credential retrieval without retaining the
+secret, validates that credential against the intended repository, and binds its
+actor to the separately reported API actor; SSH reachability remains an explicit
+unbound-identity warning. The immediate pre-push gate consumes the same typed
+decision before any push side effect. Same-repo and fork targets are derived from
+authoritative PR head/permission facts, option parsing is terminated for remote
+arguments, and no readiness path performs a dry-run or real push. Fake helper and
+askpass success/hang fixtures cover redaction, recursive causes, timeout, and
+process-group termination.
 
 ### Package 4: continuing Neon PR-owner agent instance
 

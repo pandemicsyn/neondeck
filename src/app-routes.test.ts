@@ -52,6 +52,10 @@ describe('app API safety routes', () => {
           primitive: 'route',
         }),
         expect.objectContaining({
+          id: '/api/autopilot/readiness',
+          primitive: 'route',
+        }),
+        expect.objectContaining({
           id: '/api/autopilot/fix-pr-ci-failure',
           primitive: 'route',
         }),
@@ -81,6 +85,30 @@ describe('app API safety routes', () => {
       },
     });
     expect(Array.isArray(body.queue)).toBe(true);
+  });
+
+  it('validates typed Autopilot readiness queries over the local API', async () => {
+    for (const query of [
+      'repoId=sample&mode=unsafe',
+      'repoId=sample&prNumber=abc',
+    ]) {
+      const response = await app.request(
+        `http://localhost/api/autopilot/readiness?${query}`,
+        { headers: { host: 'localhost' } },
+      );
+      const body = (await response.json()) as {
+        ok: boolean;
+        action: string;
+        errors: string[];
+      };
+
+      expect(response.status).toBe(400);
+      expect(body).toMatchObject({
+        ok: false,
+        action: 'autopilot_readiness_read',
+      });
+      expect(body.errors).toHaveLength(1);
+    }
   });
 
   it('serves the saved local API token to the local dashboard session', async () => {

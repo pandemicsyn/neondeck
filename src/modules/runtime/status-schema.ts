@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { autopilotReadinessSchema } from './autopilot-readiness';
 
 export type RuntimeStatusLevel = 'ready' | 'needs-config' | 'attention';
 
@@ -85,6 +86,7 @@ export const runtimeStatusSchema = v.looseObject({
     unattended: v.string(),
     preapprovedCommandCount: v.number(),
   }),
+  autopilot: v.nullable(autopilotReadinessSchema),
   session: v.object({
     id: v.string(),
     label: v.string(),

@@ -21,6 +21,7 @@ import {
 } from './modules';
 import {
   loadEnvForPaths,
+  parseAutopilotModeFlag,
   parseCandidateStatus,
   parseCandidateTarget,
   parseHandoffNoteLevel,
@@ -530,11 +531,20 @@ program
 program
   .command('doctor')
   .description('Run local Neondeck diagnostics.')
-  .action(async () => {
+  .option('--repo <id>', 'check Autopilot readiness for a configured repo')
+  .option('--pr <number>', 'run live API/fetch/push readiness for one PR')
+  .option('--mode <mode>', 'evaluate one Autopilot delivery mode')
+  .action(async (options: { repo?: string; pr?: string; mode?: string }) => {
     const { runDevDoctor } = await devDoctorModule();
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
     loadEnvForPaths(paths);
-    printActionResult(await runDevDoctor(paths));
+    printActionResult(
+      await runDevDoctor(paths, {
+        repoId: options.repo,
+        prNumber: parseOptionalPositiveIntegerFlag('--pr', options.pr),
+        mode: parseAutopilotModeFlag(options.mode),
+      }),
+    );
   });
 
 program

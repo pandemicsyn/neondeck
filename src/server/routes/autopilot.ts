@@ -1,11 +1,14 @@
 import { Hono } from 'hono';
+import * as v from 'valibot';
 import {
   commentPrAutofixResult,
   fixPrCiFailure,
   fixPrReviewFeedback,
   abandonPreparedDiffWithRevisionAbort,
+  autopilotReadinessInputSchema,
   preparePrWorktree,
   pushPrAutofix,
+  readAutopilotReadiness,
   runPreparedDiffRevision,
   triagePrEvent,
   verifyPrWorktree,
@@ -38,6 +41,42 @@ import { recordHandledPrApiResult } from '../learning-hooks';
 
 export function createAutopilotRoutes(paths: RuntimePaths) {
   const routes = new Hono();
+
+  routes.get('/autopilot/readiness', async (c) => {
+    const rawPrNumber = c.req.query('prNumber');
+    const prNumber = queryNumber(rawPrNumber);
+    const parsed = v.safeParse(autopilotReadinessInputSchema, {
+      repoId: c.req.query('repoId'),
+      prNumber:
+        rawPrNumber === undefined ? undefined : (prNumber ?? rawPrNumber),
+      mode: c.req.query('mode'),
+    });
+    if (!parsed.success) {
+      return c.json(
+        {
+          ok: false,
+          action: 'autopilot_readiness_read',
+          changed: false,
+          message: 'Invalid Autopilot readiness query.',
+          errors: [v.summarize(parsed.issues)],
+        },
+        400,
+      );
+    }
+    try {
+      return c.json(await readAutopilotReadiness(parsed.output, paths));
+    } catch (error) {
+      return c.json(
+        {
+          ok: false,
+          action: 'autopilot_readiness_read',
+          changed: false,
+          message: error instanceof Error ? error.message : String(error),
+        },
+        400,
+      );
+    }
+  });
 
   routes.post('/autopilot/triage-pr-event', async (c) => {
     const result = await triagePrEvent(await safeJsonBody(c));

@@ -82,6 +82,9 @@ export function RuntimeView({
   );
   const readiness = snapshot.status.status;
   const failedSetupChecks = snapshot.status.checks.filter((check) => !check.ok);
+  const autopilotFacts = snapshot.status.autopilot
+    ? Object.values(snapshot.status.autopilot.facts)
+    : [];
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -141,6 +144,42 @@ export function RuntimeView({
               {snapshot.status.checks.map((check) => (
                 <ReadinessRow check={check} key={check.id} />
               ))}
+            </div>
+          </RuntimeSection>
+          <RuntimeSection
+            count={
+              snapshot.status.autopilot
+                ? snapshot.status.autopilot.blocking.length +
+                  snapshot.status.autopilot.warnings.length
+                : 0
+            }
+            title="AUTOPILOT READINESS"
+            tone={
+              snapshot.status.autopilot?.status === 'blocked'
+                ? 'accent'
+                : 'violet'
+            }
+          >
+            <div className="space-y-1.5">
+              {autopilotFacts.map((fact) => (
+                <ReadinessRow
+                  check={{
+                    id: `autopilot-${fact.id}`,
+                    label: fact.label,
+                    ok:
+                      fact.status === 'ready' || fact.status === 'not-required',
+                    level:
+                      fact.status === 'blocked' ? 'attention' : 'needs-config',
+                    message: fact.action
+                      ? `${fact.message} Next: ${fact.action}`
+                      : fact.message,
+                  }}
+                  key={fact.id}
+                />
+              ))}
+              {autopilotFacts.length === 0 ? (
+                <MiniEmpty label="Configure a repository to inspect Autopilot readiness." />
+              ) : null}
             </div>
           </RuntimeSection>
           <RuntimeSection

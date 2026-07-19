@@ -4,7 +4,13 @@ import { createReadStream } from 'node:fs';
 import { lstat, mkdtemp, readFile, readlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { runExecFile } from '../lib/exec';
+import {
+  evaluateGitPushAccess,
+  probeGitPushAccess,
+  runUnattendedGit,
+  type GitPushAccessExpectation,
+  type GitPushAccessProbe,
+} from '../lib/git';
 import type { DiffSummary } from './schemas';
 import {
   resolvedReviewRevision,
@@ -55,6 +61,7 @@ export type GitPushResult = {
   branch: string;
   force: boolean;
   stdout: string;
+  readiness?: GitPushAccessProbe;
 };
 
 export async function gitStatus(repoRoot: string): Promise<RepoGitStatus> {
@@ -589,18 +596,56 @@ export async function gitCommitPaths(
 
 export async function gitPushHead(
   repoRoot: string,
-  input: { remote: string; branch: string; sha: string; force?: boolean },
+  input: {
+    remote: string;
+    branch: string;
+    sha: string;
+    force?: boolean;
+    expectedAccess?: GitPushAccessExpectation;
+    expectedRemoteSha?: string;
+  },
+  dependencies: {
+    runGit?: (cwd: string, args: string[]) => Promise<string>;
+    probePushAccess?: typeof probeGitPushAccess;
+  } = {},
 ): Promise<GitPushResult> {
   const remote = validateRemote(input.remote);
   const branch = validateRef(input.branch);
   const sha = validateCommitSha(input.sha);
   const refspec = `${input.force ? '+' : ''}${sha}:refs/heads/${branch}`;
-  const stdout = await git(repoRoot, ['push', remote, refspec]);
+  const runGit = dependencies.runGit ?? git;
+  const readiness = await (dependencies.probePushAccess ?? probeGitPushAccess)(
+    repoRoot,
+    {
+      remote,
+      ref: `refs/heads/${branch}`,
+    },
+  );
+  if (input.expectedAccess) {
+    const decision = evaluateGitPushAccess(readiness, input.expectedAccess);
+    if (!decision.ready) {
+      throw new Error(
+        `Git push access gate is ${decision.status}: ${decision.message}`,
+      );
+    }
+  }
+  if (
+    input.expectedRemoteSha !== undefined &&
+    readiness.remote.sha !== validateCommitSha(input.expectedRemoteSha)
+  ) {
+    throw new Error(
+      readiness.remote.sha
+        ? `Git push target moved from expected ${input.expectedRemoteSha} to ${readiness.remote.sha}.`
+        : `Git push target no longer has the expected branch at ${input.expectedRemoteSha}.`,
+    );
+  }
+  const stdout = await runGit(repoRoot, ['push', '--', remote, refspec]);
   return {
     remote,
     branch,
     force: Boolean(input.force),
     stdout,
+    readiness,
   };
 }
 
@@ -834,12 +879,10 @@ async function git(
   args: string[],
   options: { env?: NodeJS.ProcessEnv } = {},
 ) {
-  const { stdout } = await runExecFile('git', args, {
-    cwd,
+  return runUnattendedGit(cwd, args, {
     env: options.env,
     maxBuffer: 8 * 1024 * 1024,
   });
-  return stdout;
 }
 
 function gitWithStdin(

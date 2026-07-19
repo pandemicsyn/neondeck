@@ -1,5 +1,6 @@
 import type {
   AutopilotState,
+  AutopilotReadiness,
   AutopilotRecoveryActionId,
   AutopilotRecoveryResponse,
   AutopilotApprovalResolveResponse,
@@ -10,6 +11,23 @@ import { getJson, postJson, type ApiRequestOptions } from './http';
 
 export async function getAutopilotState(options: ApiRequestOptions = {}) {
   return getJson<AutopilotState>('/api/autopilot/state', options);
+}
+
+export async function getAutopilotReadiness(
+  input: {
+    repoId: string;
+    prNumber?: number;
+    mode?: AutopilotReadiness['mode'];
+  },
+  options: ApiRequestOptions = {},
+) {
+  const params = new URLSearchParams({ repoId: input.repoId });
+  if (input.prNumber) params.set('prNumber', String(input.prNumber));
+  if (input.mode) params.set('mode', input.mode);
+  return getJson<AutopilotReadiness>(
+    `/api/autopilot/readiness?${params.toString()}`,
+    options,
+  );
 }
 
 export async function getAutopilotRecoveryOptions(

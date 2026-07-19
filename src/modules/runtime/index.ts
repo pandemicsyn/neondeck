@@ -1,4 +1,5 @@
 export * from './agent-config';
+export * from './autopilot-readiness';
 export * from './doctor';
 export * from './env';
 export * from './local-api-auth';

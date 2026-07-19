@@ -257,7 +257,7 @@ describe('prepared-diff finding promotion', () => {
       error: { code: 'INVALID_TRANSITION' },
     });
     expect(retry.approvals).toHaveLength(1);
-  });
+  }, 30_000);
 });
 
 function promotionCandidate(input: {

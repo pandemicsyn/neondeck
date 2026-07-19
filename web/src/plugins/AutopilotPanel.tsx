@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  getAutopilotReadiness,
   getAutopilotState,
   getAutopilotRecoveryOptions,
   resolveAutopilotApproval,
@@ -17,6 +18,8 @@ import {
   type AutopilotApproval,
   type AutopilotPreparedDiff,
   type AutopilotQueueItem,
+  type AutopilotReadiness,
+  type AutopilotReadinessFact,
   type AutopilotRecoveryActionId,
   type AutopilotRecoveryOption,
   type AutopilotRepoPolicy,
@@ -128,6 +131,39 @@ function AutopilotView({
   const approvals = state.pendingApprovals.slice(0, config.approvalLimit);
   const runningChecks = state.runningChecks.slice(0, config.checkLimit);
   const activity = state.recentActivity.slice(0, config.activityLimit);
+  const readinessTarget = useMemo(() => {
+    const queueTarget = state.queue.find((item) => item.prNumber !== null);
+    if (queueTarget) {
+      return {
+        repoId: queueTarget.repoId,
+        prNumber: queueTarget.prNumber ?? undefined,
+        mode: queueTarget.mode,
+      };
+    }
+    const watchTarget = state.policies.watches[0];
+    if (watchTarget) {
+      return {
+        repoId: watchTarget.repoId,
+        prNumber: watchTarget.prNumber,
+        mode: watchTarget.mode,
+      };
+    }
+    const repoTarget = state.policies.repos[0];
+    return repoTarget
+      ? { repoId: repoTarget.repoId, mode: repoTarget.mode }
+      : undefined;
+  }, [state.policies.repos, state.policies.watches, state.queue]);
+  const readiness = useQuery({
+    queryKey: queryKeys.autopilotReadiness(
+      readinessTarget?.repoId,
+      readinessTarget?.prNumber,
+      readinessTarget?.mode,
+    ),
+    queryFn: ({ signal }) =>
+      getAutopilotReadiness(readinessTarget!, { signal }),
+    enabled: readinessTarget !== undefined,
+    refetchInterval: 60_000,
+  });
 
   return (
     <div className="autopilot-panel flex h-full min-h-0 flex-col">
@@ -184,6 +220,12 @@ function AutopilotView({
             </PanelSection>
           </div>
           <div className="min-w-0 space-y-2">
+            <ReadinessBlock
+              error={readiness.error}
+              loading={readiness.isLoading}
+              readiness={readiness.data}
+              target={readinessTarget}
+            />
             <PolicyBlock
               repoPolicies={repoPolicies}
               state={state}
@@ -226,6 +268,130 @@ function AutopilotView({
       </ScrollArea>
     </div>
   );
+}
+
+function ReadinessBlock({
+  error,
+  loading,
+  readiness,
+  target,
+}: {
+  error: Error | null;
+  loading: boolean;
+  readiness: AutopilotReadiness | undefined;
+  target:
+    | {
+        repoId: string;
+        prNumber?: number;
+        mode: AutopilotReadiness['mode'];
+      }
+    | undefined;
+}) {
+  const facts = readiness
+    ? Object.values(readiness.facts).sort(
+        (left, right) =>
+          readinessFactPriority(left.status) -
+          readinessFactPriority(right.status),
+      )
+    : [];
+  const headingId = useId();
+  const attentionCount = readiness
+    ? readiness.blocking.length + readiness.warnings.length
+    : 0;
+  return (
+    <section aria-labelledby={headingId}>
+      <div className="mb-1 flex items-center justify-between font-mono text-[10px] tracking-[0.12em] text-muted">
+        <h3 className="m-0 text-[inherit] font-[inherit]" id={headingId}>
+          READINESS
+        </h3>
+        <span>
+          {readiness
+            ? `${attentionCount} attention`
+            : target
+              ? 'checking'
+              : '—'}
+        </span>
+      </div>
+      {!target ? (
+        <p className="border border-line bg-soft px-2.5 py-2 text-[11px] leading-4 text-muted">
+          Configure a repository or PR watch to inspect Autopilot readiness.
+        </p>
+      ) : loading ? (
+        <p
+          aria-live="polite"
+          className="border border-line bg-soft px-2.5 py-2 text-[11px] text-muted"
+        >
+          Checking {readinessTargetLabel(target)}…
+        </p>
+      ) : error ? (
+        <p
+          className="border border-accent/50 bg-soft px-2.5 py-2 text-[11px] text-accent"
+          role="alert"
+        >
+          Readiness unavailable: {queryErrorMessage(error)}
+        </p>
+      ) : readiness ? (
+        <div className="space-y-1.5">
+          <p className="border border-line bg-soft px-2.5 py-2 text-[11px] leading-4 text-muted">
+            <span className="font-mono text-primary">
+              {readiness.repoFullName}
+              {readiness.prNumber ? `#${readiness.prNumber}` : ''}
+            </span>{' '}
+            · {readiness.message}
+          </p>
+          <div className="divide-y divide-line border border-line bg-soft">
+            {facts.map((fact) => (
+              <article className="px-2.5 py-2" key={fact.id}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-primary">
+                    {fact.label}
+                  </p>
+                  <Badge className={readinessFactClass(fact.status)}>
+                    {fact.status}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-[11px] leading-4 text-muted">
+                  {fact.message}
+                </p>
+                {fact.action ? (
+                  <p className="mt-1 text-[10px] leading-4 text-accent">
+                    Next: {fact.action}
+                  </p>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function readinessTargetLabel(
+  target:
+    | { repoId: string; prNumber?: number; mode: AutopilotReadiness['mode'] }
+    | undefined,
+) {
+  if (!target) return 'Autopilot readiness';
+  return `${target.repoId}${target.prNumber ? `#${target.prNumber}` : ''}`;
+}
+
+function readinessFactClass(status: AutopilotReadinessFact['status']) {
+  if (status === 'blocked') return 'border-accent text-accent';
+  if (status === 'ready' || status === 'not-required') {
+    return 'border-primary text-primary';
+  }
+  return 'border-violet text-violet';
+}
+
+function readinessFactPriority(status: AutopilotReadinessFact['status']) {
+  return {
+    blocked: 0,
+    warning: 1,
+    'not-checked': 2,
+    ready: 3,
+    'not-required': 4,
+  }[status];
 }
 
 function NeedsAttentionBanner({ state }: { state: AutopilotState }) {

@@ -100,6 +100,7 @@ export type AutopilotDependencies = {
   fetchCheckSummary?: typeof fetchCheckSummary;
   fetchFailingCheckFacts?: typeof fetchFailingCheckFacts;
   fetchPullRequestEventState?: typeof fetchPullRequestEventState;
+  fetchGitHubLogin?: typeof import('../github').fetchGitHubLogin;
   getBranchPermissions?: typeof getGitHubPrBranchPermissions;
   runExecution?: typeof runApprovedExecution;
   postPullRequestComment?: NonNullable<

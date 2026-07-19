@@ -2148,6 +2148,12 @@ export const entries: SafetyPolicyEntry[] = [
     'Reads recent MCP tool-call audit rows.',
   ),
   route(
+    '/api/autopilot/readiness',
+    'Autopilot readiness API',
+    readOnly,
+    'Reads typed local, GitHub API, exact fetch, Git credential, comment, identity, check-command, and gh readiness facts without mutating a repository or pull request.',
+  ),
+  route(
     '/api/autopilot/triage-pr-event',
     'PR event triage API',
     readOnly,
