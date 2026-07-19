@@ -15,6 +15,13 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-07-19 - Kilo Reconciliation Fixture Process Inspection
+
+- Roadmap item: Phase 21 / Kilo task retention and reconciliation
+- Decision: Keep production reconciliation's OS process inspection unchanged, but make the persisted-running-task test provide a narrowly controlled `ps` snapshot for its manually spawned fake Kilo process and wait for every forcibly terminated fixture child before deleting the temporary runtime home.
+- Reason: The test sandbox permits liveness checks but denies Node's `ps` spawn with `EPERM`, so the real reconciler correctly records `process-command-unavailable` and admits fresh work. The prior fixture therefore could not represent a persisted process whose command matched its recorded Kilo context; its teardown could also remove SQLite before a child exit handler settled.
+- Follow-up: None. Production deployments must continue to use real `ps` command inspection; this test-only snapshot is scoped to the sandbox-constrained fixture.
+
 ## 2026-07-18 - Diff Review Phase B Completion Audit
 
 - Roadmap item: Diff Improvements Plan / Phase B guided review completion audit
