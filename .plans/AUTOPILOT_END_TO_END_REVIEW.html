@@ -1,0 +1,2284 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="End-to-end product, workflow, permissions, UX, and verification review of Neondeck PR Autopilot."
+    />
+    <title>Neondeck Autopilot: End-to-End Usability Review</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0c0d12;
+        --panel: #0a0b10;
+        --panel-2: #070810;
+        --field: #070810;
+        --line: #ffffff12;
+        --line-strong: color-mix(in srgb, #d7f7ff 28%, transparent);
+        --ink: #d7f7ff;
+        --muted: color-mix(in srgb, #d7f7ff 62%, transparent);
+        --faint: color-mix(in srgb, #d7f7ff 46%, transparent);
+        --cyan: #69e6ff;
+        --teal: #00b7c7;
+        --pink: #ff4fb8;
+        --critical-bg: color-mix(in srgb, #ff4fb8 15%, #0a0b10);
+        --warning-bg: color-mix(in srgb, #69e6ff 11%, #0a0b10);
+        --success-bg: color-mix(in srgb, #00b7c7 12%, #0a0b10);
+        --max: 1440px;
+        --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+        --sans: "IBM Plex Sans", Inter, ui-sans-serif, system-ui, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 15px;
+        line-height: 1.6;
+      }
+
+      a {
+        color: var(--cyan);
+        text-decoration-color: color-mix(in srgb, var(--cyan) 50%, transparent);
+        text-underline-offset: 0.18em;
+      }
+
+      a:hover {
+        color: var(--ink);
+      }
+
+      a:focus-visible,
+      summary:focus-visible {
+        outline: 2px solid var(--cyan);
+        outline-offset: 3px;
+      }
+
+      code,
+      pre,
+      .mono {
+        font-family: var(--mono);
+      }
+
+      code {
+        color: var(--cyan);
+      }
+
+      pre {
+        margin: 0;
+        overflow: auto;
+        border: 1px solid var(--line);
+        background: var(--field);
+        padding: 16px;
+        color: var(--ink);
+        font-size: 12px;
+        line-height: 1.65;
+        white-space: pre-wrap;
+      }
+
+      h1,
+      h2,
+      h3,
+      h4,
+      p {
+        margin-top: 0;
+      }
+
+      h1,
+      h2,
+      h3 {
+        text-wrap: balance;
+      }
+
+      h1 {
+        max-width: 18ch;
+        margin-bottom: 18px;
+        font-size: clamp(2.1rem, 5vw, 4.5rem);
+        line-height: 0.98;
+        letter-spacing: -0.035em;
+      }
+
+      h2 {
+        margin-bottom: 18px;
+        font-size: 1.65rem;
+        line-height: 1.2;
+      }
+
+      h3 {
+        margin-bottom: 10px;
+        font-size: 1.08rem;
+        line-height: 1.35;
+      }
+
+      h4 {
+        margin-bottom: 7px;
+        font-size: 0.92rem;
+      }
+
+      p,
+      li {
+        max-width: 78ch;
+      }
+
+      ul,
+      ol {
+        margin: 0;
+        padding-left: 1.25rem;
+      }
+
+      li + li {
+        margin-top: 6px;
+      }
+
+      .shell {
+        width: min(var(--max), calc(100% - 32px));
+        margin: 0 auto;
+      }
+
+      .hero {
+        border-bottom: 1px solid var(--line-strong);
+        padding: 64px 0 36px;
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+        gap: 40px;
+        align-items: end;
+      }
+
+      .kicker,
+      .section-label,
+      .tag,
+      th {
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 650;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .kicker {
+        margin-bottom: 18px;
+        color: var(--cyan);
+      }
+
+      .lede {
+        max-width: 70ch;
+        margin-bottom: 0;
+        color: var(--muted);
+        font-size: 1.05rem;
+      }
+
+      .verdict {
+        border: 1px solid color-mix(in srgb, var(--pink) 48%, transparent);
+        background: var(--critical-bg);
+        padding: 20px;
+      }
+
+      .verdict strong {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--pink);
+        font-family: var(--mono);
+        font-size: 0.86rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .verdict p {
+        margin: 0;
+      }
+
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 24px;
+      }
+
+      .tag {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        padding: 5px 8px;
+        color: var(--muted);
+      }
+
+      .tag.critical {
+        border-color: color-mix(in srgb, var(--pink) 55%, transparent);
+        color: var(--pink);
+      }
+
+      .tag.high {
+        border-color: color-mix(in srgb, var(--cyan) 55%, transparent);
+        color: var(--cyan);
+      }
+
+      .tag.good {
+        border-color: color-mix(in srgb, var(--teal) 55%, transparent);
+        color: var(--teal);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 250px minmax(0, 1fr);
+        gap: 36px;
+        padding: 32px 0 80px;
+      }
+
+      nav {
+        position: sticky;
+        top: 18px;
+        align-self: start;
+        border: 1px solid var(--line);
+        background: var(--panel);
+      }
+
+      nav h2 {
+        margin: 0;
+        border-bottom: 1px solid var(--line);
+        padding: 12px 14px;
+        color: var(--cyan);
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      nav a {
+        display: block;
+        border-bottom: 1px solid var(--line);
+        padding: 9px 14px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 11px;
+        line-height: 1.35;
+        text-decoration: none;
+      }
+
+      nav a:last-child {
+        border-bottom: 0;
+      }
+
+      nav a:hover {
+        background: var(--panel-2);
+        color: var(--ink);
+      }
+
+      main {
+        min-width: 0;
+      }
+
+      section {
+        scroll-margin-top: 24px;
+      }
+
+      main > section + section {
+        margin-top: 54px;
+        border-top: 1px solid var(--line-strong);
+        padding-top: 42px;
+      }
+
+      .section-label {
+        margin-bottom: 8px;
+        color: var(--faint);
+      }
+
+      .score-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        border-top: 1px solid var(--line);
+        border-left: 1px solid var(--line);
+      }
+
+      .score {
+        min-width: 0;
+        border-right: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+        padding: 16px;
+      }
+
+      .score .value {
+        display: block;
+        margin: 4px 0 5px;
+        color: var(--ink);
+        font-family: var(--mono);
+        font-size: 1.55rem;
+        line-height: 1;
+      }
+
+      .score .label {
+        color: var(--faint);
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .score p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(150px, 1fr));
+        gap: 1px;
+        border: 1px solid var(--line-strong);
+        background: var(--line);
+      }
+
+      .flow-step {
+        min-height: 142px;
+        background: var(--panel);
+        padding: 16px;
+      }
+
+      .flow-step .number {
+        display: block;
+        margin-bottom: 16px;
+        color: var(--faint);
+        font-family: var(--mono);
+        font-size: 10px;
+      }
+
+      .flow-step strong {
+        display: block;
+        margin-bottom: 7px;
+        color: var(--cyan);
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      .flow-step p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .flow-step.dead {
+        background: var(--critical-bg);
+      }
+
+      .flow-step.dead strong {
+        color: var(--pink);
+      }
+
+      .callout {
+        margin-top: 16px;
+        border: 1px solid var(--line-strong);
+        background: var(--panel-2);
+        padding: 16px 18px;
+      }
+
+      .callout.warning {
+        border-color: color-mix(in srgb, var(--cyan) 48%, transparent);
+        background: var(--warning-bg);
+      }
+
+      .callout.success {
+        border-color: color-mix(in srgb, var(--teal) 48%, transparent);
+        background: var(--success-bg);
+      }
+
+      .callout p:last-child,
+      .callout ul:last-child {
+        margin-bottom: 0;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--line);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--panel);
+        font-size: 12.5px;
+      }
+
+      th,
+      td {
+        border-right: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        padding: 10px 12px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th:last-child,
+      td:last-child {
+        border-right: 0;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      th {
+        background: var(--field);
+        color: var(--muted);
+      }
+
+      td {
+        color: var(--ink);
+      }
+
+      .yes {
+        color: var(--teal);
+        font-weight: 700;
+      }
+
+      .no {
+        color: var(--pink);
+        font-weight: 700;
+      }
+
+      .partial {
+        color: var(--cyan);
+        font-weight: 700;
+      }
+
+      .finding-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .finding {
+        border: 1px solid var(--line);
+        background: var(--panel);
+      }
+
+      .finding > header {
+        display: grid;
+        grid-template-columns: auto auto minmax(0, 1fr);
+        gap: 10px;
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        padding: 12px 14px;
+      }
+
+      .finding .id,
+      .finding .severity {
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .finding .id {
+        color: var(--faint);
+      }
+
+      .finding .severity {
+        border: 1px solid currentColor;
+        padding: 2px 5px;
+      }
+
+      .finding.critical .severity,
+      .finding.critical h3 {
+        color: var(--pink);
+      }
+
+      .finding.high .severity,
+      .finding.high h3 {
+        color: var(--cyan);
+      }
+
+      .finding.medium .severity,
+      .finding.medium h3 {
+        color: var(--teal);
+      }
+
+      .finding h3 {
+        margin: 0;
+        font-size: 1rem;
+      }
+
+      .finding-body {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr);
+        gap: 24px;
+        padding: 16px;
+      }
+
+      .finding-body p:last-child,
+      .finding-body ul:last-child {
+        margin-bottom: 0;
+      }
+
+      .evidence {
+        border: 1px solid var(--line);
+        background: var(--field);
+        padding: 12px;
+        color: var(--muted);
+        font-size: 11.5px;
+      }
+
+      .evidence strong {
+        display: block;
+        margin-bottom: 7px;
+        color: var(--cyan);
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .evidence ul {
+        padding-left: 1rem;
+      }
+
+      .journey {
+        display: grid;
+        gap: 1px;
+        border: 1px solid var(--line);
+        background: var(--line);
+      }
+
+      .journey article {
+        display: grid;
+        grid-template-columns: 48px minmax(0, 1fr) minmax(180px, 0.38fr);
+        gap: 16px;
+        align-items: start;
+        background: var(--panel);
+        padding: 16px;
+      }
+
+      .journey article::before {
+        content: "→";
+        color: var(--cyan);
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+
+      .journey h3 {
+        margin-bottom: 5px;
+      }
+
+      .journey p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .journey .result {
+        border: 1px solid var(--line);
+        background: var(--field);
+        padding: 8px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 10.5px;
+      }
+
+      details {
+        border: 1px solid var(--line);
+        background: var(--panel);
+      }
+
+      details + details {
+        margin-top: 8px;
+      }
+
+      summary {
+        cursor: pointer;
+        padding: 12px 14px;
+        color: var(--cyan);
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      details[open] summary {
+        border-bottom: 1px solid var(--line);
+      }
+
+      .details-body {
+        padding: 16px;
+      }
+
+      .roadmap {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1px;
+        border: 1px solid var(--line);
+        background: var(--line);
+      }
+
+      .roadmap article {
+        background: var(--panel);
+        padding: 18px;
+      }
+
+      .roadmap .phase {
+        color: var(--cyan);
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .roadmap h3 {
+        margin-top: 7px;
+      }
+
+      .roadmap p,
+      .roadmap li {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .acceptance li {
+        padding-left: 4px;
+      }
+
+      .footnote {
+        margin-top: 30px;
+        border-top: 1px solid var(--line);
+        padding-top: 18px;
+        color: var(--faint);
+        font-size: 12px;
+      }
+
+      @media (max-width: 1100px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+
+        nav {
+          position: static;
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+        }
+
+        nav h2 {
+          grid-column: 1 / -1;
+        }
+
+        nav a {
+          border-right: 1px solid var(--line);
+        }
+
+        .score-grid,
+        .flow {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      @media (max-width: 760px) {
+        .shell {
+          width: min(100% - 20px, var(--max));
+        }
+
+        .hero {
+          padding-top: 34px;
+        }
+
+        .hero-grid,
+        .finding-body,
+        .roadmap {
+          grid-template-columns: 1fr;
+        }
+
+        .score-grid,
+        .flow {
+          grid-template-columns: 1fr;
+        }
+
+        nav {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .finding > header {
+          grid-template-columns: auto auto;
+        }
+
+        .finding h3 {
+          grid-column: 1 / -1;
+        }
+
+        .journey article {
+          grid-template-columns: 40px minmax(0, 1fr);
+        }
+
+        .journey .result {
+          grid-column: 2;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+      }
+
+      @media print {
+        :root {
+          color-scheme: light;
+          --bg: #edf5f8;
+          --panel: #edf5f8;
+          --panel-2: #dbeaef;
+          --field: #dbeaef;
+          --line: color-mix(in srgb, var(--ink) 18%, transparent);
+          --line-strong: color-mix(in srgb, var(--ink) 38%, transparent);
+          --ink: #19232e;
+          --muted: color-mix(in srgb, #19232e 70%, transparent);
+          --faint: color-mix(in srgb, #19232e 52%, transparent);
+          --cyan: #0093a8;
+          --teal: #0093a8;
+          --pink: #d8248d;
+          --critical-bg: color-mix(in srgb, #d8248d 8%, #edf5f8);
+          --warning-bg: color-mix(in srgb, #0093a8 8%, #edf5f8);
+          --success-bg: color-mix(in srgb, #0093a8 7%, #edf5f8);
+        }
+
+        body {
+          font-size: 11pt;
+        }
+
+        nav {
+          display: none;
+        }
+
+        .layout {
+          display: block;
+        }
+
+        main > section {
+          break-inside: avoid;
+        }
+
+        .finding,
+        .roadmap article,
+        .flow-step,
+        .score {
+          break-inside: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="hero">
+      <div class="shell hero-grid">
+        <div>
+          <p class="kicker">Neondeck engineering review · 2026-07-18</p>
+          <h1>PR Autopilot end-to-end usability review</h1>
+          <p class="lede">
+            A complete trace of setup, watch polling, event classification,
+            Flue workflow admission, worktree preparation, fix generation,
+            verification, approval, push-back, PR comments, recovery, and the
+            operator experience.
+          </p>
+          <div class="meta" aria-label="Review summary">
+            <span class="tag critical">1 critical blocker</span>
+            <span class="tag high">11 high-severity defects</span>
+            <span class="tag">5 medium defects</span>
+            <span class="tag good">strong safety primitives</span>
+          </div>
+        </div>
+        <aside class="verdict" aria-label="Executive verdict">
+          <strong>Verdict: not usable as an autopilot</strong>
+          <p>
+            The automatic watched-PR path ends after creating a managed
+            worktree. It never spawns or briefs a coding agent, generates a
+            fix, verifies it, requests/uses approval, pushes, comments, or
+            cleans up. Today this is a notification and checkout-preparation
+            foundation with individually implemented downstream primitives.
+          </p>
+        </aside>
+      </div>
+    </header>
+
+    <div class="shell layout">
+      <nav aria-label="Report sections">
+        <h2>Report index</h2>
+        <a href="#summary">Executive summary</a>
+        <a href="#actual-flow">Actual flow</a>
+        <a href="#usage">How it is used</a>
+        <a href="#modes">Mode verification</a>
+        <a href="#findings">Findings</a>
+        <a href="#permissions">Agent &amp; permissions</a>
+        <a href="#verification">Verification</a>
+        <a href="#strengths">What works</a>
+        <a href="#remediation">Remediation plan</a>
+        <a href="#acceptance">Acceptance scenarios</a>
+        <a href="#inventory">Surface inventory</a>
+      </nav>
+
+      <main>
+        <section id="summary">
+          <p class="section-label">Executive summary</p>
+          <h2>The product promise and the implementation do not meet</h2>
+          <p>
+            The README promises that watching a PR lets Autopilot prepare a fix,
+            run checks, hand over a diff, or push when policy allows. The
+            roadmap marks the PR event Autopilot and policy/UX phases complete.
+            The production coordinator, however, implements only
+            <code>watch delta → triage → prepare-pr-worktree</code>. Its durable
+            admission state machine ends at <code>prepared</code>, where
+            “prepared” means only that a checkout exists; it does not mean that
+            a diff exists.
+          </p>
+          <p>
+            The deterministic review and CI fixers are useful services, but they
+            require a caller-authored patch or replacement plan. No model turn,
+            Neon coding agent, delegated worker, scheduler transition, or user
+            surface supplies that plan for watched feedback. The automatic path
+            therefore cannot produce the feature’s core outcome.
+          </p>
+
+          <div class="score-grid" aria-label="Autopilot assessment scorecard">
+            <div class="score">
+              <span class="label">Functional journey</span>
+              <span class="value no">Critical</span>
+              <p>Stops before any code fix is generated.</p>
+            </div>
+            <div class="score">
+              <span class="label">Safety architecture</span>
+              <span class="value yes">Strong</span>
+              <p>Typed policy, isolation, locks, approvals, and push gates.</p>
+            </div>
+            <div class="score">
+              <span class="label">Setup &amp; discoverability</span>
+              <span class="value no">Poor</span>
+              <p>Hidden mode setup; new installs default to notify-only.</p>
+            </div>
+            <div class="score">
+              <span class="label">Verification confidence</span>
+              <span class="value partial">Partial</span>
+              <p>Strong unit fixtures; missing product-path coverage.</p>
+            </div>
+          </div>
+
+          <div class="callout warning">
+            <h3>Release recommendation</h3>
+            <p>
+              Do not present the current behavior as autonomous fixing. Either
+              ship the missing coordinator/planner and close the activation,
+              readiness, and operator gaps below, or temporarily rename the
+              current feature to “PR watch + managed worktree preparation” and
+              describe later stages as manual primitives.
+            </p>
+          </div>
+        </section>
+
+        <section id="actual-flow">
+          <p class="section-label">Behind the scenes</p>
+          <h2>The actual production flow</h2>
+          <div class="flow" aria-label="Actual autopilot workflow">
+            <article class="flow-step">
+              <span class="number">Entry</span>
+              <strong>Watch created</strong>
+              <p>
+                Chat, dashboard, CLI, or local API writes a PR watch and an
+                interval scheduled task. Mode is configured separately.
+              </p>
+            </article>
+            <article class="flow-step">
+              <span class="number">Poll</span>
+              <strong>Scheduler polls</strong>
+              <p>
+                Basic PR state refresh runs, then GitHub event state is fetched
+                into per-category watermarks.
+              </p>
+            </article>
+            <article class="flow-step">
+              <span class="number">Delta</span>
+              <strong>Deltas classified</strong>
+              <p>
+                Review threads, requested changes, checks, commits,
+                mergeability, and freshness become structured deltas.
+              </p>
+            </article>
+            <article class="flow-step">
+              <span class="number">Admission</span>
+              <strong>Admission claimed</strong>
+              <p>
+                SQLite deduplicates by watch/event fingerprint and applies
+                global, repo, and same-PR concurrency limits.
+              </p>
+            </article>
+            <article class="flow-step">
+              <span class="number">Triage</span>
+              <strong>Flue triage runs</strong>
+              <p>
+                <code>triage-pr-event</code> deterministically chooses no-op,
+                explain, prepare, approval, or safe-push classification.
+              </p>
+            </article>
+            <article class="flow-step">
+              <span class="number">Checkout</span>
+              <strong>Worktree prepared</strong>
+              <p>
+                <code>prepare-pr-worktree</code> gathers facts and attempts an
+                isolated detached checkout. No patch is generated.
+              </p>
+            </article>
+            <article class="flow-step dead">
+              <span class="number">Dead end</span>
+              <strong>Automatic path ends</strong>
+              <p>
+                Admission becomes <code>prepared</code>. There is no transition
+                to fix, verify, approval, push, comment, or cleanup.
+              </p>
+            </article>
+            <article class="flow-step">
+              <span class="number">Manual only</span>
+              <strong>Standalone primitives</strong>
+              <p>
+                Fix, verify, push, comment, prepared-diff, and recovery services
+                exist, but require explicit/manual/raw-API initiation.
+              </p>
+            </article>
+          </div>
+
+          <div class="callout">
+            <h3>Durable state involved</h3>
+            <p>
+              The flow spans PR watches and scheduled tasks,
+              <code>pr_watch_event_watermarks</code>,
+              <code>autopilot_admissions</code>, Flue run observations/events,
+              worktrees and worktree events, notifications, and, only if a
+              disconnected fixer is called, prepared diffs, approvals, and
+              verification/push summaries.
+            </p>
+          </div>
+
+          <details>
+            <summary>Source trace for the production coordinator</summary>
+            <div class="details-body">
+              <ul>
+                <li>
+                  Scheduler event refresh and triage admission:
+                  <code>src/modules/scheduler/pr-watch-events.ts:322-364, 482-579</code>
+                </li>
+                <li>
+                  Only continuation after triage:
+                  <code>src/modules/scheduler/pr-watch-events.ts:618-648</code>
+                </li>
+                <li>
+                  Duplicate observer continuation, also ending at prepare:
+                  <code>src/server/learning-hooks.ts:272-302</code>
+                </li>
+                <li>
+                  Scheduler workflow invoker only knows triage and prepare:
+                  <code>src/modules/scheduler/workflow-invocation.ts:23-35</code>
+                </li>
+                <li>
+                  Admission states and terminal facts stop at prepared:
+                  <code>src/modules/autopilot/admissions.ts:17-51, 612-645</code>
+                </li>
+                <li>
+                  Repository plan explicitly calls later stages “bounded,
+                  explicit operations”:
+                  <code>.plans/AUTOPILOT_LOOP_WIRING_PLAN.md:43-52</code>
+                </li>
+              </ul>
+            </div>
+          </details>
+        </section>
+
+        <section id="usage">
+          <p class="section-label">User interaction review</p>
+          <h2>How a user can and cannot use it today</h2>
+          <div class="journey">
+            <article>
+              <div>
+                <h3>Register a local repository and GitHub token</h3>
+                <p>
+                  <code>neondeck init</code> collects a checkout and
+                  <code>GITHUB_TOKEN</code>. It validates identity, not full
+                  Autopilot read/write/git readiness.
+                </p>
+              </div>
+              <div class="result">Available, incomplete readiness</div>
+            </article>
+            <article>
+              <div>
+                <h3>Enable a mode</h3>
+                <p>
+                  The fresh default is <code>notify-only</code>. The only typed
+                  mutation is a per-repo config action/local API. There is no
+                  onboarding step, settings UI, CLI mode command, or
+                  <code>/autopilot</code> command.
+                </p>
+              </div>
+              <div class="result">Hidden; separate from watch creation</div>
+            </article>
+            <article>
+              <div>
+                <h3>Create a PR watch</h3>
+                <p>
+                  The user can ask Neon, use <code>/watch-pr</code>, click Watch
+                  in the GitHub panel, run <code>neondeck watch-pr</code>, or
+                  call <code>POST /api/watches</code>. None accept a mode.
+                </p>
+              </div>
+              <div class="result">Available; silently inherits policy</div>
+            </article>
+            <article>
+              <div>
+                <h3>Process current feedback</h3>
+                <p>
+                  There is no “process existing feedback now” option. The first
+                  event poll seeds a baseline and suppresses all current
+                  actionable state.
+                </p>
+              </div>
+              <div class="result">Unavailable</div>
+            </article>
+            <article>
+              <div>
+                <h3>Observe Autopilot</h3>
+                <p>
+                  The Autopilot panel can show policy, queue-like state,
+                  prepared diffs, approvals, checks, and activity. Recommended
+                  fresh dashboard presets omit that panel, so notification
+                  deep-links can fail.
+                </p>
+              </div>
+              <div class="result">Implemented, hidden by onboarding</div>
+            </article>
+            <article>
+              <div>
+                <h3>Ask Neon to fix review feedback</h3>
+                <p>
+                  The review fixer action rejects interactive chat and has no
+                  dashboard/CLI trigger. Its raw API requires the caller to
+                  author exact replacements or a patch.
+                </p>
+              </div>
+              <div class="result">No normal user path</div>
+            </article>
+            <article>
+              <div>
+                <h3>Approve, verify, and push a prepared diff</h3>
+                <p>
+                  These controls work only after some separate path creates a
+                  prepared diff. The automatic watcher never reaches this
+                  state. Prepare-only diffs still receive push approvals that
+                  cannot succeed under their mode.
+                </p>
+              </div>
+              <div class="result">Downstream primitive only</div>
+            </article>
+            <article>
+              <div>
+                <h3>Pause or stop</h3>
+                <p>
+                  Pause controls polling only. Stop deletes the watch/task but
+                  does not cancel admitted runs, abandon diffs, remove
+                  worktrees, or purge admissions. The confirmation copy does
+                  not explain that distinction.
+                </p>
+              </div>
+              <div class="result">Control semantics are misleading</div>
+            </article>
+          </div>
+
+          <div class="callout warning">
+            <h3>Natural-language setup does not have a first-class contract</h3>
+            <p>
+              The display assistant technically has both
+              <code>neondeck_watch_pr_add</code> and
+              <code>neondeck_config_update_repo_autopilot_policy</code>, so a
+              sufficiently explicit conversation may issue two separate action
+              calls. There is no composite, tested “watch this PR in mode X”
+              action, and no agent guidance that defines the two-step setup,
+              confirmation, baseline handling, or expected outcome. Asking
+              “watch this PR and keep it moving” normally maps to a watch that
+              remains notify-only.
+            </p>
+          </div>
+        </section>
+
+        <section id="modes">
+          <p class="section-label">Mode contract verification</p>
+          <h2>All active modes collapse to the same automatic behavior</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Mode</th>
+                  <th>Detect later delta</th>
+                  <th>Create worktree</th>
+                  <th>Generate diff</th>
+                  <th>Verify</th>
+                  <th>Push/comment</th>
+                  <th>Current result</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>notify-only</code></td>
+                  <td class="yes">Yes</td>
+                  <td>Not applicable</td>
+                  <td>Not applicable</td>
+                  <td>Not applicable</td>
+                  <td>Not applicable</td>
+                  <td>Notification only, except current state is lost on baseline.</td>
+                </tr>
+                <tr>
+                  <td><code>prepare-only</code></td>
+                  <td class="yes">Yes</td>
+                  <td class="partial">Attempted</td>
+                  <td class="no">No</td>
+                  <td class="no">No</td>
+                  <td class="no">No</td>
+                  <td>Empty managed checkout labeled “prepared.”</td>
+                </tr>
+                <tr>
+                  <td><code>autofix-with-approval</code></td>
+                  <td class="yes">Yes</td>
+                  <td class="partial">Attempted</td>
+                  <td class="no">No</td>
+                  <td class="no">No</td>
+                  <td class="no">No</td>
+                  <td>Same automatic behavior as prepare-only.</td>
+                </tr>
+                <tr>
+                  <td><code>autofix-push-when-safe</code></td>
+                  <td class="yes">Yes</td>
+                  <td class="partial">Attempted</td>
+                  <td class="no">No</td>
+                  <td class="no">No</td>
+                  <td class="no">No</td>
+                  <td>Same automatic behavior as prepare-only.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="footnote">
+            “Attempted” is intentional: worktree creation can fail when the PR
+            head SHA is not already present in the local clone because creation
+            happens before any optional fetch.
+          </p>
+        </section>
+
+        <section id="findings">
+          <p class="section-label">Severity-ranked findings</p>
+          <h2>Bugs, workflow gaps, and UX defects</h2>
+          <div class="finding-list">
+            <article class="finding critical" id="f1">
+              <header>
+                <span class="id">F1</span>
+                <span class="severity">Critical</span>
+                <h3>No agent/planner or downstream coordinator exists</h3>
+              </header>
+              <div class="finding-body">
+                <div>
+                  <p>
+                    Watched review feedback and CI failures can reach triage and
+                    worktree preparation, but nothing invokes a coding agent or
+                    continues through fixer, verification, approval/push,
+                    comment, or cleanup. The fixer workflows are thin wrappers
+                    over deterministic actions and require caller-supplied
+                    replacements or patches. Without edits, no fix is applied.
+                  </p>
+                  <p>
+                    <strong>User impact:</strong> the core promise, “watch this PR
+                    and keep it moving,” cannot complete. There is no worker to
+                    brief about the checkout, GitHub, branch, tools, checks, or
+                    authority because no worker is spawned.
+                  </p>
+                </div>
+                <div class="evidence">
+                  <strong>Evidence</strong>
+                  <ul>
+                    <li><code>scheduler/pr-watch-events.ts:618-648</code></li>
+                    <li><code>server/learning-hooks.ts:272-302</code></li>
+                    <li><code>autopilot/admissions.ts:17-51</code></li>
+                    <li><code>autopilot/schemas.ts:427-479</code></li>
+                    <li><code>autopilot/review-feedback.ts:223-229, 587-609</code></li>
+                    <li><code>autopilot/ci-fix.ts:637-669</code></li>
+                    <li><code>.plans/DEVIATIONS.md:406-418</code></li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+
+            <article class="finding high" id="f2">
+              <header>
+                <span class="id">F2</span>
+                <span class="severity">High</span>
+                <h3>Existing feedback and the watch-creation race are discarded</h3>
+              </header>
+              <div class="finding-body">
+                <div>
+                  <p>
+                    Watch creation does not seed event watermarks. The first
+                    scheduler event refresh sees no previous watermarks, stores
+                    the current state as a baseline, and returns without
+                    triage, even if the PR already has failing CI, requested
+                    changes, or unresolved threads. Feedback arriving between
+                    watch creation and the first poll is lost the same way.
+                  </p>
+                  <p>
+                    Manual event refresh only refreshes state; it does not run
+                    the scheduler admission logic. The user has no “process
+                    current feedback now” control.
+                  </p>
+                </div>
+                <div class="evidence">
+                  <strong>Reproduction</strong>
+                  <ol>
+                    <li>Create a watch for an already-stuck PR.</li>
+                    <li>Wait for the first scheduled poll.</li>
+                    <li>Observe “Seeded baseline” and no admission.</li>
+                    <li>No action occurs until a later watermark changes.</li>
+                  </ol>
+                  <p><code>pr-watch-events.ts:251-264</code></p>
+                </div>
+              </div>
+            </article>
+
+            <article class="finding high" id="f3">
+              <header>
+                <span class="id">F3</span>
+                <span class="severity">High</span>
+                <h3>Fresh or fork PR worktrees can fail before fetch</h3>
+              </header>
+              <div class="finding-body">
+                <div>
+                  <p>
+                    Preparation calls <code>git worktree add --detach ...
+                    &lt;headSha&gt;</code> before the optional sync/fetch step. The
+                    scheduler does not pass <code>fetch: true</code>, and even if
+                    it did, the fetch would happen after creation. A common
+                    newest PR/fork SHA that is not already present locally
+                    cannot be checked out.
+                  </p>
+                  <p>
+                    <strong>Required correction:</strong> fetch the exact PR head
+                    ref/SHA into the source repo before worktree creation, with
+                    fork-aware remotes and a bounded failure message.
+                  </p>
+                </div>
+                <div class="evidence">
+                  <strong>Evidence</strong>
+                  <ul>
+                    <li><code>autopilot/worktree.ts:221-275</code></li>
+                    <li><code>worktrees/service.ts:145-152, 260-276</code></li>
+                    <li><code>pr-watch-events.ts:631-637</code></li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+
+            <article class="finding high" id="f4">
+              <header>
+                <span class="id">F4</span>
+                <span class="severity">High</span>
+                <h3>Autopilot setup is fragmented and effectively hidden</h3>
+              </header>
+              <div class="finding-body">
+                <div>
+                  <p>
+                    Fresh homes default to <code>notify-only</code>, contrary to
+                    the roadmap decision that new repos default to
+                    <code>prepare-only</code>. Watch creation accepts no mode.
+                    Onboarding never asks. CLI and slash commands expose only
+                    watch creation. Dashboard watch copy promises checks
+                    tracking, not autonomy. A typed config action exists, but
+                    it is not surfaced in settings, CLI, docs, or a composite
+                    “watch + mode” action.
+                  </p>
+                  <p>
+                    Watch overrides replace the entire override array, and any
+                    override-array change requires confirmation, even when
+                    reducing authority. This makes conversational updates brittle.
+                  </p>
+                </div>
+                <div class="evidence">
+                  <strong>Evidence</strong>
+                  <ul>
+                    <li><code>runtime-home/defaults.ts:19-23</code></li>
+                    <li><code>watches/schemas.ts:116-121</code></li>
+                    <li><code>cli/index.ts:437-468</code></li>
+                    <li><code>config/actions.ts:213-220</code></li>
+                    <li><code>config/mutations/repos.ts:397-414, 424-506</code></li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+
+            <article class="finding high" id="f5">
+              <header>
+                <span class="id">F5</span>
+                <span class="severity">High</span>
+                <h3>Recommended onboarding removes the Autopilot panel</h3>
+              </header>
+              <div class="finding-body">
+                <div>
+                  <p>
+                    <code>neondeck init</code> always applies a dashboard preset
+                    and recommends Cockpit. Both Cockpit and Classic omit the
+                    Autopilot plugin, even though the checked-in dashboard file
+                    includes it. Autopilot notifications still target that
+                    plugin; opening one throws “Autopilot is not available in
+                    this dashboard layout.”
+                  </p>
+                  <p>
+                    This is a fresh-user defect masked for developers who keep
+                    the checked-in dashboard config.
+                  </p>
+                </div>
+                <div class="evidence">
+                  <strong>Evidence</strong>
+                  <ul>
+                    <li><code>cli/onboarding.ts:64-68, 538-565</code></li>
+                    <li><code>config/mutations/dashboard.ts:126-282</code></li>
+                    <li><code>notifications/targets.ts:8-14, 77-82</code></li>
+                    <li><code>notifications/controller.tsx:164-168</code></li>
+                    <li><code>config/dashboard.json:77-87</code></li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+
+            <article class="finding high" id="f6">
+              <header>
+                <span class="id">F6</span>
+                <span class="severity">High</span>
+                <h3>Important PR feedback is detected incompletely or loses its text</h3>
+              </header>
+              <div class="finding-body">
+                <div>
+                  <p>
+                    Overall requested-changes review bodies are normalized
+                    without <code>body</code>; watermarks retain review metadata
+                    and IDs only. The fixer then refuses to run unless there is
+                    at least one unresolved inline comment. A normal review that
+                    says “there is a bug in the retry logic” only in the review
+                    body is detected as actionable but its instruction is gone.
+                  </p>
+                  <p>
+                    General PR conversation comments are not watermark
+                    categories at all, so bug reports and change requests posted
+                    there do not trigger Autopilot.
+                  </p>
+                </div>
+                <div class="evidence">
+                  <strong>Evidence</strong>
+                  <ul>
+                    <li><code>github/reviews.ts:1023-1056</code></li>
+                    <li><code>pr-events/watermarks.ts:40-94, 139-151</code></li>
+                    <li><code>autopilot/review-feedback.ts:189-220</code></li>
+                    <li><code>pr-events/schemas.ts:40-47, 96-104</code></li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+
+            <article class="finding high" id="f7">
+              <header>
+                <span class="id">F7</span>
+                <span class="severity">High</span>
+                <h3>Pause and stop do not control admitted Autopilot work</h3>
+              </header>
+              <div class="finding-body">
+                <div>
+                  <p>
+                    Pausing disables the scheduled watch task, but Autopilot
+                    state ignores polling state and continues to label the watch
+                    active. Stopping deletes the watch and polling task only; it
+                    does not cancel a run, supersede an admission, abandon a
+                    prepared diff, or clean a worktree. Historical/stuck
+                    admissions remain visible because there is no cascade or
+                    purge path.
+                  </p>
+                  <p>
+                    The dashboard confirmation says only “Remove this watch?”
+                    and does not disclose retained autonomous work.
+                  </p>
+                </div>
+                <div class="evidence">
+                  <strong>Evidence</strong>
+                  <ul>
+                    <li><code>watches/service.ts:389-479</code></li>
+                    <li><code>watches/store.ts:273-280</code></li>
+                    <li><code>autopilot/state.ts:85-103</code></li>
+                    <li><code>autopilot/state-mappers.ts:454-475</code></li>
+                    <li><code>web/src/plugins/ActiveWatches.tsx:86-229</code></li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+
+            <article class="finding high" id="f8">
+              <header>
+                <span class="id">F8</span>
+                <span class="severity">High</span>
+                <h3>Admissions can deadlock capacity or retry forever</h3>
+              </header>
+              <div class="finding-body">
+                <div>
+                  <p>
+                    Stale reconciliation expires admitted rows only when
+                    <code>current_run_id IS NULL</code>. If a run ID is attached
+                    but its observation never arrives or never leaves active,
+                    that row remains admitted and counts against global, repo,
+                    and same-PR limits indefinitely.
+                  </p>
+                  <p>
+                    Failed/blocked rows set <code>next_attempt_at</code> to now,
+                    then retry on every watch poll with no backoff or maximum
+                    attempts. Permanent token, git, identity, or checkout
+                    failures can recur forever.
+                  </p>
+                </div>
+                <div class="evidence">
+                  <strong>Evidence</strong>
+                  <ul>
+                    <li><code>autopilot/admissions.ts:69-84, 161-186</code></li>
+                    <li><code>autopilot/admissions.ts:269-302, 472-493</code></li>
+                    <li><code>autopilot/admissions.ts:701-784</code></li>
+                    <li><code>scheduler/pr-watch-events.ts:93-155</code></li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+
+            <article class="finding high" id="f9">
+              <header>
+                <span class="id">F9</span>
+                <span class="severity">High</span>
+                <h3>Approval, safe-push, and result-comment semantics are internally inconsistent</h3>
+              </header>
+              <div class="finding-body">
+                <div>
+                  <p>
+                    Every prepared diff creates a pending push approval,
+                    including <code>prepare-only</code>. The dashboard’s
+                    “approve” action defaults to verify-then-push, but the push
+                    gate later rejects prepare-only mode. This produces a doomed
+                    workflow and an unclear side effect hidden behind a generic
+                    label. Safe-push diffs also receive pending approvals they
+                    do not need, and a successful push does not resolve those
+                    approvals.
+                  </p>
+                  <p>
+                    Even after a successful manual push, the result only
+                    advertises <code>comment_pr_autofix_result</code> as a
+                    deferred next workflow. No observer invokes it, so the PR
+                    result comment is not automatic. If manually invoked after
+                    a real push, it compares GitHub’s now-updated head with the
+                    prepared diff’s pre-fix <code>headSha</code> before reading
+                    the stored pushed commit SHA, so the intended success
+                    comment is rejected as stale.
+                  </p>
+                </div>
+                <div class="evidence">
+                  <strong>Evidence</strong>
+                  <ul>
+                    <li><code>prepared-diffs/service.ts:92-149</code></li>
+                    <li><code>prepared-diffs/service.ts:239-261</code></li>
+                    <li><code>autopilot/approvals.ts:35-58</code></li>
+                    <li><code>server/autopilot-push-dispatch.ts:29-71</code></li>
+                    <li><code>autopilot/push.ts:343-366, 560-576</code></li>
+                    <li><code>autopilot/comments.ts:223-276</code></li>
+                    <li><code>verify-then-push-pr-autofix.ts:49-80</code></li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+
+            <article class="finding high" id="f10">
+              <header>
+                <span class="id">F10</span>
+                <span class="severity">High</span>
+                <h3>API permission readiness is disconnected from git push readiness</h3>
+              </header>
+              <div class="finding-body">
+                <div>
+                  <p>
+                    Onboarding/readiness validates <code>GITHUB_TOKEN</code> for
+                    API identity and later reads branch permission facts. Actual
+                    push uses plain <code>git push https://github.com/…</code>
+                    with inherited host credentials. The token is not wired to
+                    git, <code>gh auth setup-git</code> is not checked, and there
+                    is no noninteractive prompt guard or timeout. Commit also
+                    depends on ambient <code>user.name</code>/<code>user.email</code>.
+                  </p>
+                  <p>
+                    <strong>Integration risk:</strong> a host can appear
+                    GitHub-ready and pass API policy gates, then fail or hang on
+                    the actual unattended push. Existing tests replace the push
+                    transport and do not validate credentials.
+                  </p>
+                </div>
+                <div class="evidence">
+                  <strong>Evidence</strong>
+                  <ul>
+                    <li><code>cli/onboarding.ts:130-160</code></li>
+                    <li><code>worktrees/push-target.ts:3-30</code></li>
+                    <li><code>autopilot/push.ts:307-332, 495-513</code></li>
+                    <li><code>repo-edit/git.ts:532-604, 832-842</code></li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+
+            <article class="finding high" id="f11">
+              <header>
+                <span class="id">F11</span>
+                <span class="severity">High</span>
+                <h3>The operator queue is misleading, duplicated, and incomplete</h3>
+              </header>
+              <div class="finding-body">
+                <div>
+                  <p>
+                    Autopilot state combines every historical admission with
+                    watches, worktrees, prepared diffs, active workflows, and
+                    approvals, then calls the count “queue.” Completed
+                    <code>triaged</code>/<code>prepared</code> admissions never
+                    leave and duplicate the same PR across sources. The state is
+                    capped at 40; the panel then slices queue to 8, prepared
+                    diffs to 4, and approvals to 4 with no paging or show-all.
+                    Consequential work can be counted but unreachable.
+                  </p>
+                  <p>
+                    Active workflow rows hardcode mode
+                    <code>notify-only</code>; watcher copy still says work will
+                    happen “when Phase 19 workflows land.”
+                  </p>
+                </div>
+                <div class="evidence">
+                  <strong>Evidence</strong>
+                  <ul>
+                    <li><code>autopilot/state.ts:145-200, 221-239</code></li>
+                    <li><code>autopilot/state-mappers.ts:183-206, 463-475</code></li>
+                    <li><code>web/src/plugins/AutopilotPanel.tsx:124-130</code></li>
+                    <li><code>web/src/plugins/AutopilotPanel.tsx:148-223</code></li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+
+            <article class="finding high" id="f12">
+              <header>
+                <span class="id">F12</span>
+                <span class="severity">High</span>
+                <h3>Dashboard recovery hides abandon and manual fallback</h3>
+              </header>
+              <div class="finding-body">
+                <div>
+                  <p>
+                    Backend recovery exposes abandon and manual-follow-up
+                    operations, but the panel’s explicit whitelist omits both.
+                    A user cannot abandon a prepared diff or record a manual
+                    fallback from the principal operator surface, even though
+                    the underlying state and copy imply those outcomes exist.
+                  </p>
+                  <p>
+                    Recovery option query errors are also silent because the UI
+                    renders nothing when that query fails.
+                  </p>
+                </div>
+                <div class="evidence">
+                  <strong>Evidence</strong>
+                  <ul>
+                    <li><code>autopilot/notifications.ts:159-199</code></li>
+                    <li><code>web/src/plugins/AutopilotPanel.tsx:468-512</code></li>
+                    <li><code>web/src/plugins/AutopilotPanel.tsx:623-634</code></li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+
+            <article class="finding medium" id="f13">
+              <header>
+                <span class="id">F13</span>
+                <span class="severity">Medium</span>
+                <h3>Failure notification and attention accounting miss important states</h3>
+              </header>
+              <div class="finding-body">
+                <div>
+                  <p>
+                    A Flue action can return <code>{ok:false}</code> without the
+                    run itself throwing. Admission settlement treats that as a
+                    failure, but the generic run-failure notification is created
+                    only when <code>event.isError</code> is true. These failures
+                    may retry while only generic admission/worktree state hints
+                    at the problem.
+                  </p>
+                  <p>
+                    Actionable watch notifications use source
+                    <code>watch-pr-events</code>, while the Autopilot unread and
+                    recent-activity filters count only source
+                    <code>autopilot</code>, undercounting the events that started
+                    the flow.
+                  </p>
+                </div>
+                <div class="evidence">
+                  <strong>Evidence</strong>
+                  <ul>
+                    <li><code>server/learning-hooks.ts:81-109, 168-186</code></li>
+                    <li><code>scheduler/pr-watch-event-deltas.ts:288-330</code></li>
+                    <li><code>autopilot/state.ts:139-144, 201-216</code></li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+
+            <article class="finding medium" id="f14">
+              <header>
+                <span class="id">F14</span>
+                <span class="severity">Medium</span>
+                <h3>Review deltas can re-admit old feedback; watch status disagrees with event state</h3>
+              </header>
+              <div class="finding-body">
+                <div>
+                  <p>
+                    Any review-thread watermark change emits a delta containing
+                    all current unresolved thread IDs, not only new or changed
+                    threads. Replies, including a future bot reply, can create a
+                    new fingerprint that reprocesses old feedback unless
+                    addressed IDs/authors are filtered.
+                  </p>
+                  <p>
+                    Separately, ordinary open-PR watch snapshots fetch checks
+                    only after merge. Event watermarks can correctly detect
+                    failed open-PR checks while the Active Watches surface still
+                    says <code>watching</code> rather than
+                    <code>attention-needed</code>.
+                  </p>
+                </div>
+                <div class="evidence">
+                  <strong>Evidence</strong>
+                  <ul>
+                    <li><code>pr-watch-event-deltas.ts:48-57</code></li>
+                    <li><code>pr-events/watermarks.ts:80-94, 124-138</code></li>
+                    <li><code>watches/polling.ts:135-155</code></li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+
+            <article class="finding medium" id="f15">
+              <header>
+                <span class="id">F15</span>
+                <span class="severity">Medium</span>
+                <h3>Cleanup and lifecycle closure are not implemented end to end</h3>
+              </header>
+              <div class="finding-body">
+                <div>
+                  <p>
+                    The roadmap names <code>cleanup_autopilot_worktree</code>,
+                    but there is no such workflow/action, only allowlist names.
+                    Generic worktree cleanup exists as an explicit service and
+                    recovery action. No successful-push grace-period dispatcher
+                    or admission archival/purge path was found.
+                  </p>
+                  <p>
+                    Removing/recreating a watch leaves its admission history,
+                    which compounds queue crowd-out and can collide with the
+                    same durable event fingerprints.
+                  </p>
+                </div>
+                <div class="evidence">
+                  <strong>Evidence</strong>
+                  <ul>
+                    <li><code>.plans/ROADMAP.md:396-405</code></li>
+                    <li><code>worktrees/service.ts:560-707</code></li>
+                    <li><code>watches/store.ts:273-280</code></li>
+                    <li><code>autopilot/admissions.ts</code> (no delete/archive path)</li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+
+            <article class="finding medium" id="f16">
+              <header>
+                <span class="id">F16</span>
+                <span class="severity">Medium</span>
+                <h3>Documentation and completion claims are inaccurate</h3>
+              </header>
+              <div class="finding-body">
+                <div>
+                  <p>
+                    README and roadmap language describe working autonomous
+                    fixes, verification, push-back, comments, notification
+                    policy, docs, and end-to-end smoke coverage. The internal
+                    wiring plan and deviations acknowledge that later stages and
+                    semantic patch generation remain explicit/future work.
+                  </p>
+                  <p>
+                    Public docs have no Autopilot setup recipe, mode selection,
+                    readiness/scopes, baseline behavior, stop semantics,
+                    recovery decision tree, or quick-disable instructions,
+                    despite the roadmap marking those docs complete.
+                  </p>
+                </div>
+                <div class="evidence">
+                  <strong>Evidence</strong>
+                  <ul>
+                    <li><code>README.md:21-24</code></li>
+                    <li><code>.plans/ROADMAP.md:1266-1364</code></li>
+                    <li><code>.plans/AUTOPILOT_LOOP_WIRING_PLAN.md:43-52</code></li>
+                    <li><code>.plans/DEVIATIONS.md:384-418</code></li>
+                    <li><code>docs/src/pages/docs/configuration.astro</code></li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+
+            <article class="finding medium" id="f17">
+              <header>
+                <span class="id">F17</span>
+                <span class="severity">Medium</span>
+                <h3>Operator accessibility and troubleshooting are incomplete</h3>
+              </header>
+              <div class="finding-body">
+                <div>
+                  <p>
+                    The panel has good semantic section labeling and live
+                    mutation output, but some controls override the shared
+                    28px button to 22–24px, recovery descriptions live only in
+                    hover titles, and the polling “Needs attention” banner has
+                    no live/status semantics. Check rows compute a run URL but
+                    do not render it; activity omits timestamps; attention
+                    counts are not actionable.
+                  </p>
+                  <p>
+                    These defects are especially relevant on a companion/touch
+                    display. Coarse-pointer CSS raising targets to 44px is a
+                    positive mitigation where it applies.
+                  </p>
+                </div>
+                <div class="evidence">
+                  <strong>Evidence</strong>
+                  <ul>
+                    <li><code>web/src/components/ui.tsx:33-45</code></li>
+                    <li><code>AutopilotPanel.tsx:231-253, 388-411</code></li>
+                    <li><code>AutopilotPanel.tsx:515-540, 878-936</code></li>
+                    <li><code>web/src/styles.css:133-138</code></li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section id="permissions">
+          <p class="section-label">Agent briefing, environment, and permissions</p>
+          <h2>The expected Neon worker briefing does not exist</h2>
+          <p>
+            No coding worker is spawned in the watched-PR path. The configured
+            Flue workflows name <code>displayAssistant</code> as their agent but
+            execute deterministic actions directly; they do not start a model
+            planning turn. The display assistant’s own working directory is the
+            virtual <code>/workspace</code>, explicitly not the host checkout.
+            Its available subagents are research/CI/release analysis profiles
+            that are instructed not to discover or run host commands.
+          </p>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Required worker context</th>
+                  <th>Current watched path</th>
+                  <th>Required future contract</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Exact checkout on disk</td>
+                  <td class="no">No worker receives it</td>
+                  <td>Absolute managed worktree path and worktree ID</td>
+                </tr>
+                <tr>
+                  <td>PR/branch identity</td>
+                  <td class="partial">Facts exist in services</td>
+                  <td>Repo, PR, head/base refs and SHAs, fork/permission facts</td>
+                </tr>
+                <tr>
+                  <td>Review/bug request</td>
+                  <td class="partial">Inline facts only; no planner</td>
+                  <td>Full review body, threads, comments, author, addressed IDs</td>
+                </tr>
+                <tr>
+                  <td>Available tools</td>
+                  <td class="no">No capability inventory</td>
+                  <td>Repo-edit actions, mediated execution, gh/API availability</td>
+                </tr>
+                <tr>
+                  <td>GitHub authentication</td>
+                  <td class="partial">API token only</td>
+                  <td>Separate API scopes and noninteractive git push readiness</td>
+                </tr>
+                <tr>
+                  <td>Verification</td>
+                  <td class="partial">Service can resolve commands</td>
+                  <td>Required checks, preapproval result, timeout, expected outputs</td>
+                </tr>
+                <tr>
+                  <td>Authority boundaries</td>
+                  <td class="partial">Policy service exists</td>
+                  <td>Mode, guardrails, denied/high-risk paths, no primary checkout</td>
+                </tr>
+                <tr>
+                  <td>Output contract</td>
+                  <td class="no">No planner output</td>
+                  <td>Typed replacements/patch + addressed feedback + confidence/risk</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="callout success">
+            <h3>A good existing pattern is available</h3>
+            <p>
+              The explicit dashboard <strong>Fix CI</strong> path is separate
+              from watched Autopilot but does create/sync a managed worktree and
+              start Kilo in that real directory. Its handoff includes the
+              workspace path and managed-worktree status. It still needs a
+              verified tool/auth capability inventory, but it is a useful model
+              for the missing autonomous worker contract.
+            </p>
+          </div>
+        </section>
+
+        <section id="verification">
+          <p class="section-label">Verification and evidence</p>
+          <h2>What was verified, and what could not be run</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Verification method</th>
+                  <th>Result</th>
+                  <th>Conclusion</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Production call-graph trace</td>
+                  <td class="no">Stops at prepare</td>
+                  <td>Confirmed from both scheduler and Flue observer continuations.</td>
+                </tr>
+                <tr>
+                  <td>Workflow/action schemas</td>
+                  <td class="no">Caller patch required</td>
+                  <td>No semantic fixer/planner exists in the watched path.</td>
+                </tr>
+                <tr>
+                  <td>User-surface reachability</td>
+                  <td class="no">Review fixer unreachable</td>
+                  <td>Interactive action rejects; no dashboard/CLI workflow trigger.</td>
+                </tr>
+                <tr>
+                  <td>Dashboard preset trace</td>
+                  <td class="no">Autopilot omitted</td>
+                  <td>Fresh recommended onboarding makes deep-links fail.</td>
+                </tr>
+                <tr>
+                  <td>Existing test inventory</td>
+                  <td class="partial">Primitive-level</td>
+                  <td>Strong policy/fixer/push fixtures; no watcher-to-outcome test.</td>
+                </tr>
+                <tr>
+                  <td>Targeted Vitest execution</td>
+                  <td class="partial">Environment blocked</td>
+                  <td><code>vitest: command not found</code>; node_modules is absent.</td>
+                </tr>
+                <tr>
+                  <td>Credentialed GitHub/git push</td>
+                  <td class="partial">Not executed</td>
+                  <td>Reported as an integration risk, not a reproduced push failure.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="callout warning">
+            <h3>Coverage claims do not match the shipped smoke script</h3>
+            <p>
+              <code>scripts/autopilot-smoke.mjs</code> performs a real Flue
+              triage run, then a guarded prepare call for a missing repository.
+              It does not run the watcher event dispatcher, generate a fix,
+              verify, approve/push, comment, or invoke the deterministic
+              workflow suite claimed in <code>.plans/DEVIATIONS.md</code>. No
+              tests reference <code>refreshWatchJobEvents</code>,
+              <code>continueTerminalTriageAdmission</code>, or
+              <code>startPrepareAfterTriage</code>.
+            </p>
+          </div>
+
+          <details>
+            <summary>Targeted test command and result</summary>
+            <div class="details-body">
+              <pre><code>$ npm run test:unit -- src/autopilot-admissions.test.ts src/autopilot-workflows.test.ts
+
+&gt; vitest run --config vitest.unit.config.ts ...
+sh: vitest: command not found
+exit code: 127</code></pre>
+              <p>
+                Runtime Node version was <code>v26.4.0</code>, matching the
+                repository requirement. Dependencies were not installed because
+                this was a review task and the worktree contained no
+                <code>node_modules</code>.
+              </p>
+            </div>
+          </details>
+        </section>
+
+        <section id="strengths">
+          <p class="section-label">Architecture to retain</p>
+          <h2>The foundations are valuable</h2>
+          <p>
+            The failure is primarily missing orchestration, planning, activation,
+            and product closure, not an absence of safety infrastructure. The
+            following pieces should be preserved and composed into the finished
+            loop:
+          </p>
+          <div class="roadmap">
+            <article>
+              <span class="phase">Deterministic facts</span>
+              <h3>GitHub event model and watermarks</h3>
+              <p>
+                Event collection is structured, persistent, and quiet when
+                nothing meaningful changes. Deltas cover commits, inline review
+                threads, requested changes, checks, mergeability, and freshness.
+              </p>
+            </article>
+            <article>
+              <span class="phase">Concurrency</span>
+              <h3>Atomic admission and deduplication</h3>
+              <p>
+                Claims are idempotent by watch/event fingerprint and enforce
+                global, per-repo, and same-PR mutation capacity.
+              </p>
+            </article>
+            <article>
+              <span class="phase">Isolation</span>
+              <h3>Managed worktrees and repo-edit boundaries</h3>
+              <p>
+                Code-changing work is designed to stay out of the user’s primary
+                checkout, with locks, dirty-state checks, path containment, and
+                guardrails.
+              </p>
+            </article>
+            <article>
+              <span class="phase">Push safety</span>
+              <h3>Strong deterministic gates</h3>
+              <p>
+                Push checks mode/policy, SHA- and policy-bound approval,
+                verification against current HEAD, branch permission facts,
+                clean committed state, and forbids force push.
+              </p>
+            </article>
+            <article>
+              <span class="phase">Operator review</span>
+              <h3>Prepared diff and recovery services</h3>
+              <p>
+                Diff inspection, verification records, revisions, retry,
+                resync, cleanup, and result notifications provide a solid
+                backend for one web/TUI runtime.
+              </p>
+            </article>
+            <article>
+              <span class="phase">Explicit worker path</span>
+              <h3>Bounded Fix CI / Kilo safeguards</h3>
+              <p>
+                The separate human-triggered CI path rejects partial facts and
+                head movement, uses an exact managed worktree, and prohibits
+                implicit push/comment effects.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="remediation">
+          <p class="section-label">Recommended implementation sequence</p>
+          <h2>Close the loop in five gates</h2>
+          <div class="roadmap">
+            <article>
+              <span class="phase">Gate 1 · Core coordinator</span>
+              <h3>Add a durable planner/fixer stage</h3>
+              <ul>
+                <li>Extend admissions through plan/fix, verify, approval, push, comment, cleanup.</li>
+                <li>Spawn a dedicated bounded coding agent or model-planning workflow.</li>
+                <li>Feed typed patch/replacement output into existing deterministic fixers.</li>
+                <li>Branch correctly by mode; never create a push approval in prepare-only.</li>
+              </ul>
+            </article>
+            <article>
+              <span class="phase">Gate 2 · Activation</span>
+              <h3>Create one first-class setup operation</h3>
+              <ul>
+                <li>Add <code>autopilot_watch_pr_configure(ref, mode, processExisting)</code>.</li>
+                <li>Expose it in chat, dashboard, CLI, and docs.</li>
+                <li>Put Autopilot in recommended dashboard presets and onboarding.</li>
+                <li>Make current mode and polling state visible beside each watch.</li>
+              </ul>
+            </article>
+            <article>
+              <span class="phase">Gate 3 · Readiness</span>
+              <h3>Preflight the real environment</h3>
+              <ul>
+                <li>Fetch the PR head before worktree creation.</li>
+                <li>Validate full feedback availability and token scopes.</li>
+                <li>Verify noninteractive git credentials and commit identity.</li>
+                <li>Resolve required checks and unattended preapproval before admission.</li>
+              </ul>
+            </article>
+            <article>
+              <span class="phase">Gate 4 · Durable recovery</span>
+              <h3>Make work cancellable and finite</h3>
+              <ul>
+                <li>Expire attached but lost/stuck runs.</li>
+                <li>Add exponential backoff, attempt caps, and explicit resume.</li>
+                <li>Separate pause watch, cancel run, abandon diff, and cleanup worktree.</li>
+                <li>Archive terminal admissions and purge/supersede on watch removal.</li>
+              </ul>
+            </article>
+            <article>
+              <span class="phase">Gate 5 · Product verification</span>
+              <h3>Test the user promise, not the primitives alone</h3>
+              <ul>
+                <li>Drive a scheduled watch from baseline through a new review delta.</li>
+                <li>Use a real Flue invoke boundary and a bounded fake planning agent.</li>
+                <li>Assert diff, checks, approval/push, comment, notifications, and cleanup.</li>
+                <li>Test restarts, duplicates, stale SHAs, forks, permissions, and cancellation.</li>
+              </ul>
+            </article>
+            <article>
+              <span class="phase">Documentation</span>
+              <h3>Align claims with shipped behavior</h3>
+              <ul>
+                <li>Publish prerequisites, modes, trust boundaries, and exact setup recipes.</li>
+                <li>Document initial baseline/process-existing behavior.</li>
+                <li>Explain approval side effects, stop semantics, and recovery.</li>
+                <li>Mark the roadmap complete only after acceptance tests pass.</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section id="acceptance">
+          <p class="section-label">Definition of usable</p>
+          <h2>Required end-to-end acceptance scenarios</h2>
+          <ol class="acceptance">
+            <li>
+              In chat, “watch <code>owner/repo#123</code> in prepare-only and
+              process current feedback” creates one watch, persists the PR
+              override, confirms any authority increase, and reports exact next
+              poll/current processing state.
+            </li>
+            <li>
+              A PR that already has unresolved inline feedback at activation is
+              admitted once when <code>processExisting</code> is requested; safe
+              baseline-only behavior is also selectable and clearly explained.
+            </li>
+            <li>
+              New inline review feedback spawns a bounded coding worker with the
+              exact managed worktree path, repo/PR/branch/SHAs, full feedback,
+              available tools, checks, and policy limits.
+            </li>
+            <li>
+              Overall requested-changes review bodies and supported PR
+              conversation comments retain their text and can trigger a fix or
+              an explicit “unsupported/manual” outcome.
+            </li>
+            <li>
+              A new or fork PR head absent from the local clone is fetched before
+              checkout and produces a usable worktree without touching the
+              primary checkout.
+            </li>
+            <li>
+              Prepare-only produces a real inspectable diff, never creates a
+              push approval, and stops with review/revise/abandon/cleanup actions.
+            </li>
+            <li>
+              Autofix-with-approval produces and verifies a diff, explains the
+              effect of approval, pushes only after explicit approval, then posts
+              one fact-grounded result comment.
+            </li>
+            <li>
+              Safe-push mode automatically verifies, checks credentials and
+              branch permissions, pushes without force, posts the result, and
+              schedules cleanup only when every gate passes.
+            </li>
+            <li>
+              Missing token scopes, git credentials, commit identity, required
+              check preapproval, or model provider blocks before mutation with a
+              precise setup instruction and no retry storm.
+            </li>
+            <li>
+              Pause, stop watching, cancel active work, abandon a diff, and clean
+              a worktree are distinct controls with accurate confirmation copy
+              and durable audit state.
+            </li>
+            <li>
+              Restart during every stage reconciles exactly once; attached lost
+              runs time out; repeated failures back off and cap; same-PR changes
+              serialize without permanently consuming capacity.
+            </li>
+            <li>
+              The dashboard shows one canonical row per PR/task with stage,
+              mode, reason, timestamp, run link, and available action; it never
+              hides an approval due to client-side slicing.
+            </li>
+            <li>
+              A fixture-backed product test executes watch delta → triage →
+              worker plan/fix → prepared diff → verification → approval/push →
+              comment → cleanup, and the smoke command actually runs it.
+            </li>
+          </ol>
+        </section>
+
+        <section id="inventory">
+          <p class="section-label">Surface inventory</p>
+          <h2>Implemented entry points and their reachability</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Surface</th>
+                  <th>Entry point</th>
+                  <th>User-reachable?</th>
+                  <th>Role today</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Chat action</td>
+                  <td><code>neondeck_watch_pr_add</code></td>
+                  <td class="yes">Yes</td>
+                  <td>Adds a watch; no mode.</td>
+                </tr>
+                <tr>
+                  <td>Chat action</td>
+                  <td><code>neondeck_config_update_repo_autopilot_policy</code></td>
+                  <td class="partial">Technically</td>
+                  <td>Separate, hidden policy mutation.</td>
+                </tr>
+                <tr>
+                  <td>Slash / dashboard / CLI</td>
+                  <td><code>/watch-pr</code>, Watch button, <code>neondeck watch-pr</code></td>
+                  <td class="yes">Yes</td>
+                  <td>Creates notify-inheriting watch.</td>
+                </tr>
+                <tr>
+                  <td>Automatic workflow</td>
+                  <td><code>triage-pr-event</code></td>
+                  <td class="yes">Scheduler</td>
+                  <td>Classifies a later event delta.</td>
+                </tr>
+                <tr>
+                  <td>Automatic workflow</td>
+                  <td><code>prepare-pr-worktree</code></td>
+                  <td class="yes">Scheduler/observer</td>
+                  <td>Creates checkout; no diff.</td>
+                </tr>
+                <tr>
+                  <td>Mutation workflow</td>
+                  <td><code>fix-pr-review-feedback</code></td>
+                  <td class="no">No normal surface</td>
+                  <td>Requires caller patch/replacements.</td>
+                </tr>
+                <tr>
+                  <td>Mutation workflow</td>
+                  <td><code>fix-pr-ci-failure</code></td>
+                  <td class="no">Not from watcher</td>
+                  <td>Requires caller patch; raw API/workflow primitive.</td>
+                </tr>
+                <tr>
+                  <td>Human dashboard workflow</td>
+                  <td><code>fix-pr-ci</code></td>
+                  <td class="yes">Fix CI button</td>
+                  <td>Separate Kilo handoff, not Autopilot continuation.</td>
+                </tr>
+                <tr>
+                  <td>Prepared-diff flow</td>
+                  <td><code>verify-pr-worktree</code></td>
+                  <td class="partial">Recovery/approval path</td>
+                  <td>Runs policy-mediated checks.</td>
+                </tr>
+                <tr>
+                  <td>Prepared-diff flow</td>
+                  <td><code>push-pr-autofix</code></td>
+                  <td class="partial">Approval/recovery path</td>
+                  <td>Strong gates; disconnected from watcher.</td>
+                </tr>
+                <tr>
+                  <td>Prepared-diff flow</td>
+                  <td><code>comment-pr-autofix-result</code></td>
+                  <td class="partial">Raw/explicit</td>
+                  <td>Not automatically invoked after push.</td>
+                </tr>
+                <tr>
+                  <td>Cleanup</td>
+                  <td><code>cleanup_autopilot_worktree</code></td>
+                  <td class="no">Missing workflow</td>
+                  <td>Generic worktree cleanup exists only.</td>
+                </tr>
+                <tr>
+                  <td>Dashboard</td>
+                  <td><code>AutopilotPanel</code></td>
+                  <td class="partial">Omitted from presets</td>
+                  <td>Operator read/recovery surface if configured.</td>
+                </tr>
+                <tr>
+                  <td>Local API</td>
+                  <td><code>/api/autopilot/*</code>, <code>/api/prepared-diffs/*</code></td>
+                  <td class="partial">Developer/operator</td>
+                  <td>Exposes primitives; not an end-user orchestration API.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <details>
+            <summary>Review scope and methodology</summary>
+            <div class="details-body">
+              <p>
+                The review followed the in-repository Flue guidance and the
+                Neondeck product/design register. It covered roadmap intent,
+                README/public docs, defaults/onboarding, chat actions and
+                instructions, command/CLI/dashboard watch surfaces, scheduler
+                dispatch, PR event/watermark logic, admission persistence,
+                Flue workflow observation, worktree creation/sync, review and CI
+                fix services, verification, prepared-diff approvals, push,
+                comments, notifications/recovery, operator read models, and
+                test/smoke coverage.
+              </p>
+              <p>
+                Three parallel read-only audits focused on backend durability,
+                setup/dashboard UX, and PR-feedback/worker/permission handling.
+                Findings were reconciled against the primary source. No feature
+                code or runtime state was changed; this HTML report is the only
+                workspace modification.
+              </p>
+            </div>
+          </details>
+
+          <p class="footnote">
+            Report generated from repository state on 2026-07-18. Confidence is
+            highest for call-graph, schema, state-machine, and user-surface
+            findings. Git credential behavior is an evidence-backed integration
+            risk that still requires a credentialed host test after the core
+            coordinator exists.
+          </p>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
