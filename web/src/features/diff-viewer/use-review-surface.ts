@@ -100,7 +100,7 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
       if (surfaceId) enqueueSurfaceRemoval(surfaceId);
       return;
     }
-    if (eventStreamReadyRef.current) {
+    if (registeredRef.current || eventStreamReadyRef.current) {
       enqueueSurfaceRegistration(snapshot);
     }
   }, [snapshot, surfaceId]);

@@ -160,10 +160,25 @@ describe('useReviewSurface', () => {
       await Promise.resolve();
     });
     act(() => onError?.(new Event('error')));
+    const nextSource = reviewSource();
+    nextSource.revision = resolvedReviewRevision({
+      kind: 'git-commit',
+      id: 'next-head-sha',
+    });
+    await act(async () =>
+      root.render(<ReviewSurfaceHarness source={nextSource} />),
+    );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(15_000);
     });
 
+    expect(api.register).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        source: expect.objectContaining({
+          revision: expect.objectContaining({ id: 'next-head-sha' }),
+        }),
+      }),
+    );
     expect(api.heartbeat).toHaveBeenCalledTimes(1);
   });
 
