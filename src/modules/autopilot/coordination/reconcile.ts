@@ -14,7 +14,10 @@ import {
   settlePendingAutopilotStageObservation,
 } from './settle';
 import { isLegalAutopilotTransition } from './transitions';
-import { settlePendingAutopilotOwnerObservation } from '../owner/settle';
+import {
+  flushPendingAutopilotOwnerLearning,
+  settlePendingAutopilotOwnerObservation,
+} from '../owner/settle';
 import { hasAutopilotSubmissionProcessLease } from '../owner/submission-lease';
 
 export const defaultAutopilotReservationTimeoutMs = 5 * 60 * 1000;
@@ -37,6 +40,7 @@ export async function reconcileAutopilotStageAttempts(
   } = {},
 ) {
   await ensureRuntimeHome(paths);
+  await flushPendingAutopilotOwnerLearning(paths);
   const now = options.now ?? new Date();
   const reservationBefore = new Date(
     now.getTime() -

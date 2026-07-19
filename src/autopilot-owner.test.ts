@@ -886,10 +886,18 @@ describe('Package 4 continuing PR owner', () => {
           currentSha: async () => 'abc123',
           readLiveHead: liveFixtureHead,
           runReviewFix: async (_input, _paths, dependencies) => {
-            await dependencies?.ownerMutationFence?.('before-mutation');
+            await dependencies?.ownerMutationFence?.('before-write', {
+              paths: ['src/fix.ts'],
+              bytes: 6,
+              lines: 2,
+            });
             enteredMutation();
             await release;
-            await dependencies?.ownerMutationFence?.('before-commit');
+            await dependencies?.ownerMutationFence?.('before-write', {
+              paths: ['src/fix.ts'],
+              bytes: 6,
+              lines: 2,
+            });
             throw new Error('revoked mutation unexpectedly continued');
           },
         },
@@ -956,6 +964,60 @@ describe('Package 4 continuing PR owner', () => {
         readRows(paths, 'autopilot_owner_fix_submissions')[0]?.result_json,
       );
       expect(stored).not.toContain('remainingBlockers');
+    });
+  });
+
+  it('recovers durable owner learning evidence after settlement interruption', async () => {
+    await withFixture(async (paths) => {
+      await updateLearningConfig({ enabled: false }, paths);
+      seedPreparedTurn(
+        paths,
+        'admission:learning-recovery',
+        'event:learning-recovery',
+        1,
+      );
+      const turn = await dispatchTurn(
+        paths,
+        'admission:learning-recovery',
+        'dispatch:learning-recovery',
+      );
+      await submitAutopilotFix(
+        submissionFromEnvelope(turn.envelope, {
+          disposition: 'no-op',
+          summary: 'Persist learning evidence for restart recovery.',
+        }),
+        paths,
+        { currentSha: async () => 'abc123', readLiveHead: liveFixtureHead },
+      );
+      await recordAutopilotOwnerTerminalObservation(
+        terminal(turn.envelope, 'dispatch:learning-recovery'),
+        paths,
+      );
+
+      expect(
+        readRows(paths, 'app_metadata').filter((row) =>
+          String(row.key).startsWith('autopilot.owner.learning:'),
+        ),
+      ).toHaveLength(1);
+      expect(readRows(paths, 'learning_events')).toHaveLength(0);
+
+      await updateLearningConfig(
+        { enabled: true, prRetrospectiveThreshold: 100 },
+        paths,
+      );
+      await reconcileAutopilotStageAttempts(paths);
+      await reconcileAutopilotStageAttempts(paths);
+
+      expect(
+        readRows(paths, 'learning_events').filter(
+          (row) => row.type === 'pr_handled',
+        ),
+      ).toHaveLength(1);
+      expect(
+        readRows(paths, 'app_metadata').filter((row) =>
+          String(row.key).startsWith('autopilot.owner.learning:'),
+        ),
+      ).toHaveLength(0);
     });
   });
 
@@ -1083,6 +1145,51 @@ describe('Package 4 continuing PR owner', () => {
     });
   });
 
+  it('rejects same-SHA worktree content drift before mutation', async () => {
+    await withGitFixture(async ({ paths, headSha, worktreePath }) => {
+      seedPreparedTurn(
+        paths,
+        'admission:revision-drift',
+        'event:revision-drift',
+        1,
+        'autofix-with-approval',
+      );
+      const turn = await dispatchGitTurn(
+        paths,
+        'admission:revision-drift',
+        'dispatch:revision-drift',
+        headSha,
+      );
+      await writeFile(join(worktreePath, 'src/fix.ts'), 'drifted\n');
+
+      const result = await submitAutopilotFix(
+        submissionFromEnvelope(turn.envelope, {
+          disposition: 'fix',
+          fixerKind: 'review',
+          replacements: [
+            { path: 'src/fix.ts', oldString: 'old\n', newString: 'fixed\n' },
+          ],
+          summary: 'Reject a stale same-SHA proposal.',
+        }),
+        paths,
+        {
+          currentSha: async () => headSha,
+          readLiveHead: async () => headSha,
+          runReviewFix: async (_input, _paths, dependencies) => {
+            await dependencies?.ownerMutationFence?.('before-mutation');
+            throw new Error('mutation unexpectedly passed its revision fence');
+          },
+        },
+      );
+
+      expect(result).toMatchObject({ ok: false });
+      expect(result.message).toContain('grounded revision');
+      expect(String(await readFile(join(worktreePath, 'src/fix.ts')))).toBe(
+        'drifted\n',
+      );
+    });
+  });
+
   it('lets finalized prepared and no-op artifacts outrank a later failed terminal event', async () => {
     await withFixture(async (paths) => {
       seedPreparedTurn(
@@ -1096,7 +1203,7 @@ describe('Package 4 continuing PR owner', () => {
         'admission:prepared-terminal',
         'dispatch:prepared-terminal',
       );
-      await submitAutopilotFix(
+      const preparedResult = await submitAutopilotFix(
         submissionFromEnvelope(preparedTurn.envelope, {
           disposition: 'fix',
           fixerKind: 'review',
@@ -1111,7 +1218,7 @@ describe('Package 4 continuing PR owner', () => {
           readLiveHead: liveFixtureHead,
           runReviewFix: async () =>
             ({
-              ok: true,
+              ok: false,
               action: 'autopilot_fix_pr_review_feedback',
               changed: true,
               message: 'Prepared fixture diff.',
@@ -1119,6 +1226,11 @@ describe('Package 4 continuing PR owner', () => {
             }) as never,
         },
       );
+      expect(preparedResult).toMatchObject({
+        ok: true,
+        changed: true,
+        action: 'autopilot_submit_fix',
+      });
       const preparedSettlement = await recordAutopilotOwnerTerminalObservation(
         {
           ...terminal(preparedTurn.envelope, 'dispatch:prepared-terminal'),

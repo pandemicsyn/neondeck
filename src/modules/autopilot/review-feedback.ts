@@ -469,7 +469,7 @@ export async function fixPrReviewFeedback(
         { requires: ['refreshWorktreeHead'] },
       );
     }
-    if (hasEdits) await dependencies.ownerMutationFence?.('before-mutation');
+    let mutationScopeBound = false;
 
     const editResults = hasEdits
       ? await applyReviewEdits(
@@ -481,6 +481,13 @@ export async function fixPrReviewFeedback(
             patch: input.patch,
             dryRun: input.dryRun,
             fileReads,
+            beforeExternalMutation: async (effect) => {
+              await dependencies.ownerMutationFence?.(
+                mutationScopeBound ? 'before-write' : 'before-mutation',
+                effect,
+              );
+              mutationScopeBound = true;
+            },
           },
           paths,
         )

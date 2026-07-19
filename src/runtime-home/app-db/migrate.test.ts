@@ -25,6 +25,11 @@ describe('app database migrator', () => {
     const root = await tempDir();
     const databasePath = join(root, 'neondeck.db');
     const migrations = readAppDbMigrationFiles();
+    expect(
+      migrations.filter((migration) =>
+        migration.name.includes('autopilot_package_4_continuing_owner'),
+      ),
+    ).toHaveLength(1);
     expect(applyAppDbMigrations(databasePath)).toMatchObject({
       applied: migrations.map((migration) => migration.name),
       backupPath: null,
@@ -34,6 +39,18 @@ describe('app database migrator', () => {
       expect(tableExists(database, 'notifications')).toBe(true);
       expect(tableExists(database, 'briefing_profiles')).toBe(true);
       expect(tableExists(database, 'briefing_runs')).toBe(true);
+      expect(
+        database
+          .prepare(
+            `SELECT name FROM pragma_table_info('autopilot_owner_fix_submissions')
+             WHERE name IN ('mutation_revision_key', 'artifact_revision_key')
+             ORDER BY name;`,
+          )
+          .all(),
+      ).toEqual([
+        { name: 'artifact_revision_key' },
+        { name: 'mutation_revision_key' },
+      ]);
     } finally {
       database.close();
     }
@@ -232,6 +249,15 @@ describe('app database migrator', () => {
           }),
           '2026-07-19T00:02:00.000Z',
         );
+      before.exec(`
+        INSERT INTO memory_events
+          (id, memory_id, action, actor, created_at)
+        VALUES
+          ('memory-event:one', 'memory:one', 'created', 'fixture',
+           '2026-07-18T00:03:00.000Z'),
+          ('memory-event:two', 'memory:two', 'updated', 'fixture',
+           '2026-07-18T00:04:00.000Z');
+      `);
     } finally {
       before.close();
     }
@@ -373,6 +399,22 @@ describe('app database migrator', () => {
           )
           .run('admission:legacy'),
       ).toThrow(/CHECK constraint failed/);
+      expect(
+        after
+          .prepare('SELECT sequence, id FROM memory_events ORDER BY sequence;')
+          .all(),
+      ).toEqual([
+        { sequence: 1, id: 'memory-event:one' },
+        { sequence: 2, id: 'memory-event:two' },
+      ]);
+      expect(() =>
+        after
+          .prepare(
+            `UPDATE autopilot_admissions
+             SET authority_mode = 'unbounded' WHERE id = ?;`,
+          )
+          .run('admission:legacy'),
+      ).toThrow(/autopilot Package 4 authority constraint failed/);
     } finally {
       after.close();
     }

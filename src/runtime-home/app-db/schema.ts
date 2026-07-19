@@ -929,6 +929,8 @@ export const autopilotOwnerFixSubmissions = sqliteTable(
     finishedAt: text('finished_at'),
     cancellationRequestedAt: text('cancellation_requested_at'),
     mutationStartedAt: text('mutation_started_at'),
+    mutationRevisionKey: text('mutation_revision_key'),
+    artifactRevisionKey: text('artifact_revision_key'),
   },
   (table) => [
     uniqueIndex('idx_autopilot_owner_fix_attempt').on(table.attemptId),

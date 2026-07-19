@@ -7,6 +7,8 @@ import { gitCurrentSha } from '../../../repo-edit/git';
 import { parseV4APatch } from '../../../repo-edit/patch-parser';
 import { resolveRepoPath } from '../../../repo-edit/path-safety';
 import { replaceContent } from '../../../repo-edit/fuzzy-replace';
+import { readRepoDiff } from '../../../repo-edit';
+import { reviewRevisionKey } from '../../../../shared/review-source';
 import {
   ensureRuntimeHome,
   parseAppConfig,
@@ -78,6 +80,8 @@ const groundingScopeRowSchema = v.looseObject({
   pr_head_sha: v.nullable(v.string()),
   worktree_head_sha: v.nullable(v.string()),
   policy_hash: v.string(),
+  diff_base_sha: v.string(),
+  diff_revision_key: v.string(),
 });
 const mutationFenceRowSchema = v.looseObject({
   submission_status: v.literal('applying'),
@@ -95,6 +99,8 @@ const mutationFenceRowSchema = v.looseObject({
   base_sha: v.string(),
   checkout_branch: v.string(),
   checkout_detached: v.number(),
+  diff_base_sha: v.string(),
+  diff_revision_key: v.string(),
   repo_binding_hash: v.string(),
   workspace_binding_hash: v.string(),
   policy_hash: v.string(),
@@ -235,8 +241,10 @@ export async function submitAutopilotFix(
 
   let result: FixResult;
   const ownerMutationFence = (
-    phase: 'before-mutation' | 'before-commit' | 'before-artifact',
-  ) => assertSubmissionMutationFence(input, paths, dependencies, phase);
+    phase:
+      'before-mutation' | 'before-write' | 'before-commit' | 'before-artifact',
+    effect?: { paths: string[]; bytes: number; lines: number },
+  ) => assertSubmissionMutationFence(input, paths, dependencies, phase, effect);
   try {
     result =
       input.fixerKind === 'review'
@@ -290,36 +298,53 @@ export async function submitAutopilotFix(
     return failure(`The deterministic fixer failed: ${message}`);
   }
   const preparedDiffId = findPreparedDiffId(result);
-  if (!result.ok || !preparedDiffId) {
-    const message = result.ok
-      ? 'The deterministic fixer returned without a prepared diff.'
-      : result.message;
+  if (preparedDiffId) {
+    await finalizeSubmission(
+      input.attemptId,
+      'prepared',
+      preparedDiffId,
+      result,
+      null,
+      paths,
+    );
+    return {
+      ...result,
+      ok: true,
+      changed: true,
+      action: 'autopilot_submit_fix',
+    };
+  }
+  if (!result.ok) {
+    const message = result.message;
     await finalizeSubmission(
       input.attemptId,
       'failed',
-      preparedDiffId,
+      null,
       result,
       message,
       paths,
     );
     return { ...result, action: 'autopilot_submit_fix' };
   }
+  const message = 'The deterministic fixer returned without a prepared diff.';
   await finalizeSubmission(
     input.attemptId,
-    'prepared',
-    preparedDiffId,
-    result,
+    'failed',
     null,
+    result,
+    message,
     paths,
   );
-  return { ...result, action: 'autopilot_submit_fix' };
+  return failure(message);
 }
 
 async function assertSubmissionMutationFence(
   input: SubmitInput,
   paths: RuntimePaths,
   dependencies: SubmitDependencies,
-  phase: 'before-mutation' | 'before-commit' | 'before-artifact',
+  phase:
+    'before-mutation' | 'before-write' | 'before-commit' | 'before-artifact',
+  plannedEffect?: { paths: string[]; bytes: number; lines: number },
 ) {
   const database = openDb(paths.neondeckDatabase);
   let scope: v.InferOutput<typeof mutationFenceRowSchema>;
@@ -334,6 +359,7 @@ async function assertSubmissionMutationFence(
                   grounding.worktree_id, grounding.pr_head_sha,
                   grounding.worktree_head_sha, grounding.base_sha,
                   grounding.checkout_branch, grounding.checkout_detached,
+                  grounding.diff_base_sha, grounding.diff_revision_key,
                   grounding.repo_binding_hash, grounding.workspace_binding_hash,
                   grounding.policy_hash
            FROM autopilot_owner_fix_submissions AS submissions
@@ -414,10 +440,12 @@ async function assertSubmissionMutationFence(
       'Repository or managed-worktree identity changed after dispatch.',
     );
   }
+  const postMutationArtifact =
+    phase === 'before-artifact' && input.disposition === 'fix';
   const actualSha = await (dependencies.currentSha ?? gitCurrentSha)(
     worktree.localPath,
   );
-  if (phase !== 'before-artifact' && actualSha !== scope.worktree_head_sha) {
+  if (!postMutationArtifact && actualSha !== scope.worktree_head_sha) {
     throw new Error('Worktree HEAD changed after dispatch.');
   }
   if (!dependencies.currentSha) {
@@ -430,14 +458,33 @@ async function assertSubmissionMutationFence(
       throw new Error('Worktree Git state is unavailable.');
     const gitState = git as Record<string, unknown>;
     if (
-      (phase !== 'before-artifact' &&
-        gitState.headSha !== scope.worktree_head_sha) ||
+      (!postMutationArtifact && gitState.headSha !== scope.worktree_head_sha) ||
       gitState.baseSha !== scope.base_sha ||
       gitState.branch !== scope.checkout_branch ||
       (gitState.branch === 'HEAD') !== Boolean(scope.checkout_detached)
     ) {
       throw new Error(
         'Worktree HEAD, base, or branch attachment changed after dispatch.',
+      );
+    }
+  }
+  if (phase === 'before-mutation') {
+    const diff = await readRepoDiff(
+      {
+        repoId: repo.id,
+        worktreeId: worktree.id,
+        base: scope.diff_base_sha,
+        includePatch: false,
+      },
+      paths,
+    );
+    const revisionKey =
+      diff.ok && diff.action === 'repo_diff' && diff.revision
+        ? reviewRevisionKey(diff.revision)
+        : null;
+    if (revisionKey !== scope.diff_revision_key) {
+      throw new Error(
+        'Worktree content changed after the grounded revision was accepted.',
       );
     }
   }
@@ -488,10 +535,14 @@ async function assertSubmissionMutationFence(
   if (stableJsonHash(effective) !== scope.policy_hash) {
     throw new Error('Effective owner policy changed after dispatch.');
   }
-  if (input.disposition === 'fix' && phase === 'before-mutation') {
+  if (
+    input.disposition === 'fix' &&
+    (phase === 'before-mutation' || phase === 'before-write')
+  ) {
     const guardrails = repoGuardrails(repo, appConfig);
     const effect =
-      dependencies.runReviewFix || dependencies.runCiFix
+      plannedEffect ??
+      (dependencies.runReviewFix || dependencies.runCiFix
         ? {
             paths: submissionPaths(input),
             bytes: Buffer.byteLength(
@@ -513,7 +564,7 @@ async function assertSubmissionMutationFence(
             input,
             { worktreeId: worktree.id },
             paths,
-          );
+          ));
     if (
       effect.paths.length > guardrails.maxFilesChanged ||
       effect.lines > guardrails.maxLinesChanged ||
@@ -524,6 +575,25 @@ async function assertSubmissionMutationFence(
         'Current path, byte, or line authority rejects the planned effect.',
       );
     }
+  }
+
+  if (phase === 'before-commit' || postMutationArtifact) {
+    const diff = await readRepoDiff(
+      {
+        repoId: repo.id,
+        worktreeId: worktree.id,
+        base: scope.diff_base_sha,
+        includePatch: false,
+      },
+      paths,
+    );
+    const revisionKey =
+      diff.ok && diff.action === 'repo_diff' && diff.revision
+        ? reviewRevisionKey(diff.revision)
+        : null;
+    if (!revisionKey)
+      throw new Error('Owner mutation revision is unavailable.');
+    bindSubmissionRevision(input.attemptId, phase, revisionKey, paths);
   }
 
   const confirm = openDb(paths.neondeckDatabase, { readOnly: true });
@@ -716,6 +786,39 @@ async function validateSubmissionContext(
   return { owner, admission, attempt, policy: currentPolicy };
 }
 
+function bindSubmissionRevision(
+  attemptId: string,
+  phase: 'before-commit' | 'before-artifact',
+  revisionKey: string,
+  paths: RuntimePaths,
+) {
+  const column =
+    phase === 'before-commit'
+      ? 'mutation_revision_key'
+      : 'artifact_revision_key';
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    withImmediateTransaction(database, () => {
+      const update = database
+        .prepare(
+          `UPDATE autopilot_owner_fix_submissions
+           SET ${column} = COALESCE(${column}, ?)
+           WHERE attempt_id = ? AND status = 'applying'
+             AND cancellation_requested_at IS NULL
+             AND (${column} IS NULL OR ${column} = ?);`,
+        )
+        .run(revisionKey, attemptId, revisionKey);
+      if (update.changes !== 1) {
+        throw new Error(
+          'Owner mutation revision changed after it was lease-bound.',
+        );
+      }
+    });
+  } finally {
+    database.close();
+  }
+}
+
 async function measureSubmissionEffect(
   input: SubmitInput,
   scope: { worktreeId: string },
@@ -752,8 +855,9 @@ async function measureSubmissionEffect(
       } else if (operation.type === 'move') {
         const source = await load(operation.from);
         const destination = await load(operation.to);
+        const movedContent = source.after;
         source.after = '';
-        destination.after = source.before;
+        destination.after = movedContent;
         for (const hunk of operation.hunks) {
           destination.after = applyMeasuredHunk(destination.after, hunk.lines);
         }

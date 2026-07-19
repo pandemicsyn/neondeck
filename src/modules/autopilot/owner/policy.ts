@@ -3,6 +3,7 @@ import type { AutopilotMode } from '../../autopilot-policy';
 import { repoAutopilotPolicyForWatch } from '../../autopilot-policy';
 import { parseRepoRegistry, type AppConfig } from '../../../runtime-home';
 import type { AutopilotAdmission } from '../coordination/schemas';
+import * as v from 'valibot';
 
 const modeAuthority: Record<AutopilotMode, number> = {
   'notify-only': 0,
@@ -10,6 +11,22 @@ const modeAuthority: Record<AutopilotMode, number> = {
   'autofix-with-approval': 2,
   'autofix-push-when-safe': 3,
 };
+const autopilotModeSchema = v.picklist([
+  'notify-only',
+  'prepare-only',
+  'autofix-with-approval',
+  'autofix-push-when-safe',
+]);
+const configHistoryAuthorityRowSchema = v.looseObject({
+  id: v.number(),
+  action: v.string(),
+  target: v.nullable(v.string()),
+  after_json: v.nullable(v.string()),
+});
+const durableAuthorityRowSchema = v.object({
+  authority_mode: autopilotModeSchema,
+  policy_config_history_id: v.number(),
+});
 
 /** Never grant more authority than either admission-time or current policy. */
 export function effectiveAutopilotOwnerMode(
@@ -67,12 +84,8 @@ export function constrainAutopilotAdmissionAuthority(
       `SELECT id, action, target, after_json FROM config_history
        WHERE id > ? ORDER BY id ASC;`,
     )
-    .all(input.admission.policyConfigHistoryId) as Array<{
-    id: number;
-    action: string;
-    target: string | null;
-    after_json: string | null;
-  }>;
+    .all(input.admission.policyConfigHistoryId)
+    .map((row) => v.parse(configHistoryAuthorityRowSchema, row));
   let authorityMode = input.admission.authorityMode;
   for (const row of rows) {
     if (
@@ -105,23 +118,19 @@ export function constrainAutopilotAdmissionAuthority(
       input.admission.authorityMode,
       input.admission.policyConfigHistoryId,
     );
-  const durable = database
-    .prepare(
-      `SELECT COALESCE(authority_mode, mode) AS authority_mode,
+  const durable = v.parse(
+    durableAuthorityRowSchema,
+    database
+      .prepare(
+        `SELECT COALESCE(authority_mode, mode) AS authority_mode,
               policy_config_history_id
        FROM autopilot_admissions WHERE id = ?;`,
-    )
-    .get(input.admission.id) as
-    | { authority_mode?: unknown; policy_config_history_id?: unknown }
-    | undefined;
+      )
+      .get(input.admission.id),
+  );
   return {
-    authorityMode:
-      typeof durable?.authority_mode === 'string'
-        ? (durable.authority_mode as AutopilotMode)
-        : authorityMode,
-    policyConfigHistoryId: Number(
-      durable?.policy_config_history_id ?? historyId,
-    ),
+    authorityMode: durable.authority_mode,
+    policyConfigHistoryId: durable.policy_config_history_id,
   };
 }
 

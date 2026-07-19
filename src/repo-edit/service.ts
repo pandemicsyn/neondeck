@@ -30,6 +30,8 @@ import {
 } from './schemas';
 import {
   atomicWrite,
+  cleanupStagedWrites,
+  commitStagedWrite,
   execRg,
   failureResult,
   fallbackSearch,
@@ -39,8 +41,10 @@ import {
   parseInput,
   readTextFile,
   recordReadStamp,
+  restoreContent,
   resolveSessionId,
   safeGlobs,
+  stageWrite,
   staleResult,
 } from './support';
 
@@ -446,6 +450,13 @@ export async function replaceRepoFilesAtomically(
     reason?: string;
   },
   paths = runtimePaths(),
+  dependencies: {
+    beforeExternalMutation?: (effect: {
+      paths: string[];
+      bytes: number;
+      lines: number;
+    }) => void | Promise<void>;
+  } = {},
 ) {
   try {
     await ensureRuntimeHome(paths);
@@ -542,19 +553,65 @@ export async function replaceRepoFilesAtomically(
       );
       const written: typeof planned = [];
       if (!input.dryRun) {
+        const effect = {
+          paths: planned.map((file) => file.target.relativePath),
+          bytes: planned.reduce(
+            (total, file) =>
+              total +
+              Buffer.byteLength(file.before.content) +
+              Buffer.byteLength(file.after),
+            0,
+          ),
+          lines: planned.reduce((total, file) => {
+            const count = countDiffLines(file.diff);
+            return total + count.additions + count.deletions;
+          }, 0),
+        };
+        await dependencies.beforeExternalMutation?.(effect);
+        const finalWrites: Array<Awaited<ReturnType<typeof stageWrite>>> = [];
+        const rollbackWrites: Array<Awaited<ReturnType<typeof stageWrite>>> =
+          [];
         try {
           for (const file of planned) {
-            await atomicWrite(file.target.fullPath, file.after);
+            finalWrites.push(
+              await stageWrite(file.target.fullPath, file.after),
+            );
+            rollbackWrites.push(
+              await stageWrite(
+                file.target.fullPath,
+                restoreContent(file.before),
+              ),
+            );
+          }
+          for (let index = 0; index < planned.length; index += 1) {
+            const file = planned[index]!;
             written.push(file);
+            await dependencies.beforeExternalMutation?.(effect);
+            await commitStagedWrite(finalWrites[index]!);
           }
         } catch (error) {
-          await Promise.allSettled(
-            written.map((file) =>
-              atomicWrite(file.target.fullPath, file.before.content),
-            ),
-          );
+          const rollbackErrors: string[] = [];
+          for (let index = written.length - 1; index >= 0; index -= 1) {
+            try {
+              await commitStagedWrite(rollbackWrites[index]!);
+            } catch (rollbackError) {
+              rollbackErrors.push(
+                rollbackError instanceof Error
+                  ? rollbackError.message
+                  : String(rollbackError),
+              );
+            }
+          }
+          await cleanupStagedWrites([...finalWrites, ...rollbackWrites]);
+          if (rollbackErrors.length > 0) {
+            throw new Error(
+              `Atomic replacement failed and rollback was incomplete: ${rollbackErrors.join('; ')}`,
+              { cause: error },
+            );
+          }
           throw error;
         }
+        await cleanupStagedWrites([...finalWrites, ...rollbackWrites]);
       }
       const diffSummary = summarizeDiff(
         planned.map((file) => countDiffLines(file.diff)),

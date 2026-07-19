@@ -44,6 +44,13 @@ type SimulatedFileState = {
 export async function patchRepoFiles(
   rawInput: unknown,
   paths = runtimePaths(),
+  dependencies: {
+    beforeExternalMutation?: (effect: {
+      paths: string[];
+      bytes: number;
+      lines: number;
+    }) => void | Promise<void>;
+  } = {},
 ) {
   const parsed = parseInput(repoPatchInputSchema, rawInput, 'repo_file_patch');
   if (!parsed.ok) return parsed.result;
@@ -74,7 +81,29 @@ export async function patchRepoFiles(
       const sessionId = await resolveSessionId(input.sessionId, paths);
       const planned = await planPatch({ ...input, sessionId }, resolved, paths);
       if (!input.dryRun) {
-        await applyPlannedPatch(planned.files);
+        const effect = {
+          paths: [
+            ...new Set(
+              planned.files.flatMap((file) =>
+                file.destination
+                  ? [file.target.relativePath, file.destination.relativePath]
+                  : [file.target.relativePath],
+              ),
+            ),
+          ],
+          bytes: planned.files.reduce(
+            (total, file) =>
+              total +
+              Buffer.byteLength(file.before) +
+              Buffer.byteLength(file.after),
+            0,
+          ),
+          lines: planned.diffSummary.additions + planned.diffSummary.deletions,
+        };
+        await dependencies.beforeExternalMutation?.(effect);
+        await applyPlannedPatch(planned.files, async () => {
+          await dependencies.beforeExternalMutation?.(effect);
+        });
       }
       const event = await recordRepoEditEvent(
         {
@@ -410,6 +439,7 @@ async function planPatch(
 
 async function applyPlannedPatch(
   files: Awaited<ReturnType<typeof planPatch>>['files'],
+  beforeMutation: () => Promise<void>,
 ) {
   const finalWrites: Array<{ temp: string; target: string }> = [];
   const rollbackWrites: Array<{ temp: string; target: string }> = [];
@@ -440,6 +470,7 @@ async function applyPlannedPatch(
     for (const file of files) {
       if (file.operation === 'add') {
         const final = finalWrites[finalIndex++]!;
+        await beforeMutation();
         await rename(final.temp, final.target);
         rollbackSteps.push(() => rm(final.target, { force: true }));
         await access(final.target, constants.R_OK);
@@ -449,6 +480,7 @@ async function applyPlannedPatch(
       if (file.operation === 'update') {
         const final = finalWrites[finalIndex++]!;
         const rollback = rollbackWrites[rollbackIndex++]!;
+        await beforeMutation();
         await rename(final.temp, final.target);
         rollbackSteps.push(() => commitStagedWrite(rollback));
         await access(final.target, constants.R_OK);
@@ -457,6 +489,7 @@ async function applyPlannedPatch(
 
       if (file.operation === 'delete') {
         const rollback = rollbackWrites[rollbackIndex++]!;
+        await beforeMutation();
         await rm(file.target.fullPath, { force: true });
         rollbackSteps.push(() => commitStagedWrite(rollback));
         continue;
@@ -464,9 +497,11 @@ async function applyPlannedPatch(
 
       const final = finalWrites[finalIndex++]!;
       const rollback = rollbackWrites[rollbackIndex++]!;
+      await beforeMutation();
       await rename(final.temp, final.target);
       rollbackSteps.push(() => rm(final.target, { force: true }));
       await access(final.target, constants.R_OK);
+      await beforeMutation();
       await rm(file.target.fullPath, { force: true });
       rollbackSteps.push(() => commitStagedWrite(rollback));
     }

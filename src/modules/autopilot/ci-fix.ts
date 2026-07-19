@@ -432,7 +432,7 @@ export async function fixPrCiFailure(
           { requires: ['refreshWorktreeHead'] },
         );
       }
-      await dependencies.ownerMutationFence?.('before-mutation');
+      let mutationScopeBound = false;
       const patched = await patchRepoFiles(
         {
           repoId: repo.id,
@@ -443,6 +443,15 @@ export async function fixPrCiFailure(
             input.patchReason ?? 'Apply scoped fix for failing PR CI checks.',
         },
         paths,
+        {
+          beforeExternalMutation: async (effect) => {
+            await dependencies.ownerMutationFence?.(
+              mutationScopeBound ? 'before-write' : 'before-mutation',
+              effect,
+            );
+            mutationScopeBound = true;
+          },
+        },
       );
       if (!booleanField(patched, 'ok')) {
         return lowerLevelFailure(

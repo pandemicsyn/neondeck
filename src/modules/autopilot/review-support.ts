@@ -355,6 +355,11 @@ export async function applyReviewEdits(
     patch?: string;
     dryRun?: boolean;
     fileReads: Array<{ path: string; stamp: object | null }>;
+    beforeExternalMutation?: (effect: {
+      paths: string[];
+      bytes: number;
+      lines: number;
+    }) => void | Promise<void>;
   },
   paths: RuntimePaths,
 ) {
@@ -391,6 +396,7 @@ export async function applyReviewEdits(
           reason: 'fix_pr_review_feedback',
         },
         paths,
+        { beforeExternalMutation: input.beforeExternalMutation },
       ),
     );
   }
@@ -426,6 +432,7 @@ export async function applyReviewEdits(
           reason: 'fix_pr_review_feedback',
         },
         paths,
+        { beforeExternalMutation: input.beforeExternalMutation },
       ),
     );
   }

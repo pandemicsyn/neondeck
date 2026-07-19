@@ -326,6 +326,46 @@ describe('repo edit actions', () => {
     );
   });
 
+  it('fences the exact cumulative effect before applying an update and move', async () => {
+    const { paths, repo } = await fixture();
+    let effect: { paths: string[]; bytes: number; lines: number } | undefined;
+    const result = await patchRepoFiles(
+      {
+        repoId: 'sample',
+        patch: [
+          '*** Begin Patch',
+          '*** Update File: src/app.ts',
+          '@@',
+          '-export const value = 1;',
+          '+export const value = 123456789;',
+          '*** Move File: src/app.ts -> src/moved.ts',
+          '*** End Patch',
+        ].join('\n'),
+      },
+      paths,
+      {
+        beforeExternalMutation: (planned) => {
+          effect = planned;
+          throw new Error('planned effect rejected');
+        },
+      },
+    );
+
+    expect(result).toMatchObject({ ok: false });
+    expect(effect).toMatchObject({
+      paths: ['src/app.ts', 'src/moved.ts'],
+    });
+    expect(effect?.bytes).toBeGreaterThan(
+      Buffer.byteLength('export const value = 1;\n'),
+    );
+    await expect(readFile(join(repo, 'src/app.ts'), 'utf8')).resolves.toBe(
+      'export const value = 1;\n',
+    );
+    await expect(
+      readFile(join(repo, 'src/moved.ts'), 'utf8'),
+    ).rejects.toThrow();
+  });
+
   it('requires V4A update hunks to match complete lines', async () => {
     const { paths, repo } = await fixture();
     const result = await patchRepoFiles(

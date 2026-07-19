@@ -95,6 +95,12 @@ export type AutopilotActionResult = {
   errors?: string[];
 };
 
+export type AutopilotMutationEffect = {
+  paths: string[];
+  bytes: number;
+  lines: number;
+};
+
 export type AutopilotDependencies = {
   fetchPullRequestDetail?: typeof fetchPullRequestDetail;
   fetchCheckSummary?: typeof fetchCheckSummary;
@@ -113,7 +119,9 @@ export type AutopilotDependencies = {
   fetchExactPullRequestHead?: typeof fetchExactPullRequestHead;
   token?: string;
   ownerMutationFence?: (
-    phase: 'before-mutation' | 'before-commit' | 'before-artifact',
+    phase:
+      'before-mutation' | 'before-write' | 'before-commit' | 'before-artifact',
+    effect?: AutopilotMutationEffect,
   ) => void | Promise<void>;
 };
 

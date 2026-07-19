@@ -16,6 +16,8 @@ CREATE TABLE `autopilot_owner_fix_submissions` (
 	`finished_at` text,
 	`cancellation_requested_at` text,
 	`mutation_started_at` text,
+	`mutation_revision_key` text,
+	`artifact_revision_key` text,
 	CONSTRAINT "autopilot_owner_fix_disposition_check" CHECK("disposition" IN ('fix', 'no-op')),
 	CONSTRAINT "autopilot_owner_fix_status_check" CHECK("status" IN ('applying', 'prepared', 'no-op', 'rejected', 'failed', 'cancelled')),
 	CONSTRAINT "autopilot_owner_fix_mutation_epoch_check" CHECK("mutation_epoch" >= 0)

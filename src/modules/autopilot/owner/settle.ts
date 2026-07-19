@@ -16,6 +16,7 @@ import * as v from 'valibot';
 import { recordHandledPrEventAndMaybeQueueLearning } from '../../learning';
 
 const terminalPrefix = 'autopilot.owner.terminal:';
+const learningPrefix = 'autopilot.owner.learning:';
 
 export type AutopilotOwnerTerminalObservation = {
   agent: 'pr-autopilot-owner';
@@ -33,6 +34,14 @@ const terminalObservationSchema = v.strictObject({
   failed: v.boolean(),
   error: v.optional(v.nullable(v.pipe(v.string(), v.maxLength(2_048)))),
   source: v.picklist(['agent_end', 'operation', 'submission_settled']),
+});
+const ownerLearningMarkerSchema = v.strictObject({
+  sourceId: v.pipe(v.string(), v.minLength(1), v.maxLength(200)),
+  repoId: v.pipe(v.string(), v.minLength(1), v.maxLength(512)),
+  prNumber: v.pipe(v.number(), v.integer(), v.minValue(1)),
+  summary: v.pipe(v.string(), v.maxLength(500)),
+  disposition: v.picklist(['prepared', 'no-op']),
+  preparedDiffId: v.nullable(v.pipe(v.string(), v.maxLength(512))),
 });
 
 export function recordAutopilotOwnerTerminalObservation(
@@ -211,6 +220,40 @@ export async function settleAutopilotOwnerObservation(
         },
         now: nowIso,
       });
+      const learning =
+        settlement.reason === 'owner-fix-prepared' ||
+        settlement.reason === 'owner-explicit-no-op'
+          ? {
+              sourceId:
+                `owner:${attempt.id}:${settlement.reason === 'owner-fix-prepared' ? 'prepared' : 'no-op'}`.slice(
+                  0,
+                  200,
+                ),
+              repoId: admission.repoId,
+              prNumber: admission.prNumber,
+              summary:
+                settlement.reason === 'owner-fix-prepared'
+                  ? 'Continuing PR owner prepared a deterministic fix.'
+                  : 'Continuing PR owner completed with an explicit no-op.',
+              disposition:
+                settlement.reason === 'owner-fix-prepared'
+                  ? ('prepared' as const)
+                  : ('no-op' as const),
+              preparedDiffId: settlement.preparedDiffId,
+            }
+          : null;
+      if (learning) {
+        database
+          .prepare(
+            `INSERT INTO app_metadata (key, value, updated_at)
+             VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING;`,
+          )
+          .run(
+            `${learningPrefix}${attempt.id}`,
+            JSON.stringify(learning),
+            nowIso,
+          );
+      }
       database
         .prepare('DELETE FROM app_metadata WHERE key = ?;')
         .run(`${terminalPrefix}${observation.dispatchId}`);
@@ -231,47 +274,68 @@ export async function settleAutopilotOwnerObservation(
         ),
         attemptId: attempt.id,
         queuedAdmissionId,
-        learning:
-          settlement.reason === 'owner-fix-prepared' ||
-          settlement.reason === 'owner-explicit-no-op'
-            ? {
-                sourceId: `owner:${attempt.id}:${settlement.reason === 'owner-fix-prepared' ? 'prepared' : 'no-op'}`,
-                repoId: admission.repoId,
-                prNumber: admission.prNumber,
-                summary:
-                  settlement.reason === 'owner-fix-prepared'
-                    ? 'Continuing PR owner prepared a deterministic fix.'
-                    : 'Continuing PR owner completed with an explicit no-op.',
-                disposition:
-                  settlement.reason === 'owner-fix-prepared'
-                    ? ('prepared' as const)
-                    : ('no-op' as const),
-                preparedDiffId: settlement.preparedDiffId,
-              }
-            : null,
+        learning,
       };
     });
   } finally {
     database.close();
   }
-  if (result && 'learning' in result && result.learning) {
-    await recordHandledPrEventAndMaybeQueueLearning(
-      {
-        eventType: 'owner_pr_handled',
-        source: 'autopilot-owner',
-        sourceId: result.learning.sourceId.slice(0, 200),
-        repoId: result.learning.repoId,
-        prNumber: result.learning.prNumber,
-        summary: result.learning.summary,
-        data: {
-          disposition: result.learning.disposition,
-          preparedDiffId: result.learning.preparedDiffId,
-        },
-      },
-      paths,
-    );
-  }
+  await flushPendingAutopilotOwnerLearning(paths);
   return result;
+}
+
+export async function flushPendingAutopilotOwnerLearning(
+  paths: RuntimePaths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  let rows: Array<{ key: string; value: string }>;
+  try {
+    rows = database
+      .prepare(
+        `SELECT key, value FROM app_metadata
+         WHERE key LIKE ? ORDER BY updated_at ASC;`,
+      )
+      .all(`${learningPrefix}%`) as Array<{ key: string; value: string }>;
+  } finally {
+    database.close();
+  }
+  let flushed = 0;
+  for (const row of rows) {
+    const parsed = v.safeParse(ownerLearningMarkerSchema, parseJson(row.value));
+    if (!parsed.success) continue;
+    try {
+      const learning = parsed.output;
+      const recorded = await recordHandledPrEventAndMaybeQueueLearning(
+        {
+          eventType: 'owner_pr_handled',
+          source: 'autopilot-owner',
+          sourceId: learning.sourceId,
+          repoId: learning.repoId,
+          prNumber: learning.prNumber,
+          summary: learning.summary,
+          data: {
+            disposition: learning.disposition,
+            preparedDiffId: learning.preparedDiffId,
+          },
+        },
+        paths,
+      );
+      if (!recorded.recorded && !recorded.duplicate) continue;
+      const writer = openDb(paths.neondeckDatabase);
+      try {
+        writer
+          .prepare('DELETE FROM app_metadata WHERE key = ? AND value = ?;')
+          .run(row.key, row.value);
+        flushed += 1;
+      } finally {
+        writer.close();
+      }
+    } catch {
+      // Retain the durable marker for the next reconciliation pass.
+    }
+  }
+  return { flushed, pending: rows.length - flushed };
 }
 
 function ownerSettlement(
