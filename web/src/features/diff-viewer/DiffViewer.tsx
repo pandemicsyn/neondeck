@@ -2,11 +2,12 @@ import {
   CodeView,
   PatchDiff,
   WorkerPoolContextProvider,
+  type CodeViewHandle,
   type CodeViewItem,
   type SelectedLineRange,
 } from '@pierre/diffs/react';
 import { getSingularPatch } from '@pierre/diffs';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Badge, MiniEmpty } from '../../components/ui';
 import { cn } from '../../lib/cn';
 import {
@@ -45,6 +46,13 @@ type UnifiedPatchViewProps = {
   virtualizeLargePatches?: boolean;
   codeViewTextScale?: number;
   source?: ReviewSourceSnapshot;
+  navigationScroll?: DiffNavigationScrollRequest | null;
+};
+
+export type DiffNavigationScrollRequest = {
+  token: number;
+  line: number | null;
+  selection: SelectedLineRange | null;
 };
 
 const codeViewChangedLineThreshold = 2_000;
@@ -75,7 +83,11 @@ export function UnifiedPatchView({
   virtualizeLargePatches = true,
   codeViewTextScale,
   source,
+  navigationScroll,
 }: UnifiedPatchViewProps) {
+  const codeViewRef =
+    useRef<CodeViewHandle<DiffReviewAnnotationMetadata>>(null);
+  const shellRef = useRef<HTMLElement>(null);
   const themeType = useResolvedDiffTheme();
   const useCodeView =
     virtualizeLargePatches &&
@@ -104,6 +116,40 @@ export function UnifiedPatchView({
       : null,
   );
 
+  useEffect(() => {
+    if (!navigationScroll || !patchHasContent(patch)) return;
+    const frame = window.requestAnimationFrame(() => {
+      if (useCodeView) {
+        const target = navigationScroll.selection
+          ? {
+              type: 'range' as const,
+              id: codeViewItemId,
+              range: navigationScroll.selection,
+              align: 'center' as const,
+              behavior: 'smooth-auto' as const,
+            }
+          : navigationScroll.line
+            ? {
+                type: 'line' as const,
+                id: codeViewItemId,
+                lineNumber: navigationScroll.line,
+                align: 'center' as const,
+                behavior: 'smooth-auto' as const,
+              }
+            : {
+                type: 'item' as const,
+                id: codeViewItemId,
+                align: 'start' as const,
+                behavior: 'smooth-auto' as const,
+              };
+        codeViewRef.current?.scrollTo(target);
+        return;
+      }
+      scrollPatchDiffToNavigationTarget(shellRef.current, navigationScroll);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [navigationScroll, patch, useCodeView]);
+
   if (!patchHasContent(patch)) {
     return <MiniEmpty label="No patch content available." />;
   }
@@ -113,6 +159,7 @@ export function UnifiedPatchView({
   return (
     <section
       className={cn('diff-viewer-shell', className)}
+      ref={shellRef}
       {...(source ? reviewSourceDataAttributes(source) : {})}
       {...(surfaceId ? { 'data-review-surface-id': surfaceId } : {})}
     >
@@ -130,6 +177,7 @@ export function UnifiedPatchView({
         <CodeView<DiffReviewAnnotationMetadata>
           className="diff-patch diff-code-view"
           items={codeViewItems}
+          ref={codeViewRef}
           onSelectedLinesChange={
             onSelectedLinesChange
               ? (selection) => onSelectedLinesChange(selection?.range ?? null)
@@ -171,6 +219,42 @@ export function UnifiedPatchView({
         />
       )}
     </section>
+  );
+}
+
+function scrollPatchDiffToNavigationTarget(
+  shell: HTMLElement | null,
+  navigation: DiffNavigationScrollRequest,
+) {
+  if (!shell) return;
+  const container = shell.querySelector('diffs-container');
+  const renderedDiff = container?.shadowRoot;
+  const selectedAnnotation = shell.querySelector<HTMLElement>(
+    '[data-navigation-selected]',
+  );
+  const selectedLine = renderedDiff?.querySelector<HTMLElement>(
+    '[data-selected-line]',
+  );
+  const requestedLine = navigation.line
+    ? renderedDiff?.querySelector<HTMLElement>(
+        `[data-line="${navigation.line}"]`,
+      )
+    : null;
+  const target =
+    selectedAnnotation ??
+    selectedLine ??
+    requestedLine ??
+    (container instanceof HTMLElement ? container : null);
+  target?.scrollIntoView({
+    behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+    block: navigation.selection || navigation.line ? 'center' : 'start',
+    inline: 'nearest',
+  });
+}
+
+function prefersReducedMotion() {
+  return (
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
   );
 }
 

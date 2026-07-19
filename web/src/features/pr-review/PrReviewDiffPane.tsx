@@ -2,6 +2,7 @@ import type { SelectedLineRange } from '@pierre/diffs/react';
 import type { ReactNode } from 'react';
 import { MiniEmpty } from '../../components/ui';
 import { MultiFileView } from '../diff-viewer/MultiFileView';
+import type { DiffNavigationScrollRequest } from '../diff-viewer/DiffViewer';
 import type {
   DiffFilePatch,
   DiffReviewAnnotation,
@@ -24,6 +25,7 @@ export function PrReviewDiffPane({
   findingsSidebar,
   isLoadingPatch,
   isStandalone,
+  navigationScroll,
   fileFilter,
   onFileFilterChange,
   onReviewSurfaceFindingsChange,
@@ -48,6 +50,7 @@ export function PrReviewDiffPane({
   findingsSidebar: PrReviewFindingsSidebarProps;
   isLoadingPatch: boolean;
   isStandalone: boolean;
+  navigationScroll: DiffNavigationScrollRequest | null;
   fileFilter: string | null;
   onFileFilterChange: (query: string | null, paths: string[] | null) => void;
   onReviewSurfaceFindingsChange: (
@@ -96,6 +99,7 @@ export function PrReviewDiffPane({
         }
         inspectorLabel="PR review inspector"
         isLoadingPatch={isLoadingPatch}
+        navigationScroll={navigationScroll}
         onActivePathChange={onActivePathChange}
         onFileFilterChange={onFileFilterChange}
         onReviewSurfaceFindingsChange={onReviewSurfaceFindingsChange}

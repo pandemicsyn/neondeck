@@ -240,18 +240,18 @@ export class ReviewSurfaceRegistry {
         addedFindingCount += 1;
         continue;
       }
-      if (sameFindingScope(current, finding)) {
-        if (sameFindingDraft(current, finding)) continue;
-        return this.findingError(surfaceId, 'apply', 'finding-id-conflict', {
-          revisionKey: currentRevisionKey,
-        });
+      if (
+        sameFindingScope(current, finding) &&
+        sameFindingDraft(current, finding)
+      ) {
+        continue;
       }
-      if (current.lifecycle.state === 'active') {
-        return this.findingError(surfaceId, 'apply', 'finding-id-conflict', {
-          revisionKey: currentRevisionKey,
-        });
-      }
-      findingsToApply.push(finding);
+      // Finding ids are the retained-record identity for a surface. Reusing
+      // one across revisions would replace its stale/dismissed/promoted
+      // lifecycle and provenance in the map below.
+      return this.findingError(surfaceId, 'apply', 'finding-id-conflict', {
+        revisionKey: currentRevisionKey,
+      });
     }
 
     if (

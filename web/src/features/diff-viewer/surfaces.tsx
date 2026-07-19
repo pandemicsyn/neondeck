@@ -411,8 +411,25 @@ function KiloTaskDiffReviewSurface({ task }: { task: KiloTaskRecord }) {
     appliedRepoData?.diffSummary ??
     summaryFromKilo(kiloDiffQuery.data?.diff ?? task.diff);
   const source = useMemo(
-    () => kiloResultReviewSource(task, files, appliedRepoData?.revision),
-    [appliedRepoData?.revision, files, task],
+    () =>
+      kiloResultReviewSource(task, files, appliedRepoData?.revision, {
+        loadingPaths:
+          activePath && repoPatchQuery.isLoading
+            ? new Set([activePath])
+            : undefined,
+        unavailablePaths:
+          activePath && repoPatchQuery.error
+            ? new Set([activePath])
+            : undefined,
+      }),
+    [
+      activePath,
+      appliedRepoData?.revision,
+      files,
+      repoPatchQuery.error,
+      repoPatchQuery.isLoading,
+      task,
+    ],
   );
   useEffect(() => {
     if (activePath && files.some((file) => file.path === activePath)) return;

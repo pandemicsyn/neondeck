@@ -21,6 +21,13 @@ describe('PR review navigation controls', () => {
     document.body.append(container);
     root = createRoot(container);
     onMove = vi.fn<(direction: 'previous' | 'next') => void>();
+    HTMLDialogElement.prototype.showModal = function showModal() {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function close() {
+      this.removeAttribute('open');
+      this.dispatchEvent(new Event('close'));
+    };
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
       callback(0);
       return 1;
@@ -132,21 +139,23 @@ describe('PR review navigation controls', () => {
 
     act(() => dispatchKey(outside, '?', { shiftKey: true }));
     const dialog = container.querySelector<HTMLDialogElement>('dialog')!;
-    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    expect(dialog.open).toBe(true);
     expect(dialog.textContent).toContain('Shortcuts are off while a field');
     expect(document.activeElement?.textContent).toBe('Close');
 
-    act(() => dispatchKey(dialog, 'Escape'));
-    expect(container.querySelector('dialog')).toBeNull();
+    act(() => dialog.dispatchEvent(new Event('cancel', { cancelable: true })));
+    expect(dialog.open).toBe(false);
     expect(document.activeElement).toBe(outside);
 
     act(() => dispatchKey(outside, '?', { shiftKey: true }));
     act(() => button('Close').click());
-    expect(container.querySelector('dialog')).toBeNull();
+    expect(dialog.open).toBe(false);
     expect(document.activeElement).toBe(outside);
 
     act(() => help.click());
-    expect(container.querySelector('dialog')).not.toBeNull();
+    expect(dialog.open).toBe(true);
+    act(() => dispatchKey(outside, ']'));
+    expect(onMove).not.toHaveBeenCalled();
     outside.remove();
   });
 

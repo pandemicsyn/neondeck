@@ -284,7 +284,7 @@ describe('review surface registry', () => {
     expect(registry.readFindings('surface-a').count).toBe(1);
   });
 
-  it('replaces a non-active stable id after the surface source and revision change', async () => {
+  it('rejects a reused stable id and retains stale history after a source and revision change', async () => {
     const { app, registry } = harness();
     const events: ReviewSurfaceChangeEvent[] = [];
     registry.subscribe((event) => events.push(event));
@@ -309,40 +309,29 @@ describe('review surface registry', () => {
       nextRevisionKey,
     );
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(409);
     await expect(response.json()).resolves.toMatchObject({
-      ok: true,
-      changed: true,
-      findingIds: ['finding-a'],
-      count: 1,
+      ok: false,
+      changed: false,
+      error: { code: 'finding-id-conflict' },
     });
     expect(registry.readFindings('surface-a')).toMatchObject({
       count: 1,
       findings: [
         {
           id: 'finding-a',
-          sourceId: nextSourceId,
-          revisionKey: nextRevisionKey,
-          title: 'Current revision finding',
-          lifecycle: { state: 'active' },
+          sourceId: 'github-pr:example/repo#42',
+          revisionKey: 'git-commit::head-sha',
+          lifecycle: { state: 'stale' },
         },
       ],
     });
-    expect(events.at(-1)).toMatchObject({
-      action: 'findings-changed',
-      surfaceId: 'surface-a',
-      findings: {
-        action: 'applied',
-        findingIds: ['finding-a'],
-        count: 1,
-      },
-    });
     expect(
       events.filter((event) => event.findings?.action === 'applied'),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
   });
 
-  it('replaces a dismissed stable id after the surface revision changes', () => {
+  it('rejects a reused dismissed id and retains its lifecycle history', () => {
     const registry = new ReviewSurfaceRegistry();
     registries.push(registry);
     registry.upsert(snapshot('surface-a'));
@@ -368,15 +357,21 @@ describe('review surface registry', () => {
           }),
         ],
       }),
-    ).toMatchObject({ ok: true, changed: true, count: 1 });
+    ).toMatchObject({
+      ok: false,
+      changed: false,
+      error: { code: 'finding-id-conflict' },
+    });
     expect(registry.readFindings('surface-a')).toMatchObject({
       count: 1,
       findings: [
         {
           id: 'finding-a',
-          revisionKey: 'git-commit::next-head-sha',
-          title: 'Valid finding on the current revision',
-          lifecycle: { state: 'active' },
+          revisionKey: 'git-commit::head-sha',
+          lifecycle: {
+            state: 'dismissed',
+            reason: 'Dismissed on the prior revision.',
+          },
         },
       ],
     });
@@ -693,7 +688,7 @@ describe('review surface registry', () => {
     registry.applyFindings('surface-a', {
       revisionKey: 'git-commit::next-head-sha',
       findings: [
-        finding('finding-a', {
+        finding('finding-current', {
           revisionKey: 'git-commit::next-head-sha',
           title: 'Current revision content',
         }),
@@ -723,10 +718,15 @@ describe('review surface registry', () => {
       error: { code: 'source-mismatch' },
     });
     expect(registry.readFindings('surface-a')).toMatchObject({
-      count: 1,
+      count: 2,
       findings: [
         {
           id: 'finding-a',
+          revisionKey: 'git-commit::head-sha',
+          lifecycle: { state: 'stale' },
+        },
+        {
+          id: 'finding-current',
           revisionKey: 'git-commit::next-head-sha',
           title: 'Current revision content',
           lifecycle: { state: 'active' },
@@ -812,7 +812,11 @@ describe('review surface registry', () => {
           }),
         ],
       }),
-    ).toMatchObject({ ok: true, changed: true, count: 1 });
+    ).toMatchObject({
+      ok: false,
+      changed: false,
+      error: { code: 'finding-id-conflict' },
+    });
     expect(registry.readFindings('surface-a').count).toBe(
       neonReviewFindingLimits.maxFindingsPerSurface,
     );

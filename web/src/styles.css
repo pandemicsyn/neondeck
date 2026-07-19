@@ -1157,7 +1157,7 @@ button:disabled {
   position: fixed;
   z-index: var(--z-modal-backdrop);
   inset: 0;
-  display: flex;
+  display: none;
   width: 100%;
   max-width: none;
   height: 100%;
@@ -1167,6 +1167,10 @@ button:disabled {
   background: color-mix(in srgb, var(--canvas) 78%, transparent);
   margin: 0;
   padding: 16px;
+}
+
+.pr-review-shortcuts-dialog[open] {
+  display: flex;
 }
 
 .pr-review-shortcuts-panel {
