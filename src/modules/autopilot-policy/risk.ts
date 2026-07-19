@@ -1,6 +1,6 @@
+import { openDb } from '../../lib/sqlite.ts';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { type RepoDiffFile } from '../../repo-edit/git';
 import { type RuntimePaths } from '../../runtime-home';
@@ -148,7 +148,7 @@ export function emptyPolicyFailure(
 }
 
 export function readActiveAutopilotRuns(paths: RuntimePaths): ActiveRunRow[] {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     return database
       .prepare(

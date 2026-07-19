@@ -519,6 +519,10 @@ export const githubIssueCommentApiResponseSchema = v.object({
   updated_at: v.string(),
 });
 
+export const githubIssueCommentsApiResponseSchema = v.array(
+  githubIssueCommentApiResponseSchema,
+);
+
 export const githubGraphqlBaseResponseSchema = v.looseObject({
   errors: v.optional(v.array(v.object({ message: v.string() }))),
 });

@@ -1,5 +1,5 @@
+import { openDb } from '../../lib/sqlite.ts';
 import { randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import type { RepoConfig, RuntimePaths } from '../../runtime-home';
 import { WorktreeError, errorMessage } from './errors';
@@ -69,7 +69,7 @@ export function recordWorktreeCreating(
 }
 
 export function upsertWorktree(record: WorktreeRecord, paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -141,7 +141,7 @@ export function updateWorktreeStatus(
   status: WorktreeLifecycleStatus,
   paths: RuntimePaths,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -166,7 +166,7 @@ export async function recordWorktreeEvent(
   data: unknown,
   paths: RuntimePaths,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -200,7 +200,7 @@ export function recordCleanupAttempt(
   error: string | undefined,
   paths: RuntimePaths,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -233,7 +233,7 @@ export function findReusableWorktree(
   headRef: string,
   paths: RuntimePaths,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare(
@@ -256,7 +256,7 @@ export function findReusableWorktree(
 }
 
 export function requireWorktree(id: string, paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare('SELECT * FROM worktrees WHERE id = ?;')
@@ -274,7 +274,7 @@ export function requireWorktree(id: string, paths: RuntimePaths) {
 }
 
 export function listWorktreeRecords(paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     return database
       .prepare(
@@ -292,7 +292,7 @@ export function listWorktreeRecords(paths: RuntimePaths) {
 }
 
 export function listCleanupFailures(paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     return database
       .prepare(

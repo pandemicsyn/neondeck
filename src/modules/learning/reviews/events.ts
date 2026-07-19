@@ -1,6 +1,6 @@
+import { openDb } from '../../../lib/sqlite.ts';
 import type { JsonValue } from '@flue/runtime';
 import { randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
 import { ensureRuntimeHome, runtimePaths } from '../../../runtime-home';
 import type {
   ConversationReviewInput,
@@ -40,7 +40,7 @@ export async function recordConversationTurnAndMaybeQueueLearning(
     return { queued: [], turnCount: 0, message: 'Learning is disabled.' };
   }
 
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
   let turnCount = 0;
   let queueConversation = false;
@@ -178,7 +178,7 @@ export async function recordHandledPrEventAndMaybeQueueLearning(
         ? `${input.repoId}#${input.prNumber}`
         : null;
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   let recorded = false;
   try {
     const existing = database

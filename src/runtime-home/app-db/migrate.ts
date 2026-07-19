@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
+import { defaultSqliteBusyTimeoutMs } from '../../lib/sqlite';
 
 const drizzleMigrationsTable = '__drizzle_migrations';
 const defaultMigrationsFolder = fileURLToPath(
@@ -95,7 +96,10 @@ export function readAppDbMigrationStatus(
 
   let database: DatabaseSync | undefined;
   try {
-    database = new DatabaseSync(databasePath, { readOnly: true });
+    database = new DatabaseSync(databasePath, {
+      readOnly: true,
+      timeout: defaultSqliteBusyTimeoutMs,
+    });
     if (!tableExists(database, drizzleMigrationsTable)) {
       return {
         ok: false,
@@ -187,7 +191,9 @@ export function applyAppDbMigrations(
   options: { migrationsFolder?: string; now?: Date } = {},
 ): ApplyAppDbMigrationsResult {
   const migrations = readAppDbMigrationFiles(options.migrationsFolder);
-  const database = new DatabaseSync(databasePath);
+  const database = new DatabaseSync(databasePath, {
+    timeout: defaultSqliteBusyTimeoutMs,
+  });
   let transactionOpen = false;
   let backupPath: string | null = null;
   let activeMigration: string | undefined;

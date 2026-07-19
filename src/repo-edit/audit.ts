@@ -1,5 +1,5 @@
+import { openDb } from '../lib/sqlite.ts';
 import { createHash, randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
 import {
   ensureRuntimeHome,
   type RuntimePaths,
@@ -55,7 +55,7 @@ export async function recordRepoEditEvent(
     createdAt: now,
     updatedAt: now,
   };
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     database
@@ -122,7 +122,7 @@ export async function recordRepoEditEvent(
 
 export async function listRepoEditEvents(paths: RuntimePaths = runtimePaths()) {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
 
   try {
     return {

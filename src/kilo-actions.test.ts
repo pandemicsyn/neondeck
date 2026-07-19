@@ -352,11 +352,14 @@ describe('Kilo handoff runner', () => {
     const taskId = taskIdFrom(started);
     await waitForRootSession(taskId, paths);
 
+    const abortStartedAt = Date.now();
     const aborted = await abortKiloTask({ taskId }, paths);
+    const abortDurationMs = Date.now() - abortStartedAt;
     await waitForTrackedKiloTask(taskId);
     const status = await waitForTask(taskId, 'cancelled', paths);
 
     expect(aborted).toMatchObject({ ok: true, changed: true });
+    expect(abortDurationMs).toBeGreaterThanOrEqual(100);
     expect(status).toMatchObject({
       ok: true,
       task: {
@@ -516,6 +519,9 @@ console.log(JSON.stringify({
   sessionID: 'ses_hanging',
   part: { type: 'text', text: 'Still working.', time: { end: Date.now() } }
 }));
+process.on('SIGTERM', () => {
+  setTimeout(() => process.exit(0), 150);
+});
 setInterval(() => {}, 1000);
 `;
 }

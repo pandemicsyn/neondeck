@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { openDb } from '../../lib/sqlite';
+import { openDb, rollbackQuietly } from '../../lib/sqlite';
 import {
   ensureRuntimeHome,
   parseAppConfig,
@@ -185,7 +185,7 @@ export async function reconcileAutopilotAdmissions(
     database.exec('COMMIT;');
     return retries;
   } catch (error) {
-    database.exec('ROLLBACK;');
+    rollbackQuietly(database);
     throw error;
   } finally {
     database.close();
@@ -365,7 +365,7 @@ export async function claimAutopilotTriageAdmission(
       reason: capped ? ('limited' as const) : null,
     };
   } catch (error) {
-    database.exec('ROLLBACK;');
+    rollbackQuietly(database);
     throw error;
   } finally {
     database.close();
@@ -462,7 +462,7 @@ export async function recordAutopilotAdmissionRun(
       terminal: settles && workflowMatches ? terminal : undefined,
     };
   } catch (error) {
-    database.exec('ROLLBACK;');
+    rollbackQuietly(database);
     throw error;
   } finally {
     database.close();
@@ -580,7 +580,7 @@ export async function beginAutopilotAdmissionPrepare(
       updatedAt: now,
     };
   } catch (error) {
-    database.exec('ROLLBACK;');
+    rollbackQuietly(database);
     throw error;
   } finally {
     database.close();

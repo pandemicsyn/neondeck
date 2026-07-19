@@ -1374,13 +1374,16 @@ describe('learning review orchestration', () => {
       ok: false,
       requires: ['explicit-user-decision'],
     });
-    await expect(
+    const concurrentApplyResults = await Promise.all([
       applySkillPatchCandidate({ id: candidateId }, paths),
-    ).resolves.toMatchObject({
-      ok: true,
-      changed: true,
-      action: 'skill_patch_apply',
-    });
+      applySkillPatchCandidate({ id: candidateId }, paths),
+    ]);
+    expect(concurrentApplyResults.filter((result) => result.ok)).toHaveLength(
+      1,
+    );
+    expect(concurrentApplyResults.filter((result) => !result.ok)).toHaveLength(
+      1,
+    );
     await expect(
       restoreSkillPatchCandidate(
         {
@@ -1395,7 +1398,7 @@ describe('learning review orchestration', () => {
       ok: false,
       requires: ['explicit-user-decision'],
     });
-    await expect(
+    const concurrentRestoreResults = await Promise.all([
       restoreSkillPatchCandidate(
         {
           id: candidateId,
@@ -1404,11 +1407,21 @@ describe('learning review orchestration', () => {
         },
         paths,
       ),
-    ).resolves.toMatchObject({
-      ok: true,
-      changed: true,
-      action: 'skill_patch_restore',
-    });
+      restoreSkillPatchCandidate(
+        {
+          id: candidateId,
+          confirm: true,
+          reason: 'Concurrent restore test patch.',
+        },
+        paths,
+      ),
+    ]);
+    expect(concurrentRestoreResults.filter((result) => result.ok)).toHaveLength(
+      1,
+    );
+    expect(
+      concurrentRestoreResults.filter((result) => !result.ok),
+    ).toHaveLength(1);
     await expect(
       restoreSkillPatchCandidate(
         {

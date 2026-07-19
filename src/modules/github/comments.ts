@@ -3,6 +3,7 @@ import * as v from 'valibot';
 import { encodePathSegment, githubFetch, githubGraphqlFetch } from './client';
 import {
   githubIssueCommentApiResponseSchema,
+  githubIssueCommentsApiResponseSchema,
   githubReviewThreadNodeGraphqlResponseSchema,
   githubReviewThreadCommentsGraphqlResponseSchema,
   githubReviewThreadsGraphqlResponseSchema,
@@ -55,6 +56,44 @@ export async function postPullRequestComment(options: {
     await response.json(),
   );
 
+  return {
+    id: data.id,
+    nodeId: data.node_id ?? null,
+    url: data.html_url,
+    authorLogin: data.user?.login ?? null,
+    body: data.body,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+  };
+}
+
+export async function listPullRequestComments(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+}): Promise<GitHubPullRequestComment[]> {
+  const comments: GitHubPullRequestComment[] = [];
+  for (let page = 1; page <= 100; page += 1) {
+    const response = await githubFetch(
+      options.token,
+      `https://api.github.com/repos/${encodePathSegment(options.owner)}/${encodePathSegment(options.repo)}/issues/${options.number}/comments?per_page=100&page=${page}`,
+    );
+    const data = v.parse(
+      githubIssueCommentsApiResponseSchema,
+      await response.json(),
+    );
+    comments.push(...data.map(pullRequestCommentFromApi));
+    if (data.length < 100) return comments;
+  }
+  throw new Error(
+    'Pull request has more than 10,000 comments; refusing an incomplete idempotency check.',
+  );
+}
+
+function pullRequestCommentFromApi(
+  data: v.InferOutput<typeof githubIssueCommentApiResponseSchema>,
+): GitHubPullRequestComment {
   return {
     id: data.id,
     nodeId: data.node_id ?? null,

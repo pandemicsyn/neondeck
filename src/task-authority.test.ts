@@ -256,10 +256,11 @@ describe('task authority', () => {
         contextDependencies,
         pushGit: async (cwd, input) => {
           expect(input).toMatchObject({ branch: 'feature' });
+          expect(input.sha).toMatch(/^[0-9a-f]{40}$/);
           expect(input.force).toBeUndefined();
           const { stdout } = await execFileAsync(
             'git',
-            ['push', remote, 'HEAD:refs/heads/feature'],
+            ['push', remote, `${input.sha}:refs/heads/feature`],
             { cwd },
           );
           return {
@@ -362,7 +363,7 @@ describe('task authority', () => {
       contextDependencies,
       pushGit: async (
         _cwd: string,
-        input: { remote: string; branch: string; force?: boolean },
+        input: { remote: string; branch: string; sha: string; force?: boolean },
       ) => {
         pushCount += 1;
         return { ...input, force: false, stdout: '' };

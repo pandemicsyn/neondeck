@@ -1,6 +1,6 @@
+import { openDb } from '../../../lib/sqlite.ts';
 import type { JsonValue } from '@flue/runtime';
 import { readFile } from 'node:fs/promises';
-import { DatabaseSync } from 'node:sqlite';
 import { listRuntimeSkills } from '../../runtime';
 import type { RuntimePaths } from '../../../runtime-home';
 import {
@@ -32,7 +32,7 @@ export function listHandledPrEventsForReview(
   input: { repoId?: string; limit: number; sinceLastReview: boolean },
   paths: RuntimePaths,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const filters = ["type = 'pr_handled'"];
     const params: Array<string | number> = [];
@@ -175,7 +175,7 @@ export function listRelatedWorkflowSummaries(
   paths: RuntimePaths,
 ) {
   const needles = eventNeedles(events);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     return database
       .prepare(
@@ -200,7 +200,7 @@ export function listRelatedPreparedDiffSummaries(
   paths: RuntimePaths,
 ) {
   const keys = prEventKeys(events);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     return database
       .prepare(
@@ -256,7 +256,7 @@ export function listRelatedNotificationSummaries(
   paths: RuntimePaths,
 ) {
   const needles = eventNeedles(events);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     return database
       .prepare(
@@ -298,7 +298,7 @@ export function listRelatedKiloResultSummaries(
   paths: RuntimePaths,
 ) {
   const needles = eventNeedles(events);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     return database
       .prepare(

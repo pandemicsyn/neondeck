@@ -1,6 +1,6 @@
 /* eslint-disable no-unused-vars */
 import { defineTool } from '@flue/runtime';
-import { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { listExecutionApprovals } from '../execution';
 import { flueRunInspectionUrl } from '../runtime';

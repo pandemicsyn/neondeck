@@ -1,5 +1,5 @@
+import { openDb } from '../../lib/sqlite.ts';
 import { randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
 import {
   auth,
   type OAuthClientProvider,
@@ -291,7 +291,7 @@ export async function logoutMcpOAuthServer(
     };
   }
 
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   let changed = false;
   try {
     const result = database
@@ -357,7 +357,7 @@ export async function hasMcpOAuthTokens(
 export async function readMcpOAuthLogin(id: string, paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
   expireOldOAuthLogins(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare('SELECT * FROM mcp_oauth_logins WHERE id = ?;')
@@ -381,7 +381,7 @@ export async function readMcpOAuthLoginByState(
 ) {
   await ensureRuntimeHome(paths);
   expireOldOAuthLogins(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare('SELECT * FROM mcp_oauth_logins WHERE state = ?;')
@@ -637,7 +637,7 @@ async function createOAuthLogin(
   paths: RuntimePaths,
 ) {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date();
   const createdAt = now.toISOString();
   const expiresAt = new Date(now.getTime() + loginTtlMs).toISOString();
@@ -690,7 +690,7 @@ async function updateOAuthLoginAuthorizationUrl(
   paths: RuntimePaths,
 ) {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
   try {
     database
@@ -720,7 +720,7 @@ function writeLoginStateByState(
   state: string,
   patch: LoginStatePatch,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const fields: string[] = [];
     const values: Array<string | null> = [];
@@ -754,7 +754,7 @@ function writeLoginStateByState(
 }
 
 function readLoginStateByState(paths: RuntimePaths, state: string) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare(
@@ -777,7 +777,7 @@ function readLoginStateByState(paths: RuntimePaths, state: string) {
 
 async function markOAuthLoginAuthorized(id: string, paths: RuntimePaths) {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
   try {
     const result = database
@@ -805,7 +805,7 @@ async function failOAuthLogin(
   paths: RuntimePaths,
 ) {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
   try {
     const result = database
@@ -829,7 +829,7 @@ async function failOAuthLogin(
 }
 
 function expireOldOAuthLogins(paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
   try {
     database
@@ -850,7 +850,7 @@ function expireOldOAuthLogins(paths: RuntimePaths) {
 }
 
 function readTokenState(paths: RuntimePaths, serverId: string): TokenState {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare('SELECT * FROM mcp_oauth_tokens WHERE server_id = ?;')
@@ -884,7 +884,7 @@ function writeTokenState(
     patch.serverIdentity !== undefined &&
     patch.serverIdentity !== current.serverIdentity;
   const next = { ...(identityChanged ? emptyTokenState() : current), ...patch };
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -938,7 +938,7 @@ function writeTokenState(
 }
 
 function clearTokenState(paths: RuntimePaths, serverId: string) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare('DELETE FROM mcp_oauth_tokens WHERE server_id = ?;')

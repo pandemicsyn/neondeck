@@ -1,5 +1,5 @@
+import { openDb } from '../../lib/sqlite.ts';
 import { type JsonValue } from '@flue/runtime';
-import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import {
   addNotification,
@@ -132,7 +132,7 @@ export async function listKiloNotificationFacts(
   await ensureRuntimeHome(paths);
   const ids = [...new Set(taskIds)].filter(Boolean);
   if (ids.length === 0) return new Map<string, KiloNotificationFact[]>();
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   const facts = new Map<string, KiloNotificationFact[]>(
     ids.map((id) => [id, []]),
   );

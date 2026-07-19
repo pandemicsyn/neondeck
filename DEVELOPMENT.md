@@ -81,6 +81,11 @@ The runtime home contains `.env`, `config.json`, `mcp.json`, `repos.json`,
 `data/neondeck.db` and `data/flue.db` databases. Neondeck app database
 migrations are shipped with the package and auto-apply before app code touches
 `data/neondeck.db`; pre-migration backups are kept under `data/backups/`.
+Production app-state connections must be opened through `src/lib/sqlite.ts` so
+they share the configured busy timeout and foreign-key enforcement. The Flue
+adapter keeps its separate database and receives the same busy timeout through
+the startup hook in `src/db.ts`. Raw `DatabaseSync` construction is reserved for
+the shared gateway and the migration boundary.
 
 Initialize or validate the runtime home explicitly without starting the server:
 

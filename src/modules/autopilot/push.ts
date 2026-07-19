@@ -507,6 +507,7 @@ export async function pushPrAutofix(
       {
         remote,
         branch,
+        sha: currentSha,
         force: false,
       },
     );

@@ -1,19 +1,28 @@
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, type DatabaseSyncOptions } from 'node:sqlite';
 import * as v from 'valibot';
 import { asJsonValue } from './action-result';
 
-export type OpenDbOptions = {
-  readOnly?: boolean;
-};
+export type OpenDbOptions = DatabaseSyncOptions;
 
 export const defaultSqliteBusyTimeoutMs = 5000;
 
 export function openDb(path: string, options: OpenDbOptions = {}) {
-  return configureDb(new DatabaseSync(path, options));
+  const busyTimeoutMs = options.timeout ?? defaultSqliteBusyTimeoutMs;
+  return configureDb(
+    new DatabaseSync(path, {
+      ...options,
+      timeout: busyTimeoutMs,
+    }),
+    busyTimeoutMs,
+  );
 }
 
-export function configureDb(database: DatabaseSync) {
-  database.exec(`PRAGMA busy_timeout = ${defaultSqliteBusyTimeoutMs};`);
+export function configureDb(
+  database: DatabaseSync,
+  busyTimeoutMs = defaultSqliteBusyTimeoutMs,
+) {
+  database.exec(`PRAGMA busy_timeout = ${busyTimeoutMs};`);
+  database.exec('PRAGMA foreign_keys = ON;');
   return database;
 }
 
@@ -28,6 +37,42 @@ export function rollbackQuietly(database: DatabaseSync) {
   } catch {
     // Preserve the original transaction failure when BEGIN did not succeed.
   }
+}
+
+export function withTransaction<T>(
+  database: DatabaseSync,
+  operation: () => T,
+  mode: 'deferred' | 'immediate' = 'deferred',
+) {
+  let transactionOpen = false;
+  try {
+    database.exec(mode === 'immediate' ? 'BEGIN IMMEDIATE;' : 'BEGIN;');
+    transactionOpen = true;
+    const result = operation();
+    if (
+      result !== null &&
+      typeof result === 'object' &&
+      'then' in result &&
+      typeof result.then === 'function'
+    ) {
+      throw new Error(
+        'SQLite transaction callbacks must be synchronous; do not hold an app database transaction across await.',
+      );
+    }
+    database.exec('COMMIT;');
+    transactionOpen = false;
+    return result;
+  } catch (error) {
+    if (transactionOpen) rollbackQuietly(database);
+    throw error;
+  }
+}
+
+export function withImmediateTransaction<T>(
+  database: DatabaseSync,
+  operation: () => T,
+) {
+  return withTransaction(database, operation, 'immediate');
 }
 
 export function isSqliteBusy(error: unknown) {

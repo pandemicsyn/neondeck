@@ -1,3 +1,4 @@
+import { openDb } from '../lib/sqlite.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import {
@@ -12,7 +13,6 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { ensureRuntimeHome, type RuntimePaths } from '../runtime-home';
 import { readNeonSessionState } from '../modules/sessions';
@@ -162,7 +162,7 @@ async function latestReadStamp(
   paths: RuntimePaths,
 ): Promise<FileStamp | undefined> {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare(
@@ -212,7 +212,7 @@ export async function recordReadStamp(
   paths: RuntimePaths,
 ) {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(

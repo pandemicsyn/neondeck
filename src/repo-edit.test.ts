@@ -28,7 +28,7 @@ import {
   replaceRepoFile,
   writeRepoFile,
 } from './repo-edit';
-import { gitDiff, gitWorktreeRevision } from './repo-edit/git';
+import { gitDiff, gitPushHead, gitWorktreeRevision } from './repo-edit/git';
 import { recordRepoEditEvent } from './repo-edit/audit';
 import { subscribeReviewSourceRevisionEvents } from './modules/review-refresh';
 import { runtimePaths } from './runtime-home';
@@ -65,6 +65,43 @@ afterEach(async () => {
 });
 
 describe('repo edit actions', () => {
+  it('pushes the selected commit SHA even when HEAD has moved', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'neondeck-exact-push-'));
+    const repo = join(root, 'repo');
+    const remote = join(root, 'remote.git');
+    tempRoots.push(root);
+    await mkdir(repo, { recursive: true });
+    await execFileAsync('git', ['init', '--bare', remote]);
+    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repo });
+    await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: repo });
+    await execFileAsync('git', ['config', 'user.email', 'test@example.com'], {
+      cwd: repo,
+    });
+    await writeFile(join(repo, 'value.txt'), 'one\n');
+    await execFileAsync('git', ['add', 'value.txt'], { cwd: repo });
+    await execFileAsync('git', ['commit', '-m', 'one'], { cwd: repo });
+    const selectedSha = (
+      await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: repo })
+    ).stdout.trim();
+    await writeFile(join(repo, 'value.txt'), 'two\n');
+    await execFileAsync('git', ['commit', '-am', 'two'], { cwd: repo });
+
+    await gitPushHead(repo, {
+      remote,
+      branch: 'feature',
+      sha: selectedSha,
+    });
+
+    const remoteSha = (
+      await execFileAsync(
+        'git',
+        ['--git-dir', remote, 'rev-parse', 'refs/heads/feature'],
+        { cwd: repo },
+      )
+    ).stdout.trim();
+    expect(remoteSha).toBe(selectedSha);
+  });
+
   it('publishes a targeted worktree revision event after an applied edit', async () => {
     const { paths } = await fixture();
     const events: Array<{

@@ -104,6 +104,9 @@ export type AutopilotDependencies = {
   postPullRequestComment?: NonNullable<
     Parameters<typeof postGitHubPrComment>[2]
   >['postPullRequestComment'];
+  listPullRequestComments?: NonNullable<
+    Parameters<typeof postGitHubPrComment>[2]
+  >['listPullRequestComments'];
   pushGit?: typeof gitPushHead;
   token?: string;
 };

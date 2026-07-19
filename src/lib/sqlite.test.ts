@@ -5,13 +5,17 @@ import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import * as v from 'valibot';
 import {
+  defaultSqliteBusyTimeoutMs,
   isUniqueConstraintError,
+  openDb,
   parseRow,
   readJsonColumn,
   rollbackQuietly,
+  withImmediateTransaction,
   writeJsonColumn,
   writeNullableJsonColumn,
 } from './sqlite';
+import './node-sqlite-defaults';
 
 describe('sqlite helpers', () => {
   it('parses rows with context-rich failures', () => {
@@ -41,6 +45,44 @@ describe('sqlite helpers', () => {
     expect(isUniqueConstraintError(new Error('other failure'))).toBe(false);
   });
 
+  it('applies safe defaults to app and direct Node SQLite connections', () => {
+    const appDatabase = openDb(':memory:');
+    const directDatabase = new DatabaseSync(':memory:');
+    try {
+      expect(pragmaValue(appDatabase, 'busy_timeout')).toBe(
+        defaultSqliteBusyTimeoutMs,
+      );
+      expect(pragmaValue(appDatabase, 'foreign_keys')).toBe(1);
+      expect(pragmaValue(directDatabase, 'busy_timeout')).toBe(
+        defaultSqliteBusyTimeoutMs,
+      );
+    } finally {
+      appDatabase.close();
+      directDatabase.close();
+    }
+  });
+
+  it('rolls back failed immediate transactions and rejects async callbacks', () => {
+    const database = openDb(':memory:');
+    try {
+      database.exec('CREATE TABLE demo (id INTEGER PRIMARY KEY);');
+      expect(() =>
+        withImmediateTransaction(database, () => {
+          database.prepare('INSERT INTO demo (id) VALUES (1);').run();
+          throw new Error('stop');
+        }),
+      ).toThrow('stop');
+      expect(
+        database.prepare('SELECT COUNT(*) AS count FROM demo;').get(),
+      ).toEqual({ count: 0 });
+      expect(() =>
+        withImmediateTransaction(database, () => Promise.resolve()),
+      ).toThrow(/must be synchronous/);
+    } finally {
+      database.close();
+    }
+  });
+
   it('preserves a lock error when BEGIN fails before a transaction opens', async () => {
     const home = await mkdtemp(join(tmpdir(), 'neondeck-sqlite-'));
     const databasePath = join(home, 'neondeck.db');
@@ -67,3 +109,9 @@ describe('sqlite helpers', () => {
     }
   });
 });
+
+function pragmaValue(database: DatabaseSync, pragma: string) {
+  return Object.values(
+    database.prepare(`PRAGMA ${pragma};`).get() as Record<string, unknown>,
+  )[0];
+}

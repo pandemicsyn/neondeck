@@ -321,6 +321,7 @@ export async function pushInteractiveRepo(
           {
             remote: context.pushRemote,
             branch: context.pushBranch,
+            sha: commitSha,
           },
         );
         await recordWorktreePushSucceeded(

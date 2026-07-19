@@ -59,7 +59,7 @@ describe('execution policy', () => {
       ok: true,
       decision: 'allow',
       risk: 'read-only',
-      matchedPreapproval: { id: 'gh' },
+      matchedPreapproval: { id: 'gh-pr-checks' },
     });
 
     await expect(
@@ -71,7 +71,7 @@ describe('execution policy', () => {
       ok: true,
       decision: 'allow',
       risk: 'read-only',
-      matchedPreapproval: { id: 'gh' },
+      matchedPreapproval: { id: 'gh-run-view' },
     });
 
     await expect(
@@ -80,9 +80,9 @@ describe('execution policy', () => {
         paths,
       ),
     ).resolves.toMatchObject({
-      ok: true,
-      decision: 'allow',
-      matchedPreapproval: { id: 'gh' },
+      ok: false,
+      decision: 'deny',
+      requires: ['preapprovedCommands'],
     });
 
     await expect(
@@ -94,9 +94,38 @@ describe('execution policy', () => {
         paths,
       ),
     ).resolves.toMatchObject({
-      ok: true,
-      decision: 'allow',
-      matchedPreapproval: { id: 'gh' },
+      ok: false,
+      decision: 'deny',
+      requires: ['preapprovedCommands'],
+    });
+
+    await expect(
+      checkExecutionPolicy(
+        {
+          command: 'gh repo delete pandemicsyn/neondeck --yes',
+          context: 'unattended',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      decision: 'deny',
+      requires: ['preapprovedCommands'],
+    });
+
+    await expect(
+      checkExecutionPolicy(
+        {
+          command:
+            'gh api -X DELETE repos/pandemicsyn/neondeck/git/refs/heads/main',
+          context: 'unattended',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      decision: 'deny',
+      requires: ['preapprovedCommands'],
     });
 
     await expect(
