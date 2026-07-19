@@ -473,6 +473,14 @@ export async function fixPrCiFailure(
       if (!policy.ok || policy.blocked || policy.approvalRequired) {
         finalLockStatus = 'prepared-diff';
         await dependencies.ownerMutationFence?.('before-artifact');
+        assertWorktreeMutationAllowed(
+          {
+            repoId: repo.id,
+            worktreeId: worktree.id,
+            lockId: acquiredLockId,
+          },
+          paths,
+        );
         const preparedDiff = await ensurePreparedDiffForWorktree(
           worktree,
           paths,
@@ -588,6 +596,14 @@ export async function fixPrCiFailure(
       } catch (error) {
         finalLockStatus = 'prepared-diff';
         await dependencies.ownerMutationFence?.('before-artifact');
+        assertWorktreeMutationAllowed(
+          {
+            repoId: repo.id,
+            worktreeId: worktree.id,
+            lockId: acquiredLockId,
+          },
+          paths,
+        );
         const preparedDiff = await ensurePreparedDiffForWorktree(
           worktree,
           paths,
@@ -676,6 +692,14 @@ export async function fixPrCiFailure(
     if (changed) {
       finalLockStatus = 'prepared-diff';
       await dependencies.ownerMutationFence?.('before-artifact');
+      assertWorktreeMutationAllowed(
+        {
+          repoId: repo.id,
+          worktreeId: worktree.id,
+          lockId: acquiredLockId,
+        },
+        paths,
+      );
       preparedDiff = await ensurePreparedDiffForWorktree(worktree, paths, {
         title: `CI fix for ${repoFullName(repo)}#${worktree.prNumber ?? 'worktree'}`,
         createdBy: 'fix_pr_ci_failure',

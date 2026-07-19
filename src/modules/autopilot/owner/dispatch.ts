@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { dispatch, type DispatchReceipt } from '@flue/runtime';
+import * as v from 'valibot';
 import { openDb, withImmediateTransaction } from '../../../lib/sqlite';
 import { buildMemoryPromptSnapshotSync } from '../../memory';
 import {
@@ -35,6 +36,39 @@ export type AutopilotOwnerDispatcher = (request: {
   id: string;
   input: string;
 }) => Promise<DispatchReceipt>;
+
+const groundingSnapshotRowSchema = v.looseObject({
+  id: v.string(),
+  owner_id: v.string(),
+  admission_id: v.string(),
+  attempt_id: v.string(),
+  generation: v.pipe(v.number(), v.integer(), v.minValue(1)),
+  flue_instance_id: v.string(),
+  config_history_id: v.pipe(v.number(), v.integer(), v.minValue(0)),
+  memory_event_at: v.nullable(v.string()),
+  memory_event_id: v.nullable(v.string()),
+  memory_event_sequence: v.pipe(v.number(), v.integer(), v.minValue(0)),
+  memory_cas_event_sequence: v.pipe(v.number(), v.integer(), v.minValue(0)),
+  memory_ids_json: v.string(),
+  envelope_hash: v.pipe(v.string(), v.minLength(1)),
+  policy_hash: v.pipe(v.string(), v.minLength(1)),
+  submit_token_hash: v.pipe(v.string(), v.minLength(1)),
+  status: v.picklist(['reserved', 'accepted', 'blocked', 'orphaned']),
+});
+const configHighWaterRowSchema = v.object({
+  id: v.pipe(v.number(), v.integer(), v.minValue(0)),
+});
+const memoryHighWaterRowSchema = v.nullable(
+  v.object({
+    event_sequence: v.pipe(v.number(), v.integer(), v.minValue(1)),
+    created_at: v.string(),
+    id: v.string(),
+  }),
+);
+const groundingMemoryIdsSchema = v.pipe(
+  v.array(v.pipe(v.string(), v.minLength(1), v.maxLength(512))),
+  v.maxLength(256),
+);
 
 export async function dispatchReservedAutopilotOwnerTurn(
   input: {
@@ -424,30 +458,43 @@ function registerOwnerDispatch(
   try {
     return withImmediateTransaction(database, () => {
       const context = readContextInDatabase(database, input.attemptId);
-      const snapshot = database
+      const rawSnapshot = database
         .prepare(
           'SELECT * FROM autopilot_owner_grounding_snapshots WHERE id = ?;',
         )
-        .get(input.snapshotId) as Record<string, unknown> | undefined;
-      if (!context || !snapshot) return { status: 'missing' as const };
-      const currentConfigId = Number(
-        (
-          database
-            .prepare('SELECT COALESCE(MAX(id), 0) AS id FROM config_history;')
-            .get() as {
-            id: number;
-          }
-        ).id,
+        .get(input.snapshotId);
+      if (!context || !rawSnapshot) return { status: 'missing' as const };
+      const snapshotResult = v.safeParse(
+        groundingSnapshotRowSchema,
+        rawSnapshot,
       );
-      const currentMemory = database
-        .prepare(
-          `SELECT sequence AS event_sequence, created_at, id FROM memory_events
-           ORDER BY sequence DESC LIMIT 1;`,
-        )
-        .get() as
-        | { event_sequence?: unknown; created_at?: unknown; id?: unknown }
-        | undefined;
+      const snapshot = snapshotResult.success
+        ? snapshotResult.output
+        : undefined;
+      const configHighWater = v.safeParse(
+        configHighWaterRowSchema,
+        database
+          .prepare('SELECT COALESCE(MAX(id), 0) AS id FROM config_history;')
+          .get(),
+      );
+      const memoryHighWater = v.safeParse(
+        memoryHighWaterRowSchema,
+        database
+          .prepare(
+            `SELECT sequence AS event_sequence, created_at, id FROM memory_events
+             ORDER BY sequence DESC LIMIT 1;`,
+          )
+          .get() ?? null,
+      );
+      const selectedMemoryIds = v.safeParse(
+        groundingMemoryIdsSchema,
+        parsePersistedJson(snapshot?.memory_ids_json ?? ''),
+      );
       const current =
+        snapshot !== undefined &&
+        configHighWater.success &&
+        memoryHighWater.success &&
+        selectedMemoryIds.success &&
         context.attempt.status === 'running' &&
         context.attempt.dispatchId === null &&
         context.admission.version === input.expectedAdmissionVersion &&
@@ -456,9 +503,9 @@ function registerOwnerDispatch(
         context.owner.generation === input.generation &&
         context.owner.flueInstanceId === input.instanceId &&
         snapshot.status === 'reserved' &&
-        Number(snapshot.config_history_id) === currentConfigId &&
-        Number(currentMemory?.event_sequence ?? 0) ===
-          Number(snapshot.memory_cas_event_sequence ?? 0);
+        snapshot.config_history_id === configHighWater.output.id &&
+        (memoryHighWater.output?.event_sequence ?? 0) ===
+          snapshot.memory_cas_event_sequence;
       if (!current) {
         database
           .prepare(
@@ -523,6 +570,9 @@ function registerOwnerDispatch(
           ...context,
         };
       }
+      if (!snapshot || !selectedMemoryIds.success) {
+        throw new Error('Validated grounding state became unavailable.');
+      }
       const attemptUpdate = database
         .prepare(
           `UPDATE autopilot_stage_attempts
@@ -575,15 +625,11 @@ function registerOwnerDispatch(
            WHERE id = ? AND generation = ? AND flue_instance_id = ?;`,
         )
         .run(
-          Number(snapshot.config_history_id),
-          typeof snapshot.memory_event_at === 'string'
-            ? snapshot.memory_event_at
-            : null,
-          typeof snapshot.memory_event_id === 'string'
-            ? snapshot.memory_event_id
-            : null,
-          Number(snapshot.memory_event_sequence ?? 0),
-          String(snapshot.memory_ids_json),
+          snapshot.config_history_id,
+          snapshot.memory_event_at,
+          snapshot.memory_event_id,
+          snapshot.memory_event_sequence,
+          JSON.stringify(selectedMemoryIds.output),
           context.admission.eventSequence,
           nowIso,
           context.owner.id,
@@ -656,6 +702,14 @@ function readContextInDatabase(
       .get(attempt.ownerId),
   );
   return owner ? { attempt, admission, owner } : undefined;
+}
+
+function parsePersistedJson(value: string) {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 function defaultOwnerDispatcher(request: {

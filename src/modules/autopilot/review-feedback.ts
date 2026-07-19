@@ -601,6 +601,14 @@ export async function fixPrReviewFeedback(
     let preparedDiff = null;
     if (shouldPrepareDiff && !input.dryRun) {
       await dependencies.ownerMutationFence?.('before-artifact');
+      assertWorktreeMutationAllowed(
+        {
+          repoId: repo.id,
+          worktreeId: worktree.id,
+          lockId: acquiredLockId,
+        },
+        paths,
+      );
       const preparedWorktree = {
         ...worktree,
         baseRef: worktree.headSha ?? eventState.headSha,

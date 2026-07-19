@@ -100,10 +100,19 @@ export async function patchRepoFiles(
           ),
           lines: planned.diffSummary.additions + planned.diffSummary.deletions,
         };
-        await dependencies.beforeExternalMutation?.(effect);
-        await applyPlannedPatch(planned.files, async () => {
+        const assertMutationLease = async () => {
           await dependencies.beforeExternalMutation?.(effect);
-        });
+          assertWorktreeMutationAllowed(
+            {
+              repoId: input.repoId,
+              worktreeId: input.worktreeId,
+              lockId: input.worktreeLockId,
+            },
+            paths,
+          );
+        };
+        await assertMutationLease();
+        await applyPlannedPatch(planned.files, assertMutationLease);
       }
       const event = await recordRepoEditEvent(
         {

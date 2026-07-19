@@ -66,26 +66,33 @@ async function finishAutopilotAdmission(
 ) {
   await ensureRuntimeHome(paths);
   const nowIso = now.toISOString();
-  const revokedAttempts = revokeAdmissionMutations(
-    input.admissionId,
-    input.target === 'stopped',
-    input.reason,
-    paths,
-    nowIso,
-  );
-  await Promise.all(
-    revokedAttempts.map(waitForAutopilotSubmissionProcessLease),
-  );
   const database = openDb(paths.neondeckDatabase);
+  let result;
   try {
-    return withImmediateTransaction(database, () => {
+    result = withImmediateTransaction(database, () => {
       const admission = readAutopilotAdmission(
         database
           .prepare('SELECT * FROM autopilot_admissions WHERE id = ?;')
           .get(input.admissionId),
       );
       if (!admission) return { status: 'missing' as const };
+      if (
+        input.expectedVersion !== undefined &&
+        admission.version !== input.expectedVersion
+      ) {
+        return { status: 'cas-lost' as const, admission };
+      }
       if (admission.state === input.target) {
+        const revokedAttempts =
+          input.target === 'stopped'
+            ? revokeAdmissionMutationsInDatabase(
+                database,
+                admission,
+                true,
+                input.reason,
+                nowIso,
+              )
+            : [];
         if (input.target === 'stopped') {
           stopRemainingOwnerAdmissions(
             database,
@@ -96,13 +103,11 @@ async function finishAutopilotAdmission(
           );
           markOwnerDraining(database, admission.ownerId, nowIso);
         }
-        return { status: 'already-finished' as const, admission };
-      }
-      if (
-        input.expectedVersion !== undefined &&
-        admission.version !== input.expectedVersion
-      ) {
-        return { status: 'cas-lost' as const, admission };
+        return {
+          status: 'already-finished' as const,
+          admission,
+          revokedAttempts,
+        };
       }
       if (!isLegalAutopilotTransition(admission.state, input.target)) {
         return { status: 'illegal' as const, admission };
@@ -114,6 +119,13 @@ async function finishAutopilotAdmission(
               .get(admission.currentStageAttemptId),
           )
         : undefined;
+      const revokedAttempts = revokeAdmissionMutationsInDatabase(
+        database,
+        admission,
+        input.target === 'stopped',
+        input.reason,
+        nowIso,
+      );
       database
         .prepare(
           `UPDATE autopilot_owner_fix_submissions
@@ -188,32 +200,36 @@ async function finishAutopilotAdmission(
             .prepare('SELECT * FROM autopilot_admissions WHERE id = ?;')
             .get(admission.id),
         ),
+        revokedAttempts,
       };
     });
   } finally {
     database.close();
   }
+  const revokedAttempts =
+    'revokedAttempts' in result && Array.isArray(result.revokedAttempts)
+      ? result.revokedAttempts
+      : [];
+  if (revokedAttempts.length > 0) {
+    await Promise.all(
+      revokedAttempts.map((attemptId) =>
+        waitForAutopilotSubmissionProcessLease(String(attemptId)),
+      ),
+    );
+  }
+  return result;
 }
 
-function revokeAdmissionMutations(
-  admissionId: string,
+function revokeAdmissionMutationsInDatabase(
+  database: DatabaseSync,
+  admission: NonNullable<ReturnType<typeof readAutopilotAdmission>>,
   ownerScoped: boolean,
   reason: string,
-  paths: RuntimePaths,
   now: string,
 ) {
-  const database = openDb(paths.neondeckDatabase);
-  try {
-    return withImmediateTransaction(database, () => {
-      const admission = readAutopilotAdmission(
-        database
-          .prepare('SELECT * FROM autopilot_admissions WHERE id = ?;')
-          .get(admissionId),
-      );
-      if (!admission) return [];
-      const rows = database
-        .prepare(
-          `SELECT attempts.id AS attempt_id, admissions.id AS admission_id
+  const rows = database
+    .prepare(
+      `SELECT attempts.id AS attempt_id, admissions.id AS admission_id
            FROM autopilot_admissions AS admissions
            INNER JOIN autopilot_stage_attempts AS attempts
              ON attempts.id = admissions.current_stage_attempt_id
@@ -222,35 +238,31 @@ function revokeAdmissionMutations(
                ('archived', 'completed', 'stopped', 'superseded')
              AND attempts.stage = 'owner-turn'
              AND attempts.status IN ('reserved', 'running');`,
-        )
-        .all(ownerScoped ? admission.ownerId : admission.id) as Array<{
-        attempt_id: string;
-        admission_id: string;
-      }>;
-      for (const row of rows) {
-        database
-          .prepare(
-            `UPDATE autopilot_admissions
+    )
+    .all(ownerScoped ? admission.ownerId : admission.id) as Array<{
+    attempt_id: string;
+    admission_id: string;
+  }>;
+  for (const row of rows) {
+    database
+      .prepare(
+        `UPDATE autopilot_admissions
              SET mutation_epoch = mutation_epoch + 1,
                  stop_requested_at = COALESCE(stop_requested_at, ?),
                  updated_at = ?
              WHERE id = ?;`,
-          )
-          .run(now, now, row.admission_id);
-        database
-          .prepare(
-            `UPDATE autopilot_owner_fix_submissions
+      )
+      .run(now, now, row.admission_id);
+    database
+      .prepare(
+        `UPDATE autopilot_owner_fix_submissions
              SET cancellation_requested_at = COALESCE(cancellation_requested_at, ?),
                  error = COALESCE(error, ?)
              WHERE attempt_id = ? AND status = 'applying';`,
-          )
-          .run(now, reason, row.attempt_id);
-      }
-      return rows.map((row) => row.attempt_id);
-    });
-  } finally {
-    database.close();
+      )
+      .run(now, reason, row.attempt_id);
   }
+  return rows.map((row) => row.attempt_id);
 }
 
 function stopRemainingOwnerAdmissions(
@@ -280,6 +292,13 @@ function stopRemainingOwnerAdmissions(
             .get(admission.currentStageAttemptId),
         )
       : undefined;
+    database
+      .prepare(
+        `UPDATE autopilot_owner_fix_submissions
+         SET status = 'cancelled', error = ?, finished_at = ?
+         WHERE attempt_id = ? AND status = 'applying';`,
+      )
+      .run(reason, now, attempt?.id ?? '');
     if (
       attempt &&
       (attempt.status === 'reserved' || attempt.status === 'running')

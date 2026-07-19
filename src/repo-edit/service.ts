@@ -568,6 +568,14 @@ export async function replaceRepoFilesAtomically(
           }, 0),
         };
         await dependencies.beforeExternalMutation?.(effect);
+        assertWorktreeMutationAllowed(
+          {
+            repoId: input.repoId,
+            worktreeId: input.worktreeId,
+            lockId: input.worktreeLockId,
+          },
+          paths,
+        );
         const finalWrites: Array<Awaited<ReturnType<typeof stageWrite>>> = [];
         const rollbackWrites: Array<Awaited<ReturnType<typeof stageWrite>>> =
           [];
@@ -587,6 +595,14 @@ export async function replaceRepoFilesAtomically(
             const file = planned[index]!;
             written.push(file);
             await dependencies.beforeExternalMutation?.(effect);
+            assertWorktreeMutationAllowed(
+              {
+                repoId: input.repoId,
+                worktreeId: input.worktreeId,
+                lockId: input.worktreeLockId,
+              },
+              paths,
+            );
             await commitStagedWrite(finalWrites[index]!);
           }
         } catch (error) {

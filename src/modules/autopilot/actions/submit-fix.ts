@@ -108,6 +108,7 @@ const mutationFenceRowSchema = v.looseObject({
 type FixResult = Awaited<ReturnType<typeof fixPrReviewFeedback>>;
 type SubmitDependencies = {
   currentSha?: typeof gitCurrentSha;
+  readDiff?: typeof readRepoDiff;
   readLiveHead?: (input: {
     owner: string;
     repo: string;
@@ -468,8 +469,11 @@ async function assertSubmissionMutationFence(
       );
     }
   }
-  if (phase === 'before-mutation') {
-    const diff = await readRepoDiff(
+  if (
+    phase === 'before-mutation' ||
+    (phase === 'before-artifact' && input.disposition === 'no-op')
+  ) {
+    const diff = await (dependencies.readDiff ?? readRepoDiff)(
       {
         repoId: repo.id,
         worktreeId: worktree.id,
@@ -578,7 +582,7 @@ async function assertSubmissionMutationFence(
   }
 
   if (phase === 'before-commit' || postMutationArtifact) {
-    const diff = await readRepoDiff(
+    const diff = await (dependencies.readDiff ?? readRepoDiff)(
       {
         repoId: repo.id,
         worktreeId: worktree.id,

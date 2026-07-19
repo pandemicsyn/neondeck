@@ -400,7 +400,7 @@ describe('Package 4 continuing PR owner', () => {
           summary: 'Baseline established.',
         }),
         paths,
-        { currentSha: async () => 'abc123', readLiveHead: liveFixtureHead },
+        syntheticNoOpDependencies(first.envelope),
       );
       await recordAutopilotOwnerTerminalObservation(
         terminal(first.envelope, 'dispatch:one'),
@@ -432,7 +432,7 @@ describe('Package 4 continuing PR owner', () => {
           summary: 'Baseline established.',
         }),
         paths,
-        { currentSha: async () => 'abc123', readLiveHead: liveFixtureHead },
+        syntheticNoOpDependencies(first.envelope),
       );
       await recordAutopilotOwnerTerminalObservation(
         terminal(first.envelope, 'dispatch:one'),
@@ -497,7 +497,7 @@ describe('Package 4 continuing PR owner', () => {
           summary: 'Establish memory cursor.',
         }),
         paths,
-        { currentSha: async () => 'abc123', readLiveHead: liveFixtureHead },
+        syntheticNoOpDependencies(first.envelope),
       );
       await recordAutopilotOwnerTerminalObservation(
         terminal(first.envelope, 'dispatch:cursor-one'),
@@ -929,6 +929,81 @@ describe('Package 4 continuing PR owner', () => {
     });
   });
 
+  it('does not revoke an active mutation when stop loses its version CAS', async () => {
+    await withFixture(async (paths) => {
+      seedPreparedTurn(paths, 'admission:stale-stop', 'event:stale-stop', 1);
+      const turn = await dispatchTurn(
+        paths,
+        'admission:stale-stop',
+        'dispatch:stale-stop',
+      );
+      let enteredMutation!: () => void;
+      let releaseMutation!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        enteredMutation = resolve;
+      });
+      const release = new Promise<void>((resolve) => {
+        releaseMutation = resolve;
+      });
+      const submission = submitAutopilotFix(
+        submissionFromEnvelope(turn.envelope, {
+          disposition: 'fix',
+          fixerKind: 'review',
+          replacements: [
+            { path: 'src/fix.ts', oldString: 'old', newString: 'new' },
+          ],
+          summary: 'Keep the active mutation after a stale stop request.',
+        }),
+        paths,
+        {
+          currentSha: async () => 'abc123',
+          readLiveHead: liveFixtureHead,
+          runReviewFix: async (_input, _paths, dependencies) => {
+            await dependencies?.ownerMutationFence?.('before-write', {
+              paths: ['src/fix.ts'],
+              bytes: 6,
+              lines: 2,
+            });
+            enteredMutation();
+            await release;
+            await dependencies?.ownerMutationFence?.('before-write', {
+              paths: ['src/fix.ts'],
+              bytes: 6,
+              lines: 2,
+            });
+            return {
+              ok: true,
+              action: 'autopilot_fix_pr_review_feedback',
+              changed: true,
+              message: 'Prepared after stale stop.',
+              data: { preparedDiff: { id: 'prepared:stale-stop' } },
+            } as never;
+          },
+        },
+      );
+      await entered;
+      const current = readAdmission(paths, 'admission:stale-stop');
+      const stopped = await stopAutopilotAdmission(
+        {
+          admissionId: 'admission:stale-stop',
+          expectedVersion: Number(current.version) - 1,
+        },
+        paths,
+      );
+      expect(stopped.status).toBe('cas-lost');
+      expect(readAdmission(paths, 'admission:stale-stop')).toMatchObject({
+        state: 'owner-turn-running',
+        stop_requested_at: null,
+      });
+
+      releaseMutation();
+      expect(await submission).toMatchObject({ ok: true });
+      expect(
+        readRows(paths, 'autopilot_owner_fix_submissions')[0],
+      ).toMatchObject({ status: 'prepared' });
+    });
+  });
+
   it('records owner-handled learning evidence once without retaining proposal source', async () => {
     await withFixture(async (paths) => {
       await updateLearningConfig({ prRetrospectiveThreshold: 100 }, paths);
@@ -945,7 +1020,7 @@ describe('Package 4 continuing PR owner', () => {
           remainingBlockers: ['none'],
         }),
         paths,
-        { currentSha: async () => 'abc123', readLiveHead: liveFixtureHead },
+        syntheticNoOpDependencies(turn.envelope),
       );
       await recordAutopilotOwnerTerminalObservation(
         terminal(turn.envelope, 'dispatch:learning'),
@@ -987,7 +1062,7 @@ describe('Package 4 continuing PR owner', () => {
           summary: 'Persist learning evidence for restart recovery.',
         }),
         paths,
-        { currentSha: async () => 'abc123', readLiveHead: liveFixtureHead },
+        syntheticNoOpDependencies(turn.envelope),
       );
       await recordAutopilotOwnerTerminalObservation(
         terminal(turn.envelope, 'dispatch:learning-recovery'),
@@ -1045,6 +1120,45 @@ describe('Package 4 continuing PR owner', () => {
       } finally {
         database.close();
       }
+    });
+  });
+
+  it('orphans an accepted dispatch when persisted grounding JSON is malformed', async () => {
+    await withFixture(async (paths) => {
+      seedPreparedTurn(
+        paths,
+        'admission:malformed-grounding',
+        'event:malformed-grounding',
+        1,
+      );
+      const dispatchOwner = vi.fn(async () => {
+        const database = new DatabaseSync(paths.neondeckDatabase);
+        try {
+          database
+            .prepare(
+              `UPDATE autopilot_owner_grounding_snapshots
+               SET memory_ids_json = '{invalid'
+               WHERE admission_id = ? AND status = 'reserved';`,
+            )
+            .run('admission:malformed-grounding');
+        } finally {
+          database.close();
+        }
+        return {
+          dispatchId: 'dispatch:malformed-grounding',
+          acceptedAt: Date.now(),
+        };
+      });
+
+      const result = await coordinateAutopilotAdmission(
+        coordinationInput('admission:malformed-grounding', dispatchOwner),
+        paths,
+      );
+
+      expect(result.dispatched?.status).toBe('orphaned-receipt');
+      expect(
+        readAdmission(paths, 'admission:malformed-grounding'),
+      ).toMatchObject({ state: 'manual-review' });
     });
   });
 
@@ -1190,6 +1304,43 @@ describe('Package 4 continuing PR owner', () => {
     });
   });
 
+  it('rejects same-SHA worktree content drift before a durable no-op', async () => {
+    await withGitFixture(async ({ paths, headSha, worktreePath }) => {
+      seedPreparedTurn(
+        paths,
+        'admission:no-op-revision-drift',
+        'event:no-op-revision-drift',
+        1,
+        'autofix-with-approval',
+      );
+      const turn = await dispatchGitTurn(
+        paths,
+        'admission:no-op-revision-drift',
+        'dispatch:no-op-revision-drift',
+        headSha,
+      );
+      await writeFile(join(worktreePath, 'src/fix.ts'), 'drifted\n');
+
+      const result = await submitAutopilotFix(
+        submissionFromEnvelope(turn.envelope, {
+          disposition: 'no-op',
+          summary: 'Reject a stale no-op.',
+        }),
+        paths,
+        {
+          currentSha: async () => headSha,
+          readLiveHead: async () => headSha,
+        },
+      );
+
+      expect(result).toMatchObject({ ok: false });
+      expect(result.message).toContain('grounded revision');
+      expect(
+        readRows(paths, 'autopilot_owner_fix_submissions')[0],
+      ).toMatchObject({ status: 'rejected' });
+    });
+  });
+
   it('lets finalized prepared and no-op artifacts outrank a later failed terminal event', async () => {
     await withFixture(async (paths) => {
       seedPreparedTurn(
@@ -1276,7 +1427,7 @@ describe('Package 4 continuing PR owner', () => {
           summary: 'Persist an explicit no-op before the loop fails.',
         }),
         paths,
-        { currentSha: async () => 'abc123', readLiveHead: liveFixtureHead },
+        syntheticNoOpDependencies(noOpTurn.envelope),
       );
       const noOpSettlement = await recordAutopilotOwnerTerminalObservation(
         {
@@ -1527,7 +1678,7 @@ describe('Package 4 continuing PR owner', () => {
           summary: 'Release the serialized owner turn.',
         }),
         paths,
-        { currentSha: async () => 'abc123', readLiveHead: liveFixtureHead },
+        syntheticNoOpDependencies(active.envelope),
       );
       const settled = await recordAutopilotOwnerTerminalObservation(
         terminal(active.envelope, 'dispatch:active'),
@@ -1985,6 +2136,30 @@ function terminal(envelope: any, dispatchId: string) {
 
 async function liveFixtureHead() {
   return 'abc123';
+}
+
+function syntheticNoOpDependencies(envelope: any) {
+  const baseId = String(envelope.workspace.baseSha);
+  const revisionKey = String(envelope.workspace.groundedDiffRevisionKey);
+  const prefix = `worktree-diff:${baseId}:`;
+  if (!revisionKey.startsWith(prefix)) {
+    throw new Error('Synthetic owner fixture has an invalid revision key.');
+  }
+  return {
+    currentSha: async () => 'abc123',
+    readLiveHead: liveFixtureHead,
+    readDiff: async () =>
+      ({
+        ok: true,
+        action: 'repo_diff',
+        revision: {
+          state: 'resolved',
+          kind: 'worktree-diff',
+          id: revisionKey.slice(prefix.length),
+          baseId,
+        },
+      }) as never,
+  };
 }
 
 function insertConfig(paths: RuntimePaths, action: string, target: string) {
