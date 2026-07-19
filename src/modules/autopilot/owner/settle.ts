@@ -242,10 +242,6 @@ function ownerSettlement(
     | undefined,
   now: string,
 ) {
-  if (observation.failed) {
-    const message = observation.error ?? 'The PR-owner model turn failed.';
-    return failedSettlement('model-failure', message, now, true);
-  }
   if (
     submission?.status === 'prepared' &&
     typeof submission.prepared_diff_id === 'string'
@@ -283,6 +279,10 @@ function ownerSettlement(
         artifact: parseJson(submission.result_json),
       },
     };
+  }
+  if (observation.failed) {
+    const message = observation.error ?? 'The PR-owner model turn failed.';
+    return failedSettlement('model-failure', message, now, true);
   }
   const message =
     typeof submission?.error === 'string'

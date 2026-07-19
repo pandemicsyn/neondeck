@@ -1,8 +1,8 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "e857b759-2a54-43c4-addc-c315098aac01",
-  "prevIds": ["c865d24d-21ac-425c-928a-3b7480989468"],
+  "id": "6a8bf820-0ee9-47d0-bc55-57f9defac710",
+  "prevIds": ["4dd1fc92-811c-4a9c-afd7-8a0106e60bb7"],
   "ddl": [
     {
       "name": "app_metadata",

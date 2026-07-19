@@ -91,10 +91,7 @@ describe('app database migrator', () => {
       if (
         entry.includes('autopilot_product_closure') ||
         entry.includes('autopilot_package_1_durable_invariants') ||
-        entry.includes('autopilot_package_4_owner_runtime') ||
-        entry.includes('autopilot_owner_memory_cas') ||
-        entry.includes('autopilot_owner_memory_rowid_cursor') ||
-        entry.includes('autopilot_owner_head_scope_binding')
+        entry.includes('autopilot_package_4_continuing_owner')
       ) {
         continue;
       }

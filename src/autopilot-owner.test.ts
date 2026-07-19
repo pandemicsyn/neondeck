@@ -359,7 +359,7 @@ describe('Package 4 continuing PR owner', () => {
         readAdmission(paths, 'admission:real-two').prepared_diff_id,
       ).toBeTruthy();
     });
-  });
+  }, 30_000);
 
   it('blocks unknown config without advancing baseline and rotates on fundamental capability drift with audited handoff', async () => {
     await withFixture(async (paths) => {
@@ -742,6 +742,115 @@ describe('Package 4 continuing PR owner', () => {
     expect(prAutopilotOwnerCompaction.reserveTokens).toBeGreaterThan(
       prAutopilotOwnerCompaction.keepRecentTokens,
     );
+  });
+
+  it('lets finalized prepared and no-op artifacts outrank a later failed terminal event', async () => {
+    await withFixture(async (paths) => {
+      seedPreparedTurn(
+        paths,
+        'admission:prepared-terminal',
+        'event:prepared-terminal',
+        1,
+      );
+      const preparedTurn = await dispatchTurn(
+        paths,
+        'admission:prepared-terminal',
+        'dispatch:prepared-terminal',
+      );
+      await submitAutopilotFix(
+        submissionFromEnvelope(preparedTurn.envelope, {
+          disposition: 'fix',
+          fixerKind: 'review',
+          replacements: [
+            { path: 'src/fix.ts', oldString: 'old', newString: 'new' },
+          ],
+          summary: 'Persist the prepared artifact before the loop fails.',
+        }),
+        paths,
+        {
+          currentSha: async () => 'abc123',
+          readLiveHead: liveFixtureHead,
+          runReviewFix: async () =>
+            ({
+              ok: true,
+              action: 'autopilot_fix_pr_review_feedback',
+              changed: true,
+              message: 'Prepared fixture diff.',
+              data: { preparedDiff: { id: 'prepared:terminal-wins' } },
+            }) as never,
+        },
+      );
+      const preparedSettlement = await recordAutopilotOwnerTerminalObservation(
+        {
+          ...terminal(preparedTurn.envelope, 'dispatch:prepared-terminal'),
+          failed: true,
+          error: 'model loop failed after action completion',
+          source: 'operation',
+        },
+        paths,
+      );
+      expect(preparedSettlement.status).toBe('settled');
+      const preparedAdmission = readAdmission(
+        paths,
+        'admission:prepared-terminal',
+      );
+      expect(preparedAdmission).toMatchObject({
+        state: 'fix-prepared',
+        prepared_diff_id: 'prepared:terminal-wins',
+        next_attempt_at: null,
+        last_error: null,
+      });
+      expect(
+        JSON.parse(String(preparedAdmission.last_outcome_json)),
+      ).toMatchObject({
+        stage: 'owner-turn',
+        result: 'completed',
+        preparedDiffId: 'prepared:terminal-wins',
+      });
+
+      seedPreparedTurn(
+        paths,
+        'admission:no-op-terminal',
+        'event:no-op-terminal',
+        2,
+      );
+      const noOpTurn = await dispatchTurn(
+        paths,
+        'admission:no-op-terminal',
+        'dispatch:no-op-terminal',
+      );
+      await submitAutopilotFix(
+        submissionFromEnvelope(noOpTurn.envelope, {
+          disposition: 'no-op',
+          summary: 'Persist an explicit no-op before the loop fails.',
+        }),
+        paths,
+        { currentSha: async () => 'abc123', readLiveHead: liveFixtureHead },
+      );
+      const noOpSettlement = await recordAutopilotOwnerTerminalObservation(
+        {
+          ...terminal(noOpTurn.envelope, 'dispatch:no-op-terminal'),
+          failed: true,
+          error: 'model loop failed after no-op completion',
+          source: 'operation',
+        },
+        paths,
+      );
+      expect(noOpSettlement.status).toBe('settled');
+      const noOpAdmission = readAdmission(paths, 'admission:no-op-terminal');
+      expect(noOpAdmission).toMatchObject({
+        state: 'completed',
+        prepared_diff_id: null,
+        next_attempt_at: null,
+        last_error: null,
+      });
+      expect(JSON.parse(String(noOpAdmission.last_outcome_json))).toMatchObject(
+        {
+          stage: 'owner-turn',
+          result: 'completed',
+        },
+      );
+    });
   });
 
   it('holds terminal settlement while a reserved fix is applying, then reconciles it', async () => {

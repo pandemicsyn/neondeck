@@ -38,9 +38,16 @@ CREATE TABLE `autopilot_owner_grounding_snapshots` (
 	`attempt_id` text NOT NULL,
 	`generation` integer NOT NULL,
 	`flue_instance_id` text NOT NULL,
+	`worktree_id` text,
+	`pr_head_sha` text,
+	`worktree_head_sha` text,
 	`config_history_id` integer NOT NULL,
 	`memory_event_at` text,
 	`memory_event_id` text,
+	`memory_event_rowid` integer DEFAULT 0 NOT NULL,
+	`memory_cas_event_at` text,
+	`memory_cas_event_id` text,
+	`memory_cas_event_rowid` integer DEFAULT 0 NOT NULL,
 	`memory_ids_json` text DEFAULT '[]' NOT NULL,
 	`stale_reasons_json` text DEFAULT '[]' NOT NULL,
 	`envelope_hash` text NOT NULL,
@@ -53,6 +60,7 @@ CREATE TABLE `autopilot_owner_grounding_snapshots` (
 	CONSTRAINT "autopilot_grounding_status_check" CHECK("status" IN ('reserved', 'accepted', 'blocked', 'orphaned'))
 );
 --> statement-breakpoint
+ALTER TABLE `autopilot_pr_owners` ADD `grounding_memory_event_rowid` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX `idx_autopilot_owner_fix_attempt` ON `autopilot_owner_fix_submissions` (`attempt_id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `idx_autopilot_owner_fix_token` ON `autopilot_owner_fix_submissions` (`token_hash`);--> statement-breakpoint
 CREATE INDEX `idx_autopilot_owner_fix_owner` ON `autopilot_owner_fix_submissions` (`owner_id`,"created_at" DESC);--> statement-breakpoint
