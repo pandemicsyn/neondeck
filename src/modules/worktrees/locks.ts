@@ -18,10 +18,18 @@ export function assertNoForeignActiveLock(
     (lock) => Date.parse(lock.expiresAt) > now,
   );
   if (lockId) {
-    if (locks.some((lock) => lock.id === lockId && !lock.revokedAt)) return;
+    const ownLock = locks.find((lock) => lock.id === lockId && !lock.revokedAt);
+    if (!ownLock) {
+      throw new WorktreeError(
+        'WORKTREE_LOCKED',
+        `Worktree lock ${lockId} is no longer active; the mutation lease was revoked or expired.`,
+      );
+    }
+    const foreignLock = locks.find((lock) => lock.id !== lockId);
+    if (!foreignLock) return;
     throw new WorktreeError(
       'WORKTREE_LOCKED',
-      `Worktree lock ${lockId} is no longer active; the mutation lease was revoked or expired.`,
+      `Worktree ${record.id} also has an active lock held by ${foreignLock.owner}.`,
     );
   }
   if (locks.length === 0) return;
@@ -41,23 +49,28 @@ export function acquireLock(
   const database = openDb(paths.neondeckDatabase);
   try {
     return withImmediateTransaction(database, () => {
-      const activeRow = database
+      const activeRows = database
         .prepare(
           `
         SELECT *
         FROM worktree_locks
-        WHERE scope_key = ?
-          AND released_at IS NULL
-        ORDER BY created_at DESC
-        LIMIT 1;
+        WHERE released_at IS NULL
+          AND (
+            scope_key = ?
+            OR (? IS NOT NULL AND repo_id = ? AND pr_number = ?)
+          )
+        ORDER BY created_at DESC;
           `,
         )
-        .get(lock.scopeKey);
-      const active = activeRow ? readLockRow(activeRow) : undefined;
-      if (active && !isLockReclaimable(active, now)) {
-        return { ok: false as const, active };
+        .all(lock.scopeKey, lock.prNumber, lock.repoId, lock.prNumber)
+        .map(readLockRow);
+      const blocking = activeRows.find(
+        (active) => !isLockReclaimable(active, now),
+      );
+      if (blocking) {
+        return { ok: false as const, active: blocking };
       }
-      if (active) {
+      for (const active of activeRows) {
         database
           .prepare(
             `
@@ -96,7 +109,11 @@ export function acquireLock(
           lock.createdAt,
           lock.updatedAt,
         );
-      return { ok: true as const, lock, recovered: active };
+      return {
+        ok: true as const,
+        lock,
+        recovered: activeRows[0],
+      };
     });
   } catch (error) {
     if (isSqliteUniqueConstraint(error)) {

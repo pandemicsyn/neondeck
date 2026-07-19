@@ -306,6 +306,57 @@ describe('worktree runtime foundation', () => {
     expect(inventory.activeLocks[0]).toMatchObject({ owner: 'workflow-b' });
   });
 
+  it('serializes PR and worktree lock scopes for the same pull request', async () => {
+    const { paths } = await fixture();
+    const created = await createWorktree(
+      { repoId: 'sample', prNumber: 7, headRef: 'feature' },
+      paths,
+    );
+    const worktree = worktreeFrom(created);
+    const prLockResult = await lockWorktree(
+      {
+        worktreeId: worktree.id,
+        scope: 'pr',
+        owner: 'pr-workflow',
+      },
+      paths,
+    );
+    const prLock = lockFrom(prLockResult);
+
+    await expect(
+      lockWorktree(
+        {
+          worktreeId: worktree.id,
+          scope: 'worktree',
+          owner: 'worktree-workflow',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: false, lock: { id: prLock.id } });
+
+    await releaseWorktreeLock({ lockId: prLock.id }, paths);
+    const worktreeLockResult = await lockWorktree(
+      {
+        worktreeId: worktree.id,
+        scope: 'worktree',
+        owner: 'worktree-workflow',
+      },
+      paths,
+    );
+    const worktreeLock = lockFrom(worktreeLockResult);
+
+    await expect(
+      lockWorktree(
+        {
+          worktreeId: worktree.id,
+          scope: 'pr',
+          owner: 'pr-workflow',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: false, lock: { id: worktreeLock.id } });
+  });
+
   it('recovers revoked locks after the cooperative handoff grace', async () => {
     const { paths } = await fixture();
     const created = await createWorktree(
@@ -469,6 +520,39 @@ describe('worktree runtime foundation', () => {
       results: [expect.objectContaining({ outcome: 'deleted' })],
     });
     await expect(stat(clean.localPath)).rejects.toThrow(/ENOENT|no such file/i);
+  });
+
+  it('revalidates managed worktree identity immediately before cleanup', async () => {
+    const { paths } = await fixture();
+    const victim = worktreeFrom(
+      await createWorktree(
+        { repoId: 'sample', prNumber: 7, headRef: 'feature' },
+        paths,
+      ),
+    );
+    const other = worktreeFrom(
+      await createWorktree(
+        { repoId: 'sample', prNumber: 8, headRef: 'feature' },
+        paths,
+      ),
+    );
+    markSucceededOld(paths.neondeckDatabase, victim.id);
+    await rm(victim.localPath, { recursive: true, force: true });
+    await symlink(other.localPath, victim.localPath);
+
+    await expect(
+      cleanupWorktrees({ worktreeId: victim.id }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      results: [
+        expect.objectContaining({
+          outcome: 'failed',
+          error: expect.stringContaining('must not be a symlink'),
+        }),
+      ],
+    });
+    await expect(stat(other.localPath)).resolves.toBeDefined();
   });
 
   it('applies current cleanup policy to existing failed worktrees', async () => {

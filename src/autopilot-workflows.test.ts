@@ -1830,6 +1830,39 @@ describe('PR event autopilot', () => {
     ]);
   });
 
+  it('admits only one push workflow when prepared-diff approvals race', async () => {
+    const { paths, featureSha } = await fixture();
+    const prepared = await prepareReviewPreparedDiff(paths, featureSha);
+    const preparedDiffId = stringPath(prepared, ['data', 'preparedDiff', 'id']);
+    const calls: string[] = [];
+    const invokeWorkflow = async () => {
+      calls.push('invoked');
+      return { runId: `run-concurrent-approval-${calls.length}` };
+    };
+
+    const results = await Promise.all([
+      approvePreparedDiffPushWithDispatch(
+        { preparedDiffId, confirm: true },
+        paths,
+        { invokeWorkflow },
+      ),
+      approvePreparedDiffPushWithDispatch(
+        { preparedDiffId, confirm: true },
+        paths,
+        { invokeWorkflow },
+      ),
+    ]);
+
+    expect(
+      results.filter((result) => result.ok && result.changed),
+    ).toHaveLength(1);
+    expect(
+      results.filter((result) => !result.ok && !result.changed),
+    ).toHaveLength(1);
+    expect(calls).toEqual(['invoked']);
+    await expect(listWorkflowSummaries(paths)).resolves.toHaveLength(1);
+  });
+
   it('returns an explicit dispatch failure after recording push approval', async () => {
     const { paths, featureSha } = await fixture();
     const prepared = await prepareReviewPreparedDiff(paths, featureSha);

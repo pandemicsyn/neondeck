@@ -30,6 +30,7 @@ import {
   repoFullName,
   resolveDeclaredWorktreePath,
   resolveStorageKind,
+  validateManagedWorktreeRoot,
 } from './paths';
 import {
   cleanupInputSchema,
@@ -606,8 +607,51 @@ export async function cleanupWorktrees(
         continue;
       }
 
+      const cleanupOwner = `cleanup:${randomUUID()}`;
+      const acquired = await lockWorktree(
+        {
+          worktreeId: record.id,
+          scope: record.prNumber === null ? 'worktree' : 'pr',
+          owner: cleanupOwner,
+          ttlSeconds: 300,
+        },
+        paths,
+      );
+      if (!acquired.ok || !('lock' in acquired)) {
+        const reason = 'worktree became locked before cleanup';
+        recordCleanupAttempt(
+          record,
+          'retained',
+          reason,
+          false,
+          undefined,
+          paths,
+        );
+        results.push({
+          worktreeId: record.id,
+          outcome: 'retained',
+          delete: false,
+          reason,
+        });
+        continue;
+      }
+
+      const cleanupLock = acquired.lock;
       try {
         const context = await repoContext(record.repoId, paths);
+        if (await exists(record.localPath)) {
+          if (record.adopted) {
+            await assertAdoptableWorktree(record.localPath, context.repo.path);
+          } else {
+            await validateManagedWorktreeRoot(record, paths);
+          }
+          if (!(await isGitClean(record.localPath))) {
+            throw new WorktreeError(
+              'WORKTREE_DIRTY',
+              `Worktree ${record.id} became dirty before cleanup.`,
+            );
+          }
+        }
         await git(context.repo.path, ['worktree', 'remove', record.localPath]);
       } catch (error) {
         recordCleanupAttempt(
@@ -626,6 +670,8 @@ export async function cleanupWorktrees(
           error: errorMessage(error),
         });
         continue;
+      } finally {
+        releaseLock(cleanupLock.id, new Date().toISOString(), paths);
       }
 
       changed = true;

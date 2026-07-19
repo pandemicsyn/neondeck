@@ -1,6 +1,6 @@
 import { type JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../lib/action-result';
-import { openDb } from '../../lib/sqlite';
+import { openDb, withImmediateTransaction } from '../../lib/sqlite';
 import { randomUUID } from 'node:crypto';
 import type { ExecutionBackend, RuntimePaths } from '../../runtime-home';
 import type {
@@ -114,6 +114,141 @@ export function readApproval(paths: RuntimePaths, id: string) {
       )
       .get(id);
     return row ? readExecutionApprovalRow(row) : undefined;
+  } finally {
+    database.close();
+  }
+}
+
+const resolutionClaimPrefix = 'neondeck:resolving:';
+const staleResolutionClaimMs = 5 * 60_000;
+
+export function claimPendingApprovalResolution(
+  paths: RuntimePaths,
+  id: string,
+  claimId: string,
+  now = new Date(),
+) {
+  const claimedSurface = `${resolutionClaimPrefix}${claimId}`;
+  const nowIso = now.toISOString();
+  const staleBefore = new Date(
+    now.getTime() - staleResolutionClaimMs,
+  ).toISOString();
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return withImmediateTransaction(database, () => {
+      database
+        .prepare(
+          `
+          UPDATE execution_approvals
+          SET approver_surface = NULL, updated_at = ?
+          WHERE id = ?
+            AND status = 'pending'
+            AND approver_surface LIKE ?
+            AND updated_at <= ?;
+        `,
+        )
+        .run(nowIso, id, `${resolutionClaimPrefix}%`, staleBefore);
+      const claimed = database
+        .prepare(
+          `
+          UPDATE execution_approvals
+          SET approver_surface = ?, updated_at = ?
+          WHERE id = ?
+            AND status = 'pending'
+            AND approver_surface IS NULL;
+        `,
+        )
+        .run(claimedSurface, nowIso, id);
+      const row = database
+        .prepare('SELECT * FROM execution_approvals WHERE id = ?;')
+        .get(id);
+      const approval = row ? readExecutionApprovalRow(row) : undefined;
+      return {
+        claimed: claimed.changes === 1,
+        claimedSurface,
+        approval: approval ? { ...approval, approverSurface: null } : undefined,
+      };
+    });
+  } finally {
+    database.close();
+  }
+}
+
+export function completePendingApprovalResolution(
+  paths: RuntimePaths,
+  input: {
+    id: string;
+    claimedSurface: string;
+    status: ExecutionApprovalStatus;
+    decision: ExecutionApprovalDecision;
+    approverSurface: string;
+    result: unknown;
+    resolvedAt: string;
+  },
+) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return withImmediateTransaction(database, () => {
+      const update = database
+        .prepare(
+          `
+          UPDATE execution_approvals
+          SET
+            status = ?,
+            approval_decision = ?,
+            approver_surface = ?,
+            result_json = ?,
+            resolved_at = ?,
+            updated_at = ?
+          WHERE id = ?
+            AND status = 'pending'
+            AND approver_surface = ?;
+        `,
+        )
+        .run(
+          input.status,
+          input.decision,
+          input.approverSurface,
+          input.result === null
+            ? null
+            : JSON.stringify(asJsonValue(input.result)),
+          input.resolvedAt,
+          input.resolvedAt,
+          input.id,
+          input.claimedSurface,
+        );
+      const row = database
+        .prepare('SELECT * FROM execution_approvals WHERE id = ?;')
+        .get(input.id);
+      return {
+        changed: update.changes === 1,
+        approval: row ? readExecutionApprovalRow(row) : undefined,
+      };
+    });
+  } finally {
+    database.close();
+  }
+}
+
+export function releasePendingApprovalResolution(
+  paths: RuntimePaths,
+  id: string,
+  claimedSurface: string,
+) {
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        UPDATE execution_approvals
+        SET approver_surface = NULL, updated_at = ?
+        WHERE id = ?
+          AND status = 'pending'
+          AND approver_surface = ?;
+      `,
+      )
+      .run(now, id, claimedSurface);
   } finally {
     database.close();
   }

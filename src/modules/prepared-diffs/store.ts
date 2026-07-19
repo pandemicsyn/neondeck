@@ -173,6 +173,169 @@ export function updatePreparedDiffState(
   return updated;
 }
 
+export function approvePreparedDiffPushState(
+  id: string,
+  input: {
+    approvedCommitSha: string;
+    policyHash: string;
+    policyDecision: 'require-approval' | 'allow';
+    reason: string | undefined;
+    approverSurface: string | undefined;
+    approvedAt: string;
+  },
+  paths: RuntimePaths,
+): {
+  changed: boolean;
+  preparedDiff: PreparedDiffRecord;
+  approval?: PreparedDiffApprovalRecord;
+} {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return withImmediateTransaction(database, () => {
+      const row = database
+        .prepare('SELECT * FROM prepared_diffs WHERE id = ?;')
+        .get(id);
+      if (!row) throw new Error(`Prepared diff ${id} was not found.`);
+      const current = readPreparedDiffRow(row);
+      const allowedStatuses: PreparedDiffStatus[] = [
+        'prepared',
+        'verification-requested',
+        'push-blocked',
+      ];
+      if (!allowedStatuses.includes(current.status)) {
+        return { changed: false, preparedDiff: current };
+      }
+
+      const updated: PreparedDiffRecord = {
+        ...current,
+        status: 'push-approved',
+        pushApprovalStatus: 'approved',
+        summary: mergeSummary(current.summary, {
+          pushApproval: {
+            approvedCommitSha: input.approvedCommitSha,
+            approvedAt: input.approvedAt,
+            reason: input.reason ?? null,
+          },
+        }),
+        updatedAt: input.approvedAt,
+      };
+      database
+        .prepare(
+          `
+          UPDATE prepared_diffs
+          SET status = ?, push_approval_status = ?, summary_json = ?, updated_at = ?
+          WHERE id = ?;
+        `,
+        )
+        .run(
+          updated.status,
+          updated.pushApprovalStatus,
+          JSON.stringify(updated.summary),
+          updated.updatedAt,
+          updated.id,
+        );
+
+      const pendingRows = database
+        .prepare(
+          `
+          SELECT *
+          FROM prepared_diff_approvals
+          WHERE prepared_diff_id = ?
+            AND approval_type = 'push'
+            AND status = 'pending'
+          ORDER BY requested_at DESC;
+        `,
+        )
+        .all(updated.id);
+      let approval: PreparedDiffApprovalRecord;
+      if (pendingRows.length > 0) {
+        database
+          .prepare(
+            `
+            UPDATE prepared_diff_approvals
+            SET status = 'approved',
+                reason = COALESCE(?, reason),
+                approver_surface = COALESCE(?, approver_surface),
+                target_sha = ?,
+                policy_hash = ?,
+                policy_decision = ?,
+                resolved_at = ?,
+                updated_at = ?
+            WHERE prepared_diff_id = ?
+              AND approval_type = 'push'
+              AND status = 'pending';
+          `,
+          )
+          .run(
+            input.reason ?? null,
+            input.approverSurface ?? null,
+            input.approvedCommitSha,
+            input.policyHash,
+            input.policyDecision,
+            input.approvedAt,
+            input.approvedAt,
+            updated.id,
+          );
+        const selected = database
+          .prepare('SELECT * FROM prepared_diff_approvals WHERE id = ?;')
+          .get(readApprovalRow(pendingRows[0]).id);
+        if (!selected) {
+          throw new Error(
+            `Prepared diff approval for ${updated.id} was not persisted.`,
+          );
+        }
+        approval = readApprovalRow(selected);
+      } else {
+        approval = {
+          id: randomUUID(),
+          preparedDiffId: updated.id,
+          worktreeId: updated.worktreeId,
+          approvalType: 'push',
+          status: 'approved',
+          targetSha: input.approvedCommitSha,
+          policyHash: input.policyHash,
+          policyDecision: input.policyDecision,
+          reason: input.reason ?? null,
+          approverSurface: input.approverSurface ?? null,
+          requestedAt: input.approvedAt,
+          resolvedAt: input.approvedAt,
+          updatedAt: input.approvedAt,
+        };
+        database
+          .prepare(
+            `
+            INSERT INTO prepared_diff_approvals (
+              id, prepared_diff_id, worktree_id, approval_type, status,
+              target_sha, policy_hash, policy_decision, reason,
+              approver_surface, requested_at, resolved_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+          `,
+          )
+          .run(
+            approval.id,
+            approval.preparedDiffId,
+            approval.worktreeId,
+            approval.approvalType,
+            approval.status,
+            approval.targetSha,
+            approval.policyHash,
+            approval.policyDecision,
+            approval.reason,
+            approval.approverSurface,
+            approval.requestedAt,
+            approval.resolvedAt,
+            approval.updatedAt,
+          );
+      }
+
+      return { changed: true, preparedDiff: updated, approval };
+    });
+  } finally {
+    database.close();
+  }
+}
+
 export function updatePreparedDiffVerificationWithLease(
   id: string,
   input: {

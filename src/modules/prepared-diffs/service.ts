@@ -40,6 +40,7 @@ import {
   type WorktreeRecordLike,
 } from './schemas';
 import {
+  approvePreparedDiffPushState,
   assertTransition,
   ensurePendingApproval,
   insertApproval,
@@ -524,34 +525,34 @@ export async function approvePreparedDiffPush(
       'PREPARED_DIFF_APPROVAL_STALE',
     );
   }
-  const updated = updatePreparedDiffState(
+  const approvalState = approvePreparedDiffPushState(
     record.record.id,
     {
-      status: 'push-approved',
-      pushApprovalStatus: 'approved',
-      summary: mergeSummary(record.record.summary, {
-        pushApproval: {
-          approvedCommitSha,
-          approvedAt: new Date().toISOString(),
-          reason: parsed.input.reason ?? null,
-        },
-      }),
-    },
-    paths,
-  );
-  const approval = resolvePendingApprovals(
-    updated,
-    'push',
-    'approved',
-    parsed.input.reason,
-    parsed.input.approverSurface,
-    {
-      targetSha: approvedCommitSha,
+      approvedCommitSha,
       policyHash: binding.policyHash,
       policyDecision: binding.policyDecision,
+      reason: parsed.input.reason,
+      approverSurface: parsed.input.approverSurface,
+      approvedAt: new Date().toISOString(),
     },
     paths,
   );
+  if (!approvalState.changed || !approvalState.approval) {
+    const currentTransition = assertTransition(
+      approvalState.preparedDiff,
+      'prepared_diff_approve_push',
+      'approve-push',
+      ['prepared', 'verification-requested', 'push-blocked'],
+    );
+    if (!currentTransition.ok) return currentTransition.result;
+    return failure(
+      'prepared_diff_approve_push',
+      'Prepared diff approval changed before it could be recorded.',
+      'PREPARED_DIFF_APPROVAL_CONFLICT',
+    );
+  }
+  const updated = approvalState.preparedDiff;
+  const notificationErrors: string[] = [];
   await addNotification(
     {
       level: 'ready',
@@ -563,7 +564,9 @@ export async function approvePreparedDiffPush(
       data: { preparedDiffId: updated.id, worktreeId: updated.worktreeId },
     },
     paths,
-  );
+  ).catch((error) => {
+    notificationErrors.push(errorMessage(error));
+  });
   return {
     ok: true,
     action: 'prepared_diff_approve_push',
@@ -571,8 +574,11 @@ export async function approvePreparedDiffPush(
     message:
       'Recorded prepared diff push approval. Actual push-back is handled by a later workflow.',
     preparedDiff: updated,
-    approvals: [approval],
+    approvals: [approvalState.approval],
     data: asJsonValue({ nextWorkflow: 'push_pr_autofix' }),
+    ...(notificationErrors.length > 0
+      ? { requires: ['notification'], errors: notificationErrors }
+      : {}),
   };
 }
 
@@ -968,6 +974,10 @@ function failure(action: string, message: string, code: string) {
     errors: [message],
     error: { code, message },
   };
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function shouldKeepAbandonedRevision(

@@ -49,16 +49,6 @@ export async function createApprovalResolutionNudge(
       : `${label} approval ${input.approvalId} denied for ${input.subject}. Do not retry unless the user changes the decision.`;
   const errors: string[] = [];
   const shouldDispatch = input.decision === 'approved';
-  const dispatchReceipt = shouldDispatch
-    ? await approvalNudgeDispatch({
-        agent: 'display-assistant',
-        id: sessionId,
-        input: message,
-      }).catch((error) => {
-        errors.push(error instanceof Error ? error.message : String(error));
-        return null;
-      })
-    : null;
   const created = await createChatSessionCommandEvent(
     {
       sessionId,
@@ -70,6 +60,21 @@ export async function createApprovalResolutionNudge(
     errors.push(error instanceof Error ? error.message : String(error));
     return null;
   });
+
+  const commandEventRecorded = Boolean(
+    created?.ok && 'event' in created && created.event,
+  );
+  const dispatchReceipt =
+    shouldDispatch && commandEventRecorded
+      ? await approvalNudgeDispatch({
+          agent: 'display-assistant',
+          id: sessionId,
+          input: message,
+        }).catch((error) => {
+          errors.push(error instanceof Error ? error.message : String(error));
+          return null;
+        })
+      : null;
 
   if (created?.ok && 'event' in created && created.event) {
     const eventStatus =
@@ -91,7 +96,7 @@ export async function createApprovalResolutionNudge(
               ? `${message} Flue accepted the answer for delivery.`
               : `${message} Flue dispatch did not accept the answer; the decision was recorded in this session command log.`
             : message,
-          dispatchAttempted: shouldDispatch,
+          dispatchAttempted: shouldDispatch && commandEventRecorded,
           dispatchReceipt,
         },
       },
@@ -104,12 +109,9 @@ export async function createApprovalResolutionNudge(
   }
 
   const dispatchAccepted = Boolean(dispatchReceipt);
-  const commandEventRecorded = Boolean(
-    created?.ok && 'event' in created && created.event,
-  );
   const dispatchFailureDetail = commandEventRecorded
     ? 'Flue dispatch did not accept the answer; the decision was recorded in this session command log.'
-    : 'Flue dispatch did not accept the answer, and the decision could not be recorded in the session command log.';
+    : 'Flue dispatch was not attempted because the decision could not be recorded in the session command log.';
   const notificationMessage =
     shouldDispatch && !dispatchAccepted
       ? `${label} approval ${input.approvalId} approved for ${input.subject}. ${dispatchFailureDetail}`
@@ -133,7 +135,7 @@ export async function createApprovalResolutionNudge(
         approvalId: input.approvalId,
         sessionId,
         decision: input.decision,
-        dispatchAttempted: shouldDispatch,
+        dispatchAttempted: shouldDispatch && commandEventRecorded,
         dispatchAccepted,
         dispatchReceipt,
       },

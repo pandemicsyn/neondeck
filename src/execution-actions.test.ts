@@ -91,6 +91,16 @@ describe('execution actions', () => {
     const approvalId = readApprovalId(request);
     expect(approvalId).toBeTruthy();
     const restoreDispatch = setApprovalNudgeDispatchForTests(async (input) => {
+      await expect(
+        listChatSessionCommandEvents({ sessionId }, paths),
+      ).resolves.toMatchObject({
+        events: [
+          expect.objectContaining({
+            status: 'running',
+            input: expect.stringContaining(`approval ${approvalId} approved`),
+          }),
+        ],
+      });
       expect(input).toMatchObject({
         agent: 'display-assistant',
         id: sessionId,
@@ -154,6 +164,53 @@ describe('execution actions', () => {
         }),
       ]),
     );
+  });
+
+  it('resolves a pending approval and dispatches its nudge only once under contention', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const session = await createChatSession(
+      { title: 'Concurrent execution approval' },
+      paths,
+    );
+    const sessionId = (session as { session: ChatSessionRecord }).session.id;
+    const request = await requestExecutionApproval(
+      { command: 'node --version', cwd: paths.home, sessionId },
+      paths,
+    );
+    const approvalId = readApprovalId(request);
+    let dispatchCount = 0;
+    const restoreDispatch = setApprovalNudgeDispatchForTests(async () => {
+      dispatchCount += 1;
+      return {
+        dispatchId: `dispatch-${dispatchCount}`,
+        acceptedAt: new Date().toISOString(),
+      };
+    });
+
+    try {
+      const results = await Promise.all([
+        resolveExecutionApproval(
+          { id: approvalId, decision: 'allow-session' },
+          paths,
+        ),
+        resolveExecutionApproval(
+          { id: approvalId, decision: 'allow-session' },
+          paths,
+        ),
+      ]);
+      expect(results.filter((result) => result.changed)).toHaveLength(1);
+      expect(results.filter((result) => !result.changed)).toHaveLength(1);
+    } finally {
+      restoreDispatch();
+    }
+
+    expect(dispatchCount).toBe(1);
+    await expect(
+      listChatSessionCommandEvents({ sessionId }, paths),
+    ).resolves.toMatchObject({
+      events: [expect.objectContaining({ status: 'completed' })],
+    });
   });
 
   it('does not reuse a one-shot execution approval after it is claimed', async () => {
@@ -252,7 +309,9 @@ describe('execution actions', () => {
       paths,
     );
     const approvalId = readApprovalId(request);
+    let dispatched = false;
     const restoreDispatch = setApprovalNudgeDispatchForTests(async () => {
+      dispatched = true;
       throw new Error('dispatch queue unavailable');
     });
 
@@ -266,14 +325,12 @@ describe('execution actions', () => {
         ok: true,
         approval: { status: 'approved' },
         requires: ['approvalNudge'],
-        errors: expect.arrayContaining([
-          'dispatch queue unavailable',
-          'Session missing-session was not found.',
-        ]),
+        errors: ['Session missing-session was not found.'],
       });
     } finally {
       restoreDispatch();
     }
+    expect(dispatched).toBe(false);
     const notifications = await listNotifications(paths);
     const failedNotification = notifications.find(
       (notification) =>

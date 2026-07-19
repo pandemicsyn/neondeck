@@ -1,6 +1,6 @@
-import { asJsonValue } from '../../lib/action-result';
 import { openDb } from '../../lib/sqlite';
 import { updateExecutionPolicy } from '../config';
+import { randomUUID } from 'node:crypto';
 import { currentFlueExecutionContext } from '../flue/execution-context';
 import {
   ensureRuntimeHome,
@@ -13,9 +13,11 @@ import { checkExecutionPolicy } from './policy';
 import { failedResult, hasShellOperator } from './utils';
 import { authorizeExecutionScope, approvalExecutionScopeKey } from './scope';
 import {
+  claimPendingApprovalResolution,
+  completePendingApprovalResolution,
   insertApproval,
-  readApproval,
   readExecutionApprovalRow,
+  releasePendingApprovalResolution,
 } from './store';
 import { createApprovalResolutionNudge } from '../sessions';
 import {
@@ -164,7 +166,8 @@ export async function resolveExecutionApproval(
   }
 
   const input = parsed.output;
-  const existing = readApproval(paths, input.id);
+  const claim = claimPendingApprovalResolution(paths, input.id, randomUUID());
+  const existing = claim.approval;
   if (!existing) {
     return failedResult(
       'execution_resolve_approval',
@@ -173,59 +176,51 @@ export async function resolveExecutionApproval(
     );
   }
 
-  if (existing.status !== 'pending') {
+  if (!claim.claimed) {
     return {
       ok: false,
       action: 'execution_resolve_approval',
       changed: false,
-      message: `Execution approval "${input.id}" is already ${existing.status}.`,
+      message:
+        existing.status === 'pending'
+          ? `Execution approval "${input.id}" is already being resolved.`
+          : `Execution approval "${input.id}" is already ${existing.status}.`,
       approval: existing,
     };
   }
 
-  if (input.decision === 'allow-always') {
-    const preapproval = await addAlwaysPreapproval(existing, paths);
-    if (!preapproval.ok) return preapproval;
-  }
-
-  const now = new Date().toISOString();
-  const nextStatus: ExecutionApprovalStatus =
-    input.decision === 'deny' ? 'denied' : 'approved';
-  const result =
-    input.note === undefined ? existing.result : { note: input.note };
-  const database = openDb(paths.neondeckDatabase);
-
   try {
-    database
-      .prepare(
-        `
-        UPDATE execution_approvals
-        SET
-          status = ?,
-          approval_decision = ?,
-          approver_surface = ?,
-          result_json = ?,
-          resolved_at = ?,
-          updated_at = ?
-        WHERE id = ?;
-      `,
-      )
-      .run(
-        nextStatus,
-        input.decision,
-        input.approverSurface ?? 'api',
-        result === null ? null : JSON.stringify(asJsonValue(result)),
-        now,
-        now,
-        existing.id,
-      );
-  } finally {
-    database.close();
-  }
+    if (input.decision === 'allow-always') {
+      const preapproval = await addAlwaysPreapproval(existing, paths);
+      if (!preapproval.ok) return preapproval;
+    }
 
-  const approval = readApproval(paths, existing.id);
-  let nudgeErrors: string[] = [];
-  if (approval) {
+    const now = new Date().toISOString();
+    const nextStatus: ExecutionApprovalStatus =
+      input.decision === 'deny' ? 'denied' : 'approved';
+    const result =
+      input.note === undefined ? existing.result : { note: input.note };
+    const completed = completePendingApprovalResolution(paths, {
+      id: existing.id,
+      claimedSurface: claim.claimedSurface,
+      status: nextStatus,
+      decision: input.decision,
+      approverSurface: input.approverSurface ?? 'api',
+      result,
+      resolvedAt: now,
+    });
+    if (!completed.changed || !completed.approval) {
+      return {
+        ok: false,
+        action: 'execution_resolve_approval',
+        changed: false,
+        message: `Execution approval "${input.id}" changed while it was being resolved.`,
+        approval: completed.approval ?? existing,
+      };
+    }
+
+    const approval = completed.approval;
+    let nudgeErrors: string[] = [];
     const nudge = await createApprovalResolutionNudge(
       {
         family: 'execution',
@@ -238,20 +233,22 @@ export async function resolveExecutionApproval(
       paths,
     );
     if (!nudge.ok) nudgeErrors = nudge.errors;
+    return {
+      ok: true,
+      action: 'execution_resolve_approval',
+      changed: true,
+      message:
+        input.decision === 'deny'
+          ? 'Denied execution approval.'
+          : `Approved execution ${input.decision.replace('-', ' ')}.`,
+      approval,
+      ...(nudgeErrors.length > 0
+        ? { requires: ['approvalNudge'], errors: nudgeErrors }
+        : {}),
+    };
+  } finally {
+    releasePendingApprovalResolution(paths, existing.id, claim.claimedSurface);
   }
-  return {
-    ok: true,
-    action: 'execution_resolve_approval',
-    changed: true,
-    message:
-      input.decision === 'deny'
-        ? 'Denied execution approval.'
-        : `Approved execution ${input.decision.replace('-', ' ')}.`,
-    approval,
-    ...(nudgeErrors.length > 0
-      ? { requires: ['approvalNudge'], errors: nudgeErrors }
-      : {}),
-  };
 }
 
 function nonEmpty(value: string | undefined) {
