@@ -256,6 +256,8 @@ export async function dispatchReservedAutopilotStage(
             invokeWorkflow: input.invokeWorkflow,
             dispatchOwner: input.dispatchOwner,
             ownerFactsLoader: input.ownerFactsLoader,
+            ownerReadinessLoader: input.ownerReadinessLoader,
+            ownerLocalShaLoader: input.ownerLocalShaLoader,
             enableOwnerDispatch: input.enableOwnerDispatch,
             limits: input.limits,
             now,

@@ -1,6 +1,6 @@
 # Autopilot Product-Closure Implementation Plan
 
-Status: in progress; Packages 1–3 implemented, Packages 4–8 not started
+Status: in progress; Packages 1–4 implemented, Packages 5–8 not started
 
 Companion audit: `.plans/AUTOPILOT_END_TO_END_REVIEW.html`
 
