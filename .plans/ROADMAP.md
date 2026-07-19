@@ -1265,55 +1265,56 @@ Must-haves:
 
 ### Phase 19: PR Event Autopilot
 
-- Status: complete for current in-scope PR autopilot work. Event watermarks, triage, worktree preparation, review/CI fix workflows, verification, push-back, PR result comments, concurrency controls, dashboard/TUI-ready state, notification policy, runtime guidance, and fixture-backed smoke/integration coverage have landed. Future refinements such as richer model-planning orchestration, provider-specific log adapters, and broader production rollout policy can build on this foundation.
+- Status: incomplete. The deterministic actions and safety foundations have landed, and watcher admissions currently advance through triage and worktree preparation. The production path does not yet create/reuse one continuing Neon PR-owner session and workspace or continue automatically through bounded event turns, fix, verification, approval/push, result delivery, and terminal cleanup. The source-of-truth closure plan is `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`; the evidence audit is `.plans/AUTOPILOT_END_TO_END_REVIEW.html`.
 
-- [x] Extend PR watches to persist event watermarks for commits, review threads, requested-changes reviews, check suites, check runs, mergeability, and out-of-date branch state.
+- [ ] Complete PR event watermarks for commits, review threads, requested-changes review bodies, general PR conversation comments, check suites/runs, mergeability, out-of-date state, and per-item new/changed fingerprints. The current foundation omits or loses some actionable feedback.
 - [x] Add a `triage_pr_event` workflow that classifies deltas into no-op, notify-only, explain-only, prepare-only, autofix-with-approval, or autofix-push-when-safe.
-- [x] Add deterministic GitHub tools/actions for unresolved review comments, review thread state, requested-changes state, branch push permissions, and PR comment posting.
-- [x] Add `prepare_pr_worktree` workflow to create/sync/lock a PR worktree and gather deterministic repo/GitHub/check facts.
-- [x] Add `fix_pr_review_feedback` workflow:
+- [ ] Complete deterministic GitHub tools/actions for unresolved review comments, full review bodies, conversation comments, review thread state, requested-changes state, branch push permissions, and idempotent result/thread comment posting.
+- [ ] Add one durable PR-owner record per Autopilot watch. Lazily create its Neon session and managed worktree on the first actionable event, reuse both across later events/restarts, and rotate the session only through an explicit audited recovery path.
+- [ ] Complete `prepare_pr_worktree` so it fetches and verifies the exact same-repo or fork head SHA before first worktree creation, synchronizes the persistent owner worktree for later turns, and emits full authoritative event-envelope facts.
+- [ ] Complete `fix_pr_review_feedback` as a bounded event turn in the continuing PR-owner Neon session:
   - fetch unresolved review comments
   - group comments by file/path/topic
   - read relevant files through repo-edit actions
   - plan and apply bounded changes through repo-edit replace/patch actions
   - commit locally with a generated message that references addressed comments
   - produce a prepared diff and summary
-- [x] Add `fix_pr_ci_failure` workflow:
+- [ ] Complete `fix_pr_ci_failure` as a bounded event turn in the same continuing PR-owner Neon session:
   - fetch failing check metadata and logs where available
   - identify likely failing package script or command
   - run configured diagnostics through approved execution actions
   - apply scoped fixes through repo-edit actions
   - commit locally and summarize confidence and remaining risk
 - [x] Add `verify_pr_worktree` workflow to run configured repo checks through the execution approval policy.
-- [x] Add `push_pr_autofix` workflow that pushes only when autopilot policy, GitHub permissions, and checks allow it.
+- [ ] Connect `push_pr_autofix` to the durable coordinator and correct noninteractive credential, approval, and pushed-SHA behavior while preserving its existing safety gates.
 - [x] When direct push is not possible, leave the prepared worktree intact, mark the attempt blocked, and notify the user with recovery options.
-- [x] Add `comment_pr_autofix_result` workflow that posts concise PR comments with addressed comments, commit SHA, checks run, and any remaining manual asks.
-- [x] Add concurrency controls:
+- [ ] Connect and correct `comment_pr_autofix_result` so it posts one idempotent result for the pushed SHA and replies to addressed feedback where supported.
+- [ ] Complete durable concurrency/admission controls and bounded retry/reconciliation:
   - global autonomous workflow limit
   - per-repo autonomous workflow limit
-  - one active mutation workflow per PR by default
+  - one serialized active turn/mutation per PR owner, with queued event coalescing
   - local execution concurrency limit
-- [x] Add dashboard/TUI-ready APIs for active autopilot queue, prepared diffs, pending push approvals, running checks, and recent autonomous fixes.
-- [x] Add notification policy for autopilot:
+- [ ] Replace the derived/duplicated dashboard queue with canonical, paginated admission APIs joined to prepared diffs, approvals, checks, and activity.
+- [ ] Complete notification policy and attention accounting for autopilot:
   - ready when a fix is prepared or pushed
   - attention when push/checks are blocked
   - urgent only for production/main failures
   - quiet no-op when a watch delta is reconciled without action
-- [x] Add runtime skill guidance for worktree autopilot, including when Neon must avoid direct edits, when to ask for approval, and how to explain autonomous fixes.
-- [x] Add fixture-driven integration tests for same-PR event reconciliation, cross-PR parallelism, direct-push permission checks, blocked push-back worktrees, and blocked high-risk file changes.
-- [x] Add Flue workflow smoke tests for `triage_pr_event`, `prepare_pr_worktree`, `fix_pr_review_feedback`, `fix_pr_ci_failure`, `verify_pr_worktree`, `comment_pr_autofix_result`, and `push_pr_autofix` using temporary `NEONDECK_HOME`, temporary repos/worktrees, and fake GitHub/check/comment fixtures.
-- [x] Add local smoke scripts that run watch/autopilot workflows through `flue run` or `@flue/sdk` and assert workflow summaries, notifications, prepared diffs, and run observability records.
+- [ ] Replace inaccurate runtime guidance with the continuing PR-owner session, authoritative event-envelope, and narrow capability contracts plus truthful operator guidance.
+- [ ] Add fixture-driven integration tests for current-feedback processing, same-session/worktree reuse, queued-event coalescing, explicit session rotation, same-PR reconciliation, cross-PR parallelism, fork checkout, credentials, direct-push gates, stop/restart behavior, terminal owner archival, and blocked high-risk changes.
+- [ ] Add Flue workflow tests that exercise the production coordinator from watcher admission through every bounded stage rather than invoking disconnected workflow wrappers.
+- [ ] Make the local smoke script run watch → continuing PR-owner session (at least two event turns) → prepared diff → verify → approval/push → result delivery → terminal archive/cleanup without raw manual API continuation or per-event session creation.
 
 ### Phase 20: Autopilot Policy And UX Hardening
 
-- Status: complete. Repo/watch policy, high-risk classes, prepared-diff records/APIs/actions, approval primitives, dashboard decision visibility, human-readable audit summaries, bounded recovery actions, rebase/resync and cleanup-specific recovery controls, notification policy, and docs have landed.
+- Status: incomplete. Policy, guardrails, prepared-diff records, and most deterministic recovery primitives have landed. Explicit setup, fresh-install discoverability, approval semantics, canonical operator state, pause/stop behavior, complete recovery UX, readiness, and accurate docs remain open under `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`.
 
 - [x] Add repo-level autopilot config with explicit modes:
   - `notify-only`
   - `prepare-only`
   - `autofix-with-approval`
   - `autofix-push-when-safe`
-- [x] Add watch-rule overrides so a single PR watch can be more or less autonomous than the repo default.
+- [ ] Complete stable watch-rule override mutation and expose an explicit watch-plus-mode setup contract across chat, CLI, API, and dashboard.
 - [x] Add policy limits:
   - maximum files changed
   - maximum lines changed
@@ -1334,7 +1335,7 @@ Must-haves:
   - binary files
   - vendored code
   - repo-configured globs
-- [x] Add a pending approval flow for prepared diffs and push-back actions.
+- [ ] Correct pending approval creation, dispatch, resolution, and supersession semantics for prepare-only, approval, and safe-push modes.
 - [x] Add prepared-diff records in app state that reference the source worktree as the source of truth.
 - [x] Add shared prepared-diff APIs/actions for web and future TUI:
   - list prepared diffs
@@ -1347,9 +1348,9 @@ Must-haves:
   - open worktree path
   - run verification
 - [x] Keep git/diff operations in backend services and actions; UI clients should not implement git logic.
-- [x] Add a dashboard panel for autopilot decisions, including why Neon did or did not act.
+- [ ] Make the Autopilot dashboard panel available in recommended fresh-install layouts and base it on canonical admissions with accurate state and controls.
 - [x] Add human-readable audit summaries for autonomous workflows, suitable for PR comments and timeline UI.
-- [x] Add bounded prepared-diff recovery actions:
+- [ ] Expose all bounded prepared-diff recovery actions and query failures in the primary operator UI:
   - inspect retained worktree
   - retry verification
   - retry push
@@ -1361,7 +1362,7 @@ Must-haves:
   - retry after new commit
   - rebase/resync worktree
   - clean up worktree
-- [x] Add docs for autonomous modes, trust boundaries, worktree storage, GitHub token permissions, push-back behavior, and how to disable autopilot quickly.
+- [ ] Add accurate docs for setup, modes, baseline/current-feedback behavior, trust boundaries, worktree storage, API and git credential readiness, push-back, recovery, stop semantics, polling latency, and quick disable.
 
 ### Phase 21: KiloCode Handoff Runner
 

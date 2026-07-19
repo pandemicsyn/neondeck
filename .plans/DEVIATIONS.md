@@ -461,7 +461,7 @@ Use this format:
 
 ## 2026-07-10 - Scheduler, Admission, Approval, And Baseline Refactor
 
-- Roadmap item: scheduler/autopilot cleanup following `.plans/20260709-review.md`.
+- Roadmap item: scheduler/autopilot cleanup following `.plans/archived/SCHEDULER_ROUTINES_AUTOPILOT_MECHANICS_REVIEW_20260709.md`.
 - Decision: Replaced the duplicate schedule/routine models with SQLite scheduled
   tasks, made watcher triage and worktree preparation durable admission stages,
   bound prepared-diff push approvals to the exact SHA and effective policy hash,
@@ -520,3 +520,25 @@ Use this format:
   proves that the first interactive call completes after cooperative handoff. Lock
   coverage proves fresh revocations remain exclusive during the grace and become
   recoverable afterward.
+
+## 2026-07-19 - Autopilot Product-Closure Plan Consolidation
+
+- Roadmap item: Phases 19–21 / watched-PR Autopilot product closure.
+- Decision: Reopened the Phase 19 and 20 completion claims, added
+  `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md` as the implementation source of truth,
+  retained the HTML end-to-end review as evidence, and archived the superseded
+  partial loop-wiring plan and July 9 scheduler/Autopilot mechanics review. The
+  consolidated plan selects one continuing Neon PR-owner session and managed
+  workspace per Autopilot watch, with bounded serialized event turns, as the
+  default watched-PR fixer. It keeps Kilo explicit or policy-opted and routes both
+  through one durable admission/owner coordinator.
+- Reason: The end-to-end audit proved that production watcher progression stops
+  after managed worktree preparation. Individually callable fix, verification,
+  approval, push, comment, Kilo, and recovery primitives do not constitute a usable
+  Autopilot without a continuing PR owner, coordinator, explicit setup, accurate
+  operator state, and product-path verification. Reusing the same session preserves
+  the diagnosis and implementation context across repeated review cycles, while
+  fresh deterministic envelopes keep mutable authority and PR facts current.
+- Follow-up: Implement Packages 1–8 in the consolidated plan and mark roadmap items
+  complete only after their exit gates and the watcher-to-cleanup acceptance suite
+  pass.

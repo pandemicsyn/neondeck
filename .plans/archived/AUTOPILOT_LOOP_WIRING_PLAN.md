@@ -1,6 +1,11 @@
 # Autopilot Loop Wiring Plan
 
-Status: implemented through watcher triage and worktree preparation
+Status: superseded and archived by `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`
+
+Historical note: this document intentionally stopped the coordinator at worktree
+preparation. Keep it as implementation history; do not use it as the current
+product-closure plan.
+
 Related: `.plans/ROADMAP.md` Phases 19–20
 
 ## Findings — what is wired today

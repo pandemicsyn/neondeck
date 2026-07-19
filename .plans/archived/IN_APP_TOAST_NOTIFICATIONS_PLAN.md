@@ -3,7 +3,7 @@
 Status: completed
 Written: 2026-07-11
 Completed: 2026-07-11
-Related: `.plans/ROADMAP.md` Phase 14, `.plans/AUTOPILOT_LOOP_WIRING_PLAN.md`
+Related: `.plans/ROADMAP.md` Phase 14, `.plans/archived/AUTOPILOT_LOOP_WIRING_PLAN.md`
 
 ## Purpose
 

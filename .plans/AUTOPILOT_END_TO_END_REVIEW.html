@@ -214,6 +214,13 @@
         color: var(--muted);
       }
 
+      .meta a.tag {
+        display: inline-flex;
+        min-height: 32px;
+        align-items: center;
+        text-decoration: none;
+      }
+
       .tag.critical {
         border-color: color-mix(in srgb, var(--pink) 55%, transparent);
         color: var(--pink);
@@ -398,6 +405,10 @@
       .callout p:last-child,
       .callout ul:last-child {
         margin-bottom: 0;
+      }
+
+      .callout + .roadmap {
+        margin-top: 16px;
       }
 
       .table-wrap {
@@ -727,6 +738,12 @@
         }
       }
 
+      @media (pointer: coarse) {
+        .meta a.tag {
+          min-height: 44px;
+        }
+      }
+
       @media print {
         :root {
           color-scheme: light;
@@ -789,6 +806,7 @@
             <span class="tag high">11 high-severity defects</span>
             <span class="tag">5 medium defects</span>
             <span class="tag good">strong safety primitives</span>
+            <a class="tag good" href="./AUTOPILOT_IMPLEMENTATION_PLAN.md">implementation plan</a>
           </div>
         </div>
         <aside class="verdict" aria-label="Executive verdict">
@@ -986,7 +1004,7 @@
                 <li>
                   Repository plan explicitly calls later stages “bounded,
                   explicit operations”:
-                  <code>.plans/AUTOPILOT_LOOP_WIRING_PLAN.md:43-52</code>
+                  <code>.plans/archived/AUTOPILOT_LOOP_WIRING_PLAN.md:52-57</code>
                 </li>
               </ul>
             </div>
@@ -1730,7 +1748,7 @@
                   <ul>
                     <li><code>README.md:21-24</code></li>
                     <li><code>.plans/ROADMAP.md:1266-1364</code></li>
-                    <li><code>.plans/AUTOPILOT_LOOP_WIRING_PLAN.md:43-52</code></li>
+                    <li><code>.plans/archived/AUTOPILOT_LOOP_WIRING_PLAN.md:52-57</code></li>
                     <li><code>.plans/DEVIATIONS.md:384-418</code></li>
                     <li><code>docs/src/pages/docs/configuration.astro</code></li>
                   </ul>
@@ -1777,7 +1795,7 @@
 
         <section id="permissions">
           <p class="section-label">Agent briefing, environment, and permissions</p>
-          <h2>The expected Neon worker briefing does not exist</h2>
+          <h2>The expected continuing PR-owner session and briefing do not exist</h2>
           <p>
             No coding worker is spawned in the watched-PR path. The configured
             Flue workflows name <code>displayAssistant</code> as their agent but
@@ -1840,6 +1858,21 @@
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          <div class="callout success">
+            <h3>Target lifecycle: one Neon session and workspace per watched PR</h3>
+            <p>
+              The first actionable event should lazily create one narrowly scoped
+              <strong>PR-owner Neon session</strong> and one managed worktree.
+              Later feedback, CI failures, and PR state changes should be delivered
+              as fresh authoritative event envelopes to that same session, with
+              same-PR turns serialized by the durable controller. A routine event
+              must not create another Neon session. The owner session and workspace
+              remain until the PR reaches its configured terminal state or the user
+              explicitly stops Autopilot; exceptional session rotation is explicit,
+              audited, and carries forward a compact handoff.
+            </p>
           </div>
 
           <div class="callout success">
@@ -2008,13 +2041,22 @@ exit code: 127</code></pre>
         <section id="remediation">
           <p class="section-label">Recommended implementation sequence</p>
           <h2>Close the loop in five gates</h2>
+          <div class="callout success">
+            <h3>Implementation source of truth</h3>
+            <p>
+              The executable work packages, state model, PR-owner session/event
+              briefing,
+              verification matrix, and package exit gates live in
+              <a href="./AUTOPILOT_IMPLEMENTATION_PLAN.md">AUTOPILOT_IMPLEMENTATION_PLAN.md</a>.
+            </p>
+          </div>
           <div class="roadmap">
             <article>
               <span class="phase">Gate 1 · Core coordinator</span>
               <h3>Add a durable planner/fixer stage</h3>
               <ul>
                 <li>Extend admissions through plan/fix, verify, approval, push, comment, cleanup.</li>
-                <li>Spawn a dedicated bounded coding agent or model-planning workflow.</li>
+                <li>Create/reuse one continuing PR-owner Neon session; bound and audit each event turn.</li>
                 <li>Feed typed patch/replacement output into existing deterministic fixers.</li>
                 <li>Branch correctly by mode; never create a push approval in prepare-only.</li>
               </ul>
@@ -2045,7 +2087,7 @@ exit code: 127</code></pre>
               <ul>
                 <li>Expire attached but lost/stuck runs.</li>
                 <li>Add exponential backoff, attempt caps, and explicit resume.</li>
-                <li>Separate pause watch, cancel run, abandon diff, and cleanup worktree.</li>
+                <li>Separate pause watch, cancel turn, abandon diff, archive session, and cleanup worktree.</li>
                 <li>Archive terminal admissions and purge/supersede on watch removal.</li>
               </ul>
             </article>
@@ -2054,7 +2096,7 @@ exit code: 127</code></pre>
               <h3>Test the user promise, not the primitives alone</h3>
               <ul>
                 <li>Drive a scheduled watch from baseline through a new review delta.</li>
-                <li>Use a real Flue invoke boundary and a bounded fake planning agent.</li>
+                <li>Use a real Flue session-dispatch boundary and a continuing fake planning agent.</li>
                 <li>Assert diff, checks, approval/push, comment, notifications, and cleanup.</li>
                 <li>Test restarts, duplicates, stale SHAs, forks, permissions, and cancellation.</li>
               </ul>
@@ -2088,9 +2130,11 @@ exit code: 127</code></pre>
               baseline-only behavior is also selectable and clearly explained.
             </li>
             <li>
-              New inline review feedback spawns a bounded coding worker with the
-              exact managed worktree path, repo/PR/branch/SHAs, full feedback,
-              available tools, checks, and policy limits.
+              The first actionable review event starts one PR-owner Neon session
+              with the exact managed worktree path, repo/PR/branch/SHAs, full
+              feedback, available tools, checks, and policy limits. Later feedback
+              is injected into that same session and workspace with refreshed,
+              authoritative facts.
             </li>
             <li>
               Overall requested-changes review bodies and supported PR
@@ -2138,8 +2182,9 @@ exit code: 127</code></pre>
             </li>
             <li>
               A fixture-backed product test executes watch delta → triage →
-              worker plan/fix → prepared diff → verification → approval/push →
-              comment → cleanup, and the smoke command actually runs it.
+              continuing owner-session turn → prepared diff → verification →
+              approval/push → later feedback in the same session → terminal
+              archive/cleanup, and the smoke command actually runs it.
             </li>
           </ol>
         </section>
@@ -2264,8 +2309,8 @@ exit code: 127</code></pre>
                 Three parallel read-only audits focused on backend durability,
                 setup/dashboard UX, and PR-feedback/worker/permission handling.
                 Findings were reconciled against the primary source. No feature
-                code or runtime state was changed; this HTML report is the only
-                workspace modification.
+                code or runtime state was changed; all workspace modifications
+                are planning, roadmap, or plan-archive documentation.
               </p>
             </div>
           </details>

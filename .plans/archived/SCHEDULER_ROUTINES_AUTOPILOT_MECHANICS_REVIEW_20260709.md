@@ -1,5 +1,9 @@
 # Scheduler, Routines, and Autopilot Mechanics Review
 
+Status: superseded and archived. Scheduler/admission findings that remain relevant
+are carried forward in `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`; the current
+evidence review is `.plans/AUTOPILOT_END_TO_END_REVIEW.html`.
+
 Date: 2026-07-09
 Baseline: `origin/main` at `7ec91b96` (`Polish repository README`)
 Method: static inspection only; no tests, builds, linters, migrations, or app commands were run.
@@ -234,7 +238,7 @@ Recommended fix:
 
 ### 8. [P2] Planning and operator terminology are stale
 
-`.plans/AUTOPILOT_LOOP_WIRING_PLAN.md` still says scheduler PR-watch jobs never touch event watermarks and triage never fires automatically. That is no longer true on current `main`.
+`.plans/archived/AUTOPILOT_LOOP_WIRING_PLAN.md` still says scheduler PR-watch jobs never touch event watermarks and triage never fires automatically. That is no longer true on the reviewed `main`.
 
 At the same time, `src/modules/autopilot/state.ts` still describes the queue as placeholder adapters derived from other tables until workflow admission rows land. That is accurate, but it conflicts with Phase 19/20 being marked complete in `.plans/ROADMAP.md`.
 
