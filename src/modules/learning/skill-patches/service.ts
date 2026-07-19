@@ -1,8 +1,18 @@
 import { openDb, withImmediateTransaction } from '../../../lib/sqlite.ts';
 import { asJsonValue } from '../../../lib/action-result';
 import { randomUUID } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import {
+  chmodSync,
+  closeSync,
+  fsyncSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import * as v from 'valibot';
 import { ensureRuntimeHome, runtimePaths } from '../../../runtime-home';
@@ -252,7 +262,7 @@ export async function applySkillPatchCandidate(
             'Skill content changed while this patch was being applied.',
           );
         }
-        writeFileSync(target.skill.path, patch.afterContent, 'utf8');
+        writeFileAtomicallySync(target.skill.path, patch.afterContent);
         fileChanged = true;
         const update = database
           .prepare(
@@ -515,7 +525,7 @@ export async function restoreSkillPatchCandidate(
           },
           createdAt: now,
         });
-        writeFileSync(target.skill.path, patch.beforeContent, 'utf8');
+        writeFileAtomicallySync(target.skill.path, patch.beforeContent);
         fileChanged = true;
         const update = database
           .prepare(
@@ -627,7 +637,7 @@ async function restoreFileIfHashMatches(
   try {
     const current = await readFile(path, 'utf8');
     if (sha256(current) === expectedHash) {
-      await writeFile(path, content, 'utf8');
+      writeFileAtomicallySync(path, content);
       return true;
     }
     return false;
@@ -635,5 +645,27 @@ async function restoreFileIfHashMatches(
     // Preserve the original mutation/audit failure. Manual recovery remains
     // safer than overwriting a concurrently changed skill file.
     return false;
+  }
+}
+
+function writeFileAtomicallySync(path: string, content: string) {
+  const temporaryPath = `${path}.neondeck-${randomUUID()}.tmp`;
+  const mode = statSync(path).mode & 0o777;
+  try {
+    writeFileSync(temporaryPath, content, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode,
+    });
+    chmodSync(temporaryPath, mode);
+    const descriptor = openSync(temporaryPath, 'r');
+    try {
+      fsyncSync(descriptor);
+    } finally {
+      closeSync(descriptor);
+    }
+    renameSync(temporaryPath, path);
+  } finally {
+    rmSync(temporaryPath, { force: true });
   }
 }
