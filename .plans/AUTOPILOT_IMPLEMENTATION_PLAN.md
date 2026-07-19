@@ -1,6 +1,7 @@
 # Autopilot Product-Closure Implementation Plan
 
-Status: proposed; implementation not started
+Status: in progress; Package 1 durable coordinator foundation implemented,
+Packages 2–8 not started
 
 Companion audit: `.plans/AUTOPILOT_END_TO_END_REVIEW.html`
 
@@ -302,12 +303,12 @@ stable id instead of replacing the entire overrides array.
 
 ### Mode behavior is observable and testable
 
-| Mode | Owner turn | Local commit | Verify | Approval | Push | Comment |
-| --- | --- | --- | --- | --- | --- | --- |
-| `notify-only` | no | no | no | no | no | notification only |
-| `prepare-only` | yes | no | optional policy diagnostics | no push approval | never | prepared-diff notification |
-| `autofix-with-approval` | yes | yes | required | exact SHA/policy approval | after approval | after push or terminal block |
-| `autofix-push-when-safe` | yes | yes | required | none unless policy downgrades to approval | automatic when all gates pass | after push or terminal block |
+| Mode                     | Owner turn | Local commit | Verify                      | Approval                                  | Push                          | Comment                      |
+| ------------------------ | ---------- | ------------ | --------------------------- | ----------------------------------------- | ----------------------------- | ---------------------------- |
+| `notify-only`            | no         | no           | no                          | no                                        | no                            | notification only            |
+| `prepare-only`           | yes        | no           | optional policy diagnostics | no push approval                          | never                         | prepared-diff notification   |
+| `autofix-with-approval`  | yes        | yes          | required                    | exact SHA/policy approval                 | after approval                | after push or terminal block |
+| `autofix-push-when-safe` | yes        | yes          | required                    | none unless policy downgrades to approval | automatic when all gates pass | after push or terminal block |
 
 No mode may collapse to “empty checkout prepared.” In `prepare-only`, prepared
 means a reviewable proposed change exists.
@@ -833,6 +834,10 @@ expose the full-autonomy entry point until Package 7 passes.
 
 ### Package 1: truthful contract and durable coordinator foundation
 
+Status: implemented. The exit gate is covered by the coordinator, migration,
+and scheduler/observer race tests; later packages remain intentionally out of
+scope.
+
 Primary files:
 
 - `.plans/ROADMAP.md`
@@ -1194,25 +1199,25 @@ Autopilot is usable when all of these statements are true:
 
 ## Finding-To-Package Traceability
 
-| Audit finding | Owning packages |
-| --- | --- |
-| F1 missing agent/coordinator | 1, 4, 5 |
-| F2 first-poll/current feedback loss | 2, 6 |
-| F3 fetch-after-worktree/fork failure | 2, 3 |
-| F4 hidden and fragmented setup | 6, 8 |
-| F5 presets remove Autopilot | 6 |
-| F6 missing feedback bodies/comments | 2, 4 |
-| F7 pause/stop do not control work | 1, 7 |
-| F8 deadlocked admissions/infinite retries | 1 |
-| F9 approval, safe-push, comment inconsistencies | 5 |
-| F10 API and git credential mismatch | 3, 5 |
-| F11 misleading duplicated queue | 7 |
-| F12 hidden recovery actions/errors | 7 |
-| F13 missing failure/attention accounting | 1, 7 |
-| F14 old-feedback replay/watch status mismatch | 2, 7 |
-| F15 cleanup/lifecycle gaps | 1, 5, 7 |
-| F16 inaccurate docs/completion claims | 1, 8 |
-| F17 accessibility/troubleshooting defects | 7, 8 |
+| Audit finding                                   | Owning packages |
+| ----------------------------------------------- | --------------- |
+| F1 missing agent/coordinator                    | 1, 4, 5         |
+| F2 first-poll/current feedback loss             | 2, 6            |
+| F3 fetch-after-worktree/fork failure            | 2, 3            |
+| F4 hidden and fragmented setup                  | 6, 8            |
+| F5 presets remove Autopilot                     | 6               |
+| F6 missing feedback bodies/comments             | 2, 4            |
+| F7 pause/stop do not control work               | 1, 7            |
+| F8 deadlocked admissions/infinite retries       | 1               |
+| F9 approval, safe-push, comment inconsistencies | 5               |
+| F10 API and git credential mismatch             | 3, 5            |
+| F11 misleading duplicated queue                 | 7               |
+| F12 hidden recovery actions/errors              | 7               |
+| F13 missing failure/attention accounting        | 1, 7            |
+| F14 old-feedback replay/watch status mismatch   | 2, 7            |
+| F15 cleanup/lifecycle gaps                      | 1, 5, 7         |
+| F16 inaccurate docs/completion claims           | 1, 8            |
+| F17 accessibility/troubleshooting defects       | 7, 8            |
 
 ## Explicit Deferrals
 

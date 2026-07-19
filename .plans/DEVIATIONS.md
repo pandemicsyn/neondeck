@@ -15,6 +15,13 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-07-19 - Kilo Reconciliation Fixture Process Inspection
+
+- Roadmap item: Phase 21 / Kilo task retention and reconciliation
+- Decision: Keep production reconciliation's OS process inspection unchanged, but make the persisted-running-task test provide a narrowly controlled `ps` snapshot for its manually spawned fake Kilo process and wait for every forcibly terminated fixture child before deleting the temporary runtime home.
+- Reason: The test sandbox permits liveness checks but denies Node's `ps` spawn with `EPERM`, so the real reconciler correctly records `process-command-unavailable` and admits fresh work. The prior fixture therefore could not represent a persisted process whose command matched its recorded Kilo context; its teardown could also remove SQLite before a child exit handler settled.
+- Follow-up: None. Production deployments must continue to use real `ps` command inspection; this test-only snapshot is scoped to the sandbox-constrained fixture.
+
 ## 2026-07-18 - Diff Review Phase B Completion Audit
 
 - Roadmap item: Diff Improvements Plan / Phase B guided review completion audit
@@ -542,3 +549,53 @@ Use this format:
 - Follow-up: Implement Packages 1–8 in the consolidated plan and mark roadmap items
   complete only after their exit gates and the watcher-to-cleanup acceptance suite
   pass.
+
+## 2026-07-19 - Autopilot Package 1 Active-Attempt Identity
+
+- Roadmap item: Phase 19 / Autopilot Package 1 durable coordinator foundation.
+- Decision: Add `owner_id` and `created_at` to stage attempts and a
+  `current_stage_attempt_id` pointer to admissions in addition to the conceptual
+  Package 1 field list. Enforce one reserved/running attempt per owner with a
+  partial unique index and key every dispatch registration, terminal settlement,
+  stop, and supersession CAS to that exact attempt.
+- Reason: SQLite cannot enforce a partial uniqueness rule across an admission join,
+  and stale reservations without a reservation timestamp cannot be reconciled
+  safely. The denormalized owner identity and explicit pointer make the plan's
+  one-active-turn invariant and late-observation rejection enforceable at the
+  database boundary.
+- Follow-up: Packages 4–5 should attach owner dispatch ids and workflow run ids to
+  this same attempt record rather than introducing another active-run pointer.
+
+## 2026-07-19 - Kilo Verification Fixture Spawn Synchronization
+
+- Roadmap item: Phase 19 / Autopilot Package 1 verification gate.
+- Decision: Add one test-only `await once(child, 'spawn')` synchronization to the
+  existing Kilo persisted-process concurrency fixture before it records the child
+  PID and asks production reconciliation to inspect it. No Kilo production code or
+  behavior changes.
+- Reason: The isolated integration test failed repeatedly before this Package 1
+  change while `git diff -- src/modules/kilo src/kilo-actions.test.ts` was empty,
+  proving the race was present in the `origin/main` implementation under test. The
+  fixture could reconcile between `spawn()` returning and the child emitting its
+  successful `spawn` event, incorrectly treating the simulated persisted process
+  as absent. Waiting for that event reproducibly made the isolated baseline test
+  pass and is required for the repository's mandatory full verification gate.
+- Follow-up: Keep process-liveness behavior unchanged; this synchronization belongs
+  only to fixtures that create a fresh child to simulate a pre-existing process.
+
+## 2026-07-19 - Integration Fixture And Test Budget
+
+- Roadmap item: Phase 19 / Autopilot Package 1 verification gate.
+- Decision: Set the integration-only Vitest `testTimeout` and `hookTimeout` to 60
+  seconds, matching the budget already selected locally by the slowest integration
+  suites. Production code and unit/git suite budgets are unchanged.
+- Reason: In the mandatory `npm run verify` sequence, the preceding 87-second git
+  suite left three concurrent repository-seed `beforeAll` hooks over Vitest's
+  default 10-second hook budget; all three timed out before their test bodies ran.
+  After those hooks were allowed to complete, an unrelated repo-edit push test hit
+  the shared 15-second body budget at 15.013 seconds under the same post-suite load.
+  The integration suite cleared these fixtures when run cleanly, confirming harness
+  resource latency rather than a Package 1 regression. The explicit integration
+  budgets let the required combined verification exercise the actual tests.
+- Follow-up: Keep slow fixture setup visible in CI timing; optimize or share the
+  repository seed separately if it approaches the explicit 60-second budget.

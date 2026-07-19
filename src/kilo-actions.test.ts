@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { chmod, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +13,63 @@ import {
   it,
   vi,
 } from 'vitest';
+
+const persistedProcessSnapshots = vi.hoisted(
+  () => new Map<number, { command: string; startedAt: string }>(),
+);
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  const actualExecFile = actual.execFile as (...args: unknown[]) => unknown;
+  const execFile = ((...args: unknown[]) => {
+    const [file, commandArgs] = args;
+    const pid = Array.isArray(commandArgs) ? Number(commandArgs[1]) : NaN;
+    const snapshot =
+      file === 'ps' ? persistedProcessSnapshots.get(pid) : undefined;
+    if (!snapshot) {
+      const callback = args.at(-1);
+      if (typeof callback !== 'function') {
+        throw new Error('Expected execFile callback.');
+      }
+      const forwarded = (...result: unknown[]) => {
+        callback(...result);
+      };
+      return actualExecFile(...args.slice(0, -1), forwarded);
+    }
+    const callback = args.at(-1);
+    if (typeof callback !== 'function') {
+      throw new Error('Expected execFile callback for fake ps snapshot.');
+    }
+    callback(
+      null,
+      `${psStartTime(snapshot.startedAt)} ${snapshot.command}`,
+      '',
+    );
+    return undefined;
+  }) as typeof actual.execFile;
+  Object.defineProperty(execFile, Symbol.for('nodejs.util.promisify.custom'), {
+    value: (file: string, commandArgs: string[], options: object) =>
+      new Promise((resolve, reject) => {
+        (execFile as (...args: unknown[]) => unknown)(
+          file,
+          commandArgs,
+          options,
+          (error: unknown, stdout: unknown, stderr: unknown) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve({ stdout, stderr });
+          },
+        );
+      }),
+  });
+  return {
+    ...actual,
+    execFile,
+  };
+});
+
 import { listNotifications } from './modules/app-state';
 import { runningProcesses } from './modules/kilo/process';
 import {
@@ -159,13 +217,30 @@ describe('Kilo handoff runner', () => {
       ['run', 'Old prompt', '--dir', paths.home, '--title', 'Stale task'],
       {
         cwd: paths.home,
-        stdio: 'ignore',
+        stdio: ['ignore', 'pipe', 'ignore'],
       },
     );
     try {
+      await once(child, 'spawn');
+      if (!child.stdout) {
+        throw new Error('Expected fake Kilo stdout.');
+      }
+      await once(child.stdout, 'data');
+      if (!child.pid) {
+        throw new Error('Expected fake Kilo pid.');
+      }
+      const processStartedAt = new Date().toISOString();
+      persistedProcessSnapshots.set(
+        child.pid,
+        {
+          command: `${kilo} run Old prompt --dir ${paths.home} --title Stale task`,
+          startedAt: processStartedAt,
+        },
+      );
       insertStaleRunningTask(paths, 'stale-task', {
         pid: child.pid,
         cliPath: kilo,
+        processStartedAt,
       });
 
       const started = await startKiloTask(
@@ -192,7 +267,12 @@ describe('Kilo handoff runner', () => {
         },
       });
     } finally {
-      child.kill('SIGTERM');
+      if (child.pid) persistedProcessSnapshots.delete(child.pid);
+      if (child.exitCode === null && child.signalCode === null) {
+        const closed = once(child, 'close');
+        child.kill('SIGTERM');
+        await closed;
+      }
     }
   });
 
@@ -628,12 +708,13 @@ async function waitForTrackedKiloProcesses() {
   for (const process of processes) {
     process.child.kill('SIGTERM');
   }
+  await completed;
 }
 
 function insertStaleRunningTask(
   paths: RuntimePaths,
   taskId: string,
-  input: { pid?: number; cliPath?: string } = {},
+  input: { pid?: number; cliPath?: string; processStartedAt?: string } = {},
 ) {
   const now = new Date().toISOString();
   const database = new DatabaseSync(paths.neondeckDatabase);
@@ -667,7 +748,7 @@ function insertStaleRunningTask(
         input.cliPath ?? 'kilo',
         JSON.stringify(['run', 'Old prompt']),
         input.pid ?? 4242,
-        now,
+        input.processStartedAt ?? now,
         null,
         JSON.stringify([]),
         null,
@@ -681,4 +762,9 @@ function insertStaleRunningTask(
   } finally {
     database.close();
   }
+}
+
+function psStartTime(iso: string) {
+  const [weekday, month, day, year, time] = new Date(iso).toString().split(' ');
+  return `${weekday} ${month} ${day} ${time} ${year}`;
 }

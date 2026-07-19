@@ -1265,7 +1265,7 @@ Must-haves:
 
 ### Phase 19: PR Event Autopilot
 
-- Status: incomplete. The deterministic actions and safety foundations have landed, and watcher admissions currently advance through triage and worktree preparation. The production path does not yet create/reuse one continuing Neon PR-owner session and workspace or continue automatically through bounded event turns, fix, verification, approval/push, result delivery, and terminal cleanup. The source-of-truth closure plan is `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`; the evidence audit is `.plans/AUTOPILOT_END_TO_END_REVIEW.html`.
+- Status: incomplete. The deterministic actions and safety foundations have landed. Watcher admissions now use a versioned durable PR-owner/coordinator foundation with per-stage attempts, audit transitions, bounded retry/reconciliation, and one CAS-protected triage → worktree-preparation continuation. The production path does not yet allocate/reuse the continuing Neon PR-owner agent instance and exact-SHA owner workspace or continue automatically through bounded event turns, fix, verification, approval/push, result delivery, and terminal cleanup. The source-of-truth closure plan is `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`; the evidence audit is `.plans/AUTOPILOT_END_TO_END_REVIEW.html`.
 
 - [ ] Complete PR event watermarks for commits, review threads, requested-changes review bodies, general PR conversation comments, check suites/runs, mergeability, out-of-date state, and per-item new/changed fingerprints. The current foundation omits or loses some actionable feedback.
 - [x] Add a `triage_pr_event` workflow that classifies deltas into no-op, notify-only, explain-only, prepare-only, autofix-with-approval, or autofix-push-when-safe.

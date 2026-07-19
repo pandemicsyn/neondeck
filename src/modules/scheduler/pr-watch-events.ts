@@ -6,15 +6,12 @@ import {
   type AutopilotMode,
 } from '../autopilot-policy';
 import {
-  beginAutopilotAdmissionPrepare,
   claimAutopilotTriageAdmission,
-  failAutopilotAdmission,
-  listAutopilotAdmissionsAwaitingPreparation,
-  recordAutopilotAdmissionRun,
-  reconcileAutopilotAdmissions,
-  type AutopilotAdmission,
+  coordinateAutopilotAdmission,
+  reconcileAutopilotStageAttempts,
+  type CoordinateAutopilotAdmissionResult,
+  type AutopilotWorkflowInvoker,
 } from '../autopilot';
-import type { AutopilotConcurrencyPolicy } from '../autopilot-policy';
 import {
   listPrWatchEventWatermarks,
   refreshPrWatchEventState,
@@ -90,68 +87,20 @@ export async function refreshWatchJobEvents(
   const watches = await listPrWatchRecords(paths);
   const watchById = new Map(watches.map((watch) => [watch.id, watch]));
   const invokeWorkflow = dependencies.invokeWorkflow ?? invokeScheduledWorkflow;
-  const recovered = await reconcileAutopilotAdmissions(paths);
-  const awaitingPreparation =
-    await listAutopilotAdmissionsAwaitingPreparation(paths);
-  for (const admission of awaitingPreparation) {
+  const reconciliation = await reconcileAutopilotStageAttempts(paths);
+  for (const admission of reconciliation.dueAdmissions) {
     const watch = watchById.get(admission.watchId);
     if (!watch) continue;
     const policy = await readEffectiveWatchAutopilotPolicy(watch, paths);
     if (!('concurrency' in policy) || policy.mode === 'notify-only') continue;
-    await continueTerminalTriageAdmission(
-      admission,
-      policy.concurrency,
-      admission.input as Record<string, JsonValue>,
-      invokeWorkflow,
-      paths,
-    );
-  }
-  for (const admission of recovered) {
-    const watch = watchById.get(admission.watchId);
-    if (!watch) continue;
-    const policy = await readEffectiveWatchAutopilotPolicy(watch, paths);
-    if (!('concurrency' in policy) || policy.mode === 'notify-only') continue;
-    const recoveredClaim = await claimAutopilotTriageAdmission(
+    await coordinateAutopilotAdmission(
       {
-        watchId: admission.watchId,
-        eventFingerprint: admission.eventFingerprint,
-        repoId: admission.repoId,
-        prNumber: admission.prNumber,
-        mode: admission.mode,
-        input: admission.input,
+        admissionId: admission.id,
         limits: policy.concurrency,
+        invokeWorkflow: autopilotWorkflowInvoker(invokeWorkflow),
       },
       paths,
     );
-    if (!recoveredClaim.claimed) continue;
-    try {
-      const { runId } = await invokeWorkflow('triage-pr-event', {
-        ...recoveredClaim.admission.input,
-        admissionId: recoveredClaim.admission.id,
-      } as JsonValue);
-      const attached = await recordAutopilotAdmissionRun(
-        { id: recoveredClaim.admission.id, runId },
-        paths,
-      );
-      if (
-        attached?.terminal?.workflow === 'triage-pr-event' &&
-        !attached.terminal.failed &&
-        attached.terminal.shouldPrepare
-      ) {
-        await continueTerminalTriageAdmission(
-          attached.admission,
-          policy.concurrency,
-          recoveredClaim.admission.input as Record<string, JsonValue>,
-          invokeWorkflow,
-          paths,
-        );
-      }
-    } catch (error) {
-      await failAutopilotAdmission(
-        { id: recoveredClaim.admission.id, error: errorMessage(error) },
-        paths,
-      );
-    }
   }
   const targetWatches = results
     .map((result) => watchIdFromResult(result))
@@ -544,45 +493,23 @@ async function admitWatchTriageEvent(
 
   const invokeWorkflow = dependencies.invokeWorkflow ?? invokeScheduledWorkflow;
   try {
-    const { runId } = await invokeWorkflow('triage-pr-event', {
-      ...input,
-      admissionId: admission.admission.id,
-    });
-    const attached = await recordAutopilotAdmissionRun(
-      { id: admission.admission.id, runId },
+    const coordination = await coordinateAutopilotAdmission(
+      {
+        admissionId: admission.admission.id,
+        limits: policy.concurrency,
+        invokeWorkflow: autopilotWorkflowInvoker(invokeWorkflow),
+      },
       paths,
     );
-    if (
-      attached?.terminal?.workflow === 'triage-pr-event' &&
-      !attached.terminal.failed &&
-      attached.terminal.shouldPrepare
-    ) {
-      await continueTerminalTriageAdmission(
-        attached.admission,
-        policy.concurrency,
-        input,
-        invokeWorkflow,
-        paths,
-      );
-    }
-    return {
-      ok: true,
-      changed: true,
-      triage: {
-        status: 'admitted',
-        eventId,
-        runId,
-        workflow: 'triage-pr-event',
-        input: { ...input, admissionId: admission.admission.id },
-      } as unknown as JsonValue,
-      notifications: [],
-    };
+    return triageAdmissionResultFromCoordination({
+      watch,
+      eventId,
+      input,
+      admissionId: admission.admission.id,
+      coordination,
+    });
   } catch (error) {
     const message = `Autopilot triage admission failed: ${errorMessage(error)}.`;
-    await failAutopilotAdmission(
-      { id: admission.admission.id, error: errorMessage(error) },
-      paths,
-    );
     return {
       ok: false,
       changed: true,
@@ -615,42 +542,157 @@ async function admitWatchTriageEvent(
   }
 }
 
-async function continueTerminalTriageAdmission(
-  admission: AutopilotAdmission,
-  limits: AutopilotConcurrencyPolicy,
-  input: Record<string, JsonValue>,
-  invokeWorkflow: NonNullable<SchedulerDependencies['invokeWorkflow']>,
-  paths: RuntimePaths,
-) {
-  const preparedAdmission = await beginAutopilotAdmissionPrepare(
-    { triageRunId: admission.currentRunId ?? '', limits },
-    paths,
-  );
-  if (!preparedAdmission) return;
-  try {
-    const { runId } = await invokeWorkflow('prepare-pr-worktree', {
-      repoId: preparedAdmission.repoId,
-      prNumber: preparedAdmission.prNumber,
-      eventId: preparedAdmission.eventFingerprint,
-      lock: false,
-      sourceEvent: input,
-    });
-    await recordAutopilotAdmissionRun(
-      { id: preparedAdmission.id, runId },
-      paths,
-    );
-  } catch (error) {
-    await failAutopilotAdmission(
-      { id: preparedAdmission.id, error: errorMessage(error) },
-      paths,
-    );
+export function triageAdmissionResultFromCoordination(input: {
+  watch: Pick<PrWatch, 'id' | 'repoId' | 'repoFullName' | 'prNumber'>;
+  eventId: string;
+  input: Record<string, JsonValue>;
+  admissionId: string;
+  coordination: CoordinateAutopilotAdmissionResult;
+}): TriageAdmissionResult {
+  const triageInput = { ...input.input, admissionId: input.admissionId };
+  const dispatched = input.coordination.dispatched;
+  if (!dispatched) {
+    return {
+      ok: true,
+      changed: true,
+      triage: {
+        status: 'deferred',
+        eventId: input.eventId,
+        workflow: 'triage-pr-event',
+        input: triageInput,
+      } as unknown as JsonValue,
+      notifications: [],
+    };
   }
+
+  if (dispatched.status === 'running') {
+    return {
+      ok: true,
+      changed: true,
+      triage: {
+        status: 'admitted',
+        eventId: input.eventId,
+        runId: dispatched.runId,
+        workflow: 'triage-pr-event',
+        input: triageInput,
+      } as unknown as JsonValue,
+      notifications: [],
+    };
+  }
+
+  const evidence = dispatchEvidence(dispatched, input.admissionId);
+  if (
+    dispatched.status === 'cas-lost' ||
+    dispatched.status === 'stale-reservation' ||
+    dispatched.status === 'not-reserved'
+  ) {
+    return {
+      ok: true,
+      changed: true,
+      triage: {
+        status: dispatched.status,
+        eventId: input.eventId,
+        workflow: 'triage-pr-event',
+        input: triageInput,
+        dispatch: evidence,
+      } as unknown as JsonValue,
+      notifications: [],
+    };
+  }
+
+  const error =
+    dispatched.status === 'dispatch-failed'
+      ? dispatched.error
+      : dispatchFailureMessage(dispatched.status);
+  const message = `Autopilot triage admission failed: ${error}.`;
+  return {
+    ok: false,
+    changed: true,
+    message,
+    triage: {
+      status:
+        dispatched.status === 'dispatch-failed' ? 'failed' : dispatched.status,
+      eventId: input.eventId,
+      workflow: 'triage-pr-event',
+      input: triageInput,
+      dispatch: evidence,
+      error,
+    } as unknown as JsonValue,
+    notifications: [
+      {
+        level: 'attention',
+        title: 'Autopilot triage failed',
+        message,
+        source: 'autopilot',
+        sourceId: `triage:${input.watch.id}:${input.eventId}:${dispatched.status}`,
+        data: {
+          watchId: input.watch.id,
+          repoId: input.watch.repoId,
+          repoFullName: input.watch.repoFullName,
+          prNumber: input.watch.prNumber,
+          eventId: input.eventId,
+          input: triageInput,
+          dispatch: evidence,
+          error,
+        },
+      },
+    ],
+  };
+}
+
+function dispatchEvidence(
+  dispatched: NonNullable<CoordinateAutopilotAdmissionResult['dispatched']>,
+  admissionId: string,
+) {
+  if (dispatched.status === 'missing') {
+    return { status: dispatched.status, admissionId };
+  }
+
+  return {
+    status: dispatched.status,
+    admissionId: dispatched.admission.id,
+    admissionState: dispatched.admission.state,
+    admissionVersion: dispatched.admission.version,
+    attemptId: dispatched.attempt.id,
+    attemptStatus: dispatched.attempt.status,
+    attemptNumber: dispatched.attempt.attemptNumber,
+    workflow: dispatched.attempt.workflow,
+    ...(dispatched.status === 'dispatch-failed'
+      ? { error: dispatched.error }
+      : {}),
+    ...('runId' in dispatched ? { runId: dispatched.runId } : {}),
+  };
+}
+
+function dispatchFailureMessage(
+  status: 'missing' | 'orphaned-receipt' | 'unsupported-transport',
+) {
+  if (status === 'orphaned-receipt') {
+    return 'Flue accepted a workflow receipt that could not be attached to its durable admission';
+  }
+  if (status === 'unsupported-transport') {
+    return 'the reserved autopilot stage cannot be dispatched by the configured workflow transport';
+  }
+  return 'the durable autopilot admission or stage attempt could not be found';
 }
 
 export function pendingEventResultsFromJobResult(value: JsonValue | null) {
   return readJsonArray(readObjectConfig(value).eventResults).filter(
     (eventResult) => pendingTriageEventsFromEventResult(eventResult).length > 0,
   );
+}
+
+function autopilotWorkflowInvoker(
+  invokeWorkflow: NonNullable<SchedulerDependencies['invokeWorkflow']>,
+): AutopilotWorkflowInvoker {
+  return (workflow, input) => {
+    if (workflow !== 'triage-pr-event' && workflow !== 'prepare-pr-worktree') {
+      throw new Error(
+        `Package 1 cannot invoke autopilot workflow ${workflow}.`,
+      );
+    }
+    return invokeWorkflow(workflow, input);
+  };
 }
 
 function pendingTriageEventsFromJobResult(value: JsonValue | null) {
