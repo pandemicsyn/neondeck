@@ -8,6 +8,7 @@ import {
 } from '../scheduled-tasks';
 import type {
   CheckFetcher,
+  PrWatchInitialEventBaselineFetcher,
   PrWatch,
   RefWatch,
   ResolvedPrReference,
@@ -26,6 +27,7 @@ import {
 } from './schemas';
 import {
   defaultCheckFetcher,
+  defaultPrWatchInitialEventBaselineFetcher,
   defaultWatchFetcher,
   fetchWatchDetail,
   meaningfulPrSnapshot,
@@ -47,6 +49,7 @@ import {
   readWatches,
   updateRefWatch,
   updateWatch,
+  markWatchInitialEventProcessed,
   upsertWatchPollingTask,
   watchPollingTaskId,
 } from './store';
@@ -58,10 +61,13 @@ export async function addPrWatch(
   paths = runtimePaths(),
   fetcher: WatchFetcher = defaultWatchFetcher,
   checkFetcher: CheckFetcher = defaultCheckFetcher,
+  initialEventBaselineFetcher?: PrWatchInitialEventBaselineFetcher,
 ): Promise<WatchActionResult> {
   await ensureRuntimeHome(paths);
   const parsed = parseActionInput(watchPrAddInputSchema, input, 'watch_pr_add');
   if (!parsed.ok) return parsed.result;
+  const baselineFetcher =
+    initialEventBaselineFetcher ?? defaultPrWatchInitialEventBaselineFetcher;
 
   const registry = await readRepoRegistrySnapshot(paths);
   const resolved = resolvePrReference(
@@ -79,6 +85,9 @@ export async function addPrWatch(
     );
     const desiredTerminalStateChanged =
       existing.desiredTerminalState !== resolved.reference.desiredTerminalState;
+    const processExistingChanged =
+      parsed.input.processExisting !== undefined &&
+      existing.processExisting !== parsed.input.processExisting;
     const terminalWatch = isTerminalPrWatchStatus(existing.status);
     const intervalChanged =
       parsed.input.intervalSeconds !== undefined &&
@@ -89,18 +98,25 @@ export async function addPrWatch(
       !desiredTerminalStateChanged &&
       !intervalChanged &&
       !missingPollingTask &&
+      !processExistingChanged &&
       !terminalWatch
     ) {
       return okResult(
         'watch_pr_add',
         false,
         'silent',
-        `Watch "${existing.id}" already exists.`,
+        `Watch "${existing.id}" already exists. ${initialFeedbackChoiceMessage(existing)}`,
         {
           watch: existing,
         },
       );
     }
+
+    const baseline =
+      processExistingChanged && parsed.input.processExisting === false
+        ? await fetchInitialEventBaseline(resolved.reference, baselineFetcher)
+        : undefined;
+    if (baseline && !baseline.ok) return baseline.result;
 
     let watch: PrWatch = desiredTerminalStateChanged
       ? {
@@ -116,6 +132,18 @@ export async function addPrWatch(
           updatedAt: new Date().toISOString(),
         }
       : existing;
+    if (processExistingChanged) {
+      watch = {
+        ...watch,
+        processExisting: parsed.input.processExisting ?? false,
+        initialEventProcessedAt:
+          parsed.input.processExisting === false
+            ? new Date().toISOString()
+            : null,
+        lastOutcome: 'updated',
+        updatedAt: new Date().toISOString(),
+      };
+    }
 
     if (terminalWatch) {
       const detail = await fetchWatchDetail(
@@ -146,9 +174,9 @@ export async function addPrWatch(
         lastCheckedAt: now,
         updatedAt: now,
       };
-      updateWatch(paths, watch);
-    } else if (desiredTerminalStateChanged) {
-      updateWatch(paths, watch);
+      updateWatch(paths, watch, baseline?.watermarks);
+    } else if (desiredTerminalStateChanged || processExistingChanged) {
+      updateWatch(paths, watch, baseline?.watermarks);
     }
     await upsertWatchPollingTask(
       watch,
@@ -163,7 +191,7 @@ export async function addPrWatch(
       'watch_pr_add',
       true,
       'updated',
-      `Updated watch "${watch.id}".`,
+      `Updated watch "${watch.id}". ${initialFeedbackChoiceMessage(watch)}`,
       {
         watch,
       },
@@ -176,6 +204,12 @@ export async function addPrWatch(
     fetcher,
   );
   if (!detail.ok) return detail.result;
+
+  const processExisting = parsed.input.processExisting ?? false;
+  const baseline = processExisting
+    ? undefined
+    : await fetchInitialEventBaseline(resolved.reference, baselineFetcher);
+  if (baseline && !baseline.ok) return baseline.result;
 
   const now = new Date().toISOString();
   const snapshot = await snapshotFromDetail(
@@ -203,17 +237,116 @@ export async function addPrWatch(
     lastOutcome: 'created',
     lastCheckedAt: now,
     createdBy: parsed.input.createdBy ?? null,
+    processExisting,
+    initialEventProcessedAt: processExisting ? null : now,
     createdAt: now,
     updatedAt: now,
   };
 
-  insertWatch(paths, watch);
+  insertWatch(paths, watch, baseline?.watermarks);
   await upsertWatchPollingTask(watch, paths, parsed.input.intervalSeconds);
 
-  return okResult('watch_pr_add', true, 'created', `Watching ${watch.id}.`, {
-    watch,
-  });
+  return okResult(
+    'watch_pr_add',
+    true,
+    'created',
+    `Watching ${watch.id}. ${initialFeedbackChoiceMessage(watch)}`,
+    { watch },
+  );
 }
+
+function initialFeedbackChoiceMessage(watch: PrWatch) {
+  if (!watch.processExisting) {
+    return 'Current feedback was baselined; only later changes will run.';
+  }
+  return watch.initialEventProcessedAt
+    ? 'Current actionable feedback was selected for processing and its initial state has already been handled.'
+    : 'Current actionable feedback will be processed before later changes.';
+}
+
+async function fetchInitialEventBaseline(
+  reference: ResolvedPrReference,
+  fetcher: PrWatchInitialEventBaselineFetcher,
+): Promise<
+  | { ok: true; watermarks: Awaited<ReturnType<typeof fetcher>> }
+  | { ok: false; result: WatchActionResult }
+> {
+  try {
+    const watermarks = await fetcher(reference, reference.id);
+    const validationError = initialEventBaselineValidationError(watermarks);
+    if (validationError) {
+      return {
+        ok: false,
+        result: failResult(
+          'watch_pr_add',
+          'Could not capture a complete initial PR event baseline before enabling the watch.',
+          {
+            requires: ['completePrEventFacts'],
+            errors: [validationError],
+          },
+        ),
+      };
+    }
+    return {
+      ok: true,
+      watermarks,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      result: failResult(
+        'watch_pr_add',
+        'Could not capture the initial PR event baseline before enabling the watch.',
+        {
+          requires: ['completePrEventFacts'],
+          errors: [error instanceof Error ? error.message : String(error)],
+        },
+      ),
+    };
+  }
+}
+
+const requiredInitialEventBaselineCategories = [
+  'commits',
+  'review_threads',
+  'requested_changes_reviews',
+  'conversation_comments',
+  'check_suites',
+  'check_runs',
+  'mergeability',
+  'out_of_date_branch',
+] as const;
+
+function initialEventBaselineValidationError(
+  watermarks: Awaited<ReturnType<PrWatchInitialEventBaselineFetcher>>,
+) {
+  const byCategory = new Map(
+    watermarks.map((watermark) => [watermark.category, watermark]),
+  );
+  const missing = requiredInitialEventBaselineCategories.filter(
+    (category) => !byCategory.has(category),
+  );
+  if (missing.length > 0) {
+    return `Initial PR event baseline is missing categories: ${missing.join(', ')}.`;
+  }
+  const truncated = requiredInitialEventBaselineCategories.filter(
+    (category) => {
+      const value = byCategory.get(category)?.value;
+      return (
+        typeof value === 'object' &&
+        value !== null &&
+        !Array.isArray(value) &&
+        value.truncated === true
+      );
+    },
+  );
+  if (truncated.length > 0) {
+    return `Initial PR event baseline is truncated for categories: ${truncated.join(', ')}.`;
+  }
+  return null;
+}
+
+export { markWatchInitialEventProcessed };
 
 export async function listPrWatches(
   paths = runtimePaths(),

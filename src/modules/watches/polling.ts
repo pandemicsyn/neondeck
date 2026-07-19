@@ -1,5 +1,9 @@
 import type { GitHubCheckSummary, GitHubPullRequestDetail } from '../github';
-import { fetchCheckSummary, fetchPullRequestDetail } from '../github';
+import {
+  fetchCheckSummary,
+  fetchPullRequestDetail,
+  fetchPullRequestEventState,
+} from '../github';
 import { readRepoRegistrySnapshot } from '../repos';
 import type { RuntimePaths } from '../../runtime-home';
 import type {
@@ -75,6 +79,24 @@ export async function defaultWatchFetcher(reference: ResolvedPrReference) {
     repo: reference.githubName,
     number: reference.prNumber,
   });
+}
+
+export async function defaultPrWatchInitialEventBaselineFetcher(
+  reference: ResolvedPrReference,
+  watchId: string,
+) {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    throw new Error('GITHUB_TOKEN is not configured');
+  }
+  const state = await fetchPullRequestEventState({
+    token,
+    owner: reference.githubOwner,
+    repo: reference.githubName,
+    number: reference.prNumber,
+  });
+  const { watermarksFromEventState } = await import('../pr-events');
+  return watermarksFromEventState(watchId, state);
 }
 
 export async function defaultCheckFetcher(

@@ -1,7 +1,6 @@
 # Autopilot Product-Closure Implementation Plan
 
-Status: in progress; Package 1 durable coordinator foundation implemented,
-Packages 2–8 not started
+Status: in progress; Packages 1–2 implemented, Packages 3–8 not started
 
 Companion audit: `.plans/AUTOPILOT_END_TO_END_REVIEW.html`
 
@@ -866,6 +865,8 @@ Exit gate: existing watch→triage→prepare works through the coordinator and c
 dispatch twice when scheduler and observer race.
 
 ### Package 2: event intake, initial processing, and persistent exact-SHA checkout
+
+Status: implemented on 2026-07-19. Packages 3–8 remain unstarted.
 
 Primary files:
 

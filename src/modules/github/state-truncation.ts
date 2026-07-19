@@ -6,6 +6,7 @@ export type GitHubPullRequestEventStateTruncation = {
   commits: boolean;
   reviewThreads: boolean;
   reviews: boolean;
+  conversationComments: boolean;
   checkSuites: boolean;
   checkRuns: boolean;
 };
@@ -17,6 +18,7 @@ export function pullRequestEventStateTruncation(
     commits: Boolean(state.commitsTruncated),
     reviewThreads: Boolean(state.reviewThreadsTruncated),
     reviews: Boolean(state.reviewsTruncated),
+    conversationComments: Boolean(state.conversationCommentsTruncated),
     checkSuites: Boolean(state.checkSuitesTruncated),
     checkRuns: Boolean(state.checkRunsTruncated),
   };

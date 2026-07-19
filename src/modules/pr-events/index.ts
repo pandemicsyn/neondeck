@@ -44,3 +44,8 @@ export {
   listPrWatchEventWatermarks,
 } from './service';
 export { resolvePullRequestTarget } from './target';
+export { categoryWatermark, watermarksFromEventState } from './watermarks';
+export {
+  readAddressedPrFeedback,
+  recordAddressedPrFeedback,
+} from './addressed';

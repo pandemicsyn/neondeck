@@ -913,6 +913,15 @@ describe('app API safety routes', () => {
           headers: { 'content-type': 'application/json' },
         });
       }
+      if (
+        url.includes('/issues/123/comments') &&
+        (init?.method ?? 'GET') === 'GET'
+      ) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
       if (url.includes('/commits/head-sha/check-suites')) {
         return new Response(JSON.stringify({ check_suites: [] }), {
           status: 200,

@@ -61,6 +61,9 @@ export async function postPullRequestComment(options: {
     nodeId: data.node_id ?? null,
     url: data.html_url,
     authorLogin: data.user?.login ?? null,
+    authorType: data.user?.type ?? null,
+    authorIsBot:
+      data.user?.type === undefined ? undefined : data.user.type === 'Bot',
     body: data.body,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
@@ -91,6 +94,31 @@ export async function listPullRequestComments(options: {
   );
 }
 
+export async function listPullRequestCommentsWithMetadata(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+}): Promise<{
+  comments: GitHubPullRequestComment[];
+  truncated: boolean;
+}> {
+  const comments: GitHubPullRequestComment[] = [];
+  for (let page = 1; page <= 5; page += 1) {
+    const response = await githubFetch(
+      options.token,
+      `https://api.github.com/repos/${encodePathSegment(options.owner)}/${encodePathSegment(options.repo)}/issues/${options.number}/comments?per_page=100&page=${page}`,
+    );
+    const data = v.parse(
+      githubIssueCommentsApiResponseSchema,
+      await response.json(),
+    );
+    comments.push(...data.map(pullRequestCommentFromApi));
+    if (data.length < 100) return { comments, truncated: false };
+  }
+  return { comments, truncated: true };
+}
+
 function pullRequestCommentFromApi(
   data: v.InferOutput<typeof githubIssueCommentApiResponseSchema>,
 ): GitHubPullRequestComment {
@@ -99,6 +127,9 @@ function pullRequestCommentFromApi(
     nodeId: data.node_id ?? null,
     url: data.html_url,
     authorLogin: data.user?.login ?? null,
+    authorType: data.user?.type ?? null,
+    authorIsBot:
+      data.user?.type === undefined ? undefined : data.user.type === 'Bot',
     body: data.body,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
@@ -363,6 +394,11 @@ function normalizeReviewThreadComment(
     id: comment.id,
     databaseId: comment.databaseId ?? null,
     authorLogin: comment.author?.login ?? null,
+    authorType: comment.author?.__typename ?? null,
+    authorIsBot:
+      comment.author?.__typename === undefined
+        ? undefined
+        : comment.author.__typename === 'Bot',
     body: comment.body,
     url: comment.url ?? null,
     path: comment.path ?? thread.path ?? null,

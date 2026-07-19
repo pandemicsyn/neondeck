@@ -599,3 +599,17 @@ Use this format:
   budgets let the required combined verification exercise the actual tests.
 - Follow-up: Keep slow fixture setup visible in CI timing; optimize or share the
   repository seed separately if it approaches the explicit 60-second budget.
+
+## 2026-07-19 - Autopilot Package 2 Fingerprint-Bound Feedback And Initial Delivery
+
+- Roadmap item: Phase 19 / Autopilot Package 2 event intake and process-existing behavior.
+- Decision: Persist addressed review-thread/comment state as item fingerprints instead of permanent bare ids, snapshot every current comment when a whole thread is addressed, and couple notify-only synthetic delivery with `initial_event_processed_at` in one SQLite transaction. Admission-backed modes advance the same marker only after the Package 1 admission is durably claimed. For `processExisting: false`, fetch complete authoritative event facts before a watch becomes pollable, atomically persist their fingerprint watermarks with a processed marker, and use ordinary previous/current comparison from the first poll onward. Reconfiguration captures a fresh baseline, and the migration marks pre-existing watches processed while retaining their existing watermarks.
+- Reason: A permanent id filter would hide edited feedback, while recording only a thread's latest comment would replay its older comments after restart. Advancing the initial-processing marker before either admission or notification durability could also lose the user's explicit process-existing request during a crash. Timestamp cutoffs cannot distinguish feedback created later in the same GitHub timestamp second and can replay older facts when a watch is reconfigured or upgraded. Fingerprint-bound baselines re-admit only edited or appended feedback, and the atomic baseline/marker and notification/marker writes give every mode restart-safe one-shot semantics.
+- Follow-up: Package 5 should use this addressing ledger when it posts final pushed-SHA results and thread replies; it must continue to record the exact fingerprints represented by each delivery rather than reverting to permanent id suppression.
+
+## 2026-07-19 - Autopilot Package 2 Verification Formatting Cleanup
+
+- Roadmap item: Phase 19 / Autopilot Package 2 verification gate.
+- Decision: Include Prettier-only normalization of the generated Package 2 migration snapshot and the pre-existing `src/kilo-actions.test.ts` formatting drift; do not change Kilo behavior.
+- Reason: The mandatory repository-wide `npm run verify` gate passed tests, builds, package inspection, and packed-CLI smoke, then failed only its final `format:check` on those two files. `src/kilo-actions.test.ts` had no implementation diff before the formatter-only cleanup.
+- Follow-up: None.

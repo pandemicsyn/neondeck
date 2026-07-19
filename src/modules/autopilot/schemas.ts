@@ -77,6 +77,7 @@ import {
   releaseWorktreeLock,
   syncWorktree,
   type WorktreeRecord,
+  fetchExactPullRequestHead,
 } from '../worktrees';
 import type { AutopilotMode } from '../autopilot-policy';
 
@@ -108,6 +109,7 @@ export type AutopilotDependencies = {
     Parameters<typeof postGitHubPrComment>[2]
   >['listPullRequestComments'];
   pushGit?: typeof gitPushHead;
+  fetchExactPullRequestHead?: typeof fetchExactPullRequestHead;
   token?: string;
 };
 
@@ -134,6 +136,8 @@ export const prEventDeltaSchema = v.object({
     'merge-conflict',
     'branch-out-of-date',
     'metadata',
+    'conversation-comment',
+    'incomplete-feedback',
     'unknown',
   ]),
   id: v.optional(nonEmptyStringSchema),
@@ -181,7 +185,9 @@ export const prFactsSchema = v.object({
   headRef: v.optional(nonEmptyStringSchema),
   headOwner: v.optional(nonEmptyStringSchema),
   headName: v.optional(nonEmptyStringSchema),
+  headRepoFullName: v.optional(nonEmptyStringSchema),
   baseRef: nonEmptyStringSchema,
+  baseRepoFullName: v.optional(nonEmptyStringSchema),
   updatedAt: nonEmptyStringSchema,
   maintainerCanModify: v.optional(v.boolean()),
 });
@@ -200,6 +206,8 @@ export const reviewCommentSchema = v.object({
   id: nonEmptyStringSchema,
   databaseId: v.nullable(v.number()),
   authorLogin: nullableStringSchema,
+  authorType: v.optional(nullableStringSchema),
+  authorIsBot: v.optional(v.boolean()),
   body: v.string(),
   url: nullableStringSchema,
   path: nullableStringSchema,
@@ -224,9 +232,13 @@ export const reviewSchema = v.object({
   nodeId: nullableStringSchema,
   state: nonEmptyStringSchema,
   authorLogin: nullableStringSchema,
+  authorType: v.optional(nullableStringSchema),
+  authorIsBot: v.optional(v.boolean()),
   submittedAt: nullableStringSchema,
   commitId: nullableStringSchema,
   url: nullableStringSchema,
+  body: v.optional(nullableStringSchema),
+  bodyTruncated: v.optional(v.boolean()),
 });
 export const requestedChangesStateSchema = v.object({
   active: v.array(reviewSchema),
@@ -321,8 +333,12 @@ export const prReviewEventStateSchema = v.object({
   mergeCommitSha: nullableStringSchema,
   headSha: nonEmptyStringSchema,
   headRef: nullableStringSchema,
+  headOwner: v.optional(nullableStringSchema),
+  headName: v.optional(nullableStringSchema),
+  headRepoFullName: v.optional(nullableStringSchema),
   baseRef: nonEmptyStringSchema,
   baseSha: nullableStringSchema,
+  baseRepoFullName: v.optional(nullableStringSchema),
   mergeable: v.nullable(v.boolean()),
   mergeableState: nullableStringSchema,
   maintainerCanModify: v.boolean(),
@@ -332,6 +348,8 @@ export const prReviewEventStateSchema = v.object({
   reviewThreadsTruncated: v.optional(v.boolean()),
   requestedChangesReviews: v.array(reviewSchema),
   requestedChangesState: requestedChangesStateSchema,
+  conversationComments: v.optional(v.array(prCommentFixtureSchema)),
+  conversationCommentsTruncated: v.optional(v.boolean()),
   checkSuites: v.array(checkSuiteSchema),
   checkSuitesTruncated: v.optional(v.boolean()),
   checkRuns: v.array(checkRunSchema),
@@ -392,6 +410,9 @@ export const preparePrWorktreeInputSchema = v.strictObject({
   repoId: nonEmptyStringSchema,
   prNumber: positiveIntegerSchema,
   eventId: v.optional(nonEmptyStringSchema),
+  ownerId: v.optional(nonEmptyStringSchema),
+  worktreeId: v.optional(nonEmptyStringSchema),
+  sourceEvent: v.optional(v.record(v.string(), v.unknown())),
   createWorktree: v.optional(v.boolean()),
   sync: v.optional(v.boolean()),
   fetch: v.optional(v.boolean()),

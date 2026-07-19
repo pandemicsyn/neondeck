@@ -5,8 +5,18 @@ import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { GitHubPullRequestDetail } from './modules/github';
-import { addPrWatch } from './modules/watches';
+import { addPrWatch as addPrWatchWithoutBaseline } from './modules/watches';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
+import { emptyPrWatchInitialEventBaseline } from './testing/pr-watch-event-baseline';
+
+const addPrWatch = (...args: Parameters<typeof addPrWatchWithoutBaseline>) =>
+  addPrWatchWithoutBaseline(
+    args[0],
+    args[1],
+    args[2],
+    args[3],
+    emptyPrWatchInitialEventBaseline,
+  );
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
@@ -71,10 +81,14 @@ describe('agent handoff CLI', () => {
       {
         args: ['watch-pr', 'neondeck#123', '--json'],
         action: 'watch_pr_add',
+        message: expect.stringContaining(
+          'Current feedback was baselined; only later changes will run.',
+        ),
       },
       {
         args: ['note', 'Finished', 'handoff', '--from', 'codex', '--json'],
         action: 'handoff_note_create',
+        message: expect.any(String),
       },
       {
         args: [
@@ -88,17 +102,20 @@ describe('agent handoff CLI', () => {
           '--json',
         ],
         action: 'handoff_pr_register',
+        message: expect.any(String),
       },
     ]) {
       const result = await runCli(home, command.args);
       const parsed = JSON.parse(result.stdout) as {
         ok: boolean;
         action: string;
+        message: string;
       };
 
       expect(parsed).toMatchObject({
         ok: true,
         action: command.action,
+        message: command.message,
       });
     }
   });

@@ -156,9 +156,13 @@ export type GitHubPullRequestReview = {
   nodeId: string | null;
   state: string;
   authorLogin: string | null;
+  authorType?: string | null;
+  authorIsBot?: boolean;
   submittedAt: string | null;
   commitId: string | null;
   url: string | null;
+  body?: string | null;
+  bodyTruncated?: boolean;
 };
 
 export type GitHubSubmittedPullRequestReview = GitHubPullRequestReview & {
@@ -189,6 +193,8 @@ export type GitHubPullRequestReviewThreadComment = {
   id: string;
   databaseId: number | null;
   authorLogin: string | null;
+  authorType?: string | null;
+  authorIsBot?: boolean;
   body: string;
   url: string | null;
   path: string | null;
@@ -198,6 +204,7 @@ export type GitHubPullRequestReviewThreadComment = {
   reviewId: number | null;
   createdAt: string;
   updatedAt: string;
+  bodyTruncated?: boolean;
 };
 
 export type GitHubCheckSuiteDetail = {
@@ -265,6 +272,8 @@ export type GitHubPullRequestComment = {
   nodeId: string | null;
   url: string;
   authorLogin: string | null;
+  authorType?: string | null;
+  authorIsBot?: boolean;
   body: string;
   createdAt: string;
   updatedAt: string;
@@ -282,8 +291,12 @@ export type GitHubPullRequestEventState = {
   mergeCommitSha: string | null;
   headSha: string;
   headRef: string | null;
+  headOwner?: string | null;
+  headName?: string | null;
+  headRepoFullName?: string | null;
   baseRef: string;
   baseSha: string | null;
+  baseRepoFullName?: string | null;
   mergeable: boolean | null;
   mergeableState: string | null;
   maintainerCanModify: boolean;
@@ -293,6 +306,8 @@ export type GitHubPullRequestEventState = {
   reviewThreadsTruncated?: boolean;
   requestedChangesReviews: GitHubPullRequestReview[];
   requestedChangesState: GitHubPullRequestRequestedChangesState;
+  conversationComments?: GitHubPullRequestComment[];
+  conversationCommentsTruncated?: boolean;
   checkSuites: GitHubCheckSuiteDetail[];
   checkSuitesTruncated?: boolean;
   checkRuns: GitHubCheckRunDetail[];
@@ -483,7 +498,9 @@ export const githubPullRequestReviewApiItemSchema = v.object({
   id: v.number(),
   node_id: v.optional(v.string()),
   state: v.string(),
-  user: v.optional(v.nullable(v.object({ login: v.string() }))),
+  user: v.optional(
+    v.nullable(v.object({ login: v.string(), type: v.optional(v.string()) })),
+  ),
   submitted_at: v.optional(v.nullable(v.string())),
   commit_id: v.optional(v.nullable(v.string())),
   html_url: v.optional(v.nullable(v.string())),
@@ -514,7 +531,9 @@ export const githubIssueCommentApiResponseSchema = v.object({
   node_id: v.optional(v.nullable(v.string())),
   html_url: v.string(),
   body: v.string(),
-  user: v.optional(v.nullable(v.object({ login: v.string() }))),
+  user: v.optional(
+    v.nullable(v.object({ login: v.string(), type: v.optional(v.string()) })),
+  ),
   created_at: v.string(),
   updated_at: v.string(),
 });
@@ -532,7 +551,14 @@ export const githubReviewThreadCommentGraphqlNodeSchema = v.object({
   databaseId: v.optional(v.nullable(v.number())),
   body: v.string(),
   url: v.optional(v.nullable(v.string())),
-  author: v.optional(v.nullable(v.object({ login: v.string() }))),
+  author: v.optional(
+    v.nullable(
+      v.object({
+        login: v.string(),
+        __typename: v.optional(v.string()),
+      }),
+    ),
+  ),
   createdAt: v.string(),
   updatedAt: v.string(),
   path: v.optional(v.nullable(v.string())),
@@ -696,6 +722,7 @@ export const pullRequestReviewThreadsQuery = `
                 body
                 url
                 author {
+                  __typename
                   login
                 }
                 createdAt
@@ -743,6 +770,7 @@ export const pullRequestReviewSurfaceThreadsQuery = `
                 body
                 url
                 author {
+                  __typename
                   login
                 }
                 createdAt
@@ -774,6 +802,7 @@ export const reviewThreadCommentsQuery = `
             body
             url
             author {
+              __typename
               login
             }
             createdAt
@@ -820,6 +849,7 @@ export const pullRequestReviewThreadNodeQuery = `
             body
             url
             author {
+              __typename
               login
             }
             createdAt

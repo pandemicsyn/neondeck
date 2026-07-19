@@ -1,5 +1,8 @@
 import type { JsonValue } from '@flue/runtime';
-import type { AutomationExecutionResult } from '../app-state';
+import {
+  publishNotificationEvent,
+  type AutomationExecutionResult,
+} from '../app-state';
 import { readRepoRegistrySnapshot } from '../repos';
 import {
   repoAutopilotPolicyForWatch,
@@ -14,6 +17,7 @@ import {
 } from '../autopilot';
 import {
   listPrWatchEventWatermarks,
+  readAddressedPrFeedback,
   refreshPrWatchEventState,
   type PrWatchEventWatermarkCategory,
   type PrWatchEventWatermarkRecord,
@@ -23,10 +27,16 @@ import {
   readRuntimeJson,
   type RuntimePaths,
 } from '../../runtime-home';
-import { listPrWatchRecords, type PrWatch } from '../watches';
+import {
+  listPrWatchRecords,
+  markWatchInitialEventProcessed,
+  persistInitialWatchNotificationAndMarkProcessed,
+  type PrWatch,
+} from '../watches';
 import type { SchedulerDependencies } from './schemas';
 import {
   deltasFromChangedCategories,
+  initialActionableDeltas,
   prEventNotification,
   prEventSourceId,
   shouldAdmitTriageForDeltas,
@@ -69,7 +79,16 @@ type TriageAdmissionResult = {
   triage?: JsonValue;
   notifications: NonNullable<AutomationExecutionResult['notifications']>;
   message?: string;
+  durablyAdmitted?: boolean;
 };
+
+const initialActionableCategories: PrWatchEventWatermarkCategory[] = [
+  'review_threads',
+  'requested_changes_reviews',
+  'conversation_comments',
+  'check_suites',
+  'check_runs',
+];
 
 export async function refreshWatchJobEvents(
   results: Awaited<
@@ -162,8 +181,21 @@ async function refreshOneWatchEvent(
   }
 
   const changedCategories = changedCategoriesFromActionResult(refresh);
+  const currentWatermarks = watermarksFromActionResult(refresh);
   const policy = await readEffectiveWatchAutopilotPolicy(watch, paths);
   const mode = policy.mode;
+  if (!watch.initialEventProcessedAt) {
+    return processInitialWatchEventState(
+      watch,
+      currentWatermarks,
+      changedCategories,
+      mode,
+      policy,
+      paths,
+      dependencies,
+      refresh as unknown as JsonValue,
+    );
+  }
   if (changedCategories.length === 0) {
     if (pendingTriageEvents.length > 0) {
       if (mode === 'notify-only') {
@@ -197,26 +229,19 @@ async function refreshOneWatchEvent(
     };
   }
 
-  const currentWatermarks = watermarksFromActionResult(refresh);
-  if (previousWatermarks.length === 0) {
-    return {
-      ok: true,
-      changed: false,
-      watchId: watch.id,
-      repoId: watch.repoId,
-      repoFullName: watch.repoFullName,
-      prNumber: watch.prNumber,
-      mode,
-      changedCategories,
-      message: `Seeded PR event watermark baseline for ${watch.id}.`,
-      refresh: refresh as unknown as JsonValue,
-    };
-  }
-
+  const addressed = readAddressedPrFeedback(
+    watch.repoFullName,
+    watch.prNumber,
+    paths,
+  );
   const deltas = deltasFromChangedCategories(
     changedCategories,
     currentWatermarks,
     previousWatermarks,
+    {
+      addressedReviewThreadFingerprints: addressed.reviewThreadFingerprints,
+      addressedReviewCommentFingerprints: addressed.reviewCommentFingerprints,
+    },
   );
   const current = snapshotFromWatermarks(currentWatermarks);
   const previous = snapshotFromWatermarks(previousWatermarks);
@@ -327,6 +352,184 @@ async function refreshOneWatchEvent(
     refresh: refresh as unknown as JsonValue,
     triage,
     notifications,
+  };
+}
+
+async function processInitialWatchEventState(
+  watch: PrWatch,
+  currentWatermarks: PrWatchEventWatermarkRecord[],
+  changedCategories: PrWatchEventWatermarkCategory[],
+  mode: AutopilotMode,
+  policy: Awaited<ReturnType<typeof readEffectiveWatchAutopilotPolicy>>,
+  paths: RuntimePaths,
+  dependencies: SchedulerDependencies,
+  refresh: JsonValue,
+): Promise<WatchJobEventResult> {
+  if (watch.initialEventProcessedAt) {
+    return {
+      ok: true,
+      changed: false,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      mode,
+      changedCategories,
+      message: `Seeded PR event watermark baseline for ${watch.id}.`,
+      refresh,
+    };
+  }
+
+  if (!watch.processExisting) {
+    return {
+      ok: false,
+      changed: false,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      mode,
+      changedCategories,
+      message:
+        'The process-existing baseline is missing; reconfigure this watch before polling to avoid losing or replaying feedback.',
+      refresh,
+    };
+  }
+
+  const addressed = readAddressedPrFeedback(
+    watch.repoFullName,
+    watch.prNumber,
+    paths,
+  );
+  const filters = {
+    addressedReviewThreadFingerprints: addressed.reviewThreadFingerprints,
+    addressedReviewCommentFingerprints: addressed.reviewCommentFingerprints,
+  };
+  const deltas = initialActionableDeltas(currentWatermarks, filters);
+  if (deltas.length === 0) {
+    markWatchInitialEventProcessed(paths, watch.id);
+    return {
+      ok: true,
+      changed: false,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      mode,
+      changedCategories,
+      deltas,
+      message: `Processed the initial PR state for ${watch.id}; no actionable current feedback was found.`,
+      refresh,
+    };
+  }
+
+  if (!('concurrency' in policy)) {
+    return {
+      ok: false,
+      changed: true,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      mode,
+      changedCategories,
+      deltas,
+      message:
+        'Current PR feedback could not be durably admitted because Autopilot policy is unavailable.',
+      refresh,
+    };
+  }
+
+  if (mode === 'notify-only') {
+    const notification = prEventNotification(
+      watch,
+      initialActionableCategories,
+      currentWatermarks,
+      deltas,
+      mode,
+    );
+    const delivery = persistInitialWatchNotificationAndMarkProcessed(
+      paths,
+      watch.id,
+      notification,
+    );
+    if (delivery.notification) {
+      publishNotificationEvent({
+        id: delivery.notification.id,
+        action: 'created',
+        notification: delivery.notification,
+        changedAt: delivery.notification.createdAt,
+      });
+    }
+    return {
+      ok: true,
+      changed: true,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      mode,
+      changedCategories,
+      deltas,
+      message: `Recorded current PR feedback for ${watch.id} in notify-only mode.`,
+      refresh,
+    };
+  }
+
+  const current = snapshotFromWatermarks(currentWatermarks);
+  const eventId = `${prEventSourceId(
+    watch,
+    initialActionableCategories,
+    currentWatermarks,
+  )}:initial-actionable-state`;
+  const input = jsonRecord({
+    repoId: watch.repoId,
+    repoFullName: watch.repoFullName,
+    prNumber: watch.prNumber,
+    watchId: watch.id,
+    eventId,
+    source: 'watch',
+    synthetic: 'initial-actionable-state',
+    autopilotMode: triageModeForPolicy(mode),
+    previous: {},
+    current,
+    deltas,
+  });
+  const admission = await admitWatchTriageEvent(
+    watch,
+    paths,
+    dependencies,
+    input,
+  );
+  if (admission.durablyAdmitted) {
+    markWatchInitialEventProcessed(paths, watch.id);
+  }
+  return {
+    ok: admission.ok,
+    changed: true,
+    watchId: watch.id,
+    repoId: watch.repoId,
+    repoFullName: watch.repoFullName,
+    prNumber: watch.prNumber,
+    mode,
+    changedCategories,
+    deltas,
+    message: admission.durablyAdmitted
+      ? `Durably admitted current actionable PR feedback for ${watch.id}.`
+      : (admission.message ??
+        `Current actionable PR feedback for ${watch.id} remains unprocessed.`),
+    refresh,
+    triage: admission.triage,
+    notifications: [
+      prEventNotification(
+        watch,
+        changedCategories,
+        currentWatermarks,
+        deltas,
+        mode,
+      ),
+      ...admission.notifications,
+    ],
   };
 }
 
@@ -488,6 +691,7 @@ async function admitWatchTriageEvent(
         admission: admission.admission,
       } as unknown as JsonValue,
       notifications: [],
+      durablyAdmitted: true,
     };
   }
 
@@ -538,6 +742,7 @@ async function admitWatchTriageEvent(
           },
         },
       ],
+      durablyAdmitted: true,
     };
   }
 }
@@ -562,6 +767,7 @@ export function triageAdmissionResultFromCoordination(input: {
         input: triageInput,
       } as unknown as JsonValue,
       notifications: [],
+      durablyAdmitted: true,
     };
   }
 
@@ -577,6 +783,7 @@ export function triageAdmissionResultFromCoordination(input: {
         input: triageInput,
       } as unknown as JsonValue,
       notifications: [],
+      durablyAdmitted: true,
     };
   }
 
@@ -597,6 +804,7 @@ export function triageAdmissionResultFromCoordination(input: {
         dispatch: evidence,
       } as unknown as JsonValue,
       notifications: [],
+      durablyAdmitted: true,
     };
   }
 
@@ -637,6 +845,7 @@ export function triageAdmissionResultFromCoordination(input: {
         },
       },
     ],
+    durablyAdmitted: true,
   };
 }
 
@@ -864,6 +1073,7 @@ function isWatermarkCategory(
     value === 'commits' ||
     value === 'review_threads' ||
     value === 'requested_changes_reviews' ||
+    value === 'conversation_comments' ||
     value === 'check_suites' ||
     value === 'check_runs' ||
     value === 'mergeability' ||

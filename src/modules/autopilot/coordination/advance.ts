@@ -133,9 +133,9 @@ export async function admitAutopilotEvent(
           `INSERT INTO autopilot_admissions (
              id, owner_id, watch_id, event_fingerprint, event_sequence, repo_id,
              pr_number, mode, input_json, state, priority, current_workflow,
-             current_stage_attempt_id, version, attempt_count, next_attempt_at,
+             current_stage_attempt_id, worktree_id, version, attempt_count, next_attempt_at,
              last_error, last_outcome_json, completed_at, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?);`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?);`,
         )
         .run(
           admissionId,
@@ -150,6 +150,7 @@ export async function admitAutopilotEvent(
           state,
           state === 'triage-admitted' ? 'triage-pr-event' : null,
           attemptId,
+          owner.worktreeId,
           attemptId ? 1 : 0,
           nextAttemptAt,
           limitedOutcome?.message ?? null,

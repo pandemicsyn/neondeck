@@ -68,6 +68,7 @@ export {
   fetchPullRequestReviewSurfaceThreadsWithMetadata,
   fetchPullRequestReviewThreads,
   listPullRequestComments,
+  listPullRequestCommentsWithMetadata,
   postPullRequestComment,
   fetchPullRequestReviewThreadsWithMetadata,
   invalidatePullRequestReviewSurfaceThreadCache,

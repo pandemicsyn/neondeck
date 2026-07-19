@@ -230,13 +230,10 @@ describe('Kilo handoff runner', () => {
         throw new Error('Expected fake Kilo pid.');
       }
       const processStartedAt = new Date().toISOString();
-      persistedProcessSnapshots.set(
-        child.pid,
-        {
-          command: `${kilo} run Old prompt --dir ${paths.home} --title Stale task`,
-          startedAt: processStartedAt,
-        },
-      );
+      persistedProcessSnapshots.set(child.pid, {
+        command: `${kilo} run Old prompt --dir ${paths.home} --title Stale task`,
+        startedAt: processStartedAt,
+      });
       insertStaleRunningTask(paths, 'stale-task', {
         pid: child.pid,
         cliPath: kilo,

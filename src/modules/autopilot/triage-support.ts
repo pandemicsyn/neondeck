@@ -129,7 +129,9 @@ export function prFactsFromDetail(
     headRef: detail.headRef ?? detail.headSha,
     headOwner: detail.headOwner ?? owner,
     headName: detail.headName ?? name,
+    headRepoFullName: detail.headRepoFullName ?? detail.repo,
     baseRef: detail.baseRef,
+    baseRepoFullName: detail.baseRepoFullName ?? detail.repo,
     updatedAt: detail.updatedAt,
     maintainerCanModify: detail.maintainerCanModify ?? false,
   };
@@ -166,6 +168,7 @@ export function classifySignals(
           delta.type === 'review-thread-resolved' ||
           delta.type === 'metadata',
       ),
+    incomplete: deltas.some((delta) => delta.type === 'incomplete-feedback'),
     explanatory: deltas.some(
       (delta) => delta.requiresExplanation || delta.type === 'new-commit',
     ),
@@ -181,6 +184,7 @@ export function classificationFor(
   if (signals.closed || signals.recoveryOnly || signals.draft) {
     return 'notify-only';
   }
+  if (signals.incomplete) return 'explain-only';
   if (signals.mergeBlocked) return 'explain-only';
   if (
     signals.failingChecks ||
@@ -208,6 +212,11 @@ export function reasonsFor(
   if (signals.draft) reasons.push('Draft PRs are not prepared for autofix.');
   if (signals.recoveryOnly) {
     reasons.push('Only recovery or metadata deltas were present.');
+  }
+  if (signals.incomplete) {
+    reasons.push(
+      'Required feedback facts are incomplete, so autonomous preparation is blocked.',
+    );
   }
   if (signals.mergeBlocked) {
     reasons.push('Merge conflict or out-of-date branch needs explanation.');

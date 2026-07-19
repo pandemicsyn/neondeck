@@ -47,6 +47,8 @@ export const prWatches = sqliteTable(
     lastOutcome: text('last_outcome'),
     lastCheckedAt: text('last_checked_at'),
     createdBy: text('created_by'),
+    processExisting: integer('process_existing').default(0).notNull(),
+    initialEventProcessedAt: text('initial_event_processed_at'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -90,6 +92,33 @@ export const prWatchEventWatermarks = sqliteTable(
     index('idx_pr_watch_event_watermarks_watch').on(
       table.watchId,
       sql`${table.updatedAt} DESC`,
+    ),
+  ],
+);
+
+export const prFeedbackAddressing = sqliteTable(
+  'pr_feedback_addressing',
+  {
+    repoFullName: text('repo_full_name').notNull(),
+    prNumber: integer('pr_number').notNull(),
+    itemKind: text('item_kind').notNull(),
+    itemId: text('item_id').notNull(),
+    itemFingerprint: text('item_fingerprint').notNull(),
+    deliveryCommentId: text('delivery_comment_id'),
+    addressedAt: text('addressed_at').notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.repoFullName,
+        table.prNumber,
+        table.itemKind,
+        table.itemId,
+      ],
+    }),
+    index('idx_pr_feedback_addressing_target').on(
+      table.repoFullName,
+      table.prNumber,
     ),
   ],
 );

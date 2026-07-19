@@ -41,6 +41,8 @@ export type PrWatch = {
   lastOutcome: WatchOutcome | null;
   lastCheckedAt: string | null;
   createdBy: string | null;
+  processExisting: boolean;
+  initialEventProcessedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -103,6 +105,15 @@ export type ResolvedRefReference = {
 export type WatchFetcher = (
   watch: ResolvedPrReference,
 ) => Promise<GitHubPullRequestDetail>;
+export type PrWatchInitialWatermark = {
+  category: string;
+  sourceUpdatedAt: string | null;
+  value: JsonValue;
+};
+export type PrWatchInitialEventBaselineFetcher = (
+  watch: ResolvedPrReference,
+  watchId: string,
+) => Promise<PrWatchInitialWatermark[]>;
 export type CheckFetcher = (
   watch: ResolvedPrReference | ResolvedRefReference,
   ref: string,
@@ -118,6 +129,7 @@ export const watchPrAddInputSchema = v.object({
   desiredTerminalState: desiredTerminalStateSchema,
   intervalSeconds: v.optional(v.pipe(v.number(), v.integer(), v.minValue(60))),
   createdBy: v.optional(nonEmptyStringSchema),
+  processExisting: v.optional(v.boolean()),
 });
 
 export const watchPrRemoveInputSchema = v.object({

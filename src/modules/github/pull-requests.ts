@@ -4,7 +4,10 @@ import {
   fetchCheckRunDetailsWithMetadata,
   fetchCheckSuitesWithMetadata,
 } from './checks';
-import { fetchPullRequestReviewThreadsWithMetadata } from './comments';
+import {
+  fetchPullRequestReviewThreadsWithMetadata,
+  listPullRequestCommentsWithMetadata,
+} from './comments';
 import {
   fetchPullRequestReviewsWithMetadata,
   requestedChangesStateFromReviews,
@@ -85,6 +88,7 @@ export async function fetchPullRequestEventState(options: {
     commitDetails,
     reviewDetails,
     reviewThreadDetails,
+    conversationCommentDetails,
     checkSuiteDetails,
     checkRunDetails,
     branchPermissions,
@@ -93,6 +97,7 @@ export async function fetchPullRequestEventState(options: {
     fetchPullRequestCommitsWithMetadata(options),
     fetchPullRequestReviewsWithMetadata(options),
     fetchPullRequestReviewThreadsWithMetadata(options),
+    listPullRequestCommentsWithMetadata(options),
     fetchCheckSuitesWithMetadata({
       token: options.token,
       owner: options.owner,
@@ -129,8 +134,12 @@ export async function fetchPullRequestEventState(options: {
     mergeCommitSha: detail.mergeCommitSha,
     headSha: detail.headSha,
     headRef: detail.headRef ?? null,
+    headOwner: detail.headOwner ?? null,
+    headName: detail.headName ?? null,
+    headRepoFullName: detail.headRepoFullName ?? null,
     baseRef: detail.baseRef,
     baseSha: detail.baseSha ?? null,
+    baseRepoFullName: detail.baseRepoFullName ?? null,
     mergeable: detail.mergeable ?? null,
     mergeableState: detail.mergeableState ?? null,
     maintainerCanModify: detail.maintainerCanModify ?? false,
@@ -144,6 +153,8 @@ export async function fetchPullRequestEventState(options: {
       ),
     requestedChangesReviews: requestedChangesState.active,
     requestedChangesState,
+    conversationComments: conversationCommentDetails.comments,
+    conversationCommentsTruncated: conversationCommentDetails.truncated,
     reviewsTruncated: reviewDetails.truncated,
     checkSuites: checkSuiteDetails.checkSuites,
     checkSuitesTruncated: checkSuiteDetails.truncated,

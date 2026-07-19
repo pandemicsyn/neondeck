@@ -29,10 +29,24 @@ import {
   postGitHubPrThreadReply,
   postGitHubPrThreadResolution,
   putGitHubPrReviewDraft,
+  readAddressedPrFeedback,
   refreshPrWatchEventState,
 } from './modules/pr-events';
 import { runtimePaths } from './runtime-home';
-import { addPrWatch, removePrWatch } from './modules/watches';
+import {
+  addPrWatch as addPrWatchWithoutBaseline,
+  removePrWatch,
+} from './modules/watches';
+import { emptyPrWatchInitialEventBaseline } from './testing/pr-watch-event-baseline';
+
+const addPrWatch = (...args: Parameters<typeof addPrWatchWithoutBaseline>) =>
+  addPrWatchWithoutBaseline(
+    args[0],
+    args[1],
+    args[2],
+    args[3],
+    emptyPrWatchInitialEventBaseline,
+  );
 
 const tempRoots: string[] = [];
 const originalEnv = { ...process.env };
@@ -84,6 +98,7 @@ describe('PR event state watermarks', () => {
           'commits',
           'review_threads',
           'requested_changes_reviews',
+          'conversation_comments',
           'check_suites',
           'check_runs',
           'mergeability',
@@ -104,7 +119,32 @@ describe('PR event state watermarks', () => {
         watermarks: expect.arrayContaining([
           expect.objectContaining({ category: 'commits' }),
           expect.objectContaining({ category: 'review_threads' }),
-          expect.objectContaining({ category: 'requested_changes_reviews' }),
+          expect.objectContaining({
+            category: 'requested_changes_reviews',
+            watermark: expect.objectContaining({
+              reviews: [
+                expect.objectContaining({
+                  id: 9001,
+                  body: 'Please cover the timeout path in the overall review.',
+                  bodyTruncated: false,
+                  fingerprint: expect.any(String),
+                }),
+              ],
+            }),
+          }),
+          expect.objectContaining({
+            category: 'conversation_comments',
+            watermark: expect.objectContaining({
+              comments: [
+                expect.objectContaining({
+                  id: 7001,
+                  body: 'Please update the user-facing error too.',
+                  actionable: true,
+                  fingerprint: expect.any(String),
+                }),
+              ],
+            }),
+          }),
           expect.objectContaining({ category: 'check_suites' }),
           expect.objectContaining({ category: 'check_runs' }),
           expect.objectContaining({
@@ -154,6 +194,151 @@ describe('PR event state watermarks', () => {
           'out_of_date_branch',
         ],
       },
+    });
+  });
+
+  it('prefers authoritative GitHub actor types over login suffix heuristics', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
+    const state = prEventState({
+      reviewThreads: [
+        {
+          ...prEventState().reviewThreads[0]!,
+          comments: [
+            {
+              ...prEventState().reviewThreads[0]!.comments[0]!,
+              authorLogin: 'human-with-bot-suffix[bot]',
+              authorType: 'User',
+              authorIsBot: false,
+            },
+            {
+              ...prEventState().reviewThreads[0]!.comments[0]!,
+              id: 'comment-2',
+              databaseId: 112,
+              authorLogin: 'automation',
+              authorType: 'Bot',
+              authorIsBot: true,
+            },
+            {
+              ...prEventState().reviewThreads[0]!.comments[0]!,
+              id: 'comment-3',
+              databaseId: 113,
+              authorLogin: 'neondeck-service-user',
+              authorType: 'User',
+              authorIsBot: false,
+              body: 'Handled.\n\n<!-- neondeck:generated -->',
+            },
+          ],
+        },
+      ],
+      conversationComments: [
+        {
+          ...prEventState().conversationComments![0]!,
+          authorLogin: 'release-bot',
+          authorType: 'User',
+          authorIsBot: false,
+        },
+        {
+          ...prEventState().conversationComments![0]!,
+          id: 7002,
+          nodeId: 'issue-comment-7002',
+          authorLogin: 'release-automation',
+          authorType: 'Bot',
+          authorIsBot: true,
+        },
+        {
+          ...prEventState().conversationComments![0]!,
+          id: 7003,
+          nodeId: 'issue-comment-7003',
+          authorLogin: 'legacy-automation[bot]',
+          authorType: undefined,
+          authorIsBot: undefined,
+        },
+        {
+          ...prEventState().conversationComments![0]!,
+          id: 7004,
+          nodeId: 'issue-comment-7004',
+          authorLogin: 'neondeck-service-user',
+          authorType: 'User',
+          authorIsBot: false,
+          body: 'Handled.\n\n<!-- neondeck:generated -->',
+        },
+      ],
+    });
+
+    await refreshPrWatchEventState(
+      { watchId: 'pandemicsyn/neondeck#123' },
+      paths,
+      { fetchPullRequestEventState: async () => state },
+    );
+    const result = await listPrWatchEventWatermarks(
+      { watchId: 'pandemicsyn/neondeck#123' },
+      paths,
+    );
+    const watermarks = (
+      result.data as {
+        watermarks: Array<{
+          category: string;
+          watermark: Record<string, unknown>;
+        }>;
+      }
+    ).watermarks;
+    const review = watermarks.find(
+      (item) => item.category === 'review_threads',
+    )!.watermark;
+    const conversation = watermarks.find(
+      (item) => item.category === 'conversation_comments',
+    )!.watermark;
+
+    expect(review).toMatchObject({
+      threads: [
+        {
+          comments: [
+            expect.objectContaining({
+              id: 111,
+              actionable: true,
+              ignoredReason: null,
+            }),
+            expect.objectContaining({
+              id: 112,
+              actionable: false,
+              ignoredReason: 'bot-author',
+            }),
+            expect.objectContaining({
+              id: 113,
+              actionable: false,
+              ignoredReason: 'neondeck-authored',
+            }),
+          ],
+        },
+      ],
+    });
+    expect(conversation).toMatchObject({
+      comments: [
+        expect.objectContaining({
+          id: 7001,
+          actionable: true,
+          ignoredReason: null,
+        }),
+        expect.objectContaining({
+          id: 7002,
+          actionable: false,
+          ignoredReason: 'bot-author',
+        }),
+        expect.objectContaining({
+          id: 7003,
+          actionable: false,
+          ignoredReason: 'bot-author',
+        }),
+        expect.objectContaining({
+          id: 7004,
+          actionable: false,
+          ignoredReason: 'neondeck-authored',
+        }),
+      ],
     });
   });
 
@@ -384,6 +569,24 @@ describe('PR event state watermarks', () => {
     await writeRepoRegistry(paths.repos);
     const calls: unknown[] = [];
 
+    const eventState = prEventState({
+      reviewThreads: [
+        {
+          ...prEventState().reviewThreads[0]!,
+          comments: [
+            prEventState().reviewThreads[0]!.comments[0]!,
+            {
+              ...prEventState().reviewThreads[0]!.comments[0]!,
+              id: 'comment-2',
+              databaseId: 112,
+              body: 'Please also update the fallback.',
+              updatedAt: '2026-06-30T20:06:00Z',
+            },
+          ],
+        },
+      ],
+    });
+
     await expect(
       postGitHubPrComment(
         {
@@ -397,7 +600,7 @@ describe('PR event state watermarks', () => {
         },
         paths,
         {
-          fetchPullRequestEventState: async () => prEventState(),
+          fetchPullRequestEventState: async () => eventState,
           postPullRequestComment: async (input) => {
             calls.push(input);
             return {
@@ -440,8 +643,20 @@ describe('PR event state watermarks', () => {
         owner: 'pandemicsyn',
         repo: 'neondeck',
         number: 123,
-        body: 'Addressed review feedback in commit abc123. Checks: test.',
+        body: 'Addressed review feedback in commit abc123. Checks: test.\n\n<!-- neondeck:generated -->',
       }),
+    ]);
+    const addressed = readAddressedPrFeedback(
+      'pandemicsyn/neondeck',
+      123,
+      paths,
+    );
+    expect([...addressed.reviewThreadFingerprints.keys()]).toEqual([
+      'thread-1',
+    ]);
+    expect([...addressed.reviewCommentFingerprints.keys()].sort()).toEqual([
+      '111',
+      '112',
     ]);
   });
 
@@ -908,6 +1123,7 @@ describe('PR event state watermarks', () => {
     expect(mismatchCalls).toEqual(['fetch:thread-1']);
 
     const replyCalls: string[] = [];
+    let replyBody: string | undefined;
     await expect(
       postGitHubPrThreadReply(
         { repo: 'neondeck', prNumber: 123 },
@@ -921,6 +1137,7 @@ describe('PR event state watermarks', () => {
           },
           replyToPullRequestReviewThread: async (input) => {
             replyCalls.push(`reply:${input.threadId}`);
+            replyBody = input.body;
             return reviewThread({
               comments: [
                 {
@@ -954,6 +1171,7 @@ describe('PR event state watermarks', () => {
       },
     });
     expect(replyCalls).toEqual(['fetch:thread-1', 'reply:thread-1']);
+    expect(replyBody).toBe('Thanks, fixed.\n\n<!-- neondeck:generated -->');
 
     const resolveCalls: string[] = [];
     await expect(
@@ -1297,6 +1515,7 @@ function prEventState(
         submittedAt: '2026-06-30T20:06:00Z',
         commitId: 'head123',
         url: 'https://github.com/pandemicsyn/neondeck/pull/123#pullrequestreview-9001',
+        body: 'Please cover the timeout path in the overall review.',
       },
     ],
     requestedChangesState: {
@@ -1334,6 +1553,19 @@ function prEventState(
         },
       ],
     },
+    conversationComments: [
+      {
+        id: 7001,
+        nodeId: 'issue-comment-7001',
+        url: 'https://github.com/pandemicsyn/neondeck/pull/123#issuecomment-7001',
+        authorLogin: 'reviewer',
+        authorType: 'User',
+        authorIsBot: false,
+        body: 'Please update the user-facing error too.',
+        createdAt: '2026-06-30T20:06:30Z',
+        updatedAt: '2026-06-30T20:06:30Z',
+      },
+    ],
     checkSuites: [
       {
         id: 5001,

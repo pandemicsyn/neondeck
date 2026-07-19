@@ -41,6 +41,7 @@ export type PrWatchEventWatermarkCategory =
   | 'commits'
   | 'review_threads'
   | 'requested_changes_reviews'
+  | 'conversation_comments'
   | 'check_suites'
   | 'check_runs'
   | 'mergeability'
@@ -97,6 +98,7 @@ export const watermarkCategories: PrWatchEventWatermarkCategory[] = [
   'commits',
   'review_threads',
   'requested_changes_reviews',
+  'conversation_comments',
   'check_suites',
   'check_runs',
   'mergeability',

@@ -80,6 +80,7 @@ import {
   upsertWatermarks,
   watermarksFromEventState,
 } from './watermarks';
+import { recordAddressedPrFeedback } from './addressed';
 import {
   errorMessage,
   eventTargetJson,
@@ -1066,6 +1067,15 @@ export async function postGitHubPrThreadReply(
   });
   if (!verified.ok) return verified.result;
 
+  const replyBody = `${parsed.output.text}\n\n${neondeckSelfAuthoredMarker}`;
+  if (replyBody.length > githubCommentLengthLimit) {
+    return failResult(
+      action,
+      'Review thread reply plus its Neondeck marker exceeds GitHub’s comment length limit.',
+      { requires: ['shorterComment'] },
+    );
+  }
+
   try {
     const replier =
       dependencies.replyToPullRequestReviewThread ??
@@ -1075,7 +1085,7 @@ export async function postGitHubPrThreadReply(
       thread = await replier({
         token,
         threadId,
-        body: parsed.output.text,
+        body: replyBody,
       });
     } finally {
       invalidatePullRequestReviewSurfaceThreadCache({
@@ -1361,6 +1371,13 @@ export async function postGitHubPrComment(
         comment.body.includes(idempotencyMarker),
       );
       if (existing) {
+        persistAddressedFeedback(
+          resolved.target,
+          parsed.output,
+          eventState,
+          existing.id,
+          paths,
+        );
         return okResult(
           'pr_comment',
           false,
@@ -1384,10 +1401,8 @@ export async function postGitHubPrComment(
 
     const poster =
       dependencies.postPullRequestComment ?? postPullRequestComment;
-    const body = idempotencyMarker
-      ? `${parsed.output.body}\n\n${idempotencyMarker}`
-      : parsed.output.body;
-    if (body.length > 65_536) {
+    const body = `${parsed.output.body}\n\n${idempotencyMarker ?? neondeckSelfAuthoredMarker}`;
+    if (body.length > githubCommentLengthLimit) {
       return failResult(
         'pr_comment',
         'PR comment plus its idempotency marker exceeds GitHub’s comment length limit.',
@@ -1401,6 +1416,13 @@ export async function postGitHubPrComment(
       number: resolved.target.number,
       body,
     });
+    persistAddressedFeedback(
+      resolved.target,
+      parsed.output,
+      eventState,
+      comment.id,
+      paths,
+    );
 
     return okResult(
       'pr_comment',
@@ -1424,6 +1446,104 @@ export async function postGitHubPrComment(
       errors: [errorMessage(error)],
     });
   }
+}
+
+const neondeckSelfAuthoredMarker = '<!-- neondeck:generated -->';
+const githubCommentLengthLimit = 65_536;
+
+function persistAddressedFeedback(
+  target: PullRequestTarget,
+  input: {
+    addressedReviewThreadIds?: string[];
+    addressedReviewCommentIds?: string[];
+  },
+  eventState: GitHubPullRequestEventState,
+  deliveryCommentId: string | number,
+  paths: RuntimePaths,
+) {
+  const reviewThreadIds = input.addressedReviewThreadIds ?? [];
+  const reviewCommentIds = input.addressedReviewCommentIds ?? [];
+  if (reviewThreadIds.length === 0 && reviewCommentIds.length === 0) return;
+  const fingerprints = addressedFeedbackFingerprints(eventState);
+  const commentsAddressedByThread = reviewThreadIds.flatMap(
+    (threadId) => fingerprints.reviewCommentsByThread.get(threadId) ?? [],
+  );
+  recordAddressedPrFeedback(
+    {
+      repoFullName: target.repoFullName,
+      prNumber: target.number,
+      reviewThreadFingerprints: Object.fromEntries(
+        reviewThreadIds.flatMap((id) => {
+          const fingerprint = fingerprints.reviewThreads.get(id);
+          return fingerprint ? [[id, fingerprint]] : [];
+        }),
+      ),
+      reviewCommentFingerprints: Object.fromEntries(
+        [
+          ...new Set([...reviewCommentIds, ...commentsAddressedByThread]),
+        ].flatMap((id) => {
+          const fingerprint = fingerprints.reviewComments.get(id);
+          return fingerprint ? [[id, fingerprint]] : [];
+        }),
+      ),
+      deliveryCommentId,
+    },
+    paths,
+  );
+}
+
+function addressedFeedbackFingerprints(state: GitHubPullRequestEventState) {
+  const reviewThreads = new Map<string, string>();
+  const reviewComments = new Map<string, string>();
+  const reviewCommentsByThread = new Map<string, string[]>();
+  const watermark = watermarksFromEventState('addressed-feedback', state).find(
+    (item) => item.category === 'review_threads',
+  )?.value;
+  const payload =
+    watermark && typeof watermark === 'object' && !Array.isArray(watermark)
+      ? (watermark as Record<string, unknown>)
+      : {};
+  const threads = Array.isArray(payload.threads) ? payload.threads : [];
+  for (const value of threads) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const thread = value as Record<string, unknown>;
+    const threadId = typeof thread.id === 'string' ? thread.id : null;
+    const comments = Array.isArray(thread.comments) ? thread.comments : [];
+    const commentIds: string[] = [];
+    let latestFingerprint: string | null = null;
+    let latestUpdatedAt = '';
+    for (const commentValue of comments) {
+      if (
+        !commentValue ||
+        typeof commentValue !== 'object' ||
+        Array.isArray(commentValue)
+      ) {
+        continue;
+      }
+      const comment = commentValue as Record<string, unknown>;
+      const id =
+        typeof comment.id === 'string' || typeof comment.id === 'number'
+          ? String(comment.id)
+          : null;
+      const fingerprint =
+        typeof comment.fingerprint === 'string' ? comment.fingerprint : null;
+      if (id && fingerprint) {
+        reviewComments.set(id, fingerprint);
+        commentIds.push(id);
+      }
+      const updatedAt =
+        typeof comment.updatedAt === 'string' ? comment.updatedAt : '';
+      if (fingerprint && updatedAt >= latestUpdatedAt) {
+        latestFingerprint = fingerprint;
+        latestUpdatedAt = updatedAt;
+      }
+    }
+    if (threadId && latestFingerprint) {
+      reviewThreads.set(threadId, latestFingerprint);
+      reviewCommentsByThread.set(threadId, commentIds);
+    }
+  }
+  return { reviewThreads, reviewComments, reviewCommentsByThread };
 }
 
 export async function refreshPrWatchEventState(

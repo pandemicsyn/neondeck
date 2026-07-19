@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync, readdirSync } from 'node:fs';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -22,6 +22,75 @@ afterEach(async () => {
 });
 
 describe('Drizzle v1 package behavior', () => {
+  it('marks pre-existing watches initially processed while preserving upgrade watermarks', async () => {
+    const root = await tempDir();
+    const database = new DatabaseSync(join(root, 'upgrade.sqlite'));
+    database.exec(`
+      CREATE TABLE pr_watches (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE pr_watch_event_watermarks (
+        watch_id TEXT NOT NULL,
+        category TEXT NOT NULL,
+        watermark_json TEXT NOT NULL,
+        source_updated_at TEXT,
+        checked_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (watch_id, category)
+      );
+      INSERT INTO pr_watches (id, created_at, updated_at)
+      VALUES ('example/sample#7', '2026-07-01T00:00:00.000Z', '2026-07-18T12:34:56.000Z');
+      INSERT INTO pr_watch_event_watermarks (
+        watch_id, category, watermark_json, source_updated_at,
+        checked_at, created_at, updated_at
+      ) VALUES (
+        'example/sample#7', 'conversation_comments',
+        '{"comments":[{"id":7001,"fingerprint":"already-handled"}]}',
+        '2026-07-18T12:00:00.000Z', '2026-07-18T12:34:56.000Z',
+        '2026-07-18T12:34:56.000Z', '2026-07-18T12:34:56.000Z'
+      );
+    `);
+
+    try {
+      const migration = await readFile(
+        join(
+          process.cwd(),
+          'src/runtime-home/app-db/migrations/20260719083828_autopilot_package_2_intake/migration.sql',
+        ),
+        'utf8',
+      );
+      for (const statement of migration.split('--> statement-breakpoint')) {
+        if (statement.trim()) database.exec(statement);
+      }
+
+      expect(
+        database
+          .prepare(
+            'SELECT process_existing, initial_event_processed_at FROM pr_watches WHERE id = ?;',
+          )
+          .get('example/sample#7'),
+      ).toEqual({
+        process_existing: 0,
+        initial_event_processed_at: '2026-07-18T12:34:56.000Z',
+      });
+      expect(
+        database
+          .prepare(
+            'SELECT watermark_json FROM pr_watch_event_watermarks WHERE watch_id = ? AND category = ?;',
+          )
+          .get('example/sample#7', 'conversation_comments'),
+      ).toEqual({
+        watermark_json:
+          '{"comments":[{"id":7001,"fingerprint":"already-handled"}]}',
+      });
+    } finally {
+      database.close();
+    }
+  });
+
   it('reads timestamped migration directories and records the v1 journal shape', async () => {
     const root = await tempDir();
     const migrations = join(root, 'migrations');

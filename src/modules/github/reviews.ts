@@ -1048,9 +1048,16 @@ export async function fetchPullRequestReviewsWithMetadata(options: {
       nodeId: review.node_id ?? null,
       state: review.state,
       authorLogin: review.user?.login ?? null,
+      authorType: review.user?.type ?? null,
+      authorIsBot:
+        review.user?.type === undefined
+          ? undefined
+          : review.user.type === 'Bot',
       submittedAt: review.submitted_at ?? null,
       commitId: review.commit_id ?? null,
       url: review.html_url ?? null,
+      body: review.body ?? null,
+      bodyTruncated: false,
     })),
     truncated: Boolean(nextUrl),
   };
@@ -1318,6 +1325,9 @@ async function createPullRequestReview(options: {
     nodeId: review.node_id ?? null,
     state: review.state,
     authorLogin: review.user?.login ?? null,
+    authorType: review.user?.type ?? null,
+    authorIsBot:
+      review.user?.type === undefined ? undefined : review.user.type === 'Bot',
     submittedAt: review.submitted_at ?? null,
     commitId: review.commit_id ?? null,
     url: review.html_url ?? null,

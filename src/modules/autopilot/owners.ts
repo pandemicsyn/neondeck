@@ -111,6 +111,23 @@ export async function readAutopilotPrOwnerByWatch(
   }
 }
 
+export async function readAutopilotPrOwnerById(
+  ownerId: string,
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    return readAutopilotPrOwner(
+      database
+        .prepare('SELECT * FROM autopilot_pr_owners WHERE id = ?;')
+        .get(ownerId),
+    );
+  } finally {
+    database.close();
+  }
+}
+
 export async function listAutopilotPrOwners(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
@@ -120,6 +137,61 @@ export async function listAutopilotPrOwners(paths = runtimePaths()) {
       .all()
       .map(readAutopilotPrOwner)
       .filter((owner): owner is AutopilotPrOwner => Boolean(owner));
+  } finally {
+    database.close();
+  }
+}
+
+export async function bindAutopilotOwnerWorktree(
+  input: {
+    ownerId: string;
+    worktreeId: string;
+    headSha: string;
+  },
+  paths = runtimePaths(),
+  now = new Date(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return withImmediateTransaction(database, () => {
+      const owner = readAutopilotPrOwner(
+        database
+          .prepare('SELECT * FROM autopilot_pr_owners WHERE id = ?;')
+          .get(input.ownerId),
+      );
+      if (!owner)
+        throw new Error(`Autopilot owner ${input.ownerId} was not found.`);
+      if (owner.worktreeId && owner.worktreeId !== input.worktreeId) {
+        throw new Error(
+          `Autopilot owner ${owner.id} is already bound to worktree ${owner.worktreeId}.`,
+        );
+      }
+      const nowIso = now.toISOString();
+      database
+        .prepare(
+          `UPDATE autopilot_pr_owners
+           SET worktree_id = ?, current_head_sha = ?, status = 'active',
+               updated_at = ?
+           WHERE id = ? AND (worktree_id IS NULL OR worktree_id = ?);`,
+        )
+        .run(
+          input.worktreeId,
+          input.headSha,
+          nowIso,
+          owner.id,
+          input.worktreeId,
+        );
+      const updated = readAutopilotPrOwner(
+        database
+          .prepare('SELECT * FROM autopilot_pr_owners WHERE id = ?;')
+          .get(owner.id),
+      );
+      if (!updated || updated.worktreeId !== input.worktreeId) {
+        throw new Error('Autopilot owner worktree binding lost its CAS.');
+      }
+      return updated;
+    });
   } finally {
     database.close();
   }
