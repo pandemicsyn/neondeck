@@ -8,6 +8,7 @@ import { extractHandledPrEvent } from './modules/learning/reviews/pr-context';
 import {
   claimAutopilotTriageAdmission,
   coordinateAutopilotAdmission,
+  listAutopilotAdmissions,
   listAutopilotStageAttempts,
   type AutopilotWorkflowInvoker,
 } from './modules/autopilot';
@@ -361,6 +362,83 @@ describe('Flue learning hooks', () => {
         runId: 'run:observer-prepare',
       }),
     ]);
+  });
+
+  it('preserves bounded action failure details for autopilot retry classification', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-learning-hooks-'));
+    tempRoots.push(home);
+    const paths = runtimePaths(home);
+    const limits = {
+      maxAutonomousJobs: 2,
+      maxActiveWorkflowRuns: 2,
+      maxPerRepoAutonomousJobs: 2,
+      singleMutationPerPr: true,
+      localExecutionLimit: 1,
+    };
+    const admitted = await claimAutopilotTriageAdmission(
+      {
+        watchId: 'watch:action-failure',
+        eventFingerprint: 'event:action-failure',
+        repoId: 'repo',
+        prNumber: 43,
+        mode: 'prepare-only',
+        input: { eventId: 'event:action-failure' },
+        limits,
+      },
+      paths,
+    );
+    const errors = Array.from({ length: 10_000 }, () => ({}));
+    errors[7] = 'x'.repeat(5_000);
+    await coordinateAutopilotAdmission(
+      {
+        admissionId: admitted.admission.id,
+        limits,
+        invokeWorkflow: async () => ({ runId: 'run:action-failure' }),
+      },
+      paths,
+    );
+
+    let subscriber: FlueObservationSubscriber | undefined;
+    installFlueObservationHandlers(paths, {
+      observe(next) {
+        subscriber = next;
+        return vi.fn<() => void>();
+      },
+      autopilotConcurrency: limits,
+    });
+    subscriber?.(
+      {
+        v: 3,
+        type: 'run_end',
+        eventIndex: 2,
+        timestamp: '2026-07-19T00:00:01.000Z',
+        runId: 'run:action-failure',
+        workflow: 'triage-pr-event',
+        durationMs: 1_000,
+        isError: false,
+        result: {
+          ok: false,
+          error: {
+            code: 'credentials-missing',
+          },
+          errors,
+        },
+      } as FlueObservation,
+      {} as never,
+    );
+
+    await vi.waitFor(async () => {
+      await expect(listAutopilotAdmissions(paths)).resolves.toEqual([
+        expect.objectContaining({
+          id: admitted.admission.id,
+          state: 'blocked',
+          lastOutcome: expect.objectContaining({
+            errorCode: 'credentials-missing',
+            message: 'x'.repeat(4_096),
+          }),
+        }),
+      ]);
+    });
   });
 });
 

@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   check,
+  foreignKey,
   index,
   integer,
   primaryKey,
@@ -619,6 +620,7 @@ export const autopilotAdmissions = sqliteTable(
       table.ownerId,
       table.eventSequence,
     ),
+    unique('autopilot_admissions_id_owner_unique').on(table.id, table.ownerId),
     index('idx_autopilot_admissions_owner_state').on(
       table.ownerId,
       table.state,
@@ -631,6 +633,10 @@ export const autopilotAdmissions = sqliteTable(
     check(
       'autopilot_admissions_mode_check',
       sql`${table.mode} IN ('notify-only', 'prepare-only', 'autofix-with-approval', 'autofix-push-when-safe')`,
+    ),
+    check(
+      'autopilot_admissions_fixer_kind_check',
+      sql`${table.fixerKind} IS NULL OR ${table.fixerKind} IN ('neon-owner', 'kilo')`,
     ),
     check('autopilot_admissions_version_check', sql`${table.version} >= 1`),
     check(
@@ -754,6 +760,11 @@ export const autopilotStageAttempts = sqliteTable(
       'autopilot_stage_attempts_number_check',
       sql`${table.attemptNumber} >= 1`,
     ),
+    foreignKey({
+      columns: [table.admissionId, table.ownerId],
+      foreignColumns: [autopilotAdmissions.id, autopilotAdmissions.ownerId],
+      name: 'autopilot_stage_attempts_admission_owner_fk',
+    }),
   ],
 );
 

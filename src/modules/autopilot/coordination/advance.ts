@@ -16,7 +16,7 @@ import {
   type AutopilotMode,
 } from '../../autopilot-policy';
 import { ensureAutopilotPrOwnerInDatabase } from '../owners';
-import { autopilotRetryDecision, maxAutopilotStageAttempts } from './retry';
+import { autopilotRetryBackoffMs, maxAutopilotStageAttempts } from './retry';
 import {
   readAutopilotAdmission,
   readAutopilotPrOwner,
@@ -116,6 +116,7 @@ export async function admitAutopilotEvent(
               stage: 'triage',
               result: 'blocked',
               retryClass: 'transient',
+              concurrencyWaitCount: 1,
               retryStage: 'triage',
               resumeState: 'triage-admitted',
               errorCode: 'concurrency-limited',
@@ -125,7 +126,7 @@ export async function admitAutopilotEvent(
       const completedAt =
         state === 'completed' || state === 'stopped' ? nowIso : null;
       const nextAttemptAt = limited
-        ? new Date(now.getTime() + 30_000).toISOString()
+        ? concurrencyWaitNextAttemptAt(1, now)
         : null;
       database
         .prepare(
@@ -320,33 +321,33 @@ export async function advanceAutopilotAdmission(
         )
       ) {
         if (admission.state === 'blocked') {
-          return { status: 'limited' as const, admission };
+          const concurrencyWaitCount = nextConcurrencyWaitCount(admission);
+          const updated = rearmConcurrencyBlockedAdmission(
+            database,
+            admission,
+            selection.stage,
+            selection.admittedState,
+            concurrencyWaitCount,
+            concurrencyWaitNextAttemptAt(concurrencyWaitCount, now),
+            nowIso,
+          );
+          return updated
+            ? { status: 'limited' as const, admission: updated }
+            : { status: 'cas-lost' as const, admission };
         }
-        const retry = autopilotRetryDecision(
-          Math.max(attempts, 1),
-          {
-            kind: 'transient',
-            code: 'concurrency-limited',
-            reason: 'Autopilot admission limit reached.',
-          },
-          now,
-        );
+        const concurrencyWaitCount = nextConcurrencyWaitCount(admission);
         const updated = transitionWithoutAttempt(
           database,
           admission,
           'blocked',
           'concurrency-limited',
           nowIso,
-          {
-            stage: selection.stage,
-            result: 'blocked',
-            retryClass: 'transient',
-            retryStage: selection.stage,
-            resumeState: selection.admittedState,
-            errorCode: 'concurrency-limited',
-            message: 'Autopilot admission limit reached.',
-          },
-          retry.nextAttemptAt,
+          concurrencyLimitedOutcome(
+            selection.stage,
+            selection.admittedState,
+            concurrencyWaitCount,
+          ),
+          concurrencyWaitNextAttemptAt(concurrencyWaitCount, now),
         );
         return updated
           ? { status: 'limited' as const, admission: updated }
@@ -580,6 +581,83 @@ function transitionWithoutAttempt(
       .prepare('SELECT * FROM autopilot_admissions WHERE id = ?;')
       .get(admission.id),
   );
+}
+
+function rearmConcurrencyBlockedAdmission(
+  database: DatabaseSync,
+  admission: AutopilotAdmission,
+  stage: AutopilotStage,
+  resumeState: AutopilotAdmissionState,
+  concurrencyWaitCount: number,
+  nextAttemptAt: string,
+  now: string,
+) {
+  const outcome = concurrencyLimitedOutcome(
+    stage,
+    resumeState,
+    concurrencyWaitCount,
+  );
+  const update = database
+    .prepare(
+      `UPDATE autopilot_admissions
+       SET next_attempt_at = ?, last_error = ?, last_outcome_json = ?,
+           version = version + 1, updated_at = ?
+       WHERE id = ? AND version = ? AND state = 'blocked'
+         AND current_stage_attempt_id IS NULL;`,
+    )
+    .run(
+      nextAttemptAt,
+      outcome.message ?? null,
+      JSON.stringify(outcome),
+      now,
+      admission.id,
+      admission.version,
+    );
+  if (update.changes !== 1) return undefined;
+  insertAutopilotAdmissionEvent(database, {
+    admissionId: admission.id,
+    fromState: 'blocked',
+    toState: 'blocked',
+    reason: 'concurrency-wait-rearmed',
+    data: { outcome },
+    now,
+  });
+  return readAutopilotAdmission(
+    database
+      .prepare('SELECT * FROM autopilot_admissions WHERE id = ?;')
+      .get(admission.id),
+  );
+}
+
+function nextConcurrencyWaitCount(admission: AutopilotAdmission) {
+  return admission.lastOutcome?.errorCode === 'concurrency-limited'
+    ? (admission.lastOutcome.concurrencyWaitCount ?? 1) + 1
+    : 1;
+}
+
+function concurrencyWaitNextAttemptAt(waitCount: number, now: Date) {
+  const delay =
+    autopilotRetryBackoffMs[
+      Math.min(waitCount - 1, autopilotRetryBackoffMs.length - 1)
+    ];
+  return new Date(now.getTime() + delay).toISOString();
+}
+
+function concurrencyLimitedOutcome(
+  stage: AutopilotStage,
+  resumeState: AutopilotAdmissionState,
+  concurrencyWaitCount: number,
+): AutopilotStageOutcome {
+  return {
+    stage,
+    result: 'blocked',
+    retryClass: 'transient',
+    concurrencyWaitCount,
+    retryStage: stage,
+    resumeState,
+    errorCode: 'concurrency-limited',
+    message: 'Autopilot admission limit reached.',
+  };
 }
 
 function insertStageAttempt(

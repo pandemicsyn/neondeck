@@ -69,6 +69,9 @@ export const autopilotStageOutcomeSchema = v.object({
   stage: autopilotStageSchema,
   result: v.picklist(['completed', 'failed', 'blocked', 'cancelled']),
   retryClass: v.optional(autopilotRetryClassSchema),
+  concurrencyWaitCount: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1)),
+  ),
   retryStage: v.optional(autopilotStageSchema),
   resumeState: v.optional(autopilotAdmissionStateSchema),
   shouldPrepare: v.optional(v.boolean()),

@@ -16,6 +16,7 @@ import {
   legalAutopilotTransitions,
   listAutopilotAdmissionEvents,
   listAutopilotAdmissions,
+  listAutopilotAdmissionsNeedingAdvance,
   listAutopilotPrOwners,
   listAutopilotStageAttempts,
   reconcileAutopilotStageAttempts,
@@ -312,6 +313,71 @@ describe('durable autopilot coordination', () => {
     });
   });
 
+  it('moves a current orphaned receipt to manual review instead of stranding it', async () => {
+    await withHome(async (paths) => {
+      const admitted = await admit(
+        paths,
+        'watch:orphaned-receipt',
+        'event:orphaned-receipt',
+        24,
+      );
+      const invokeWorkflow = vi.fn<AutopilotWorkflowInvoker>(async () => {
+        const database = new DatabaseSync(paths.neondeckDatabase);
+        try {
+          database
+            .prepare(
+              `UPDATE autopilot_admissions
+               SET version = version + 1 WHERE id = ?;`,
+            )
+            .run(admitted.admission.id);
+        } finally {
+          database.close();
+        }
+        return { runId: 'run:orphaned-current' };
+      });
+
+      await expect(
+        coordinateAutopilotAdmission(
+          { admissionId: admitted.admission.id, limits, invokeWorkflow },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        dispatched: {
+          status: 'orphaned-receipt',
+          admission: {
+            state: 'manual-review',
+            currentRunId: null,
+            currentStageAttemptId: null,
+            lastOutcome: {
+              errorCode: 'orphaned-dispatch-receipt',
+              retryClass: 'uncertain',
+            },
+          },
+        },
+      });
+      await expect(
+        listAutopilotStageAttempts(
+          { admissionId: admitted.admission.id },
+          paths,
+        ),
+      ).resolves.toEqual([
+        expect.objectContaining({
+          status: 'failed',
+          runId: 'run:orphaned-current',
+        }),
+      ]);
+      await expect(
+        reconcileAutopilotStageAttempts(paths),
+      ).resolves.toMatchObject({ reconciledAdmissionIds: [] });
+      await expect(
+        advanceAutopilotAdmission(
+          { admissionId: admitted.admission.id, limits },
+          paths,
+        ),
+      ).resolves.toMatchObject({ status: 'idle' });
+    });
+  });
+
   it('expires never-attached terminal facts after the bounded retention window', async () => {
     await withHome(async (paths) => {
       const now = new Date('2026-07-19T00:00:00.000Z');
@@ -404,6 +470,55 @@ describe('durable autopilot coordination', () => {
         paths,
       );
       expect(second).toMatchObject({ claimed: false, reason: 'limited' });
+      const firstDue = new Date(Date.now() + 31_000);
+      await expect(
+        advanceAutopilotAdmission(
+          {
+            admissionId: second.admission.id,
+            limits: oneAtATime,
+            now: firstDue,
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        status: 'limited',
+        admission: {
+          state: 'blocked',
+          nextAttemptAt: new Date(
+            firstDue.getTime() + 2 * 60_000,
+          ).toISOString(),
+          lastOutcome: { concurrencyWaitCount: 2 },
+        },
+      });
+      await expect(
+        listAutopilotAdmissionsNeedingAdvance(
+          paths,
+          new Date(firstDue.getTime() + 30_000),
+        ),
+      ).resolves.not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: second.admission.id }),
+        ]),
+      );
+      const secondDue = new Date(firstDue.getTime() + 2 * 60_000);
+      await expect(
+        advanceAutopilotAdmission(
+          {
+            admissionId: second.admission.id,
+            limits: oneAtATime,
+            now: secondDue,
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        status: 'limited',
+        admission: {
+          nextAttemptAt: new Date(
+            secondDue.getTime() + 10 * 60_000,
+          ).toISOString(),
+          lastOutcome: { concurrencyWaitCount: 3 },
+        },
+      });
       await coordinateAutopilotAdmission(
         {
           admissionId: first.admission.id,
@@ -427,7 +542,7 @@ describe('durable autopilot coordination', () => {
         {
           admissionId: second.admission.id,
           limits: oneAtATime,
-          now: new Date(Date.now() + 31_000),
+          now: new Date(secondDue.getTime() + 10 * 60_000),
         },
         paths,
       );

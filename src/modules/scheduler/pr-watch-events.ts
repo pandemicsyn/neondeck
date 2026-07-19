@@ -9,6 +9,7 @@ import {
   claimAutopilotTriageAdmission,
   coordinateAutopilotAdmission,
   reconcileAutopilotStageAttempts,
+  type CoordinateAutopilotAdmissionResult,
   type AutopilotWorkflowInvoker,
 } from '../autopilot';
 import {
@@ -500,22 +501,13 @@ async function admitWatchTriageEvent(
       },
       paths,
     );
-    const runId =
-      coordination.dispatched?.status === 'running'
-        ? coordination.dispatched.runId
-        : null;
-    return {
-      ok: true,
-      changed: true,
-      triage: {
-        status: 'admitted',
-        eventId,
-        runId,
-        workflow: 'triage-pr-event',
-        input: { ...input, admissionId: admission.admission.id },
-      } as unknown as JsonValue,
-      notifications: [],
-    };
+    return triageAdmissionResultFromCoordination({
+      watch,
+      eventId,
+      input,
+      admissionId: admission.admission.id,
+      coordination,
+    });
   } catch (error) {
     const message = `Autopilot triage admission failed: ${errorMessage(error)}.`;
     return {
@@ -548,6 +540,140 @@ async function admitWatchTriageEvent(
       ],
     };
   }
+}
+
+export function triageAdmissionResultFromCoordination(input: {
+  watch: Pick<PrWatch, 'id' | 'repoId' | 'repoFullName' | 'prNumber'>;
+  eventId: string;
+  input: Record<string, JsonValue>;
+  admissionId: string;
+  coordination: CoordinateAutopilotAdmissionResult;
+}): TriageAdmissionResult {
+  const triageInput = { ...input.input, admissionId: input.admissionId };
+  const dispatched = input.coordination.dispatched;
+  if (!dispatched) {
+    return {
+      ok: true,
+      changed: true,
+      triage: {
+        status: 'deferred',
+        eventId: input.eventId,
+        workflow: 'triage-pr-event',
+        input: triageInput,
+      } as unknown as JsonValue,
+      notifications: [],
+    };
+  }
+
+  if (dispatched.status === 'running') {
+    return {
+      ok: true,
+      changed: true,
+      triage: {
+        status: 'admitted',
+        eventId: input.eventId,
+        runId: dispatched.runId,
+        workflow: 'triage-pr-event',
+        input: triageInput,
+      } as unknown as JsonValue,
+      notifications: [],
+    };
+  }
+
+  const evidence = dispatchEvidence(dispatched, input.admissionId);
+  if (
+    dispatched.status === 'cas-lost' ||
+    dispatched.status === 'stale-reservation' ||
+    dispatched.status === 'not-reserved'
+  ) {
+    return {
+      ok: true,
+      changed: true,
+      triage: {
+        status: dispatched.status,
+        eventId: input.eventId,
+        workflow: 'triage-pr-event',
+        input: triageInput,
+        dispatch: evidence,
+      } as unknown as JsonValue,
+      notifications: [],
+    };
+  }
+
+  const error =
+    dispatched.status === 'dispatch-failed'
+      ? dispatched.error
+      : dispatchFailureMessage(dispatched.status);
+  const message = `Autopilot triage admission failed: ${error}.`;
+  return {
+    ok: false,
+    changed: true,
+    message,
+    triage: {
+      status:
+        dispatched.status === 'dispatch-failed' ? 'failed' : dispatched.status,
+      eventId: input.eventId,
+      workflow: 'triage-pr-event',
+      input: triageInput,
+      dispatch: evidence,
+      error,
+    } as unknown as JsonValue,
+    notifications: [
+      {
+        level: 'attention',
+        title: 'Autopilot triage failed',
+        message,
+        source: 'autopilot',
+        sourceId: `triage:${input.watch.id}:${input.eventId}:${dispatched.status}`,
+        data: {
+          watchId: input.watch.id,
+          repoId: input.watch.repoId,
+          repoFullName: input.watch.repoFullName,
+          prNumber: input.watch.prNumber,
+          eventId: input.eventId,
+          input: triageInput,
+          dispatch: evidence,
+          error,
+        },
+      },
+    ],
+  };
+}
+
+function dispatchEvidence(
+  dispatched: NonNullable<CoordinateAutopilotAdmissionResult['dispatched']>,
+  admissionId: string,
+) {
+  if (dispatched.status === 'missing') {
+    return { status: dispatched.status, admissionId };
+  }
+
+  return {
+    status: dispatched.status,
+    admissionId: dispatched.admission.id,
+    admissionState: dispatched.admission.state,
+    admissionVersion: dispatched.admission.version,
+    attemptId: dispatched.attempt.id,
+    attemptStatus: dispatched.attempt.status,
+    attemptNumber: dispatched.attempt.attemptNumber,
+    workflow: dispatched.attempt.workflow,
+    ...(dispatched.status === 'dispatch-failed'
+      ? { error: dispatched.error }
+      : {}),
+    ...('runId' in dispatched ? { runId: dispatched.runId } : {}),
+  };
+}
+
+function dispatchFailureMessage(
+  status: 'missing' | 'orphaned-receipt' | 'unsupported-transport',
+) {
+  if (status === 'orphaned-receipt') {
+    return 'Flue accepted a workflow receipt that could not be attached to its durable admission';
+  }
+  if (status === 'unsupported-transport') {
+    return 'the reserved autopilot stage cannot be dispatched by the configured workflow transport';
+  }
+  return 'the durable autopilot admission or stage attempt could not be found';
 }
 
 export function pendingEventResultsFromJobResult(value: JsonValue | null) {

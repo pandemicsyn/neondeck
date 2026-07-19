@@ -88,7 +88,12 @@ describe('app database migrator', () => {
     const oldMigrations = join(root, 'old-migrations');
     await mkdir(oldMigrations);
     for (const entry of await readdir(appDbMigrationsFolder())) {
-      if (entry.includes('autopilot_product_closure')) continue;
+      if (
+        entry.includes('autopilot_product_closure') ||
+        entry.includes('autopilot_package_1_durable_invariants')
+      ) {
+        continue;
+      }
       await cp(
         join(appDbMigrationsFolder(), entry),
         join(oldMigrations, entry),
@@ -162,6 +167,26 @@ describe('app database migrator', () => {
         .prepare(
           `INSERT INTO autopilot_admissions (
              id, watch_id, event_fingerprint, repo_id, pr_number, mode,
+             input_json, state, current_workflow, current_run_id,
+             attempt_count, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, '{}', 'triage-admitted',
+                     'triage-pr-event', ?, 1, ?, ?);`,
+        )
+        .run(
+          'admission:legacy-terminal-triage',
+          'watch:terminal-triage',
+          'event:legacy-terminal-triage',
+          'repo',
+          18,
+          'prepare-only',
+          'run:legacy-terminal-triage',
+          '2026-07-19T00:00:00.000Z',
+          '2026-07-19T00:01:00.000Z',
+        );
+      before
+        .prepare(
+          `INSERT INTO autopilot_admissions (
+             id, watch_id, event_fingerprint, repo_id, pr_number, mode,
              input_json, state, attempt_count, next_attempt_at, last_error,
              created_at, updated_at
            ) VALUES (?, ?, ?, ?, ?, ?, '{}', 'failed', 1, ?, ?, ?, ?);`,
@@ -178,15 +203,47 @@ describe('app database migrator', () => {
           '2026-07-19T00:00:00.000Z',
           '2026-07-19T00:00:00.000Z',
         );
+      before
+        .prepare(
+          `INSERT INTO app_metadata (key, value, updated_at)
+           VALUES (?, ?, ?);`,
+        )
+        .run(
+          'autopilot.admission.terminal:run:legacy',
+          JSON.stringify({
+            workflow: 'prepare-pr-worktree',
+            failed: false,
+            worktreeId: 'worktree:legacy-terminal',
+          }),
+          '2026-07-18T00:02:00.000Z',
+        );
+      before
+        .prepare(
+          `INSERT INTO app_metadata (key, value, updated_at)
+           VALUES (?, ?, ?);`,
+        )
+        .run(
+          'autopilot.admission.terminal:run:legacy-terminal-triage',
+          JSON.stringify({
+            workflow: 'triage-pr-event',
+            failed: false,
+            shouldPrepare: true,
+          }),
+          '2026-07-19T00:02:00.000Z',
+        );
     } finally {
       before.close();
     }
 
-    expect(applyAppDbMigrations(databasePath).applied).toEqual([
-      expect.stringContaining('autopilot_product_closure'),
-    ]);
-    const after = new DatabaseSync(databasePath, { readOnly: true });
+    expect(applyAppDbMigrations(databasePath).applied).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('autopilot_product_closure'),
+        expect.stringContaining('autopilot_package_1_durable_invariants'),
+      ]),
+    );
+    const after = new DatabaseSync(databasePath);
     try {
+      after.exec('PRAGMA foreign_keys=ON;');
       expect(
         after
           .prepare(
@@ -269,6 +326,52 @@ describe('app database migrator', () => {
           'migration-legacy-retry-unproven',
         ),
       });
+      expect(
+        after
+          .prepare('SELECT value FROM app_metadata WHERE key = ?;')
+          .get('autopilot.stage.terminal:run:legacy'),
+      ).toEqual({
+        value: JSON.stringify({
+          workflow: 'prepare-pr-worktree',
+          failed: false,
+          worktreeId: 'worktree:legacy-terminal',
+        }),
+      });
+      expect(
+        after
+          .prepare('SELECT value FROM app_metadata WHERE key = ?;')
+          .get('autopilot.stage.terminal:run:legacy-terminal-triage'),
+      ).toEqual({
+        value: JSON.stringify({
+          workflow: 'triage-pr-event',
+          failed: false,
+          shouldPrepare: true,
+        }),
+      });
+      expect(() =>
+        after
+          .prepare(
+            `INSERT INTO autopilot_stage_attempts (
+               id, admission_id, owner_id, stage, attempt_number, status,
+               input_fingerprint, created_at
+             ) VALUES (?, ?, ?, 'triage', 99, 'reserved', ?, ?);`,
+          )
+          .run(
+            'attempt:wrong-owner',
+            'admission:legacy',
+            'owner:wrong',
+            'fixture',
+            '2026-07-19T00:03:00.000Z',
+          ),
+      ).toThrow(/FOREIGN KEY constraint failed/);
+      expect(() =>
+        after
+          .prepare(
+            `UPDATE autopilot_admissions
+             SET fixer_kind = 'unbounded-worker' WHERE id = ?;`,
+          )
+          .run('admission:legacy'),
+      ).toThrow(/CHECK constraint failed/);
     } finally {
       after.close();
     }

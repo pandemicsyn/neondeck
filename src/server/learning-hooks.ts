@@ -307,12 +307,14 @@ function autopilotTerminalFact(
   event: Extract<FlueObservation, { type: 'run_end' }>,
 ) {
   const workflow = workflowLabel(event);
-  const failed = terminalActionFailed(event);
+  const failure = terminalActionFailure(event);
+  const failed = Boolean(failure);
   if (workflow === 'triage-pr-event') {
     return {
       workflow,
       failed,
       shouldPrepare: !failed && triageRequestsPrepare(event),
+      ...failure,
     } as const;
   }
   if (workflow === 'prepare-pr-worktree') {
@@ -320,21 +322,62 @@ function autopilotTerminalFact(
       workflow,
       failed,
       worktreeId: failed ? undefined : prepareWorktreeId(event),
+      ...failure,
     } as const;
   }
   return undefined;
 }
 
-function terminalActionFailed(
+function terminalActionFailure(
   event: Extract<FlueObservation, { type: 'run_end' }>,
 ) {
-  if (event.isError || !('result' in event)) return event.isError;
+  if (event.isError) {
+    return {
+      errorCode: 'workflow-run-error',
+      error: `${workflowLabel(event)} failed before returning an action result.`,
+    };
+  }
+  if (!('result' in event)) return undefined;
   const result = event.result;
-  return Boolean(
-    result &&
-    typeof result === 'object' &&
-    (result as { ok?: unknown }).ok === false,
-  );
+  if (
+    !result ||
+    typeof result !== 'object' ||
+    (result as { ok?: unknown }).ok !== false
+  ) {
+    return undefined;
+  }
+  const record = result as Record<string, unknown>;
+  const error =
+    record.error && typeof record.error === 'object'
+      ? (record.error as Record<string, unknown>)
+      : undefined;
+  const errorFromList = Array.isArray(record.errors)
+    ? firstBoundedError(record.errors)
+    : undefined;
+  return {
+    errorCode:
+      boundedStringValue(error?.code, 128) ??
+      boundedStringValue(record.code, 128) ??
+      'action-failed',
+    error:
+      boundedStringValue(error?.message) ??
+      boundedStringValue(record.message) ??
+      errorFromList ??
+      `${workflowLabel(event)} returned an unsuccessful action result.`,
+  };
+}
+
+function boundedStringValue(value: unknown, maxLength = 4_096) {
+  if (typeof value !== 'string' || !value) return undefined;
+  return value.slice(0, maxLength);
+}
+
+function firstBoundedError(errors: unknown[]) {
+  for (const value of errors.slice(0, 8)) {
+    const error = boundedStringValue(value);
+    if (error) return error;
+  }
+  return undefined;
 }
 
 export function recordHandledPrApiResult(

@@ -264,11 +264,49 @@ export async function registerAutopilotStageDispatch(
         if (receiptUpdate.changes !== 1) {
           return { status: 'cas-lost' as const, attempt, admission };
         }
+        const orphanedOutcome = {
+          stage: attempt.stage,
+          result: 'failed',
+          retryClass: 'uncertain',
+          errorCode: 'orphaned-dispatch-receipt',
+          message,
+        } as const;
+        const admissionUpdate =
+          admission.currentStageAttemptId === attempt.id &&
+          (admission.state === 'triage-admitted' ||
+            admission.state === 'prepare-admitted')
+            ? database
+                .prepare(
+                  `UPDATE autopilot_admissions
+                   SET state = 'manual-review', current_workflow = NULL,
+                       current_run_id = NULL, current_stage_attempt_id = NULL,
+                       next_attempt_at = NULL, last_error = ?,
+                       last_outcome_json = ?, completed_at = ?,
+                       version = version + 1, updated_at = ?
+                   WHERE id = ? AND version = ? AND state = ?
+                     AND current_stage_attempt_id = ?;`,
+                )
+                .run(
+                  message,
+                  JSON.stringify(orphanedOutcome),
+                  nowIso,
+                  nowIso,
+                  admission.id,
+                  admission.version,
+                  admission.state,
+                  attempt.id,
+                )
+            : undefined;
+        if (admissionUpdate && admissionUpdate.changes !== 1) {
+          return { status: 'cas-lost' as const, attempt, admission };
+        }
         insertAutopilotAdmissionEvent(database, {
           admissionId: admission.id,
           fromState: admission.state,
-          toState: admission.state,
-          reason: 'orphaned-dispatch-receipt-recorded',
+          toState: admissionUpdate ? 'manual-review' : admission.state,
+          reason: admissionUpdate
+            ? 'orphaned-dispatch-receipt-manual-review'
+            : 'orphaned-dispatch-receipt-recorded',
           workflow: attempt.workflow,
           runId: input.runId,
           data: {
@@ -276,6 +314,7 @@ export async function registerAutopilotStageDispatch(
             attemptStatus: attempt.status,
             expectedAdmissionVersion: input.expectedAdmissionVersion,
             actualAdmissionVersion: admission.version,
+            outcome: admissionUpdate ? orphanedOutcome : undefined,
           },
           now: nowIso,
         });
@@ -287,11 +326,21 @@ export async function registerAutopilotStageDispatch(
         if (!updatedAttempt) {
           throw new Error('Orphaned autopilot receipt could not be read.');
         }
+        const updatedAdmission = admissionUpdate
+          ? readAutopilotAdmission(
+              database
+                .prepare('SELECT * FROM autopilot_admissions WHERE id = ?;')
+                .get(admission.id),
+            )
+          : admission;
+        if (!updatedAdmission) {
+          throw new Error('Orphaned autopilot admission could not be read.');
+        }
         return {
           status: 'orphaned-receipt' as const,
           runId: input.runId,
           attempt: updatedAttempt,
-          admission,
+          admission: updatedAdmission,
         };
       }
       if (!registrationIsCurrent || attempt.runId !== null) {
