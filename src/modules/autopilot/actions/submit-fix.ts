@@ -244,7 +244,11 @@ export async function submitAutopilotFix(
   let result: FixResult;
   const ownerMutationFence = async (
     phase:
-      'before-mutation' | 'before-write' | 'before-commit' | 'before-artifact',
+      | 'before-execution'
+      | 'before-mutation'
+      | 'before-write'
+      | 'before-commit'
+      | 'before-artifact',
     effect?: { paths: string[]; bytes: number; lines: number },
   ) => {
     await assertSubmissionMutationFence(
@@ -372,7 +376,11 @@ async function assertSubmissionMutationFence(
   paths: RuntimePaths,
   dependencies: SubmitDependencies,
   phase:
-    'before-mutation' | 'before-write' | 'before-commit' | 'before-artifact',
+    | 'before-execution'
+    | 'before-mutation'
+    | 'before-write'
+    | 'before-commit'
+    | 'before-artifact',
   plannedEffect?: { paths: string[]; bytes: number; lines: number },
 ) {
   const database = openDb(paths.neondeckDatabase);
@@ -805,6 +813,23 @@ async function validateSubmissionContext(
   }
   if (!currentPolicy.fixAllowed && input.disposition === 'fix') {
     return { failure: 'Current policy no longer permits an owner fix.' };
+  }
+  if (input.fixerKind === 'ci') {
+    const allowedCommands = new Set(
+      authority.guardrails.requiredChecks.map((command) => command.trim()),
+    );
+    const rejectedCommand = [
+      ...(input.diagnostics ?? []),
+      ...(input.checks ?? []),
+    ]
+      .map((command) => command.trim())
+      .find((command) => !allowedCommands.has(command));
+    if (rejectedCommand) {
+      return {
+        failure:
+          'CI diagnostic command is outside the grounded repository authority.',
+      };
+    }
   }
   const plannedPaths = submissionPaths(input);
   const denied = plannedPaths.find((path) =>

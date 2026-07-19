@@ -21,6 +21,7 @@ import { readAutopilotPrOwnerByWatch } from './modules/autopilot/owners';
 import { classifyAutopilotOwnerConfigChange } from './modules/autopilot/owner/grounding';
 import { runScopedOwnerRead } from './modules/autopilot/owner/actions';
 import { fixPrReviewFeedback } from './modules/autopilot/review-feedback';
+import { runAutopilotDiagnostics } from './modules/autopilot/github-facts';
 import { updateLearningConfig } from './modules/config';
 import { readStaleReasonChanges } from './modules/sessions/stale-reasons';
 import { readAutopilotOwnerCapabilitySnapshot } from './modules/autopilot/owner/capabilities';
@@ -1304,23 +1305,23 @@ describe('Package 4 continuing PR owner', () => {
         const first = readAutopilotOwnerCapabilitySnapshot(paths);
         const database = new DatabaseSync(paths.neondeckDatabase);
         try {
-        ensureAutopilotOwnerInstanceInDatabase(
-          database,
-          'owner:one',
-          new Date().toISOString(),
-          first,
-        );
-        process.env.NEONDECK_OWNER_PROVIDER_KEY = 'second-credential';
-        const changed = readAutopilotOwnerCapabilitySnapshot(paths);
-        expect(changed.providerConfigHash).not.toBe(first.providerConfigHash);
-        expect(() =>
           ensureAutopilotOwnerInstanceInDatabase(
             database,
             'owner:one',
             new Date().toISOString(),
-            changed,
-          ),
-        ).toThrow(/audited generation rotation/);
+            first,
+          );
+          process.env.NEONDECK_OWNER_PROVIDER_KEY = 'second-credential';
+          const changed = readAutopilotOwnerCapabilitySnapshot(paths);
+          expect(changed.providerConfigHash).not.toBe(first.providerConfigHash);
+          expect(() =>
+            ensureAutopilotOwnerInstanceInDatabase(
+              database,
+              'owner:one',
+              new Date().toISOString(),
+              changed,
+            ),
+          ).toThrow(/audited generation rotation/);
         } finally {
           database.close();
         }
@@ -1425,6 +1426,83 @@ describe('Package 4 continuing PR owner', () => {
         ok: false,
         message: expect.stringContaining('branch attachment changed'),
       });
+    });
+  });
+
+  it('rejects model-selected CI commands outside grounded required checks', async () => {
+    await withFixture(async (paths) => {
+      seedPreparedTurn(
+        paths,
+        'admission:diagnostic-authority',
+        'event:diagnostic-authority',
+        1,
+      );
+      const turn = await dispatchTurn(
+        paths,
+        'admission:diagnostic-authority',
+        'dispatch:diagnostic-authority',
+      );
+      const runCiFix = vi.fn();
+      const result = await submitAutopilotFix(
+        submissionFromEnvelope(turn.envelope, {
+          disposition: 'fix',
+          fixerKind: 'ci',
+          diagnostics: ['git push origin HEAD'],
+          patch: [
+            '*** Begin Patch',
+            '*** Update File: src/fix.ts',
+            '@@',
+            '-old',
+            '+new',
+            '*** End Patch',
+          ].join('\n'),
+          summary: 'Reject an ungrounded diagnostic command.',
+        }),
+        paths,
+        {
+          currentSha: async () => 'abc123',
+          readLiveHead: liveFixtureHead,
+          runCiFix,
+        },
+      );
+
+      expect(result).toMatchObject({
+        ok: false,
+        message: expect.stringContaining('outside the grounded'),
+      });
+      expect(runCiFix).not.toHaveBeenCalled();
+    });
+  });
+
+  it('revalidates the owner fence inside the diagnostic execution slot', async () => {
+    await withFixture(async (paths) => {
+      const runExecution = vi.fn();
+      let fenceCalls = 0;
+      await expect(
+        runAutopilotDiagnostics(
+          ['npm run check'],
+          limits,
+          {
+            repoId: 'repo',
+            repoFullName: 'example/repo',
+            prNumber: 42,
+            worktreeId: 'worktree:one',
+            workflow: 'fix_pr_ci_failure',
+          },
+          '/fixture/worktree',
+          paths,
+          {} as never,
+          { runExecution: runExecution as never },
+          async () => {
+            fenceCalls += 1;
+            if (fenceCalls === 2) {
+              throw new Error('Owner mutation lease was revoked.');
+            }
+          },
+        ),
+      ).rejects.toThrow('Owner mutation lease was revoked.');
+      expect(runExecution).not.toHaveBeenCalled();
+      expect(fenceCalls).toBe(2);
     });
   });
 

@@ -334,7 +334,7 @@ export async function fixPrCiFailure(
       paths,
       input,
       dependencies,
-      () =>
+      async () => {
         assertWorktreeMutationAllowed(
           {
             repoId: repo.id,
@@ -342,7 +342,9 @@ export async function fixPrCiFailure(
             lockId: acquiredLockId,
           },
           paths,
-        ),
+        );
+        await dependencies.ownerMutationFence?.('before-execution');
+      },
     );
     const blocked = diagnostics.some((item) => item.requires.length > 0);
     if (blocked && input.patch) {

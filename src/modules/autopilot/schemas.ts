@@ -120,7 +120,11 @@ export type AutopilotDependencies = {
   token?: string;
   ownerMutationFence?: (
     phase:
-      'before-mutation' | 'before-write' | 'before-commit' | 'before-artifact',
+      | 'before-execution'
+      | 'before-mutation'
+      | 'before-write'
+      | 'before-commit'
+      | 'before-artifact',
     effect?: AutopilotMutationEffect,
   ) => void | Promise<void>;
   ownerCommitAllowed?: () => boolean | Promise<boolean>;
