@@ -1,6 +1,6 @@
+import { openDb } from '../../lib/sqlite.ts';
 import { randomUUID } from 'node:crypto';
 import { access, open } from 'node:fs/promises';
-import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { taskDiffSummary } from './runtime-facts';
 import {
@@ -410,7 +410,7 @@ function addSessionAudit(
   options: KiloSessionReadOptions,
   paths: RuntimePaths,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(

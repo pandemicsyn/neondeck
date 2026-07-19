@@ -1,6 +1,7 @@
+import { openDb } from '../../../lib/sqlite.ts';
 import type { JsonValue } from '@flue/runtime';
 import { randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { runtimePaths, type RuntimePaths } from '../../../runtime-home';
 import type {
@@ -17,7 +18,7 @@ export function listLearningReviews(
   } = {},
   paths = runtimePaths(),
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const filters = [];
     const params: Array<string | number> = [];
@@ -64,7 +65,7 @@ export function startLearningReview(
 ) {
   const id = randomUUID();
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -114,7 +115,7 @@ export function completeLearningReview(
   paths = runtimePaths(),
 ) {
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const review = readLearningReviewById(database, id);
     database
@@ -151,7 +152,7 @@ export function failLearningReview(
   paths = runtimePaths(),
 ) {
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const review = readLearningReviewById(database, id);
     database
@@ -188,7 +189,7 @@ export function attachLearningReviewRunId(
   },
   paths = runtimePaths(),
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -211,7 +212,7 @@ export function markLearningCadenceAdmitted(
   turnCount: number,
 ) {
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     if (kind === 'conversation') {
       database
@@ -253,7 +254,7 @@ export function recordLearningEvent(
     data?: JsonValue | null;
   },
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     recordLearningEventInDatabase(database, {
       ...input,

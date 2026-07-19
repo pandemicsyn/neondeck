@@ -8,14 +8,13 @@ import {
   listKiloNotificationFacts,
   notifyKiloState,
   readKiloNotificationFacts,
-  resolveKiloNotifications,
 } from './notifications';
 import {
   attachProcessHandlers,
+  cancellingTaskIds,
   kiloLockOwner,
   reconcilePersistedRunningTasks,
   releaseKiloTaskLock,
-  releaseTaskLock,
   runningProcesses,
   terminalTaskIds,
 } from './process';
@@ -41,7 +40,6 @@ import {
   insertKiloTask,
   listKiloTaskEvents,
   listKiloTaskRows,
-  markKiloTaskFinished,
   readKiloTaskWorktree,
   requireKiloTask,
   resolveKiloTaskForSessionInput,
@@ -64,8 +62,6 @@ import {
 import { repoFullName } from '../repos';
 import { lockWorktree, readManagedWorktree } from '../worktrees';
 import { readKiloResultStateSummary } from './results';
-import { reconcilePreparedDiffRevisionResult } from './revision-reconcile';
-import { reconcileCiFixRunForKiloTask } from './ci-fix-run-reconcile';
 
 export async function startKiloTask(
   rawInput: unknown,
@@ -360,41 +356,64 @@ export async function abortKiloTask(
   }
 
   const running = runningProcesses.get(task.id);
-  if (running) {
-    running.child.kill('SIGTERM');
-  } else {
+  if (!running) {
     return failResult(
       'kilo_task_abort',
       'Kilo task is not attached to this Neondeck process; restart reconciliation is required before it can be safely aborted.',
     );
   }
-  markKiloTaskFinished(
+  if (cancellingTaskIds.has(task.id)) {
+    return failResult(
+      'kilo_task_abort',
+      `Kilo task ${task.id} is already cancelling.`,
+    );
+  }
+
+  cancellingTaskIds.add(task.id);
+  addKiloTaskEvent(
     task.id,
-    'cancelled',
-    null,
-    'Cancelled by Neondeck.',
+    {
+      eventType: 'task.cancel_requested',
+      stream: 'system',
+      summary: 'Cancellation requested by Neondeck.',
+      data: null,
+    },
     paths,
   );
-  await releaseTaskLock(task, 'cancelled', paths);
-  await reconcilePreparedDiffRevisionResult(
-    { task: requireKiloTask(task.id, paths), status: 'cancelled' },
-    paths,
-  );
-  await reconcileCiFixRunCompletion(
-    { task: requireKiloTask(task.id, paths), status: 'cancelled' },
-    paths,
-  );
+  running.child.kill('SIGTERM');
+  const exitedAfterTerm = await waitForKiloExit(running.completed, 2_000);
+  if (!exitedAfterTerm && runningProcesses.has(task.id)) {
+    addKiloTaskEvent(
+      task.id,
+      {
+        eventType: 'task.cancel_escalated',
+        stream: 'system',
+        summary: 'Kilo did not exit after SIGTERM; sent SIGKILL.',
+        data: null,
+      },
+      paths,
+    );
+    running.child.kill('SIGKILL');
+  }
+  const exited =
+    exitedAfterTerm || (await waitForKiloExit(running.completed, 2_000));
+  if (!exited) {
+    return failResult(
+      'kilo_task_abort',
+      `Kilo task ${task.id} did not exit after cancellation signals; its worktree lock remains held.`,
+    );
+  }
+
   addKiloTaskEvent(
     task.id,
     {
       eventType: 'task.cancelled',
       stream: 'system',
-      summary: 'Cancelled by Neondeck.',
+      summary: 'Cancelled by Neondeck after the child process exited.',
       data: null,
     },
     paths,
   );
-  await resolveKiloNotifications(task.id, ['started', 'progress'], paths);
   return {
     ok: true,
     action: 'kilo_task_abort',
@@ -404,20 +423,18 @@ export async function abortKiloTask(
   };
 }
 
-async function reconcileCiFixRunCompletion(
-  input: {
-    task: ReturnType<typeof requireKiloTask>;
-    status: 'cancelled';
-  },
-  paths: RuntimePaths,
-) {
+async function waitForKiloExit(completed: Promise<void>, timeoutMs: number) {
+  let timeout: NodeJS.Timeout | undefined;
   try {
-    await reconcileCiFixRunForKiloTask(input, paths);
-  } catch (error) {
-    console.error('[neondeck] failed to reconcile CI fix Kilo cancellation', {
-      taskId: input.task.id,
-      error: errorMessage(error),
-    });
+    return await Promise.race([
+      completed.then(() => true),
+      new Promise<false>((resolve) => {
+        timeout = setTimeout(() => resolve(false), timeoutMs);
+        timeout.unref();
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
 }
 

@@ -1385,6 +1385,7 @@ describe('PR event autopilot', () => {
         async fetchPullRequestEventState() {
           return reviewEventState(featureSha);
         },
+        listPullRequestComments: async () => [],
         postPullRequestComment: async (input) => {
           calls.push(input);
           return {
@@ -1483,6 +1484,7 @@ describe('PR event autopilot', () => {
         async fetchPullRequestEventState() {
           return reviewEventState(featureSha);
         },
+        listPullRequestComments: async () => [],
         postPullRequestComment: async (input) => {
           calls.push(input);
           throw new Error('should not post');
@@ -1539,6 +1541,7 @@ describe('PR event autopilot', () => {
         async fetchPullRequestEventState() {
           return reviewEventState(featureSha);
         },
+        listPullRequestComments: async () => [],
         postPullRequestComment: async (input) => {
           calls.push(input);
           return {
@@ -1587,6 +1590,7 @@ describe('PR event autopilot', () => {
         async fetchPullRequestEventState() {
           return { ...reviewEventState(featureSha), headSha: 'new-head-sha' };
         },
+        listPullRequestComments: async () => [],
         postPullRequestComment: async (input) => {
           calls.push(input);
           throw new Error('should not post');
@@ -2308,14 +2312,15 @@ async function writeAutopilotConfig(
 function pushToFixtureOrigin(remote: string) {
   return async (
     cwd: string,
-    input: { remote: string; branch: string; force?: boolean },
+    input: { remote: string; branch: string; sha: string; force?: boolean },
   ) => {
     expect(input).toMatchObject({
       remote: 'https://github.com/example/sample.git',
       branch: 'feature',
       force: false,
+      sha: expect.stringMatching(/^[0-9a-f]{40}$/),
     });
-    await git(cwd, ['push', remote, 'HEAD:refs/heads/feature']);
+    await git(cwd, ['push', remote, `${input.sha}:refs/heads/feature`]);
     return {
       remote: input.remote,
       branch: input.branch,

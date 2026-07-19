@@ -1,5 +1,6 @@
+import { openDb } from '../../lib/sqlite.ts';
 import { existsSync } from 'node:fs';
-import { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync } from 'node:sqlite';
 import type { RuntimePaths } from '../../runtime-home';
 import {
   readAppDbMigrationStatus,
@@ -35,7 +36,7 @@ export function inspectAppDatabase(paths: RuntimePaths): AppDatabaseSnapshot {
   }
 
   const cutoff = new Date(Date.now() - flueFailureWindowMs).toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
 
   try {
     const activeScheduledTasks = count(
@@ -160,7 +161,7 @@ export function inspectFlueDatabase(paths: RuntimePaths) {
     return { ok: false, message: 'Flue runtime database is missing.' };
   }
 
-  const database = new DatabaseSync(paths.flueDatabase, { readOnly: true });
+  const database = openDb(paths.flueDatabase, { readOnly: true });
 
   try {
     database.prepare('SELECT name FROM sqlite_master LIMIT 1;').get();

@@ -123,7 +123,30 @@ const defaultPreapprovals: NormalizedPreapprovedCommand[] = [
     'glob',
     'Bounded one-line git log.',
   ),
-  preapproval('gh', 'gh', 'prefix', 'Run GitHub CLI commands.'),
+  preapproval(
+    'gh-pr-view',
+    'gh pr view',
+    'prefix',
+    'Read pull request details.',
+  ),
+  preapproval(
+    'gh-pr-checks',
+    'gh pr checks',
+    'prefix',
+    'Read pull request check status.',
+  ),
+  preapproval(
+    'gh-pr-diff',
+    'gh pr diff',
+    'prefix',
+    'Read a pull request diff.',
+  ),
+  preapproval(
+    'gh-run-view',
+    'gh run view',
+    'prefix',
+    'Read workflow run details and logs.',
+  ),
 ];
 
 const hardlinePatterns: Array<[RegExp, string]> = [

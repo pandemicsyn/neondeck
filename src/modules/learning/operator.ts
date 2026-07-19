@@ -1,5 +1,6 @@
+import { openDb } from '../../lib/sqlite.ts';
 import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
-import { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import {
   ensureRuntimeHome,
@@ -106,7 +107,7 @@ export async function readLearningOperatorState(
   const config = resolveLearningConfig(
     await readRuntimeJson(paths.config, parseAppConfig),
   );
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const summary = readLearningSummary(database);
     const reviews = readReviews(database, {

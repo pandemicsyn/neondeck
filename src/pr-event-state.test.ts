@@ -445,6 +445,59 @@ describe('PR event state watermarks', () => {
     ]);
   });
 
+  it('reuses an existing PR comment with the same idempotency key', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    let postedBody: string | undefined;
+    let postCount = 0;
+    const existingComment = () => ({
+      id: 88,
+      nodeId: 'comment-node-88',
+      url: 'https://github.com/pandemicsyn/neondeck/pull/123#issuecomment-88',
+      authorLogin: 'neon',
+      body: postedBody ?? '',
+      createdAt: '2026-06-30T21:00:00Z',
+      updatedAt: '2026-06-30T21:00:00Z',
+    });
+    const dependencies = {
+      fetchPullRequestEventState: async () => prEventState(),
+      listPullRequestComments: async () =>
+        postedBody ? [existingComment()] : [],
+      postPullRequestComment: async (input: {
+        token: string;
+        owner: string;
+        repo: string;
+        number: number;
+        body: string;
+      }) => {
+        postCount += 1;
+        postedBody = input.body;
+        return existingComment();
+      },
+    };
+    const input = {
+      repo: 'neondeck',
+      prNumber: 123,
+      body: 'Autofix completed.',
+      idempotencyKey: 'prepared-diff:pd-1:pushed:abc123',
+    };
+
+    await expect(
+      postGitHubPrComment(input, paths, dependencies),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+    await expect(
+      postGitHubPrComment(input, paths, dependencies),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      data: { metadata: { idempotentReplay: true } },
+    });
+    expect(postCount).toBe(1);
+    expect(postedBody).toContain('<!-- neondeck:idempotency:');
+  });
+
   it('refuses PR comments when event facts are truncated', async () => {
     process.env.GITHUB_TOKEN = 'token';
     const home = await tempHome();

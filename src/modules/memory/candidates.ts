@@ -1,7 +1,7 @@
+import { openDb } from '../../lib/sqlite.ts';
 import type { JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../lib/action-result';
 import { randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import {
   ensureRuntimeHome,
@@ -69,7 +69,7 @@ export async function createMemoryCandidate(
   if (parsed.output.value !== undefined) {
     const rejection = memoryRejectionReason(parsed.output.value);
     if (rejection) {
-      const database = new DatabaseSync(paths.neondeckDatabase);
+      const database = openDb(paths.neondeckDatabase);
       try {
         recordMemoryEvent(database, {
           action: 'rejected',
@@ -110,7 +110,7 @@ export async function createMemoryCandidate(
     decidedAt: null,
   };
 
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     insertMemoryCandidate(database, candidate);
     recordLearningEvent(database, {
@@ -149,7 +149,7 @@ export async function listMemoryCandidates(
     };
   }
 
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const candidates = database
       .prepare(
@@ -200,7 +200,7 @@ export async function decideMemoryCandidate(
     );
   }
 
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
   try {
     const candidateRow = database

@@ -1,12 +1,13 @@
 /* eslint-disable no-unused-vars */
 import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
-import { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import {
   fetchPullRequestEventState,
   fetchPullRequestFiles,
   fetchPullRequestReviewThreadsWithMetadata,
   fetchPullRequestReviewThread,
+  listPullRequestComments,
   replyToPullRequestReviewThread,
   resolvePullRequestReviewThread,
   submitPullRequestReview,
@@ -84,6 +85,7 @@ export type PrEventStateDependencies = {
   fetchPullRequestReviewThreads?: typeof fetchPullRequestReviewThreadsWithMetadata;
   fetchPullRequestReviewThread?: typeof fetchPullRequestReviewThread;
   postPullRequestComment?: typeof postPullRequestComment;
+  listPullRequestComments?: typeof listPullRequestComments;
   submitPullRequestReview?: typeof submitPullRequestReview;
   replyToPullRequestReviewThread?: typeof replyToPullRequestReviewThread;
   resolvePullRequestReviewThread?: typeof resolvePullRequestReviewThread;
@@ -146,6 +148,7 @@ export const prCommentInputSchema = v.object({
   addressedReviewCommentIds: v.optional(v.array(nonEmptyStringSchema)),
   checkRunIds: v.optional(v.array(v.pipe(v.number(), v.integer()))),
   commitSha: v.optional(nonEmptyStringSchema),
+  idempotencyKey: v.optional(nonEmptyStringSchema),
 });
 export const prReviewVerdictSchema = v.picklist([
   'comment',

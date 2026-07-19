@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import * as v from 'valibot';
 import { addNotification } from '../app-state';
 import { buildPreparedDiffAuditSummary } from '../autonomous-audit';
-import { openDb } from '../../lib/sqlite';
+import { openDb, withImmediateTransaction } from '../../lib/sqlite';
 import { gitCurrentSha, gitDiff, type RepoDiffFile } from '../../repo-edit/git';
 import {
   type RuntimePaths,
@@ -183,63 +183,58 @@ export function updatePreparedDiffVerificationWithLease(
   paths: RuntimePaths,
 ) {
   const database = openDb(paths.neondeckDatabase);
-  let committed = false;
   try {
-    database.exec('BEGIN IMMEDIATE;');
-    const now = new Date().toISOString();
-    const lease = database
-      .prepare(
-        `
+    return withImmediateTransaction(database, () => {
+      const now = new Date().toISOString();
+      const lease = database
+        .prepare(
+          `
         SELECT id
         FROM worktree_locks
         WHERE id = ?
           AND released_at IS NULL
           AND revoked_at IS NULL
           AND expires_at > ?;
-      `,
-      )
-      .get(input.lockId, now);
-    if (!lease) {
-      throw Object.assign(
-        new Error(
-          `Worktree lock ${input.lockId} is no longer active; verification was not recorded.`,
-        ),
-        { code: 'WORKTREE_LOCKED' },
-      );
-    }
-    const row = database
-      .prepare('SELECT * FROM prepared_diffs WHERE id = ?;')
-      .get(id);
-    if (!row) throw new Error(`Prepared diff ${id} was not found.`);
-    const current = readPreparedDiffRow(row);
-    const updated: PreparedDiffRecord = {
-      ...current,
-      verificationStatus: input.status,
-      summary: mergeSummary(current.summary, {
-        verification: input.verification,
-      }),
-      updatedAt: now,
-    };
-    database
-      .prepare(
-        `
+          `,
+        )
+        .get(input.lockId, now);
+      if (!lease) {
+        throw Object.assign(
+          new Error(
+            `Worktree lock ${input.lockId} is no longer active; verification was not recorded.`,
+          ),
+          { code: 'WORKTREE_LOCKED' },
+        );
+      }
+      const row = database
+        .prepare('SELECT * FROM prepared_diffs WHERE id = ?;')
+        .get(id);
+      if (!row) throw new Error(`Prepared diff ${id} was not found.`);
+      const current = readPreparedDiffRow(row);
+      const updated: PreparedDiffRecord = {
+        ...current,
+        verificationStatus: input.status,
+        summary: mergeSummary(current.summary, {
+          verification: input.verification,
+        }),
+        updatedAt: now,
+      };
+      database
+        .prepare(
+          `
         UPDATE prepared_diffs
         SET verification_status = ?, summary_json = ?, updated_at = ?
         WHERE id = ?;
-      `,
-      )
-      .run(
-        updated.verificationStatus,
-        updated.summary === null ? null : JSON.stringify(updated.summary),
-        updated.updatedAt,
-        updated.id,
-      );
-    database.exec('COMMIT;');
-    committed = true;
-    return updated;
-  } catch (error) {
-    if (!committed) database.exec('ROLLBACK;');
-    throw error;
+          `,
+        )
+        .run(
+          updated.verificationStatus,
+          updated.summary === null ? null : JSON.stringify(updated.summary),
+          updated.updatedAt,
+          updated.id,
+        );
+      return updated;
+    });
   } finally {
     database.close();
   }

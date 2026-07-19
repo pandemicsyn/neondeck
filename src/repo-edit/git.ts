@@ -589,11 +589,12 @@ export async function gitCommitPaths(
 
 export async function gitPushHead(
   repoRoot: string,
-  input: { remote: string; branch: string; force?: boolean },
+  input: { remote: string; branch: string; sha: string; force?: boolean },
 ): Promise<GitPushResult> {
   const remote = validateRemote(input.remote);
   const branch = validateRef(input.branch);
-  const refspec = `${input.force ? '+' : ''}HEAD:refs/heads/${branch}`;
+  const sha = validateCommitSha(input.sha);
+  const refspec = `${input.force ? '+' : ''}${sha}:refs/heads/${branch}`;
   const stdout = await git(repoRoot, ['push', remote, refspec]);
   return {
     remote,
@@ -601,6 +602,15 @@ export async function gitPushHead(
     force: Boolean(input.force),
     stdout,
   };
+}
+
+function validateCommitSha(sha: string) {
+  if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(sha)) {
+    throw Object.assign(new Error(`Invalid git commit SHA: ${sha}`), {
+      code: 'GIT_ERROR',
+    });
+  }
+  return sha;
 }
 
 export async function unifiedDiff(

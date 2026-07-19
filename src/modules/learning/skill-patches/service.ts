@@ -1,8 +1,19 @@
+import { openDb, withImmediateTransaction } from '../../../lib/sqlite.ts';
 import { asJsonValue } from '../../../lib/action-result';
 import { randomUUID } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import {
+  chmodSync,
+  closeSync,
+  fsyncSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { ensureRuntimeHome, runtimePaths } from '../../../runtime-home';
 import type {
@@ -98,7 +109,7 @@ export async function proposeSkillPatch(
     decidedAt: null,
   };
 
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     insertSkillPatchCandidate(database, candidate);
     recordLearningEvent(database, {
@@ -136,7 +147,7 @@ export async function listSkillPatchCandidates(
       errors: [v.summarize(parsed.issues)],
     };
   }
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const filters = ["target = 'skill'"];
     const params: Array<string | number> = [];
@@ -182,7 +193,7 @@ export async function applySkillPatchCandidate(
     return failedSkillPatch('skill_patch_apply', v.summarize(parsed.issues));
   }
 
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
   try {
     const candidate = readSkillPatchCandidateById(database, parsed.output.id);
@@ -235,55 +246,87 @@ export async function applySkillPatchCandidate(
       ]);
     }
 
-    await writeFile(target.skill.path, patch.afterContent, 'utf8');
+    let fileChanged = false;
     try {
-      database.exec('BEGIN;');
-      database
-        .prepare(
-          `
+      withImmediateTransaction(database, () => {
+        const currentCandidate = readSkillPatchCandidateById(
+          database,
+          candidate.id,
+        );
+        if (currentCandidate?.status !== 'proposed') {
+          throw new Error('Skill patch candidate was already decided.');
+        }
+        const latestContent = readFileSync(target.skill.path, 'utf8');
+        if (sha256(latestContent) !== patch.beforeHash) {
+          throw new Error(
+            'Skill content changed while this patch was being applied.',
+          );
+        }
+        writeFileAtomicallySync(target.skill.path, patch.afterContent);
+        fileChanged = true;
+        const update = database
+          .prepare(
+            `
           UPDATE learning_candidates
           SET status = 'applied', decided_at = ?
-          WHERE id = ?;
+          WHERE id = ? AND status = 'proposed';
         `,
-        )
-        .run(now, candidate.id);
-      recordLearningEvent(database, {
-        type: 'skill_patch_applied',
-        source: options.source ?? 'user',
-        data: {
-          candidateId: candidate.id,
-          skillId: candidate.skillId,
-          beforeHash: patch.beforeHash,
-          afterHash: patch.afterHash,
-          reason: parsed.output.reason ?? candidate.reason,
-        },
-        createdAt: now,
+          )
+          .run(now, candidate.id);
+        if (update.changes !== 1) {
+          throw new Error('Skill patch candidate was concurrently decided.');
+        }
+        recordLearningEvent(database, {
+          type: 'skill_patch_applied',
+          source: options.source ?? 'user',
+          data: {
+            candidateId: candidate.id,
+            skillId: candidate.skillId,
+            beforeHash: patch.beforeHash,
+            afterHash: patch.afterHash,
+            reason: parsed.output.reason ?? candidate.reason,
+          },
+          createdAt: now,
+        });
+        recordConfigHistory(database, {
+          action: 'skill_patch_applied',
+          target: `skill:${candidate.skillId}`,
+          before: {
+            path: patch.path,
+            sha256: patch.beforeHash,
+            content: patch.beforeContent,
+          },
+          after: {
+            path: patch.path,
+            sha256: patch.afterHash,
+            content: patch.afterContent,
+          },
+          changedAt: now,
+        });
       });
-      recordConfigHistory(database, {
-        action: 'skill_patch_applied',
-        target: `skill:${candidate.skillId}`,
-        before: {
-          path: patch.path,
-          sha256: patch.beforeHash,
-          content: patch.beforeContent,
-        },
-        after: {
-          path: patch.path,
-          sha256: patch.afterHash,
-          content: patch.afterContent,
-        },
-        changedAt: now,
-      });
-      database.exec('COMMIT;');
     } catch (error) {
-      try {
-        database.exec('ROLLBACK;');
-      } catch {
-        // Ignore rollback failures; the file compensation below is the critical step.
+      let compensated = true;
+      if (fileChanged) {
+        compensated = await restoreFileIfHashMatches(
+          target.skill.path,
+          patch.afterHash,
+          patch.beforeContent,
+        );
       }
-      await writeFile(target.skill.path, patch.beforeContent, 'utf8').catch(
-        () => {},
-      );
+      if (!fileChanged) {
+        return failedSkillPatch(
+          'skill_patch_apply',
+          `Skill patch was not applied. ${errorMessage(error)}`,
+          ['skill-patch-state'],
+        );
+      }
+      if (!compensated) {
+        return failedSkillPatch(
+          'skill_patch_apply',
+          `Skill patch audit failed and the file could not be safely restored; inspect the skill and audit state manually. ${errorMessage(error)}`,
+          ['skill-patch-manual-recovery'],
+        );
+      }
       return failedSkillPatch(
         'skill_patch_apply',
         `Skill patch audit failed; restored the previous skill content. ${errorMessage(error)}`,
@@ -324,7 +367,7 @@ export async function rejectSkillPatchCandidate(
     );
   }
 
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
   try {
     const candidate = readSkillPatchCandidateById(database, parsed.output.id);
@@ -342,25 +385,36 @@ export async function rejectSkillPatchCandidate(
         ['id'],
       );
     }
-    database
-      .prepare(
-        `
-        UPDATE learning_candidates
-        SET status = 'rejected', decided_at = ?
-        WHERE id = ?;
-      `,
-      )
-      .run(now, candidate.id);
-    recordLearningEvent(database, {
-      type: 'skill_patch_rejected',
-      source: options.source ?? 'user',
-      data: {
-        candidateId: candidate.id,
-        skillId: candidate.skillId,
-        reason: parsed.output.reason ?? candidate.reason,
-      },
-      createdAt: now,
+    const rejected = withImmediateTransaction(database, () => {
+      const update = database
+        .prepare(
+          `
+          UPDATE learning_candidates
+          SET status = 'rejected', decided_at = ?
+          WHERE id = ? AND status = 'proposed';
+        `,
+        )
+        .run(now, candidate.id);
+      if (update.changes !== 1) return false;
+      recordLearningEvent(database, {
+        type: 'skill_patch_rejected',
+        source: options.source ?? 'user',
+        data: {
+          candidateId: candidate.id,
+          skillId: candidate.skillId,
+          reason: parsed.output.reason ?? candidate.reason,
+        },
+        createdAt: now,
+      });
+      return true;
     });
+    if (!rejected) {
+      return failedSkillPatch(
+        'skill_patch_reject',
+        'Skill patch candidate was concurrently decided.',
+        ['id'],
+      );
+    }
 
     return {
       ok: true,
@@ -392,7 +446,7 @@ export async function restoreSkillPatchCandidate(
     );
   }
 
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
   try {
     const candidate = readSkillPatchCandidateById(database, parsed.output.id);
@@ -440,100 +494,105 @@ export async function restoreSkillPatchCandidate(
       ]);
     }
 
-    recordLearningEvent(database, {
-      type: 'skill_patch_restore_started',
-      source: options.source ?? 'user',
-      data: {
-        candidateId: candidate.id,
-        skillId: candidate.skillId,
-        fromHash: patch.afterHash,
-        toHash: patch.beforeHash,
-        reason:
-          parsed.output.reason ??
-          candidate.reason ??
-          'Restoring from skill patch audit.',
-      },
-      createdAt: now,
-    });
-
+    let fileChanged = false;
     try {
-      await writeFile(target.skill.path, patch.beforeContent, 'utf8');
-    } catch (error) {
-      await writeFile(target.skill.path, patch.afterContent, 'utf8').catch(
-        () => {},
-      );
-      try {
+      withImmediateTransaction(database, () => {
+        const currentCandidate = readSkillPatchCandidateById(
+          database,
+          candidate.id,
+        );
+        if (currentCandidate?.status !== 'applied') {
+          throw new Error('Skill patch candidate is no longer applied.');
+        }
+        const latestContent = readFileSync(target.skill.path, 'utf8');
+        if (sha256(latestContent) !== patch.afterHash) {
+          throw new Error(
+            'Skill content changed while this patch was being restored.',
+          );
+        }
         recordLearningEvent(database, {
-          type: 'skill_patch_restore_failed',
+          type: 'skill_patch_restore_started',
           source: options.source ?? 'user',
           data: {
             candidateId: candidate.id,
             skillId: candidate.skillId,
-            phase: 'file-write',
-            error: errorMessage(error),
+            fromHash: patch.afterHash,
+            toHash: patch.beforeHash,
+            reason:
+              parsed.output.reason ??
+              candidate.reason ??
+              'Restoring from skill patch audit.',
           },
-          createdAt: new Date().toISOString(),
+          createdAt: now,
         });
-      } catch {
-        // Best-effort failure audit when the restore write itself fails.
-      }
-      return failedSkillPatch(
-        'skill_patch_restore',
-        `Skill patch restore file write failed; reapplied the patched content when possible. ${errorMessage(error)}`,
-        ['skill-patch-write'],
-      );
-    }
-    try {
-      database.exec('BEGIN;');
-      database
-        .prepare(
-          `
+        writeFileAtomicallySync(target.skill.path, patch.beforeContent);
+        fileChanged = true;
+        const update = database
+          .prepare(
+            `
           UPDATE learning_candidates
           SET status = 'archived', decided_at = ?
-          WHERE id = ?;
+          WHERE id = ? AND status = 'applied';
         `,
-        )
-        .run(now, candidate.id);
-      recordLearningEvent(database, {
-        type: 'skill_patch_restored',
-        source: options.source ?? 'user',
-        data: {
-          candidateId: candidate.id,
-          skillId: candidate.skillId,
-          beforeHash: patch.afterHash,
-          afterHash: patch.beforeHash,
-          reason:
-            parsed.output.reason ??
-            candidate.reason ??
-            'Restored from skill patch audit.',
-        },
-        createdAt: now,
+          )
+          .run(now, candidate.id);
+        if (update.changes !== 1) {
+          throw new Error('Skill patch candidate was concurrently restored.');
+        }
+        recordLearningEvent(database, {
+          type: 'skill_patch_restored',
+          source: options.source ?? 'user',
+          data: {
+            candidateId: candidate.id,
+            skillId: candidate.skillId,
+            beforeHash: patch.afterHash,
+            afterHash: patch.beforeHash,
+            reason:
+              parsed.output.reason ??
+              candidate.reason ??
+              'Restored from skill patch audit.',
+          },
+          createdAt: now,
+        });
+        recordConfigHistory(database, {
+          action: 'skill_patch_restored',
+          target: `skill:${candidate.skillId}`,
+          before: {
+            path: patch.path,
+            sha256: patch.afterHash,
+            content: patch.afterContent,
+          },
+          after: {
+            path: patch.path,
+            sha256: patch.beforeHash,
+            content: patch.beforeContent,
+          },
+          changedAt: now,
+        });
       });
-      recordConfigHistory(database, {
-        action: 'skill_patch_restored',
-        target: `skill:${candidate.skillId}`,
-        before: {
-          path: patch.path,
-          sha256: patch.afterHash,
-          content: patch.afterContent,
-        },
-        after: {
-          path: patch.path,
-          sha256: patch.beforeHash,
-          content: patch.beforeContent,
-        },
-        changedAt: now,
-      });
-      database.exec('COMMIT;');
     } catch (error) {
-      try {
-        database.exec('ROLLBACK;');
-      } catch {
-        // Ignore rollback failures; the file compensation below is the critical step.
+      let compensated = true;
+      if (fileChanged) {
+        compensated = await restoreFileIfHashMatches(
+          target.skill.path,
+          patch.beforeHash,
+          patch.afterContent,
+        );
       }
-      await writeFile(target.skill.path, patch.afterContent, 'utf8').catch(
-        () => {},
-      );
+      if (!fileChanged) {
+        return failedSkillPatch(
+          'skill_patch_restore',
+          `Skill patch was not restored. ${errorMessage(error)}`,
+          ['skill-patch-state'],
+        );
+      }
+      if (!compensated) {
+        return failedSkillPatch(
+          'skill_patch_restore',
+          `Skill patch restore audit failed and the patched file could not be safely reapplied; inspect the skill and audit state manually. ${errorMessage(error)}`,
+          ['skill-patch-manual-recovery'],
+        );
+      }
       try {
         recordLearningEvent(database, {
           type: 'skill_patch_restore_failed',
@@ -567,5 +626,46 @@ export async function restoreSkillPatchCandidate(
     };
   } finally {
     database.close();
+  }
+}
+
+async function restoreFileIfHashMatches(
+  path: string,
+  expectedHash: string,
+  content: string,
+) {
+  try {
+    const current = await readFile(path, 'utf8');
+    if (sha256(current) === expectedHash) {
+      writeFileAtomicallySync(path, content);
+      return true;
+    }
+    return false;
+  } catch {
+    // Preserve the original mutation/audit failure. Manual recovery remains
+    // safer than overwriting a concurrently changed skill file.
+    return false;
+  }
+}
+
+function writeFileAtomicallySync(path: string, content: string) {
+  const temporaryPath = `${path}.neondeck-${randomUUID()}.tmp`;
+  const mode = statSync(path).mode & 0o777;
+  try {
+    writeFileSync(temporaryPath, content, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode,
+    });
+    chmodSync(temporaryPath, mode);
+    const descriptor = openSync(temporaryPath, 'r');
+    try {
+      fsyncSync(descriptor);
+    } finally {
+      closeSync(descriptor);
+    }
+    renameSync(temporaryPath, path);
+  } finally {
+    rmSync(temporaryPath, { force: true });
   }
 }

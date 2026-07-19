@@ -41,6 +41,7 @@ import { publishReviewSourceRevision } from '../review-refresh';
 const execFileAsync = promisify(execFile);
 export const runningProcesses = new Map<string, RunningProcess>();
 export const terminalTaskIds = new Set<string>();
+export const cancellingTaskIds = new Set<string>();
 
 export function attachProcessHandlers(
   taskId: string,
@@ -64,6 +65,7 @@ export function attachProcessHandlers(
   const cleanup = () => {
     runningProcesses.delete(taskId);
     terminalTaskIds.delete(taskId);
+    cancellingTaskIds.delete(taskId);
     rawLog?.end();
     settle();
   };
@@ -92,21 +94,30 @@ export function attachProcessHandlers(
     void (async () => {
       const task = tryKiloTask(taskId, paths);
       if (!task) return;
-      markKiloTaskFinished(taskId, 'failed', null, errorMessage(error), paths);
-      await releaseTaskLock(task, 'failed', paths);
+      const cancelled = cancellingTaskIds.has(taskId);
+      const status = cancelled ? 'cancelled' : 'failed';
+      const processError = errorMessage(error);
+      markKiloTaskFinished(
+        taskId,
+        status,
+        null,
+        cancelled ? null : processError,
+        paths,
+      );
+      await releaseTaskLock(task, status, paths);
       await reconcilePreparedDiffRevisionResult(
         {
           task,
-          status: 'failed',
-          error: errorMessage(error),
+          status,
+          error: cancelled ? null : processError,
         },
         paths,
       );
       await reconcileCiFixRunCompletion(
         {
           task: tryKiloTask(taskId, paths) ?? task,
-          status: 'failed',
-          error: errorMessage(error),
+          status,
+          error: cancelled ? null : processError,
         },
         paths,
       );
@@ -115,31 +126,36 @@ export function attachProcessHandlers(
         {
           eventType: 'process.error',
           stream: 'system',
-          summary: errorMessage(error),
-          data: { error: errorMessage(error) },
+          summary: processError,
+          data: { error: processError, cancelled },
         },
         paths,
       );
-      await notifyKiloState(
-        {
-          taskId,
-          state: 'failed',
-          message: `Kilo task ${taskId} failed to start or continue: ${errorMessage(error)}`,
-          repoId: task.repoId,
-          repoFullName: task.repoFullName,
-          worktreeId: task.worktreeId,
-          sessionId: task.rootSessionId,
-          data: { error: errorMessage(error) },
-        },
-        paths,
-      );
+      if (cancelled) {
+        await resolveKiloNotifications(taskId, ['started', 'progress'], paths);
+      } else {
+        await notifyKiloState(
+          {
+            taskId,
+            state: 'failed',
+            message: `Kilo task ${taskId} failed to start or continue: ${processError}`,
+            repoId: task.repoId,
+            repoFullName: task.repoFullName,
+            worktreeId: task.worktreeId,
+            sessionId: task.rootSessionId,
+            data: { error: processError },
+          },
+          paths,
+        );
+      }
     })().finally(cleanup);
   });
   child.on('exit', (code, signal) => {
     void (async () => {
       const task = tryKiloTask(taskId, paths);
       if (!task) return;
-      const cancelled = task?.status === 'cancelled';
+      const cancelled =
+        cancellingTaskIds.has(taskId) || task?.status === 'cancelled';
       const status = cancelled
         ? 'cancelled'
         : code === 0

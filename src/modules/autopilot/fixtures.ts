@@ -139,6 +139,8 @@ export async function dependenciesWithAutopilotFixture(
     postPullRequestComment:
       dependencies.postPullRequestComment ??
       (async (input) => fixturePrCommentResult(fixture, input)),
+    listPullRequestComments:
+      dependencies.listPullRequestComments ?? (async () => []),
     pushGit:
       dependencies.pushGit ??
       (async (cwd, input) => fixturePushGit(fixture, cwd, input)),

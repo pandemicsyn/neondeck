@@ -2,7 +2,7 @@ import type { JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../../lib/action-result';
 import { createHash, randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
-import { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import {
   parseAppConfig,
@@ -15,6 +15,8 @@ import type {
   SkillPatchCandidateRecord,
   SkillPatchMutationSource,
 } from './schemas';
+
+const maxSkillPatchBytes = 1024 * 1024;
 import { nonEmptyStringSchema, skillPatchOperationSchema } from './schemas';
 
 export async function resolvePatchableSkill(
@@ -93,6 +95,15 @@ export function validateSkillPatch(
   beforeContent: string,
   afterContent: string,
 ) {
+  if (
+    Buffer.byteLength(beforeContent, 'utf8') > maxSkillPatchBytes ||
+    Buffer.byteLength(afterContent, 'utf8') > maxSkillPatchBytes
+  ) {
+    return {
+      ok: false as const,
+      message: 'Skill patches are limited to 1 MiB per file.',
+    };
+  }
   const beforeFrontmatter = frontmatterBlock(beforeContent);
   const afterFrontmatter = frontmatterBlock(afterContent);
   if (!beforeFrontmatter || !afterFrontmatter) {

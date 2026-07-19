@@ -1,6 +1,6 @@
 import { type JsonValue } from '@flue/runtime';
 import { randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { asJsonValue } from '../../lib/action-result';
 import { openDb } from '../../lib/sqlite';

@@ -1,6 +1,6 @@
+import { openDb } from '../../lib/sqlite.ts';
 import { asJsonValue } from '../../lib/action-result';
 import { randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import type { MemoryMutationSource, MemoryRecord } from './schemas';
@@ -45,7 +45,7 @@ export async function listMemories(
     };
   }
 
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     const filters: string[] = [];
@@ -109,7 +109,7 @@ export async function upsertMemory(
 
   const rejection = memoryRejectionReason(parsed.output.value);
   if (rejection) {
-    const database = new DatabaseSync(paths.neondeckDatabase);
+    const database = openDb(paths.neondeckDatabase);
     try {
       recordMemoryEvent(database, {
         action: 'rejected',
@@ -127,7 +127,7 @@ export async function upsertMemory(
 
   const now = new Date().toISOString();
   const value = asJsonValue(parsed.output.value);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     const existing = readMemoryByScopeKey(
@@ -248,7 +248,7 @@ export async function rewriteMemory(
     return failedMemoryMutation('memory_rewrite', rejection, ['value']);
   }
 
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
 
   try {
@@ -319,7 +319,7 @@ export async function mergeMemories(
     }
   }
 
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
 
   try {
@@ -427,7 +427,7 @@ export async function archiveMemory(
   const policy = await memoryWritePolicyResult(paths, source);
   if (!policy.ok) return { ...policy.result, action: 'memory_archive' };
 
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
 
   try {
@@ -499,7 +499,7 @@ export async function markMemoriesUsed(
   }
 
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const ids = [...new Set(parsed.output.ids)];
     let changed = 0;
@@ -548,7 +548,7 @@ export async function listMemoryEvents(
     };
   }
 
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const events = database
       .prepare(

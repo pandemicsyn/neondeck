@@ -1,6 +1,7 @@
+import { openDb } from '../../lib/sqlite.ts';
 import { type JsonValue } from '@flue/runtime';
 import { randomUUID } from 'node:crypto';
-import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
+import type { SQLInputValue } from 'node:sqlite';
 import * as v from 'valibot';
 import { type RuntimePaths } from '../../runtime-home';
 
@@ -141,7 +142,7 @@ const eventRowSchema = v.object({
 });
 
 export function insertKiloTask(task: KiloTaskRecord, paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -203,7 +204,7 @@ export function listKiloTaskRows(
     values.push(filters.repoId);
   }
   values.push(filters.limit);
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
 
   try {
     return database
@@ -227,7 +228,7 @@ export function listReconcileableKiloTasks(
   paths: RuntimePaths,
   taskId?: string,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
 
   try {
     const statement = taskId
@@ -259,7 +260,7 @@ export function listLinkedKiloSessionTasks(
   filters: KiloLinkedSessionTaskFilters,
   paths: RuntimePaths,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   const clauses: string[] = [];
   const values: SQLInputValue[] = [];
   if (filters.repoId) {
@@ -319,7 +320,7 @@ export function updateKiloTaskProcess(
   startedAt: string,
   paths: RuntimePaths,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -343,7 +344,7 @@ export function markKiloTaskFinished(
   paths: RuntimePaths,
 ) {
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -371,7 +372,7 @@ export function updateKiloTaskStatus(
   paths: RuntimePaths,
 ) {
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -399,7 +400,7 @@ export function updateKiloTaskSummary(
   paths: RuntimePaths,
 ) {
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -429,7 +430,7 @@ export function updateKiloTaskSessions(
   ];
   const nextRoot = task.rootSessionId ?? rootSessionId ?? null;
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -459,7 +460,7 @@ export function addKiloTaskEvent(
   },
   paths: RuntimePaths,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
   try {
     const row = database
@@ -508,7 +509,7 @@ export function requireKiloTask(taskId: string, paths: RuntimePaths) {
 }
 
 export function tryKiloTask(taskId: string, paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare('SELECT * FROM kilo_tasks WHERE id = ?;')
@@ -524,7 +525,7 @@ export function resolveKiloTaskForSessionInput(
   paths: RuntimePaths,
 ) {
   if (input.taskId) return tryKiloTask(input.taskId, paths);
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = input.sessionId
       ? database
@@ -563,7 +564,7 @@ export function listKiloTaskEvents(
   limit: number,
   paths: RuntimePaths,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     return database
       .prepare(
@@ -584,7 +585,7 @@ export function listKiloTaskEvents(
 }
 
 export function countRunningKiloTasks(paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare(
@@ -598,7 +599,7 @@ export function countRunningKiloTasks(paths: RuntimePaths) {
 }
 
 export function readKiloTaskWorktree(id: string, paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare(

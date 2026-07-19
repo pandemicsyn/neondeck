@@ -1,6 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
-
-import { configureDb, enableWal } from '../../lib/sqlite.ts';
+import { enableWal, openDb } from '../../lib/sqlite.ts';
 import { applyAppDbMigrations } from './migrate.ts';
 import {
   reconcileActiveChatSession,
@@ -10,7 +8,7 @@ import {
 
 export function initializeAppDatabase(path: string) {
   applyAppDbMigrations(path);
-  const database = enableWal(configureDb(new DatabaseSync(path)));
+  const database = enableWal(openDb(path));
   const now = new Date().toISOString();
 
   try {
@@ -69,6 +67,6 @@ export function initializeAppDatabase(path: string) {
 }
 
 export function initializeFlueDatabase(path: string) {
-  const database = configureDb(new DatabaseSync(path));
+  const database = openDb(path);
   database.close();
 }

@@ -326,12 +326,14 @@ export async function commentPrAutofixResult(
         addressedReviewCommentIds,
         checkRunIds,
         commitSha,
+        idempotencyKey: `autofix-result:${preparedDiff.id}:${preparedDiff.status}:${commitSha ?? preparedDiff.headSha ?? 'unknown'}`,
       },
       paths,
       {
         token,
         fetchPullRequestEventState: dependencies.fetchPullRequestEventState,
         postPullRequestComment: dependencies.postPullRequestComment,
+        listPullRequestComments: dependencies.listPullRequestComments,
       },
     );
 
@@ -360,6 +362,9 @@ export async function commentPrAutofixResult(
       ...(comment.ok ? [] : (comment.errors ?? [])),
       ...auditErrors,
     ]);
+    const successfulMessage = comment.changed
+      ? `Posted autopilot result comment for ${preparedDiff.repoFullName}#${preparedDiff.prNumber}.`
+      : `Reused the existing autopilot result comment for ${preparedDiff.repoFullName}#${preparedDiff.prNumber}.`;
     await notifyAutopilotState(
       {
         state: 'comment-result',
@@ -369,9 +374,7 @@ export async function commentPrAutofixResult(
         repoFullName: preparedDiff.repoFullName,
         prNumber: preparedDiff.prNumber,
         workflow: 'comment_pr_autofix_result',
-        message: comment.ok
-          ? `Posted autopilot result comment for ${preparedDiff.repoFullName}#${preparedDiff.prNumber}.`
-          : comment.message,
+        message: comment.ok ? successfulMessage : comment.message,
         recoveryActions: recoveryActionsForPreparedDiff(preparedDiff),
         data: { comment, auditErrors },
       },
@@ -384,8 +387,8 @@ export async function commentPrAutofixResult(
       changed: comment.changed,
       message: comment.ok
         ? auditErrors.length > 0
-          ? `Posted autopilot result comment for ${preparedDiff.repoFullName}#${preparedDiff.prNumber}, but the audit update failed.`
-          : `Posted autopilot result comment for ${preparedDiff.repoFullName}#${preparedDiff.prNumber}.`
+          ? `${successfulMessage.slice(0, -1)}, but the audit update failed.`
+          : successfulMessage
         : comment.message,
       workflowSummary: asJsonValue(workflowSummary),
       data: asJsonValue({

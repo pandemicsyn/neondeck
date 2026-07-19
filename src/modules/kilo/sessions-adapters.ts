@@ -1,8 +1,9 @@
+import { openDb } from '../../lib/sqlite.ts';
 import { execFile } from 'node:child_process';
 import { readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import * as v from 'valibot';
 import {
@@ -181,7 +182,7 @@ function readKiloSessionsFromSqlite(
   path: string,
   input: v.InferOutput<typeof sessionsSearchInputSchema>,
 ) {
-  const database = new DatabaseSync(path, { readOnly: true });
+  const database = openDb(path, { readOnly: true });
   try {
     const table = findSessionTable(database);
     if (!table) return [];

@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
+import { openDb } from '../../lib/sqlite.ts';
 import { asJsonValue } from '../../lib/action-result';
 import { ensureRuntimeHome, type RuntimePaths } from '../../runtime-home';
 import type { RepoDiffSummary } from '../repos';
@@ -32,7 +32,7 @@ export async function recordDocsDriftFixTaskBoundary(
     allowedDocsPaths: normalizeAllowedPaths(input.allowedDocsPaths),
     createdAt: new Date().toISOString(),
   };
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -91,7 +91,7 @@ function readDocsDriftFixTaskBoundary(
   taskId: string,
   paths: RuntimePaths,
 ): DocsDriftFixTaskBoundary | null {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const row = database
       .prepare('SELECT value FROM app_metadata WHERE key = ?;')

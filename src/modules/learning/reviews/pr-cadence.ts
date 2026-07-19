@@ -1,6 +1,7 @@
+import { openDb } from '../../../lib/sqlite.ts';
 import type { JsonValue } from '@flue/runtime';
 import { randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync } from 'node:sqlite';
 import type { RuntimePaths } from '../../../runtime-home';
 
 export type HandledPrEventRecord = {
@@ -14,7 +15,7 @@ export type HandledPrEventRecord = {
 };
 
 export function prRetrospectiveDue(paths: RuntimePaths, threshold: number) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const checkpoint = latestPrRetrospectiveCheckpoint(database);
     const activeAdmission = hasActivePrRetrospectiveAdmission(
@@ -42,7 +43,7 @@ export function markPrRetrospectiveAdmitted(
   paths: RuntimePaths,
   input: { repoId: string | null; count: number; threshold: number },
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
   try {
     const checkpoint = latestPrRetrospectiveCheckpoint(database);

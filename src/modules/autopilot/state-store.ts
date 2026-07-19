@@ -1,6 +1,6 @@
+import { openDb } from '../../lib/sqlite.ts';
 /* eslint-disable no-unused-vars */
 import { defineTool } from '@flue/runtime';
-import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { listExecutionApprovals } from '../execution';
 import { flueRunInspectionUrl } from '../runtime';
@@ -44,7 +44,7 @@ import {
 } from './state-schemas';
 
 export function readActiveAutopilotRuns(paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     return database
       .prepare(
@@ -67,7 +67,7 @@ export function readActiveAutopilotRuns(paths: RuntimePaths) {
 export function readRecentAutopilotWorkflowEvents(
   paths: RuntimePaths,
 ): AutopilotActivity[] {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     return database
       .prepare(
@@ -103,7 +103,7 @@ export function readRecentWorktreeEvents(
   worktrees: WorktreeRecord[],
 ): AutopilotActivity[] {
   const byId = new Map(worktrees.map((worktree) => [worktree.id, worktree]));
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     return database
       .prepare(

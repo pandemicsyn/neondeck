@@ -1,6 +1,7 @@
 /* eslint-disable no-unused-vars */
 import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
-import { DatabaseSync } from 'node:sqlite';
+import { createHmac } from 'node:crypto';
+import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import {
   addPrReviewDraftComment,
@@ -14,6 +15,7 @@ import {
   fetchPullRequestReviewThread,
   GitHubPrReviewSubmitError,
   invalidatePullRequestReviewSurfaceThreadCache,
+  listPullRequestComments,
   postPullRequestComment,
   pullRequestEventStateTruncation,
   readLivePrReviewDraft,
@@ -1343,14 +1345,61 @@ export async function postGitHubPrComment(
       );
     }
 
+    const idempotencyMarker = parsed.output.idempotencyKey
+      ? `<!-- neondeck:idempotency:${createHmac('sha256', token).update(parsed.output.idempotencyKey).digest('hex')} -->`
+      : undefined;
+    if (idempotencyMarker) {
+      const comments = await (
+        dependencies.listPullRequestComments ?? listPullRequestComments
+      )({
+        token,
+        owner: resolved.target.owner,
+        repo: resolved.target.repo,
+        number: resolved.target.number,
+      });
+      const existing = comments.find((comment) =>
+        comment.body.includes(idempotencyMarker),
+      );
+      if (existing) {
+        return okResult(
+          'pr_comment',
+          false,
+          `PR comment already exists on ${resolved.target.repoFullName}#${resolved.target.number}.`,
+          {
+            target: eventTargetJson(resolved.target),
+            comment: existing as unknown as JsonValue,
+            metadata: {
+              idempotentReplay: true,
+              addressedReviewThreadIds:
+                parsed.output.addressedReviewThreadIds ?? [],
+              addressedReviewCommentIds:
+                parsed.output.addressedReviewCommentIds ?? [],
+              checkRunIds: parsed.output.checkRunIds ?? [],
+              commitSha: parsed.output.commitSha ?? null,
+            },
+          },
+        );
+      }
+    }
+
     const poster =
       dependencies.postPullRequestComment ?? postPullRequestComment;
+    const body = idempotencyMarker
+      ? `${parsed.output.body}\n\n${idempotencyMarker}`
+      : parsed.output.body;
+    if (body.length > 65_536) {
+      return failResult(
+        'pr_comment',
+        'PR comment plus its idempotency marker exceeds GitHub’s comment length limit.',
+        { requires: ['shorterComment'] },
+      );
+    }
     const comment = await poster({
       token,
       owner: resolved.target.owner,
       repo: resolved.target.repo,
       number: resolved.target.number,
-      body: parsed.output.body,
+      body,
     });
 
     return okResult(

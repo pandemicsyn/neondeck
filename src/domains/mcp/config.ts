@@ -1,7 +1,7 @@
+import { openDb } from '../../lib/sqlite.ts';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import {
   configEventFromChange,
@@ -316,7 +316,7 @@ function recordMcpConfigChange(
     after: McpConfig;
   },
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
 
   try {
@@ -358,7 +358,7 @@ function recordMcpConfigChange(
 }
 
 function deleteMcpServerState(paths: RuntimePaths, serverId: string) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare('DELETE FROM mcp_tool_catalog WHERE server_id = ?;')
@@ -378,7 +378,7 @@ function deleteMcpServerState(paths: RuntimePaths, serverId: string) {
 }
 
 function deleteMcpOAuthState(paths: RuntimePaths, serverId: string) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare('DELETE FROM mcp_oauth_tokens WHERE server_id = ?;')

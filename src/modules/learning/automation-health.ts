@@ -1,4 +1,5 @@
-import { DatabaseSync } from 'node:sqlite';
+import { openDb } from '../../lib/sqlite.ts';
+import type { DatabaseSync } from 'node:sqlite';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 
 export const automationHealthDefaultWindowDays = 30;
@@ -78,7 +79,7 @@ export async function readAutomationHealth(
     since: sinceDate.toISOString(),
     until: untilDate.toISOString(),
   };
-  const database = new DatabaseSync(paths.neondeckDatabase, {
+  const database = openDb(paths.neondeckDatabase, {
     readOnly: true,
   });
   try {

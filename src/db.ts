@@ -1,3 +1,5 @@
+import './lib/node-sqlite-defaults.ts';
+
 import { sqlite } from '@flue/runtime/node';
 import type { PersistenceAdapter } from '@flue/runtime/adapter';
 import { ensureRuntimeHomeSync, runtimePaths } from './runtime-home';

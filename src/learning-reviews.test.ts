@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -1374,13 +1381,16 @@ describe('learning review orchestration', () => {
       ok: false,
       requires: ['explicit-user-decision'],
     });
-    await expect(
+    const concurrentApplyResults = await Promise.all([
       applySkillPatchCandidate({ id: candidateId }, paths),
-    ).resolves.toMatchObject({
-      ok: true,
-      changed: true,
-      action: 'skill_patch_apply',
-    });
+      applySkillPatchCandidate({ id: candidateId }, paths),
+    ]);
+    expect(concurrentApplyResults.filter((result) => result.ok)).toHaveLength(
+      1,
+    );
+    expect(concurrentApplyResults.filter((result) => !result.ok)).toHaveLength(
+      1,
+    );
     await expect(
       restoreSkillPatchCandidate(
         {
@@ -1395,7 +1405,7 @@ describe('learning review orchestration', () => {
       ok: false,
       requires: ['explicit-user-decision'],
     });
-    await expect(
+    const concurrentRestoreResults = await Promise.all([
       restoreSkillPatchCandidate(
         {
           id: candidateId,
@@ -1404,11 +1414,21 @@ describe('learning review orchestration', () => {
         },
         paths,
       ),
-    ).resolves.toMatchObject({
-      ok: true,
-      changed: true,
-      action: 'skill_patch_restore',
-    });
+      restoreSkillPatchCandidate(
+        {
+          id: candidateId,
+          confirm: true,
+          reason: 'Concurrent restore test patch.',
+        },
+        paths,
+      ),
+    ]);
+    expect(concurrentRestoreResults.filter((result) => result.ok)).toHaveLength(
+      1,
+    );
+    expect(
+      concurrentRestoreResults.filter((result) => !result.ok),
+    ).toHaveLength(1);
     await expect(
       restoreSkillPatchCandidate(
         {
@@ -1469,6 +1489,62 @@ describe('learning review orchestration', () => {
         expect.objectContaining({ id: String(rejectId), status: 'rejected' }),
       ]),
     });
+  });
+
+  it('keeps applied skill content intact when an atomic restore cannot be staged', async () => {
+    const paths = runtimePaths(await tempHome());
+    await writeUserSkill(paths.home, 'restore-failure-skill');
+    const skillDirectory = join(paths.home, 'skills', 'restore-failure-skill');
+    const skillPath = join(skillDirectory, 'SKILL.md');
+    const proposed = await proposeSkillPatch(
+      {
+        skillId: 'restore-failure-skill',
+        summary: 'Add atomic restore guidance.',
+        operation: {
+          type: 'append-section',
+          heading: 'Atomic restore',
+          content: '- Preserve the old file until replacement is complete.\n',
+        },
+      },
+      paths,
+    );
+    if (!proposed.ok || !('candidate' in proposed)) {
+      throw new Error(proposed.message);
+    }
+    const candidateId = (proposed as { candidate: { id: string } }).candidate
+      .id;
+    await expect(
+      applySkillPatchCandidate({ id: candidateId }, paths),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+    const appliedContent = await readFile(skillPath, 'utf8');
+
+    await chmod(skillDirectory, 0o500);
+    try {
+      await expect(
+        restoreSkillPatchCandidate(
+          {
+            id: candidateId,
+            confirm: true,
+            reason: 'Exercise a failed staged restore.',
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        ok: false,
+        requires: ['skill-patch-state'],
+      });
+      await expect(readFile(skillPath, 'utf8')).resolves.toBe(appliedContent);
+      await expect(
+        listSkillPatchCandidates(
+          { status: 'applied', skillId: 'restore-failure-skill' },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        candidates: [expect.objectContaining({ id: candidateId })],
+      });
+    } finally {
+      await chmod(skillDirectory, 0o700);
+    }
   });
 
   it('keeps dedicated learning operator candidate lists independently bounded', async () => {

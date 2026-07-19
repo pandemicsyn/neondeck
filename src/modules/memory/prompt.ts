@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
+import { openDb } from '../../lib/sqlite.ts';
 import { runtimePaths } from '../../runtime-home';
 import type { ActiveMemoryScope, MemoryRecord } from './schemas';
 import {
@@ -70,7 +70,7 @@ export function markMemoryBackgroundContextUsedSync(
 ) {
   const ids = [...new Set(memoryIds)].filter(Boolean);
   if (ids.length === 0) return;
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     for (const id of ids) {
       database
@@ -94,7 +94,7 @@ export function buildMemoryPromptSnapshotSync(
   paths = runtimePaths(),
   options: { repoId?: string | null } = {},
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase, {
+  const database = openDb(paths.neondeckDatabase, {
     readOnly: true,
   });
 

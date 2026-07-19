@@ -1,5 +1,5 @@
+import { openDb } from '../../lib/sqlite.ts';
 import { createHash, randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
 import {
   ensureRuntimeHome,
   runtimePaths,
@@ -91,7 +91,7 @@ export async function replaceMcpToolCatalog(
 ) {
   await ensureRuntimeHome(paths);
   await mcpCatalogReplaceTestHook?.({ serverId, records, paths });
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
 
   try {
@@ -168,7 +168,7 @@ export async function markMcpCatalogUnavailable(
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -190,7 +190,7 @@ export async function deleteMcpToolCatalog(
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare('DELETE FROM mcp_tool_catalog WHERE server_id = ?;')
@@ -205,7 +205,7 @@ export async function listMcpToolCatalog(
   options: { serverId?: string } = {},
 ) {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const rows = (
       options.serverId
@@ -246,7 +246,7 @@ export async function findUsableMcpApproval(
 ) {
   await ensureRuntimeHome(paths);
   expireOldApprovals(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     const row = database
       .prepare(
@@ -287,7 +287,7 @@ export async function consumeUsableMcpApproval(
 ) {
   await ensureRuntimeHome(paths);
   expireOldApprovals(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
   let transactionStarted = false;
   try {
@@ -364,7 +364,7 @@ export async function createMcpApprovalRequest(
 ) {
   await ensureRuntimeHome(paths);
   expireOldApprovals(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date();
   const nowIso = now.toISOString();
   const expiresAt = new Date(
@@ -459,7 +459,7 @@ export async function createMcpApprovalRequest(
 
 export async function consumeMcpApproval(id: string, paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
   try {
     database
@@ -491,7 +491,7 @@ export function expireMcpServerApprovalsSync(
   serverId: string,
   paths = runtimePaths(),
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
   try {
     database
@@ -534,7 +534,7 @@ export async function resolveMcpApprovalWithPaths(
   expireOldApprovals(paths);
   const nextStatus = input.decision === 'approve' ? 'approved' : 'denied';
   const now = new Date().toISOString();
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   let transactionStarted = false;
   try {
     database.exec('BEGIN IMMEDIATE;');
@@ -648,7 +648,7 @@ export async function listMcpApprovals(
 ) {
   await ensureRuntimeHome(paths);
   expireOldApprovals(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const rows = database
       .prepare(
@@ -683,7 +683,7 @@ export async function insertMcpAudit(
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const id = randomUUID();
   const now = new Date().toISOString();
   try {
@@ -731,7 +731,7 @@ export async function listMcpAudit(
   options: { serverId?: string; limit?: number } = {},
 ) {
   await ensureRuntimeHome(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
   try {
     const rows = (
@@ -765,7 +765,7 @@ export async function listMcpAudit(
 }
 
 function readApproval(paths: RuntimePaths, id: string) {
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare('SELECT * FROM mcp_tool_approvals WHERE id = ?;')
@@ -777,7 +777,7 @@ function readApproval(paths: RuntimePaths, id: string) {
 }
 
 function expireOldApprovals(paths: RuntimePaths) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
   try {
     database
