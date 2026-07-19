@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReportDeckDocument } from '../../shared/report-deck';
 import { REPORT_DECK_CSS } from '../../shared/report-deck-styles';
 import { ReportDeck } from '../../shared/report-deck-view';
+import { withReportThemeBootstrap } from '../../shared/theme-bootstrap';
 import { REPORT_DECK_CONTROLLER_SOURCE } from './report-deck-controller';
 import { escapeHtml } from './report-html';
 
@@ -10,7 +11,7 @@ export function renderReportDeckHtml(document: ReportDeckDocument) {
   const deck = renderToStaticMarkup(
     createElement(ReportDeck, { document, staticController: true }),
   );
-  return `<!doctype html>
+  return withReportThemeBootstrap(`<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -28,5 +29,5 @@ export function renderReportDeckHtml(document: ReportDeckDocument) {
   <script>${REPORT_DECK_CONTROLLER_SOURCE}</script>
 </body>
 </html>
-`;
+`);
 }

@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
 import { Hono } from 'hono';
+import {
+  THEME_BOOTSTRAP_SOURCE,
+  withReportThemeBootstrap,
+} from '../../../shared/theme-bootstrap';
 import { REPORT_DECK_CONTROLLER_SOURCE } from '../../lib/report-deck-controller';
 import { stageDocsDriftFix } from '../../modules/docs-drift';
 import { listReports, readReport, readReportHtml } from '../../modules/reports';
@@ -9,11 +13,14 @@ import { safeJsonObject } from '../http';
 export const REPORT_DECK_CONTROLLER_HASH = createHash('sha256')
   .update(REPORT_DECK_CONTROLLER_SOURCE)
   .digest('base64');
+export const REPORT_THEME_BOOTSTRAP_HASH = createHash('sha256')
+  .update(THEME_BOOTSTRAP_SOURCE)
+  .digest('base64');
 
 const reportContentSecurityPolicy = [
   "default-src 'none'",
   "style-src 'unsafe-inline'",
-  `script-src 'sha256-${REPORT_DECK_CONTROLLER_HASH}'`,
+  `script-src 'sha256-${REPORT_THEME_BOOTSTRAP_HASH}' 'sha256-${REPORT_DECK_CONTROLLER_HASH}'`,
 ].join('; ');
 
 export function createReportApiRoutes(paths: RuntimePaths) {
@@ -126,7 +133,7 @@ export function createReportFileRoutes(paths: RuntimePaths) {
     try {
       const result = await readReportHtml(id, paths);
       if (!result) return c.text('Not found', 404);
-      return c.html(result.html, 200, {
+      return c.html(withReportThemeBootstrap(result.html), 200, {
         'content-security-policy': reportContentSecurityPolicy,
         'x-content-type-options': 'nosniff',
       });

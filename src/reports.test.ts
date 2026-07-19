@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { representativeReportDeckFixture } from '../shared/report-deck-fixtures';
+import { THEME_BOOTSTRAP_SOURCE } from '../shared/theme-bootstrap';
 import { REPORT_DECK_CONTROLLER_SOURCE } from './lib/report-deck-controller';
 import { renderReportDeckHtml } from './lib/report-deck-html';
 import { renderReportHtml } from './lib/report-html';
@@ -17,7 +18,10 @@ import {
   writeReport,
 } from './modules/reports';
 import { createApp } from './server/create-app';
-import { REPORT_DECK_CONTROLLER_HASH } from './server/routes/reports';
+import {
+  REPORT_DECK_CONTROLLER_HASH,
+  REPORT_THEME_BOOTSTRAP_HASH,
+} from './server/routes/reports';
 import { runtimePaths } from './runtime-home';
 
 const tempRoots: string[] = [];
@@ -263,11 +267,18 @@ describe('reports', () => {
     const expectedHash = createHash('sha256')
       .update(REPORT_DECK_CONTROLLER_SOURCE)
       .digest('base64');
+    const expectedThemeHash = createHash('sha256')
+      .update(THEME_BOOTSTRAP_SOURCE)
+      .digest('base64');
 
     expect(response.status).toBe(200);
     expect(REPORT_DECK_CONTROLLER_HASH).toBe(expectedHash);
+    expect(REPORT_THEME_BOOTSTRAP_HASH).toBe(expectedThemeHash);
     expect(response.headers.get('content-security-policy')).toBe(
-      `default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-${expectedHash}'`,
+      `default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-${expectedThemeHash}' 'sha256-${expectedHash}'`,
+    );
+    expect(servedHtml).toContain(
+      `<script data-neondeck-theme-bootstrap>${THEME_BOOTSTRAP_SOURCE}</script>`,
     );
     expect(servedHtml).toContain(
       `<script>${REPORT_DECK_CONTROLLER_SOURCE}</script>`,

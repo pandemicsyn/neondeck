@@ -10,6 +10,10 @@ import {
 } from 'react';
 import type { CSSProperties } from 'react';
 import {
+  RESOLVED_THEME_STORAGE_KEY,
+  THEME_PREFERENCE_STORAGE_KEY,
+} from '../../shared/theme-bootstrap';
+import {
   getDashboardConfig,
   openChatSessionCommandEventStream,
   openChatSessionEventStream,
@@ -71,7 +75,6 @@ export function App() {
   } = useQuery({
     queryKey: queryKeys.dashboardConfig,
     queryFn: getDashboardConfig,
-    enabled: isDashboardRoute,
   });
 
   useEffect(() => {
@@ -124,7 +127,9 @@ export function App() {
     if (!config) return;
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const applyTheme = () => {
-      document.documentElement.dataset.theme = resolveTheme(config.theme);
+      const theme = resolveTheme(config.theme);
+      document.documentElement.dataset.theme = theme;
+      persistResolvedTheme(config.theme, theme);
     };
     applyTheme();
     if (config.theme !== 'system') return;
@@ -674,6 +679,19 @@ function resolveTheme(theme: DashboardTheme) {
   return window.matchMedia('(prefers-color-scheme: dark)').matches
     ? 'dark'
     : 'light';
+}
+
+function persistResolvedTheme(
+  preference: DashboardTheme,
+  theme: 'dark' | 'light',
+) {
+  try {
+    window.localStorage.setItem(THEME_PREFERENCE_STORAGE_KEY, preference);
+    window.localStorage.setItem(RESOLVED_THEME_STORAGE_KEY, theme);
+  } catch {
+    // Storage can be unavailable in a hardened browser context. The current
+    // document still receives the resolved theme above.
+  }
 }
 
 type ReviewPopoutRoute =
