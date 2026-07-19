@@ -242,14 +242,23 @@ export async function runAutopilotDiagnostics(
   paths: RuntimePaths,
   input: v.InferOutput<typeof fixPrCiFailureInputSchema>,
   dependencies: AutopilotDependencies,
-  assertLease?: () => void,
+  assertLease?: () => void | Promise<void>,
 ) {
   const runExecution = dependencies.runExecution ?? runApprovedExecution;
   const results = [];
   for (const command of commands) {
-    assertLease?.();
-    const slot = await withAutopilotLocalExecutionSlot(limits, () =>
-      runExecution(
+    await assertLease?.();
+    const slot = await withAutopilotLocalExecutionSlot(limits, async () => {
+      await assertLease?.();
+      if (
+        dependencies.ownerDiagnosticCommandAllowed &&
+        !(await dependencies.ownerDiagnosticCommandAllowed(command))
+      ) {
+        throw new Error(
+          'CI diagnostic command is outside the grounded repository authority.',
+        );
+      }
+      return runExecution(
         {
           command,
           backend: input.backend,
@@ -263,9 +272,9 @@ export async function runAutopilotDiagnostics(
           },
         },
         paths,
-      ),
-    );
-    assertLease?.();
+      );
+    });
+    await assertLease?.();
     if ('blocked' in slot) {
       results.push({
         command,

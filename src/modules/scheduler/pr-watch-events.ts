@@ -116,6 +116,7 @@ export async function refreshWatchJobEvents(
         admissionId: admission.id,
         limits: policy.concurrency,
         invokeWorkflow: autopilotWorkflowInvoker(invokeWorkflow),
+        enableOwnerDispatch: true,
       },
       paths,
     );
@@ -1073,6 +1074,7 @@ async function admitWatchTriageEvent(
         admissionId: admission.admission.id,
         limits: policy.concurrency,
         invokeWorkflow: autopilotWorkflowInvoker(invokeWorkflow),
+        enableOwnerDispatch: true,
       },
       paths,
     );
@@ -1171,7 +1173,12 @@ export function triageAdmissionResultFromCoordination(input: {
       triage: {
         status: 'admitted',
         eventId: input.eventId,
-        runId: dispatched.runId,
+        runId:
+          'runId' in dispatched
+            ? dispatched.runId
+            : 'dispatchId' in dispatched
+              ? dispatched.dispatchId
+              : null,
         workflow: 'triage-pr-event',
         input: triageInput,
       } as unknown as JsonValue,
@@ -1184,7 +1191,8 @@ export function triageAdmissionResultFromCoordination(input: {
   if (
     dispatched.status === 'cas-lost' ||
     dispatched.status === 'stale-reservation' ||
-    dispatched.status === 'not-reserved'
+    dispatched.status === 'not-reserved' ||
+    dispatched.status === 'settled'
   ) {
     return {
       ok: true,
@@ -1249,6 +1257,13 @@ function dispatchEvidence(
   if (dispatched.status === 'missing') {
     return { status: dispatched.status, admissionId };
   }
+  if (dispatched.status === 'settled') {
+    return {
+      status: dispatched.status,
+      admissionId: dispatched.admission?.id ?? admissionId,
+      queuedAdmissionId: dispatched.queuedAdmissionId,
+    };
+  }
 
   return {
     status: dispatched.status,
@@ -1267,8 +1282,11 @@ function dispatchEvidence(
 }
 
 function dispatchFailureMessage(
-  status: 'missing' | 'orphaned-receipt' | 'unsupported-transport',
+  status: 'missing' | 'orphaned-receipt' | 'unsupported-transport' | 'blocked',
 ) {
+  if (status === 'blocked') {
+    return 'owner grounding blocked the dispatch before any model turn was accepted';
+  }
   if (status === 'orphaned-receipt') {
     return 'Flue accepted a workflow receipt that could not be attached to its durable admission';
   }

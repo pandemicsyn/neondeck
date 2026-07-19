@@ -26,6 +26,7 @@ import {
   readRepoDiff,
   readRepoFile,
   replaceRepoFile,
+  replaceRepoFilesAtomically,
   writeRepoFile,
 } from './repo-edit';
 import { gitDiff, gitPushHead, gitWorktreeRevision } from './repo-edit/git';
@@ -326,6 +327,116 @@ describe('repo edit actions', () => {
     );
   });
 
+  it('fences the exact cumulative effect before applying an update and move', async () => {
+    const { paths, repo } = await fixture();
+    let effect: { paths: string[]; bytes: number; lines: number } | undefined;
+    const result = await patchRepoFiles(
+      {
+        repoId: 'sample',
+        patch: [
+          '*** Begin Patch',
+          '*** Update File: src/app.ts',
+          '@@',
+          '-export const value = 1;',
+          '+export const value = 123456789;',
+          '*** Move File: src/app.ts -> src/moved.ts',
+          '*** End Patch',
+        ].join('\n'),
+      },
+      paths,
+      {
+        beforeExternalMutation: (planned) => {
+          effect = planned;
+          throw new Error('planned effect rejected');
+        },
+      },
+    );
+
+    expect(result).toMatchObject({ ok: false });
+    expect(effect).toMatchObject({
+      paths: ['src/app.ts', 'src/moved.ts'],
+    });
+    expect(effect?.bytes).toBeGreaterThan(
+      Buffer.byteLength('export const value = 1;\n'),
+    );
+    await expect(readFile(join(repo, 'src/app.ts'), 'utf8')).resolves.toBe(
+      'export const value = 1;\n',
+    );
+    await expect(
+      readFile(join(repo, 'src/moved.ts'), 'utf8'),
+    ).rejects.toThrow();
+  });
+
+  it('rejects a target changed after patch planning without overwriting it', async () => {
+    const { paths, repo } = await fixture();
+    let fenceCalls = 0;
+    const result = await patchRepoFiles(
+      {
+        repoId: 'sample',
+        patch: [
+          '*** Begin Patch',
+          '*** Update File: src/app.ts',
+          '@@',
+          '-export const value = 1;',
+          '+export const value = 2;',
+          '*** End Patch',
+        ].join('\n'),
+      },
+      paths,
+      {
+        beforeExternalMutation: async () => {
+          fenceCalls += 1;
+          if (fenceCalls === 2) {
+            await writeFile(join(repo, 'src/app.ts'), 'external change\n');
+          }
+        },
+      },
+    );
+
+    expect(result).toMatchObject({ ok: false });
+    await expect(readFile(join(repo, 'src/app.ts'), 'utf8')).resolves.toBe(
+      'external change\n',
+    );
+  });
+
+  it('rejects a target changed after replacement planning without rolling it back', async () => {
+    const { paths, repo } = await fixture();
+    const read = await readRepoFile(
+      { repoId: 'sample', path: 'src/app.ts' },
+      paths,
+    );
+    if (!read.ok || !('stamp' in read)) throw new Error('Expected file stamp.');
+    let fenceCalls = 0;
+    const result = await replaceRepoFilesAtomically(
+      {
+        repoId: 'sample',
+        worktreeId: '',
+        replacements: [
+          {
+            path: 'src/app.ts',
+            oldString: 'value = 1',
+            newString: 'value = 2',
+          },
+        ],
+        expectedStamps: { 'src/app.ts': read.stamp },
+      },
+      paths,
+      {
+        beforeExternalMutation: async () => {
+          fenceCalls += 1;
+          if (fenceCalls === 2) {
+            await writeFile(join(repo, 'src/app.ts'), 'external replacement\n');
+          }
+        },
+      },
+    );
+
+    expect(result).toMatchObject({ ok: false });
+    await expect(readFile(join(repo, 'src/app.ts'), 'utf8')).resolves.toBe(
+      'external replacement\n',
+    );
+  });
+
   it('requires V4A update hunks to match complete lines', async () => {
     const { paths, repo } = await fixture();
     const result = await patchRepoFiles(
@@ -436,6 +547,19 @@ describe('repo edit actions', () => {
           repoId: 'sample',
           paths: ['src/app.ts'],
           includePatch: true,
+          expectedRevisionKey: firstRevisionKey ?? undefined,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['refresh'],
+      errors: ['The requested revision is stale.'],
+    });
+    await expect(
+      readRepoDiff(
+        {
+          repoId: 'sample',
           expectedRevisionKey: firstRevisionKey ?? undefined,
         },
         paths,

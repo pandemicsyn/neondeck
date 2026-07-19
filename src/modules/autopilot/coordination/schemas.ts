@@ -115,6 +115,7 @@ export type AutopilotPrOwner = {
   groundingConfigHistoryId: number;
   groundingMemoryEventAt: string | null;
   groundingMemoryEventId: string | null;
+  groundingMemoryEventSequence: number;
   groundingMemoryIds: string[];
   status: AutopilotOwnerStatus;
   currentHeadSha: string | null;
@@ -135,6 +136,9 @@ export type AutopilotAdmission = {
   repoId: string;
   prNumber: number;
   mode: AutopilotMode;
+  authorityMode: AutopilotMode;
+  policyConfigHistoryId: number;
+  mutationEpoch: number;
   input: Record<string, unknown>;
   state: AutopilotAdmissionState;
   priority: number;
@@ -210,7 +214,10 @@ export function readAutopilotAdmission(row: unknown) {
     eventSequence: Number(value.event_sequence),
     repoId: String(value.repo_id),
     prNumber: Number(value.pr_number),
-    mode: value.mode as AutopilotMode,
+    mode: readAutopilotMode(value.mode),
+    authorityMode: readAutopilotMode(value.authority_mode ?? value.mode),
+    policyConfigHistoryId: Number(value.policy_config_history_id ?? 0),
+    mutationEpoch: Number(value.mutation_epoch ?? 0),
     input: readJsonRecord(value.input_json),
     state: state.output,
     priority: Number(value.priority ?? 0),
@@ -282,6 +289,9 @@ export function readAutopilotPrOwner(row: unknown) {
     groundingConfigHistoryId: Number(value.grounding_config_history_id),
     groundingMemoryEventAt: nullableString(value.grounding_memory_event_at),
     groundingMemoryEventId: nullableString(value.grounding_memory_event_id),
+    groundingMemoryEventSequence: Number(
+      value.grounding_memory_event_sequence ?? 0,
+    ),
     groundingMemoryIds: readStringArray(value.grounding_memory_ids_json),
     status: status.output,
     currentHeadSha: nullableString(value.current_head_sha),
@@ -334,4 +344,18 @@ function nullableString(value: unknown) {
 
 function nullableNumber(value: unknown) {
   return typeof value === 'number' ? value : null;
+}
+
+function readAutopilotMode(value: unknown): AutopilotMode {
+  const parsed = v.safeParse(
+    v.picklist([
+      'notify-only',
+      'prepare-only',
+      'autofix-with-approval',
+      'autofix-push-when-safe',
+    ]),
+    value,
+  );
+  if (!parsed.success) throw new Error('Invalid persisted Autopilot mode.');
+  return parsed.output;
 }

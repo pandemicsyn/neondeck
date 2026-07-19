@@ -64,6 +64,7 @@ export function ensureAutopilotPrOwnerInDatabase(
     groundingConfigHistoryId: 0,
     groundingMemoryEventAt: null,
     groundingMemoryEventId: null,
+    groundingMemoryEventSequence: 0,
     groundingMemoryIds: [],
     status: 'awaiting-event',
     currentHeadSha: null,

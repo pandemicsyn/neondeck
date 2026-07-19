@@ -1265,21 +1265,21 @@ Must-haves:
 
 ### Phase 19: PR Event Autopilot
 
-- Status: incomplete. The deterministic actions and safety foundations have landed. Watcher admissions now use a versioned durable PR-owner/coordinator foundation with per-stage attempts, audit transitions, bounded retry/reconciliation, one CAS-protected triage → worktree-preparation continuation, crash-safe pending event intake before watermark acknowledgement, complete-fact retry gates, explicit restart-safe current-feedback processing, and a persistent owner worktree fetched and synchronized through a registered repository remote to the exact same-repo or fork head SHA. Central readiness now exposes separate API, exact-fetch, Git credential/target, comment, identity, check-command, and `gh` facts, and all production remote Git paths use bounded noninteractive execution; the immediate push path consumes the same actor/target decision before its side effect. Conversation comments are retained as explain-only candidate-reasoning facts for the future continuing owner; they do not authorize deterministic mutation in this package. The production path does not yet allocate/reuse the continuing Neon PR-owner agent instance or continue automatically through bounded event turns, fix, verification, approval/push, result delivery, and terminal cleanup. The source-of-truth closure plan is `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`; the evidence audit is `.plans/AUTOPILOT_END_TO_END_REVIEW.html`.
+- Status: incomplete after Autopilot Package 4. The production watcher now progresses through durable triage/worktree preparation into one continuing, compacting, private Neon PR-owner instance per watch. Complete authoritative review/CI/readiness/authority/workspace envelopes, immutable grounding/receipt linkage, explicit monotonic memory/config cursors, trusted revision-bound read/fix capabilities, baseline-aware in-place re-grounding or audited capability rotation, serialized/byte-bounded coalesced turns, durable stop/supersession mutation epochs, under-lock live-head/identity/policy/effect checks, owner-specific restart reconciliation, bounded one-time submission persistence, idempotent handled-PR learning evidence, and restart-safe deterministic prepared-diff submission are implemented. Focused fixture coverage runs two real sequential review fixes against the same instance/worktree across reconstructed service closures and a real policy downgrade. Verification, approval/push, result delivery, terminal cleanup, explicit setup/control UX, and full product-path integration/smoke remain open in Packages 5–8. The source-of-truth closure plan is `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`; the evidence audit is `.plans/AUTOPILOT_END_TO_END_REVIEW.html`.
 
 - [x] Complete PR event watermarks for commits, review threads, requested-changes review bodies, general PR conversation comments, check suites/runs, mergeability, out-of-date state, and per-item new/changed fingerprints.
 - [x] Add a `triage_pr_event` workflow that classifies deltas into no-op, notify-only, explain-only, prepare-only, autofix-with-approval, or autofix-push-when-safe.
 - [ ] Complete deterministic GitHub tools/actions for unresolved review comments, full review bodies, conversation comments, review thread state, requested-changes state, branch push permissions, and idempotent result/thread comment posting.
-- [ ] Add one durable PR-owner record per Autopilot watch. Lazily create its Neon session and managed worktree on the first actionable event, reuse both across later events/restarts, and rotate the session only through an explicit audited recovery path.
-- [ ] Complete `prepare_pr_worktree` so it fetches and verifies the exact same-repo or fork head SHA before first worktree creation, synchronizes the persistent owner worktree for later turns, and emits full authoritative event-envelope facts.
-- [ ] Complete `fix_pr_review_feedback` as a bounded event turn in the continuing PR-owner Neon session:
+- [x] Add one durable PR-owner record per Autopilot watch. Lazily create its Neon session and managed worktree on the first actionable event, reuse both across later events/restarts, and rotate the session only through an explicit audited recovery path.
+- [x] Complete `prepare_pr_worktree` so it fetches and verifies the exact same-repo or fork head SHA before first worktree creation, synchronizes the persistent owner worktree for later turns, and emits full authoritative event-envelope facts.
+- [x] Complete `fix_pr_review_feedback` as a bounded event turn in the continuing PR-owner Neon session:
   - fetch unresolved review comments
   - group comments by file/path/topic
   - read relevant files through repo-edit actions
   - plan and apply bounded changes through repo-edit replace/patch actions
   - commit locally with a generated message that references addressed comments
   - produce a prepared diff and summary
-- [ ] Complete `fix_pr_ci_failure` as a bounded event turn in the same continuing PR-owner Neon session:
+- [x] Complete `fix_pr_ci_failure` as a bounded event turn in the same continuing PR-owner Neon session:
   - fetch failing check metadata and logs where available
   - identify likely failing package script or command
   - run configured diagnostics through approved execution actions
@@ -1289,7 +1289,7 @@ Must-haves:
 - [ ] Connect `push_pr_autofix` to the durable coordinator and correct noninteractive credential, approval, and pushed-SHA behavior while preserving its existing safety gates.
 - [x] When direct push is not possible, leave the prepared worktree intact, mark the attempt blocked, and notify the user with recovery options.
 - [ ] Connect and correct `comment_pr_autofix_result` so it posts one idempotent result for the pushed SHA and replies to addressed feedback where supported.
-- [ ] Complete durable concurrency/admission controls and bounded retry/reconciliation:
+- [x] Complete durable concurrency/admission controls and bounded retry/reconciliation:
   - global autonomous workflow limit
   - per-repo autonomous workflow limit
   - one serialized active turn/mutation per PR owner, with queued event coalescing
@@ -1300,7 +1300,7 @@ Must-haves:
   - attention when push/checks are blocked
   - urgent only for production/main failures
   - quiet no-op when a watch delta is reconciled without action
-- [ ] Replace inaccurate runtime guidance with the continuing PR-owner session, authoritative event-envelope, and narrow capability contracts plus truthful operator guidance.
+- [x] Replace inaccurate runtime guidance with the continuing PR-owner session, authoritative event-envelope, and narrow capability contracts plus truthful operator guidance.
 - [ ] Add fixture-driven integration tests for current-feedback processing, same-session/worktree reuse, queued-event coalescing, explicit session rotation, same-PR reconciliation, cross-PR parallelism, fork checkout, credentials, direct-push gates, stop/restart behavior, terminal owner archival, and blocked high-risk changes.
 - [ ] Add Flue workflow tests that exercise the production coordinator from watcher admission through every bounded stage rather than invoking disconnected workflow wrappers.
 - [ ] Make the local smoke script run watch → continuing PR-owner session (at least two event turns) → prepared diff → verify → approval/push → result delivery → terminal archive/cleanup without raw manual API continuation or per-event session creation.

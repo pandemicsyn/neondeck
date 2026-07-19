@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -12,6 +12,7 @@ import {
   claimAutopilotTriageAdmission,
   classifyAutopilotRetry,
   coordinateAutopilotAdmission,
+  dispatchReservedAutopilotStage,
   isLegalAutopilotTransition,
   legalAutopilotTransitions,
   listAutopilotAdmissionEvents,
@@ -25,7 +26,7 @@ import {
   supersedeAutopilotAdmission,
   type AutopilotWorkflowInvoker,
 } from './modules/autopilot';
-import { runtimePaths } from './runtime-home';
+import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 
 const limits = {
   maxAutonomousJobs: 4,
@@ -107,7 +108,7 @@ describe('autopilot retry policy', () => {
 });
 
 describe('durable autopilot coordination', () => {
-  it('preserves watch → triage → prepare through one coordinator and early observations', async () => {
+  it('preserves watch → triage → prepare and defers disabled owner dispatch without a stranded reservation', async () => {
     await withHome(async (paths) => {
       const admitted = await admit(paths, 'watch:one', 'event:one', 1);
       const invocations: string[] = [];
@@ -176,6 +177,75 @@ describe('durable autopilot coordination', () => {
           'worktree-prepared',
         ]),
       );
+
+      await expect(
+        coordinateAutopilotAdmission(
+          {
+            admissionId: admitted.admission.id,
+            limits,
+            invokeWorkflow,
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        advanced: {
+          status: 'deferred',
+          reason: 'owner-dispatch-disabled',
+          admission: {
+            state: 'prepared',
+            currentStageAttemptId: null,
+          },
+        },
+        dispatched: null,
+      });
+      await expect(
+        listAutopilotStageAttempts(
+          { admissionId: admitted.admission.id },
+          paths,
+        ),
+      ).resolves.toHaveLength(2);
+
+      const reserved = await advanceAutopilotAdmission(
+        { admissionId: admitted.admission.id, limits },
+        paths,
+      );
+      if (reserved.status !== 'reserved') {
+        throw new Error(
+          `Expected owner reservation, received ${reserved.status}.`,
+        );
+      }
+      await expect(
+        dispatchReservedAutopilotStage(
+          {
+            attemptId: reserved.attempt.id,
+            invokeWorkflow,
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        status: 'unsupported-transport',
+        attempt: { status: 'cancelled' },
+        admission: {
+          state: 'prepared',
+          currentStageAttemptId: null,
+        },
+      });
+      await expect(
+        dispatchReservedAutopilotStage(
+          {
+            attemptId: reserved.attempt.id,
+            invokeWorkflow,
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        status: 'not-reserved',
+        attempt: { status: 'cancelled' },
+        admission: {
+          state: 'prepared',
+          currentStageAttemptId: null,
+        },
+      });
     });
   });
 
@@ -795,6 +865,21 @@ async function withHome(
   const home = await mkdtemp(join(tmpdir(), 'neondeck-admissions-'));
   const paths = runtimePaths(home);
   try {
+    await ensureRuntimeHome(paths);
+    await writeFile(
+      paths.repos,
+      JSON.stringify({
+        repos: [
+          {
+            id: 'repo',
+            github: { owner: 'example', name: 'repo' },
+            path: '/fixture/primary',
+            defaultBranch: 'main',
+            metadata: { autopilot: { mode: 'prepare-only' } },
+          },
+        ],
+      }),
+    );
     await run(paths);
   } finally {
     await rm(home, { recursive: true, force: true });

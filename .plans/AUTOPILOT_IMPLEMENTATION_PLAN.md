@@ -1,6 +1,6 @@
 # Autopilot Product-Closure Implementation Plan
 
-Status: in progress; Packages 1–3 implemented, Packages 4–8 not started
+Status: in progress; Packages 1–4 implemented, Packages 5–8 not started
 
 Companion audit: `.plans/AUTOPILOT_END_TO_END_REVIEW.html`
 
@@ -990,6 +990,42 @@ The fixture also proves that a selected-memory change is re-grounded with its id
 while an unknown config-history action blocks or rotates without advancing the
 baseline. No caller supplies the patch to the top-level product request, and no
 second instance is created for ordinary feedback.
+
+Implementation status: complete. Package 4 now persists lazy owner generations,
+immutable grounding snapshots, one-time fix submissions, and accepted-dispatch
+CAS linkage across the Neondeck and Flue persistence boundary. The private
+`pr-autopilot-owner` uses explicit model-visible compaction, complete authoritative
+review/CI/readiness/authority/workspace envelopes, a five-action capability ceiling,
+trusted attempt/token-bound read wrappers, serialized byte-bounded/coalesced turns,
+and deterministic prepared-diff integration with effective-mode commit suppression.
+Accepted dispatches persist independent config and explicit monotonic integer memory
+cursors. Explicit repo-Autopilot policy, execution, worktree, learning, and selected
+memory changes re-ground in place; structural repo changes and unknown config block
+without advancing the baseline; fundamental model/provider/skill/SOUL changes rotate
+with an audited handoff. Fix submission is atomically leased before asynchronous
+validation, rechecks the live PR and local worktree heads, and prevents terminal
+settlement or restart reconciliation from racing an in-flight deterministic
+mutation. Durable mutation epochs let stop/supersession revoke in-flight submissions
+and wait for their process lease. The deterministic fixers repeat live GitHub head,
+repository/workspace identity, branch/base/head, monotonic policy authority, and
+path/byte/line checks under their worktree mutation lease before edits, commits, and
+prepared-diff persistence. Multiple replacements are planned and applied atomically;
+approval-required results are never locally committed. Owner-specific reconciliation follows
+dispatch ids, retained terminal facts, process-local applying leases, expired
+worktree locks, and a 65-minute owner stage timeout aligned beyond Flue's explicit
+one-hour durable submission limit instead of treating agent turns as
+detached workflow runs. Focused fixture-backed
+unit/component coverage proves two sequential real prepared fixes reuse the
+instance/worktree across reconstructed service closures and a real policy downgrade,
+selected-memory in-place re-grounding, same-timestamp memory cursor safety,
+unknown-drift blocking, fundamental rotation, scoped reads, early/in-flight terminal
+races, one-time/no-op/truncation/policy/size/SHA/model/missing/late handling, and
+durable queue coalescing. Per explicit verification constraint, this package did not
+run the long integration suite or `npm run verify`; the substituted coverage and its
+process-boundary limitation are recorded in `.plans/DEVIATIONS.md`. Compaction unit
+evidence verifies the explicit `CompactionConfig` values and the documented Flue
+semantics only; it does not empirically drive a live provider through enough history
+to prove threshold reconstruction, and makes no persisted-stream/storage claim.
 
 ### Package 5: verification, approval, push, comment, and cleanup continuation
 

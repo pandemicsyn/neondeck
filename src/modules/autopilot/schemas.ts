@@ -95,6 +95,12 @@ export type AutopilotActionResult = {
   errors?: string[];
 };
 
+export type AutopilotMutationEffect = {
+  paths: string[];
+  bytes: number;
+  lines: number;
+};
+
 export type AutopilotDependencies = {
   fetchPullRequestDetail?: typeof fetchPullRequestDetail;
   fetchCheckSummary?: typeof fetchCheckSummary;
@@ -112,6 +118,20 @@ export type AutopilotDependencies = {
   pushGit?: typeof gitPushHead;
   fetchExactPullRequestHead?: typeof fetchExactPullRequestHead;
   token?: string;
+  ownerMutationFence?: (
+    phase:
+      | 'before-execution'
+      | 'before-mutation'
+      | 'before-write'
+      | 'before-commit'
+      | 'before-artifact',
+    effect?: AutopilotMutationEffect,
+  ) => void | Promise<void>;
+  ownerCommitAllowed?: () => boolean | Promise<boolean>;
+  ownerDiagnosticCommands?: string[];
+  ownerDiagnosticCommandAllowed?: (
+    command: string,
+  ) => boolean | Promise<boolean>;
 };
 
 export const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
@@ -450,6 +470,8 @@ export const pushPrAutofixInputSchema = v.strictObject({
 });
 export const fixPrCiFailureInputSchema = v.strictObject({
   worktreeId: nonEmptyStringSchema,
+  expectedHeadSha: v.optional(nonEmptyStringSchema),
+  expectedWorktreeHeadSha: v.optional(nonEmptyStringSchema),
   checks: v.optional(v.array(nonEmptyStringSchema)),
   diagnostics: v.optional(v.array(nonEmptyStringSchema)),
   patch: v.optional(
@@ -460,6 +482,7 @@ export const fixPrCiFailureInputSchema = v.strictObject({
   risk: v.optional(v.picklist(['low', 'medium', 'high'])),
   manualAsks: v.optional(v.array(nonEmptyStringSchema)),
   commitMessage: v.optional(nonEmptyStringSchema),
+  commit: v.optional(v.boolean()),
   backend: v.optional(v.picklist(['local', 'exe.dev'])),
   context: v.optional(v.picklist(['interactive', 'unattended'])),
   lockOwner: v.optional(nonEmptyStringSchema),
@@ -474,8 +497,8 @@ export const fixPrCiFailureInputSchema = v.strictObject({
 });
 export const reviewFixReplacementSchema = v.strictObject({
   path: repoRelativePathSchema,
-  oldString: nonEmptyStringSchema,
-  newString: v.string(),
+  oldString: v.pipe(nonEmptyStringSchema, v.maxLength(128 * 1024)),
+  newString: v.pipe(v.string(), v.maxLength(128 * 1024)),
   replaceAll: v.optional(v.boolean()),
   fuzzy: v.optional(v.picklist(['off', 'safe'])),
 });
@@ -483,9 +506,13 @@ export const fixPrReviewFeedbackInputSchema = v.strictObject({
   repoId: nonEmptyStringSchema,
   prNumber: positiveIntegerSchema,
   worktreeId: v.optional(nonEmptyStringSchema),
+  expectedHeadSha: v.optional(nonEmptyStringSchema),
+  expectedWorktreeHeadSha: v.optional(nonEmptyStringSchema),
   addressedReviewCommentIds: v.optional(v.array(nonEmptyStringSchema)),
   addressedReviewThreadIds: v.optional(v.array(nonEmptyStringSchema)),
-  replacements: v.optional(v.array(reviewFixReplacementSchema)),
+  replacements: v.optional(
+    v.pipe(v.array(reviewFixReplacementSchema), v.maxLength(100)),
+  ),
   patch: v.optional(v.pipe(v.string(), v.minLength(1))),
   createWorktree: v.optional(v.boolean()),
   sync: v.optional(v.boolean()),

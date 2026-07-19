@@ -22,6 +22,15 @@ import {
   settlePendingAutopilotStageObservation,
 } from './settle';
 import { autopilotStageRegistry } from './transitions';
+import {
+  dispatchReservedAutopilotOwnerTurn,
+  type AutopilotOwnerDispatcher,
+} from '../owner/dispatch';
+import type {
+  OwnerEnvelopeFactsLoader,
+  OwnerEnvelopeLocalShaLoader,
+  OwnerEnvelopeReadinessLoader,
+} from '../owner/envelope';
 
 export type PackageOneAutopilotWorkflow =
   'triage-pr-event' | 'prepare-pr-worktree';
@@ -55,15 +64,24 @@ export type AutopilotDispatchResult =
   | ({ status: 'orphaned-receipt'; runId: string } & DispatchContext)
   | ({ status: 'dispatch-failed'; error: string } & DispatchContext);
 
+export type AutopilotOwnerDispatchResult = Awaited<
+  ReturnType<typeof dispatchReservedAutopilotOwnerTurn>
+>;
+
 export type CoordinateAutopilotAdmissionResult = {
   advanced: Awaited<ReturnType<typeof advanceAutopilotAdmission>>;
-  dispatched: AutopilotDispatchResult | null;
+  dispatched: AutopilotDispatchResult | AutopilotOwnerDispatchResult | null;
 };
 
 export async function coordinateAutopilotAdmission(
   input: {
     admissionId: string;
     invokeWorkflow: AutopilotWorkflowInvoker;
+    dispatchOwner?: AutopilotOwnerDispatcher;
+    ownerFactsLoader?: OwnerEnvelopeFactsLoader;
+    ownerReadinessLoader?: OwnerEnvelopeReadinessLoader;
+    ownerLocalShaLoader?: OwnerEnvelopeLocalShaLoader;
+    enableOwnerDispatch?: boolean;
     limits?: AutopilotConcurrencyPolicy;
     now?: Date;
   },
@@ -72,6 +90,7 @@ export async function coordinateAutopilotAdmission(
   const advanced = await advanceAutopilotAdmission(
     {
       admissionId: input.admissionId,
+      allowOwnerTurnReservation: input.enableOwnerDispatch === true,
       limits: input.limits,
       now: input.now,
     },
@@ -86,11 +105,25 @@ export async function coordinateAutopilotAdmission(
       {
         attemptId: advanced.attempt.id,
         invokeWorkflow: input.invokeWorkflow,
+        dispatchOwner: input.dispatchOwner,
+        ownerFactsLoader: input.ownerFactsLoader,
+        ownerReadinessLoader: input.ownerReadinessLoader,
+        ownerLocalShaLoader: input.ownerLocalShaLoader,
+        enableOwnerDispatch: input.enableOwnerDispatch,
         limits: input.limits,
       },
       paths,
       input.now,
     );
+    if (dispatched.status === 'settled' && dispatched.queuedAdmissionId) {
+      await coordinateAutopilotAdmission(
+        {
+          ...input,
+          admissionId: dispatched.queuedAdmissionId,
+        },
+        paths,
+      );
+    }
     return { advanced, dispatched };
   }
   return { advanced, dispatched: null };
@@ -100,11 +133,16 @@ export async function dispatchReservedAutopilotStage(
   input: {
     attemptId: string;
     invokeWorkflow: AutopilotWorkflowInvoker;
+    dispatchOwner?: AutopilotOwnerDispatcher;
+    ownerFactsLoader?: OwnerEnvelopeFactsLoader;
+    ownerReadinessLoader?: OwnerEnvelopeReadinessLoader;
+    ownerLocalShaLoader?: OwnerEnvelopeLocalShaLoader;
+    enableOwnerDispatch?: boolean;
     limits?: AutopilotConcurrencyPolicy;
   },
   paths: RuntimePaths = runtimePaths(),
   now = new Date(),
-): Promise<AutopilotDispatchResult> {
+): Promise<AutopilotDispatchResult | AutopilotOwnerDispatchResult> {
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   let attempt;
@@ -131,6 +169,22 @@ export async function dispatchReservedAutopilotStage(
   }
   if (admission.currentStageAttemptId !== attempt.id) {
     return { status: 'stale-reservation' as const, attempt, admission };
+  }
+  if (attempt.stage === 'owner-turn') {
+    if (!input.enableOwnerDispatch) {
+      return deferReservedAutopilotOwnerTurn(attempt.id, paths, now);
+    }
+    return dispatchReservedAutopilotOwnerTurn(
+      {
+        attemptId: attempt.id,
+        dispatchOwner: input.dispatchOwner,
+        factsLoader: input.ownerFactsLoader,
+        readinessLoader: input.ownerReadinessLoader,
+        localShaLoader: input.ownerLocalShaLoader,
+      },
+      paths,
+      now,
+    );
   }
   if (attempt.stage !== 'triage' && attempt.stage !== 'prepare-worktree') {
     return {
@@ -196,18 +250,107 @@ export async function dispatchReservedAutopilotStage(
       now,
     );
     if (pending.status === 'settled' && pending.admission) {
-      await coordinateAutopilotAdmission(
-        {
-          admissionId: pending.admission.id,
-          invokeWorkflow: input.invokeWorkflow,
-          limits: input.limits,
-          now,
-        },
-        paths,
-      );
+      if (pending.admission.state !== 'prepared' || input.enableOwnerDispatch) {
+        await coordinateAutopilotAdmission(
+          {
+            admissionId: pending.admission.id,
+            invokeWorkflow: input.invokeWorkflow,
+            dispatchOwner: input.dispatchOwner,
+            ownerFactsLoader: input.ownerFactsLoader,
+            ownerReadinessLoader: input.ownerReadinessLoader,
+            ownerLocalShaLoader: input.ownerLocalShaLoader,
+            enableOwnerDispatch: input.enableOwnerDispatch,
+            limits: input.limits,
+            now,
+          },
+          paths,
+        );
+      }
     }
   }
   return registration;
+}
+
+async function deferReservedAutopilotOwnerTurn(
+  attemptId: string,
+  paths: RuntimePaths,
+  now: Date,
+): Promise<AutopilotDispatchResult> {
+  const nowIso = now.toISOString();
+  const message =
+    'Owner dispatch is disabled; the prepared admission remains deferred.';
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return withImmediateTransaction(database, () => {
+      const attempt = readAutopilotStageAttempt(
+        database
+          .prepare('SELECT * FROM autopilot_stage_attempts WHERE id = ?;')
+          .get(attemptId),
+      );
+      if (!attempt) return { status: 'missing' as const };
+      const admission = readAutopilotAdmission(
+        database
+          .prepare('SELECT * FROM autopilot_admissions WHERE id = ?;')
+          .get(attempt.admissionId),
+      );
+      if (!admission) return { status: 'missing' as const };
+      if (attempt.status !== 'reserved') {
+        return { status: 'not-reserved' as const, attempt, admission };
+      }
+      if (
+        attempt.stage !== 'owner-turn' ||
+        admission.state !== 'owner-turn-admitted' ||
+        admission.currentStageAttemptId !== attempt.id
+      ) {
+        return { status: 'stale-reservation' as const, attempt, admission };
+      }
+
+      const attemptUpdate = database
+        .prepare(
+          `UPDATE autopilot_stage_attempts
+           SET status = 'cancelled', error = ?, finished_at = ?
+           WHERE id = ? AND status = 'reserved' AND run_id IS NULL
+             AND dispatch_id IS NULL;`,
+        )
+        .run(message, nowIso, attempt.id);
+      const admissionUpdate = database
+        .prepare(
+          `UPDATE autopilot_admissions
+           SET state = 'prepared', current_workflow = NULL,
+               current_run_id = NULL, current_stage_attempt_id = NULL,
+               version = version + 1, updated_at = ?
+           WHERE id = ? AND version = ? AND state = 'owner-turn-admitted'
+             AND current_stage_attempt_id = ?;`,
+        )
+        .run(nowIso, admission.id, admission.version, attempt.id);
+      if (attemptUpdate.changes !== 1 || admissionUpdate.changes !== 1) {
+        throw new Error('Owner dispatch deferral lost its reservation CAS.');
+      }
+      insertAutopilotAdmissionEvent(database, {
+        admissionId: admission.id,
+        fromState: 'owner-turn-admitted',
+        toState: 'prepared',
+        reason: 'owner-dispatch-disabled',
+        data: { attemptId: attempt.id },
+        now: nowIso,
+      });
+      return {
+        status: 'unsupported-transport' as const,
+        attempt: readAutopilotStageAttempt(
+          database
+            .prepare('SELECT * FROM autopilot_stage_attempts WHERE id = ?;')
+            .get(attempt.id),
+        )!,
+        admission: readAutopilotAdmission(
+          database
+            .prepare('SELECT * FROM autopilot_admissions WHERE id = ?;')
+            .get(admission.id),
+        )!,
+      };
+    });
+  } finally {
+    database.close();
+  }
 }
 
 export async function registerAutopilotStageDispatch(
@@ -419,7 +562,7 @@ export async function registerAutopilotStageDispatch(
   }
 }
 
-async function claimAutopilotStageDispatch(
+export async function claimAutopilotStageDispatch(
   input: { attemptId: string; expectedAdmissionVersion: number },
   paths: RuntimePaths,
   now: Date,
