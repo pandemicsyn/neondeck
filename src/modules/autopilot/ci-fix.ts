@@ -572,7 +572,9 @@ export async function fixPrCiFailure(
       !commitPolicy.blocked &&
       !commitPolicy.approvalRequired &&
       (commitPolicy.mode === 'autofix-with-approval' ||
-        commitPolicy.mode === 'autofix-push-when-safe')
+        commitPolicy.mode === 'autofix-push-when-safe') &&
+      (!dependencies.ownerCommitAllowed ||
+        (await dependencies.ownerCommitAllowed()))
     ) {
       try {
         await dependencies.ownerMutationFence?.('before-commit');

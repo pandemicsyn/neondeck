@@ -564,6 +564,8 @@ export async function fixPrReviewFeedback(
       (postEditPolicy.mode === 'autofix-with-approval' ||
         postEditPolicy.mode === 'autofix-push-when-safe') &&
       !postEditPolicy.approvalRequired &&
+      (!dependencies.ownerCommitAllowed ||
+        (await dependencies.ownerCommitAllowed())) &&
       changedFiles > 0
     ) {
       await dependencies.ownerMutationFence?.('before-commit');

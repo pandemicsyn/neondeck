@@ -15,7 +15,9 @@ import {
   type AutopilotConcurrencyPolicy,
   type AutopilotMode,
 } from '../../autopilot-policy';
+import { repoGuardrails } from '../../repo-guardrails';
 import { ensureAutopilotPrOwnerInDatabase } from '../owners';
+import { initialAutopilotAdmissionAuthority } from '../owner/policy';
 import { autopilotRetryBackoffMs, maxAutopilotStageAttempts } from './retry';
 import {
   readAutopilotAdmission,
@@ -61,6 +63,7 @@ export async function admitAutopilotEvent(
   now = new Date(),
 ) {
   await ensureRuntimeHome(paths);
+  const authorityBaseline = await readAdmissionAuthorityBaseline(input, paths);
   const nowIso = now.toISOString();
   const database = openDb(paths.neondeckDatabase);
   try {
@@ -169,11 +172,11 @@ export async function admitAutopilotEvent(
           `INSERT INTO autopilot_admissions (
              id, owner_id, watch_id, event_fingerprint, event_sequence, repo_id,
              pr_number, mode, authority_mode, policy_config_history_id,
+             authority_policy_json,
              mutation_epoch, input_json, state, priority, current_workflow,
              current_stage_attempt_id, worktree_id, version, attempt_count, next_attempt_at,
              last_error, last_outcome_json, completed_at, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
-                     (SELECT COALESCE(MAX(id), 0) FROM config_history),
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                      0, ?, ?, 0, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?);`,
         )
         .run(
@@ -186,6 +189,8 @@ export async function admitAutopilotEvent(
           input.prNumber,
           input.mode,
           input.mode,
+          authorityBaseline.configHistoryId,
+          JSON.stringify(authorityBaseline.authority),
           JSON.stringify(input.input),
           state,
           state === 'triage-admitted' ? 'triage-pr-event' : null,
@@ -263,6 +268,44 @@ export async function admitAutopilotEvent(
   } finally {
     database.close();
   }
+}
+
+async function readAdmissionAuthorityBaseline(
+  input: AdmitAutopilotEventInput,
+  paths: RuntimePaths,
+) {
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  let configHistoryId: number;
+  try {
+    const row = database
+      .prepare('SELECT COALESCE(MAX(id), 0) AS id FROM config_history;')
+      .get() as { id?: unknown } | undefined;
+    configHistoryId = Number(row?.id ?? 0);
+  } finally {
+    database.close();
+  }
+  const [registry, appConfig] = await Promise.all([
+    readRepoRegistrySnapshot(paths),
+    readRuntimeJson(paths.config, parseAppConfig),
+  ]);
+  const repo = registry.repos.find((candidate) => candidate.id === input.repoId);
+  if (!repo) {
+    throw new Error(
+      `Repository "${input.repoId}" is not configured for Autopilot admission.`,
+    );
+  }
+  return {
+    configHistoryId,
+    authority: initialAutopilotAdmissionAuthority(
+      repoGuardrails(repo, appConfig),
+      {
+        configHistoryId,
+        mode: input.mode,
+        repoId: input.repoId,
+        watchId: input.watchId,
+      },
+    ),
+  };
 }
 
 export async function advanceAutopilotAdmission(

@@ -593,7 +593,6 @@ export async function replaceRepoFilesAtomically(
           }
           for (let index = 0; index < planned.length; index += 1) {
             const file = planned[index]!;
-            written.push(file);
             await dependencies.beforeExternalMutation?.(effect);
             assertWorktreeMutationAllowed(
               {
@@ -603,6 +602,16 @@ export async function replaceRepoFilesAtomically(
               },
               paths,
             );
+            const current = await readTextFile(file.target).catch(() => null);
+            if (
+              !current ||
+              restoreContent(current) !== restoreContent(file.before)
+            ) {
+              throw new Error(
+                `Replacement target changed after planning: ${file.target.relativePath}`,
+              );
+            }
+            written.push(file);
             await commitStagedWrite(finalWrites[index]!);
           }
         } catch (error) {
@@ -698,6 +707,12 @@ export async function readRepoDiff(
         dependencies,
       );
       if (!stable.stable) {
+        return staleRepoDiffPatch(parsed.input, stable.revision);
+      }
+      if (
+        parsed.input.expectedRevisionKey &&
+        parsed.input.expectedRevisionKey !== reviewRevisionKey(stable.revision)
+      ) {
         return staleRepoDiffPatch(parsed.input, stable.revision);
       }
       return {

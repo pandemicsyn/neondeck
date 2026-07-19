@@ -10,6 +10,7 @@ import {
   prAutopilotOwnerDurability,
 } from './modules/autopilot/owner/config';
 import {
+  admitAutopilotEvent,
   coordinateAutopilotAdmission,
   reconcileAutopilotStageAttempts,
   recordAutopilotOwnerTerminalObservation,
@@ -986,6 +987,33 @@ describe('Package 4 continuing PR owner', () => {
     );
   });
 
+  it('snapshots admission-time guardrails before later policy processing', async () => {
+    await withFixture(async (paths) => {
+      const config = JSON.parse(String(await readFile(paths.config)));
+      config.guardrails.maxLinesChanged = 17;
+      await writeFile(paths.config, JSON.stringify(config));
+
+      const admitted = await admitAutopilotEvent(
+        {
+          watchId: 'watch:one',
+          eventFingerprint: 'event:admission-authority',
+          repoId: 'repo',
+          prNumber: 42,
+          mode: 'autofix-with-approval',
+          input: { eventId: 'event:admission-authority' },
+          limits,
+        },
+        paths,
+      );
+
+      const row = readAdmission(paths, admitted.admission.id);
+      expect(JSON.parse(String(row.authority_policy_json))).toMatchObject({
+        guardrails: { maxLinesChanged: 17 },
+        transitionHash: expect.any(String),
+      });
+    });
+  });
+
   it('revokes an in-flight owner mutation and waits for its process lease before stopping', async () => {
     await withFixture(async (paths) => {
       seedPreparedTurn(paths, 'admission:stop-fence', 'event:stop-fence', 1);
@@ -1260,24 +1288,29 @@ describe('Package 4 continuing PR owner', () => {
 
   it('freezes selected provider configuration across durable recovery', async () => {
     await withFixture(async (paths) => {
-      const first = readAutopilotOwnerCapabilitySnapshot(paths);
-      const database = new DatabaseSync(paths.neondeckDatabase);
+      const previous = process.env.NEONDECK_OWNER_PROVIDER_KEY;
       try {
+        process.env.NEONDECK_OWNER_PROVIDER_KEY = 'first-credential';
+        const initial = readAutopilotOwnerCapabilitySnapshot(paths);
+        const config = JSON.parse(String(await readFile(paths.config)));
+        config.providers = {
+          ...(config.providers ?? {}),
+          [initial.provider]: {
+            enabled: true,
+            apiKeyEnv: 'NEONDECK_OWNER_PROVIDER_KEY',
+          },
+        };
+        await writeFile(paths.config, JSON.stringify(config));
+        const first = readAutopilotOwnerCapabilitySnapshot(paths);
+        const database = new DatabaseSync(paths.neondeckDatabase);
+        try {
         ensureAutopilotOwnerInstanceInDatabase(
           database,
           'owner:one',
           new Date().toISOString(),
           first,
         );
-        const config = JSON.parse(String(await readFile(paths.config)));
-        config.providers = {
-          ...(config.providers ?? {}),
-          [first.provider]: {
-            enabled: true,
-            apiKeyEnv: 'NEONDECK_OWNER_PROVIDER_KEY',
-          },
-        };
-        await writeFile(paths.config, JSON.stringify(config));
+        process.env.NEONDECK_OWNER_PROVIDER_KEY = 'second-credential';
         const changed = readAutopilotOwnerCapabilitySnapshot(paths);
         expect(changed.providerConfigHash).not.toBe(first.providerConfigHash);
         expect(() =>
@@ -1288,8 +1321,15 @@ describe('Package 4 continuing PR owner', () => {
             changed,
           ),
         ).toThrow(/audited generation rotation/);
+        } finally {
+          database.close();
+        }
       } finally {
-        database.close();
+        if (previous === undefined) {
+          delete process.env.NEONDECK_OWNER_PROVIDER_KEY;
+        } else {
+          process.env.NEONDECK_OWNER_PROVIDER_KEY = previous;
+        }
       }
     });
   });
@@ -1388,11 +1428,8 @@ describe('Package 4 continuing PR owner', () => {
     });
   });
 
-  it('prepares but never locally commits when the final policy requires approval', async () => {
+  it('prepares but never locally commits when monotonic admission authority requires approval', async () => {
     await withGitFixture(async ({ paths, headSha, worktreePath }) => {
-      const config = JSON.parse(String(await readFile(paths.config)));
-      config.guardrails.approvalRequiredFileGlobs = ['src/**'];
-      await writeFile(paths.config, JSON.stringify(config));
       seedPreparedTurn(
         paths,
         'admission:approval-required',
@@ -1400,6 +1437,40 @@ describe('Package 4 continuing PR owner', () => {
         1,
         'autofix-with-approval',
       );
+      const database = new DatabaseSync(paths.neondeckDatabase);
+      try {
+        for (const [id, approvalRequiredFileGlobs] of [
+          [1, ['src/**']],
+          [2, []],
+        ] as const) {
+          database
+            .prepare(
+              `INSERT INTO config_history
+                 (id, action, file, target, after_json, changed_at)
+               VALUES (?, 'config_update_repo_autopilot_policy', 'repos.json', 'repo', ?, ?);`,
+            )
+            .run(
+              id,
+              JSON.stringify({
+                repos: [
+                  {
+                    id: 'repo',
+                    github: { owner: 'example', name: 'repo' },
+                    path: join(paths.home, 'primary'),
+                    defaultBranch: 'main',
+                    metadata: {
+                      autopilot: { mode: 'autofix-with-approval' },
+                      guardrails: { approvalRequiredFileGlobs },
+                    },
+                  },
+                ],
+              }),
+              `2026-07-19T18:02:0${id}.000Z`,
+            );
+        }
+      } finally {
+        database.close();
+      }
       const turn = await dispatchGitTurn(
         paths,
         'admission:approval-required',

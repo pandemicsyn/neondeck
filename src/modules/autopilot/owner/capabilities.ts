@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import * as v from 'valibot';
 import { readAgentModelSelectionSync } from '../../runtime';
+import { providerRuntimeRegistrations } from '../../repos/providers';
 import {
   parseAppConfig,
   readRuntimeJsonSync,
@@ -46,15 +47,43 @@ export function readAutopilotOwnerCapabilitySnapshot(
     : model;
   const config = readRuntimeJsonSync(paths.config, parseAppConfig);
   const providers = config.providers ?? {};
+  const runtimeRegistration = providerRuntimeRegistrations(
+    process.env,
+    config,
+  ).find((candidate) => candidate.id === provider);
   return {
     model,
     provider,
-    providerConfigHash: stableJsonHash(
-      providers[provider as keyof typeof providers] ?? null,
-    ),
+    providerConfigHash: stableJsonHash({
+      configured: providers[provider as keyof typeof providers] ?? null,
+      effective: runtimeRegistration
+        ? sanitizeProviderRegistration(runtimeRegistration.registration)
+        : null,
+    }),
     thinkingLevel: models.displayAssistantThinkingLevel,
     skillHash: sha256(readFileSync(ownerSkillPath, 'utf8')),
     soulHash: sha256(readFileSync(paths.soul, 'utf8')),
+  };
+}
+
+function sanitizeProviderRegistration(
+  registration: ReturnType<
+    typeof providerRuntimeRegistrations
+  >[number]['registration'],
+) {
+  const { apiKey, headers, ...configuration } =
+    registration as unknown as Record<string, unknown>;
+  return {
+    ...configuration,
+    apiKeyHash: sha256(typeof apiKey === 'string' ? apiKey : ''),
+    headers:
+      headers && typeof headers === 'object'
+        ? Object.fromEntries(
+            Object.entries(headers)
+              .sort(([left], [right]) => left.localeCompare(right))
+              .map(([name, value]) => [name, sha256(String(value))]),
+          )
+        : null,
   };
 }
 

@@ -123,6 +123,7 @@ export type AutopilotDependencies = {
       'before-mutation' | 'before-write' | 'before-commit' | 'before-artifact',
     effect?: AutopilotMutationEffect,
   ) => void | Promise<void>;
+  ownerCommitAllowed?: () => boolean | Promise<boolean>;
 };
 
 export const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));

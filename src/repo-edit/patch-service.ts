@@ -1,5 +1,5 @@
 import { constants } from 'node:fs';
-import { access, rename, rm } from 'node:fs/promises';
+import { access, readFile, rename, rm } from 'node:fs/promises';
 import { assertWorktreeMutationAllowed } from '../modules/worktrees';
 import {
   ensureRuntimeHome,
@@ -480,6 +480,7 @@ async function applyPlannedPatch(
       if (file.operation === 'add') {
         const final = finalWrites[finalIndex++]!;
         await beforeMutation();
+        await assertPlannedPreimage(final.target, undefined);
         await rename(final.temp, final.target);
         rollbackSteps.push(() => rm(final.target, { force: true }));
         await access(final.target, constants.R_OK);
@@ -490,6 +491,10 @@ async function applyPlannedPatch(
         const final = finalWrites[finalIndex++]!;
         const rollback = rollbackWrites[rollbackIndex++]!;
         await beforeMutation();
+        await assertPlannedPreimage(
+          file.target.fullPath,
+          file.restoreBefore,
+        );
         await rename(final.temp, final.target);
         rollbackSteps.push(() => commitStagedWrite(rollback));
         await access(final.target, constants.R_OK);
@@ -499,6 +504,10 @@ async function applyPlannedPatch(
       if (file.operation === 'delete') {
         const rollback = rollbackWrites[rollbackIndex++]!;
         await beforeMutation();
+        await assertPlannedPreimage(
+          file.target.fullPath,
+          file.restoreBefore,
+        );
         await rm(file.target.fullPath, { force: true });
         rollbackSteps.push(() => commitStagedWrite(rollback));
         continue;
@@ -507,10 +516,15 @@ async function applyPlannedPatch(
       const final = finalWrites[finalIndex++]!;
       const rollback = rollbackWrites[rollbackIndex++]!;
       await beforeMutation();
+      await assertPlannedPreimage(final.target, undefined);
       await rename(final.temp, final.target);
       rollbackSteps.push(() => rm(final.target, { force: true }));
       await access(final.target, constants.R_OK);
       await beforeMutation();
+      await assertPlannedPreimage(
+        file.target.fullPath,
+        file.restoreBefore,
+      );
       await rm(file.target.fullPath, { force: true });
       rollbackSteps.push(() => commitStagedWrite(rollback));
     }
@@ -544,6 +558,25 @@ async function applyPlannedPatch(
   }
 
   await cleanupStagedWrites(rollbackWrites);
+}
+
+async function assertPlannedPreimage(
+  path: string,
+  expected: string | undefined,
+) {
+  if (expected === undefined) {
+    const exists = await access(path, constants.F_OK)
+      .then(() => true)
+      .catch(() => false);
+    if (exists) {
+      throw new Error(`Patch target changed after planning: ${path}`);
+    }
+    return;
+  }
+  const actual = await readFile(path, 'utf8').catch(() => null);
+  if (actual !== expected) {
+    throw new Error(`Patch target changed after planning: ${path}`);
+  }
 }
 
 function applyHunks(content: string, hunks: PatchHunk[], path: string) {

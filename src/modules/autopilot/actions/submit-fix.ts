@@ -24,6 +24,7 @@ import {
 import { readRepoRegistrySnapshot } from '../../repos';
 import { readWorktreeRecord } from '../../worktrees';
 import { readWorktreeStatus } from '../../worktrees';
+import { evaluateRepoGuardrails } from '../../repo-guardrails';
 import { fixPrCiFailure } from '../ci-fix';
 import {
   readAutopilotAdmission,
@@ -241,11 +242,38 @@ export async function submitAutopilotFix(
   }
 
   let result: FixResult;
-  const ownerMutationFence = (
+  const ownerMutationFence = async (
     phase:
       'before-mutation' | 'before-write' | 'before-commit' | 'before-artifact',
     effect?: { paths: string[]; bytes: number; lines: number },
-  ) => assertSubmissionMutationFence(input, paths, dependencies, phase, effect);
+  ) => {
+    await assertSubmissionMutationFence(
+      input,
+      paths,
+      dependencies,
+      phase,
+      effect,
+    );
+  };
+  const ownerCommitAllowed = async () => {
+    const scope = await assertSubmissionMutationFence(
+      input,
+      paths,
+      dependencies,
+      'before-commit',
+    );
+    const evaluated = await evaluateRepoGuardrails(
+      {
+        repoId: scope.repoId,
+        worktreeId: scope.worktreeId,
+        diffBaseRef: scope.diffBaseSha,
+        pushDestination: 'pull-request-head',
+        guardrails: scope.guardrails,
+      },
+      paths,
+    );
+    return evaluated.denied.length === 0 && evaluated.expansions.length === 0;
+  };
   try {
     result =
       input.fixerKind === 'review'
@@ -267,7 +295,7 @@ export async function submitAutopilotFix(
               expectedWorktreeHeadSha: input.expectedWorktreeHeadSha,
             },
             paths,
-            { ownerMutationFence },
+            { ownerMutationFence, ownerCommitAllowed },
           )
         : await (dependencies.runCiFix ?? fixPrCiFailure)(
             {
@@ -284,7 +312,7 @@ export async function submitAutopilotFix(
               expectedWorktreeHeadSha: input.expectedWorktreeHeadSha,
             },
             paths,
-            { ownerMutationFence },
+            { ownerMutationFence, ownerCommitAllowed },
           );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -627,6 +655,12 @@ async function assertSubmissionMutationFence(
   } finally {
     confirm.close();
   }
+  return {
+    repoId: repo.id,
+    worktreeId: worktree.id,
+    diffBaseSha: scope.diff_base_sha,
+    guardrails: authority.guardrails,
+  };
 }
 
 async function validateSubmissionContext(

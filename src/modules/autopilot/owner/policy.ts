@@ -49,6 +49,27 @@ const authorityPolicySchema = v.strictObject({
   transitionHash: v.string(),
 });
 
+export function initialAutopilotAdmissionAuthority(
+  guardrails: RepoGuardrails,
+  input: {
+    configHistoryId: number;
+    mode: AutopilotMode;
+    repoId: string;
+    watchId: string;
+  },
+) {
+  return {
+    guardrails,
+    transitionHash: stableJsonHash({
+      kind: 'autopilot-admission-authority',
+      configHistoryId: input.configHistoryId,
+      mode: input.mode,
+      repoId: input.repoId,
+      watchId: input.watchId,
+    }),
+  };
+}
+
 /** Never grant more authority than either admission-time or current policy. */
 export function effectiveAutopilotOwnerMode(
   admissionMode: AutopilotMode,
