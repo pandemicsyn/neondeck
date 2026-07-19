@@ -24,11 +24,14 @@ describe('theme bootstrap', () => {
 
   it('upgrades legacy reports exactly once', () => {
     const legacy =
-      '<!doctype html><html><head></head><body>Report</body></html>';
+      '<!doctype html><html><head><meta charset="utf-8"><title>Résumé</title></head><body>Report</body></html>';
     const upgraded = withReportThemeBootstrap(legacy);
 
     expect(upgraded).toContain(
       `<script data-neondeck-theme-bootstrap>${THEME_BOOTSTRAP_SOURCE}</script>`,
+    );
+    expect(upgraded.indexOf('<meta charset="utf-8">')).toBeLessThan(
+      upgraded.indexOf('data-neondeck-theme-bootstrap'),
     );
     expect(withReportThemeBootstrap(upgraded)).toBe(upgraded);
   });

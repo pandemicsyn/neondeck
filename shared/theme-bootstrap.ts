@@ -52,8 +52,13 @@ const THEME_BOOTSTRAP_MARKER = 'data-neondeck-theme-bootstrap';
 
 export function withReportThemeBootstrap(html: string) {
   if (html.includes(THEME_BOOTSTRAP_MARKER)) return html;
+  const markup = `<script ${THEME_BOOTSTRAP_MARKER}>${THEME_BOOTSTRAP_SOURCE}</script>\n<style ${THEME_BOOTSTRAP_MARKER}>${REPORT_THEME_BOOTSTRAP_CSS}</style>`;
+  const charsetMeta =
+    /<meta\s+charset\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)\s*\/?>/iu;
+  if (charsetMeta.test(html)) {
+    return html.replace(charsetMeta, (meta) => `${meta}\n${markup}`);
+  }
   const head = /<head(?:\s[^>]*)?>/iu;
   if (!head.test(html)) return html;
-  const markup = `<script ${THEME_BOOTSTRAP_MARKER}>${THEME_BOOTSTRAP_SOURCE}</script>\n<style ${THEME_BOOTSTRAP_MARKER}>${REPORT_THEME_BOOTSTRAP_CSS}</style>`;
   return html.replace(head, (openingTag) => `${openingTag}\n${markup}`);
 }
