@@ -1,3 +1,5 @@
+import { withReportThemeBootstrap } from '../../shared/theme-bootstrap';
+
 export type ReportHtmlSection = {
   title: string;
   body?: string | null;
@@ -25,7 +27,7 @@ export function renderReportHtml(input: RenderReportHtmlInput) {
     ? `<p class="eyebrow">${escapeHtml(input.eyebrow)}</p>`
     : '';
 
-  return `<!doctype html>
+  return withReportThemeBootstrap(`<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -162,7 +164,7 @@ export function renderReportHtml(input: RenderReportHtmlInput) {
   </main>
 </body>
 </html>
-`;
+`);
 }
 
 export function escapeHtml(value: string) {

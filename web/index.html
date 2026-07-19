@@ -3,6 +3,37 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script data-neondeck-theme-bootstrap>
+      (() => {
+        const preferenceKey = 'neondeck.theme-preference';
+        const resolvedKey = 'neondeck.resolved-theme';
+        const systemTheme = () =>
+          window.matchMedia?.('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light';
+        const read = () => {
+          let preference = null;
+          let resolved = null;
+          try {
+            preference = window.localStorage.getItem(preferenceKey);
+            resolved = window.localStorage.getItem(resolvedKey);
+          } catch {}
+          if (preference === 'system') return systemTheme();
+          if (preference === 'light' || preference === 'dark') {
+            return preference;
+          }
+          if (resolved === 'light' || resolved === 'dark') return resolved;
+          return systemTheme();
+        };
+        const apply = () => {
+          document.documentElement.dataset.theme = read();
+        };
+        apply();
+        window.addEventListener('storage', (event) => {
+          if (event.key === preferenceKey || event.key === resolvedKey) apply();
+        });
+      })();
+    </script>
     <meta name="theme-color" content="#ff4fb8" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" type="image/svg+xml" href="/icons/neondeck-icon.svg" />
