@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { chmod, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -163,6 +164,7 @@ describe('Kilo handoff runner', () => {
       },
     );
     try {
+      await once(child, 'spawn');
       insertStaleRunningTask(paths, 'stale-task', {
         pid: child.pid,
         cliPath: kilo,

@@ -2,9 +2,11 @@
 
 A companion agent for keeping PRs moving.
 
-Neon watches your PRs, tracks CI and release checks, prepares fixes when work
-gets stuck, and can configure its own repos, schedules, models, and deck layout
-through typed actions.
+Neon watches your PRs, tracks CI and release checks, and can configure its own
+repos, schedules, models, and deck layout through typed actions. Its current
+watcher-driven Autopilot path durably triages actionable events and prepares an
+isolated worktree; continuing agent-authored fixes and automatic delivery are
+still roadmap work.
 
 It is especially useful on a companion display, vertical panel, or Corsair
 Xeneon Edge-style deck, where your active work can stay visible without taking
@@ -18,10 +20,12 @@ Neon watches your PRs, prepares fixes, and keeps the busywork moving.
 
 - **Your PRs, with CI status at a glance.** See open PRs across your repos in
   one panel, with live check status and stale-work flags.
-- **Watch a PR, then let autopilot move it.** Track a PR through merge, checks,
-  and deploy. When review feedback or CI failures need action, autopilot can
-  prepare a fix in an isolated worktree, run checks, and hand you the diff or
-  push it when repo policy allows.
+- **Watch a PR with durable Autopilot staging.** Track a PR through merge,
+  checks, and deploy. Actionable watcher events enter one restart-safe
+  coordinator and currently advance through triage and isolated worktree
+  preparation. The repository has separately callable guarded fix, verify,
+  approval, push, and comment primitives, but the continuing PR-owner path that
+  connects them automatically has not landed yet.
 - **Review and approve PRs on the deck.** Read diffs, leave inline comments,
   resolve threads, traverse files, hunks, drafts, threads, and revision-bound
   Neon findings, and submit approvals or change requests without switching to

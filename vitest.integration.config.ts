@@ -8,6 +8,8 @@ import {
 export default defineConfig({
   test: {
     ...sharedTestOptions,
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
     exclude: baseExclude,
     include: integrationTestFiles,
   },

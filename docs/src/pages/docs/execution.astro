@@ -157,11 +157,12 @@ const layersDiagram = `flowchart TB
           <code>guardrails</code> config block still denies forbidden paths and destinations,
           and asks once before high-risk or over-limit pushes. That acknowledgment
           is bound to the reviewed commit and effect, so a changed worktree prompts
-          again. Event-driven autopilot runs are the only path that consumes the per-PR
-          autopilot mode; they retain prepared work instead of expanding their own
-          authority. Interactive work requests preemption of an autopilot-owned PR
-          lock, waits for its mutation lease to release, and leaves the autonomous
-          run recoverable from its retained diff.
+          again. Event-driven watcher work is durably admitted through the Autopilot
+          coordinator, but the current automatic chain stops after triage and isolated
+          worktree preparation. Separately invoked guarded fix and delivery actions
+          consume per-PR policy without expanding their own authority. Interactive
+          work requests preemption of an autopilot-owned PR lock, waits for its mutation
+          lease to release, and leaves any prepared diff recoverable.
         </p>
 
         <h2>Planned: exe.dev workspace mode</h2>

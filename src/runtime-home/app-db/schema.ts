@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  check,
   index,
   integer,
   primaryKey,
@@ -572,8 +573,10 @@ export const autopilotAdmissions = sqliteTable(
   'autopilot_admissions',
   {
     id: text('id').primaryKey(),
+    ownerId: text('owner_id').notNull(),
     watchId: text('watch_id').notNull(),
     eventFingerprint: text('event_fingerprint').notNull(),
+    eventSequence: integer('event_sequence').notNull(),
     repoId: text('repo_id').notNull(),
     prNumber: integer('pr_number').notNull(),
     mode: text('mode').notNull(),
@@ -582,11 +585,18 @@ export const autopilotAdmissions = sqliteTable(
     priority: integer('priority').default(0).notNull(),
     currentWorkflow: text('current_workflow'),
     currentRunId: text('current_run_id'),
+    currentStageAttemptId: text('current_stage_attempt_id'),
     worktreeId: text('worktree_id'),
     preparedDiffId: text('prepared_diff_id'),
+    fixerKind: text('fixer_kind'),
+    version: integer('version').default(1).notNull(),
     attemptCount: integer('attempt_count').default(0).notNull(),
     nextAttemptAt: text('next_attempt_at'),
     lastError: text('last_error'),
+    lastOutcomeJson: text('last_outcome_json'),
+    stopRequestedAt: text('stop_requested_at'),
+    completedAt: text('completed_at'),
+    archivedAt: text('archived_at'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -605,6 +615,168 @@ export const autopilotAdmissions = sqliteTable(
       table.prNumber,
       table.state,
     ),
+    uniqueIndex('idx_autopilot_admissions_owner_sequence').on(
+      table.ownerId,
+      table.eventSequence,
+    ),
+    index('idx_autopilot_admissions_owner_state').on(
+      table.ownerId,
+      table.state,
+      sql`${table.updatedAt} DESC`,
+    ),
+    check(
+      'autopilot_admissions_state_check',
+      sql`${table.state} IN ('triage-admitted', 'triaged', 'prepare-admitted', 'prepared', 'owner-turn-admitted', 'owner-turn-running', 'fix-prepared', 'verify-admitted', 'verified', 'approval-pending', 'push-admitted', 'pushed', 'comment-admitted', 'completed', 'cleanup-pending', 'archived', 'blocked', 'manual-review', 'failed', 'stopped', 'superseded')`,
+    ),
+    check(
+      'autopilot_admissions_mode_check',
+      sql`${table.mode} IN ('notify-only', 'prepare-only', 'autofix-with-approval', 'autofix-push-when-safe')`,
+    ),
+    check('autopilot_admissions_version_check', sql`${table.version} >= 1`),
+    check(
+      'autopilot_admissions_sequence_check',
+      sql`${table.eventSequence} >= 1`,
+    ),
+  ],
+);
+
+export const autopilotPrOwners = sqliteTable(
+  'autopilot_pr_owners',
+  {
+    id: text('id').primaryKey(),
+    watchId: text('watch_id').notNull(),
+    repoId: text('repo_id').notNull(),
+    prNumber: integer('pr_number').notNull(),
+    flueAgent: text('flue_agent').default('pr-autopilot-owner').notNull(),
+    flueInstanceId: text('flue_instance_id'),
+    chatSessionId: text('chat_session_id'),
+    worktreeId: text('worktree_id'),
+    generation: integer('generation').default(1).notNull(),
+    groundingConfigHistoryId: integer('grounding_config_history_id')
+      .default(0)
+      .notNull(),
+    groundingMemoryEventAt: text('grounding_memory_event_at'),
+    groundingMemoryEventId: text('grounding_memory_event_id'),
+    groundingMemoryIdsJson: text('grounding_memory_ids_json')
+      .default('[]')
+      .notNull(),
+    status: text('status').default('awaiting-event').notNull(),
+    currentHeadSha: text('current_head_sha'),
+    lastDispatchedSequence: integer('last_dispatched_sequence')
+      .default(0)
+      .notNull(),
+    lastSettledSequence: integer('last_settled_sequence').default(0).notNull(),
+    lastEventAt: text('last_event_at'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    archivedAt: text('archived_at'),
+  },
+  (table) => [
+    uniqueIndex('idx_autopilot_pr_owners_watch').on(table.watchId),
+    uniqueIndex('idx_autopilot_pr_owners_flue_instance')
+      .on(table.flueInstanceId)
+      .where(sql`${table.flueInstanceId} IS NOT NULL`),
+    index('idx_autopilot_pr_owners_repo_pr').on(
+      table.repoId,
+      table.prNumber,
+      table.status,
+    ),
+    check(
+      'autopilot_pr_owners_status_check',
+      sql`${table.status} IN ('awaiting-event', 'active', 'draining', 'archived', 'failed')`,
+    ),
+    check(
+      'autopilot_pr_owners_generation_check',
+      sql`${table.generation} >= 1`,
+    ),
+    check(
+      'autopilot_pr_owners_sequence_check',
+      sql`${table.lastDispatchedSequence} >= 0 AND ${table.lastSettledSequence} >= 0 AND ${table.lastSettledSequence} <= ${table.lastDispatchedSequence}`,
+    ),
+  ],
+);
+
+export const autopilotStageAttempts = sqliteTable(
+  'autopilot_stage_attempts',
+  {
+    id: text('id').primaryKey(),
+    admissionId: text('admission_id').notNull(),
+    ownerId: text('owner_id').notNull(),
+    stage: text('stage').notNull(),
+    attemptNumber: integer('attempt_number').notNull(),
+    workflow: text('workflow'),
+    runId: text('run_id'),
+    flueInstanceId: text('flue_instance_id'),
+    ownerGeneration: integer('owner_generation'),
+    eventSequence: integer('event_sequence'),
+    dispatchId: text('dispatch_id'),
+    status: text('status').notNull(),
+    inputFingerprint: text('input_fingerprint').notNull(),
+    artifactJson: text('artifact_json').default('{}').notNull(),
+    error: text('error'),
+    createdAt: text('created_at').notNull(),
+    startedAt: text('started_at'),
+    finishedAt: text('finished_at'),
+  },
+  (table) => [
+    uniqueIndex('idx_autopilot_stage_attempts_number').on(
+      table.admissionId,
+      table.stage,
+      table.attemptNumber,
+    ),
+    uniqueIndex('idx_autopilot_stage_attempts_run')
+      .on(table.runId)
+      .where(sql`${table.runId} IS NOT NULL`),
+    uniqueIndex('idx_autopilot_stage_attempts_dispatch')
+      .on(table.dispatchId)
+      .where(sql`${table.dispatchId} IS NOT NULL`),
+    uniqueIndex('idx_autopilot_stage_attempts_owner_active')
+      .on(table.ownerId)
+      .where(sql`${table.status} IN ('reserved', 'running')`),
+    index('idx_autopilot_stage_attempts_admission').on(
+      table.admissionId,
+      table.stage,
+      sql`${table.attemptNumber} DESC`,
+    ),
+    index('idx_autopilot_stage_attempts_status').on(
+      table.status,
+      table.createdAt,
+    ),
+    check(
+      'autopilot_stage_attempts_stage_check',
+      sql`${table.stage} IN ('triage', 'prepare-worktree', 'owner-turn', 'verify', 'push', 'comment-result', 'cleanup')`,
+    ),
+    check(
+      'autopilot_stage_attempts_status_check',
+      sql`${table.status} IN ('reserved', 'running', 'completed', 'blocked', 'failed', 'cancelled')`,
+    ),
+    check(
+      'autopilot_stage_attempts_number_check',
+      sql`${table.attemptNumber} >= 1`,
+    ),
+  ],
+);
+
+export const autopilotAdmissionEvents = sqliteTable(
+  'autopilot_admission_events',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    admissionId: text('admission_id').notNull(),
+    fromState: text('from_state'),
+    toState: text('to_state').notNull(),
+    reason: text('reason').notNull(),
+    workflow: text('workflow'),
+    runId: text('run_id'),
+    dataJson: text('data_json').default('{}').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_autopilot_admission_events_admission').on(
+      table.admissionId,
+      sql`${table.createdAt} DESC`,
+      sql`${table.id} DESC`,
+    ),
+    index('idx_autopilot_admission_events_run').on(table.runId),
   ],
 );
 

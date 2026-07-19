@@ -9,13 +9,12 @@ import type { MiddlewareHandler } from 'hono';
 import { addNotification, setWorkflowSummaryRunId } from '../modules/app-state';
 import { settleScheduledTaskWorkflowRun } from '../modules/scheduled-tasks';
 import {
-  beginAutopilotAdmissionPrepare,
-  failAutopilotAdmission,
-  recordAutopilotAdmissionRun,
-  recordAutopilotAdmissionTerminalFact,
-  settleAutopilotAdmissionPrepare,
-  settleAutopilotAdmissionTriage,
+  coordinateAutopilotAdmission,
+  recordAutopilotStageTerminalObservation,
+  type AutopilotConcurrencyPolicy,
+  type AutopilotWorkflowInvoker,
 } from '../modules/autopilot';
+import { invokeScheduledWorkflow } from '../modules/scheduler';
 import {
   attachLearningReviewRunId,
   recordConversationTurnAndMaybeQueueLearning,
@@ -36,6 +35,8 @@ type ObservationInstallDependencies = {
   observe?: (subscriber: FlueObservationSubscriber) => () => void;
   recordFlueObservation?: typeof recordFlueObservation;
   settleScheduledTaskWorkflowRun?: typeof settleScheduledTaskWorkflowRun;
+  invokeAutopilotWorkflow?: AutopilotWorkflowInvoker;
+  autopilotConcurrency?: AutopilotConcurrencyPolicy;
 };
 
 const observationHandlerUnsubscribers = new Map<string, () => void>();
@@ -51,6 +52,8 @@ export function installFlueObservationHandlers(
   const settleScheduledWorkflow =
     dependencies.settleScheduledTaskWorkflowRun ??
     settleScheduledTaskWorkflowRun;
+  const invokeAutopilotWorkflow =
+    dependencies.invokeAutopilotWorkflow ?? defaultAutopilotWorkflowInvoker;
   const unsubscribe = observeFn((event, context) => {
     const contextHome = flueContextRuntimeHome(context);
     if (contextHome && contextHome !== paths.home) return;
@@ -79,34 +82,21 @@ export function installFlueObservationHandlers(
       void Promise.resolve()
         .then(async () => {
           const terminalFact = autopilotTerminalFact(event);
-          if (terminalFact) {
-            await recordAutopilotAdmissionTerminalFact(
-              { runId: event.runId, fact: terminalFact },
-              paths,
-            );
-          }
+          if (!terminalFact) return;
+          const settled = await recordAutopilotStageTerminalObservation(
+            { runId: event.runId, observation: terminalFact },
+            paths,
+          );
+          if (settled.status !== 'settled' || !settled.admission) return;
+          await coordinateAutopilotAdmission(
+            {
+              admissionId: settled.admission.id,
+              invokeWorkflow: invokeAutopilotWorkflow,
+              limits: dependencies.autopilotConcurrency,
+            },
+            paths,
+          );
         })
-        .then(() =>
-          Promise.all([
-            settleAutopilotAdmissionTriage(
-              {
-                runId: event.runId,
-                failed: terminalActionFailed(event),
-                shouldPrepare: triageRequestsPrepare(event),
-              },
-              paths,
-            ),
-            settleAutopilotAdmissionPrepare(
-              {
-                runId: event.runId,
-                failed: terminalActionFailed(event),
-                worktreeId: prepareWorktreeId(event),
-              },
-              paths,
-            ),
-          ]),
-        )
-        .then(() => startPrepareAfterTriage(event, paths))
         .catch((error) => {
           console.error(
             '[neondeck] failed to settle autopilot Flue observation',
@@ -229,6 +219,16 @@ export function installFlueObservationHandlers(
   observationHandlerUnsubscribers.set(paths.home, unsubscribe);
 }
 
+const defaultAutopilotWorkflowInvoker: AutopilotWorkflowInvoker = (
+  workflow,
+  input,
+) => {
+  if (workflow !== 'triage-pr-event' && workflow !== 'prepare-pr-worktree') {
+    throw new Error(`Package 1 cannot invoke autopilot workflow ${workflow}.`);
+  }
+  return invokeScheduledWorkflow(workflow, input);
+};
+
 export function resetFlueObservationHandlersForTests() {
   for (const unsubscribe of observationHandlerUnsubscribers.values()) {
     unsubscribe();
@@ -267,38 +267,6 @@ export function linkPrReviewRunObservation(
 function flueContextRuntimeHome(context: FlueEventContext | undefined) {
   const value = context?.env?.NEONDECK_HOME;
   return typeof value === 'string' && value ? value : undefined;
-}
-
-async function startPrepareAfterTriage(
-  event: Extract<FlueObservation, { type: 'run_end' }>,
-  paths: RuntimePaths,
-) {
-  if (event.isError || !triageRequestsPrepare(event)) return;
-  const admission = await beginAutopilotAdmissionPrepare(
-    { triageRunId: event.runId },
-    paths,
-  );
-  if (!admission) return;
-  try {
-    const workflow = await import('../workflows/prepare-pr-worktree');
-    const { runId } = await invoke(workflow.default, {
-      input: {
-        repoId: admission.repoId,
-        prNumber: admission.prNumber,
-        eventId: admission.eventFingerprint,
-        lock: false,
-      },
-    });
-    await recordAutopilotAdmissionRun({ id: admission.id, runId }, paths);
-  } catch (error) {
-    await failAutopilotAdmission(
-      {
-        id: admission.id,
-        error: error instanceof Error ? error.message : String(error),
-      },
-      paths,
-    );
-  }
 }
 
 function triageRequestsPrepare(
