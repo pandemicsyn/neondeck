@@ -689,6 +689,11 @@ async function assertSubmissionMutationFence(
       Number(scope.grounding_config_history_id),
       repo.id,
     );
+    assertNoUnfoldedAuthorityDrift(
+      confirm,
+      authority.authorityScanConfigHistoryId,
+      repo.id,
+    );
   } finally {
     confirm.close();
   }
@@ -918,6 +923,28 @@ function assertNoBlockingConfigDrift(
   if (blocking) {
     throw new Error(
       `Owner grounding changed after dispatch: ${blocking.action}:${blocking.target ?? 'general'}.`,
+    );
+  }
+}
+
+function assertNoUnfoldedAuthorityDrift(
+  database: ReturnType<typeof openDb>,
+  configHistoryId: number,
+  repoId: string,
+) {
+  const rows = database
+    .prepare(
+      `SELECT action, target FROM config_history
+       WHERE id > ? ORDER BY id ASC;`,
+    )
+    .all(configHistoryId)
+    .map((row) => v.parse(mutationFenceConfigRowSchema, row));
+  const transition = rows.find(
+    (row) => classifyAutopilotOwnerConfigChange(row, repoId) !== 'none',
+  );
+  if (transition) {
+    throw new Error(
+      `Owner policy changed during validation: ${transition.action}:${transition.target ?? 'general'}.`,
     );
   }
 }

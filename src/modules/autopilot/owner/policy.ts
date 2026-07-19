@@ -7,7 +7,10 @@ import {
   type AppConfig,
   type RepoGuardrails,
 } from '../../../runtime-home';
-import type { AutopilotAdmission } from '../coordination/schemas';
+import {
+  readAutopilotAdmission,
+  type AutopilotAdmission,
+} from '../coordination/schemas';
 import * as v from 'valibot';
 import {
   classifyAutopilotOwnerConfigChange,
@@ -123,17 +126,27 @@ export function autopilotOwnerPolicySnapshot(input: {
   };
 }
 
+type AdmissionAuthorityInput = {
+  admission: AutopilotAdmission;
+  repoId: string;
+  watchId: string;
+  prNumber: number;
+  appConfig: AppConfig;
+  currentConfiguredMode: AutopilotMode;
+  currentGuardrails: RepoGuardrails;
+};
+
 export function constrainAutopilotAdmissionAuthority(
   database: DatabaseSync,
-  input: {
-    admission: AutopilotAdmission;
-    repoId: string;
-    watchId: string;
-    prNumber: number;
-    appConfig: AppConfig;
-    currentConfiguredMode: AutopilotMode;
-    currentGuardrails: RepoGuardrails;
-  },
+  input: AdmissionAuthorityInput,
+) {
+  return constrainAutopilotAdmissionAuthorityOnce(database, input, 0);
+}
+
+function constrainAutopilotAdmissionAuthorityOnce(
+  database: DatabaseSync,
+  input: AdmissionAuthorityInput,
+  retryCount: number,
 ) {
   let authorityMode = input.admission.authorityMode;
   const stored = readStoredAuthorityPolicy(database, input.admission.id);
@@ -147,13 +160,13 @@ export function constrainAutopilotAdmissionAuthority(
       `SELECT id, action, target, after_json FROM config_history
        WHERE id > ? ORDER BY id ASC;`,
     )
-    .all(stored.authorityScanConfigHistoryId)
+    .all(stored.policy.authorityScanConfigHistoryId)
     .map((row) => v.parse(configHistoryAuthorityRowSchema, row));
-  let authorityGuardrails = stored.guardrails;
-  let diagnosticCommands = stored.diagnosticCommands;
-  let authorityScanConfigHistoryId = stored.authorityScanConfigHistoryId;
-  let blockingConfigHistoryId = stored.blockingConfigHistoryId;
-  let transitionHash = stored.transitionHash;
+  let authorityGuardrails = stored.policy.guardrails;
+  let diagnosticCommands = stored.policy.diagnosticCommands;
+  let authorityScanConfigHistoryId = stored.policy.authorityScanConfigHistoryId;
+  let blockingConfigHistoryId = stored.policy.blockingConfigHistoryId;
+  let transitionHash = stored.policy.transitionHash;
   let historyId = input.admission.policyConfigHistoryId;
   for (const row of rows) {
     authorityScanConfigHistoryId = row.id;
@@ -229,28 +242,47 @@ export function constrainAutopilotAdmissionAuthority(
     diagnosticCommands,
     input.currentGuardrails.requiredChecks,
   );
-  database
+  const nextAuthorityPolicyJson = JSON.stringify({
+    guardrails: authorityGuardrails,
+    diagnosticCommands,
+    authorityScanConfigHistoryId,
+    blockingConfigHistoryId,
+    transitionHash,
+  });
+  const update = database
     .prepare(
       `UPDATE autopilot_admissions
        SET authority_mode = ?, policy_config_history_id = ?,
            authority_policy_json = ?, updated_at = updated_at
        WHERE id = ? AND COALESCE(authority_mode, mode) = ?
-         AND policy_config_history_id = ?;`,
+         AND policy_config_history_id = ?
+         AND authority_policy_json = ?;`,
     )
     .run(
       authorityMode,
       historyId,
-      JSON.stringify({
-        guardrails: authorityGuardrails,
-        diagnosticCommands,
-        authorityScanConfigHistoryId,
-        blockingConfigHistoryId,
-        transitionHash,
-      }),
+      nextAuthorityPolicyJson,
       input.admission.id,
       input.admission.authorityMode,
       input.admission.policyConfigHistoryId,
+      stored.json,
     );
+  if (update.changes !== 1) {
+    if (retryCount >= 2) {
+      throw new Error('Admission authority changed concurrently; retry later.');
+    }
+    const refreshed = readAutopilotAdmission(
+      database
+        .prepare('SELECT * FROM autopilot_admissions WHERE id = ?;')
+        .get(input.admission.id),
+    );
+    if (!refreshed) throw new Error('Persisted admission is invalid.');
+    return constrainAutopilotAdmissionAuthorityOnce(
+      database,
+      { ...input, admission: refreshed },
+      retryCount + 1,
+    );
+  }
   const durable = v.parse(
     durableAuthorityRowSchema,
     database
@@ -267,6 +299,7 @@ export function constrainAutopilotAdmissionAuthority(
     policyConfigHistoryId: durable.policy_config_history_id,
     guardrails: durablePolicy.guardrails,
     diagnosticCommands: durablePolicy.diagnosticCommands,
+    authorityScanConfigHistoryId: durablePolicy.authorityScanConfigHistoryId,
     transitionHash: durablePolicy.transitionHash,
   };
 }
@@ -281,7 +314,10 @@ function readStoredAuthorityPolicy(
     )
     .get(admissionId) as { authority_policy_json?: unknown } | undefined;
   return typeof row?.authority_policy_json === 'string'
-    ? parseAuthorityPolicy(row.authority_policy_json)
+    ? {
+        json: row.authority_policy_json,
+        policy: parseAuthorityPolicy(row.authority_policy_json),
+      }
     : null;
 }
 
