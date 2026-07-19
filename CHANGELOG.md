@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.0-beta.12
+
+### Patch Changes
+
+- [#157](https://github.com/pandemicsyn/neondeck/pull/157) [`48425a6`](https://github.com/pandemicsyn/neondeck/commit/48425a6d7274931d34b4f4468d1aec5f48ef56b8) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep Phase B review navigation, findings, promotions, refresh, and mounted surface state consistent across slow requests, event-stream outages, and concurrent actions.
+
+- [#159](https://github.com/pandemicsyn/neondeck/pull/159) [`3840128`](https://github.com/pandemicsyn/neondeck/commit/3840128277c83aeb40c8561a6f80b821ca081303) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Run the app database in WAL mode and harden scheduler leases, workflow settlement, recovery, and SQLite diagnostics against lock contention and partial persistence failures.
+
+- [#160](https://github.com/pandemicsyn/neondeck/pull/160) [`2134a32`](https://github.com/pandemicsyn/neondeck/commit/2134a32ee4a8fc5979ab2675692e53971990a901) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Harden SQLite contention handling, Kilo cancellation, exact-commit pushes, idempotent autofix comments, unattended GitHub command policy, and concurrent skill-patch decisions.
+
+- [#161](https://github.com/pandemicsyn/neondeck/pull/161) [`85ab780`](https://github.com/pandemicsyn/neondeck/commit/85ab780411bd105fec8075c8c1a8b931791f1b05) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Prevent duplicate approval dispatches, serialize worktree cleanup with active workflows, and record approval nudges before Flue accepts them.
+
 ## 1.0.0-beta.11
 
 ### Minor Changes
