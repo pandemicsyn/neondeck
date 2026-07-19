@@ -156,9 +156,13 @@ export type GitHubPullRequestReview = {
   nodeId: string | null;
   state: string;
   authorLogin: string | null;
+  authorType?: string | null;
+  authorIsBot?: boolean;
   submittedAt: string | null;
   commitId: string | null;
   url: string | null;
+  body?: string | null;
+  bodyTruncated?: boolean;
 };
 
 export type GitHubSubmittedPullRequestReview = GitHubPullRequestReview & {
@@ -189,15 +193,21 @@ export type GitHubPullRequestReviewThreadComment = {
   id: string;
   databaseId: number | null;
   authorLogin: string | null;
+  authorType?: string | null;
+  authorIsBot?: boolean;
   body: string;
   url: string | null;
   path: string | null;
+  side?: string | null;
   line: number | null;
+  startLine?: number | null;
+  startSide?: string | null;
   originalLine: number | null;
   diffHunk: string | null;
   reviewId: number | null;
   createdAt: string;
   updatedAt: string;
+  bodyTruncated?: boolean;
 };
 
 export type GitHubCheckSuiteDetail = {
@@ -265,6 +275,8 @@ export type GitHubPullRequestComment = {
   nodeId: string | null;
   url: string;
   authorLogin: string | null;
+  authorType?: string | null;
+  authorIsBot?: boolean;
   body: string;
   createdAt: string;
   updatedAt: string;
@@ -282,8 +294,12 @@ export type GitHubPullRequestEventState = {
   mergeCommitSha: string | null;
   headSha: string;
   headRef: string | null;
+  headOwner?: string | null;
+  headName?: string | null;
+  headRepoFullName?: string | null;
   baseRef: string;
   baseSha: string | null;
+  baseRepoFullName?: string | null;
   mergeable: boolean | null;
   mergeableState: string | null;
   maintainerCanModify: boolean;
@@ -293,6 +309,8 @@ export type GitHubPullRequestEventState = {
   reviewThreadsTruncated?: boolean;
   requestedChangesReviews: GitHubPullRequestReview[];
   requestedChangesState: GitHubPullRequestRequestedChangesState;
+  conversationComments?: GitHubPullRequestComment[];
+  conversationCommentsTruncated?: boolean;
   checkSuites: GitHubCheckSuiteDetail[];
   checkSuitesTruncated?: boolean;
   checkRuns: GitHubCheckRunDetail[];
@@ -301,6 +319,16 @@ export type GitHubPullRequestEventState = {
   branchPermissions: GitHubBranchPushPermissions;
   isOutOfDate: boolean;
   fetchedAt: string;
+  eventBudget?: {
+    maxItems: number;
+    maxBytes: number;
+    maxElapsedMs: number;
+    retainedItems: number;
+    retainedBytes: number;
+    elapsedMs: number;
+    exhausted: boolean;
+    exhaustedCategories: string[];
+  };
 };
 
 export const githubSearchIssueSchema = v.object({
@@ -483,7 +511,9 @@ export const githubPullRequestReviewApiItemSchema = v.object({
   id: v.number(),
   node_id: v.optional(v.string()),
   state: v.string(),
-  user: v.optional(v.nullable(v.object({ login: v.string() }))),
+  user: v.optional(
+    v.nullable(v.object({ login: v.string(), type: v.optional(v.string()) })),
+  ),
   submitted_at: v.optional(v.nullable(v.string())),
   commit_id: v.optional(v.nullable(v.string())),
   html_url: v.optional(v.nullable(v.string())),
@@ -495,6 +525,29 @@ export type GitHubPullRequestReviewApiItem = v.InferOutput<
 
 export const githubPullRequestReviewCreatedApiResponseSchema =
   githubPullRequestReviewApiItemSchema;
+
+export const githubPullRequestReviewCommentApiItemSchema = v.object({
+  id: v.number(),
+  node_id: v.optional(v.nullable(v.string())),
+  pull_request_review_id: v.number(),
+  diff_hunk: v.optional(v.nullable(v.string())),
+  path: v.string(),
+  side: v.optional(v.nullable(v.string())),
+  line: v.optional(v.nullable(v.number())),
+  start_line: v.optional(v.nullable(v.number())),
+  start_side: v.optional(v.nullable(v.string())),
+  original_line: v.optional(v.nullable(v.number())),
+  body: v.string(),
+  user: v.optional(
+    v.nullable(v.object({ login: v.string(), type: v.optional(v.string()) })),
+  ),
+  created_at: v.string(),
+  updated_at: v.string(),
+  html_url: v.optional(v.nullable(v.string())),
+});
+export type GitHubPullRequestReviewCommentApiItem = v.InferOutput<
+  typeof githubPullRequestReviewCommentApiItemSchema
+>;
 
 export const githubRepositoryApiResponseSchema = v.object({
   full_name: v.string(),
@@ -514,7 +567,9 @@ export const githubIssueCommentApiResponseSchema = v.object({
   node_id: v.optional(v.nullable(v.string())),
   html_url: v.string(),
   body: v.string(),
-  user: v.optional(v.nullable(v.object({ login: v.string() }))),
+  user: v.optional(
+    v.nullable(v.object({ login: v.string(), type: v.optional(v.string()) })),
+  ),
   created_at: v.string(),
   updated_at: v.string(),
 });
@@ -532,7 +587,14 @@ export const githubReviewThreadCommentGraphqlNodeSchema = v.object({
   databaseId: v.optional(v.nullable(v.number())),
   body: v.string(),
   url: v.optional(v.nullable(v.string())),
-  author: v.optional(v.nullable(v.object({ login: v.string() }))),
+  author: v.optional(
+    v.nullable(
+      v.object({
+        login: v.string(),
+        __typename: v.optional(v.string()),
+      }),
+    ),
+  ),
   createdAt: v.string(),
   updatedAt: v.string(),
   path: v.optional(v.nullable(v.string())),
@@ -666,7 +728,7 @@ export const pullRequestReviewThreadsQuery = `
   query NeondeckPullRequestReviewThreads($owner: String!, $name: String!, $number: Int!, $after: String) {
     repository(owner: $owner, name: $name) {
       pullRequest(number: $number) {
-        reviewThreads(first: 100, after: $after) {
+        reviewThreads(first: 10, after: $after) {
           pageInfo {
             hasNextPage
             endCursor
@@ -685,7 +747,7 @@ export const pullRequestReviewThreadsQuery = `
                 nameWithOwner
               }
             }
-            comments(first: 100) {
+            comments(first: 10) {
               pageInfo {
                 hasNextPage
                 endCursor
@@ -696,6 +758,7 @@ export const pullRequestReviewThreadsQuery = `
                 body
                 url
                 author {
+                  __typename
                   login
                 }
                 createdAt
@@ -743,6 +806,7 @@ export const pullRequestReviewSurfaceThreadsQuery = `
                 body
                 url
                 author {
+                  __typename
                   login
                 }
                 createdAt
@@ -763,7 +827,7 @@ export const reviewThreadCommentsQuery = `
   query NeondeckPullRequestReviewThreadComments($threadId: ID!, $after: String) {
     node(id: $threadId) {
       ... on PullRequestReviewThread {
-        comments(first: 100, after: $after) {
+        comments(first: 20, after: $after) {
           pageInfo {
             hasNextPage
             endCursor
@@ -774,6 +838,7 @@ export const reviewThreadCommentsQuery = `
             body
             url
             author {
+              __typename
               login
             }
             createdAt
@@ -820,6 +885,7 @@ export const pullRequestReviewThreadNodeQuery = `
             body
             url
             author {
+              __typename
               login
             }
             createdAt

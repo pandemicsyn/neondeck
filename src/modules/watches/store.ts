@@ -1,9 +1,16 @@
-import { openDb } from '../../lib/sqlite';
+import { randomUUID } from 'node:crypto';
+import { asJsonValue } from '../../lib/action-result';
+import { openDb, rollbackQuietly } from '../../lib/sqlite';
 import type { RuntimePaths } from '../../runtime-home';
+import type {
+  AutomationExecutionResult,
+  NotificationRecord,
+} from '../app-state';
 import { upsertScheduledTask } from '../scheduled-tasks';
 import type {
   DesiredTerminalState,
   PrWatch,
+  PrWatchInitialWatermark,
   PrWatchSnapshot,
   PrWatchStatus,
   RefWatch,
@@ -12,12 +19,18 @@ import type {
   WatchOutcome,
 } from './schemas';
 
-export function insertWatch(paths: RuntimePaths, watch: PrWatch) {
+export function insertWatch(
+  paths: RuntimePaths,
+  watch: PrWatch,
+  initialWatermarks?: PrWatchInitialWatermark[],
+) {
   const database = openDb(paths.neondeckDatabase);
   try {
-    database
-      .prepare(
-        `
+    database.exec('BEGIN;');
+    try {
+      database
+        .prepare(
+          `
         INSERT INTO pr_watches (
           id,
           repo_id,
@@ -35,24 +48,53 @@ export function insertWatch(paths: RuntimePaths, watch: PrWatch) {
           last_outcome,
           last_checked_at,
           created_by,
+          process_existing,
+          initial_event_processed_at,
+          event_watermark_version,
+          event_generation_id,
           created_at,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `,
-      )
-      .run(...watchParams(watch));
+        )
+        .run(...watchParams(watch));
+      if (initialWatermarks) {
+        upsertInitialEventWatermarks(
+          database,
+          watch.id,
+          initialWatermarks,
+          watch.initialEventProcessedAt ?? watch.updatedAt,
+        );
+      }
+      database.exec('COMMIT;');
+    } catch (error) {
+      rollbackQuietly(database);
+      throw error;
+    }
   } finally {
     database.close();
   }
 }
 
-export function updateWatch(paths: RuntimePaths, watch: PrWatch) {
+export function updateWatch(
+  paths: RuntimePaths,
+  watch: PrWatch,
+  initialWatermarks?: PrWatchInitialWatermark[],
+  eventBaselineReset?: {
+    supersededReason: string;
+  },
+  expectedEventGenerationId = watch.eventGenerationId,
+) {
   const database = openDb(paths.neondeckDatabase);
   try {
-    database
-      .prepare(
-        `
+    database.exec(
+      initialWatermarks || eventBaselineReset ? 'BEGIN IMMEDIATE;' : 'BEGIN;',
+    );
+    try {
+      const updated = database
+        .prepare(
+          `
         UPDATE pr_watches
         SET
           repo_id = ?,
@@ -69,30 +111,118 @@ export function updateWatch(paths: RuntimePaths, watch: PrWatch) {
           last_snapshot_json = ?,
           last_outcome = ?,
           last_checked_at = ?,
+          process_existing = ?,
+          initial_event_processed_at = ?,
+          event_watermark_version = ?,
+          event_generation_id = ?,
           updated_at = ?
-        WHERE id = ?;
+        WHERE id = ? AND event_generation_id = ?;
+      `,
+        )
+        .run(
+          watch.repoId,
+          watch.repoFullName,
+          watch.githubOwner,
+          watch.githubName,
+          watch.prNumber,
+          watch.desiredTerminalState,
+          watch.status,
+          watch.prState,
+          watch.title,
+          watch.url,
+          watch.mergeCommitSha,
+          watch.lastSnapshot ? JSON.stringify(watch.lastSnapshot) : null,
+          watch.lastOutcome,
+          watch.lastCheckedAt,
+          watch.processExisting ? 1 : 0,
+          watch.initialEventProcessedAt,
+          watch.eventWatermarkVersion,
+          watch.eventGenerationId,
+          watch.updatedAt,
+          watch.id,
+          expectedEventGenerationId,
+        ).changes;
+      if (updated !== 1) {
+        rollbackQuietly(database);
+        return false;
+      }
+      if (initialWatermarks || eventBaselineReset) {
+        database
+          .prepare(
+            `UPDATE pr_watch_event_intakes
+             SET status = 'superseded',
+                 outcome = 'baseline-reset',
+                 superseded_reason = ?,
+                 acknowledged_at = ?,
+                 updated_at = ?
+             WHERE watch_id = ? AND status = 'pending';`,
+          )
+          .run(
+            eventBaselineReset?.supersededReason ??
+              'Operator installed a fresh process-existing=false baseline.',
+            watch.updatedAt,
+            watch.updatedAt,
+            watch.id,
+          );
+        database
+          .prepare('DELETE FROM pr_watch_event_watermarks WHERE watch_id = ?;')
+          .run(watch.id);
+      }
+      if (initialWatermarks) {
+        upsertInitialEventWatermarks(
+          database,
+          watch.id,
+          initialWatermarks,
+          watch.initialEventProcessedAt ?? watch.updatedAt,
+        );
+      }
+      database.exec('COMMIT;');
+      return true;
+    } catch (error) {
+      rollbackQuietly(database);
+      throw error;
+    }
+  } finally {
+    database.close();
+  }
+}
+
+function upsertInitialEventWatermarks(
+  database: ReturnType<typeof openDb>,
+  watchId: string,
+  watermarks: PrWatchInitialWatermark[],
+  now: string,
+) {
+  for (const watermark of watermarks) {
+    database
+      .prepare(
+        `
+        INSERT INTO pr_watch_event_watermarks (
+          watch_id,
+          category,
+          watermark_json,
+          source_updated_at,
+          checked_at,
+          created_at,
+          updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(watch_id, category) DO UPDATE SET
+          watermark_json = excluded.watermark_json,
+          source_updated_at = excluded.source_updated_at,
+          checked_at = excluded.checked_at,
+          updated_at = excluded.updated_at;
       `,
       )
       .run(
-        watch.repoId,
-        watch.repoFullName,
-        watch.githubOwner,
-        watch.githubName,
-        watch.prNumber,
-        watch.desiredTerminalState,
-        watch.status,
-        watch.prState,
-        watch.title,
-        watch.url,
-        watch.mergeCommitSha,
-        watch.lastSnapshot ? JSON.stringify(watch.lastSnapshot) : null,
-        watch.lastOutcome,
-        watch.lastCheckedAt,
-        watch.updatedAt,
-        watch.id,
+        watchId,
+        watermark.category,
+        JSON.stringify(watermark.value),
+        watermark.sourceUpdatedAt,
+        now,
+        now,
+        now,
       );
-  } finally {
-    database.close();
   }
 }
 
@@ -272,11 +402,30 @@ export function readRefWatch(paths: RuntimePaths, id: string) {
 
 export function deleteWatch(paths: RuntimePaths, id: string) {
   const database = openDb(paths.neondeckDatabase);
+  const now = new Date().toISOString();
   try {
-    database
-      .prepare('DELETE FROM pr_watch_event_watermarks WHERE watch_id = ?;')
-      .run(id);
-    database.prepare('DELETE FROM pr_watches WHERE id = ?;').run(id);
+    database.exec('BEGIN IMMEDIATE;');
+    try {
+      database
+        .prepare(
+          `UPDATE pr_watch_event_intakes
+           SET status = 'superseded',
+               outcome = 'baseline-reset',
+               superseded_reason = 'Operator removed the PR watch.',
+               acknowledged_at = ?,
+               updated_at = ?
+           WHERE watch_id = ? AND status = 'pending';`,
+        )
+        .run(now, now, id);
+      database
+        .prepare('DELETE FROM pr_watch_event_watermarks WHERE watch_id = ?;')
+        .run(id);
+      database.prepare('DELETE FROM pr_watches WHERE id = ?;').run(id);
+      database.exec('COMMIT;');
+    } catch (error) {
+      rollbackQuietly(database);
+      throw error;
+    }
   } finally {
     database.close();
   }
@@ -319,6 +468,10 @@ export function watchParams(watch: PrWatch) {
     watch.lastOutcome,
     watch.lastCheckedAt,
     watch.createdBy,
+    watch.processExisting ? 1 : 0,
+    watch.initialEventProcessedAt,
+    watch.eventWatermarkVersion,
+    watch.eventGenerationId,
     watch.createdAt,
     watch.updatedAt,
   ];
@@ -392,7 +545,131 @@ export function readWatchRow(row: unknown): PrWatch {
         : null,
     createdBy:
       typeof record.created_by === 'string' ? String(record.created_by) : null,
+    processExisting: record.process_existing === 1,
+    initialEventProcessedAt:
+      typeof record.initial_event_processed_at === 'string'
+        ? record.initial_event_processed_at
+        : null,
+    eventWatermarkVersion:
+      typeof record.event_watermark_version === 'number'
+        ? record.event_watermark_version
+        : 1,
+    eventGenerationId:
+      typeof record.event_generation_id === 'string'
+        ? record.event_generation_id
+        : 'legacy',
     createdAt: String(record.created_at),
     updatedAt: String(record.updated_at),
   };
+}
+
+export function markWatchInitialEventProcessed(
+  paths: RuntimePaths,
+  watchId: string,
+  processedAt = new Date().toISOString(),
+) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return (
+      database
+        .prepare(
+          `UPDATE pr_watches
+           SET initial_event_processed_at = ?, updated_at = ?
+           WHERE id = ? AND initial_event_processed_at IS NULL;`,
+        )
+        .run(processedAt, processedAt, watchId).changes === 1
+    );
+  } finally {
+    database.close();
+  }
+}
+
+export function persistInitialWatchNotificationAndMarkProcessed(
+  paths: RuntimePaths,
+  watchId: string,
+  notification: NonNullable<AutomationExecutionResult['notifications']>[number],
+  processedAt = new Date().toISOString(),
+) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database.exec('BEGIN IMMEDIATE;');
+    try {
+      const watch = database
+        .prepare(
+          `SELECT initial_event_processed_at
+           FROM pr_watches
+           WHERE id = ? AND initial_event_processed_at IS NULL;`,
+        )
+        .get(watchId);
+      if (!watch) {
+        database.exec('COMMIT;');
+        return { processed: false, notification: null };
+      }
+
+      const source = notification.source ?? 'watch-pr-events';
+      const sourceId = notification.sourceId ?? watchId;
+      const existing = database
+        .prepare(
+          `SELECT id
+           FROM notifications
+           WHERE source = ? AND source_id = ? AND resolved_at IS NULL
+           LIMIT 1;`,
+        )
+        .get(source, sourceId);
+      let persistedNotification: NotificationRecord | null = null;
+      if (!existing) {
+        const id = randomUUID();
+        const data =
+          notification.data === undefined
+            ? null
+            : asJsonValue(notification.data);
+        database
+          .prepare(
+            `INSERT INTO notifications (
+               id, level, title, message, source, source_id, data_json,
+               read_at, resolved_at, occurrence_count, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 1, ?, ?);`,
+          )
+          .run(
+            id,
+            notification.level,
+            notification.title,
+            notification.message,
+            source,
+            sourceId,
+            data === null ? null : JSON.stringify(data),
+            processedAt,
+            processedAt,
+          );
+        persistedNotification = {
+          id,
+          level: notification.level,
+          title: notification.title,
+          message: notification.message,
+          source,
+          sourceId,
+          data,
+          readAt: null,
+          resolvedAt: null,
+          occurrenceCount: 1,
+          createdAt: processedAt,
+          updatedAt: processedAt,
+        };
+      }
+      database
+        .prepare(
+          `UPDATE pr_watches
+           SET initial_event_processed_at = ?, updated_at = ?
+           WHERE id = ? AND initial_event_processed_at IS NULL;`,
+        )
+        .run(processedAt, processedAt, watchId);
+      database.exec('COMMIT;');
+      return { processed: true, notification: persistedNotification };
+    } catch (error) {
+      database.exec('ROLLBACK;');
+      throw error;
+    }
+  } finally {
+    database.close();
+  }
 }

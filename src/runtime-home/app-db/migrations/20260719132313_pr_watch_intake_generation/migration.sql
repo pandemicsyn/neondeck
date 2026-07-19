@@ -1,0 +1,1 @@
+ALTER TABLE `pr_watch_event_intakes` ADD `event_generation_id` text DEFAULT 'legacy' NOT NULL;

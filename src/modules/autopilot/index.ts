@@ -37,6 +37,7 @@ export {
 export {
   admitAutopilotEvent,
   advanceAutopilotAdmission,
+  AutopilotPendingIntakeLeaseLostError,
   listAutopilotAdmissionsNeedingAdvance,
 } from './coordination/advance';
 export {

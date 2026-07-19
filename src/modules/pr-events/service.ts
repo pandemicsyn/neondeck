@@ -1,6 +1,6 @@
 /* eslint-disable no-unused-vars */
 import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
-import { createHmac } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import {
@@ -10,6 +10,7 @@ import {
   fetchPullRequestEventState,
   fetchPullRequestFiles,
   fetchPullRequestFilesWithCache,
+  fetchPullRequestReviewComments,
   fetchPullRequestReviewSurfaceThreadsWithMetadata,
   fetchPullRequestReviewThreadsWithMetadata,
   fetchPullRequestReviewThread,
@@ -17,6 +18,7 @@ import {
   invalidatePullRequestReviewSurfaceThreadCache,
   listPullRequestComments,
   postPullRequestComment,
+  prEventWatermarkTruncationCategories,
   pullRequestEventStateTruncation,
   readLivePrReviewDraft,
   readPrReviewDraft,
@@ -31,6 +33,7 @@ import {
   type GitHubPrReviewDraftComment,
   type GitHubPullRequestEventState,
   type GitHubPullRequestReviewThread,
+  type GitHubPullRequestReviewThreadComment,
 } from '../github';
 import {
   readLocalPullRequestFileDiff,
@@ -76,17 +79,24 @@ import {
   commentAnchorExists,
 } from '../../../shared/patch-anchors';
 import {
+  conversationCommentFingerprint,
   readWatermarks,
-  upsertWatermarks,
+  requestedChangesReviewDeliveryFingerprint,
+  reviewThreadCommentDeliveryFingerprint,
   watermarksFromEventState,
 } from './watermarks';
 import {
-  errorMessage,
-  eventTargetJson,
-  failResult,
-  okResult,
-  stableJson,
-} from './utils';
+  currentPrWatchEventWatermarkVersion,
+  installPrWatchEventBaseline,
+  readPendingPrWatchEventIntake,
+  stagePrWatchEventIntake,
+} from './intakes';
+import { recordAddressedPrFeedback } from './addressed';
+import {
+  recordNeondeckPrDeliveries,
+  recordNeondeckPrDelivery,
+} from './deliveries';
+import { errorMessage, eventTargetJson, failResult, okResult } from './utils';
 
 export async function getGitHubPrEventState(
   input: v.InferInput<typeof prEventTargetInputSchema>,
@@ -911,6 +921,59 @@ export async function postGitHubPrReview(
       repo: resolved.target.repo,
       number: resolved.target.number,
     });
+    const selectedCommentIds = parsedReview.output.commentIds
+      ? new Set(parsedReview.output.commentIds)
+      : null;
+    const submittedDraftComments = result.draft.comments.filter(
+      (comment) =>
+        selectedCommentIds === null || selectedCommentIds.has(comment.id),
+    );
+    const deliveredComments = await (
+      dependencies.fetchPullRequestReviewComments ??
+      fetchPullRequestReviewComments
+    )({
+      token,
+      owner: resolved.target.owner,
+      repo: resolved.target.repo,
+      number: resolved.target.number,
+      reviewId: result.review.id,
+    });
+    const deliveryIdentityError = submittedReviewDeliveryIdentityError(
+      result.review.id,
+      submittedDraftComments,
+      deliveredComments,
+    );
+    if (deliveryIdentityError) {
+      return failResult(
+        'github_pr_review_post',
+        'Submitted PR review but could not uniquely verify its durable delivery identity.',
+        {
+          requires: ['deliveryIdentity'],
+          errors: [deliveryIdentityError],
+        },
+      );
+    }
+    recordNeondeckPrDeliveries(
+      [
+        {
+          repoFullName: resolved.target.repoFullName,
+          prNumber: resolved.target.number,
+          itemKind: 'review' as const,
+          itemId: result.review.id,
+          itemFingerprint: requestedChangesReviewDeliveryFingerprint(
+            result.review,
+          ),
+        },
+        ...deliveredComments.map((comment) => ({
+          repoFullName: resolved.target.repoFullName,
+          prNumber: resolved.target.number,
+          itemKind: 'review-comment' as const,
+          itemId: comment.databaseId ?? comment.id,
+          itemFingerprint: reviewThreadCommentDeliveryFingerprint(comment),
+        })),
+      ],
+      paths,
+    );
     return okResult(
       'github_pr_review_post',
       true,
@@ -939,6 +1002,65 @@ export async function postGitHubPrReview(
       errors: [errorMessage(error)],
     });
   }
+}
+
+function submittedReviewDeliveryIdentityError(
+  reviewId: number,
+  expected: GitHubPrReviewDraft['comments'],
+  delivered: GitHubPullRequestReviewThreadComment[],
+) {
+  if (
+    delivered.some(
+      (comment) => comment.databaseId === null || comment.reviewId !== reviewId,
+    )
+  ) {
+    return `GitHub returned a comment without an exact database id for submitted review ${reviewId}.`;
+  }
+  const deliveredIds = delivered.map((comment) => comment.databaseId!);
+  if (new Set(deliveredIds).size !== deliveredIds.length) {
+    return `GitHub returned duplicate comment ids for submitted review ${reviewId}.`;
+  }
+  const expectedSignatures = expected
+    .map(submittedDraftCommentSignature)
+    .sort();
+  const deliveredSignatures = delivered
+    .map(submittedReviewCommentSignature)
+    .sort();
+  if (
+    expectedSignatures.length !== deliveredSignatures.length ||
+    expectedSignatures.some(
+      (signature, index) => signature !== deliveredSignatures[index],
+    )
+  ) {
+    return `GitHub comments for submitted review ${reviewId} do not exactly match the submitted draft comments.`;
+  }
+  return null;
+}
+
+function submittedDraftCommentSignature(
+  comment: GitHubPrReviewDraft['comments'][number],
+) {
+  return JSON.stringify([
+    comment.path,
+    comment.side,
+    comment.line,
+    comment.startLine,
+    comment.startSide,
+    comment.body,
+  ]);
+}
+
+function submittedReviewCommentSignature(
+  comment: GitHubPullRequestReviewThreadComment,
+) {
+  return JSON.stringify([
+    comment.path,
+    comment.side,
+    comment.line,
+    comment.startLine,
+    comment.startSide,
+    comment.body,
+  ]);
 }
 
 function draftMatchesTarget(
@@ -1066,6 +1188,15 @@ export async function postGitHubPrThreadReply(
   });
   if (!verified.ok) return verified.result;
 
+  const replyBody = `${parsed.output.text}\n\n${neondeckSelfAuthoredMarker}`;
+  if (replyBody.length > githubCommentLengthLimit) {
+    return failResult(
+      action,
+      'Review thread reply plus its Neondeck marker exceeds GitHub’s comment length limit.',
+      { requires: ['shorterComment'] },
+    );
+  }
+
   try {
     const replier =
       dependencies.replyToPullRequestReviewThread ??
@@ -1075,7 +1206,7 @@ export async function postGitHubPrThreadReply(
       thread = await replier({
         token,
         threadId,
-        body: parsed.output.text,
+        body: replyBody,
       });
     } finally {
       invalidatePullRequestReviewSurfaceThreadCache({
@@ -1084,6 +1215,37 @@ export async function postGitHubPrThreadReply(
         number: resolved.target.number,
       });
     }
+    const previousCommentIds = new Set(
+      verified.thread.comments.map((comment) =>
+        String(comment.databaseId ?? comment.id),
+      ),
+    );
+    const deliveredComments = thread.comments.filter(
+      (comment) =>
+        !previousCommentIds.has(String(comment.databaseId ?? comment.id)) &&
+        comment.body === replyBody,
+    );
+    if (deliveredComments.length !== 1) {
+      return failResult(
+        action,
+        'Posted review thread reply but could not uniquely verify its durable delivery identity.',
+        { requires: ['deliveryIdentity'] },
+      );
+    }
+    const deliveredComment = deliveredComments[0]!;
+    recordNeondeckPrDelivery(
+      {
+        repoFullName: resolved.target.repoFullName,
+        prNumber: resolved.target.number,
+        itemKind: 'review-comment',
+        itemId: deliveredComment.databaseId ?? deliveredComment.id,
+        itemFingerprint: reviewThreadCommentDeliveryFingerprint(
+          deliveredComment,
+          thread,
+        ),
+      },
+      paths,
+    );
     return okResult(action, true, 'Posted review thread reply.', {
       thread: thread as unknown as JsonValue,
     });
@@ -1361,6 +1523,23 @@ export async function postGitHubPrComment(
         comment.body.includes(idempotencyMarker),
       );
       if (existing) {
+        recordNeondeckPrDelivery(
+          {
+            repoFullName: resolved.target.repoFullName,
+            prNumber: resolved.target.number,
+            itemKind: 'conversation-comment',
+            itemId: existing.id,
+            itemFingerprint: conversationCommentFingerprint(existing),
+          },
+          paths,
+        );
+        persistAddressedFeedback(
+          resolved.target,
+          parsed.output,
+          eventState,
+          existing.id,
+          paths,
+        );
         return okResult(
           'pr_comment',
           false,
@@ -1384,10 +1563,8 @@ export async function postGitHubPrComment(
 
     const poster =
       dependencies.postPullRequestComment ?? postPullRequestComment;
-    const body = idempotencyMarker
-      ? `${parsed.output.body}\n\n${idempotencyMarker}`
-      : parsed.output.body;
-    if (body.length > 65_536) {
+    const body = `${parsed.output.body}\n\n${idempotencyMarker ?? neondeckSelfAuthoredMarker}`;
+    if (body.length > githubCommentLengthLimit) {
       return failResult(
         'pr_comment',
         'PR comment plus its idempotency marker exceeds GitHub’s comment length limit.',
@@ -1401,6 +1578,23 @@ export async function postGitHubPrComment(
       number: resolved.target.number,
       body,
     });
+    recordNeondeckPrDelivery(
+      {
+        repoFullName: resolved.target.repoFullName,
+        prNumber: resolved.target.number,
+        itemKind: 'conversation-comment',
+        itemId: comment.id,
+        itemFingerprint: conversationCommentFingerprint(comment),
+      },
+      paths,
+    );
+    persistAddressedFeedback(
+      resolved.target,
+      parsed.output,
+      eventState,
+      comment.id,
+      paths,
+    );
 
     return okResult(
       'pr_comment',
@@ -1426,11 +1620,162 @@ export async function postGitHubPrComment(
   }
 }
 
+const neondeckSelfAuthoredMarker = '<!-- neondeck:generated -->';
+const githubCommentLengthLimit = 65_536;
+
+function persistAddressedFeedback(
+  target: PullRequestTarget,
+  input: {
+    addressedReviewThreadIds?: string[];
+    addressedReviewCommentIds?: string[];
+  },
+  eventState: GitHubPullRequestEventState,
+  deliveryCommentId: string | number,
+  paths: RuntimePaths,
+) {
+  const reviewThreadIds = input.addressedReviewThreadIds ?? [];
+  const reviewCommentIds = input.addressedReviewCommentIds ?? [];
+  if (reviewThreadIds.length === 0 && reviewCommentIds.length === 0) return;
+  const fingerprints = addressedFeedbackFingerprints(eventState);
+  const commentsAddressedByThread = reviewThreadIds.flatMap(
+    (threadId) => fingerprints.reviewCommentsByThread.get(threadId) ?? [],
+  );
+  recordAddressedPrFeedback(
+    {
+      repoFullName: target.repoFullName,
+      prNumber: target.number,
+      reviewThreadFingerprints: Object.fromEntries(
+        reviewThreadIds.flatMap((id) => {
+          const fingerprint = fingerprints.reviewThreads.get(id);
+          return fingerprint ? [[id, fingerprint]] : [];
+        }),
+      ),
+      reviewCommentFingerprints: Object.fromEntries(
+        [
+          ...new Set([...reviewCommentIds, ...commentsAddressedByThread]),
+        ].flatMap((id) => {
+          const fingerprint = fingerprints.reviewComments.get(id);
+          return fingerprint ? [[id, fingerprint]] : [];
+        }),
+      ),
+      deliveryCommentId,
+    },
+    paths,
+  );
+}
+
+function addressedFeedbackFingerprints(state: GitHubPullRequestEventState) {
+  const reviewThreads = new Map<string, string>();
+  const reviewComments = new Map<string, string>();
+  const reviewCommentsByThread = new Map<string, string[]>();
+  const watermark = watermarksFromEventState('addressed-feedback', state).find(
+    (item) => item.category === 'review_threads',
+  )?.value;
+  const payload =
+    watermark && typeof watermark === 'object' && !Array.isArray(watermark)
+      ? (watermark as Record<string, unknown>)
+      : {};
+  const threads = Array.isArray(payload.threads) ? payload.threads : [];
+  for (const value of threads) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const thread = value as Record<string, unknown>;
+    const threadId = typeof thread.id === 'string' ? thread.id : null;
+    const comments = Array.isArray(thread.comments) ? thread.comments : [];
+    const commentIds: string[] = [];
+    let latestFingerprint: string | null = null;
+    let latestUpdatedAt = '';
+    for (const commentValue of comments) {
+      if (
+        !commentValue ||
+        typeof commentValue !== 'object' ||
+        Array.isArray(commentValue)
+      ) {
+        continue;
+      }
+      const comment = commentValue as Record<string, unknown>;
+      const id =
+        typeof comment.id === 'string' || typeof comment.id === 'number'
+          ? String(comment.id)
+          : null;
+      const fingerprint =
+        typeof comment.fingerprint === 'string' ? comment.fingerprint : null;
+      if (id && fingerprint) {
+        reviewComments.set(id, fingerprint);
+        commentIds.push(id);
+      }
+      const updatedAt =
+        typeof comment.updatedAt === 'string' ? comment.updatedAt : '';
+      if (fingerprint && updatedAt >= latestUpdatedAt) {
+        latestFingerprint = fingerprint;
+        latestUpdatedAt = updatedAt;
+      }
+    }
+    if (threadId && latestFingerprint) {
+      reviewThreads.set(threadId, latestFingerprint);
+      reviewCommentsByThread.set(threadId, commentIds);
+    }
+  }
+  return { reviewThreads, reviewComments, reviewCommentsByThread };
+}
+
 export async function refreshPrWatchEventState(
   input: v.InferInput<typeof prEventTargetInputSchema>,
   paths: RuntimePaths = runtimePaths(),
   dependencies: PrEventStateDependencies = {},
 ): Promise<PrEventActionResult> {
+  await ensureRuntimeHome(paths);
+  const parsed = v.safeParse(prEventTargetInputSchema, input);
+  if (!parsed.success) {
+    return failResult(
+      'pr_watch_event_state_refresh',
+      'Invalid PR event refresh target.',
+      { errors: [v.summarize(parsed.issues)] },
+    );
+  }
+  const localTarget = await resolvePullRequestTarget(
+    parsed.output,
+    paths,
+    'pr_watch_event_state_refresh',
+  );
+  if (!localTarget.ok) return localTarget.result;
+  if (!localTarget.target.watch) {
+    return failResult(
+      'pr_watch_event_state_refresh',
+      'Refreshing event watermarks requires a configured PR watch.',
+      { requires: ['watchId'] },
+    );
+  }
+  const localWatch = localTarget.target.watch;
+  let pending: ReturnType<typeof readPendingPrWatchEventIntake>;
+  try {
+    pending = readPendingPrWatchEventIntake(paths, localWatch.id);
+  } catch (error) {
+    return invalidPersistedIntakeResult(localWatch.id, error);
+  }
+  if (pending && pending.eventGenerationId !== localWatch.eventGenerationId) {
+    return invalidPersistedIntakeResult(
+      localWatch.id,
+      new Error(
+        `Pending intake generation ${pending.eventGenerationId} does not match current watch generation ${localWatch.eventGenerationId}.`,
+      ),
+    );
+  }
+  if (pending) {
+    return okResult(
+      'pr_watch_event_state_refresh',
+      true,
+      `Resuming pending PR event intake ${pending.eventId}.`,
+      {
+        watchId: localWatch.id,
+        target: eventTargetJson(localTarget.target),
+        intakeId: pending.eventId,
+        changedCategories: pending.changedCategories,
+        previousWatermarks: pending.previousWatermarks as unknown as JsonValue,
+        watermarks: pending.candidateWatermarks as unknown as JsonValue,
+        pending: true,
+      },
+    );
+  }
   const resolved = await fetchEventState(
     'pr_watch_event_state_refresh',
     input,
@@ -1445,60 +1790,126 @@ export async function refreshPrWatchEventState(
       { requires: ['watchId'] },
     );
   }
+  const watch = resolved.target.watch;
 
-  const previous = readWatermarks(paths, resolved.target.watch.id);
-  const next = watermarksFromEventState(
-    resolved.target.watch.id,
-    resolved.state,
-  );
-  const changedCategories = next
-    .filter((item) => {
-      const existing = previous.find(
-        (record) => record.category === item.category,
-      );
-      return (
-        stableJson(comparableWatermark(item.category, existing?.watermark)) !==
-        stableJson(comparableWatermark(item.category, item.value))
-      );
-    })
-    .map((item) => item.category);
+  const truncation = pullRequestEventStateTruncation(resolved.state);
+  if (truncation.any) {
+    return failResult(
+      'pr_watch_event_state_refresh',
+      'PR event facts are incomplete; preserving the last acknowledged watermark baseline and retrying later.',
+      {
+        requires: ['completePrEventFacts'],
+        errors: [
+          `Incomplete PR event fact categories: ${truncation.categories.join(', ')}.`,
+        ],
+      },
+    );
+  }
 
-  upsertWatermarks(paths, resolved.target.watch.id, next);
+  const next = watermarksFromEventState(watch.id, resolved.state);
+  const incompleteWatermarks = prEventWatermarkTruncationCategories(next);
+  if (incompleteWatermarks.length > 0) {
+    return failResult(
+      'pr_watch_event_state_refresh',
+      'PR event facts are incomplete; preserving the last acknowledged watermark baseline and retrying later.',
+      {
+        requires: ['completePrEventFacts'],
+        errors: [
+          `Incomplete PR event watermark categories: ${incompleteWatermarks.join(', ')}.`,
+        ],
+      },
+    );
+  }
+
+  if (watch.eventWatermarkVersion < currentPrWatchEventWatermarkVersion) {
+    const installed = installPrWatchEventBaseline(paths, {
+      watchId: watch.id,
+      expectedEventGenerationId: localWatch.eventGenerationId,
+      nextEventGenerationId: randomUUID(),
+      watermarks: next,
+      markInitialProcessed: true,
+    });
+    if (!installed.installed) {
+      return stalePrWatchGenerationResult(watch.id);
+    }
+    return okResult(
+      'pr_watch_event_state_refresh',
+      false,
+      `Upgraded the PR event watermark baseline for ${watch.id} without replaying historical feedback.`,
+      {
+        watchId: watch.id,
+        target: eventTargetJson(resolved.target),
+        changedCategories: [],
+        watermarks: readWatermarks(paths, watch.id) as unknown as JsonValue,
+        seededUpgrade: true,
+        watermarkVersion: currentPrWatchEventWatermarkVersion,
+      },
+    );
+  }
+
+  const staged = stagePrWatchEventIntake(paths, {
+    watchId: watch.id,
+    expectedEventGenerationId: localWatch.eventGenerationId,
+    repoFullName: watch.repoFullName,
+    prNumber: watch.prNumber,
+    initialEvent: !watch.initialEventProcessedAt && watch.processExisting,
+    next,
+  });
+  if (staged.kind === 'stale') {
+    return stalePrWatchGenerationResult(watch.id);
+  }
+  if (staged.kind === 'pending') {
+    await dependencies.afterPrWatchEventIntakeStaged?.({
+      watchId: watch.id,
+      eventId: staged.intake.eventId,
+    });
+  }
+
+  const changedCategories =
+    staged.kind === 'pending' ? staged.intake.changedCategories : [];
+  const watermarks =
+    staged.kind === 'pending'
+      ? staged.intake.candidateWatermarks
+      : staged.watermarks;
 
   return okResult(
     'pr_watch_event_state_refresh',
     changedCategories.length > 0,
     changedCategories.length > 0
-      ? `Updated ${changedCategories.length} PR event watermark(s) for ${resolved.target.watch.id}.`
-      : `No PR event watermark changes for ${resolved.target.watch.id}.`,
+      ? `Staged ${changedCategories.length} PR event watermark change(s) for durable processing on ${watch.id}.`
+      : `No PR event watermark changes for ${watch.id}.`,
     {
-      watchId: resolved.target.watch.id,
+      watchId: watch.id,
       target: eventTargetJson(resolved.target),
+      intakeId: staged.kind === 'pending' ? staged.intake.eventId : null,
       changedCategories,
-      watermarks: readWatermarks(
-        paths,
-        resolved.target.watch.id,
-      ) as unknown as JsonValue,
+      previousWatermarks:
+        staged.kind === 'pending'
+          ? (staged.intake.previousWatermarks as unknown as JsonValue)
+          : (watermarks as unknown as JsonValue),
+      watermarks: watermarks as unknown as JsonValue,
+      pending: staged.kind === 'pending',
     },
   );
 }
 
-function comparableWatermark(category: string, value: unknown) {
-  if (category !== 'mergeability') return value ?? null;
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return value ?? null;
-  }
-  const record = value as Record<string, unknown>;
-  return {
-    state: record.state,
-    draft: typeof record.draft === 'boolean' ? record.draft : false,
-    merged: record.merged,
-    mergeable: record.mergeable,
-    mergeableState: record.mergeableState,
-    mergeCommitSha: record.mergeCommitSha,
-    headSha: record.headSha,
-    baseSha: record.baseSha,
-  };
+function stalePrWatchGenerationResult(watchId: string) {
+  return failResult(
+    'pr_watch_event_state_refresh',
+    `PR watch "${watchId}" changed while GitHub event facts were being fetched; preserving current state and retrying on the next poll.`,
+    { requires: ['currentWatchGeneration'] },
+  );
+}
+
+function invalidPersistedIntakeResult(watchId: string, error: unknown) {
+  return failResult(
+    'pr_watch_event_state_refresh',
+    `Stored PR event intake for ${watchId} is invalid and requires operator repair before polling can continue.`,
+    {
+      requires: ['repairPrWatchEventIntake'],
+      errors: [errorMessage(error)],
+    },
+  );
 }
 
 export async function listPrWatchEventWatermarks(

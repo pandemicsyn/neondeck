@@ -19,6 +19,7 @@ import type {
   GitHubReviewThreadCommentGraphqlNode,
   GitHubReviewThreadGraphqlNode,
 } from './schemas';
+import type { PullRequestEventFetchBudget } from './event-budget';
 
 const reviewSurfaceCacheTtlMs = 15_000;
 const reviewSurfaceCacheMaxEntries = 16;
@@ -61,6 +62,9 @@ export async function postPullRequestComment(options: {
     nodeId: data.node_id ?? null,
     url: data.html_url,
     authorLogin: data.user?.login ?? null,
+    authorType: data.user?.type ?? null,
+    authorIsBot:
+      data.user?.type === undefined ? undefined : data.user.type === 'Bot',
     body: data.body,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
@@ -91,6 +95,40 @@ export async function listPullRequestComments(options: {
   );
 }
 
+export async function listPullRequestCommentsWithMetadata(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+  eventBudget?: PullRequestEventFetchBudget;
+}): Promise<{
+  comments: GitHubPullRequestComment[];
+  truncated: boolean;
+}> {
+  const comments: GitHubPullRequestComment[] = [];
+  for (let page = 1; page <= 5; page += 1) {
+    if (!(options.eventBudget?.canFetch('conversation_comments') ?? true)) {
+      return { comments, truncated: true };
+    }
+    const response = await githubFetch(
+      options.token,
+      `https://api.github.com/repos/${encodePathSegment(options.owner)}/${encodePathSegment(options.repo)}/issues/${options.number}/comments?per_page=100&page=${page}`,
+    );
+    const data = v.parse(
+      githubIssueCommentsApiResponseSchema,
+      await response.json(),
+    );
+    for (const item of data.map(pullRequestCommentFromApi)) {
+      if (options.eventBudget?.admit('conversation_comments', item) === false) {
+        return { comments, truncated: true };
+      }
+      comments.push(item);
+    }
+    if (data.length < 100) return { comments, truncated: false };
+  }
+  return { comments, truncated: true };
+}
+
 function pullRequestCommentFromApi(
   data: v.InferOutput<typeof githubIssueCommentApiResponseSchema>,
 ): GitHubPullRequestComment {
@@ -99,6 +137,9 @@ function pullRequestCommentFromApi(
     nodeId: data.node_id ?? null,
     url: data.html_url,
     authorLogin: data.user?.login ?? null,
+    authorType: data.user?.type ?? null,
+    authorIsBot:
+      data.user?.type === undefined ? undefined : data.user.type === 'Bot',
     body: data.body,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
@@ -122,6 +163,7 @@ export async function fetchPullRequestReviewThreadsWithMetadata(options: {
   repo: string;
   number: number;
   signal?: AbortSignal;
+  eventBudget?: PullRequestEventFetchBudget;
 }): Promise<{
   reviewThreads: GitHubPullRequestReviewThread[];
   truncated: boolean;
@@ -221,6 +263,7 @@ async function fetchReviewThreadsWithQuery(
     repo: string;
     number: number;
     signal?: AbortSignal;
+    eventBudget?: PullRequestEventFetchBudget;
   },
   query: string,
 ): Promise<{
@@ -231,7 +274,12 @@ async function fetchReviewThreadsWithQuery(
   let cursor: string | null = null;
   let truncated = false;
 
-  for (let page = 0; page < 5; page += 1) {
+  const pageLimit = options.eventBudget ? 100 : 5;
+  for (let page = 0; page < pageLimit; page += 1) {
+    if (!(options.eventBudget?.canFetch('review_threads') ?? true)) {
+      truncated = true;
+      break;
+    }
     const data = await githubGraphqlFetch(
       options.token,
       query,
@@ -247,13 +295,22 @@ async function fetchReviewThreadsWithQuery(
     const pullRequest = parsed.data.repository?.pullRequest;
     if (!pullRequest) break;
     for (const thread of pullRequest.reviewThreads.nodes ?? []) {
-      threads.push(
-        await normalizeReviewThread(options.token, thread, options.signal),
+      const normalized = await normalizeReviewThread(
+        options.token,
+        thread,
+        options.signal,
+        options.eventBudget,
       );
+      if (!normalized) {
+        truncated = true;
+        break;
+      }
+      threads.push(normalized);
     }
+    if (truncated) break;
 
     if (!pullRequest.reviewThreads.pageInfo.hasNextPage) break;
-    if (page === 4) {
+    if (page === pageLimit - 1) {
       truncated = true;
       console.warn(
         `[neondeck] GitHub review thread fetch reached the page cap for ${options.owner}/${options.repo}#${options.number}; results may be truncated.`,
@@ -267,7 +324,11 @@ async function fetchReviewThreadsWithQuery(
     }
   }
 
-  return { reviewThreads: threads, truncated };
+  return {
+    reviewThreads: threads,
+    truncated:
+      truncated || threads.some((thread) => thread.commentsTruncated === true),
+  };
 }
 
 export async function fetchPullRequestReviewThread(options: {
@@ -288,15 +349,42 @@ export async function fetchPullRequestReviewThread(options: {
       `GitHub review thread "${options.threadId}" was not found.`,
     );
   }
-  return normalizeReviewThread(options.token, thread, options.signal);
+  const normalized = await normalizeReviewThread(
+    options.token,
+    thread,
+    options.signal,
+  );
+  if (!normalized) {
+    throw new Error(
+      `GitHub review thread "${options.threadId}" exceeded its fetch budget.`,
+    );
+  }
+  return normalized;
 }
 
 async function normalizeReviewThread(
   token: string,
   thread: GitHubReviewThreadGraphqlNode,
   signal?: AbortSignal,
-): Promise<GitHubPullRequestReviewThread> {
-  const comments = await fetchAllReviewThreadComments(token, thread, signal);
+  eventBudget?: PullRequestEventFetchBudget,
+): Promise<GitHubPullRequestReviewThread | undefined> {
+  if (
+    eventBudget?.admit('review_threads', {
+      id: thread.id,
+      path: thread.path,
+      line: thread.line,
+      isResolved: thread.isResolved,
+      isOutdated: thread.isOutdated,
+    }) === false
+  ) {
+    return undefined;
+  }
+  const comments = await fetchAllReviewThreadComments(
+    token,
+    thread,
+    signal,
+    eventBudget,
+  );
   return {
     id: thread.id,
     isResolved: thread.isResolved,
@@ -318,14 +406,27 @@ async function fetchAllReviewThreadComments(
   token: string,
   thread: GitHubReviewThreadGraphqlNode,
   signal?: AbortSignal,
+  eventBudget?: PullRequestEventFetchBudget,
 ) {
-  const comments = [...(thread.comments.nodes ?? [])];
+  const comments: GitHubReviewThreadCommentGraphqlNode[] = [];
+  let truncated = false;
+  for (const comment of thread.comments.nodes ?? []) {
+    if (eventBudget?.admit('review_threads', comment) === false) {
+      truncated = true;
+      break;
+    }
+    comments.push(comment);
+  }
   let cursor = thread.comments.pageInfo.endCursor;
   let hasNextPage = thread.comments.pageInfo.hasNextPage;
-  let truncated = false;
 
-  for (let page = 0; hasNextPage && page < 10;) {
+  const pageLimit = eventBudget ? 100 : 10;
+  for (let page = 0; hasNextPage && page < pageLimit && !truncated;) {
     page += 1;
+    if (!(eventBudget?.canFetch('review_threads') ?? true)) {
+      truncated = true;
+      break;
+    }
     if (!cursor) {
       truncated = true;
       break;
@@ -345,7 +446,14 @@ async function fetchAllReviewThreadComments(
     );
     const node = parsed.data.node;
     if (!node?.comments) break;
-    comments.push(...(node.comments.nodes ?? []));
+    for (const comment of node.comments.nodes ?? []) {
+      if (eventBudget?.admit('review_threads', comment) === false) {
+        truncated = true;
+        break;
+      }
+      comments.push(comment);
+    }
+    if (truncated) break;
     hasNextPage = node.comments.pageInfo.hasNextPage;
     if (!hasNextPage) break;
     cursor = node.comments.pageInfo.endCursor;
@@ -363,6 +471,11 @@ function normalizeReviewThreadComment(
     id: comment.id,
     databaseId: comment.databaseId ?? null,
     authorLogin: comment.author?.login ?? null,
+    authorType: comment.author?.__typename ?? null,
+    authorIsBot:
+      comment.author?.__typename === undefined
+        ? undefined
+        : comment.author.__typename === 'Bot',
     body: comment.body,
     url: comment.url ?? null,
     path: comment.path ?? thread.path ?? null,

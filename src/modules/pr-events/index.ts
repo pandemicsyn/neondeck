@@ -44,3 +44,28 @@ export {
   listPrWatchEventWatermarks,
 } from './service';
 export { resolvePullRequestTarget } from './target';
+export {
+  categoryWatermark,
+  conversationCommentFingerprint,
+  requestedChangesReviewDeliveryFingerprint,
+  reviewThreadCommentDeliveryFingerprint,
+  reviewThreadCommentFingerprint,
+  watermarksFromEventState,
+} from './watermarks';
+export {
+  acknowledgePrWatchEventIntake,
+  currentPrWatchEventWatermarkVersion,
+  installPrWatchEventBaseline,
+  prWatchEventSourceId,
+  readPendingPrWatchEventIntake,
+  stagePrWatchEventIntake,
+  type PendingPrWatchEventIntake,
+} from './intakes';
+export {
+  readAddressedPrFeedback,
+  recordAddressedPrFeedback,
+} from './addressed';
+export {
+  readNeondeckPrDeliveries,
+  recordNeondeckPrDelivery,
+} from './deliveries';

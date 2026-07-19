@@ -129,7 +129,9 @@ export function prFactsFromDetail(
     headRef: detail.headRef ?? detail.headSha,
     headOwner: detail.headOwner ?? owner,
     headName: detail.headName ?? name,
+    headRepoFullName: detail.headRepoFullName ?? detail.repo,
     baseRef: detail.baseRef,
+    baseRepoFullName: detail.baseRepoFullName ?? detail.repo,
     updatedAt: detail.updatedAt,
     maintainerCanModify: detail.maintainerCanModify ?? false,
   };
@@ -139,17 +141,25 @@ export function classifySignals(
   current: v.InferOutput<typeof prEventSnapshotSchema> | undefined,
   deltas: Array<v.InferOutput<typeof prEventDeltaSchema>>,
 ) {
+  const mutationEligibleDeltas = deltas.filter(
+    (delta) =>
+      delta.actionable === true &&
+      delta.mutationEligible !== false &&
+      delta.type !== 'conversation-comment',
+  );
   return {
     noChange: deltas.length === 0,
     closed: current?.state === 'closed' || current?.merged === true,
     draft: current?.draft === true,
-    failingChecks:
-      current?.checkStatus === 'failure' ||
-      deltas.some((delta) => delta.type === 'check-failure'),
-    requestedChanges: deltas.some(
+    failingChecks: mutationEligibleDeltas.some(
+      (delta) => delta.type === 'check-failure',
+    ),
+    requestedChanges: mutationEligibleDeltas.some(
       (delta) => delta.type === 'requested-changes',
     ),
-    reviewFeedback: deltas.some((delta) => delta.type === 'review-comment'),
+    reviewFeedback: mutationEligibleDeltas.some(
+      (delta) => delta.type === 'review-comment',
+    ),
     mergeBlocked:
       current?.mergeable === false ||
       current?.outOfDate === true ||
@@ -166,10 +176,16 @@ export function classifySignals(
           delta.type === 'review-thread-resolved' ||
           delta.type === 'metadata',
       ),
+    incomplete: deltas.some((delta) => delta.type === 'incomplete-feedback'),
+    conversationCandidate: deltas.some(
+      (delta) =>
+        delta.type === 'conversation-comment' &&
+        delta.candidateReasoning === true,
+    ),
     explanatory: deltas.some(
       (delta) => delta.requiresExplanation || delta.type === 'new-commit',
     ),
-    actionable: deltas.some((delta) => delta.actionable === true),
+    actionable: mutationEligibleDeltas.length > 0,
   };
 }
 
@@ -181,6 +197,7 @@ export function classificationFor(
   if (signals.closed || signals.recoveryOnly || signals.draft) {
     return 'notify-only';
   }
+  if (signals.incomplete) return 'explain-only';
   if (signals.mergeBlocked) return 'explain-only';
   if (
     signals.failingChecks ||
@@ -190,6 +207,7 @@ export function classificationFor(
   ) {
     return mode;
   }
+  if (signals.conversationCandidate) return 'explain-only';
   if (signals.explanatory) return 'explain-only';
   return 'notify-only';
 }
@@ -208,6 +226,16 @@ export function reasonsFor(
   if (signals.draft) reasons.push('Draft PRs are not prepared for autofix.');
   if (signals.recoveryOnly) {
     reasons.push('Only recovery or metadata deltas were present.');
+  }
+  if (signals.incomplete) {
+    reasons.push(
+      'Required feedback facts are incomplete, so autonomous preparation is blocked.',
+    );
+  }
+  if (signals.conversationCandidate) {
+    reasons.push(
+      'Conversation feedback is retained for owner reasoning but is not deterministically mutation-eligible.',
+    );
   }
   if (signals.mergeBlocked) {
     reasons.push('Merge conflict or out-of-date branch needs explanation.');

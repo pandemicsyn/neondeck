@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
+import { pathToFileURL } from 'node:url';
 import {
   afterAll,
   afterEach,
@@ -19,6 +20,9 @@ import {
   checkAutopilotConcurrency,
   checkAutopilotPolicy,
   approvePreparedDiffPushWithPolicy,
+  claimAutopilotTriageAdmission,
+  defaultAutopilotConcurrency,
+  listAutopilotPrOwners,
 } from './modules/autopilot';
 import {
   fixPrCiFailure,
@@ -34,7 +38,13 @@ import {
   ensurePreparedDiffForWorktree,
   readPreparedDiff,
 } from './modules/prepared-diffs';
-import { lockWorktree, releaseWorktreeLock } from './modules/worktrees';
+import {
+  fetchExactPullRequestHead,
+  listWorktrees,
+  lockWorktree,
+  readWorktreeStatus,
+  releaseWorktreeLock,
+} from './modules/worktrees';
 import { approvePreparedDiffPushWithDispatch } from './server/autopilot-push-dispatch';
 import { runWithFlueExecutionContextForTests } from './modules/flue/execution-context';
 import {
@@ -126,6 +136,125 @@ describe('PR event autopilot', () => {
     });
   });
 
+  it('gives incomplete feedback event-wide precedence over actionable signals', async () => {
+    const result = await triagePrEvent({
+      repoId: 'sample',
+      prNumber: 8,
+      source: 'fixture',
+      autopilotMode: 'autofix-with-approval',
+      current: {
+        state: 'open',
+        draft: false,
+        checkStatus: 'failure',
+      },
+      deltas: [
+        {
+          type: 'requested-changes',
+          id: 'complete-review',
+          actionable: true,
+          summary: 'A complete requested-changes review.',
+        },
+        {
+          type: 'incomplete-feedback',
+          id: 'truncated-thread',
+          actionable: false,
+          incomplete: true,
+          requiresExplanation: true,
+          summary: 'A different review thread was truncated.',
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        classification: 'explain-only',
+        shouldPrepareWorktree: false,
+      },
+    });
+  });
+
+  it('retains conversation candidates without letting them veto actionable feedback', async () => {
+    const result = await triagePrEvent({
+      repoId: 'sample',
+      prNumber: 8,
+      source: 'fixture',
+      autopilotMode: 'autofix-with-approval',
+      current: {
+        state: 'open',
+        draft: false,
+        checkStatus: 'failure',
+      },
+      deltas: [
+        {
+          type: 'conversation-comment',
+          id: 'conversation-1',
+          actionable: false,
+          candidateReasoning: true,
+          mutationEligible: false,
+          requiresExplanation: true,
+          summary: 'Conversation context for the continuing owner.',
+        },
+        {
+          type: 'requested-changes',
+          id: 'review-1',
+          actionable: true,
+          summary: 'Independent requested changes require preparation.',
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        classification: 'autofix-with-approval',
+        shouldPrepareWorktree: true,
+        nextWorkflow: 'prepare_pr_worktree',
+        deltas: expect.arrayContaining([
+          expect.objectContaining({ id: 'conversation-1' }),
+          expect.objectContaining({ id: 'review-1' }),
+        ]),
+      },
+    });
+  });
+
+  it('never lets conversation-only input authorize mutation at the action boundary', async () => {
+    const result = await triagePrEvent({
+      repoId: 'sample',
+      prNumber: 8,
+      source: 'fixture',
+      autopilotMode: 'autofix-push-when-safe',
+      current: {
+        state: 'open',
+        draft: false,
+        checkStatus: 'failure',
+      },
+      deltas: [
+        {
+          type: 'conversation-comment',
+          id: 'conversation-only',
+          actionable: true,
+          candidateReasoning: true,
+          mutationEligible: false,
+          requiresExplanation: true,
+          summary: 'Schema-valid but non-mutation-eligible conversation input.',
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        classification: 'explain-only',
+        shouldPrepareWorktree: false,
+        nextWorkflow: null,
+      },
+    });
+  });
+
   it('prepares a managed PR worktree from deterministic PR facts', async () => {
     const { paths, featureSha } = await fixture();
     const result = await preparePrWorktree(
@@ -192,6 +321,256 @@ describe('PR event autopilot', () => {
         eventId: 'watch-event-1',
         runLinkage: { owningWorkflowRunIdAttached: false },
       },
+    });
+  });
+
+  it('reuses one owner worktree and verifies each new exact PR head before binding', async () => {
+    const { paths, repo, featureSha } = await fixture({ remote: true });
+    const details = (headSha: string) => ({
+      token: 'test-token',
+      async fetchPullRequestDetail() {
+        return {
+          number: 7,
+          title: 'Update feature',
+          repo: 'example/sample',
+          url: 'https://github.com/example/sample/pull/7',
+          state: 'open',
+          draft: false,
+          merged: false,
+          mergeCommitSha: null,
+          headSha,
+          headRef: 'feature',
+          headOwner: 'example',
+          headName: 'sample',
+          headRepoFullName: 'example/sample',
+          baseRepoFullName: 'example/sample',
+          baseRef: 'main',
+          updatedAt: '2026-07-19T00:00:00.000Z',
+          maintainerCanModify: true,
+        };
+      },
+      async fetchCheckSummary() {
+        return {
+          status: 'success' as const,
+          total: 1,
+          successful: 1,
+          failed: 0,
+          pending: 0,
+          checkedAt: '2026-07-19T00:00:00.000Z',
+        };
+      },
+    });
+
+    // Represents a crash-era orphan: a PR worktree exists before the durable
+    // owner binding. A retry must reuse and synchronize it, not create another.
+    const orphaned = await preparePrWorktree(
+      { repoId: 'sample', prNumber: 7, lock: false },
+      paths,
+      details(featureSha),
+    );
+    const worktreeId = stringPath(orphaned, ['data', 'worktree', 'id']);
+    const admission = await claimAutopilotTriageAdmission(
+      {
+        watchId: 'example/sample#7',
+        eventFingerprint: 'existing-feedback-fingerprint',
+        repoId: 'sample',
+        prNumber: 7,
+        mode: 'prepare-only',
+        input: { synthetic: 'initial-actionable-state' },
+        limits: defaultAutopilotConcurrency,
+      },
+      paths,
+    );
+    expect(admission.claimed).toBe(true);
+    const duplicate = await claimAutopilotTriageAdmission(
+      {
+        watchId: 'example/sample#7',
+        eventFingerprint: 'existing-feedback-fingerprint',
+        repoId: 'sample',
+        prNumber: 7,
+        mode: 'prepare-only',
+        input: { synthetic: 'initial-actionable-state' },
+        limits: defaultAutopilotConcurrency,
+      },
+      paths,
+    );
+    expect(duplicate).toMatchObject({ claimed: false, reason: 'duplicate' });
+    const ownerId = admission.admission.ownerId;
+
+    await git(repo, ['checkout', 'feature']);
+    await writeFile(join(repo, 'src/retry.ts'), 'export const retry = 1;\n');
+    await git(repo, ['add', '-A']);
+    await git(repo, ['commit', '-m', 'new head after owner-bind crash']);
+    const retryHead = (await gitOutput(repo, ['rev-parse', 'HEAD'])).trim();
+    await git(repo, ['push', '--force', 'origin', 'feature:refs/pull/7/head']);
+
+    const rebound = await preparePrWorktree(
+      {
+        repoId: 'sample',
+        prNumber: 7,
+        ownerId,
+        eventId: 'event-2',
+        lock: false,
+      },
+      paths,
+      details(retryHead),
+    );
+    expect(rebound).toMatchObject({ ok: true });
+    expect(stringPath(rebound, ['data', 'worktree', 'id'])).toBe(worktreeId);
+
+    await writeFile(join(repo, 'src/retry.ts'), 'export const retry = 2;\n');
+    await git(repo, ['commit', '-am', 'next sequential PR event']);
+    const latestHead = (await gitOutput(repo, ['rev-parse', 'HEAD'])).trim();
+    await git(repo, ['push', '--force', 'origin', 'feature:refs/pull/7/head']);
+    const sequential = await preparePrWorktree(
+      {
+        repoId: 'sample',
+        prNumber: 7,
+        ownerId,
+        eventId: 'event-3',
+        lock: false,
+      },
+      paths,
+      details(latestHead),
+    );
+
+    expect(stringPath(sequential, ['data', 'worktree', 'id'])).toBe(worktreeId);
+    expect(await listWorktrees(paths)).toMatchObject({
+      worktrees: [expect.objectContaining({ id: worktreeId })],
+    });
+    expect(await listAutopilotPrOwners(paths)).toEqual([
+      expect.objectContaining({
+        id: ownerId,
+        worktreeId,
+        currentHeadSha: latestHead,
+      }),
+    ]);
+    expect(await readWorktreeStatus({ worktreeId }, paths)).toMatchObject({
+      git: { headSha: latestHead, dirty: false },
+    });
+  });
+
+  it('leaves no worktree record when exact PR head fetch fails', async () => {
+    const { paths, featureSha } = await fixture();
+    const result = await preparePrWorktree(
+      { repoId: 'sample', prNumber: 7, lock: false },
+      paths,
+      {
+        token: 'test-token',
+        async fetchPullRequestDetail() {
+          return {
+            number: 7,
+            title: 'Private fork',
+            repo: 'example/sample',
+            url: 'https://github.com/example/sample/pull/7',
+            state: 'open',
+            draft: false,
+            merged: false,
+            mergeCommitSha: null,
+            headSha: featureSha,
+            headRef: 'private-feature',
+            headOwner: 'private-contributor',
+            headName: 'sample',
+            headRepoFullName: 'private-contributor/sample',
+            baseRepoFullName: 'example/sample',
+            baseRef: 'main',
+            updatedAt: '2026-07-19T00:00:00.000Z',
+            maintainerCanModify: false,
+          };
+        },
+        async fetchCheckSummary() {
+          return {
+            status: 'success',
+            total: 0,
+            successful: 0,
+            failed: 0,
+            pending: 0,
+            checkedAt: '2026-07-19T00:00:00.000Z',
+          };
+        },
+        async fetchExactPullRequestHead() {
+          throw new Error('private fork is inaccessible');
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      requires: ['exactPrHead'],
+      errors: [expect.stringContaining('private fork is inaccessible')],
+    });
+    expect(await listWorktrees(paths)).toMatchObject({
+      worktrees: [],
+    });
+  });
+
+  it('fetches an exact fork head through an explicit host-aware resolver', async () => {
+    const { repo, featureSha } = await fixture();
+    const forkRemote = await mkdtemp(
+      join(tmpdir(), 'neondeck-autopilot-fork-remote-'),
+    );
+    tempRoots.push(forkRemote);
+    await git(forkRemote, ['init', '--bare']);
+    await git(repo, [
+      'push',
+      forkRemote,
+      'feature:refs/heads/contributor-feature',
+    ]);
+
+    const credential = 'private-token-that-must-not-persist';
+    for (const protocol of ['https', 'ftp']) {
+      let rejected: unknown;
+      try {
+        await fetchExactPullRequestHead(
+          {
+            sourceRepoPath: repo,
+            baseRepoFullName: 'example/sample',
+            headRepoFullName: 'contributor/sample',
+            prNumber: 7,
+            headRef: 'contributor-feature',
+            headSha: featureSha,
+          },
+          {
+            resolveForkRemote: () =>
+              `${protocol}://automation:${credential}@git.example.test/contributor/sample.git`,
+          },
+        );
+      } catch (error) {
+        rejected = error;
+      }
+      expect(rejected).toBeInstanceOf(Error);
+      expect((rejected as Error).message).toContain(
+        'must not embed credentials',
+      );
+      expect((rejected as Error).message).not.toContain(credential);
+    }
+    const fetchHeadBeforeSafeFetch = await readFile(
+      join(repo, '.git', 'FETCH_HEAD'),
+      'utf8',
+    ).catch(() => '');
+    const gitConfigBeforeSafeFetch = await readFile(
+      join(repo, '.git', 'config'),
+      'utf8',
+    );
+    expect(fetchHeadBeforeSafeFetch).not.toContain(credential);
+    expect(gitConfigBeforeSafeFetch).not.toContain(credential);
+
+    await expect(
+      fetchExactPullRequestHead(
+        {
+          sourceRepoPath: repo,
+          baseRepoFullName: 'example/sample',
+          headRepoFullName: 'contributor/sample',
+          prNumber: 7,
+          headRef: 'contributor-feature',
+          headSha: featureSha,
+        },
+        { resolveForkRemote: () => pathToFileURL(forkRemote).href },
+      ),
+    ).resolves.toMatchObject({
+      fork: true,
+      fetchRef: 'refs/heads/contributor-feature',
+      resolvedSha: featureSha,
     });
   });
 
@@ -2172,10 +2551,11 @@ async function fixture(options: { remote?: boolean } = {}) {
   const home = await mkdtemp(join(tmpdir(), 'neondeck-autopilot-home-'));
   const repoRoot = await mkdtemp(join(tmpdir(), 'neondeck-autopilot-repo-'));
   const repo = join(repoRoot, 'repository');
-  const remote = options.remote
-    ? await mkdtemp(join(tmpdir(), 'neondeck-autopilot-remote-'))
-    : null;
-  tempRoots.push(...[home, repoRoot, remote].filter((path) => path !== null));
+  const exactHeadRemote = await mkdtemp(
+    join(tmpdir(), 'neondeck-autopilot-remote-'),
+  );
+  const remote = options.remote ? exactHeadRemote : null;
+  tempRoots.push(home, repoRoot, exactHeadRemote);
   const paths = runtimePaths(home);
 
   if (!repositorySeed?.featureSha) {
@@ -2183,11 +2563,26 @@ async function fixture(options: { remote?: boolean } = {}) {
   }
   await repositorySeed.copyTo(repo);
   const featureSha = repositorySeed.featureSha;
-  if (remote) {
-    await git(remote, ['init', '--bare']);
-    await git(repo, ['remote', 'add', 'origin', remote]);
-    await git(repo, ['push', 'origin', 'main', 'feature']);
-  }
+  await git(exactHeadRemote, ['init', '--bare']);
+  await git(repo, ['remote', 'add', 'origin', exactHeadRemote]);
+  await git(repo, ['push', 'origin', 'main', 'feature']);
+  await git(repo, ['push', 'origin', 'feature:refs/pull/7/head']);
+  await git(repo, ['push', 'origin', 'feature:refs/pull/8/head']);
+  await git(repo, [
+    'remote',
+    'set-url',
+    '--add',
+    'origin',
+    'git@github.com:example/sample.git',
+  ]);
+  await git(repo, [
+    'remote',
+    'set-url',
+    '--add',
+    '--push',
+    'origin',
+    exactHeadRemote,
+  ]);
 
   await mkdir(paths.home, { recursive: true });
   await writeFile(

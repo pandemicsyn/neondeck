@@ -50,7 +50,7 @@ export async function fetchEventState(
     };
   }
 
-  const token = process.env.GITHUB_TOKEN;
+  const token = dependencies.token ?? process.env.GITHUB_TOKEN;
   if (!token) {
     return {
       ok: false,

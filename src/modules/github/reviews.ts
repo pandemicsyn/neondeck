@@ -14,15 +14,19 @@ import { GitHubApiError, errorMessage } from './errors';
 import { fetchPullRequestDetail } from './pull-requests';
 import {
   githubPullRequestReviewApiItemSchema,
+  githubPullRequestReviewCommentApiItemSchema,
   githubPullRequestReviewCreatedApiResponseSchema,
 } from './schemas';
 import type {
   GitHubPullRequestRequestedChangesState,
   GitHubPullRequestReview,
   GitHubPullRequestReviewApiItem,
+  GitHubPullRequestReviewCommentApiItem,
   GitHubPullRequestReviewThread,
+  GitHubPullRequestReviewThreadComment,
   GitHubSubmittedPullRequestReview,
 } from './schemas';
+import type { PullRequestEventFetchBudget } from './event-budget';
 
 export type GitHubPrReviewVerdict = 'comment' | 'approve' | 'request-changes';
 
@@ -1020,26 +1024,105 @@ export async function fetchPullRequestReviews(options: {
   return (await fetchPullRequestReviewsWithMetadata(options)).reviews;
 }
 
+export async function fetchPullRequestReviewComments(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+  reviewId: number;
+}): Promise<GitHubPullRequestReviewThreadComment[]> {
+  const comments: GitHubPullRequestReviewCommentApiItem[] = [];
+  let nextUrl: string | undefined =
+    `https://api.github.com/repos/${encodePathSegment(options.owner)}/${encodePathSegment(options.repo)}/pulls/${options.number}/reviews/${options.reviewId}/comments?per_page=100`;
+  for (let page = 0; nextUrl && page < 100; page += 1) {
+    const response = await githubFetch(options.token, nextUrl);
+    const data = v.parse(
+      v.array(githubPullRequestReviewCommentApiItemSchema),
+      await response.json(),
+    );
+    comments.push(...data);
+    nextUrl = nextLink(response.headers.get('link'));
+  }
+  if (nextUrl) {
+    throw new Error(
+      `Pull request review ${options.reviewId} has more than 10,000 comments; refusing an incomplete delivery-identity check.`,
+    );
+  }
+  if (
+    comments.some(
+      (comment) => comment.pull_request_review_id !== options.reviewId,
+    )
+  ) {
+    throw new Error(
+      `GitHub returned a comment outside submitted review ${options.reviewId}.`,
+    );
+  }
+  return comments.map(reviewThreadCommentFromApi);
+}
+
+function reviewThreadCommentFromApi(
+  comment: GitHubPullRequestReviewCommentApiItem,
+): GitHubPullRequestReviewThreadComment {
+  return {
+    id: comment.node_id ?? String(comment.id),
+    databaseId: comment.id,
+    authorLogin: comment.user?.login ?? null,
+    authorType: comment.user?.type ?? null,
+    authorIsBot:
+      comment.user?.type === undefined
+        ? undefined
+        : comment.user.type === 'Bot',
+    body: comment.body,
+    url: comment.html_url ?? null,
+    path: comment.path,
+    side: comment.side ?? null,
+    line: comment.line ?? null,
+    startLine: comment.start_line ?? null,
+    startSide: comment.start_side ?? null,
+    originalLine: comment.original_line ?? null,
+    diffHunk: comment.diff_hunk ?? null,
+    reviewId: comment.pull_request_review_id,
+    createdAt: comment.created_at,
+    updatedAt: comment.updated_at,
+  };
+}
+
 export async function fetchPullRequestReviewsWithMetadata(options: {
   token: string;
   owner: string;
   repo: string;
   number: number;
+  eventBudget?: PullRequestEventFetchBudget;
 }): Promise<{ reviews: GitHubPullRequestReview[]; truncated: boolean }> {
   const reviews: GitHubPullRequestReviewApiItem[] = [];
   let nextUrl: string | undefined =
     `https://api.github.com/repos/${encodePathSegment(options.owner)}/${encodePathSegment(options.repo)}/pulls/${options.number}/reviews?per_page=100`;
   let pageCount = 0;
 
-  while (nextUrl && pageCount < 3) {
+  while (
+    nextUrl &&
+    pageCount < 3 &&
+    (options.eventBudget?.canFetch('requested_changes_reviews') ?? true)
+  ) {
     pageCount += 1;
     const response = await githubFetch(options.token, nextUrl);
     const data = v.parse(
       v.array(githubPullRequestReviewApiItemSchema),
       await response.json(),
     );
-    reviews.push(...data);
+    let admittedPage = true;
+    for (const review of data) {
+      if (
+        options.eventBudget?.admit('requested_changes_reviews', review) ===
+        false
+      ) {
+        admittedPage = false;
+        break;
+      }
+      reviews.push(review);
+    }
     nextUrl = nextLink(response.headers.get('link'));
+    if (!admittedPage) break;
   }
 
   return {
@@ -1048,11 +1131,20 @@ export async function fetchPullRequestReviewsWithMetadata(options: {
       nodeId: review.node_id ?? null,
       state: review.state,
       authorLogin: review.user?.login ?? null,
+      authorType: review.user?.type ?? null,
+      authorIsBot:
+        review.user?.type === undefined
+          ? undefined
+          : review.user.type === 'Bot',
       submittedAt: review.submitted_at ?? null,
       commitId: review.commit_id ?? null,
       url: review.html_url ?? null,
+      body: review.body ?? null,
+      bodyTruncated: false,
     })),
-    truncated: Boolean(nextUrl),
+    truncated:
+      Boolean(nextUrl) ||
+      Boolean(options.eventBudget?.exhausted('requested_changes_reviews')),
   };
 }
 
@@ -1318,6 +1410,9 @@ async function createPullRequestReview(options: {
     nodeId: review.node_id ?? null,
     state: review.state,
     authorLogin: review.user?.login ?? null,
+    authorType: review.user?.type ?? null,
+    authorIsBot:
+      review.user?.type === undefined ? undefined : review.user.type === 'Bot',
     submittedAt: review.submitted_at ?? null,
     commitId: review.commit_id ?? null,
     url: review.html_url ?? null,

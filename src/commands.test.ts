@@ -17,11 +17,21 @@ import { updateAgentModels } from './modules/config';
 import { listRepoStatus, runDevDoctor } from './modules/runtime';
 import { runtimePaths } from './runtime-home';
 import { createChatSession, readNeonSessionState } from './modules/sessions';
-import { addPrWatch } from './modules/watches';
+import { addPrWatch as addPrWatchWithoutBaseline } from './modules/watches';
 import {
   createSeededGitRepository,
   type SeededGitRepository,
 } from './testing/git-repository-fixture';
+import { emptyPrWatchInitialEventBaseline } from './testing/pr-watch-event-baseline';
+
+const addPrWatch = (...args: Parameters<typeof addPrWatchWithoutBaseline>) =>
+  addPrWatchWithoutBaseline(
+    args[0],
+    args[1],
+    args[2],
+    args[3],
+    emptyPrWatchInitialEventBaseline,
+  );
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
@@ -990,7 +1000,7 @@ describe('Neon commands', () => {
       action: 'watch_pr_add',
       changed: true,
       outcome: 'created',
-      message: `Watching ${input.ref}.`,
+      message: `Watching ${input.ref}. Current feedback was baselined; only later changes will run.`,
       watch: { id: input.ref },
     });
 
@@ -1004,6 +1014,9 @@ describe('Neon commands', () => {
       ok: true,
       command: 'watch-pr',
       status: 'completed',
+      message: expect.stringContaining(
+        'Current feedback was baselined; only later changes will run.',
+      ),
       data: {
         inferredRef: 'Kilo-Org/cloud#4443',
         watch: { id: 'Kilo-Org/cloud#4443' },

@@ -1,9 +1,11 @@
 /* eslint-disable no-unused-vars */
 import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
+import { createHash } from 'node:crypto';
 import * as v from 'valibot';
 import { openDb, rollbackQuietly } from '../../lib/sqlite';
 import {
   fetchPullRequestEventState,
+  maxPrEventFeedbackBodyLength,
   postPullRequestComment,
   type GitHubPullRequestEventState,
 } from '../github';
@@ -40,6 +42,9 @@ export function watermarksFromEventState(
   const latestRequestedChanges = maxString(
     state.requestedChangesReviews.map((review) => review.submittedAt),
   );
+  const latestConversationComment = maxString(
+    (state.conversationComments ?? []).map((comment) => comment.updatedAt),
+  );
   const latestSuiteUpdate = maxString(
     state.checkSuites.map((suite) => suite.updatedAt),
   );
@@ -47,12 +52,7 @@ export function watermarksFromEventState(
     state.checkRuns.map((run) => run.completedAt ?? run.startedAt),
   );
   const requestedChangesReviews = state.requestedChangesReviews
-    .map((review) => ({
-      id: review.id,
-      authorLogin: review.authorLogin,
-      commitId: review.commitId,
-      submittedAt: review.submittedAt,
-    }))
+    .map((review) => feedbackReviewWatermark(review))
     .sort((a, b) => a.id - b.id);
   const latestRequestedChangeStates =
     state.requestedChangesState.latestByReviewer
@@ -62,6 +62,17 @@ export function watermarksFromEventState(
         authorLogin: review.authorLogin,
         commitId: review.commitId,
         submittedAt: review.submittedAt,
+        body: boundedFeedbackBody(review.body).body,
+        bodyTruncated:
+          review.bodyTruncated || boundedFeedbackBody(review.body).truncated,
+        fingerprint: feedbackFingerprint({
+          id: review.id,
+          state: review.state,
+          authorLogin: review.authorLogin,
+          commitId: review.commitId,
+          submittedAt: review.submittedAt,
+          body: review.body,
+        }),
       }))
       .sort((a, b) =>
         String(a.authorLogin ?? a.id).localeCompare(
@@ -75,6 +86,17 @@ export function watermarksFromEventState(
       authorLogin: review.authorLogin,
       commitId: review.commitId,
       submittedAt: review.submittedAt,
+      body: boundedFeedbackBody(review.body).body,
+      bodyTruncated:
+        review.bodyTruncated || boundedFeedbackBody(review.body).truncated,
+      fingerprint: feedbackFingerprint({
+        id: review.id,
+        state: review.state,
+        authorLogin: review.authorLogin,
+        commitId: review.commitId,
+        submittedAt: review.submittedAt,
+        body: review.body,
+      }),
     }))
     .sort((a, b) => a.id - b.id);
   const reviewThreads = state.reviewThreads
@@ -87,6 +109,34 @@ export function watermarksFromEventState(
       commentIds: thread.comments
         .map((comment) => comment.databaseId ?? comment.id)
         .sort((a, b) => String(a).localeCompare(String(b))),
+      commentsTruncated: thread.commentsTruncated ?? false,
+      comments: thread.comments.map((comment) => {
+        const bounded = boundedFeedbackBody(comment.body);
+        return {
+          id: comment.databaseId ?? comment.id,
+          nodeId: comment.id,
+          authorLogin: comment.authorLogin,
+          authorType: comment.authorType ?? null,
+          authorIsBot: comment.authorIsBot ?? null,
+          body: bounded.body,
+          bodyTruncated: comment.bodyTruncated || bounded.truncated,
+          url: comment.url,
+          path: comment.path ?? thread.path,
+          line: comment.line ?? thread.line,
+          originalLine: comment.originalLine,
+          diffHunk: boundedFeedbackBody(comment.diffHunk).body,
+          reviewId: comment.reviewId,
+          createdAt: comment.createdAt,
+          updatedAt: comment.updatedAt,
+          actionable: true,
+          ignoredReason: null,
+          fingerprint: reviewThreadCommentFingerprint(thread, comment),
+          deliveryFingerprint: reviewThreadCommentDeliveryFingerprint(
+            comment,
+            thread,
+          ),
+        };
+      }),
       latestCommentUpdatedAt: maxString(
         thread.comments.map((comment) => comment.updatedAt),
       ),
@@ -100,6 +150,7 @@ export function watermarksFromEventState(
       conclusion: suite.conclusion,
       appSlug: suite.appSlug,
       updatedAt: suite.updatedAt,
+      fingerprint: feedbackFingerprint(suite),
     }))
     .sort((a, b) => a.id - b.id);
   const checkRuns = state.checkRuns
@@ -110,6 +161,7 @@ export function watermarksFromEventState(
       status: run.status,
       conclusion: run.conclusion,
       completedAt: run.completedAt,
+      fingerprint: feedbackFingerprint(run),
     }))
     .sort((a, b) => a.id - b.id);
 
@@ -148,6 +200,36 @@ export function watermarksFromEventState(
         reviews: requestedChangesReviews,
         latestByReviewer: latestRequestedChangeStates,
         history: requestedChangeHistory,
+      },
+    ),
+    categoryWatermark(
+      watchId,
+      'conversation_comments',
+      latestConversationComment,
+      {
+        total: (state.conversationComments ?? []).length,
+        truncated: state.conversationCommentsTruncated ?? false,
+        latestUpdatedAt: latestConversationComment,
+        comments: (state.conversationComments ?? [])
+          .map((comment) => {
+            const bounded = boundedFeedbackBody(comment.body);
+            return {
+              id: comment.id,
+              nodeId: comment.nodeId,
+              authorLogin: comment.authorLogin,
+              authorType: comment.authorType ?? null,
+              authorIsBot: comment.authorIsBot ?? null,
+              body: bounded.body,
+              bodyTruncated: bounded.truncated,
+              url: comment.url,
+              createdAt: comment.createdAt,
+              updatedAt: comment.updatedAt,
+              actionable: true,
+              ignoredReason: null,
+              fingerprint: conversationCommentFingerprint(comment),
+            };
+          })
+          .sort((a, b) => a.id - b.id),
       },
     ),
     categoryWatermark(watchId, 'check_suites', latestSuiteUpdate, {
@@ -192,6 +274,117 @@ export function watermarksFromEventState(
       baseRef: state.baseRef,
     }),
   ];
+}
+
+function boundedFeedbackBody(value: string | null | undefined) {
+  if (value === null || value === undefined) {
+    return { body: null, truncated: false };
+  }
+  return value.length <= maxPrEventFeedbackBodyLength
+    ? { body: value, truncated: false }
+    : {
+        body: value.slice(0, maxPrEventFeedbackBodyLength),
+        truncated: true,
+      };
+}
+
+function feedbackReviewWatermark(
+  review: GitHubPullRequestEventState['requestedChangesReviews'][number],
+) {
+  const bounded = boundedFeedbackBody(review.body);
+  return {
+    id: review.id,
+    authorLogin: review.authorLogin,
+    authorType: review.authorType ?? null,
+    authorIsBot: review.authorIsBot ?? null,
+    commitId: review.commitId,
+    submittedAt: review.submittedAt,
+    url: review.url,
+    body: bounded.body,
+    bodyTruncated: review.bodyTruncated || bounded.truncated,
+    actionable: true,
+    ignoredReason: null,
+    fingerprint: requestedChangesReviewDeliveryFingerprint(review),
+  };
+}
+
+function feedbackFingerprint(value: unknown) {
+  return createHash('sha256').update(stableFeedbackJson(value)).digest('hex');
+}
+
+export function conversationCommentFingerprint(
+  comment: NonNullable<
+    GitHubPullRequestEventState['conversationComments']
+  >[number],
+) {
+  return feedbackFingerprint({
+    id: comment.id,
+    authorLogin: comment.authorLogin,
+    body: comment.body,
+    updatedAt: comment.updatedAt,
+  });
+}
+
+export function requestedChangesReviewDeliveryFingerprint(
+  review: GitHubPullRequestEventState['requestedChangesState']['history'][number],
+) {
+  return feedbackFingerprint({
+    id: review.id,
+    state: review.state,
+    authorLogin: review.authorLogin,
+    commitId: review.commitId,
+    submittedAt: review.submittedAt,
+    body: review.body,
+  });
+}
+
+export function reviewThreadCommentFingerprint(
+  thread: GitHubPullRequestEventState['reviewThreads'][number],
+  comment: GitHubPullRequestEventState['reviewThreads'][number]['comments'][number],
+) {
+  return feedbackFingerprint({
+    id: comment.databaseId ?? comment.id,
+    authorLogin: comment.authorLogin,
+    body: comment.body,
+    path: comment.path ?? thread.path,
+    line: comment.line ?? thread.line,
+    updatedAt: comment.updatedAt,
+    isResolved: thread.isResolved,
+    isOutdated: thread.isOutdated,
+  });
+}
+
+export function reviewThreadCommentDeliveryFingerprint(
+  comment: GitHubPullRequestEventState['reviewThreads'][number]['comments'][number],
+  thread?: Pick<
+    GitHubPullRequestEventState['reviewThreads'][number],
+    'path' | 'originalLine'
+  >,
+) {
+  return feedbackFingerprint({
+    id: comment.databaseId ?? comment.id,
+    authorLogin: comment.authorLogin,
+    body: comment.body,
+    path: comment.path ?? thread?.path,
+    originalLine: comment.originalLine ?? thread?.originalLine ?? null,
+    updatedAt: comment.updatedAt,
+  });
+}
+
+function stableFeedbackJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableFeedbackJson(item)).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .filter(([, item]) => item !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(
+        ([key, item]) => `${JSON.stringify(key)}:${stableFeedbackJson(item)}`,
+      )
+      .join(',')}}`;
+  }
+  return JSON.stringify(value ?? null);
 }
 
 export function categoryWatermark(

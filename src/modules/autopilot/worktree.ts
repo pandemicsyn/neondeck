@@ -68,17 +68,21 @@ import {
 } from '../../runtime-home';
 import {
   createWorktree,
+  fetchExactPullRequestHead,
   assertWorktreeMutationAllowed,
   listWorktrees,
   lockWorktree,
   recordWorktreePushBlocked,
   recordWorktreePushSucceeded,
   readManagedWorktree,
+  recordWorktreeEvent,
+  readWorktreeLock,
   readWorktreeStatus,
   releaseWorktreeLock,
   syncWorktree,
   type WorktreeRecord,
 } from '../worktrees';
+import { bindAutopilotOwnerWorktree, readAutopilotPrOwnerById } from './owners';
 import {
   AutopilotActionResult,
   AutopilotDependencies,
@@ -221,84 +225,254 @@ export async function preparePrWorktree(
     let worktree: unknown = null;
     let lock: unknown = null;
     let status: unknown = null;
+    let exactHeadFetch: unknown = null;
     const createEnabled = input.createWorktree ?? true;
 
     if (createEnabled) {
-      const created = await createWorktree(
-        {
-          repoId: repo.id,
-          prNumber: input.prNumber,
-          baseRef: prFacts.baseRef || repo.defaultBranch,
-          headOwner: prFacts.headOwner,
-          headName: prFacts.headName,
-          headRef: prFacts.headRef ?? prFacts.headSha,
-          headSha: prFacts.headSha,
-          directPushAllowed: Boolean(prFacts.maintainerCanModify),
-        },
-        paths,
-      );
-      if (!created.ok) {
-        return lowerLevelFailure(
-          'autopilot_prepare_pr_worktree',
-          'worktree_create',
-          created,
-        );
-      }
-      worktree = objectField(created, 'worktree');
-      const worktreeId = stringField(worktree, 'id');
-      if (!worktreeId) {
+      const suppliedMutationLock = input.lockId
+        ? readWorktreeLock(input.lockId, paths)
+        : null;
+      if (
+        suppliedMutationLock &&
+        (suppliedMutationLock.releasedAt ||
+          suppliedMutationLock.revokedAt ||
+          Date.parse(suppliedMutationLock.expiresAt) <= Date.now() ||
+          suppliedMutationLock.repoId !== repo.id ||
+          suppliedMutationLock.prNumber !== input.prNumber)
+      ) {
         return failResult(
           'autopilot_prepare_pr_worktree',
-          'Worktree creation did not return a worktree id.',
-          { errors: ['Missing worktree id.'] },
+          'The supplied PR mutation lock is inactive or belongs to a different target.',
+          { requires: ['lockId'] },
+        );
+      }
+      const mutationOwner =
+        suppliedMutationLock?.owner ??
+        input.lockOwner ??
+        `autopilot-owner:${input.ownerId ?? input.eventId ?? input.prNumber}`;
+      const locked = suppliedMutationLock
+        ? { ok: true as const, lock: suppliedMutationLock }
+        : await lockWorktree(
+            {
+              repoId: repo.id,
+              prNumber: input.prNumber,
+              scope: 'pr',
+              owner: mutationOwner,
+              ttlSeconds: input.lockTtlSeconds ?? 1_800,
+            },
+            paths,
+          );
+      if (!locked.ok) {
+        return lowerLevelFailure(
+          'autopilot_prepare_pr_worktree',
+          'worktree_lock',
+          locked,
+        );
+      }
+      const mutationLock = objectField(locked, 'lock');
+      const mutationLockId = stringField(mutationLock, 'id');
+      if (!mutationLockId) {
+        return failResult(
+          'autopilot_prepare_pr_worktree',
+          'PR-owner mutation lock did not return an id.',
         );
       }
 
-      if (input.sync ?? true) {
-        const synced = await syncWorktree(
-          {
-            worktreeId,
+      try {
+        const owner = input.ownerId
+          ? await readAutopilotPrOwnerById(input.ownerId, paths)
+          : null;
+        if (input.ownerId && !owner) {
+          return failResult(
+            'autopilot_prepare_pr_worktree',
+            `Autopilot owner "${input.ownerId}" was not found.`,
+            { requires: ['ownerId'] },
+          );
+        }
+        if (
+          owner &&
+          (owner.repoId !== repo.id || owner.prNumber !== input.prNumber)
+        ) {
+          return failResult(
+            'autopilot_prepare_pr_worktree',
+            'Autopilot owner is bound to a different repository or pull request.',
+            { requires: ['ownerId'] },
+          );
+        }
+
+        const fetcher =
+          dependencies.fetchExactPullRequestHead ?? fetchExactPullRequestHead;
+        try {
+          exactHeadFetch = await fetcher({
+            sourceRepoPath: repo.path,
+            baseRepoFullName: prFacts.baseRepoFullName ?? repoFullName(repo),
+            headRepoFullName:
+              prFacts.headRepoFullName ??
+              `${prFacts.headOwner ?? repo.github.owner}/${prFacts.headName ?? repo.github.name}`,
+            prNumber: input.prNumber,
             headRef: prFacts.headRef ?? prFacts.headSha,
             headSha: prFacts.headSha,
-            fetch: input.fetch,
-            lockId: input.lockId,
-          },
-          paths,
-        );
-        if (!synced.ok) {
-          return lowerLevelFailure(
+          });
+        } catch (error) {
+          return failResult(
             'autopilot_prepare_pr_worktree',
-            'worktree_sync',
-            synced,
+            'Could not fetch and verify the exact pull request head.',
+            { requires: ['exactPrHead'], errors: [errorMessage(error)] },
           );
         }
-        worktree = objectField(synced, 'worktree') ?? worktree;
+
+        const ownerWorktreeId = owner?.worktreeId ?? input.worktreeId;
+        if (ownerWorktreeId) {
+          const existing = await readManagedWorktree(
+            ownerWorktreeId,
+            repo.id,
+            paths,
+          );
+          if (existing.prNumber !== input.prNumber) {
+            return failResult(
+              'autopilot_prepare_pr_worktree',
+              `Worktree "${existing.id}" belongs to a different pull request.`,
+              { requires: ['worktreeId'] },
+            );
+          }
+          const synced = await syncWorktree(
+            {
+              worktreeId: existing.id,
+              headRef: prFacts.headRef ?? prFacts.headSha,
+              headSha: prFacts.headSha,
+              fetch: false,
+              lockId: mutationLockId,
+            },
+            paths,
+          );
+          if (!synced.ok) {
+            return lowerLevelFailure(
+              'autopilot_prepare_pr_worktree',
+              'worktree_sync',
+              synced,
+            );
+          }
+          worktree = objectField(synced, 'worktree') ?? existing;
+        } else {
+          const created = await createWorktree(
+            {
+              repoId: repo.id,
+              prNumber: input.prNumber,
+              baseRef: prFacts.baseRef || repo.defaultBranch,
+              headOwner: prFacts.headOwner,
+              headName: prFacts.headName,
+              headRef: prFacts.headRef ?? prFacts.headSha,
+              headSha: prFacts.headSha,
+              directPushAllowed: Boolean(prFacts.maintainerCanModify),
+            },
+            paths,
+          );
+          if (!created.ok) {
+            return lowerLevelFailure(
+              'autopilot_prepare_pr_worktree',
+              'worktree_create',
+              created,
+            );
+          }
+          worktree = objectField(created, 'worktree');
+          const createdWorktreeId = stringField(worktree, 'id');
+          if (!createdWorktreeId) {
+            return failResult(
+              'autopilot_prepare_pr_worktree',
+              'Worktree creation or reuse did not return a worktree id.',
+              { errors: ['Missing worktree id.'] },
+            );
+          }
+          const synced = await syncWorktree(
+            {
+              worktreeId: createdWorktreeId,
+              headRef: prFacts.headRef ?? prFacts.headSha,
+              headSha: prFacts.headSha,
+              fetch: false,
+              lockId: mutationLockId,
+            },
+            paths,
+          );
+          if (!synced.ok) {
+            return lowerLevelFailure(
+              'autopilot_prepare_pr_worktree',
+              'worktree_sync',
+              synced,
+            );
+          }
+          worktree = objectField(synced, 'worktree') ?? worktree;
+        }
+
+        const worktreeId = stringField(worktree, 'id');
+        if (!worktreeId) {
+          return failResult(
+            'autopilot_prepare_pr_worktree',
+            'Worktree preparation did not return a worktree id.',
+            { errors: ['Missing worktree id.'] },
+          );
+        }
+        status = await readWorktreeStatus({ worktreeId }, paths);
+        const checkedOutSha = stringField(
+          objectField(status, 'git'),
+          'headSha',
+        );
+        if (checkedOutSha !== prFacts.headSha) {
+          return failResult(
+            'autopilot_prepare_pr_worktree',
+            `Prepared worktree HEAD ${checkedOutSha ?? 'unknown'} does not match GitHub head ${prFacts.headSha}.`,
+            { requires: ['exactPrHead'] },
+          );
+        }
+        if (owner) {
+          await bindAutopilotOwnerWorktree(
+            { ownerId: owner.id, worktreeId, headSha: checkedOutSha },
+            paths,
+          );
+        }
+        await recordWorktreeEvent(
+          worktreeId,
+          repo.id,
+          'pr_head_verified',
+          'ready',
+          `Verified exact PR head ${prFacts.headSha.slice(0, 12)} before checkout.`,
+          exactHeadFetch,
+          paths,
+        );
+      } finally {
+        if (!suppliedMutationLock) {
+          await releaseWorktreeLock(
+            {
+              lockId: mutationLockId,
+              owner: mutationOwner,
+              finalStatus: 'ready',
+            },
+            paths,
+          ).catch(() => undefined);
+        }
       }
 
-      // A prepared worktree is durable state, not an active mutation. Holding a
-      // PR lock here prevents the next independent fixer or verifier workflow
-      // from acquiring the lock it needs.
       if (input.lock === true) {
-        const locked = await lockWorktree(
-          {
-            worktreeId,
-            scope: 'pr',
-            owner: input.lockOwner ?? 'prepare_pr_worktree',
-            ttlSeconds: input.lockTtlSeconds ?? 1_800,
-          },
-          paths,
-        );
-        if (!locked.ok) {
-          return lowerLevelFailure(
-            'autopilot_prepare_pr_worktree',
-            'worktree_lock',
-            locked,
+        const worktreeId = stringField(worktree, 'id');
+        if (worktreeId) {
+          const retainedLock = await lockWorktree(
+            {
+              worktreeId,
+              scope: 'pr',
+              owner: input.lockOwner ?? 'prepare_pr_worktree',
+              ttlSeconds: input.lockTtlSeconds ?? 1_800,
+            },
+            paths,
           );
+          if (!retainedLock.ok) {
+            return lowerLevelFailure(
+              'autopilot_prepare_pr_worktree',
+              'worktree_lock',
+              retainedLock,
+            );
+          }
+          lock = objectField(retainedLock, 'lock');
         }
-        lock = objectField(locked, 'lock');
       }
-
-      status = await readWorktreeStatus({ worktreeId }, paths);
     }
 
     return {
@@ -321,6 +495,7 @@ export async function preparePrWorktree(
         worktree,
         lock,
         status,
+        exactHeadFetch,
         eventId: input.eventId ?? null,
         runLinkage: {
           owningWorkflowRunIdAttached: false,

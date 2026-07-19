@@ -489,6 +489,8 @@ function workflowInput(
       repoId: admission.repoId,
       prNumber: admission.prNumber,
       eventId: admission.eventFingerprint,
+      ownerId: admission.ownerId,
+      worktreeId: admission.worktreeId ?? undefined,
       lock: false,
       sourceEvent: admission.input,
     } as JsonValue;

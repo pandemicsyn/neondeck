@@ -47,6 +47,12 @@ export const prWatches = sqliteTable(
     lastOutcome: text('last_outcome'),
     lastCheckedAt: text('last_checked_at'),
     createdBy: text('created_by'),
+    processExisting: integer('process_existing').default(0).notNull(),
+    initialEventProcessedAt: text('initial_event_processed_at'),
+    eventWatermarkVersion: integer('event_watermark_version')
+      .default(2)
+      .notNull(),
+    eventGenerationId: text('event_generation_id').default('legacy').notNull(),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -90,6 +96,97 @@ export const prWatchEventWatermarks = sqliteTable(
     index('idx_pr_watch_event_watermarks_watch').on(
       table.watchId,
       sql`${table.updatedAt} DESC`,
+    ),
+  ],
+);
+
+export const prWatchEventIntakes = sqliteTable(
+  'pr_watch_event_intakes',
+  {
+    eventId: text('event_id').primaryKey(),
+    watchId: text('watch_id').notNull(),
+    eventGenerationId: text('event_generation_id').default('legacy').notNull(),
+    sequence: integer('sequence').notNull(),
+    repoFullName: text('repo_full_name').notNull(),
+    prNumber: integer('pr_number').notNull(),
+    source: text('source').notNull(),
+    initialEvent: integer('initial_event').default(0).notNull(),
+    previousWatermarksJson: text('previous_watermarks_json').notNull(),
+    candidateWatermarksJson: text('candidate_watermarks_json').notNull(),
+    changedCategoriesJson: text('changed_categories_json').notNull(),
+    status: text('status').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    acknowledgedAt: text('acknowledged_at'),
+    outcome: text('outcome'),
+    admissionId: text('admission_id'),
+    notificationId: text('notification_id'),
+    supersededReason: text('superseded_reason'),
+  },
+  (table) => [
+    uniqueIndex('idx_pr_watch_event_intakes_one_pending')
+      .on(table.watchId)
+      .where(sql`${table.status} = 'pending'`),
+    uniqueIndex('idx_pr_watch_event_intakes_sequence').on(
+      table.watchId,
+      table.sequence,
+    ),
+    index('idx_pr_watch_event_intakes_pending').on(
+      table.status,
+      table.updatedAt,
+    ),
+  ],
+);
+
+export const prNeondeckDeliveries = sqliteTable(
+  'pr_neondeck_deliveries',
+  {
+    repoFullName: text('repo_full_name').notNull(),
+    prNumber: integer('pr_number').notNull(),
+    itemKind: text('item_kind').notNull(),
+    itemId: text('item_id').notNull(),
+    itemFingerprint: text('item_fingerprint').notNull(),
+    deliveredAt: text('delivered_at').notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.repoFullName,
+        table.prNumber,
+        table.itemKind,
+        table.itemId,
+      ],
+    }),
+    index('idx_pr_neondeck_deliveries_target').on(
+      table.repoFullName,
+      table.prNumber,
+    ),
+  ],
+);
+
+export const prFeedbackAddressing = sqliteTable(
+  'pr_feedback_addressing',
+  {
+    repoFullName: text('repo_full_name').notNull(),
+    prNumber: integer('pr_number').notNull(),
+    itemKind: text('item_kind').notNull(),
+    itemId: text('item_id').notNull(),
+    itemFingerprint: text('item_fingerprint').notNull(),
+    deliveryCommentId: text('delivery_comment_id'),
+    addressedAt: text('addressed_at').notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.repoFullName,
+        table.prNumber,
+        table.itemKind,
+        table.itemId,
+      ],
+    }),
+    index('idx_pr_feedback_addressing_target').on(
+      table.repoFullName,
+      table.prNumber,
     ),
   ],
 );

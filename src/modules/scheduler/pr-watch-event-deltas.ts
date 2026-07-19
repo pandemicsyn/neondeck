@@ -20,14 +20,356 @@ export function deltasFromChangedCategories(
   categories: PrWatchEventWatermarkCategory[],
   currentWatermarks: PrWatchEventWatermarkRecord[],
   previousWatermarks: PrWatchEventWatermarkRecord[],
+  filters: {
+    addressedReviewThreadFingerprints?: ReadonlyMap<string, string>;
+    addressedReviewCommentFingerprints?: ReadonlyMap<string, string>;
+    neondeckReviewCommentFingerprints?: ReadonlyMap<string, string>;
+    neondeckRequestedChangesReviewFingerprints?: ReadonlyMap<string, string>;
+    neondeckConversationCommentFingerprints?: ReadonlyMap<string, string>;
+  } = {},
 ) {
-  return categories.map((category) =>
-    deltaFromWatermark(
-      category,
-      watermarkPayload(currentWatermarks, category),
-      watermarkPayload(previousWatermarks, category),
+  return categories.flatMap((category) => {
+    const payload = watermarkPayload(currentWatermarks, category);
+    const previousPayload = watermarkPayload(previousWatermarks, category);
+    if (category === 'review_threads') {
+      return reviewCommentDeltas(payload, previousPayload, filters);
+    }
+    if (category === 'requested_changes_reviews') {
+      return requestedChangesDeltas(payload, previousPayload, filters);
+    }
+    if (category === 'conversation_comments') {
+      return conversationCommentDeltas(payload, previousPayload, filters);
+    }
+    if (category === 'check_suites' || category === 'check_runs') {
+      return checkDeltas(category, payload, previousPayload);
+    }
+    return [deltaFromWatermark(category, payload, previousPayload)];
+  });
+}
+
+export function initialActionableDeltas(
+  currentWatermarks: PrWatchEventWatermarkRecord[],
+  filters: {
+    addressedReviewThreadFingerprints?: ReadonlyMap<string, string>;
+    addressedReviewCommentFingerprints?: ReadonlyMap<string, string>;
+    neondeckReviewCommentFingerprints?: ReadonlyMap<string, string>;
+    neondeckRequestedChangesReviewFingerprints?: ReadonlyMap<string, string>;
+    neondeckConversationCommentFingerprints?: ReadonlyMap<string, string>;
+  } = {},
+) {
+  return deltasFromChangedCategories(
+    [
+      'review_threads',
+      'requested_changes_reviews',
+      'conversation_comments',
+      'check_suites',
+      'check_runs',
+    ],
+    currentWatermarks,
+    [],
+    filters,
+  ).filter(
+    (delta) =>
+      delta.actionable === true ||
+      delta.candidateReasoning === true ||
+      delta.type === 'incomplete-feedback',
+  );
+}
+
+function reviewCommentDeltas(
+  payload: Record<string, unknown>,
+  previousPayload: Record<string, unknown>,
+  filters: {
+    addressedReviewThreadFingerprints?: ReadonlyMap<string, string>;
+    addressedReviewCommentFingerprints?: ReadonlyMap<string, string>;
+    neondeckReviewCommentFingerprints?: ReadonlyMap<string, string>;
+  },
+) {
+  const previous = feedbackFingerprintMap(
+    feedbackItemsFromThreads(previousPayload),
+  );
+  const deltas = feedbackItemsFromThreads(payload).flatMap((item) => {
+    const threadId = stringField(item.threadId);
+    const id = feedbackItemId(item);
+    if (
+      !id ||
+      booleanField(item.isResolved) === true ||
+      booleanField(item.actionable) === false
+    ) {
+      return [];
+    }
+    const fingerprint = stringField(item.fingerprint);
+    const deliveryFingerprint = stringField(item.deliveryFingerprint);
+    const addressedCommentFingerprint =
+      filters.addressedReviewCommentFingerprints?.get(id);
+    const neondeckDeliveryFingerprint =
+      filters.neondeckReviewCommentFingerprints?.get(id);
+    const addressedThreadFingerprint = threadId
+      ? filters.addressedReviewThreadFingerprints?.get(threadId)
+      : undefined;
+    if (
+      fingerprint &&
+      (addressedCommentFingerprint === fingerprint ||
+        (neondeckDeliveryFingerprint !== undefined &&
+          deliveryFingerprint !== undefined &&
+          neondeckDeliveryFingerprint === deliveryFingerprint) ||
+        addressedThreadFingerprint === fingerprint)
+    ) {
+      return [];
+    }
+    const change = feedbackChange(item, previous.get(id));
+    if (!change) return [];
+    const incomplete =
+      booleanField(item.bodyTruncated) === true ||
+      booleanField(item.commentsTruncated) === true ||
+      booleanField(payload.truncated) === true;
+    return [
+      jsonRecord({
+        type: incomplete ? 'incomplete-feedback' : 'review-comment',
+        feedbackType: 'review-comment',
+        id: `review-comment:${id}:${stringField(item.fingerprint) ?? change}`,
+        itemId: id,
+        threadId,
+        itemFingerprint: stringField(item.fingerprint),
+        change,
+        summary: `${change === 'new' ? 'New' : 'Changed'} review feedback from ${stringField(item.authorLogin) ?? 'unknown reviewer'}.`,
+        actionable: !incomplete,
+        requiresExplanation: incomplete,
+        severity: 'medium',
+        feedback: item,
+        incomplete,
+      }),
+    ];
+  });
+  if (deltas.length > 0) return deltas;
+  if (booleanField(payload.truncated) === true) {
+    return [incompleteCollectionDelta('review_threads')];
+  }
+  return [
+    jsonRecord({
+      type: 'metadata',
+      id: 'review_threads',
+      summary: 'Review thread state changed without new actionable feedback.',
+      severity: 'low',
+    }),
+  ];
+}
+
+function requestedChangesDeltas(
+  payload: Record<string, unknown>,
+  previousPayload: Record<string, unknown>,
+  filters: {
+    neondeckRequestedChangesReviewFingerprints?: ReadonlyMap<string, string>;
+  },
+) {
+  const previous = feedbackFingerprintMap(recordArray(previousPayload.reviews));
+  const deltas = recordArray(payload.reviews).flatMap((item) => {
+    const id = feedbackItemId(item);
+    if (!id || item.actionable === false) return [];
+    const fingerprint = stringField(item.fingerprint);
+    if (
+      fingerprint &&
+      filters.neondeckRequestedChangesReviewFingerprints?.get(id) ===
+        fingerprint
+    ) {
+      return [];
+    }
+    const change = feedbackChange(item, previous.get(id));
+    if (!change) return [];
+    const incomplete =
+      item.bodyTruncated === true || payload.truncated === true;
+    return [
+      jsonRecord({
+        type: incomplete ? 'incomplete-feedback' : 'requested-changes',
+        feedbackType: 'requested-changes',
+        id: `requested-changes:${id}:${fingerprint ?? change}`,
+        itemId: id,
+        itemFingerprint: fingerprint,
+        change,
+        summary: `${change === 'new' ? 'New' : 'Changed'} requested-changes review from ${stringField(item.authorLogin) ?? 'unknown reviewer'}.`,
+        actionable: !incomplete,
+        requiresExplanation: incomplete,
+        severity: 'high',
+        review: item,
+        incomplete,
+      }),
+    ];
+  });
+  if (deltas.length > 0) return deltas;
+  if (booleanField(payload.truncated) === true) {
+    return [incompleteCollectionDelta('requested_changes_reviews')];
+  }
+  const previousTotal = numberField(previousPayload.total) ?? 0;
+  return [
+    jsonRecord({
+      type: 'metadata',
+      id: 'requested_changes_reviews',
+      summary:
+        (numberField(payload.total) ?? 0) === 0 && previousTotal > 0
+          ? 'Requested changes were cleared.'
+          : 'Requested-change review state changed without new actionable feedback.',
+      severity: 'medium',
+    }),
+  ];
+}
+
+function conversationCommentDeltas(
+  payload: Record<string, unknown>,
+  previousPayload: Record<string, unknown>,
+  filters: {
+    neondeckConversationCommentFingerprints?: ReadonlyMap<string, string>;
+  },
+) {
+  const previous = feedbackFingerprintMap(
+    recordArray(previousPayload.comments),
+  );
+  const deltas = recordArray(payload.comments).flatMap((item) => {
+    const id = feedbackItemId(item);
+    if (!id || item.actionable === false) return [];
+    const fingerprint = stringField(item.fingerprint);
+    if (
+      fingerprint &&
+      filters.neondeckConversationCommentFingerprints?.get(id) === fingerprint
+    ) {
+      return [];
+    }
+    const change = feedbackChange(item, previous.get(id));
+    if (!change) return [];
+    const incomplete =
+      item.bodyTruncated === true || payload.truncated === true;
+    return [
+      jsonRecord({
+        type: incomplete ? 'incomplete-feedback' : 'conversation-comment',
+        feedbackType: 'conversation-comment',
+        id: `conversation-comment:${id}:${fingerprint ?? change}`,
+        itemId: id,
+        itemFingerprint: stringField(item.fingerprint),
+        change,
+        summary: `${change === 'new' ? 'New' : 'Changed'} PR conversation comment from ${stringField(item.authorLogin) ?? 'unknown author'}.`,
+        actionable: false,
+        requiresExplanation: true,
+        candidateReasoning: !incomplete,
+        mutationEligible: false,
+        severity: 'medium',
+        comment: item,
+        incomplete,
+      }),
+    ];
+  });
+  if (deltas.length > 0) return deltas;
+  if (booleanField(payload.truncated) === true) {
+    return [incompleteCollectionDelta('conversation_comments')];
+  }
+  return [
+    jsonRecord({
+      type: 'metadata',
+      id: 'conversation_comments',
+      summary: 'PR conversation changed without new actionable human feedback.',
+      severity: 'low',
+    }),
+  ];
+}
+
+function checkDeltas(
+  category: 'check_suites' | 'check_runs',
+  payload: Record<string, unknown>,
+  previousPayload: Record<string, unknown>,
+) {
+  const key = category === 'check_suites' ? 'suites' : 'runs';
+  const previous = feedbackFingerprintMap(recordArray(previousPayload[key]));
+  const failingIds = new Set(
+    arrayField(
+      category === 'check_suites'
+        ? payload.failingSuiteIds
+        : payload.failingRunIds,
+    ).map(String),
+  );
+  const deltas = recordArray(payload[key]).flatMap((item) => {
+    const id = feedbackItemId(item);
+    if (!id || !failingIds.has(id)) return [];
+    const change = feedbackChange(item, previous.get(id));
+    if (!change) return [];
+    const incomplete = payload.truncated === true;
+    return [
+      jsonRecord({
+        type: incomplete ? 'incomplete-feedback' : 'check-failure',
+        feedbackType: 'check-failure',
+        id: `${category}:${id}:${stringField(item.fingerprint) ?? change}`,
+        itemId: id,
+        itemFingerprint: stringField(item.fingerprint),
+        change,
+        summary: `${change === 'new' ? 'New' : 'Changed'} failing ${category === 'check_suites' ? 'check suite' : 'check run'} ${stringField(item.name) ?? id}.`,
+        actionable: !incomplete,
+        requiresExplanation: incomplete,
+        severity: 'high',
+        check: item,
+        incomplete,
+      }),
+    ];
+  });
+  if (deltas.length > 0) return deltas;
+  if (booleanField(payload.truncated) === true) {
+    return [incompleteCollectionDelta(category)];
+  }
+  return [deltaFromWatermark(category, payload, previousPayload)];
+}
+
+function incompleteCollectionDelta(category: PrWatchEventWatermarkCategory) {
+  return jsonRecord({
+    type: 'incomplete-feedback',
+    feedbackType: category,
+    id: `incomplete:${category}`,
+    summary: `${category.replaceAll('_', ' ')} were truncated; autonomous handling is blocked until complete facts are available.`,
+    actionable: false,
+    requiresExplanation: true,
+    severity: 'high',
+    incomplete: true,
+  });
+}
+
+function feedbackItemsFromThreads(payload: Record<string, unknown>) {
+  return recordArray(payload.threads).flatMap((thread) =>
+    recordArray(thread.comments).map(
+      (comment) =>
+        ({
+          ...comment,
+          threadId: stringField(thread.id),
+          isResolved: thread.isResolved === true,
+          isOutdated: thread.isOutdated === true,
+          commentsTruncated: thread.commentsTruncated === true,
+        }) as Record<string, unknown>,
     ),
   );
+}
+
+function feedbackFingerprintMap(items: Array<Record<string, unknown>>) {
+  return new Map(
+    items.flatMap((item) => {
+      const id = feedbackItemId(item);
+      return id ? [[id, stringField(item.fingerprint)]] : [];
+    }),
+  );
+}
+
+function feedbackItemId(item: Record<string, unknown>) {
+  return typeof item.id === 'string' || typeof item.id === 'number'
+    ? String(item.id)
+    : undefined;
+}
+
+function feedbackChange(
+  item: Record<string, unknown>,
+  previousFingerprint: string | undefined,
+) {
+  const fingerprint = stringField(item.fingerprint);
+  if (!previousFingerprint) return 'new';
+  return fingerprint && fingerprint !== previousFingerprint ? 'changed' : null;
+}
+
+function recordArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.map(readObjectConfig).filter((item) => Object.keys(item).length > 0)
+    : [];
 }
 
 function deltaFromWatermark(
@@ -102,6 +444,15 @@ function deltaFromWatermark(
       summary: `${total} requested-changes review${total === 1 ? '' : 's'}.`,
       actionable: true,
       severity: 'high',
+    });
+  }
+
+  if (category === 'conversation_comments') {
+    return jsonRecord({
+      type: 'metadata',
+      id: category,
+      summary: 'PR conversation comments changed.',
+      severity: 'low',
     });
   }
 
@@ -190,7 +541,11 @@ export function shouldAdmitTriageForDeltas(
   deltas: Array<Record<string, unknown>>,
 ) {
   return deltas.some((delta) => {
-    if (delta.actionable === true || delta.requiresExplanation === true) {
+    if (
+      delta.actionable === true ||
+      delta.requiresExplanation === true ||
+      delta.candidateReasoning === true
+    ) {
       return true;
     }
     return (
@@ -226,6 +581,15 @@ function hasActionablePrEventState(watermarks: PrWatchEventWatermarkRecord[]) {
     numberField(requestedChanges.total) ??
     arrayField(requestedChanges.reviewIds).length;
   if (requestedTotal > 0) return true;
+
+  const conversation = watermarkPayload(watermarks, 'conversation_comments');
+  if (
+    recordArray(conversation.comments).some(
+      (comment) => comment.actionable !== false,
+    )
+  ) {
+    return true;
+  }
 
   const runs = watermarkPayload(watermarks, 'check_runs');
   if (arrayField(runs.failingRunIds).length > 0) return true;
@@ -292,9 +656,16 @@ export function prEventNotification(
   deltas: Array<Record<string, unknown>>,
   mode: AutopilotMode,
 ) {
-  const actionable = deltas.some((delta) => delta.actionable === true);
+  const incomplete = deltas.some(
+    (delta) => delta.type === 'incomplete-feedback',
+  );
+  const actionable =
+    incomplete || deltas.some((delta) => delta.actionable === true);
   const requestedChanges = deltas.some(
     (delta) => delta.type === 'requested-changes',
+  );
+  const conversationFeedback = deltas.some(
+    (delta) => delta.type === 'conversation-comment',
   );
   const reviewFeedback = deltas.some(
     (delta) => delta.type === 'review-comment',
@@ -304,9 +675,11 @@ export function prEventNotification(
     ? 'PR watch requested changes'
     : reviewFeedback
       ? 'PR watch review feedback'
-      : checkFailure
-        ? 'PR watch checks failed'
-        : 'PR watch event changed';
+      : conversationFeedback
+        ? 'PR watch conversation feedback'
+        : checkFailure
+          ? 'PR watch checks failed'
+          : 'PR watch event changed';
   const message = `${watch.repoFullName}#${watch.prNumber}: ${deltas
     .map((delta) => stringField(delta.summary))
     .filter(Boolean)

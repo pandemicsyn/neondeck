@@ -40,7 +40,15 @@ export type AdmitAutopilotEventInput = {
   mode: AutopilotMode;
   input: Record<string, unknown>;
   limits: AutopilotConcurrencyPolicy;
+  requiredPendingIntake?: {
+    eventId: string;
+    eventGenerationId: string;
+  };
 };
+
+export class AutopilotPendingIntakeLeaseLostError extends Error {
+  override readonly name = 'AutopilotPendingIntakeLeaseLostError';
+}
 
 export type AutopilotReservation = {
   admission: AutopilotAdmission;
@@ -57,6 +65,34 @@ export async function admitAutopilotEvent(
   const database = openDb(paths.neondeckDatabase);
   try {
     return withImmediateTransaction(database, () => {
+      if (input.requiredPendingIntake) {
+        if (input.requiredPendingIntake.eventId !== input.eventFingerprint) {
+          throw new AutopilotPendingIntakeLeaseLostError(
+            'The required PR event intake does not match the admitted event fingerprint.',
+          );
+        }
+        const pending = database
+          .prepare(
+            `SELECT intake.event_id
+             FROM pr_watch_event_intakes AS intake
+             INNER JOIN pr_watches AS watch ON watch.id = intake.watch_id
+             WHERE intake.watch_id = ?
+               AND intake.event_id = ?
+               AND intake.status = 'pending'
+               AND intake.event_generation_id = watch.event_generation_id
+               AND watch.event_generation_id = ?;`,
+          )
+          .get(
+            input.watchId,
+            input.requiredPendingIntake.eventId,
+            input.requiredPendingIntake.eventGenerationId,
+          );
+        if (!pending) {
+          throw new AutopilotPendingIntakeLeaseLostError(
+            `PR event intake ${input.requiredPendingIntake.eventId} is no longer pending for the current watch generation.`,
+          );
+        }
+      }
       const existing = readAutopilotAdmission(
         database
           .prepare(
@@ -133,9 +169,9 @@ export async function admitAutopilotEvent(
           `INSERT INTO autopilot_admissions (
              id, owner_id, watch_id, event_fingerprint, event_sequence, repo_id,
              pr_number, mode, input_json, state, priority, current_workflow,
-             current_stage_attempt_id, version, attempt_count, next_attempt_at,
+             current_stage_attempt_id, worktree_id, version, attempt_count, next_attempt_at,
              last_error, last_outcome_json, completed_at, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?);`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?);`,
         )
         .run(
           admissionId,
@@ -150,6 +186,7 @@ export async function admitAutopilotEvent(
           state,
           state === 'triage-admitted' ? 'triage-pr-event' : null,
           attemptId,
+          owner.worktreeId,
           attemptId ? 1 : 0,
           nextAttemptAt,
           limitedOutcome?.message ?? null,

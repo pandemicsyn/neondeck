@@ -1,7 +1,6 @@
 # Autopilot Product-Closure Implementation Plan
 
-Status: in progress; Package 1 durable coordinator foundation implemented,
-Packages 2–8 not started
+Status: in progress; Packages 1–2 implemented, Packages 3–8 not started
 
 Companion audit: `.plans/AUTOPILOT_END_TO_END_REVIEW.html`
 
@@ -867,6 +866,10 @@ dispatch twice when scheduler and observer race.
 
 ### Package 2: event intake, initial processing, and persistent exact-SHA checkout
 
+Status: implemented and recovery-hardened on 2026-07-19. Packages 3–8 remain
+unstarted. Conversation comments are retained as non-mutation candidate-reasoning
+inputs; Package 4 owns their semantic interpretation in the continuing PR owner.
+
 Primary files:
 
 - `src/modules/github/reviews.ts`
@@ -880,18 +883,29 @@ Primary files:
 Deliverables:
 
 - review bodies and conversation comments retained;
-- per-item new/changed fingerprints and bot/addressed filters;
+- per-item new/changed fingerprints, addressed filters, and exact durable
+  Neondeck-delivery suppression without trusting author type or body markers;
+- one durable pending intake before watermark acknowledgement, complete-fact gates,
+  restart replay, aggregate item/byte/time fetch budgets, and versioned seed-only
+  upgrade behavior;
+- opaque watch generations that rotate on baseline reset/rearm, CAS every
+  post-fetch watch update, and bind admission to the exact still-pending intake
+  generation so remove/reset races fail before notification or dispatch;
 - explicit process-existing synthetic delta;
 - fetch/verify exact same-repo and fork head before worktree creation;
 - create the owner worktree on first actionable work and reuse/sync it for later
   events;
 - no partial worktree record on fetch failure;
+- match the registered repository remote, validate all ref/remote components, and
+  keep option parsing terminated for exact-head fetches;
 - fixtures for existing feedback, first-poll race, old-thread reply, fork head, and
   inaccessible private fork.
 
 Exit gate: an already-stuck PR can intentionally create exactly one admission and
 one owner worktree at the current GitHub head SHA; a later event reuses that
-worktree and synchronizes it to the new exact head.
+worktree and synchronizes it to the new exact head. Removing or resetting the
+watch before admission supersedes the retained intake without notification or
+dispatch; Package 7 owns stop/recovery after an admission transaction commits.
 
 ### Package 3: readiness and noninteractive credentials
 

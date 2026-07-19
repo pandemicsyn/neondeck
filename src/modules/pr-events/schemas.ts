@@ -5,6 +5,7 @@ import * as v from 'valibot';
 import {
   fetchPullRequestEventState,
   fetchPullRequestFiles,
+  fetchPullRequestReviewComments,
   fetchPullRequestReviewThreadsWithMetadata,
   fetchPullRequestReviewThread,
   listPullRequestComments,
@@ -41,6 +42,7 @@ export type PrWatchEventWatermarkCategory =
   | 'commits'
   | 'review_threads'
   | 'requested_changes_reviews'
+  | 'conversation_comments'
   | 'check_suites'
   | 'check_runs'
   | 'mergeability'
@@ -83,6 +85,7 @@ export type PrEventStateDependencies = {
     baseSha: string | null | undefined;
   }>;
   fetchPullRequestReviewThreads?: typeof fetchPullRequestReviewThreadsWithMetadata;
+  fetchPullRequestReviewComments?: typeof fetchPullRequestReviewComments;
   fetchPullRequestReviewThread?: typeof fetchPullRequestReviewThread;
   postPullRequestComment?: typeof postPullRequestComment;
   listPullRequestComments?: typeof listPullRequestComments;
@@ -90,26 +93,68 @@ export type PrEventStateDependencies = {
   replyToPullRequestReviewThread?: typeof replyToPullRequestReviewThread;
   resolvePullRequestReviewThread?: typeof resolvePullRequestReviewThread;
   unresolvePullRequestReviewThread?: typeof unresolvePullRequestReviewThread;
+  afterPrWatchEventIntakeStaged?: (input: {
+    watchId: string;
+    eventId: string;
+  }) => void | Promise<void>;
   token?: string;
 };
 
-export const watermarkCategories: PrWatchEventWatermarkCategory[] = [
+export const watermarkCategories = [
   'commits',
   'review_threads',
   'requested_changes_reviews',
+  'conversation_comments',
   'check_suites',
   'check_runs',
   'mergeability',
   'out_of_date_branch',
-];
+] as const satisfies readonly PrWatchEventWatermarkCategory[];
 
 export const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
+export const prWatchEventWatermarkCategorySchema =
+  v.picklist(watermarkCategories);
+export const prEventJsonValueSchema = v.custom<JsonValue>(
+  isJsonValue,
+  'Value must be JSON-safe.',
+);
+export const prWatchEventWatermarkRecordSchema = v.strictObject({
+  watchId: nonEmptyStringSchema,
+  category: prWatchEventWatermarkCategorySchema,
+  watermark: prEventJsonValueSchema,
+  sourceUpdatedAt: v.nullable(v.pipe(v.string(), v.isoTimestamp())),
+  checkedAt: v.pipe(v.string(), v.isoTimestamp()),
+  createdAt: v.pipe(v.string(), v.isoTimestamp()),
+  updatedAt: v.pipe(v.string(), v.isoTimestamp()),
+});
+export const prWatchEventWatermarkRecordsSchema = v.array(
+  prWatchEventWatermarkRecordSchema,
+);
+export const prWatchEventWatermarkCategoriesSchema = v.array(
+  prWatchEventWatermarkCategorySchema,
+);
 export const prEventTargetInputSchema = v.object({
   watchId: v.optional(nonEmptyStringSchema),
   ref: v.optional(nonEmptyStringSchema),
   repo: v.optional(nonEmptyStringSchema),
   prNumber: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
 });
+
+function isJsonValue(value: unknown): boolean {
+  if (value === null) return true;
+  if (
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    typeof value === 'number'
+  ) {
+    return typeof value !== 'number' || Number.isFinite(value);
+  }
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  if (typeof value === 'object') {
+    return Object.values(value).every(isJsonValue);
+  }
+  return false;
+}
 export const prFilesInputSchema = v.object({
   watchId: v.optional(nonEmptyStringSchema),
   ref: v.optional(nonEmptyStringSchema),

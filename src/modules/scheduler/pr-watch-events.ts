@@ -1,11 +1,15 @@
 import type { JsonValue } from '@flue/runtime';
-import type { AutomationExecutionResult } from '../app-state';
+import {
+  publishNotificationEvent,
+  type AutomationExecutionResult,
+} from '../app-state';
 import { readRepoRegistrySnapshot } from '../repos';
 import {
   repoAutopilotPolicyForWatch,
   type AutopilotMode,
 } from '../autopilot-policy';
 import {
+  AutopilotPendingIntakeLeaseLostError,
   claimAutopilotTriageAdmission,
   coordinateAutopilotAdmission,
   reconcileAutopilotStageAttempts,
@@ -13,7 +17,10 @@ import {
   type AutopilotWorkflowInvoker,
 } from '../autopilot';
 import {
+  acknowledgePrWatchEventIntake,
   listPrWatchEventWatermarks,
+  readAddressedPrFeedback,
+  readNeondeckPrDeliveries,
   refreshPrWatchEventState,
   type PrWatchEventWatermarkCategory,
   type PrWatchEventWatermarkRecord,
@@ -27,6 +34,7 @@ import { listPrWatchRecords, type PrWatch } from '../watches';
 import type { SchedulerDependencies } from './schemas';
 import {
   deltasFromChangedCategories,
+  initialActionableDeltas,
   prEventNotification,
   prEventSourceId,
   shouldAdmitTriageForDeltas,
@@ -69,7 +77,17 @@ type TriageAdmissionResult = {
   triage?: JsonValue;
   notifications: NonNullable<AutomationExecutionResult['notifications']>;
   message?: string;
+  durablyAdmitted?: boolean;
+  admissionId?: string;
 };
+
+const initialActionableCategories: PrWatchEventWatermarkCategory[] = [
+  'review_threads',
+  'requested_changes_reviews',
+  'conversation_comments',
+  'check_suites',
+  'check_runs',
+];
 
 export async function refreshWatchJobEvents(
   results: Awaited<
@@ -134,7 +152,7 @@ async function refreshOneWatchEvent(
   const refreshEvents =
     dependencies.refreshPrWatchEventState ?? refreshPrWatchEventState;
   const previousResult = await listWatermarks({ watchId: watch.id }, paths);
-  const previousWatermarks = watermarksFromActionResult(previousResult);
+  const acknowledgedWatermarks = watermarksFromActionResult(previousResult);
   const refresh = await refreshEvents({ watchId: watch.id }, paths);
   if (!refresh.ok) {
     const triage = triageValue(pendingTriageSnapshots(pendingTriageEvents));
@@ -162,8 +180,38 @@ async function refreshOneWatchEvent(
   }
 
   const changedCategories = changedCategoriesFromActionResult(refresh);
+  const currentWatermarks = watermarksFromActionResult(refresh);
+  const previousWatermarks =
+    previousWatermarksFromActionResult(refresh) ?? acknowledgedWatermarks;
+  const intakeId = intakeIdFromActionResult(refresh);
+  if (seededUpgradeFromActionResult(refresh)) {
+    return {
+      ok: true,
+      changed: false,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      changedCategories: [],
+      message: refresh.message,
+      refresh: refresh as unknown as JsonValue,
+    };
+  }
   const policy = await readEffectiveWatchAutopilotPolicy(watch, paths);
   const mode = policy.mode;
+  if (!watch.initialEventProcessedAt) {
+    return processInitialWatchEventState(
+      watch,
+      currentWatermarks,
+      changedCategories,
+      mode,
+      policy,
+      paths,
+      dependencies,
+      refresh as unknown as JsonValue,
+      intakeId,
+    );
+  }
   if (changedCategories.length === 0) {
     if (pendingTriageEvents.length > 0) {
       if (mode === 'notify-only') {
@@ -197,10 +245,43 @@ async function refreshOneWatchEvent(
     };
   }
 
-  const currentWatermarks = watermarksFromActionResult(refresh);
-  if (previousWatermarks.length === 0) {
+  const addressed = readAddressedPrFeedback(
+    watch.repoFullName,
+    watch.prNumber,
+    paths,
+  );
+  let deliveries: ReturnType<typeof readNeondeckPrDeliveries>;
+  try {
+    deliveries = readNeondeckPrDeliveries(
+      watch.repoFullName,
+      watch.prNumber,
+      paths,
+    );
+  } catch (error) {
+    return invalidDeliveryLedgerResult(
+      watch,
+      changedCategories,
+      mode,
+      refresh as unknown as JsonValue,
+      error,
+    );
+  }
+  const deltas = deltasFromChangedCategories(
+    changedCategories,
+    currentWatermarks,
+    previousWatermarks,
+    {
+      addressedReviewThreadFingerprints: addressed.reviewThreadFingerprints,
+      addressedReviewCommentFingerprints: addressed.reviewCommentFingerprints,
+      neondeckReviewCommentFingerprints: deliveries.reviewCommentFingerprints,
+      neondeckRequestedChangesReviewFingerprints: deliveries.reviewFingerprints,
+      neondeckConversationCommentFingerprints:
+        deliveries.conversationCommentFingerprints,
+    },
+  );
+  if (deltas.some((delta) => delta.type === 'incomplete-feedback')) {
     return {
-      ok: true,
+      ok: false,
       changed: false,
       watchId: watch.id,
       repoId: watch.repoId,
@@ -208,28 +289,70 @@ async function refreshOneWatchEvent(
       prNumber: watch.prNumber,
       mode,
       changedCategories,
-      message: `Seeded PR event watermark baseline for ${watch.id}.`,
+      deltas,
+      message:
+        'PR event facts are incomplete; the pending intake remains retryable and its watermark baseline was not acknowledged.',
       refresh: refresh as unknown as JsonValue,
     };
   }
-
-  const deltas = deltasFromChangedCategories(
-    changedCategories,
-    currentWatermarks,
-    previousWatermarks,
-  );
   const current = snapshotFromWatermarks(currentWatermarks);
   const previous = snapshotFromWatermarks(previousWatermarks);
-  const notifications: AutomationExecutionResult['notifications'] = [
-    prEventNotification(
+  const eventNotification = {
+    ...prEventNotification(
       watch,
       changedCategories,
       currentWatermarks,
       deltas,
       mode,
     ),
+    ...(intakeId ? { sourceId: intakeId } : {}),
+  };
+  if (mode === 'notify-only' && intakeId) {
+    const delivery = await acknowledgeWatchEventIntake(
+      watch,
+      intakeId,
+      'notification',
+      paths,
+      dependencies,
+      { notification: eventNotification },
+    );
+    if (!delivery.acknowledged) {
+      return unacknowledgedIntakeResult(
+        watch,
+        mode,
+        changedCategories,
+        deltas,
+        refresh as unknown as JsonValue,
+        intakeId,
+      );
+    }
+    if (delivery.notification) {
+      publishNotificationEvent({
+        id: delivery.notification.id,
+        action: 'created',
+        notification: delivery.notification,
+        changedAt: delivery.notification.createdAt,
+      });
+    }
+    return {
+      ok: true,
+      changed: true,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      mode,
+      changedCategories,
+      deltas,
+      message: `Durably recorded PR event ${intakeId} in notify-only mode.`,
+      refresh: refresh as unknown as JsonValue,
+    };
+  }
+  const notifications: AutomationExecutionResult['notifications'] = [
+    eventNotification,
   ];
   let triage: JsonValue | undefined;
+  let durableAdmissionId: string | undefined;
 
   const triageAttempts: JsonValue[] = [];
   if (pendingTriageEvents.length > 0) {
@@ -278,7 +401,10 @@ async function refreshOneWatchEvent(
       repoFullName: watch.repoFullName,
       prNumber: watch.prNumber,
       watchId: watch.id,
-      eventId: prEventSourceId(watch, changedCategories, currentWatermarks),
+      eventId:
+        intakeId ??
+        prEventSourceId(watch, changedCategories, currentWatermarks),
+      eventGenerationId: watch.eventGenerationId,
       source: 'watch',
       autopilotMode: triageModeForPolicy(mode),
       previous,
@@ -293,6 +419,25 @@ async function refreshOneWatchEvent(
     );
     notifications.push(...admission.notifications);
     if (admission.triage) triageAttempts.push(admission.triage);
+    if (!admission.durablyAdmitted) {
+      return {
+        ok: false,
+        changed: false,
+        watchId: watch.id,
+        repoId: watch.repoId,
+        repoFullName: watch.repoFullName,
+        prNumber: watch.prNumber,
+        mode,
+        changedCategories,
+        deltas,
+        message:
+          admission.message ??
+          'Autopilot triage did not produce a durable outcome; the PR event intake remains pending.',
+        refresh: refresh as unknown as JsonValue,
+        triage: triageValue(triageAttempts),
+        notifications: admission.notifications,
+      };
+    }
     if (!admission.ok) {
       return {
         ok: false,
@@ -310,8 +455,31 @@ async function refreshOneWatchEvent(
         notifications,
       };
     }
+    durableAdmissionId = admission.admissionId;
   }
   triage = triageValue(triageAttempts);
+
+  if (intakeId) {
+    const outcome = durableAdmissionId ? 'admission' : 'no-op';
+    const acknowledgement = await acknowledgeWatchEventIntake(
+      watch,
+      intakeId,
+      outcome,
+      paths,
+      dependencies,
+      { admissionId: durableAdmissionId },
+    );
+    if (!acknowledgement.acknowledged) {
+      return unacknowledgedIntakeResult(
+        watch,
+        mode,
+        changedCategories,
+        deltas,
+        refresh as unknown as JsonValue,
+        intakeId,
+      );
+    }
+  }
 
   return {
     ok: true,
@@ -327,6 +495,394 @@ async function refreshOneWatchEvent(
     refresh: refresh as unknown as JsonValue,
     triage,
     notifications,
+  };
+}
+
+async function processInitialWatchEventState(
+  watch: PrWatch,
+  currentWatermarks: PrWatchEventWatermarkRecord[],
+  changedCategories: PrWatchEventWatermarkCategory[],
+  mode: AutopilotMode,
+  policy: Awaited<ReturnType<typeof readEffectiveWatchAutopilotPolicy>>,
+  paths: RuntimePaths,
+  dependencies: SchedulerDependencies,
+  refresh: JsonValue,
+  intakeId: string | undefined,
+): Promise<WatchJobEventResult> {
+  if (watch.initialEventProcessedAt) {
+    return {
+      ok: true,
+      changed: false,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      mode,
+      changedCategories,
+      message: `Seeded PR event watermark baseline for ${watch.id}.`,
+      refresh,
+    };
+  }
+
+  if (!watch.processExisting) {
+    return {
+      ok: false,
+      changed: false,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      mode,
+      changedCategories,
+      message:
+        'The process-existing baseline is missing; reconfigure this watch before polling to avoid losing or replaying feedback.',
+      refresh,
+    };
+  }
+
+  const addressed = readAddressedPrFeedback(
+    watch.repoFullName,
+    watch.prNumber,
+    paths,
+  );
+  let deliveries: ReturnType<typeof readNeondeckPrDeliveries>;
+  try {
+    deliveries = readNeondeckPrDeliveries(
+      watch.repoFullName,
+      watch.prNumber,
+      paths,
+    );
+  } catch (error) {
+    return invalidDeliveryLedgerResult(
+      watch,
+      changedCategories,
+      mode,
+      refresh,
+      error,
+    );
+  }
+  const filters = {
+    addressedReviewThreadFingerprints: addressed.reviewThreadFingerprints,
+    addressedReviewCommentFingerprints: addressed.reviewCommentFingerprints,
+    neondeckReviewCommentFingerprints: deliveries.reviewCommentFingerprints,
+    neondeckRequestedChangesReviewFingerprints: deliveries.reviewFingerprints,
+    neondeckConversationCommentFingerprints:
+      deliveries.conversationCommentFingerprints,
+  };
+  const deltas = initialActionableDeltas(currentWatermarks, filters);
+  if (deltas.some((delta) => delta.type === 'incomplete-feedback')) {
+    return {
+      ok: false,
+      changed: false,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      mode,
+      changedCategories,
+      deltas,
+      message:
+        'Current PR feedback is incomplete; initial processing remains pending until a complete authoritative fetch succeeds.',
+      refresh,
+    };
+  }
+  if (deltas.length === 0) {
+    if (!intakeId) {
+      return unacknowledgedIntakeResult(
+        watch,
+        mode,
+        changedCategories,
+        deltas,
+        refresh,
+        'missing',
+      );
+    }
+    const acknowledgement = await acknowledgeWatchEventIntake(
+      watch,
+      intakeId,
+      'no-op',
+      paths,
+      dependencies,
+      { markInitialProcessed: true },
+    );
+    if (!acknowledgement.acknowledged) {
+      return unacknowledgedIntakeResult(
+        watch,
+        mode,
+        changedCategories,
+        deltas,
+        refresh,
+        intakeId,
+      );
+    }
+    return {
+      ok: true,
+      changed: false,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      mode,
+      changedCategories,
+      deltas,
+      message: `Processed the initial PR state for ${watch.id}; no actionable current feedback was found.`,
+      refresh,
+    };
+  }
+
+  if (!('concurrency' in policy)) {
+    return {
+      ok: false,
+      changed: true,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      mode,
+      changedCategories,
+      deltas,
+      message:
+        'Current PR feedback could not be durably admitted because Autopilot policy is unavailable.',
+      refresh,
+    };
+  }
+
+  if (mode === 'notify-only') {
+    const notification = {
+      ...prEventNotification(
+        watch,
+        initialActionableCategories,
+        currentWatermarks,
+        deltas,
+        mode,
+      ),
+      ...(intakeId ? { sourceId: intakeId } : {}),
+    };
+    if (!intakeId) {
+      return unacknowledgedIntakeResult(
+        watch,
+        mode,
+        changedCategories,
+        deltas,
+        refresh,
+        'missing',
+      );
+    }
+    const delivery = await acknowledgeWatchEventIntake(
+      watch,
+      intakeId,
+      'notification',
+      paths,
+      dependencies,
+      { markInitialProcessed: true, notification },
+    );
+    if (!delivery.acknowledged) {
+      return unacknowledgedIntakeResult(
+        watch,
+        mode,
+        changedCategories,
+        deltas,
+        refresh,
+        intakeId,
+      );
+    }
+    if (delivery.notification) {
+      publishNotificationEvent({
+        id: delivery.notification.id,
+        action: 'created',
+        notification: delivery.notification,
+        changedAt: delivery.notification.createdAt,
+      });
+    }
+    return {
+      ok: true,
+      changed: true,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      mode,
+      changedCategories,
+      deltas,
+      message: `Recorded current PR feedback for ${watch.id} in notify-only mode.`,
+      refresh,
+    };
+  }
+
+  const current = snapshotFromWatermarks(currentWatermarks);
+  const eventId =
+    intakeId ??
+    prEventSourceId(watch, initialActionableCategories, currentWatermarks);
+  const input = jsonRecord({
+    repoId: watch.repoId,
+    repoFullName: watch.repoFullName,
+    prNumber: watch.prNumber,
+    watchId: watch.id,
+    eventId,
+    eventGenerationId: watch.eventGenerationId,
+    source: 'watch',
+    synthetic: 'initial-actionable-state',
+    autopilotMode: triageModeForPolicy(mode),
+    previous: {},
+    current,
+    deltas,
+  });
+  const admission = await admitWatchTriageEvent(
+    watch,
+    paths,
+    dependencies,
+    input,
+  );
+  if (!admission.durablyAdmitted || !intakeId) {
+    return {
+      ok: false,
+      changed: false,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      mode,
+      changedCategories,
+      deltas,
+      message:
+        admission.message ??
+        'Current PR feedback did not reach a durable intake outcome and remains pending.',
+      refresh,
+      triage: admission.triage,
+      notifications: admission.notifications,
+    };
+  }
+  if (admission.durablyAdmitted && intakeId) {
+    const acknowledgement = await acknowledgeWatchEventIntake(
+      watch,
+      intakeId,
+      'admission',
+      paths,
+      dependencies,
+      {
+        markInitialProcessed: true,
+        admissionId: admission.admissionId,
+      },
+    );
+    if (!acknowledgement.acknowledged) {
+      return unacknowledgedIntakeResult(
+        watch,
+        mode,
+        changedCategories,
+        deltas,
+        refresh,
+        intakeId,
+      );
+    }
+  }
+  return {
+    ok: admission.ok,
+    changed: true,
+    watchId: watch.id,
+    repoId: watch.repoId,
+    repoFullName: watch.repoFullName,
+    prNumber: watch.prNumber,
+    mode,
+    changedCategories,
+    deltas,
+    message: admission.durablyAdmitted
+      ? `Durably admitted current actionable PR feedback for ${watch.id}.`
+      : (admission.message ??
+        `Current actionable PR feedback for ${watch.id} remains unprocessed.`),
+    refresh,
+    triage: admission.triage,
+    notifications: [
+      {
+        ...prEventNotification(
+          watch,
+          changedCategories,
+          currentWatermarks,
+          deltas,
+          mode,
+        ),
+        sourceId: intakeId,
+      },
+      ...admission.notifications,
+    ],
+  };
+}
+
+async function acknowledgeWatchEventIntake(
+  watch: PrWatch,
+  eventId: string,
+  outcome: 'admission' | 'notification' | 'no-op',
+  paths: RuntimePaths,
+  dependencies: SchedulerDependencies,
+  options: {
+    markInitialProcessed?: boolean;
+    admissionId?: string;
+    notification?: NonNullable<
+      AutomationExecutionResult['notifications']
+    >[number];
+  } = {},
+) {
+  await dependencies.beforePrWatchEventIntakeAcknowledged?.({
+    watchId: watch.id,
+    eventId,
+    outcome,
+  });
+  return acknowledgePrWatchEventIntake(paths, {
+    watchId: watch.id,
+    eventId,
+    outcome,
+    markInitialProcessed: options.markInitialProcessed,
+    admissionId: options.admissionId,
+    notification: options.notification,
+  });
+}
+
+function unacknowledgedIntakeResult(
+  watch: PrWatch,
+  mode: AutopilotMode,
+  changedCategories: PrWatchEventWatermarkCategory[],
+  deltas: JsonValue[],
+  refresh: JsonValue,
+  intakeId: string,
+): WatchJobEventResult {
+  return {
+    ok: false,
+    changed: false,
+    watchId: watch.id,
+    repoId: watch.repoId,
+    repoFullName: watch.repoFullName,
+    prNumber: watch.prNumber,
+    mode,
+    changedCategories,
+    deltas,
+    message: `PR event intake ${intakeId} was not acknowledged; it remains pending for restart-safe retry.`,
+    refresh,
+  };
+}
+
+function invalidDeliveryLedgerResult(
+  watch: PrWatch,
+  changedCategories: PrWatchEventWatermarkCategory[],
+  mode: AutopilotMode,
+  refresh: JsonValue,
+  error: unknown,
+): WatchJobEventResult {
+  return {
+    ok: false,
+    changed: false,
+    watchId: watch.id,
+    repoId: watch.repoId,
+    repoFullName: watch.repoFullName,
+    prNumber: watch.prNumber,
+    mode,
+    changedCategories,
+    message:
+      'Stored Neondeck PR delivery identity is invalid and requires operator repair before this intake can be acknowledged.',
+    refresh,
+    triage: {
+      status: 'blocked',
+      reason: 'invalid-delivery-ledger',
+      error: errorMessage(error),
+    },
   };
 }
 
@@ -435,6 +991,14 @@ async function admitWatchTriageEvent(
   input: Record<string, JsonValue>,
 ): Promise<TriageAdmissionResult> {
   const eventId = stringField(input.eventId) ?? 'unknown';
+  const eventGenerationId = stringField(input.eventGenerationId);
+  if (!eventGenerationId) {
+    return lostIntakeLeaseAdmissionResult(
+      eventId,
+      input,
+      'The persisted watch event is missing its event-generation fence.',
+    );
+  }
   const policy = await readEffectiveWatchAutopilotPolicy(watch, paths);
   if (!('concurrency' in policy)) {
     return {
@@ -465,18 +1029,27 @@ async function admitWatchTriageEvent(
       ],
     };
   }
-  const admission = await claimAutopilotTriageAdmission(
-    {
-      watchId: watch.id,
-      eventFingerprint: eventId,
-      repoId: watch.repoId,
-      prNumber: watch.prNumber,
-      mode: policy.mode,
-      input,
-      limits: policy.concurrency,
-    },
-    paths,
-  );
+  let admission: Awaited<ReturnType<typeof claimAutopilotTriageAdmission>>;
+  try {
+    admission = await claimAutopilotTriageAdmission(
+      {
+        watchId: watch.id,
+        eventFingerprint: eventId,
+        repoId: watch.repoId,
+        prNumber: watch.prNumber,
+        mode: policy.mode,
+        input,
+        limits: policy.concurrency,
+        requiredPendingIntake: { eventId, eventGenerationId },
+      },
+      paths,
+    );
+  } catch (error) {
+    if (error instanceof AutopilotPendingIntakeLeaseLostError) {
+      return lostIntakeLeaseAdmissionResult(eventId, input, error.message);
+    }
+    throw error;
+  }
   if (!admission.claimed) {
     return {
       ok: true,
@@ -488,6 +1061,8 @@ async function admitWatchTriageEvent(
         admission: admission.admission,
       } as unknown as JsonValue,
       notifications: [],
+      durablyAdmitted: true,
+      admissionId: admission.admission.id,
     };
   }
 
@@ -501,13 +1076,14 @@ async function admitWatchTriageEvent(
       },
       paths,
     );
-    return triageAdmissionResultFromCoordination({
+    const result = triageAdmissionResultFromCoordination({
       watch,
       eventId,
       input,
       admissionId: admission.admission.id,
       coordination,
     });
+    return { ...result, admissionId: admission.admission.id };
   } catch (error) {
     const message = `Autopilot triage admission failed: ${errorMessage(error)}.`;
     return {
@@ -538,8 +1114,30 @@ async function admitWatchTriageEvent(
           },
         },
       ],
+      durablyAdmitted: true,
+      admissionId: admission.admission.id,
     };
   }
+}
+
+function lostIntakeLeaseAdmissionResult(
+  eventId: string,
+  input: Record<string, JsonValue>,
+  message: string,
+): TriageAdmissionResult {
+  return {
+    ok: false,
+    changed: false,
+    message,
+    triage: {
+      status: 'superseded',
+      eventId,
+      reason: 'pr-watch-event-intake-lease-lost',
+      input,
+    } as unknown as JsonValue,
+    notifications: [],
+    durablyAdmitted: false,
+  };
 }
 
 export function triageAdmissionResultFromCoordination(input: {
@@ -562,6 +1160,7 @@ export function triageAdmissionResultFromCoordination(input: {
         input: triageInput,
       } as unknown as JsonValue,
       notifications: [],
+      durablyAdmitted: true,
     };
   }
 
@@ -577,6 +1176,7 @@ export function triageAdmissionResultFromCoordination(input: {
         input: triageInput,
       } as unknown as JsonValue,
       notifications: [],
+      durablyAdmitted: true,
     };
   }
 
@@ -597,6 +1197,7 @@ export function triageAdmissionResultFromCoordination(input: {
         dispatch: evidence,
       } as unknown as JsonValue,
       notifications: [],
+      durablyAdmitted: true,
     };
   }
 
@@ -637,6 +1238,7 @@ export function triageAdmissionResultFromCoordination(input: {
         },
       },
     ],
+    durablyAdmitted: true,
   };
 }
 
@@ -833,6 +1435,25 @@ function watermarksFromActionResult(result: unknown) {
     .filter((item): item is PrWatchEventWatermarkRecord => Boolean(item));
 }
 
+function previousWatermarksFromActionResult(result: unknown) {
+  const data = dataFromActionResult(result);
+  if (!Array.isArray(data.previousWatermarks)) return undefined;
+  return data.previousWatermarks
+    .map(readWatermarkLike)
+    .filter((item): item is PrWatchEventWatermarkRecord => Boolean(item));
+}
+
+function intakeIdFromActionResult(result: unknown) {
+  const intakeId = dataFromActionResult(result).intakeId;
+  return typeof intakeId === 'string' && intakeId.length > 0
+    ? intakeId
+    : undefined;
+}
+
+function seededUpgradeFromActionResult(result: unknown) {
+  return dataFromActionResult(result).seededUpgrade === true;
+}
+
 function dataFromActionResult(result: unknown) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) return {};
   return readObjectConfig((result as { data?: unknown }).data);
@@ -864,6 +1485,7 @@ function isWatermarkCategory(
     value === 'commits' ||
     value === 'review_threads' ||
     value === 'requested_changes_reviews' ||
+    value === 'conversation_comments' ||
     value === 'check_suites' ||
     value === 'check_runs' ||
     value === 'mergeability' ||
