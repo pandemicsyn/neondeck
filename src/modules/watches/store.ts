@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
+import { openDb } from '../../lib/sqlite';
 import type { RuntimePaths } from '../../runtime-home';
 import { upsertScheduledTask } from '../scheduled-tasks';
 import type {
@@ -13,7 +13,7 @@ import type {
 } from './schemas';
 
 export function insertWatch(paths: RuntimePaths, watch: PrWatch) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -48,7 +48,7 @@ export function insertWatch(paths: RuntimePaths, watch: PrWatch) {
 }
 
 export function updateWatch(paths: RuntimePaths, watch: PrWatch) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -97,7 +97,7 @@ export function updateWatch(paths: RuntimePaths, watch: PrWatch) {
 }
 
 export function insertRefWatch(paths: RuntimePaths, watch: RefWatch) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -128,7 +128,7 @@ export function insertRefWatch(paths: RuntimePaths, watch: RefWatch) {
 }
 
 export function updateRefWatch(paths: RuntimePaths, watch: RefWatch) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -197,7 +197,7 @@ export function watchPollingTaskId(id: string) {
 }
 
 export function readWatches(paths: RuntimePaths): PrWatch[] {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     return database
       .prepare(
@@ -215,7 +215,7 @@ export function readWatches(paths: RuntimePaths): PrWatch[] {
 }
 
 export function readWatch(paths: RuntimePaths, id: string) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare(
@@ -234,7 +234,7 @@ export function readWatch(paths: RuntimePaths, id: string) {
 }
 
 export function readRefWatches(paths: RuntimePaths): RefWatch[] {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     return database
       .prepare(
@@ -252,7 +252,7 @@ export function readRefWatches(paths: RuntimePaths): RefWatch[] {
 }
 
 export function readRefWatch(paths: RuntimePaths, id: string) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = database
       .prepare(
@@ -271,7 +271,7 @@ export function readRefWatch(paths: RuntimePaths, id: string) {
 }
 
 export function deleteWatch(paths: RuntimePaths, id: string) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare('DELETE FROM pr_watch_event_watermarks WHERE watch_id = ?;')

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { asJsonValue } from '../../lib/action-result';
-import { openDb } from '../../lib/sqlite';
+import { openDb, rollbackQuietly } from '../../lib/sqlite';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import {
   scheduledTaskSpecSchema,
@@ -157,7 +157,7 @@ export async function deleteScheduledTask(id: string, paths = runtimePaths()) {
     database.prepare('DELETE FROM scheduled_tasks WHERE id = ?;').run(id);
     database.exec('COMMIT;');
   } catch (error) {
-    database.exec('ROLLBACK;');
+    rollbackQuietly(database);
     throw error;
   } finally {
     database.close();
@@ -201,7 +201,7 @@ export async function setScheduledTaskEnabled(
     database.exec('COMMIT;');
     if (result.changes !== 1) return undefined;
   } catch (error) {
-    database.exec('ROLLBACK;');
+    rollbackQuietly(database);
     throw error;
   } finally {
     database.close();
@@ -229,6 +229,36 @@ export async function claimDueScheduledTasks(
   ).toISOString();
   try {
     database.exec('BEGIN IMMEDIATE;');
+    database
+      .prepare(
+        `
+        UPDATE scheduled_task_runs
+        SET
+          status = CASE terminal.status
+            WHEN 'failed' THEN 'failed'
+            ELSE 'completed'
+          END,
+          outcome = CASE terminal.status
+            WHEN 'failed' THEN 'failed'
+            ELSE 'recorded'
+          END,
+          message = CASE terminal.status
+            WHEN 'failed' THEN 'Scheduled workflow failed; see Flue run details.'
+            ELSE 'Scheduled workflow completed.'
+          END,
+          error = CASE terminal.status
+            WHEN 'failed' THEN 'See Flue run details.'
+            ELSE NULL
+          END,
+          completed_at = COALESCE(terminal.ended_at, ?),
+          updated_at = ?
+        FROM workflow_run_observations AS terminal
+        WHERE scheduled_task_runs.status = 'active'
+          AND scheduled_task_runs.workflow_run_id = terminal.run_id
+          AND terminal.status IN ('completed', 'failed');
+      `,
+      )
+      .run(nowIso, nowIso);
     database
       .prepare(
         `
@@ -403,7 +433,7 @@ export async function claimDueScheduledTasks(
     database.exec('COMMIT;');
     return claimed;
   } catch (error) {
-    database.exec('ROLLBACK;');
+    rollbackQuietly(database);
     throw error;
   } finally {
     database.close();
@@ -453,7 +483,7 @@ export async function releaseUnstartedScheduledTaskClaim(
       );
     database.exec('COMMIT;');
   } catch (error) {
-    database.exec('ROLLBACK;');
+    rollbackQuietly(database);
     throw error;
   } finally {
     database.close();
@@ -512,7 +542,7 @@ export async function deferUnstartedScheduledTaskClaim(
       );
     database.exec('COMMIT;');
   } catch (error) {
-    database.exec('ROLLBACK;');
+    rollbackQuietly(database);
     throw error;
   } finally {
     database.close();
@@ -589,7 +619,7 @@ export async function activateScheduledTaskWorkflowRun(
       .run(now, input.taskId, input.claimId);
     database.exec('COMMIT;');
   } catch (error) {
-    database.exec('ROLLBACK;');
+    rollbackQuietly(database);
     throw error;
   } finally {
     database.close();
@@ -647,7 +677,7 @@ export async function attachScheduledTaskWorkflowRunId(
       );
     database.exec('COMMIT;');
   } catch (error) {
-    database.exec('ROLLBACK;');
+    rollbackQuietly(database);
     throw error;
   } finally {
     database.close();
@@ -706,13 +736,13 @@ export async function settleScheduledTaskRun(
   const database = openDb(paths.neondeckDatabase);
   try {
     database.exec('BEGIN IMMEDIATE;');
-    database
+    const settled = database
       .prepare(
         `
         UPDATE scheduled_task_runs
         SET status = ?, outcome = ?, message = ?, workflow_run_id = ?, session_id = ?,
             result_json = ?, error = ?, completed_at = ?, updated_at = ?
-        WHERE id = ? AND task_id = ?;
+        WHERE id = ? AND task_id = ? AND status IN ('claimed', 'active');
       `,
       )
       .run(
@@ -730,6 +760,10 @@ export async function settleScheduledTaskRun(
         input.runId,
         input.taskId,
       );
+    if (settled.changes !== 1) {
+      database.exec('COMMIT;');
+      return false;
+    }
     database
       .prepare(
         `
@@ -740,8 +774,9 @@ export async function settleScheduledTaskRun(
       )
       .run(now, input.taskId, input.claimId);
     database.exec('COMMIT;');
+    return true;
   } catch (error) {
-    database.exec('ROLLBACK;');
+    rollbackQuietly(database);
     throw error;
   } finally {
     database.close();

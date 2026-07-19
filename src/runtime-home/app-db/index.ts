@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 
-import { configureDb } from '../../lib/sqlite.ts';
+import { configureDb, enableWal } from '../../lib/sqlite.ts';
 import { applyAppDbMigrations } from './migrate.ts';
 import {
   reconcileActiveChatSession,
@@ -10,7 +10,7 @@ import {
 
 export function initializeAppDatabase(path: string) {
   applyAppDbMigrations(path);
-  const database = configureDb(new DatabaseSync(path));
+  const database = enableWal(configureDb(new DatabaseSync(path)));
   const now = new Date().toISOString();
 
   try {

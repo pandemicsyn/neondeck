@@ -5,6 +5,13 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { addWorkflowSummary, listWorkflowSummaries } from './modules/app-state';
 import { extractHandledPrEvent } from './modules/learning/reviews/pr-context';
+import {
+  activateScheduledTaskWorkflowRun,
+  attachScheduledTaskWorkflowRunId,
+  claimDueScheduledTasks,
+  readLatestScheduledTaskRun,
+  upsertScheduledTask,
+} from './modules/scheduled-tasks';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   attachCommandRunSummaryRunId,
@@ -194,6 +201,73 @@ describe('Flue learning hooks', () => {
         taskId: 'ci-fix-task-1',
         worktreeId: 'worktree-1',
       }),
+    });
+  });
+
+  it('settles a scheduled workflow even when observation persistence fails', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-learning-hooks-'));
+    tempRoots.push(home);
+    const paths = runtimePaths(home);
+    await upsertScheduledTask(
+      {
+        id: 'briefing:observation-failure',
+        spec: { kind: 'run-briefing', briefingId: 'daily' },
+        trigger: { kind: 'interval', everySeconds: 300 },
+        nextRunAt: '2026-07-10T00:00:00.000Z',
+      },
+      paths,
+    );
+    const [claim] = await claimDueScheduledTasks(
+      paths,
+      new Date('2026-07-10T00:00:00.000Z'),
+    );
+    if (!claim) throw new Error('Expected the due task to be claimed.');
+    await activateScheduledTaskWorkflowRun(
+      {
+        taskId: claim.task.id,
+        runId: claim.run.id,
+        claimId: claim.task.claimId ?? '',
+      },
+      paths,
+    );
+    await attachScheduledTaskWorkflowRunId(
+      {
+        runId: claim.run.id,
+        workflowRunId: 'workflow:observation-failure',
+      },
+      paths,
+    );
+
+    let subscriber: FlueObservationSubscriber | undefined;
+    installFlueObservationHandlers(paths, {
+      observe(next) {
+        subscriber = next;
+        return vi.fn<() => void>();
+      },
+      recordFlueObservation: vi.fn<() => Promise<never>>(async () => {
+        throw new Error('observation write failed');
+      }),
+    });
+
+    subscriber?.(
+      {
+        v: 3,
+        type: 'run_end',
+        eventIndex: 2,
+        timestamp: '2026-07-10T00:00:01.000Z',
+        runId: 'workflow:observation-failure',
+        workflow: 'briefing',
+        durationMs: 1_000,
+        isError: false,
+        result: { ok: true },
+      } as FlueObservation,
+      {} as never,
+    );
+
+    await vi.waitFor(async () => {
+      await expect(
+        readLatestScheduledTaskRun(claim.task.id, paths),
+      ).resolves.toMatchObject({ id: claim.run.id, status: 'completed' });
     });
   });
 });

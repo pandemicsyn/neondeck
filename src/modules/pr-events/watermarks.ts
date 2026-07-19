@@ -1,7 +1,7 @@
 /* eslint-disable no-unused-vars */
 import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
-import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
+import { openDb, rollbackQuietly } from '../../lib/sqlite';
 import {
   fetchPullRequestEventState,
   postPullRequestComment,
@@ -207,7 +207,7 @@ export function readWatermarks(
   paths: RuntimePaths,
   watchId?: string,
 ): PrWatchEventWatermarkRecord[] {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const query = watchId
       ? `
@@ -236,7 +236,7 @@ export function upsertWatermarks(
   watchId: string,
   watermarks: ReturnType<typeof watermarksFromEventState>,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
 
   try {
@@ -275,7 +275,7 @@ export function upsertWatermarks(
       }
       database.exec('COMMIT;');
     } catch (error) {
-      database.exec('ROLLBACK;');
+      rollbackQuietly(database);
       throw error;
     }
   } finally {
