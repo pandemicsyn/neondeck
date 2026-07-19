@@ -1795,7 +1795,7 @@
 
         <section id="permissions">
           <p class="section-label">Agent briefing, environment, and permissions</p>
-          <h2>The expected continuing PR-owner session and briefing do not exist</h2>
+          <h2>The expected continuing PR-owner agent instance and briefing do not exist</h2>
           <p>
             No coding worker is spawned in the watched-PR path. The configured
             Flue workflows name <code>displayAssistant</code> as their agent but
@@ -1861,17 +1861,38 @@
           </div>
 
           <div class="callout success">
-            <h3>Target lifecycle: one Neon session and workspace per watched PR</h3>
+            <h3>Target lifecycle: one Neon instance and workspace per watched PR</h3>
             <p>
               The first actionable event should lazily create one narrowly scoped
-              <strong>PR-owner Neon session</strong> and one managed worktree.
-              Later feedback, CI failures, and PR state changes should be delivered
-              as fresh authoritative event envelopes to that same session, with
+              <strong>PR-owner Neon agent instance</strong> (the durable
+              <code>dispatch</code> target, addressed by
+              <code>flue_instance_id</code>) and one managed worktree. Later
+              feedback, CI failures, and PR state changes should be delivered as
+              fresh authoritative event envelopes to that same instance, with
               same-PR turns serialized by the durable controller. A routine event
-              must not create another Neon session. The owner session and workspace
-              remain until the PR reaches its configured terminal state or the user
-              explicitly stops Autopilot; exceptional session rotation is explicit,
-              audited, and carries forward a compact handoff.
+              must not create another Neon instance. The owner instance and
+              workspace remain until the PR reaches its configured terminal state or
+              the user explicitly stops Autopilot.
+            </p>
+            <p>
+              Two continuity concerns must not be conflated. Flue
+              <code>CompactionConfig</code> bounds model-visible context input for
+              a long PR, not the persisted canonical stream, transcript storage, or
+              replay cost; it is not an instance-rotation policy. Neondeck's own
+              <code>staleReasons</code> signal is separate: it reports
+              grounding drift (a <code>config_history</code> or relevant
+              in-context <code>memory</code> change measured against the owner's
+              persisted config and memory cursors; <code>contextLoadedAt</code> is
+              chat metadata only) and fires on routine operator edits —
+              notably a mid-flight mode change, which is a
+              <code>config_update_repo_autopilot_policy</code> action. The owner
+              must therefore <em>not</em> reuse the briefings throw-on-stale gate.
+              Memory and explicitly classified, completely covered repo/config drift
+              re-ground in place through the next authoritative envelope; unknown or
+              future config drift blocks or triggers audited instance rotation. Only
+              <code>model</code>/<code>provider</code>/<code>skill</code>/<code>soul</code>
+              drift always rotates. Any rotation is explicit, audited, and carries
+              forward a compact handoff.
             </p>
           </div>
 
@@ -2044,7 +2065,7 @@ exit code: 127</code></pre>
           <div class="callout success">
             <h3>Implementation source of truth</h3>
             <p>
-              The executable work packages, state model, PR-owner session/event
+              The executable work packages, state model, PR-owner agent-instance/event
               briefing,
               verification matrix, and package exit gates live in
               <a href="./AUTOPILOT_IMPLEMENTATION_PLAN.md">AUTOPILOT_IMPLEMENTATION_PLAN.md</a>.
@@ -2056,7 +2077,7 @@ exit code: 127</code></pre>
               <h3>Add a durable planner/fixer stage</h3>
               <ul>
                 <li>Extend admissions through plan/fix, verify, approval, push, comment, cleanup.</li>
-                <li>Create/reuse one continuing PR-owner Neon session; bound and audit each event turn.</li>
+                <li>Create/reuse one continuing PR-owner Neon agent instance; bound and audit each event turn.</li>
                 <li>Feed typed patch/replacement output into existing deterministic fixers.</li>
                 <li>Branch correctly by mode; never create a push approval in prepare-only.</li>
               </ul>
@@ -2087,7 +2108,7 @@ exit code: 127</code></pre>
               <ul>
                 <li>Expire attached but lost/stuck runs.</li>
                 <li>Add exponential backoff, attempt caps, and explicit resume.</li>
-                <li>Separate pause watch, cancel turn, abandon diff, archive session, and cleanup worktree.</li>
+                <li>Separate pause watch, cancel turn, abandon diff, archive agent instance, and cleanup worktree.</li>
                 <li>Archive terminal admissions and purge/supersede on watch removal.</li>
               </ul>
             </article>
@@ -2096,7 +2117,7 @@ exit code: 127</code></pre>
               <h3>Test the user promise, not the primitives alone</h3>
               <ul>
                 <li>Drive a scheduled watch from baseline through a new review delta.</li>
-                <li>Use a real Flue session-dispatch boundary and a continuing fake planning agent.</li>
+                <li>Use a real Flue agent-instance dispatch boundary and a continuing fake planning agent.</li>
                 <li>Assert diff, checks, approval/push, comment, notifications, and cleanup.</li>
                 <li>Test restarts, duplicates, stale SHAs, forks, permissions, and cancellation.</li>
               </ul>
@@ -2130,10 +2151,10 @@ exit code: 127</code></pre>
               baseline-only behavior is also selectable and clearly explained.
             </li>
             <li>
-              The first actionable review event starts one PR-owner Neon session
+              The first actionable review event starts one PR-owner Neon agent instance
               with the exact managed worktree path, repo/PR/branch/SHAs, full
               feedback, available tools, checks, and policy limits. Later feedback
-              is injected into that same session and workspace with refreshed,
+              is injected into that same agent instance and workspace with refreshed,
               authoritative facts.
             </li>
             <li>
@@ -2182,8 +2203,8 @@ exit code: 127</code></pre>
             </li>
             <li>
               A fixture-backed product test executes watch delta → triage →
-              continuing owner-session turn → prepared diff → verification →
-              approval/push → later feedback in the same session → terminal
+              continuing owner-agent-instance turn → prepared diff → verification →
+              approval/push → later feedback in the same agent instance → terminal
               archive/cleanup, and the smoke command actually runs it.
             </li>
           </ol>
