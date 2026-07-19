@@ -57,6 +57,17 @@ export {
   dispatchReservedAutopilotStage,
   registerAutopilotStageDispatch,
 } from './coordination/dispatch';
+export {
+  recordAutopilotOwnerTerminalObservation,
+  settleAutopilotOwnerObservation,
+  settlePendingAutopilotOwnerObservation,
+} from './owner/settle';
+export type { AutopilotOwnerTerminalObservation } from './owner/settle';
+export {
+  submitAutopilotFix,
+  submitAutopilotFixAction,
+  submitAutopilotFixInputSchema,
+} from './actions/submit-fix';
 export type {
   AutopilotDispatchRegistrationResult,
   AutopilotDispatchResult,

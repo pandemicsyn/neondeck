@@ -484,6 +484,7 @@ export async function listAutopilotAdmissionsNeedingAdvance(
            AND stop_requested_at IS NULL
            AND (
              state = 'triaged'
+             OR state = 'prepared'
              OR (state IN ('blocked', 'failed') AND next_attempt_at <= ?)
            )
          ORDER BY priority DESC, updated_at ASC;`,
@@ -541,6 +542,14 @@ function selectNextStage(admission: AutopilotAdmission, now: Date) {
         } as const)
       : ({ kind: 'complete', reason: 'triage-no-further-action' } as const);
   }
+  if (admission.state === 'prepared') {
+    return {
+      kind: 'stage',
+      stage: 'owner-turn',
+      admittedState: 'owner-turn-admitted',
+      reason: 'worktree-ready-for-owner',
+    } as const;
+  }
   if (admission.state !== 'blocked' && admission.state !== 'failed') {
     return undefined;
   }
@@ -553,7 +562,12 @@ function selectNextStage(admission: AutopilotAdmission, now: Date) {
     return undefined;
   }
   const stage = admission.lastOutcome.retryStage;
-  if (stage !== 'triage' && stage !== 'prepare-worktree') return undefined;
+  if (
+    stage !== 'triage' &&
+    stage !== 'prepare-worktree' &&
+    stage !== 'owner-turn'
+  )
+    return undefined;
   return {
     kind: 'stage',
     stage,

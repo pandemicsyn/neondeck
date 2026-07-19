@@ -10,3 +10,4 @@ export * from './repo-context';
 export * from './schemas';
 export * from './service';
 export * from './summaries';
+export * from './stale-reasons';

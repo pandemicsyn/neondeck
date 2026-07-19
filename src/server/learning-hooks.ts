@@ -11,6 +11,7 @@ import { settleScheduledTaskWorkflowRun } from '../modules/scheduled-tasks';
 import {
   coordinateAutopilotAdmission,
   recordAutopilotStageTerminalObservation,
+  recordAutopilotOwnerTerminalObservation,
   type AutopilotConcurrencyPolicy,
   type AutopilotWorkflowInvoker,
 } from '../modules/autopilot';
@@ -93,6 +94,7 @@ export function installFlueObservationHandlers(
               admissionId: settled.admission.id,
               invokeWorkflow: invokeAutopilotWorkflow,
               limits: dependencies.autopilotConcurrency,
+              enableOwnerDispatch: true,
             },
             paths,
           );
@@ -186,6 +188,39 @@ export function installFlueObservationHandlers(
       void settleBriefingObservation(event, paths).catch((error) => {
         console.error('[neondeck] failed to settle briefing submission', error);
       });
+      const ownerTerminal = autopilotOwnerTerminalFact(event);
+      if (ownerTerminal) {
+        void recordAutopilotOwnerTerminalObservation(ownerTerminal, paths)
+          .then(async (settled) => {
+            if (settled.status !== 'settled' || !settled.admission) return;
+            await coordinateAutopilotAdmission(
+              {
+                admissionId: settled.admission.id,
+                invokeWorkflow: invokeAutopilotWorkflow,
+                limits: dependencies.autopilotConcurrency,
+                enableOwnerDispatch: true,
+              },
+              paths,
+            );
+            if (settled.queuedAdmissionId) {
+              await coordinateAutopilotAdmission(
+                {
+                  admissionId: settled.queuedAdmissionId,
+                  invokeWorkflow: invokeAutopilotWorkflow,
+                  limits: dependencies.autopilotConcurrency,
+                  enableOwnerDispatch: true,
+                },
+                paths,
+              );
+            }
+          })
+          .catch((error) => {
+            console.error(
+              '[neondeck] failed to settle PR-owner observation',
+              error,
+            );
+          });
+      }
     }
 
     void recordFlueObservation(event, paths).catch((error) => {
@@ -217,6 +252,60 @@ export function installFlueObservationHandlers(
     }
   });
   observationHandlerUnsubscribers.set(paths.home, unsubscribe);
+}
+
+export function autopilotOwnerTerminalFact(
+  event: Extract<
+    FlueObservation,
+    { type: 'agent_end' | 'operation' | 'submission_settled' }
+  >,
+) {
+  if (!event.dispatchId) return null;
+  const record = event as unknown as Record<string, unknown>;
+  if (
+    record.taskId ||
+    record.parentSession ||
+    (typeof record.agentName === 'string' &&
+      record.agentName !== 'pr-autopilot-owner')
+  ) {
+    return null;
+  }
+  if (
+    event.type === 'operation' &&
+    (event.operationKind !== 'prompt' || !event.isError)
+  ) {
+    return null;
+  }
+  const instanceId =
+    typeof record.instanceId === 'string' ? record.instanceId : null;
+  if (!instanceId) return null;
+  const failed =
+    event.type === 'operation'
+      ? event.isError
+      : event.type === 'submission_settled'
+        ? event.outcome !== 'completed'
+        : false;
+  let error: string | null = null;
+  if (failed) {
+    if (event.type === 'submission_settled') {
+      error = event.error?.message ?? `Owner submission ${event.outcome}.`;
+    } else if (event.type === 'operation') {
+      error =
+        event.error instanceof Error
+          ? event.error.message
+          : typeof event.error === 'string'
+            ? event.error
+            : (event.errorInfo?.message ?? 'Owner model operation failed.');
+    }
+  }
+  return {
+    agent: 'pr-autopilot-owner' as const,
+    instanceId,
+    dispatchId: event.dispatchId,
+    failed,
+    error,
+    source: event.type,
+  };
 }
 
 const defaultAutopilotWorkflowInvoker: AutopilotWorkflowInvoker = (

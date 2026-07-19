@@ -22,6 +22,7 @@ import {
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   attachCommandRunSummaryRunId,
+  autopilotOwnerTerminalFact,
   installFlueObservationHandlers,
   resetFlueObservationHandlersForTests,
 } from './server/learning-hooks';
@@ -38,6 +39,25 @@ afterEach(async () => {
 });
 
 describe('Flue learning hooks', () => {
+  it('accepts a correlated owner terminal fact when optional agentName is omitted', () => {
+    expect(
+      autopilotOwnerTerminalFact({
+        v: 3,
+        type: 'agent_end',
+        eventIndex: 2,
+        timestamp: '2026-07-19T00:00:01.000Z',
+        dispatchId: 'dispatch:owner',
+        instanceId: 'instance:owner',
+        durationMs: 100,
+        messages: [],
+      } as FlueObservation & { type: 'agent_end' }),
+    ).toMatchObject({
+      instanceId: 'instance:owner',
+      dispatchId: 'dispatch:owner',
+      failed: false,
+    });
+  });
+
   it('installs one observation subscriber per runtime home', () => {
     const subscribers: unknown[] = [];
     const unsubscribers = [vi.fn<() => void>(), vi.fn<() => void>()];

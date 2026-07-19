@@ -14,11 +14,14 @@ import {
   settlePendingAutopilotStageObservation,
 } from './settle';
 import { isLegalAutopilotTransition } from './transitions';
+import { settlePendingAutopilotOwnerObservation } from '../owner/settle';
+import { hasAutopilotSubmissionProcessLease } from '../owner/submission-lease';
 
 export const defaultAutopilotReservationTimeoutMs = 5 * 60 * 1000;
 export const defaultAutopilotStageTimeoutMs = 30 * 60 * 1000;
 export const defaultAutopilotTerminalArtifactGraceMs = 30 * 1000;
 export const defaultAutopilotTerminalFactRetentionMs = 60 * 60 * 1000;
+export const defaultAutopilotOwnerApplyingTimeoutMs = 2 * 60 * 60 * 1000;
 
 export async function reconcileAutopilotStageAttempts(
   paths: RuntimePaths = runtimePaths(),
@@ -28,6 +31,7 @@ export async function reconcileAutopilotStageAttempts(
     stageTimeoutMs?: number;
     terminalArtifactGraceMs?: number;
     terminalFactRetentionMs?: number;
+    ownerApplyingTimeoutMs?: number;
   } = {},
 ) {
   await ensureRuntimeHome(paths);
@@ -43,6 +47,11 @@ export async function reconcileAutopilotStageAttempts(
     now.getTime() -
       (options.terminalArtifactGraceMs ??
         defaultAutopilotTerminalArtifactGraceMs),
+  ).toISOString();
+  const ownerApplyingBefore = new Date(
+    now.getTime() -
+      (options.ownerApplyingTimeoutMs ??
+        defaultAutopilotOwnerApplyingTimeoutMs),
   ).toISOString();
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   let attempts;
@@ -62,6 +71,7 @@ export async function reconcileAutopilotStageAttempts(
              OR (attempt.status = 'running' AND attempt.run_id IS NOT NULL
                  AND attempt.started_at <= ?)
              OR observation.status IN ('completed', 'failed')
+             OR (attempt.stage = 'owner-turn' AND attempt.status = 'running')
            );`,
       )
       .all(reservationBefore, reservationBefore, stageBefore);
@@ -84,6 +94,75 @@ export async function reconcileAutopilotStageAttempts(
         )
       ) {
         reconciled.push(attempt.admissionId);
+      }
+      continue;
+    }
+    if (attempt.stage === 'owner-turn') {
+      if (attempt.dispatchId) {
+        const pending = await settlePendingAutopilotOwnerObservation(
+          attempt.dispatchId,
+          paths,
+          now,
+        );
+        if (pending.status === 'settled') {
+          reconciled.push(attempt.admissionId);
+          continue;
+        }
+      }
+      const applying = readOwnerApplyingSubmission(attempt.id, paths);
+      if (applying) {
+        if (hasAutopilotSubmissionProcessLease(attempt.id)) continue;
+        if (
+          applying.createdAt <= ownerApplyingBefore &&
+          expireStaleOwnerApplyingSubmission(
+            attempt.id,
+            attempt.ownerId,
+            ownerApplyingBefore,
+            paths,
+            now,
+          ) &&
+          (await markStaleAutopilotAttemptForManualReview(
+            attempt.id,
+            'owner-submission-lease-expired',
+            'The owner fix submission lease expired after its worktree mutation lock was released or lost.',
+            paths,
+            now,
+          ))
+        ) {
+          reconciled.push(attempt.admissionId);
+        }
+        continue;
+      }
+      if (
+        !attempt.dispatchId &&
+        attempt.startedAt &&
+        attempt.startedAt <= reservationBefore
+      ) {
+        if (
+          await markStaleAutopilotAttemptForManualReview(
+            attempt.id,
+            'owner-dispatch-unattached',
+            'The owner turn has no durable Flue dispatch id.',
+            paths,
+            now,
+          )
+        ) {
+          reconciled.push(attempt.admissionId);
+        }
+        continue;
+      }
+      if (attempt.startedAt && attempt.startedAt <= stageBefore) {
+        if (
+          await markStaleAutopilotAttemptForManualReview(
+            attempt.id,
+            'owner-turn-timeout',
+            'The attached owner dispatch produced no terminal observation before the owner stage timeout.',
+            paths,
+            now,
+          )
+        ) {
+          reconciled.push(attempt.admissionId);
+        }
       }
       continue;
     }
@@ -178,7 +257,15 @@ export async function reconcileAutopilotStageAttempts(
       cleanupDatabase
         .prepare(
           `DELETE FROM app_metadata
-           WHERE key LIKE 'autopilot.stage.terminal:%' AND updated_at <= ?;`,
+           WHERE (key LIKE 'autopilot.stage.terminal:%'
+                  OR (key LIKE 'autopilot.owner.terminal:%'
+                      AND NOT EXISTS (
+                        SELECT 1 FROM autopilot_stage_attempts AS attempts
+                        WHERE attempts.status = 'running'
+                          AND attempts.stage = 'owner-turn'
+                          AND key = 'autopilot.owner.terminal:' || attempts.dispatch_id
+                      )))
+             AND updated_at <= ?;`,
         )
         .run(factBefore).changes,
     );
@@ -192,6 +279,60 @@ export async function reconcileAutopilotStageAttempts(
     dueAdmissions: due,
     removedTerminalFacts,
   };
+}
+
+function readOwnerApplyingSubmission(attemptId: string, paths: RuntimePaths) {
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    const row = database
+      .prepare(
+        `SELECT created_at FROM autopilot_owner_fix_submissions
+         WHERE attempt_id = ? AND status = 'applying';`,
+      )
+      .get(attemptId) as { created_at?: unknown } | undefined;
+    return typeof row?.created_at === 'string'
+      ? { createdAt: row.created_at }
+      : null;
+  } finally {
+    database.close();
+  }
+}
+
+function expireStaleOwnerApplyingSubmission(
+  attemptId: string,
+  ownerId: string,
+  applyingBefore: string,
+  paths: RuntimePaths,
+  now: Date,
+) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return (
+      database
+        .prepare(
+          `UPDATE autopilot_owner_fix_submissions
+           SET status = 'failed', error = ?, finished_at = ?
+           WHERE attempt_id = ? AND status = 'applying' AND created_at <= ?
+             AND NOT EXISTS (
+               SELECT 1 FROM worktree_locks AS locks
+               INNER JOIN autopilot_pr_owners AS owners
+                 ON owners.worktree_id = locks.worktree_id
+               WHERE owners.id = ? AND locks.released_at IS NULL
+                 AND locks.expires_at > ?
+             );`,
+        )
+        .run(
+          'Owner fix submission lease expired during restart reconciliation.',
+          now.toISOString(),
+          attemptId,
+          applyingBefore,
+          ownerId,
+          now.toISOString(),
+        ).changes === 1
+    );
+  } finally {
+    database.close();
+  }
 }
 
 export async function markStaleAutopilotAttemptForManualReview(

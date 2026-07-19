@@ -22,6 +22,15 @@ import {
   settlePendingAutopilotStageObservation,
 } from './settle';
 import { autopilotStageRegistry } from './transitions';
+import {
+  dispatchReservedAutopilotOwnerTurn,
+  type AutopilotOwnerDispatcher,
+} from '../owner/dispatch';
+import type {
+  OwnerEnvelopeFactsLoader,
+  OwnerEnvelopeLocalShaLoader,
+  OwnerEnvelopeReadinessLoader,
+} from '../owner/envelope';
 
 export type PackageOneAutopilotWorkflow =
   'triage-pr-event' | 'prepare-pr-worktree';
@@ -55,15 +64,24 @@ export type AutopilotDispatchResult =
   | ({ status: 'orphaned-receipt'; runId: string } & DispatchContext)
   | ({ status: 'dispatch-failed'; error: string } & DispatchContext);
 
+export type AutopilotOwnerDispatchResult = Awaited<
+  ReturnType<typeof dispatchReservedAutopilotOwnerTurn>
+>;
+
 export type CoordinateAutopilotAdmissionResult = {
   advanced: Awaited<ReturnType<typeof advanceAutopilotAdmission>>;
-  dispatched: AutopilotDispatchResult | null;
+  dispatched: AutopilotDispatchResult | AutopilotOwnerDispatchResult | null;
 };
 
 export async function coordinateAutopilotAdmission(
   input: {
     admissionId: string;
     invokeWorkflow: AutopilotWorkflowInvoker;
+    dispatchOwner?: AutopilotOwnerDispatcher;
+    ownerFactsLoader?: OwnerEnvelopeFactsLoader;
+    ownerReadinessLoader?: OwnerEnvelopeReadinessLoader;
+    ownerLocalShaLoader?: OwnerEnvelopeLocalShaLoader;
+    enableOwnerDispatch?: boolean;
     limits?: AutopilotConcurrencyPolicy;
     now?: Date;
   },
@@ -86,11 +104,25 @@ export async function coordinateAutopilotAdmission(
       {
         attemptId: advanced.attempt.id,
         invokeWorkflow: input.invokeWorkflow,
+        dispatchOwner: input.dispatchOwner,
+        ownerFactsLoader: input.ownerFactsLoader,
+        ownerReadinessLoader: input.ownerReadinessLoader,
+        ownerLocalShaLoader: input.ownerLocalShaLoader,
+        enableOwnerDispatch: input.enableOwnerDispatch,
         limits: input.limits,
       },
       paths,
       input.now,
     );
+    if (dispatched.status === 'settled' && dispatched.queuedAdmissionId) {
+      await coordinateAutopilotAdmission(
+        {
+          ...input,
+          admissionId: dispatched.queuedAdmissionId,
+        },
+        paths,
+      );
+    }
     return { advanced, dispatched };
   }
   return { advanced, dispatched: null };
@@ -100,11 +132,16 @@ export async function dispatchReservedAutopilotStage(
   input: {
     attemptId: string;
     invokeWorkflow: AutopilotWorkflowInvoker;
+    dispatchOwner?: AutopilotOwnerDispatcher;
+    ownerFactsLoader?: OwnerEnvelopeFactsLoader;
+    ownerReadinessLoader?: OwnerEnvelopeReadinessLoader;
+    ownerLocalShaLoader?: OwnerEnvelopeLocalShaLoader;
+    enableOwnerDispatch?: boolean;
     limits?: AutopilotConcurrencyPolicy;
   },
   paths: RuntimePaths = runtimePaths(),
   now = new Date(),
-): Promise<AutopilotDispatchResult> {
+): Promise<AutopilotDispatchResult | AutopilotOwnerDispatchResult> {
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   let attempt;
@@ -131,6 +168,22 @@ export async function dispatchReservedAutopilotStage(
   }
   if (admission.currentStageAttemptId !== attempt.id) {
     return { status: 'stale-reservation' as const, attempt, admission };
+  }
+  if (attempt.stage === 'owner-turn') {
+    if (!input.enableOwnerDispatch) {
+      return { status: 'unsupported-transport' as const, attempt, admission };
+    }
+    return dispatchReservedAutopilotOwnerTurn(
+      {
+        attemptId: attempt.id,
+        dispatchOwner: input.dispatchOwner,
+        factsLoader: input.ownerFactsLoader,
+        readinessLoader: input.ownerReadinessLoader,
+        localShaLoader: input.ownerLocalShaLoader,
+      },
+      paths,
+      now,
+    );
   }
   if (attempt.stage !== 'triage' && attempt.stage !== 'prepare-worktree') {
     return {
@@ -196,15 +249,20 @@ export async function dispatchReservedAutopilotStage(
       now,
     );
     if (pending.status === 'settled' && pending.admission) {
-      await coordinateAutopilotAdmission(
-        {
-          admissionId: pending.admission.id,
-          invokeWorkflow: input.invokeWorkflow,
-          limits: input.limits,
-          now,
-        },
-        paths,
-      );
+      if (pending.admission.state !== 'prepared' || input.enableOwnerDispatch) {
+        await coordinateAutopilotAdmission(
+          {
+            admissionId: pending.admission.id,
+            invokeWorkflow: input.invokeWorkflow,
+            dispatchOwner: input.dispatchOwner,
+            ownerFactsLoader: input.ownerFactsLoader,
+            enableOwnerDispatch: input.enableOwnerDispatch,
+            limits: input.limits,
+            now,
+          },
+          paths,
+        );
+      }
     }
   }
   return registration;
@@ -419,7 +477,7 @@ export async function registerAutopilotStageDispatch(
   }
 }
 
-async function claimAutopilotStageDispatch(
+export async function claimAutopilotStageDispatch(
   input: { attemptId: string; expectedAdmissionVersion: number },
   paths: RuntimePaths,
   now: Date,

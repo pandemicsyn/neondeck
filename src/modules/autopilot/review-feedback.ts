@@ -194,6 +194,13 @@ export async function fixPrReviewFeedback(
     );
     if (isAutopilotActionResult(fetchedEventState)) return fetchedEventState;
     const eventState = fetchedEventState;
+    if (input.expectedHeadSha && eventState.headSha !== input.expectedHeadSha) {
+      return failResult(
+        'autopilot_fix_pr_review_feedback',
+        'Pull request HEAD changed before the deterministic review fix began.',
+        { requires: ['refreshPrHead'] },
+      );
+    }
 
     const reviewFacts = reviewFactsFromEventState(eventState);
     if (reviewFacts.truncated) {
@@ -372,6 +379,18 @@ export async function fixPrReviewFeedback(
       acquiredLockId = stringField(objectField(locked, 'lock'), 'id');
     }
 
+    if (
+      input.expectedWorktreeHeadSha &&
+      (await gitCurrentSha(worktree.localPath)) !==
+        input.expectedWorktreeHeadSha
+    ) {
+      return failResult(
+        'autopilot_fix_pr_review_feedback',
+        'Worktree HEAD changed before the deterministic review fix acquired its mutation lease.',
+        { requires: ['refreshWorktreeHead'] },
+      );
+    }
+
     const baselineStatus = await readWorktreeStatus(
       { worktreeId: worktree.id },
       paths,
@@ -419,6 +438,35 @@ export async function fixPrReviewFeedback(
         }),
         errors: failedReads.map((item) => item.message),
       };
+    }
+
+    const mutationPolicy = hasEdits
+      ? await checkAutopilotPolicy(
+          {
+            worktreeId: worktree.id,
+            pushDestination: 'pull-request-head',
+          },
+          paths,
+        )
+      : null;
+    if (mutationPolicy?.mode === 'notify-only') {
+      return failResult(
+        'autopilot_fix_pr_review_feedback',
+        'Current Autopilot policy no longer permits deterministic review edits.',
+        { requires: ['autopilotMode'] },
+      );
+    }
+    if (
+      hasEdits &&
+      input.expectedWorktreeHeadSha &&
+      (await gitCurrentSha(worktree.localPath)) !==
+        input.expectedWorktreeHeadSha
+    ) {
+      return failResult(
+        'autopilot_fix_pr_review_feedback',
+        'Worktree HEAD changed immediately before deterministic review edits.',
+        { requires: ['refreshWorktreeHead'] },
+      );
     }
 
     const editResults = hasEdits
@@ -504,6 +552,8 @@ export async function fixPrReviewFeedback(
       hasEdits &&
       !input.dryRun &&
       (input.commit ?? true) &&
+      (postEditPolicy.mode === 'autofix-with-approval' ||
+        postEditPolicy.mode === 'autofix-push-when-safe') &&
       changedFiles > 0
     ) {
       assertWorktreeMutationAllowed(

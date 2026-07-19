@@ -14,6 +14,7 @@ import {
   type ChatSessionSummaryStatus,
   type NeonSessionStaleReason,
 } from './schemas';
+import { readStaleReasonChanges } from './stale-reasons';
 
 export async function readChatSessionInternal(
   id: string,
@@ -324,76 +325,11 @@ function readStaleReasons(
   activatedAt: string,
   contextMemoryIds: string[] = [],
 ): NeonSessionStaleReason[] {
-  const reasons: NeonSessionStaleReason[] = [];
-  const config = database
-    .prepare(
-      `
-      SELECT action, target, changed_at
-      FROM config_history
-      WHERE action != 'briefing_profile_update'
-      ORDER BY changed_at DESC
-      LIMIT 1;
-    `,
-    )
-    .get() as
-    { action?: unknown; target?: unknown; changed_at?: unknown } | undefined;
-
-  if (
-    typeof config?.changed_at === 'string' &&
-    Date.parse(config.changed_at) > Date.parse(activatedAt)
-  ) {
-    const target = typeof config.target === 'string' ? config.target : null;
-    const type = staleReasonType(String(config.action ?? ''), target);
-    reasons.push({
-      type,
-      message: `${staleReasonLabel(type, target)} changed after this session was last active.`,
-      changedAt: config.changed_at,
-      target,
-    });
-  }
-
-  const memory = database
-    .prepare(
-      `
-      SELECT memory_id, action, after_json, before_json, created_at
-      FROM memory_events
-      ${
-        contextMemoryIds.length > 0
-          ? `WHERE memory_id IN (${contextMemoryIds.map(() => '?').join(', ')})`
-          : ''
-      }
-      ORDER BY created_at DESC
-      LIMIT 1;
-    `,
-    )
-    .get(...contextMemoryIds) as
-    | {
-        memory_id?: unknown;
-        action?: unknown;
-        after_json?: unknown;
-        before_json?: unknown;
-        created_at?: unknown;
-      }
-    | undefined;
-
-  if (
-    typeof memory?.created_at === 'string' &&
-    Date.parse(memory.created_at) > Date.parse(activatedAt)
-  ) {
-    const target = memoryEventTarget(memory.after_json, memory.before_json);
-    reasons.push({
-      type: 'memory',
-      message: `Memory ${target ?? 'unknown'} ${String(memory.action ?? 'changed')} after this session was last active.`,
-      changedAt: memory.created_at,
-      target:
-        target ??
-        (typeof memory.memory_id === 'string' ? memory.memory_id : null),
-    });
-  }
-
-  return reasons.sort(
-    (a, b) => Date.parse(b.changedAt) - Date.parse(a.changedAt),
-  );
+  return readStaleReasonChanges(database, {
+    activatedAt,
+    contextMemoryIds,
+    ignoredConfigActions: ['briefing_profile_update'],
+  }).reasons;
 }
 
 function parsePersistedStringArray(value: unknown) {
@@ -425,30 +361,6 @@ export function markLoadedMemoriesUsed(
       `,
       )
       .run(usedAt, id);
-  }
-}
-
-function memoryEventTarget(afterJson: unknown, beforeJson: unknown) {
-  const after = parseMemoryEventSnapshot(afterJson);
-  const before = parseMemoryEventSnapshot(beforeJson);
-  const snapshot = after ?? before;
-  if (!snapshot) return null;
-  return `${snapshot.scope}:${snapshot.key}`;
-}
-
-function parseMemoryEventSnapshot(value: unknown) {
-  if (typeof value !== 'string') return null;
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return null;
-    }
-    const record = parsed as Record<string, unknown>;
-    return typeof record.scope === 'string' && typeof record.key === 'string'
-      ? { scope: record.scope, key: record.key }
-      : null;
-  } catch {
-    return null;
   }
 }
 
@@ -524,37 +436,4 @@ function summaryStatus(
   if (!summary) return 'missing';
   if (!generatedAt) return 'stale';
   return 'fresh';
-}
-
-function staleReasonType(
-  action: string,
-  target: string | null,
-): NeonSessionStaleReason['type'] {
-  if (target === 'models' || action.includes('agent_models')) return 'model';
-  if (target?.startsWith('providers.') || action.includes('provider')) {
-    return 'provider';
-  }
-  if (target === 'skillRoots' || action.includes('skill')) return 'skill';
-  if (
-    action === 'config_add_repo' ||
-    action === 'config_update_repo' ||
-    action === 'config_remove_repo'
-  ) {
-    return 'repo';
-  }
-  if (target === 'soul' || action.includes('soul')) return 'soul';
-  return 'config';
-}
-
-function staleReasonLabel(
-  type: NeonSessionStaleReason['type'],
-  target: string | null,
-) {
-  if (type === 'model') return 'Model configuration';
-  if (type === 'provider') return 'Provider configuration';
-  if (type === 'repo') return 'Repository configuration';
-  if (type === 'skill') return 'Runtime skill configuration';
-  if (type === 'soul') return 'SOUL context';
-  if (type === 'memory') return 'Memory';
-  return target ?? 'Runtime config';
 }

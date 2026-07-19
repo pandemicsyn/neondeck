@@ -243,6 +243,18 @@ export async function fixPrCiFailure(
     }
     acquiredLockId = stringField(objectField(locked, 'lock'), 'id');
 
+    if (
+      input.expectedWorktreeHeadSha &&
+      (await gitCurrentSha(worktree.localPath)) !==
+        input.expectedWorktreeHeadSha
+    ) {
+      return failResult(
+        'autopilot_fix_pr_ci_failure',
+        'Worktree HEAD changed before the deterministic CI fix acquired its mutation lease.',
+        { requires: ['refreshWorktreeHead'] },
+      );
+    }
+
     const baselineStatus = await readWorktreeStatus(
       { worktreeId: worktree.id },
       paths,
@@ -266,6 +278,18 @@ export async function fixPrCiFailure(
           );
     if (pr && 'ok' in pr && !pr.ok) {
       return { ...pr, action: 'autopilot_fix_pr_ci_failure' };
+    }
+    if (
+      input.expectedHeadSha &&
+      pr &&
+      !('ok' in pr) &&
+      pr.headSha !== input.expectedHeadSha
+    ) {
+      return failResult(
+        'autopilot_fix_pr_ci_failure',
+        'Pull request HEAD changed before the deterministic CI fix began.',
+        { requires: ['refreshPrHead'] },
+      );
     }
     const ref =
       (pr && !('ok' in pr) ? pr.headSha : null) ??
@@ -383,6 +407,31 @@ export async function fixPrCiFailure(
 
     let patchResult: unknown = null;
     if (input.patch) {
+      const mutationPolicy = await checkAutopilotPolicy(
+        {
+          worktreeId: worktree.id,
+          pushDestination: 'pull-request-head',
+        },
+        paths,
+      );
+      if (mutationPolicy.mode === 'notify-only') {
+        return failResult(
+          'autopilot_fix_pr_ci_failure',
+          'Current Autopilot policy no longer permits deterministic CI edits.',
+          { requires: ['autopilotMode'] },
+        );
+      }
+      if (
+        input.expectedWorktreeHeadSha &&
+        (await gitCurrentSha(worktree.localPath)) !==
+          input.expectedWorktreeHeadSha
+      ) {
+        return failResult(
+          'autopilot_fix_pr_ci_failure',
+          'Worktree HEAD changed immediately before deterministic CI edits.',
+          { requires: ['refreshWorktreeHead'] },
+        );
+      }
       const patched = await patchRepoFiles(
         {
           repoId: repo.id,
@@ -489,8 +538,22 @@ export async function fixPrCiFailure(
 
     const status = await readWorktreeStatus({ worktreeId: worktree.id }, paths);
     const dirty = Boolean(booleanField(objectField(status, 'git'), 'dirty'));
+    const commitPolicy = await checkAutopilotPolicy(
+      {
+        worktreeId: worktree.id,
+        pushDestination: 'pull-request-head',
+      },
+      paths,
+    );
     let commit: unknown = null;
-    if (dirty) {
+    if (
+      dirty &&
+      input.commit !== false &&
+      commitPolicy.ok &&
+      !commitPolicy.blocked &&
+      (commitPolicy.mode === 'autofix-with-approval' ||
+        commitPolicy.mode === 'autofix-push-when-safe')
+    ) {
       try {
         assertWorktreeMutationAllowed(
           {

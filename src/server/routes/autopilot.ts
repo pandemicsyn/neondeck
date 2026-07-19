@@ -38,9 +38,51 @@ import {
   safeJsonObject,
 } from '../http';
 import { recordHandledPrApiResult } from '../learning-hooks';
+import {
+  readAutopilotAdmissionInspection,
+  readAutopilotOwnerInspection,
+} from '../../modules/autopilot/owner/inspection';
 
 export function createAutopilotRoutes(paths: RuntimePaths) {
   const routes = new Hono();
+
+  routes.get('/autopilot/owners/:id', async (c) => {
+    const inspection = await readAutopilotOwnerInspection(
+      c.req.param('id'),
+      paths,
+    );
+    return inspection
+      ? c.json({ ok: true, action: 'autopilot_owner_inspection', inspection })
+      : c.json(
+          {
+            ok: false,
+            action: 'autopilot_owner_inspection',
+            message: 'Owner not found.',
+          },
+          404,
+        );
+  });
+
+  routes.get('/autopilot/admissions/:id', async (c) => {
+    const inspection = await readAutopilotAdmissionInspection(
+      c.req.param('id'),
+      paths,
+    );
+    return inspection
+      ? c.json({
+          ok: true,
+          action: 'autopilot_admission_inspection',
+          inspection,
+        })
+      : c.json(
+          {
+            ok: false,
+            action: 'autopilot_admission_inspection',
+            message: 'Admission not found.',
+          },
+          404,
+        );
+  });
 
   routes.get('/autopilot/readiness', async (c) => {
     const rawPrNumber = c.req.query('prNumber');

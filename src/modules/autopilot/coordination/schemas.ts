@@ -115,6 +115,7 @@ export type AutopilotPrOwner = {
   groundingConfigHistoryId: number;
   groundingMemoryEventAt: string | null;
   groundingMemoryEventId: string | null;
+  groundingMemoryEventRowId: number;
   groundingMemoryIds: string[];
   status: AutopilotOwnerStatus;
   currentHeadSha: string | null;
@@ -282,6 +283,7 @@ export function readAutopilotPrOwner(row: unknown) {
     groundingConfigHistoryId: Number(value.grounding_config_history_id),
     groundingMemoryEventAt: nullableString(value.grounding_memory_event_at),
     groundingMemoryEventId: nullableString(value.grounding_memory_event_id),
+    groundingMemoryEventRowId: Number(value.grounding_memory_event_rowid ?? 0),
     groundingMemoryIds: readStringArray(value.grounding_memory_ids_json),
     status: status.output,
     currentHeadSha: nullableString(value.current_head_sha),

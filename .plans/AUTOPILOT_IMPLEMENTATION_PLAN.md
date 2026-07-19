@@ -991,6 +991,35 @@ while an unknown config-history action blocks or rotates without advancing the
 baseline. No caller supplies the patch to the top-level product request, and no
 second instance is created for ordinary feedback.
 
+Implementation status: complete. Package 4 now persists lazy owner generations,
+immutable grounding snapshots, one-time fix submissions, and accepted-dispatch
+CAS linkage across the Neondeck and Flue persistence boundary. The private
+`pr-autopilot-owner` uses explicit model-visible compaction, complete authoritative
+review/CI/readiness/authority/workspace envelopes, a five-action capability ceiling,
+trusted attempt/token-bound read wrappers, serialized byte-bounded/coalesced turns,
+and deterministic prepared-diff integration with effective-mode commit suppression.
+Accepted dispatches persist independent config and monotonic SQLite-rowid memory
+cursors. Explicit repo-Autopilot policy, execution, worktree, learning, and selected
+memory changes re-ground in place; structural repo changes and unknown config block
+without advancing the baseline; fundamental model/provider/skill/SOUL changes rotate
+with an audited handoff. Fix submission is atomically leased before asynchronous
+validation, rechecks the live PR and local worktree heads, and prevents terminal
+settlement or restart reconciliation from racing an in-flight deterministic
+mutation. The deterministic fixers repeat local-head and effective-mode checks under
+their worktree mutation lease, while replacement count, bytes, paths, and conservative
+line impact are bounded before editing. Owner-specific reconciliation follows
+dispatch ids, retained terminal facts, process-local applying leases, expired
+worktree locks, and explicit stage timeouts instead of treating agent turns as
+detached workflow runs. Focused fixture-backed
+unit/component coverage proves two sequential real prepared fixes reuse the
+instance/worktree across reconstructed service closures and a real policy downgrade,
+selected-memory in-place re-grounding, same-timestamp memory cursor safety,
+unknown-drift blocking, fundamental rotation, scoped reads, early/in-flight terminal
+races, one-time/no-op/truncation/policy/size/SHA/model/missing/late handling, and
+durable queue coalescing. Per explicit verification constraint, this package did not
+run the long integration suite or `npm run verify`; the substituted coverage and its
+process-boundary limitation are recorded in `.plans/DEVIATIONS.md`.
+
 ### Package 5: verification, approval, push, comment, and cleanup continuation
 
 Primary files:
