@@ -17,6 +17,28 @@ export function configureDb(database: DatabaseSync) {
   return database;
 }
 
+export function enableWal(database: DatabaseSync) {
+  database.exec('PRAGMA journal_mode = WAL;');
+  return database;
+}
+
+export function rollbackQuietly(database: DatabaseSync) {
+  try {
+    database.exec('ROLLBACK;');
+  } catch {
+    // Preserve the original transaction failure when BEGIN did not succeed.
+  }
+}
+
+export function isSqliteBusy(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes('SQLITE_BUSY') ||
+    message.includes('SQLITE_LOCKED') ||
+    message.includes('database is locked')
+  );
+}
+
 export function parseRow<T>(
   row: unknown,
   schema: v.GenericSchema<unknown, T>,

@@ -1,5 +1,6 @@
 import type { JsonValue } from '@flue/runtime';
 import type { RuntimePaths } from '../../runtime-home';
+import type { addNotification } from '../app-state';
 import { refreshPrWatch, type WatchActionResult } from '../watches';
 import {
   listPrWatchEventWatermarks,
@@ -25,6 +26,7 @@ export type SchedulerResult = {
 export type { AutomationExecutionResult } from '../app-state';
 
 export type SchedulerDependencies = {
+  addNotification?: typeof addNotification;
   refreshPrWatch?: (
     input: Parameters<typeof refreshPrWatch>[0],
     paths: RuntimePaths,

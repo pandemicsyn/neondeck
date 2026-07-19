@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   activateScheduledTaskWorkflowRun,
   attachScheduledTaskWorkflowRunId,
@@ -101,6 +101,65 @@ describe('scheduled task storage', () => {
         id: claim.run.id,
         status: 'completed',
         result: { changed: true },
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('does not overwrite a terminal run during repeated settlement', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
+    const paths = runtimePaths(home);
+    try {
+      await upsertScheduledTask(
+        {
+          id: 'watch:terminal-settlement',
+          spec: { kind: 'poll-pr-watch', watchId: 'terminal-settlement' },
+          trigger: { kind: 'interval', everySeconds: 300 },
+          nextRunAt: '2026-07-10T00:00:00.000Z',
+        },
+        paths,
+      );
+      const [claim] = await claimDueScheduledTasks(
+        paths,
+        new Date('2026-07-10T00:00:00.000Z'),
+      );
+      if (!claim) throw new Error('Expected the due task to be claimed.');
+
+      await expect(
+        settleScheduledTaskRun(
+          {
+            taskId: claim.task.id,
+            runId: claim.run.id,
+            claimId: claim.task.claimId ?? '',
+            status: 'completed',
+            outcome: 'recorded',
+            message: 'Original successful result.',
+          },
+          paths,
+        ),
+      ).resolves.toBe(true);
+      await expect(
+        settleScheduledTaskRun(
+          {
+            taskId: claim.task.id,
+            runId: claim.run.id,
+            claimId: claim.task.claimId ?? '',
+            status: 'failed',
+            outcome: 'failed',
+            message: 'Late failure.',
+            error: 'Late failure.',
+          },
+          paths,
+        ),
+      ).resolves.toBe(false);
+      await expect(
+        readLatestScheduledTaskRun(claim.task.id, paths),
+      ).resolves.toMatchObject({
+        status: 'completed',
+        outcome: 'recorded',
+        message: 'Original successful result.',
+        error: null,
       });
     } finally {
       await rm(home, { recursive: true, force: true });
@@ -418,6 +477,70 @@ describe('scheduled task storage', () => {
     }
   });
 
+  it('reconciles linked active runs when direct terminal settlement was missed', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
+    const paths = runtimePaths(home);
+    try {
+      await upsertScheduledTask(
+        {
+          id: 'briefing:missed-terminal-settlement',
+          spec: { kind: 'run-briefing', briefingId: 'daily' },
+          trigger: { kind: 'interval', everySeconds: 300 },
+          nextRunAt: '2026-07-10T00:00:00.000Z',
+        },
+        paths,
+      );
+      const [claim] = await claimDueScheduledTasks(
+        paths,
+        new Date('2026-07-10T00:00:00.000Z'),
+      );
+      if (!claim) throw new Error('Expected the due task to be claimed.');
+      await activateScheduledTaskWorkflowRun(
+        {
+          taskId: claim.task.id,
+          runId: claim.run.id,
+          claimId: claim.task.claimId ?? '',
+        },
+        paths,
+      );
+      await attachScheduledTaskWorkflowRunId(
+        {
+          runId: claim.run.id,
+          workflowRunId: 'workflow:briefing:missed-settlement',
+        },
+        paths,
+      );
+      await recordFlueObservation(
+        {
+          v: 3,
+          type: 'run_end',
+          eventIndex: 2,
+          runId: 'workflow:briefing:missed-settlement',
+          workflow: 'briefing',
+          timestamp: '2026-07-10T00:00:01.000Z',
+          durationMs: 1_000,
+          isError: false,
+          result: { ok: true },
+        } as never,
+        paths,
+      );
+
+      await claimDueScheduledTasks(paths, new Date('2026-07-10T00:00:01.000Z'));
+      await expect(
+        readLatestScheduledTaskRun(claim.task.id, paths),
+      ).resolves.toMatchObject({
+        id: claim.run.id,
+        status: 'completed',
+        message: 'Scheduled workflow completed.',
+      });
+      await expect(
+        canAdmitScheduledWorkflow(claim.task.id, paths),
+      ).resolves.toBe(true);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   it('admits due briefings through Flue and retains an active workflow run', async () => {
     const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
     const paths = runtimePaths(home);
@@ -452,6 +575,71 @@ describe('scheduled task storage', () => {
         canAdmitScheduledWorkflow('briefing:daily', paths),
       ).resolves.toBe(false);
     } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps a successful task terminal when notification persistence fails', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
+    const paths = runtimePaths(home);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      await upsertScheduledTask(
+        {
+          id: 'watch:notification-failure',
+          spec: { kind: 'poll-pr-watch', watchId: 'notification-failure' },
+          trigger: { kind: 'interval', everySeconds: 300 },
+          nextRunAt: '2026-07-10T00:00:00.000Z',
+        },
+        paths,
+      );
+
+      await expect(
+        runSchedulerTick(paths, new Date('2026-07-10T00:00:00.000Z'), {
+          addNotification: async () => {
+            throw new Error('notification database write failed');
+          },
+          refreshPrWatch: async () => ({
+            ok: true,
+            action: 'watch_pr_refresh',
+            changed: true,
+            outcome: 'updated',
+            id: 'notification-failure',
+            message: 'Watch changed.',
+            watch: {
+              id: 'notification-failure',
+              repoFullName: 'pandemicsyn/neondeck',
+              prNumber: 157,
+              status: 'green',
+              prState: 'open',
+              lastSnapshot: {
+                merged: false,
+                checks: {
+                  status: 'success',
+                  total: 1,
+                  failed: 0,
+                  pending: 0,
+                },
+              },
+            },
+          }),
+          refreshPrWatchEventState: async () =>
+            ({ ok: true, changed: false, message: 'No changes.' }) as never,
+        }),
+      ).resolves.toMatchObject({ ok: true, outcome: 'updated' });
+      await expect(
+        readLatestScheduledTaskRun('watch:notification-failure', paths),
+      ).resolves.toMatchObject({
+        status: 'completed',
+        outcome: 'recorded',
+        message: 'Updated 1 PR watch.',
+      });
+      expect(warn).toHaveBeenCalledWith(
+        '[neondeck] failed to persist scheduled task notification',
+        expect.any(Error),
+      );
+    } finally {
+      warn.mockRestore();
       await rm(home, { recursive: true, force: true });
     }
   });

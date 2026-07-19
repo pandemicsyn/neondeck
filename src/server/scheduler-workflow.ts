@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
 import {
   getRun,
   invoke,
@@ -8,14 +7,12 @@ import {
   type WorkflowInvocationReceipt,
 } from '@flue/runtime';
 import schedulerTickWorkflow from '../workflows/scheduler-tick';
+import { isSqliteBusy, openDb, rollbackQuietly } from '../lib/sqlite';
 import { addNotification } from '../modules/app-state';
+import { expireWorkflowRunObservation } from '../modules/learning/observability';
 import type { SchedulerResult } from '../modules/scheduler/schemas';
 import { runSchedulerTick } from '../modules/scheduler/service';
-import {
-  isSqliteBusy,
-  readMetadataValue,
-  rollbackQuietly,
-} from '../modules/scheduler/lease';
+import { readMetadataValue } from '../modules/scheduler/lease';
 import { ensureRuntimeHome, type RuntimePaths } from '../runtime-home';
 
 const schedulerWorkflowName = 'scheduler-tick';
@@ -144,23 +141,30 @@ async function runDirectSchedulerTickFallback(
   error: unknown,
   phase: 'inspection' | 'admission',
 ): Promise<ObservedSchedulerTickResult> {
-  const message = errorMessage(error);
+  const message = errorMessageWithCauses(error);
   const fallback = await runSchedulerTick(paths);
-  await addNotification(
-    {
-      level: 'attention',
-      title: 'Scheduler workflow observation failed',
-      message: `Scheduler tick workflow ${phase} failed; ran the direct scheduler tick instead. ${message}`,
-      source: 'scheduler',
-      sourceId: 'scheduler-tick:workflow-observation-fallback',
-      data: {
-        phase,
-        error: message,
-        fallbackOutcome: fallback.outcome ?? null,
+  try {
+    await addNotification(
+      {
+        level: 'attention',
+        title: 'Scheduler workflow observation failed',
+        message: `Scheduler tick workflow ${phase} failed; ran the direct scheduler tick instead. ${message}`,
+        source: 'scheduler',
+        sourceId: 'scheduler-tick:workflow-observation-fallback',
+        data: {
+          phase,
+          error: message,
+          fallbackOutcome: fallback.outcome ?? null,
+        },
       },
-    },
-    paths,
-  );
+      paths,
+    );
+  } catch (notificationError) {
+    console.warn(
+      '[neondeck] failed to persist scheduler workflow fallback notification',
+      notificationError,
+    );
+  }
 
   return {
     ...fallback,
@@ -205,8 +209,8 @@ function resultFromTerminalRun(
       action: 'scheduler_tick',
       changed: false,
       outcome: 'failed',
-      message: `Scheduler tick workflow ${runId} failed: ${errorMessage(run.error)}.`,
-      errors: [errorMessage(run.error)],
+      message: `Scheduler tick workflow ${runId} failed: ${errorMessageWithCauses(run.error)}.`,
+      errors: [errorMessageWithCauses(run.error)],
       extra: { runId },
       runId,
     };
@@ -264,7 +268,23 @@ async function activeSchedulerTickRun(
     const run = await (dependencies.getRun ?? getRun)(pointer.runId);
     if (!run || run.status !== 'active') continue;
     if (runRuntimeHome(run) !== paths.home) continue;
-    if (isStaleActiveRun(run, now, activeRunTtlMs(dependencies))) continue;
+    if (isStaleActiveRun(run, now, activeRunTtlMs(dependencies))) {
+      await expireWorkflowRunObservation(
+        {
+          runId: run.runId,
+          message:
+            'Scheduler workflow exceeded the active-run deadline and was superseded by a new tick.',
+          endedAt: now.toISOString(),
+        },
+        paths,
+      ).catch((error) => {
+        console.warn(
+          '[neondeck] failed to expire stale scheduler workflow projection',
+          error,
+        );
+      });
+      continue;
+    }
     return run;
   }
   return null;
@@ -320,7 +340,7 @@ function acquireSchedulerWorkflowAdmissionLease(
   now: Date,
   ttlMs: number,
 ): SchedulerWorkflowAdmissionLeaseResult {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     database.exec('BEGIN IMMEDIATE;');
@@ -381,7 +401,7 @@ function recordSchedulerWorkflowAdmissionRunId(
   now: Date,
   ttlMs: number,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     database.exec('BEGIN IMMEDIATE;');
@@ -463,7 +483,7 @@ function releaseSchedulerWorkflowAdmissionLeaseOnce(
   paths: RuntimePaths,
   owner: string,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     database.exec('BEGIN IMMEDIATE;');
@@ -532,8 +552,20 @@ function currentDate(dependencies: SchedulerWorkflowDependencies) {
   return dependencies.now?.() ?? new Date();
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+export function errorMessageWithCauses(error: unknown) {
+  const messages: string[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+
+  while (current !== undefined && current !== null && !seen.has(current)) {
+    seen.add(current);
+    const message =
+      current instanceof Error ? current.message : String(current);
+    if (message && !messages.includes(message)) messages.push(message);
+    current = current instanceof Error ? current.cause : undefined;
+  }
+
+  return messages.join(': ').slice(0, 2_000) || 'Unknown error';
 }
 
 function sleep(milliseconds: number) {

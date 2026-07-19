@@ -59,6 +59,7 @@ export async function runSchedulerTick(
     const notifications = [];
     let taskChanged = false;
     let stoppedForLostLease = false;
+    const persistNotification = dependencies.addNotification ?? addNotification;
 
     for (const [index, claim] of claimedTasks.entries()) {
       const { task, run } = claim;
@@ -79,6 +80,7 @@ export async function runSchedulerTick(
         break;
       }
       const previous = await readLatestScheduledTaskRun(task.id, paths);
+      let result: Awaited<ReturnType<typeof executeScheduledTask>>;
       try {
         const workflowTask = requiresWorkflowAdmission(task);
         if (
@@ -107,7 +109,7 @@ export async function runSchedulerTick(
             paths,
           );
         }
-        const result = await executeScheduledTask(
+        result = await executeScheduledTask(
           task,
           previous?.result ?? null,
           paths,
@@ -133,19 +135,6 @@ export async function runSchedulerTick(
             paths,
           );
         }
-        if (result.outcome !== 'silent') taskChanged = true;
-        for (const notification of result.notifications ?? []) {
-          notifications.push(
-            await addNotification(
-              {
-                ...notification,
-                source: notification.source ?? 'scheduled-task',
-                sourceId: notification.sourceId ?? task.id,
-              },
-              paths,
-            ),
-          );
-        }
       } catch (error) {
         const message = `Scheduled task failed: ${errorMessage(error)}.`;
         await settleScheduledTaskRun(
@@ -161,18 +150,47 @@ export async function runSchedulerTick(
           paths,
         );
         taskChanged = true;
-        notifications.push(
-          await addNotification(
-            {
-              level: 'attention',
-              title: 'Scheduled task failed',
-              message,
-              source: 'scheduler',
-              sourceId: task.id,
-            },
-            paths,
-          ),
-        );
+        try {
+          notifications.push(
+            await persistNotification(
+              {
+                level: 'attention',
+                title: 'Scheduled task failed',
+                message,
+                source: 'scheduler',
+                sourceId: task.id,
+              },
+              paths,
+            ),
+          );
+        } catch (notificationError) {
+          console.warn(
+            '[neondeck] failed to persist scheduled task failure notification',
+            notificationError,
+          );
+        }
+        continue;
+      }
+
+      if (result.outcome !== 'silent') taskChanged = true;
+      for (const notification of result.notifications ?? []) {
+        try {
+          notifications.push(
+            await persistNotification(
+              {
+                ...notification,
+                source: notification.source ?? 'scheduled-task',
+                sourceId: notification.sourceId ?? task.id,
+              },
+              paths,
+            ),
+          );
+        } catch (notificationError) {
+          console.warn(
+            '[neondeck] failed to persist scheduled task notification',
+            notificationError,
+          );
+        }
       }
     }
 

@@ -1,5 +1,6 @@
 import { type FlueObservation, type JsonValue } from '@flue/runtime';
-import { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync } from 'node:sqlite';
+import { openDb } from '../../lib/sqlite';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import { flueRunInspectionUrl, readLocalApiToken } from '../runtime';
 
@@ -63,7 +64,7 @@ export async function recordFlueObservation(
   if (!persistedEventTypes.has(event.type)) return;
   await ensureRuntimeHome(paths);
   const summary = summarizeObservation(event);
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     const runId = readString(event, 'runId');
@@ -114,7 +115,7 @@ export async function recordFlueObservation(
 export async function readWorkflowObservability(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
   const localApiToken = await readLocalApiToken(paths);
-  const database = new DatabaseSync(paths.neondeckDatabase, { readOnly: true });
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
 
   try {
     const recentEvents = database
@@ -171,6 +172,32 @@ export async function readWorkflowObservability(paths = runtimePaths()) {
       recentEvents: recentEvents.slice(0, 20),
       fetchedAt: new Date().toISOString(),
     } satisfies WorkflowObservabilitySnapshot;
+  } finally {
+    database.close();
+  }
+}
+
+export async function expireWorkflowRunObservation(
+  input: { runId: string; message: string; endedAt?: string },
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const endedAt = input.endedAt ?? new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return (
+      database
+        .prepare(
+          `
+          UPDATE workflow_run_observations
+          SET status = 'failed', ended_at = ?, last_event_at = ?,
+              last_message = ?, is_error = 1, updated_at = ?
+          WHERE run_id = ? AND status = 'active';
+        `,
+        )
+        .run(endedAt, endedAt, input.message, endedAt, input.runId).changes ===
+      1
+    );
   } finally {
     database.close();
   }

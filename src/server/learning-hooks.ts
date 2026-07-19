@@ -34,6 +34,8 @@ import { attachPrReviewAttemptRun, failPrReview } from '../modules/pr-reviews';
 
 type ObservationInstallDependencies = {
   observe?: (subscriber: FlueObservationSubscriber) => () => void;
+  recordFlueObservation?: typeof recordFlueObservation;
+  settleScheduledTaskWorkflowRun?: typeof settleScheduledTaskWorkflowRun;
 };
 
 const observationHandlerUnsubscribers = new Map<string, () => void>();
@@ -44,6 +46,11 @@ export function installFlueObservationHandlers(
 ) {
   if (observationHandlerUnsubscribers.has(paths.home)) return;
   const observeFn = dependencies.observe ?? observe;
+  const recordObservation =
+    dependencies.recordFlueObservation ?? recordFlueObservation;
+  const settleScheduledWorkflow =
+    dependencies.settleScheduledTaskWorkflowRun ??
+    settleScheduledTaskWorkflowRun;
   const unsubscribe = observeFn((event, context) => {
     const contextHome = flueContextRuntimeHome(context);
     if (contextHome && contextHome !== paths.home) return;
@@ -57,7 +64,19 @@ export function installFlueObservationHandlers(
     }
 
     if (event.type === 'run_end') {
-      void recordFlueObservation(event, paths)
+      void recordObservation(event, paths).catch((error) => {
+        console.error('[neondeck] failed to record Flue observation', error);
+      });
+      void settleScheduledWorkflow(
+        { workflowRunId: event.runId, failed: event.isError },
+        paths,
+      ).catch((error) => {
+        console.error(
+          '[neondeck] failed to settle scheduled workflow run',
+          error,
+        );
+      });
+      void Promise.resolve()
         .then(async () => {
           const terminalFact = autopilotTerminalFact(event);
           if (terminalFact) {
@@ -69,10 +88,6 @@ export function installFlueObservationHandlers(
         })
         .then(() =>
           Promise.all([
-            settleScheduledTaskWorkflowRun(
-              { workflowRunId: event.runId, failed: event.isError },
-              paths,
-            ),
             settleAutopilotAdmissionTriage(
               {
                 runId: event.runId,
@@ -94,7 +109,7 @@ export function installFlueObservationHandlers(
         .then(() => startPrepareAfterTriage(event, paths))
         .catch((error) => {
           console.error(
-            '[neondeck] failed to record or settle Flue observation',
+            '[neondeck] failed to settle autopilot Flue observation',
             error,
           );
         });

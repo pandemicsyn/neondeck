@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
+import { isSqliteBusy, openDb, rollbackQuietly } from '../../lib/sqlite';
 import type { RuntimePaths } from '../../runtime-home';
 import type {
   SchedulerTickLease,
@@ -14,7 +14,7 @@ export function acquireSchedulerTickLease(
   now: Date,
   ttlMs: number,
 ): SchedulerTickLeaseResult {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     database.exec('BEGIN IMMEDIATE;');
@@ -85,7 +85,7 @@ export function renewSchedulerTickLease(
   now: Date,
   ttlMs: number,
 ): SchedulerTickLeaseRenewResult {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     database.exec('BEGIN IMMEDIATE;');
@@ -131,7 +131,7 @@ export function isSchedulerTickLeaseOwned(
   owner: string,
   now: Date,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
 
   try {
     const existing = database
@@ -142,9 +142,6 @@ export function isSchedulerTickLeaseOwned(
       existingLease?.owner === owner &&
       Date.parse(existingLease.expiresAt) > now.getTime()
     );
-  } catch (error) {
-    if (isSqliteBusy(error)) return false;
-    throw error;
   } finally {
     database.close();
   }
@@ -173,7 +170,7 @@ export function releaseSchedulerTickLeaseOnce(
   paths: RuntimePaths,
   owner: string,
 ) {
-  const database = new DatabaseSync(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase);
 
   try {
     database.exec('BEGIN IMMEDIATE;');
@@ -223,23 +220,6 @@ export function readMetadataValue(row: unknown) {
     const value = row.value;
     return typeof value === 'string' ? value : undefined;
   }
-}
-
-export function rollbackQuietly(database: DatabaseSync) {
-  try {
-    database.exec('ROLLBACK;');
-  } catch {
-    // The transaction may already be closed.
-  }
-}
-
-export function isSqliteBusy(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return (
-    message.includes('SQLITE_BUSY') ||
-    message.includes('SQLITE_LOCKED') ||
-    message.includes('database is locked')
-  );
 }
 
 export function sleep(ms: number) {
