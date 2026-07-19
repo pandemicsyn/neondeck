@@ -52,6 +52,7 @@ export const legalAutopilotTransitions = {
     'superseded',
   ],
   'owner-turn-admitted': [
+    'prepared',
     'owner-turn-running',
     'blocked',
     'manual-review',

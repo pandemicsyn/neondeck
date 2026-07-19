@@ -288,7 +288,9 @@ async function readAdmissionAuthorityBaseline(
     readRepoRegistrySnapshot(paths),
     readRuntimeJson(paths.config, parseAppConfig),
   ]);
-  const repo = registry.repos.find((candidate) => candidate.id === input.repoId);
+  const repo = registry.repos.find(
+    (candidate) => candidate.id === input.repoId,
+  );
   if (!repo) {
     throw new Error(
       `Repository "${input.repoId}" is not configured for Autopilot admission.`,
@@ -311,6 +313,7 @@ async function readAdmissionAuthorityBaseline(
 export async function advanceAutopilotAdmission(
   input: {
     admissionId: string;
+    allowOwnerTurnReservation?: boolean;
     limits?: AutopilotConcurrencyPolicy;
     now?: Date;
   },
@@ -371,6 +374,16 @@ export async function advanceAutopilotAdmission(
         return updated
           ? { status: 'completed' as const, admission: updated }
           : { status: 'cas-lost' as const, admission };
+      }
+      if (
+        selection.stage === 'owner-turn' &&
+        input.allowOwnerTurnReservation === false
+      ) {
+        return {
+          status: 'deferred' as const,
+          reason: 'owner-dispatch-disabled' as const,
+          admission,
+        };
       }
 
       const attempts = countStageAttempts(
