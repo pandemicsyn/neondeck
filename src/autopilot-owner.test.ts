@@ -1017,6 +1017,96 @@ describe('Package 4 continuing PR owner', () => {
     });
   });
 
+  it('fails closed for a migrated admission without a trustworthy authority snapshot', async () => {
+    await withFixture(async (paths) => {
+      seedPreparedTurn(
+        paths,
+        'admission:legacy-authority',
+        'event:legacy-authority',
+        1,
+      );
+      const database = new DatabaseSync(paths.neondeckDatabase);
+      try {
+        database
+          .prepare(
+            `UPDATE autopilot_admissions
+             SET authority_policy_json = NULL
+             WHERE id = 'admission:legacy-authority';`,
+          )
+          .run();
+      } finally {
+        database.close();
+      }
+      const config = JSON.parse(String(await readFile(paths.config)));
+      config.guardrails.maxFilesChanged = 100;
+      config.guardrails.maxLinesChanged = 10_000;
+      config.guardrails.requiredChecks = ['npm run untrusted'];
+      await writeFile(paths.config, JSON.stringify(config));
+
+      const result = await coordinateAutopilotAdmission(
+        coordinationInput('admission:legacy-authority', vi.fn()),
+        paths,
+      );
+
+      expect(result.dispatched).toMatchObject({
+        status: 'dispatch-failed',
+        error: expect.stringContaining('no trustworthy'),
+      });
+    });
+  });
+
+  it('permanently clears diagnostic authority after an execution-policy transition', async () => {
+    await withFixture(async (paths) => {
+      const config = JSON.parse(String(await readFile(paths.config)));
+      config.guardrails.requiredChecks = ['npm run check'];
+      await writeFile(paths.config, JSON.stringify(config));
+      seedPreparedTurn(
+        paths,
+        'admission:execution-downgrade',
+        'event:execution-downgrade',
+        1,
+      );
+      const database = new DatabaseSync(paths.neondeckDatabase);
+      try {
+        database
+          .prepare(
+            `UPDATE autopilot_admissions SET authority_policy_json = ?
+             WHERE id = 'admission:execution-downgrade';`,
+          )
+          .run(JSON.stringify(fixtureAdmissionAuthority(['npm run check'])));
+        for (const [id, after] of [
+          [1, { execution: { preapprovedCommands: [] } }],
+          [2, { execution: { preapprovedCommands: ['npm run check'] } }],
+        ] as const) {
+          database
+            .prepare(
+              `INSERT INTO config_history
+                 (id, action, file, target, after_json, changed_at)
+               VALUES (?, 'config_update_execution_policy', 'config.json', 'execution', ?, ?);`,
+            )
+            .run(id, JSON.stringify(after), `2026-07-19T18:05:0${id}.000Z`);
+        }
+      } finally {
+        database.close();
+      }
+
+      const turn = await dispatchTurn(
+        paths,
+        'admission:execution-downgrade',
+        'dispatch:execution-downgrade',
+      );
+      expect(turn.envelope.policy.diagnosticCommands).toEqual([]);
+      expect(
+        JSON.parse(
+          String(
+            readAdmission(paths, 'admission:execution-downgrade')
+              .authority_policy_json,
+          ),
+        ).diagnosticCommands,
+      ).toEqual([]);
+    });
+  });
+
   it('revokes an in-flight owner mutation and waits for its process lease before stopping', async () => {
     await withFixture(async (paths) => {
       seedPreparedTurn(paths, 'admission:stop-fence', 'event:stop-fence', 1);
@@ -2235,9 +2325,10 @@ function seedPreparedTurn(
       .prepare(
         `INSERT INTO autopilot_admissions (
            id, owner_id, watch_id, event_fingerprint, event_sequence, repo_id,
-           pr_number, mode, input_json, state, priority, worktree_id, version,
+           pr_number, mode, authority_mode, authority_policy_json,
+           input_json, state, priority, worktree_id, version,
            attempt_count, created_at, updated_at
-         ) VALUES (?, 'owner:one', 'watch:one', ?, ?, 'repo', 42, ?,
+         ) VALUES (?, 'owner:one', 'watch:one', ?, ?, 'repo', 42, ?, ?, ?,
            ?, 'prepared', 0, 'worktree:one', 1, 0, ?, ?);`,
       )
       .run(
@@ -2245,6 +2336,8 @@ function seedPreparedTurn(
         fingerprint,
         sequence,
         mode,
+        mode,
+        JSON.stringify(fixtureAdmissionAuthority()),
         JSON.stringify({
           eventId: fingerprint,
           deltas: {
@@ -2260,6 +2353,24 @@ function seedPreparedTurn(
   } finally {
     database.close();
   }
+}
+
+function fixtureAdmissionAuthority(requiredChecks: string[] = []) {
+  return {
+    guardrails: {
+      maxFilesChanged: 10,
+      maxLinesChanged: 300,
+      deniedFileGlobs: ['secrets/**'],
+      approvalRequiredFileGlobs: [],
+      requiredChecks,
+      allowedPushDestinations: ['pull-request-head'],
+      allowForcePush: false,
+      highRiskClasses: [],
+      generatedFileSizeThresholdBytes: 256 * 1024,
+    },
+    diagnosticCommands: requiredChecks,
+    transitionHash: 'fixture-admission-authority',
+  };
 }
 
 async function writeRepoMode(

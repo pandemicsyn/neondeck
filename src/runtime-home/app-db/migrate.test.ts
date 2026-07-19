@@ -283,7 +283,8 @@ describe('app database migrator', () => {
       expect(
         after
           .prepare(
-            `SELECT owner_id, event_sequence, version, current_stage_attempt_id
+            `SELECT owner_id, event_sequence, version, current_stage_attempt_id,
+                    authority_policy_json
              FROM autopilot_admissions WHERE id = ?;`,
           )
           .get('admission:legacy'),
@@ -292,6 +293,7 @@ describe('app database migrator', () => {
         event_sequence: 3,
         version: 1,
         current_stage_attempt_id: 'autopilot-attempt:migrated:admission:legacy',
+        authority_policy_json: null,
       });
       expect(
         after

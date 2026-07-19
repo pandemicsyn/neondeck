@@ -140,16 +140,22 @@ export function constrainAutopilotAdmissionAuthority(
     .map((row) => v.parse(configHistoryAuthorityRowSchema, row));
   let authorityMode = input.admission.authorityMode;
   const stored = readStoredAuthorityPolicy(database, input.admission.id);
-  let authorityGuardrails = stored?.guardrails ?? input.currentGuardrails;
-  let diagnosticCommands =
-    stored?.diagnosticCommands ??
-    normalizeCommands(input.currentGuardrails.requiredChecks);
-  let transitionHash = stored?.transitionHash ?? stableJsonHash('initial');
+  if (!stored) {
+    throw new Error(
+      'Admission has no trustworthy admission-time authority snapshot.',
+    );
+  }
+  let authorityGuardrails = stored.guardrails;
+  let diagnosticCommands = stored.diagnosticCommands;
+  let transitionHash = stored.transitionHash;
   let historyId = input.admission.policyConfigHistoryId;
   for (const row of rows) {
     const drift = classifyAutopilotOwnerConfigChange(row, input.repoId);
     if (drift === 'block' || drift === 'rotate') break;
     historyId = row.id;
+    if (row.action === 'config_update_execution_policy') {
+      diagnosticCommands = [];
+    }
     if (
       row.action !== 'config_update_repo_autopilot_policy' ||
       row.target !== input.repoId
