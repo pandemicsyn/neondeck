@@ -8,7 +8,6 @@ import {
   searchRepoFiles,
 } from '../../../repo-edit';
 import {
-  gitRefSchema,
   maxPatchBytes,
   maxReadLimit,
   maxSearchResults,
@@ -54,23 +53,12 @@ export const autopilotOwnerFileSearchInputSchema = v.strictObject({
 export const autopilotOwnerDiffInputSchema = v.pipe(
   v.strictObject({
     ...scopeSchema,
-    base: v.optional(gitRefSchema),
     paths: v.optional(v.array(repoRelativePathSchema)),
     includePatch: v.optional(v.boolean()),
-    expectedRevisionKey: v.optional(
-      v.pipe(v.string(), v.minLength(1), v.maxLength(768)),
-    ),
     maxPatchBytes: v.optional(
       v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(maxPatchBytes)),
     ),
   }),
-  v.check(
-    (input) =>
-      !input.paths?.length ||
-      input.includePatch !== true ||
-      Boolean(input.expectedRevisionKey),
-    'expectedRevisionKey is required for a scoped patch read.',
-  ),
 );
 
 export const autopilotOwnerStatusInputSchema = v.strictObject(scopeSchema);
@@ -140,6 +128,12 @@ export async function runScopedOwnerRead(
     ...request,
     repoId: target.repoId,
     worktreeId: target.worktreeId,
+    ...(kind === 'diff'
+      ? {
+          base: target.diffBaseSha,
+          expectedRevisionKey: target.diffRevisionKey,
+        }
+      : {}),
   };
   if (kind === 'file') return readRepoFile(bound, paths);
   if (kind === 'search') return searchRepoFiles(bound, paths);
@@ -161,7 +155,17 @@ async function runScopedRead(
     ...request
   } = input as Record<string, unknown>;
   return (await reader(
-    { ...request, repoId: target.repoId, worktreeId: target.worktreeId },
+    {
+      ...request,
+      repoId: target.repoId,
+      worktreeId: target.worktreeId,
+      ...(reader === readRepoDiff
+        ? {
+            base: target.diffBaseSha,
+            expectedRevisionKey: target.diffRevisionKey,
+          }
+        : {}),
+    },
     paths,
   )) as v.InferOutput<typeof repoEditOutputSchema>;
 }
@@ -174,7 +178,8 @@ function readAcceptedScope(
   try {
     const row = database
       .prepare(
-        `SELECT owners.repo_id, owners.worktree_id
+        `SELECT owners.repo_id, owners.worktree_id,
+                grounding.diff_base_sha, grounding.diff_revision_key
          FROM autopilot_owner_grounding_snapshots AS grounding
          INNER JOIN autopilot_stage_attempts AS attempts
            ON attempts.id = grounding.attempt_id
@@ -193,10 +198,23 @@ function readAcceptedScope(
            AND owners.worktree_id IS NOT NULL;`,
       )
       .get(input.attemptId, stableJsonHash(input.token)) as
-      { repo_id?: unknown; worktree_id?: unknown } | undefined;
+      | {
+          repo_id?: unknown;
+          worktree_id?: unknown;
+          diff_base_sha?: unknown;
+          diff_revision_key?: unknown;
+        }
+      | undefined;
     return typeof row?.repo_id === 'string' &&
-      typeof row.worktree_id === 'string'
-      ? { repoId: row.repo_id, worktreeId: row.worktree_id }
+      typeof row.worktree_id === 'string' &&
+      typeof row.diff_base_sha === 'string' &&
+      typeof row.diff_revision_key === 'string'
+      ? {
+          repoId: row.repo_id,
+          worktreeId: row.worktree_id,
+          diffBaseSha: row.diff_base_sha,
+          diffRevisionKey: row.diff_revision_key,
+        }
       : null;
   } finally {
     database.close();

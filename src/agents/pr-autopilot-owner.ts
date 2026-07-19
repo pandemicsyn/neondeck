@@ -1,5 +1,6 @@
 import { defineAgent, type AgentRouteHandler } from '@flue/runtime';
-import { readAgentModelSelectionSync } from '../modules/runtime';
+import { openDb } from '../lib/sqlite';
+import { ensureRuntimeHomeSync, runtimePaths } from '../runtime-home';
 import { submitAutopilotFixAction } from '../modules/autopilot/actions/submit-fix';
 import {
   autopilotOwnerDiffAction,
@@ -8,9 +9,17 @@ import {
   autopilotOwnerStatusAction,
 } from '../modules/autopilot/owner/actions';
 import neonAutopilotFix from '../skills/neon-autopilot-fix/SKILL.md' with { type: 'skill' };
-import { prAutopilotOwnerCompaction } from '../modules/autopilot/owner/config';
+import {
+  prAutopilotOwnerCompaction,
+  prAutopilotOwnerDurability,
+} from '../modules/autopilot/owner/config';
+import {
+  capabilitySnapshotHash,
+  parseStoredCapabilitySnapshot,
+  readAutopilotOwnerCapabilitySnapshot,
+} from '../modules/autopilot/owner/capabilities';
 
-export { prAutopilotOwnerCompaction };
+export { prAutopilotOwnerCompaction, prAutopilotOwnerDurability };
 
 export const description =
   'Private continuing owner for one watched pull request and its managed worktree.';
@@ -25,13 +34,43 @@ export const route: AgentRouteHandler = async (context, next) => {
   );
 };
 
-export default defineAgent(() => {
-  const models = readAgentModelSelectionSync();
+export default defineAgent(({ id }) => {
+  const paths = runtimePaths();
+  ensureRuntimeHomeSync(paths);
+  const current = readAutopilotOwnerCapabilitySnapshot(paths);
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  let stored;
+  try {
+    const row = database
+      .prepare(
+        `SELECT capability_hash, capability_json
+         FROM autopilot_owner_generations WHERE flue_instance_id = ?;`,
+      )
+      .get(id) as
+      { capability_hash?: unknown; capability_json?: unknown } | undefined;
+    if (!row || typeof row.capability_hash !== 'string') {
+      throw new Error(
+        `PR-owner instance ${id} has no durable capability generation.`,
+      );
+    }
+    stored = parseStoredCapabilitySnapshot(row.capability_json);
+    if (
+      row.capability_hash !== capabilitySnapshotHash(stored) ||
+      row.capability_hash !== capabilitySnapshotHash(current)
+    ) {
+      throw new Error(
+        `PR-owner instance ${id} capability drift requires audited rotation.`,
+      );
+    }
+  } finally {
+    database.close();
+  }
   return {
-    model: models.displayAssistant,
-    thinkingLevel: models.displayAssistantThinkingLevel,
+    model: stored.model,
+    thinkingLevel: stored.thinkingLevel,
     cwd: '/workspace',
     compaction: prAutopilotOwnerCompaction,
+    durability: prAutopilotOwnerDurability,
     instructions: [
       'You are the private continuing Neondeck owner for exactly one watched pull request.',
       'Each turn begins with a deterministic authoritative envelope. The newest envelope overrides historical transcript facts.',

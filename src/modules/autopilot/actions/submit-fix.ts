@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { defineAction } from '@flue/runtime';
 import * as v from 'valibot';
 import { openDb, withImmediateTransaction } from '../../../lib/sqlite';
 import { gitCurrentSha } from '../../../repo-edit/git';
 import { parseV4APatch } from '../../../repo-edit/patch-parser';
+import { resolveRepoPath } from '../../../repo-edit/path-safety';
+import { replaceContent } from '../../../repo-edit/fuzzy-replace';
 import {
   ensureRuntimeHome,
   parseAppConfig,
@@ -18,6 +21,7 @@ import {
 } from '../../autopilot-policy';
 import { readRepoRegistrySnapshot } from '../../repos';
 import { readWorktreeRecord } from '../../worktrees';
+import { readWorktreeStatus } from '../../worktrees';
 import { fixPrCiFailure } from '../ci-fix';
 import {
   readAutopilotAdmission,
@@ -27,7 +31,10 @@ import {
 import { fixPrReviewFeedback } from '../review-feedback';
 import { autopilotOutputSchema, reviewFixReplacementSchema } from '../schemas';
 import { stableJsonHash } from '../owner/grounding';
-import { autopilotOwnerPolicySnapshot } from '../owner/policy';
+import {
+  autopilotOwnerPolicySnapshot,
+  constrainAutopilotAdmissionAuthority,
+} from '../owner/policy';
 import { settlePendingAutopilotOwnerObservation } from '../owner/settle';
 import { fetchPullRequestDetail } from '../../github';
 import {
@@ -35,7 +42,8 @@ import {
   releaseAutopilotSubmissionProcessLease,
 } from '../owner/submission-lease';
 
-const nonEmpty = v.pipe(v.string(), v.minLength(1));
+const nonEmpty = v.pipe(v.string(), v.minLength(1), v.maxLength(2_048));
+const boundedList = v.optional(v.pipe(v.array(nonEmpty), v.maxLength(64)));
 export const submitAutopilotFixInputSchema = v.strictObject({
   admissionId: nonEmpty,
   attemptId: nonEmpty,
@@ -47,22 +55,50 @@ export const submitAutopilotFixInputSchema = v.strictObject({
   policyHash: nonEmpty,
   disposition: v.picklist(['fix', 'no-op']),
   fixerKind: v.optional(v.picklist(['review', 'ci'])),
-  addressedReviewCommentIds: v.optional(v.array(nonEmpty)),
-  addressedReviewThreadIds: v.optional(v.array(nonEmpty)),
+  addressedReviewCommentIds: boundedList,
+  addressedReviewThreadIds: boundedList,
   replacements: v.optional(
     v.pipe(v.array(reviewFixReplacementSchema), v.maxLength(100)),
   ),
   patch: v.optional(v.pipe(v.string(), v.maxLength(256 * 1024))),
-  diagnostics: v.optional(v.array(nonEmpty)),
-  checks: v.optional(v.array(nonEmpty)),
-  testsAttempted: v.optional(v.array(nonEmpty)),
+  diagnostics: boundedList,
+  checks: boundedList,
+  testsAttempted: boundedList,
   summary: nonEmpty,
   confidence: v.optional(v.picklist(['low', 'medium', 'high'])),
   risk: v.optional(v.picklist(['low', 'medium', 'high'])),
-  remainingBlockers: v.optional(v.array(nonEmpty)),
+  remainingBlockers: boundedList,
 });
 
 type SubmitInput = v.InferOutput<typeof submitAutopilotFixInputSchema>;
+const groundingScopeRowSchema = v.looseObject({
+  submit_token_hash: nonEmpty,
+  status: v.picklist(['reserved', 'accepted', 'blocked', 'orphaned']),
+  worktree_id: v.nullable(v.string()),
+  pr_head_sha: v.nullable(v.string()),
+  worktree_head_sha: v.nullable(v.string()),
+  policy_hash: v.string(),
+});
+const mutationFenceRowSchema = v.looseObject({
+  submission_status: v.literal('applying'),
+  submission_epoch: v.number(),
+  cancellation_requested_at: v.nullable(v.string()),
+  attempt_status: v.literal('running'),
+  mutation_epoch: v.number(),
+  stop_requested_at: v.nullable(v.string()),
+  current_stage_attempt_id: v.string(),
+  state: v.literal('owner-turn-running'),
+  repo_id: v.string(),
+  watch_id: v.string(),
+  worktree_head_sha: v.string(),
+  pr_head_sha: v.string(),
+  base_sha: v.string(),
+  checkout_branch: v.string(),
+  checkout_detached: v.number(),
+  repo_binding_hash: v.string(),
+  workspace_binding_hash: v.string(),
+  policy_hash: v.string(),
+});
 type FixResult = Awaited<ReturnType<typeof fixPrReviewFeedback>>;
 type SubmitDependencies = {
   currentSha?: typeof gitCurrentSha;
@@ -98,6 +134,14 @@ export async function submitAutopilotFix(
     ]);
   }
   const input = parsed.output;
+  if (Buffer.byteLength(JSON.stringify(withoutToken(input))) > 384 * 1024) {
+    return failure(
+      'Scoped fix submission exceeds the aggregate proposal limit.',
+    );
+  }
+  if (input.patch && input.replacements?.length) {
+    return failure('Use either one atomic patch or replacements, not both.');
+  }
   await ensureRuntimeHome(paths);
   const reserved = reserveSubmission(input, paths);
   if (!reserved) {
@@ -134,6 +178,25 @@ export async function submitAutopilotFix(
     return failure(context.failure);
   }
   if (input.disposition === 'no-op') {
+    try {
+      await assertSubmissionMutationFence(
+        input,
+        paths,
+        dependencies,
+        'before-artifact',
+      );
+    } catch (error) {
+      const message = `Invalid scoped no-op: ${error instanceof Error ? error.message : String(error)}`;
+      await finalizeSubmission(
+        input.attemptId,
+        'rejected',
+        null,
+        {},
+        message,
+        paths,
+      );
+      return failure(message);
+    }
     await finalizeSubmission(
       input.attemptId,
       'no-op',
@@ -171,6 +234,9 @@ export async function submitAutopilotFix(
   }
 
   let result: FixResult;
+  const ownerMutationFence = (
+    phase: 'before-mutation' | 'before-commit' | 'before-artifact',
+  ) => assertSubmissionMutationFence(input, paths, dependencies, phase);
   try {
     result =
       input.fixerKind === 'review'
@@ -192,6 +258,7 @@ export async function submitAutopilotFix(
               expectedWorktreeHeadSha: input.expectedWorktreeHeadSha,
             },
             paths,
+            { ownerMutationFence },
           )
         : await (dependencies.runCiFix ?? fixPrCiFailure)(
             {
@@ -208,6 +275,7 @@ export async function submitAutopilotFix(
               expectedWorktreeHeadSha: input.expectedWorktreeHeadSha,
             },
             paths,
+            { ownerMutationFence },
           );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -247,6 +315,243 @@ export async function submitAutopilotFix(
   return { ...result, action: 'autopilot_submit_fix' };
 }
 
+async function assertSubmissionMutationFence(
+  input: SubmitInput,
+  paths: RuntimePaths,
+  dependencies: SubmitDependencies,
+  phase: 'before-mutation' | 'before-commit' | 'before-artifact',
+) {
+  const database = openDb(paths.neondeckDatabase);
+  let scope: v.InferOutput<typeof mutationFenceRowSchema>;
+  try {
+    scope = withImmediateTransaction(database, () => {
+      const rawRow = database
+        .prepare(
+          `SELECT submissions.status AS submission_status,
+                  submissions.mutation_epoch AS submission_epoch,
+                  submissions.cancellation_requested_at,
+                  admissions.*, attempts.status AS attempt_status,
+                  grounding.worktree_id, grounding.pr_head_sha,
+                  grounding.worktree_head_sha, grounding.base_sha,
+                  grounding.checkout_branch, grounding.checkout_detached,
+                  grounding.repo_binding_hash, grounding.workspace_binding_hash,
+                  grounding.policy_hash
+           FROM autopilot_owner_fix_submissions AS submissions
+           INNER JOIN autopilot_admissions AS admissions
+             ON admissions.id = submissions.admission_id
+           INNER JOIN autopilot_stage_attempts AS attempts
+             ON attempts.id = submissions.attempt_id
+           INNER JOIN autopilot_owner_grounding_snapshots AS grounding
+             ON grounding.attempt_id = attempts.id
+           WHERE submissions.attempt_id = ?;`,
+        )
+        .get(input.attemptId);
+      const parsedRow = v.safeParse(mutationFenceRowSchema, rawRow);
+      const row = parsedRow.success ? parsedRow.output : undefined;
+      if (
+        !row ||
+        row.submission_status !== 'applying' ||
+        row.cancellation_requested_at !== null ||
+        row.attempt_status !== 'running' ||
+        row.state !== 'owner-turn-running' ||
+        row.current_stage_attempt_id !== input.attemptId ||
+        Number(row.submission_epoch) !== Number(row.mutation_epoch) ||
+        row.stop_requested_at !== null
+      ) {
+        throw new Error('Owner mutation lease was revoked or superseded.');
+      }
+      if (phase === 'before-mutation') {
+        database
+          .prepare(
+            `UPDATE autopilot_owner_fix_submissions
+             SET mutation_started_at = COALESCE(mutation_started_at, ?)
+             WHERE attempt_id = ? AND status = 'applying'
+               AND cancellation_requested_at IS NULL;`,
+          )
+          .run(new Date().toISOString(), input.attemptId);
+      }
+      return row;
+    });
+  } finally {
+    database.close();
+  }
+
+  const [registry, appConfig] = await Promise.all([
+    readRepoRegistrySnapshot(paths),
+    readRuntimeJson(paths.config, parseAppConfig),
+  ]);
+  const repo = registry.repos.find(
+    (candidate) => candidate.id === scope.repo_id,
+  );
+  if (!repo) throw new Error('Owner repository is no longer configured.');
+  const worktree = readWorktreeRecord(input.worktreeId, paths);
+  const repoBindingHash = stableJsonHash({
+    id: repo.id,
+    path: repo.path,
+    defaultBranch: repo.defaultBranch,
+    githubOwner: repo.github.owner,
+    githubName: repo.github.name,
+  });
+  const workspaceBindingHash = stableJsonHash({
+    id: worktree.id,
+    repoId: worktree.repoId,
+    repoFullName: worktree.repoFullName,
+    localPath: worktree.localPath,
+    prNumber: worktree.prNumber,
+    baseRef: worktree.baseRef,
+    headOwner: worktree.headOwner,
+    headName: worktree.headName,
+    headRef: worktree.headRef,
+    storageKind: worktree.storageKind,
+    adopted: worktree.adopted,
+    createdBy: worktree.createdBy,
+  });
+  if (
+    repoBindingHash !== scope.repo_binding_hash ||
+    workspaceBindingHash !== scope.workspace_binding_hash
+  ) {
+    throw new Error(
+      'Repository or managed-worktree identity changed after dispatch.',
+    );
+  }
+  const actualSha = await (dependencies.currentSha ?? gitCurrentSha)(
+    worktree.localPath,
+  );
+  if (phase !== 'before-artifact' && actualSha !== scope.worktree_head_sha) {
+    throw new Error('Worktree HEAD changed after dispatch.');
+  }
+  if (!dependencies.currentSha) {
+    const status = await readWorktreeStatus({ worktreeId: worktree.id }, paths);
+    const git =
+      status && typeof status === 'object'
+        ? (status as Record<string, unknown>).git
+        : null;
+    if (!git || typeof git !== 'object')
+      throw new Error('Worktree Git state is unavailable.');
+    const gitState = git as Record<string, unknown>;
+    if (
+      (phase !== 'before-artifact' &&
+        gitState.headSha !== scope.worktree_head_sha) ||
+      gitState.baseSha !== scope.base_sha ||
+      gitState.branch !== scope.checkout_branch ||
+      (gitState.branch === 'HEAD') !== Boolean(scope.checkout_detached)
+    ) {
+      throw new Error(
+        'Worktree HEAD, base, or branch attachment changed after dispatch.',
+      );
+    }
+  }
+  const liveHead = await (dependencies.readLiveHead ?? defaultLiveHead)({
+    owner: repo.github.owner,
+    repo: repo.github.name,
+    prNumber: Number(worktree.prNumber),
+  });
+  if (liveHead !== scope.pr_head_sha)
+    throw new Error('Pull request HEAD changed after dispatch.');
+
+  const admission = readAutopilotAdmission(scope);
+  if (!admission) throw new Error('Persisted admission is invalid.');
+  const policy = repoAutopilotPolicyForWatch(repo, appConfig, {
+    id: String(scope.watch_id),
+    prNumber: Number(worktree.prNumber),
+  });
+  const authorityDatabase = openDb(paths.neondeckDatabase);
+  let authority;
+  try {
+    authority = withImmediateTransaction(authorityDatabase, () =>
+      constrainAutopilotAdmissionAuthority(authorityDatabase, {
+        admission,
+        repoId: repo.id,
+        watchId: String(scope.watch_id),
+        prNumber: Number(worktree.prNumber),
+        appConfig,
+        currentConfiguredMode: policy.mode,
+      }),
+    );
+  } finally {
+    authorityDatabase.close();
+  }
+  const effective = autopilotOwnerPolicySnapshot({
+    admissionMode: admission.mode,
+    authorityMode: authority.authorityMode,
+    configuredMode: policy.mode,
+    guardrails: repoGuardrails(repo, appConfig),
+    executionPolicy: appConfig.execution ?? null,
+    worktreePolicy: appConfig.worktrees ?? null,
+    learningPolicy: appConfig.learning ?? null,
+  });
+  if (input.disposition === 'fix' && !effective.fixAllowed) {
+    throw new Error(
+      'Current monotonic policy authority no longer permits a fix.',
+    );
+  }
+  if (stableJsonHash(effective) !== scope.policy_hash) {
+    throw new Error('Effective owner policy changed after dispatch.');
+  }
+  if (input.disposition === 'fix' && phase === 'before-mutation') {
+    const guardrails = repoGuardrails(repo, appConfig);
+    const effect =
+      dependencies.runReviewFix || dependencies.runCiFix
+        ? {
+            paths: submissionPaths(input),
+            bytes: Buffer.byteLength(
+              JSON.stringify(input.replacements ?? input.patch ?? ''),
+            ),
+            lines: input.patch
+              ? input.patch
+                  .split('\n')
+                  .filter((line) => /^[+-](?!\+\+|--)/.test(line)).length
+              : (input.replacements ?? []).reduce(
+                  (total, item) =>
+                    total +
+                    item.oldString.split('\n').length +
+                    item.newString.split('\n').length,
+                  0,
+                ),
+          }
+        : await measureSubmissionEffect(
+            input,
+            { worktreeId: worktree.id },
+            paths,
+          );
+    if (
+      effect.paths.length > guardrails.maxFilesChanged ||
+      effect.lines > guardrails.maxLinesChanged ||
+      effect.bytes > 256 * 1024 ||
+      effect.paths.some((path) => pathDeniedByAutopilotPolicy(path, guardrails))
+    ) {
+      throw new Error(
+        'Current path, byte, or line authority rejects the planned effect.',
+      );
+    }
+  }
+
+  const confirm = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    const row = confirm
+      .prepare(
+        `SELECT submissions.status, submissions.cancellation_requested_at,
+                submissions.mutation_epoch AS submission_epoch,
+                admissions.mutation_epoch, admissions.stop_requested_at
+         FROM autopilot_owner_fix_submissions AS submissions
+         INNER JOIN autopilot_admissions AS admissions
+           ON admissions.id = submissions.admission_id
+         WHERE submissions.attempt_id = ?;`,
+      )
+      .get(input.attemptId) as Record<string, unknown> | undefined;
+    if (
+      !row ||
+      row.status !== 'applying' ||
+      row.cancellation_requested_at !== null ||
+      row.stop_requested_at !== null ||
+      Number(row.submission_epoch) !== Number(row.mutation_epoch)
+    )
+      throw new Error('Owner mutation lease was revoked during validation.');
+  } finally {
+    confirm.close();
+  }
+}
+
 async function validateSubmissionContext(
   input: SubmitInput,
   paths: RuntimePaths,
@@ -275,11 +580,13 @@ async function validateSubmissionContext(
             .get(admission.ownerId),
         )
       : undefined;
-    grounding = database
+    const groundingRow = database
       .prepare(
         'SELECT * FROM autopilot_owner_grounding_snapshots WHERE attempt_id = ?;',
       )
-      .get(input.attemptId) as Record<string, unknown> | undefined;
+      .get(input.attemptId);
+    const parsedGrounding = v.safeParse(groundingScopeRowSchema, groundingRow);
+    grounding = parsedGrounding.success ? parsedGrounding.output : undefined;
   } finally {
     database.close();
   }
@@ -350,6 +657,7 @@ async function validateSubmissionContext(
   const guardrails = repoGuardrails(repo, appConfig);
   const currentPolicy = autopilotOwnerPolicySnapshot({
     admissionMode: admission.mode,
+    authorityMode: admission.authorityMode,
     configuredMode: policy.mode,
     guardrails,
     executionPolicy: appConfig.execution ?? null,
@@ -370,32 +678,145 @@ async function validateSubmissionContext(
     return { failure: 'Current policy no longer permits an owner fix.' };
   }
   const plannedPaths = submissionPaths(input);
-  if (plannedPaths.length > guardrails.maxFilesChanged)
-    return { failure: 'Fix exceeds the configured maximum file count.' };
-  const replacementBytes = Buffer.byteLength(
-    JSON.stringify(input.replacements ?? []),
-  );
-  if (replacementBytes > 256 * 1024) {
-    return { failure: 'Fix replacements exceed the proposal byte limit.' };
-  }
-  const lineChanges = input.patch
-    ? input.patch.split('\n').filter((line) => /^[+-](?!\+\+|--)/.test(line))
-        .length
-    : (input.replacements ?? []).reduce(
-        (total, replacement) =>
-          total +
-          replacement.oldString.split('\n').length +
-          replacement.newString.split('\n').length,
-        0,
-      );
-  if (lineChanges > guardrails.maxLinesChanged)
-    return { failure: 'Fix exceeds the configured maximum line count.' };
   const denied = plannedPaths.find((path) =>
     pathDeniedByAutopilotPolicy(path, guardrails),
   );
   if (denied)
     return { failure: `Fix path ${denied} is denied by repository policy.` };
+  const effect =
+    dependencies.runReviewFix || dependencies.runCiFix
+      ? {
+          paths: plannedPaths,
+          bytes: Buffer.byteLength(
+            JSON.stringify(input.replacements ?? input.patch ?? ''),
+          ),
+          lines: input.patch
+            ? input.patch
+                .split('\n')
+                .filter((line) => /^[+-](?!\+\+|--)/.test(line)).length
+            : (input.replacements ?? []).reduce(
+                (total, item) =>
+                  total +
+                  item.oldString.split('\n').length +
+                  item.newString.split('\n').length,
+                0,
+              ),
+        }
+      : await measureSubmissionEffect(
+          input,
+          { worktreeId: input.worktreeId },
+          paths,
+        );
+  if (plannedPaths.length > guardrails.maxFilesChanged)
+    return { failure: 'Fix exceeds the configured maximum file count.' };
+  if (effect.bytes > 256 * 1024)
+    return { failure: 'Fix actual affected content exceeds the byte limit.' };
+  if (effect.lines > guardrails.maxLinesChanged)
+    return { failure: 'Fix exceeds the configured maximum line count.' };
   return { owner, admission, attempt, policy: currentPolicy };
+}
+
+async function measureSubmissionEffect(
+  input: SubmitInput,
+  scope: { worktreeId: string },
+  paths: RuntimePaths,
+) {
+  const changed = new Map<string, { before: string; after: string }>();
+  const repoId = readWorktreeRecord(scope.worktreeId, paths).repoId;
+  const load = async (path: string) => {
+    const existing = changed.get(path);
+    if (existing) return existing;
+    const target = await resolveRepoPath(
+      { repoId, worktreeId: scope.worktreeId, path, intent: 'read' },
+      paths,
+    );
+    const before = target.exists ? await readFile(target.fullPath, 'utf8') : '';
+    const state = { before, after: before };
+    changed.set(path, state);
+    return state;
+  };
+  for (const replacement of input.replacements ?? []) {
+    const state = await load(replacement.path);
+    const result = replaceContent(state.after, replacement);
+    if (!result.ok) throw new Error(result.message);
+    state.after = result.content;
+  }
+  if (input.patch) {
+    for (const operation of parseV4APatch(input.patch).operations) {
+      if (operation.type === 'add') {
+        const state = await load(operation.path);
+        state.after = operation.lines.join('\n');
+      } else if (operation.type === 'delete') {
+        const state = await load(operation.path);
+        state.after = '';
+      } else if (operation.type === 'move') {
+        const source = await load(operation.from);
+        const destination = await load(operation.to);
+        source.after = '';
+        destination.after = source.before;
+        for (const hunk of operation.hunks) {
+          destination.after = applyMeasuredHunk(destination.after, hunk.lines);
+        }
+      } else {
+        const state = await load(operation.path);
+        for (const hunk of operation.hunks) {
+          state.after = applyMeasuredHunk(state.after, hunk.lines);
+        }
+      }
+    }
+  }
+  let lines = 0;
+  let bytes = 0;
+  for (const state of changed.values()) {
+    bytes += Buffer.byteLength(state.before) + Buffer.byteLength(state.after);
+    lines += changedLineEstimate(state.before, state.after);
+  }
+  return { paths: [...changed.keys()], bytes, lines };
+}
+
+function applyMeasuredHunk(
+  content: string,
+  lines: Array<{ kind: 'context' | 'remove' | 'add'; text: string }>,
+) {
+  const oldText = lines
+    .filter((line) => line.kind !== 'add')
+    .map((line) => line.text)
+    .join('\n');
+  const newText = lines
+    .filter((line) => line.kind !== 'remove')
+    .map((line) => line.text)
+    .join('\n');
+  const index = content.indexOf(oldText);
+  if (index < 0 || content.indexOf(oldText, index + 1) >= 0) {
+    throw new Error(
+      'Patch hunk does not resolve uniquely in the current file.',
+    );
+  }
+  return `${content.slice(0, index)}${newText}${content.slice(index + oldText.length)}`;
+}
+
+function changedLineEstimate(before: string, after: string) {
+  if (before === after) return 0;
+  const beforeLines = before === '' ? [] : before.split('\n');
+  const afterLines = after === '' ? [] : after.split('\n');
+  let prefix = 0;
+  while (
+    prefix < beforeLines.length &&
+    prefix < afterLines.length &&
+    beforeLines[prefix] === afterLines[prefix]
+  )
+    prefix += 1;
+  let suffix = 0;
+  while (
+    suffix < beforeLines.length - prefix &&
+    suffix < afterLines.length - prefix &&
+    beforeLines[beforeLines.length - 1 - suffix] ===
+      afterLines[afterLines.length - 1 - suffix]
+  )
+    suffix += 1;
+  return (
+    beforeLines.length - prefix - suffix + afterLines.length - prefix - suffix
+  );
 }
 
 function submissionPaths(input: SubmitInput) {
@@ -418,9 +839,9 @@ function reserveSubmission(input: SubmitInput, paths: RuntimePaths) {
         .prepare(
           `INSERT INTO autopilot_owner_fix_submissions (
              id, owner_id, admission_id, attempt_id, dispatch_id, token_hash,
-             disposition, status, request_hash, result_json, created_at
+             disposition, status, request_hash, mutation_epoch, result_json, created_at
            ) SELECT ?, owners.id, admissions.id, attempts.id,
-                    grounding.dispatch_id, ?, ?, 'applying', ?, ?, ?
+                    grounding.dispatch_id, ?, ?, 'applying', ?, admissions.mutation_epoch, ?, ?
            FROM autopilot_owner_grounding_snapshots AS grounding
            INNER JOIN autopilot_stage_attempts AS attempts
              ON attempts.id = grounding.attempt_id
@@ -450,7 +871,7 @@ function reserveSubmission(input: SubmitInput, paths: RuntimePaths) {
           stableJsonHash(input.token),
           input.disposition,
           stableJsonHash(withoutToken(input)),
-          JSON.stringify(withoutToken(input)),
+          JSON.stringify(boundedRequestRecord(input)),
           new Date().toISOString(),
           input.attemptId,
           input.admissionId,
@@ -481,11 +902,26 @@ function finishSubmission(
   try {
     const current = database
       .prepare(
-        `SELECT result_json FROM autopilot_owner_fix_submissions
-         WHERE attempt_id = ? AND status = 'applying';`,
+        `SELECT submissions.result_json, submissions.cancellation_requested_at,
+                submissions.mutation_epoch AS submission_epoch,
+                admissions.mutation_epoch
+         FROM autopilot_owner_fix_submissions AS submissions
+         INNER JOIN autopilot_admissions AS admissions
+           ON admissions.id = submissions.admission_id
+         WHERE submissions.attempt_id = ? AND submissions.status = 'applying';`,
       )
-      .get(attemptId) as { result_json?: unknown } | undefined;
+      .get(attemptId) as
+      | {
+          result_json?: unknown;
+          cancellation_requested_at?: unknown;
+          submission_epoch?: unknown;
+          mutation_epoch?: unknown;
+        }
+      | undefined;
     const request = parseStoredJson(current?.result_json);
+    const cancelled =
+      current?.cancellation_requested_at !== null ||
+      Number(current?.submission_epoch) !== Number(current?.mutation_epoch);
     database
       .prepare(
         `UPDATE autopilot_owner_fix_submissions
@@ -493,10 +929,14 @@ function finishSubmission(
          WHERE attempt_id = ? AND status = 'applying';`,
       )
       .run(
-        status,
-        preparedDiffId,
-        JSON.stringify({ request, result }),
-        error,
+        cancelled ? 'cancelled' : status,
+        cancelled ? null : preparedDiffId,
+        JSON.stringify({ request, result: boundedResultRecord(result) }),
+        cancelled
+          ? 'Owner mutation lease was cancelled.'
+          : error
+            ? truncate(error, 2_048)
+            : null,
         new Date().toISOString(),
         attemptId,
       );
@@ -574,6 +1014,59 @@ function findPreparedDiffId(result: unknown): string | null {
 function withoutToken(input: SubmitInput) {
   const { token: _token, ...rest } = input;
   return rest;
+}
+
+function boundedRequestRecord(input: SubmitInput) {
+  return {
+    disposition: input.disposition,
+    fixerKind: input.fixerKind ?? null,
+    summary: truncate(input.summary, 2_048),
+    addressedReviewCommentIds: (input.addressedReviewCommentIds ?? []).slice(
+      0,
+      64,
+    ),
+    addressedReviewThreadIds: (input.addressedReviewThreadIds ?? []).slice(
+      0,
+      64,
+    ),
+    plannedPaths: submissionPaths(input).slice(0, 100),
+    patchHash: input.patch ? stableJsonHash(input.patch) : null,
+    replacementsHash: input.replacements
+      ? stableJsonHash(input.replacements)
+      : null,
+    proposalBytes: Buffer.byteLength(JSON.stringify(withoutToken(input))),
+  };
+}
+
+function boundedResultRecord(result: unknown) {
+  if (!result || typeof result !== 'object') return {};
+  const record = result as Record<string, unknown>;
+  return {
+    ok: record.ok === true,
+    changed: record.changed === true,
+    action:
+      typeof record.action === 'string' ? truncate(record.action, 128) : null,
+    message:
+      typeof record.message === 'string'
+        ? truncate(record.message, 2_048)
+        : null,
+    preparedDiffId: findPreparedDiffId(result),
+    requires: boundedStrings(record.requires),
+    errors: boundedStrings(record.errors),
+  };
+}
+
+function boundedStrings(value: unknown) {
+  return Array.isArray(value)
+    ? value
+        .filter((item): item is string => typeof item === 'string')
+        .slice(0, 32)
+        .map((item) => truncate(item, 512))
+    : [];
+}
+
+function truncate(value: string, limit: number) {
+  return value.length <= limit ? value : `${value.slice(0, limit - 1)}…`;
 }
 
 function failure(message: string, errors: string[] = []) {

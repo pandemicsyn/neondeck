@@ -1,6 +1,7 @@
 import { openDb, withImmediateTransaction } from '../../../lib/sqlite';
 import {
   ensureRuntimeHome,
+  ensureRuntimeHomeSync,
   runtimePaths,
   type RuntimePaths,
 } from '../../../runtime-home';
@@ -11,6 +12,8 @@ import {
   readAutopilotStageAttempt,
   type AutopilotAdmissionState,
 } from '../coordination/schemas';
+import * as v from 'valibot';
+import { recordHandledPrEventAndMaybeQueueLearning } from '../../learning';
 
 const terminalPrefix = 'autopilot.owner.terminal:';
 
@@ -23,12 +26,22 @@ export type AutopilotOwnerTerminalObservation = {
   source: 'agent_end' | 'operation' | 'submission_settled';
 };
 
-export async function recordAutopilotOwnerTerminalObservation(
+const terminalObservationSchema = v.strictObject({
+  agent: v.literal('pr-autopilot-owner'),
+  instanceId: v.pipe(v.string(), v.minLength(1), v.maxLength(512)),
+  dispatchId: v.pipe(v.string(), v.minLength(1), v.maxLength(512)),
+  failed: v.boolean(),
+  error: v.optional(v.nullable(v.pipe(v.string(), v.maxLength(2_048)))),
+  source: v.picklist(['agent_end', 'operation', 'submission_settled']),
+});
+
+export function recordAutopilotOwnerTerminalObservation(
   observation: AutopilotOwnerTerminalObservation,
   paths: RuntimePaths = runtimePaths(),
   now = new Date(),
 ) {
-  await ensureRuntimeHome(paths);
+  const parsed = v.parse(terminalObservationSchema, observation);
+  ensureRuntimeHomeSync(paths);
   const database = openDb(paths.neondeckDatabase);
   try {
     database
@@ -38,17 +51,13 @@ export async function recordAutopilotOwnerTerminalObservation(
       )
       .run(
         `${terminalPrefix}${observation.dispatchId}`,
-        JSON.stringify(observation),
+        JSON.stringify(parsed),
         now.toISOString(),
       );
   } finally {
     database.close();
   }
-  return settlePendingAutopilotOwnerObservation(
-    observation.dispatchId,
-    paths,
-    now,
-  );
+  return settlePendingAutopilotOwnerObservation(parsed.dispatchId, paths, now);
 }
 
 export async function settlePendingAutopilotOwnerObservation(
@@ -65,9 +74,7 @@ export async function settlePendingAutopilotOwnerObservation(
       .get(`${terminalPrefix}${dispatchId}`) as { value?: unknown } | undefined;
     if (typeof row?.value === 'string') {
       try {
-        observation = JSON.parse(
-          row.value,
-        ) as AutopilotOwnerTerminalObservation;
+        observation = v.parse(terminalObservationSchema, JSON.parse(row.value));
       } catch {
         observation = undefined;
       }
@@ -87,8 +94,9 @@ export async function settleAutopilotOwnerObservation(
   await ensureRuntimeHome(paths);
   const nowIso = now.toISOString();
   const database = openDb(paths.neondeckDatabase);
+  let result;
   try {
-    return withImmediateTransaction(database, () => {
+    result = withImmediateTransaction(database, () => {
       const attempt = readAutopilotStageAttempt(
         database
           .prepare(
@@ -223,11 +231,47 @@ export async function settleAutopilotOwnerObservation(
         ),
         attemptId: attempt.id,
         queuedAdmissionId,
+        learning:
+          settlement.reason === 'owner-fix-prepared' ||
+          settlement.reason === 'owner-explicit-no-op'
+            ? {
+                sourceId: `owner:${attempt.id}:${settlement.reason === 'owner-fix-prepared' ? 'prepared' : 'no-op'}`,
+                repoId: admission.repoId,
+                prNumber: admission.prNumber,
+                summary:
+                  settlement.reason === 'owner-fix-prepared'
+                    ? 'Continuing PR owner prepared a deterministic fix.'
+                    : 'Continuing PR owner completed with an explicit no-op.',
+                disposition:
+                  settlement.reason === 'owner-fix-prepared'
+                    ? ('prepared' as const)
+                    : ('no-op' as const),
+                preparedDiffId: settlement.preparedDiffId,
+              }
+            : null,
       };
     });
   } finally {
     database.close();
   }
+  if (result && 'learning' in result && result.learning) {
+    await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'owner_pr_handled',
+        source: 'autopilot-owner',
+        sourceId: result.learning.sourceId.slice(0, 200),
+        repoId: result.learning.repoId,
+        prNumber: result.learning.prNumber,
+        summary: result.learning.summary,
+        data: {
+          disposition: result.learning.disposition,
+          preparedDiffId: result.learning.preparedDiffId,
+        },
+      },
+      paths,
+    );
+  }
+  return result;
 }
 
 function ownerSettlement(

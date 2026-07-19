@@ -12,6 +12,7 @@ import {
   type AutopilotAdmissionState,
 } from './schemas';
 import { isLegalAutopilotTransition } from './transitions';
+import { waitForAutopilotSubmissionProcessLease } from '../owner/submission-lease';
 
 export async function stopAutopilotAdmission(
   input: {
@@ -65,6 +66,16 @@ async function finishAutopilotAdmission(
 ) {
   await ensureRuntimeHome(paths);
   const nowIso = now.toISOString();
+  const revokedAttempts = revokeAdmissionMutations(
+    input.admissionId,
+    input.target === 'stopped',
+    input.reason,
+    paths,
+    nowIso,
+  );
+  await Promise.all(
+    revokedAttempts.map(waitForAutopilotSubmissionProcessLease),
+  );
   const database = openDb(paths.neondeckDatabase);
   try {
     return withImmediateTransaction(database, () => {
@@ -103,6 +114,13 @@ async function finishAutopilotAdmission(
               .get(admission.currentStageAttemptId),
           )
         : undefined;
+      database
+        .prepare(
+          `UPDATE autopilot_owner_fix_submissions
+           SET status = 'cancelled', error = ?, finished_at = ?
+           WHERE attempt_id = ? AND status = 'applying';`,
+        )
+        .run(input.reason, nowIso, attempt?.id ?? '');
       if (
         attempt &&
         (attempt.status === 'reserved' || attempt.status === 'running')
@@ -171,6 +189,64 @@ async function finishAutopilotAdmission(
             .get(admission.id),
         ),
       };
+    });
+  } finally {
+    database.close();
+  }
+}
+
+function revokeAdmissionMutations(
+  admissionId: string,
+  ownerScoped: boolean,
+  reason: string,
+  paths: RuntimePaths,
+  now: string,
+) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return withImmediateTransaction(database, () => {
+      const admission = readAutopilotAdmission(
+        database
+          .prepare('SELECT * FROM autopilot_admissions WHERE id = ?;')
+          .get(admissionId),
+      );
+      if (!admission) return [];
+      const rows = database
+        .prepare(
+          `SELECT attempts.id AS attempt_id, admissions.id AS admission_id
+           FROM autopilot_admissions AS admissions
+           INNER JOIN autopilot_stage_attempts AS attempts
+             ON attempts.id = admissions.current_stage_attempt_id
+           WHERE ${ownerScoped ? 'admissions.owner_id = ?' : 'admissions.id = ?'}
+             AND admissions.state NOT IN
+               ('archived', 'completed', 'stopped', 'superseded')
+             AND attempts.stage = 'owner-turn'
+             AND attempts.status IN ('reserved', 'running');`,
+        )
+        .all(ownerScoped ? admission.ownerId : admission.id) as Array<{
+        attempt_id: string;
+        admission_id: string;
+      }>;
+      for (const row of rows) {
+        database
+          .prepare(
+            `UPDATE autopilot_admissions
+             SET mutation_epoch = mutation_epoch + 1,
+                 stop_requested_at = COALESCE(stop_requested_at, ?),
+                 updated_at = ?
+             WHERE id = ?;`,
+          )
+          .run(now, now, row.admission_id);
+        database
+          .prepare(
+            `UPDATE autopilot_owner_fix_submissions
+             SET cancellation_requested_at = COALESCE(cancellation_requested_at, ?),
+                 error = COALESCE(error, ?)
+             WHERE attempt_id = ? AND status = 'applying';`,
+          )
+          .run(now, reason, row.attempt_id);
+      }
+      return rows.map((row) => row.attempt_id);
     });
   } finally {
     database.close();

@@ -5,17 +5,25 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it, vi } from 'vitest';
-import { prAutopilotOwnerCompaction } from './modules/autopilot/owner/config';
+import {
+  prAutopilotOwnerCompaction,
+  prAutopilotOwnerDurability,
+} from './modules/autopilot/owner/config';
 import {
   coordinateAutopilotAdmission,
   reconcileAutopilotStageAttempts,
   recordAutopilotOwnerTerminalObservation,
   submitAutopilotFix,
+  stopAutopilotAdmission,
 } from './modules/autopilot';
 import { readAutopilotPrOwnerByWatch } from './modules/autopilot/owners';
 import { classifyAutopilotOwnerConfigChange } from './modules/autopilot/owner/grounding';
 import { runScopedOwnerRead } from './modules/autopilot/owner/actions';
 import { fixPrReviewFeedback } from './modules/autopilot/review-feedback';
+import { updateLearningConfig } from './modules/config';
+import { readStaleReasonChanges } from './modules/sessions/stale-reasons';
+import { readAutopilotOwnerCapabilitySnapshot } from './modules/autopilot/owner/capabilities';
+import { ensureAutopilotOwnerInstanceInDatabase } from './modules/autopilot/owner/instance';
 import {
   ensureRuntimeHome,
   runtimePaths,
@@ -136,9 +144,22 @@ describe('Package 4 continuing PR owner', () => {
           database
             .prepare(
               `INSERT INTO config_history (action, file, target, before_json, after_json, changed_at)
-             VALUES ('config_update_repo_autopilot_policy', 'repos.json', 'repo', '{}', '{}', ?);`,
+             VALUES ('config_update_repo_autopilot_policy', 'repos.json', 'repo', '{}', ?, ?);`,
             )
-            .run(changedAt);
+            .run(
+              JSON.stringify({
+                repos: [
+                  {
+                    id: 'repo',
+                    github: { owner: 'example', name: 'repo' },
+                    path: '/fixture/primary',
+                    defaultBranch: 'main',
+                    metadata: { autopilot: { mode: 'prepare-only' } },
+                  },
+                ],
+              }),
+              changedAt,
+            );
           database
             .prepare(
               `INSERT INTO memories (
@@ -187,7 +208,7 @@ describe('Package 4 continuing PR owner', () => {
         expect(second.envelope.grounding.selectedMemoryIds).toContain(
           'memory:selected',
         );
-        await submitAutopilotFix(
+        const secondSubmit = await submitAutopilotFix(
           submissionFromEnvelope(second.envelope, {
             disposition: 'fix',
             fixerKind: 'review',
@@ -214,6 +235,7 @@ describe('Package 4 continuing PR owner', () => {
               }) as never,
           },
         );
+        expect(secondSubmit).toMatchObject({ ok: true, changed: true });
         await recordAutopilotOwnerTerminalObservation(
           terminal(second.envelope, 'dispatch:two'),
           paths,
@@ -285,7 +307,8 @@ describe('Package 4 continuing PR owner', () => {
           addressedReviewCommentIds: ['comment:1'],
           addressedReviewThreadIds: ['thread:1'],
           replacements: [
-            { path: 'src/fix.ts', oldString: 'old\n', newString: 'new\n' },
+            { path: 'src/fix.ts', oldString: 'old\n', newString: 'middle\n' },
+            { path: 'src/fix.ts', oldString: 'middle\n', newString: 'new\n' },
           ],
           summary: 'Apply first deterministic review fix.',
         }),
@@ -296,6 +319,12 @@ describe('Package 4 continuing PR owner', () => {
         ok: true,
         changed: true,
       });
+      const persistedSubmission = String(
+        readRows(paths, 'autopilot_owner_fix_submissions')[0]?.result_json,
+      );
+      expect(persistedSubmission).not.toContain('oldString');
+      expect(persistedSubmission).not.toContain('middle');
+      expect(persistedSubmission).not.toContain('diffSummary');
       await recordAutopilotOwnerTerminalObservation(
         terminal(first.envelope, 'dispatch:real-one'),
         paths,
@@ -742,6 +771,316 @@ describe('Package 4 continuing PR owner', () => {
     expect(prAutopilotOwnerCompaction.reserveTokens).toBeGreaterThan(
       prAutopilotOwnerCompaction.keepRecentTokens,
     );
+    expect(prAutopilotOwnerDurability).toEqual({
+      maxAttempts: 10,
+      timeoutMs: 60 * 60 * 1_000,
+    });
+  });
+
+  it('treats an explicit empty selected-memory set as no memory drift', async () => {
+    await withFixture(async (paths) => {
+      const database = new DatabaseSync(paths.neondeckDatabase);
+      try {
+        database
+          .prepare(
+            `INSERT INTO memory_events (id, memory_id, action, actor, created_at)
+             VALUES ('memory:event:ignored', 'memory:ignored', 'updated', 'user', ?);`,
+          )
+          .run('2026-07-19T18:00:00.000Z');
+        const changes = readStaleReasonChanges(database, {
+          configHistoryId: 0,
+          memoryEventSequence: 0,
+          contextMemoryIds: [],
+        });
+        expect(changes.memoryChanges).toEqual([]);
+        expect(changes.memoryHighWaterSequence).toBe(0);
+      } finally {
+        database.close();
+      }
+    });
+  });
+
+  it('preserves the lowest policy authority across notify-only then safe transitions', async () => {
+    await withFixture(
+      async (paths) => {
+        seedPreparedTurn(
+          paths,
+          'admission:monotonic-policy',
+          'event:monotonic-policy',
+          1,
+          'autofix-with-approval',
+        );
+        const database = new DatabaseSync(paths.neondeckDatabase);
+        try {
+          for (const [id, mode] of [
+            [1, 'notify-only'],
+            [2, 'autofix-with-approval'],
+          ] as const) {
+            database
+              .prepare(
+                `INSERT INTO config_history
+                   (id, action, file, target, after_json, changed_at)
+                 VALUES (?, 'config_update_repo_autopilot_policy', 'repos.json', 'repo', ?, ?);`,
+              )
+              .run(
+                id,
+                JSON.stringify({
+                  repos: [
+                    {
+                      id: 'repo',
+                      github: { owner: 'example', name: 'repo' },
+                      path: '/fixture/primary',
+                      defaultBranch: 'main',
+                      metadata: { autopilot: { mode } },
+                    },
+                  ],
+                }),
+                `2026-07-19T18:00:0${id}.000Z`,
+              );
+          }
+        } finally {
+          database.close();
+        }
+        const turn = await dispatchTurn(
+          paths,
+          'admission:monotonic-policy',
+          'dispatch:monotonic-policy',
+        );
+        expect(turn.envelope.policy).toMatchObject({
+          authorityMode: 'notify-only',
+          effectiveMode: 'notify-only',
+          fixAllowed: false,
+        });
+      },
+      { mode: 'autofix-with-approval' },
+    );
+  });
+
+  it('revokes an in-flight owner mutation and waits for its process lease before stopping', async () => {
+    await withFixture(async (paths) => {
+      seedPreparedTurn(paths, 'admission:stop-fence', 'event:stop-fence', 1);
+      const turn = await dispatchTurn(
+        paths,
+        'admission:stop-fence',
+        'dispatch:stop-fence',
+      );
+      let releaseMutation!: () => void;
+      let enteredMutation!: () => void;
+      const entered = new Promise<void>(
+        (resolve) => (enteredMutation = resolve),
+      );
+      const release = new Promise<void>(
+        (resolve) => (releaseMutation = resolve),
+      );
+      const submission = submitAutopilotFix(
+        submissionFromEnvelope(turn.envelope, {
+          disposition: 'fix',
+          fixerKind: 'review',
+          replacements: [
+            { path: 'src/fix.ts', oldString: 'old', newString: 'new' },
+          ],
+          summary: 'Exercise durable stop fencing.',
+        }),
+        paths,
+        {
+          currentSha: async () => 'abc123',
+          readLiveHead: liveFixtureHead,
+          runReviewFix: async (_input, _paths, dependencies) => {
+            await dependencies?.ownerMutationFence?.('before-mutation');
+            enteredMutation();
+            await release;
+            await dependencies?.ownerMutationFence?.('before-commit');
+            throw new Error('revoked mutation unexpectedly continued');
+          },
+        },
+      );
+      await entered;
+      let stopFinished = false;
+      const stop = stopAutopilotAdmission(
+        { admissionId: 'admission:stop-fence' },
+        paths,
+      ).then((result) => {
+        stopFinished = true;
+        return result;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(stopFinished).toBe(false);
+      releaseMutation();
+      expect(await submission).toMatchObject({ ok: false });
+      expect(await stop).toMatchObject({ status: 'stopped' });
+      expect(readAdmission(paths, 'admission:stop-fence')).toMatchObject({
+        state: 'stopped',
+        prepared_diff_id: null,
+      });
+      expect(
+        readRows(paths, 'autopilot_owner_fix_submissions')[0],
+      ).toMatchObject({
+        status: 'cancelled',
+        prepared_diff_id: null,
+      });
+    });
+  });
+
+  it('records owner-handled learning evidence once without retaining proposal source', async () => {
+    await withFixture(async (paths) => {
+      await updateLearningConfig({ prRetrospectiveThreshold: 100 }, paths);
+      seedPreparedTurn(paths, 'admission:learning', 'event:learning', 1);
+      const turn = await dispatchTurn(
+        paths,
+        'admission:learning',
+        'dispatch:learning',
+      );
+      await submitAutopilotFix(
+        submissionFromEnvelope(turn.envelope, {
+          disposition: 'no-op',
+          summary: 'No safe change is required.',
+          remainingBlockers: ['none'],
+        }),
+        paths,
+        { currentSha: async () => 'abc123', readLiveHead: liveFixtureHead },
+      );
+      await recordAutopilotOwnerTerminalObservation(
+        terminal(turn.envelope, 'dispatch:learning'),
+        paths,
+      );
+      await recordAutopilotOwnerTerminalObservation(
+        terminal(turn.envelope, 'dispatch:learning'),
+        paths,
+      );
+      const handled = readRows(paths, 'learning_events').filter(
+        (row) => row.type === 'pr_handled' && row.source === 'autopilot-owner',
+      );
+      expect(handled).toHaveLength(1);
+      expect(String(handled[0]?.source_id).length).toBeLessThanOrEqual(200);
+      const stored = String(
+        readRows(paths, 'autopilot_owner_fix_submissions')[0]?.result_json,
+      );
+      expect(stored).not.toContain('remainingBlockers');
+    });
+  });
+
+  it('freezes the durable owner capability generation across recovery', async () => {
+    await withFixture(async (paths) => {
+      const first = readAutopilotOwnerCapabilitySnapshot(paths);
+      const database = new DatabaseSync(paths.neondeckDatabase);
+      try {
+        ensureAutopilotOwnerInstanceInDatabase(
+          database,
+          'owner:one',
+          new Date().toISOString(),
+          first,
+        );
+        await writeFile(paths.soul, '# Changed soul generation\n');
+        const changed = readAutopilotOwnerCapabilitySnapshot(paths);
+        expect(() =>
+          ensureAutopilotOwnerInstanceInDatabase(
+            database,
+            'owner:one',
+            new Date().toISOString(),
+            changed,
+          ),
+        ).toThrow(/audited generation rotation/);
+      } finally {
+        database.close();
+      }
+    });
+  });
+
+  it('fails closed when same-SHA repository identity or branch attachment changes', async () => {
+    await withGitFixture(async ({ paths, headSha }) => {
+      seedPreparedTurn(paths, 'admission:repo-drift', 'event:repo-drift', 1);
+      const turn = await dispatchGitTurn(
+        paths,
+        'admission:repo-drift',
+        'dispatch:repo-drift',
+        headSha,
+      );
+      const registry = JSON.parse(String(await readFile(paths.repos)));
+      registry.repos[0].defaultBranch = 'develop';
+      await writeFile(paths.repos, JSON.stringify(registry));
+      const result = await submitAutopilotFix(
+        submissionFromEnvelope(turn.envelope, {
+          disposition: 'no-op',
+          summary: 'Do not accept changed repository identity.',
+        }),
+        paths,
+        { readLiveHead: async () => headSha },
+      );
+      expect(result).toMatchObject({
+        ok: false,
+        message: expect.stringContaining('identity changed'),
+      });
+    });
+
+    await withGitFixture(async ({ paths, headSha, worktreePath }) => {
+      seedPreparedTurn(
+        paths,
+        'admission:branch-drift',
+        'event:branch-drift',
+        1,
+      );
+      const turn = await dispatchGitTurn(
+        paths,
+        'admission:branch-drift',
+        'dispatch:branch-drift',
+        headSha,
+      );
+      await git(worktreePath, ['checkout', '--detach']);
+      const result = await submitAutopilotFix(
+        submissionFromEnvelope(turn.envelope, {
+          disposition: 'no-op',
+          summary: 'Do not accept changed branch attachment.',
+        }),
+        paths,
+        { readLiveHead: async () => headSha },
+      );
+      expect(result).toMatchObject({
+        ok: false,
+        message: expect.stringContaining('branch attachment changed'),
+      });
+    });
+  });
+
+  it('prepares but never locally commits when the final policy requires approval', async () => {
+    await withGitFixture(async ({ paths, headSha, worktreePath }) => {
+      const config = JSON.parse(String(await readFile(paths.config)));
+      config.guardrails.approvalRequiredFileGlobs = ['src/**'];
+      await writeFile(paths.config, JSON.stringify(config));
+      seedPreparedTurn(
+        paths,
+        'admission:approval-required',
+        'event:approval-required',
+        1,
+        'autofix-with-approval',
+      );
+      const turn = await dispatchGitTurn(
+        paths,
+        'admission:approval-required',
+        'dispatch:approval-required',
+        headSha,
+      );
+      const result = await submitAutopilotFix(
+        submissionFromEnvelope(turn.envelope, {
+          disposition: 'fix',
+          fixerKind: 'review',
+          addressedReviewCommentIds: ['comment:3'],
+          addressedReviewThreadIds: ['thread:3'],
+          replacements: [
+            { path: 'src/fix.ts', oldString: 'old\n', newString: 'review\n' },
+          ],
+          summary: 'Prepare an approval-gated review fix.',
+        }),
+        paths,
+        realReviewDependencies(headSha, 'comment:3'),
+      );
+      expect(result).toMatchObject({ ok: true, changed: true });
+      expect(await gitOutput(worktreePath, ['rev-parse', 'HEAD'])).toBe(
+        headSha,
+      );
+      expect(String(await readFile(join(worktreePath, 'src/fix.ts')))).toBe(
+        'review\n',
+      );
+    });
   });
 
   it('lets finalized prepared and no-op artifacts outrank a later failed terminal event', async () => {
@@ -1388,8 +1727,13 @@ async function dispatchGitTurn(
 function realReviewDependencies(headSha: string, commentId: string) {
   return {
     readLiveHead: async () => headSha,
-    runReviewFix: async (input: unknown, paths?: RuntimePaths) =>
+    runReviewFix: async (
+      input: unknown,
+      paths?: RuntimePaths,
+      ownerDependencies: Record<string, any> = {},
+    ) =>
       fixPrReviewFeedback(input, paths, {
+        ...ownerDependencies,
         token: 'fixture-token',
         fetchPullRequestEventState: async () =>
           reviewEventState(headSha, commentId) as never,

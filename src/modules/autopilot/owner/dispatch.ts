@@ -28,6 +28,7 @@ import {
   rotateAutopilotOwnerInstanceInDatabase,
 } from './instance';
 import { settlePendingAutopilotOwnerObservation } from './settle';
+import { readAutopilotOwnerCapabilitySnapshot } from './capabilities';
 
 export type AutopilotOwnerDispatcher = (request: {
   agent: 'pr-autopilot-owner';
@@ -170,6 +171,7 @@ function prepareOwnerGeneration(
   paths: RuntimePaths,
   now: Date,
 ) {
+  const capability = readAutopilotOwnerCapabilitySnapshot(paths);
   const nowIso = now.toISOString();
   const database = openDb(paths.neondeckDatabase);
   try {
@@ -197,11 +199,11 @@ function prepareOwnerGeneration(
       }
       const memoryCas = database
         .prepare(
-          `SELECT rowid AS event_rowid, created_at, id FROM memory_events
-           ORDER BY rowid DESC LIMIT 1;`,
+          `SELECT sequence AS event_sequence, created_at, id FROM memory_events
+           ORDER BY sequence DESC LIMIT 1;`,
         )
         .get() as
-        | { event_rowid?: unknown; created_at?: unknown; id?: unknown }
+        | { event_sequence?: unknown; created_at?: unknown; id?: unknown }
         | undefined;
       if (drift.kind === 'block') {
         const message = `Owner grounding blocked: ${drift.reasons.join(', ')}`;
@@ -241,7 +243,7 @@ function prepareOwnerGeneration(
             `INSERT INTO autopilot_owner_grounding_snapshots (
                id, owner_id, admission_id, attempt_id, generation,
                flue_instance_id, config_history_id, memory_event_at,
-               memory_event_id, memory_event_rowid, memory_ids_json, stale_reasons_json,
+               memory_event_id, memory_event_sequence, memory_ids_json, stale_reasons_json,
                envelope_hash, policy_hash, submit_token_hash, status, created_at
              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', 'blocked', ?);`,
           )
@@ -255,7 +257,7 @@ function prepareOwnerGeneration(
             context.owner.groundingConfigHistoryId,
             context.owner.groundingMemoryEventAt,
             context.owner.groundingMemoryEventId,
-            context.owner.groundingMemoryEventRowId,
+            context.owner.groundingMemoryEventSequence,
             JSON.stringify(context.owner.groundingMemoryIds),
             JSON.stringify(drift.staleReasons),
             stableJsonHash(drift.reasons),
@@ -271,11 +273,7 @@ function prepareOwnerGeneration(
         });
         return { status: 'blocked' as const, ...context, drift };
       }
-      let owner = ensureAutopilotOwnerInstanceInDatabase(
-        database,
-        context.owner.id,
-        nowIso,
-      );
+      let owner = context.owner;
       if (drift.kind === 'rotate') {
         owner = rotateAutopilotOwnerInstanceInDatabase(database, {
           ownerId: owner.id,
@@ -294,8 +292,16 @@ function prepareOwnerGeneration(
             rotationMemoryEventAt: drift.memoryEventAt,
             rotationMemoryEventId: drift.memoryEventId,
           },
+          capability,
           now: nowIso,
         });
+      } else {
+        owner = ensureAutopilotOwnerInstanceInDatabase(
+          database,
+          context.owner.id,
+          nowIso,
+          capability,
+        );
       }
       return {
         status: 'ready' as const,
@@ -308,7 +314,7 @@ function prepareOwnerGeneration(
             : null,
         memoryCasEventId:
           typeof memoryCas?.id === 'string' ? memoryCas.id : null,
-        memoryCasEventRowId: Number(memoryCas?.event_rowid ?? 0),
+        memoryCasEventSequence: Number(memoryCas?.event_sequence ?? 0),
       };
     });
   } finally {
@@ -354,13 +360,15 @@ function reserveGroundingSnapshot(
       .prepare(
         `INSERT INTO autopilot_owner_grounding_snapshots (
            id, owner_id, admission_id, attempt_id, generation, flue_instance_id,
-           worktree_id, pr_head_sha, worktree_head_sha,
+           worktree_id, pr_head_sha, worktree_head_sha, base_sha,
+           checkout_branch, checkout_detached, diff_base_sha, diff_revision_key,
+           repo_binding_hash, workspace_binding_hash,
            config_history_id, memory_event_at, memory_event_id,
-           memory_event_rowid, memory_cas_event_at, memory_cas_event_id,
-           memory_cas_event_rowid, memory_ids_json,
+           memory_event_sequence, memory_cas_event_at, memory_cas_event_id,
+           memory_cas_event_sequence, memory_ids_json,
            stale_reasons_json, envelope_hash, policy_hash, submit_token_hash,
            status, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', ?);`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', ?);`,
       )
       .run(
         id,
@@ -372,13 +380,20 @@ function reserveGroundingSnapshot(
         built.worktreeId,
         built.expectedPrHeadSha,
         built.expectedWorktreeHeadSha,
+        built.baseSha,
+        built.checkoutBranch,
+        built.checkoutDetached ? 1 : 0,
+        built.diffBaseSha,
+        built.diffRevisionKey,
+        built.repoBindingHash,
+        built.workspaceBindingHash,
         prepared.drift.configHistoryId,
         prepared.drift.memoryEventAt,
         prepared.drift.memoryEventId,
-        prepared.drift.memoryEventRowId,
+        prepared.drift.memoryEventSequence,
         prepared.memoryCasEventAt,
         prepared.memoryCasEventId,
-        prepared.memoryCasEventRowId,
+        prepared.memoryCasEventSequence,
         JSON.stringify(built.selectedMemoryIds),
         JSON.stringify(prepared.drift.staleReasons),
         built.envelopeHash,
@@ -426,11 +441,11 @@ function registerOwnerDispatch(
       );
       const currentMemory = database
         .prepare(
-          `SELECT rowid AS event_rowid, created_at, id FROM memory_events
-           ORDER BY rowid DESC LIMIT 1;`,
+          `SELECT sequence AS event_sequence, created_at, id FROM memory_events
+           ORDER BY sequence DESC LIMIT 1;`,
         )
         .get() as
-        | { event_rowid?: unknown; created_at?: unknown; id?: unknown }
+        | { event_sequence?: unknown; created_at?: unknown; id?: unknown }
         | undefined;
       const current =
         context.attempt.status === 'running' &&
@@ -442,8 +457,8 @@ function registerOwnerDispatch(
         context.owner.flueInstanceId === input.instanceId &&
         snapshot.status === 'reserved' &&
         Number(snapshot.config_history_id) === currentConfigId &&
-        Number(currentMemory?.event_rowid ?? 0) ===
-          Number(snapshot.memory_cas_event_rowid ?? 0);
+        Number(currentMemory?.event_sequence ?? 0) ===
+          Number(snapshot.memory_cas_event_sequence ?? 0);
       if (!current) {
         database
           .prepare(
@@ -553,7 +568,7 @@ function registerOwnerDispatch(
         .prepare(
           `UPDATE autopilot_pr_owners
            SET grounding_config_history_id = ?, grounding_memory_event_at = ?,
-               grounding_memory_event_id = ?, grounding_memory_event_rowid = ?,
+               grounding_memory_event_id = ?, grounding_memory_event_sequence = ?,
                grounding_memory_ids_json = ?,
                last_dispatched_sequence = MAX(last_dispatched_sequence, ?),
                status = 'active', updated_at = ?
@@ -567,7 +582,7 @@ function registerOwnerDispatch(
           typeof snapshot.memory_event_id === 'string'
             ? snapshot.memory_event_id
             : null,
-          Number(snapshot.memory_event_rowid ?? 0),
+          Number(snapshot.memory_event_sequence ?? 0),
           String(snapshot.memory_ids_json),
           context.admission.eventSequence,
           nowIso,

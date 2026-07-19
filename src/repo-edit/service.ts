@@ -16,7 +16,8 @@ import {
 } from './git';
 import { readStableDiffMetadata } from './stable-diff';
 import { withPathLocks } from './locks';
-import { resolveRepoPath } from './path-safety';
+import { resolveRepoPath, type ResolvedRepoPath } from './path-safety';
+import type { FileStamp } from './schemas';
 import {
   defaultReadLimit,
   failedResult,
@@ -425,6 +426,169 @@ export async function replaceRepoFile(
     );
   } catch (error) {
     return failureResult('repo_file_replace', error, paths, rawInput);
+  }
+}
+
+export async function replaceRepoFilesAtomically(
+  input: {
+    repoId: string;
+    worktreeId: string;
+    worktreeLockId?: string;
+    replacements: Array<{
+      path: string;
+      oldString: string;
+      newString: string;
+      replaceAll?: boolean;
+      fuzzy?: 'off' | 'safe';
+    }>;
+    expectedStamps: Record<string, FileStamp>;
+    dryRun?: boolean;
+    reason?: string;
+  },
+  paths = runtimePaths(),
+) {
+  try {
+    await ensureRuntimeHome(paths);
+    assertWorktreeMutationAllowed(
+      {
+        repoId: input.repoId,
+        worktreeId: input.worktreeId,
+        lockId: input.worktreeLockId,
+      },
+      paths,
+    );
+    const targets = new Map<string, ResolvedRepoPath>();
+    for (const replacement of input.replacements) {
+      if (!targets.has(replacement.path)) {
+        targets.set(
+          replacement.path,
+          await resolveRepoPath(
+            {
+              repoId: input.repoId,
+              worktreeId: input.worktreeId,
+              path: replacement.path,
+              intent: 'write',
+            },
+            paths,
+          ),
+        );
+      }
+    }
+    const lockKeys = [...targets.values()].map((target) =>
+      lockKey(input.repoId, input.worktreeId, target.relativePath),
+    );
+    return await withPathLocks(lockKeys, async () => {
+      const sessionId = await resolveSessionId(undefined, paths);
+      const files = new Map<
+        string,
+        {
+          target: ResolvedRepoPath;
+          before: Awaited<ReturnType<typeof readTextFile>>;
+          content: string;
+          replacements: number;
+        }
+      >();
+      for (const target of targets.values()) {
+        const before = await readTextFile(target);
+        if (
+          await isStaleForInput(
+            input.expectedStamps[target.relativePath],
+            before.stamp,
+            input.repoId,
+            input.worktreeId,
+            target.relativePath,
+            sessionId,
+            paths,
+          )
+        ) {
+          return staleResult(
+            'repo_files_replace',
+            input.repoId,
+            target.relativePath,
+          );
+        }
+        files.set(target.relativePath, {
+          target,
+          before,
+          content: before.content,
+          replacements: 0,
+        });
+      }
+      for (const replacement of input.replacements) {
+        const file = files.get(replacement.path)!;
+        const replaced = replaceContent(file.content, replacement);
+        if (!replaced.ok) {
+          return failedResult('repo_files_replace', replaced.message, {
+            code: replaced.code,
+            message: replaced.message,
+            path: replacement.path,
+            details: { candidates: replaced.candidates },
+          });
+        }
+        file.content = replaced.content;
+        file.replacements += replaced.replacements;
+      }
+      const planned = await Promise.all(
+        [...files.values()].map(async (file) => {
+          const after = normalizeOutputContent(file.content, file.before);
+          const diff = await unifiedDiff(
+            file.target.repoRoot,
+            file.target.relativePath,
+            file.before.content,
+            after,
+          );
+          return { ...file, after, diff };
+        }),
+      );
+      const written: typeof planned = [];
+      if (!input.dryRun) {
+        try {
+          for (const file of planned) {
+            await atomicWrite(file.target.fullPath, file.after);
+            written.push(file);
+          }
+        } catch (error) {
+          await Promise.allSettled(
+            written.map((file) =>
+              atomicWrite(file.target.fullPath, file.before.content),
+            ),
+          );
+          throw error;
+        }
+      }
+      const diffSummary = summarizeDiff(
+        planned.map((file) => countDiffLines(file.diff)),
+      );
+      const event = await recordRepoEditEvent(
+        {
+          repoId: input.repoId,
+          worktreeId: input.worktreeId,
+          sessionId,
+          action: 'replace',
+          status: input.dryRun ? 'preview' : 'applied',
+          reason: input.reason,
+          paths: planned.map((file) => file.target.relativePath),
+          diffSummary,
+          diffPatch: planned.map((file) => file.diff).join('\n'),
+        },
+        paths,
+      );
+      return {
+        ok: true,
+        action: 'repo_files_replace',
+        changed: !input.dryRun && planned.some((file) => file.diff.length > 0),
+        message: `${input.dryRun ? 'Previewed' : 'Applied'} ${input.replacements.length} replacement(s) atomically.`,
+        files: planned.map((file) => ({
+          path: file.target.relativePath,
+          replacements: file.replacements,
+          ...countDiffLines(file.diff),
+        })),
+        diffSummary,
+        eventId: event.id,
+      };
+    });
+  } catch (error) {
+    return failureResult('repo_files_replace', error, paths, input);
   }
 }
 

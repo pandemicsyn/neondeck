@@ -536,7 +536,7 @@ describe('session actions', () => {
     }
   });
 
-  it('reports stale context after model config and memory changes', async () => {
+  it('does not treat later memory as selected when the baseline captured none', async () => {
     const paths = runtimePaths(await tempDir());
     await createChatSession(
       { reason: 'fresh-baseline', activate: true, surface: 'dashboard' },
@@ -559,11 +559,10 @@ describe('session actions', () => {
           type: 'model',
           target: 'models',
         }),
-        expect.objectContaining({
-          type: 'memory',
-          target: 'user:summary-style',
-        }),
       ]),
+    );
+    expect(state.staleReasons).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: 'memory' })]),
     );
   });
 
@@ -693,7 +692,7 @@ describe('session actions', () => {
     );
   });
 
-  it('keeps switched old sessions stale after context-changing writes', async () => {
+  it('keeps switched old sessions grounded when their selected-memory set was empty', async () => {
     const paths = runtimePaths(await tempDir());
     const old = await createChatSession({ title: 'Old context' }, paths);
     const oldId = (old as { session: ChatSessionRecord }).session.id;
@@ -708,13 +707,8 @@ describe('session actions', () => {
       ok: true,
       state: {
         activeSessionId: oldId,
-        stale: true,
-        staleReasons: [
-          expect.objectContaining({
-            type: 'memory',
-            target: 'user:tone',
-          }),
-        ],
+        stale: false,
+        staleReasons: [],
       },
     });
   });

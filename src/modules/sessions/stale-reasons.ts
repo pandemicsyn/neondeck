@@ -1,5 +1,22 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { NeonSessionStaleReason } from './schemas';
+import * as v from 'valibot';
+
+const configChangeRowSchema = v.looseObject({
+  id: v.number(),
+  action: v.string(),
+  target: v.nullable(v.string()),
+  changed_at: v.string(),
+});
+const memoryChangeRowSchema = v.looseObject({
+  event_sequence: v.number(),
+  id: v.string(),
+  memory_id: v.nullable(v.string()),
+  action: v.string(),
+  created_at: v.string(),
+  before_json: v.nullable(v.string()),
+  after_json: v.nullable(v.string()),
+});
 
 export type ConfigHistoryChange = {
   id: number;
@@ -9,7 +26,7 @@ export type ConfigHistoryChange = {
 };
 
 export type MemoryEventChange = {
-  rowId: number;
+  sequence: number;
   id: string;
   memoryId: string | null;
   action: string;
@@ -22,7 +39,7 @@ export type StaleReasonCursor = {
   activatedAt?: string;
   memoryEventAt?: string | null;
   memoryEventId?: string | null;
-  memoryEventRowId?: number;
+  memoryEventSequence?: number;
   contextMemoryIds?: string[];
   ignoredConfigActions?: string[];
 };
@@ -59,28 +76,31 @@ export function readStaleReasonChanges(
   const memoryPredicate = memoryIds.length
     ? `AND memory_id IN (${memoryIds.map(() => '?').join(', ')})`
     : '';
-  const memoryChanges = database
-    .prepare(
-      cursor.memoryEventRowId !== undefined
-        ? `SELECT rowid AS event_rowid, id, memory_id, action, before_json, after_json, created_at
-           FROM memory_events WHERE rowid > ? ${memoryPredicate}
-           ORDER BY rowid ASC;`
-        : `SELECT rowid AS event_rowid, id, memory_id, action, before_json, after_json, created_at
-           FROM memory_events
-           WHERE (created_at > ? OR (created_at = ? AND id > ?)) ${memoryPredicate}
-           ORDER BY created_at ASC, id ASC;`,
-    )
-    .all(
-      ...(cursor.memoryEventRowId !== undefined
-        ? [cursor.memoryEventRowId]
-        : [
-            cursor.memoryEventAt ?? cursor.activatedAt ?? '',
-            cursor.memoryEventAt ?? cursor.activatedAt ?? '',
-            cursor.memoryEventId ?? '',
-          ]),
-      ...memoryIds,
-    )
-    .map(readMemoryChange);
+  const memoryChanges =
+    cursor.contextMemoryIds !== undefined && memoryIds.length === 0
+      ? []
+      : database
+          .prepare(
+            cursor.memoryEventSequence !== undefined
+              ? `SELECT sequence AS event_sequence, id, memory_id, action, before_json, after_json, created_at
+                 FROM memory_events WHERE sequence > ? ${memoryPredicate}
+                 ORDER BY sequence ASC;`
+              : `SELECT sequence AS event_sequence, id, memory_id, action, before_json, after_json, created_at
+                 FROM memory_events
+                 WHERE (created_at > ? OR (created_at = ? AND id > ?)) ${memoryPredicate}
+                 ORDER BY created_at ASC, id ASC;`,
+          )
+          .all(
+            ...(cursor.memoryEventSequence !== undefined
+              ? [cursor.memoryEventSequence]
+              : [
+                  cursor.memoryEventAt ?? cursor.activatedAt ?? '',
+                  cursor.memoryEventAt ?? cursor.activatedAt ?? '',
+                  cursor.memoryEventId ?? '',
+                ]),
+            ...memoryIds,
+          )
+          .map(readMemoryChange);
 
   const reasons = [
     ...configChanges.map(configStaleReason),
@@ -94,7 +114,8 @@ export function readStaleReasonChanges(
     configHighWaterId: configChanges.at(-1)?.id ?? cursor.configHistoryId ?? 0,
     memoryHighWaterAt: lastMemory?.createdAt ?? cursor.memoryEventAt ?? null,
     memoryHighWaterId: lastMemory?.id ?? cursor.memoryEventId ?? null,
-    memoryHighWaterRowId: lastMemory?.rowId ?? cursor.memoryEventRowId ?? 0,
+    memoryHighWaterSequence:
+      lastMemory?.sequence ?? cursor.memoryEventSequence ?? 0,
   };
 }
 
@@ -120,7 +141,7 @@ export function staleReasonType(
 }
 
 function readConfigChange(row: unknown): ConfigHistoryChange {
-  const value = row as Record<string, unknown>;
+  const value = v.parse(configChangeRowSchema, row);
   return {
     id: Number(value.id),
     action: String(value.action),
@@ -130,9 +151,9 @@ function readConfigChange(row: unknown): ConfigHistoryChange {
 }
 
 function readMemoryChange(row: unknown): MemoryEventChange {
-  const value = row as Record<string, unknown>;
+  const value = v.parse(memoryChangeRowSchema, row);
   return {
-    rowId: Number(value.event_rowid),
+    sequence: Number(value.event_sequence),
     id: String(value.id),
     memoryId: typeof value.memory_id === 'string' ? value.memory_id : null,
     action: String(value.action),

@@ -112,6 +112,9 @@ export type AutopilotDependencies = {
   pushGit?: typeof gitPushHead;
   fetchExactPullRequestHead?: typeof fetchExactPullRequestHead;
   token?: string;
+  ownerMutationFence?: (
+    phase: 'before-mutation' | 'before-commit' | 'before-artifact',
+  ) => void | Promise<void>;
 };
 
 export const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));

@@ -353,7 +353,8 @@ export const memories = sqliteTable(
 export const memoryEvents = sqliteTable(
   'memory_events',
   {
-    id: text('id').primaryKey(),
+    sequence: integer('sequence').primaryKey({ autoIncrement: true }),
+    id: text('id').notNull(),
     memoryId: text('memory_id'),
     action: text('action').notNull(),
     actor: text('actor').notNull(),
@@ -363,6 +364,7 @@ export const memoryEvents = sqliteTable(
     createdAt: text('created_at').notNull(),
   },
   (table) => [
+    uniqueIndex('idx_memory_events_id').on(table.id),
     index('idx_memory_events_changed').on(sql`${table.createdAt} DESC`),
   ],
 );
@@ -678,6 +680,11 @@ export const autopilotAdmissions = sqliteTable(
     repoId: text('repo_id').notNull(),
     prNumber: integer('pr_number').notNull(),
     mode: text('mode').notNull(),
+    authorityMode: text('authority_mode'),
+    policyConfigHistoryId: integer('policy_config_history_id')
+      .default(0)
+      .notNull(),
+    mutationEpoch: integer('mutation_epoch').default(0).notNull(),
     inputJson: text('input_json').default('{}').notNull(),
     state: text('state').notNull(),
     priority: integer('priority').default(0).notNull(),
@@ -732,6 +739,14 @@ export const autopilotAdmissions = sqliteTable(
       sql`${table.mode} IN ('notify-only', 'prepare-only', 'autofix-with-approval', 'autofix-push-when-safe')`,
     ),
     check(
+      'autopilot_admissions_authority_mode_check',
+      sql`${table.authorityMode} IS NULL OR ${table.authorityMode} IN ('notify-only', 'prepare-only', 'autofix-with-approval', 'autofix-push-when-safe')`,
+    ),
+    check(
+      'autopilot_admissions_mutation_epoch_check',
+      sql`${table.mutationEpoch} >= 0`,
+    ),
+    check(
       'autopilot_admissions_fixer_kind_check',
       sql`${table.fixerKind} IS NULL OR ${table.fixerKind} IN ('neon-owner', 'kilo')`,
     ),
@@ -760,7 +775,7 @@ export const autopilotPrOwners = sqliteTable(
       .notNull(),
     groundingMemoryEventAt: text('grounding_memory_event_at'),
     groundingMemoryEventId: text('grounding_memory_event_id'),
-    groundingMemoryEventRowId: integer('grounding_memory_event_rowid')
+    groundingMemoryEventSequence: integer('grounding_memory_event_sequence')
       .default(0)
       .notNull(),
     groundingMemoryIdsJson: text('grounding_memory_ids_json')
@@ -812,6 +827,8 @@ export const autopilotOwnerGenerations = sqliteTable(
     status: text('status').notNull(),
     rotationReason: text('rotation_reason'),
     handoffJson: text('handoff_json').default('{}').notNull(),
+    capabilityHash: text('capability_hash').notNull(),
+    capabilityJson: text('capability_json').notNull(),
     createdAt: text('created_at').notNull(),
     archivedAt: text('archived_at'),
   },
@@ -850,13 +867,22 @@ export const autopilotOwnerGroundingSnapshots = sqliteTable(
     worktreeId: text('worktree_id'),
     prHeadSha: text('pr_head_sha'),
     worktreeHeadSha: text('worktree_head_sha'),
+    baseSha: text('base_sha'),
+    checkoutBranch: text('checkout_branch'),
+    checkoutDetached: integer('checkout_detached', { mode: 'boolean' }),
+    diffBaseSha: text('diff_base_sha'),
+    diffRevisionKey: text('diff_revision_key'),
+    repoBindingHash: text('repo_binding_hash'),
+    workspaceBindingHash: text('workspace_binding_hash'),
     configHistoryId: integer('config_history_id').notNull(),
     memoryEventAt: text('memory_event_at'),
     memoryEventId: text('memory_event_id'),
-    memoryEventRowId: integer('memory_event_rowid').default(0).notNull(),
+    memoryEventSequence: integer('memory_event_sequence').default(0).notNull(),
     memoryCasEventAt: text('memory_cas_event_at'),
     memoryCasEventId: text('memory_cas_event_id'),
-    memoryCasEventRowId: integer('memory_cas_event_rowid').default(0).notNull(),
+    memoryCasEventSequence: integer('memory_cas_event_sequence')
+      .default(0)
+      .notNull(),
     memoryIdsJson: text('memory_ids_json').default('[]').notNull(),
     staleReasonsJson: text('stale_reasons_json').default('[]').notNull(),
     envelopeHash: text('envelope_hash').notNull(),
@@ -895,11 +921,14 @@ export const autopilotOwnerFixSubmissions = sqliteTable(
     disposition: text('disposition').notNull(),
     status: text('status').notNull(),
     requestHash: text('request_hash').notNull(),
+    mutationEpoch: integer('mutation_epoch').default(0).notNull(),
     preparedDiffId: text('prepared_diff_id'),
     resultJson: text('result_json').default('{}').notNull(),
     error: text('error'),
     createdAt: text('created_at').notNull(),
     finishedAt: text('finished_at'),
+    cancellationRequestedAt: text('cancellation_requested_at'),
+    mutationStartedAt: text('mutation_started_at'),
   },
   (table) => [
     uniqueIndex('idx_autopilot_owner_fix_attempt').on(table.attemptId),
@@ -914,7 +943,11 @@ export const autopilotOwnerFixSubmissions = sqliteTable(
     ),
     check(
       'autopilot_owner_fix_status_check',
-      sql`${table.status} IN ('applying', 'prepared', 'no-op', 'rejected', 'failed')`,
+      sql`${table.status} IN ('applying', 'prepared', 'no-op', 'rejected', 'failed', 'cancelled')`,
+    ),
+    check(
+      'autopilot_owner_fix_mutation_epoch_check',
+      sql`${table.mutationEpoch} >= 0`,
     ),
   ],
 );

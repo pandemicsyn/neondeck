@@ -56,6 +56,7 @@ import {
   readRepoDiff,
   readRepoFile,
   replaceRepoFile,
+  replaceRepoFilesAtomically,
 } from '../../repo-edit';
 import { parseV4APatch } from '../../repo-edit/patch-parser';
 import { repoRelativePathSchema } from '../../repo-edit/schemas';
@@ -365,28 +366,27 @@ export async function applyReviewEdits(
   );
   const readPaths = new Set(input.fileReads.map((read) => read.path));
 
-  for (const replacement of input.replacements) {
-    if (!readPaths.has(replacement.path) || !stamps.has(replacement.path)) {
-      results.push({
-        ok: false,
-        action: 'repo_file_replace',
-        changed: false,
-        message: `Replacement target ${replacement.path} was not read from unresolved review feedback.`,
-      });
-      continue;
-    }
+  const unreadReplacementPaths = unique(
+    input.replacements
+      .map((replacement) => replacement.path)
+      .filter((path) => !readPaths.has(path) || !stamps.has(path)),
+  );
+  if (unreadReplacementPaths.length > 0) {
+    results.push({
+      ok: false,
+      action: 'repo_files_replace',
+      changed: false,
+      message: `Replacement target(s) were not read from unresolved review feedback: ${unreadReplacementPaths.join(', ')}.`,
+    });
+  } else if (input.replacements.length > 0) {
     results.push(
-      await replaceRepoFile(
+      await replaceRepoFilesAtomically(
         {
           repoId: input.repoId,
           worktreeId: input.worktreeId,
           worktreeLockId: input.lockId,
-          path: replacement.path,
-          oldString: replacement.oldString,
-          newString: replacement.newString,
-          replaceAll: replacement.replaceAll,
-          fuzzy: replacement.fuzzy ?? 'safe',
-          expectedStamp: stamps.get(replacement.path),
+          replacements: input.replacements,
+          expectedStamps: Object.fromEntries(stamps) as Record<string, any>,
           dryRun: input.dryRun,
           reason: 'fix_pr_review_feedback',
         },

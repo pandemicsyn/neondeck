@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "6a8bf820-0ee9-47d0-bc55-57f9defac710",
+  "id": "8d3e2b3e-4ac4-4655-8015-97966303b049",
   "prevIds": ["4dd1fc92-811c-4a9c-afd7-8a0106e60bb7"],
   "ddl": [
     {
@@ -434,6 +434,36 @@
     },
     {
       "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "authority_mode",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "policy_config_history_id",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "mutation_epoch",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
+      "type": "text",
       "notNull": true,
       "autoincrement": false,
       "default": "'{}'",
@@ -713,6 +743,16 @@
       "table": "autopilot_owner_fix_submissions"
     },
     {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "mutation_epoch",
+      "entityType": "columns",
+      "table": "autopilot_owner_fix_submissions"
+    },
+    {
       "type": "text",
       "notNull": false,
       "autoincrement": false,
@@ -759,6 +799,26 @@
       "default": null,
       "generated": null,
       "name": "finished_at",
+      "entityType": "columns",
+      "table": "autopilot_owner_fix_submissions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "cancellation_requested_at",
+      "entityType": "columns",
+      "table": "autopilot_owner_fix_submissions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "mutation_started_at",
       "entityType": "columns",
       "table": "autopilot_owner_fix_submissions"
     },
@@ -829,6 +889,26 @@
       "default": "'{}'",
       "generated": null,
       "name": "handoff_json",
+      "entityType": "columns",
+      "table": "autopilot_owner_generations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "capability_hash",
+      "entityType": "columns",
+      "table": "autopilot_owner_generations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "capability_json",
       "entityType": "columns",
       "table": "autopilot_owner_generations"
     },
@@ -943,6 +1023,76 @@
       "table": "autopilot_owner_grounding_snapshots"
     },
     {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "base_sha",
+      "entityType": "columns",
+      "table": "autopilot_owner_grounding_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "checkout_branch",
+      "entityType": "columns",
+      "table": "autopilot_owner_grounding_snapshots"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "checkout_detached",
+      "entityType": "columns",
+      "table": "autopilot_owner_grounding_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "diff_base_sha",
+      "entityType": "columns",
+      "table": "autopilot_owner_grounding_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "diff_revision_key",
+      "entityType": "columns",
+      "table": "autopilot_owner_grounding_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "repo_binding_hash",
+      "entityType": "columns",
+      "table": "autopilot_owner_grounding_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "workspace_binding_hash",
+      "entityType": "columns",
+      "table": "autopilot_owner_grounding_snapshots"
+    },
+    {
       "type": "integer",
       "notNull": true,
       "autoincrement": false,
@@ -978,7 +1128,7 @@
       "autoincrement": false,
       "default": "0",
       "generated": null,
-      "name": "memory_event_rowid",
+      "name": "memory_event_sequence",
       "entityType": "columns",
       "table": "autopilot_owner_grounding_snapshots"
     },
@@ -1008,7 +1158,7 @@
       "autoincrement": false,
       "default": "0",
       "generated": null,
-      "name": "memory_cas_event_rowid",
+      "name": "memory_cas_event_sequence",
       "entityType": "columns",
       "table": "autopilot_owner_grounding_snapshots"
     },
@@ -1228,7 +1378,7 @@
       "autoincrement": false,
       "default": "0",
       "generated": null,
-      "name": "grounding_memory_event_rowid",
+      "name": "grounding_memory_event_sequence",
       "entityType": "columns",
       "table": "autopilot_pr_owners"
     },
@@ -4343,8 +4493,18 @@
       "table": "memories"
     },
     {
-      "type": "text",
+      "type": "integer",
       "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "sequence",
+      "entityType": "columns",
+      "table": "memory_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
       "autoincrement": false,
       "default": null,
       "generated": null,
@@ -7994,7 +8154,7 @@
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": ["sequence"],
       "nameExplicit": false,
       "name": "memory_events_pk",
       "table": "memory_events",
@@ -9061,6 +9221,20 @@
     {
       "columns": [
         {
+          "value": "id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_memory_events_id",
+      "entityType": "indexes",
+      "table": "memory_events"
+    },
+    {
+      "columns": [
+        {
           "value": "\"created_at\" DESC",
           "isExpression": true
         }
@@ -9822,6 +9996,18 @@
       "table": "autopilot_admissions"
     },
     {
+      "value": "\"authority_mode\" IS NULL OR \"authority_mode\" IN ('notify-only', 'prepare-only', 'autofix-with-approval', 'autofix-push-when-safe')",
+      "name": "autopilot_admissions_authority_mode_check",
+      "entityType": "checks",
+      "table": "autopilot_admissions"
+    },
+    {
+      "value": "\"mutation_epoch\" >= 0",
+      "name": "autopilot_admissions_mutation_epoch_check",
+      "entityType": "checks",
+      "table": "autopilot_admissions"
+    },
+    {
       "value": "\"fixer_kind\" IS NULL OR \"fixer_kind\" IN ('neon-owner', 'kilo')",
       "name": "autopilot_admissions_fixer_kind_check",
       "entityType": "checks",
@@ -9846,8 +10032,14 @@
       "table": "autopilot_owner_fix_submissions"
     },
     {
-      "value": "\"status\" IN ('applying', 'prepared', 'no-op', 'rejected', 'failed')",
+      "value": "\"status\" IN ('applying', 'prepared', 'no-op', 'rejected', 'failed', 'cancelled')",
       "name": "autopilot_owner_fix_status_check",
+      "entityType": "checks",
+      "table": "autopilot_owner_fix_submissions"
+    },
+    {
+      "value": "\"mutation_epoch\" >= 0",
+      "name": "autopilot_owner_fix_mutation_epoch_check",
       "entityType": "checks",
       "table": "autopilot_owner_fix_submissions"
     },

@@ -19,6 +19,7 @@ import { hasAutopilotSubmissionProcessLease } from '../owner/submission-lease';
 
 export const defaultAutopilotReservationTimeoutMs = 5 * 60 * 1000;
 export const defaultAutopilotStageTimeoutMs = 30 * 60 * 1000;
+export const defaultAutopilotOwnerStageTimeoutMs = 65 * 60 * 1000;
 export const defaultAutopilotTerminalArtifactGraceMs = 30 * 1000;
 export const defaultAutopilotTerminalFactRetentionMs = 60 * 60 * 1000;
 export const defaultAutopilotOwnerApplyingTimeoutMs = 2 * 60 * 60 * 1000;
@@ -29,6 +30,7 @@ export async function reconcileAutopilotStageAttempts(
     now?: Date;
     reservationTimeoutMs?: number;
     stageTimeoutMs?: number;
+    ownerStageTimeoutMs?: number;
     terminalArtifactGraceMs?: number;
     terminalFactRetentionMs?: number;
     ownerApplyingTimeoutMs?: number;
@@ -42,6 +44,10 @@ export async function reconcileAutopilotStageAttempts(
   ).toISOString();
   const stageBefore = new Date(
     now.getTime() - (options.stageTimeoutMs ?? defaultAutopilotStageTimeoutMs),
+  ).toISOString();
+  const ownerStageBefore = new Date(
+    now.getTime() -
+      (options.ownerStageTimeoutMs ?? defaultAutopilotOwnerStageTimeoutMs),
   ).toISOString();
   const terminalBefore = new Date(
     now.getTime() -
@@ -151,7 +157,7 @@ export async function reconcileAutopilotStageAttempts(
         }
         continue;
       }
-      if (attempt.startedAt && attempt.startedAt <= stageBefore) {
+      if (attempt.startedAt && attempt.startedAt <= ownerStageBefore) {
         if (
           await markStaleAutopilotAttemptForManualReview(
             attempt.id,

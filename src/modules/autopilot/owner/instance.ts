@@ -5,16 +5,22 @@ import {
   readAutopilotPrOwner,
   type AutopilotPrOwner,
 } from '../coordination/schemas';
+import {
+  capabilitySnapshotHash,
+  capabilitySnapshotJson,
+  type AutopilotOwnerCapabilitySnapshot,
+} from './capabilities';
 
 export function ensureAutopilotOwnerInstanceInDatabase(
   database: DatabaseSync,
   ownerId: string,
   now: string,
+  capability: AutopilotOwnerCapabilitySnapshot,
 ) {
   const owner = readOwner(database, ownerId);
   if (!owner) throw new Error(`Autopilot owner ${ownerId} was not found.`);
   if (owner.flueInstanceId) {
-    ensureGenerationRow(database, owner, owner.flueInstanceId, now);
+    ensureGenerationRow(database, owner, owner.flueInstanceId, now, capability);
     return owner;
   }
   const instanceId = ownerInstanceId(owner.id, owner.generation);
@@ -30,11 +36,17 @@ export function ensureAutopilotOwnerInstanceInDatabase(
     if (!current?.flueInstanceId) {
       throw new Error('Autopilot owner instance creation lost its CAS.');
     }
-    ensureGenerationRow(database, current, current.flueInstanceId, now);
+    ensureGenerationRow(
+      database,
+      current,
+      current.flueInstanceId,
+      now,
+      capability,
+    );
     return current;
   }
   if (!current) throw new Error('Created owner instance could not be read.');
-  ensureGenerationRow(database, current, instanceId, now);
+  ensureGenerationRow(database, current, instanceId, now, capability);
   return current;
 }
 
@@ -47,14 +59,13 @@ export function rotateAutopilotOwnerInstanceInDatabase(
     expectedGeneration: number;
     reason: string;
     handoff: Record<string, unknown>;
+    capability: AutopilotOwnerCapabilitySnapshot;
     now: string;
   },
 ) {
-  const owner = ensureAutopilotOwnerInstanceInDatabase(
-    database,
-    input.ownerId,
-    input.now,
-  );
+  const owner = readOwner(database, input.ownerId);
+  if (!owner)
+    throw new Error(`Autopilot owner ${input.ownerId} was not found.`);
   if (owner.generation !== input.expectedGeneration || !owner.flueInstanceId) {
     throw new Error('Autopilot owner rotation lost its generation CAS.');
   }
@@ -92,7 +103,13 @@ export function rotateAutopilotOwnerInstanceInDatabase(
   }
   const rotated = readOwner(database, owner.id);
   if (!rotated) throw new Error('Rotated owner instance could not be read.');
-  ensureGenerationRow(database, rotated, nextInstanceId, input.now);
+  ensureGenerationRow(
+    database,
+    rotated,
+    nextInstanceId,
+    input.now,
+    input.capability,
+  );
   insertAutopilotAdmissionEvent(database, {
     admissionId: input.admissionId,
     fromState: 'owner-turn-admitted',
@@ -117,12 +134,15 @@ function ensureGenerationRow(
   owner: AutopilotPrOwner,
   instanceId: string,
   now: string,
+  capability: AutopilotOwnerCapabilitySnapshot,
 ) {
+  const expectedHash = capabilitySnapshotHash(capability);
   database
     .prepare(
       `INSERT INTO autopilot_owner_generations (
-         id, owner_id, generation, flue_instance_id, status, handoff_json, created_at
-       ) VALUES (?, ?, ?, ?, 'active', '{}', ?)
+         id, owner_id, generation, flue_instance_id, status, capability_hash,
+         capability_json, handoff_json, created_at
+       ) VALUES (?, ?, ?, ?, 'active', ?, ?, '{}', ?)
        ON CONFLICT(owner_id, generation) DO NOTHING;`,
     )
     .run(
@@ -130,8 +150,26 @@ function ensureGenerationRow(
       owner.id,
       owner.generation,
       instanceId,
+      expectedHash,
+      capabilitySnapshotJson(capability),
       now,
     );
+  const stored = database
+    .prepare(
+      `SELECT flue_instance_id, capability_hash
+       FROM autopilot_owner_generations
+       WHERE owner_id = ? AND generation = ?;`,
+    )
+    .get(owner.id, owner.generation) as
+    { flue_instance_id?: unknown; capability_hash?: unknown } | undefined;
+  if (
+    stored?.flue_instance_id !== instanceId ||
+    stored.capability_hash !== expectedHash
+  ) {
+    throw new Error(
+      'Autopilot owner capability drift requires an audited generation rotation.',
+    );
+  }
 }
 
 function ownerInstanceId(ownerId: string, generation: number) {

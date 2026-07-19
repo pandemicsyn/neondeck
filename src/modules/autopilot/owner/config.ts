@@ -7,3 +7,8 @@ export const prAutopilotOwnerCompaction = {
   reserveTokens: 16_000,
   keepRecentTokens: 8_000,
 } as const;
+
+export const prAutopilotOwnerDurability = {
+  maxAttempts: 10,
+  timeoutMs: 60 * 60 * 1_000,
+} as const;

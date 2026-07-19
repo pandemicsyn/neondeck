@@ -11,9 +11,10 @@ import {
   repoGuardrails,
 } from '../../autopilot-policy';
 import { readRepoRegistrySnapshot, repoFullName } from '../../repos';
-import { readWorktreeRecord } from '../../worktrees';
+import { readWorktreeRecord, readWorktreeStatus } from '../../worktrees';
 import { readAutopilotReadiness, type AutopilotReadiness } from '../../runtime';
-import { gitCurrentSha } from '../../../repo-edit/git';
+import { readRepoDiff } from '../../../repo-edit';
+import { reviewRevisionKey } from '../../../../shared/review-source';
 import { openDb } from '../../../lib/sqlite';
 import {
   parseAppConfig,
@@ -26,7 +27,10 @@ import type {
   AutopilotStageAttempt,
 } from '../coordination/schemas';
 import { stableJsonHash } from './grounding';
-import { autopilotOwnerPolicySnapshot } from './policy';
+import {
+  autopilotOwnerPolicySnapshot,
+  constrainAutopilotAdmissionAuthority,
+} from './policy';
 
 const maximumFactsBytes = 384 * 1024;
 const maximumEnvelopeBytes = 512 * 1024;
@@ -64,7 +68,7 @@ export async function buildAutopilotOwnerEnvelope(
       configHistoryId: number;
       memoryEventAt: string | null;
       memoryEventId: string | null;
-      memoryEventRowId: number;
+      memoryEventSequence: number;
       memoryIds: string[];
     };
     submitToken?: string;
@@ -108,15 +112,30 @@ export async function buildAutopilotOwnerEnvelope(
     prNumber: input.owner.prNumber,
   });
   const guardrails = repoGuardrails(repo, appConfig);
+  const authorityDatabase = openDb(paths.neondeckDatabase);
+  let authority;
+  try {
+    authority = constrainAutopilotAdmissionAuthority(authorityDatabase, {
+      admission: input.admission,
+      repoId: repo.id,
+      watchId: input.owner.watchId,
+      prNumber: input.owner.prNumber,
+      appConfig,
+      currentConfiguredMode: policy.mode,
+    });
+  } finally {
+    authorityDatabase.close();
+  }
   const effectivePolicy = autopilotOwnerPolicySnapshot({
     admissionMode: input.admission.mode,
+    authorityMode: authority.authorityMode,
     configuredMode: policy.mode,
     guardrails,
     executionPolicy: appConfig.execution ?? null,
     worktreePolicy: appConfig.worktrees ?? null,
     learningPolicy: appConfig.learning ?? null,
   });
-  const [facts, readiness, localHeadSha] = await Promise.all([
+  const [facts, readiness, workspaceState] = await Promise.all([
     (input.factsLoader ?? loadOwnerFacts)({
       owner: repo.github.owner,
       repo: repo.github.name,
@@ -131,7 +150,7 @@ export async function buildAutopilotOwnerEnvelope(
       prNumber: input.owner.prNumber,
       mode: effectivePolicy.effectiveMode,
     }),
-    (input.localShaLoader ?? gitCurrentSha)(worktree.localPath),
+    loadWorkspaceState(worktree, paths, input.localShaLoader),
   ]);
   if (pullRequestHeadSha(facts.pullRequest) !== input.owner.currentHeadSha) {
     throw new Error('Live pull request head changed before owner dispatch.');
@@ -148,6 +167,34 @@ export async function buildAutopilotOwnerEnvelope(
     );
   }
   const memory = buildMemoryPromptSnapshotSync(paths, { repoId: repo.id });
+  const repoBinding = {
+    id: repo.id,
+    path: repo.path,
+    defaultBranch: repo.defaultBranch,
+    githubOwner: repo.github.owner,
+    githubName: repo.github.name,
+  };
+  const workspaceBinding = {
+    id: worktree.id,
+    repoId: worktree.repoId,
+    repoFullName: worktree.repoFullName,
+    localPath: worktree.localPath,
+    prNumber: worktree.prNumber,
+    baseRef: worktree.baseRef,
+    headOwner: worktree.headOwner,
+    headName: worktree.headName,
+    headRef: worktree.headRef,
+    storageKind: worktree.storageKind,
+    adopted: worktree.adopted,
+    createdBy: worktree.createdBy,
+  };
+  const diff = await readGroundedDiff(
+    repo.id,
+    worktree.id,
+    workspaceState.baseSha,
+    paths,
+    Boolean(input.localShaLoader),
+  );
   const submitToken =
     input.submitToken ??
     `${input.attempt.id}.${randomBytes(24).toString('base64url')}`;
@@ -197,7 +244,12 @@ export async function buildAutopilotOwnerEnvelope(
       checkoutMode: 'managed-pr-worktree',
       headRef: worktree.headRef,
       expectedPrHeadSha: input.owner.currentHeadSha,
-      expectedWorktreeHeadSha: localHeadSha,
+      expectedWorktreeHeadSha: workspaceState.headSha,
+      baseSha: workspaceState.baseSha,
+      branch: workspaceState.branch,
+      detached: workspaceState.detached,
+      groundedDiffBaseSha: diff.baseSha,
+      groundedDiffRevisionKey: diff.revisionKey,
       lastSyncedSha: worktree.lastSyncedSha,
       directPushAllowed: worktree.directPushAllowed,
       intendedPushTarget: readiness.pushTarget,
@@ -236,7 +288,7 @@ export async function buildAutopilotOwnerEnvelope(
         expectedAttemptId: input.attempt.id,
         expectedWorktreeId: worktree.id,
         expectedPrHeadSha: input.owner.currentHeadSha,
-        expectedWorktreeHeadSha: localHeadSha,
+        expectedWorktreeHeadSha: workspaceState.headSha,
         policyHash,
       },
       reads: {
@@ -269,8 +321,80 @@ export async function buildAutopilotOwnerEnvelope(
     selectedMemoryIds: memory.memoryIds,
     worktreeId: worktree.id,
     expectedPrHeadSha: input.owner.currentHeadSha,
-    expectedWorktreeHeadSha: localHeadSha,
+    expectedWorktreeHeadSha: workspaceState.headSha,
+    baseSha: workspaceState.baseSha,
+    checkoutBranch: workspaceState.branch,
+    checkoutDetached: workspaceState.detached,
+    diffBaseSha: diff.baseSha,
+    diffRevisionKey: diff.revisionKey,
+    repoBindingHash: stableJsonHash(repoBinding),
+    workspaceBindingHash: stableJsonHash(workspaceBinding),
   };
+}
+
+async function loadWorkspaceState(
+  worktree: ReturnType<typeof readWorktreeRecord>,
+  paths: RuntimePaths,
+  localShaLoader?: OwnerEnvelopeLocalShaLoader,
+) {
+  if (localShaLoader) {
+    const headSha = await localShaLoader(worktree.localPath);
+    return {
+      headSha,
+      baseSha: headSha,
+      branch: 'HEAD',
+      detached: true,
+    };
+  }
+  const status = await readWorktreeStatus({ worktreeId: worktree.id }, paths);
+  const git =
+    status && typeof status === 'object'
+      ? (status as Record<string, unknown>).git
+      : null;
+  if (!git || typeof git !== 'object') {
+    throw new Error('Managed worktree Git state is unavailable.');
+  }
+  const record = git as Record<string, unknown>;
+  if (
+    typeof record.headSha !== 'string' ||
+    typeof record.baseSha !== 'string' ||
+    typeof record.branch !== 'string'
+  ) {
+    throw new Error('Managed worktree Git state is incomplete.');
+  }
+  return {
+    headSha: record.headSha,
+    baseSha: record.baseSha,
+    branch: record.branch,
+    detached: record.branch === 'HEAD',
+  };
+}
+
+async function readGroundedDiff(
+  repoId: string,
+  worktreeId: string,
+  baseSha: string,
+  paths: RuntimePaths,
+  synthetic: boolean,
+) {
+  if (synthetic) {
+    return {
+      baseSha,
+      revisionKey: `worktree-diff:${baseSha}:${stableJsonHash({ repoId, worktreeId, baseSha })}`,
+    };
+  }
+  const result = await readRepoDiff(
+    { repoId, worktreeId, base: baseSha, includePatch: false },
+    paths,
+  );
+  if (!result.ok || !result.revision) {
+    throw new Error(
+      'Could not bind the owner diff to a stable worktree revision.',
+    );
+  }
+  const revisionKey = reviewRevisionKey(result.revision);
+  if (!revisionKey) throw new Error('Owner worktree revision is unavailable.');
+  return { baseSha, revisionKey };
 }
 
 function pullRequestHeadSha(value: unknown) {

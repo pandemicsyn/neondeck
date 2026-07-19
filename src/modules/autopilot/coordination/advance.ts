@@ -168,10 +168,13 @@ export async function admitAutopilotEvent(
         .prepare(
           `INSERT INTO autopilot_admissions (
              id, owner_id, watch_id, event_fingerprint, event_sequence, repo_id,
-             pr_number, mode, input_json, state, priority, current_workflow,
+             pr_number, mode, authority_mode, policy_config_history_id,
+             mutation_epoch, input_json, state, priority, current_workflow,
              current_stage_attempt_id, worktree_id, version, attempt_count, next_attempt_at,
              last_error, last_outcome_json, completed_at, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?);`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
+                     (SELECT COALESCE(MAX(id), 0) FROM config_history),
+                     0, ?, ?, 0, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?);`,
         )
         .run(
           admissionId,
@@ -181,6 +184,7 @@ export async function admitAutopilotEvent(
           eventSequence,
           input.repoId,
           input.prNumber,
+          input.mode,
           input.mode,
           JSON.stringify(input.input),
           state,

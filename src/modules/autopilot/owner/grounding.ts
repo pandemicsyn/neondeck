@@ -21,7 +21,7 @@ export type OwnerDriftDecision = {
   configHistoryId: number;
   memoryEventAt: string | null;
   memoryEventId: string | null;
-  memoryEventRowId: number;
+  memoryEventSequence: number;
   memoryIds: string[];
   staleReasons: ReturnType<typeof readStaleReasonChanges>['reasons'];
 };
@@ -35,7 +35,7 @@ export function classifyAutopilotOwnerDrift(
     configHistoryId: input.owner.groundingConfigHistoryId,
     memoryEventAt: input.owner.groundingMemoryEventAt,
     memoryEventId: input.owner.groundingMemoryEventId,
-    memoryEventRowId: input.owner.groundingMemoryEventRowId,
+    memoryEventSequence: input.owner.groundingMemoryEventSequence,
     contextMemoryIds: [
       ...new Set([...input.owner.groundingMemoryIds, ...selectedMemoryIds]),
     ],
@@ -139,7 +139,7 @@ function decision(
     configHistoryId: changes.configHighWaterId,
     memoryEventAt: changes.memoryHighWaterAt,
     memoryEventId: changes.memoryHighWaterId,
-    memoryEventRowId: changes.memoryHighWaterRowId,
+    memoryEventSequence: changes.memoryHighWaterSequence,
     memoryIds,
     staleReasons: changes.reasons,
   };

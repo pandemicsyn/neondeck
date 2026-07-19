@@ -56,6 +56,7 @@ import {
   readRepoDiff,
   readRepoFile,
   replaceRepoFile,
+  replaceRepoFilesAtomically,
 } from '../../repo-edit';
 import { parseV4APatch } from '../../repo-edit/patch-parser';
 import { repoRelativePathSchema } from '../../repo-edit/schemas';
@@ -468,6 +469,7 @@ export async function fixPrReviewFeedback(
         { requires: ['refreshWorktreeHead'] },
       );
     }
+    if (hasEdits) await dependencies.ownerMutationFence?.('before-mutation');
 
     const editResults = hasEdits
       ? await applyReviewEdits(
@@ -554,8 +556,10 @@ export async function fixPrReviewFeedback(
       (input.commit ?? true) &&
       (postEditPolicy.mode === 'autofix-with-approval' ||
         postEditPolicy.mode === 'autofix-push-when-safe') &&
+      !postEditPolicy.approvalRequired &&
       changedFiles > 0
     ) {
+      await dependencies.ownerMutationFence?.('before-commit');
       assertWorktreeMutationAllowed(
         {
           repoId: repo.id,
@@ -589,20 +593,7 @@ export async function fixPrReviewFeedback(
     };
     let preparedDiff = null;
     if (shouldPrepareDiff && !input.dryRun) {
-      if (acquiredLockId) {
-        const released = await releaseWorktreeLock(
-          {
-            lockId: acquiredLockId,
-            owner: lockOwner,
-            finalStatus: 'prepared-diff',
-          },
-          paths,
-        );
-        worktree =
-          (objectField(released, 'worktree') as WorktreeRecord | undefined) ??
-          worktree;
-        acquiredLockId = undefined;
-      }
+      await dependencies.ownerMutationFence?.('before-artifact');
       const preparedWorktree = {
         ...worktree,
         baseRef: worktree.headSha ?? eventState.headSha,
