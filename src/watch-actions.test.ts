@@ -1,4 +1,5 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import type { JsonValue } from '@flue/runtime';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -296,6 +297,84 @@ describe('PR watch actions', () => {
     });
     expect(await listPrWatches(paths)).toMatchObject({ watches: [] });
     expect(await listScheduledTasks(paths)).toEqual([]);
+
+    await expect(
+      addPrWatchWithoutBaseline(
+        { ref: 'neondeck#123', processExisting: false },
+        paths,
+        async () => prDetail(),
+        undefined,
+        async (reference, watchId) =>
+          (await emptyPrWatchInitialEventBaseline(reference, watchId)).map(
+            (watermark) =>
+              watermark.category === 'review_threads'
+                ? {
+                    ...watermark,
+                    value: {
+                      truncated: false,
+                      threads: [{ commentsTruncated: true }],
+                    },
+                  }
+                : watermark,
+          ),
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      requires: ['completePrEventFacts'],
+      errors: [expect.stringContaining('review_threads')],
+    });
+    expect(await listPrWatches(paths)).toMatchObject({ watches: [] });
+    expect(await listScheduledTasks(paths)).toEqual([]);
+
+    const itemTruncationCases: Array<{
+      category: string;
+      value: JsonValue;
+    }> = [
+      {
+        category: 'review_threads',
+        value: {
+          truncated: false,
+          threads: [
+            {
+              commentsTruncated: false,
+              comments: [{ bodyTruncated: true }],
+            },
+          ],
+        },
+      },
+      {
+        category: 'requested_changes_reviews',
+        value: {
+          truncated: false,
+          reviews: [{ bodyTruncated: true }],
+        },
+      },
+    ];
+    for (const itemTruncation of itemTruncationCases) {
+      await expect(
+        addPrWatchWithoutBaseline(
+          { ref: 'neondeck#123', processExisting: false },
+          paths,
+          async () => prDetail(),
+          undefined,
+          async (reference, watchId) =>
+            (await emptyPrWatchInitialEventBaseline(reference, watchId)).map(
+              (watermark) =>
+                watermark.category === itemTruncation.category
+                  ? { ...watermark, value: itemTruncation.value }
+                  : watermark,
+            ),
+        ),
+      ).resolves.toMatchObject({
+        ok: false,
+        changed: false,
+        requires: ['completePrEventFacts'],
+        errors: [expect.stringContaining(itemTruncation.category)],
+      });
+      expect(await listPrWatches(paths)).toMatchObject({ watches: [] });
+      expect(await listScheduledTasks(paths)).toEqual([]);
+    }
   });
 
   it('updates existing PR watch targets and polling intervals without refetching', async () => {

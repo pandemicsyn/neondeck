@@ -5,6 +5,7 @@ import * as v from 'valibot';
 import { openDb, rollbackQuietly } from '../../lib/sqlite';
 import {
   fetchPullRequestEventState,
+  maxPrEventFeedbackBodyLength,
   postPullRequestComment,
   type GitHubPullRequestEventState,
 } from '../github';
@@ -111,12 +112,6 @@ export function watermarksFromEventState(
       commentsTruncated: thread.commentsTruncated ?? false,
       comments: thread.comments.map((comment) => {
         const bounded = boundedFeedbackBody(comment.body);
-        const ignoredReason = feedbackIgnoredReason(
-          comment.authorLogin,
-          comment.body,
-          comment.authorIsBot,
-          comment.authorType,
-        );
         return {
           id: comment.databaseId ?? comment.id,
           nodeId: comment.id,
@@ -133,18 +128,13 @@ export function watermarksFromEventState(
           reviewId: comment.reviewId,
           createdAt: comment.createdAt,
           updatedAt: comment.updatedAt,
-          actionable: ignoredReason === null,
-          ignoredReason,
-          fingerprint: feedbackFingerprint({
-            id: comment.databaseId ?? comment.id,
-            authorLogin: comment.authorLogin,
-            body: comment.body,
-            path: comment.path ?? thread.path,
-            line: comment.line ?? thread.line,
-            updatedAt: comment.updatedAt,
-            isResolved: thread.isResolved,
-            isOutdated: thread.isOutdated,
-          }),
+          actionable: true,
+          ignoredReason: null,
+          fingerprint: reviewThreadCommentFingerprint(thread, comment),
+          deliveryFingerprint: reviewThreadCommentDeliveryFingerprint(
+            comment,
+            thread,
+          ),
         };
       }),
       latestCommentUpdatedAt: maxString(
@@ -223,12 +213,6 @@ export function watermarksFromEventState(
         comments: (state.conversationComments ?? [])
           .map((comment) => {
             const bounded = boundedFeedbackBody(comment.body);
-            const ignoredReason = feedbackIgnoredReason(
-              comment.authorLogin,
-              comment.body,
-              comment.authorIsBot,
-              comment.authorType,
-            );
             return {
               id: comment.id,
               nodeId: comment.nodeId,
@@ -240,14 +224,9 @@ export function watermarksFromEventState(
               url: comment.url,
               createdAt: comment.createdAt,
               updatedAt: comment.updatedAt,
-              actionable: ignoredReason === null,
-              ignoredReason,
-              fingerprint: feedbackFingerprint({
-                id: comment.id,
-                authorLogin: comment.authorLogin,
-                body: comment.body,
-                updatedAt: comment.updatedAt,
-              }),
+              actionable: true,
+              ignoredReason: null,
+              fingerprint: conversationCommentFingerprint(comment),
             };
           })
           .sort((a, b) => a.id - b.id),
@@ -297,16 +276,14 @@ export function watermarksFromEventState(
   ];
 }
 
-const maxFeedbackBodyLength = 65_536;
-
 function boundedFeedbackBody(value: string | null | undefined) {
   if (value === null || value === undefined) {
     return { body: null, truncated: false };
   }
-  return value.length <= maxFeedbackBodyLength
+  return value.length <= maxPrEventFeedbackBodyLength
     ? { body: value, truncated: false }
     : {
-        body: value.slice(0, maxFeedbackBodyLength),
+        body: value.slice(0, maxPrEventFeedbackBodyLength),
         truncated: true,
       };
 }
@@ -315,12 +292,6 @@ function feedbackReviewWatermark(
   review: GitHubPullRequestEventState['requestedChangesReviews'][number],
 ) {
   const bounded = boundedFeedbackBody(review.body);
-  const ignoredReason = feedbackIgnoredReason(
-    review.authorLogin,
-    review.body ?? null,
-    review.authorIsBot,
-    review.authorType,
-  );
   return {
     id: review.id,
     authorLogin: review.authorLogin,
@@ -331,40 +302,73 @@ function feedbackReviewWatermark(
     url: review.url,
     body: bounded.body,
     bodyTruncated: review.bodyTruncated || bounded.truncated,
-    actionable: ignoredReason === null,
-    ignoredReason,
-    fingerprint: feedbackFingerprint({
-      id: review.id,
-      state: review.state,
-      authorLogin: review.authorLogin,
-      commitId: review.commitId,
-      submittedAt: review.submittedAt,
-      body: review.body,
-    }),
+    actionable: true,
+    ignoredReason: null,
+    fingerprint: requestedChangesReviewDeliveryFingerprint(review),
   };
-}
-
-function feedbackIgnoredReason(
-  authorLogin: string | null,
-  body: string | null,
-  authorIsBot?: boolean,
-  authorType?: string | null,
-) {
-  if (authorIsBot === true || authorType?.toLowerCase() === 'bot') {
-    return 'bot-author';
-  }
-  if (authorIsBot === false || authorType) {
-    if (body?.includes('<!-- neondeck:')) return 'neondeck-authored';
-    return null;
-  }
-  const login = authorLogin?.toLowerCase() ?? '';
-  if (login.endsWith('[bot]') || login.endsWith('-bot')) return 'bot-author';
-  if (body?.includes('<!-- neondeck:')) return 'neondeck-authored';
-  return null;
 }
 
 function feedbackFingerprint(value: unknown) {
   return createHash('sha256').update(stableFeedbackJson(value)).digest('hex');
+}
+
+export function conversationCommentFingerprint(
+  comment: NonNullable<
+    GitHubPullRequestEventState['conversationComments']
+  >[number],
+) {
+  return feedbackFingerprint({
+    id: comment.id,
+    authorLogin: comment.authorLogin,
+    body: comment.body,
+    updatedAt: comment.updatedAt,
+  });
+}
+
+export function requestedChangesReviewDeliveryFingerprint(
+  review: GitHubPullRequestEventState['requestedChangesState']['history'][number],
+) {
+  return feedbackFingerprint({
+    id: review.id,
+    state: review.state,
+    authorLogin: review.authorLogin,
+    commitId: review.commitId,
+    submittedAt: review.submittedAt,
+    body: review.body,
+  });
+}
+
+export function reviewThreadCommentFingerprint(
+  thread: GitHubPullRequestEventState['reviewThreads'][number],
+  comment: GitHubPullRequestEventState['reviewThreads'][number]['comments'][number],
+) {
+  return feedbackFingerprint({
+    id: comment.databaseId ?? comment.id,
+    authorLogin: comment.authorLogin,
+    body: comment.body,
+    path: comment.path ?? thread.path,
+    line: comment.line ?? thread.line,
+    updatedAt: comment.updatedAt,
+    isResolved: thread.isResolved,
+    isOutdated: thread.isOutdated,
+  });
+}
+
+export function reviewThreadCommentDeliveryFingerprint(
+  comment: GitHubPullRequestEventState['reviewThreads'][number]['comments'][number],
+  thread?: Pick<
+    GitHubPullRequestEventState['reviewThreads'][number],
+    'path' | 'originalLine'
+  >,
+) {
+  return feedbackFingerprint({
+    id: comment.databaseId ?? comment.id,
+    authorLogin: comment.authorLogin,
+    body: comment.body,
+    path: comment.path ?? thread?.path,
+    originalLine: comment.originalLine ?? thread?.originalLine ?? null,
+    updatedAt: comment.updatedAt,
+  });
 }
 
 function stableFeedbackJson(value: unknown): string {

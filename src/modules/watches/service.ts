@@ -1,4 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { readRepoRegistrySnapshot } from '../repos';
+import { prEventWatermarkTruncationCategories } from '../github';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import {
   deleteScheduledTask,
@@ -18,6 +20,7 @@ import type {
 } from './schemas';
 import type * as v from 'valibot';
 import {
+  currentPrWatchEventWatermarkVersion,
   watchPrAddInputSchema,
   watchPrPollingInputSchema,
   watchPrRefreshInputSchema,
@@ -112,10 +115,17 @@ export async function addPrWatch(
       );
     }
 
-    const baseline =
-      processExistingChanged && parsed.input.processExisting === false
-        ? await fetchInitialEventBaseline(resolved.reference, baselineFetcher)
-        : undefined;
+    const effectiveProcessExisting =
+      parsed.input.processExisting ?? existing.processExisting;
+    const needsFreshBaseline =
+      effectiveProcessExisting === false &&
+      (processExistingChanged || terminalWatch);
+    const needsCurrentFeedbackRearm =
+      effectiveProcessExisting === true &&
+      (processExistingChanged || terminalWatch);
+    const baseline = needsFreshBaseline
+      ? await fetchInitialEventBaseline(resolved.reference, baselineFetcher)
+      : undefined;
     if (baseline && !baseline.ok) return baseline.result;
 
     let watch: PrWatch = desiredTerminalStateChanged
@@ -140,9 +150,14 @@ export async function addPrWatch(
           parsed.input.processExisting === false
             ? new Date().toISOString()
             : null,
+        eventWatermarkVersion: currentPrWatchEventWatermarkVersion,
         lastOutcome: 'updated',
         updatedAt: new Date().toISOString(),
       };
+    }
+
+    if (needsFreshBaseline || needsCurrentFeedbackRearm) {
+      watch = { ...watch, eventGenerationId: randomUUID() };
     }
 
     if (terminalWatch) {
@@ -161,6 +176,9 @@ export async function addPrWatch(
       );
       watch = {
         ...watch,
+        processExisting: effectiveProcessExisting,
+        initialEventProcessedAt: effectiveProcessExisting ? null : now,
+        eventWatermarkVersion: currentPrWatchEventWatermarkVersion,
         status: statusFromSnapshot(
           snapshot,
           resolved.reference.desiredTerminalState,
@@ -174,9 +192,33 @@ export async function addPrWatch(
         lastCheckedAt: now,
         updatedAt: now,
       };
-      updateWatch(paths, watch, baseline?.watermarks);
+      const updated = updateWatch(
+        paths,
+        watch,
+        baseline?.watermarks,
+        needsCurrentFeedbackRearm
+          ? {
+              supersededReason:
+                'Operator rearmed process-existing=true for current feedback.',
+            }
+          : undefined,
+        existing.eventGenerationId,
+      );
+      if (!updated) return staleWatchUpdateResult('watch_pr_add', watch.id);
     } else if (desiredTerminalStateChanged || processExistingChanged) {
-      updateWatch(paths, watch, baseline?.watermarks);
+      const updated = updateWatch(
+        paths,
+        watch,
+        baseline?.watermarks,
+        needsCurrentFeedbackRearm
+          ? {
+              supersededReason:
+                'Operator rearmed process-existing=true for current feedback.',
+            }
+          : undefined,
+        existing.eventGenerationId,
+      );
+      if (!updated) return staleWatchUpdateResult('watch_pr_add', watch.id);
     }
     await upsertWatchPollingTask(
       watch,
@@ -239,6 +281,8 @@ export async function addPrWatch(
     createdBy: parsed.input.createdBy ?? null,
     processExisting,
     initialEventProcessedAt: processExisting ? null : now,
+    eventWatermarkVersion: currentPrWatchEventWatermarkVersion,
+    eventGenerationId: randomUUID(),
     createdAt: now,
     updatedAt: now,
   };
@@ -329,17 +373,21 @@ function initialEventBaselineValidationError(
   if (missing.length > 0) {
     return `Initial PR event baseline is missing categories: ${missing.join(', ')}.`;
   }
-  const truncated = requiredInitialEventBaselineCategories.filter(
-    (category) => {
-      const value = byCategory.get(category)?.value;
-      return (
-        typeof value === 'object' &&
-        value !== null &&
-        !Array.isArray(value) &&
-        value.truncated === true
-      );
-    },
-  );
+  const unexpected = watermarks
+    .map((watermark) => watermark.category)
+    .filter(
+      (category) =>
+        !requiredInitialEventBaselineCategories.some(
+          (expected) => expected === category,
+        ),
+    );
+  if (unexpected.length > 0) {
+    return `Initial PR event baseline has unexpected categories: ${unexpected.join(', ')}.`;
+  }
+  if (byCategory.size !== watermarks.length) {
+    return 'Initial PR event baseline contains duplicate categories.';
+  }
+  const truncated = prEventWatermarkTruncationCategories(watermarks);
   if (truncated.length > 0) {
     return `Initial PR event baseline is truncated for categories: ${truncated.join(', ')}.`;
   }
@@ -676,7 +724,17 @@ export async function refreshPrWatch(
     updatedAt: now,
   };
 
-  updateWatch(paths, nextWatch);
+  if (
+    !updateWatch(
+      paths,
+      nextWatch,
+      undefined,
+      undefined,
+      watch.eventGenerationId,
+    )
+  ) {
+    return staleWatchUpdateResult('watch_pr_refresh', watch.id);
+  }
 
   return okResult(
     'watch_pr_refresh',
@@ -686,5 +744,13 @@ export async function refreshPrWatch(
       ? `Updated watch "${watch.id}".`
       : `No change for watch "${watch.id}".`,
     { watch: nextWatch },
+  );
+}
+
+function staleWatchUpdateResult(action: string, id: string) {
+  return failResult(
+    action,
+    `Watch "${id}" changed while current state was being fetched; retry the operation against the current watch generation.`,
+    { requires: ['currentWatchGeneration'] },
   );
 }

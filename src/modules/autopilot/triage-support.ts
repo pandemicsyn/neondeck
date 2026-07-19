@@ -141,17 +141,25 @@ export function classifySignals(
   current: v.InferOutput<typeof prEventSnapshotSchema> | undefined,
   deltas: Array<v.InferOutput<typeof prEventDeltaSchema>>,
 ) {
+  const mutationEligibleDeltas = deltas.filter(
+    (delta) =>
+      delta.actionable === true &&
+      delta.mutationEligible !== false &&
+      delta.type !== 'conversation-comment',
+  );
   return {
     noChange: deltas.length === 0,
     closed: current?.state === 'closed' || current?.merged === true,
     draft: current?.draft === true,
-    failingChecks:
-      current?.checkStatus === 'failure' ||
-      deltas.some((delta) => delta.type === 'check-failure'),
-    requestedChanges: deltas.some(
+    failingChecks: mutationEligibleDeltas.some(
+      (delta) => delta.type === 'check-failure',
+    ),
+    requestedChanges: mutationEligibleDeltas.some(
       (delta) => delta.type === 'requested-changes',
     ),
-    reviewFeedback: deltas.some((delta) => delta.type === 'review-comment'),
+    reviewFeedback: mutationEligibleDeltas.some(
+      (delta) => delta.type === 'review-comment',
+    ),
     mergeBlocked:
       current?.mergeable === false ||
       current?.outOfDate === true ||
@@ -169,10 +177,15 @@ export function classifySignals(
           delta.type === 'metadata',
       ),
     incomplete: deltas.some((delta) => delta.type === 'incomplete-feedback'),
+    conversationCandidate: deltas.some(
+      (delta) =>
+        delta.type === 'conversation-comment' &&
+        delta.candidateReasoning === true,
+    ),
     explanatory: deltas.some(
       (delta) => delta.requiresExplanation || delta.type === 'new-commit',
     ),
-    actionable: deltas.some((delta) => delta.actionable === true),
+    actionable: mutationEligibleDeltas.length > 0,
   };
 }
 
@@ -194,6 +207,7 @@ export function classificationFor(
   ) {
     return mode;
   }
+  if (signals.conversationCandidate) return 'explain-only';
   if (signals.explanatory) return 'explain-only';
   return 'notify-only';
 }
@@ -216,6 +230,11 @@ export function reasonsFor(
   if (signals.incomplete) {
     reasons.push(
       'Required feedback facts are incomplete, so autonomous preparation is blocked.',
+    );
+  }
+  if (signals.conversationCandidate) {
+    reasons.push(
+      'Conversation feedback is retained for owner reasoning but is not deterministically mutation-eligible.',
     );
   }
   if (signals.mergeBlocked) {

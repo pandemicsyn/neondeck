@@ -9,6 +9,7 @@ export type RefWatchStatus =
 
 export type DesiredTerminalState = 'checks' | 'merged';
 export type WatchOutcome = 'created' | 'updated' | 'removed' | 'silent';
+export const currentPrWatchEventWatermarkVersion = 2;
 
 export type WatchActionResult = {
   ok: boolean;
@@ -43,6 +44,8 @@ export type PrWatch = {
   createdBy: string | null;
   processExisting: boolean;
   initialEventProcessedAt: string | null;
+  eventWatermarkVersion: number;
+  eventGenerationId: string;
   createdAt: string;
   updatedAt: string;
 };

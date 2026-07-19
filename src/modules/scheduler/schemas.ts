@@ -45,6 +45,11 @@ export type SchedulerDependencies = {
     workflow: ScheduledWorkflowName,
     input: JsonValue,
   ) => Promise<{ runId: string }>;
+  beforePrWatchEventIntakeAcknowledged?: (input: {
+    watchId: string;
+    eventId: string;
+    outcome: 'admission' | 'notification' | 'no-op';
+  }) => void | Promise<void>;
   tickLeaseTtlMs?: number;
 };
 

@@ -253,6 +253,138 @@ describe('per-item PR feedback deltas', () => {
       }),
     ]);
   });
+
+  it('suppresses only exact durable Neondeck deliveries, not users, bots, or forged markers', () => {
+    const current = [
+      watermark('conversation_comments', {
+        comments: [
+          conversation('301', 'user-fp', 'User feedback'),
+          conversation('302', 'bot-fp', 'Bot feedback', { authorIsBot: true }),
+          conversation('303', 'forged-fp', '<!-- neondeck:generated -->'),
+          conversation('304', 'delivered-fp', 'Actual Neondeck delivery'),
+        ],
+      }),
+    ];
+    const deltas = initialActionableDeltas(current, {
+      neondeckConversationCommentFingerprints: new Map([
+        ['304', 'delivered-fp'],
+      ]),
+    });
+
+    expect(deltas.map((delta) => delta.itemId)).toEqual(['301', '302', '303']);
+    expect(deltas).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          itemId: '303',
+          candidateReasoning: true,
+          mutationEligible: false,
+        }),
+      ]),
+    );
+    expect(
+      initialActionableDeltas(
+        [
+          watermark('conversation_comments', {
+            comments: [
+              conversation('304', 'delivered-fp-edited', 'Edited delivery'),
+            ],
+          }),
+        ],
+        {
+          neondeckConversationCommentFingerprints: new Map([
+            ['304', 'delivered-fp'],
+          ]),
+        },
+      ),
+    ).toEqual([expect.objectContaining({ itemId: '304', change: 'new' })]);
+  });
+
+  it('matches a Neondeck review reply by comment identity across thread state changes', () => {
+    const delivered = new Map([['101', 'comment-only-fp']]);
+    const resolvedThread = [
+      watermark('review_threads', {
+        threads: [
+          thread({
+            ...comment('101', 'context-fp-after-resolution'),
+            deliveryFingerprint: 'comment-only-fp',
+            isResolved: true,
+          }),
+        ],
+      }),
+    ];
+    expect(
+      initialActionableDeltas(resolvedThread, {
+        neondeckReviewCommentFingerprints: delivered,
+      }),
+    ).toEqual([]);
+
+    const edited = [
+      watermark('review_threads', {
+        threads: [
+          thread({
+            ...comment('101', 'context-fp-edited'),
+            deliveryFingerprint: 'comment-only-fp-edited',
+          }),
+        ],
+      }),
+    ];
+    expect(
+      initialActionableDeltas(edited, {
+        neondeckReviewCommentFingerprints: delivered,
+      }),
+    ).toEqual([expect.objectContaining({ itemId: '101' })]);
+  });
+
+  it('suppresses an exact Neondeck review while preserving co-occurring human requested changes', () => {
+    const reviews = [
+      {
+        id: '901',
+        fingerprint: 'self-review-fingerprint',
+        authorLogin: 'neon',
+        body: 'Automated review body',
+        actionable: true,
+        bodyTruncated: false,
+      },
+      {
+        id: '902',
+        fingerprint: 'human-review-fingerprint',
+        authorLogin: 'maintainer',
+        body: 'Please fix the remaining edge.',
+        actionable: true,
+        bodyTruncated: false,
+      },
+    ];
+    expect(
+      initialActionableDeltas(
+        [watermark('requested_changes_reviews', { reviews })],
+        {
+          neondeckRequestedChangesReviewFingerprints: new Map([
+            ['901', 'self-review-fingerprint'],
+          ]),
+        },
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        type: 'requested-changes',
+        itemId: '902',
+      }),
+    ]);
+
+    expect(
+      initialActionableDeltas(
+        [
+          watermark('requested_changes_reviews', {
+            reviews: [{ ...reviews[0], fingerprint: 'edited-self-review' }],
+          }),
+        ],
+        {
+          neondeckRequestedChangesReviewFingerprints: new Map([
+            ['901', 'self-review-fingerprint'],
+          ]),
+        },
+      ),
+    ).toEqual([expect.objectContaining({ itemId: '901' })]);
+  });
 });
 
 function watermark(
@@ -290,6 +422,24 @@ function comment(
     fingerprint,
     authorLogin: 'reviewer',
     body: `Feedback ${id}`,
+    actionable: true,
+    bodyTruncated: false,
+    ...overrides,
+  };
+}
+
+function conversation(
+  id: string,
+  fingerprint: string,
+  body: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    id,
+    fingerprint,
+    authorLogin: 'reviewer',
+    authorIsBot: false,
+    body,
     actionable: true,
     bodyTruncated: false,
     ...overrides,

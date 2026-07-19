@@ -18,7 +18,11 @@ export {
   fetchPullRequestEventState,
   fetchPullRequestFiles,
 } from './pull-requests';
-export { pullRequestEventStateTruncation } from './state-truncation';
+export {
+  maxPrEventFeedbackBodyLength,
+  prEventWatermarkTruncationCategories,
+  pullRequestEventStateTruncation,
+} from './state-truncation';
 export type { GitHubPullRequestEventStateTruncation } from './state-truncation';
 export {
   fetchPullRequestFilesWithCache,
@@ -39,6 +43,7 @@ export {
   deletePrReviewNeonSeedsForComments,
   deletePrReviewDraftComment,
   discardPrReviewDraft,
+  fetchPullRequestReviewComments,
   fetchPullRequestReviews,
   fetchPullRequestReviewsWithMetadata,
   readLivePrReviewDraft,

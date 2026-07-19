@@ -144,6 +144,8 @@ export const prEventDeltaSchema = v.object({
   summary: v.optional(nonEmptyStringSchema),
   actionable: v.optional(v.boolean()),
   requiresExplanation: v.optional(v.boolean()),
+  candidateReasoning: v.optional(v.boolean()),
+  mutationEligible: v.optional(v.boolean()),
   severity: v.optional(v.picklist(['low', 'medium', 'high', 'urgent'])),
 });
 export const prEventSnapshotSchema = v.object({

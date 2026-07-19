@@ -23,6 +23,9 @@ export function deltasFromChangedCategories(
   filters: {
     addressedReviewThreadFingerprints?: ReadonlyMap<string, string>;
     addressedReviewCommentFingerprints?: ReadonlyMap<string, string>;
+    neondeckReviewCommentFingerprints?: ReadonlyMap<string, string>;
+    neondeckRequestedChangesReviewFingerprints?: ReadonlyMap<string, string>;
+    neondeckConversationCommentFingerprints?: ReadonlyMap<string, string>;
   } = {},
 ) {
   return categories.flatMap((category) => {
@@ -32,10 +35,10 @@ export function deltasFromChangedCategories(
       return reviewCommentDeltas(payload, previousPayload, filters);
     }
     if (category === 'requested_changes_reviews') {
-      return requestedChangesDeltas(payload, previousPayload);
+      return requestedChangesDeltas(payload, previousPayload, filters);
     }
     if (category === 'conversation_comments') {
-      return conversationCommentDeltas(payload, previousPayload);
+      return conversationCommentDeltas(payload, previousPayload, filters);
     }
     if (category === 'check_suites' || category === 'check_runs') {
       return checkDeltas(category, payload, previousPayload);
@@ -49,6 +52,9 @@ export function initialActionableDeltas(
   filters: {
     addressedReviewThreadFingerprints?: ReadonlyMap<string, string>;
     addressedReviewCommentFingerprints?: ReadonlyMap<string, string>;
+    neondeckReviewCommentFingerprints?: ReadonlyMap<string, string>;
+    neondeckRequestedChangesReviewFingerprints?: ReadonlyMap<string, string>;
+    neondeckConversationCommentFingerprints?: ReadonlyMap<string, string>;
   } = {},
 ) {
   return deltasFromChangedCategories(
@@ -64,7 +70,9 @@ export function initialActionableDeltas(
     filters,
   ).filter(
     (delta) =>
-      delta.actionable === true || delta.type === 'incomplete-feedback',
+      delta.actionable === true ||
+      delta.candidateReasoning === true ||
+      delta.type === 'incomplete-feedback',
   );
 }
 
@@ -74,6 +82,7 @@ function reviewCommentDeltas(
   filters: {
     addressedReviewThreadFingerprints?: ReadonlyMap<string, string>;
     addressedReviewCommentFingerprints?: ReadonlyMap<string, string>;
+    neondeckReviewCommentFingerprints?: ReadonlyMap<string, string>;
   },
 ) {
   const previous = feedbackFingerprintMap(
@@ -90,14 +99,20 @@ function reviewCommentDeltas(
       return [];
     }
     const fingerprint = stringField(item.fingerprint);
+    const deliveryFingerprint = stringField(item.deliveryFingerprint);
     const addressedCommentFingerprint =
       filters.addressedReviewCommentFingerprints?.get(id);
+    const neondeckDeliveryFingerprint =
+      filters.neondeckReviewCommentFingerprints?.get(id);
     const addressedThreadFingerprint = threadId
       ? filters.addressedReviewThreadFingerprints?.get(threadId)
       : undefined;
     if (
       fingerprint &&
       (addressedCommentFingerprint === fingerprint ||
+        (neondeckDeliveryFingerprint !== undefined &&
+          deliveryFingerprint !== undefined &&
+          neondeckDeliveryFingerprint === deliveryFingerprint) ||
         addressedThreadFingerprint === fingerprint)
     ) {
       return [];
@@ -143,11 +158,22 @@ function reviewCommentDeltas(
 function requestedChangesDeltas(
   payload: Record<string, unknown>,
   previousPayload: Record<string, unknown>,
+  filters: {
+    neondeckRequestedChangesReviewFingerprints?: ReadonlyMap<string, string>;
+  },
 ) {
   const previous = feedbackFingerprintMap(recordArray(previousPayload.reviews));
   const deltas = recordArray(payload.reviews).flatMap((item) => {
     const id = feedbackItemId(item);
     if (!id || item.actionable === false) return [];
+    const fingerprint = stringField(item.fingerprint);
+    if (
+      fingerprint &&
+      filters.neondeckRequestedChangesReviewFingerprints?.get(id) ===
+        fingerprint
+    ) {
+      return [];
+    }
     const change = feedbackChange(item, previous.get(id));
     if (!change) return [];
     const incomplete =
@@ -156,9 +182,9 @@ function requestedChangesDeltas(
       jsonRecord({
         type: incomplete ? 'incomplete-feedback' : 'requested-changes',
         feedbackType: 'requested-changes',
-        id: `requested-changes:${id}:${stringField(item.fingerprint) ?? change}`,
+        id: `requested-changes:${id}:${fingerprint ?? change}`,
         itemId: id,
-        itemFingerprint: stringField(item.fingerprint),
+        itemFingerprint: fingerprint,
         change,
         summary: `${change === 'new' ? 'New' : 'Changed'} requested-changes review from ${stringField(item.authorLogin) ?? 'unknown reviewer'}.`,
         actionable: !incomplete,
@@ -190,6 +216,9 @@ function requestedChangesDeltas(
 function conversationCommentDeltas(
   payload: Record<string, unknown>,
   previousPayload: Record<string, unknown>,
+  filters: {
+    neondeckConversationCommentFingerprints?: ReadonlyMap<string, string>;
+  },
 ) {
   const previous = feedbackFingerprintMap(
     recordArray(previousPayload.comments),
@@ -197,6 +226,13 @@ function conversationCommentDeltas(
   const deltas = recordArray(payload.comments).flatMap((item) => {
     const id = feedbackItemId(item);
     if (!id || item.actionable === false) return [];
+    const fingerprint = stringField(item.fingerprint);
+    if (
+      fingerprint &&
+      filters.neondeckConversationCommentFingerprints?.get(id) === fingerprint
+    ) {
+      return [];
+    }
     const change = feedbackChange(item, previous.get(id));
     if (!change) return [];
     const incomplete =
@@ -205,13 +241,15 @@ function conversationCommentDeltas(
       jsonRecord({
         type: incomplete ? 'incomplete-feedback' : 'conversation-comment',
         feedbackType: 'conversation-comment',
-        id: `conversation-comment:${id}:${stringField(item.fingerprint) ?? change}`,
+        id: `conversation-comment:${id}:${fingerprint ?? change}`,
         itemId: id,
         itemFingerprint: stringField(item.fingerprint),
         change,
         summary: `${change === 'new' ? 'New' : 'Changed'} PR conversation comment from ${stringField(item.authorLogin) ?? 'unknown author'}.`,
-        actionable: !incomplete,
-        requiresExplanation: incomplete,
+        actionable: false,
+        requiresExplanation: true,
+        candidateReasoning: !incomplete,
+        mutationEligible: false,
         severity: 'medium',
         comment: item,
         incomplete,
@@ -503,7 +541,11 @@ export function shouldAdmitTriageForDeltas(
   deltas: Array<Record<string, unknown>>,
 ) {
   return deltas.some((delta) => {
-    if (delta.actionable === true || delta.requiresExplanation === true) {
+    if (
+      delta.actionable === true ||
+      delta.requiresExplanation === true ||
+      delta.candidateReasoning === true
+    ) {
       return true;
     }
     return (

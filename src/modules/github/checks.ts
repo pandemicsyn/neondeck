@@ -16,6 +16,7 @@ import type {
   GitHubCheckSummary,
   GitHubFailingCheckFact,
 } from './schemas';
+import type { PullRequestEventFetchBudget } from './event-budget';
 
 export async function fetchCheckSummary(options: {
   token: string;
@@ -91,25 +92,45 @@ export async function fetchCheckSummary(options: {
   };
 }
 
-async function fetchCheckRuns(token: string, initialUrl: string, maxPages = 3) {
+async function fetchCheckRuns(
+  token: string,
+  initialUrl: string,
+  maxPages = 3,
+  eventBudget?: PullRequestEventFetchBudget,
+) {
   const runs: GitHubCheckRun[] = [];
   let nextUrl: string | undefined = initialUrl;
   let pageCount = 0;
 
-  while (nextUrl && pageCount < maxPages) {
+  let budgetExhausted = false;
+  while (
+    nextUrl &&
+    pageCount < maxPages &&
+    (eventBudget?.canFetch('check_runs') ?? true)
+  ) {
     pageCount += 1;
     const response = await githubFetch(token, nextUrl);
     const data = v.parse(
       githubCheckRunsApiResponseSchema,
       await response.json(),
     );
-    runs.push(...(data.check_runs ?? []));
+    for (const run of data.check_runs ?? []) {
+      if (eventBudget?.admit('check_runs', run) === false) {
+        budgetExhausted = true;
+        break;
+      }
+      runs.push(run);
+    }
     nextUrl = nextLink(response.headers.get('link'));
+    if (budgetExhausted) break;
   }
 
   return {
     items: runs,
-    truncated: Boolean(nextUrl),
+    truncated:
+      Boolean(nextUrl) ||
+      budgetExhausted ||
+      Boolean(eventBudget?.exhausted('check_runs')),
   };
 }
 
@@ -344,6 +365,7 @@ export async function fetchCheckRunDetailsWithMetadata(options: {
   owner: string;
   repo: string;
   ref: string;
+  eventBudget?: PullRequestEventFetchBudget;
 }): Promise<{ checkRuns: GitHubCheckRunDetail[]; truncated: boolean }> {
   const owner = encodePathSegment(options.owner);
   const repo = encodePathSegment(options.repo);
@@ -351,6 +373,8 @@ export async function fetchCheckRunDetailsWithMetadata(options: {
   const runs = await fetchCheckRuns(
     options.token,
     `https://api.github.com/repos/${owner}/${repo}/commits/${ref}/check-runs?per_page=100`,
+    3,
+    options.eventBudget,
   );
 
   return {
@@ -447,6 +471,7 @@ export async function fetchCheckSuitesWithMetadata(options: {
   owner: string;
   repo: string;
   ref: string;
+  eventBudget?: PullRequestEventFetchBudget;
 }): Promise<{ checkSuites: GitHubCheckSuiteDetail[]; truncated: boolean }> {
   const owner = encodePathSegment(options.owner);
   const repo = encodePathSegment(options.repo);
@@ -456,15 +481,27 @@ export async function fetchCheckSuitesWithMetadata(options: {
     `https://api.github.com/repos/${owner}/${repo}/commits/${ref}/check-suites?per_page=100`;
   let pageCount = 0;
 
-  while (nextUrl && pageCount < 3) {
+  let budgetExhausted = false;
+  while (
+    nextUrl &&
+    pageCount < 3 &&
+    (options.eventBudget?.canFetch('check_suites') ?? true)
+  ) {
     pageCount += 1;
     const response = await githubFetch(options.token, nextUrl);
     const data = v.parse(
       githubCheckSuitesApiResponseSchema,
       await response.json(),
     );
-    suites.push(...(data.check_suites ?? []));
+    for (const suite of data.check_suites ?? []) {
+      if (options.eventBudget?.admit('check_suites', suite) === false) {
+        budgetExhausted = true;
+        break;
+      }
+      suites.push(suite);
+    }
     nextUrl = nextLink(response.headers.get('link'));
+    if (budgetExhausted) break;
   }
 
   return {
@@ -479,6 +516,9 @@ export async function fetchCheckSuitesWithMetadata(options: {
       createdAt: suite.created_at ?? null,
       updatedAt: suite.updated_at ?? null,
     })),
-    truncated: Boolean(nextUrl),
+    truncated:
+      Boolean(nextUrl) ||
+      budgetExhausted ||
+      Boolean(options.eventBudget?.exhausted('check_suites')),
   };
 }

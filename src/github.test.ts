@@ -12,11 +12,13 @@ import {
   fetchGitHubIssues,
   fetchCheckSummary,
   fetchPullRequestFiles,
+  fetchPullRequestReviewComments,
   fetchPullRequestReviewSurfaceThreadsWithMetadata,
   fetchPullRequestReviewThreads,
   fetchPullRequestReviewThreadsWithMetadata,
   fetchPullRequestQueue,
   invalidatePullRequestReviewSurfaceThreadCache,
+  listPullRequestCommentsWithMetadata,
   postPullRequestComment,
   readLivePrReviewDraft,
   recordPrReviewNeonSeed,
@@ -31,6 +33,7 @@ import {
 import { listWorkflowSummaries } from './modules/app-state/workflow-summaries';
 import type { RepoConfig } from './runtime-home';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
+import { createPullRequestEventFetchBudget } from './modules/github/event-budget';
 
 const originalFetch = globalThis.fetch;
 const tempRoots: string[] = [];
@@ -745,6 +748,136 @@ describe('github foundation', () => {
       }),
     ]);
     expect(fetchedBodies).toHaveLength(2);
+    expect((fetchedBodies[0] as { query?: string }).query).toContain(
+      'reviewThreads(first: 10',
+    );
+    expect((fetchedBodies[0] as { query?: string }).query).toContain(
+      'comments(first: 10)',
+    );
+    expect((fetchedBodies[1] as { query?: string }).query).toContain(
+      'comments(first: 20',
+    );
+  });
+
+  it('continues budgeted review-thread pagination beyond the former 50-thread cap', async () => {
+    let page = 0;
+    const queries: string[] = [];
+    globalThis.fetch = vi.fn<typeof fetch>(async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { query?: string };
+      queries.push(body.query ?? '');
+      page += 1;
+      const offset = (page - 1) * 10;
+      return jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: {
+                  hasNextPage: true,
+                  endCursor: `cursor-${page}`,
+                },
+                nodes: Array.from({ length: 10 }, (_value, index) => {
+                  const id = offset + index + 1;
+                  return {
+                    id: `thread-${id}`,
+                    isResolved: false,
+                    isOutdated: false,
+                    path: 'src/app.ts',
+                    line: id,
+                    originalLine: null,
+                    diffSide: 'RIGHT',
+                    comments: {
+                      pageInfo: { hasNextPage: false, endCursor: null },
+                      nodes: [reviewThreadComment(`comment-${id}`, id)],
+                    },
+                  };
+                }),
+              },
+            },
+          },
+        },
+      });
+    });
+
+    const result = await fetchPullRequestReviewThreadsWithMetadata({
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+      eventBudget: createPullRequestEventFetchBudget({
+        maxItems: 125,
+        maxBytes: 10 * 1024 * 1024,
+        maxElapsedMs: 30_000,
+      }),
+    });
+
+    expect(result.reviewThreads).toHaveLength(63);
+    expect(result.truncated).toBe(true);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(7);
+    expect(
+      queries.every((query) => query.includes('reviewThreads(first: 10')),
+    ).toBe(true);
+  });
+
+  it('stops comment pagination when the shared byte or time budget is exhausted', async () => {
+    let elapsedMs = 0;
+    globalThis.fetch = vi.fn<typeof fetch>(async () => {
+      elapsedMs = 31_000;
+      return jsonResponse([
+        {
+          id: 301,
+          node_id: 'comment-301',
+          html_url:
+            'https://github.com/pandemicsyn/neondeck/pull/123#issuecomment-301',
+          user: { login: 'reviewer', type: 'User' },
+          body: 'A'.repeat(1024),
+          created_at: '2026-07-19T00:00:00.000Z',
+          updated_at: '2026-07-19T00:00:00.000Z',
+        },
+      ]);
+    });
+    const timed = await listPullRequestCommentsWithMetadata({
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+      eventBudget: createPullRequestEventFetchBudget({
+        maxItems: 100,
+        maxBytes: 10 * 1024,
+        maxElapsedMs: 30_000,
+        now: () => elapsedMs,
+      }),
+    });
+    expect(timed).toEqual({ comments: [], truncated: true });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+    globalThis.fetch = vi.fn<typeof fetch>(async () =>
+      jsonResponse([
+        {
+          id: 302,
+          node_id: 'comment-302',
+          html_url:
+            'https://github.com/pandemicsyn/neondeck/pull/123#issuecomment-302',
+          user: { login: 'reviewer', type: 'User' },
+          body: 'B'.repeat(1024),
+          created_at: '2026-07-19T00:00:00.000Z',
+          updated_at: '2026-07-19T00:00:00.000Z',
+        },
+      ]),
+    );
+    const bytes = await listPullRequestCommentsWithMetadata({
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+      eventBudget: createPullRequestEventFetchBudget({
+        maxItems: 100,
+        maxBytes: 128,
+        maxElapsedMs: 30_000,
+      }),
+    });
+    expect(bytes).toEqual({ comments: [], truncated: true });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('marks review thread facts truncated when GitHub omits a next-page cursor', async () => {
@@ -1269,6 +1402,67 @@ describe('github foundation', () => {
         prNumber: 123,
       })?.id,
     ).toBe(first.id);
+  });
+
+  it('lists every exact inline comment created by one submitted review', async () => {
+    const requests: string[] = [];
+    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      requests.push(url);
+      const secondPage = url.includes('page=2');
+      return jsonResponse(
+        [
+          {
+            id: secondPage ? 112 : 111,
+            node_id: secondPage ? 'comment-node-112' : 'comment-node-111',
+            pull_request_review_id: 9001,
+            diff_hunk: '@@',
+            path: secondPage ? 'src/two.ts' : 'src/one.ts',
+            side: 'RIGHT',
+            line: secondPage ? 22 : 11,
+            start_line: secondPage ? 20 : null,
+            start_side: secondPage ? 'RIGHT' : null,
+            original_line: secondPage ? 22 : 11,
+            body: secondPage ? 'Second comment.' : 'First comment.',
+            user: { login: 'neon', type: 'User' },
+            created_at: '2026-07-19T00:00:00.000Z',
+            updated_at: '2026-07-19T00:00:00.000Z',
+            html_url: `https://github.com/pandemicsyn/neondeck/pull/123#discussion_r${secondPage ? 112 : 111}`,
+          },
+        ],
+        200,
+        secondPage
+          ? {}
+          : {
+              link: '<https://api.github.com/repos/pandemicsyn/neondeck/pulls/123/reviews/9001/comments?per_page=100&page=2>; rel="next"',
+            },
+      );
+    });
+
+    await expect(
+      fetchPullRequestReviewComments({
+        token: 'test-token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+        reviewId: 9001,
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        databaseId: 111,
+        reviewId: 9001,
+        side: 'RIGHT',
+        startLine: null,
+      }),
+      expect.objectContaining({
+        databaseId: 112,
+        reviewId: 9001,
+        side: 'RIGHT',
+        startLine: 20,
+        startSide: 'RIGHT',
+      }),
+    ]);
+    expect(requests).toHaveLength(2);
   });
 
   it('submits review drafts with modern GitHub line anchors and writes an audit row', async () => {

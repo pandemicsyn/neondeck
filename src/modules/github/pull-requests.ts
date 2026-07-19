@@ -13,6 +13,10 @@ import {
   requestedChangesStateFromReviews,
 } from './reviews';
 import {
+  createPullRequestEventFetchBudget,
+  type PullRequestEventFetchBudget,
+} from './event-budget';
+import {
   githubPullRequestApiResponseSchema,
   githubPullRequestCommitApiItemSchema,
   githubPullRequestFileApiItemSchema,
@@ -83,6 +87,9 @@ export async function fetchPullRequestEventState(options: {
   repo: string;
   number: number;
 }): Promise<GitHubPullRequestEventState> {
+  const eventBudget = createPullRequestEventFetchBudget(
+    defaultPullRequestEventStateBudget,
+  );
   const detail = await fetchPullRequestDetail(options);
   const [
     commitDetails,
@@ -94,21 +101,23 @@ export async function fetchPullRequestEventState(options: {
     branchPermissions,
     behindBy,
   ] = await Promise.all([
-    fetchPullRequestCommitsWithMetadata(options),
-    fetchPullRequestReviewsWithMetadata(options),
-    fetchPullRequestReviewThreadsWithMetadata(options),
-    listPullRequestCommentsWithMetadata(options),
+    fetchPullRequestCommitsWithMetadata({ ...options, eventBudget }),
+    fetchPullRequestReviewsWithMetadata({ ...options, eventBudget }),
+    fetchPullRequestReviewThreadsWithMetadata({ ...options, eventBudget }),
+    listPullRequestCommentsWithMetadata({ ...options, eventBudget }),
     fetchCheckSuitesWithMetadata({
       token: options.token,
       owner: options.owner,
       repo: options.repo,
       ref: detail.headSha,
+      eventBudget,
     }),
     fetchCheckRunDetailsWithMetadata({
       token: options.token,
       owner: options.owner,
       repo: options.repo,
       ref: detail.headSha,
+      eventBudget,
     }),
     fetchBranchPushPermissions({
       token: options.token,
@@ -122,7 +131,7 @@ export async function fetchPullRequestEventState(options: {
     reviewDetails.reviews,
   );
 
-  return {
+  const state: GitHubPullRequestEventState = {
     repo: detail.repo,
     number: detail.number,
     url: detail.url,
@@ -164,6 +173,173 @@ export async function fetchPullRequestEventState(options: {
     isOutOfDate: isOutOfDateState(behindBy, detail.mergeableState),
     fetchedAt: new Date().toISOString(),
   };
+  return enforcePullRequestEventStateBudget(state, {
+    ...eventBudget.snapshot(),
+  });
+}
+
+export const defaultPullRequestEventStateBudget = {
+  maxItems: 1_000,
+  maxBytes: 2 * 1024 * 1024,
+  maxElapsedMs: 30_000,
+} as const;
+
+export function enforcePullRequestEventStateBudget(
+  state: GitHubPullRequestEventState,
+  options: {
+    maxItems?: number;
+    maxBytes?: number;
+    maxElapsedMs?: number;
+    elapsedMs?: number;
+  } = {},
+): GitHubPullRequestEventState {
+  const limits = {
+    maxItems: options.maxItems ?? defaultPullRequestEventStateBudget.maxItems,
+    maxBytes: options.maxBytes ?? defaultPullRequestEventStateBudget.maxBytes,
+    maxElapsedMs:
+      options.maxElapsedMs ?? defaultPullRequestEventStateBudget.maxElapsedMs,
+  };
+  const elapsedMs = options.elapsedMs ?? 0;
+  const timeExhausted = elapsedMs > limits.maxElapsedMs;
+  let retainedItems = 0;
+  let retainedBytes = 0;
+  const exhaustedCategories = new Set<string>();
+
+  type BudgetBucket = {
+    category: string;
+    source: unknown[];
+    retained: unknown[];
+    itemCost: (value: unknown) => number;
+  };
+  const buckets: BudgetBucket[] = [
+    {
+      category: 'commits',
+      source: state.commits,
+      retained: [],
+      itemCost: () => 1,
+    },
+    {
+      category: 'review_threads',
+      source: state.reviewThreads,
+      retained: [],
+      itemCost: (value) =>
+        1 +
+        (Array.isArray(
+          (value as GitHubPullRequestEventState['reviewThreads'][number])
+            .comments,
+        )
+          ? (value as GitHubPullRequestEventState['reviewThreads'][number])
+              .comments.length
+          : 0),
+    },
+    {
+      category: 'requested_changes_reviews',
+      source: state.requestedChangesState.history,
+      retained: [],
+      itemCost: () => 1,
+    },
+    {
+      category: 'conversation_comments',
+      source: state.conversationComments ?? [],
+      retained: [],
+      itemCost: () => 1,
+    },
+    {
+      category: 'check_suites',
+      source: state.checkSuites,
+      retained: [],
+      itemCost: () => 1,
+    },
+    {
+      category: 'check_runs',
+      source: state.checkRuns,
+      retained: [],
+      itemCost: () => 1,
+    },
+  ];
+
+  if (timeExhausted) {
+    for (const bucket of buckets) exhaustedCategories.add(bucket.category);
+  } else {
+    const offsets = new Map(buckets.map((bucket) => [bucket.category, 0]));
+    let remaining = true;
+    while (remaining) {
+      remaining = false;
+      for (const bucket of buckets) {
+        const offset = offsets.get(bucket.category) ?? 0;
+        const item = bucket.source[offset];
+        if (item === undefined) continue;
+        remaining = true;
+        offsets.set(bucket.category, offset + 1);
+        const itemCost = bucket.itemCost(item);
+        const byteCost = Buffer.byteLength(JSON.stringify(item), 'utf8');
+        if (
+          retainedItems + itemCost > limits.maxItems ||
+          retainedBytes + byteCost > limits.maxBytes
+        ) {
+          exhaustedCategories.add(bucket.category);
+          continue;
+        }
+        bucket.retained.push(item);
+        retainedItems += itemCost;
+        retainedBytes += byteCost;
+      }
+    }
+  }
+
+  const retained = new Map(
+    buckets.map((bucket) => [bucket.category, bucket.retained]),
+  );
+  const retainedReviews = retained.get(
+    'requested_changes_reviews',
+  ) as GitHubPullRequestEventState['requestedChangesState']['history'];
+  const requestedChangesState =
+    requestedChangesStateFromReviews(retainedReviews);
+  const exhausted = exhaustedCategories.size > 0;
+
+  return {
+    ...state,
+    commits: retained.get('commits') as GitHubPullRequestEventState['commits'],
+    commitsTruncated:
+      Boolean(state.commitsTruncated) || exhaustedCategories.has('commits'),
+    reviewThreads: retained.get(
+      'review_threads',
+    ) as GitHubPullRequestEventState['reviewThreads'],
+    reviewThreadsTruncated:
+      Boolean(state.reviewThreadsTruncated) ||
+      exhaustedCategories.has('review_threads'),
+    requestedChangesReviews: requestedChangesState.active,
+    requestedChangesState,
+    reviewsTruncated:
+      Boolean(state.reviewsTruncated) ||
+      exhaustedCategories.has('requested_changes_reviews'),
+    conversationComments: retained.get('conversation_comments') as NonNullable<
+      GitHubPullRequestEventState['conversationComments']
+    >,
+    conversationCommentsTruncated:
+      Boolean(state.conversationCommentsTruncated) ||
+      exhaustedCategories.has('conversation_comments'),
+    checkSuites: retained.get(
+      'check_suites',
+    ) as GitHubPullRequestEventState['checkSuites'],
+    checkSuitesTruncated:
+      Boolean(state.checkSuitesTruncated) ||
+      exhaustedCategories.has('check_suites'),
+    checkRuns: retained.get(
+      'check_runs',
+    ) as GitHubPullRequestEventState['checkRuns'],
+    checkRunsTruncated:
+      Boolean(state.checkRunsTruncated) ||
+      exhaustedCategories.has('check_runs'),
+    eventBudget: {
+      ...limits,
+      retainedItems,
+      retainedBytes,
+      elapsedMs,
+      exhausted,
+      exhaustedCategories: [...exhaustedCategories].sort(),
+    },
+  };
 }
 
 export async function fetchPullRequestCommits(options: {
@@ -180,21 +356,34 @@ export async function fetchPullRequestCommitsWithMetadata(options: {
   owner: string;
   repo: string;
   number: number;
+  eventBudget?: PullRequestEventFetchBudget;
 }): Promise<{ commits: GitHubPullRequestCommit[]; truncated: boolean }> {
   const commits: GitHubPullRequestCommitApiItem[] = [];
   let nextUrl: string | undefined =
     `https://api.github.com/repos/${encodePathSegment(options.owner)}/${encodePathSegment(options.repo)}/pulls/${options.number}/commits?per_page=100`;
   let pageCount = 0;
 
-  while (nextUrl && pageCount < 3) {
+  while (
+    nextUrl &&
+    pageCount < 3 &&
+    (options.eventBudget?.canFetch('commits') ?? true)
+  ) {
     pageCount += 1;
     const response = await githubFetch(options.token, nextUrl);
     const data = v.parse(
       v.array(githubPullRequestCommitApiItemSchema),
       await response.json(),
     );
-    commits.push(...data);
+    let admittedPage = true;
+    for (const commit of data) {
+      if (options.eventBudget?.admit('commits', commit) === false) {
+        admittedPage = false;
+        break;
+      }
+      commits.push(commit);
+    }
     nextUrl = nextLink(response.headers.get('link'));
+    if (!admittedPage) break;
   }
 
   return {
@@ -205,7 +394,8 @@ export async function fetchPullRequestCommitsWithMetadata(options: {
       committedAt:
         commit.commit.committer?.date ?? commit.commit.author?.date ?? null,
     })),
-    truncated: Boolean(nextUrl),
+    truncated:
+      Boolean(nextUrl) || Boolean(options.eventBudget?.exhausted('commits')),
   };
 }
 

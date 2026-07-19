@@ -50,10 +50,12 @@ export function insertWatch(
           created_by,
           process_existing,
           initial_event_processed_at,
+          event_watermark_version,
+          event_generation_id,
           created_at,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `,
         )
         .run(...watchParams(watch));
@@ -79,12 +81,18 @@ export function updateWatch(
   paths: RuntimePaths,
   watch: PrWatch,
   initialWatermarks?: PrWatchInitialWatermark[],
+  eventBaselineReset?: {
+    supersededReason: string;
+  },
+  expectedEventGenerationId = watch.eventGenerationId,
 ) {
   const database = openDb(paths.neondeckDatabase);
   try {
-    database.exec('BEGIN;');
+    database.exec(
+      initialWatermarks || eventBaselineReset ? 'BEGIN IMMEDIATE;' : 'BEGIN;',
+    );
     try {
-      database
+      const updated = database
         .prepare(
           `
         UPDATE pr_watches
@@ -105,8 +113,10 @@ export function updateWatch(
           last_checked_at = ?,
           process_existing = ?,
           initial_event_processed_at = ?,
+          event_watermark_version = ?,
+          event_generation_id = ?,
           updated_at = ?
-        WHERE id = ?;
+        WHERE id = ? AND event_generation_id = ?;
       `,
         )
         .run(
@@ -126,9 +136,38 @@ export function updateWatch(
           watch.lastCheckedAt,
           watch.processExisting ? 1 : 0,
           watch.initialEventProcessedAt,
+          watch.eventWatermarkVersion,
+          watch.eventGenerationId,
           watch.updatedAt,
           watch.id,
-        );
+          expectedEventGenerationId,
+        ).changes;
+      if (updated !== 1) {
+        rollbackQuietly(database);
+        return false;
+      }
+      if (initialWatermarks || eventBaselineReset) {
+        database
+          .prepare(
+            `UPDATE pr_watch_event_intakes
+             SET status = 'superseded',
+                 outcome = 'baseline-reset',
+                 superseded_reason = ?,
+                 acknowledged_at = ?,
+                 updated_at = ?
+             WHERE watch_id = ? AND status = 'pending';`,
+          )
+          .run(
+            eventBaselineReset?.supersededReason ??
+              'Operator installed a fresh process-existing=false baseline.',
+            watch.updatedAt,
+            watch.updatedAt,
+            watch.id,
+          );
+        database
+          .prepare('DELETE FROM pr_watch_event_watermarks WHERE watch_id = ?;')
+          .run(watch.id);
+      }
       if (initialWatermarks) {
         upsertInitialEventWatermarks(
           database,
@@ -138,6 +177,7 @@ export function updateWatch(
         );
       }
       database.exec('COMMIT;');
+      return true;
     } catch (error) {
       rollbackQuietly(database);
       throw error;
@@ -362,11 +402,30 @@ export function readRefWatch(paths: RuntimePaths, id: string) {
 
 export function deleteWatch(paths: RuntimePaths, id: string) {
   const database = openDb(paths.neondeckDatabase);
+  const now = new Date().toISOString();
   try {
-    database
-      .prepare('DELETE FROM pr_watch_event_watermarks WHERE watch_id = ?;')
-      .run(id);
-    database.prepare('DELETE FROM pr_watches WHERE id = ?;').run(id);
+    database.exec('BEGIN IMMEDIATE;');
+    try {
+      database
+        .prepare(
+          `UPDATE pr_watch_event_intakes
+           SET status = 'superseded',
+               outcome = 'baseline-reset',
+               superseded_reason = 'Operator removed the PR watch.',
+               acknowledged_at = ?,
+               updated_at = ?
+           WHERE watch_id = ? AND status = 'pending';`,
+        )
+        .run(now, now, id);
+      database
+        .prepare('DELETE FROM pr_watch_event_watermarks WHERE watch_id = ?;')
+        .run(id);
+      database.prepare('DELETE FROM pr_watches WHERE id = ?;').run(id);
+      database.exec('COMMIT;');
+    } catch (error) {
+      rollbackQuietly(database);
+      throw error;
+    }
   } finally {
     database.close();
   }
@@ -411,6 +470,8 @@ export function watchParams(watch: PrWatch) {
     watch.createdBy,
     watch.processExisting ? 1 : 0,
     watch.initialEventProcessedAt,
+    watch.eventWatermarkVersion,
+    watch.eventGenerationId,
     watch.createdAt,
     watch.updatedAt,
   ];
@@ -489,6 +550,14 @@ export function readWatchRow(row: unknown): PrWatch {
       typeof record.initial_event_processed_at === 'string'
         ? record.initial_event_processed_at
         : null,
+    eventWatermarkVersion:
+      typeof record.event_watermark_version === 'number'
+        ? record.event_watermark_version
+        : 1,
+    eventGenerationId:
+      typeof record.event_generation_id === 'string'
+        ? record.event_generation_id
+        : 'legacy',
     createdAt: String(record.created_at),
     updatedAt: String(record.updated_at),
   };

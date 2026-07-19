@@ -30,7 +30,10 @@ import {
   postGitHubPrThreadResolution,
   putGitHubPrReviewDraft,
   readAddressedPrFeedback,
+  readNeondeckPrDeliveries,
+  reviewThreadCommentDeliveryFingerprint,
   refreshPrWatchEventState,
+  acknowledgePrWatchEventIntake,
 } from './modules/pr-events';
 import { runtimePaths } from './runtime-home';
 import {
@@ -61,6 +64,26 @@ afterEach(async () => {
 });
 
 describe('PR event state watermarks', () => {
+  it('keeps review delivery identity stable when the current line becomes outdated', () => {
+    const comment = {
+      id: 'comment-node-112',
+      databaseId: 112,
+      authorLogin: 'neon',
+      body: 'Exact delivered review comment.',
+      url: null,
+      path: 'src/app.ts',
+      line: 12,
+      originalLine: 12,
+      diffHunk: '@@',
+      reviewId: 9001,
+      createdAt: '2026-07-19T00:00:00.000Z',
+      updatedAt: '2026-07-19T00:00:00.000Z',
+    };
+    expect(reviewThreadCommentDeliveryFingerprint(comment)).toBe(
+      reviewThreadCommentDeliveryFingerprint({ ...comment, line: null }),
+    );
+  });
+
   it('exposes roadmap PR review fact tools and comment action names', () => {
     expect(neondeckPrEventTools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
@@ -85,11 +108,14 @@ describe('PR event state watermarks', () => {
     await writeRepoRegistry(paths.repos);
     await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
 
-    await expect(
-      refreshPrWatchEventState({ watchId: 'pandemicsyn/neondeck#123' }, paths, {
+    const staged = await refreshPrWatchEventState(
+      { watchId: 'pandemicsyn/neondeck#123' },
+      paths,
+      {
         fetchPullRequestEventState: async () => prEventState(),
-      }),
-    ).resolves.toMatchObject({
+      },
+    );
+    expect(staged).toMatchObject({
       ok: true,
       changed: true,
       data: {
@@ -106,6 +132,7 @@ describe('PR event state watermarks', () => {
         ],
       },
     });
+    acknowledgeRefresh(paths, staged);
 
     await expect(
       listPrWatchEventWatermarks(
@@ -197,7 +224,7 @@ describe('PR event state watermarks', () => {
     });
   });
 
-  it('prefers authoritative GitHub actor types over login suffix heuristics', async () => {
+  it('keeps user, bot, and forged marker feedback actionable by default', async () => {
     process.env.GITHUB_TOKEN = 'token';
     const home = await tempHome();
     const paths = runtimePaths(home);
@@ -269,15 +296,12 @@ describe('PR event state watermarks', () => {
       ],
     });
 
-    await refreshPrWatchEventState(
+    const staged = await refreshPrWatchEventState(
       { watchId: 'pandemicsyn/neondeck#123' },
       paths,
       { fetchPullRequestEventState: async () => state },
     );
-    const result = await listPrWatchEventWatermarks(
-      { watchId: 'pandemicsyn/neondeck#123' },
-      paths,
-    );
+    const result = staged;
     const watermarks = (
       result.data as {
         watermarks: Array<{
@@ -304,13 +328,13 @@ describe('PR event state watermarks', () => {
             }),
             expect.objectContaining({
               id: 112,
-              actionable: false,
-              ignoredReason: 'bot-author',
+              actionable: true,
+              ignoredReason: null,
             }),
             expect.objectContaining({
               id: 113,
-              actionable: false,
-              ignoredReason: 'neondeck-authored',
+              actionable: true,
+              ignoredReason: null,
             }),
           ],
         },
@@ -325,18 +349,18 @@ describe('PR event state watermarks', () => {
         }),
         expect.objectContaining({
           id: 7002,
-          actionable: false,
-          ignoredReason: 'bot-author',
+          actionable: true,
+          ignoredReason: null,
         }),
         expect.objectContaining({
           id: 7003,
-          actionable: false,
-          ignoredReason: 'bot-author',
+          actionable: true,
+          ignoredReason: null,
         }),
         expect.objectContaining({
           id: 7004,
-          actionable: false,
-          ignoredReason: 'neondeck-authored',
+          actionable: true,
+          ignoredReason: null,
         }),
       ],
     });
@@ -349,13 +373,14 @@ describe('PR event state watermarks', () => {
     await writeRepoRegistry(paths.repos);
     await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
 
-    await refreshPrWatchEventState(
+    const staged = await refreshPrWatchEventState(
       { watchId: 'pandemicsyn/neondeck#123' },
       paths,
       {
         fetchPullRequestEventState: async () => prEventState(),
       },
     );
+    acknowledgeRefresh(paths, staged);
     rewriteMergeabilityWatermark(paths.neondeckDatabase, (watermark) => {
       const { draft: _draft, ...legacy } = watermark;
       return legacy;
@@ -378,11 +403,12 @@ describe('PR event state watermarks', () => {
     const paths = runtimePaths(home);
     await writeRepoRegistry(paths.repos);
     await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
-    await refreshPrWatchEventState(
+    const staged = await refreshPrWatchEventState(
       { watchId: 'pandemicsyn/neondeck#123' },
       paths,
       { fetchPullRequestEventState: async () => prEventState() },
     );
+    acknowledgeRefresh(paths, staged);
 
     await removePrWatch(
       { id: 'pandemicsyn/neondeck#123', confirm: true },
@@ -407,14 +433,17 @@ describe('PR event state watermarks', () => {
     await writeRepoRegistry(paths.repos);
     await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
 
-    await refreshPrWatchEventState(
+    const staged = await refreshPrWatchEventState(
       { watchId: 'pandemicsyn/neondeck#123' },
       paths,
       { fetchPullRequestEventState: async () => prEventState() },
     );
+    acknowledgeRefresh(paths, staged);
 
-    await expect(
-      refreshPrWatchEventState({ watchId: 'pandemicsyn/neondeck#123' }, paths, {
+    const updated = await refreshPrWatchEventState(
+      { watchId: 'pandemicsyn/neondeck#123' },
+      paths,
+      {
         fetchPullRequestEventState: async () =>
           prEventState({
             requestedChangesReviews: [],
@@ -445,12 +474,14 @@ describe('PR event state watermarks', () => {
               ],
             },
           }),
-      }),
-    ).resolves.toMatchObject({
+      },
+    );
+    expect(updated).toMatchObject({
       ok: true,
       changed: true,
       data: { changedCategories: ['requested_changes_reviews'] },
     });
+    acknowledgeRefresh(paths, updated);
 
     await expect(
       listPrWatchEventWatermarks(
@@ -658,6 +689,10 @@ describe('PR event state watermarks', () => {
       '111',
       '112',
     ]);
+    expect(
+      readNeondeckPrDeliveries('pandemicsyn/neondeck', 123, paths)
+        .conversationCommentFingerprints,
+    ).toEqual(new Map([['77', expect.any(String)]]));
   });
 
   it('reuses an existing PR comment with the same idempotency key', async () => {
@@ -1091,6 +1126,183 @@ describe('PR event state watermarks', () => {
     expect(replied).toBe(false);
   });
 
+  it('records exact submitted review and inline-comment delivery identities', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    const draftComment = {
+      id: 'draft-comment-1',
+      draftId: 'draft-1',
+      path: 'src/app.ts',
+      side: 'RIGHT' as const,
+      line: 12,
+      startLine: 10,
+      startSide: 'RIGHT' as const,
+      body: 'Inline review feedback.',
+      origin: 'neon' as const,
+      sourceFindingId: 'finding-1',
+      createdAt: '2026-07-19T00:00:00.000Z',
+      updatedAt: '2026-07-19T00:00:00.000Z',
+    };
+    const review = {
+      id: 9001,
+      nodeId: 'review-node-9001',
+      state: 'CHANGES_REQUESTED',
+      authorLogin: 'neon',
+      authorType: 'User',
+      authorIsBot: false,
+      submittedAt: '2026-07-19T00:01:00.000Z',
+      commitId: 'a'.repeat(40),
+      url: 'https://github.com/pandemicsyn/neondeck/pull/123#pullrequestreview-9001',
+      body: 'Please address the inline feedback.',
+    };
+    const deliveredComment = {
+      id: 'review-comment-node-112',
+      databaseId: 112,
+      authorLogin: 'neon',
+      authorType: 'User',
+      authorIsBot: false,
+      body: draftComment.body,
+      url: 'https://github.com/pandemicsyn/neondeck/pull/123#discussion_r112',
+      path: draftComment.path,
+      side: draftComment.side,
+      line: draftComment.line,
+      startLine: draftComment.startLine,
+      startSide: draftComment.startSide,
+      originalLine: draftComment.line,
+      diffHunk: '@@',
+      reviewId: review.id,
+      createdAt: '2026-07-19T00:01:00.000Z',
+      updatedAt: '2026-07-19T00:01:00.000Z',
+    };
+    const submittedDraft = {
+      id: 'draft-1',
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'a'.repeat(40),
+      verdict: 'request-changes' as const,
+      body: review.body,
+      status: 'submitted' as const,
+      createdAt: '2026-07-19T00:00:00.000Z',
+      updatedAt: '2026-07-19T00:01:00.000Z',
+      submittedAt: '2026-07-19T00:01:00.000Z',
+      comments: [draftComment],
+    };
+
+    await expect(
+      postGitHubPrReview(
+        { repo: 'neondeck', prNumber: 123 },
+        {
+          draftId: submittedDraft.id,
+          headSha: submittedDraft.headSha,
+          commentIds: [draftComment.id],
+        },
+        paths,
+        {
+          token: 'test-token',
+          submitPullRequestReview: async () => ({
+            draft: submittedDraft,
+            review,
+          }),
+          fetchPullRequestReviewComments: async (input) => {
+            expect(input.reviewId).toBe(review.id);
+            return [deliveredComment];
+          },
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'github_pr_review_post',
+    });
+    const deliveries = readNeondeckPrDeliveries(
+      'pandemicsyn/neondeck',
+      123,
+      paths,
+    );
+    expect(deliveries.reviewFingerprints).toEqual(
+      new Map([['9001', expect.any(String)]]),
+    );
+    expect(deliveries.reviewCommentFingerprints).toEqual(
+      new Map([['112', expect.any(String)]]),
+    );
+
+    await expect(
+      postGitHubPrReview(
+        { repo: 'neondeck', prNumber: 123 },
+        {
+          draftId: 'draft-2',
+          headSha: submittedDraft.headSha,
+          commentIds: [draftComment.id],
+        },
+        paths,
+        {
+          token: 'test-token',
+          submitPullRequestReview: async () => ({
+            draft: { ...submittedDraft, id: 'draft-2' },
+            review: { ...review, id: 9002, nodeId: 'review-node-9002' },
+          }),
+          fetchPullRequestReviewComments: async () => [
+            {
+              ...deliveredComment,
+              id: 'review-comment-node-113',
+              databaseId: 113,
+              reviewId: 9002,
+              startSide: 'LEFT',
+            },
+          ],
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'github_pr_review_post',
+      requires: ['deliveryIdentity'],
+    });
+    expect(
+      readNeondeckPrDeliveries(
+        'pandemicsyn/neondeck',
+        123,
+        paths,
+      ).reviewFingerprints.has('9002'),
+    ).toBe(false);
+
+    await expect(
+      postGitHubPrReview(
+        { repo: 'neondeck', prNumber: 123 },
+        { draftId: 'draft-3', headSha: submittedDraft.headSha },
+        paths,
+        {
+          token: 'test-token',
+          submitPullRequestReview: async () => ({
+            draft: {
+              ...submittedDraft,
+              id: 'draft-3',
+              comments: [],
+            },
+            review: { ...review, id: 9003, nodeId: 'review-node-9003' },
+          }),
+          fetchPullRequestReviewComments: async () => [
+            {
+              ...deliveredComment,
+              id: 'review-comment-node-114',
+              databaseId: 114,
+              reviewId: 9003,
+            },
+          ],
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['deliveryIdentity'],
+    });
+    expect(
+      readNeondeckPrDeliveries(
+        'pandemicsyn/neondeck',
+        123,
+        paths,
+      ).reviewFingerprints.has('9003'),
+    ).toBe(false);
+  });
+
   it('keeps live PR review thread mutations scoped to the route PR', async () => {
     process.env.GITHUB_TOKEN = 'token';
     const home = await tempHome();
@@ -1154,6 +1366,20 @@ describe('PR event state watermarks', () => {
                   createdAt: '2026-06-30T20:10:00Z',
                   updatedAt: '2026-06-30T20:10:00Z',
                 },
+                {
+                  id: 'comment-3',
+                  databaseId: 113,
+                  authorLogin: 'reviewer',
+                  body: 'A concurrent human reply.',
+                  url: null,
+                  path: 'src/app.ts',
+                  line: 12,
+                  originalLine: 12,
+                  diffHunk: '@@',
+                  reviewId: 9002,
+                  createdAt: '2026-06-30T20:10:01Z',
+                  updatedAt: '2026-06-30T20:10:01Z',
+                },
               ],
             });
           },
@@ -1172,6 +1398,10 @@ describe('PR event state watermarks', () => {
     });
     expect(replyCalls).toEqual(['fetch:thread-1', 'reply:thread-1']);
     expect(replyBody).toBe('Thanks, fixed.\n\n<!-- neondeck:generated -->');
+    expect(
+      readNeondeckPrDeliveries('pandemicsyn/neondeck', 123, paths)
+        .reviewCommentFingerprints,
+    ).toEqual(new Map([['112', expect.any(String)]]));
 
     const resolveCalls: string[] = [];
     await expect(
@@ -1377,15 +1607,16 @@ describe('PR event state watermarks', () => {
       refreshPrWatchEventState({ repo: 'neondeck' }, paths),
     ).resolves.toMatchObject({
       ok: false,
+      requires: ['watchId', 'ref', 'repo', 'prNumber'],
+    });
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
+    await expect(
+      refreshPrWatchEventState({ watchId: 'pandemicsyn/neondeck#123' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
       requires: ['GITHUB_TOKEN'],
     });
     process.env.GITHUB_TOKEN = 'token';
-    await expect(
-      refreshPrWatchEventState({ repo: 'neondeck' }, paths),
-    ).resolves.toMatchObject({
-      ok: false,
-      requires: ['watchId', 'ref', 'repo', 'prNumber'],
-    });
     await expect(
       postGitHubPrComment(
         { repo: 'neondeck', prNumber: 123, body: '   ' },
@@ -1666,6 +1897,23 @@ function rewriteMergeabilityWatermark(
   } finally {
     database.close();
   }
+}
+
+function acknowledgeRefresh(
+  paths: ReturnType<typeof runtimePaths>,
+  result: { data?: unknown },
+) {
+  const data = result.data as
+    { watchId?: unknown; intakeId?: unknown } | undefined;
+  if (typeof data?.watchId !== 'string' || typeof data.intakeId !== 'string') {
+    throw new Error('Expected a staged PR event intake.');
+  }
+  const acknowledged = acknowledgePrWatchEventIntake(paths, {
+    watchId: data.watchId,
+    eventId: data.intakeId,
+    outcome: 'no-op',
+  });
+  expect(acknowledged.acknowledged).toBe(true);
 }
 
 function anchorValidationDependencies() {

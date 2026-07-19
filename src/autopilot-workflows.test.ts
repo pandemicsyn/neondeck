@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
+import { pathToFileURL } from 'node:url';
 import {
   afterAll,
   afterEach,
@@ -141,7 +142,11 @@ describe('PR event autopilot', () => {
       prNumber: 8,
       source: 'fixture',
       autopilotMode: 'autofix-with-approval',
-      current: { state: 'open', draft: false },
+      current: {
+        state: 'open',
+        draft: false,
+        checkStatus: 'failure',
+      },
       deltas: [
         {
           type: 'requested-changes',
@@ -166,6 +171,86 @@ describe('PR event autopilot', () => {
       data: {
         classification: 'explain-only',
         shouldPrepareWorktree: false,
+      },
+    });
+  });
+
+  it('retains conversation candidates without letting them veto actionable feedback', async () => {
+    const result = await triagePrEvent({
+      repoId: 'sample',
+      prNumber: 8,
+      source: 'fixture',
+      autopilotMode: 'autofix-with-approval',
+      current: {
+        state: 'open',
+        draft: false,
+        checkStatus: 'failure',
+      },
+      deltas: [
+        {
+          type: 'conversation-comment',
+          id: 'conversation-1',
+          actionable: false,
+          candidateReasoning: true,
+          mutationEligible: false,
+          requiresExplanation: true,
+          summary: 'Conversation context for the continuing owner.',
+        },
+        {
+          type: 'requested-changes',
+          id: 'review-1',
+          actionable: true,
+          summary: 'Independent requested changes require preparation.',
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        classification: 'autofix-with-approval',
+        shouldPrepareWorktree: true,
+        nextWorkflow: 'prepare_pr_worktree',
+        deltas: expect.arrayContaining([
+          expect.objectContaining({ id: 'conversation-1' }),
+          expect.objectContaining({ id: 'review-1' }),
+        ]),
+      },
+    });
+  });
+
+  it('never lets conversation-only input authorize mutation at the action boundary', async () => {
+    const result = await triagePrEvent({
+      repoId: 'sample',
+      prNumber: 8,
+      source: 'fixture',
+      autopilotMode: 'autofix-push-when-safe',
+      current: {
+        state: 'open',
+        draft: false,
+        checkStatus: 'failure',
+      },
+      deltas: [
+        {
+          type: 'conversation-comment',
+          id: 'conversation-only',
+          actionable: true,
+          candidateReasoning: true,
+          mutationEligible: false,
+          requiresExplanation: true,
+          summary: 'Schema-valid but non-mutation-eligible conversation input.',
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        classification: 'explain-only',
+        shouldPrepareWorktree: false,
+        nextWorkflow: null,
       },
     });
   });
@@ -480,7 +565,7 @@ describe('PR event autopilot', () => {
           headRef: 'contributor-feature',
           headSha: featureSha,
         },
-        { resolveForkRemote: () => forkRemote },
+        { resolveForkRemote: () => pathToFileURL(forkRemote).href },
       ),
     ).resolves.toMatchObject({
       fork: true,
@@ -2483,6 +2568,21 @@ async function fixture(options: { remote?: boolean } = {}) {
   await git(repo, ['push', 'origin', 'main', 'feature']);
   await git(repo, ['push', 'origin', 'feature:refs/pull/7/head']);
   await git(repo, ['push', 'origin', 'feature:refs/pull/8/head']);
+  await git(repo, [
+    'remote',
+    'set-url',
+    '--add',
+    'origin',
+    'git@github.com:example/sample.git',
+  ]);
+  await git(repo, [
+    'remote',
+    'set-url',
+    '--add',
+    '--push',
+    'origin',
+    exactHeadRemote,
+  ]);
 
   await mkdir(paths.home, { recursive: true });
   await writeFile(
