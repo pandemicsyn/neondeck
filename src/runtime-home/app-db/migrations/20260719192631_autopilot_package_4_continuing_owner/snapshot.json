@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "a7c0fcfe-e1fe-4923-9bfe-e2aaa020f14a",
+  "id": "c6ebbb7a-a566-486c-becc-43ba02bf5d99",
   "prevIds": [
     "4dd1fc92-811c-4a9c-afd7-8a0106e60bb7"
   ],
@@ -455,6 +455,16 @@
       "table": "autopilot_admissions"
     },
     {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "authority_policy_json",
+      "entityType": "columns",
+      "table": "autopilot_admissions"
+    },
+    {
       "type": "integer",
       "notNull": true,
       "autoincrement": false,
@@ -741,6 +751,16 @@
       "default": null,
       "generated": null,
       "name": "request_hash",
+      "entityType": "columns",
+      "table": "autopilot_owner_fix_submissions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "result_hash",
       "entityType": "columns",
       "table": "autopilot_owner_fix_submissions"
     },

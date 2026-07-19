@@ -43,14 +43,23 @@ describe('app database migrator', () => {
         database
           .prepare(
             `SELECT name FROM pragma_table_info('autopilot_owner_fix_submissions')
-             WHERE name IN ('mutation_revision_key', 'artifact_revision_key')
+             WHERE name IN ('mutation_revision_key', 'artifact_revision_key', 'result_hash')
              ORDER BY name;`,
           )
           .all(),
       ).toEqual([
         { name: 'artifact_revision_key' },
         { name: 'mutation_revision_key' },
+        { name: 'result_hash' },
       ]);
+      expect(
+        database
+          .prepare(
+            `SELECT name FROM pragma_table_info('autopilot_admissions')
+             WHERE name = 'authority_policy_json';`,
+          )
+          .get(),
+      ).toEqual({ name: 'authority_policy_json' });
     } finally {
       database.close();
     }

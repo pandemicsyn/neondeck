@@ -684,6 +684,7 @@ export const autopilotAdmissions = sqliteTable(
     policyConfigHistoryId: integer('policy_config_history_id')
       .default(0)
       .notNull(),
+    authorityPolicyJson: text('authority_policy_json'),
     mutationEpoch: integer('mutation_epoch').default(0).notNull(),
     inputJson: text('input_json').default('{}').notNull(),
     state: text('state').notNull(),
@@ -921,6 +922,7 @@ export const autopilotOwnerFixSubmissions = sqliteTable(
     disposition: text('disposition').notNull(),
     status: text('status').notNull(),
     requestHash: text('request_hash').notNull(),
+    resultHash: text('result_hash'),
     mutationEpoch: integer('mutation_epoch').default(0).notNull(),
     preparedDiffId: text('prepared_diff_id'),
     resultJson: text('result_json').default('{}').notNull(),

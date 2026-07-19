@@ -222,7 +222,7 @@ function prepareOwnerGeneration(
           database,
           context.owner.id,
           context.owner.generation,
-          drift.configHistoryId,
+          drift.rotationConfigHistoryId,
         )
       ) {
         drift = {
@@ -322,7 +322,7 @@ function prepareOwnerGeneration(
             worktreeId: owner.worktreeId,
             headSha: owner.currentHeadSha,
             groundingReasons: drift.reasons,
-            rotationConfigHistoryId: drift.configHistoryId,
+            rotationConfigHistoryId: drift.rotationConfigHistoryId,
             rotationMemoryEventAt: drift.memoryEventAt,
             rotationMemoryEventId: drift.memoryEventId,
           },
@@ -360,9 +360,9 @@ function previousRotationAlreadyCovers(
   database: ReturnType<typeof openDb>,
   ownerId: string,
   generation: number,
-  configHistoryId: number,
+  rotationConfigHistoryId: number | null,
 ) {
-  if (generation <= 1) return false;
+  if (generation <= 1 || rotationConfigHistoryId === null) return false;
   const row = database
     .prepare(
       `SELECT handoff_json FROM autopilot_owner_generations
@@ -372,7 +372,10 @@ function previousRotationAlreadyCovers(
   if (typeof row?.handoff_json !== 'string') return false;
   try {
     const handoff = JSON.parse(row.handoff_json) as Record<string, unknown>;
-    return handoff.rotationConfigHistoryId === configHistoryId;
+    return (
+      typeof handoff.rotationConfigHistoryId === 'number' &&
+      handoff.rotationConfigHistoryId >= rotationConfigHistoryId
+    );
   } catch {
     return false;
   }

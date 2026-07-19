@@ -19,6 +19,7 @@ export type OwnerDriftDecision = {
   kind: 'initial' | 'none' | 'reground' | 'rotate' | 'block';
   reasons: string[];
   configHistoryId: number;
+  rotationConfigHistoryId: number | null;
   memoryEventAt: string | null;
   memoryEventId: string | null;
   memoryEventSequence: number;
@@ -51,6 +52,7 @@ export function classifyAutopilotOwnerDrift(
   }
 
   const reasons: string[] = [];
+  let rotationConfigHistoryId: number | null = null;
   let kind: OwnerDriftDecision['kind'] = 'none';
   for (const change of changes.configChanges) {
     const classification = classifyAutopilotOwnerConfigChange(
@@ -61,6 +63,12 @@ export function classifyAutopilotOwnerDrift(
     if (classification !== 'none') {
       reasons.push(
         `${classification === 'block' && !isKnownBlockingChange(change, input.owner.repoId) ? 'unknown:' : ''}${change.action}:${change.target ?? 'general'}`,
+      );
+    }
+    if (classification === 'rotate') {
+      rotationConfigHistoryId = Math.max(
+        rotationConfigHistoryId ?? 0,
+        change.id,
       );
     }
   }
@@ -78,7 +86,13 @@ export function classifyAutopilotOwnerDrift(
       reasons.push(`selected-memory:${selectedMemoryIds.join(',') || 'none'}`);
     }
   }
-  return decision(kind, reasons, changes, selectedMemoryIds);
+  return decision(
+    kind,
+    reasons,
+    changes,
+    selectedMemoryIds,
+    rotationConfigHistoryId,
+  );
 }
 
 export function classifyAutopilotOwnerConfigChange(
@@ -132,11 +146,13 @@ function decision(
   reasons: string[],
   changes: ReturnType<typeof readStaleReasonChanges>,
   memoryIds: string[],
+  rotationConfigHistoryId: number | null = null,
 ): OwnerDriftDecision {
   return {
     kind,
     reasons,
     configHistoryId: changes.configHighWaterId,
+    rotationConfigHistoryId,
     memoryEventAt: changes.memoryHighWaterAt,
     memoryEventId: changes.memoryHighWaterId,
     memoryEventSequence: changes.memoryHighWaterSequence,

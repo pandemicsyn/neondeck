@@ -8,6 +8,7 @@ CREATE TABLE `autopilot_owner_fix_submissions` (
 	`disposition` text NOT NULL,
 	`status` text NOT NULL,
 	`request_hash` text NOT NULL,
+	`result_hash` text,
 	`mutation_epoch` integer DEFAULT 0 NOT NULL,
 	`prepared_diff_id` text,
 	`result_json` text DEFAULT '{}' NOT NULL,
@@ -77,6 +78,7 @@ CREATE TABLE `autopilot_owner_grounding_snapshots` (
 --> statement-breakpoint
 ALTER TABLE `autopilot_admissions` ADD `authority_mode` text;--> statement-breakpoint
 ALTER TABLE `autopilot_admissions` ADD `policy_config_history_id` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `autopilot_admissions` ADD `authority_policy_json` text;--> statement-breakpoint
 ALTER TABLE `autopilot_admissions` ADD `mutation_epoch` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
 ALTER TABLE `autopilot_pr_owners` ADD `grounding_memory_event_sequence` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
 ALTER TABLE `memory_events` ADD `sequence` integer;--> statement-breakpoint

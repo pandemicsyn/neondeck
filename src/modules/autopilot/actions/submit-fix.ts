@@ -506,6 +506,7 @@ async function assertSubmissionMutationFence(
     id: String(scope.watch_id),
     prNumber: Number(worktree.prNumber),
   });
+  const currentGuardrails = repoGuardrails(repo, appConfig);
   const authorityDatabase = openDb(paths.neondeckDatabase);
   let authority;
   try {
@@ -517,6 +518,7 @@ async function assertSubmissionMutationFence(
         prNumber: Number(worktree.prNumber),
         appConfig,
         currentConfiguredMode: policy.mode,
+        currentGuardrails,
       }),
     );
   } finally {
@@ -526,10 +528,11 @@ async function assertSubmissionMutationFence(
     admissionMode: admission.mode,
     authorityMode: authority.authorityMode,
     configuredMode: policy.mode,
-    guardrails: repoGuardrails(repo, appConfig),
+    guardrails: authority.guardrails,
     executionPolicy: appConfig.execution ?? null,
     worktreePolicy: appConfig.worktrees ?? null,
     learningPolicy: appConfig.learning ?? null,
+    authorityTransitionHash: authority.transitionHash,
   });
   if (input.disposition === 'fix' && !effective.fixAllowed) {
     throw new Error(
@@ -543,7 +546,7 @@ async function assertSubmissionMutationFence(
     input.disposition === 'fix' &&
     (phase === 'before-mutation' || phase === 'before-write')
   ) {
-    const guardrails = repoGuardrails(repo, appConfig);
+    const guardrails = authority.guardrails;
     const effect =
       plannedEffect ??
       (dependencies.runReviewFix || dependencies.runCiFix
@@ -729,14 +732,32 @@ async function validateSubmissionContext(
     prNumber: owner.prNumber,
   });
   const guardrails = repoGuardrails(repo, appConfig);
+  const authorityDatabase = openDb(paths.neondeckDatabase);
+  let authority;
+  try {
+    authority = withImmediateTransaction(authorityDatabase, () =>
+      constrainAutopilotAdmissionAuthority(authorityDatabase, {
+        admission,
+        repoId: repo.id,
+        watchId: owner.watchId,
+        prNumber: owner.prNumber,
+        appConfig,
+        currentConfiguredMode: policy.mode,
+        currentGuardrails: guardrails,
+      }),
+    );
+  } finally {
+    authorityDatabase.close();
+  }
   const currentPolicy = autopilotOwnerPolicySnapshot({
     admissionMode: admission.mode,
-    authorityMode: admission.authorityMode,
+    authorityMode: authority.authorityMode,
     configuredMode: policy.mode,
-    guardrails,
+    guardrails: authority.guardrails,
     executionPolicy: appConfig.execution ?? null,
     worktreePolicy: appConfig.worktrees ?? null,
     learningPolicy: appConfig.learning ?? null,
+    authorityTransitionHash: authority.transitionHash,
   });
   const currentPolicyHash = stableJsonHash(currentPolicy);
   if (
@@ -753,7 +774,7 @@ async function validateSubmissionContext(
   }
   const plannedPaths = submissionPaths(input);
   const denied = plannedPaths.find((path) =>
-    pathDeniedByAutopilotPolicy(path, guardrails),
+    pathDeniedByAutopilotPolicy(path, authority.guardrails),
   );
   if (denied)
     return { failure: `Fix path ${denied} is denied by repository policy.` };
@@ -781,11 +802,11 @@ async function validateSubmissionContext(
           { worktreeId: input.worktreeId },
           paths,
         );
-  if (plannedPaths.length > guardrails.maxFilesChanged)
+  if (plannedPaths.length > authority.guardrails.maxFilesChanged)
     return { failure: 'Fix exceeds the configured maximum file count.' };
   if (effect.bytes > 256 * 1024)
     return { failure: 'Fix actual affected content exceeds the byte limit.' };
-  if (effect.lines > guardrails.maxLinesChanged)
+  if (effect.lines > authority.guardrails.maxLinesChanged)
     return { failure: 'Fix exceeds the configured maximum line count.' };
   return { owner, admission, attempt, policy: currentPolicy };
 }
@@ -1033,12 +1054,14 @@ function finishSubmission(
     database
       .prepare(
         `UPDATE autopilot_owner_fix_submissions
-         SET status = ?, prepared_diff_id = ?, result_json = ?, error = ?, finished_at = ?
+         SET status = ?, prepared_diff_id = ?, result_hash = ?, result_json = ?,
+             error = ?, finished_at = ?
          WHERE attempt_id = ? AND status = 'applying';`,
       )
       .run(
         cancelled ? 'cancelled' : status,
         cancelled ? null : preparedDiffId,
+        stableJsonHash(result),
         JSON.stringify({ request, result: boundedResultRecord(result) }),
         cancelled
           ? 'Owner mutation lease was cancelled.'

@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import * as v from 'valibot';
 import { readAgentModelSelectionSync } from '../../runtime';
 import {
+  parseAppConfig,
+  readRuntimeJsonSync,
   runtimePaths,
   type RuntimePaths,
   type ThinkingLevel,
@@ -17,6 +19,7 @@ const ownerSkillPath = fileURLToPath(
 const capabilitySchema = v.strictObject({
   model: v.pipe(v.string(), v.minLength(1)),
   provider: v.pipe(v.string(), v.minLength(1)),
+  providerConfigHash: v.pipe(v.string(), v.minLength(1)),
   thinkingLevel: v.picklist([
     'off',
     'minimal',
@@ -38,9 +41,17 @@ export function readAutopilotOwnerCapabilitySnapshot(
 ): AutopilotOwnerCapabilitySnapshot {
   const models = readAgentModelSelectionSync(paths);
   const model = models.displayAssistant;
+  const provider = model.includes('/')
+    ? model.slice(0, model.indexOf('/'))
+    : model;
+  const config = readRuntimeJsonSync(paths.config, parseAppConfig);
+  const providers = config.providers ?? {};
   return {
     model,
-    provider: model.includes('/') ? model.slice(0, model.indexOf('/')) : model,
+    provider,
+    providerConfigHash: stableJsonHash(
+      providers[provider as keyof typeof providers] ?? null,
+    ),
     thinkingLevel: models.displayAssistantThinkingLevel,
     skillHash: sha256(readFileSync(ownerSkillPath, 'utf8')),
     soulHash: sha256(readFileSync(paths.soul, 'utf8')),

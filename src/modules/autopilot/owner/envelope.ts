@@ -122,6 +122,7 @@ export async function buildAutopilotOwnerEnvelope(
       prNumber: input.owner.prNumber,
       appConfig,
       currentConfiguredMode: policy.mode,
+      currentGuardrails: guardrails,
     });
   } finally {
     authorityDatabase.close();
@@ -130,10 +131,11 @@ export async function buildAutopilotOwnerEnvelope(
     admissionMode: input.admission.mode,
     authorityMode: authority.authorityMode,
     configuredMode: policy.mode,
-    guardrails,
+    guardrails: authority.guardrails,
     executionPolicy: appConfig.execution ?? null,
     worktreePolicy: appConfig.worktrees ?? null,
     learningPolicy: appConfig.learning ?? null,
+    authorityTransitionHash: authority.transitionHash,
   });
   const [facts, readiness, workspaceState] = await Promise.all([
     (input.factsLoader ?? loadOwnerFacts)({

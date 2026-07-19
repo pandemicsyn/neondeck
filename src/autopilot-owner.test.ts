@@ -527,6 +527,72 @@ describe('Package 4 continuing PR owner', () => {
     });
   });
 
+  it('does not repeat an audited rotation after later benign config history', async () => {
+    await withFixture(async (paths) => {
+      seedPreparedTurn(
+        paths,
+        'admission:rotation-base',
+        'event:rotation-base',
+        1,
+      );
+      const first = await dispatchTurn(
+        paths,
+        'admission:rotation-base',
+        'dispatch:rotation-base',
+      );
+      await submitAutopilotFix(
+        submissionFromEnvelope(first.envelope, {
+          disposition: 'no-op',
+          summary: 'Establish the pre-rotation baseline.',
+        }),
+        paths,
+        syntheticNoOpDependencies(first.envelope),
+      );
+      await recordAutopilotOwnerTerminalObservation(
+        terminal(first.envelope, 'dispatch:rotation-base'),
+        paths,
+      );
+
+      insertConfig(paths, 'config_update_agent_models', 'models');
+      seedPreparedTurn(
+        paths,
+        'admission:rotation-failed',
+        'event:rotation-failed',
+        2,
+      );
+      const failed = await coordinateAutopilotAdmission(
+        {
+          ...coordinationInput('admission:rotation-failed', async () => {
+            throw new Error('fixture dispatch failure after rotation');
+          }),
+        },
+        paths,
+      );
+      expect(failed.dispatched?.status).toBe('dispatch-failed');
+      expect(
+        (await readAutopilotPrOwnerByWatch('watch:one', paths))?.generation,
+      ).toBe(2);
+
+      insertConfig(paths, 'config_update_execution_policy', 'execution');
+      seedPreparedTurn(
+        paths,
+        'admission:rotation-retry',
+        'event:rotation-retry',
+        3,
+      );
+      const retry = await dispatchTurn(
+        paths,
+        'admission:rotation-retry',
+        'dispatch:rotation-retry',
+      );
+      expect(retry.envelope.identity.generation).toBe(2);
+      expect(retry.envelope.grounding.reasons).toContain(
+        'pending-rotation-retry',
+      );
+      expect(readRows(paths, 'autopilot_owner_generations')).toHaveLength(2);
+    });
+  });
+
   it('rejects truncation, stale SHA, missing submission, model failure, and late results deterministically', async () => {
     await withFixture(async (paths) => {
       seedPreparedTurn(paths, 'admission:truncated', 'event:truncated', 1);
@@ -856,6 +922,70 @@ describe('Package 4 continuing PR owner', () => {
     );
   });
 
+  it('preserves tightened guardrails after a later relaxation', async () => {
+    await withFixture(
+      async (paths) => {
+        seedPreparedTurn(
+          paths,
+          'admission:monotonic-guardrails',
+          'event:monotonic-guardrails',
+          1,
+          'autofix-with-approval',
+        );
+        const database = new DatabaseSync(paths.neondeckDatabase);
+        try {
+          for (const [id, maxLinesChanged] of [
+            [1, 10],
+            [2, 300],
+          ] as const) {
+            database
+              .prepare(
+                `INSERT INTO config_history
+                   (id, action, file, target, after_json, changed_at)
+                 VALUES (?, 'config_update_repo_autopilot_policy', 'repos.json', 'repo', ?, ?);`,
+              )
+              .run(
+                id,
+                JSON.stringify({
+                  repos: [
+                    {
+                      id: 'repo',
+                      github: { owner: 'example', name: 'repo' },
+                      path: '/fixture/primary',
+                      defaultBranch: 'main',
+                      metadata: {
+                        autopilot: { mode: 'autofix-with-approval' },
+                        guardrails: { maxLinesChanged },
+                      },
+                    },
+                  ],
+                }),
+                `2026-07-19T18:01:0${id}.000Z`,
+              );
+          }
+        } finally {
+          database.close();
+        }
+
+        const turn = await dispatchTurn(
+          paths,
+          'admission:monotonic-guardrails',
+          'dispatch:monotonic-guardrails',
+        );
+        expect(turn.envelope.policy.guardrails.maxLinesChanged).toBe(10);
+        expect(
+          JSON.parse(
+            String(
+              readAdmission(paths, 'admission:monotonic-guardrails')
+                .authority_policy_json,
+            ),
+          ),
+        ).toMatchObject({ guardrails: { maxLinesChanged: 10 } });
+      },
+      { mode: 'autofix-with-approval' },
+    );
+  });
+
   it('revokes an in-flight owner mutation and waits for its process lease before stopping', async () => {
     await withFixture(async (paths) => {
       seedPreparedTurn(paths, 'admission:stop-fence', 'event:stop-fence', 1);
@@ -1039,6 +1169,11 @@ describe('Package 4 continuing PR owner', () => {
         readRows(paths, 'autopilot_owner_fix_submissions')[0]?.result_json,
       );
       expect(stored).not.toContain('remainingBlockers');
+      expect(
+        String(
+          readRows(paths, 'autopilot_owner_fix_submissions')[0]?.result_hash,
+        ),
+      ).toHaveLength(64);
     });
   });
 
@@ -1109,6 +1244,42 @@ describe('Package 4 continuing PR owner', () => {
         );
         await writeFile(paths.soul, '# Changed soul generation\n');
         const changed = readAutopilotOwnerCapabilitySnapshot(paths);
+        expect(() =>
+          ensureAutopilotOwnerInstanceInDatabase(
+            database,
+            'owner:one',
+            new Date().toISOString(),
+            changed,
+          ),
+        ).toThrow(/audited generation rotation/);
+      } finally {
+        database.close();
+      }
+    });
+  });
+
+  it('freezes selected provider configuration across durable recovery', async () => {
+    await withFixture(async (paths) => {
+      const first = readAutopilotOwnerCapabilitySnapshot(paths);
+      const database = new DatabaseSync(paths.neondeckDatabase);
+      try {
+        ensureAutopilotOwnerInstanceInDatabase(
+          database,
+          'owner:one',
+          new Date().toISOString(),
+          first,
+        );
+        const config = JSON.parse(String(await readFile(paths.config)));
+        config.providers = {
+          ...(config.providers ?? {}),
+          [first.provider]: {
+            enabled: true,
+            apiKeyEnv: 'NEONDECK_OWNER_PROVIDER_KEY',
+          },
+        };
+        await writeFile(paths.config, JSON.stringify(config));
+        const changed = readAutopilotOwnerCapabilitySnapshot(paths);
+        expect(changed.providerConfigHash).not.toBe(first.providerConfigHash);
         expect(() =>
           ensureAutopilotOwnerInstanceInDatabase(
             database,
