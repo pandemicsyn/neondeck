@@ -1055,7 +1055,7 @@ describe('Package 4 continuing PR owner', () => {
     });
   });
 
-  it('permanently clears diagnostic authority after an execution-policy transition', async () => {
+  it('folds downgrades after a rotation row and never restores mode or diagnostics', async () => {
     await withFixture(async (paths) => {
       const config = JSON.parse(String(await readFile(paths.config)));
       config.guardrails.requiredChecks = ['npm run check'];
@@ -1074,17 +1074,60 @@ describe('Package 4 continuing PR owner', () => {
              WHERE id = 'admission:execution-downgrade';`,
           )
           .run(JSON.stringify(fixtureAdmissionAuthority(['npm run check'])));
-        for (const [id, after] of [
-          [1, { execution: { preapprovedCommands: [] } }],
-          [2, { execution: { preapprovedCommands: ['npm run check'] } }],
+        const repoPolicy = (mode: string) => ({
+          repos: [
+            {
+              id: 'repo',
+              github: { owner: 'example', name: 'repo' },
+              path: '/fixture/primary',
+              defaultBranch: 'main',
+              metadata: {
+                autopilot: { mode },
+                guardrails: { requiredChecks: ['npm run check'] },
+              },
+            },
+          ],
+        });
+        for (const [id, action, target, after] of [
+          [1, 'config_update_agent_models', 'models', {}],
+          [
+            2,
+            'config_update_execution_policy',
+            'execution',
+            { execution: { preapprovedCommands: [] } },
+          ],
+          [
+            3,
+            'config_update_repo_autopilot_policy',
+            'repo',
+            repoPolicy('notify-only'),
+          ],
+          [
+            4,
+            'config_update_execution_policy',
+            'execution',
+            { execution: { preapprovedCommands: ['npm run check'] } },
+          ],
+          [
+            5,
+            'config_update_repo_autopilot_policy',
+            'repo',
+            repoPolicy('autofix-with-approval'),
+          ],
         ] as const) {
           database
             .prepare(
               `INSERT INTO config_history
                  (id, action, file, target, after_json, changed_at)
-               VALUES (?, 'config_update_execution_policy', 'config.json', 'execution', ?, ?);`,
+               VALUES (?, ?, 'config.json', ?, ?, ?);`,
             )
-            .run(id, JSON.stringify(after), `2026-07-19T18:05:0${id}.000Z`);
+            .run(
+              id,
+              action,
+              target,
+              JSON.stringify(after),
+              `2026-07-19T18:05:0${id}.000Z`,
+            );
         }
       } finally {
         database.close();
@@ -1095,6 +1138,11 @@ describe('Package 4 continuing PR owner', () => {
         'admission:execution-downgrade',
         'dispatch:execution-downgrade',
       );
+      expect(turn.envelope.policy).toMatchObject({
+        authorityMode: 'notify-only',
+        effectiveMode: 'notify-only',
+        fixAllowed: false,
+      });
       expect(turn.envelope.policy.diagnosticCommands).toEqual([]);
       expect(
         JSON.parse(
@@ -2369,6 +2417,8 @@ function fixtureAdmissionAuthority(requiredChecks: string[] = []) {
       generatedFileSizeThresholdBytes: 256 * 1024,
     },
     diagnosticCommands: requiredChecks,
+    authorityScanConfigHistoryId: 0,
+    blockingConfigHistoryId: null,
     transitionHash: 'fixture-admission-authority',
   };
 }

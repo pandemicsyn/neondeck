@@ -50,6 +50,8 @@ const authorityPolicySchema = v.strictObject({
     generatedFileSizeThresholdBytes: v.number(),
   }),
   diagnosticCommands: v.array(v.string()),
+  authorityScanConfigHistoryId: v.number(),
+  blockingConfigHistoryId: v.nullable(v.number()),
   transitionHash: v.string(),
 });
 
@@ -65,6 +67,8 @@ export function initialAutopilotAdmissionAuthority(
   return {
     guardrails,
     diagnosticCommands: normalizeCommands(guardrails.requiredChecks),
+    authorityScanConfigHistoryId: input.configHistoryId,
+    blockingConfigHistoryId: null,
     transitionHash: stableJsonHash({
       kind: 'autopilot-admission-authority',
       configHistoryId: input.configHistoryId,
@@ -131,13 +135,6 @@ export function constrainAutopilotAdmissionAuthority(
     currentGuardrails: RepoGuardrails;
   },
 ) {
-  const rows = database
-    .prepare(
-      `SELECT id, action, target, after_json FROM config_history
-       WHERE id > ? ORDER BY id ASC;`,
-    )
-    .all(input.admission.policyConfigHistoryId)
-    .map((row) => v.parse(configHistoryAuthorityRowSchema, row));
   let authorityMode = input.admission.authorityMode;
   const stored = readStoredAuthorityPolicy(database, input.admission.id);
   if (!stored) {
@@ -145,14 +142,29 @@ export function constrainAutopilotAdmissionAuthority(
       'Admission has no trustworthy admission-time authority snapshot.',
     );
   }
+  const rows = database
+    .prepare(
+      `SELECT id, action, target, after_json FROM config_history
+       WHERE id > ? ORDER BY id ASC;`,
+    )
+    .all(stored.authorityScanConfigHistoryId)
+    .map((row) => v.parse(configHistoryAuthorityRowSchema, row));
   let authorityGuardrails = stored.guardrails;
   let diagnosticCommands = stored.diagnosticCommands;
+  let authorityScanConfigHistoryId = stored.authorityScanConfigHistoryId;
+  let blockingConfigHistoryId = stored.blockingConfigHistoryId;
   let transitionHash = stored.transitionHash;
   let historyId = input.admission.policyConfigHistoryId;
   for (const row of rows) {
+    authorityScanConfigHistoryId = row.id;
     const drift = classifyAutopilotOwnerConfigChange(row, input.repoId);
-    if (drift === 'block' || drift === 'rotate') break;
-    historyId = row.id;
+    if (
+      blockingConfigHistoryId === null &&
+      (drift === 'block' || drift === 'rotate')
+    ) {
+      blockingConfigHistoryId = row.id;
+    }
+    if (blockingConfigHistoryId === null) historyId = row.id;
     if (row.action === 'config_update_execution_policy') {
       diagnosticCommands = [];
     }
@@ -231,6 +243,8 @@ export function constrainAutopilotAdmissionAuthority(
       JSON.stringify({
         guardrails: authorityGuardrails,
         diagnosticCommands,
+        authorityScanConfigHistoryId,
+        blockingConfigHistoryId,
         transitionHash,
       }),
       input.admission.id,
