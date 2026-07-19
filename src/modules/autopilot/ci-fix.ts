@@ -305,13 +305,15 @@ export async function fixPrCiFailure(
     if (!Array.isArray(checkFactsResult)) return checkFactsResult;
     const checkFacts = checkFactsResult;
 
-    const likelyCommands = identifyLikelyCommands(
-      checkFacts,
-      repo,
-      repoGuardrails(repo, appConfig).requiredChecks,
-      input.checks,
-      input.diagnostics,
-    );
+    const likelyCommands = dependencies.ownerDiagnosticCommands
+      ? [...dependencies.ownerDiagnosticCommands]
+      : identifyLikelyCommands(
+          checkFacts,
+          repo,
+          repoGuardrails(repo, appConfig).requiredChecks,
+          input.checks,
+          input.diagnostics,
+        );
     assertWorktreeMutationAllowed(
       {
         repoId: repo.id,
@@ -343,7 +345,6 @@ export async function fixPrCiFailure(
           },
           paths,
         );
-        await dependencies.ownerMutationFence?.('before-execution');
       },
     );
     const blocked = diagnostics.some((item) => item.requires.length > 0);

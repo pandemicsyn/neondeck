@@ -128,6 +128,10 @@ export type AutopilotDependencies = {
     effect?: AutopilotMutationEffect,
   ) => void | Promise<void>;
   ownerCommitAllowed?: () => boolean | Promise<boolean>;
+  ownerDiagnosticCommands?: string[];
+  ownerDiagnosticCommandAllowed?: (
+    command: string,
+  ) => boolean | Promise<boolean>;
 };
 
 export const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));

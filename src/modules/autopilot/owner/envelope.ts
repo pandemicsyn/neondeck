@@ -135,6 +135,7 @@ export async function buildAutopilotOwnerEnvelope(
     executionPolicy: appConfig.execution ?? null,
     worktreePolicy: appConfig.worktrees ?? null,
     learningPolicy: appConfig.learning ?? null,
+    diagnosticCommands: authority.diagnosticCommands,
     authorityTransitionHash: authority.transitionHash,
   });
   const [facts, readiness, workspaceState] = await Promise.all([

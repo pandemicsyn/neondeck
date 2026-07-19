@@ -33,7 +33,10 @@ import {
 } from '../coordination/schemas';
 import { fixPrReviewFeedback } from '../review-feedback';
 import { autopilotOutputSchema, reviewFixReplacementSchema } from '../schemas';
-import { stableJsonHash } from '../owner/grounding';
+import {
+  classifyAutopilotOwnerConfigChange,
+  stableJsonHash,
+} from '../owner/grounding';
 import {
   autopilotOwnerPolicySnapshot,
   constrainAutopilotAdmissionAuthority,
@@ -105,6 +108,11 @@ const mutationFenceRowSchema = v.looseObject({
   repo_binding_hash: v.string(),
   workspace_binding_hash: v.string(),
   policy_hash: v.string(),
+  grounding_config_history_id: v.number(),
+});
+const mutationFenceConfigRowSchema = v.looseObject({
+  action: v.string(),
+  target: v.nullable(v.string()),
 });
 type FixResult = Awaited<ReturnType<typeof fixPrReviewFeedback>>;
 type SubmitDependencies = {
@@ -278,6 +286,15 @@ export async function submitAutopilotFix(
     );
     return evaluated.denied.length === 0 && evaluated.expansions.length === 0;
   };
+  const ownerDiagnosticCommandAllowed = async (command: string) => {
+    const scope = await assertSubmissionMutationFence(
+      input,
+      paths,
+      dependencies,
+      'before-execution',
+    );
+    return scope.diagnosticCommands.includes(command.trim());
+  };
   try {
     result =
       input.fixerKind === 'review'
@@ -316,7 +333,12 @@ export async function submitAutopilotFix(
               expectedWorktreeHeadSha: input.expectedWorktreeHeadSha,
             },
             paths,
-            { ownerMutationFence, ownerCommitAllowed },
+            {
+              ownerMutationFence,
+              ownerCommitAllowed,
+              ownerDiagnosticCommands: context.policy.diagnosticCommands,
+              ownerDiagnosticCommandAllowed,
+            },
           );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -398,7 +420,8 @@ async function assertSubmissionMutationFence(
                   grounding.checkout_branch, grounding.checkout_detached,
                   grounding.diff_base_sha, grounding.diff_revision_key,
                   grounding.repo_binding_hash, grounding.workspace_binding_hash,
-                  grounding.policy_hash
+                  grounding.policy_hash,
+                  grounding.config_history_id AS grounding_config_history_id
            FROM autopilot_owner_fix_submissions AS submissions
            INNER JOIN autopilot_admissions AS admissions
              ON admissions.id = submissions.admission_id
@@ -568,6 +591,7 @@ async function assertSubmissionMutationFence(
     executionPolicy: appConfig.execution ?? null,
     worktreePolicy: appConfig.worktrees ?? null,
     learningPolicy: appConfig.learning ?? null,
+    diagnosticCommands: authority.diagnosticCommands,
     authorityTransitionHash: authority.transitionHash,
   });
   if (input.disposition === 'fix' && !effective.fixAllowed) {
@@ -660,6 +684,11 @@ async function assertSubmissionMutationFence(
       Number(row.submission_epoch) !== Number(row.mutation_epoch)
     )
       throw new Error('Owner mutation lease was revoked during validation.');
+    assertNoBlockingConfigDrift(
+      confirm,
+      Number(scope.grounding_config_history_id),
+      repo.id,
+    );
   } finally {
     confirm.close();
   }
@@ -668,6 +697,7 @@ async function assertSubmissionMutationFence(
     worktreeId: worktree.id,
     diffBaseSha: scope.diff_base_sha,
     guardrails: authority.guardrails,
+    diagnosticCommands: authority.diagnosticCommands,
   };
 }
 
@@ -799,6 +829,7 @@ async function validateSubmissionContext(
     executionPolicy: appConfig.execution ?? null,
     worktreePolicy: appConfig.worktrees ?? null,
     learningPolicy: appConfig.learning ?? null,
+    diagnosticCommands: authority.diagnosticCommands,
     authorityTransitionHash: authority.transitionHash,
   });
   const currentPolicyHash = stableJsonHash(currentPolicy);
@@ -815,9 +846,7 @@ async function validateSubmissionContext(
     return { failure: 'Current policy no longer permits an owner fix.' };
   }
   if (input.fixerKind === 'ci') {
-    const allowedCommands = new Set(
-      authority.guardrails.requiredChecks.map((command) => command.trim()),
-    );
+    const allowedCommands = new Set(currentPolicy.diagnosticCommands);
     const rejectedCommand = [
       ...(input.diagnostics ?? []),
       ...(input.checks ?? []),
@@ -868,6 +897,29 @@ async function validateSubmissionContext(
   if (effect.lines > authority.guardrails.maxLinesChanged)
     return { failure: 'Fix exceeds the configured maximum line count.' };
   return { owner, admission, attempt, policy: currentPolicy };
+}
+
+function assertNoBlockingConfigDrift(
+  database: ReturnType<typeof openDb>,
+  configHistoryId: number,
+  repoId: string,
+) {
+  const rows = database
+    .prepare(
+      `SELECT action, target FROM config_history
+       WHERE id > ? ORDER BY id ASC;`,
+    )
+    .all(configHistoryId)
+    .map((row) => v.parse(mutationFenceConfigRowSchema, row));
+  const blocking = rows.find((row) => {
+    const drift = classifyAutopilotOwnerConfigChange(row, repoId);
+    return drift === 'block' || drift === 'rotate';
+  });
+  if (blocking) {
+    throw new Error(
+      `Owner grounding changed after dispatch: ${blocking.action}:${blocking.target ?? 'general'}.`,
+    );
+  }
 }
 
 function bindSubmissionRevision(

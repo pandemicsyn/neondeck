@@ -9,7 +9,10 @@ import {
 } from '../../../runtime-home';
 import type { AutopilotAdmission } from '../coordination/schemas';
 import * as v from 'valibot';
-import { stableJsonHash } from './grounding';
+import {
+  classifyAutopilotOwnerConfigChange,
+  stableJsonHash,
+} from './grounding';
 
 const modeAuthority: Record<AutopilotMode, number> = {
   'notify-only': 0,
@@ -46,6 +49,7 @@ const authorityPolicySchema = v.strictObject({
     highRiskClasses: v.array(v.string()),
     generatedFileSizeThresholdBytes: v.number(),
   }),
+  diagnosticCommands: v.array(v.string()),
   transitionHash: v.string(),
 });
 
@@ -60,6 +64,7 @@ export function initialAutopilotAdmissionAuthority(
 ) {
   return {
     guardrails,
+    diagnosticCommands: normalizeCommands(guardrails.requiredChecks),
     transitionHash: stableJsonHash({
       kind: 'autopilot-admission-authority',
       configHistoryId: input.configHistoryId,
@@ -88,6 +93,7 @@ export function autopilotOwnerPolicySnapshot(input: {
   executionPolicy: unknown;
   worktreePolicy: unknown;
   learningPolicy: unknown;
+  diagnosticCommands: string[];
   authorityTransitionHash?: string;
 }) {
   const effectiveMode = effectiveAutopilotOwnerMode(
@@ -103,6 +109,7 @@ export function autopilotOwnerPolicySnapshot(input: {
     executionPolicy: input.executionPolicy,
     worktreePolicy: input.worktreePolicy,
     learningPolicy: input.learningPolicy,
+    diagnosticCommands: input.diagnosticCommands,
     authorityTransitionHash: input.authorityTransitionHash ?? null,
     fixAllowed: effectiveMode !== 'notify-only',
     localCommit:
@@ -134,8 +141,15 @@ export function constrainAutopilotAdmissionAuthority(
   let authorityMode = input.admission.authorityMode;
   const stored = readStoredAuthorityPolicy(database, input.admission.id);
   let authorityGuardrails = stored?.guardrails ?? input.currentGuardrails;
+  let diagnosticCommands =
+    stored?.diagnosticCommands ??
+    normalizeCommands(input.currentGuardrails.requiredChecks);
   let transitionHash = stored?.transitionHash ?? stableJsonHash('initial');
+  let historyId = input.admission.policyConfigHistoryId;
   for (const row of rows) {
+    const drift = classifyAutopilotOwnerConfigChange(row, input.repoId);
+    if (drift === 'block' || drift === 'rotate') break;
+    historyId = row.id;
     if (
       row.action !== 'config_update_repo_autopilot_policy' ||
       row.target !== input.repoId
@@ -153,6 +167,10 @@ export function constrainAutopilotAdmissionAuthority(
           authorityGuardrails = intersectGuardrails(
             authorityGuardrails,
             historicalGuardrails,
+          );
+          diagnosticCommands = intersectCommands(
+            diagnosticCommands,
+            historicalGuardrails.requiredChecks,
           );
         }
       }
@@ -175,6 +193,10 @@ export function constrainAutopilotAdmissionAuthority(
         authorityGuardrails,
         historicalGuardrails,
       );
+      diagnosticCommands = intersectCommands(
+        diagnosticCommands,
+        historicalGuardrails.requiredChecks,
+      );
     }
   }
   authorityMode = minimumAutopilotMode(
@@ -185,7 +207,10 @@ export function constrainAutopilotAdmissionAuthority(
     authorityGuardrails,
     input.currentGuardrails,
   );
-  const historyId = rows.at(-1)?.id ?? input.admission.policyConfigHistoryId;
+  diagnosticCommands = intersectCommands(
+    diagnosticCommands,
+    input.currentGuardrails.requiredChecks,
+  );
   database
     .prepare(
       `UPDATE autopilot_admissions
@@ -197,7 +222,11 @@ export function constrainAutopilotAdmissionAuthority(
     .run(
       authorityMode,
       historyId,
-      JSON.stringify({ guardrails: authorityGuardrails, transitionHash }),
+      JSON.stringify({
+        guardrails: authorityGuardrails,
+        diagnosticCommands,
+        transitionHash,
+      }),
       input.admission.id,
       input.admission.authorityMode,
       input.admission.policyConfigHistoryId,
@@ -217,6 +246,7 @@ export function constrainAutopilotAdmissionAuthority(
     authorityMode: durable.authority_mode,
     policyConfigHistoryId: durable.policy_config_history_id,
     guardrails: durablePolicy.guardrails,
+    diagnosticCommands: durablePolicy.diagnosticCommands,
     transitionHash: durablePolicy.transitionHash,
   };
 }
@@ -306,6 +336,17 @@ function intersectGuardrails(
       right.generatedFileSizeThresholdBytes,
     ),
   };
+}
+
+function normalizeCommands(commands: string[]) {
+  return [
+    ...new Set(commands.map((command) => command.trim()).filter(Boolean)),
+  ].sort();
+}
+
+function intersectCommands(left: string[], right: string[]) {
+  const allowed = new Set(normalizeCommands(right));
+  return normalizeCommands(left).filter((command) => allowed.has(command));
 }
 
 function configuredModeFromHistory(

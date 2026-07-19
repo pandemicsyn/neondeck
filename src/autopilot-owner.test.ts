@@ -992,6 +992,7 @@ describe('Package 4 continuing PR owner', () => {
     await withFixture(async (paths) => {
       const config = JSON.parse(String(await readFile(paths.config)));
       config.guardrails.maxLinesChanged = 17;
+      config.guardrails.requiredChecks = ['npm run check'];
       await writeFile(paths.config, JSON.stringify(config));
 
       const admitted = await admitAutopilotEvent(
@@ -1010,6 +1011,7 @@ describe('Package 4 continuing PR owner', () => {
       const row = readAdmission(paths, admitted.admission.id);
       expect(JSON.parse(String(row.authority_policy_json))).toMatchObject({
         guardrails: { maxLinesChanged: 17 },
+        diagnosticCommands: ['npm run check'],
         transitionHash: expect.any(String),
       });
     });
@@ -1474,6 +1476,52 @@ describe('Package 4 continuing PR owner', () => {
     });
   });
 
+  it('rejects post-envelope fundamental drift without advancing its authority cursor', async () => {
+    await withFixture(async (paths) => {
+      seedPreparedTurn(
+        paths,
+        'admission:late-config-drift',
+        'event:late-config-drift',
+        1,
+      );
+      const turn = await dispatchTurn(
+        paths,
+        'admission:late-config-drift',
+        'dispatch:late-config-drift',
+      );
+      const database = new DatabaseSync(paths.neondeckDatabase);
+      try {
+        database
+          .prepare(
+            `INSERT INTO config_history
+               (id, action, file, target, after_json, changed_at)
+             VALUES (1, 'config_future_unknown', 'config.json', 'mystery', '{}', ?);`,
+          )
+          .run('2026-07-19T18:04:01.000Z');
+      } finally {
+        database.close();
+      }
+
+      const result = await submitAutopilotFix(
+        submissionFromEnvelope(turn.envelope, {
+          disposition: 'no-op',
+          summary: 'Reject late fundamental drift.',
+        }),
+        paths,
+        syntheticNoOpDependencies(turn.envelope),
+      );
+
+      expect(result).toMatchObject({
+        ok: false,
+        message: expect.stringContaining('Owner grounding changed'),
+      });
+      expect(
+        readAdmission(paths, 'admission:late-config-drift')
+          .policy_config_history_id,
+      ).toBe(0);
+    });
+  });
+
   it('revalidates the owner fence inside the diagnostic execution slot', async () => {
     await withFixture(async (paths) => {
       const runExecution = vi.fn();
@@ -1492,12 +1540,14 @@ describe('Package 4 continuing PR owner', () => {
           '/fixture/worktree',
           paths,
           {} as never,
-          { runExecution: runExecution as never },
+          {
+            runExecution: runExecution as never,
+            ownerDiagnosticCommandAllowed: async () => {
+              throw new Error('Owner mutation lease was revoked.');
+            },
+          },
           async () => {
             fenceCalls += 1;
-            if (fenceCalls === 2) {
-              throw new Error('Owner mutation lease was revoked.');
-            }
           },
         ),
       ).rejects.toThrow('Owner mutation lease was revoked.');

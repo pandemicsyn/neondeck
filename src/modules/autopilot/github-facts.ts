@@ -250,6 +250,14 @@ export async function runAutopilotDiagnostics(
     await assertLease?.();
     const slot = await withAutopilotLocalExecutionSlot(limits, async () => {
       await assertLease?.();
+      if (
+        dependencies.ownerDiagnosticCommandAllowed &&
+        !(await dependencies.ownerDiagnosticCommandAllowed(command))
+      ) {
+        throw new Error(
+          'CI diagnostic command is outside the grounded repository authority.',
+        );
+      }
       return runExecution(
         {
           command,
