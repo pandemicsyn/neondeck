@@ -183,12 +183,6 @@ export const fileDiffInputSchema = v.object({
     v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(256 * 1024)),
   ),
 });
-export const approvePushInputSchema = v.object({
-  preparedDiffId: nonEmptyStringSchema,
-  reason: v.optional(v.string()),
-  approverSurface: v.optional(nonEmptyStringSchema),
-  confirm: v.optional(v.boolean()),
-});
 export const requestRevisionInputSchema = v.object({
   preparedDiffId: nonEmptyStringSchema,
   reason: v.optional(v.string()),
@@ -206,17 +200,6 @@ export const requestRevisionInputSchema = v.object({
 export const runRevisionInputSchema = v.object({
   preparedDiffId: nonEmptyStringSchema,
   reason: v.optional(v.string()),
-  approverSurface: v.optional(nonEmptyStringSchema),
-});
-export const abandonInputSchema = v.object({
-  preparedDiffId: nonEmptyStringSchema,
-  reason: v.optional(v.string()),
-  approverSurface: v.optional(nonEmptyStringSchema),
-  confirm: v.optional(v.boolean()),
-});
-export const verificationInputSchema = v.object({
-  preparedDiffId: nonEmptyStringSchema,
-  checkName: v.optional(nonEmptyStringSchema),
   approverSurface: v.optional(nonEmptyStringSchema),
 });
 export const worktreeRowSchema = v.object({

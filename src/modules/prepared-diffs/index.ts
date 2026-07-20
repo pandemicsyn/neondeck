@@ -27,8 +27,6 @@ export {
   readPreparedDiffChangedFiles,
   readPreparedDiffFileDiff,
   requestPreparedDiffRevision,
-  abandonPreparedDiff,
-  openPreparedDiffWorktree,
 } from './service';
 export {
   readPreparedDiffRecord,
@@ -37,4 +35,3 @@ export {
   mergeSummary,
   updatePreparedDiffState,
 } from './store';
-export { abandonInputSchema } from './schemas';
