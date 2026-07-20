@@ -1,5 +1,8 @@
 import type { JsonValue } from '@flue/runtime';
-import type { AutomationExecutionResult } from '../app-state';
+import type {
+  AutomationExecutionResult,
+  NotificationRecord,
+} from '../app-state';
 import { readRepoRegistrySnapshot } from '../repos';
 import {
   repoAutopilotPolicyForWatch,
@@ -44,7 +47,7 @@ type WatchJobEventResult = {
   message: string;
   refresh?: JsonValue;
   notifications?: AutomationExecutionResult['notifications'];
-  persistedNotification?: JsonValue;
+  persistedNotifications?: NotificationRecord[];
 };
 
 /**
@@ -197,8 +200,9 @@ async function refreshOneWatchEvent(
     deltas,
     message: refresh.message,
     refresh: refresh as unknown as JsonValue,
-    persistedNotification:
-      (persisted.notification as unknown as JsonValue | null) ?? undefined,
+    ...(persisted.notification
+      ? { persistedNotifications: [persisted.notification] }
+      : {}),
   };
 }
 

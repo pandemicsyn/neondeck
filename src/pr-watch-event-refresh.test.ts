@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { listNotifications } from './modules/app-state';
 import type { GitHubPullRequestEventState } from './modules/github';
 import {
@@ -14,6 +14,8 @@ import {
   reviewThreadCommentFingerprint,
 } from './modules/pr-events';
 import { refreshWatchJobEvents } from './modules/scheduler/pr-watch-events';
+import { runSchedulerTick } from './modules/scheduler';
+import { upsertScheduledTask } from './modules/scheduled-tasks';
 import { addPrWatch, listPrWatchRecords } from './modules/watches';
 import {
   ensureRuntimeHome,
@@ -75,10 +77,12 @@ describe('deterministic PR watch event refresh', () => {
         changedCategories: expect.arrayContaining([
           'requested_changes_reviews',
         ]),
-        persistedNotification: expect.objectContaining({
-          title: 'PR watch requested changes',
-          data: expect.objectContaining({ mode: 'prepare-only' }),
-        }),
+        persistedNotifications: [
+          expect.objectContaining({
+            title: 'PR watch requested changes',
+            data: expect.objectContaining({ mode: 'prepare-only' }),
+          }),
+        ],
       }),
     ]);
     expect(await listNotifications(paths)).toEqual([
@@ -252,6 +256,64 @@ describe('deterministic PR watch event refresh', () => {
       ),
     ).resolves.toMatchObject({ data: { watermarks: [] } });
     expect(await listNotifications(paths)).toEqual([]);
+  });
+
+  it('reports atomically persisted event notifications without persisting them twice', async () => {
+    const paths = await fixture();
+    await addPrWatch(
+      { ref: 'pandemicsyn/neondeck#164', processExisting: true },
+      paths,
+      async () => prDetail(),
+    );
+    await upsertScheduledTask(
+      {
+        id: 'watch:pandemicsyn/neondeck#164',
+        spec: {
+          kind: 'poll-pr-watch',
+          watchId: 'pandemicsyn/neondeck#164',
+        },
+        trigger: { kind: 'interval', everySeconds: 300 },
+        nextRunAt: '2026-07-19T00:00:00.000Z',
+      },
+      paths,
+    );
+    const addNotification = vi.fn();
+
+    const result = await runSchedulerTick(
+      paths,
+      new Date('2026-07-19T00:00:00.000Z'),
+      {
+        ...liveDependencies(eventState()),
+        addNotification,
+        refreshPrWatch: async () => ({
+          ok: true,
+          action: 'watch_pr_refresh',
+          changed: false,
+          outcome: 'silent',
+          id: 'pandemicsyn/neondeck#164',
+          message: 'Watch unchanged.',
+          watch: { id: 'pandemicsyn/neondeck#164' },
+        }),
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      notifications: [
+        expect.objectContaining({
+          title: 'PR watch requested changes',
+          occurrenceCount: 1,
+        }),
+      ],
+    });
+    expect(addNotification).not.toHaveBeenCalled();
+    expect(await listNotifications(paths)).toEqual([
+      expect.objectContaining({
+        title: 'PR watch requested changes',
+        occurrenceCount: 1,
+      }),
+    ]);
   });
 });
 

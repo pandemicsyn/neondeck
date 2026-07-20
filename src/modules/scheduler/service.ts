@@ -192,6 +192,7 @@ export async function runSchedulerTick(
           );
         }
       }
+      notifications.push(...(result.persistedNotifications ?? []));
     }
 
     const changed = taskChanged || notifications.length > 0;

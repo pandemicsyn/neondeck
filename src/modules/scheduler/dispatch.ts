@@ -47,6 +47,9 @@ export async function refreshWatchTask(
     ...(result.changed ? [notificationFromWatchResult(result, watchId)] : []),
     ...eventResults.flatMap((item) => item.notifications ?? []),
   ];
+  const persistedNotifications = eventResults.flatMap(
+    (item) => item.persistedNotifications ?? [],
+  );
   return {
     outcome:
       eventFailures.length > 0
@@ -64,6 +67,7 @@ export async function refreshWatchTask(
       ...(eventResults.length > 0 ? { eventResults } : {}),
     },
     notifications,
+    persistedNotifications,
   };
 }
 
