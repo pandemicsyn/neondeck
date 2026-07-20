@@ -516,6 +516,11 @@ describe('config actions', () => {
       'github',
       'reports',
     ]);
+    expect(
+      dashboard.layout.regions.flatMap((region) =>
+        region.tabs.map((tab) => tab.pluginId),
+      ),
+    ).not.toContain('autopilot');
     expect(dashboard.layout.regions[1]).toMatchObject({
       id: 'neon',
       defaultTab: 'chat',
@@ -577,6 +582,16 @@ describe('config actions', () => {
       'watches',
       'reports',
     ]);
+    expect(
+      dashboard.layout.regions.flatMap((region) =>
+        region.tabs.map((tab) => tab.pluginId),
+      ),
+    ).toEqual(expect.arrayContaining(['active-watches']));
+    expect(
+      dashboard.layout.regions.flatMap((region) =>
+        region.tabs.map((tab) => tab.pluginId),
+      ),
+    ).not.toContain('autopilot');
     expect(dashboard.layout.regions[1].tabs.map((tab) => tab.id)).toEqual([
       'chat',
       'briefing',

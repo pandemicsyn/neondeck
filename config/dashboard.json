@@ -74,19 +74,6 @@
             }
           },
           {
-            "id": "autopilot",
-            "title": "AUTOPILOT",
-            "pluginId": "autopilot",
-            "config": {
-              "queueLimit": 8,
-              "policyLimit": 6,
-              "preparedLimit": 4,
-              "approvalLimit": 4,
-              "checkLimit": 4,
-              "activityLimit": 8
-            }
-          },
-          {
             "id": "reports",
             "title": "REPORTS",
             "pluginId": "reports-panel",

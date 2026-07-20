@@ -1,7 +1,5 @@
 import { defineAgent, type AgentRouteHandler } from '@flue/runtime';
 import { readAgentModelSelectionSync } from '../modules/runtime';
-import { neondeckAutopilotActions } from '../modules/autopilot';
-import { neondeckAutopilotRecoveryActions } from '../modules/autopilot/recovery';
 import { neondeckBriefingActions } from '../modules/briefings';
 import { neondeckCommandActions } from '../modules/commands';
 import { neondeckConfigActions } from '../modules/config';
@@ -22,7 +20,6 @@ import {
   neondeckMemoryActions,
 } from '../modules/memory';
 import { neondeckPrEventActions } from '../modules/pr-events';
-import { neondeckPreparedDiffActions } from '../modules/prepared-diffs';
 import { neondeckReviewSurfaceActions } from '../modules/review-surfaces';
 import {
   neondeckRuntimeSkillActions,
@@ -39,6 +36,10 @@ import {
 import { soulInstructions } from '../modules/runtime';
 import { neondeckSubagents } from '../modules/runtime';
 import { neondeckFactTools } from './support/tools';
+import {
+  displayAssistantAutopilotActions,
+  displayAssistantAutopilotInstructions,
+} from './support/autopilot';
 import { neondeckWatchActions } from '../modules/watches';
 import { neondeckWorktreeActions } from '../modules/worktrees';
 import githubGh from '../skills/github-gh/SKILL.md' with { type: 'skill' };
@@ -70,12 +71,10 @@ export default defineAgent(({ id }) => {
       'For provider configuration, use neondeck_config_read_providers and neondeck_config_update_provider. Provider config is allowlisted and stores environment variable references only; raw secrets, arbitrary base URLs, and arbitrary provider ids are not supported. Server restart is required for provider registration changes.',
       'For dashboard layout changes, use neondeck_config_apply_dashboard_preset for classic or cockpit layouts, or neondeck_config_update_dashboard_layout for a complete validated custom dashboard object. Do not freestyle-edit dashboard.json.',
       'For PR watches, use the provided neondeck_watch_pr_* actions. Treat silent refresh results as no-op updates and do not notify unless the watch reports a meaningful change.',
+      displayAssistantAutopilotInstructions,
       'For morning briefings, use neondeck_briefing_profile_read, neondeck_briefing_profile_update, neondeck_briefing_run_now, and neondeck_briefing_run_read for exact persisted grounding. Briefing instructions may request any configured MCP source, but do not add a briefing-specific allowlist or auto-approve mutations. For other scheduled work, use neondeck_scheduled_task_instruction_create. Scheduled instructions run as bounded workflows by default; select an explicit agent session target only when the user needs continuity. Use the scheduled-task list, read, pause, resume, and delete actions to operate existing tasks.',
-      'For autopilot status, use neondeck_autopilot_state_lookup before explaining what Neon is watching, why it did or did not act, which worktrees are prepared, which approvals are pending, and what repo/watch policy allows. Treat this as read-only operator state; do not invent queue entries, diffs, pushes, or workflow outcomes that are not present in the lookup.',
-      'For prepared autopilot diffs, use neondeck_prepared_diff_list, neondeck_prepared_diff_summary, neondeck_prepared_diff_changed_files, and neondeck_prepared_diff_file_diff for facts. Use neondeck_autopilot_recovery_options before recommending recovery from prepared, blocked, pushed, or failed autopilot states. Use neondeck_autopilot_recovery_run for bounded inspect, retry-after-new-commit, rebase/resync worktree, retry verify, retry push, retry comment, request revision, cleanup worktree, abandon, or manual-follow-up decisions. These recovery actions dispatch to existing prepared-diff, worktree sync/cleanup, and autopilot services, keep the source worktree as the source of truth, and never bypass confirmation, execution, policy, cleanup, or GitHub gates.',
-      'For a live diff, use neondeck_review_surfaces_lookup to resolve the intended window and neondeck_review_surface_context_lookup to page through its bounded source metadata and ephemeral findings. Use neondeck_review_surface_navigate only for one explicit surface id, keeping focus=false unless the user asked to be shown the target. Apply findings only through neondeck_review_surface_findings_apply with the exact active source and revision, stable ids, and concise bounded text; Neondeck stamps trusted provenance. Dismiss or clear findings explicitly with the exact active source and revision. Review-surface findings are process-ephemeral local context only and never create GitHub comments, submit reviews, request prepared-diff revisions, or silently re-anchor across revisions.',
-      'The neondeck_autopilot_prepare_pr_worktree, neondeck_autopilot_fix_pr_review_feedback, neondeck_autopilot_fix_pr_ci_failure, and neondeck_autopilot_push_pr_autofix actions are workflow-only and refuse in interactive chat. PR watches currently collect facts and notifications only; they do not automatically dispatch these workflow primitives while the simplified owner loop is being rebuilt.',
-      'For PR event facts and watermarks, use neondeck_github_pr_event_state_get, neondeck_pr_review_comments_lookup, neondeck_pr_requested_changes_lookup, neondeck_pr_branch_permissions_lookup, neondeck_pr_watch_event_state_refresh, and neondeck_pr_watch_event_watermarks_list. These GitHub fact collectors and app-state watermarks do not prepare fixes or push. Use neondeck_pr_comment only when the intended PR comment text is explicit and grounded in deterministic facts; prefer neondeck_autopilot_comment_pr_autofix_result for autonomous prepared-diff result comments because it also records the workflow summary audit.',
+      'For a live diff, use neondeck_review_surfaces_lookup to resolve the intended window and neondeck_review_surface_context_lookup to page through its bounded source metadata and ephemeral findings. Use neondeck_review_surface_navigate only for one explicit surface id, keeping focus=false unless the user asked to be shown the target. Apply findings only through neondeck_review_surface_findings_apply with the exact active source and revision, stable ids, and concise bounded text; Neondeck stamps trusted provenance. Dismiss or clear findings explicitly with the exact active source and revision. Review-surface findings are process-ephemeral local context only and never create GitHub comments, submit reviews, or silently re-anchor across revisions.',
+      'For PR event facts and watermarks, use neondeck_github_pr_event_state_get, neondeck_pr_review_comments_lookup, neondeck_pr_requested_changes_lookup, neondeck_pr_branch_permissions_lookup, neondeck_pr_watch_event_state_refresh, and neondeck_pr_watch_event_watermarks_list. These GitHub fact collectors and app-state watermarks do not prepare fixes or push. Use neondeck_pr_comment only when the intended PR comment text is explicit and grounded in deterministic facts.',
       'For quick deterministic facts, prefer the neondeck_*_lookup tools. Use actions when you need a durable command, mutation, scheduler tick, or persisted workflow summary.',
       'For readiness, onboarding, or “why is Neon failing?” questions, use neondeck_runtime_status_lookup before answering.',
       'For safety, approval, confirmation, destructive changes, or host execution questions, use neondeck_safety_policy_lookup before answering. Destructive mutations require explicit user confirmation and action input confirm=true.',
@@ -90,7 +89,7 @@ export default defineAgent(({ id }) => {
       'For local repository status, use neondeck_repo_status_lookup when you need deterministic git facts without a persisted command summary.',
       'For interactive repository work, use neondeck_repo_file_read, neondeck_repo_file_search, neondeck_repo_file_replace, neondeck_repo_file_patch, neondeck_repo_file_write, neondeck_repo_diff, and neondeck_repo_checkout_status, then neondeck_repo_commit and neondeck_repo_push. These capabilities operate only inside declared Neondeck repo/worktree boundaries and routine edits, commits, and linked-PR-head pushes never create execution approvals. If neondeck_repo_push returns confirmPush, explain its effect and call it once more with acknowledgeExpansion=true and the returned confirmationToken only after the user confirms. Prefer replace for small edits and V4A patches for multi-file edits.',
       'For autonomous or delegated code changes, use Neondeck-managed worktrees as the isolation boundary. Create, sync, inspect, lock, release, and clean them up with neondeck_worktree_* actions. When editing inside an isolated worktree, pass worktreeId to repo-edit actions; do not mutate the user primary checkout for autonomous fix work.',
-      'For KiloCode handoff, only delegate when the user explicitly asks for Kilo or a future repo policy opts in. Use neondeck_kilo_task_start for explicit handoff, then neondeck_kilo_task_status, neondeck_kilo_task_events, neondeck_kilo_task_sessions, neondeck_kilo_task_reconcile, neondeck_kilo_sessions_search, and neondeck_kilo_session_read to supervise and summarize results. Use neondeck_kilo_result_review to classify completed Kilo diffs, neondeck_kilo_result_verify to run checks through execution policy, and neondeck_kilo_result_promote to run the safe promotion admission layer. Push-back is handled by neondeck_autopilot_push_pr_autofix once the prepared diff gates pass; PR comments remain separate. Do not read Kilo storage directly, do not make Kilo the default agent path, and do not use --auto unless the user explicitly confirms it.',
+      'For KiloCode handoff, only delegate when the user explicitly asks for Kilo or a future repo policy opts in. Use neondeck_kilo_task_start for explicit handoff, then neondeck_kilo_task_status, neondeck_kilo_task_events, neondeck_kilo_task_sessions, neondeck_kilo_task_reconcile, neondeck_kilo_sessions_search, and neondeck_kilo_session_read to supervise and summarize results. Use neondeck_kilo_result_review to classify completed Kilo diffs, neondeck_kilo_result_verify to run checks through execution policy, and neondeck_kilo_result_promote to run the safe promotion admission layer. Kilo result promotion remains a separate explicitly gated path from watched-PR Autopilot; PR comments remain separate. Do not read Kilo storage directly, do not make Kilo the default agent path, and do not use --auto unless the user explicitly confirms it.',
       'For local development diagnostics, use neondeck_dev_doctor_run or run /dev-doctor through neondeck_command_run and summarize concrete issues first.',
       'For durable user preferences, local machine/tool facts, and project/repo conventions, use neondeck_memory_learn, neondeck_memory_rewrite, neondeck_memory_merge, neondeck_memory_archive, and review-mode memory candidate actions. Memory writes are limited to user, local, and project scopes. Memory rows are current guidance, not an evidence graph. Memory writes are durable immediately but active session context changes only on a new session or explicit refresh.',
       'For learning operator status, use neondeck_learning_operator_state_lookup to inspect learning reviews, candidates, memory decisions, skill patch decisions, and audit history before summarizing what Neon learned or what needs review.',
@@ -119,9 +118,7 @@ export default defineAgent(({ id }) => {
       ...neondeckExeDevCheckoutActions,
       ...neondeckPrEventActions,
       ...neondeckWatchActions,
-      ...neondeckAutopilotActions,
-      ...neondeckAutopilotRecoveryActions,
-      ...neondeckPreparedDiffActions,
+      ...displayAssistantAutopilotActions,
       ...neondeckReviewSurfaceActions,
       ...neondeckScheduledTaskActions,
       ...neondeckSchedulerActions,
