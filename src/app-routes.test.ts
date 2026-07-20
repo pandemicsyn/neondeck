@@ -40,73 +40,47 @@ describe('app API safety routes', () => {
           primitive: 'tool',
         }),
         expect.objectContaining({
-          id: 'prepare-pr-worktree',
+          id: 'fix-pr-ci',
           primitive: 'workflow',
         }),
         expect.objectContaining({
-          id: 'fix-pr-ci-failure',
-          primitive: 'workflow',
+          id: 'neondeck_autopilot_watch_status',
+          primitive: 'action',
         }),
         expect.objectContaining({
-          id: '/api/autopilot/prepare-pr-worktree',
+          id: '/api/watches/autopilot',
           primitive: 'route',
         }),
         expect.objectContaining({
-          id: '/api/autopilot/readiness',
+          id: '/api/watches/:id/autopilot',
           primitive: 'route',
         }),
         expect.objectContaining({
-          id: '/api/autopilot/fix-pr-ci-failure',
+          id: '/api/watches/:id/autopilot/message',
           primitive: 'route',
         }),
       ]),
     );
   });
 
-  it('serves autopilot operator state over the local API', async () => {
-    const response = await app.request('http://localhost/api/autopilot/state', {
-      headers: { host: 'localhost' },
-    });
-    const body = (await response.json()) as {
-      ok: boolean;
-      action: string;
-      policies: {
-        global: { mode: string };
-      };
-    };
-
-    expect(response.status).toBe(200);
-    expect(body).toMatchObject({
-      ok: true,
-      action: 'autopilot_state_read',
-      policies: {
-        global: { mode: 'notify-only' },
-      },
-    });
-    expect(body).not.toHaveProperty('queue');
-  });
-
-  it('validates typed Autopilot readiness queries over the local API', async () => {
-    for (const query of [
-      'repoId=sample&mode=unsafe',
-      'repoId=sample&prNumber=abc',
+  it('does not mount retired Autopilot transition routes', async () => {
+    for (const path of [
+      '/api/autopilot/state',
+      '/api/autopilot/readiness',
+      '/api/autopilot/triage-pr-event',
+      '/api/autopilot/prepare-pr-worktree',
+      '/api/autopilot/fix-pr-ci-failure',
+      '/api/autopilot/fix-pr-review-feedback',
+      '/api/autopilot/verify-pr-worktree',
+      '/api/autopilot/push-pr-autofix',
+      '/api/autopilot/comment-pr-autofix-result',
     ]) {
-      const response = await app.request(
-        `http://localhost/api/autopilot/readiness?${query}`,
-        { headers: { host: 'localhost' } },
-      );
-      const body = (await response.json()) as {
-        ok: boolean;
-        action: string;
-        errors: string[];
-      };
-
-      expect(response.status).toBe(400);
-      expect(body).toMatchObject({
-        ok: false,
-        action: 'autopilot_readiness_read',
+      const response = await app.request(`http://localhost${path}`, {
+        method: 'POST',
+        headers: { host: 'localhost', 'content-type': 'application/json' },
+        body: '{}',
       });
-      expect(body.errors).toHaveLength(1);
+      expect({ path, status: response.status }).toEqual({ path, status: 404 });
     }
   });
 
@@ -810,67 +784,6 @@ describe('app API safety routes', () => {
     expect(body).toMatchObject({
       ok: false,
       action: 'github_pr_file_diff_get',
-    });
-  });
-
-  it('serves PR event autopilot triage over the local API', async () => {
-    const response = await app.request(
-      'http://localhost/api/autopilot/triage-pr-event',
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          host: 'localhost',
-          origin: 'http://localhost',
-        },
-        body: JSON.stringify({
-          repoId: 'sample',
-          prNumber: 1,
-          autopilotMode: 'prepare-only',
-          deltas: [{ type: 'check-failure', actionable: true }],
-          current: { state: 'open', checkStatus: 'failure' },
-        }),
-      },
-    );
-    const body = (await response.json()) as {
-      ok: boolean;
-      data?: { classification?: string };
-    };
-
-    expect(response.status).toBe(200);
-    expect(body).toMatchObject({
-      ok: true,
-      data: { classification: 'prepare-only' },
-    });
-  });
-
-  it('rejects caller-supplied PR facts on the prepare worktree API', async () => {
-    const response = await app.request(
-      'http://localhost/api/autopilot/prepare-pr-worktree',
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          host: 'localhost',
-          origin: 'http://localhost',
-        },
-        body: JSON.stringify({
-          repoId: 'sample',
-          prNumber: 1,
-          pr: { headSha: 'fabricated' },
-          checks: { status: 'success' },
-        }),
-      },
-    );
-    const body = (await response.json()) as {
-      ok: boolean;
-      message?: string;
-    };
-
-    expect(response.status).toBe(400);
-    expect(body).toMatchObject({
-      ok: false,
-      message: 'Invalid autopilot input.',
     });
   });
 

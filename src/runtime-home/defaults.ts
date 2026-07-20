@@ -19,7 +19,6 @@ export function defaultAppConfig(): AppConfig {
     autopilot: {
       mode: 'notify-only',
       concurrency: { singleMutationPerPr: true },
-      pushOnApproval: 'verify-then-push',
     },
   };
 }

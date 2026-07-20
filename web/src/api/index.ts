@@ -5,7 +5,7 @@ export * from './config';
 export * from './github';
 export * from './repos';
 export * from './runtime';
-export * from './autopilot';
+export * from './prepared-diffs';
 export * from './events';
 export * from './safety';
 export * from './sessions';

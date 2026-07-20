@@ -26,7 +26,7 @@ describe('safety policy', () => {
     expect(policy).toMatchObject({
       ok: true,
       action: 'safety_policy_read',
-      version: 5,
+      version: 6,
     });
     expect(policy.summary.destructiveMutation).toBeGreaterThanOrEqual(4);
     expect(policy.summary.hostExecution).toBeGreaterThanOrEqual(2);
@@ -82,6 +82,23 @@ describe('safety policy', () => {
           class: 'safe-mutation',
           requiresConfirmation: true,
           audited: true,
+        }),
+        expect.objectContaining({
+          id: 'neondeck_autopilot_watch_status',
+          primitive: 'action',
+          class: 'read-only',
+        }),
+        expect.objectContaining({
+          id: 'neondeck_autopilot_configure_pr',
+          primitive: 'action',
+          class: 'safe-mutation',
+          requiresConfirmation: false,
+        }),
+        expect.objectContaining({
+          id: 'neondeck_autopilot_message_owner',
+          primitive: 'action',
+          class: 'safe-mutation',
+          requiresConfirmation: false,
         }),
         expect.objectContaining({
           id: 'neondeck_execution_policy_check',

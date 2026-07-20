@@ -15,18 +15,7 @@ export type AutopilotNotificationState =
 export type AutopilotNotificationOutcome =
   'prepared' | 'passed' | 'failed' | 'blocked' | 'pushed' | 'posted';
 
-export type AutopilotRecoveryActionId =
-  | 'inspect-worktree'
-  | 'retry-after-new-commit'
-  | 'rebase-resync-worktree'
-  | 'retry-verify'
-  | 'retry-push'
-  | 'retry-comment'
-  | 'request-revision'
-  | 'run-revision'
-  | 'cleanup-worktree'
-  | 'abandon'
-  | 'manual-follow-up';
+export type AutopilotRecoveryActionId = 'inspect-worktree' | 'manual-follow-up';
 
 export type AutopilotRecoveryActionSummary = {
   id: AutopilotRecoveryActionId;
@@ -65,19 +54,7 @@ const notificationInputSchema = v.object({
   recoveryActions: v.optional(
     v.array(
       v.object({
-        id: v.picklist([
-          'inspect-worktree',
-          'retry-after-new-commit',
-          'rebase-resync-worktree',
-          'retry-verify',
-          'retry-push',
-          'retry-comment',
-          'request-revision',
-          'run-revision',
-          'cleanup-worktree',
-          'abandon',
-          'manual-follow-up',
-        ]),
+        id: v.picklist(['inspect-worktree', 'manual-follow-up']),
         label: nonEmptyStringSchema,
         description: nonEmptyStringSchema,
       }),
@@ -89,116 +66,24 @@ const notificationInputSchema = v.object({
 type AutopilotNotificationInput = v.InferOutput<typeof notificationInputSchema>;
 
 export function recoveryActionsForPreparedDiff(
-  preparedDiff: Pick<
+  _preparedDiff: Pick<
     PreparedDiffRecord,
     'id' | 'status' | 'verificationStatus' | 'pushApprovalStatus'
   >,
 ): AutopilotRecoveryActionSummary[] {
-  const actions: AutopilotRecoveryActionSummary[] = [
+  return [
     {
       id: 'inspect-worktree',
       label: 'Inspect worktree',
       description: 'Open or inspect the retained source worktree and diff.',
     },
-  ];
-
-  if (
-    [
-      'prepared',
-      'verification-requested',
-      'revision-requested',
-      'push-approved',
-      'push-blocked',
-    ].includes(preparedDiff.status)
-  ) {
-    actions.push(
-      {
-        id: 'retry-after-new-commit',
-        label: 'Retry after new commit',
-        description:
-          'Fetch and rebase/resync the retained worktree before retrying verification or push.',
-      },
-      {
-        id: 'rebase-resync-worktree',
-        label: 'Rebase/resync worktree',
-        description:
-          'Rebase the prepared worktree onto the configured PR head ref and reset stale push decisions.',
-      },
-    );
-    actions.push({
-      id: 'retry-verify',
-      label: 'Retry verify',
-      description: 'Run verify_pr_worktree again through execution policy.',
-    });
-  }
-
-  if (
-    ['push-approved', 'push-blocked'].includes(preparedDiff.status) &&
-    preparedDiff.pushApprovalStatus === 'approved' &&
-    preparedDiff.verificationStatus === 'passed'
-  ) {
-    actions.push({
-      id: 'retry-push',
-      label: 'Retry push',
-      description: 'Retry push_pr_autofix if policy and branch gates allow it.',
-    });
-  }
-
-  if (
-    ['prepared', 'verification-requested', 'push-blocked', 'pushed'].includes(
-      preparedDiff.status,
-    )
-  ) {
-    actions.push({
-      id: 'retry-comment',
-      label: 'Retry comment',
-      description: 'Post or retry the deterministic PR autofix result comment.',
-    });
-  }
-
-  if (!['abandoned', 'pushed'].includes(preparedDiff.status)) {
-    if (
-      preparedDiff.status !== 'revision-requested' &&
-      preparedDiff.status !== 'revision-in-progress'
-    ) {
-      actions.push({
-        id: 'request-revision',
-        label: 'Request revision',
-        description:
-          'Record an operator revision request while retaining the worktree.',
-      });
-    }
-    if (preparedDiff.status === 'revision-requested') {
-      actions.push({
-        id: 'run-revision',
-        label: 'Run revision',
-        description:
-          'Start a bounded Kilo task from the retained revision note.',
-      });
-    }
-    actions.push({
-      id: 'abandon',
-      label: 'Abandon',
+    {
+      id: 'manual-follow-up',
+      label: 'Manual follow-up',
       description:
-        'Abandon the prepared-diff record and leave cleanup to worktree policy.',
-    });
-  }
-
-  actions.push({
-    id: 'cleanup-worktree',
-    label: 'Clean up worktree',
-    description:
-      'Run worktree cleanup with explicit confirmation for prepared-diff retention.',
-  });
-
-  actions.push({
-    id: 'manual-follow-up',
-    label: 'Manual follow-up',
-    description:
-      'Use the retained worktree path and recovery notes to finish manually.',
-  });
-
-  return actions;
+        'Use the retained worktree and current typed product surfaces to finish manually.',
+    },
+  ];
 }
 
 export async function notifyAutopilotState(

@@ -180,8 +180,7 @@ export async function checkAutopilotConcurrency(
     if (worktree.owningWorkflowRunId) {
       return activeRunIds.has(worktree.owningWorkflowRunId);
     }
-    if (worktree.lifecycleStatus !== 'busy') return false;
-    return input.workflow !== 'verify_pr_worktree';
+    return worktree.lifecycleStatus === 'busy';
   });
   const perRepoAutonomousJobs = activeWorktrees.filter(
     (worktree) => worktree.repoId === input.repoId,

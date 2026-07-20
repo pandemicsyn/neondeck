@@ -26,7 +26,6 @@ import {
   requireFlueRunInspectionToken,
   requireLocalApiAccess,
 } from './middleware';
-import { createAutopilotRoutes } from './routes/autopilot';
 import { createBriefingRoutes } from './routes/briefings';
 import { createCommandRoutes } from './routes/commands';
 import { createConfigRoutes } from './routes/config';
@@ -39,6 +38,7 @@ import { createMemoryRoutes } from './routes/memory';
 import { createMetricsRoutes } from './routes/metrics';
 import { createMcpRoutes } from './routes/mcp';
 import { createNotificationRoutes } from './routes/notifications';
+import { createPreparedDiffRoutes } from './routes/prepared-diffs';
 import { createRepoEditRoutes } from './routes/repo-edit';
 import {
   createReportApiRoutes,
@@ -109,7 +109,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api', createRepoEditRoutes(paths));
   app.route('/api', createWorktreeRoutes(paths));
   app.route('/api/kilo', createKiloRoutes(paths));
-  app.route('/api', createAutopilotRoutes(paths));
+  app.route('/api', createPreparedDiffRoutes(paths));
   app.route('/api', createBriefingRoutes(paths));
   app.route('/api', createHandoffRoutes(paths));
   app.route('/api', createWatchRoutes(paths));

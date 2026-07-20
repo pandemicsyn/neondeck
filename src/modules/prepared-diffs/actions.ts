@@ -1,22 +1,15 @@
 import { defineAction, defineTool } from '@flue/runtime';
 import {
-  abandonPreparedDiff,
   listPreparedDiffs,
-  openPreparedDiffWorktree,
   readPreparedDiffChangedFiles,
   readPreparedDiffFileDiff,
   readPreparedDiffSummary,
-  requestPreparedDiffRevision,
-  runPreparedDiffVerification,
 } from './service';
 import {
-  abandonInputSchema,
   fileDiffInputSchema,
   idInputSchema,
   listInputSchema,
   outputSchema,
-  requestRevisionInputSchema,
-  verificationInputSchema,
 } from './schemas';
 
 export const preparedDiffsLookupTool = defineTool({
@@ -73,60 +66,5 @@ export const preparedDiffFileDiffAction = defineAction({
     return readPreparedDiffFileDiff(input);
   },
 });
-
-export const preparedDiffRequestRevisionAction = defineAction({
-  name: 'neondeck_prepared_diff_request_revision',
-  description:
-    'Request a revision for a prepared diff and keep the source worktree available for follow-up work.',
-  input: requestRevisionInputSchema,
-  output: outputSchema,
-  async run({ input }) {
-    return requestPreparedDiffRevision(input);
-  },
-});
-
-export const preparedDiffAbandonAction = defineAction({
-  name: 'neondeck_prepared_diff_abandon',
-  description:
-    'Abandon a prepared-diff record without deleting its source worktree.',
-  input: abandonInputSchema,
-  output: outputSchema,
-  async run({ input }) {
-    return abandonPreparedDiff(input);
-  },
-});
-
-export const preparedDiffOpenWorktreeAction = defineAction({
-  name: 'neondeck_prepared_diff_open_worktree',
-  description:
-    'Return the managed source worktree path for a prepared diff so a web or TUI client can open it.',
-  input: idInputSchema,
-  output: outputSchema,
-  async run({ input }) {
-    return openPreparedDiffWorktree(input);
-  },
-});
-
-export const preparedDiffRunVerificationAction = defineAction({
-  name: 'neondeck_prepared_diff_run_verification',
-  description:
-    'Record a verification request for a prepared diff. The later verify_pr_worktree workflow owns actual command execution.',
-  input: verificationInputSchema,
-  output: outputSchema,
-  async run({ input }) {
-    return runPreparedDiffVerification(input);
-  },
-});
-
-export const neondeckPreparedDiffActions = [
-  preparedDiffListAction,
-  preparedDiffSummaryAction,
-  preparedDiffChangedFilesAction,
-  preparedDiffFileDiffAction,
-  preparedDiffRequestRevisionAction,
-  preparedDiffAbandonAction,
-  preparedDiffOpenWorktreeAction,
-  preparedDiffRunVerificationAction,
-];
 
 export const neondeckPreparedDiffTools = [preparedDiffsLookupTool];

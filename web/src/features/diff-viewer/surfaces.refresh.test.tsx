@@ -10,7 +10,7 @@ import {
   type ReviewSourceSnapshot,
 } from '../../../../shared/review-source';
 import type { NeonReviewFinding } from '../../../../shared/review-finding';
-import type { AutopilotPreparedDiff, KiloTaskRecord } from '../../api';
+import type { KiloTaskRecord, PreparedDiffRecord } from '../../api';
 
 const state = vi.hoisted(() => ({
   findings: [] as NeonReviewFinding[],
@@ -539,7 +539,7 @@ describe('revision-aware prepared and Kilo surfaces', () => {
   }
 });
 
-function preparedDiff(): AutopilotPreparedDiff {
+function preparedDiff(): PreparedDiffRecord {
   return {
     id: 'prepared-1',
     repoId: 'repo-1',

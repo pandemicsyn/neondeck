@@ -31,7 +31,6 @@ import {
 } from './utils';
 import { type RuntimePaths } from '../../runtime-home';
 import { releaseWorktreeLock } from '../worktrees';
-import { reconcilePreparedDiffRevisionResult } from './revision-reconcile';
 import {
   ciFixRunWorktreeReleaseStatusForKiloTask,
   reconcileCiFixRunForKiloTask,
@@ -105,14 +104,6 @@ export function attachProcessHandlers(
         paths,
       );
       await releaseTaskLock(task, status, paths);
-      await reconcilePreparedDiffRevisionResult(
-        {
-          task,
-          status,
-          error: cancelled ? null : processError,
-        },
-        paths,
-      );
       await reconcileCiFixRunCompletion(
         {
           task: tryKiloTask(taskId, paths) ?? task,
@@ -269,15 +260,6 @@ export function attachProcessHandlers(
         );
       }
       await releaseTaskLock(task, status, paths, observedDiff);
-      await reconcilePreparedDiffRevisionResult(
-        {
-          task: tryKiloTask(taskId, paths) ?? current ?? task,
-          status,
-          diff: observedDiff,
-          error,
-        },
-        paths,
-      );
       await reconcileCiFixRunCompletion(
         {
           task: tryKiloTask(taskId, paths) ?? current ?? task,
@@ -467,14 +449,6 @@ export async function reconcilePersistedRunningTasks(
     );
     if (!processAlive) {
       await releaseTaskLock(task, status, paths, diff);
-      await reconcilePreparedDiffRevisionResult(
-        {
-          task: tryKiloTask(task.id, paths) ?? task,
-          status,
-          diff,
-        },
-        paths,
-      );
       await reconcileCiFixRunCompletion(
         {
           task: tryKiloTask(task.id, paths) ?? task,

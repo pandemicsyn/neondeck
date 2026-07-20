@@ -13,11 +13,6 @@ export {
   preparedDiffSummaryAction,
   preparedDiffChangedFilesAction,
   preparedDiffFileDiffAction,
-  preparedDiffRequestRevisionAction,
-  preparedDiffAbandonAction,
-  preparedDiffOpenWorktreeAction,
-  preparedDiffRunVerificationAction,
-  neondeckPreparedDiffActions,
   neondeckPreparedDiffTools,
 } from './actions';
 export {
@@ -31,23 +26,15 @@ export {
   readPreparedDiffSummary,
   readPreparedDiffChangedFiles,
   readPreparedDiffFileDiff,
-  approvePreparedDiffPush,
   requestPreparedDiffRevision,
   abandonPreparedDiff,
   openPreparedDiffWorktree,
-  runPreparedDiffVerification,
 } from './service';
 export {
-  readApprovalRecord as readPreparedDiffApprovalRecord,
   readPreparedDiffRecord,
   readPreparedDiffByWorktreeId,
-  listApprovalRecords,
   assertTransition,
   mergeSummary,
   updatePreparedDiffState,
 } from './store';
-export {
-  abandonInputSchema,
-  approvePushInputSchema,
-  runRevisionInputSchema,
-} from './schemas';
+export { abandonInputSchema } from './schemas';

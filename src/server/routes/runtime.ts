@@ -1,16 +1,11 @@
 import { Hono } from 'hono';
 import {
-  autopilotStateSchema,
-  readAutopilotState,
-} from '../../modules/autopilot/state';
-import {
   localApiAuthHeader,
   localApiTokenQueryParam,
   readLocalApiToken,
 } from '../../modules/runtime';
 import type { RuntimePaths } from '../../runtime-home';
 import { readRuntimeStatus } from '../../modules/runtime';
-import * as v from 'valibot';
 
 export function createRuntimeRoutes(paths: RuntimePaths) {
   const routes = new Hono();
@@ -36,12 +31,6 @@ export function createRuntimeRoutes(paths: RuntimePaths) {
       header: localApiAuthHeader,
       queryParam: localApiTokenQueryParam,
     });
-  });
-
-  routes.get('/autopilot/state', async (c) => {
-    return c.json(
-      v.parse(autopilotStateSchema, await readAutopilotState(paths)),
-    );
   });
 
   return routes;

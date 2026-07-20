@@ -1,5 +1,5 @@
 import type {
-  AutopilotPreparedDiff,
+  PreparedDiffRecord,
   GitHubPullRequest,
   KiloTaskRecord,
   LearningCandidate,
@@ -86,7 +86,7 @@ export function githubPrReviewSource(
 }
 
 export function preparedDiffReviewSource(
-  diff: AutopilotPreparedDiff,
+  diff: PreparedDiffRecord,
   files: DiffFilePatch[],
   revision: ReviewRevision | undefined,
   options: PatchStateOptions = {},

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useIsMutating, useQueryClient } from '@tanstack/react-query';
 import {
-  type AutopilotPreparedDiff,
+  type PreparedDiffRecord,
   type DiffSummary,
   type KiloTaskRecord,
   type LearningCandidate,
@@ -47,7 +47,7 @@ export function PreparedDiffReview({
   diff,
   externalRefreshGuard,
 }: {
-  diff: AutopilotPreparedDiff;
+  diff: PreparedDiffRecord;
   externalRefreshGuard?: {
     mutationPending?: boolean;
     revisionConfirmationOpen?: boolean;

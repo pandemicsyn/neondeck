@@ -409,7 +409,7 @@ export async function promoteKiloResult(
     preparedDiff,
     permissions: permissions ?? null,
     deferral:
-      'Actual commit, push, and PR comment mutations are deferred to the later push-back workflow.',
+      'Actual commit, push, and PR comment mutations require explicit human follow-up.',
   };
   const next = upsertKiloResultState(
     task.id,
@@ -437,7 +437,7 @@ export async function promoteKiloResult(
       state: admitted ? 'promoted' : 'promote-blocked',
       title: admitted ? 'Kilo promotion admitted' : undefined,
       message: admitted
-        ? 'Kilo result passed promotion admission; push/comment remains delegated to push_pr_autofix.'
+        ? 'Kilo result passed promotion admission; commit, push, and comment remain explicit human follow-up.'
         : 'Kilo result is blocked from promotion.',
       repoId: task.repoId,
       repoFullName: task.repoFullName,
@@ -461,7 +461,7 @@ export async function promoteKiloResult(
     resultState: next,
     data: asJsonValue(promotion),
     requires: admitted
-      ? ['push_pr_autofix']
+      ? ['explicit-human-delivery']
       : gates.filter((gate) => !gate.ok).map((gate) => gate.gate),
   };
 }
