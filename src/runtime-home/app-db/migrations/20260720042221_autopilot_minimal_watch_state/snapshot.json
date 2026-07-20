@@ -2,9 +2,7 @@
   "version": "7",
   "dialect": "sqlite",
   "id": "07c5103f-9b8a-4605-8a17-b8a3662cb33d",
-  "prevIds": [
-    "6aff46f1-9c8b-452b-b124-15f1739d0e27"
-  ],
+  "prevIds": ["6aff46f1-9c8b-452b-b124-15f1739d0e27"],
   "ddl": [
     {
       "name": "app_metadata",
@@ -6313,13 +6311,9 @@
       "table": "worktrees"
     },
     {
-      "columns": [
-        "draft_id"
-      ],
+      "columns": ["draft_id"],
       "tableTo": "pr_review_drafts",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "nameExplicit": false,
@@ -6328,13 +6322,9 @@
       "table": "pr_review_draft_comments"
     },
     {
-      "columns": [
-        "draft_id"
-      ],
+      "columns": ["draft_id"],
       "tableTo": "pr_review_drafts",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "nameExplicit": false,
@@ -6343,451 +6333,343 @@
       "table": "pr_review_neon_seeded_comments"
     },
     {
-      "columns": [
-        "repo",
-        "pr_number",
-        "head_sha"
-      ],
+      "columns": ["repo", "pr_number", "head_sha"],
       "nameExplicit": false,
       "name": "github_pr_file_cache_pk",
       "entityType": "pks",
       "table": "github_pr_file_cache"
     },
     {
-      "columns": [
-        "server_id",
-        "tool_name"
-      ],
+      "columns": ["server_id", "tool_name"],
       "nameExplicit": false,
       "name": "mcp_tool_catalog_pk",
       "entityType": "pks",
       "table": "mcp_tool_catalog"
     },
     {
-      "columns": [
-        "repo_full_name",
-        "pr_number",
-        "item_kind",
-        "item_id"
-      ],
+      "columns": ["repo_full_name", "pr_number", "item_kind", "item_id"],
       "nameExplicit": false,
       "name": "pr_feedback_addressing_pk",
       "entityType": "pks",
       "table": "pr_feedback_addressing"
     },
     {
-      "columns": [
-        "repo_full_name",
-        "pr_number",
-        "item_kind",
-        "item_id"
-      ],
+      "columns": ["repo_full_name", "pr_number", "item_kind", "item_id"],
       "nameExplicit": false,
       "name": "pr_neondeck_deliveries_pk",
       "entityType": "pks",
       "table": "pr_neondeck_deliveries"
     },
     {
-      "columns": [
-        "watch_id",
-        "category"
-      ],
+      "columns": ["watch_id", "category"],
       "nameExplicit": false,
       "name": "pr_watch_event_watermarks_pk",
       "entityType": "pks",
       "table": "pr_watch_event_watermarks"
     },
     {
-      "columns": [
-        "key"
-      ],
+      "columns": ["key"],
       "nameExplicit": false,
       "name": "app_metadata_pk",
       "table": "app_metadata",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "briefing_profiles_pk",
       "table": "briefing_profiles",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "briefing_runs_pk",
       "table": "briefing_runs",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "chat_session_audit_pk",
       "table": "chat_session_audit",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "chat_session_command_events_pk",
       "table": "chat_session_command_events",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "surface"
-      ],
+      "columns": ["surface"],
       "nameExplicit": false,
       "name": "chat_session_surfaces_pk",
       "table": "chat_session_surfaces",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "chat_sessions_pk",
       "table": "chat_sessions",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "config_history_pk",
       "table": "config_history",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "execution_approvals_pk",
       "table": "execution_approvals",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "kilo_result_events_pk",
       "table": "kilo_result_events",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "task_id"
-      ],
+      "columns": ["task_id"],
       "nameExplicit": false,
       "name": "kilo_result_state_pk",
       "table": "kilo_result_state",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "kilo_session_audit_pk",
       "table": "kilo_session_audit",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "kilo_task_events_pk",
       "table": "kilo_task_events",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "kilo_tasks_pk",
       "table": "kilo_tasks",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "learning_candidates_pk",
       "table": "learning_candidates",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "learning_events_pk",
       "table": "learning_events",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "learning_reviews_pk",
       "table": "learning_reviews",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "mcp_oauth_logins_pk",
       "table": "mcp_oauth_logins",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "server_id"
-      ],
+      "columns": ["server_id"],
       "nameExplicit": false,
       "name": "mcp_oauth_tokens_pk",
       "table": "mcp_oauth_tokens",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "mcp_tool_approvals_pk",
       "table": "mcp_tool_approvals",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "mcp_tool_audit_pk",
       "table": "mcp_tool_audit",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "memories_pk",
       "table": "memories",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "sequence"
-      ],
+      "columns": ["sequence"],
       "nameExplicit": false,
       "name": "memory_events_pk",
       "table": "memory_events",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "notifications_pk",
       "table": "notifications",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "pr_review_draft_comments_pk",
       "table": "pr_review_draft_comments",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "pr_review_drafts_pk",
       "table": "pr_review_drafts",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "comment_id"
-      ],
+      "columns": ["comment_id"],
       "nameExplicit": false,
       "name": "pr_review_neon_seeded_comments_pk",
       "table": "pr_review_neon_seeded_comments",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "pr_reviews_pk",
       "table": "pr_reviews",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "pr_watches_pk",
       "table": "pr_watches",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "prepared_diff_approvals_pk",
       "table": "prepared_diff_approvals",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "prepared_diffs_pk",
       "table": "prepared_diffs",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "ref_watches_pk",
       "table": "ref_watches",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "repo_edit_events_pk",
       "table": "repo_edit_events",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "repo_file_reads_pk",
       "table": "repo_file_reads",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "reports_pk",
       "table": "reports",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "scheduled_task_runs_pk",
       "table": "scheduled_task_runs",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "scheduled_tasks_pk",
       "table": "scheduled_tasks",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "workflow_events_pk",
       "table": "workflow_events",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "run_id"
-      ],
+      "columns": ["run_id"],
       "nameExplicit": false,
       "name": "workflow_run_observations_pk",
       "table": "workflow_run_observations",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "workflow_summaries_pk",
       "table": "workflow_summaries",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "worktree_cleanup_attempts_pk",
       "table": "worktree_cleanup_attempts",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "worktree_events_pk",
       "table": "worktree_events",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "worktree_locks_pk",
       "table": "worktree_locks",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "worktrees_pk",
       "table": "worktrees",
@@ -7944,38 +7826,28 @@
       "table": "worktrees"
     },
     {
-      "columns": [
-        "repo_full_name",
-        "pr_number"
-      ],
+      "columns": ["repo_full_name", "pr_number"],
       "nameExplicit": false,
       "name": "pr_watches_repo_full_name_pr_number_unique",
       "entityType": "uniques",
       "table": "pr_watches"
     },
     {
-      "columns": [
-        "worktree_id"
-      ],
+      "columns": ["worktree_id"],
       "nameExplicit": false,
       "name": "prepared_diffs_worktree_id_unique",
       "entityType": "uniques",
       "table": "prepared_diffs"
     },
     {
-      "columns": [
-        "repo_full_name",
-        "ref"
-      ],
+      "columns": ["repo_full_name", "ref"],
       "nameExplicit": false,
       "name": "ref_watches_repo_full_name_ref_unique",
       "entityType": "uniques",
       "table": "ref_watches"
     },
     {
-      "columns": [
-        "local_path"
-      ],
+      "columns": ["local_path"],
       "nameExplicit": false,
       "name": "worktrees_local_path_unique",
       "entityType": "uniques",

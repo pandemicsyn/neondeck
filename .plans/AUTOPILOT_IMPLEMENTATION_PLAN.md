@@ -98,12 +98,12 @@ A mode is not merely text in the agent prompt. Each dispatch builds the agent's
 toolset from the watch's current mode. A tool that the mode does not permit must not
 be registered for that turn.
 
-| Mode                         | Agent turn | Tools available to the agent |
-| ---------------------------- | ---------- | ---------------------------- |
-| `notify-only`                | No         | None; emit a notification only |
-| `prepare-only`               | Yes        | Read/search, bounded edits, targeted diagnostics, commit; no push |
-| `autofix-with-approval`      | Yes        | Watcher turn: prepare tools with no push; any direct-human turn while waiting: the full bounded repo toolset, including edit, commit, push, and PR response |
-| `autofix-push-when-safe`     | Yes        | The prepare tools plus the narrow guarded push and PR-response tools |
+| Mode                     | Agent turn | Tools available to the agent                                                                                                                                |
+| ------------------------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `notify-only`            | No         | None; emit a notification only                                                                                                                              |
+| `prepare-only`           | Yes        | Read/search, bounded edits, targeted diagnostics, commit; no push                                                                                           |
+| `autofix-with-approval`  | Yes        | Watcher turn: prepare tools with no push; any direct-human turn while waiting: the full bounded repo toolset, including edit, commit, push, and PR response |
+| `autofix-push-when-safe` | Yes        | The prepare tools plus the narrow guarded push and PR-response tools                                                                                        |
 
 Do not expose a generic raw host shell that can bypass these ceilings. The agent
 receives the smallest repository toolset needed for the mode.
