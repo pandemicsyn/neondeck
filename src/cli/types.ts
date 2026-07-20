@@ -21,6 +21,8 @@ export type WatchPrOptions = {
   until?: string;
   interval?: string;
   from?: string;
+  mode?: string;
+  processExisting?: boolean;
   json?: boolean;
 };
 

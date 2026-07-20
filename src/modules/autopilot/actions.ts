@@ -15,6 +15,7 @@ import {
   verifyPrWorktreeInputSchema,
   autopilotOutputSchema,
 } from './schemas';
+import { neondeckPrAutopilotWatchActions } from './watch-service';
 import { triagePrEvent } from './triage';
 import { preparePrWorktree, verifyPrWorktree } from './worktree';
 import { pushPrAutofix } from './push';
@@ -166,6 +167,7 @@ export const commentPrAutofixResultAction = defineAction({
 });
 
 export const neondeckAutopilotActions = [
+  ...neondeckPrAutopilotWatchActions,
   approvePreparedDiffPushAction,
   triagePrEventAction,
   preparePrWorktreeAction,

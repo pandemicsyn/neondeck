@@ -1,4 +1,5 @@
 import type { JsonValue } from '@flue/runtime';
+import type { AutopilotMode } from '../autopilot-policy';
 import type { GitHubCheckSummary, GitHubPullRequestDetail } from '../github';
 import * as v from 'valibot';
 
@@ -9,6 +10,8 @@ export type RefWatchStatus =
 
 export type DesiredTerminalState = 'checks' | 'merged';
 export type WatchOutcome = 'created' | 'updated' | 'removed' | 'silent';
+export type AutopilotWatchStatus =
+  'watching' | 'working' | 'waiting' | 'blocked' | 'complete';
 export const currentPrWatchEventWatermarkVersion = 2;
 
 export type WatchActionResult = {
@@ -45,6 +48,11 @@ export type PrWatch = {
   processExisting: boolean;
   initialEventProcessedAt: string | null;
   eventWatermarkVersion: number;
+  autopilotMode: AutopilotMode;
+  autopilotStatus: AutopilotWatchStatus;
+  ownerInstanceId: string | null;
+  worktreeId: string | null;
+  lastEventFingerprint: string | null;
   createdAt: string;
   updatedAt: string;
 };

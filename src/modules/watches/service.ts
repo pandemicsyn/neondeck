@@ -267,6 +267,11 @@ export async function addPrWatch(
     processExisting,
     initialEventProcessedAt: processExisting ? null : now,
     eventWatermarkVersion: currentPrWatchEventWatermarkVersion,
+    autopilotMode: 'notify-only',
+    autopilotStatus: 'watching',
+    ownerInstanceId: null,
+    worktreeId: null,
+    lastEventFingerprint: null,
     createdAt: now,
     updatedAt: now,
   };

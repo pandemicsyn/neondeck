@@ -54,10 +54,15 @@ export function insertWatch(
           process_existing,
           initial_event_processed_at,
           event_watermark_version,
+          autopilot_mode,
+          autopilot_status,
+          owner_instance_id,
+          worktree_id,
+          last_event_fingerprint,
           created_at,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `,
         )
         .run(...watchParams(watch));
@@ -114,6 +119,11 @@ export function updateWatch(
           process_existing = ?,
           initial_event_processed_at = ?,
           event_watermark_version = ?,
+          autopilot_mode = ?,
+          autopilot_status = ?,
+          owner_instance_id = ?,
+          worktree_id = ?,
+          last_event_fingerprint = ?,
           updated_at = ?
         WHERE id = ?
           AND updated_at = ?
@@ -140,6 +150,11 @@ export function updateWatch(
           watch.processExisting ? 1 : 0,
           watch.initialEventProcessedAt,
           watch.eventWatermarkVersion,
+          watch.autopilotMode,
+          watch.autopilotStatus,
+          watch.ownerInstanceId,
+          watch.worktreeId,
+          watch.lastEventFingerprint,
           watch.updatedAt,
           watch.id,
           expectedWatchState.updatedAt,
@@ -351,6 +366,167 @@ export function readWatch(paths: RuntimePaths, id: string) {
   }
 }
 
+export function readWatchByOwnerInstanceId(
+  paths: RuntimePaths,
+  ownerInstanceId: string,
+) {
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    const row = database
+      .prepare(`SELECT * FROM pr_watches WHERE owner_instance_id = ? LIMIT 1;`)
+      .get(ownerInstanceId);
+    return row ? readWatchRow(row) : undefined;
+  } finally {
+    database.close();
+  }
+}
+
+export function configureWatchAutopilot(
+  paths: RuntimePaths,
+  id: string,
+  mode: PrWatch['autopilotMode'],
+) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const now = new Date().toISOString();
+    const changed = database
+      .prepare(
+        `UPDATE pr_watches
+         SET autopilot_mode = ?,
+             autopilot_status = CASE
+               WHEN autopilot_status = 'complete' THEN 'watching'
+               ELSE autopilot_status
+             END,
+             updated_at = ?
+         WHERE id = ? AND autopilot_mode <> ?;`,
+      )
+      .run(mode, now, id, mode).changes;
+    return { changed: changed === 1, watch: readWatch(paths, id) };
+  } finally {
+    database.close();
+  }
+}
+
+export function bindWatchAutopilotOwner(
+  paths: RuntimePaths,
+  id: string,
+  input: { ownerInstanceId: string; worktreeId: string },
+) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database.exec('BEGIN IMMEDIATE;');
+    try {
+      const row = database
+        .prepare('SELECT * FROM pr_watches WHERE id = ?;')
+        .get(id);
+      if (!row) {
+        rollbackQuietly(database);
+        return undefined;
+      }
+      const watch = readWatchRow(row);
+      if (
+        (watch.ownerInstanceId &&
+          watch.ownerInstanceId !== input.ownerInstanceId) ||
+        (watch.worktreeId && watch.worktreeId !== input.worktreeId)
+      ) {
+        rollbackQuietly(database);
+        throw new Error(
+          `Autopilot watch "${id}" is already bound to a different owner or worktree.`,
+        );
+      }
+      const now = new Date().toISOString();
+      database
+        .prepare(
+          `UPDATE pr_watches
+           SET owner_instance_id = COALESCE(owner_instance_id, ?),
+               worktree_id = COALESCE(worktree_id, ?),
+               updated_at = ?
+           WHERE id = ?;`,
+        )
+        .run(input.ownerInstanceId, input.worktreeId, now, id);
+      const updated = database
+        .prepare('SELECT * FROM pr_watches WHERE id = ?;')
+        .get(id);
+      database.exec('COMMIT;');
+      return updated ? readWatchRow(updated) : undefined;
+    } catch (error) {
+      rollbackQuietly(database);
+      throw error;
+    }
+  } finally {
+    database.close();
+  }
+}
+
+export function claimWatchAutopilotTurn(
+  paths: RuntimePaths,
+  id: string,
+  eventFingerprint: string,
+) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const now = new Date().toISOString();
+    const changed = database
+      .prepare(
+        `UPDATE pr_watches
+         SET autopilot_status = 'working', updated_at = ?
+         WHERE id = ?
+           AND autopilot_status = 'watching'
+           AND (last_event_fingerprint IS NULL OR last_event_fingerprint <> ?);`,
+      )
+      .run(now, id, eventFingerprint).changes;
+    return changed === 1 ? readWatch(paths, id) : undefined;
+  } finally {
+    database.close();
+  }
+}
+
+export function transitionWatchAutopilot(
+  paths: RuntimePaths,
+  id: string,
+  input: {
+    from: PrWatch['autopilotStatus'] | PrWatch['autopilotStatus'][];
+    to: PrWatch['autopilotStatus'];
+    eventFingerprint?: string;
+  },
+) {
+  const from = Array.isArray(input.from) ? input.from : [input.from];
+  if (from.length === 0) return undefined;
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const placeholders = from.map(() => '?').join(', ');
+    const now = new Date().toISOString();
+    const changed = database
+      .prepare(
+        `UPDATE pr_watches
+         SET autopilot_status = ?,
+             last_event_fingerprint = COALESCE(?, last_event_fingerprint),
+             updated_at = ?
+         WHERE id = ? AND autopilot_status IN (${placeholders});`,
+      )
+      .run(input.to, input.eventFingerprint ?? null, now, id, ...from).changes;
+    return changed === 1 ? readWatch(paths, id) : undefined;
+  } finally {
+    database.close();
+  }
+}
+
+export function recoverInterruptedAutopilotWatches(paths: RuntimePaths) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const now = new Date().toISOString();
+    return database
+      .prepare(
+        `UPDATE pr_watches
+         SET autopilot_status = 'blocked', updated_at = ?
+         WHERE autopilot_status = 'working';`,
+      )
+      .run(now).changes;
+  } finally {
+    database.close();
+  }
+}
+
 export function readRefWatches(paths: RuntimePaths): RefWatch[] {
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
@@ -447,6 +623,11 @@ export function watchParams(watch: PrWatch) {
     watch.processExisting ? 1 : 0,
     watch.initialEventProcessedAt,
     watch.eventWatermarkVersion,
+    watch.autopilotMode,
+    watch.autopilotStatus,
+    watch.ownerInstanceId,
+    watch.worktreeId,
+    watch.lastEventFingerprint,
     watch.createdAt,
     watch.updatedAt,
   ];
@@ -529,6 +710,24 @@ export function readWatchRow(row: unknown): PrWatch {
       typeof record.event_watermark_version === 'number'
         ? record.event_watermark_version
         : 1,
+    autopilotMode:
+      typeof record.autopilot_mode === 'string'
+        ? (record.autopilot_mode as PrWatch['autopilotMode'])
+        : 'notify-only',
+    autopilotStatus:
+      typeof record.autopilot_status === 'string'
+        ? (record.autopilot_status as PrWatch['autopilotStatus'])
+        : 'watching',
+    ownerInstanceId:
+      typeof record.owner_instance_id === 'string'
+        ? record.owner_instance_id
+        : null,
+    worktreeId:
+      typeof record.worktree_id === 'string' ? record.worktree_id : null,
+    lastEventFingerprint:
+      typeof record.last_event_fingerprint === 'string'
+        ? record.last_event_fingerprint
+        : null,
     createdAt: String(record.created_at),
     updatedAt: String(record.updated_at),
   };

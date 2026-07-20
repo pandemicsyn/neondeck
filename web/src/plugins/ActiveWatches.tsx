@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
   getPrWatches,
+  configurePrAutopilot,
+  controlPrAutopilot,
   removePrWatch,
   setPrWatchPolling,
   type PrWatch,
@@ -113,6 +115,26 @@ function WatchRow({ watch }: { watch: PrWatch }) {
       : 'next poll pending';
   const sourceLabel = watch.createdBy ? ` · ${watch.createdBy}` : '';
   const attentionReason = prWatchAttentionReason(watch);
+  const configureMutation = useMutation({
+    mutationFn: (mode: PrWatch['autopilotMode']) =>
+      configurePrAutopilot({
+        ref: watch.id,
+        mode,
+        processExisting: watch.processExisting,
+      }),
+    onSuccess() {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.autopilotState,
+      });
+    },
+  });
+  const retryMutation = useMutation({
+    mutationFn: () => controlPrAutopilot(watch.id, 'retry'),
+    onSuccess() {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
+    },
+  });
 
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
@@ -130,7 +152,31 @@ function WatchRow({ watch }: { watch: PrWatch }) {
             </p>
           ) : null}
         </div>
-        <Badge className={statusClass(watch.status)}>{watch.status}</Badge>
+        <div className="flex flex-col items-end gap-1">
+          <Badge className={statusClass(watch.status)}>{watch.status}</Badge>
+          <Badge className={autopilotStatusClass(watch.autopilotStatus)}>
+            {watch.autopilotStatus}
+          </Badge>
+        </div>
+      </div>
+      <div className="mt-2 flex items-center gap-2 font-mono text-[10px] text-muted">
+        <span>mode</span>
+        <select
+          aria-label={`Autopilot mode for ${watch.id}`}
+          className="min-h-[28px] min-w-0 flex-1 border border-line bg-field px-2 text-[10px] text-ink"
+          disabled={configureMutation.isPending}
+          onChange={(event) =>
+            configureMutation.mutate(
+              event.target.value as PrWatch['autopilotMode'],
+            )
+          }
+          value={watch.autopilotMode}
+        >
+          <option value="notify-only">notify-only</option>
+          <option value="prepare-only">prepare-only</option>
+          <option value="autofix-with-approval">autofix-with-approval</option>
+          <option value="autofix-push-when-safe">autofix-push-when-safe</option>
+        </select>
       </div>
       <div className="mt-2 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
         <span className="min-w-0 truncate">
@@ -187,6 +233,16 @@ function WatchRow({ watch }: { watch: PrWatch }) {
                 ? 'pause'
                 : 'resume'}
           </Button>
+          {watch.autopilotStatus === 'blocked' ? (
+            <Button
+              className="min-h-[28px] border-accent bg-transparent px-2 py-1 text-[10px] text-accent"
+              disabled={retryMutation.isPending}
+              onClick={() => retryMutation.mutate()}
+              type="button"
+            >
+              {retryMutation.isPending ? 'retrying' : 'retry'}
+            </Button>
+          ) : null}
           <Button
             className="min-h-[28px] border-line bg-transparent px-2 py-1 text-[10px] text-muted hover:border-accent hover:text-accent"
             disabled={removeMutation.isPending || pollingMutation.isPending}
@@ -249,4 +305,12 @@ function statusClass(status: string) {
   if (status === 'closed' || status === 'merged')
     return 'border-line text-muted';
   return '';
+}
+
+function autopilotStatusClass(status: PrWatch['autopilotStatus']) {
+  if (status === 'blocked') return 'border-accent text-accent';
+  if (status === 'working' || status === 'waiting')
+    return 'border-warn text-warn';
+  if (status === 'complete') return 'border-primary text-primary';
+  return 'border-line text-muted';
 }

@@ -12,6 +12,28 @@ export async function addPrWatch(input: {
   return postJson<PrWatchMutationResponse>('/api/watches', input);
 }
 
+export async function configurePrAutopilot(input: {
+  ref: string;
+  mode:
+    | 'notify-only'
+    | 'prepare-only'
+    | 'autofix-with-approval'
+    | 'autofix-push-when-safe';
+  processExisting: boolean;
+}) {
+  return postJson<PrWatchMutationResponse>('/api/watches/autopilot', input);
+}
+
+export async function controlPrAutopilot(
+  id: string,
+  operation: 'pause' | 'resume' | 'retry' | 'stop',
+) {
+  return postJson<PrWatchMutationResponse>(
+    `/api/watches/${encodeURIComponent(id)}/autopilot/control`,
+    { operation },
+  );
+}
+
 export async function removePrWatch(id: string) {
   return postJson<PrWatchMutationResponse>(
     `/api/watches/${encodeURIComponent(id)}`,

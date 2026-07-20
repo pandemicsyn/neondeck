@@ -61,6 +61,7 @@ export {
 export { fixPrReviewFeedback } from './review-feedback';
 export { commentPrAutofixResult } from './comments';
 export { autopilotStateLookupTool, readAutopilotState } from './state';
+export * from './watch-service';
 export type {
   AutopilotState,
   AutopilotPreparedDiff,
