@@ -190,6 +190,7 @@ export async function addPrWatch(
       const updated = updateWatch(
         paths,
         watch,
+        existing,
         baseline?.watermarks,
         needsCurrentFeedbackRearm,
       );
@@ -198,6 +199,7 @@ export async function addPrWatch(
       const updated = updateWatch(
         paths,
         watch,
+        existing,
         baseline?.watermarks,
         needsCurrentFeedbackRearm,
       );
@@ -706,7 +708,7 @@ export async function refreshPrWatch(
     updatedAt: now,
   };
 
-  if (!updateWatch(paths, nextWatch)) {
+  if (!updateWatch(paths, nextWatch, watch)) {
     return staleWatchUpdateResult('watch_pr_refresh', watch.id);
   }
 
@@ -724,7 +726,7 @@ export async function refreshPrWatch(
 function staleWatchUpdateResult(action: string, id: string) {
   return failResult(
     action,
-    `Watch "${id}" changed while current state was being fetched; retry the operation against the current watch generation.`,
-    { requires: ['currentWatchGeneration'] },
+    `Watch "${id}" changed while current state was being fetched; retry the operation against the current watch state.`,
+    { requires: ['currentWatchState'] },
   );
 }

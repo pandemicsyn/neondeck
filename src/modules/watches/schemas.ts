@@ -49,6 +49,14 @@ export type PrWatch = {
   updatedAt: string;
 };
 
+export type PrWatchStateFence = Pick<
+  PrWatch,
+  | 'updatedAt'
+  | 'processExisting'
+  | 'initialEventProcessedAt'
+  | 'eventWatermarkVersion'
+>;
+
 export type PrWatchSnapshot = {
   state: string;
   merged: boolean;

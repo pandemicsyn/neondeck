@@ -48,6 +48,7 @@ import {
 import {
   listPrWatchRecords,
   parseWatchPrReference,
+  persistWatchEventRefresh,
   type PrWatch,
 } from '../watches';
 import {
@@ -84,7 +85,6 @@ import {
   readWatermarks,
   requestedChangesReviewDeliveryFingerprint,
   reviewThreadCommentDeliveryFingerprint,
-  upsertWatermarks,
   watermarksFromEventState,
 } from './watermarks';
 import { recordAddressedPrFeedback } from './addressed';
@@ -1816,7 +1816,12 @@ export async function refreshPrWatchEventState(
     .map((item) => item.category);
 
   if (dependencies.persistWatermarks !== false) {
-    upsertWatermarks(paths, watch.id, next);
+    const persisted = persistWatchEventRefresh(paths, watch.id, next, {
+      expectedWatchState: watch,
+    });
+    if (!persisted.persisted) {
+      return staleWatchEventRefreshResult(watch.id);
+    }
   }
   const currentWatermarks =
     dependencies.persistWatermarks === false
@@ -1836,6 +1841,14 @@ export async function refreshPrWatchEventState(
       previousWatermarks: previous as unknown as JsonValue,
       watermarks: currentWatermarks as unknown as JsonValue,
     },
+  );
+}
+
+function staleWatchEventRefreshResult(watchId: string) {
+  return failResult(
+    'pr_watch_event_state_refresh',
+    `Watch "${watchId}" changed while PR event facts were being fetched; the current event baseline was preserved. Retry against the current watch state.`,
+    { requires: ['currentWatchState'] },
   );
 }
 

@@ -13,6 +13,7 @@ import type {
   DesiredTerminalState,
   PrWatch,
   PrWatchInitialWatermark,
+  PrWatchStateFence,
   PrWatchSnapshot,
   PrWatchStatus,
   RefWatch,
@@ -81,6 +82,7 @@ export function insertWatch(
 export function updateWatch(
   paths: RuntimePaths,
   watch: PrWatch,
+  expectedWatchState: PrWatchStateFence,
   initialWatermarks?: PrWatchInitialWatermark[],
   resetEventWatermarks = false,
 ) {
@@ -113,7 +115,11 @@ export function updateWatch(
           initial_event_processed_at = ?,
           event_watermark_version = ?,
           updated_at = ?
-        WHERE id = ?;
+        WHERE id = ?
+          AND updated_at = ?
+          AND process_existing = ?
+          AND initial_event_processed_at IS ?
+          AND event_watermark_version = ?;
       `,
         )
         .run(
@@ -136,6 +142,10 @@ export function updateWatch(
           watch.eventWatermarkVersion,
           watch.updatedAt,
           watch.id,
+          expectedWatchState.updatedAt,
+          expectedWatchState.processExisting ? 1 : 0,
+          expectedWatchState.initialEventProcessedAt,
+          expectedWatchState.eventWatermarkVersion,
         ).changes;
       if (updated !== 1) {
         rollbackQuietly(database);
@@ -550,11 +560,12 @@ export function persistWatchEventRefresh(
   watchId: string,
   watermarks: PrWatchInitialWatermark[],
   options: {
+    expectedWatchState: PrWatchStateFence;
     notification?: NonNullable<
       AutomationExecutionResult['notifications']
     >[number];
     markInitialProcessed?: boolean;
-  } = {},
+  },
   processedAt = new Date().toISOString(),
 ) {
   const database = openDb(paths.neondeckDatabase);
@@ -565,14 +576,30 @@ export function persistWatchEventRefresh(
     try {
       const watch = database
         .prepare(
-          `SELECT initial_event_processed_at
+          `SELECT
+             updated_at,
+             process_existing,
+             initial_event_processed_at,
+             event_watermark_version
            FROM pr_watches
            WHERE id = ?;`,
         )
-        .get(watchId);
+        .get(watchId) as WatchStateRow | undefined;
       if (!watch) {
         rollbackQuietly(database);
-        return { persisted: false, notification: null };
+        return {
+          persisted: false as const,
+          reason: 'missing' as const,
+          notification: null,
+        };
+      }
+      if (!watchStateMatchesFence(watch, options.expectedWatchState)) {
+        rollbackQuietly(database);
+        return {
+          persisted: false as const,
+          reason: 'stale' as const,
+          notification: null,
+        };
       }
 
       for (const watermark of watermarks) {
@@ -707,5 +734,27 @@ export function persistWatchEventRefresh(
       changedAt: processedAt,
     });
   }
-  return { persisted: true, notification: persistedNotification };
+  return {
+    persisted: true as const,
+    notification: persistedNotification,
+  };
+}
+
+type WatchStateRow = {
+  updated_at: unknown;
+  process_existing: unknown;
+  initial_event_processed_at: unknown;
+  event_watermark_version: unknown;
+};
+
+function watchStateMatchesFence(
+  row: WatchStateRow,
+  expected: PrWatchStateFence,
+) {
+  return (
+    row.updated_at === expected.updatedAt &&
+    row.process_existing === (expected.processExisting ? 1 : 0) &&
+    row.initial_event_processed_at === expected.initialEventProcessedAt &&
+    row.event_watermark_version === expected.eventWatermarkVersion
+  );
 }

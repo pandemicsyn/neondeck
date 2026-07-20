@@ -48,6 +48,7 @@ type WatchJobEventResult = {
   refresh?: JsonValue;
   notifications?: AutomationExecutionResult['notifications'];
   persistedNotifications?: NotificationRecord[];
+  requires?: string[];
 };
 
 /**
@@ -122,12 +123,18 @@ async function refreshOneWatchEvent(
   const changedCategories = changedCategoriesFromActionResult(refresh);
   const currentWatermarks = watermarksFromActionResult(refresh);
   if (changedCategories.length === 0) {
-    persistWatchEventRefresh(
+    const persisted = persistWatchEventRefresh(
       paths,
       watch.id,
       watermarksForPersistence(currentWatermarks),
-      { markInitialProcessed: !watch.initialEventProcessedAt },
+      {
+        expectedWatchState: watch,
+        markInitialProcessed: !watch.initialEventProcessedAt,
+      },
     );
+    if (!persisted.persisted) {
+      return staleWatchEventPersistenceResult(watch, refresh);
+    }
     return {
       ok: true,
       changed: false,
@@ -183,10 +190,14 @@ async function refreshOneWatchEvent(
     watch.id,
     watermarksForPersistence(currentWatermarks),
     {
+      expectedWatchState: watch,
       notification,
       markInitialProcessed: firstPoll,
     },
   );
+  if (!persisted.persisted) {
+    return staleWatchEventPersistenceResult(watch, refresh);
+  }
 
   return {
     ok: true,
@@ -203,6 +214,34 @@ async function refreshOneWatchEvent(
     ...(persisted.notification
       ? { persistedNotifications: [persisted.notification] }
       : {}),
+  };
+}
+
+function staleWatchEventPersistenceResult(
+  watch: PrWatch,
+  refresh: Awaited<ReturnType<typeof refreshPrWatchEventState>>,
+): WatchJobEventResult {
+  const message = `Watch "${watch.id}" changed while PR event facts were being fetched; the current event baseline was preserved. Retry against the current watch state.`;
+  return {
+    ok: false,
+    changed: false,
+    watchId: watch.id,
+    repoId: watch.repoId,
+    repoFullName: watch.repoFullName,
+    prNumber: watch.prNumber,
+    message,
+    refresh: refresh as unknown as JsonValue,
+    requires: ['currentWatchState'],
+    notifications: [
+      {
+        level: 'attention',
+        title: 'PR event refresh needs retry',
+        message,
+        source: 'watch-pr-events',
+        sourceId: `${watch.id}:stale-watch-state`,
+        data: { watchId: watch.id, requires: ['currentWatchState'] },
+      },
+    ],
   };
 }
 

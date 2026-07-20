@@ -12,6 +12,7 @@ import {
   refreshPrWatchEventState,
   requestedChangesReviewDeliveryFingerprint,
   reviewThreadCommentFingerprint,
+  watermarksFromEventState,
 } from './modules/pr-events';
 import { refreshWatchJobEvents } from './modules/scheduler/pr-watch-events';
 import { runSchedulerTick } from './modules/scheduler';
@@ -256,6 +257,82 @@ describe('deterministic PR watch event refresh', () => {
       ),
     ).resolves.toMatchObject({ data: { watermarks: [] } });
     expect(await listNotifications(paths)).toEqual([]);
+  });
+
+  it('does not let a deferred event fetch overwrite a concurrent current-feedback rearm', async () => {
+    const paths = await fixture();
+    const state = eventState();
+    await addPrWatch(
+      { ref: 'pandemicsyn/neondeck#164', processExisting: false },
+      paths,
+      async () => prDetail(),
+      undefined,
+      async (_watch, watchId) => watermarksFromEventState(watchId, state),
+    );
+    expect((await listPrWatchRecords(paths))[0]).toMatchObject({
+      processExisting: false,
+      initialEventProcessedAt: expect.any(String),
+    });
+
+    const fetchStarted = Promise.withResolvers<void>();
+    const eventFetch = Promise.withResolvers<GitHubPullRequestEventState>();
+    const refresh = refreshWatchJobEvents(
+      [{ watch: { id: 'pandemicsyn/neondeck#164' } }] as never,
+      paths,
+      {
+        refreshPrWatchEventState: (input, targetPaths, options) =>
+          refreshPrWatchEventState(input, targetPaths, {
+            token: 'test-token',
+            persistWatermarks: options?.persistWatermarks,
+            fetchPullRequestEventState: async () => {
+              fetchStarted.resolve();
+              return eventFetch.promise;
+            },
+          }),
+      },
+      null,
+    );
+    await fetchStarted.promise;
+
+    await expect(
+      addPrWatch(
+        { ref: 'pandemicsyn/neondeck#164', processExisting: true },
+        paths,
+        async () => prDetail(),
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+    expect((await listPrWatchRecords(paths))[0]).toMatchObject({
+      processExisting: true,
+      initialEventProcessedAt: null,
+    });
+    await expect(
+      listPrWatchEventWatermarks(
+        { watchId: 'pandemicsyn/neondeck#164' },
+        paths,
+      ),
+    ).resolves.toMatchObject({ data: { watermarks: [] } });
+
+    eventFetch.resolve(state);
+    await expect(refresh).resolves.toEqual([
+      expect.objectContaining({
+        ok: false,
+        changed: false,
+        requires: ['currentWatchState'],
+        message: expect.stringContaining(
+          'current event baseline was preserved',
+        ),
+      }),
+    ]);
+    expect((await listPrWatchRecords(paths))[0]).toMatchObject({
+      processExisting: true,
+      initialEventProcessedAt: null,
+    });
+    await expect(
+      listPrWatchEventWatermarks(
+        { watchId: 'pandemicsyn/neondeck#164' },
+        paths,
+      ),
+    ).resolves.toMatchObject({ data: { watermarks: [] } });
   });
 
   it('reports atomically persisted event notifications without persisting them twice', async () => {
