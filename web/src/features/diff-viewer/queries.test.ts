@@ -3,6 +3,22 @@ import { describe, expect, it } from 'vitest';
 import { diffViewerQueryKeys } from './queries';
 
 describe('diff viewer revision query families', () => {
+  it('keeps managed-worktree diffs bound to their retained PR head', () => {
+    expect(
+      diffViewerQueryKeys.repoDiff({
+        repoId: 'repo-1',
+        worktreeId: 'worktree-1',
+        base: 'pr-head-a',
+      }),
+    ).not.toEqual(
+      diffViewerQueryKeys.repoDiff({
+        repoId: 'repo-1',
+        worktreeId: 'worktree-1',
+        base: 'pr-head-b',
+      }),
+    );
+  });
+
   it('keeps prepared patch bodies revision-bound', () => {
     expect(
       diffViewerQueryKeys.preparedDiffFile(

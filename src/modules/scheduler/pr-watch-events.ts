@@ -1,13 +1,11 @@
 import type { JsonValue } from '@flue/runtime';
+import { asJsonValue } from '../../lib/action-result';
 import type {
   AutomationExecutionResult,
   NotificationRecord,
 } from '../app-state';
-import { readRepoRegistrySnapshot } from '../repos';
-import {
-  repoAutopilotPolicyForWatch,
-  type AutopilotMode,
-} from '../autopilot-policy';
+import type { AutopilotMode } from '../autopilot-policy';
+import { runAutopilotWatchEvent } from '../autopilot';
 import {
   listPrWatchEventWatermarks,
   readAddressedPrFeedback,
@@ -16,14 +14,11 @@ import {
   type PrWatchEventWatermarkCategory,
   type PrWatchEventWatermarkRecord,
 } from '../pr-events';
-import {
-  parseAppConfig,
-  readRuntimeJson,
-  type RuntimePaths,
-} from '../../runtime-home';
+import { type RuntimePaths } from '../../runtime-home';
 import {
   listPrWatchRecords,
   persistWatchEventRefresh,
+  readWatch,
   type PrWatch,
 } from '../watches';
 import type { SchedulerDependencies } from './schemas';
@@ -31,6 +26,8 @@ import {
   deltasFromChangedCategories,
   initialActionableDeltas,
   prEventNotification,
+  shouldAdmitTriageForDeltas,
+  snapshotFromWatermarks,
 } from './pr-watch-event-deltas';
 import { readJsonArray, readObjectConfig, stringField } from './utils';
 
@@ -48,13 +45,14 @@ type WatchJobEventResult = {
   refresh?: JsonValue;
   notifications?: AutomationExecutionResult['notifications'];
   persistedNotifications?: NotificationRecord[];
+  autopilot?: JsonValue;
   requires?: string[];
 };
 
 /**
  * Refreshes deterministic PR event facts and emits notifications for meaningful
- * changes. Autopilot owner dispatch intentionally remains disconnected until the
- * simplified loop is implemented separately.
+ * changes. Eligible actionable changes are dispatched to the minimal continuing
+ * Autopilot owner loop after the new baseline is persisted.
  */
 export async function refreshWatchJobEvents(
   results: Awaited<
@@ -88,6 +86,22 @@ async function refreshOneWatchEvent(
   paths: RuntimePaths,
   dependencies: SchedulerDependencies,
 ): Promise<WatchJobEventResult> {
+  if (
+    watch.autopilotStatus === 'working' ||
+    watch.autopilotStatus === 'waiting' ||
+    watch.autopilotStatus === 'blocked'
+  ) {
+    return {
+      ok: true,
+      changed: false,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      mode: watch.autopilotMode,
+      message: `Deferred PR event watermark advancement while Autopilot is ${watch.autopilotStatus}; the next eligible poll will compare current facts with the retained baseline.`,
+    };
+  }
   const listWatermarks =
     dependencies.listPrWatchEventWatermarks ?? listPrWatchEventWatermarks;
   const refreshEvents =
@@ -174,7 +188,7 @@ async function refreshOneWatchEvent(
         previousWatermarks,
         filters,
       );
-  const mode = await readEffectiveWatchAutopilotMode(watch, paths);
+  const mode = watch.autopilotMode;
   const notification =
     deltas.length > 0
       ? prEventNotification(
@@ -185,20 +199,61 @@ async function refreshOneWatchEvent(
           mode,
         )
       : undefined;
+  const currentBeforeAdmission = readWatch(paths, watch.id);
+  if (
+    !currentBeforeAdmission ||
+    !sameWatchEventFence(watch, currentBeforeAdmission)
+  ) {
+    return staleWatchEventPersistenceResult(watch, refresh);
+  }
+  const autopilot = notification
+    ? await runAutopilotWatchEvent(
+        {
+          watchId: watch.id,
+          eventFingerprint: notification.sourceId,
+          reasoningRequired: shouldAdmitTriageForDeltas(deltas),
+          changedCategories,
+          deltas,
+          currentFacts: asJsonValue({
+            snapshot: snapshotFromWatermarks(currentWatermarks),
+            watermarks: currentWatermarks,
+          }),
+        },
+        paths,
+      )
+    : undefined;
+  const currentWatch = readWatch(paths, watch.id);
+  if (!currentWatch) {
+    return staleWatchEventPersistenceResult(watch, refresh);
+  }
+  const preserveBaseline = Boolean(
+    notification &&
+    currentWatch.lastEventFingerprint !== notification.sourceId &&
+    autopilot &&
+    ['dispatched', 'busy', 'waiting', 'blocked'].includes(autopilot.state),
+  );
+  const handledEventFingerprint =
+    notification &&
+    autopilot &&
+    ['notified', 'observed', 'terminal-pending'].includes(autopilot.state)
+      ? notification.sourceId
+      : undefined;
   const persisted = persistWatchEventRefresh(
     paths,
     watch.id,
-    watermarksForPersistence(currentWatermarks),
+    watermarksForPersistence(
+      preserveBaseline ? previousWatermarks : currentWatermarks,
+    ),
     {
-      expectedWatchState: watch,
-      notification,
-      markInitialProcessed: firstPoll,
+      expectedWatchState: currentWatch,
+      notification: autopilot?.state === 'duplicate' ? undefined : notification,
+      handledEventFingerprint,
+      markInitialProcessed: firstPoll && !preserveBaseline,
     },
   );
   if (!persisted.persisted) {
     return staleWatchEventPersistenceResult(watch, refresh);
   }
-
   return {
     ok: true,
     changed: Boolean(notification),
@@ -211,6 +266,7 @@ async function refreshOneWatchEvent(
     deltas,
     message: refresh.message,
     refresh: refresh as unknown as JsonValue,
+    ...(autopilot ? { autopilot: autopilot as unknown as JsonValue } : {}),
     ...(persisted.notification
       ? { persistedNotifications: [persisted.notification] }
       : {}),
@@ -245,28 +301,21 @@ function staleWatchEventPersistenceResult(
   };
 }
 
+function sameWatchEventFence(expected: PrWatch, current: PrWatch) {
+  return (
+    current.updatedAt === expected.updatedAt &&
+    current.processExisting === expected.processExisting &&
+    current.initialEventProcessedAt === expected.initialEventProcessedAt &&
+    current.eventWatermarkVersion === expected.eventWatermarkVersion
+  );
+}
+
 function watermarksForPersistence(watermarks: PrWatchEventWatermarkRecord[]) {
   return watermarks.map((watermark) => ({
     category: watermark.category,
     value: watermark.watermark,
     sourceUpdatedAt: watermark.sourceUpdatedAt,
   }));
-}
-
-async function readEffectiveWatchAutopilotMode(
-  watch: PrWatch,
-  paths: RuntimePaths,
-): Promise<AutopilotMode> {
-  const [registry, appConfig] = await Promise.all([
-    readRepoRegistrySnapshot(paths),
-    readRuntimeJson(paths.config, parseAppConfig),
-  ]);
-  const repo = registry.repos.find(
-    (candidate) => candidate.id === watch.repoId,
-  );
-  return repo
-    ? repoAutopilotPolicyForWatch(repo, appConfig, watch).mode
-    : 'notify-only';
 }
 
 function watchIdFromResult(value: unknown) {

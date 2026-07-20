@@ -48,6 +48,7 @@ export async function cleanupDecision(
   }
   if (input.force) {
     const forceCleanupStatuses = [
+      'ready',
       'stale',
       'needs-sync',
       'cleanup-pending',

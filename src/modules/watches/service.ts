@@ -1,6 +1,10 @@
 import { readRepoRegistrySnapshot } from '../repos';
 import { prEventWatermarkTruncationCategories } from '../github';
-import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
+import {
+  ensureRuntimeHome,
+  runtimePaths,
+  type RuntimePaths,
+} from '../../runtime-home';
 import {
   deleteScheduledTask,
   listScheduledTasks,
@@ -57,6 +61,7 @@ import {
 } from './store';
 import { resolvePrReference, resolveRefReference } from './references';
 import { failResult, okResult, parseActionInput } from './utils';
+import { readWorktreeRecord } from '../worktrees';
 
 export async function addPrWatch(
   input: v.InferInput<typeof watchPrAddInputSchema>,
@@ -267,6 +272,11 @@ export async function addPrWatch(
     processExisting,
     initialEventProcessedAt: processExisting ? null : now,
     eventWatermarkVersion: currentPrWatchEventWatermarkVersion,
+    autopilotMode: 'notify-only',
+    autopilotStatus: 'watching',
+    ownerInstanceId: null,
+    worktreeId: null,
+    lastEventFingerprint: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -390,8 +400,12 @@ export async function listPrWatches(
   return okResult('watch_pr_list', false, undefined, 'Listed PR watches.', {
     watches: readWatches(paths).map((watch) => {
       const task = tasks.get(watchPollingTaskId(watch.id));
+      const worktreeHeadSha = watch.worktreeId
+        ? readWatchWorktreeHead(watch.worktreeId, paths)
+        : null;
       return {
         ...watch,
+        worktreeHeadSha,
         nextRunAt: task?.nextRunAt ?? null,
         pollingEnabled: task?.enabled ?? false,
         pollIntervalSeconds:
@@ -399,6 +413,14 @@ export async function listPrWatches(
       };
     }),
   });
+}
+
+function readWatchWorktreeHead(worktreeId: string, paths: RuntimePaths) {
+  try {
+    return readWorktreeRecord(worktreeId, paths).headSha;
+  } catch {
+    return null;
+  }
 }
 
 export async function listPrWatchRecords(paths = runtimePaths()) {

@@ -640,6 +640,75 @@ export function RepoEditEventDiffReview({ event }: { event: RepoEditEvent }) {
   );
 }
 
+export function WorktreeDiffReview({
+  repoId,
+  worktreeId,
+  base,
+  title,
+  detail,
+}: {
+  repoId: string;
+  worktreeId: string;
+  base: string;
+  title: string;
+  detail?: string;
+}) {
+  const [activePath, setActivePath] = useState<string | null>(null);
+  const diffQuery = useRepoDiff({ repoId, worktreeId, base });
+  const files = useMemo(() => diffQuery.data?.files ?? [], [diffQuery.data]);
+  useEffect(() => {
+    if (activePath && files.some((file) => file.path === activePath)) return;
+    setActivePath(firstRenderablePath(files) ?? null);
+  }, [activePath, files]);
+  const revisionKey = reviewRevisionKey(
+    diffQuery.data?.revision ?? {
+      state: 'unavailable',
+      kind: 'worktree-diff',
+      reason: 'The managed worktree diff has not loaded.',
+    },
+  );
+  const patchQuery = useRepoDiffFilePatch({
+    repoId,
+    worktreeId,
+    base,
+    path: activePath,
+    revisionKey,
+  });
+  const renderedFiles = useMemo(
+    () =>
+      files.map((file) => {
+        if (file.path !== activePath) return file;
+        const patch = patchQuery.data?.files?.find(
+          (candidate) => candidate.path === file.path,
+        );
+        return patch ? { ...file, ...patch } : file;
+      }),
+    [activePath, files, patchQuery.data?.files],
+  );
+
+  if (diffQuery.isLoading) return <MiniEmpty label="Loading Autopilot diff." />;
+  if (diffQuery.error) {
+    return (
+      <MiniEmpty
+        label={`Autopilot diff unavailable: ${queryErrorMessage(diffQuery.error)}`}
+      />
+    );
+  }
+  return (
+    <MultiFileView
+      activePath={activePath}
+      detail={detail ?? 'Committed change held in the managed worktree'}
+      emptyLabel="No managed worktree changes to render."
+      files={renderedFiles}
+      isLoadingPatch={Boolean(activePath) && patchQuery.isLoading}
+      onActivePathChange={setActivePath}
+      patchError={patchQuery.error ? queryErrorMessage(patchQuery.error) : null}
+      title={title}
+      tone="primary"
+    />
+  );
+}
+
 function StaticReviewNotice({ label }: { label: string }) {
   return (
     <p className="border-b border-line bg-field px-2 py-1 font-mono text-[10px] text-muted">

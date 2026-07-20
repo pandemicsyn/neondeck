@@ -5,6 +5,7 @@ import { decideLearningCandidateCli } from './learning';
 import { registerMcpCommands } from './mcp';
 import {
   appDbModule,
+  autopilotModule,
   configActionsModule,
   devDoctorModule,
   handoffModule,
@@ -445,6 +446,15 @@ program
   )
   .option('--interval <seconds>', 'poll interval in seconds')
   .option('--from <agent>', 'external agent attribution')
+  .option('--mode <mode>', 'Autopilot capability mode')
+  .option(
+    '--process-existing',
+    'process current actionable feedback instead of baselining it',
+  )
+  .option(
+    '--confirm-autopilot',
+    'confirm enabling or increasing the requested Autopilot capability mode',
+  )
   .option('--json', 'print machine-readable JSON')
   .action(async (ref: string, options: WatchPrOptions) => {
     applyCommandJsonOption(options);
@@ -454,17 +464,36 @@ program
     loadEnvForPaths(paths);
     const desiredTerminalState = parseWatchTarget(options.until);
     const intervalSeconds = parseOptionalIntervalSeconds(options.interval);
-    const result = await addPrWatch(
-      {
-        ref,
-        desiredTerminalState,
-        ...(intervalSeconds !== undefined ? { intervalSeconds } : {}),
-        ...(options.from
-          ? { createdBy: normalizeHandoffSource(options.from) }
-          : {}),
-      },
-      paths,
-    );
+    const result = options.mode
+      ? await (async () => {
+          const { configurePrAutopilot } = await autopilotModule();
+          return configurePrAutopilot(
+            {
+              ref,
+              mode: parseAutopilotModeFlag(options.mode)!,
+              processExisting: Boolean(options.processExisting),
+              confirm: Boolean(options.confirmAutopilot),
+              desiredTerminalState,
+              ...(intervalSeconds !== undefined ? { intervalSeconds } : {}),
+              ...(options.from
+                ? { createdBy: normalizeHandoffSource(options.from) }
+                : {}),
+            },
+            paths,
+          );
+        })()
+      : await addPrWatch(
+          {
+            ref,
+            desiredTerminalState,
+            ...(intervalSeconds !== undefined ? { intervalSeconds } : {}),
+            ...(options.from
+              ? { createdBy: normalizeHandoffSource(options.from) }
+              : {}),
+            ...(options.processExisting ? { processExisting: true } : {}),
+          },
+          paths,
+        );
     printActionResult(result);
   });
 

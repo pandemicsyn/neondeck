@@ -491,10 +491,7 @@ async function applyPlannedPatch(
         const final = finalWrites[finalIndex++]!;
         const rollback = rollbackWrites[rollbackIndex++]!;
         await beforeMutation();
-        await assertPlannedPreimage(
-          file.target.fullPath,
-          file.restoreBefore,
-        );
+        await assertPlannedPreimage(file.target.fullPath, file.restoreBefore);
         await rename(final.temp, final.target);
         rollbackSteps.push(() => commitStagedWrite(rollback));
         await access(final.target, constants.R_OK);
@@ -504,10 +501,7 @@ async function applyPlannedPatch(
       if (file.operation === 'delete') {
         const rollback = rollbackWrites[rollbackIndex++]!;
         await beforeMutation();
-        await assertPlannedPreimage(
-          file.target.fullPath,
-          file.restoreBefore,
-        );
+        await assertPlannedPreimage(file.target.fullPath, file.restoreBefore);
         await rm(file.target.fullPath, { force: true });
         rollbackSteps.push(() => commitStagedWrite(rollback));
         continue;
@@ -521,10 +515,7 @@ async function applyPlannedPatch(
       rollbackSteps.push(() => rm(final.target, { force: true }));
       await access(final.target, constants.R_OK);
       await beforeMutation();
-      await assertPlannedPreimage(
-        file.target.fullPath,
-        file.restoreBefore,
-      );
+      await assertPlannedPreimage(file.target.fullPath, file.restoreBefore);
       await rm(file.target.fullPath, { force: true });
       rollbackSteps.push(() => commitStagedWrite(rollback));
     }

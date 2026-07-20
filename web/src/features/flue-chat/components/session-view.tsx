@@ -60,6 +60,9 @@ import type {
 export function FlueChatSessionView({
   activeRecord,
   agentName,
+  allowCommands = true,
+  messageEnabled = true,
+  messageLabel = 'Message Neon',
   onReferenceDraftConsumed,
   quickCommands,
   referenceDraft,
@@ -68,6 +71,9 @@ export function FlueChatSessionView({
 }: {
   activeRecord: ChatSessionRecord | undefined;
   agentName: string;
+  allowCommands?: boolean;
+  messageEnabled?: boolean;
+  messageLabel?: string;
   onReferenceDraftConsumed?: () => void;
   quickCommands: FlueChatConfig['quickCommands'];
   referenceDraft?: string;
@@ -97,13 +103,14 @@ export function FlueChatSessionView({
   const commandsQuery = useQuery({
     queryKey: queryKeys.neonCommands,
     queryFn: getNeonCommands,
+    enabled: allowCommands,
     staleTime: Number.POSITIVE_INFINITY,
   });
   const commandCatalog = useMemo(
     () => mergeCommandCatalog(quickCommands, commandsQuery.data?.items),
     [commandsQuery.data?.items, quickCommands],
   );
-  const commandQuery = commandQueryFromInput(input);
+  const commandQuery = allowCommands ? commandQueryFromInput(input) : undefined;
   const matchingCommands = useMemo(
     () => filterCommands(commandCatalog, commandQuery),
     [commandCatalog, commandQuery],
@@ -122,15 +129,17 @@ export function FlueChatSessionView({
   const commandBusy = commandSubmitting || Boolean(runningCommand);
   const inputPlaceholder = !session
     ? 'Resolving active session...'
-    : historyInputBlocked
-      ? 'Loading session history...'
-      : session.placeholder;
+    : !messageEnabled
+      ? session.placeholder
+      : historyInputBlocked
+        ? 'Loading session history...'
+        : session.placeholder;
   const linkedWatchId = activeRecord?.linkedWatchId;
   const commandEventsQuery = useQuery({
     queryKey: queryKeys.chatSessionCommandEvents(session?.id),
     queryFn: ({ signal }) =>
       getChatSessionCommandEvents(session?.id ?? '', { signal }),
-    enabled: Boolean(session?.id),
+    enabled: Boolean(allowCommands && session?.id),
   });
   const activityQuery = useQuery({
     queryKey: queryKeys.chatSessionActivity(session?.id, linkedWatchId),
@@ -203,6 +212,7 @@ export function FlueChatSessionView({
     const message = input.trim();
     if (
       !message ||
+      !messageEnabled ||
       sendingMessage ||
       commandBusy ||
       commandSubmitLockRef.current
@@ -216,7 +226,7 @@ export function FlueChatSessionView({
       return;
     }
 
-    if (message.startsWith('/')) {
+    if (allowCommands && message.startsWith('/')) {
       let createdEvent: CommandEvent | undefined;
       commandSubmitLockRef.current = true;
       setCommandSubmitting(true);
@@ -504,7 +514,7 @@ export function FlueChatSessionView({
               <p className="mt-1 line-clamp-2">{agent.error.message}</p>
             </div>
           ) : null}
-          {commandEventsQuery.error ? (
+          {allowCommands && commandEventsQuery.error ? (
             <div
               className="border border-accent/60 bg-soft px-2.5 py-2 font-mono text-[10.5px] leading-4 text-accent"
               role="alert"
@@ -548,14 +558,16 @@ export function FlueChatSessionView({
         </div>
       </ScrollArea>
       <div className="relative shrink-0 border-t border-line bg-field">
-        <CommandTypeahead
-          activeCommand={activeCommand}
-          activeCommandIndex={activeCommandIndex}
-          commands={visibleCommands}
-          id={commandTypeaheadId}
-          open={commandMenuOpen}
-          onSelect={completeCommand}
-        />
+        {allowCommands ? (
+          <CommandTypeahead
+            activeCommand={activeCommand}
+            activeCommandIndex={activeCommandIndex}
+            commands={visibleCommands}
+            id={commandTypeaheadId}
+            open={commandMenuOpen}
+            onSelect={completeCommand}
+          />
+        ) : null}
         {submitError ? (
           <div
             className="border-b border-accent/50 px-4 py-1 font-mono text-[10.5px] leading-4 text-accent"
@@ -578,7 +590,7 @@ export function FlueChatSessionView({
             aria-autocomplete="list"
             aria-controls={commandTypeaheadId}
             aria-expanded={commandMenuOpen}
-            aria-label="Message Neon"
+            aria-label={messageLabel}
             className="dashboard-input h-7 min-w-0 flex-1 overflow-hidden px-0 py-1 font-mono text-[13px] leading-5 caret-primary"
             onChange={(event) => {
               setInput(event.target.value);
@@ -590,7 +602,11 @@ export function FlueChatSessionView({
             rows={1}
             role="combobox"
             disabled={
-              !session || historyInputBlocked || sendingMessage || commandBusy
+              !session ||
+              !messageEnabled ||
+              historyInputBlocked ||
+              sendingMessage ||
+              commandBusy
             }
             value={input}
           />
@@ -605,12 +621,15 @@ export function FlueChatSessionView({
                     ? 'Starting'
                     : sendingMessage
                       ? 'Sending'
-                      : '/ commands | Enter send'}
+                      : allowCommands
+                        ? '/ commands | Enter send'
+                        : 'Enter send'}
           </Kbd>
           <Button
             className="flue-chat-send min-h-[28px] shrink-0 bg-transparent px-2 py-1 font-mono text-[10px]"
             disabled={
               !session ||
+              !messageEnabled ||
               historyInputBlocked ||
               !input.trim() ||
               sendingMessage ||

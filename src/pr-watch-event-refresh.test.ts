@@ -17,7 +17,12 @@ import {
 import { refreshWatchJobEvents } from './modules/scheduler/pr-watch-events';
 import { runSchedulerTick } from './modules/scheduler';
 import { upsertScheduledTask } from './modules/scheduled-tasks';
-import { addPrWatch, listPrWatchRecords } from './modules/watches';
+import {
+  addPrWatch,
+  claimWatchAutopilotTurn,
+  listPrWatchRecords,
+  transitionWatchAutopilot,
+} from './modules/watches';
 import {
   ensureRuntimeHome,
   runtimePaths,
@@ -81,7 +86,7 @@ describe('deterministic PR watch event refresh', () => {
         persistedNotifications: [
           expect.objectContaining({
             title: 'PR watch requested changes',
-            data: expect.objectContaining({ mode: 'prepare-only' }),
+            data: expect.objectContaining({ mode: 'notify-only' }),
           }),
         ],
       }),
@@ -89,7 +94,7 @@ describe('deterministic PR watch event refresh', () => {
     expect(await listNotifications(paths)).toEqual([
       expect.objectContaining({
         title: 'PR watch requested changes',
-        data: expect.objectContaining({ mode: 'prepare-only' }),
+        data: expect.objectContaining({ mode: 'notify-only' }),
       }),
     ]);
     expect(first[0]).not.toHaveProperty('triage');
@@ -172,6 +177,62 @@ describe('deterministic PR watch event refresh', () => {
     });
   });
 
+  it('retains the event baseline while an owner is busy and observes the feedback on the next eligible poll', async () => {
+    const paths = await fixture();
+    await addPrWatch(
+      { ref: 'pandemicsyn/neondeck#164', processExisting: true },
+      paths,
+      async () => prDetail(),
+    );
+    const quiet = eventState();
+    quiet.requestedChangesReviews = [];
+    quiet.requestedChangesState = {
+      active: [],
+      latestByReviewer: [],
+      history: [],
+    };
+    const target = [{ watch: { id: 'pandemicsyn/neondeck#164' } }] as never;
+    await refreshWatchJobEvents(target, paths, liveDependencies(quiet), null);
+
+    claimWatchAutopilotTurn(
+      paths,
+      'pandemicsyn/neondeck#164',
+      'in-flight-event',
+    );
+    const refreshWhileBusy = vi.fn();
+    await expect(
+      refreshWatchJobEvents(
+        target,
+        paths,
+        { refreshPrWatchEventState: refreshWhileBusy as never },
+        null,
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({ message: expect.stringContaining('Deferred') }),
+    ]);
+    expect(refreshWhileBusy).not.toHaveBeenCalled();
+
+    transitionWatchAutopilot(paths, 'pandemicsyn/neondeck#164', {
+      from: 'working',
+      to: 'watching',
+    });
+    const replayed = await refreshWatchJobEvents(
+      target,
+      paths,
+      liveDependencies(eventState()),
+      null,
+    );
+    expect(replayed).toEqual([
+      expect.objectContaining({
+        changed: true,
+        autopilot: expect.objectContaining({ state: 'notified' }),
+        deltas: expect.arrayContaining([
+          expect.objectContaining({ type: 'requested-changes' }),
+        ]),
+      }),
+    ]);
+  });
+
   it('filters addressed and Neondeck-delivered feedback in the live first poll', async () => {
     const paths = await fixture();
     await addPrWatch(
@@ -219,7 +280,7 @@ describe('deterministic PR watch event refresh', () => {
     expect(await listNotifications(paths)).toEqual([]);
   });
 
-  it('rolls back watermarks and the first-poll marker when notification persistence fails', async () => {
+  it('retries notify-only feedback when atomic notification persistence fails', async () => {
     const paths = await fixture();
     await addPrWatch(
       { ref: 'pandemicsyn/neondeck#164', processExisting: true },
@@ -249,6 +310,7 @@ describe('deterministic PR watch event refresh', () => {
 
     expect((await listPrWatchRecords(paths))[0]).toMatchObject({
       initialEventProcessedAt: null,
+      lastEventFingerprint: null,
     });
     await expect(
       listPrWatchEventWatermarks(
@@ -257,6 +319,32 @@ describe('deterministic PR watch event refresh', () => {
       ),
     ).resolves.toMatchObject({ data: { watermarks: [] } });
     expect(await listNotifications(paths)).toEqual([]);
+
+    const retryDatabase = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      retryDatabase.exec('DROP TRIGGER reject_watch_notifications;');
+    } finally {
+      retryDatabase.close();
+    }
+    await expect(
+      refreshWatchJobEvents(
+        [{ watch: { id: 'pandemicsyn/neondeck#164' } }] as never,
+        paths,
+        liveDependencies(eventState()),
+        null,
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        changed: true,
+        autopilot: expect.objectContaining({ state: 'notified' }),
+        persistedNotifications: [expect.any(Object)],
+      }),
+    ]);
+    expect((await listPrWatchRecords(paths))[0]).toMatchObject({
+      initialEventProcessedAt: expect.any(String),
+      lastEventFingerprint: expect.any(String),
+    });
+    expect(await listNotifications(paths)).toHaveLength(1);
   });
 
   it('does not let a deferred event fetch overwrite a concurrent current-feedback rearm', async () => {

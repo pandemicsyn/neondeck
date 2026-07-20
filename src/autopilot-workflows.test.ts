@@ -987,6 +987,7 @@ describe('PR event autopilot', () => {
       `${JSON.stringify(
         {
           version: 1,
+          autopilot: { defaultMode: 'autofix-with-approval' },
           execution: {
             preapprovedCommands: [
               {

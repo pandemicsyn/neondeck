@@ -51,6 +51,11 @@ export const prWatches = sqliteTable(
     eventWatermarkVersion: integer('event_watermark_version')
       .default(2)
       .notNull(),
+    autopilotMode: text('autopilot_mode').default('notify-only').notNull(),
+    autopilotStatus: text('autopilot_status').default('watching').notNull(),
+    ownerInstanceId: text('owner_instance_id'),
+    worktreeId: text('worktree_id'),
+    lastEventFingerprint: text('last_event_fingerprint'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },

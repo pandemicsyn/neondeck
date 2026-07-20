@@ -38,6 +38,12 @@ export {
   type AutopilotOwnerEnvelope,
 } from './owner/envelope';
 export { autopilotOwnerInstanceId } from './owner/instance';
+export { runAutopilotWatchEvent } from './owner/loop';
+export { completeAutopilotWatchIfTerminal } from './owner/lifecycle';
+export {
+  recoverInterruptedAutopilotOwners,
+  settleAutopilotOwnerObservation,
+} from './owner/settlement';
 export {
   autopilotOwnerCapabilities,
   type AutopilotOwnerCapability,
@@ -61,6 +67,7 @@ export {
 export { fixPrReviewFeedback } from './review-feedback';
 export { commentPrAutofixResult } from './comments';
 export { autopilotStateLookupTool, readAutopilotState } from './state';
+export * from './watch-service';
 export type {
   AutopilotState,
   AutopilotPreparedDiff,

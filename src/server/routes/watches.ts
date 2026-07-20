@@ -13,6 +13,12 @@ import {
   setPrWatchPolling,
 } from '../../modules/watches';
 import { safeJsonBody, safeJsonObject } from '../http';
+import {
+  configurePrAutopilot,
+  controlPrAutopilot,
+  messagePrAutopilotOwner,
+  readPrAutopilotStatus,
+} from '../../modules/autopilot';
 
 export function createWatchRoutes(paths: RuntimePaths) {
   const routes = new Hono();
@@ -25,6 +31,44 @@ export function createWatchRoutes(paths: RuntimePaths) {
     const input = (await safeJsonBody(c)) as Parameters<typeof addPrWatch>[0];
     const result = await addPrWatch(input, paths);
     return c.json(result, result.ok ? 200 : 400);
+  });
+
+  routes.post('/watches/autopilot', async (c) => {
+    const result = await configurePrAutopilot(
+      (await safeJsonBody(c)) as Parameters<typeof configurePrAutopilot>[0],
+      paths,
+    );
+    return c.json(result, result.ok ? 200 : 400);
+  });
+
+  routes.get('/watches/:id/autopilot', async (c) => {
+    const result = await readPrAutopilotStatus(
+      { id: c.req.param('id') },
+      paths,
+    );
+    return c.json(result, result.ok ? 200 : 404);
+  });
+
+  routes.post('/watches/:id/autopilot/control', async (c) => {
+    const result = await controlPrAutopilot(
+      {
+        ...(await safeJsonObject(c)),
+        id: c.req.param('id'),
+      } as Parameters<typeof controlPrAutopilot>[0],
+      paths,
+    );
+    return c.json(result, result.ok ? 200 : 400);
+  });
+
+  routes.post('/watches/:id/autopilot/message', async (c) => {
+    const result = await messagePrAutopilotOwner(
+      {
+        ...(await safeJsonObject(c)),
+        id: c.req.param('id'),
+      } as Parameters<typeof messagePrAutopilotOwner>[0],
+      paths,
+    );
+    return c.json(result, result.ok ? 202 : 400);
   });
 
   routes.get('/watches/events/watermarks', async (c) => {

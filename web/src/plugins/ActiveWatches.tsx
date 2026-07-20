@@ -2,17 +2,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
   getPrWatches,
-  removePrWatch,
-  setPrWatchPolling,
+  configurePrAutopilot,
+  controlPrAutopilot,
   type PrWatch,
 } from '../api';
-import { SessionReferenceButton } from '../components/SessionReferenceButton';
 import { Badge, Button, ScrollArea } from '../components/ui';
+import { FlueChatSessionView } from '../features/flue-chat/components/session-view';
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
 import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import { prWatchAttentionReason } from '../lib/watch-status';
 import type { DisplayPlugin } from '../types';
+import { WorktreeDiffReview } from '../features/diff-viewer/surfaces';
 import { parsePositiveIntegerConfig } from './config';
 
 type ActiveWatchesConfig = {
@@ -83,13 +84,18 @@ export const ActiveWatchesPlugin = {
   },
 } satisfies DisplayPlugin<ActiveWatchesConfig>;
 
-function WatchRow({ watch }: { watch: PrWatch }) {
-  const [confirmingRemove, setConfirmingRemove] = useState(false);
+export function WatchRow({ watch }: { watch: PrWatch }) {
+  const [confirmingStop, setConfirmingStop] = useState(false);
+  const [confirmingMode, setConfirmingMode] = useState<
+    PrWatch['autopilotMode'] | null
+  >(null);
+  const [reviewingDiff, setReviewingDiff] = useState(false);
+  const [reviewingOwner, setReviewingOwner] = useState(false);
   const queryClient = useQueryClient();
-  const removeMutation = useMutation({
-    mutationFn: () => removePrWatch(watch.id),
+  const stopMutation = useMutation({
+    mutationFn: () => controlPrAutopilot(watch.id, 'stop'),
     onSuccess() {
-      setConfirmingRemove(false);
+      setConfirmingStop(false);
       void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
       void queryClient.invalidateQueries({
         queryKey: queryKeys.autopilotState,
@@ -98,7 +104,8 @@ function WatchRow({ watch }: { watch: PrWatch }) {
   });
   const pollingEnabled = watch.pollingEnabled !== false;
   const pollingMutation = useMutation({
-    mutationFn: () => setPrWatchPolling(watch.id, !pollingEnabled),
+    mutationFn: () =>
+      controlPrAutopilot(watch.id, pollingEnabled ? 'pause' : 'resume'),
     onSuccess() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
     },
@@ -112,8 +119,32 @@ function WatchRow({ watch }: { watch: PrWatch }) {
       ? `next ${relativeTime(watch.nextRunAt)}`
       : 'next poll pending';
   const sourceLabel = watch.createdBy ? ` · ${watch.createdBy}` : '';
+  const activityLabel = `activity ${relativeTime(
+    watch.lastSnapshot?.updatedAt ?? watch.updatedAt,
+  )}`;
   const attentionReason = prWatchAttentionReason(watch);
-
+  const configureMutation = useMutation({
+    mutationFn: (input: { mode: PrWatch['autopilotMode']; confirm: boolean }) =>
+      configurePrAutopilot({
+        ref: watch.id,
+        mode: input.mode,
+        processExisting: watch.processExisting,
+        confirm: input.confirm,
+      }),
+    onSuccess() {
+      setConfirmingMode(null);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.autopilotState,
+      });
+    },
+  });
+  const retryMutation = useMutation({
+    mutationFn: () => controlPrAutopilot(watch.id, 'retry'),
+    onSuccess() {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
+    },
+  });
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
       <div className="flex items-start justify-between gap-2">
@@ -130,29 +161,95 @@ function WatchRow({ watch }: { watch: PrWatch }) {
             </p>
           ) : null}
         </div>
-        <Badge className={statusClass(watch.status)}>{watch.status}</Badge>
+        <div className="flex flex-col items-end gap-1">
+          <Badge className={statusClass(watch.status)}>{watch.status}</Badge>
+          <Badge className={autopilotStatusClass(watch.autopilotStatus)}>
+            {watch.autopilotStatus}
+          </Badge>
+        </div>
       </div>
+      <div className="mt-2 flex items-center gap-2 font-mono text-[10px] text-muted">
+        <span>mode</span>
+        <select
+          aria-label={`Autopilot mode for ${watch.id}`}
+          className="min-h-[28px] min-w-0 flex-1 border border-line bg-field px-2 text-[10px] text-ink"
+          disabled={configureMutation.isPending}
+          onChange={(event) => {
+            const mode = event.target.value as PrWatch['autopilotMode'];
+            if (
+              autopilotModeRank(mode) > autopilotModeRank(watch.autopilotMode)
+            ) {
+              setConfirmingMode(mode);
+              return;
+            }
+            setConfirmingMode(null);
+            configureMutation.mutate({ mode, confirm: false });
+          }}
+          value={watch.autopilotMode}
+        >
+          <option value="notify-only">notify-only</option>
+          <option value="prepare-only">prepare-only</option>
+          <option value="autofix-with-approval">autofix-with-approval</option>
+          <option value="autofix-push-when-safe">autofix-push-when-safe</option>
+        </select>
+      </div>
+      {confirmingMode ? (
+        <div className="mt-2 border border-accent/50 bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
+          <p className="text-accent">
+            Increase Autopilot authority to {confirmingMode}?
+          </p>
+          <p className="mt-1 leading-4">
+            This expands what the continuing PR owner may do on future turns.
+          </p>
+          <span className="mt-1.5 flex gap-1.5">
+            <Button
+              className="min-h-[28px] border-accent bg-transparent px-2 py-1 text-[10px] text-accent"
+              disabled={configureMutation.isPending}
+              onClick={() =>
+                configureMutation.mutate({
+                  mode: confirmingMode,
+                  confirm: true,
+                })
+              }
+              type="button"
+            >
+              confirm increase
+            </Button>
+            <Button
+              className="min-h-[28px] bg-transparent px-2 py-1 text-[10px] text-muted"
+              disabled={configureMutation.isPending}
+              onClick={() => setConfirmingMode(null)}
+              type="button"
+            >
+              cancel
+            </Button>
+          </span>
+          {configureMutation.error ? (
+            <p className="mt-1 text-accent">
+              {queryErrorMessage(configureMutation.error)}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <div className="mt-2 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
         <span className="min-w-0 truncate">
           until {watch.desiredTerminalState} · {checkedLabel} · {nextPollLabel}
+          {' · '}
+          {activityLabel}
           {sourceLabel}
         </span>
         <span className="flex shrink-0 gap-1.5">
-          <SessionReferenceButton
-            kind="watch"
-            linkedRepoId={watch.repoId}
-            linkedWatchId={watch.id}
-            summary={`${watch.repoFullName}#${watch.prNumber} watch is ${watch.status} until ${watch.desiredTerminalState}. ${watch.title ?? 'Untitled PR'}.`}
-            title={`Watch ${watch.repoFullName}#${watch.prNumber}`}
-            uiMetadata={{
-              source: 'pr-watch',
-              repoFullName: watch.repoFullName,
-              prNumber: watch.prNumber,
-              status: watch.status,
-              desiredTerminalState: watch.desiredTerminalState,
-              url: watch.url,
-            }}
-          />
+          {watch.ownerInstanceId ? (
+            <Button
+              aria-label={`Review owner agent for ${watch.repoFullName} pull request ${watch.prNumber}`}
+              className="min-h-[28px] border-primary bg-transparent px-2 py-1 text-[10px] text-primary"
+              onClick={() => setReviewingOwner((current) => !current)}
+              title={`Open continuing owner ${watch.ownerInstanceId}`}
+              type="button"
+            >
+              {reviewingOwner ? 'hide agent' : 'review agent'}
+            </Button>
+          ) : null}
           {watch.url ? (
             <Button
               className="min-h-[28px] border-line bg-transparent px-2 py-1 text-[10px] text-muted"
@@ -187,44 +284,100 @@ function WatchRow({ watch }: { watch: PrWatch }) {
                 ? 'pause'
                 : 'resume'}
           </Button>
+          {watch.autopilotStatus === 'blocked' ? (
+            <Button
+              className="min-h-[28px] border-accent bg-transparent px-2 py-1 text-[10px] text-accent"
+              disabled={retryMutation.isPending}
+              onClick={() => retryMutation.mutate()}
+              type="button"
+            >
+              {retryMutation.isPending ? 'retrying' : 'retry'}
+            </Button>
+          ) : null}
+          {watch.worktreeId && watch.worktreeHeadSha ? (
+            <Button
+              className="min-h-[28px] border-primary bg-transparent px-2 py-1 text-[10px] text-primary"
+              onClick={() => setReviewingDiff((current) => !current)}
+              type="button"
+            >
+              {reviewingDiff ? 'hide diff' : 'review diff'}
+            </Button>
+          ) : null}
           <Button
             className="min-h-[28px] border-line bg-transparent px-2 py-1 text-[10px] text-muted hover:border-accent hover:text-accent"
-            disabled={removeMutation.isPending || pollingMutation.isPending}
-            onClick={() => setConfirmingRemove(true)}
+            disabled={stopMutation.isPending || pollingMutation.isPending}
+            onClick={() => setConfirmingStop(true)}
             type="button"
           >
             stop
           </Button>
         </span>
       </div>
-      {confirmingRemove ? (
+      {confirmingStop ? (
         <div className="mt-2 border border-accent/50 bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-accent">Remove this watch?</span>
+            <span className="text-accent">Stop this Autopilot watch?</span>
             <span className="flex gap-1.5">
               <Button
                 className="min-h-[28px] border-accent bg-transparent px-2 py-1 text-[10px] text-accent"
-                disabled={removeMutation.isPending}
-                onClick={() => removeMutation.mutate()}
+                disabled={stopMutation.isPending}
+                onClick={() => stopMutation.mutate()}
                 type="button"
               >
                 confirm
               </Button>
               <Button
                 className="min-h-[28px] bg-transparent px-2 py-1 text-[10px] text-muted"
-                disabled={removeMutation.isPending}
-                onClick={() => setConfirmingRemove(false)}
+                disabled={stopMutation.isPending}
+                onClick={() => setConfirmingStop(false)}
                 type="button"
               >
                 cancel
               </Button>
             </span>
           </div>
-          {removeMutation.error ? (
+          {stopMutation.error ? (
             <p className="mt-1 text-accent">
-              {queryErrorMessage(removeMutation.error)}
+              {queryErrorMessage(stopMutation.error)}
             </p>
           ) : null}
+        </div>
+      ) : null}
+      {reviewingDiff && watch.worktreeId && watch.worktreeHeadSha ? (
+        <div className="mt-2 max-h-[32rem] overflow-auto border border-line bg-field">
+          <WorktreeDiffReview
+            base={watch.worktreeHeadSha}
+            detail={`${watch.autopilotMode} · ${watch.autopilotStatus}`}
+            repoId={watch.repoId}
+            title={`${watch.repoFullName}#${watch.prNumber} Autopilot change`}
+            worktreeId={watch.worktreeId}
+          />
+        </div>
+      ) : null}
+      {reviewingOwner && watch.ownerInstanceId ? (
+        <div className="mt-2 h-[28rem] min-h-0 overflow-hidden border border-line bg-field">
+          <FlueChatSessionView
+            activeRecord={undefined}
+            agentName="pr-autopilot-owner"
+            allowCommands={false}
+            key={`pr-autopilot-owner:${watch.ownerInstanceId}`}
+            messageEnabled={
+              watch.autopilotMode === 'autofix-with-approval' &&
+              watch.autopilotStatus === 'waiting'
+            }
+            messageLabel={`Message owner for ${watch.repoFullName} pull request ${watch.prNumber}`}
+            quickCommands={[]}
+            session={{
+              id: watch.ownerInstanceId,
+              label: `PR owner ${watch.prNumber}`,
+              placeholder:
+                watch.autopilotMode === 'autofix-with-approval' &&
+                watch.autopilotStatus === 'waiting'
+                  ? 'approved, push — or ask for one more focused edit'
+                  : 'Owner messages are available while approval mode is waiting.',
+            }}
+            sessionState={undefined}
+          />
         </div>
       ) : null}
     </article>
@@ -249,4 +402,21 @@ function statusClass(status: string) {
   if (status === 'closed' || status === 'merged')
     return 'border-line text-muted';
   return '';
+}
+
+function autopilotStatusClass(status: PrWatch['autopilotStatus']) {
+  if (status === 'blocked') return 'border-accent text-accent';
+  if (status === 'working' || status === 'waiting')
+    return 'border-warn text-warn';
+  if (status === 'complete') return 'border-primary text-primary';
+  return 'border-line text-muted';
+}
+
+function autopilotModeRank(mode: PrWatch['autopilotMode']) {
+  return [
+    'notify-only',
+    'prepare-only',
+    'autofix-with-approval',
+    'autofix-push-when-safe',
+  ].indexOf(mode);
 }

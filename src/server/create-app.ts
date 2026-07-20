@@ -57,6 +57,7 @@ import { createSkillRoutes } from './routes/skills';
 import { createWatchRoutes } from './routes/watches';
 import { createWorkflowRoutes } from './routes/workflows';
 import { createWorktreeRoutes } from './routes/worktrees';
+import { recoverInterruptedAutopilotOwners } from '../modules/autopilot/owner/settlement';
 
 export type CreateAppOptions = {
   paths?: RuntimePaths;
@@ -82,6 +83,7 @@ export async function createApp(options: CreateAppOptions = {}) {
 
   await ensureRuntimeHome(paths);
   installFlueExecutionContextTracker();
+  await recoverInterruptedAutopilotOwners(paths);
   installFlueObservationHandlers(paths);
 
   if (

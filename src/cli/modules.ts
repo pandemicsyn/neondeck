@@ -28,6 +28,12 @@ export async function appDbModule() {
   ) as Promise<typeof import('../runtime-home/app-db/migrate')>;
 }
 
+export async function autopilotModule() {
+  return import(
+    new URL('../modules/autopilot/index.ts', import.meta.url).href
+  ) as Promise<typeof import('../modules/autopilot')>;
+}
+
 export async function learningOperatorModule() {
   return import(
     new URL('../modules/learning/index.ts', import.meta.url).href

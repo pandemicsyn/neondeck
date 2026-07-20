@@ -1874,6 +1874,17 @@ export type PrWatch = {
   lastSnapshot: PrWatchSnapshot | null;
   lastCheckedAt: string | null;
   createdBy: string | null;
+  processExisting: boolean;
+  autopilotMode:
+    | 'notify-only'
+    | 'prepare-only'
+    | 'autofix-with-approval'
+    | 'autofix-push-when-safe';
+  autopilotStatus: 'watching' | 'working' | 'waiting' | 'blocked' | 'complete';
+  ownerInstanceId: string | null;
+  worktreeId: string | null;
+  worktreeHeadSha?: string | null;
+  lastEventFingerprint: string | null;
   nextRunAt?: string | null;
   pollingEnabled?: boolean;
   pollIntervalSeconds?: number | null;
