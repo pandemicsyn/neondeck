@@ -469,8 +469,6 @@ export async function fixPrReviewFeedback(
         { requires: ['refreshWorktreeHead'] },
       );
     }
-    let mutationScopeBound = false;
-
     const editResults = hasEdits
       ? await applyReviewEdits(
           {
@@ -481,13 +479,6 @@ export async function fixPrReviewFeedback(
             patch: input.patch,
             dryRun: input.dryRun,
             fileReads,
-            beforeExternalMutation: async (effect) => {
-              await dependencies.ownerMutationFence?.(
-                mutationScopeBound ? 'before-write' : 'before-mutation',
-                effect,
-              );
-              mutationScopeBound = true;
-            },
           },
           paths,
         )
@@ -564,11 +555,8 @@ export async function fixPrReviewFeedback(
       (postEditPolicy.mode === 'autofix-with-approval' ||
         postEditPolicy.mode === 'autofix-push-when-safe') &&
       !postEditPolicy.approvalRequired &&
-      (!dependencies.ownerCommitAllowed ||
-        (await dependencies.ownerCommitAllowed())) &&
       changedFiles > 0
     ) {
-      await dependencies.ownerMutationFence?.('before-commit');
       assertWorktreeMutationAllowed(
         {
           repoId: repo.id,
@@ -602,7 +590,6 @@ export async function fixPrReviewFeedback(
     };
     let preparedDiff = null;
     if (shouldPrepareDiff && !input.dryRun) {
-      await dependencies.ownerMutationFence?.('before-artifact');
       assertWorktreeMutationAllowed(
         {
           repoId: repo.id,

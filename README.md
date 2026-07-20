@@ -4,10 +4,9 @@ A companion agent for keeping PRs moving.
 
 Neon watches your PRs, tracks CI and release checks, and can configure its own
 repos, schedules, models, and deck layout through typed actions. Its current
-watcher-driven Autopilot path durably triages actionable events, prepares an
-isolated worktree, and dispatches authoritative bounded turns to one continuing
-PR-owner agent per watch. Verification, approval/push, result delivery, and
-terminal cleanup continuation remain roadmap work.
+PR watches retain complete feedback facts and semantic watermarks, including an
+explicit choice to process or baseline existing feedback. Automatic fix dispatch
+is temporarily disconnected while the smaller one-owner Autopilot loop is rebuilt.
 
 It is especially useful on a companion display, vertical panel, or Corsair
 Xeneon Edge-style deck, where your active work can stay visible without taking
@@ -21,15 +20,11 @@ Neon watches your PRs, prepares fixes, and keeps the busywork moving.
 
 - **Your PRs, with CI status at a glance.** See open PRs across your repos in
   one panel, with live check status and stale-work flags.
-- **Watch a PR with a continuing owner.** Actionable watcher events enter one
-  restart-safe coordinator, reuse one managed worktree and Flue instance, and
-  reach a narrow PR-owner turn grounded in complete review/CI facts, current
-  policy, exact memory ids, and a one-time deterministic fix submission. New
-  events serialize and coalesce per PR. Fundamental capability drift rotates
-  the owner with an audited handoff; explicit repo-Autopilot-policy or selected
-  memory drift re-grounds the same instance, while unknown or structural config
-  drift blocks safely. Post-fix verification and delivery continuation remain
-  separate roadmap packages.
+- **Watch a PR without losing feedback.** Watch polling records complete review,
+  conversation, requested-change, commit, and check facts with semantic
+  fingerprints. Current feedback can be processed on the first poll or baselined
+  explicitly. The abandoned coordinator has been removed; automatic worktree and
+  owner dispatch will return through the smaller loop described in the roadmap.
 - **Review and approve PRs on the deck.** Read diffs, leave inline comments,
   resolve threads, traverse files, hunks, drafts, threads, and revision-bound
   Neon findings, and submit approvals or change requests without switching to

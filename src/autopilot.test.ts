@@ -105,14 +105,8 @@ describe('autopilot operator state', () => {
         source: 'watch-override',
       }),
     ]);
-    expect(state.queue).toEqual([
-      expect.objectContaining({
-        source: 'watch',
-        watchId: 'pandemicsyn/neondeck#42',
-        mode: 'notify-only',
-        status: 'watching',
-      }),
-    ]);
+    expect(state).not.toHaveProperty('queue');
+    expect(state.summary).not.toHaveProperty('queuedItems');
     expect(state.summary.placeholderAdapters.length).toBeGreaterThan(0);
   });
 
@@ -213,16 +207,7 @@ describe('autopilot operator state', () => {
         }),
       ]),
     );
-    expect(state.queue).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          source: 'approval',
-          status: 'waiting-approval',
-        }),
-        expect.objectContaining({ source: 'workflow', status: 'running' }),
-        expect.objectContaining({ source: 'watch', status: 'prepared' }),
-      ]),
-    );
+    expect(state).not.toHaveProperty('queue');
   });
 });
 

@@ -33,7 +33,6 @@ import {
   readNeondeckPrDeliveries,
   reviewThreadCommentDeliveryFingerprint,
   refreshPrWatchEventState,
-  acknowledgePrWatchEventIntake,
 } from './modules/pr-events';
 import { runtimePaths } from './runtime-home';
 import {
@@ -1900,20 +1899,14 @@ function rewriteMergeabilityWatermark(
 }
 
 function acknowledgeRefresh(
-  paths: ReturnType<typeof runtimePaths>,
+  _paths: ReturnType<typeof runtimePaths>,
   result: { data?: unknown },
 ) {
-  const data = result.data as
-    { watchId?: unknown; intakeId?: unknown } | undefined;
-  if (typeof data?.watchId !== 'string' || typeof data.intakeId !== 'string') {
-    throw new Error('Expected a staged PR event intake.');
-  }
-  const acknowledged = acknowledgePrWatchEventIntake(paths, {
-    watchId: data.watchId,
-    eventId: data.intakeId,
-    outcome: 'no-op',
+  expect(result.data).toMatchObject({
+    watchId: expect.any(String),
+    changedCategories: expect.any(Array),
+    watermarks: expect.any(Array),
   });
-  expect(acknowledged.acknowledged).toBe(true);
 }
 
 function anchorValidationDependencies() {

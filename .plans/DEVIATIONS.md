@@ -15,6 +15,13 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-07-20 - Autopilot Coordinator Reset
+
+- Roadmap item: Phase 19 / PR event Autopilot reset
+- Decision: Forward-delete the abandoned admission/coordinator runtime while preserving complete GitHub feedback fingerprints, exact-head worktrees, bounded Git behavior, generic watches and worktrees, the diff viewer, readiness facts, and reusable private owner/Flue seams. Keep every historical migration already on `main` and add one generated forward cleanup migration that removes the abandoned tables and watch generation column from upgraded runtime homes.
+- Reason: The Package 1–4 migrations are already in the shipped `main` history and were not proven unshipped, so rewriting them would make upgrades unsafe. The coordinator also duplicated workflow-engine responsibilities and is explicitly superseded by `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`.
+- Follow-up: Implement the replacement minimal loop in PR 2 only after this reset is reviewed and merged. Do not restore admissions, stage ledgers, owner generations, grounding snapshots, queues/coalescing, submission leases, or workflow-observation continuation.
+
 ## 2026-07-19 - Kilo Reconciliation Fixture Process Inspection
 
 - Roadmap item: Phase 21 / Kilo task retention and reconciliation

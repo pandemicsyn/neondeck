@@ -305,15 +305,13 @@ export async function fixPrCiFailure(
     if (!Array.isArray(checkFactsResult)) return checkFactsResult;
     const checkFacts = checkFactsResult;
 
-    const likelyCommands = dependencies.ownerDiagnosticCommands
-      ? [...dependencies.ownerDiagnosticCommands]
-      : identifyLikelyCommands(
-          checkFacts,
-          repo,
-          repoGuardrails(repo, appConfig).requiredChecks,
-          input.checks,
-          input.diagnostics,
-        );
+    const likelyCommands = identifyLikelyCommands(
+      checkFacts,
+      repo,
+      repoGuardrails(repo, appConfig).requiredChecks,
+      input.checks,
+      input.diagnostics,
+    );
     assertWorktreeMutationAllowed(
       {
         repoId: repo.id,
@@ -336,7 +334,7 @@ export async function fixPrCiFailure(
       paths,
       input,
       dependencies,
-      async () => {
+      () => {
         assertWorktreeMutationAllowed(
           {
             repoId: repo.id,
@@ -435,7 +433,6 @@ export async function fixPrCiFailure(
           { requires: ['refreshWorktreeHead'] },
         );
       }
-      let mutationScopeBound = false;
       const patched = await patchRepoFiles(
         {
           repoId: repo.id,
@@ -446,15 +443,6 @@ export async function fixPrCiFailure(
             input.patchReason ?? 'Apply scoped fix for failing PR CI checks.',
         },
         paths,
-        {
-          beforeExternalMutation: async (effect) => {
-            await dependencies.ownerMutationFence?.(
-              mutationScopeBound ? 'before-write' : 'before-mutation',
-              effect,
-            );
-            mutationScopeBound = true;
-          },
-        },
       );
       if (!booleanField(patched, 'ok')) {
         return lowerLevelFailure(
@@ -475,7 +463,6 @@ export async function fixPrCiFailure(
       );
       if (!policy.ok || policy.blocked || policy.approvalRequired) {
         finalLockStatus = 'prepared-diff';
-        await dependencies.ownerMutationFence?.('before-artifact');
         assertWorktreeMutationAllowed(
           {
             repoId: repo.id,
@@ -575,12 +562,9 @@ export async function fixPrCiFailure(
       !commitPolicy.blocked &&
       !commitPolicy.approvalRequired &&
       (commitPolicy.mode === 'autofix-with-approval' ||
-        commitPolicy.mode === 'autofix-push-when-safe') &&
-      (!dependencies.ownerCommitAllowed ||
-        (await dependencies.ownerCommitAllowed()))
+        commitPolicy.mode === 'autofix-push-when-safe')
     ) {
       try {
-        await dependencies.ownerMutationFence?.('before-commit');
         assertWorktreeMutationAllowed(
           {
             repoId: repo.id,
@@ -600,7 +584,6 @@ export async function fixPrCiFailure(
         );
       } catch (error) {
         finalLockStatus = 'prepared-diff';
-        await dependencies.ownerMutationFence?.('before-artifact');
         assertWorktreeMutationAllowed(
           {
             repoId: repo.id,
@@ -696,7 +679,6 @@ export async function fixPrCiFailure(
     let preparedDiff: PreparedDiffRecord | null = null;
     if (changed) {
       finalLockStatus = 'prepared-diff';
-      await dependencies.ownerMutationFence?.('before-artifact');
       assertWorktreeMutationAllowed(
         {
           repoId: repo.id,

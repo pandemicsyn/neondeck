@@ -17,7 +17,6 @@ import {
   type AutopilotActivity,
   type AutopilotApproval,
   type AutopilotPreparedDiff,
-  type AutopilotQueueItem,
   type AutopilotReadiness,
   type AutopilotReadinessFact,
   type AutopilotRecoveryActionId,
@@ -28,7 +27,6 @@ import {
   type KiloTaskRecord,
 } from '../api';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
-import { StopPrWatchButton } from '../components/StopPrWatchButton';
 import {
   Badge,
   Button,
@@ -53,7 +51,6 @@ const KiloTaskDiffReview = lazy(() =>
 );
 
 type AutopilotPanelConfig = {
-  queueLimit: number;
   policyLimit: number;
   preparedLimit: number;
   approvalLimit: number;
@@ -62,7 +59,6 @@ type AutopilotPanelConfig = {
 };
 
 const autopilotPanelDefaultConfig = {
-  queueLimit: 8,
   policyLimit: 6,
   preparedLimit: 4,
   approvalLimit: 4,
@@ -124,7 +120,6 @@ function AutopilotView({
   config: AutopilotPanelConfig;
   state: AutopilotState;
 }) {
-  const queue = state.queue.slice(0, config.queueLimit);
   const repoPolicies = state.policies.repos.slice(0, config.policyLimit);
   const watchPolicies = state.policies.watches.slice(0, config.policyLimit);
   const preparedDiffs = state.preparedDiffs.slice(0, config.preparedLimit);
@@ -132,14 +127,6 @@ function AutopilotView({
   const runningChecks = state.runningChecks.slice(0, config.checkLimit);
   const activity = state.recentActivity.slice(0, config.activityLimit);
   const readinessTarget = useMemo(() => {
-    const queueTarget = state.queue.find((item) => item.prNumber !== null);
-    if (queueTarget) {
-      return {
-        repoId: queueTarget.repoId,
-        prNumber: queueTarget.prNumber ?? undefined,
-        mode: queueTarget.mode,
-      };
-    }
     const watchTarget = state.policies.watches[0];
     if (watchTarget) {
       return {
@@ -152,7 +139,7 @@ function AutopilotView({
     return repoTarget
       ? { repoId: repoTarget.repoId, mode: repoTarget.mode }
       : undefined;
-  }, [state.policies.repos, state.policies.watches, state.queue]);
+  }, [state.policies.repos, state.policies.watches]);
   const readiness = useQuery({
     queryKey: queryKeys.autopilotReadiness(
       readinessTarget?.repoId,
@@ -173,7 +160,6 @@ function AutopilotView({
         </h2>
         <div className="flex items-center gap-1.5">
           <Badge>{state.modeLabels[state.policies.global.mode]}</Badge>
-          <Badge>{state.summary.queuedItems} queue</Badge>
         </div>
       </header>
       <NeedsAttentionBanner state={state} />
@@ -181,15 +167,6 @@ function AutopilotView({
         <div className="autopilot-grid grid gap-2 p-3">
           <div className="min-w-0 space-y-2">
             <SummaryStrip state={state} />
-            <PanelSection
-              count={state.queue.length}
-              empty="No queued autopilot work."
-              title="Queue"
-            >
-              {queue.map((item) => (
-                <QueueRow item={item} key={item.id} />
-              ))}
-            </PanelSection>
             <PanelSection
               count={state.preparedDiffs.length}
               empty="No prepared diffs."
@@ -472,51 +449,6 @@ function PanelSection({
         )}
       </div>
     </section>
-  );
-}
-
-function QueueRow({ item }: { item: AutopilotQueueItem }) {
-  return (
-    <article className="border border-line bg-soft px-2.5 py-2">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate font-mono text-[11px] text-primary">
-            {prLabel(item.repoFullName, item.prNumber)}
-          </p>
-          <p className="mt-1 line-clamp-1 text-[12px] text-ink">{item.title}</p>
-        </div>
-        <Badge className={priorityClass(item.priority)}>{item.status}</Badge>
-      </div>
-      <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-muted">
-        {item.reason}
-      </p>
-      <div className="mt-2 flex min-w-0 items-center justify-between gap-2 font-mono text-[10px] text-muted">
-        <span className="truncate">{item.nextStep}</span>
-        <span className="flex shrink-0 items-center gap-1.5">
-          <SessionReferenceButton
-            kind="task"
-            linkedRepoId={item.repoId}
-            linkedTaskId={item.id}
-            summary={`${item.title}: ${item.reason} Next step: ${item.nextStep}. Mode ${item.mode}; status ${item.status}.`}
-            title={`Autopilot ${item.title}`}
-            uiMetadata={{
-              source: 'autopilot-queue',
-              itemId: item.id,
-              repoFullName: item.repoFullName,
-              prNumber: item.prNumber,
-              worktreeId: item.worktreeId,
-              runId: item.runId,
-              mode: item.mode,
-              status: item.status,
-            }}
-          />
-          {item.source === 'watch' && item.watchId ? (
-            <StopPrWatchButton watchId={item.watchId} />
-          ) : null}
-          {item.mode}
-        </span>
-      </div>
-    </article>
   );
 }
 
@@ -1100,14 +1032,6 @@ function ActivityRow({ item }: { item: AutopilotActivity }) {
       </div>
     </article>
   );
-}
-
-function priorityClass(priority: string) {
-  if (priority === 'urgent' || priority === 'high') {
-    return 'border-accent text-accent';
-  }
-  if (priority === 'normal') return 'border-primary text-primary';
-  return '';
 }
 
 function prLabel(repo: string, prNumber: number | null) {

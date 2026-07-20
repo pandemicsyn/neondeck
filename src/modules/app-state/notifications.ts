@@ -233,7 +233,7 @@ export async function resolveNotification(id: string, paths = runtimePaths()) {
   }
 }
 
-function readNotificationRow(row: unknown): NotificationRecord {
+export function readNotificationRow(row: unknown): NotificationRecord {
   const record = row as Record<string, unknown>;
   return {
     id: String(record.id),

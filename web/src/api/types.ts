@@ -1117,30 +1117,6 @@ export type AutopilotConcurrencyPolicy = {
   localExecutionLimit: number;
 };
 
-export type AutopilotQueueItem = {
-  id: string;
-  source: 'admission' | 'watch' | 'worktree' | 'workflow' | 'approval';
-  watchId: string | null;
-  status:
-    | 'watching'
-    | 'queued'
-    | 'running'
-    | 'prepared'
-    | 'waiting-approval'
-    | 'blocked';
-  priority: 'low' | 'normal' | 'high' | 'urgent';
-  repoId: string;
-  repoFullName: string;
-  prNumber: number | null;
-  title: string;
-  mode: AutopilotMode;
-  reason: string;
-  nextStep: string;
-  worktreeId: string | null;
-  runId: string | null;
-  updatedAt: string;
-};
-
 export type AutopilotRepoPolicy = {
   repoId: string;
   repoFullName: string;
@@ -1236,7 +1212,6 @@ export type AutopilotState = {
   modeLabels: Record<AutopilotMode, string>;
   summary: {
     activeWatches: number;
-    queuedItems: number;
     preparedDiffs: number;
     pendingApprovals: number;
     runningChecks: number;
@@ -1245,7 +1220,6 @@ export type AutopilotState = {
     recentActivity: number;
     placeholderAdapters: string[];
   };
-  queue: AutopilotQueueItem[];
   policies: {
     global: {
       mode: AutopilotMode;

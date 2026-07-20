@@ -45,10 +45,17 @@ export type PrWatch = {
   processExisting: boolean;
   initialEventProcessedAt: string | null;
   eventWatermarkVersion: number;
-  eventGenerationId: string;
   createdAt: string;
   updatedAt: string;
 };
+
+export type PrWatchStateFence = Pick<
+  PrWatch,
+  | 'updatedAt'
+  | 'processExisting'
+  | 'initialEventProcessedAt'
+  | 'eventWatermarkVersion'
+>;
 
 export type PrWatchSnapshot = {
   state: string;

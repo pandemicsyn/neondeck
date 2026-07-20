@@ -95,12 +95,6 @@ export type AutopilotActionResult = {
   errors?: string[];
 };
 
-export type AutopilotMutationEffect = {
-  paths: string[];
-  bytes: number;
-  lines: number;
-};
-
 export type AutopilotDependencies = {
   fetchPullRequestDetail?: typeof fetchPullRequestDetail;
   fetchCheckSummary?: typeof fetchCheckSummary;
@@ -118,20 +112,6 @@ export type AutopilotDependencies = {
   pushGit?: typeof gitPushHead;
   fetchExactPullRequestHead?: typeof fetchExactPullRequestHead;
   token?: string;
-  ownerMutationFence?: (
-    phase:
-      | 'before-execution'
-      | 'before-mutation'
-      | 'before-write'
-      | 'before-commit'
-      | 'before-artifact',
-    effect?: AutopilotMutationEffect,
-  ) => void | Promise<void>;
-  ownerCommitAllowed?: () => boolean | Promise<boolean>;
-  ownerDiagnosticCommands?: string[];
-  ownerDiagnosticCommandAllowed?: (
-    command: string,
-  ) => boolean | Promise<boolean>;
 };
 
 export const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
@@ -187,7 +167,6 @@ export const triagePrEventInputSchema = v.object({
   prNumber: positiveIntegerSchema,
   watchId: v.optional(nonEmptyStringSchema),
   eventId: v.optional(nonEmptyStringSchema),
-  admissionId: v.optional(nonEmptyStringSchema),
   source: v.optional(v.picklist(['watch', 'api', 'fixture'])),
   autopilotMode: v.optional(autopilotModeSchema),
   previous: v.optional(prEventSnapshotSchema),

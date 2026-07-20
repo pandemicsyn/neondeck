@@ -9,9 +9,6 @@ import { drizzle } from 'drizzle-orm/node-sqlite';
 import { migrate } from 'drizzle-orm/node-sqlite/migrator';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { GitHubPullRequestEventState } from './modules/github';
-import { refreshPrWatchEventState } from './modules/pr-events';
-import { runtimePaths } from './runtime-home';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
@@ -25,27 +22,19 @@ afterEach(async () => {
 });
 
 describe('Drizzle v1 package behavior', () => {
-  it('upgrades the real pre-Package-2 schema as a versioned seed-only baseline', async () => {
+  it('applies the forward cleanup without disturbing watch feedback foundations', async () => {
     const root = await tempDir();
-    const paths = runtimePaths(root);
-    await mkdir(paths.data, { recursive: true });
-    const database = new DatabaseSync(paths.neondeckDatabase);
-    let migratedGeneration = '';
+    const database = new DatabaseSync(join(root, 'neondeck.db'));
+    const migrationsFolder = join(
+      process.cwd(),
+      'src/runtime-home/app-db/migrations',
+    );
+    const historicalMigrations = join(root, 'pre-cleanup-migrations');
+    const cleanupMigration = '20260720030908_autopilot_engine_cleanup';
 
     try {
-      const migrationsFolder = join(
-        process.cwd(),
-        'src/runtime-home/app-db/migrations',
-      );
-      const migrationFiles = readMigrationFiles({ migrationsFolder });
-      const historicalMigrations = join(root, 'package-1-migrations');
-      for (const migration of migrationFiles) {
-        if (
-          migration.name >
-          '20260719072902_autopilot_package_1_durable_invariants'
-        ) {
-          break;
-        }
+      for (const migration of readMigrationFiles({ migrationsFolder })) {
+        if (migration.name >= cleanupMigration) break;
         await writeMigrationExact(
           historicalMigrations,
           migration.name,
@@ -58,14 +47,14 @@ describe('Drizzle v1 package behavior', () => {
       migrate(drizzle({ client: database }), {
         migrationsFolder: historicalMigrations,
       });
+
       database
         .prepare(
           `INSERT INTO pr_watches (
              id, repo_id, repo_full_name, github_owner, github_name, pr_number,
-             desired_terminal_state, status, pr_state, title, url,
-             merge_commit_sha, last_snapshot_json, last_outcome, last_checked_at,
-             created_by, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?, ?);`,
+             desired_terminal_state, status, event_generation_id,
+             created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         )
         .run(
           'example/sample#7',
@@ -74,201 +63,75 @@ describe('Drizzle v1 package behavior', () => {
           'example',
           'sample',
           7,
-          'merged-or-closed',
-          'active',
-          'open',
-          'Historical PR',
-          'https://github.com/example/sample/pull/7',
-          'operator',
-          '2026-07-01T00:00:00.000Z',
-          '2026-07-18T12:34:56.000Z',
+          'merged',
+          'watching',
+          'obsolete-generation',
+          '2026-07-19T00:00:00.000Z',
+          '2026-07-19T00:00:00.000Z',
         );
       database
         .prepare(
           `INSERT INTO pr_watch_event_watermarks (
              watch_id, category, watermark_json, source_updated_at,
              checked_at, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?);`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?);`,
         )
         .run(
           'example/sample#7',
-          'commits',
-          '{"headSha":"abc123","total":1,"truncated":false}',
-          '2026-07-18T12:00:00.000Z',
-          '2026-07-18T12:34:56.000Z',
-          '2026-07-18T12:34:56.000Z',
-          '2026-07-18T12:34:56.000Z',
-          'example/sample#7',
-          'review_threads',
-          '{"total":1,"unresolvedThreadIds":["thread-1"],"truncated":false}',
-          '2026-07-18T12:00:00.000Z',
-          '2026-07-18T12:34:56.000Z',
-          '2026-07-18T12:34:56.000Z',
-          '2026-07-18T12:34:56.000Z',
+          'conversation_comments',
+          '{"total":1,"items":[{"id":"comment-1","fingerprint":"sha256:complete"}]}',
+          '2026-07-19T00:00:00.000Z',
+          '2026-07-19T00:00:00.000Z',
+          '2026-07-19T00:00:00.000Z',
+          '2026-07-19T00:00:00.000Z',
         );
 
       migrate(drizzle({ client: database }), { migrationsFolder });
 
-      const migratedWatch = database
-        .prepare(
-          'SELECT process_existing, initial_event_processed_at, event_watermark_version, event_generation_id FROM pr_watches WHERE id = ?;',
-        )
-        .get('example/sample#7') as Record<string, unknown>;
-      expect(migratedWatch).toEqual({
-        process_existing: 0,
-        initial_event_processed_at: '2026-07-18T12:34:56.000Z',
-        event_watermark_version: 1,
-        event_generation_id: expect.any(String),
-      });
-      migratedGeneration = String(migratedWatch.event_generation_id);
-      expect(migratedGeneration.length).toBeGreaterThan(0);
       expect(
         database
           .prepare(
-            'SELECT category, watermark_json FROM pr_watch_event_watermarks WHERE watch_id = ? ORDER BY category;',
+            `SELECT id, process_existing, event_watermark_version
+             FROM pr_watches WHERE id = ?;`,
           )
-          .all('example/sample#7'),
-      ).toEqual([
-        {
-          category: 'commits',
-          watermark_json: '{"headSha":"abc123","total":1,"truncated":false}',
-        },
-        {
-          category: 'review_threads',
-          watermark_json:
-            '{"total":1,"unresolvedThreadIds":["thread-1"],"truncated":false}',
-        },
-      ]);
+          .get('example/sample#7'),
+      ).toEqual({
+        id: 'example/sample#7',
+        process_existing: 0,
+        event_watermark_version: 2,
+      });
       expect(
         database
-          .prepare('SELECT COUNT(*) AS count FROM pr_watch_event_intakes;')
-          .get(),
-      ).toEqual({ count: 0 });
+          .prepare(
+            `SELECT category, watermark_json
+             FROM pr_watch_event_watermarks WHERE watch_id = ?;`,
+          )
+          .get('example/sample#7'),
+      ).toEqual({
+        category: 'conversation_comments',
+        watermark_json:
+          '{"total":1,"items":[{"id":"comment-1","fingerprint":"sha256:complete"}]}',
+      });
+      expect(
+        database
+          .prepare('PRAGMA table_info(pr_watches);')
+          .all()
+          .map((column) => (column as { name: string }).name),
+      ).not.toContain('event_generation_id');
+      expect(
+        database
+          .prepare(
+            `SELECT name FROM sqlite_master
+             WHERE type = 'table'
+               AND (name = 'pr_watch_event_intakes' OR name LIKE 'autopilot_%')
+             ORDER BY name;`,
+          )
+          .all(),
+      ).toEqual([]);
     } finally {
       database.close();
     }
-
-    await writeFile(
-      paths.repos,
-      `${JSON.stringify({
-        repos: [
-          {
-            id: 'sample',
-            github: { owner: 'example', name: 'sample' },
-            path: '/tmp/example-sample',
-            defaultBranch: 'main',
-            metadata: { autopilot: { mode: 'prepare-only' } },
-          },
-        ],
-      })}\n`,
-    );
-    const incomplete = legacyUpgradeEventState({
-      conversationCommentsTruncated: true,
-    });
-    await expect(
-      refreshPrWatchEventState({ watchId: 'example/sample#7' }, paths, {
-        token: 'test-token',
-        fetchPullRequestEventState: async () => incomplete,
-      }),
-    ).resolves.toMatchObject({
-      ok: false,
-      requires: ['completePrEventFacts'],
-    });
-    expect(readUpgradeWatchState(paths.neondeckDatabase)).toMatchObject({
-      event_watermark_version: 1,
-      event_generation_id: migratedGeneration,
-      pending_intakes: 0,
-      admissions: 0,
-      commits_watermark: '{"headSha":"abc123","total":1,"truncated":false}',
-    });
-
-    const complete = legacyUpgradeEventState();
-    await expect(
-      refreshPrWatchEventState({ watchId: 'example/sample#7' }, paths, {
-        token: 'test-token',
-        fetchPullRequestEventState: async () => complete,
-      }),
-    ).resolves.toMatchObject({
-      ok: true,
-      changed: false,
-      data: { seededUpgrade: true, watermarkVersion: 2 },
-    });
-    const seededUpgrade = readUpgradeWatchState(paths.neondeckDatabase) as {
-      event_generation_id: string;
-    };
-    expect(seededUpgrade).toMatchObject({
-      event_watermark_version: 2,
-      pending_intakes: 0,
-      admissions: 0,
-    });
-    expect(seededUpgrade.event_generation_id).toEqual(expect.any(String));
-    expect(seededUpgrade.event_generation_id).not.toBe(migratedGeneration);
-
-    // A restart sees the v2 seed and must not replay any historical feedback.
-    await expect(
-      refreshPrWatchEventState({ watchId: 'example/sample#7' }, paths, {
-        token: 'test-token',
-        fetchPullRequestEventState: async () => complete,
-      }),
-    ).resolves.toMatchObject({ ok: true, changed: false });
-    expect(readUpgradeWatchState(paths.neondeckDatabase)).toMatchObject({
-      pending_intakes: 0,
-      admissions: 0,
-    });
-
-    const later = legacyUpgradeEventState({
-      conversationComments: [
-        ...complete.conversationComments!,
-        {
-          id: 7002,
-          nodeId: 'comment-7002',
-          url: 'https://github.com/example/sample/pull/7#issuecomment-7002',
-          authorLogin: 'reviewer',
-          authorType: 'User',
-          authorIsBot: false,
-          body: 'This is new after the v2 seed.',
-          createdAt: '2026-07-19T12:00:00.000Z',
-          updatedAt: '2026-07-19T12:00:00.000Z',
-        },
-      ],
-    });
-    const firstLater = await refreshPrWatchEventState(
-      { watchId: 'example/sample#7' },
-      paths,
-      {
-        token: 'test-token',
-        fetchPullRequestEventState: async () => later,
-      },
-    );
-    const secondLater = await refreshPrWatchEventState(
-      { watchId: 'example/sample#7' },
-      paths,
-      {
-        token: 'test-token',
-        fetchPullRequestEventState: async () => {
-          throw new Error('pending intake must replay without GitHub');
-        },
-      },
-    );
-    expect(firstLater).toMatchObject({
-      ok: true,
-      changed: true,
-      data: { pending: true },
-    });
-    expect(secondLater).toMatchObject({
-      ok: true,
-      changed: true,
-      data: { pending: true },
-    });
-    expect((firstLater.data as { intakeId: string }).intakeId).toBe(
-      (secondLater.data as { intakeId: string }).intakeId,
-    );
-    expect(readUpgradeWatchState(paths.neondeckDatabase)).toMatchObject({
-      pending_intakes: 1,
-      admissions: 0,
-    });
   });
-
   it('reads timestamped migration directories and records the v1 journal shape', async () => {
     const root = await tempDir();
     const migrations = join(root, 'migrations');
@@ -462,81 +325,6 @@ async function writeMigrationExact(root: string, name: string, sql: string) {
   const dir = join(root, name);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, 'migration.sql'), sql);
-}
-
-function readUpgradeWatchState(databasePath: string) {
-  const database = new DatabaseSync(databasePath, { readOnly: true });
-  try {
-    return database
-      .prepare(
-        `SELECT
-           (SELECT event_watermark_version FROM pr_watches WHERE id = 'example/sample#7') AS event_watermark_version,
-           (SELECT event_generation_id FROM pr_watches WHERE id = 'example/sample#7') AS event_generation_id,
-           (SELECT watermark_json FROM pr_watch_event_watermarks WHERE watch_id = 'example/sample#7' AND category = 'commits') AS commits_watermark,
-           (SELECT COUNT(*) FROM pr_watch_event_intakes WHERE watch_id = 'example/sample#7' AND status = 'pending') AS pending_intakes,
-           (SELECT COUNT(*) FROM autopilot_admissions WHERE watch_id = 'example/sample#7') AS admissions;`,
-      )
-      .get();
-  } finally {
-    database.close();
-  }
-}
-
-function legacyUpgradeEventState(
-  overrides: Partial<GitHubPullRequestEventState> = {},
-): GitHubPullRequestEventState {
-  return {
-    repo: 'example/sample',
-    number: 7,
-    url: 'https://github.com/example/sample/pull/7',
-    title: 'Historical PR',
-    body: null,
-    state: 'open',
-    draft: false,
-    merged: false,
-    mergeCommitSha: null,
-    headSha: 'a'.repeat(40),
-    headRef: 'feature',
-    headRepoFullName: 'example/sample',
-    baseRef: 'main',
-    baseSha: 'b'.repeat(40),
-    baseRepoFullName: 'example/sample',
-    mergeable: true,
-    mergeableState: 'clean',
-    maintainerCanModify: true,
-    commits: [],
-    reviewThreads: [],
-    requestedChangesReviews: [],
-    requestedChangesState: { active: [], latestByReviewer: [], history: [] },
-    conversationComments: [
-      {
-        id: 7001,
-        nodeId: 'comment-7001',
-        url: 'https://github.com/example/sample/pull/7#issuecomment-7001',
-        authorLogin: 'reviewer',
-        authorType: 'User',
-        authorIsBot: false,
-        body: 'Historical feedback must only seed.',
-        createdAt: '2026-07-18T12:00:00.000Z',
-        updatedAt: '2026-07-18T12:00:00.000Z',
-      },
-    ],
-    checkSuites: [],
-    checkRuns: [],
-    branchPermissions: {
-      headRepoFullName: 'example/sample',
-      baseRepoFullName: 'example/sample',
-      isFork: false,
-      maintainerCanModify: true,
-      headRepoPush: true,
-      baseRepoPush: true,
-      canLikelyPush: true,
-      checkedAt: '2026-07-19T00:00:00.000Z',
-    },
-    isOutOfDate: false,
-    fetchedAt: '2026-07-19T00:00:00.000Z',
-    ...overrides,
-  };
 }
 
 async function runDrizzleKit(args: string[]) {

@@ -890,7 +890,7 @@ export const entries: SafetyPolicyEntry[] = [
     'neondeck_pr_comment',
     'Post PR comment',
     unauditedSafeMutation,
-    'Posts a GitHub PR comment through the server-side GitHub token and returns normalized comment metadata. Durable PR-comment audit records are deferred to the autopilot queue persistence slice.',
+    'Posts a GitHub PR comment through the server-side GitHub token, returns normalized comment metadata, and records the Neondeck delivery fingerprint used to suppress self-authored feedback.',
   ),
   action(
     'neondeck_pr_watch_event_state_refresh',
@@ -1040,7 +1040,7 @@ export const entries: SafetyPolicyEntry[] = [
     '/api/github/prs/comment',
     'Post PR comment API',
     unauditedSafeMutation,
-    'Local API route for posting a bounded PR comment with the server-side GitHub token. Durable PR-comment audit records are deferred to the autopilot queue persistence slice.',
+    'Local API route for posting a bounded PR comment with the server-side GitHub token and recording its Neondeck delivery fingerprint.',
   ),
   action(
     'neondeck_watch_ref_add',

@@ -1,5 +1,5 @@
 import { dispatch, type JsonValue } from '@flue/runtime';
-import type { NotificationLevel } from '../app-state';
+import type { NotificationLevel, NotificationRecord } from '../app-state';
 import type { RuntimePaths } from '../../runtime-home';
 import { loadRuntimeSkill } from '../runtime';
 import { refreshWatchTask } from '../scheduler/dispatch';
@@ -21,6 +21,7 @@ export type ScheduledTaskExecutionResult = {
     sourceId?: string;
     data?: unknown;
   }>;
+  persistedNotifications?: NotificationRecord[];
 };
 
 export async function executeScheduledTask(

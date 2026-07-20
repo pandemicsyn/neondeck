@@ -70,7 +70,6 @@ describe('app API safety routes', () => {
     const body = (await response.json()) as {
       ok: boolean;
       action: string;
-      queue: unknown[];
       policies: {
         global: { mode: string };
       };
@@ -84,7 +83,7 @@ describe('app API safety routes', () => {
         global: { mode: 'notify-only' },
       },
     });
-    expect(Array.isArray(body.queue)).toBe(true);
+    expect(body).not.toHaveProperty('queue');
   });
 
   it('validates typed Autopilot readiness queries over the local API', async () => {

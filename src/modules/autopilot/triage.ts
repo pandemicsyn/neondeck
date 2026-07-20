@@ -121,10 +121,6 @@ export async function triagePrEvent(
   const mode = input.autopilotMode ?? 'prepare-only';
   const signals = classifySignals(input.current, deltas);
   const classification = classificationFor(mode, signals);
-  const shouldPrepareWorktree =
-    classification === 'prepare-only' ||
-    classification === 'autofix-with-approval' ||
-    classification === 'autofix-push-when-safe';
   const reasons = reasonsFor(classification, mode, signals, deltas);
 
   return {
@@ -138,11 +134,8 @@ export async function triagePrEvent(
     data: asJsonValue({
       classification,
       autopilotMode: mode,
-      shouldPrepareWorktree,
-      nextWorkflow: shouldPrepareWorktree ? 'prepare_pr_worktree' : null,
       source: input.source ?? 'api',
       eventId: input.eventId ?? null,
-      admissionId: input.admissionId ?? null,
       watchId: input.watchId ?? null,
       repoId: input.repoId ?? null,
       repoFullName: input.repoFullName ?? null,

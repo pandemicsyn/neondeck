@@ -27,7 +27,7 @@ describe('app database migrator', () => {
     const migrations = readAppDbMigrationFiles();
     expect(
       migrations.filter((migration) =>
-        migration.name.includes('autopilot_package_4_continuing_owner'),
+        migration.name.includes('autopilot_engine_cleanup'),
       ),
     ).toHaveLength(1);
     expect(applyAppDbMigrations(databasePath)).toMatchObject({
@@ -39,27 +39,16 @@ describe('app database migrator', () => {
       expect(tableExists(database, 'notifications')).toBe(true);
       expect(tableExists(database, 'briefing_profiles')).toBe(true);
       expect(tableExists(database, 'briefing_runs')).toBe(true);
+      expect(tableExists(database, 'pr_watch_event_watermarks')).toBe(true);
+      expect(tableExists(database, 'pr_watch_event_intakes')).toBe(false);
+      expect(tableExists(database, 'autopilot_admissions')).toBe(false);
+      expect(tableExists(database, 'autopilot_pr_owners')).toBe(false);
       expect(
         database
-          .prepare(
-            `SELECT name FROM pragma_table_info('autopilot_owner_fix_submissions')
-             WHERE name IN ('mutation_revision_key', 'artifact_revision_key', 'result_hash')
-             ORDER BY name;`,
-          )
-          .all(),
-      ).toEqual([
-        { name: 'artifact_revision_key' },
-        { name: 'mutation_revision_key' },
-        { name: 'result_hash' },
-      ]);
-      expect(
-        database
-          .prepare(
-            `SELECT name FROM pragma_table_info('autopilot_admissions')
-             WHERE name = 'authority_policy_json';`,
-          )
-          .get(),
-      ).toEqual({ name: 'authority_policy_json' });
+          .prepare('PRAGMA table_info(pr_watches);')
+          .all()
+          .map((column) => (column as { name: string }).name),
+      ).not.toContain('event_generation_id');
     } finally {
       database.close();
     }
@@ -107,20 +96,13 @@ describe('app database migrator', () => {
       'predates the current Neondeck baseline',
     );
   });
-
-  it('backfills durable owners and active attempts for pre-package admissions', async () => {
+  it('cleans an upgraded runtime home while preserving watch feedback state', async () => {
     const root = await tempDir();
     const databasePath = join(root, 'neondeck.db');
-    const oldMigrations = join(root, 'old-migrations');
+    const oldMigrations = join(root, 'pre-cleanup-migrations');
     await mkdir(oldMigrations);
     for (const entry of await readdir(appDbMigrationsFolder())) {
-      if (
-        entry.includes('autopilot_product_closure') ||
-        entry.includes('autopilot_package_1_durable_invariants') ||
-        entry.includes('autopilot_package_4_continuing_owner')
-      ) {
-        continue;
-      }
+      if (entry.includes('autopilot_engine_cleanup')) continue;
       await cp(
         join(appDbMigrationsFolder(), entry),
         join(oldMigrations, entry),
@@ -128,304 +110,115 @@ describe('app database migrator', () => {
       );
     }
     applyAppDbMigrations(databasePath, { migrationsFolder: oldMigrations });
+
     const before = new DatabaseSync(databasePath);
     try {
       before
         .prepare(
-          `INSERT INTO autopilot_admissions (
-             id, watch_id, event_fingerprint, repo_id, pr_number, mode,
-             input_json, state, current_run_id, worktree_id,
-             attempt_count, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, '{}', 'prepared', ?, ?, 1, ?, ?);`,
-        )
-        .run(
-          'admission:legacy-prepared',
-          'watch:legacy',
-          'event:legacy-prepared',
-          'repo',
-          17,
-          'prepare-only',
-          'run:legacy-prepared',
-          'worktree:legacy',
-          '2026-07-16T00:00:00.000Z',
-          '2026-07-16T00:01:00.000Z',
-        );
-      before
-        .prepare(
-          `INSERT INTO autopilot_admissions (
-             id, watch_id, event_fingerprint, repo_id, pr_number, mode,
-             input_json, state, current_workflow, current_run_id,
-             attempt_count, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, '{}', 'triage-admitted',
-                     'triage-pr-event', ?, 1, ?, ?);`,
-        )
-        .run(
-          'admission:legacy-stale',
-          'watch:legacy',
-          'event:legacy-stale',
-          'repo',
-          17,
-          'prepare-only',
-          'run:legacy-stale',
-          '2026-07-17T00:00:00.000Z',
-          '2026-07-17T00:01:00.000Z',
-        );
-      before
-        .prepare(
-          `INSERT INTO autopilot_admissions (
-             id, watch_id, event_fingerprint, repo_id, pr_number, mode,
-             input_json, state, current_workflow, current_run_id,
-             attempt_count, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, '{}', 'prepare-admitted',
-                     'prepare-pr-worktree', ?, 2, ?, ?);`,
-        )
-        .run(
-          'admission:legacy',
-          'watch:legacy',
-          'event:legacy',
-          'repo',
-          17,
-          'prepare-only',
-          'run:legacy',
-          '2026-07-18T00:00:00.000Z',
-          '2026-07-18T00:01:00.000Z',
-        );
-      before
-        .prepare(
-          `INSERT INTO autopilot_admissions (
-             id, watch_id, event_fingerprint, repo_id, pr_number, mode,
-             input_json, state, current_workflow, current_run_id,
-             attempt_count, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, '{}', 'triage-admitted',
-                     'triage-pr-event', ?, 1, ?, ?);`,
-        )
-        .run(
-          'admission:legacy-terminal-triage',
-          'watch:terminal-triage',
-          'event:legacy-terminal-triage',
-          'repo',
-          18,
-          'prepare-only',
-          'run:legacy-terminal-triage',
-          '2026-07-19T00:00:00.000Z',
-          '2026-07-19T00:01:00.000Z',
-        );
-      before
-        .prepare(
-          `INSERT INTO autopilot_admissions (
-             id, watch_id, event_fingerprint, repo_id, pr_number, mode,
-             input_json, state, attempt_count, next_attempt_at, last_error,
+          `INSERT INTO pr_watches (
+             id, repo_id, repo_full_name, github_owner, github_name, pr_number,
+             desired_terminal_state, status, event_generation_id,
              created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, '{}', 'failed', 1, ?, ?, ?, ?);`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         )
         .run(
-          'admission:legacy-retry',
-          'watch:legacy',
-          'event:legacy-retry',
-          'repo',
-          17,
-          'prepare-only',
-          '2026-07-19T00:01:00.000Z',
-          'legacy retry',
+          'example/sample#7',
+          'repo-1',
+          'example/sample',
+          'example',
+          'sample',
+          7,
+          'merged',
+          'watching',
+          'obsolete-generation',
           '2026-07-19T00:00:00.000Z',
           '2026-07-19T00:00:00.000Z',
         );
       before
         .prepare(
-          `INSERT INTO app_metadata (key, value, updated_at)
-           VALUES (?, ?, ?);`,
+          `INSERT INTO pr_watch_event_watermarks (
+             watch_id, category, watermark_json, source_updated_at,
+             checked_at, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?);`,
         )
         .run(
-          'autopilot.admission.terminal:run:legacy',
-          JSON.stringify({
-            workflow: 'prepare-pr-worktree',
-            failed: false,
-            worktreeId: 'worktree:legacy-terminal',
-          }),
-          '2026-07-18T00:02:00.000Z',
+          'example/sample#7',
+          'review_threads',
+          '{"total":1,"items":[{"id":"thread-1","fingerprint":"sha256:complete"}]}',
+          '2026-07-19T00:00:00.000Z',
+          '2026-07-19T00:00:00.000Z',
+          '2026-07-19T00:00:00.000Z',
+          '2026-07-19T00:00:00.000Z',
         );
       before
         .prepare(
-          `INSERT INTO app_metadata (key, value, updated_at)
-           VALUES (?, ?, ?);`,
+          `INSERT INTO pr_watch_event_intakes (
+             event_id, watch_id, event_generation_id, sequence,
+             repo_full_name, pr_number, source, previous_watermarks_json,
+             candidate_watermarks_json, changed_categories_json, status,
+             created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         )
         .run(
-          'autopilot.admission.terminal:run:legacy-terminal-triage',
-          JSON.stringify({
-            workflow: 'triage-pr-event',
-            failed: false,
-            shouldPrepare: true,
-          }),
-          '2026-07-19T00:02:00.000Z',
+          'event:obsolete',
+          'example/sample#7',
+          'obsolete-generation',
+          1,
+          'example/sample',
+          7,
+          'poll',
+          '{}',
+          '{}',
+          '[]',
+          'pending',
+          '2026-07-19T00:00:00.000Z',
+          '2026-07-19T00:00:00.000Z',
         );
-      before.exec(`
-        INSERT INTO memory_events
-          (id, memory_id, action, actor, created_at)
-        VALUES
-          ('memory-event:one', 'memory:one', 'created', 'fixture',
-           '2026-07-18T00:03:00.000Z'),
-          ('memory-event:two', 'memory:two', 'updated', 'fixture',
-           '2026-07-18T00:04:00.000Z');
-      `);
     } finally {
       before.close();
     }
 
-    expect(applyAppDbMigrations(databasePath).applied).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('autopilot_product_closure'),
-        expect.stringContaining('autopilot_package_1_durable_invariants'),
-      ]),
-    );
-    const after = new DatabaseSync(databasePath);
+    expect(applyAppDbMigrations(databasePath)).toMatchObject({
+      applied: [expect.stringContaining('autopilot_engine_cleanup')],
+      pending: [],
+      backupPath: expect.stringContaining('autopilot_engine_cleanup'),
+    });
+
+    const after = new DatabaseSync(databasePath, { readOnly: true });
     try {
-      after.exec('PRAGMA foreign_keys=ON;');
+      expect(tableExists(after, 'pr_watch_event_intakes')).toBe(false);
+      expect(tableExists(after, 'autopilot_admissions')).toBe(false);
+      expect(tableExists(after, 'autopilot_owner_fix_submissions')).toBe(false);
       expect(
         after
           .prepare(
-            `SELECT owner_id, event_sequence, version, current_stage_attempt_id,
-                    authority_policy_json
-             FROM autopilot_admissions WHERE id = ?;`,
+            `SELECT id, process_existing, event_watermark_version
+             FROM pr_watches WHERE id = ?;`,
           )
-          .get('admission:legacy'),
-      ).toMatchObject({
-        owner_id: expect.stringContaining('autopilot-owner:migrated:'),
-        event_sequence: 3,
-        version: 1,
-        current_stage_attempt_id: 'autopilot-attempt:migrated:admission:legacy',
-        authority_policy_json: null,
-      });
-      expect(
-        after
-          .prepare(
-            `SELECT stage, status, run_id FROM autopilot_stage_attempts
-             WHERE admission_id = ?;`,
-          )
-          .get('admission:legacy'),
+          .get('example/sample#7'),
       ).toEqual({
-        stage: 'prepare-worktree',
-        status: 'running',
-        run_id: 'run:legacy',
+        id: 'example/sample#7',
+        process_existing: 0,
+        event_watermark_version: 2,
       });
       expect(
         after
           .prepare(
-            `SELECT reason FROM autopilot_admission_events
-             WHERE admission_id = ?;`,
+            `SELECT category, watermark_json
+             FROM pr_watch_event_watermarks WHERE watch_id = ?;`,
           )
-          .get('admission:legacy'),
-      ).toEqual({ reason: 'migration-backfill' });
-      expect(
-        after
-          .prepare(
-            `SELECT state, current_run_id, current_stage_attempt_id, last_error
-             FROM autopilot_admissions WHERE id = ?;`,
-          )
-          .get('admission:legacy-stale'),
+          .get('example/sample#7'),
       ).toEqual({
-        state: 'manual-review',
-        current_run_id: null,
-        current_stage_attempt_id: null,
-        last_error:
-          'Migration found a newer active admission for this PR owner.',
+        category: 'review_threads',
+        watermark_json:
+          '{"total":1,"items":[{"id":"thread-1","fingerprint":"sha256:complete"}]}',
       });
-      expect(
-        after
-          .prepare(
-            `SELECT COUNT(*) AS count FROM autopilot_stage_attempts
-             WHERE owner_id = (
-               SELECT owner_id FROM autopilot_admissions WHERE id = ?
-             ) AND status IN ('reserved', 'running');`,
-          )
-          .get('admission:legacy'),
-      ).toEqual({ count: 1 });
-      expect(
-        after
-          .prepare(
-            `SELECT worktree_id FROM autopilot_pr_owners
-             WHERE id = (
-               SELECT owner_id FROM autopilot_admissions WHERE id = ?
-             );`,
-          )
-          .get('admission:legacy-prepared'),
-      ).toEqual({ worktree_id: 'worktree:legacy' });
-      expect(
-        after
-          .prepare(
-            `SELECT state, next_attempt_at, completed_at, last_outcome_json
-             FROM autopilot_admissions WHERE id = ?;`,
-          )
-          .get('admission:legacy-retry'),
-      ).toMatchObject({
-        state: 'manual-review',
-        next_attempt_at: null,
-        completed_at: '2026-07-19T00:00:00.000Z',
-        last_outcome_json: expect.stringContaining(
-          'migration-legacy-retry-unproven',
-        ),
+      expect(readAppDbMigrationStatus(databasePath)).toMatchObject({
+        ok: true,
+        pending: [],
+        unknown: [],
+        changed: [],
       });
-      expect(
-        after
-          .prepare('SELECT value FROM app_metadata WHERE key = ?;')
-          .get('autopilot.stage.terminal:run:legacy'),
-      ).toEqual({
-        value: JSON.stringify({
-          workflow: 'prepare-pr-worktree',
-          failed: false,
-          worktreeId: 'worktree:legacy-terminal',
-        }),
-      });
-      expect(
-        after
-          .prepare('SELECT value FROM app_metadata WHERE key = ?;')
-          .get('autopilot.stage.terminal:run:legacy-terminal-triage'),
-      ).toEqual({
-        value: JSON.stringify({
-          workflow: 'triage-pr-event',
-          failed: false,
-          shouldPrepare: true,
-        }),
-      });
-      expect(() =>
-        after
-          .prepare(
-            `INSERT INTO autopilot_stage_attempts (
-               id, admission_id, owner_id, stage, attempt_number, status,
-               input_fingerprint, created_at
-             ) VALUES (?, ?, ?, 'triage', 99, 'reserved', ?, ?);`,
-          )
-          .run(
-            'attempt:wrong-owner',
-            'admission:legacy',
-            'owner:wrong',
-            'fixture',
-            '2026-07-19T00:03:00.000Z',
-          ),
-      ).toThrow(/FOREIGN KEY constraint failed/);
-      expect(() =>
-        after
-          .prepare(
-            `UPDATE autopilot_admissions
-             SET fixer_kind = 'unbounded-worker' WHERE id = ?;`,
-          )
-          .run('admission:legacy'),
-      ).toThrow(/CHECK constraint failed/);
-      expect(
-        after
-          .prepare('SELECT sequence, id FROM memory_events ORDER BY sequence;')
-          .all(),
-      ).toEqual([
-        { sequence: 1, id: 'memory-event:one' },
-        { sequence: 2, id: 'memory-event:two' },
-      ]);
-      expect(() =>
-        after
-          .prepare(
-            `UPDATE autopilot_admissions
-             SET authority_mode = 'unbounded' WHERE id = ?;`,
-          )
-          .run('admission:legacy'),
-      ).toThrow(/autopilot Package 4 authority constraint failed/);
     } finally {
       after.close();
     }

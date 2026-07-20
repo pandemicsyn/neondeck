@@ -36,16 +36,6 @@ import {
   type WorktreeRecord,
 } from '../worktrees';
 
-export type AutopilotQueueStatus =
-  | 'watching'
-  | 'queued'
-  | 'running'
-  | 'prepared'
-  | 'waiting-approval'
-  | 'blocked';
-
-export type AutopilotPriority = 'low' | 'normal' | 'high' | 'urgent';
-
 export type AutopilotPolicyConfig = {
   mode: AutopilotMode;
   limits: AutopilotPolicyLimits;
@@ -70,24 +60,6 @@ export type WatchAutopilotPolicy = {
   mode: AutopilotMode;
   source: 'repo-policy' | 'watch-override';
   reason: string;
-};
-
-export type AutopilotQueueItem = {
-  id: string;
-  source: 'admission' | 'watch' | 'worktree' | 'workflow' | 'approval';
-  watchId: string | null;
-  status: AutopilotQueueStatus;
-  priority: AutopilotPriority;
-  repoId: string;
-  repoFullName: string;
-  prNumber: number | null;
-  title: string;
-  mode: AutopilotMode;
-  reason: string;
-  nextStep: string;
-  worktreeId: string | null;
-  runId: string | null;
-  updatedAt: string;
 };
 
 export type AutopilotPreparedDiff = {
@@ -167,7 +139,6 @@ export type AutopilotState = {
   modeLabels: Record<AutopilotMode, string>;
   summary: {
     activeWatches: number;
-    queuedItems: number;
     preparedDiffs: number;
     pendingApprovals: number;
     runningChecks: number;
@@ -176,7 +147,6 @@ export type AutopilotState = {
     recentActivity: number;
     placeholderAdapters: string[];
   };
-  queue: AutopilotQueueItem[];
   policies: {
     global: AutopilotPolicyConfig;
     repos: RepoAutopilotPolicy[];
@@ -261,36 +231,6 @@ export const concurrencyOutputSchema = v.object({
   maxPerRepoAutonomousJobs: v.number(),
   singleMutationPerPr: v.boolean(),
   localExecutionLimit: v.number(),
-});
-export const queueItemSchema = v.object({
-  id: v.string(),
-  source: v.picklist([
-    'admission',
-    'watch',
-    'worktree',
-    'workflow',
-    'approval',
-  ]),
-  watchId: v.nullable(v.string()),
-  status: v.picklist([
-    'watching',
-    'queued',
-    'running',
-    'prepared',
-    'waiting-approval',
-    'blocked',
-  ]),
-  priority: v.picklist(['low', 'normal', 'high', 'urgent']),
-  repoId: v.string(),
-  repoFullName: v.string(),
-  prNumber: v.nullable(v.number()),
-  title: v.string(),
-  mode: autopilotModeOutputSchema,
-  reason: v.string(),
-  nextStep: v.string(),
-  worktreeId: v.nullable(v.string()),
-  runId: v.nullable(v.string()),
-  updatedAt: v.string(),
 });
 export const repoPolicySchema = v.object({
   repoId: v.string(),
@@ -395,7 +335,6 @@ export const autopilotStateSchema = v.object({
   modeLabels: v.record(v.string(), v.string()),
   summary: v.object({
     activeWatches: v.number(),
-    queuedItems: v.number(),
     preparedDiffs: v.number(),
     pendingApprovals: v.number(),
     runningChecks: v.number(),
@@ -404,7 +343,6 @@ export const autopilotStateSchema = v.object({
     recentActivity: v.number(),
     placeholderAdapters: v.array(v.string()),
   }),
-  queue: v.array(queueItemSchema),
   policies: v.object({
     global: v.object({
       mode: autopilotModeOutputSchema,

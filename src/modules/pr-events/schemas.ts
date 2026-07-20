@@ -93,10 +93,7 @@ export type PrEventStateDependencies = {
   replyToPullRequestReviewThread?: typeof replyToPullRequestReviewThread;
   resolvePullRequestReviewThread?: typeof resolvePullRequestReviewThread;
   unresolvePullRequestReviewThread?: typeof unresolvePullRequestReviewThread;
-  afterPrWatchEventIntakeStaged?: (input: {
-    watchId: string;
-    eventId: string;
-  }) => void | Promise<void>;
+  persistWatermarks?: boolean;
   token?: string;
 };
 
