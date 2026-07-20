@@ -96,7 +96,7 @@ export function watchPolicy(
   const repo = repos.find((candidate) => candidate.id === watch.repoId);
   const override = readRepoAutopilot(repo)?.watchOverrides?.find(
     (candidate) =>
-      candidate.watchId === watch.id || candidate.prNumber === watch.prNumber,
+      candidate.watchId === watch.id && candidate.prNumber === watch.prNumber,
   );
   const inheritedMode = repoPolicy?.mode ?? 'notify-only';
   const mode = override?.mode ?? inheritedMode;

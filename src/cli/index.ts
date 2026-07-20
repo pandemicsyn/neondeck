@@ -18,7 +18,6 @@ import {
   serverModule,
   serviceModule,
   skillPatchesModule,
-  watchActionsModule,
 } from './modules';
 import {
   loadEnvForPaths,
@@ -451,13 +450,13 @@ program
   .option('--json', 'print machine-readable JSON')
   .action(async (ref: string, options: WatchPrOptions) => {
     applyCommandJsonOption(options);
-    const { addPrWatch } = await watchActionsModule();
+    const { addPrWatchWithAutopilotLease } = await autopilotModule();
     const { normalizeHandoffSource } = await handoffModule();
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
     loadEnvForPaths(paths);
     const desiredTerminalState = parseWatchTarget(options.until);
     const intervalSeconds = parseOptionalIntervalSeconds(options.interval);
-    const result = await addPrWatch(
+    const result = await addPrWatchWithAutopilotLease(
       {
         ref,
         desiredTerminalState,
@@ -471,8 +470,12 @@ program
     printActionResult(result);
   });
 
-program
-  .command('autopilot <ref>')
+const autopilotCommand = program
+  .command('autopilot')
+  .description('Configure and control Autopilot PR watches.');
+
+autopilotCommand
+  .command('watch <ref>')
   .description(
     'Configure one PR watch with an explicit per-watch Autopilot mode.',
   )
@@ -482,7 +485,11 @@ program
   )
   .option(
     '--process-existing',
-    'process current actionable feedback on the first poll',
+    'process current feedback on the next poll (legacy compatibility)',
+  )
+  .option(
+    '--no-process-existing',
+    'baseline current feedback and act only on later changes',
   )
   .option('--interval <seconds>', 'poll interval in seconds')
   .option('--reason <text>', 'operator-visible reason for this watch override')
@@ -497,16 +504,89 @@ program
     if (!mode) throw new Error('--mode is required');
     const intervalSeconds = parseOptionalIntervalSeconds(options.interval);
     printActionResult(
-      await configureAutopilotWatch(
+      await configureAutopilotWatchFromCli(
+        configureAutopilotWatch,
         {
           ref,
           mode,
-          ...(options.processExisting ? { processExisting: true } : {}),
+          processExisting: options.processExisting !== false,
           ...(intervalSeconds !== undefined ? { intervalSeconds } : {}),
           ...(options.reason ? { reason: options.reason } : {}),
-          ...(options.confirm ? { confirm: true } : {}),
         },
         paths,
+        options.confirm === true,
+      ),
+    );
+  });
+
+for (const operation of [
+  'list',
+  'status',
+  'pause',
+  'resume',
+  'stop',
+  'retry',
+] as const) {
+  autopilotCommand
+    .command(`${operation} [watchId]`)
+    .description(
+      `${operation} an Autopilot watch through the shared control service.`,
+    )
+    .option('--admission <id>', 'retry only this durable admission')
+    .option('--confirm', 'confirm stopping a watch and its active work')
+    .option('--json', 'print machine-readable JSON')
+    .action(
+      async (watchId: string | undefined, options: AutopilotControlOptions) => {
+        applyCommandJsonOption(options);
+        const { controlAutopilotWatch } = await autopilotModule();
+        const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+        loadEnvForPaths(paths);
+        printActionResult(
+          await controlAutopilotWatch(
+            {
+              operation,
+              ...(watchId ? { watchId } : {}),
+              ...(options.admission ? { admissionId: options.admission } : {}),
+              ...(options.confirm ? { confirm: true } : {}),
+            },
+            paths,
+          ),
+        );
+      },
+    );
+}
+
+// Compatibility aliases for scripts written before the cohesive command group.
+program
+  .command('autopilot-watch <ref>')
+  .description('Compatibility alias for `neondeck autopilot watch <ref>`.')
+  .requiredOption('--mode <mode>')
+  .option('--process-existing')
+  .option('--no-process-existing')
+  .option('--interval <seconds>')
+  .option('--reason <text>')
+  .option('--confirm')
+  .option('--json')
+  .action(async (ref: string, options: AutopilotOptions) => {
+    applyCommandJsonOption(options);
+    const { configureAutopilotWatch } = await autopilotModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    loadEnvForPaths(paths);
+    const mode = parseAutopilotModeFlag(options.mode);
+    if (!mode) throw new Error('--mode is required');
+    const intervalSeconds = parseOptionalIntervalSeconds(options.interval);
+    printActionResult(
+      await configureAutopilotWatchFromCli(
+        configureAutopilotWatch,
+        {
+          ref,
+          mode,
+          processExisting: options.processExisting !== false,
+          ...(intervalSeconds !== undefined ? { intervalSeconds } : {}),
+          ...(options.reason ? { reason: options.reason } : {}),
+        },
+        paths,
+        options.confirm === true,
       ),
     );
   });
@@ -648,7 +728,158 @@ program
     console.log('Run `npm run dev` for the current local web dashboard.');
   });
 
-await program.parseAsync(process.argv);
+await program.parseAsync(rewriteLegacyAutopilotInvocation(process.argv));
+
+function rewriteLegacyAutopilotInvocation(argv: string[]) {
+  const commandIndex = topLevelCommandIndex(argv);
+  if (commandIndex === -1 || argv[commandIndex] !== 'autopilot') return argv;
+  const refIndex = legacyAutopilotRefIndex(argv, commandIndex + 1);
+  if (refIndex === -1) return argv;
+  const rewritten = [...argv];
+  rewritten.splice(commandIndex + 1, 0, 'watch');
+  const legacyArguments = argv.slice(commandIndex + 1);
+  if (
+    !legacyArguments.includes('--process-existing') &&
+    !legacyArguments.includes('--no-process-existing')
+  ) {
+    const terminator = rewritten.indexOf('--', commandIndex + 2);
+    rewritten.splice(
+      terminator === -1 ? rewritten.length : terminator,
+      0,
+      '--no-process-existing',
+    );
+  }
+  return rewritten;
+}
+
+function legacyAutopilotRefIndex(argv: string[], start: number) {
+  for (let index = start; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === '--') {
+      const candidate = argv[index + 1];
+      return candidate && isLegacyAutopilotRef(candidate) ? index + 1 : -1;
+    }
+    if (
+      argument === '--mode' ||
+      argument === '--interval' ||
+      argument === '--reason' ||
+      argument === '--home'
+    ) {
+      index += 1;
+      continue;
+    }
+    if (
+      argument === '--json' ||
+      argument === '--confirm' ||
+      argument === '--process-existing' ||
+      argument === '--no-process-existing' ||
+      argument.startsWith('--home=')
+    ) {
+      continue;
+    }
+    if (
+      argument.startsWith('--mode=') ||
+      argument.startsWith('--interval=') ||
+      argument.startsWith('--reason=')
+    ) {
+      continue;
+    }
+    return isLegacyAutopilotRef(argument) ? index : -1;
+  }
+  return -1;
+}
+
+function isLegacyAutopilotRef(value: string) {
+  return (
+    /^#\d+$/.test(value) ||
+    /^[^\s/#]+#[0-9]+$/.test(value) ||
+    /^[^\s/#]+\/[^\s/#]+#[0-9]+$/.test(value) ||
+    /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+\/?$/i.test(value)
+  );
+}
+
+function topLevelCommandIndex(argv: string[]) {
+  let index = 2;
+  while (index < argv.length) {
+    const argument = argv[index];
+    if (
+      argument === '--json' ||
+      argument === '--version' ||
+      argument === '-V'
+    ) {
+      index += 1;
+      continue;
+    }
+    if (argument === '--home') {
+      index += 2;
+      continue;
+    }
+    if (argument.startsWith('--home=')) {
+      index += 1;
+      continue;
+    }
+    return index;
+  }
+  return -1;
+}
+
+async function configureAutopilotWatchFromCli(
+  configure: (
+    input: unknown,
+    paths: Awaited<ReturnType<typeof pathsFromOptions>>,
+  ) => Promise<unknown>,
+  input: Record<string, unknown>,
+  paths: Awaited<ReturnType<typeof pathsFromOptions>>,
+  confirm: boolean,
+): Promise<{
+  ok: boolean;
+  message: string;
+  changed?: boolean;
+  errors?: string[];
+  warnings?: string[];
+  requires?: string[];
+}> {
+  const initial = await configure(input, paths);
+  if (!confirm || !requiresSetupConfirmation(initial))
+    return initial as {
+      ok: boolean;
+      message: string;
+      changed?: boolean;
+      errors?: string[];
+      warnings?: string[];
+      requires?: string[];
+    };
+  return (await configure(
+    {
+      ...input,
+      confirm: true,
+      confirmation: initial.confirmation.intent,
+    },
+    paths,
+  )) as {
+    ok: boolean;
+    message: string;
+    changed?: boolean;
+    errors?: string[];
+    warnings?: string[];
+    requires?: string[];
+  };
+}
+
+function requiresSetupConfirmation(result: unknown): result is {
+  ok: false;
+  requires: string[];
+  confirmation: { intent: unknown };
+} {
+  return Boolean(
+    result &&
+    typeof result === 'object' &&
+    (result as { ok?: unknown }).ok === false &&
+    Array.isArray((result as { requires?: unknown }).requires) &&
+    (result as { requires: unknown[] }).requires.includes('confirm') &&
+    (result as { confirmation?: { intent?: unknown } }).confirmation?.intent,
+  );
+}
 
 function applyCommandJsonOption(options: { json?: boolean }) {
   if (options.json) setJsonOutput(true);

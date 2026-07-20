@@ -8,7 +8,7 @@ import {
   createChatSession,
   type ChatSessionRecord,
 } from '../../sessions';
-import { addPrWatch } from '../../watches';
+import { addPrWatchWithAutopilotLease } from '../../autopilot/setup';
 import { collectBriefingSnapshot } from '../../briefings';
 import type { RuntimePaths } from '../../../runtime-home';
 import type {
@@ -261,7 +261,10 @@ export async function watchPrCommand(
     );
   }
 
-  const watch = await (dependencies.addPrWatch ?? addPrWatch)({ ref }, paths);
+  const watch = await (dependencies.addPrWatch ?? addPrWatchWithAutopilotLease)(
+    { ref },
+    paths,
+  );
   if (!watch.ok) {
     return failedCommand(command.name, command.raw, watch.message, {
       errors: watch.errors,

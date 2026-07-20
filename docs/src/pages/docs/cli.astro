@@ -111,20 +111,20 @@ neondeck watch-pr https://github.com/pandemicsyn/neondeck/pull/521
         </p>
 
         <h2>Autopilot setup</h2>
-        <pre><code>neondeck autopilot pandemicsyn/neondeck#521 --mode prepare-only --confirm
-neondeck autopilot pandemicsyn/neondeck#521 --mode prepare-only --process-existing --confirm
-neondeck autopilot-control status pandemicsyn/neondeck#521
-neondeck autopilot-control retry pandemicsyn/neondeck#521 --admission autopilot-admission:…</code></pre>
+        <pre><code>neondeck autopilot watch pandemicsyn/neondeck#521 --mode prepare-only --confirm
+neondeck autopilot watch pandemicsyn/neondeck#521 --mode prepare-only --no-process-existing --confirm
+neondeck autopilot status pandemicsyn/neondeck#521
+neondeck autopilot retry pandemicsyn/neondeck#521 --admission autopilot-admission:…</code></pre>
         <p>
           This shared setup operation creates or updates the PR watch, stores a
-          stable per-watch mode override, creates its durable
+          cross-process-safe stable per-watch mode override, creates its durable
           <code>awaiting-event</code> owner, and reports readiness. It does not create
           a Flue instance or worktree until a meaningful event arrives. Use <code
-            >--process-existing</code
-          > to process current actionable feedback on the first poll; otherwise that
-          state is baselined. Any authority increase requires <code
-            >--confirm</code
-          >.
+            >--no-process-existing</code
+          > to baseline current actionable feedback; otherwise it is processed on
+          the first poll. Any authority increase requires <code>--confirm</code
+          >. If a local setup step cannot complete, the watch stays fail-closed
+          until the same setup command is retried successfully.
         </p>
 
         <h2>External agent handoff</h2>

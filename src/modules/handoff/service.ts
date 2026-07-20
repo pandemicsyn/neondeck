@@ -11,6 +11,7 @@ import {
 import { addNotification, addWorkflowSummary } from '../app-state';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import { addPrWatch, resolvePrReference, type PrWatch } from '../watches';
+import { addPrWatchWithAutopilotLease } from '../autopilot/setup';
 import {
   handoffNoteInputSchema,
   handoffRegisterPrInputSchema,
@@ -63,7 +64,9 @@ export async function registerHandoffWatchPr(
   if (!prLink.ok) return prLink.result;
 
   const desiredTerminalState = parsed.input.desiredTerminalState ?? 'checks';
-  const watchResult = await (dependencies.addPrWatch ?? addPrWatch)(
+  const watchResult = await (
+    dependencies.addPrWatch ?? addPrWatchWithAutopilotLease
+  )(
     {
       ref: prLink.link.ref.id,
       desiredTerminalState,
@@ -229,7 +232,9 @@ export async function registerHandoffPr(
   let watchChanged = false;
   let watchId: string | undefined;
   if (watchEnabled) {
-    const watchResult = await (dependencies.addPrWatch ?? addPrWatch)(
+    const watchResult = await (
+      dependencies.addPrWatch ?? addPrWatchWithAutopilotLease
+    )(
       {
         ref,
         desiredTerminalState: 'checks',

@@ -1159,6 +1159,10 @@ export type AutopilotWatchPolicy = {
   mode: AutopilotMode;
   source: 'repo-policy' | 'watch-override';
   reason: string;
+  ownerId?: string;
+  ownerGeneration?: number;
+  ownerInstanceId?: string | null;
+  lastEventAt?: string | null;
 };
 
 export type AutopilotPreparedDiff = {

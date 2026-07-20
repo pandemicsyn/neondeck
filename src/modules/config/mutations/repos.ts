@@ -1,8 +1,18 @@
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { access, readFile, stat } from 'node:fs/promises';
+import {
+  access,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import * as v from 'valibot';
 import {
@@ -37,12 +47,25 @@ import {
   type RepoGuardrailsConfig,
   type RepoAutopilotConfig,
 } from '../../autopilot-policy';
+import {
+  createLeaseOwnerRecord,
+  leaseOwnerIsAlive,
+} from '../../autopilot/lease-owner';
 
 const execFileAsync = promisify(execFile);
 
 export async function addRepo(
   rawInput: v.InferInput<typeof addRepoInputSchema>,
   paths = runtimePaths(),
+): Promise<ConfigActionResult> {
+  return withRepoOverrideLock(paths.repos, () =>
+    addRepoUnlocked(rawInput, paths),
+  );
+}
+
+async function addRepoUnlocked(
+  rawInput: v.InferInput<typeof addRepoInputSchema>,
+  paths: RuntimePaths,
 ): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
   const parsed = parseActionInput(
@@ -100,6 +123,13 @@ export async function addRepo(
       message: `Repository "${id}" already exists.`,
     });
   }
+  if (hasWatchOverrides(input.metadata)) {
+    return failResult('config_add_repo', paths, [paths.repos], {
+      message:
+        'Autopilot watch overrides are created only by the Autopilot watch setup action.',
+      requires: ['autopilotWatchSetup'],
+    });
+  }
 
   const repo: RepoConfig = {
     id,
@@ -145,6 +175,15 @@ export async function addRepo(
 export async function updateRepo(
   rawInput: v.InferInput<typeof updateRepoInputSchema>,
   paths = runtimePaths(),
+): Promise<ConfigActionResult> {
+  return withRepoOverrideLock(paths.repos, () =>
+    updateRepoUnlocked(rawInput, paths),
+  );
+}
+
+async function updateRepoUnlocked(
+  rawInput: v.InferInput<typeof updateRepoInputSchema>,
+  paths: RuntimePaths,
 ): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
   const parsed = parseActionInput(
@@ -250,6 +289,15 @@ export async function updateRepoAutopilotPolicy(
   rawInput: v.InferInput<typeof updateRepoAutopilotPolicyInputSchema>,
   paths = runtimePaths(),
 ): Promise<ConfigActionResult> {
+  return withRepoOverrideLock(paths.repos, () =>
+    updateRepoAutopilotPolicyUnlocked(rawInput, paths),
+  );
+}
+
+async function updateRepoAutopilotPolicyUnlocked(
+  rawInput: v.InferInput<typeof updateRepoAutopilotPolicyInputSchema>,
+  paths: RuntimePaths,
+): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
   const parsed = parseActionInput(
     updateRepoAutopilotPolicyInputSchema,
@@ -268,13 +316,7 @@ export async function updateRepoAutopilotPolicy(
       [paths.repos, paths.config],
       {
         message: 'At least one autopilot policy setting is required.',
-        requires: [
-          'mode',
-          'reason',
-          'guardrails',
-          'concurrency',
-          'watchOverrides',
-        ],
+        requires: ['mode', 'reason', 'guardrails', 'concurrency'],
       },
     );
   }
@@ -322,8 +364,6 @@ export async function updateRepoAutopilotPolicy(
       nextPolicy,
       currentGuardrails,
       nextGuardrails,
-      currentOverride,
-      nextOverride,
     ) &&
     confirm !== true
   ) {
@@ -487,33 +527,170 @@ async function updateRepoAutopilotWatchOverrideUnlocked(
   );
 }
 
-const repoOverrideLocks = new Map<string, Promise<void>>();
-
 async function withRepoOverrideLock<T>(
   path: string,
   operation: () => Promise<T>,
 ) {
-  const previous = repoOverrideLocks.get(path) ?? Promise.resolve();
-  let release!: () => void;
-  const next = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  repoOverrideLocks.set(
-    path,
-    previous.then(() => next),
-  );
-  await previous;
+  const lockPath = `${path}.autopilot-override.lock`;
+  const ownerPath = join(lockPath, 'owner');
+  const ownerToken = randomUUID();
+  const ownerRecord = await createLeaseOwnerRecord(ownerToken);
+  await cleanupStaleLockGenerations(lockPath);
+  const deadline = Date.now() + 5_000;
+  while (true) {
+    try {
+      await mkdir(lockPath);
+      try {
+        await writeFile(ownerPath, ownerRecord, 'utf8');
+      } catch (error) {
+        await rm(lockPath, { recursive: true, force: true });
+        throw error;
+      }
+      break;
+    } catch (error) {
+      if (!isExistsError(error)) throw error;
+      const age = await stat(ownerPath)
+        .then((value) => Date.now() - value.mtimeMs)
+        .catch(() =>
+          stat(lockPath)
+            .then((value) => Date.now() - value.mtimeMs)
+            .catch(() => 0),
+        );
+      // The critical section only writes one local JSON file.  A long lease
+      // makes recovery from a crashed process possible without stealing an
+      // active lock during a slow filesystem operation.  Rename is atomic: a
+      // competing process can never remove a freshly acquired replacement.
+      const observedToken = await readFile(ownerPath, 'utf8').catch(() => null);
+      if (
+        age > 300_000 &&
+        !(await leaseOwnerIsAlive(observedToken)) &&
+        (await stealStaleRepoOverrideLock(lockPath, observedToken))
+      ) {
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(
+          'Timed out waiting for the Autopilot watch override lock.',
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
   try {
     return await operation();
   } finally {
-    release();
-    if (repoOverrideLocks.get(path) === next) repoOverrideLocks.delete(path);
+    const currentToken = await readFile(ownerPath, 'utf8').catch(() => null);
+    const takeoverClaimed = await readFile(
+      join(lockPath, 'takeover'),
+      'utf8',
+    ).catch(() => null);
+    if (
+      currentToken === ownerRecord &&
+      !(await hasFreshTakeoverClaim(lockPath, takeoverClaimed))
+    ) {
+      await rm(lockPath, { recursive: true, force: true });
+    }
   }
+}
+
+async function stealStaleRepoOverrideLock(
+  lockPath: string,
+  observedToken: string | null,
+) {
+  const takeoverPath = join(lockPath, 'takeover');
+  const takeoverToken = randomUUID();
+  try {
+    await writeFile(takeoverPath, takeoverToken, {
+      encoding: 'utf8',
+      flag: 'wx',
+    });
+  } catch (error) {
+    if (isExistsError(error)) {
+      if (!(await hasFreshTakeoverClaim(lockPath))) {
+        await rm(takeoverPath, { force: true });
+      }
+      return false;
+    }
+    if (isNotFoundError(error)) return false;
+    throw error;
+  }
+  const currentToken = await readFile(join(lockPath, 'owner'), 'utf8').catch(
+    () => null,
+  );
+  if (currentToken !== observedToken) {
+    if (
+      (await readFile(takeoverPath, 'utf8').catch(() => null)) === takeoverToken
+    ) {
+      await rm(takeoverPath, { force: true });
+    }
+    return false;
+  }
+  const stalePath = `${lockPath}.stale-${randomUUID()}`;
+  try {
+    await rename(lockPath, stalePath);
+  } catch (error) {
+    if (isExistsError(error) || isNotFoundError(error)) return false;
+    throw error;
+  }
+  await rm(stalePath, { recursive: true, force: true });
+  return true;
+}
+
+async function hasFreshTakeoverClaim(lockPath: string, claim?: string | null) {
+  if (!claim) return false;
+  const age = await stat(join(lockPath, 'takeover'))
+    .then((value) => Date.now() - value.mtimeMs)
+    .catch(() => Infinity);
+  return age <= 300_000;
+}
+
+/** Reap interrupted takeover directories after their recovery grace period. */
+async function cleanupStaleLockGenerations(path: string) {
+  const parent = dirname(path);
+  const prefix = `${basename(path)}.stale-`;
+  const entries = await readdir(parent).catch(() => [] as string[]);
+  await Promise.all(
+    entries
+      .filter((entry) => entry.startsWith(prefix))
+      .map(async (entry) => {
+        const candidate = join(parent, entry);
+        const age = await stat(candidate)
+          .then((value) => Date.now() - value.mtimeMs)
+          .catch(() => 0);
+        if (age > 300_000)
+          await rm(candidate, { recursive: true, force: true });
+      }),
+  );
+}
+
+function isExistsError(error: unknown) {
+  return Boolean(
+    error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'EEXIST',
+  );
+}
+
+function isNotFoundError(error: unknown) {
+  return Boolean(
+    error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'ENOENT',
+  );
 }
 
 function hasAutopilotMetadata(metadata: Record<string, unknown> | undefined) {
   return (
     metadata?.autopilot !== undefined || metadata?.guardrails !== undefined
+  );
+}
+
+function hasWatchOverrides(metadata: Record<string, unknown> | undefined) {
+  const autopilot = metadata?.autopilot;
+  return Boolean(
+    autopilot && typeof autopilot === 'object' && 'watchOverrides' in autopilot,
   );
 }
 
@@ -552,9 +729,6 @@ function mergeRepoAutopilotConfig(
     ...(input.concurrency !== undefined
       ? { concurrency: { ...current.concurrency, ...input.concurrency } }
       : {}),
-    ...(input.watchOverrides !== undefined
-      ? { watchOverrides: input.watchOverrides }
-      : {}),
   };
 }
 
@@ -570,8 +744,6 @@ function autopilotAuthorityIncreases(
   next: ReturnType<typeof repoAutopilotPolicy>,
   currentGuardrails: ReturnType<typeof repoGuardrails>,
   nextGuardrails: ReturnType<typeof repoGuardrails>,
-  currentOverride: RepoAutopilotConfig,
-  nextOverride: RepoAutopilotConfig,
 ) {
   if (modeRank(next.mode) > modeRank(current.mode)) return true;
   if (nextGuardrails.maxFilesChanged > currentGuardrails.maxFilesChanged)
@@ -644,10 +816,7 @@ function autopilotAuthorityIncreases(
     current.concurrency.localExecutionLimit
   )
     return true;
-  return (
-    JSON.stringify(currentOverride.watchOverrides ?? []) !==
-    JSON.stringify(nextOverride.watchOverrides ?? [])
-  );
+  return false;
 }
 
 function addsValues(current: string[], next: string[]) {
@@ -670,6 +839,15 @@ function modeRank(mode: AutopilotMode) {
 export async function removeRepo(
   rawInput: v.InferInput<typeof removeRepoInputSchema>,
   paths = runtimePaths(),
+): Promise<ConfigActionResult> {
+  return withRepoOverrideLock(paths.repos, () =>
+    removeRepoUnlocked(rawInput, paths),
+  );
+}
+
+async function removeRepoUnlocked(
+  rawInput: v.InferInput<typeof removeRepoInputSchema>,
+  paths: RuntimePaths,
 ): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
   const parsed = parseActionInput(

@@ -11,6 +11,7 @@ import {
   startPrReview,
   type GitHubPullRequest,
   type NeonCommandResult,
+  type AutopilotWatchConfirmationIntent,
   type WorkflowObservability,
 } from '../api';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
@@ -31,6 +32,47 @@ import { parsePositiveIntegerConfig } from './config';
 type GitHubPrListConfig = {
   limit: number;
 };
+
+export const autopilotModes = [
+  'notify-only',
+  'prepare-only',
+  'autofix-with-approval',
+  'autofix-push-when-safe',
+] as const;
+
+export function autopilotSetupStatus(input: {
+  loading: boolean;
+  readiness?: {
+    ready?: boolean;
+    status?: 'ready' | 'blocked' | 'warning';
+    blocking?: string[];
+  };
+  readinessError?: string;
+  result?: { ok: boolean; message: string; firstPlannedAction?: string };
+}) {
+  if (input.result?.ok)
+    return {
+      role: 'status' as const,
+      label: `configured · ${input.result.firstPlannedAction ?? input.result.message}${input.readiness && !input.readiness.ready ? ` · ${input.readiness.status ?? 'blocked'}${input.readiness.blocking?.length ? `: ${input.readiness.blocking.join(', ')}` : ''}` : ''}`,
+    };
+  if (input.result)
+    return { role: 'alert' as const, label: input.result.message };
+  if (input.loading)
+    return { role: 'status' as const, label: 'checking readiness' };
+  if (input.readinessError)
+    return {
+      role: 'alert' as const,
+      label: `readiness unavailable · ${input.readinessError}`,
+    };
+  if (input.readiness)
+    return {
+      role: 'status' as const,
+      label: input.readiness.ready
+        ? 'ready'
+        : `${input.readiness.status ?? 'blocked'} · ${(input.readiness.blocking ?? []).join(', ')}`,
+    };
+  return undefined;
+}
 
 const githubPrListDefaultConfig = {
   limit: 12,
@@ -498,11 +540,11 @@ function AutopilotButton({
   repoId: string | undefined;
 }) {
   const queryClient = useQueryClient();
-  const [processExisting, setProcessExisting] = useState(false);
-  const [mode, setMode] = useState<
-    'prepare-only' | 'autofix-with-approval' | 'autofix-push-when-safe'
-  >('prepare-only');
-  const [confirmed, setConfirmed] = useState(false);
+  const [processExisting, setProcessExisting] = useState(true);
+  const [mode, setMode] =
+    useState<(typeof autopilotModes)[number]>('prepare-only');
+  const [confirmationIntent, setConfirmationIntent] =
+    useState<AutopilotWatchConfirmationIntent>();
   const readiness = useQuery({
     queryKey: ['autopilot-readiness', repoId, item.number, mode],
     queryFn: () =>
@@ -516,20 +558,32 @@ function AutopilotButton({
         ref: `${item.repo}#${item.number}`,
         mode,
         processExisting,
-        confirm: confirmed,
+        confirm: Boolean(confirmationIntent),
+        ...(confirmationIntent ? { confirmation: confirmationIntent } : {}),
         reason: 'Enabled from the GitHub PR list.',
       }),
-    onSuccess() {
+    onSuccess(result) {
+      setConfirmationIntent(
+        !result.ok && result.requires?.includes('confirm')
+          ? result.confirmation?.intent
+          : undefined,
+      );
       void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
       void queryClient.invalidateQueries({
         queryKey: queryKeys.autopilotState,
       });
     },
   });
-  // The service decides whether this is an authority increase; the UI always
-  // makes the operator take a deliberate second click before persisting a mode.
-  const requiresConfirmation = !confirmed;
+  const requiresConfirmation = Boolean(confirmationIntent);
   const label = processExisting ? 'process now' : 'later changes';
+  const status = autopilotSetupStatus({
+    loading: readiness.isLoading,
+    readiness: mutation.data?.readiness ?? readiness.data,
+    readinessError: readiness.error
+      ? queryErrorMessage(readiness.error)
+      : undefined,
+    result: mutation.data,
+  });
   return (
     <span className="flex shrink-0 items-center gap-1">
       <label className="sr-only" htmlFor={`autopilot-mode-${item.id}`}>
@@ -540,18 +594,34 @@ function AutopilotButton({
         id={`autopilot-mode-${item.id}`}
         onChange={(event) => {
           setMode(event.target.value as typeof mode);
-          setConfirmed(false);
+          setConfirmationIntent(undefined);
         }}
         value={mode}
       >
-        <option value="prepare-only">prepare</option>
-        <option value="autofix-with-approval">fix + approve</option>
-        <option value="autofix-push-when-safe">fix + safe push</option>
+        {autopilotModes.map((candidate) => (
+          <option key={candidate} value={candidate}>
+            {candidate === 'notify-only'
+              ? 'notify only'
+              : candidate === 'prepare-only'
+                ? 'prepare'
+                : candidate === 'autofix-with-approval'
+                  ? 'fix + approve'
+                  : 'fix + safe push'}
+          </option>
+        ))}
       </select>
       <Button
+        aria-label={
+          processExisting
+            ? 'Process existing PR feedback on first poll'
+            : 'Baseline existing PR feedback and wait for later changes'
+        }
         aria-pressed={processExisting}
         className="min-h-[28px] border-line bg-transparent px-2 py-1 text-[10px] text-muted"
-        onClick={() => setProcessExisting((value) => !value)}
+        onClick={() => {
+          setProcessExisting((value) => !value);
+          setConfirmationIntent(undefined);
+        }}
         title={
           processExisting
             ? 'Current feedback will be processed on the first poll.'
@@ -564,13 +634,7 @@ function AutopilotButton({
       <Button
         className="min-h-[28px] shrink-0 border-primary/60 bg-transparent px-2 py-1 text-[10px] text-primary hover:border-primary hover:text-primary"
         disabled={mutation.isPending || !repoId || readiness.isLoading}
-        onClick={() => {
-          if (requiresConfirmation) {
-            setConfirmed(true);
-            return;
-          }
-          mutation.mutate();
-        }}
+        onClick={() => mutation.mutate()}
         title={
           mutation.error
             ? queryErrorMessage(mutation.error)
@@ -581,26 +645,21 @@ function AutopilotButton({
         {mutation.isPending
           ? 'configuring'
           : requiresConfirmation
-            ? 'confirm mode'
+            ? 'confirm authority'
             : `autopilot · ${label}`}
       </Button>
-      {readiness.data ? (
+      {status ? (
         <span
           className={
-            readiness.data.ready
-              ? 'text-[10px] text-muted'
-              : 'text-[10px] text-accent'
+            status.role === 'alert'
+              ? 'text-[10px] text-accent'
+              : status.label === 'ready'
+                ? 'text-[10px] text-muted'
+                : 'text-[10px] text-primary'
           }
-          role="status"
+          role={status.role}
         >
-          {readiness.data.ready
-            ? 'ready'
-            : `${readiness.data.status} · ${(readiness.data.blocking ?? []).join(', ')}`}
-        </span>
-      ) : null}
-      {mutation.data && !mutation.data.ok ? (
-        <span className="text-[10px] text-accent" role="alert">
-          {mutation.data.message}
+          {status.label}
         </span>
       ) : null}
       {mutation.error ? (

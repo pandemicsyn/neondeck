@@ -63,6 +63,7 @@ export async function runInit(options: { home?: string }) {
   await configureSoul(paths);
   await configureProviderAndModels(paths);
   await configureRepos(paths);
+  await configureAutopilotOnboarding();
   await configureDashboard(paths);
   await configureExecution(paths);
   await configureSkillRoots(paths);
@@ -108,6 +109,44 @@ export async function runInit(options: { home?: string }) {
     status.status === 'ready'
       ? 'The deck is live.'
       : 'Finish the remaining config, then start the deck.',
+  );
+}
+
+async function configureAutopilotOnboarding() {
+  const configure = await promptConfirm({
+    message: 'Configure Autopilot for a PR now?',
+    initialValue: false,
+  });
+  if (!configure) return;
+  const mode = await promptSelect({
+    message: 'Autopilot mode',
+    initialValue: 'prepare-only',
+    options: [
+      {
+        value: 'notify-only',
+        label: 'Notify only',
+        hint: 'Report meaningful PR changes without preparing fixes.',
+      },
+      {
+        value: 'prepare-only',
+        label: 'Prepare only',
+        hint: 'Prepare a bounded fix for your review; never push.',
+      },
+      {
+        value: 'autofix-with-approval',
+        label: 'Fix with approval',
+        hint: 'Prepare fixes and require explicit approval before push.',
+      },
+      {
+        value: 'autofix-push-when-safe',
+        label: 'Safe push',
+        hint: 'Push only policy-safe, verified fixes.',
+      },
+    ],
+  });
+  note(
+    `Autopilot ${mode} selected. Configure a PR with: neondeck autopilot watch <repo>#<pr> --mode ${mode} --confirm`,
+    'Autopilot',
   );
 }
 

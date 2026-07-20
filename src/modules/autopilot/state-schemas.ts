@@ -70,6 +70,10 @@ export type WatchAutopilotPolicy = {
   mode: AutopilotMode;
   source: 'repo-policy' | 'watch-override';
   reason: string;
+  ownerId?: string;
+  ownerGeneration?: number;
+  ownerInstanceId?: string | null;
+  lastEventAt?: string | null;
 };
 
 export type AutopilotQueueItem = {
@@ -309,6 +313,10 @@ export const watchPolicySchema = v.object({
   mode: autopilotModeOutputSchema,
   source: v.picklist(['repo-policy', 'watch-override']),
   reason: v.string(),
+  ownerId: v.optional(v.string()),
+  ownerGeneration: v.optional(v.number()),
+  ownerInstanceId: v.optional(v.nullable(v.string())),
+  lastEventAt: v.optional(v.nullable(v.string())),
 });
 export const preparedDiffSchema = v.object({
   id: v.string(),

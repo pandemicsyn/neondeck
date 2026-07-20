@@ -2,6 +2,7 @@ import type { JsonValue } from '@flue/runtime';
 import type { NotificationLevel } from '../app-state';
 import type { RuntimePaths } from '../../runtime-home';
 import { refreshPrWatch } from '../watches';
+import { refreshPrWatchWithAutopilotLease } from '../autopilot/setup';
 import type { SchedulerDependencies } from './schemas';
 import {
   pendingEventResultsFromJobResult,
@@ -16,7 +17,8 @@ export async function refreshWatchTask(
   paths: RuntimePaths,
   dependencies: SchedulerDependencies = {},
 ) {
-  const refreshWatch = dependencies.refreshPrWatch ?? refreshPrWatch;
+  const refreshWatch =
+    dependencies.refreshPrWatch ?? refreshPrWatchWithAutopilotLease;
   const result = await refreshWatch({ id: watchId }, paths);
   if (!result.ok) {
     const pendingEventResults =

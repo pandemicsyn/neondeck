@@ -1314,7 +1314,9 @@ Must-haves:
   - `prepare-only`
   - `autofix-with-approval`
   - `autofix-push-when-safe`
-- [x] Complete stable watch-rule override mutation and expose an explicit watch-plus-mode setup contract across chat, CLI, API, and dashboard.
+- [x] Complete a cross-process-serialized stable watch-rule override mutation and
+      expose a failure-closed explicit watch-plus-mode setup contract across chat,
+      CLI, API, and dashboard.
 - [x] Add policy limits:
   - maximum files changed
   - maximum lines changed

@@ -6,7 +6,6 @@ import {
   autopilotConcurrencySchema,
   repoGuardrailsSchema,
   modeSchema,
-  watchOverrideSchema,
 } from '../autopilot-policy';
 
 export type ConfigTarget = 'all' | 'config' | 'mcp' | 'repos' | 'dashboard';
@@ -73,7 +72,6 @@ export const updateRepoAutopilotPolicyInputSchema = v.strictObject({
   reason: v.optional(nonEmptyStringSchema),
   guardrails: v.optional(repoGuardrailsSchema),
   concurrency: v.optional(autopilotConcurrencySchema),
-  watchOverrides: v.optional(v.array(watchOverrideSchema)),
   confirm: v.optional(v.boolean()),
 });
 

@@ -50,12 +50,18 @@ export function createAutopilotRoutes(paths: RuntimePaths) {
 
   routes.post('/autopilot/watches/configure', async (c) => {
     const result = await configureAutopilotWatch(await safeJsonBody(c), paths);
-    return c.json(result, result.ok ? 200 : 400);
+    return c.json(
+      result,
+      result.ok || resultRequires(result, 'confirm') ? 200 : 400,
+    );
   });
 
   routes.post('/autopilot/watches/control', async (c) => {
     const result = await controlAutopilotWatch(await safeJsonBody(c), paths);
-    return c.json(result, result.ok ? 200 : 400);
+    return c.json(
+      result,
+      result.ok ? 200 : resultRequires(result, 'autopilotWatch') ? 404 : 400,
+    );
   });
 
   routes.get('/autopilot/owners/:id', async (c) => {
@@ -365,6 +371,15 @@ export function createAutopilotRoutes(paths: RuntimePaths) {
   });
 
   return routes;
+}
+
+function resultRequires(result: unknown, requirement: string) {
+  return Boolean(
+    result &&
+    typeof result === 'object' &&
+    Array.isArray((result as { requires?: unknown }).requires) &&
+    (result as { requires: unknown[] }).requires.includes(requirement),
+  );
 }
 
 function approvalNotFound(message: string | undefined) {

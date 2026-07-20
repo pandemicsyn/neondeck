@@ -5,12 +5,21 @@ import {
 } from '../../modules/pr-events';
 import type { RuntimePaths } from '../../runtime-home';
 import {
-  addPrWatch,
   addRefWatch,
   listPrWatches,
   listRefWatches,
+  removePrWatch,
+  setPrWatchPolling,
 } from '../../modules/watches';
-import { controlAutopilotWatch } from '../../modules/autopilot';
+import {
+  addPrWatchWithAutopilotLease,
+  listAutopilotWatchBindings,
+} from '../../modules/autopilot';
+import { controlAutopilotWatchWithSetupLease } from '../../modules/autopilot/setup';
+import {
+  isAutopilotSetupBlocked,
+  withAutopilotSetupWatchLease,
+} from '../../modules/autopilot/setup-transactions';
 import { safeJsonBody, safeJsonObject } from '../http';
 
 export function createWatchRoutes(paths: RuntimePaths) {
@@ -21,8 +30,10 @@ export function createWatchRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/watches', async (c) => {
-    const input = (await safeJsonBody(c)) as Parameters<typeof addPrWatch>[0];
-    const result = await addPrWatch(input, paths);
+    const input = (await safeJsonBody(c)) as Parameters<
+      typeof addPrWatchWithAutopilotLease
+    >[0];
+    const result = await addPrWatchWithAutopilotLease(input, paths);
     return c.json(result, result.ok ? 200 : 400);
   });
 
@@ -42,8 +53,10 @@ export function createWatchRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/watches/:id/events/refresh', async (c) => {
+    const id = c.req.param('id');
+    const body = await safeJsonObject(c);
     const result = await refreshPrWatchEventState(
-      { ...(await safeJsonObject(c)), watchId: c.req.param('id') },
+      { ...body, watchId: id },
       paths,
     );
     return c.json(result, result.ok ? 200 : 400);
@@ -61,28 +74,62 @@ export function createWatchRoutes(paths: RuntimePaths) {
 
   routes.post('/watches/:id/polling', async (c) => {
     const body = await safeJsonObject(c);
-    const result = await controlAutopilotWatch(
-      {
-        operation: body.enabled === true ? 'resume' : 'pause',
-        watchId: c.req.param('id'),
-      },
-      paths,
-    );
-    return c.json(result, result.ok ? 200 : 400);
+    const id = c.req.param('id');
+    const response = await withAutopilotSetupWatchLease(id, paths, async () => {
+      if (await isAutopilotSetupBlocked(id, paths))
+        return blockedWatchResponse('watch_pr_polling_update');
+      const bound = (await listAutopilotWatchBindings(paths)).some(
+        (binding) => binding.owner.watchId === id,
+      );
+      const result = bound
+        ? await controlAutopilotWatchWithSetupLease(
+            {
+              operation: body.enabled === true ? 'resume' : 'pause',
+              watchId: id,
+            },
+            paths,
+          )
+        : await setPrWatchPolling(
+            { id, enabled: body.enabled === true },
+            paths,
+          );
+      return { status: result.ok ? (200 as const) : (400 as const), result };
+    });
+    return c.json(response.result, response.status);
   });
 
   routes.post('/watches/:id', async (c) => {
     const body = await safeJsonObject(c);
-    const result = await controlAutopilotWatch(
-      {
-        operation: 'stop',
-        watchId: c.req.param('id'),
-        confirm: body.confirm === true,
-      },
-      paths,
-    );
-    return c.json(result, result.ok ? 200 : 400);
+    const id = c.req.param('id');
+    const response = await withAutopilotSetupWatchLease(id, paths, async () => {
+      if (await isAutopilotSetupBlocked(id, paths))
+        return blockedWatchResponse('watch_pr_remove');
+      const bound = (await listAutopilotWatchBindings(paths)).some(
+        (binding) => binding.owner.watchId === id,
+      );
+      const result = bound
+        ? await controlAutopilotWatchWithSetupLease(
+            { operation: 'stop', watchId: id, confirm: body.confirm === true },
+            paths,
+          )
+        : await removePrWatch({ id, confirm: body.confirm === true }, paths);
+      return { status: result.ok ? (200 as const) : (400 as const), result };
+    });
+    return c.json(response.result, response.status);
   });
 
   return routes;
+}
+
+function blockedWatchResponse(action: string) {
+  return {
+    status: 409 as const,
+    result: {
+      ok: false,
+      action,
+      changed: false,
+      message: 'Watch controls are blocked until Autopilot setup recovers.',
+      requires: ['retrySetup'],
+    },
+  };
 }

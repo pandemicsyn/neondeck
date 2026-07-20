@@ -262,6 +262,5 @@ export const neondeckConfigActions = [
   addRepoAction,
   updateRepoAction,
   updateRepoAutopilotPolicyAction,
-  updateRepoAutopilotWatchOverrideAction,
   removeRepoAction,
 ];

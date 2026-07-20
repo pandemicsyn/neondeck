@@ -41,6 +41,10 @@ import {
 } from '../pr-local-diffs';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import {
+  isAutopilotSetupBlocked,
+  withAutopilotSetupWatchLease,
+} from '../autopilot/setup-transactions';
+import {
   type RuntimePaths,
   ensureRuntimeHome,
   runtimePaths,
@@ -1746,151 +1750,185 @@ export async function refreshPrWatchEventState(
     );
   }
   const localWatch = localTarget.target.watch;
-  let pending: ReturnType<typeof readPendingPrWatchEventIntake>;
-  try {
-    pending = readPendingPrWatchEventIntake(paths, localWatch.id);
-  } catch (error) {
-    return invalidPersistedIntakeResult(localWatch.id, error);
-  }
-  if (pending && pending.eventGenerationId !== localWatch.eventGenerationId) {
-    return invalidPersistedIntakeResult(
-      localWatch.id,
-      new Error(
-        `Pending intake generation ${pending.eventGenerationId} does not match current watch generation ${localWatch.eventGenerationId}.`,
-      ),
-    );
-  }
-  if (pending) {
-    return okResult(
+  return withAutopilotSetupWatchLease(localWatch.id, paths, async () => {
+    // Setup can replace the watch's event generation or process-existing
+    // choice while this call is waiting for its per-watch lease. Re-resolve
+    // after acquiring it so every admission decision uses one serialized
+    // durable snapshot rather than the pre-lease watch.
+    const currentTarget = await resolvePullRequestTarget(
+      parsed.output,
+      paths,
       'pr_watch_event_state_refresh',
-      true,
-      `Resuming pending PR event intake ${pending.eventId}.`,
-      {
-        watchId: localWatch.id,
-        target: eventTargetJson(localTarget.target),
-        intakeId: pending.eventId,
-        changedCategories: pending.changedCategories,
-        previousWatermarks: pending.previousWatermarks as unknown as JsonValue,
-        watermarks: pending.candidateWatermarks as unknown as JsonValue,
-        pending: true,
-      },
     );
-  }
-  const resolved = await fetchEventState(
-    'pr_watch_event_state_refresh',
-    input,
-    paths,
-    dependencies,
-  );
-  if (!resolved.ok) return resolved.result;
-  if (!resolved.target.watch) {
-    return failResult(
+    if (!currentTarget.ok) return currentTarget.result;
+    if (!currentTarget.target.watch) {
+      return failResult(
+        'pr_watch_event_state_refresh',
+        'Refreshing event watermarks requires a configured PR watch.',
+        { requires: ['watchId'] },
+      );
+    }
+    const currentWatch = currentTarget.target.watch;
+    if (currentWatch.id !== localWatch.id) {
+      return stalePrWatchGenerationResult(localWatch.id);
+    }
+    if (await isAutopilotSetupBlocked(localWatch.id, paths)) {
+      return failResult(
+        'pr_watch_event_state_refresh',
+        'Watch event refresh is blocked until Autopilot setup recovers.',
+        { requires: ['retrySetup'] },
+      );
+    }
+    let pending: ReturnType<typeof readPendingPrWatchEventIntake>;
+    try {
+      pending = readPendingPrWatchEventIntake(paths, localWatch.id);
+    } catch (error) {
+      return invalidPersistedIntakeResult(localWatch.id, error);
+    }
+    if (
+      pending &&
+      pending.eventGenerationId !== currentWatch.eventGenerationId
+    ) {
+      return invalidPersistedIntakeResult(
+        localWatch.id,
+        new Error(
+          `Pending intake generation ${pending.eventGenerationId} does not match current watch generation ${currentWatch.eventGenerationId}.`,
+        ),
+      );
+    }
+    if (pending) {
+      return okResult(
+        'pr_watch_event_state_refresh',
+        true,
+        `Resuming pending PR event intake ${pending.eventId}.`,
+        {
+          watchId: localWatch.id,
+          target: eventTargetJson(currentTarget.target),
+          intakeId: pending.eventId,
+          changedCategories: pending.changedCategories,
+          previousWatermarks:
+            pending.previousWatermarks as unknown as JsonValue,
+          watermarks: pending.candidateWatermarks as unknown as JsonValue,
+          pending: true,
+        },
+      );
+    }
+    const resolved = await fetchEventState(
       'pr_watch_event_state_refresh',
-      'Refreshing event watermarks requires a configured PR watch.',
-      { requires: ['watchId'] },
+      input,
+      paths,
+      dependencies,
     );
-  }
-  const watch = resolved.target.watch;
+    if (!resolved.ok) return resolved.result;
+    if (!resolved.target.watch) {
+      return failResult(
+        'pr_watch_event_state_refresh',
+        'Refreshing event watermarks requires a configured PR watch.',
+        { requires: ['watchId'] },
+      );
+    }
+    const watch = resolved.target.watch;
 
-  const truncation = pullRequestEventStateTruncation(resolved.state);
-  if (truncation.any) {
-    return failResult(
-      'pr_watch_event_state_refresh',
-      'PR event facts are incomplete; preserving the last acknowledged watermark baseline and retrying later.',
-      {
-        requires: ['completePrEventFacts'],
-        errors: [
-          `Incomplete PR event fact categories: ${truncation.categories.join(', ')}.`,
-        ],
-      },
-    );
-  }
+    const truncation = pullRequestEventStateTruncation(resolved.state);
+    if (truncation.any) {
+      return failResult(
+        'pr_watch_event_state_refresh',
+        'PR event facts are incomplete; preserving the last acknowledged watermark baseline and retrying later.',
+        {
+          requires: ['completePrEventFacts'],
+          errors: [
+            `Incomplete PR event fact categories: ${truncation.categories.join(', ')}.`,
+          ],
+        },
+      );
+    }
 
-  const next = watermarksFromEventState(watch.id, resolved.state);
-  const incompleteWatermarks = prEventWatermarkTruncationCategories(next);
-  if (incompleteWatermarks.length > 0) {
-    return failResult(
-      'pr_watch_event_state_refresh',
-      'PR event facts are incomplete; preserving the last acknowledged watermark baseline and retrying later.',
-      {
-        requires: ['completePrEventFacts'],
-        errors: [
-          `Incomplete PR event watermark categories: ${incompleteWatermarks.join(', ')}.`,
-        ],
-      },
-    );
-  }
+    const next = watermarksFromEventState(watch.id, resolved.state);
+    const incompleteWatermarks = prEventWatermarkTruncationCategories(next);
+    if (incompleteWatermarks.length > 0) {
+      return failResult(
+        'pr_watch_event_state_refresh',
+        'PR event facts are incomplete; preserving the last acknowledged watermark baseline and retrying later.',
+        {
+          requires: ['completePrEventFacts'],
+          errors: [
+            `Incomplete PR event watermark categories: ${incompleteWatermarks.join(', ')}.`,
+          ],
+        },
+      );
+    }
 
-  if (watch.eventWatermarkVersion < currentPrWatchEventWatermarkVersion) {
-    const installed = installPrWatchEventBaseline(paths, {
+    if (watch.eventWatermarkVersion < currentPrWatchEventWatermarkVersion) {
+      const installed = installPrWatchEventBaseline(paths, {
+        watchId: watch.id,
+        expectedEventGenerationId: currentWatch.eventGenerationId,
+        nextEventGenerationId: randomUUID(),
+        watermarks: next,
+        markInitialProcessed: true,
+      });
+      if (!installed.installed) {
+        return stalePrWatchGenerationResult(watch.id);
+      }
+      return okResult(
+        'pr_watch_event_state_refresh',
+        false,
+        `Upgraded the PR event watermark baseline for ${watch.id} without replaying historical feedback.`,
+        {
+          watchId: watch.id,
+          target: eventTargetJson(resolved.target),
+          changedCategories: [],
+          watermarks: readWatermarks(paths, watch.id) as unknown as JsonValue,
+          seededUpgrade: true,
+          watermarkVersion: currentPrWatchEventWatermarkVersion,
+        },
+      );
+    }
+
+    const staged = stagePrWatchEventIntake(paths, {
       watchId: watch.id,
-      expectedEventGenerationId: localWatch.eventGenerationId,
-      nextEventGenerationId: randomUUID(),
-      watermarks: next,
-      markInitialProcessed: true,
+      expectedEventGenerationId: currentWatch.eventGenerationId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      initialEvent: !watch.initialEventProcessedAt && watch.processExisting,
+      next,
     });
-    if (!installed.installed) {
+    if (staged.kind === 'stale') {
       return stalePrWatchGenerationResult(watch.id);
     }
+    if (staged.kind === 'pending') {
+      await dependencies.afterPrWatchEventIntakeStaged?.({
+        watchId: watch.id,
+        eventId: staged.intake.eventId,
+      });
+    }
+
+    const changedCategories =
+      staged.kind === 'pending' ? staged.intake.changedCategories : [];
+    const watermarks =
+      staged.kind === 'pending'
+        ? staged.intake.candidateWatermarks
+        : staged.watermarks;
+
     return okResult(
       'pr_watch_event_state_refresh',
-      false,
-      `Upgraded the PR event watermark baseline for ${watch.id} without replaying historical feedback.`,
+      changedCategories.length > 0,
+      changedCategories.length > 0
+        ? `Staged ${changedCategories.length} PR event watermark change(s) for durable processing on ${watch.id}.`
+        : `No PR event watermark changes for ${watch.id}.`,
       {
         watchId: watch.id,
         target: eventTargetJson(resolved.target),
-        changedCategories: [],
-        watermarks: readWatermarks(paths, watch.id) as unknown as JsonValue,
-        seededUpgrade: true,
-        watermarkVersion: currentPrWatchEventWatermarkVersion,
+        intakeId: staged.kind === 'pending' ? staged.intake.eventId : null,
+        changedCategories,
+        previousWatermarks:
+          staged.kind === 'pending'
+            ? (staged.intake.previousWatermarks as unknown as JsonValue)
+            : (watermarks as unknown as JsonValue),
+        watermarks: watermarks as unknown as JsonValue,
+        pending: staged.kind === 'pending',
       },
     );
-  }
-
-  const staged = stagePrWatchEventIntake(paths, {
-    watchId: watch.id,
-    expectedEventGenerationId: localWatch.eventGenerationId,
-    repoFullName: watch.repoFullName,
-    prNumber: watch.prNumber,
-    initialEvent: !watch.initialEventProcessedAt && watch.processExisting,
-    next,
   });
-  if (staged.kind === 'stale') {
-    return stalePrWatchGenerationResult(watch.id);
-  }
-  if (staged.kind === 'pending') {
-    await dependencies.afterPrWatchEventIntakeStaged?.({
-      watchId: watch.id,
-      eventId: staged.intake.eventId,
-    });
-  }
-
-  const changedCategories =
-    staged.kind === 'pending' ? staged.intake.changedCategories : [];
-  const watermarks =
-    staged.kind === 'pending'
-      ? staged.intake.candidateWatermarks
-      : staged.watermarks;
-
-  return okResult(
-    'pr_watch_event_state_refresh',
-    changedCategories.length > 0,
-    changedCategories.length > 0
-      ? `Staged ${changedCategories.length} PR event watermark change(s) for durable processing on ${watch.id}.`
-      : `No PR event watermark changes for ${watch.id}.`,
-    {
-      watchId: watch.id,
-      target: eventTargetJson(resolved.target),
-      intakeId: staged.kind === 'pending' ? staged.intake.eventId : null,
-      changedCategories,
-      previousWatermarks:
-        staged.kind === 'pending'
-          ? (staged.intake.previousWatermarks as unknown as JsonValue)
-          : (watermarks as unknown as JsonValue),
-      watermarks: watermarks as unknown as JsonValue,
-      pending: staged.kind === 'pending',
-    },
-  );
 }
 
 function stalePrWatchGenerationResult(watchId: string) {

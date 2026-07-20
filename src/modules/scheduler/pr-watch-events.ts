@@ -8,6 +8,7 @@ import {
   repoAutopilotPolicyForWatch,
   type AutopilotMode,
 } from '../autopilot-policy';
+import { listAutopilotWatchBindings } from '../autopilot/setup';
 import {
   AutopilotPendingIntakeLeaseLostError,
   claimAutopilotTriageAdmission,
@@ -1420,6 +1421,10 @@ async function readEffectiveWatchAutopilotPolicy(
   if (!repo) {
     return { mode: 'notify-only' as AutopilotMode };
   }
+  const binding = (await listAutopilotWatchBindings(paths)).find(
+    (candidate) => candidate.owner.watchId === watch.id,
+  );
+  if (!binding) return { mode: 'notify-only' as AutopilotMode };
 
   return repoAutopilotPolicyForWatch(repo, appConfig, {
     id: watch.id,

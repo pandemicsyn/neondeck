@@ -45,6 +45,7 @@ export {
   ensureAutopilotPrOwner,
   listAutopilotPrOwners,
   readAutopilotPrOwnerByWatch,
+  retireAutopilotPrOwnerBinding,
 } from './owners';
 export {
   admitAutopilotEvent,
@@ -152,6 +153,8 @@ export * from './recovery';
 export {
   configureAutopilotWatch,
   controlAutopilotWatch,
+  addPrWatchWithAutopilotLease,
+  listAutopilotWatchBindings,
   configureAutopilotWatchAction,
   controlAutopilotWatchAction,
   autopilotSetupInputSchema,

@@ -4,6 +4,8 @@ import {
   controlAutopilotWatch,
   getAutopilotState,
   getPrWatches,
+  removePrWatch,
+  setPrWatchPolling,
   type PrWatch,
 } from '../api';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
@@ -91,6 +93,9 @@ export const ActiveWatchesPlugin = {
                       (policy) => policy.watchId === watch.id,
                     )?.mode
                   }
+                  owner={autopilot?.policies.watches.find(
+                    (policy) => policy.watchId === watch.id,
+                  )}
                   watch={watch}
                 />
               ))
@@ -106,20 +111,31 @@ function WatchRow({
   watch,
   mode,
   admission,
+  owner,
 }: {
   watch: PrWatch;
   mode: string | undefined;
   admission: { id: string; status: string; updatedAt: string } | undefined;
+  owner:
+    | {
+        ownerId?: string;
+        ownerGeneration?: number;
+        ownerInstanceId?: string | null;
+        lastEventAt?: string | null;
+      }
+    | undefined;
 }) {
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const queryClient = useQueryClient();
   const removeMutation = useMutation({
     mutationFn: () =>
-      controlAutopilotWatch({
-        operation: 'stop',
-        watchId: watch.id,
-        confirm: true,
-      }),
+      mode
+        ? controlAutopilotWatch({
+            operation: 'stop',
+            watchId: watch.id,
+            confirm: true,
+          })
+        : removePrWatch(watch.id),
     onSuccess() {
       setConfirmingRemove(false);
       void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
@@ -131,10 +147,12 @@ function WatchRow({
   const pollingEnabled = watch.pollingEnabled !== false;
   const pollingMutation = useMutation({
     mutationFn: () =>
-      controlAutopilotWatch({
-        operation: pollingEnabled ? 'pause' : 'resume',
-        watchId: watch.id,
-      }),
+      mode
+        ? controlAutopilotWatch({
+            operation: pollingEnabled ? 'pause' : 'resume',
+            watchId: watch.id,
+          })
+        : setPrWatchPolling(watch.id, !pollingEnabled),
     onSuccess() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
     },
@@ -178,12 +196,23 @@ function WatchRow({
               why · {attentionReason}
             </p>
           ) : null}
-          <p className="mt-1 font-mono text-[10px] text-muted">
-            autopilot · {mode ?? 'notify-only'}
-            {admission
-              ? ` · ${admission.status} · updated ${relativeTime(admission.updatedAt)}`
-              : ' · awaiting event'}
-          </p>
+          {mode ? (
+            <p className="mt-1 font-mono text-[10px] text-muted">
+              autopilot · {mode}
+              {admission
+                ? ` · ${admission.status} · updated ${relativeTime(admission.updatedAt)}`
+                : ' · awaiting event'}
+            </p>
+          ) : null}
+          {owner ? (
+            <p className="mt-1 font-mono text-[10px] text-muted">
+              owner · {owner.ownerInstanceId ?? owner.ownerId ?? 'pending'} ·
+              gen {owner.ownerGeneration ?? 0}
+              {owner.lastEventAt
+                ? ` · event ${relativeTime(owner.lastEventAt)}`
+                : ''}
+            </p>
+          ) : null}
         </div>
         <Badge className={statusClass(watch.status)}>{watch.status}</Badge>
       </div>
@@ -250,7 +279,7 @@ function WatchRow({
           >
             stop
           </Button>
-          {admission ? (
+          {mode && admission ? (
             <Button
               className="min-h-[28px] border-line bg-transparent px-2 py-1 text-[10px] text-muted"
               disabled={retryMutation.isPending}
@@ -266,7 +295,9 @@ function WatchRow({
         <div className="mt-2 border border-accent/50 bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
           <div className="flex items-center justify-between gap-2">
             <span className="text-accent">
-              Stop this watch and active Autopilot work?
+              {mode
+                ? 'Stop this watch and active Autopilot work?'
+                : 'Stop this PR watch?'}
             </span>
             <span className="flex gap-1.5">
               <Button

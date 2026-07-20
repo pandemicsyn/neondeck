@@ -5,6 +5,7 @@ import { loadRuntimeSkill } from '../runtime';
 import { refreshWatchTask } from '../scheduler/dispatch';
 import type { SchedulerDependencies } from '../scheduler/schemas';
 import { invokeScheduledWorkflow } from '../scheduler/workflow-invocation';
+import { isAutopilotSetupBlocked } from '../autopilot/setup-transactions';
 import type { ScheduledTaskRecord } from './schemas';
 
 export type ScheduledTaskExecutionResult = {
@@ -30,6 +31,12 @@ export async function executeScheduledTask(
   dependencies: SchedulerDependencies = {},
 ): Promise<ScheduledTaskExecutionResult> {
   if (task.spec.kind === 'poll-pr-watch') {
+    if (await isAutopilotSetupBlocked(task.spec.watchId, paths)) {
+      return {
+        outcome: 'silent',
+        message: `Watch ${task.spec.watchId} is waiting for Autopilot setup recovery.`,
+      };
+    }
     const result = await refreshWatchTask(
       task.spec.watchId,
       previousResult,

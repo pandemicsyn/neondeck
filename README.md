@@ -109,14 +109,14 @@ bind an awaiting-event owner, and report readiness. The owner does not allocate
 a Flue instance or managed worktree until a meaningful event is admitted.
 
 ```sh
-neondeck autopilot owner/repo#123 --mode prepare-only --confirm
-neondeck autopilot owner/repo#123 --mode prepare-only --process-existing --confirm
-neondeck autopilot-control status owner/repo#123
-neondeck autopilot-control retry owner/repo#123 --admission autopilot-admission:…
+neondeck autopilot watch owner/repo#123 --mode prepare-only --confirm
+neondeck autopilot watch owner/repo#123 --mode prepare-only --no-process-existing --confirm
+neondeck autopilot status owner/repo#123
+neondeck autopilot retry owner/repo#123 --admission autopilot-admission:…
 ```
 
-`--process-existing` queues current actionable feedback for the first poll.
-Without it, current feedback is baselined and only later changes run. The
+Current actionable feedback is processed on the first poll by default. Use
+`--no-process-existing` to baseline it and act only on later changes. The
 dashboard’s PR list offers the same prepare-only choice as “now” or “later”.
 Increasing a watch’s authority requires `--confirm`; reducing it does not.
 Verification, approval/push, result delivery, and terminal cleanup remain

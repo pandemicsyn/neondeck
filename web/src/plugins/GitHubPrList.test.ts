@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { GitHubPullRequest, WorkflowObservability } from '../api';
 import {
+  autopilotModes,
+  autopilotSetupStatus,
   isCiFixCandidate,
   isTerminalWatchStatus,
   reviewWorkflowCompletionState,
@@ -8,6 +10,54 @@ import {
 } from './GitHubPrList';
 
 describe('GitHubPrList review workflow state', () => {
+  it('presents all Autopilot modes and truthful readiness/setup states', () => {
+    expect(autopilotModes).toEqual([
+      'notify-only',
+      'prepare-only',
+      'autofix-with-approval',
+      'autofix-push-when-safe',
+    ]);
+    expect(autopilotSetupStatus({ loading: true })).toEqual({
+      role: 'status',
+      label: 'checking readiness',
+    });
+    expect(
+      autopilotSetupStatus({ loading: false, readinessError: 'offline' }),
+    ).toEqual({ role: 'alert', label: 'readiness unavailable · offline' });
+    expect(
+      autopilotSetupStatus({
+        loading: false,
+        readiness: { ready: false, status: 'blocked', blocking: ['token'] },
+      }),
+    ).toEqual({ role: 'status', label: 'blocked · token' });
+    expect(
+      autopilotSetupStatus({
+        loading: false,
+        readiness: { ready: false, status: 'warning', blocking: ['checks'] },
+      }),
+    ).toEqual({ role: 'status', label: 'warning · checks' });
+    expect(
+      autopilotSetupStatus({
+        loading: false,
+        readiness: { ready: true, status: 'ready' },
+      }),
+    ).toEqual({ role: 'status', label: 'ready' });
+    expect(
+      autopilotSetupStatus({
+        loading: false,
+        result: { ok: true, message: 'configured', firstPlannedAction: 'wait' },
+      }),
+    ).toEqual({ role: 'status', label: 'configured · wait' });
+    expect(
+      autopilotSetupStatus({
+        loading: false,
+        readinessError: 'stale readiness query',
+        readiness: { ready: true, status: 'ready' },
+        result: { ok: true, message: 'configured', firstPlannedAction: 'wait' },
+      }),
+    ).toEqual({ role: 'status', label: 'configured · wait' });
+  });
+
   it('shows the fix CI affordance only for failing or unknown check states', () => {
     expect(isCiFixCandidate(githubPr({ checks: 'failure' }))).toBe(true);
     expect(isCiFixCandidate(githubPr({ checkError: 'token denied' }))).toBe(

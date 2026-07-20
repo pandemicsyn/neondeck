@@ -1,15 +1,17 @@
 import { defineAction } from '@flue/runtime';
 import * as v from 'valibot';
 import {
-  addPrWatch,
   addRefWatch,
   listPrWatches,
   listRefWatches,
-  refreshPrWatch,
   refreshRefWatch,
-  removePrWatch,
-  setPrWatchPolling,
 } from './service';
+import {
+  addPrWatchWithAutopilotLease,
+  refreshPrWatchWithAutopilotLease,
+  removePrWatchWithAutopilotLease,
+  setPrWatchPollingWithAutopilotLease,
+} from '../autopilot/setup';
 import {
   watchActionOutputSchema,
   watchPrAddInputSchema,
@@ -27,7 +29,7 @@ export const watchPrAddAction = defineAction({
   input: watchPrAddInputSchema,
   output: watchActionOutputSchema,
   async run({ input }) {
-    return addPrWatch(input);
+    return addPrWatchWithAutopilotLease(input);
   },
 });
 
@@ -47,7 +49,7 @@ export const watchPrRemoveAction = defineAction({
   input: watchPrRemoveInputSchema,
   output: watchActionOutputSchema,
   async run({ input }) {
-    return removePrWatch(input);
+    return removePrWatchWithAutopilotLease(input);
   },
 });
 
@@ -57,7 +59,7 @@ export const watchPrPollingAction = defineAction({
   input: watchPrPollingInputSchema,
   output: watchActionOutputSchema,
   async run({ input }) {
-    return setPrWatchPolling(input);
+    return setPrWatchPollingWithAutopilotLease(input);
   },
 });
 
@@ -68,7 +70,7 @@ export const watchPrRefreshAction = defineAction({
   input: watchPrRefreshInputSchema,
   output: watchActionOutputSchema,
   async run({ input }) {
-    return refreshPrWatch(input);
+    return refreshPrWatchWithAutopilotLease(input);
   },
 });
 

@@ -79,10 +79,9 @@ export function repoAutopilotPolicyForWatch(
 
   const override = readRepoAutopilotConfig(repo)?.watchOverrides?.find(
     (candidate) =>
-      (watch.id && candidate.watchId === watch.id) ||
-      (watch.prNumber !== undefined &&
-        watch.prNumber !== null &&
-        candidate.prNumber === watch.prNumber),
+      Boolean(watch.id) &&
+      candidate.watchId === watch.id &&
+      candidate.prNumber === watch.prNumber,
   );
   return {
     ...policy,

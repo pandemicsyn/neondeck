@@ -48,6 +48,22 @@ export function ensureAutopilotPrOwnerInDatabase(
         `Autopilot owner ${existing.id} is bound to a different repository or PR.`,
       );
     }
+    if (existing.status === 'draining' || existing.status === 'archived') {
+      database
+        .prepare(
+          `UPDATE autopilot_pr_owners
+           SET status = 'awaiting-event', generation = generation + 1,
+               flue_instance_id = NULL, chat_session_id = NULL, worktree_id = NULL,
+               updated_at = ?, archived_at = NULL
+           WHERE id = ?;`,
+        )
+        .run(now, existing.id);
+      return readAutopilotPrOwner(
+        database
+          .prepare('SELECT * FROM autopilot_pr_owners WHERE id = ?;')
+          .get(existing.id),
+      )!;
+    }
     return existing;
   }
 
@@ -138,6 +154,28 @@ export async function listAutopilotPrOwners(paths = runtimePaths()) {
       .all()
       .map(readAutopilotPrOwner)
       .filter((owner): owner is AutopilotPrOwner => Boolean(owner));
+  } finally {
+    database.close();
+  }
+}
+
+/** Revoke the live watch binding without deleting Package 4 audit history. */
+export async function retireAutopilotPrOwnerBinding(
+  watchId: string,
+  paths = runtimePaths(),
+  now = new Date(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `UPDATE autopilot_pr_owners
+         SET status = CASE WHEN status = 'archived' THEN status ELSE 'draining' END,
+             updated_at = ?
+         WHERE watch_id = ?;`,
+      )
+      .run(now.toISOString(), watchId);
   } finally {
     database.close();
   }

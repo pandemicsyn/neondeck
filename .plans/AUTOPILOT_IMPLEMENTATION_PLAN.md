@@ -1058,8 +1058,11 @@ real non-force push to a temporary bare remote and comment-delivery fixture.
 ### Package 6: explicit setup and control surfaces
 
 Status: implemented (2026-07-19). The shared setup contract configures a
-watch, stable per-watch override, awaiting-event owner binding, process-existing
-choice, and readiness result without allocating a Flue instance or worktree.
+watch, cross-process-serialized stable per-watch override, awaiting-event owner
+binding, process-existing choice, and readiness result without allocating a Flue
+instance or worktree. A failed multi-step setup retains a durable fail-closed
+recovery marker, so polling/admission cannot proceed until the same setup is
+retried successfully.
 Chat action, HTTP API, CLI, PR list, watch controls, and recommended presets
 use the same service. Verification/delivery and canonical operator history stay
 with Packages 5 and 7.
@@ -1080,11 +1083,18 @@ Deliverables:
 
 - composite setup contract across chat/API/CLI/UI that creates the awaiting-event
   owner binding but lazily allocates agent instance/worktree;
-- stable per-watch override mutation and authority confirmation ranking;
+- cross-process-serialized stable per-watch override mutation and authority
+  confirmation ranking;
 - watch list/pause/resume/stop/status/retry entry points;
 - process-existing choice and readiness summary;
 - Autopilot present in recommended layouts;
-- setup contract tests proving all surfaces call the same service.
+- behavioral setup-contract tests covering the shared typed action, ordinary-watch
+  separation, failure-closed recovery, and sibling override preservation across
+  processes.
+
+The public display-assistant configuration action cannot write raw watch override
+arrays. Per-watch override creation is intentionally available only through the
+composite Autopilot setup contract.
 
 Exit gate: the exact natural-language request in the Outcome section configures the
 watch and mode without direct file editing or a raw API call.

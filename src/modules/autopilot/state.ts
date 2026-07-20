@@ -24,6 +24,8 @@ import {
 } from '../../runtime-home';
 import { listNotifications, type NotificationLevel } from '../app-state';
 import { listAutopilotAdmissions } from './admissions';
+import { listAutopilotPrOwners } from './owners';
+import { isAutopilotSetupBlocked } from './setup-transactions';
 import { repoFullName } from '../repos';
 import {
   listPreparedDiffs,
@@ -91,6 +93,7 @@ export async function readAutopilotState(
     approvals,
     notifications,
     admissions,
+    owners,
   ] = await Promise.all([
     readRuntimeJson(paths.repos, parseRepoRegistry),
     readRuntimeJson(paths.config, parseAppConfig),
@@ -100,6 +103,7 @@ export async function readAutopilotState(
     listExecutionApprovals(paths, { includeResolved: false }),
     listNotifications(paths, { includeResolved: true }),
     listAutopilotAdmissions(paths),
+    listAutopilotPrOwners(paths),
   ]);
 
   const repos = reposFile.repos;
@@ -109,9 +113,45 @@ export async function readAutopilotState(
       return [repo.id, policy] as const;
     }),
   );
-  const watchPolicies = watches.map((watch) =>
-    watchPolicy(watch, repoPolicyMap.get(watch.repoId), repos),
-  );
+  // A generic PR watch is not an Autopilot watch merely because its repository
+  // has an Autopilot policy.  The durable owner plus the exact watch override
+  // are the authority-bearing binding.
+  const autopilotWatches = (
+    await Promise.all(
+      watches.map(async (watch) => {
+        const owner = owners.find(
+          (candidate) =>
+            candidate.watchId === watch.id &&
+            candidate.repoId === watch.repoId &&
+            candidate.prNumber === watch.prNumber &&
+            (candidate.status === 'awaiting-event' ||
+              candidate.status === 'active'),
+        );
+        const override = readRepoAutopilotConfig(
+          repos.find((repo) => repo.id === watch.repoId),
+        )?.watchOverrides?.find(
+          (candidate) =>
+            candidate.watchId === watch.id &&
+            candidate.prNumber === watch.prNumber,
+        );
+        return owner &&
+          override &&
+          !(await isAutopilotSetupBlocked(watch.id, paths))
+          ? watch
+          : undefined;
+      }),
+    )
+  ).filter((watch): watch is (typeof watches)[number] => Boolean(watch));
+  const watchPolicies = autopilotWatches.map((watch) => {
+    const owner = owners.find((candidate) => candidate.watchId === watch.id)!;
+    return {
+      ...watchPolicy(watch, repoPolicyMap.get(watch.repoId), repos),
+      ownerId: owner.id,
+      ownerGeneration: owner.generation,
+      ownerInstanceId: owner.flueInstanceId,
+      lastEventAt: owner.lastEventAt,
+    };
+  });
   const worktrees = worktreeSnapshot.worktrees;
   const workflowRuns = readActiveAutopilotRuns(paths);
   const runningChecks = workflowRuns
@@ -173,7 +213,7 @@ export async function readAutopilotState(
       runId: admission.currentRunId,
       updatedAt: admission.updatedAt,
     })),
-    ...watches.map((watch) =>
+    ...autopilotWatches.map((watch) =>
       queueItemFromWatch(
         watch,
         watchPolicies.find((policy) => policy.watchId === watch.id),
@@ -224,7 +264,7 @@ export async function readAutopilotState(
     changed: false,
     modeLabels,
     summary: {
-      activeWatches: watches.length,
+      activeWatches: autopilotWatches.length,
       queuedItems: queue.length,
       preparedDiffs: preparedDiffs.length,
       pendingApprovals: pendingApprovals.length,
