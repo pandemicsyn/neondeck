@@ -425,20 +425,6 @@ export const preparePrWorktreeInputSchema = v.strictObject({
     v.pipe(v.number(), v.integer(), v.minValue(30), v.maxValue(86_400)),
   ),
 });
-export const verifyPrWorktreeInputSchema = v.strictObject({
-  worktreeId: nonEmptyStringSchema,
-  checks: v.optional(v.array(nonEmptyStringSchema)),
-  diffBaseRef: v.optional(nonEmptyStringSchema),
-  backend: v.optional(v.picklist(['local', 'exe.dev'])),
-  context: v.optional(v.picklist(['interactive', 'unattended'])),
-  lock: v.optional(v.boolean()),
-  lockOwner: v.optional(nonEmptyStringSchema),
-  lockTtlSeconds: v.optional(
-    v.pipe(v.number(), v.integer(), v.minValue(30), v.maxValue(86_400)),
-  ),
-  timeoutMs: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
-  maxOutputBytes: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
-});
 export const pushPrAutofixInputSchema = v.strictObject({
   preparedDiffId: nonEmptyStringSchema,
   force: v.optional(v.boolean()),

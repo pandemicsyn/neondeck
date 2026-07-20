@@ -97,7 +97,6 @@ import {
   pushPrAutofixInputSchema,
   reviewFixReplacementSchema,
   triagePrEventInputSchema,
-  verifyPrWorktreeInputSchema,
 } from './schemas';
 import { unique } from './utils';
 

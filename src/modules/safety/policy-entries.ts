@@ -237,12 +237,6 @@ export const entries: SafetyPolicyEntry[] = [
     'Reads persisted Kilo handoff task metadata without starting or cancelling work.',
   ),
   action(
-    'neondeck_autopilot_triage_pr_event',
-    'Triage PR event',
-    readOnly,
-    'Classifies structured PR watcher deltas without mutating GitHub, repos, or worktrees.',
-  ),
-  action(
     'neondeck_execution_policy_check',
     'Check host execution policy',
     readOnly,
@@ -409,6 +403,12 @@ export const entries: SafetyPolicyEntry[] = [
     'List PR watches',
     readOnly,
     'Lists persistent PR watches.',
+  ),
+  action(
+    'neondeck_autopilot_watch_status',
+    'Read watched-PR Autopilot status',
+    readOnly,
+    'Reads the mode, owner, worktree, fingerprint, and loop status stored on one or all PR watches.',
   ),
   action(
     'neondeck_scheduled_task_list',
@@ -848,6 +848,34 @@ export const entries: SafetyPolicyEntry[] = [
     'Creates a durable PR watch and its canonical polling task after GitHub PR lookup.',
   ),
   action(
+    'neondeck_autopilot_configure_pr',
+    'Configure watched-PR Autopilot',
+    {
+      ...safeMutation,
+      auditTarget: 'pr_watches/scheduled_tasks',
+    },
+    'Creates or updates a PR watch with one explicit Autopilot capability mode. Increasing authority requires confirm=true.',
+  ),
+  action(
+    'neondeck_autopilot_watch_control',
+    'Control watched-PR Autopilot',
+    {
+      ...safeMutation,
+      auditTarget:
+        'pr_watches/scheduled_tasks/worktrees/worktree_cleanup_attempts',
+    },
+    'Pauses, resumes, retries, or stops one minimal Autopilot watch; stop cleans only an eligible Neondeck-managed worktree.',
+  ),
+  action(
+    'neondeck_autopilot_message_owner',
+    'Message watched-PR owner',
+    {
+      ...safeMutation,
+      auditTarget: 'pr_watches/Flue agent conversation/worktrees',
+    },
+    'Relays an explicit human instruction to an approval-mode owner while its prepared commit is held for review.',
+  ),
+  action(
     'neondeck_watch_pr_refresh',
     'Refresh PR watch',
     {
@@ -1070,24 +1098,6 @@ export const entries: SafetyPolicyEntry[] = [
     'Creates or adopts a git worktree only inside declared Neondeck worktree roots.',
   ),
   action(
-    'neondeck_autopilot_prepare_pr_worktree',
-    'Prepare PR worktree',
-    {
-      ...safeMutation,
-      auditTarget: 'worktrees/worktree_locks',
-    },
-    'Creates, syncs, locks, and inspects a Neondeck-managed PR worktree, but does not edit, commit, push, or comment.',
-  ),
-  action(
-    'neondeck_autopilot_fix_pr_review_feedback',
-    'Fix PR review feedback',
-    {
-      ...safeMutation,
-      auditTarget: 'worktrees/repo_edit_events/prepared_diffs',
-    },
-    'Fetches unresolved review feedback, groups it into a plan, applies caller-supplied bounded repo-edit changes inside an isolated worktree, commits locally, and prepares a diff without pushing or commenting.',
-  ),
-  action(
     'neondeck_prepared_diff_list',
     'List prepared diffs',
     readOnly,
@@ -1110,113 +1120,6 @@ export const entries: SafetyPolicyEntry[] = [
     'Read prepared file diff',
     readOnly,
     'Reads one prepared file patch through backend git helpers.',
-  ),
-  action(
-    'neondeck_prepared_diff_open_worktree',
-    'Open prepared diff worktree',
-    readOnly,
-    'Returns the managed source worktree path for a prepared diff.',
-  ),
-  tool(
-    'neondeck_autopilot_recovery_options_lookup',
-    'Read autopilot recovery options',
-    readOnly,
-    'Reads bounded recovery options for a prepared diff without mutating app state or repos.',
-  ),
-  action(
-    'neondeck_autopilot_recovery_options',
-    'Read autopilot recovery options',
-    readOnly,
-    'Reads bounded recovery options for a prepared diff without mutating app state or repos.',
-  ),
-  action(
-    'neondeck_autopilot_recovery_run',
-    'Run autopilot recovery action',
-    {
-      ...hostExecution,
-      auditTarget:
-        'prepared_diffs/prepared_diff_approvals/worktrees/workflow_summaries/notifications/execution_approvals',
-    },
-    'Dispatches one bounded recovery action to existing prepared-diff, worktree sync/cleanup, or autopilot workflow services; confirmation, execution, policy, GitHub, and push gates are still enforced by the delegated service.',
-  ),
-  action(
-    'neondeck_prepared_diff_run_verification',
-    'Request prepared diff verification',
-    {
-      ...safeMutation,
-      auditTarget: 'prepared_diffs/prepared_diff_approvals',
-    },
-    'Records a verification request; actual host command execution remains owned by verify_pr_worktree and execution approvals.',
-  ),
-  action(
-    'neondeck_prepared_diff_request_revision',
-    'Request prepared diff revision',
-    {
-      ...safeMutation,
-      auditTarget: 'prepared_diffs/prepared_diff_approvals',
-    },
-    'Records an operator revision request while retaining the source worktree.',
-  ),
-  action(
-    'neondeck_prepared_diff_approve_push',
-    'Approve prepared diff push',
-    {
-      ...destructiveMutation,
-      auditTarget: 'prepared_diffs/prepared_diff_approvals',
-    },
-    'Requires confirm=true and records push-back approval; the later push workflow performs GitHub mutations.',
-  ),
-  action(
-    'neondeck_prepared_diff_abandon',
-    'Abandon prepared diff',
-    {
-      ...destructiveMutation,
-      auditTarget: 'prepared_diffs/prepared_diff_approvals/worktree_events',
-    },
-    'Requires confirm=true and abandons the prepared-diff record without directly deleting the source worktree.',
-  ),
-  action(
-    'neondeck_autopilot_policy_check',
-    'Check autopilot policy',
-    readOnly,
-    'Classifies a worktree diff against shared repo guardrails, high-risk file classes, push destination policy, and autopilot concurrency without mutating repos or GitHub.',
-  ),
-  action(
-    'neondeck_autopilot_fix_pr_ci_failure',
-    'Fix PR CI failure',
-    {
-      ...hostExecution,
-      auditTarget:
-        'worktrees/worktree_locks/repo_edit_events/prepared_diffs/execution_approvals',
-    },
-    'Fetches deterministic failing check facts/log availability, runs configured diagnostics through execution policy, applies an optional scoped repo-edit patch in a managed worktree, commits locally, and creates a prepared diff without pushing or commenting.',
-  ),
-  action(
-    'neondeck_autopilot_verify_pr_worktree',
-    'Verify PR worktree',
-    {
-      ...hostExecution,
-      auditTarget: 'execution_approvals/workflow_events',
-    },
-    'Runs configured repo checks through Neondeck execution approval policy and records execution approvals/results.',
-  ),
-  action(
-    'neondeck_autopilot_comment_pr_autofix_result',
-    'Comment PR autofix result',
-    {
-      ...safeMutation,
-      auditTarget: 'workflow_summaries/GitHub issue comments',
-    },
-    'Posts a concise PR comment generated only from prepared-diff/autopilot result facts and persists the rendered audit summary.',
-  ),
-  action(
-    'neondeck_autopilot_push_pr_autofix',
-    'Push PR autofix',
-    {
-      ...destructiveMutation,
-      auditTarget: 'prepared_diffs/worktrees/worktree_events/notifications',
-    },
-    'Pushes an approved and verified prepared diff back to the PR head branch only when autopilot policy, GitHub branch permissions, and clean committed worktree state allow it; blocked attempts retain the worktree.',
   ),
   action(
     'neondeck_worktree_sync',
@@ -1633,69 +1536,6 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget: 'scheduled_task_runs/workflow_events',
     },
     'Runs one bounded scheduled instruction occurrence through Flue.',
-  ),
-  workflow(
-    'triage-pr-event',
-    'Run PR event triage workflow',
-    readOnly,
-    'Classifies a structured PR watcher delta through the Flue workflow surface without mutating GitHub, repos, or worktrees.',
-  ),
-  workflow(
-    'prepare-pr-worktree',
-    'Run PR worktree preparation workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'worktrees/worktree_locks/workflow_events',
-    },
-    'Creates, syncs, locks, and inspects an isolated PR worktree through the Flue workflow surface without fixing, committing, pushing, or commenting.',
-  ),
-  workflow(
-    'fix-pr-ci-failure',
-    'Run PR CI fixer workflow',
-    {
-      ...hostExecution,
-      auditTarget:
-        'worktrees/worktree_locks/repo_edit_events/prepared_diffs/execution_approvals/workflow_events',
-    },
-    'Runs the bounded PR CI fixer through the Flue workflow surface. It may apply scoped repo-edit patches, commit locally, and prepare a diff, but it does not push or comment.',
-  ),
-  workflow(
-    'fix-pr-review-feedback',
-    'Run PR review feedback fix workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'worktrees/repo_edit_events/prepared_diffs/workflow_events',
-    },
-    'Plans review-feedback fixes from deterministic GitHub facts and applies only bounded repo-edit changes inside an isolated worktree; it commits locally and prepares a diff without pushing or commenting.',
-  ),
-  workflow(
-    'verify-pr-worktree',
-    'Run PR worktree verification workflow',
-    {
-      ...hostExecution,
-      auditTarget: 'execution_approvals/workflow_events',
-    },
-    'Runs configured checks for an isolated PR worktree through the execution approval policy before any push-back workflow is allowed.',
-  ),
-  workflow(
-    'verify-then-push-pr-autofix',
-    'Run PR autofix verify then push workflow',
-    {
-      ...destructiveMutation,
-      auditTarget:
-        'execution_approvals/prepared_diffs/worktrees/worktree_events/notifications/workflow_events',
-    },
-    'Runs configured checks for an approved prepared diff and then delegates to the bounded push workflow. Execution approvals, push policy, branch permissions, and clean-worktree gates remain authoritative.',
-  ),
-  workflow(
-    'push-pr-autofix',
-    'Run PR autofix push workflow',
-    {
-      ...destructiveMutation,
-      auditTarget:
-        'prepared_diffs/worktrees/worktree_events/notifications/workflow_events',
-    },
-    'Runs the bounded PR autofix push workflow. It pushes only approved and verified prepared diffs, and records blocked attempts without deleting worktrees.',
   ),
   workflow(
     'dev-doctor',
@@ -2148,44 +1988,38 @@ export const entries: SafetyPolicyEntry[] = [
     'Reads recent MCP tool-call audit rows.',
   ),
   route(
-    '/api/autopilot/readiness',
-    'Autopilot readiness API',
-    readOnly,
-    'Reads typed local, GitHub API, exact fetch, Git credential, comment, identity, check-command, and gh readiness facts without mutating a repository or pull request.',
-  ),
-  route(
-    '/api/autopilot/triage-pr-event',
-    'PR event triage API',
-    readOnly,
-    'Classifies a structured PR watcher delta for dashboard, smoke-test, and future TUI clients.',
-  ),
-  route(
-    '/api/autopilot/prepare-pr-worktree',
-    'PR worktree preparation API',
+    '/api/watches/autopilot',
+    'Configure watched-PR Autopilot API',
     {
       ...safeMutation,
-      auditTarget: 'worktrees/worktree_locks',
+      auditTarget: 'pr_watches/scheduled_tasks',
     },
-    'Fetches deterministic GitHub PR/check facts and prepares a managed PR worktree without fixing, committing, pushing, or commenting.',
+    'Creates or updates a PR watch with one explicit Autopilot capability mode. Increasing authority requires confirm=true.',
   ),
   route(
-    '/api/autopilot/fix-pr-ci-failure',
-    'PR CI fixer API',
+    '/api/watches/:id/autopilot',
+    'Read watched-PR Autopilot API',
+    readOnly,
+    'Reads one minimal watched-PR owner loop record.',
+  ),
+  route(
+    '/api/watches/:id/autopilot/control',
+    'Control watched-PR Autopilot API',
     {
-      ...hostExecution,
+      ...safeMutation,
       auditTarget:
-        'worktrees/worktree_locks/repo_edit_events/prepared_diffs/execution_approvals',
+        'pr_watches/scheduled_tasks/worktrees/worktree_cleanup_attempts',
     },
-    'Fetches failing check facts/log availability, runs diagnostics, optionally applies a scoped repo-edit patch in a managed worktree, commits locally, and creates a prepared diff without pushing or commenting.',
+    'Pauses, resumes, retries, or stops one minimal Autopilot watch.',
   ),
   route(
-    '/api/autopilot/fix-pr-review-feedback',
-    'PR review feedback fix API',
+    '/api/watches/:id/autopilot/message',
+    'Message watched-PR owner API',
     {
       ...safeMutation,
-      auditTarget: 'worktrees/repo_edit_events/prepared_diffs',
+      auditTarget: 'pr_watches/Flue agent conversation/worktrees',
     },
-    'Fetches deterministic review feedback, prepares or reuses a managed worktree, applies bounded repo-edit changes, commits locally, and records a prepared diff without pushing or commenting.',
+    'Relays one explicit human instruction to an approval-mode owner waiting with a held commit.',
   ),
   route(
     '/api/prepared-diffs',
@@ -2210,110 +2044,6 @@ export const entries: SafetyPolicyEntry[] = [
     'Prepared file diff API',
     readOnly,
     'Reads one prepared file patch through backend git helpers.',
-  ),
-  route(
-    '/api/prepared-diffs/:id/verify',
-    'Prepared diff verification API',
-    {
-      ...safeMutation,
-      auditTarget: 'prepared_diffs/prepared_diff_approvals',
-    },
-    'Records a verification request without running host commands directly.',
-  ),
-  route(
-    '/api/autopilot/push-pr-autofix',
-    'PR autofix push API',
-    {
-      ...destructiveMutation,
-      auditTarget: 'prepared_diffs/worktrees/worktree_events/notifications',
-    },
-    'Pushes an approved and verified prepared diff through the same bounded push service used by the Flue workflow.',
-  ),
-  route(
-    '/api/prepared-diffs/:id/push',
-    'Prepared diff push API',
-    {
-      ...destructiveMutation,
-      auditTarget: 'prepared_diffs/worktrees/worktree_events/notifications',
-    },
-    'Pushes one approved and verified prepared diff through the bounded push service, or records a blocked attempt while retaining the worktree.',
-  ),
-  route(
-    '/api/prepared-diffs/:id/request-revision',
-    'Prepared diff revision API',
-    {
-      ...safeMutation,
-      auditTarget: 'prepared_diffs/prepared_diff_approvals/kilo_tasks',
-    },
-    'User-surface route that records a revision request and may dispatch a bounded Kilo revision run for the retained source worktree.',
-  ),
-  route(
-    '/api/prepared-diffs/:id/run-revision',
-    'Prepared diff run revision API',
-    {
-      ...safeMutation,
-      auditTarget: 'prepared_diffs/kilo_tasks',
-    },
-    'User-surface route that starts a bounded Kilo revision run from an already recorded revision request without adding a model-callable action.',
-  ),
-  route(
-    '/api/prepared-diffs/:id/approve-push',
-    'Prepared diff push approval API',
-    {
-      ...destructiveMutation,
-      auditTarget:
-        'prepared_diffs/prepared_diff_approvals/workflow_summaries/notifications',
-    },
-    'Requires confirmation, records push-back approval, and admits the configured push or verify-then-push workflow. Push policy, verification, branch permission, execution approval, and clean-worktree gates still run inside the delegated workflow.',
-  ),
-  route(
-    '/api/prepared-diffs/:id/abandon',
-    'Prepared diff abandon API',
-    {
-      ...destructiveMutation,
-      auditTarget: 'prepared_diffs/prepared_diff_approvals/worktree_events',
-    },
-    'Requires confirmation and abandons the prepared-diff record without deleting the source worktree.',
-  ),
-  route(
-    '/api/prepared-diffs/:id/worktree-path',
-    'Prepared diff worktree path API',
-    readOnly,
-    'Returns the managed source worktree path for a prepared diff.',
-  ),
-  route(
-    '/api/prepared-diffs/:id/recovery',
-    'Prepared diff recovery options API',
-    readOnly,
-    'Reads bounded recovery options for a prepared diff.',
-  ),
-  route(
-    '/api/prepared-diffs/:id/recovery/run',
-    'Prepared diff recovery runner API',
-    {
-      ...hostExecution,
-      auditTarget:
-        'prepared_diffs/prepared_diff_approvals/worktrees/workflow_summaries/notifications/execution_approvals',
-    },
-    'Dispatches one bounded recovery action through the same prepared-diff, worktree sync/cleanup, and autopilot workflow services used by Flue actions.',
-  ),
-  route(
-    '/api/autopilot/verify-pr-worktree',
-    'PR worktree verification API',
-    {
-      ...hostExecution,
-      auditTarget: 'execution_approvals',
-    },
-    'Runs configured checks for a managed PR worktree through the execution approval policy.',
-  ),
-  route(
-    '/api/autopilot/comment-pr-autofix-result',
-    'Comment PR autofix result API',
-    {
-      ...safeMutation,
-      auditTarget: 'workflow_summaries/GitHub issue comments',
-    },
-    'Posts a concise PR comment generated from prepared-diff/autopilot facts and records the human-readable audit summary.',
   ),
   route(
     '/api/session',

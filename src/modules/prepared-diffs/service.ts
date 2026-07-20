@@ -7,7 +7,6 @@ import {
   reviewRevisionKey,
   type ReviewRevision,
 } from '../../../shared/review-source';
-import { addNotification } from '../app-state';
 import { buildPreparedDiffAuditSummary } from '../autonomous-audit';
 import { publishReviewSourceRevision } from '../review-refresh';
 import { openDb } from '../../lib/sqlite';
@@ -26,13 +25,10 @@ import {
   runtimePaths,
 } from '../../runtime-home';
 import {
-  abandonInputSchema,
-  approvePushInputSchema,
   fileDiffInputSchema,
   idInputSchema,
   listInputSchema,
   requestRevisionInputSchema,
-  verificationInputSchema,
   type PreparedDiffActionResult,
   type PreparedDiffRecord,
   type PreparedDiffStatus,
@@ -40,7 +36,6 @@ import {
   type WorktreeRecordLike,
 } from './schemas';
 import {
-  approvePreparedDiffPushState,
   assertTransition,
   ensurePendingApproval,
   insertApproval,
@@ -470,118 +465,6 @@ function stalePreparedDiffPatch(
   };
 }
 
-export async function approvePreparedDiffPush(
-  rawInput: unknown,
-  paths: RuntimePaths = runtimePaths(),
-  binding: {
-    targetSha: string;
-    policyHash: string;
-    policyDecision: 'require-approval' | 'allow';
-  },
-): Promise<PreparedDiffActionResult> {
-  const parsed = parseInput(
-    approvePushInputSchema,
-    rawInput,
-    'prepared_diff_approve_push',
-  );
-  if (!parsed.ok) return parsed.result;
-  if (parsed.input.confirm !== true) {
-    return {
-      ok: false,
-      action: 'prepared_diff_approve_push',
-      changed: false,
-      message: 'Approving prepared diff push-back requires confirm=true.',
-      requires: ['confirm'],
-      errors: ['confirm=true is required.'],
-    };
-  }
-  const record = requirePreparedDiff(
-    parsed.input.preparedDiffId,
-    'prepared_diff_approve_push',
-    paths,
-  );
-  if (!record.ok) return record.result;
-  const transition = assertTransition(
-    record.record,
-    'prepared_diff_approve_push',
-    'approve-push',
-    ['prepared', 'verification-requested', 'push-blocked'],
-  );
-  if (!transition.ok) return transition.result;
-  const approvedCommitSha = await gitCurrentSha(
-    record.record.sourceWorktreePath,
-  ).catch(() => null);
-  if (!approvedCommitSha) {
-    return failure(
-      'prepared_diff_approve_push',
-      'Prepared diff approval requires a readable worktree commit SHA.',
-      'PREPARED_DIFF_SHA_UNAVAILABLE',
-    );
-  }
-  if (binding.targetSha !== approvedCommitSha) {
-    return failure(
-      'prepared_diff_approve_push',
-      'Prepared diff changed before approval could be recorded.',
-      'PREPARED_DIFF_APPROVAL_STALE',
-    );
-  }
-  const approvalState = approvePreparedDiffPushState(
-    record.record.id,
-    {
-      approvedCommitSha,
-      policyHash: binding.policyHash,
-      policyDecision: binding.policyDecision,
-      reason: parsed.input.reason,
-      approverSurface: parsed.input.approverSurface,
-      approvedAt: new Date().toISOString(),
-    },
-    paths,
-  );
-  if (!approvalState.changed || !approvalState.approval) {
-    const currentTransition = assertTransition(
-      approvalState.preparedDiff,
-      'prepared_diff_approve_push',
-      'approve-push',
-      ['prepared', 'verification-requested', 'push-blocked'],
-    );
-    if (!currentTransition.ok) return currentTransition.result;
-    return failure(
-      'prepared_diff_approve_push',
-      'Prepared diff approval changed before it could be recorded.',
-      'PREPARED_DIFF_APPROVAL_CONFLICT',
-    );
-  }
-  const updated = approvalState.preparedDiff;
-  const notificationErrors: string[] = [];
-  await addNotification(
-    {
-      level: 'ready',
-      title: 'Prepared diff approved',
-      message:
-        'Push-back is approved in app state. The push_pr_autofix workflow is still responsible for policy checks and GitHub mutation.',
-      source: 'autopilot',
-      sourceId: `prepared-diff:${updated.id}:push-approved`,
-      data: { preparedDiffId: updated.id, worktreeId: updated.worktreeId },
-    },
-    paths,
-  ).catch((error) => {
-    notificationErrors.push(errorMessage(error));
-  });
-  return {
-    ok: true,
-    action: 'prepared_diff_approve_push',
-    changed: true,
-    message:
-      'Recorded prepared diff push approval. Actual push-back is handled by a later workflow.',
-    preparedDiff: updated,
-    approvals: [approvalState.approval],
-    data: asJsonValue({ nextWorkflow: 'push_pr_autofix' }),
-    ...(notificationErrors.length > 0
-      ? { requires: ['notification'], errors: notificationErrors }
-      : {}),
-  };
-}
-
 export async function requestPreparedDiffRevision(
   rawInput: unknown,
   paths: RuntimePaths = runtimePaths(),
@@ -733,175 +616,6 @@ async function preparedDiffWorktreeRevision(record: PreparedDiffRecord) {
   });
 }
 
-export async function abandonPreparedDiff(
-  rawInput: unknown,
-  paths: RuntimePaths = runtimePaths(),
-  dependencies: { revisionRunAborted?: boolean } = {},
-): Promise<PreparedDiffActionResult> {
-  const parsed = parseInput(
-    abandonInputSchema,
-    rawInput,
-    'prepared_diff_abandon',
-  );
-  if (!parsed.ok) return parsed.result;
-  if (parsed.input.confirm !== true) {
-    return {
-      ok: false,
-      action: 'prepared_diff_abandon',
-      changed: false,
-      message: 'Abandoning a prepared diff requires confirm=true.',
-      requires: ['confirm'],
-      errors: ['confirm=true is required.'],
-    };
-  }
-  const loaded = requirePreparedDiff(
-    parsed.input.preparedDiffId,
-    'prepared_diff_abandon',
-    paths,
-  );
-  if (!loaded.ok) return loaded.result;
-  const transition = assertTransition(
-    loaded.record,
-    'prepared_diff_abandon',
-    'abandon',
-    [
-      'prepared',
-      'verification-requested',
-      'revision-requested',
-      'revision-in-progress',
-      'push-approved',
-      'push-blocked',
-    ],
-  );
-  if (!transition.ok) return transition.result;
-  if (
-    loaded.record.status === 'revision-in-progress' &&
-    dependencies.revisionRunAborted !== true
-  ) {
-    return {
-      ok: false,
-      action: 'prepared_diff_abandon',
-      changed: false,
-      message:
-        'Abandoning a running prepared-diff revision requires stopping the revision run first.',
-      preparedDiff: loaded.record,
-      requires: ['revisionRunAbort'],
-      errors: ['revision run must be stopped before abandon.'],
-      error: {
-        code: 'REVISION_RUN_IN_PROGRESS',
-        message:
-          'Abandoning a running prepared-diff revision requires stopping the revision run first.',
-      },
-    };
-  }
-  const updated = updatePreparedDiffState(
-    loaded.record.id,
-    {
-      status: 'abandoned',
-      pushApprovalStatus: 'rejected',
-      abandonedAt: new Date().toISOString(),
-      summary: mergeSummary(loaded.record.summary, {
-        abandonedReason: parsed.input.reason ?? null,
-      }),
-    },
-    paths,
-  );
-  updateWorktreeLifecycle(updated.worktreeId, 'cleanup-pending', paths);
-  resolvePendingApprovals(
-    updated,
-    'push',
-    'rejected',
-    parsed.input.reason,
-    parsed.input.approverSurface,
-    {},
-    paths,
-  );
-  const approval = insertApproval(
-    updated,
-    'abandon',
-    'rejected',
-    parsed.input.reason,
-    parsed.input.approverSurface,
-    {},
-    paths,
-  );
-  return {
-    ok: true,
-    action: 'prepared_diff_abandon',
-    changed: true,
-    message:
-      'Abandoned prepared diff record. The source worktree is retained for cleanup policy handling.',
-    preparedDiff: updated,
-    approvals: [approval],
-  };
-}
-
-export async function openPreparedDiffWorktree(
-  rawInput: unknown,
-  paths: RuntimePaths = runtimePaths(),
-): Promise<PreparedDiffActionResult> {
-  const loaded = await loadPreparedDiff(
-    rawInput,
-    'prepared_diff_open_worktree',
-    paths,
-  );
-  if (!loaded.ok) return loaded.result;
-  return {
-    ok: true,
-    action: 'prepared_diff_open_worktree',
-    changed: false,
-    message: `Prepared diff worktree path is ${loaded.record.sourceWorktreePath}.`,
-    preparedDiff: loaded.record,
-    data: asJsonValue({ path: loaded.record.sourceWorktreePath }),
-  };
-}
-
-export async function runPreparedDiffVerification(
-  rawInput: unknown,
-  paths: RuntimePaths = runtimePaths(),
-): Promise<PreparedDiffActionResult> {
-  const parsed = parseInput(
-    verificationInputSchema,
-    rawInput,
-    'prepared_diff_run_verification',
-  );
-  if (!parsed.ok) return parsed.result;
-  const loaded = requirePreparedDiff(
-    parsed.input.preparedDiffId,
-    'prepared_diff_run_verification',
-    paths,
-  );
-  if (!loaded.ok) return loaded.result;
-  const transition = assertTransition(
-    loaded.record,
-    'prepared_diff_run_verification',
-    'run-verification',
-    ['prepared', 'push-approved'],
-  );
-  if (!transition.ok) return transition.result;
-  const updated = updatePreparedDiffState(
-    loaded.record.id,
-    {
-      status: 'verification-requested',
-      verificationStatus: 'requested',
-      summary: mergeSummary(loaded.record.summary, {
-        requestedCheck: parsed.input.checkName ?? null,
-      }),
-    },
-    paths,
-  );
-  return {
-    ok: true,
-    action: 'prepared_diff_run_verification',
-    changed: true,
-    message:
-      'Recorded verification request. Actual command execution remains owned by verify_pr_worktree.',
-    preparedDiff: updated,
-    approvals: [],
-    data: asJsonValue({ nextWorkflow: 'verify_pr_worktree' }),
-  };
-}
-
 function parseInput<T>(
   schema: v.GenericSchema<T>,
   input: unknown,
@@ -974,10 +688,6 @@ function failure(action: string, message: string, code: string) {
     errors: [message],
     error: { code, message },
   };
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function shouldKeepAbandonedRevision(

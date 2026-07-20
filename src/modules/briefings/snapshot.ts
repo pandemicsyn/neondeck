@@ -1,7 +1,6 @@
 import { asJsonValue } from '../../lib/action-result';
 import type { RuntimePaths } from '../../runtime-home';
 import { listNotifications } from '../app-state';
-import { readAutopilotState } from '../autopilot';
 import type { CommandDependencies } from '../commands/schemas';
 import { readReviewQueue } from '../commands/handlers/queue';
 import { readHygieneSummary } from '../hygiene';
@@ -19,7 +18,6 @@ export type BriefingSnapshotDependencies = CommandDependencies & {
   readTasks?: typeof listScheduledTasks;
   readNotifications?: typeof listNotifications;
   readHygiene?: typeof readHygieneSummary;
-  readAutopilot?: typeof readAutopilotState;
 };
 
 export async function collectBriefingSnapshot(
@@ -27,127 +25,108 @@ export async function collectBriefingSnapshot(
   dependencies: BriefingSnapshotDependencies = {},
 ): Promise<BriefingSnapshot> {
   const collectedAt = new Date().toISOString();
-  const [
-    repos,
-    reviewQueue,
-    watches,
-    tasks,
-    notifications,
-    hygiene,
-    autopilot,
-  ] = await Promise.all([
-    capture('repos', async () => {
-      const registry = await (
-        dependencies.readRepos ?? readRepoRegistrySnapshot
-      )(paths);
-      return boundedList(
-        registry.repos.map((repo) => ({
-          id: repo.id,
-          fullName: `${repo.github.owner}/${repo.github.name}`,
-          localPath: repo.path,
-        })),
-      );
-    }),
-    capture('reviewQueue', async () => {
-      const result = await readReviewQueue(paths, dependencies);
-      if (!result.ok) {
-        return {
-          data: {
-            available: false,
-            message: result.message,
-            requires: result.requires ?? [],
-            errors: result.errors ?? [],
-          },
-          partial: true,
-        };
-      }
-      const items = result.queue.items.map((item) => ({
-        repo: item.repo,
-        number: item.number,
-        title: item.title,
-        url: item.url,
-        author: item.author,
-        checks: item.checks,
-        updatedAt: item.updatedAt,
-      }));
-      return {
-        ...boundedList(items),
-        data: {
-          ...boundedList(items).data,
-          issues: result.queue.issues.slice(0, 12),
-          fetchedAt: result.queue.fetchedAt,
-        },
-        partial: result.queue.truncated || result.queue.issues.length > 0,
-      };
-    }),
-    capture('watches', async () => {
-      const records = await (dependencies.readWatches ?? listPrWatchRecords)(
-        paths,
-      );
-      return boundedList(
-        records.map((watch) => ({
-          id: watch.id,
-          repoId: watch.repoId,
-          prNumber: watch.prNumber,
-          title: watch.title,
-          status: watch.status,
-          url: watch.url,
-          lastCheckedAt: watch.lastCheckedAt,
-        })),
-      );
-    }),
-    capture('scheduledTasks', async () => {
-      const records = await (dependencies.readTasks ?? listScheduledTasks)(
-        paths,
-      );
-      return boundedList(
-        records.map((task) => ({
-          id: task.id,
-          kind: task.spec.kind,
-          enabled: task.enabled,
-          nextRunAt: task.nextRunAt,
-          lastRunAt: task.lastRunAt,
-        })),
-      );
-    }),
-    capture('notifications', async () => {
-      const records = await (
-        dependencies.readNotifications ?? listNotifications
-      )(paths);
-      return boundedList(
-        records
-          .filter((notification) => !notification.readAt)
-          .map((notification) => ({
-            id: notification.id,
-            level: notification.level,
-            title: notification.title,
-            message: notification.message,
-            source: notification.source,
-            createdAt: notification.createdAt,
+  const [repos, reviewQueue, watches, tasks, notifications, hygiene] =
+    await Promise.all([
+      capture('repos', async () => {
+        const registry = await (
+          dependencies.readRepos ?? readRepoRegistrySnapshot
+        )(paths);
+        return boundedList(
+          registry.repos.map((repo) => ({
+            id: repo.id,
+            fullName: `${repo.github.owner}/${repo.github.name}`,
+            localPath: repo.path,
           })),
-      );
-    }),
-    capture('hygiene', async () => ({
-      data: await (dependencies.readHygiene ?? readHygieneSummary)(paths),
-    })),
-    capture('autopilot', async () => {
-      const state = await (dependencies.readAutopilot ?? readAutopilotState)(
-        paths,
-      );
-      return {
-        data: {
-          summary: state.summary,
-          preparedDiffs: state.preparedDiffs.slice(0, collectionLimit),
-          pendingApprovals: state.pendingApprovals.slice(0, collectionLimit),
-          runningChecks: state.runningChecks.slice(0, collectionLimit),
-        },
-        truncated:
-          state.preparedDiffs.length > collectionLimit ||
-          state.pendingApprovals.length > collectionLimit ||
-          state.runningChecks.length > collectionLimit,
-      };
-    }),
-  ]);
+        );
+      }),
+      capture('reviewQueue', async () => {
+        const result = await readReviewQueue(paths, dependencies);
+        if (!result.ok) {
+          return {
+            data: {
+              available: false,
+              message: result.message,
+              requires: result.requires ?? [],
+              errors: result.errors ?? [],
+            },
+            partial: true,
+          };
+        }
+        const items = result.queue.items.map((item) => ({
+          repo: item.repo,
+          number: item.number,
+          title: item.title,
+          url: item.url,
+          author: item.author,
+          checks: item.checks,
+          updatedAt: item.updatedAt,
+        }));
+        return {
+          ...boundedList(items),
+          data: {
+            ...boundedList(items).data,
+            issues: result.queue.issues.slice(0, 12),
+            fetchedAt: result.queue.fetchedAt,
+          },
+          partial: result.queue.truncated || result.queue.issues.length > 0,
+        };
+      }),
+      capture('watches', async () => {
+        const records = await (dependencies.readWatches ?? listPrWatchRecords)(
+          paths,
+        );
+        return boundedList(
+          records.map((watch) => ({
+            id: watch.id,
+            repoId: watch.repoId,
+            prNumber: watch.prNumber,
+            title: watch.title,
+            status: watch.status,
+            autopilotMode: watch.autopilotMode,
+            autopilotStatus: watch.autopilotStatus,
+            ownerInstanceId: watch.ownerInstanceId,
+            worktreeId: watch.worktreeId,
+            lastEventFingerprint: watch.lastEventFingerprint,
+            url: watch.url,
+            lastCheckedAt: watch.lastCheckedAt,
+          })),
+        );
+      }),
+      capture('scheduledTasks', async () => {
+        const records = await (dependencies.readTasks ?? listScheduledTasks)(
+          paths,
+        );
+        return boundedList(
+          records.map((task) => ({
+            id: task.id,
+            kind: task.spec.kind,
+            enabled: task.enabled,
+            nextRunAt: task.nextRunAt,
+            lastRunAt: task.lastRunAt,
+          })),
+        );
+      }),
+      capture('notifications', async () => {
+        const records = await (
+          dependencies.readNotifications ?? listNotifications
+        )(paths);
+        return boundedList(
+          records
+            .filter((notification) => !notification.readAt)
+            .map((notification) => ({
+              id: notification.id,
+              level: notification.level,
+              title: notification.title,
+              message: notification.message,
+              source: notification.source,
+              createdAt: notification.createdAt,
+            })),
+        );
+      }),
+      capture('hygiene', async () => ({
+        data: await (dependencies.readHygiene ?? readHygieneSummary)(paths),
+      })),
+    ]);
 
   const sources = {
     repos,
@@ -156,7 +135,6 @@ export async function collectBriefingSnapshot(
     scheduledTasks: tasks,
     notifications,
     hygiene,
-    autopilot,
   };
   const initial = {
     version: 1 as const,

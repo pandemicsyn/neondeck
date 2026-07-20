@@ -17,7 +17,7 @@ import {
   runUnattendedGit,
   unattendedGitEnv,
 } from './lib/git';
-import { readAutopilotReadiness } from './modules/autopilot/readiness';
+import { readAutopilotReadiness } from './modules/runtime/autopilot-readiness';
 import type { GitHubPullRequestEventState } from './modules/github';
 import { runDevDoctor } from './modules/runtime/doctor';
 import { readRuntimeStatus } from './modules/runtime/status';

@@ -97,7 +97,6 @@ import {
   pushPrAutofixInputSchema,
   reviewFixReplacementSchema,
   triagePrEventInputSchema,
-  verifyPrWorktreeInputSchema,
 } from './schemas';
 import { prFactsFromDetail } from './triage-support';
 import {

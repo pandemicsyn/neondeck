@@ -15,15 +15,11 @@ import {
   type CiFixDossier,
   fixPrCiRun,
 } from './modules/autopilot/ci-fix-run';
-import {
-  ciFixRunAction,
-  neondeckAutopilotActions,
-} from './modules/autopilot/actions';
+import { ciFixRunAction } from './modules/autopilot/actions';
 import {
   autopilotWorkflowNames as policyAutopilotWorkflowNames,
   mutationWorkflowNames,
 } from './modules/autopilot-policy/schemas';
-import { isAutopilotWorkflow } from './modules/autopilot/state-schemas';
 import { listPreparedDiffs } from './modules/prepared-diffs';
 import { readReportHtml } from './modules/reports';
 import type {
@@ -54,13 +50,11 @@ afterEach(async () => {
 
 describe('CI fix run', () => {
   it('registers fix-ci as a mutation workflow without exposing a model-callable action', () => {
-    expect(neondeckAutopilotActions).not.toContain(ciFixRunAction);
+    expect(ciFixRunAction.name).toBe('neondeck_autopilot_ci_fix_run');
     expect(policyAutopilotWorkflowNames.has('fix-pr-ci')).toBe(true);
     expect(policyAutopilotWorkflowNames.has('ci-fix-run')).toBe(true);
     expect(mutationWorkflowNames.has('fix-pr-ci')).toBe(true);
     expect(mutationWorkflowNames.has('ci-fix-run')).toBe(true);
-    expect(isAutopilotWorkflow('fix-pr-ci')).toBe(true);
-    expect(isAutopilotWorkflow('ci_fix_run')).toBe(true);
   });
 
   it('writes an escaped CI dossier report with failing checks and command hints', async () => {

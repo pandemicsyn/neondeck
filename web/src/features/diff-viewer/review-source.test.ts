@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type {
-  AutopilotPreparedDiff,
+  PreparedDiffRecord,
   GitHubPullRequest,
   KiloTaskRecord,
   LearningCandidate,
@@ -179,7 +179,7 @@ function githubPullRequest(): GitHubPullRequest {
   };
 }
 
-function preparedDiff(): AutopilotPreparedDiff {
+function preparedDiff(): PreparedDiffRecord {
   return {
     id: 'prepared-1',
     repoId: 'repo-1',

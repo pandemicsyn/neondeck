@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { fixPrReviewFeedbackAction } from './modules/autopilot';
 import { listExecutionApprovals } from './modules/execution';
 import { currentTaskOrigin } from './modules/flue/origin';
 import { runWithFlueExecutionContextForTests } from './modules/flue/execution-context';
@@ -77,7 +76,7 @@ describe('task authority', () => {
     ).toBe('autopilot');
   });
 
-  it('enforces inverse origin guards at the action boundary', async () => {
+  it('keeps interactive repo actions unavailable to workflow runs', async () => {
     const commit = await runWithFlueExecutionContextForTests(
       { runId: 'workflow-run' },
       () =>
@@ -95,18 +94,8 @@ describe('task authority', () => {
       { runId: 'workflow-run' },
       () => Promise.resolve(repoPushAction.run({ input: {} } as never)),
     );
-    const autopilot = await Promise.resolve(
-      fixPrReviewFeedbackAction.run({
-        input: { repoId: 'repo', prNumber: 1 },
-      } as never),
-    );
-
     expect(commit).toMatchObject({ ok: false, requires: ['interactiveOnly'] });
     expect(push).toMatchObject({ ok: false, requires: ['interactiveOnly'] });
-    expect(autopilot).toMatchObject({
-      ok: false,
-      requires: ['autopilotWorkflow'],
-    });
   });
 
   it('classifies hardline denies separately from interactive expansions', async () => {

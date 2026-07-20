@@ -12,7 +12,6 @@ import {
   vi,
 } from 'vitest';
 import { listNotifications } from './modules/app-state';
-import { approvePreparedDiffPushWithPolicy } from './modules/autopilot';
 import {
   readKiloTaskStatus,
   recordDocsDriftFixTaskBoundary,
@@ -29,6 +28,8 @@ import {
   type RuntimePaths,
 } from './runtime-home';
 import { createWorktree } from './modules/worktrees';
+import { approvePreparedDiffPushState } from './modules/prepared-diffs/store';
+import { gitCurrentSha } from './repo-edit/git';
 import {
   createSeededGitRepository,
   type SeededGitRepository,
@@ -138,17 +139,7 @@ describe('Kilo result review, verification, and promotion', () => {
       ]),
     );
 
-    await expect(
-      approvePreparedDiffPushWithPolicy(
-        {
-          preparedDiffId,
-          confirm: true,
-          approverSurface: 'test',
-          reason: 'fixture approval',
-        },
-        paths,
-      ),
-    ).resolves.toMatchObject({ ok: true });
+    await approvePreparedDiffForTest(preparedDiffId, worktreePath, paths);
 
     const promoted = await promoteKiloResult({ taskId: 'kilo-task-1' }, paths);
 
@@ -164,7 +155,7 @@ describe('Kilo result review, verification, and promotion', () => {
         deferred: true,
         actualMutations: [],
       },
-      requires: ['push_pr_autofix'],
+      requires: ['explicit-human-delivery'],
     });
     await expect(
       readKiloTaskStatus({ taskId: 'kilo-task-1' }, paths),
@@ -368,15 +359,7 @@ describe('Kilo result review, verification, and promotion', () => {
       },
       paths,
     );
-    await approvePreparedDiffPushWithPolicy(
-      {
-        preparedDiffId,
-        confirm: true,
-        approverSurface: 'test',
-        reason: 'fixture approval',
-      },
-      paths,
-    );
+    await approvePreparedDiffForTest(preparedDiffId, worktreePath, paths);
 
     await writeFile(join(worktreePath, 'README.md'), '# sample\n\nsecond\n');
     await expect(
@@ -561,4 +544,25 @@ function resultPreparedDiffId(
     throw new Error('Expected prepared diff id.');
   }
   return state.preparedDiffId;
+}
+
+async function approvePreparedDiffForTest(
+  preparedDiffId: string,
+  worktreePath: string,
+  paths: RuntimePaths,
+) {
+  const approvedAt = new Date().toISOString();
+  const result = approvePreparedDiffPushState(
+    preparedDiffId,
+    {
+      approvedCommitSha: await gitCurrentSha(worktreePath),
+      policyHash: 'test-policy',
+      policyDecision: 'allow',
+      reason: 'fixture approval',
+      approverSurface: 'test',
+      approvedAt,
+    },
+    paths,
+  );
+  expect(result).toMatchObject({ changed: true });
 }
