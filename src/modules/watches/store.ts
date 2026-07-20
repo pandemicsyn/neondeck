@@ -51,11 +51,10 @@ export function insertWatch(
           process_existing,
           initial_event_processed_at,
           event_watermark_version,
-          event_generation_id,
           created_at,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `,
         )
         .run(...watchParams(watch));
@@ -81,15 +80,12 @@ export function updateWatch(
   paths: RuntimePaths,
   watch: PrWatch,
   initialWatermarks?: PrWatchInitialWatermark[],
-  eventBaselineReset?: {
-    supersededReason: string;
-  },
-  expectedEventGenerationId = watch.eventGenerationId,
+  resetEventWatermarks = false,
 ) {
   const database = openDb(paths.neondeckDatabase);
   try {
     database.exec(
-      initialWatermarks || eventBaselineReset ? 'BEGIN IMMEDIATE;' : 'BEGIN;',
+      initialWatermarks || resetEventWatermarks ? 'BEGIN IMMEDIATE;' : 'BEGIN;',
     );
     try {
       const updated = database
@@ -114,9 +110,8 @@ export function updateWatch(
           process_existing = ?,
           initial_event_processed_at = ?,
           event_watermark_version = ?,
-          event_generation_id = ?,
           updated_at = ?
-        WHERE id = ? AND event_generation_id = ?;
+        WHERE id = ?;
       `,
         )
         .run(
@@ -137,33 +132,14 @@ export function updateWatch(
           watch.processExisting ? 1 : 0,
           watch.initialEventProcessedAt,
           watch.eventWatermarkVersion,
-          watch.eventGenerationId,
           watch.updatedAt,
           watch.id,
-          expectedEventGenerationId,
         ).changes;
       if (updated !== 1) {
         rollbackQuietly(database);
         return false;
       }
-      if (initialWatermarks || eventBaselineReset) {
-        database
-          .prepare(
-            `UPDATE pr_watch_event_intakes
-             SET status = 'superseded',
-                 outcome = 'baseline-reset',
-                 superseded_reason = ?,
-                 acknowledged_at = ?,
-                 updated_at = ?
-             WHERE watch_id = ? AND status = 'pending';`,
-          )
-          .run(
-            eventBaselineReset?.supersededReason ??
-              'Operator installed a fresh process-existing=false baseline.',
-            watch.updatedAt,
-            watch.updatedAt,
-            watch.id,
-          );
+      if (initialWatermarks || resetEventWatermarks) {
         database
           .prepare('DELETE FROM pr_watch_event_watermarks WHERE watch_id = ?;')
           .run(watch.id);
@@ -402,21 +378,9 @@ export function readRefWatch(paths: RuntimePaths, id: string) {
 
 export function deleteWatch(paths: RuntimePaths, id: string) {
   const database = openDb(paths.neondeckDatabase);
-  const now = new Date().toISOString();
   try {
     database.exec('BEGIN IMMEDIATE;');
     try {
-      database
-        .prepare(
-          `UPDATE pr_watch_event_intakes
-           SET status = 'superseded',
-               outcome = 'baseline-reset',
-               superseded_reason = 'Operator removed the PR watch.',
-               acknowledged_at = ?,
-               updated_at = ?
-           WHERE watch_id = ? AND status = 'pending';`,
-        )
-        .run(now, now, id);
       database
         .prepare('DELETE FROM pr_watch_event_watermarks WHERE watch_id = ?;')
         .run(id);
@@ -471,7 +435,6 @@ export function watchParams(watch: PrWatch) {
     watch.processExisting ? 1 : 0,
     watch.initialEventProcessedAt,
     watch.eventWatermarkVersion,
-    watch.eventGenerationId,
     watch.createdAt,
     watch.updatedAt,
   ];
@@ -554,10 +517,6 @@ export function readWatchRow(row: unknown): PrWatch {
       typeof record.event_watermark_version === 'number'
         ? record.event_watermark_version
         : 1,
-    eventGenerationId:
-      typeof record.event_generation_id === 'string'
-        ? record.event_generation_id
-        : 'legacy',
     createdAt: String(record.created_at),
     updatedAt: String(record.updated_at),
   };

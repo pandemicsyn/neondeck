@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { readRepoRegistrySnapshot } from '../repos';
 import { prEventWatermarkTruncationCategories } from '../github';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
@@ -156,10 +155,6 @@ export async function addPrWatch(
       };
     }
 
-    if (needsFreshBaseline || needsCurrentFeedbackRearm) {
-      watch = { ...watch, eventGenerationId: randomUUID() };
-    }
-
     if (terminalWatch) {
       const detail = await fetchWatchDetail(
         'watch_pr_add',
@@ -196,13 +191,7 @@ export async function addPrWatch(
         paths,
         watch,
         baseline?.watermarks,
-        needsCurrentFeedbackRearm
-          ? {
-              supersededReason:
-                'Operator rearmed process-existing=true for current feedback.',
-            }
-          : undefined,
-        existing.eventGenerationId,
+        needsCurrentFeedbackRearm,
       );
       if (!updated) return staleWatchUpdateResult('watch_pr_add', watch.id);
     } else if (desiredTerminalStateChanged || processExistingChanged) {
@@ -210,13 +199,7 @@ export async function addPrWatch(
         paths,
         watch,
         baseline?.watermarks,
-        needsCurrentFeedbackRearm
-          ? {
-              supersededReason:
-                'Operator rearmed process-existing=true for current feedback.',
-            }
-          : undefined,
-        existing.eventGenerationId,
+        needsCurrentFeedbackRearm,
       );
       if (!updated) return staleWatchUpdateResult('watch_pr_add', watch.id);
     }
@@ -282,7 +265,6 @@ export async function addPrWatch(
     processExisting,
     initialEventProcessedAt: processExisting ? null : now,
     eventWatermarkVersion: currentPrWatchEventWatermarkVersion,
-    eventGenerationId: randomUUID(),
     createdAt: now,
     updatedAt: now,
   };
@@ -724,15 +706,7 @@ export async function refreshPrWatch(
     updatedAt: now,
   };
 
-  if (
-    !updateWatch(
-      paths,
-      nextWatch,
-      undefined,
-      undefined,
-      watch.eventGenerationId,
-    )
-  ) {
+  if (!updateWatch(paths, nextWatch)) {
     return staleWatchUpdateResult('watch_pr_refresh', watch.id);
   }
 

@@ -45,7 +45,6 @@ export type PrWatch = {
   processExisting: boolean;
   initialEventProcessedAt: string | null;
   eventWatermarkVersion: number;
-  eventGenerationId: string;
   createdAt: string;
   updatedAt: string;
 };
