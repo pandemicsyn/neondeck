@@ -288,6 +288,13 @@ describe('minimal Autopilot watch loop', () => {
       dispatchId: 'human-dispatch',
       acceptedAt: '2026-07-20T00:00:00.000Z',
     }));
+    const postPrComment = vi.fn(async (input: { idempotencyKey?: string }) => ({
+      ok: true,
+      action: 'github_pr_comment',
+      changed: true,
+      message: 'Posted owner response.',
+      idempotencyKey: input.idempotencyKey,
+    }));
     await expect(
       messagePrAutopilotOwner(
         {
@@ -303,6 +310,18 @@ describe('minimal Autopilot watch loop', () => {
       id: instanceId,
       input: 'approved, fix the typo then push',
     });
+    const firstHumanRegistry = buildAutopilotOwnerToolRegistry({
+      watch: {
+        ...readWatch(paths, 'pandemicsyn/neondeck#123')!,
+        autopilotStatus: 'waiting',
+      },
+      source: 'direct-human',
+      paths,
+      postPrComment: postPrComment as never,
+    });
+    await firstHumanRegistry.tools
+      .find((tool) => tool.name === 'neondeck_owner_pr_respond')
+      ?.run({ input: { body: 'I am checking one more edit.' } } as never);
     await settleAutopilotOwnerObservation(
       ownerPromptFailure(instanceId),
       paths,
@@ -363,6 +382,7 @@ describe('minimal Autopilot watch loop', () => {
       watch: { ...humanTurnWatch, autopilotStatus: 'waiting' },
       source: 'direct-human',
       paths,
+      postPrComment: postPrComment as never,
       pushInteractive: pushInteractive as never,
     });
     const humanPush = humanRegistry.tools.find(
@@ -373,6 +393,16 @@ describe('minimal Autopilot watch loop', () => {
       ok: true,
       changed: true,
     });
+    await humanRegistry.tools
+      .find((tool) => tool.name === 'neondeck_owner_pr_respond')
+      ?.run({ input: { body: 'The held commit is pushed.' } } as never);
+    const responseKeys = postPrComment.mock.calls.map(
+      ([input]) => input.idempotencyKey,
+    );
+    expect(responseKeys).toHaveLength(2);
+    expect(responseKeys[0]).toMatch(/human-turn:/);
+    expect(responseKeys[1]).toMatch(/human-turn:/);
+    expect(responseKeys[1]).not.toBe(responseKeys[0]);
     expect(pushInteractive).toHaveBeenCalledWith(
       expect.objectContaining({
         repoId: 'neondeck',

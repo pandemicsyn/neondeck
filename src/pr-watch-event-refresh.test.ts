@@ -280,7 +280,7 @@ describe('deterministic PR watch event refresh', () => {
     expect(await listNotifications(paths)).toEqual([]);
   });
 
-  it('rolls back watermarks and the first-poll marker when notification persistence fails', async () => {
+  it('retries notify-only feedback when atomic notification persistence fails', async () => {
     const paths = await fixture();
     await addPrWatch(
       { ref: 'pandemicsyn/neondeck#164', processExisting: true },
@@ -310,6 +310,7 @@ describe('deterministic PR watch event refresh', () => {
 
     expect((await listPrWatchRecords(paths))[0]).toMatchObject({
       initialEventProcessedAt: null,
+      lastEventFingerprint: null,
     });
     await expect(
       listPrWatchEventWatermarks(
@@ -318,6 +319,32 @@ describe('deterministic PR watch event refresh', () => {
       ),
     ).resolves.toMatchObject({ data: { watermarks: [] } });
     expect(await listNotifications(paths)).toEqual([]);
+
+    const retryDatabase = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      retryDatabase.exec('DROP TRIGGER reject_watch_notifications;');
+    } finally {
+      retryDatabase.close();
+    }
+    await expect(
+      refreshWatchJobEvents(
+        [{ watch: { id: 'pandemicsyn/neondeck#164' } }] as never,
+        paths,
+        liveDependencies(eventState()),
+        null,
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        changed: true,
+        autopilot: expect.objectContaining({ state: 'notified' }),
+        persistedNotifications: [expect.any(Object)],
+      }),
+    ]);
+    expect((await listPrWatchRecords(paths))[0]).toMatchObject({
+      initialEventProcessedAt: expect.any(String),
+      lastEventFingerprint: expect.any(String),
+    });
+    expect(await listNotifications(paths)).toHaveLength(1);
   });
 
   it('does not let a deferred event fetch overwrite a concurrent current-feedback rearm', async () => {

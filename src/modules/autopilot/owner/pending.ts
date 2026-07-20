@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { PrWatch } from '../../watches';
 
 export type AutopilotOwnerTurnSource = 'watch-event' | 'direct-human';
@@ -6,6 +7,7 @@ type PendingAutopilotTurn = {
   eventFingerprint?: string;
   mode: PrWatch['autopilotMode'];
   source: AutopilotOwnerTurnSource;
+  turnId: string;
 };
 
 const pendingTurns = new Map<string, PendingAutopilotTurn>();
@@ -21,7 +23,14 @@ export function registerPendingAutopilotTurn(
   mode: PrWatch['autopilotMode'],
   source: AutopilotOwnerTurnSource,
 ) {
-  pendingTurns.set(key(home, instanceId), { eventFingerprint, mode, source });
+  const pending = {
+    eventFingerprint,
+    mode,
+    source,
+    turnId: randomUUID(),
+  };
+  pendingTurns.set(key(home, instanceId), pending);
+  return pending;
 }
 
 export function readPendingAutopilotTurn(home: string, instanceId: string) {

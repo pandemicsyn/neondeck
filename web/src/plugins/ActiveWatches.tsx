@@ -4,11 +4,10 @@ import {
   getPrWatches,
   configurePrAutopilot,
   controlPrAutopilot,
-  messagePrAutopilotOwner,
   type PrWatch,
 } from '../api';
-import { SessionReferenceButton } from '../components/SessionReferenceButton';
-import { Badge, Button, ScrollArea, Textarea } from '../components/ui';
+import { Badge, Button, ScrollArea } from '../components/ui';
+import { FlueChatSessionView } from '../features/flue-chat/components/session-view';
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
 import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
@@ -85,13 +84,13 @@ export const ActiveWatchesPlugin = {
   },
 } satisfies DisplayPlugin<ActiveWatchesConfig>;
 
-function WatchRow({ watch }: { watch: PrWatch }) {
+export function WatchRow({ watch }: { watch: PrWatch }) {
   const [confirmingStop, setConfirmingStop] = useState(false);
   const [confirmingMode, setConfirmingMode] = useState<
     PrWatch['autopilotMode'] | null
   >(null);
   const [reviewingDiff, setReviewingDiff] = useState(false);
-  const [ownerMessage, setOwnerMessage] = useState('');
+  const [reviewingOwner, setReviewingOwner] = useState(false);
   const queryClient = useQueryClient();
   const stopMutation = useMutation({
     mutationFn: () => controlPrAutopilot(watch.id, 'stop'),
@@ -120,6 +119,9 @@ function WatchRow({ watch }: { watch: PrWatch }) {
       ? `next ${relativeTime(watch.nextRunAt)}`
       : 'next poll pending';
   const sourceLabel = watch.createdBy ? ` · ${watch.createdBy}` : '';
+  const activityLabel = `activity ${relativeTime(
+    watch.lastSnapshot?.updatedAt ?? watch.updatedAt,
+  )}`;
   const attentionReason = prWatchAttentionReason(watch);
   const configureMutation = useMutation({
     mutationFn: (input: { mode: PrWatch['autopilotMode']; confirm: boolean }) =>
@@ -143,14 +145,6 @@ function WatchRow({ watch }: { watch: PrWatch }) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
     },
   });
-  const messageMutation = useMutation({
-    mutationFn: () => messagePrAutopilotOwner(watch.id, ownerMessage.trim()),
-    onSuccess() {
-      setOwnerMessage('');
-      void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
-    },
-  });
-
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
       <div className="flex items-start justify-between gap-2">
@@ -240,24 +234,22 @@ function WatchRow({ watch }: { watch: PrWatch }) {
       <div className="mt-2 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
         <span className="min-w-0 truncate">
           until {watch.desiredTerminalState} · {checkedLabel} · {nextPollLabel}
+          {' · '}
+          {activityLabel}
           {sourceLabel}
         </span>
         <span className="flex shrink-0 gap-1.5">
-          <SessionReferenceButton
-            kind="watch"
-            linkedRepoId={watch.repoId}
-            linkedWatchId={watch.id}
-            summary={`${watch.repoFullName}#${watch.prNumber} watch is ${watch.status} until ${watch.desiredTerminalState}. ${watch.title ?? 'Untitled PR'}.`}
-            title={`Watch ${watch.repoFullName}#${watch.prNumber}`}
-            uiMetadata={{
-              source: 'pr-watch',
-              repoFullName: watch.repoFullName,
-              prNumber: watch.prNumber,
-              status: watch.status,
-              desiredTerminalState: watch.desiredTerminalState,
-              url: watch.url,
-            }}
-          />
+          {watch.ownerInstanceId ? (
+            <Button
+              aria-label={`Review owner agent for ${watch.repoFullName} pull request ${watch.prNumber}`}
+              className="min-h-[28px] border-primary bg-transparent px-2 py-1 text-[10px] text-primary"
+              onClick={() => setReviewingOwner((current) => !current)}
+              title={`Open continuing owner ${watch.ownerInstanceId}`}
+              type="button"
+            >
+              {reviewingOwner ? 'hide agent' : 'review agent'}
+            </Button>
+          ) : null}
           {watch.url ? (
             <Button
               className="min-h-[28px] border-line bg-transparent px-2 py-1 text-[10px] text-muted"
@@ -302,9 +294,7 @@ function WatchRow({ watch }: { watch: PrWatch }) {
               {retryMutation.isPending ? 'retrying' : 'retry'}
             </Button>
           ) : null}
-          {watch.worktreeId &&
-          (watch.autopilotStatus === 'waiting' ||
-            watch.autopilotStatus === 'blocked') ? (
+          {watch.worktreeId && watch.worktreeHeadSha ? (
             <Button
               className="min-h-[28px] border-primary bg-transparent px-2 py-1 text-[10px] text-primary"
               onClick={() => setReviewingDiff((current) => !current)}
@@ -364,30 +354,31 @@ function WatchRow({ watch }: { watch: PrWatch }) {
           />
         </div>
       ) : null}
-      {watch.autopilotMode === 'autofix-with-approval' &&
-      watch.autopilotStatus === 'waiting' ? (
-        <div className="mt-2 flex items-end gap-2 border-t border-line pt-2">
-          <Textarea
-            aria-label={`Instruction for ${watch.repoFullName} pull request ${watch.prNumber} owner`}
-            className="min-h-[48px] flex-1 border border-line bg-field px-2 py-1.5 font-mono text-[10px] leading-4 focus:border-primary"
-            onChange={(event) => setOwnerMessage(event.target.value)}
-            placeholder="approved, push — or ask for one more focused edit"
-            value={ownerMessage}
+      {reviewingOwner && watch.ownerInstanceId ? (
+        <div className="mt-2 h-[28rem] min-h-0 overflow-hidden border border-line bg-field">
+          <FlueChatSessionView
+            activeRecord={undefined}
+            agentName="pr-autopilot-owner"
+            allowCommands={false}
+            key={`pr-autopilot-owner:${watch.ownerInstanceId}`}
+            messageEnabled={
+              watch.autopilotMode === 'autofix-with-approval' &&
+              watch.autopilotStatus === 'waiting'
+            }
+            messageLabel={`Message owner for ${watch.repoFullName} pull request ${watch.prNumber}`}
+            quickCommands={[]}
+            session={{
+              id: watch.ownerInstanceId,
+              label: `PR owner ${watch.prNumber}`,
+              placeholder:
+                watch.autopilotMode === 'autofix-with-approval' &&
+                watch.autopilotStatus === 'waiting'
+                  ? 'approved, push — or ask for one more focused edit'
+                  : 'Owner messages are available while approval mode is waiting.',
+            }}
+            sessionState={undefined}
           />
-          <Button
-            className="shrink-0 border-primary bg-primary px-2 text-primary-ink hover:text-primary-ink"
-            disabled={!ownerMessage.trim() || messageMutation.isPending}
-            onClick={() => messageMutation.mutate()}
-            type="button"
-          >
-            {messageMutation.isPending ? 'sending' : 'send to owner'}
-          </Button>
         </div>
-      ) : null}
-      {messageMutation.error ? (
-        <p className="mt-1 font-mono text-[10px] text-accent" role="alert">
-          {queryErrorMessage(messageMutation.error)}
-        </p>
       ) : null}
     </article>
   );

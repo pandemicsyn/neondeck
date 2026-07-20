@@ -232,6 +232,12 @@ async function refreshOneWatchEvent(
     autopilot &&
     ['dispatched', 'busy', 'waiting', 'blocked'].includes(autopilot.state),
   );
+  const handledEventFingerprint =
+    notification &&
+    autopilot &&
+    ['notified', 'observed', 'terminal-pending'].includes(autopilot.state)
+      ? notification.sourceId
+      : undefined;
   const persisted = persistWatchEventRefresh(
     paths,
     watch.id,
@@ -241,6 +247,7 @@ async function refreshOneWatchEvent(
     {
       expectedWatchState: currentWatch,
       notification: autopilot?.state === 'duplicate' ? undefined : notification,
+      handledEventFingerprint,
       markInitialProcessed: firstPoll && !preserveBaseline,
     },
   );

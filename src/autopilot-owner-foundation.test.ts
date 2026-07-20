@@ -82,7 +82,7 @@ describe('continuing Autopilot owner foundations', () => {
         source: 'direct-human',
         status: 'waiting',
       }),
-    ).toEqual(['read', 'edit', 'diagnose', 'commit', 'push']);
+    ).toEqual(['read', 'edit', 'diagnose', 'commit', 'push', 'respond']);
     expect(
       autopilotOwnerCapabilitySet({
         mode: 'autofix-push-when-safe',
@@ -128,10 +128,8 @@ describe('continuing Autopilot owner foundations', () => {
       expect.arrayContaining([
         'neondeck_owner_push',
         'neondeck_owner_discard_prepared_commit',
+        'neondeck_owner_pr_respond',
       ]),
-    );
-    expect(directHuman.tools.map((tool) => tool.name)).not.toContain(
-      'neondeck_owner_pr_respond',
     );
   });
 });

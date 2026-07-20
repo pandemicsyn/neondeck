@@ -763,6 +763,7 @@ export function persistWatchEventRefresh(
     notification?: NonNullable<
       AutomationExecutionResult['notifications']
     >[number];
+    handledEventFingerprint?: string;
     markInitialProcessed?: boolean;
   },
   processedAt = new Date().toISOString(),
@@ -916,6 +917,15 @@ export function persistWatchEventRefresh(
              WHERE id = ? AND initial_event_processed_at IS NULL;`,
           )
           .run(processedAt, processedAt, watchId);
+      }
+      if (options.handledEventFingerprint) {
+        database
+          .prepare(
+            `UPDATE pr_watches
+             SET last_event_fingerprint = ?, updated_at = ?
+             WHERE id = ?;`,
+          )
+          .run(options.handledEventFingerprint, processedAt, watchId);
       }
       database.exec('COMMIT;');
     } catch (error) {

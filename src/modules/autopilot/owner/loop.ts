@@ -71,11 +71,6 @@ export async function runAutopilotWatchEvent(
     );
   }
   if (watch.prState === 'closed' || watch.lastSnapshot?.merged === true) {
-    transitionWatchAutopilot(paths, watch.id, {
-      from: 'watching',
-      to: 'watching',
-      eventFingerprint: event.eventFingerprint,
-    });
     return loopResult(
       'terminal-pending',
       false,
@@ -84,11 +79,6 @@ export async function runAutopilotWatchEvent(
   }
 
   if (!event.reasoningRequired) {
-    transitionWatchAutopilot(paths, watch.id, {
-      from: 'watching',
-      to: 'watching',
-      eventFingerprint: event.eventFingerprint,
-    });
     return loopResult(
       'observed',
       false,
@@ -97,11 +87,6 @@ export async function runAutopilotWatchEvent(
   }
 
   if (watch.autopilotMode === 'notify-only') {
-    transitionWatchAutopilot(paths, watch.id, {
-      from: 'watching',
-      to: 'watching',
-      eventFingerprint: event.eventFingerprint,
-    });
     return loopResult(
       'notified',
       false,

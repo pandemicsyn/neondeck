@@ -41,7 +41,7 @@ export function autopilotOwnerCapabilitySet(input: {
     input.source === 'direct-human' &&
     input.status === 'waiting'
   ) {
-    return [...prepare, 'push'];
+    return [...prepare, 'push', 'respond'];
   }
   if (input.source !== 'watch-event' || input.status !== 'working') {
     return [];
@@ -57,6 +57,7 @@ export function buildAutopilotOwnerToolRegistry(input: {
   watch: PrWatch;
   source: AutopilotOwnerTurnSource;
   paths: RuntimePaths;
+  postPrComment?: typeof postGitHubPrComment;
   pushInteractive?: typeof pushInteractiveRepo;
 }) {
   const { watch, source, paths } = input;
@@ -388,11 +389,15 @@ export function buildAutopilotOwnerToolRegistry(input: {
           const turnFingerprint = watch.ownerInstanceId
             ? readPendingAutopilotTurn(paths.home, watch.ownerInstanceId)
             : undefined;
-          return postGitHubPrComment(
+          const responseIdentity =
+            turnFingerprint?.source === 'direct-human'
+              ? `human-turn:${turnFingerprint.turnId}`
+              : `watch-event:${turnFingerprint?.eventFingerprint ?? watch.lastEventFingerprint ?? 'current'}`;
+          return (input.postPrComment ?? postGitHubPrComment)(
             {
               watchId: watch.id,
               body: toolInput.body,
-              idempotencyKey: `autopilot-owner:${watch.id}:${turnFingerprint?.eventFingerprint ?? watch.lastEventFingerprint ?? 'current'}`,
+              idempotencyKey: `autopilot-owner:${watch.id}:${responseIdentity}`,
             },
             paths,
           );
