@@ -29,97 +29,20 @@ export {
 } from './actions';
 export { triagePrEvent } from './triage';
 export {
-  claimAutopilotTriageAdmission,
-  reconcileAutopilotAdmissions,
-  listAutopilotAdmissions,
-  listAutopilotAdmissionsAwaitingPreparation,
-  listAutopilotAdmissionEvents,
-  listAutopilotStageAttempts,
-} from './admissions';
-export type {
-  AutopilotAdmission,
-  AutopilotAdmissionState,
-  AutopilotAdmissionTerminalFact,
-} from './admissions';
+  dispatchAutopilotOwnerTurn,
+  type AutopilotOwnerDispatcher,
+} from './owner/dispatch';
 export {
-  ensureAutopilotPrOwner,
-  listAutopilotPrOwners,
-  readAutopilotPrOwnerByWatch,
-} from './owners';
+  buildAutopilotOwnerEnvelope,
+  serializeAutopilotOwnerEnvelope,
+  type AutopilotOwnerEnvelope,
+} from './owner/envelope';
+export { autopilotOwnerInstanceId } from './owner/instance';
 export {
-  admitAutopilotEvent,
-  advanceAutopilotAdmission,
-  AutopilotPendingIntakeLeaseLostError,
-  listAutopilotAdmissionsNeedingAdvance,
-} from './coordination/advance';
-export {
-  coordinateAutopilotAdmission,
-  dispatchReservedAutopilotStage,
-  registerAutopilotStageDispatch,
-} from './coordination/dispatch';
-export {
-  recordAutopilotOwnerTerminalObservation,
-  settleAutopilotOwnerObservation,
-  settlePendingAutopilotOwnerObservation,
-} from './owner/settle';
-export type { AutopilotOwnerTerminalObservation } from './owner/settle';
-export {
-  submitAutopilotFix,
-  submitAutopilotFixAction,
-  submitAutopilotFixInputSchema,
-} from './actions/submit-fix';
-export type {
-  AutopilotDispatchRegistrationResult,
-  AutopilotDispatchResult,
-  AutopilotWorkflowInvoker,
-  CoordinateAutopilotAdmissionResult,
-  PackageOneAutopilotWorkflow,
-} from './coordination/dispatch';
-export {
-  reconcileAutopilotStageAttempts,
-  markStaleAutopilotAttemptForManualReview,
-} from './coordination/reconcile';
-export {
-  classifyAutopilotRetry,
-  autopilotRetryDecision,
-  autopilotRetryBackoffMs,
-  maxAutopilotStageAttempts,
-} from './coordination/retry';
-export {
-  recordAutopilotStageTerminalObservation,
-  settleAutopilotStageObservation,
-  settlePendingAutopilotStageObservation,
-} from './coordination/settle';
-export {
-  stopAutopilotAdmission,
-  supersedeAutopilotAdmission,
-} from './coordination/stop';
-export {
-  assertExhaustiveTransitionTable,
-  autopilotModeProgression,
-  autopilotStageRegistry,
-  isLegalAutopilotTransition,
-  isTerminalAutopilotAdmissionState,
-  legalAutopilotTransitions,
-} from './coordination/transitions';
-export {
-  autopilotAdmissionStates,
-  autopilotOwnerStatuses,
-  autopilotRetryClassSchema,
-  autopilotStageOutcomeSchema,
-  autopilotStageAttemptStatuses,
-  autopilotStages,
-  autopilotTerminalObservationSchema,
-} from './coordination/schemas';
-export type {
-  AutopilotOwnerStatus,
-  AutopilotPrOwner,
-  AutopilotStage,
-  AutopilotStageAttempt,
-  AutopilotStageAttemptStatus,
-  AutopilotStageOutcome,
-  AutopilotTerminalObservation,
-} from './coordination/schemas';
+  autopilotOwnerCapabilities,
+  type AutopilotOwnerCapability,
+  type AutopilotOwnerCapabilitySet,
+} from './owner/capabilities';
 export { preparePrWorktree, verifyPrWorktree } from './worktree';
 export { approvePreparedDiffPushWithPolicy } from './approvals';
 export { pushPrAutofix } from './push';

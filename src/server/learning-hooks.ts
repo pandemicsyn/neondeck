@@ -9,14 +9,6 @@ import type { MiddlewareHandler } from 'hono';
 import { addNotification, setWorkflowSummaryRunId } from '../modules/app-state';
 import { settleScheduledTaskWorkflowRun } from '../modules/scheduled-tasks';
 import {
-  coordinateAutopilotAdmission,
-  recordAutopilotStageTerminalObservation,
-  recordAutopilotOwnerTerminalObservation,
-  type AutopilotConcurrencyPolicy,
-  type AutopilotWorkflowInvoker,
-} from '../modules/autopilot';
-import { invokeScheduledWorkflow } from '../modules/scheduler';
-import {
   attachLearningReviewRunId,
   recordConversationTurnAndMaybeQueueLearning,
   recordHandledPrFromWorkflowResult,
@@ -36,8 +28,6 @@ type ObservationInstallDependencies = {
   observe?: (subscriber: FlueObservationSubscriber) => () => void;
   recordFlueObservation?: typeof recordFlueObservation;
   settleScheduledTaskWorkflowRun?: typeof settleScheduledTaskWorkflowRun;
-  invokeAutopilotWorkflow?: AutopilotWorkflowInvoker;
-  autopilotConcurrency?: AutopilotConcurrencyPolicy;
 };
 
 const observationHandlerUnsubscribers = new Map<string, () => void>();
@@ -53,8 +43,6 @@ export function installFlueObservationHandlers(
   const settleScheduledWorkflow =
     dependencies.settleScheduledTaskWorkflowRun ??
     settleScheduledTaskWorkflowRun;
-  const invokeAutopilotWorkflow =
-    dependencies.invokeAutopilotWorkflow ?? defaultAutopilotWorkflowInvoker;
   const unsubscribe = observeFn((event, context) => {
     const contextHome = flueContextRuntimeHome(context);
     if (contextHome && contextHome !== paths.home) return;
@@ -80,31 +68,6 @@ export function installFlueObservationHandlers(
           error,
         );
       });
-      void Promise.resolve()
-        .then(async () => {
-          const terminalFact = autopilotTerminalFact(event);
-          if (!terminalFact) return;
-          const settled = await recordAutopilotStageTerminalObservation(
-            { runId: event.runId, observation: terminalFact },
-            paths,
-          );
-          if (settled.status !== 'settled' || !settled.admission) return;
-          await coordinateAutopilotAdmission(
-            {
-              admissionId: settled.admission.id,
-              invokeWorkflow: invokeAutopilotWorkflow,
-              limits: dependencies.autopilotConcurrency,
-              enableOwnerDispatch: true,
-            },
-            paths,
-          );
-        })
-        .catch((error) => {
-          console.error(
-            '[neondeck] failed to settle autopilot Flue observation',
-            error,
-          );
-        });
       void attachCommandRunSummaryRunId(event, paths).catch((error) => {
         console.error('[neondeck] failed to attach Flue run id', error);
       });
@@ -188,39 +151,6 @@ export function installFlueObservationHandlers(
       void settleBriefingObservation(event, paths).catch((error) => {
         console.error('[neondeck] failed to settle briefing submission', error);
       });
-      const ownerTerminal = autopilotOwnerTerminalFact(event);
-      if (ownerTerminal) {
-        void recordAutopilotOwnerTerminalObservation(ownerTerminal, paths)
-          .then(async (settled) => {
-            if (settled.status !== 'settled' || !settled.admission) return;
-            await coordinateAutopilotAdmission(
-              {
-                admissionId: settled.admission.id,
-                invokeWorkflow: invokeAutopilotWorkflow,
-                limits: dependencies.autopilotConcurrency,
-                enableOwnerDispatch: true,
-              },
-              paths,
-            );
-            if (settled.queuedAdmissionId) {
-              await coordinateAutopilotAdmission(
-                {
-                  admissionId: settled.queuedAdmissionId,
-                  invokeWorkflow: invokeAutopilotWorkflow,
-                  limits: dependencies.autopilotConcurrency,
-                  enableOwnerDispatch: true,
-                },
-                paths,
-              );
-            }
-          })
-          .catch((error) => {
-            console.error(
-              '[neondeck] failed to settle PR-owner observation',
-              error,
-            );
-          });
-      }
     }
 
     void recordFlueObservation(event, paths).catch((error) => {
@@ -253,70 +183,6 @@ export function installFlueObservationHandlers(
   });
   observationHandlerUnsubscribers.set(paths.home, unsubscribe);
 }
-
-export function autopilotOwnerTerminalFact(
-  event: Extract<
-    FlueObservation,
-    { type: 'agent_end' | 'operation' | 'submission_settled' }
-  >,
-) {
-  if (!event.dispatchId) return null;
-  const record = event as unknown as Record<string, unknown>;
-  if (
-    record.taskId ||
-    record.parentSession ||
-    (typeof record.agentName === 'string' &&
-      record.agentName !== 'pr-autopilot-owner')
-  ) {
-    return null;
-  }
-  if (
-    event.type === 'operation' &&
-    (event.operationKind !== 'prompt' || !event.isError)
-  ) {
-    return null;
-  }
-  const instanceId =
-    typeof record.instanceId === 'string' ? record.instanceId : null;
-  if (!instanceId) return null;
-  const failed =
-    event.type === 'operation'
-      ? event.isError
-      : event.type === 'submission_settled'
-        ? event.outcome !== 'completed'
-        : false;
-  let error: string | null = null;
-  if (failed) {
-    if (event.type === 'submission_settled') {
-      error = event.error?.message ?? `Owner submission ${event.outcome}.`;
-    } else if (event.type === 'operation') {
-      error =
-        event.error instanceof Error
-          ? event.error.message
-          : typeof event.error === 'string'
-            ? event.error
-            : (event.errorInfo?.message ?? 'Owner model operation failed.');
-    }
-  }
-  return {
-    agent: 'pr-autopilot-owner' as const,
-    instanceId,
-    dispatchId: event.dispatchId,
-    failed,
-    error,
-    source: event.type,
-  };
-}
-
-const defaultAutopilotWorkflowInvoker: AutopilotWorkflowInvoker = (
-  workflow,
-  input,
-) => {
-  if (workflow !== 'triage-pr-event' && workflow !== 'prepare-pr-worktree') {
-    throw new Error(`Package 1 cannot invoke autopilot workflow ${workflow}.`);
-  }
-  return invokeScheduledWorkflow(workflow, input);
-};
 
 export function resetFlueObservationHandlersForTests() {
   for (const unsubscribe of observationHandlerUnsubscribers.values()) {
@@ -358,116 +224,6 @@ function flueContextRuntimeHome(context: FlueEventContext | undefined) {
   return typeof value === 'string' && value ? value : undefined;
 }
 
-function triageRequestsPrepare(
-  event: Extract<FlueObservation, { type: 'run_end' }>,
-) {
-  if (workflowLabel(event) !== 'triage-pr-event' || !('result' in event)) {
-    return false;
-  }
-  const result = event.result;
-  if (!result || typeof result !== 'object') return false;
-  const data = (result as Record<string, unknown>).data;
-  return Boolean(
-    data &&
-    typeof data === 'object' &&
-    (data as Record<string, unknown>).shouldPrepareWorktree === true,
-  );
-}
-
-function prepareWorktreeId(
-  event: Extract<FlueObservation, { type: 'run_end' }>,
-) {
-  if (
-    !('result' in event) ||
-    !event.result ||
-    typeof event.result !== 'object'
-  ) {
-    return undefined;
-  }
-  const data = (event.result as Record<string, unknown>).data;
-  if (!data || typeof data !== 'object') return undefined;
-  const worktree = (data as Record<string, unknown>).worktree;
-  if (!worktree || typeof worktree !== 'object') return undefined;
-  const id = (worktree as Record<string, unknown>).id;
-  return typeof id === 'string' ? id : undefined;
-}
-
-function autopilotTerminalFact(
-  event: Extract<FlueObservation, { type: 'run_end' }>,
-) {
-  const workflow = workflowLabel(event);
-  const failure = terminalActionFailure(event);
-  const failed = Boolean(failure);
-  if (workflow === 'triage-pr-event') {
-    return {
-      workflow,
-      failed,
-      shouldPrepare: !failed && triageRequestsPrepare(event),
-      ...failure,
-    } as const;
-  }
-  if (workflow === 'prepare-pr-worktree') {
-    return {
-      workflow,
-      failed,
-      worktreeId: failed ? undefined : prepareWorktreeId(event),
-      ...failure,
-    } as const;
-  }
-  return undefined;
-}
-
-function terminalActionFailure(
-  event: Extract<FlueObservation, { type: 'run_end' }>,
-) {
-  if (event.isError) {
-    return {
-      errorCode: 'workflow-run-error',
-      error: `${workflowLabel(event)} failed before returning an action result.`,
-    };
-  }
-  if (!('result' in event)) return undefined;
-  const result = event.result;
-  if (
-    !result ||
-    typeof result !== 'object' ||
-    (result as { ok?: unknown }).ok !== false
-  ) {
-    return undefined;
-  }
-  const record = result as Record<string, unknown>;
-  const error =
-    record.error && typeof record.error === 'object'
-      ? (record.error as Record<string, unknown>)
-      : undefined;
-  const errorFromList = Array.isArray(record.errors)
-    ? firstBoundedError(record.errors)
-    : undefined;
-  return {
-    errorCode:
-      boundedStringValue(error?.code, 128) ??
-      boundedStringValue(record.code, 128) ??
-      'action-failed',
-    error:
-      boundedStringValue(error?.message) ??
-      boundedStringValue(record.message) ??
-      errorFromList ??
-      `${workflowLabel(event)} returned an unsuccessful action result.`,
-  };
-}
-
-function boundedStringValue(value: unknown, maxLength = 4_096) {
-  if (typeof value !== 'string' || !value) return undefined;
-  return value.slice(0, maxLength);
-}
-
-function firstBoundedError(errors: unknown[]) {
-  for (const value of errors.slice(0, 8)) {
-    const error = boundedStringValue(value);
-    if (error) return error;
-  }
-  return undefined;
-}
 
 export function recordHandledPrApiResult(
   paths: RuntimePaths,

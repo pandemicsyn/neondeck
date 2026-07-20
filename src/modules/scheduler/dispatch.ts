@@ -3,10 +3,7 @@ import type { NotificationLevel } from '../app-state';
 import type { RuntimePaths } from '../../runtime-home';
 import { refreshPrWatch } from '../watches';
 import type { SchedulerDependencies } from './schemas';
-import {
-  pendingEventResultsFromJobResult,
-  refreshWatchJobEvents,
-} from './pr-watch-events';
+import { refreshWatchJobEvents } from './pr-watch-events';
 
 export { invokeScheduledWorkflow } from './workflow-invocation';
 
@@ -19,16 +16,11 @@ export async function refreshWatchTask(
   const refreshWatch = dependencies.refreshPrWatch ?? refreshPrWatch;
   const result = await refreshWatch({ id: watchId }, paths);
   if (!result.ok) {
-    const pendingEventResults =
-      pendingEventResultsFromJobResult(previousResult);
     return {
       outcome: 'failed' as const,
       message: `Failed to refresh PR watch "${watchId}".`,
       result: {
         results: [result],
-        ...(pendingEventResults.length > 0
-          ? { eventResults: pendingEventResults }
-          : {}),
       },
       notifications: [
         {

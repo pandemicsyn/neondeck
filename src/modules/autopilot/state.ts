@@ -23,8 +23,6 @@ import {
   type RuntimePaths,
 } from '../../runtime-home';
 import { listNotifications, type NotificationLevel } from '../app-state';
-import { listAutopilotAdmissions } from './admissions';
-import { repoFullName } from '../repos';
 import {
   listPreparedDiffs,
   type PreparedDiffApprovalRecord,
@@ -90,7 +88,6 @@ export async function readAutopilotState(
     preparedDiffSnapshot,
     approvals,
     notifications,
-    admissions,
   ] = await Promise.all([
     readRuntimeJson(paths.repos, parseRepoRegistry),
     readRuntimeJson(paths.config, parseAppConfig),
@@ -99,7 +96,6 @@ export async function readAutopilotState(
     listPreparedDiffs({}, paths),
     listExecutionApprovals(paths, { includeResolved: false }),
     listNotifications(paths, { includeResolved: true }),
-    listAutopilotAdmissions(paths),
   ]);
 
   const repos = reposFile.repos;
@@ -143,36 +139,6 @@ export async function readAutopilotState(
       !notification.readAt,
   );
   const queue = [
-    ...admissions.map((admission) => ({
-      id: admission.id,
-      source: 'admission' as const,
-      watchId: admission.watchId,
-      status:
-        admission.state === 'prepared'
-          ? ('prepared' as const)
-          : admission.state === 'blocked' ||
-              admission.state === 'failed' ||
-              admission.state === 'manual-review'
-            ? ('blocked' as const)
-            : admission.state.endsWith('admitted')
-              ? ('running' as const)
-              : ('queued' as const),
-      priority: 'normal' as const,
-      repoId: admission.repoId,
-      repoFullName:
-        (repos.find((repo) => repo.id === admission.repoId)
-          ? repoFullName(repos.find((repo) => repo.id === admission.repoId)!)
-          : undefined) ?? admission.repoId,
-      prNumber: admission.prNumber,
-      title: `${admission.currentWorkflow ?? admission.state} for PR #${admission.prNumber}`,
-      mode: admission.mode,
-      reason: admission.lastError ?? `Durable admission is ${admission.state}.`,
-      nextStep:
-        admission.currentWorkflow ?? 'Await the next autopilot admission.',
-      worktreeId: admission.worktreeId,
-      runId: admission.currentRunId,
-      updatedAt: admission.updatedAt,
-    })),
     ...watches.map((watch) =>
       queueItemFromWatch(
         watch,
@@ -233,7 +199,7 @@ export async function readAutopilotState(
       failedChecks: failedChecks.length,
       recentActivity: recentActivity.length,
       placeholderAdapters: [
-        'Durable admission rows are included with watches, worktrees, approvals, and Flue observations.',
+        'Watches, worktrees, approvals, and Flue observations remain visible while the simplified owner loop is rebuilt.',
         'Watch-level policy reads repo metadata overrides until durable watch-policy rows land.',
       ],
     },

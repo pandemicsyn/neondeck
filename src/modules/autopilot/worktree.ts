@@ -82,7 +82,6 @@ import {
   syncWorktree,
   type WorktreeRecord,
 } from '../worktrees';
-import { bindAutopilotOwnerWorktree, readAutopilotPrOwnerById } from './owners';
 import {
   AutopilotActionResult,
   AutopilotDependencies,
@@ -249,7 +248,7 @@ export async function preparePrWorktree(
       const mutationOwner =
         suppliedMutationLock?.owner ??
         input.lockOwner ??
-        `autopilot-owner:${input.ownerId ?? input.eventId ?? input.prNumber}`;
+        `autopilot:${input.eventId ?? input.prNumber}`;
       const locked = suppliedMutationLock
         ? { ok: true as const, lock: suppliedMutationLock }
         : await lockWorktree(
@@ -279,27 +278,6 @@ export async function preparePrWorktree(
       }
 
       try {
-        const owner = input.ownerId
-          ? await readAutopilotPrOwnerById(input.ownerId, paths)
-          : null;
-        if (input.ownerId && !owner) {
-          return failResult(
-            'autopilot_prepare_pr_worktree',
-            `Autopilot owner "${input.ownerId}" was not found.`,
-            { requires: ['ownerId'] },
-          );
-        }
-        if (
-          owner &&
-          (owner.repoId !== repo.id || owner.prNumber !== input.prNumber)
-        ) {
-          return failResult(
-            'autopilot_prepare_pr_worktree',
-            'Autopilot owner is bound to a different repository or pull request.',
-            { requires: ['ownerId'] },
-          );
-        }
-
         const fetcher =
           dependencies.fetchExactPullRequestHead ?? fetchExactPullRequestHead;
         try {
@@ -321,10 +299,9 @@ export async function preparePrWorktree(
           );
         }
 
-        const ownerWorktreeId = owner?.worktreeId ?? input.worktreeId;
-        if (ownerWorktreeId) {
+        if (input.worktreeId) {
           const existing = await readManagedWorktree(
-            ownerWorktreeId,
+            input.worktreeId,
             repo.id,
             paths,
           );
@@ -421,12 +398,6 @@ export async function preparePrWorktree(
             'autopilot_prepare_pr_worktree',
             `Prepared worktree HEAD ${checkedOutSha ?? 'unknown'} does not match GitHub head ${prFacts.headSha}.`,
             { requires: ['exactPrHead'] },
-          );
-        }
-        if (owner) {
-          await bindAutopilotOwnerWorktree(
-            { ownerId: owner.id, worktreeId, headSha: checkedOutSha },
-            paths,
           );
         }
         await recordWorktreeEvent(

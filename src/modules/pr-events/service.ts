@@ -1,6 +1,6 @@
 /* eslint-disable no-unused-vars */
 import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import {
@@ -83,20 +83,21 @@ import {
   readWatermarks,
   requestedChangesReviewDeliveryFingerprint,
   reviewThreadCommentDeliveryFingerprint,
+  upsertWatermarks,
   watermarksFromEventState,
 } from './watermarks';
-import {
-  currentPrWatchEventWatermarkVersion,
-  installPrWatchEventBaseline,
-  readPendingPrWatchEventIntake,
-  stagePrWatchEventIntake,
-} from './intakes';
 import { recordAddressedPrFeedback } from './addressed';
 import {
   recordNeondeckPrDeliveries,
   recordNeondeckPrDelivery,
 } from './deliveries';
-import { errorMessage, eventTargetJson, failResult, okResult } from './utils';
+import {
+  errorMessage,
+  eventTargetJson,
+  failResult,
+  okResult,
+  stableJson,
+} from './utils';
 
 export async function getGitHubPrEventState(
   input: v.InferInput<typeof prEventTargetInputSchema>,
@@ -1732,6 +1733,17 @@ export async function refreshPrWatchEventState(
       { errors: [v.summarize(parsed.issues)] },
     );
   }
+  if (
+    !parsed.output.watchId &&
+    !parsed.output.ref &&
+    !(parsed.output.repo && parsed.output.prNumber)
+  ) {
+    return failResult(
+      'pr_watch_event_state_refresh',
+      'Refreshing event watermarks requires a watch id, PR reference, or repository and PR number.',
+      { requires: ['watchId', 'ref', 'repo', 'prNumber'] },
+    );
+  }
   const localTarget = await resolvePullRequestTarget(
     parsed.output,
     paths,
@@ -1743,37 +1755,6 @@ export async function refreshPrWatchEventState(
       'pr_watch_event_state_refresh',
       'Refreshing event watermarks requires a configured PR watch.',
       { requires: ['watchId'] },
-    );
-  }
-  const localWatch = localTarget.target.watch;
-  let pending: ReturnType<typeof readPendingPrWatchEventIntake>;
-  try {
-    pending = readPendingPrWatchEventIntake(paths, localWatch.id);
-  } catch (error) {
-    return invalidPersistedIntakeResult(localWatch.id, error);
-  }
-  if (pending && pending.eventGenerationId !== localWatch.eventGenerationId) {
-    return invalidPersistedIntakeResult(
-      localWatch.id,
-      new Error(
-        `Pending intake generation ${pending.eventGenerationId} does not match current watch generation ${localWatch.eventGenerationId}.`,
-      ),
-    );
-  }
-  if (pending) {
-    return okResult(
-      'pr_watch_event_state_refresh',
-      true,
-      `Resuming pending PR event intake ${pending.eventId}.`,
-      {
-        watchId: localWatch.id,
-        target: eventTargetJson(localTarget.target),
-        intakeId: pending.eventId,
-        changedCategories: pending.changedCategories,
-        previousWatermarks: pending.previousWatermarks as unknown as JsonValue,
-        watermarks: pending.candidateWatermarks as unknown as JsonValue,
-        pending: true,
-      },
     );
   }
   const resolved = await fetchEventState(
@@ -1790,8 +1771,6 @@ export async function refreshPrWatchEventState(
       { requires: ['watchId'] },
     );
   }
-  const watch = resolved.target.watch;
-
   const truncation = pullRequestEventStateTruncation(resolved.state);
   if (truncation.any) {
     return failResult(
@@ -1806,6 +1785,8 @@ export async function refreshPrWatchEventState(
     );
   }
 
+  const watch = resolved.target.watch;
+  const previous = readWatermarks(paths, watch.id);
   const next = watermarksFromEventState(watch.id, resolved.state);
   const incompleteWatermarks = prEventWatermarkTruncationCategories(next);
   if (incompleteWatermarks.length > 0) {
@@ -1821,95 +1802,52 @@ export async function refreshPrWatchEventState(
     );
   }
 
-  if (watch.eventWatermarkVersion < currentPrWatchEventWatermarkVersion) {
-    const installed = installPrWatchEventBaseline(paths, {
-      watchId: watch.id,
-      expectedEventGenerationId: localWatch.eventGenerationId,
-      nextEventGenerationId: randomUUID(),
-      watermarks: next,
-      markInitialProcessed: true,
-    });
-    if (!installed.installed) {
-      return stalePrWatchGenerationResult(watch.id);
-    }
-    return okResult(
-      'pr_watch_event_state_refresh',
-      false,
-      `Upgraded the PR event watermark baseline for ${watch.id} without replaying historical feedback.`,
-      {
-        watchId: watch.id,
-        target: eventTargetJson(resolved.target),
-        changedCategories: [],
-        watermarks: readWatermarks(paths, watch.id) as unknown as JsonValue,
-        seededUpgrade: true,
-        watermarkVersion: currentPrWatchEventWatermarkVersion,
-      },
-    );
-  }
+  const changedCategories = next
+    .filter((item) => {
+      const existing = previous.find(
+        (record) => record.category === item.category,
+      );
+      return (
+        stableJson(comparableWatermark(item.category, existing?.watermark)) !==
+        stableJson(comparableWatermark(item.category, item.value))
+      );
+    })
+    .map((item) => item.category);
 
-  const staged = stagePrWatchEventIntake(paths, {
-    watchId: watch.id,
-    expectedEventGenerationId: localWatch.eventGenerationId,
-    repoFullName: watch.repoFullName,
-    prNumber: watch.prNumber,
-    initialEvent: !watch.initialEventProcessedAt && watch.processExisting,
-    next,
-  });
-  if (staged.kind === 'stale') {
-    return stalePrWatchGenerationResult(watch.id);
-  }
-  if (staged.kind === 'pending') {
-    await dependencies.afterPrWatchEventIntakeStaged?.({
-      watchId: watch.id,
-      eventId: staged.intake.eventId,
-    });
-  }
-
-  const changedCategories =
-    staged.kind === 'pending' ? staged.intake.changedCategories : [];
-  const watermarks =
-    staged.kind === 'pending'
-      ? staged.intake.candidateWatermarks
-      : staged.watermarks;
+  upsertWatermarks(paths, watch.id, next);
 
   return okResult(
     'pr_watch_event_state_refresh',
     changedCategories.length > 0,
     changedCategories.length > 0
-      ? `Staged ${changedCategories.length} PR event watermark change(s) for durable processing on ${watch.id}.`
+      ? `Updated ${changedCategories.length} PR event watermark change(s) for ${watch.id}.`
       : `No PR event watermark changes for ${watch.id}.`,
     {
       watchId: watch.id,
       target: eventTargetJson(resolved.target),
-      intakeId: staged.kind === 'pending' ? staged.intake.eventId : null,
       changedCategories,
-      previousWatermarks:
-        staged.kind === 'pending'
-          ? (staged.intake.previousWatermarks as unknown as JsonValue)
-          : (watermarks as unknown as JsonValue),
-      watermarks: watermarks as unknown as JsonValue,
-      pending: staged.kind === 'pending',
+      previousWatermarks: previous as unknown as JsonValue,
+      watermarks: readWatermarks(paths, watch.id) as unknown as JsonValue,
     },
   );
 }
 
-function stalePrWatchGenerationResult(watchId: string) {
-  return failResult(
-    'pr_watch_event_state_refresh',
-    `PR watch "${watchId}" changed while GitHub event facts were being fetched; preserving current state and retrying on the next poll.`,
-    { requires: ['currentWatchGeneration'] },
-  );
-}
-
-function invalidPersistedIntakeResult(watchId: string, error: unknown) {
-  return failResult(
-    'pr_watch_event_state_refresh',
-    `Stored PR event intake for ${watchId} is invalid and requires operator repair before polling can continue.`,
-    {
-      requires: ['repairPrWatchEventIntake'],
-      errors: [errorMessage(error)],
-    },
-  );
+function comparableWatermark(category: string, value: unknown) {
+  if (category !== 'mergeability') return value ?? null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value ?? null;
+  }
+  const record = value as Record<string, unknown>;
+  return {
+    state: record.state,
+    draft: typeof record.draft === 'boolean' ? record.draft : false,
+    merged: record.merged,
+    mergeable: record.mergeable,
+    mergeableState: record.mergeableState,
+    mergeCommitSha: record.mergeCommitSha,
+    headSha: record.headSha,
+    baseSha: record.baseSha,
+  };
 }
 
 export async function listPrWatchEventWatermarks(
