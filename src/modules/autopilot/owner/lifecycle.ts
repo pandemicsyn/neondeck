@@ -42,7 +42,7 @@ export async function completeAutopilotWatchIfTerminal(
     watch.autopilotStatus === 'complete'
       ? watch
       : transitionWatchAutopilot(paths, watch.id, {
-          from: ['watching', 'working', 'waiting', 'blocked'],
+          from: ['watching', 'waiting', 'blocked'],
           to: 'complete',
         });
   if (!completed) return { complete: false, reason: 'changed' as const };
