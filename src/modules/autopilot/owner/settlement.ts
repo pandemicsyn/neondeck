@@ -16,27 +16,43 @@ import { clearPendingAutopilotTurn, readPendingAutopilotTurn } from './pending';
 
 type OwnerTerminalObservation = Extract<
   FlueObservation,
-  { type: 'agent_end' | 'submission_settled' }
+  { type: 'agent_end' | 'operation' | 'submission_settled' }
 >;
 
 export async function settleAutopilotOwnerObservation(
   event: OwnerTerminalObservation,
   paths: RuntimePaths,
 ) {
-  if (event.agentName !== 'pr-autopilot-owner' || !event.instanceId)
+  if (
+    (event.agentName && event.agentName !== 'pr-autopilot-owner') ||
+    !event.instanceId
+  ) {
     return null;
+  }
+  if (
+    event.type === 'operation' &&
+    (event.operationKind !== 'prompt' || !event.isError)
+  ) {
+    return null;
+  }
+  const observation = event as unknown as Record<string, unknown>;
+  if (observation.taskId || observation.parentSession) return null;
   const watch = readWatchByOwnerInstanceId(paths, event.instanceId);
   if (!watch || !watch.worktreeId) return null;
   const pending = readPendingAutopilotTurn(paths.home, event.instanceId);
   const fingerprint = pending?.eventFingerprint;
   const failed =
-    event.type === 'submission_settled' && event.outcome !== 'completed';
+    event.type === 'operation'
+      ? event.isError
+      : event.type === 'submission_settled'
+        ? event.outcome !== 'completed'
+        : false;
 
   try {
     if (failed) {
       return await blockOwnerTurn(
         watch.id,
-        `${watch.repoFullName}#${watch.prNumber} owner turn ${event.outcome}. Human inspection is required before retry.`,
+        `${watch.repoFullName}#${watch.prNumber} owner turn failed. Human inspection is required before retry.`,
         paths,
       );
     }

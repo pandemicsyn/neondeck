@@ -82,7 +82,7 @@ describe('continuing Autopilot owner foundations', () => {
         source: 'direct-human',
         status: 'waiting',
       }),
-    ).toEqual(['read', 'edit', 'diagnose', 'commit', 'push', 'respond']);
+    ).toEqual(['read', 'edit', 'diagnose', 'commit', 'push']);
     expect(
       autopilotOwnerCapabilitySet({
         mode: 'autofix-push-when-safe',
@@ -90,6 +90,13 @@ describe('continuing Autopilot owner foundations', () => {
         status: 'working',
       }),
     ).toEqual(['read', 'edit', 'diagnose', 'commit', 'push', 'respond']);
+    expect(
+      autopilotOwnerCapabilitySet({
+        mode: 'autofix-push-when-safe',
+        source: 'watch-event',
+        status: 'blocked',
+      }),
+    ).toEqual([]);
   });
 
   it('does not let a watcher turn gain push authority from an interactive-looking instance', () => {
@@ -120,9 +127,11 @@ describe('continuing Autopilot owner foundations', () => {
     expect(directHuman.tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
         'neondeck_owner_push',
-        'neondeck_owner_pr_respond',
         'neondeck_owner_discard_prepared_commit',
       ]),
+    );
+    expect(directHuman.tools.map((tool) => tool.name)).not.toContain(
+      'neondeck_owner_pr_respond',
     );
   });
 });

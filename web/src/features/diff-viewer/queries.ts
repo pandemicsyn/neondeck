@@ -29,6 +29,7 @@ export const diffViewerQueryKeys = {
   repoDiff: (input: {
     repoId: string;
     worktreeId?: string | null;
+    base?: string;
     paths?: string[];
     revisionKey?: string | null;
   }) =>
@@ -37,6 +38,7 @@ export const diffViewerQueryKeys = {
       'repo-diff',
       input.repoId,
       input.worktreeId ?? null,
+      input.base ?? null,
       input.paths?.join('\0') ?? '',
       input.revisionKey ?? null,
     ] as const,
@@ -95,6 +97,7 @@ export function useKiloTaskDiff(taskId: string) {
 export function useRepoDiff(input: {
   repoId: string;
   worktreeId?: string | null;
+  base?: string;
   paths?: string[];
   enabled?: boolean;
 }) {
@@ -105,6 +108,7 @@ export function useRepoDiff(input: {
         {
           repoId: input.repoId,
           worktreeId: input.worktreeId,
+          base: input.base,
           paths: input.paths,
           includePatch: false,
           maxPatchBytes,
@@ -119,6 +123,7 @@ export function useRepoDiff(input: {
 export function useRepoDiffFilePatch(input: {
   repoId: string;
   worktreeId?: string | null;
+  base?: string;
   path: string | null;
   revisionKey: string | null;
 }) {
@@ -126,6 +131,7 @@ export function useRepoDiffFilePatch(input: {
     queryKey: diffViewerQueryKeys.repoDiff({
       repoId: input.repoId,
       worktreeId: input.worktreeId,
+      base: input.base,
       paths: input.path ? [input.path] : [],
       revisionKey: input.revisionKey,
     }),
@@ -134,6 +140,7 @@ export function useRepoDiffFilePatch(input: {
         {
           repoId: input.repoId,
           worktreeId: input.worktreeId,
+          base: input.base,
           paths: input.path ? [input.path] : undefined,
           includePatch: true,
           maxPatchBytes,

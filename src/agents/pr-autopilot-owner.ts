@@ -5,9 +5,16 @@ import {
   prAutopilotOwnerDurability,
 } from '../modules/autopilot/owner/config';
 import { buildAutopilotOwnerToolRegistry } from '../modules/autopilot/owner/tools';
-import { readWatchByOwnerInstanceId } from '../modules/watches';
+import {
+  readWatchByOwnerInstanceId,
+  transitionWatchAutopilot,
+} from '../modules/watches';
 import { runtimePaths } from '../runtime-home';
-import { readPendingAutopilotTurn } from '../modules/autopilot/owner/pending';
+import {
+  clearPendingAutopilotTurn,
+  readPendingAutopilotTurn,
+  registerPendingAutopilotTurn,
+} from '../modules/autopilot/owner/pending';
 
 export { prAutopilotOwnerCompaction, prAutopilotOwnerDurability };
 
@@ -25,13 +32,40 @@ export const route: AgentRouteHandler = async (context, next) => {
       404,
     );
   }
-  const watch = readWatchByOwnerInstanceId(runtimePaths(), instanceId);
+  const paths = runtimePaths();
+  const watch = readWatchByOwnerInstanceId(paths, instanceId);
   if (
     context.req.method === 'POST' &&
     watch?.autopilotMode === 'autofix-with-approval' &&
     watch.autopilotStatus === 'waiting'
   ) {
-    return next();
+    const claimed = transitionWatchAutopilot(paths, watch.id, {
+      from: 'waiting',
+      to: 'working',
+    });
+    if (!claimed || !watch.ownerInstanceId) {
+      return context.json(
+        { ok: false, error: 'The owner already has a turn in progress.' },
+        409,
+      );
+    }
+    registerPendingAutopilotTurn(
+      paths.home,
+      watch.ownerInstanceId,
+      undefined,
+      watch.autopilotMode,
+      'direct-human',
+    );
+    try {
+      return await next();
+    } catch (error) {
+      clearPendingAutopilotTurn(paths.home, watch.ownerInstanceId);
+      transitionWatchAutopilot(paths, watch.id, {
+        from: 'working',
+        to: 'blocked',
+      });
+      throw error;
+    }
   }
   return context.json(
     {
@@ -47,15 +81,18 @@ export default defineAgent(({ id }) => {
   const model = readAgentModelSelectionSync();
   const paths = runtimePaths();
   const watch = readWatchByOwnerInstanceId(paths, id);
-  const source =
-    watch?.autopilotMode === 'autofix-with-approval' &&
-    watch.autopilotStatus === 'waiting'
-      ? ('direct-human' as const)
-      : ('watch-event' as const);
   const pending = readPendingAutopilotTurn(paths.home, id);
+  const source = pending?.source ?? 'watch-event';
   const turnWatch =
-    watch && source === 'watch-event' && pending
-      ? { ...watch, autopilotMode: pending.mode }
+    watch && pending
+      ? {
+          ...watch,
+          autopilotMode: pending.mode,
+          autopilotStatus:
+            source === 'direct-human'
+              ? ('waiting' as const)
+              : watch.autopilotStatus,
+        }
       : watch;
   const registry = turnWatch
     ? buildAutopilotOwnerToolRegistry({ watch: turnWatch, source, paths })

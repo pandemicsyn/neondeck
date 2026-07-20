@@ -18,6 +18,7 @@ import { type RuntimePaths } from '../../runtime-home';
 import {
   listPrWatchRecords,
   persistWatchEventRefresh,
+  readWatch,
   type PrWatch,
 } from '../watches';
 import type { SchedulerDependencies } from './schemas';
@@ -50,8 +51,8 @@ type WatchJobEventResult = {
 
 /**
  * Refreshes deterministic PR event facts and emits notifications for meaningful
- * changes. Autopilot owner dispatch intentionally remains disconnected until the
- * simplified loop is implemented separately.
+ * changes. Eligible actionable changes are dispatched to the minimal continuing
+ * Autopilot owner loop after the new baseline is persisted.
  */
 export async function refreshWatchJobEvents(
   results: Awaited<
@@ -85,6 +86,22 @@ async function refreshOneWatchEvent(
   paths: RuntimePaths,
   dependencies: SchedulerDependencies,
 ): Promise<WatchJobEventResult> {
+  if (
+    watch.autopilotStatus === 'working' ||
+    watch.autopilotStatus === 'waiting' ||
+    watch.autopilotStatus === 'blocked'
+  ) {
+    return {
+      ok: true,
+      changed: false,
+      watchId: watch.id,
+      repoId: watch.repoId,
+      repoFullName: watch.repoFullName,
+      prNumber: watch.prNumber,
+      mode: watch.autopilotMode,
+      message: `Deferred PR event watermark advancement while Autopilot is ${watch.autopilotStatus}; the next eligible poll will compare current facts with the retained baseline.`,
+    };
+  }
   const listWatermarks =
     dependencies.listPrWatchEventWatermarks ?? listPrWatchEventWatermarks;
   const refreshEvents =
@@ -182,17 +199,11 @@ async function refreshOneWatchEvent(
           mode,
         )
       : undefined;
-  const persisted = persistWatchEventRefresh(
-    paths,
-    watch.id,
-    watermarksForPersistence(currentWatermarks),
-    {
-      expectedWatchState: watch,
-      notification,
-      markInitialProcessed: firstPoll,
-    },
-  );
-  if (!persisted.persisted) {
+  const currentBeforeAdmission = readWatch(paths, watch.id);
+  if (
+    !currentBeforeAdmission ||
+    !sameWatchEventFence(watch, currentBeforeAdmission)
+  ) {
     return staleWatchEventPersistenceResult(watch, refresh);
   }
   const autopilot = notification
@@ -211,7 +222,31 @@ async function refreshOneWatchEvent(
         paths,
       )
     : undefined;
-
+  const currentWatch = readWatch(paths, watch.id);
+  if (!currentWatch) {
+    return staleWatchEventPersistenceResult(watch, refresh);
+  }
+  const preserveBaseline = Boolean(
+    notification &&
+    currentWatch.lastEventFingerprint !== notification.sourceId &&
+    autopilot &&
+    ['dispatched', 'busy', 'waiting', 'blocked'].includes(autopilot.state),
+  );
+  const persisted = persistWatchEventRefresh(
+    paths,
+    watch.id,
+    watermarksForPersistence(
+      preserveBaseline ? previousWatermarks : currentWatermarks,
+    ),
+    {
+      expectedWatchState: currentWatch,
+      notification: autopilot?.state === 'duplicate' ? undefined : notification,
+      markInitialProcessed: firstPoll && !preserveBaseline,
+    },
+  );
+  if (!persisted.persisted) {
+    return staleWatchEventPersistenceResult(watch, refresh);
+  }
   return {
     ok: true,
     changed: Boolean(notification),
@@ -257,6 +292,15 @@ function staleWatchEventPersistenceResult(
       },
     ],
   };
+}
+
+function sameWatchEventFence(expected: PrWatch, current: PrWatch) {
+  return (
+    current.updatedAt === expected.updatedAt &&
+    current.processExisting === expected.processExisting &&
+    current.initialEventProcessedAt === expected.initialEventProcessedAt &&
+    current.eventWatermarkVersion === expected.eventWatermarkVersion
+  );
 }
 
 function watermarksForPersistence(watermarks: PrWatchEventWatermarkRecord[]) {

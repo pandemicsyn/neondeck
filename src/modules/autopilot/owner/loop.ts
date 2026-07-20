@@ -70,6 +70,18 @@ export async function runAutopilotWatchEvent(
       'Human inspection and an explicit retry are required.',
     );
   }
+  if (watch.prState === 'closed' || watch.lastSnapshot?.merged === true) {
+    transitionWatchAutopilot(paths, watch.id, {
+      from: 'watching',
+      to: 'watching',
+      eventFingerprint: event.eventFingerprint,
+    });
+    return loopResult(
+      'terminal-pending',
+      false,
+      'The pull request is closed; Autopilot is only waiting for terminal checks.',
+    );
+  }
 
   if (!event.reasoningRequired) {
     transitionWatchAutopilot(paths, watch.id, {
@@ -97,6 +109,8 @@ export async function runAutopilotWatchEvent(
     );
   }
 
+  let heldSafeWorktree: Awaited<ReturnType<typeof readManagedWorktree>> | null =
+    null;
   if (watch.worktreeId) {
     const existing = await readManagedWorktree(
       watch.worktreeId,
@@ -109,7 +123,13 @@ export async function runAutopilotWatchEvent(
     ]);
     const unpublishedCommit =
       currentSha !== existing.headSha && currentSha !== existing.lastPushedSha;
-    if (!status.clean || unpublishedCommit) {
+    if (
+      status.clean &&
+      unpublishedCommit &&
+      watch.autopilotMode === 'autofix-push-when-safe'
+    ) {
+      heldSafeWorktree = existing;
+    } else if (!status.clean || unpublishedCommit) {
       const reviewable =
         status.clean &&
         unpublishedCommit &&
@@ -153,25 +173,25 @@ export async function runAutopilotWatchEvent(
   }
 
   try {
-    const prepared = await (dependencies.prepare ?? preparePrWorktree)(
-      {
-        repoId: claimed.repoId,
-        prNumber: claimed.prNumber,
-        worktreeId: claimed.worktreeId ?? undefined,
-        eventId: event.eventFingerprint,
-      },
-      paths,
-    );
-    if (!prepared.ok) {
-      throw new Error(prepared.message);
+    let prepared: Awaited<ReturnType<typeof preparePrWorktree>> | null = null;
+    let worktree = heldSafeWorktree;
+    if (!worktree) {
+      prepared = await (dependencies.prepare ?? preparePrWorktree)(
+        {
+          repoId: claimed.repoId,
+          prNumber: claimed.prNumber,
+          worktreeId: claimed.worktreeId ?? undefined,
+          eventId: event.eventFingerprint,
+        },
+        paths,
+      );
+      if (!prepared.ok) {
+        throw new Error(prepared.message);
+      }
+      const worktreeId = preparedWorktreeId(prepared.data);
+      if (!worktreeId) throw new Error('Worktree preparation returned no id.');
+      worktree = await readManagedWorktree(worktreeId, claimed.repoId, paths);
     }
-    const worktreeId = preparedWorktreeId(prepared.data);
-    if (!worktreeId) throw new Error('Worktree preparation returned no id.');
-    const worktree = await readManagedWorktree(
-      worktreeId,
-      claimed.repoId,
-      paths,
-    );
     const instanceId =
       claimed.ownerInstanceId ?? autopilotOwnerInstanceId(claimed.id);
     const bound = bindWatchAutopilotOwner(paths, claimed.id, {
@@ -193,8 +213,12 @@ export async function runAutopilotWatchEvent(
       prNumber: bound.prNumber,
       worktreeId: worktree.id,
       worktreePath: worktree.localPath,
-      headSha: worktree.headSha ?? preparedHeadSha(prepared.data),
-      baseSha: preparedBaseSha(prepared.data) ?? worktree.baseRef,
+      headSha:
+        worktree.headSha ??
+        (prepared ? preparedHeadSha(prepared.data) : 'unknown'),
+      baseSha:
+        (prepared ? preparedBaseSha(prepared.data) : undefined) ??
+        worktree.baseRef,
       eventFingerprint: event.eventFingerprint,
       mode: bound.autopilotMode,
       facts: asJsonValue({
@@ -215,6 +239,7 @@ export async function runAutopilotWatchEvent(
       instanceId,
       event.eventFingerprint,
       bound.autopilotMode,
+      'watch-event',
     );
     try {
       const receipt = await (

@@ -14,11 +14,16 @@ import {
 } from '../watches';
 import type {
   CheckFetcher,
+  PrWatch,
   PrWatchInitialEventBaselineFetcher,
   WatchFetcher,
 } from '../watches';
 import { modeSchema } from '../autopilot-policy';
 import { completeAutopilotWatchIfTerminal } from './owner/lifecycle';
+import {
+  clearPendingAutopilotTurn,
+  registerPendingAutopilotTurn,
+} from './owner/pending';
 
 const nonEmptyString = v.pipe(v.string(), v.minLength(1));
 
@@ -26,6 +31,7 @@ export const configurePrAutopilotInputSchema = v.object({
   ref: nonEmptyString,
   mode: modeSchema,
   processExisting: v.boolean(),
+  confirm: v.optional(v.boolean()),
 });
 
 export const prAutopilotStatusInputSchema = v.object({
@@ -84,6 +90,30 @@ export async function configurePrAutopilot(
       'autopilot_configure_pr',
       'The PR watch was created without a durable watch id.',
     );
+  }
+  const current = readWatch(paths, watchId);
+  if (!current) {
+    return failure(
+      'autopilot_configure_pr',
+      `Watch "${watchId}" could not be read before configuration.`,
+    );
+  }
+  if (
+    autopilotModeRank(parsed.output.mode) >
+      autopilotModeRank(current.autopilotMode) &&
+    parsed.output.confirm !== true
+  ) {
+    return {
+      ok: false,
+      action: 'autopilot_configure_pr',
+      changed: watchResult.changed,
+      message: `Increasing Autopilot from ${current.autopilotMode} to ${parsed.output.mode} requires explicit confirmation.`,
+      watch: current,
+      requires: ['confirmAutopilotMode'],
+      errors: [
+        'Set confirm=true only after the user explicitly confirms this autonomy increase.',
+      ],
+    };
   }
   const configured = configureWatchAutopilot(
     paths,
@@ -225,17 +255,47 @@ export async function messagePrAutopilotOwner(
       `Watch "${resolved.id}" is not an approval-mode owner waiting for a direct human message.`,
     );
   }
-  const receipt = await dispatchOwner({
-    agent: 'pr-autopilot-owner',
-    id: watch.ownerInstanceId,
-    input: parsed.output.message,
+  const claimed = transitionWatchAutopilot(paths, watch.id, {
+    from: 'waiting',
+    to: 'working',
   });
+  if (!claimed) {
+    return failure(
+      'autopilot_owner_message',
+      `Watch "${watch.id}" changed before the human turn could be claimed.`,
+    );
+  }
+  registerPendingAutopilotTurn(
+    paths.home,
+    watch.ownerInstanceId,
+    undefined,
+    watch.autopilotMode,
+    'direct-human',
+  );
+  let receipt;
+  try {
+    receipt = await dispatchOwner({
+      agent: 'pr-autopilot-owner',
+      id: watch.ownerInstanceId,
+      input: parsed.output.message,
+    });
+  } catch (error) {
+    clearPendingAutopilotTurn(paths.home, watch.ownerInstanceId);
+    transitionWatchAutopilot(paths, watch.id, {
+      from: 'working',
+      to: 'blocked',
+    });
+    return failure(
+      'autopilot_owner_message',
+      `The human owner turn could not be dispatched: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   return {
     ok: true,
     action: 'autopilot_owner_message',
     changed: true,
     message: `Sent the human instruction to continuing owner ${watch.ownerInstanceId}.`,
-    watch,
+    watch: claimed,
     dispatchId: receipt.dispatchId,
   };
 }
@@ -243,7 +303,7 @@ export async function messagePrAutopilotOwner(
 export const configurePrAutopilotAction = defineAction({
   name: 'neondeck_autopilot_configure_pr',
   description:
-    'Put one pull request on Autopilot with an explicit capability mode and an explicit choice to process or baseline current feedback.',
+    'Put one pull request on Autopilot with an explicit capability mode and an explicit choice to process or baseline current feedback. Enabling or increasing capability above notify-only requires confirm=true after explicit user confirmation.',
   input: configurePrAutopilotInputSchema,
   output: prAutopilotOutputSchema,
   async run({ input }) {
@@ -301,6 +361,15 @@ function initialFeedbackMessage(processExisting: boolean) {
   return processExisting
     ? 'Current actionable feedback will be processed.'
     : 'Current feedback was baselined; only later changes will run.';
+}
+
+function autopilotModeRank(mode: PrWatch['autopilotMode']) {
+  return [
+    'notify-only',
+    'prepare-only',
+    'autofix-with-approval',
+    'autofix-push-when-safe',
+  ].indexOf(mode);
 }
 
 function invalid(action: string, issues: Parameters<typeof v.summarize>[0]) {

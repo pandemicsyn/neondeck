@@ -643,16 +643,18 @@ export function RepoEditEventDiffReview({ event }: { event: RepoEditEvent }) {
 export function WorktreeDiffReview({
   repoId,
   worktreeId,
+  base,
   title,
   detail,
 }: {
   repoId: string;
   worktreeId: string;
+  base: string;
   title: string;
   detail?: string;
 }) {
   const [activePath, setActivePath] = useState<string | null>(null);
-  const diffQuery = useRepoDiff({ repoId, worktreeId });
+  const diffQuery = useRepoDiff({ repoId, worktreeId, base });
   const files = useMemo(() => diffQuery.data?.files ?? [], [diffQuery.data]);
   useEffect(() => {
     if (activePath && files.some((file) => file.path === activePath)) return;
@@ -668,6 +670,7 @@ export function WorktreeDiffReview({
   const patchQuery = useRepoDiffFilePatch({
     repoId,
     worktreeId,
+    base,
     path: activePath,
     revisionKey,
   });

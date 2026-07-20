@@ -25,6 +25,18 @@ export async function completeAutopilotWatchIfTerminal(
   ) {
     return { complete: false, reason: 'checks-pending' as const };
   }
+  if (
+    !options.explicitStop &&
+    (watch.autopilotStatus === 'working' || watch.autopilotStatus === 'blocked')
+  ) {
+    return {
+      complete: false,
+      reason:
+        watch.autopilotStatus === 'working'
+          ? ('owner-working' as const)
+          : ('needs-human' as const),
+    };
+  }
 
   const completed =
     watch.autopilotStatus === 'complete'
@@ -39,7 +51,7 @@ export async function completeAutopilotWatchIfTerminal(
     () => undefined,
   );
   let cleanup: Awaited<ReturnType<typeof cleanupWorktrees>> | null = null;
-  if (watch.worktreeId) {
+  if (watch.worktreeId && watch.autopilotStatus !== 'working') {
     const worktree = readWorktreeRecord(watch.worktreeId, paths);
     if (!worktree.adopted && worktree.createdBy === 'neondeck') {
       cleanup = await cleanupWorktrees(

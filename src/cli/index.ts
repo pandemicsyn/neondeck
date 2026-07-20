@@ -451,6 +451,10 @@ program
     '--process-existing',
     'process current actionable feedback instead of baselining it',
   )
+  .option(
+    '--confirm-autopilot',
+    'confirm enabling or increasing the requested Autopilot capability mode',
+  )
   .option('--json', 'print machine-readable JSON')
   .action(async (ref: string, options: WatchPrOptions) => {
     applyCommandJsonOption(options);
@@ -468,6 +472,7 @@ program
               ref,
               mode: parseAutopilotModeFlag(options.mode)!,
               processExisting: Boolean(options.processExisting),
+              confirm: Boolean(options.confirmAutopilot),
             },
             paths,
           );

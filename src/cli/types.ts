@@ -23,6 +23,7 @@ export type WatchPrOptions = {
   from?: string;
   mode?: string;
   processExisting?: boolean;
+  confirmAutopilot?: boolean;
   json?: boolean;
 };
 

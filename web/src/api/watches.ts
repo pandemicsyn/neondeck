@@ -20,6 +20,7 @@ export async function configurePrAutopilot(input: {
     | 'autofix-with-approval'
     | 'autofix-push-when-safe';
   processExisting: boolean;
+  confirm?: boolean;
 }) {
   return postJson<PrWatchMutationResponse>('/api/watches/autopilot', input);
 }

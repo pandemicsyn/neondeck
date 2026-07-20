@@ -154,7 +154,11 @@ export function installFlueObservationHandlers(
       });
     }
 
-    if (event.type === 'agent_end' || event.type === 'submission_settled') {
+    if (
+      event.type === 'agent_end' ||
+      event.type === 'operation' ||
+      event.type === 'submission_settled'
+    ) {
       void settleAutopilotOwnerObservation(event, paths).catch((error) => {
         console.error(
           '[neondeck] failed to settle Autopilot owner turn',

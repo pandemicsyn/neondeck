@@ -22,6 +22,7 @@ import {
   settleAutopilotOwnerObservation,
 } from './modules/autopilot';
 import { safePushAutopilotOwner } from './modules/autopilot/owner/safe-push';
+import { buildAutopilotOwnerToolRegistry } from './modules/autopilot/owner/tools';
 import {
   bindWatchAutopilotOwner,
   claimWatchAutopilotTurn,
@@ -37,6 +38,7 @@ import {
 } from './modules/worktrees';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import { emptyPrWatchInitialEventBaseline } from './testing/pr-watch-event-baseline';
+import { refreshWatchJobEvents } from './modules/scheduler/pr-watch-events';
 import {
   createSeededGitRepository,
   type SeededGitRepository,
@@ -71,11 +73,27 @@ afterEach(async () => {
 describe('minimal Autopilot watch loop', () => {
   it('configures one watch and retains its stable owner/worktree binding across reloads', async () => {
     const paths = await fixturePaths();
+    await expect(
+      configurePrAutopilot(
+        {
+          ref: 'neondeck#123',
+          mode: 'autofix-with-approval',
+          processExisting: false,
+        },
+        paths,
+        fixtureDependencies(),
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['confirmAutopilotMode'],
+      watch: { autopilotMode: 'notify-only' },
+    });
     const result = await configurePrAutopilot(
       {
         ref: 'neondeck#123',
         mode: 'autofix-with-approval',
         processExisting: false,
+        confirm: true,
       },
       paths,
       fixtureDependencies(),
@@ -119,6 +137,7 @@ describe('minimal Autopilot watch loop', () => {
         ref: 'neondeck#123',
         mode: 'prepare-only',
         processExisting: false,
+        confirm: true,
       },
       paths,
       fixtureDependencies(),
@@ -130,6 +149,22 @@ describe('minimal Autopilot watch loop', () => {
     expect(
       claimWatchAutopilotTurn(paths, 'pandemicsyn/neondeck#123', 'event-1'),
     ).toBeUndefined();
+
+    const refreshEvents = vi.fn();
+    await expect(
+      refreshWatchJobEvents(
+        [{ watch: { id: 'pandemicsyn/neondeck#123' } }] as never,
+        paths,
+        { refreshPrWatchEventState: refreshEvents as never },
+        null,
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        changed: false,
+        message: expect.stringContaining('Deferred'),
+      }),
+    ]);
+    expect(refreshEvents).not.toHaveBeenCalled();
 
     transitionWatchAutopilot(paths, 'pandemicsyn/neondeck#123', {
       from: 'working',
@@ -154,6 +189,7 @@ describe('minimal Autopilot watch loop', () => {
         ref: 'neondeck#123',
         mode: 'autofix-with-approval',
         processExisting: false,
+        confirm: true,
       },
       paths,
       fixtureDependencies(repositorySeed?.featureSha ?? undefined),
@@ -258,6 +294,33 @@ describe('minimal Autopilot watch loop', () => {
       id: instanceId,
       input: 'approved, fix the typo then push',
     });
+    const pushInteractive = vi.fn(async () => ({
+      ok: true,
+      action: 'repo_push',
+      changed: true,
+      message: 'Pushed the approved commit.',
+    }));
+    const humanTurnWatch = readWatch(paths, 'pandemicsyn/neondeck#123')!;
+    const humanRegistry = buildAutopilotOwnerToolRegistry({
+      watch: { ...humanTurnWatch, autopilotStatus: 'waiting' },
+      source: 'direct-human',
+      paths,
+      pushInteractive: pushInteractive as never,
+    });
+    const humanPush = humanRegistry.tools.find(
+      (tool) => tool.name === 'neondeck_owner_push',
+    );
+    await expect(humanPush?.run({ input: {} } as never)).resolves.toMatchObject(
+      { ok: true, changed: true },
+    );
+    expect(pushInteractive).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repoId: 'neondeck',
+        worktreeId: worktree.id,
+        prNumber: 123,
+      }),
+      paths,
+    );
     expect(await gitOutput(repo, ['rev-parse', 'feature'])).toBe(
       repositorySeed?.featureSha,
     );
@@ -288,6 +351,7 @@ describe('minimal Autopilot watch loop', () => {
         ref: 'neondeck#123',
         mode: 'autofix-push-when-safe',
         processExisting: false,
+        confirm: true,
       },
       paths,
       fixtureDependencies(repositorySeed?.featureSha ?? undefined),
@@ -328,6 +392,31 @@ describe('minimal Autopilot watch loop', () => {
       autopilotStatus: 'blocked',
     });
 
+    await controlPrAutopilot(
+      { id: 'pandemicsyn/neondeck#123', operation: 'retry' },
+      paths,
+    );
+    const retryPrepare = vi.fn();
+    const retryDispatch = vi.fn(async () => ({
+      dispatchId: 'safe-retry-dispatch',
+      acceptedAt: '2026-07-20T00:00:00.000Z',
+    }));
+    await expect(
+      runAutopilotWatchEvent(ownerEvent('safe-event'), paths, {
+        prepare: retryPrepare as never,
+        dispatch: retryDispatch as never,
+      }),
+    ).resolves.toMatchObject({
+      state: 'dispatched',
+      instanceId: 'safe-owner',
+      worktreeId: worktree.id,
+    });
+    expect(retryPrepare).not.toHaveBeenCalled();
+    await settleAutopilotOwnerObservation(ownerEnd('safe-owner'), paths);
+    expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toMatchObject({
+      autopilotStatus: 'blocked',
+    });
+
     await git(worktree.localPath, [
       'reset',
       '--hard',
@@ -350,6 +439,7 @@ describe('minimal Autopilot watch loop', () => {
         ref: 'neondeck#124',
         mode: 'prepare-only',
         processExisting: false,
+        confirm: true,
       },
       paths,
       fixtureDependencies(repositorySeed?.featureSha ?? undefined, 124),
@@ -386,6 +476,7 @@ describe('minimal Autopilot watch loop', () => {
         ref: 'neondeck#126',
         mode: 'autofix-push-when-safe',
         processExisting: false,
+        confirm: true,
       },
       paths,
       fixtureDependencies(repositorySeed?.featureSha ?? undefined, 126),
@@ -472,6 +563,13 @@ describe('minimal Autopilot watch loop', () => {
         'rev-parse',
         'HEAD',
       ]),
+    });
+    await settleAutopilotOwnerObservation(
+      ownerPromptFailure('successful-safe-owner'),
+      paths,
+    );
+    expect(readWatch(paths, 'pandemicsyn/neondeck#126')).toMatchObject({
+      autopilotStatus: 'blocked',
     });
   });
 });
@@ -563,6 +661,23 @@ function ownerEnd(instanceId: string) {
     instanceId,
     messages: [],
   } as FlueObservation & { type: 'agent_end' };
+}
+
+function ownerPromptFailure(instanceId: string) {
+  return {
+    v: 3,
+    type: 'operation',
+    eventIndex: 2,
+    timestamp: '2026-07-20T00:00:01.000Z',
+    agentName: 'pr-autopilot-owner',
+    instanceId,
+    dispatchId: 'safe-dispatch',
+    operationId: 'safe-prompt',
+    operationKind: 'prompt',
+    durationMs: 1_000,
+    isError: true,
+    error: new Error('provider disconnected after push'),
+  } as FlueObservation & { type: 'operation' };
 }
 
 async function git(cwd: string, args: string[]) {

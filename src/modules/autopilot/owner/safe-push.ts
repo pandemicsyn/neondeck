@@ -147,30 +147,6 @@ export async function safePushAutopilotOwner(
         { checkResults, status },
       );
     }
-    const policy = await (dependencies.checkPolicy ?? checkAutopilotPolicy)(
-      {
-        repoId: current.repoId,
-        worktreeId: worktree.id,
-        diffBaseRef: worktree.headSha ?? undefined,
-        pushDestination: 'pull-request-head',
-        forcePush: false,
-      },
-      paths,
-    );
-    if (policy.blocked || policy.approvalRequired) {
-      return blockSafePush(
-        current,
-        worktree.id,
-        'Current Autopilot policy does not allow an unattended push.',
-        policy.requires.length > 0 ? policy.requires : ['autopilotPolicy'],
-        paths,
-        { checkResults, policy },
-      );
-    }
-
-    // This is the immediate authority re-read. A mode decrease during checks
-    // fails before the external effect.
-    requireSafeWorkingWatch(binding.id, paths);
     const apiLogin = await (dependencies.fetchLogin ?? fetchGitHubLogin)(token);
     const target = await (
       dependencies.resolvePushTarget ?? resolvePrPushTargetForCheckout
@@ -185,6 +161,41 @@ export async function safePushAutopilotOwner(
       headRef: facts.headRef ?? worktree.headRef,
       branchPermissions: facts.branchPermissions,
     });
+    const immediateWatch = requireSafeWorkingWatch(binding.id, paths);
+    const policy = await (dependencies.checkPolicy ?? checkAutopilotPolicy)(
+      {
+        repoId: immediateWatch.repoId,
+        worktreeId: worktree.id,
+        diffBaseRef: worktree.headSha ?? undefined,
+        pushDestination: 'pull-request-head',
+        forcePush: false,
+      },
+      paths,
+    );
+    if (policy.blocked || policy.approvalRequired) {
+      return blockSafePush(
+        immediateWatch,
+        worktree.id,
+        'Current Autopilot policy does not allow an unattended push.',
+        policy.requires.length > 0 ? policy.requires : ['autopilotPolicy'],
+        paths,
+        { checkResults, policy },
+      );
+    }
+    // Keep the final authority and checkout checks adjacent to the external
+    // effect. Any mode/status or commit change during the preceding awaits
+    // fails closed instead of using stale permission or verification facts.
+    requireSafeWorkingWatch(binding.id, paths);
+    const [immediateStatus, immediateSha] = await Promise.all([
+      gitStatus(worktree.localPath),
+      gitCurrentSha(worktree.localPath),
+    ]);
+    if (!immediateStatus.clean || immediateSha !== commitSha) {
+      throw new Error(
+        'The prepared checkout changed after verification and before push.',
+      );
+    }
+    requireSafeWorkingWatch(binding.id, paths);
     const push = await (dependencies.pushGit ?? gitPushHead)(
       worktree.localPath,
       {

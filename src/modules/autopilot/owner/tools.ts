@@ -12,6 +12,7 @@ import {
   searchRepoFiles,
   writeRepoFile,
 } from '../../../repo-edit';
+import { gitCurrentSha } from '../../../repo-edit/git';
 import { runApprovedExecution } from '../../execution';
 import { postGitHubPrComment } from '../../pr-events';
 import { readManagedWorktree, syncWorktree } from '../../worktrees';
@@ -19,16 +20,16 @@ import { readWatch, type PrWatch } from '../../watches';
 import type { AutopilotOwnerCapability } from './capabilities';
 import { configuredAutopilotChecks } from './checks';
 import { safePushAutopilotOwner } from './safe-push';
-import { readPendingAutopilotTurn } from './pending';
-
-export type AutopilotOwnerTurnSource = 'watch-event' | 'direct-human';
+import {
+  readPendingAutopilotTurn,
+  type AutopilotOwnerTurnSource,
+} from './pending';
 
 export function autopilotOwnerCapabilitySet(input: {
   mode: PrWatch['autopilotMode'];
   source: AutopilotOwnerTurnSource;
   status: PrWatch['autopilotStatus'];
 }) {
-  if (input.mode === 'notify-only') return [] as AutopilotOwnerCapability[];
   const prepare: AutopilotOwnerCapability[] = [
     'read',
     'edit',
@@ -40,8 +41,12 @@ export function autopilotOwnerCapabilitySet(input: {
     input.source === 'direct-human' &&
     input.status === 'waiting'
   ) {
-    return [...prepare, 'push', 'respond'];
+    return [...prepare, 'push'];
   }
+  if (input.source !== 'watch-event' || input.status !== 'working') {
+    return [];
+  }
+  if (input.mode === 'notify-only') return [];
   if (input.mode === 'autofix-push-when-safe') {
     return [...prepare, 'push', 'respond'];
   }
@@ -52,6 +57,7 @@ export function buildAutopilotOwnerToolRegistry(input: {
   watch: PrWatch;
   source: AutopilotOwnerTurnSource;
   paths: RuntimePaths;
+  pushInteractive?: typeof pushInteractiveRepo;
 }) {
   const { watch, source, paths } = input;
   if (!watch.worktreeId) return { capabilities: [], tools: [] };
@@ -307,18 +313,22 @@ export function buildAutopilotOwnerToolRegistry(input: {
           confirmationToken: v.optional(v.string()),
         }),
         async run({ input: toolInput }) {
-          return source === 'watch-event'
-            ? safePushAutopilotOwner({ ...watch, worktreeId }, paths)
-            : pushInteractiveRepo(
-                {
-                  sessionId,
-                  repoId: watch.repoId,
-                  worktreeId,
-                  prNumber: watch.prNumber,
-                  ...toolInput,
-                },
-                paths,
-              );
+          if (source === 'watch-event') {
+            return safePushAutopilotOwner({ ...watch, worktreeId }, paths);
+          }
+          if (!directHumanAuthorityCurrent(watch, paths)) {
+            return staleDirectHumanAuthority();
+          }
+          return (input.pushInteractive ?? pushInteractiveRepo)(
+            {
+              sessionId,
+              repoId: watch.repoId,
+              worktreeId,
+              prNumber: watch.prNumber,
+              ...toolInput,
+            },
+            paths,
+          );
         },
       }),
     );
@@ -348,6 +358,27 @@ export function buildAutopilotOwnerToolRegistry(input: {
                 requires: ['currentSafeMode'],
               };
             }
+            const currentWorktree = await readManagedWorktree(
+              worktreeId,
+              watch.repoId,
+              paths,
+            );
+            if (
+              !currentWorktree.lastPushedSha ||
+              (await gitCurrentSha(currentWorktree.localPath)) !==
+                currentWorktree.lastPushedSha
+            ) {
+              return {
+                ok: false,
+                action: 'autopilot_owner_pr_respond',
+                changed: false,
+                message:
+                  'Autopilot must safely push the current commit before posting an autonomous PR response.',
+                requires: ['safePush'],
+              };
+            }
+          } else if (!directHumanAuthorityCurrent(watch, paths)) {
+            return staleDirectHumanAuthority();
           }
           const turnFingerprint = watch.ownerInstanceId
             ? readPendingAutopilotTurn(paths.home, watch.ownerInstanceId)
@@ -366,4 +397,26 @@ export function buildAutopilotOwnerToolRegistry(input: {
   }
 
   return { capabilities, tools };
+}
+
+function directHumanAuthorityCurrent(watch: PrWatch, paths: RuntimePaths) {
+  if (!watch.ownerInstanceId) return false;
+  const current = readWatch(paths, watch.id);
+  const pending = readPendingAutopilotTurn(paths.home, watch.ownerInstanceId);
+  return (
+    current?.autopilotMode === 'autofix-with-approval' &&
+    current.autopilotStatus === 'working' &&
+    pending?.source === 'direct-human'
+  );
+}
+
+function staleDirectHumanAuthority() {
+  return {
+    ok: false,
+    action: 'autopilot_owner_human_effect',
+    changed: false,
+    message:
+      'The approval-mode human turn is no longer current; no external effect was performed.',
+    requires: ['currentHumanTurn'],
+  };
 }

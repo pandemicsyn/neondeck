@@ -5,8 +5,6 @@ import {
   configurePrAutopilot,
   controlPrAutopilot,
   messagePrAutopilotOwner,
-  removePrWatch,
-  setPrWatchPolling,
   type PrWatch,
 } from '../api';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
@@ -88,14 +86,17 @@ export const ActiveWatchesPlugin = {
 } satisfies DisplayPlugin<ActiveWatchesConfig>;
 
 function WatchRow({ watch }: { watch: PrWatch }) {
-  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [confirmingStop, setConfirmingStop] = useState(false);
+  const [confirmingMode, setConfirmingMode] = useState<
+    PrWatch['autopilotMode'] | null
+  >(null);
   const [reviewingDiff, setReviewingDiff] = useState(false);
   const [ownerMessage, setOwnerMessage] = useState('');
   const queryClient = useQueryClient();
-  const removeMutation = useMutation({
-    mutationFn: () => removePrWatch(watch.id),
+  const stopMutation = useMutation({
+    mutationFn: () => controlPrAutopilot(watch.id, 'stop'),
     onSuccess() {
-      setConfirmingRemove(false);
+      setConfirmingStop(false);
       void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
       void queryClient.invalidateQueries({
         queryKey: queryKeys.autopilotState,
@@ -104,7 +105,8 @@ function WatchRow({ watch }: { watch: PrWatch }) {
   });
   const pollingEnabled = watch.pollingEnabled !== false;
   const pollingMutation = useMutation({
-    mutationFn: () => setPrWatchPolling(watch.id, !pollingEnabled),
+    mutationFn: () =>
+      controlPrAutopilot(watch.id, pollingEnabled ? 'pause' : 'resume'),
     onSuccess() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
     },
@@ -120,13 +122,15 @@ function WatchRow({ watch }: { watch: PrWatch }) {
   const sourceLabel = watch.createdBy ? ` · ${watch.createdBy}` : '';
   const attentionReason = prWatchAttentionReason(watch);
   const configureMutation = useMutation({
-    mutationFn: (mode: PrWatch['autopilotMode']) =>
+    mutationFn: (input: { mode: PrWatch['autopilotMode']; confirm: boolean }) =>
       configurePrAutopilot({
         ref: watch.id,
-        mode,
+        mode: input.mode,
         processExisting: watch.processExisting,
+        confirm: input.confirm,
       }),
     onSuccess() {
+      setConfirmingMode(null);
       void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
       void queryClient.invalidateQueries({
         queryKey: queryKeys.autopilotState,
@@ -176,11 +180,17 @@ function WatchRow({ watch }: { watch: PrWatch }) {
           aria-label={`Autopilot mode for ${watch.id}`}
           className="min-h-[28px] min-w-0 flex-1 border border-line bg-field px-2 text-[10px] text-ink"
           disabled={configureMutation.isPending}
-          onChange={(event) =>
-            configureMutation.mutate(
-              event.target.value as PrWatch['autopilotMode'],
-            )
-          }
+          onChange={(event) => {
+            const mode = event.target.value as PrWatch['autopilotMode'];
+            if (
+              autopilotModeRank(mode) > autopilotModeRank(watch.autopilotMode)
+            ) {
+              setConfirmingMode(mode);
+              return;
+            }
+            setConfirmingMode(null);
+            configureMutation.mutate({ mode, confirm: false });
+          }}
           value={watch.autopilotMode}
         >
           <option value="notify-only">notify-only</option>
@@ -189,6 +199,44 @@ function WatchRow({ watch }: { watch: PrWatch }) {
           <option value="autofix-push-when-safe">autofix-push-when-safe</option>
         </select>
       </div>
+      {confirmingMode ? (
+        <div className="mt-2 border border-accent/50 bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
+          <p className="text-accent">
+            Increase Autopilot authority to {confirmingMode}?
+          </p>
+          <p className="mt-1 leading-4">
+            This expands what the continuing PR owner may do on future turns.
+          </p>
+          <span className="mt-1.5 flex gap-1.5">
+            <Button
+              className="min-h-[28px] border-accent bg-transparent px-2 py-1 text-[10px] text-accent"
+              disabled={configureMutation.isPending}
+              onClick={() =>
+                configureMutation.mutate({
+                  mode: confirmingMode,
+                  confirm: true,
+                })
+              }
+              type="button"
+            >
+              confirm increase
+            </Button>
+            <Button
+              className="min-h-[28px] bg-transparent px-2 py-1 text-[10px] text-muted"
+              disabled={configureMutation.isPending}
+              onClick={() => setConfirmingMode(null)}
+              type="button"
+            >
+              cancel
+            </Button>
+          </span>
+          {configureMutation.error ? (
+            <p className="mt-1 text-accent">
+              {queryErrorMessage(configureMutation.error)}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <div className="mt-2 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
         <span className="min-w-0 truncate">
           until {watch.desiredTerminalState} · {checkedLabel} · {nextPollLabel}
@@ -267,47 +315,48 @@ function WatchRow({ watch }: { watch: PrWatch }) {
           ) : null}
           <Button
             className="min-h-[28px] border-line bg-transparent px-2 py-1 text-[10px] text-muted hover:border-accent hover:text-accent"
-            disabled={removeMutation.isPending || pollingMutation.isPending}
-            onClick={() => setConfirmingRemove(true)}
+            disabled={stopMutation.isPending || pollingMutation.isPending}
+            onClick={() => setConfirmingStop(true)}
             type="button"
           >
             stop
           </Button>
         </span>
       </div>
-      {confirmingRemove ? (
+      {confirmingStop ? (
         <div className="mt-2 border border-accent/50 bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-accent">Remove this watch?</span>
+            <span className="text-accent">Stop this Autopilot watch?</span>
             <span className="flex gap-1.5">
               <Button
                 className="min-h-[28px] border-accent bg-transparent px-2 py-1 text-[10px] text-accent"
-                disabled={removeMutation.isPending}
-                onClick={() => removeMutation.mutate()}
+                disabled={stopMutation.isPending}
+                onClick={() => stopMutation.mutate()}
                 type="button"
               >
                 confirm
               </Button>
               <Button
                 className="min-h-[28px] bg-transparent px-2 py-1 text-[10px] text-muted"
-                disabled={removeMutation.isPending}
-                onClick={() => setConfirmingRemove(false)}
+                disabled={stopMutation.isPending}
+                onClick={() => setConfirmingStop(false)}
                 type="button"
               >
                 cancel
               </Button>
             </span>
           </div>
-          {removeMutation.error ? (
+          {stopMutation.error ? (
             <p className="mt-1 text-accent">
-              {queryErrorMessage(removeMutation.error)}
+              {queryErrorMessage(stopMutation.error)}
             </p>
           ) : null}
         </div>
       ) : null}
-      {reviewingDiff && watch.worktreeId ? (
+      {reviewingDiff && watch.worktreeId && watch.worktreeHeadSha ? (
         <div className="mt-2 max-h-[32rem] overflow-auto border border-line bg-field">
           <WorktreeDiffReview
+            base={watch.worktreeHeadSha}
             detail={`${watch.autopilotMode} · ${watch.autopilotStatus}`}
             repoId={watch.repoId}
             title={`${watch.repoFullName}#${watch.prNumber} Autopilot change`}
@@ -370,4 +419,13 @@ function autopilotStatusClass(status: PrWatch['autopilotStatus']) {
     return 'border-warn text-warn';
   if (status === 'complete') return 'border-primary text-primary';
   return 'border-line text-muted';
+}
+
+function autopilotModeRank(mode: PrWatch['autopilotMode']) {
+  return [
+    'notify-only',
+    'prepare-only',
+    'autofix-with-approval',
+    'autofix-push-when-safe',
+  ].indexOf(mode);
 }

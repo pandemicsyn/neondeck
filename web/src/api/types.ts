@@ -1883,6 +1883,7 @@ export type PrWatch = {
   autopilotStatus: 'watching' | 'working' | 'waiting' | 'blocked' | 'complete';
   ownerInstanceId: string | null;
   worktreeId: string | null;
+  worktreeHeadSha?: string | null;
   lastEventFingerprint: string | null;
   nextRunAt?: string | null;
   pollingEnabled?: boolean;

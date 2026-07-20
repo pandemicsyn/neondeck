@@ -1,8 +1,11 @@
 import type { PrWatch } from '../../watches';
 
+export type AutopilotOwnerTurnSource = 'watch-event' | 'direct-human';
+
 type PendingAutopilotTurn = {
-  eventFingerprint: string;
+  eventFingerprint?: string;
   mode: PrWatch['autopilotMode'];
+  source: AutopilotOwnerTurnSource;
 };
 
 const pendingTurns = new Map<string, PendingAutopilotTurn>();
@@ -14,10 +17,11 @@ function key(home: string, instanceId: string) {
 export function registerPendingAutopilotTurn(
   home: string,
   instanceId: string,
-  eventFingerprint: string,
+  eventFingerprint: string | undefined,
   mode: PrWatch['autopilotMode'],
+  source: AutopilotOwnerTurnSource,
 ) {
-  pendingTurns.set(key(home, instanceId), { eventFingerprint, mode });
+  pendingTurns.set(key(home, instanceId), { eventFingerprint, mode, source });
 }
 
 export function readPendingAutopilotTurn(home: string, instanceId: string) {
