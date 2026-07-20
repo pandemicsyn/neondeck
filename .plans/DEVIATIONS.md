@@ -637,3 +637,10 @@ Use this format:
 - Verification detail: The sequential closure fixture does run the production deterministic review fixer twice against a real temporary Git repository and managed worktree, including a local commit on the first turn, a persisted config-history plus repo-policy downgrade, and an uncommitted prepared-diff update on the second turn. Only the live Flue process/provider boundary remains simulated by accepted dispatch receipts and reconstructed dependency closures.
 - Verification limitation: The compaction unit test verifies the configured `reserveTokens`/`keepRecentTokens` relationship and the version-matched Flue contract only. It does not run a live model/provider through enough canonical history to empirically observe reconstructed-input compaction; that remains part of Package 8's live Flue product-path smoke once the long-suite prohibition is lifted.
 - Follow-up: Package 5 must consume `fix-prepared` owner settlements for verification/approval/push/comment/cleanup. Package 8 retains the real process-restart and live Flue product-path smoke obligations when the long-suite prohibition is lifted.
+
+## 2026-07-19 - Autopilot Package 5 Focused Verification Budget
+
+- Roadmap item: Phase 19 / Autopilot Package 5 verification, approval, push, result delivery, and cleanup continuation.
+- Decision: Validate the coordinator restart/grace fixture and exact PR/thread delivery fixture plus the final relevant app type, migration, lint, formatting, and build checks; do not run the integration suite, `test:all`, or `verify` under the mandated focused-test budget. The Package 5 full mode-matrix/bare-remote integration exit gate remains explicitly open.
+- Reason: The implementation request prohibits broad integration and repetitive checks while the later Package 8 product-path smoke owns the complete end-to-end proof.
+- Follow-up: Add and run the exact Package 5 mode-matrix and result-delivery fixtures when the long-suite prohibition is lifted; Package 8 retains live Flue/process-restart smoke coverage.

@@ -10,7 +10,7 @@ import {
 import { addNotification } from '../app-state';
 import { buildPreparedDiffAuditSummary } from '../autonomous-audit';
 import { publishReviewSourceRevision } from '../review-refresh';
-import { openDb } from '../../lib/sqlite';
+import { openDb, withImmediateTransaction } from '../../lib/sqlite';
 import {
   gitCurrentSha,
   gitDiff,
@@ -243,22 +243,40 @@ export function markPreparedDiffPushed(
 ) {
   const current = readPreparedDiffRecord(preparedDiffId, paths);
   if (!current) return null;
-  return updatePreparedDiffState(
-    preparedDiffId,
-    {
-      status: 'pushed',
-      summary: mergeSummary(current.summary, {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return withImmediateTransaction(database, () => {
+      const now = new Date().toISOString();
+      const summary = mergeSummary(current.summary, {
         push: {
           status: 'pushed',
           commitSha: input.commitSha,
           remote: input.remote,
           branch: input.branch,
-          pushedAt: new Date().toISOString(),
+          pushedAt: now,
         },
-      }),
-    },
-    paths,
-  );
+      });
+      database
+        .prepare(
+          `UPDATE prepared_diffs SET status = 'pushed', pushed_commit_sha = ?, summary_json = ?, updated_at = ? WHERE id = ?;`,
+        )
+        .run(input.commitSha, JSON.stringify(summary), now, preparedDiffId);
+      database
+        .prepare(
+          `UPDATE prepared_diff_approvals SET status = 'superseded', reason = COALESCE(reason, 'push completed'), resolved_at = COALESCE(resolved_at, ?), updated_at = ? WHERE prepared_diff_id = ? AND approval_type = 'push' AND status IN ('pending', 'approved', 'rejected');`,
+        )
+        .run(now, now, preparedDiffId);
+      return {
+        ...current,
+        status: 'pushed' as const,
+        pushedCommitSha: input.commitSha,
+        summary,
+        updatedAt: now,
+      };
+    });
+  } finally {
+    database.close();
+  }
 }
 
 export async function listPreparedDiffs(

@@ -1,6 +1,6 @@
 /* eslint-disable no-unused-vars */
 import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import {
@@ -1188,7 +1188,10 @@ export async function postGitHubPrThreadReply(
   });
   if (!verified.ok) return verified.result;
 
-  const replyBody = `${parsed.output.text}\n\n${neondeckSelfAuthoredMarker}`;
+  const idempotencyMarker = parsed.output.idempotencyKey
+    ? `<!-- neondeck:idempotency:${createHash('sha256').update(parsed.output.idempotencyKey).digest('hex')} -->`
+    : undefined;
+  const replyBody = `${parsed.output.text}\n\n${idempotencyMarker ?? neondeckSelfAuthoredMarker}`;
   if (replyBody.length > githubCommentLengthLimit) {
     return failResult(
       action,
@@ -1198,6 +1201,30 @@ export async function postGitHubPrThreadReply(
   }
 
   try {
+    if (idempotencyMarker) {
+      const existing = verified.thread.comments.find((comment) =>
+        comment.body.includes(idempotencyMarker),
+      );
+      if (existing) {
+        recordNeondeckPrDelivery(
+          {
+            repoFullName: resolved.target.repoFullName,
+            prNumber: resolved.target.number,
+            itemKind: 'review-comment',
+            itemId: existing.databaseId ?? existing.id,
+            itemFingerprint: reviewThreadCommentDeliveryFingerprint(
+              existing,
+              verified.thread,
+            ),
+          },
+          paths,
+        );
+        return okResult(action, false, 'Review thread reply already exists.', {
+          thread: verified.thread as unknown as JsonValue,
+          comment: existing as unknown as JsonValue,
+        });
+      }
+    }
     const replier =
       dependencies.replyToPullRequestReviewThread ??
       replyToPullRequestReviewThread;
@@ -1248,6 +1275,7 @@ export async function postGitHubPrThreadReply(
     );
     return okResult(action, true, 'Posted review thread reply.', {
       thread: thread as unknown as JsonValue,
+      comment: deliveredComment as unknown as JsonValue,
     });
   } catch (error) {
     return failResult(action, 'Could not post review thread reply.', {
@@ -1508,7 +1536,7 @@ export async function postGitHubPrComment(
     }
 
     const idempotencyMarker = parsed.output.idempotencyKey
-      ? `<!-- neondeck:idempotency:${createHmac('sha256', token).update(parsed.output.idempotencyKey).digest('hex')} -->`
+      ? `<!-- neondeck:idempotency:${createHash('sha256').update(parsed.output.idempotencyKey).digest('hex')} -->`
       : undefined;
     if (idempotencyMarker) {
       const comments = await (

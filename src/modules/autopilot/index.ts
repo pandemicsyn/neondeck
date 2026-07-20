@@ -51,6 +51,7 @@ export {
   advanceAutopilotAdmission,
   AutopilotPendingIntakeLeaseLostError,
   listAutopilotAdmissionsNeedingAdvance,
+  admitTerminalAutopilotOwnerCleanup,
 } from './coordination/advance';
 export {
   coordinateAutopilotAdmission,
@@ -73,7 +74,7 @@ export type {
   AutopilotDispatchResult,
   AutopilotWorkflowInvoker,
   CoordinateAutopilotAdmissionResult,
-  PackageOneAutopilotWorkflow,
+  AutopilotWorkflow,
 } from './coordination/dispatch';
 export {
   reconcileAutopilotStageAttempts,
@@ -121,7 +122,11 @@ export type {
   AutopilotTerminalObservation,
 } from './coordination/schemas';
 export { preparePrWorktree, verifyPrWorktree } from './worktree';
-export { approvePreparedDiffPushWithPolicy } from './approvals';
+export {
+  approvePreparedDiffPushWithPolicy,
+  createPendingPushApprovalForAdmission,
+  rejectAdmissionBoundPushApproval,
+} from './approvals';
 export { pushPrAutofix } from './push';
 export {
   abandonPreparedDiffWithRevisionAbort,

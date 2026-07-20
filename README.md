@@ -5,9 +5,10 @@ A companion agent for keeping PRs moving.
 Neon watches your PRs, tracks CI and release checks, and can configure its own
 repos, schedules, models, and deck layout through typed actions. Its current
 watcher-driven Autopilot path durably triages actionable events, prepares an
-isolated worktree, and dispatches authoritative bounded turns to one continuing
-PR-owner agent per watch. Verification, approval/push, result delivery, and
-terminal cleanup continuation remain roadmap work.
+isolated worktree, dispatches authoritative bounded turns to one continuing
+PR-owner agent per watch, then continues through verification, policy-bound
+approval or safe push, result delivery, and cleanup admission. Setup/control UX
+and the full product-path smoke remain roadmap work.
 
 It is especially useful on a companion display, vertical panel, or Corsair
 Xeneon Edge-style deck, where your active work can stay visible without taking

@@ -312,9 +312,6 @@ const defaultAutopilotWorkflowInvoker: AutopilotWorkflowInvoker = (
   workflow,
   input,
 ) => {
-  if (workflow !== 'triage-pr-event' && workflow !== 'prepare-pr-worktree') {
-    throw new Error(`Package 1 cannot invoke autopilot workflow ${workflow}.`);
-  }
   return invokeScheduledWorkflow(workflow, input);
 };
 
@@ -414,7 +411,62 @@ function autopilotTerminalFact(
       ...failure,
     } as const;
   }
+  if (
+    workflow === 'verify-pr-worktree' ||
+    workflow === 'push-pr-autofix' ||
+    workflow === 'comment-pr-autofix-result' ||
+    workflow === 'cleanup-autopilot-worktree'
+  ) {
+    return {
+      workflow,
+      failed,
+      artifact: failed ? undefined : autopilotResultArtifact(event),
+      ...failure,
+    } as const;
+  }
   return undefined;
+}
+
+function autopilotResultArtifact(
+  event: Extract<FlueObservation, { type: 'run_end' }>,
+) {
+  const result =
+    'result' in event && event.result && typeof event.result === 'object'
+      ? (event.result as Record<string, unknown>)
+      : {};
+  const data =
+    result.data && typeof result.data === 'object'
+      ? (result.data as Record<string, unknown>)
+      : {};
+  const prepared =
+    data.preparedDiff && typeof data.preparedDiff === 'object'
+      ? (data.preparedDiff as Record<string, unknown>)
+      : {};
+  const verification =
+    data.preparedDiffVerification &&
+    typeof data.preparedDiffVerification === 'object'
+      ? (data.preparedDiffVerification as Record<string, unknown>)
+      : {};
+  return {
+    preparedDiffId:
+      typeof prepared.id === 'string'
+        ? prepared.id
+        : typeof verification.id === 'string'
+          ? verification.id
+          : undefined,
+    pushedCommitSha:
+      typeof prepared.pushedCommitSha === 'string'
+        ? prepared.pushedCommitSha
+        : undefined,
+    cleanupDeleted: data.cleanupDeleted === true,
+    cleanupFailed: data.cleanupFailed === true,
+    cleanupError:
+      typeof data.cleanupError === 'string' ? data.cleanupError : undefined,
+    commentDelivered:
+      data.comment && typeof data.comment === 'object'
+        ? (data.comment as Record<string, unknown>).ok === true
+        : false,
+  };
 }
 
 function terminalActionFailure(

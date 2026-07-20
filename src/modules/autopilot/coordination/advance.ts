@@ -18,6 +18,10 @@ import {
 import { repoGuardrails } from '../../repo-guardrails';
 import { ensureAutopilotPrOwnerInDatabase } from '../owners';
 import { initialAutopilotAdmissionAuthority } from '../owner/policy';
+import {
+  hasAutopilotSubmissionProcessLease,
+  waitForAutopilotSubmissionProcessLease,
+} from '../owner/submission-lease';
 import { autopilotRetryBackoffMs, maxAutopilotStageAttempts } from './retry';
 import {
   readAutopilotAdmission,
@@ -314,6 +318,7 @@ export async function advanceAutopilotAdmission(
   input: {
     admissionId: string;
     allowOwnerTurnReservation?: boolean;
+    approvalRevalidated?: boolean;
     limits?: AutopilotConcurrencyPolicy;
     now?: Date;
   },
@@ -341,7 +346,16 @@ export async function advanceAutopilotAdmission(
       );
       if (
         !owner ||
-        (owner.status !== 'awaiting-event' && owner.status !== 'active')
+        (owner.status !== 'awaiting-event' &&
+          owner.status !== 'active' &&
+          !(
+            owner.status === 'draining' &&
+            (admission.state === 'stopped' ||
+              admission.state === 'superseded' ||
+              admission.state === 'cleanup-pending' ||
+              (admission.state === 'failed' &&
+                admission.lastOutcome?.retryStage === 'cleanup'))
+          ))
       ) {
         return { status: 'owner-inactive' as const, admission, owner };
       }
@@ -357,12 +371,63 @@ export async function advanceAutopilotAdmission(
           attempt: activeAttempt,
         };
       }
-      if (admission.stopRequestedAt) {
+      if (
+        admission.stopRequestedAt &&
+        admission.state !== 'cleanup-pending' &&
+        !(
+          admission.state === 'failed' &&
+          admission.lastOutcome?.retryStage === 'cleanup'
+        )
+      ) {
         return { status: 'stopped' as const, admission };
       }
+      if (
+        admission.state === 'cleanup-pending' &&
+        admission.nextAttemptAt &&
+        Date.parse(admission.nextAttemptAt) > now.getTime()
+      ) {
+        return { status: 'idle' as const, admission };
+      }
+      if (
+        admission.state === 'verified' &&
+        (admission.authorityMode === 'autofix-with-approval' ||
+          admission.authorityMode === 'autofix-push-when-safe')
+      ) {
+        return { status: 'approval-resolution-required' as const, admission };
+      }
+      if (
+        admission.state === 'approval-pending' &&
+        !input.approvalRevalidated
+      ) {
+        return { status: 'approval-resolution-required' as const, admission };
+      }
 
-      const selection = selectNextStage(admission, now);
+      const selection =
+        admission.state === 'approval-pending' &&
+        hasApprovedPushApproval(
+          database,
+          admission.id,
+          admission.preparedDiffId,
+        )
+          ? {
+              kind: 'stage' as const,
+              stage: 'push' as const,
+              admittedState: 'push-admitted' as const,
+              reason: 'sha-policy-approval-resolved',
+            }
+          : selectNextStage(admission, now);
       if (!selection) return { status: 'idle' as const, admission };
+      if (
+        selection.kind === 'stage' &&
+        selection.stage === 'cleanup' &&
+        ownerHasActiveSubmissionLease(database, admission.ownerId)
+      ) {
+        // A terminal transition can cancel the database attempt before a
+        // same-process owner submission has observed its cancellation fence.
+        // Every coordinator observes this gate, so no duplicate can delete
+        // the worktree until that process lease is released.
+        return { status: 'idle' as const, admission };
+      }
       if (selection.kind === 'complete') {
         const updated = transitionWithoutAttempt(
           database,
@@ -391,7 +456,10 @@ export async function advanceAutopilotAdmission(
         admission.id,
         selection.stage,
       );
-      if (attempts >= maxAutopilotStageAttempts) {
+      if (
+        selection.stage !== 'cleanup' &&
+        attempts >= maxAutopilotStageAttempts
+      ) {
         const updated = transitionWithoutAttempt(
           database,
           admission,
@@ -411,11 +479,12 @@ export async function advanceAutopilotAdmission(
           : { status: 'cas-lost' as const, admission };
       }
       if (
-        !limits ||
-        admissionUsageExceedsLimits(
-          readAdmissionUsage(database, admission.repoId, admission.ownerId),
-          limits,
-        )
+        selection.stage !== 'cleanup' &&
+        (!limits ||
+          admissionUsageExceedsLimits(
+            readAdmissionUsage(database, admission.repoId, admission.ownerId),
+            limits,
+          ))
       ) {
         if (admission.state === 'blocked') {
           const concurrencyWaitCount = nextConcurrencyWaitCount(admission);
@@ -541,15 +610,28 @@ export async function listAutopilotAdmissionsNeedingAdvance(
       .prepare(
         `SELECT * FROM autopilot_admissions
          WHERE current_stage_attempt_id IS NULL
-           AND stop_requested_at IS NULL
+           AND (
+             stop_requested_at IS NULL
+             OR state = 'cleanup-pending'
+             OR (
+               state = 'failed'
+               AND json_extract(last_outcome_json, '$.retryStage') = 'cleanup'
+             )
+           )
            AND (
              state = 'triaged'
              OR state = 'prepared'
+             OR state = 'fix-prepared'
+             OR state = 'verified'
+             OR state = 'approval-pending'
+             OR state = 'pushed'
+             OR (state = 'cleanup-pending' AND next_attempt_at <= ?)
+             OR state IN ('stopped', 'superseded')
              OR (state IN ('blocked', 'failed') AND next_attempt_at <= ?)
            )
          ORDER BY priority DESC, updated_at ASC;`,
       )
-      .all(now.toISOString())
+      .all(now.toISOString(), now.toISOString())
       .map(readAutopilotAdmission)
       .filter((admission): admission is AutopilotAdmission =>
         Boolean(admission),
@@ -557,6 +639,192 @@ export async function listAutopilotAdmissionsNeedingAdvance(
   } finally {
     database.close();
   }
+}
+
+export async function admitTerminalAutopilotOwnerCleanup(
+  input: { watchId: string; reason: string },
+  paths: RuntimePaths = runtimePaths(),
+  now = new Date(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  let revokedAttemptIds: string[] = [];
+  let result:
+    | { status: 'not-ready' }
+    | { status: 'archived-without-worktree' }
+    | { status: 'already-admitted'; admissionId: string }
+    | { status: 'cas-lost' }
+    | { status: 'admitted'; admissionId: string };
+  try {
+    result = withImmediateTransaction(database, () => {
+      const owner = readAutopilotPrOwner(
+        database
+          .prepare('SELECT * FROM autopilot_pr_owners WHERE watch_id = ?;')
+          .get(input.watchId),
+      );
+      if (!owner || owner.status === 'archived') {
+        return { status: 'not-ready' as const };
+      }
+      const nowIso = now.toISOString();
+      revokedAttemptIds = database
+        .prepare(
+          `SELECT id FROM autopilot_stage_attempts
+           WHERE owner_id = ? AND stage = 'owner-turn'
+             AND status IN ('reserved', 'running');`,
+        )
+        .all(owner.id)
+        .map((row) => String((row as { id: string }).id));
+      // A terminal PR revokes any still-active owner work before cleanup can be
+      // admitted. Late workflow observations lose their stage CAS; the push
+      // workflow also checks this fence immediately before its side effect.
+      database
+        .prepare(
+          `UPDATE autopilot_admissions
+           SET mutation_epoch = mutation_epoch + 1,
+               stop_requested_at = COALESCE(stop_requested_at, ?), updated_at = ?
+           WHERE owner_id = ? AND current_stage_attempt_id IN (
+             SELECT id FROM autopilot_stage_attempts
+             WHERE owner_id = ? AND stage = 'owner-turn'
+               AND status IN ('reserved', 'running')
+           );`,
+        )
+        .run(nowIso, nowIso, owner.id, owner.id);
+      database
+        .prepare(
+          `UPDATE autopilot_owner_fix_submissions
+           SET cancellation_requested_at = COALESCE(cancellation_requested_at, ?),
+               error = COALESCE(error, 'pull-request-terminal-state')
+           WHERE attempt_id IN (
+             SELECT id FROM autopilot_stage_attempts
+             WHERE owner_id = ? AND stage = 'owner-turn'
+               AND status IN ('reserved', 'running')
+           ) AND status = 'applying';`,
+        )
+        .run(nowIso, owner.id);
+      database
+        .prepare(
+          `UPDATE autopilot_stage_attempts
+           SET status = 'cancelled', error = 'pull-request-terminal-state',
+               finished_at = ?
+           WHERE owner_id = ? AND stage != 'cleanup'
+             AND status IN ('reserved', 'running');`,
+        )
+        .run(nowIso, owner.id);
+      database
+        .prepare(
+          `UPDATE autopilot_admissions
+           SET state = 'stopped', current_workflow = NULL, current_run_id = NULL,
+               current_stage_attempt_id = NULL,
+               stop_requested_at = COALESCE(stop_requested_at, ?),
+               completed_at = COALESCE(completed_at, ?),
+               version = version + 1, updated_at = ?
+           WHERE owner_id = ?
+             AND state NOT IN ('completed', 'stopped', 'superseded',
+                             'cleanup-pending', 'archived');`,
+        )
+        .run(nowIso, nowIso, nowIso, owner.id);
+      database
+        .prepare(
+          `UPDATE prepared_diff_approvals
+           SET status = 'superseded',
+               reason = COALESCE(reason, 'pull request reached terminal state'),
+               resolved_at = COALESCE(resolved_at, ?), updated_at = ?
+           WHERE admission_id IN (SELECT id FROM autopilot_admissions WHERE owner_id = ?)
+             AND approval_type = 'push' AND status IN ('pending', 'approved');`,
+        )
+        .run(nowIso, nowIso, owner.id);
+      if (!owner.worktreeId) {
+        database
+          .prepare(
+            `UPDATE autopilot_pr_owners
+             SET status = 'archived', archived_at = COALESCE(archived_at, ?),
+                 updated_at = ? WHERE id = ? AND status != 'archived';`,
+          )
+          .run(nowIso, nowIso, owner.id);
+        database
+          .prepare(
+            `UPDATE autopilot_owner_generations
+             SET status = 'archived', archived_at = COALESCE(archived_at, ?)
+             WHERE owner_id = ? AND status = 'active';`,
+          )
+          .run(nowIso, owner.id);
+        database
+          .prepare(
+            `UPDATE scheduled_tasks SET enabled = 0, updated_at = ? WHERE id = ?;`,
+          )
+          .run(nowIso, `watch:${input.watchId}`);
+        database
+          .prepare(
+            `UPDATE chat_sessions SET archived_at = COALESCE(archived_at, ?), updated_at = ?
+             WHERE id = ?;`,
+          )
+          .run(nowIso, nowIso, owner.chatSessionId);
+        return { status: 'archived-without-worktree' as const };
+      }
+      const admission = readAutopilotAdmission(
+        database
+          .prepare(
+            `SELECT * FROM autopilot_admissions
+             WHERE owner_id = ?
+               AND state IN ('completed', 'stopped', 'superseded', 'cleanup-pending')
+             ORDER BY updated_at DESC LIMIT 1;`,
+          )
+          .get(owner.id),
+      );
+      if (!admission) return { status: 'not-ready' as const };
+      // A clean, managed owner worktree may never have produced a prepared
+      // diff, so it remains `ready`. Terminal ownership is the narrow durable
+      // transition that makes it eligible for the existing successful-grace
+      // cleanup policy. Adopted worktrees remain protected by their explicit
+      // confirmation guard and are never transitioned here.
+      database
+        .prepare(
+          `UPDATE worktrees
+           SET lifecycle_status = 'succeeded', updated_at = ?
+           WHERE id = ? AND lifecycle_status = 'ready' AND adopted = 0;`,
+        )
+        .run(nowIso, owner.worktreeId);
+      database
+        .prepare(
+          `UPDATE autopilot_pr_owners
+           SET status = 'draining', updated_at = ?
+           WHERE id = ? AND status != 'archived';`,
+        )
+        .run(nowIso, owner.id);
+      if (admission.state === 'cleanup-pending') {
+        return {
+          status: 'already-admitted' as const,
+          admissionId: admission.id,
+        };
+      }
+      const update = database
+        .prepare(
+          `UPDATE autopilot_admissions
+           SET state = 'cleanup-pending', next_attempt_at = ?,
+               version = version + 1, updated_at = ?
+           WHERE id = ? AND version = ? AND state = ?;`,
+        )
+        .run(nowIso, nowIso, admission.id, admission.version, admission.state);
+      if (update.changes !== 1) return { status: 'cas-lost' as const };
+      insertAutopilotAdmissionEvent(database, {
+        admissionId: admission.id,
+        fromState: admission.state,
+        toState: 'cleanup-pending',
+        reason: input.reason,
+        data: { ownerId: owner.id },
+        now: nowIso,
+      });
+      return { status: 'admitted' as const, admissionId: admission.id };
+    });
+  } finally {
+    database.close();
+  }
+  await Promise.all(
+    revokedAttemptIds.map((attemptId) =>
+      waitForAutopilotSubmissionProcessLease(attemptId),
+    ),
+  );
+  return result;
 }
 
 export function insertAutopilotAdmissionEvent(
@@ -591,6 +859,22 @@ export function insertAutopilotAdmissionEvent(
     );
 }
 
+function ownerHasActiveSubmissionLease(
+  database: DatabaseSync,
+  ownerId: string,
+) {
+  const attempts = database
+    .prepare(
+      `SELECT id FROM autopilot_stage_attempts
+       WHERE owner_id = ? AND stage = 'owner-turn';`,
+    )
+    .all(ownerId)
+    .map((row) => String((row as { id: string }).id));
+  return attempts.some((attemptId) =>
+    hasAutopilotSubmissionProcessLease(attemptId),
+  );
+}
+
 function selectNextStage(admission: AutopilotAdmission, now: Date) {
   if (admission.state === 'triaged') {
     return admission.lastOutcome?.shouldPrepare
@@ -610,6 +894,55 @@ function selectNextStage(admission: AutopilotAdmission, now: Date) {
       reason: 'worktree-ready-for-owner',
     } as const;
   }
+  if (admission.state === 'fix-prepared') {
+    if (admission.authorityMode === 'prepare-only') {
+      return {
+        kind: 'complete',
+        reason: 'prepare-only-diff-retained',
+      } as const;
+    }
+    return {
+      kind: 'stage',
+      stage: 'verify',
+      admittedState: 'verify-admitted',
+      reason: 'fix-ready-for-current-head-verification',
+    } as const;
+  }
+  if (admission.state === 'verified') {
+    return {
+      kind: 'stage',
+      stage: 'push',
+      admittedState: 'push-admitted',
+      reason: 'verified-safe-push',
+    } as const;
+  }
+  if (admission.state === 'pushed') {
+    return {
+      kind: 'stage',
+      stage: 'comment-result',
+      admittedState: 'comment-admitted',
+      reason: 'push-recorded-deliver-result',
+    } as const;
+  }
+  if (
+    (admission.state === 'stopped' || admission.state === 'superseded') &&
+    admission.worktreeId
+  ) {
+    return {
+      kind: 'stage',
+      stage: 'cleanup',
+      admittedState: 'cleanup-pending',
+      reason: 'terminal-owner-cleanup-admitted',
+    } as const;
+  }
+  if (admission.state === 'cleanup-pending') {
+    return {
+      kind: 'stage',
+      stage: 'cleanup',
+      admittedState: 'cleanup-pending',
+      reason: 'cleanup-grace-recheck',
+    } as const;
+  }
   if (admission.state !== 'blocked' && admission.state !== 'failed') {
     return undefined;
   }
@@ -625,7 +958,11 @@ function selectNextStage(admission: AutopilotAdmission, now: Date) {
   if (
     stage !== 'triage' &&
     stage !== 'prepare-worktree' &&
-    stage !== 'owner-turn'
+    stage !== 'owner-turn' &&
+    stage !== 'verify' &&
+    stage !== 'push' &&
+    stage !== 'comment-result' &&
+    stage !== 'cleanup'
   )
     return undefined;
   return {
@@ -634,6 +971,44 @@ function selectNextStage(admission: AutopilotAdmission, now: Date) {
     admittedState: autopilotStageRegistry[stage].admittedState,
     reason: 'bounded-retry',
   } as const;
+}
+
+function hasApprovedPushApproval(
+  database: DatabaseSync,
+  admissionId: string,
+  preparedDiffId: string | null,
+) {
+  if (!preparedDiffId) return false;
+  return Boolean(
+    database
+      .prepare(
+        `SELECT approval.id
+         FROM prepared_diff_approvals AS approval
+         INNER JOIN autopilot_admissions AS admission ON admission.id = approval.admission_id
+         INNER JOIN autopilot_pr_owners AS owner ON owner.id = admission.owner_id
+         WHERE approval.admission_id = ?
+           AND approval.prepared_diff_id = ?
+           AND approval.approval_type = 'push'
+           AND approval.status = 'approved'
+           AND approval.owner_generation = owner.generation
+           AND approval.target_sha = json_extract(
+             admission.last_outcome_json,
+             '$.artifact.approvalTargetSha'
+           )
+           AND approval.policy_hash = json_extract(
+             admission.last_outcome_json,
+             '$.artifact.approvalPolicyHash'
+           )
+           AND approval.stage_attempt_id = (
+             SELECT id FROM autopilot_stage_attempts
+             WHERE admission_id = admission.id
+               AND stage = 'verify' AND status = 'completed'
+             ORDER BY attempt_number DESC LIMIT 1
+           )
+         LIMIT 1;`,
+      )
+      .get(admissionId, preparedDiffId),
+  );
 }
 
 function transitionWithoutAttempt(

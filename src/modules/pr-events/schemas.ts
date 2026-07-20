@@ -237,6 +237,9 @@ export const prReviewSubmitInputSchema = v.object({
 });
 export const prReviewThreadReplyInputSchema = v.object({
   text: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(65_536)),
+  idempotencyKey: v.optional(
+    v.pipe(v.string(), v.minLength(1), v.maxLength(512)),
+  ),
 });
 export const prEventOutputSchema = v.looseObject({
   ok: v.boolean(),

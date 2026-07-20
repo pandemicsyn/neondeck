@@ -7,9 +7,9 @@ import {
   abandonPreparedDiffWithRevisionAbort,
   autopilotReadinessInputSchema,
   preparePrWorktree,
-  pushPrAutofix,
   readAutopilotReadiness,
   runPreparedDiffRevision,
+  rejectAdmissionBoundPushApproval,
   triagePrEvent,
   verifyPrWorktree,
 } from '../../modules/autopilot';
@@ -143,9 +143,8 @@ export function createAutopilotRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/autopilot/comment-pr-autofix-result', async (c) => {
-    const result = await commentPrAutofixResult(await safeJsonBody(c), paths);
-    recordHandledPrApiResult(paths, 'api:comment_pr_autofix_result', result);
-    return c.json(result, result.ok ? 200 : 400);
+    await safeJsonBody(c);
+    return c.json(coordinatorOnlyCommentResult(), 409);
   });
 
   routes.post('/autopilot/approvals/:id/resolve', async (c) => {
@@ -195,17 +194,30 @@ export function createAutopilotRoutes(paths: RuntimePaths) {
         ? await approvePreparedDiffPushWithDispatch(
             {
               preparedDiffId: approval.preparedDiffId,
+              approvalId: approval.id,
               confirm: true,
               reason: 'Approved from dashboard Autopilot panel.',
               approverSurface: 'dashboard',
             },
             paths,
           )
-        : await resolvePreparedDiffRevisionFromRoute(
-            approval.preparedDiffId,
-            input,
-            paths,
-          );
+        : approval.admissionId
+          ? rejectAdmissionBoundPushApproval(
+              approval.id,
+              {
+                reason:
+                  typeof input.reason === 'string'
+                    ? input.reason
+                    : 'Push rejected from dashboard Autopilot panel.',
+                approverSurface: 'dashboard',
+              },
+              paths,
+            )
+          : await resolvePreparedDiffRevisionFromRoute(
+              approval.preparedDiffId,
+              input,
+              paths,
+            );
     return c.json(result, preparedDiffHttpStatus(result));
   });
 
@@ -338,21 +350,38 @@ export function createAutopilotRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/autopilot/push-pr-autofix', async (c) => {
-    const result = await pushPrAutofix(await safeJsonBody(c), paths);
-    recordHandledPrApiResult(paths, 'api:push_pr_autofix', result);
-    return c.json(result, result.ok ? 200 : 400);
+    await safeJsonBody(c);
+    return c.json(coordinatorOnlyPushResult(), 409);
   });
 
   routes.post('/prepared-diffs/:id/push', async (c) => {
-    const result = await pushPrAutofix(
-      { ...(await safeJsonObject(c)), preparedDiffId: c.req.param('id') },
-      paths,
-    );
-    recordHandledPrApiResult(paths, 'api:push_pr_autofix', result);
-    return c.json(result, result.ok ? 200 : 400);
+    await safeJsonObject(c);
+    return c.json(coordinatorOnlyPushResult(), 409);
   });
 
   return routes;
+}
+
+function coordinatorOnlyPushResult() {
+  return {
+    ok: false,
+    action: 'autopilot_push_pr_autofix',
+    changed: false,
+    message:
+      'Push is coordinator-only. Resolve the admission-bound approval and let the Autopilot coordinator reserve the push stage.',
+    requires: ['autopilotAdmission'],
+  };
+}
+
+function coordinatorOnlyCommentResult() {
+  return {
+    ok: false,
+    action: 'autopilot_comment_pr_autofix_result',
+    changed: false,
+    message:
+      'Result delivery is coordinator-owned. Advance the Autopilot admission instead of dispatching a comment directly.',
+    requires: ['autopilotCoordinator'],
+  };
 }
 
 function approvalNotFound(message: string | undefined) {

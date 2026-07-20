@@ -1,10 +1,13 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it, vi } from 'vitest';
 import {
   advanceAutopilotAdmission,
+  admitTerminalAutopilotOwnerCleanup,
   autopilotAdmissionStates,
   autopilotModeProgression,
   autopilotRetryBackoffMs,
@@ -27,6 +30,13 @@ import {
   type AutopilotWorkflowInvoker,
 } from './modules/autopilot';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
+import { openDb } from './lib/sqlite';
+import {
+  claimAutopilotSubmissionProcessLease,
+  releaseAutopilotSubmissionProcessLease,
+} from './modules/autopilot/owner/submission-lease';
+
+const execFileAsync = promisify(execFile);
 
 const limits = {
   maxAutonomousJobs: 4,
@@ -666,6 +676,322 @@ describe('durable autopilot coordination', () => {
     });
   });
 
+  it('recovers a pre-effect push intent only after the remote has the exact SHA', async () => {
+    await withHome(async (paths) => {
+      const admitted = await admit(
+        paths,
+        'watch:push-receipt',
+        'event:push',
+        61,
+      );
+      const now = '2026-07-19T00:00:00.000Z';
+      const preparedDiffId = 'prepared:push-receipt';
+      const worktreeId = 'worktree:push-receipt';
+      const attemptId = admitted.admission.currentStageAttemptId!;
+      const sourcePath = join(paths.home, 'push-source');
+      const deletedPreparedWorktreePath = join(
+        paths.home,
+        'deleted-push-worktree',
+      );
+      const remotePath = join(paths.home, 'push-remote.git');
+      await mkdir(sourcePath, { recursive: true });
+      await runGit(sourcePath, ['init', '-b', 'main']);
+      await runGit(sourcePath, ['config', 'user.email', 'test@example.com']);
+      await runGit(sourcePath, ['config', 'user.name', 'Test User']);
+      await writeFile(
+        join(sourcePath, 'push.txt'),
+        'recover this push intent\n',
+      );
+      await runGit(sourcePath, ['add', 'push.txt']);
+      await runGit(sourcePath, ['commit', '-m', 'fixture push']);
+      const pushedSha = await runGitOutput(sourcePath, ['rev-parse', 'HEAD']);
+      await runGit(paths.home, ['init', '--bare', remotePath]);
+      await runGit(sourcePath, ['remote', 'add', 'origin', remotePath]);
+      await runGit(sourcePath, ['push', 'origin', 'HEAD:feature']);
+      const database = new DatabaseSync(paths.neondeckDatabase);
+      try {
+        database
+          .prepare(
+            `INSERT INTO worktrees (
+               id, repo_id, repo_full_name, github_owner, github_name, pr_number,
+               base_ref, head_ref, head_sha, local_path, storage_kind,
+               lifecycle_status, created_by, created_at, updated_at
+             ) VALUES (?, 'repo', 'example/repo', 'example', 'repo', 61,
+               'main', 'feature', 'before-push', ?, 'managed',
+               'prepared-diff', 'test', ?, ?);`,
+          )
+          .run(worktreeId, sourcePath, now, now);
+        database
+          .prepare(
+            `INSERT INTO prepared_diffs (
+               id, worktree_id, repo_id, repo_full_name, pr_number, title,
+               source_worktree_path, base_ref, head_ref, head_sha, status,
+               push_approval_status, verification_status, created_by,
+               created_at, updated_at
+             ) VALUES (?, ?, 'repo', 'example/repo', 61, 'Push receipt',
+               ?, 'main', 'feature', 'before-push', 'push-approved',
+               'approved', 'passed', 'test', ?, ?);`,
+          )
+          // Simulate terminal cleanup deleting the prepared worktree in the
+          // small window after Git accepted the push but before the local
+          // receipt was committed. Recovery must query the remote directly.
+          .run(
+            preparedDiffId,
+            worktreeId,
+            deletedPreparedWorktreePath,
+            now,
+            now,
+          );
+        database
+          .prepare(
+            `UPDATE autopilot_stage_attempts
+             SET stage = 'push', workflow = 'push-pr-autofix', status = 'running',
+                 input_fingerprint = 'push-receipt', started_at = ?
+             WHERE id = ?;`,
+          )
+          .run(now, attemptId);
+        database
+          .prepare(
+            `UPDATE autopilot_admissions
+             SET state = 'push-admitted', prepared_diff_id = ?, worktree_id = ?,
+                 current_stage_attempt_id = ?, current_workflow = 'push-pr-autofix',
+                 current_run_id = 'run:push-receipt', updated_at = ?
+             WHERE id = ?;`,
+          )
+          .run(
+            preparedDiffId,
+            worktreeId,
+            attemptId,
+            now,
+            admitted.admission.id,
+          );
+        database
+          .prepare(
+            `INSERT INTO app_metadata (key, value, updated_at) VALUES (?, ?, ?);`,
+          )
+          .run(
+            `autopilot.push-reconciliation:${preparedDiffId}:${attemptId}`,
+            JSON.stringify({
+              preparedDiffId,
+              commitSha: pushedSha,
+              remote: remotePath,
+              branch: 'feature',
+              admissionId: admitted.admission.id,
+              attemptId,
+              phase: 'push-intent',
+            }),
+            now,
+          );
+      } finally {
+        database.close();
+      }
+
+      await expect(
+        reconcileAutopilotStageAttempts(paths, {
+          now: new Date('2026-07-19T00:01:00.000Z'),
+        }),
+      ).resolves.toMatchObject({
+        reconciledAdmissionIds: [admitted.admission.id],
+      });
+      await expect(listAutopilotAdmissions(paths)).resolves.toEqual([
+        expect.objectContaining({
+          state: 'pushed',
+          pushedCommitSha: pushedSha,
+        }),
+      ]);
+      await expect(
+        listAutopilotStageAttempts(
+          { admissionId: admitted.admission.id },
+          paths,
+        ),
+      ).resolves.toEqual([
+        expect.objectContaining({ id: attemptId, status: 'completed' }),
+      ]);
+      await expect(
+        reconcileAutopilotStageAttempts(paths),
+      ).resolves.toMatchObject({
+        reconciledAdmissionIds: [],
+      });
+      const retryAttemptId = 'attempt:push-receipt-retry';
+      const retryDatabase = new DatabaseSync(paths.neondeckDatabase);
+      try {
+        retryDatabase
+          .prepare(
+            `INSERT INTO autopilot_stage_attempts (
+               id, admission_id, owner_id, stage, attempt_number, workflow,
+               event_sequence, status, input_fingerprint, artifact_json,
+               created_at, started_at
+             ) VALUES (?, ?, ?, 'push', 2, 'push-pr-autofix', 1, 'running',
+               'push-receipt-retry', '{}', ?, ?);`,
+          )
+          .run(
+            retryAttemptId,
+            admitted.admission.id,
+            admitted.admission.ownerId,
+            now,
+            now,
+          );
+        retryDatabase
+          .prepare(
+            `UPDATE autopilot_admissions
+             SET state = 'push-admitted', current_stage_attempt_id = ?,
+                 current_workflow = 'push-pr-autofix', current_run_id = 'run:retry'
+             WHERE id = ?;`,
+          )
+          .run(retryAttemptId, admitted.admission.id);
+        retryDatabase
+          .prepare(
+            `INSERT INTO app_metadata (key, value, updated_at) VALUES (?, ?, ?);`,
+          )
+          .run(
+            `autopilot.push-reconciliation:${preparedDiffId}:${attemptId}`,
+            JSON.stringify({
+              preparedDiffId,
+              commitSha: 'late-old-push',
+              remote: remotePath,
+              branch: 'feature',
+              admissionId: admitted.admission.id,
+              attemptId,
+              phase: 'push-receipt',
+            }),
+            now,
+          );
+      } finally {
+        retryDatabase.close();
+      }
+      await expect(
+        reconcileAutopilotStageAttempts(paths, {
+          now: new Date('2026-07-19T00:01:00.000Z'),
+        }),
+      ).resolves.toMatchObject({
+        reconciledAdmissionIds: [],
+      });
+      await expect(
+        listAutopilotStageAttempts(
+          { admissionId: admitted.admission.id },
+          paths,
+        ),
+      ).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: retryAttemptId, status: 'running' }),
+        ]),
+      );
+
+      // If terminal handling wins the local race after Git accepted an exact
+      // intent, reconciliation records the delivered SHA without reviving the
+      // stopped admission or its cleanup lifecycle.
+      const terminalDatabase = new DatabaseSync(paths.neondeckDatabase);
+      try {
+        terminalDatabase
+          .prepare(
+            `UPDATE autopilot_stage_attempts
+             SET status = 'cancelled', finished_at = ? WHERE id = ?;`,
+          )
+          .run(now, retryAttemptId);
+        terminalDatabase
+          .prepare(
+            `UPDATE autopilot_admissions
+             SET state = 'stopped', current_stage_attempt_id = NULL,
+                 current_workflow = NULL, current_run_id = NULL,
+                 stop_requested_at = ?, updated_at = ? WHERE id = ?;`,
+          )
+          .run(now, now, admitted.admission.id);
+        terminalDatabase
+          .prepare(
+            `INSERT INTO app_metadata (key, value, updated_at) VALUES (?, ?, ?)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at;`,
+          )
+          .run(
+            `autopilot.push-reconciliation:${preparedDiffId}:${retryAttemptId}`,
+            JSON.stringify({
+              preparedDiffId,
+              commitSha: pushedSha,
+              remote: remotePath,
+              branch: 'feature',
+              admissionId: admitted.admission.id,
+              attemptId: retryAttemptId,
+              phase: 'push-intent',
+            }),
+            now,
+          );
+      } finally {
+        terminalDatabase.close();
+      }
+      await expect(
+        reconcileAutopilotStageAttempts(paths),
+      ).resolves.toMatchObject({
+        reconciledAdmissionIds: [admitted.admission.id],
+      });
+      await expect(listAutopilotAdmissions(paths)).resolves.toEqual([
+        expect.objectContaining({
+          state: 'stopped',
+          pushedCommitSha: pushedSha,
+        }),
+      ]);
+    });
+  });
+
+  it('retries an active durable result-delivery lease instead of escalating it to manual review', async () => {
+    await withHome(async (paths) => {
+      const admitted = await admit(
+        paths,
+        'watch:delivery-lease',
+        'event:delivery-lease',
+        62,
+      );
+      const attemptId = admitted.admission.currentStageAttemptId!;
+      const database = openDb(paths.neondeckDatabase);
+      try {
+        database
+          .prepare(
+            `UPDATE autopilot_stage_attempts
+             SET stage = 'comment-result', workflow = 'comment-pr-autofix-result',
+                 status = 'running', run_id = 'run:delivery-lease', started_at = ?
+             WHERE id = ?;`,
+          )
+          .run('2026-07-19T00:00:00.000Z', attemptId);
+        database
+          .prepare(
+            `UPDATE autopilot_admissions
+             SET state = 'comment-admitted', current_workflow = 'comment-pr-autofix-result',
+                 current_run_id = 'run:delivery-lease' WHERE id = ?;`,
+          )
+          .run(admitted.admission.id);
+        database
+          .prepare(
+            `UPDATE autopilot_pr_owners SET last_dispatched_sequence = 1 WHERE id = ?;`,
+          )
+          .run(admitted.admission.ownerId);
+      } finally {
+        database.close();
+      }
+
+      await recordAutopilotStageTerminalObservation(
+        {
+          runId: 'run:delivery-lease',
+          observation: {
+            workflow: 'comment-pr-autofix-result',
+            failed: true,
+            errorCode: 'delivery-lease-active',
+            error: 'Result delivery is held by an active delivery lease.',
+          },
+        },
+        paths,
+        new Date('2026-07-19T00:00:00.000Z'),
+      );
+      await expect(listAutopilotAdmissions(paths)).resolves.toEqual([
+        expect.objectContaining({
+          id: admitted.admission.id,
+          state: 'failed',
+          lastOutcome: expect.objectContaining({
+            retryClass: 'transient',
+            retryStage: 'comment-result',
+          }),
+        }),
+      ]);
+    });
+  });
+
   it('moves stale attached runs to manual review and ignores late observations', async () => {
     await withHome(async (paths) => {
       const now = new Date('2026-07-19T00:00:00.000Z');
@@ -828,6 +1154,275 @@ describe('durable autopilot coordination', () => {
       );
     });
   });
+
+  it('holds terminal cleanup behind a cancelled owner submission lease', async () => {
+    await withHome(async (paths) => {
+      const admitted = await admit(
+        paths,
+        'watch:terminal-lease',
+        'event:terminal-lease',
+        10,
+      );
+      const attemptId = 'attempt:terminal-lease';
+      const database = openDb(paths.neondeckDatabase);
+      try {
+        database
+          .prepare(
+            `UPDATE autopilot_admissions
+             SET state = 'completed', worktree_id = 'worktree:terminal-lease',
+                 current_stage_attempt_id = ?, current_workflow = 'autopilot-owner-turn',
+                 updated_at = ? WHERE id = ?;`,
+          )
+          .run(attemptId, '2026-07-19T00:00:00.000Z', admitted.admission.id);
+        database
+          .prepare(
+            `UPDATE autopilot_pr_owners SET worktree_id = ? WHERE id = ?;`,
+          )
+          .run('worktree:terminal-lease', admitted.admission.ownerId);
+        database
+          .prepare(
+            `INSERT INTO worktrees (
+               id, repo_id, repo_full_name, github_owner, github_name, pr_number,
+               base_ref, head_ref, head_sha, local_path, storage_kind,
+               lifecycle_status, created_by, created_at, updated_at
+             ) VALUES (?, 'repo', 'example/repo', 'example', 'repo', 10,
+                       'main', 'feature', 'head', ?, 'managed', 'ready',
+                       'test', ?, ?);`,
+          )
+          .run(
+            'worktree:terminal-lease',
+            join(paths.home, 'terminal-lease-worktree'),
+            '2026-07-19T00:00:00.000Z',
+            '2026-07-19T00:00:00.000Z',
+          );
+        database
+          .prepare(
+            `UPDATE autopilot_stage_attempts
+             SET id = ?, stage = 'owner-turn', workflow = 'autopilot-owner-turn',
+                 status = 'running', started_at = ?
+             WHERE admission_id = ?;`,
+          )
+          .run(attemptId, '2026-07-19T00:00:00.000Z', admitted.admission.id);
+      } finally {
+        database.close();
+      }
+
+      claimAutopilotSubmissionProcessLease(attemptId);
+      try {
+        const cleanup = admitTerminalAutopilotOwnerCleanup(
+          { watchId: 'watch:terminal-lease', reason: 'terminal-lease' },
+          paths,
+          new Date('2026-07-19T00:00:00.000Z'),
+        );
+        await vi.waitFor(async () => {
+          await expect(listAutopilotAdmissions(paths)).resolves.toEqual([
+            expect.objectContaining({ state: 'cleanup-pending' }),
+          ]);
+        });
+        await expect(
+          advanceAutopilotAdmission(
+            { admissionId: admitted.admission.id, limits },
+            paths,
+          ),
+        ).resolves.toMatchObject({ status: 'idle' });
+        releaseAutopilotSubmissionProcessLease(attemptId);
+        await expect(cleanup).resolves.toMatchObject({ status: 'admitted' });
+        const check = openDb(paths.neondeckDatabase, { readOnly: true });
+        try {
+          expect(
+            check
+              .prepare('SELECT lifecycle_status FROM worktrees WHERE id = ?;')
+              .get('worktree:terminal-lease'),
+          ).toEqual({ lifecycle_status: 'succeeded' });
+        } finally {
+          check.close();
+        }
+      } finally {
+        releaseAutopilotSubmissionProcessLease(attemptId);
+      }
+    });
+  });
+
+  it('keeps terminal-owner cleanup admission durable through grace and archives only after deletion', async () => {
+    await withHome(async (paths) => {
+      const admitted = await admit(
+        paths,
+        'watch:terminal',
+        'event:terminal',
+        11,
+      );
+      const database = openDb(paths.neondeckDatabase);
+      try {
+        database
+          .prepare(
+            `UPDATE autopilot_admissions
+             SET state = 'completed', worktree_id = 'worktree:terminal',
+                 current_stage_attempt_id = NULL, current_workflow = NULL,
+                 completed_at = ?, updated_at = ? WHERE id = ?;`,
+          )
+          .run(
+            '2026-07-19T00:00:00.000Z',
+            '2026-07-19T00:00:00.000Z',
+            admitted.admission.id,
+          );
+        database
+          .prepare(
+            `UPDATE autopilot_stage_attempts
+             SET status = 'cancelled', finished_at = ? WHERE admission_id = ?;`,
+          )
+          .run('2026-07-19T00:00:00.000Z', admitted.admission.id);
+        database
+          .prepare(
+            `UPDATE autopilot_pr_owners
+             SET worktree_id = 'worktree:terminal' WHERE id = ?;`,
+          )
+          .run(admitted.admission.ownerId);
+      } finally {
+        database.close();
+      }
+
+      const cleanup = await admitTerminalAutopilotOwnerCleanup(
+        { watchId: 'watch:terminal', reason: 'pull-request-terminal-state' },
+        paths,
+        new Date('2026-07-19T00:00:00.000Z'),
+      );
+      expect(cleanup).toMatchObject({
+        status: 'admitted',
+        admissionId: admitted.admission.id,
+      });
+
+      const invoke = vi.fn<AutopilotWorkflowInvoker>(async () => ({
+        runId: 'run:terminal:grace',
+      }));
+      await coordinateAutopilotAdmission(
+        {
+          admissionId: admitted.admission.id,
+          limits,
+          now: new Date('2026-07-19T00:00:00.000Z'),
+          invokeWorkflow: invoke,
+        },
+        paths,
+      );
+      await expect(
+        admitTerminalAutopilotOwnerCleanup(
+          { watchId: 'watch:terminal', reason: 'duplicate-terminal-state' },
+          paths,
+          new Date('2026-07-19T00:00:00.500Z'),
+        ),
+      ).resolves.toMatchObject({
+        status: 'already-admitted',
+        admissionId: admitted.admission.id,
+      });
+      await expect(
+        listAutopilotStageAttempts(
+          { admissionId: admitted.admission.id },
+          paths,
+        ),
+      ).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            stage: 'cleanup',
+            status: 'running',
+            runId: 'run:terminal:grace',
+          }),
+        ]),
+      );
+      await recordAutopilotStageTerminalObservation(
+        {
+          runId: 'run:terminal:grace',
+          observation: {
+            workflow: 'cleanup-autopilot-worktree',
+            failed: false,
+            artifact: { cleanupDeleted: false },
+          },
+        },
+        paths,
+        new Date('2026-07-19T00:00:01.000Z'),
+      );
+      await expect(listAutopilotAdmissions(paths)).resolves.toEqual([
+        expect.objectContaining({ state: 'cleanup-pending' }),
+      ]);
+      await coordinateAutopilotAdmission(
+        {
+          admissionId: admitted.admission.id,
+          limits,
+          now: new Date('2026-07-19T00:01:00.000Z'),
+          invokeWorkflow: invoke,
+        },
+        paths,
+      );
+      expect(invoke).toHaveBeenCalledTimes(1);
+
+      const [pending] = await listAutopilotAdmissions(paths);
+      await coordinateAutopilotAdmission(
+        {
+          admissionId: admitted.admission.id,
+          limits,
+          now: new Date(Date.parse(pending.nextAttemptAt!) + 1),
+          invokeWorkflow: async () => ({ runId: 'run:terminal:failed' }),
+        },
+        paths,
+      );
+      await recordAutopilotStageTerminalObservation(
+        {
+          runId: 'run:terminal:failed',
+          observation: {
+            workflow: 'cleanup-autopilot-worktree',
+            failed: false,
+            artifact: {
+              cleanupDeleted: false,
+              cleanupFailed: true,
+              cleanupError: 'temporary worktree cleanup failure',
+            },
+          },
+        },
+        paths,
+        new Date(Date.parse(pending.nextAttemptAt!) + 2),
+      );
+      const [failedCleanup] = await listAutopilotAdmissions(paths);
+      expect(failedCleanup).toMatchObject({
+        state: 'failed',
+        lastOutcome: { retryStage: 'cleanup' },
+      });
+      await expect(
+        listAutopilotAdmissionsNeedingAdvance(
+          paths,
+          new Date(Date.parse(failedCleanup.nextAttemptAt!) + 1),
+        ),
+      ).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: admitted.admission.id }),
+        ]),
+      );
+      await coordinateAutopilotAdmission(
+        {
+          admissionId: admitted.admission.id,
+          limits,
+          now: new Date(Date.parse(failedCleanup.nextAttemptAt!) + 1),
+          invokeWorkflow: async () => ({ runId: 'run:terminal:deleted' }),
+        },
+        paths,
+      );
+      await recordAutopilotStageTerminalObservation(
+        {
+          runId: 'run:terminal:deleted',
+          observation: {
+            workflow: 'cleanup-autopilot-worktree',
+            failed: false,
+            artifact: { cleanupDeleted: true },
+          },
+        },
+        paths,
+        new Date(Date.parse(failedCleanup.nextAttemptAt!) + 2),
+      );
+      await expect(listAutopilotAdmissions(paths)).resolves.toEqual([
+        expect.objectContaining({ state: 'archived' }),
+      ]);
+      await expect(listAutopilotPrOwners(paths)).resolves.toEqual([
+        expect.objectContaining({ status: 'archived' }),
+      ]);
+    });
+  });
 });
 
 async function admit(
@@ -884,4 +1479,13 @@ async function withHome(
   } finally {
     await rm(home, { recursive: true, force: true });
   }
+}
+
+async function runGit(cwd: string, args: string[]) {
+  await execFileAsync('git', args, { cwd });
+}
+
+async function runGitOutput(cwd: string, args: string[]) {
+  const { stdout } = await execFileAsync('git', args, { cwd });
+  return stdout.trim();
 }

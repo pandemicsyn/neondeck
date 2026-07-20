@@ -2,8 +2,10 @@
 import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
+import { createHash } from 'node:crypto';
 import { type JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
+import { openDb } from '../../lib/sqlite';
 import {
   type GitHubCheckSummary,
   type GitHubFailingCheckFact,
@@ -53,6 +55,7 @@ import {
   gitStatus,
   type GitCommitResult,
 } from '../../repo-edit/git';
+
 import {
   patchRepoFiles,
   readRepoDiff,
@@ -156,6 +159,8 @@ import {
   reviewTargetPathSet,
   worktreeStatusDirty,
 } from './review-support';
+
+const execFileAsync = promisify(execFile);
 
 export async function pushPrAutofix(
   rawInput: unknown,
@@ -350,6 +355,12 @@ export async function pushPrAutofix(
       policy.mode === 'autofix-with-approval' ||
       policy.decision === 'require-approval';
     const hasCommittedDiff = policy.diff.filesChanged > 0;
+    const approvalPolicyHash = input.admissionId
+      ? admissionPolicyHash(policy.policyHash, policy.mode)
+      : policy.policyHash;
+    const approvalBinding = input.admissionId
+      ? readCoordinatorPushApprovalBinding(input.admissionId, paths)
+      : undefined;
     const matchingPushApproval = listApprovalRecords(
       { status: 'approved', preparedDiffIds: [preparedDiff.id] },
       paths,
@@ -357,9 +368,44 @@ export async function pushPrAutofix(
       (approval) =>
         approval.approvalType === 'push' &&
         approval.targetSha === currentSha &&
-        approval.policyHash === policy.policyHash &&
-        approval.policyDecision !== 'deny',
+        approval.policyHash === approvalPolicyHash &&
+        approval.policyDecision !== 'deny' &&
+        (!input.admissionId ||
+          (approval.admissionId === input.admissionId &&
+            approval.ownerGeneration === approvalBinding?.owner_generation &&
+            approval.stageAttemptId ===
+              approvalBinding?.verification_attempt_id)),
     );
+    if (
+      input.admissionId &&
+      !matchingPushApproval &&
+      policy.decision !== 'deny'
+    ) {
+      rearmAdmissionForFreshPushApproval(
+        input.admissionId,
+        input.attemptId,
+        paths,
+      );
+      return blockPushAttempt(
+        preparedDiff.id,
+        worktree.id,
+        'The approved SHA or policy binding changed; a fresh admission-bound approval is required.',
+        {
+          gates: [
+            {
+              gate: 'sha-bound-policy-approval',
+              ok: false,
+              reason:
+                'The current worktree SHA or effective policy no longer matches the resolved approval.',
+            },
+          ],
+          paths,
+          recoveryOptions: [
+            'The coordinator will re-evaluate policy and create a fresh approval when required.',
+          ],
+        },
+      );
+    }
     const gates = [
       {
         gate: 'autopilot-mode',
@@ -545,6 +591,35 @@ export async function pushPrAutofix(
         });
     const remote = pushTarget.remote;
     const branch = pushTarget.branch;
+    if (
+      input.admissionId &&
+      !isCoordinatorPushAdmissionCurrent(
+        input.admissionId,
+        input.attemptId,
+        paths,
+      )
+    ) {
+      return blockPushAttempt(
+        preparedDiff.id,
+        worktree.id,
+        'The Autopilot admission is no longer push-current; refusing the terminal PR mutation.',
+        {
+          gates: [
+            ...gates,
+            {
+              gate: 'admission-terminal-fence',
+              ok: false,
+              reason:
+                'The owning PR admission was stopped, superseded, or otherwise replaced before push.',
+            },
+          ],
+          paths,
+          recoveryOptions: [
+            'Refresh the pull request state and create a new admission if work remains.',
+          ],
+        },
+      );
+    }
     assertWorktreeMutationAllowed(
       {
         repoId: worktree.repoId,
@@ -553,6 +628,184 @@ export async function pushPrAutofix(
       },
       paths,
     );
+    // This is the last durable owner-state read before the irreversible Git
+    // side effect. Terminal PR handling changes the same admission/owner rows.
+    if (
+      input.admissionId &&
+      !isCoordinatorPushAdmissionCurrent(
+        input.admissionId,
+        input.attemptId,
+        paths,
+      )
+    ) {
+      return blockPushAttempt(
+        preparedDiff.id,
+        worktree.id,
+        'The Autopilot admission became terminal before Git accepted the push.',
+        {
+          gates,
+          paths,
+          recoveryOptions: ['Refresh the terminal PR state before retrying.'],
+        },
+      );
+    }
+    if (input.admissionId) {
+      const token = dependencies.token ?? process.env.GITHUB_TOKEN;
+      const [owner, repoName] = preparedDiff.repoFullName.split('/', 2);
+      if (!token || !owner || !repoName) {
+        return blockPushAttempt(
+          preparedDiff.id,
+          worktree.id,
+          'A current GitHub pull request recheck is required before coordinator push.',
+          {
+            gates,
+            paths,
+            recoveryOptions: ['Configure GitHub credentials and retry.'],
+          },
+        );
+      }
+      let currentPr;
+      try {
+        currentPr = await (
+          dependencies.fetchPullRequestEventState ?? fetchPullRequestEventState
+        )({ token, owner, repo: repoName, number: preparedDiff.prNumber });
+      } catch (error) {
+        return blockPushAttempt(
+          preparedDiff.id,
+          worktree.id,
+          `Could not recheck the current pull request before push: ${errorMessage(error)}`,
+          {
+            gates,
+            paths,
+            recoveryOptions: [
+              'Retry after GitHub pull request state is available.',
+            ],
+          },
+        );
+      }
+      const currentPrGate = {
+        gate: 'current-pr-before-push',
+        ok:
+          currentPr.state.toLowerCase() === 'open' &&
+          !currentPr.merged &&
+          currentPr.headSha === expectedRemoteSha &&
+          currentPr.headRef === worktree.headRef &&
+          currentPr.branchPermissions.canLikelyPush === true,
+        reason: `Current PR is ${currentPr.state}, head ${currentPr.headSha}, branch ${currentPr.headRef ?? 'unknown'}.`,
+      };
+      gates.push(currentPrGate);
+      if (!currentPrGate.ok) {
+        return blockPushAttempt(
+          preparedDiff.id,
+          worktree.id,
+          'The current GitHub pull request target, head, or permissions changed before push.',
+          {
+            gates,
+            paths,
+            recoveryOptions: [
+              'Refresh the PR and obtain a fresh approval if needed.',
+            ],
+          },
+        );
+      }
+    }
+    const effectSha = await gitCurrentSha(worktree.localPath);
+    const effectPolicy = await checkAutopilotPolicy(
+      {
+        worktreeId: worktree.id,
+        diffBaseRef: preparedDiff.headSha ?? preparedDiff.baseRef,
+        pushDestination: 'pull-request-head',
+        forcePush: input.force,
+      },
+      paths,
+    );
+    const effectApprovalHash = input.admissionId
+      ? admissionPolicyHash(effectPolicy.policyHash, effectPolicy.mode)
+      : effectPolicy.policyHash;
+    const effectApprovalBinding = input.admissionId
+      ? readCoordinatorPushApprovalBinding(input.admissionId, paths)
+      : undefined;
+    const effectApproval = listApprovalRecords(
+      { status: 'approved', preparedDiffIds: [preparedDiff.id] },
+      paths,
+    ).find(
+      (approval) =>
+        approval.approvalType === 'push' &&
+        approval.targetSha === effectSha &&
+        approval.policyHash === effectApprovalHash &&
+        (!input.admissionId ||
+          (approval.admissionId === input.admissionId &&
+            approval.ownerGeneration ===
+              effectApprovalBinding?.owner_generation &&
+            approval.stageAttemptId ===
+              effectApprovalBinding?.verification_attempt_id)),
+    );
+    if (
+      effectSha !== currentSha ||
+      !effectPolicy.ok ||
+      effectPolicy.decision === 'deny' ||
+      (input.admissionId && !effectApproval)
+    ) {
+      if (input.admissionId)
+        rearmAdmissionForFreshPushApproval(
+          input.admissionId,
+          input.attemptId,
+          paths,
+        );
+      return blockPushAttempt(
+        preparedDiff.id,
+        worktree.id,
+        'Current HEAD or policy changed before Git push; the prior approval was invalidated.',
+        {
+          gates,
+          paths,
+          recoveryOptions: ['Await fresh coordinator approval.'],
+        },
+      );
+    }
+    const remoteUrl = await readPushRemoteUrl(worktree.localPath, remote);
+    const recordedPushIntent = recordPendingPushReconciliation(
+      preparedDiff.id,
+      { commitSha: currentSha, remote, remoteUrl, branch },
+      'push-intent',
+      input.admissionId,
+      input.attemptId,
+      paths,
+    );
+    if (!recordedPushIntent) {
+      return blockPushAttempt(
+        preparedDiff.id,
+        worktree.id,
+        'Could not durably record the pending Git push before dispatch.',
+        {
+          gates,
+          paths,
+          recoveryOptions: [
+            'Restore local state persistence before retrying this push.',
+          ],
+        },
+      );
+    }
+    // The durable intent is now available for exact remote reconciliation. This
+    // is the last possible admission fence before the irreversible Git call.
+    if (
+      !isCoordinatorPushAdmissionCurrent(
+        input.admissionId,
+        input.attemptId,
+        paths,
+      )
+    ) {
+      return blockPushAttempt(
+        preparedDiff.id,
+        worktree.id,
+        'The Autopilot push attempt was superseded before Git accepted the push.',
+        {
+          gates,
+          paths,
+          recoveryOptions: ['Refresh the terminal PR state before retrying.'],
+        },
+      );
+    }
     const push = await (dependencies.pushGit ?? gitPushHead)(
       worktree.localPath,
       {
@@ -571,6 +824,14 @@ export async function pushPrAutofix(
       remote: push.remote,
       branch: push.branch,
     };
+    recordPendingPushReconciliation(
+      preparedDiff.id,
+      pushedSideEffect,
+      'push-receipt',
+      input.admissionId,
+      input.attemptId,
+      paths,
+    );
     finalLockStatus = 'succeeded';
     const updatedPreparedDiff = markPreparedDiffPushed(
       preparedDiff.id,
@@ -638,6 +899,14 @@ export async function pushPrAutofix(
         ? readPreparedDiff(parsedInput.output.preparedDiffId, paths)
         : null;
       if (preparedDiff) {
+        recordPendingPushReconciliation(
+          preparedDiff.id,
+          pushedSideEffect,
+          'push-receipt',
+          parsedInput.success ? parsedInput.output.admissionId : undefined,
+          parsedInput.success ? parsedInput.output.attemptId : undefined,
+          paths,
+        );
         await notifyAutopilotState(
           {
             state: 'failed-workflow',
@@ -723,6 +992,187 @@ export async function pushPrAutofix(
         paths,
       ).catch(() => undefined);
     }
+  }
+}
+
+function recordPendingPushReconciliation(
+  preparedDiffId: string,
+  push: {
+    commitSha: string;
+    remote: string;
+    remoteUrl?: string;
+    branch: string;
+  },
+  phase: 'push-intent' | 'push-receipt',
+  admissionId: string | undefined,
+  attemptId: string | undefined,
+  paths: RuntimePaths,
+): boolean {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const now = new Date().toISOString();
+    database
+      .prepare(
+        `INSERT INTO app_metadata (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at;`,
+      )
+      .run(
+        `autopilot.push-reconciliation:${preparedDiffId}:${attemptId ?? 'unbound'}`,
+        JSON.stringify({
+          preparedDiffId,
+          ...push,
+          phase,
+          admissionId: admissionId ?? null,
+          attemptId: attemptId ?? null,
+          recordedAt: now,
+        }),
+        now,
+      );
+    return true;
+  } catch {
+    return false;
+  } finally {
+    database.close();
+  }
+}
+
+async function readPushRemoteUrl(cwd: string, remote: string) {
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['remote', 'get-url', remote],
+      { cwd },
+    );
+    return stdout.trim() || remote;
+  } catch {
+    return remote;
+  }
+}
+
+function admissionPolicyHash(policyHash: string, mode: string) {
+  return createHash('sha256').update(`${policyHash}:${mode}`).digest('hex');
+}
+
+function isCoordinatorPushAdmissionCurrent(
+  admissionId: string,
+  attemptId: string | undefined,
+  paths: RuntimePaths,
+) {
+  if (!attemptId) return false;
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    return Boolean(
+      database
+        .prepare(
+          `SELECT admission.id
+           FROM autopilot_admissions AS admission
+           INNER JOIN autopilot_pr_owners AS owner ON owner.id = admission.owner_id
+           INNER JOIN autopilot_stage_attempts AS attempt ON attempt.id = admission.current_stage_attempt_id
+           WHERE admission.id = ? AND admission.current_stage_attempt_id = ?
+             AND admission.state = 'push-admitted' AND attempt.stage = 'push'
+             AND attempt.status IN ('reserved', 'running')
+             AND admission.stop_requested_at IS NULL AND owner.status = 'active';`,
+        )
+        .get(admissionId, attemptId),
+    );
+  } finally {
+    database.close();
+  }
+}
+
+function rearmAdmissionForFreshPushApproval(
+  admissionId: string,
+  attemptId: string | undefined,
+  paths: RuntimePaths,
+) {
+  if (!attemptId) return false;
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const now = new Date().toISOString();
+    database.exec('BEGIN IMMEDIATE;');
+    try {
+      const current = database
+        .prepare(
+          `SELECT version FROM autopilot_admissions
+           WHERE id = ? AND state = 'push-admitted'
+             AND current_stage_attempt_id = ?;`,
+        )
+        .get(admissionId, attemptId) as { version: number } | undefined;
+      if (!current) {
+        database.exec('COMMIT;');
+        return false;
+      }
+      const cancelled = database
+        .prepare(
+          `UPDATE autopilot_stage_attempts
+           SET status = 'cancelled', error = 'push-approval-binding-changed',
+               finished_at = ?
+           WHERE id = ? AND admission_id = ? AND stage = 'push'
+             AND status IN ('reserved', 'running');`,
+        )
+        .run(now, attemptId, admissionId);
+      if (cancelled.changes !== 1) {
+        database.exec('COMMIT;');
+        return false;
+      }
+      database
+        .prepare(
+          `UPDATE prepared_diff_approvals
+           SET status = 'superseded',
+               reason = 'current SHA or policy binding changed before push',
+               resolved_at = COALESCE(resolved_at, ?), updated_at = ?
+           WHERE admission_id = ? AND approval_type = 'push'
+             AND status IN ('pending', 'approved');`,
+        )
+        .run(now, now, admissionId);
+      const rearmed = database
+        .prepare(
+          `UPDATE autopilot_admissions
+           SET state = 'approval-pending', current_workflow = NULL,
+               current_run_id = NULL, current_stage_attempt_id = NULL,
+               next_attempt_at = NULL, version = version + 1, updated_at = ?
+           WHERE id = ? AND version = ? AND state = 'push-admitted'
+             AND current_stage_attempt_id = ?;`,
+        )
+        .run(now, admissionId, current.version, attemptId);
+      if (rearmed.changes !== 1) {
+        throw new Error('Push approval rearm lost its admission CAS.');
+      }
+      database.exec('COMMIT;');
+      return true;
+    } catch (error) {
+      database.exec('ROLLBACK;');
+      throw error;
+    }
+  } finally {
+    database.close();
+  }
+}
+
+function readCoordinatorPushApprovalBinding(
+  admissionId: string,
+  paths: RuntimePaths,
+) {
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    return database
+      .prepare(
+        `SELECT owner.generation AS owner_generation,
+                (
+                  SELECT id FROM autopilot_stage_attempts
+                  WHERE admission_id = admission.id
+                    AND stage = 'verify' AND status = 'completed'
+                  ORDER BY attempt_number DESC LIMIT 1
+                ) AS verification_attempt_id
+         FROM autopilot_admissions AS admission
+         INNER JOIN autopilot_pr_owners AS owner ON owner.id = admission.owner_id
+         WHERE admission.id = ?;`,
+      )
+      .get(admissionId) as
+      | { owner_generation: number; verification_attempt_id: string | null }
+      | undefined;
+  } finally {
+    database.close();
   }
 }
 

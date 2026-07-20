@@ -1,6 +1,6 @@
 # Autopilot Product-Closure Implementation Plan
 
-Status: in progress; Packages 1–4 implemented, Packages 5–8 not started
+Status: in progress; Packages 1–5 implemented with focused verification; Packages 6–8 not started
 
 Companion audit: `.plans/AUTOPILOT_END_TO_END_REVIEW.html`
 
@@ -1028,6 +1028,12 @@ semantics only; it does not empirically drive a live provider through enough his
 to prove threshold reconstruction, and makes no persisted-stream/storage claim.
 
 ### Package 5: verification, approval, push, comment, and cleanup continuation
+
+Status: implementation is frozen with focused unit fixtures; final static review
+and validation are pending. The coordinator owns verification, admission-bound
+SHA/policy approval, non-force push, result delivery, terminal archival, and
+grace-period cleanup. The Package 5 end-to-end mode-matrix/bare-remote integration
+exit gate remains open by the mandated focused-test budget.
 
 Primary files:
 

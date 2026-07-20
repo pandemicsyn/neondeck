@@ -1,4 +1,5 @@
 import { openDb, withImmediateTransaction } from '../../../lib/sqlite';
+import { runUnattendedGit } from '../../../lib/git';
 import {
   ensureRuntimeHome,
   runtimePaths,
@@ -19,6 +20,7 @@ import {
   settlePendingAutopilotOwnerObservation,
 } from '../owner/settle';
 import { hasAutopilotSubmissionProcessLease } from '../owner/submission-lease';
+import { readPreparedDiffRecord } from '../../prepared-diffs';
 
 export const defaultAutopilotReservationTimeoutMs = 5 * 60 * 1000;
 export const defaultAutopilotStageTimeoutMs = 30 * 60 * 1000;
@@ -26,6 +28,210 @@ export const defaultAutopilotOwnerStageTimeoutMs = 65 * 60 * 1000;
 export const defaultAutopilotTerminalArtifactGraceMs = 30 * 1000;
 export const defaultAutopilotTerminalFactRetentionMs = 60 * 60 * 1000;
 export const defaultAutopilotOwnerApplyingTimeoutMs = 2 * 60 * 60 * 1000;
+async function recoverPendingPushReceipts(paths: RuntimePaths) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const rows = database
+      .prepare(
+        `SELECT key, value FROM app_metadata
+         WHERE key LIKE 'autopilot.push-reconciliation:%';`,
+      )
+      .all() as Array<{ key: string; value: string }>;
+    const recovered: string[] = [];
+    for (const row of rows) {
+      let receipt: {
+        preparedDiffId?: string;
+        commitSha?: string;
+        remote?: string;
+        remoteUrl?: string;
+        branch?: string;
+        admissionId?: string | null;
+        attemptId?: string | null;
+        phase?: 'push-intent' | 'push-receipt';
+      };
+      try {
+        receipt = JSON.parse(row.value) as typeof receipt;
+      } catch {
+        continue;
+      }
+      if (
+        !receipt.preparedDiffId ||
+        !receipt.commitSha ||
+        !receipt.remote ||
+        !receipt.branch ||
+        !receipt.admissionId ||
+        !receipt.attemptId
+      )
+        continue;
+      const receiptAdmissionId = receipt.admissionId;
+      const receiptAttemptId = receipt.attemptId;
+      const receiptCommitSha = receipt.commitSha;
+      const preparedDiffId = receipt.preparedDiffId;
+      const preparedDiff = readPreparedDiffRecord(preparedDiffId, paths);
+      if (!preparedDiff) continue;
+      if (receipt.phase === 'push-intent') {
+        const remoteSha = await readRemotePushSha(
+          receipt.remoteUrl ?? receipt.remote,
+          receipt.branch,
+          paths,
+        );
+        if (remoteSha !== receipt.commitSha) continue;
+      }
+      const now = new Date().toISOString();
+      const recoveredAdmission = withImmediateTransaction(database, () => {
+        const admission = readAutopilotAdmission(
+          database
+            .prepare('SELECT * FROM autopilot_admissions WHERE id = ?;')
+            .get(receiptAdmissionId),
+        );
+        if (!admission || admission.preparedDiffId !== preparedDiffId) {
+          return false;
+        }
+        const activeAttempt = database
+          .prepare(
+            `SELECT * FROM autopilot_stage_attempts
+               WHERE id = ? AND admission_id = ? AND stage = 'push'
+               LIMIT 1;`,
+          )
+          .get(receiptAttemptId, receiptAdmissionId);
+        const attempt = readAutopilotStageAttempt(activeAttempt);
+        if (!attempt) return false;
+        const activePushAttempt =
+          admission.state === 'push-admitted' &&
+          admission.currentStageAttemptId === receiptAttemptId &&
+          (attempt.status === 'reserved' || attempt.status === 'running');
+        const terminalCancelledPush =
+          admission.state !== 'push-admitted' && attempt.status === 'cancelled';
+        // Never let an older receipt override a newer active push reservation.
+        // The only non-current receipt that can still become canonical is a
+        // terminal path which cancelled this exact push after Git accepted it.
+        if (!activePushAttempt && !terminalCancelledPush) return false;
+        database
+          .prepare(
+            `UPDATE prepared_diffs
+               SET status = 'pushed', pushed_commit_sha = ?, updated_at = ?
+               WHERE id = ?;`,
+          )
+          .run(receiptCommitSha, now, preparedDiffId);
+        database
+          .prepare(
+            `UPDATE prepared_diff_approvals
+               SET status = 'superseded',
+                   reason = COALESCE(reason, 'push receipt recovered'),
+                   resolved_at = COALESCE(resolved_at, ?), updated_at = ?
+               WHERE prepared_diff_id = ? AND approval_type = 'push'
+                 AND status IN ('pending', 'approved', 'rejected');`,
+          )
+          .run(now, now, preparedDiffId);
+        database
+          .prepare(
+            `UPDATE worktrees SET lifecycle_status = 'succeeded',
+                   last_pushed_sha = ?, updated_at = ? WHERE id = ?;`,
+          )
+          .run(receiptCommitSha, now, preparedDiff.worktreeId);
+        if (terminalCancelledPush) {
+          // Git already accepted the exact intent, but another durable path
+          // (usually terminal cleanup) advanced the admission before the local
+          // receipt was written. Preserve the side-effect fact without reviving
+          // the terminal state or re-dispatching any workflow.
+          database
+            .prepare(
+              `UPDATE autopilot_admissions
+               SET pushed_commit_sha = COALESCE(pushed_commit_sha, ?),
+                   updated_at = ? WHERE id = ?;`,
+            )
+            .run(receiptCommitSha, now, admission.id);
+          insertAutopilotAdmissionEvent(database, {
+            admissionId: admission.id,
+            fromState: admission.state,
+            toState: admission.state,
+            reason: 'push-receipt-recovered-after-admission-transition',
+            workflow: attempt.workflow ?? 'push-pr-autofix',
+            runId: attempt.runId,
+            data: {
+              preparedDiffId,
+              pushedCommitSha: receiptCommitSha,
+              attemptId: receiptAttemptId,
+            },
+            now,
+          });
+          return true;
+        }
+        database
+          .prepare(
+            `UPDATE autopilot_stage_attempts
+               SET status = 'completed', artifact_json = ?, error = NULL,
+                   finished_at = ?
+               WHERE id = ? AND status IN ('reserved', 'running');`,
+          )
+          .run(
+            JSON.stringify({
+              ...attempt.artifact,
+              preparedDiffId,
+              pushedCommitSha: receiptCommitSha,
+              recoveredPushReceipt: true,
+            }),
+            now,
+            attempt.id,
+          );
+        const updated = database
+          .prepare(
+            `UPDATE autopilot_admissions
+               SET state = 'pushed', pushed_commit_sha = ?, current_workflow = NULL,
+                   current_run_id = NULL, current_stage_attempt_id = NULL,
+                   next_attempt_at = NULL, version = version + 1, updated_at = ?
+               WHERE id = ? AND state = 'push-admitted'
+                 AND current_stage_attempt_id = ?;`,
+          )
+          .run(receiptCommitSha, now, receiptAdmissionId, receiptAttemptId);
+        if (updated.changes !== 1) return false;
+        insertAutopilotAdmissionEvent(database, {
+          admissionId: admission.id,
+          fromState: admission.state,
+          toState: 'pushed',
+          reason: 'push-receipt-recovered',
+          workflow: attempt.workflow ?? 'push-pr-autofix',
+          runId: attempt.runId,
+          data: {
+            preparedDiffId,
+            pushedCommitSha: receiptCommitSha,
+            attemptId: attempt.id,
+          },
+          now,
+        });
+        return true;
+      });
+      if (recoveredAdmission) {
+        recovered.push(receiptAdmissionId);
+        database
+          .prepare('DELETE FROM app_metadata WHERE key = ?;')
+          .run(row.key);
+      }
+    }
+    return recovered;
+  } finally {
+    database.close();
+  }
+}
+
+async function readRemotePushSha(
+  remote: string,
+  branch: string,
+  paths: RuntimePaths,
+) {
+  try {
+    const stdout = await runUnattendedGit(paths.home, [
+      'ls-remote',
+      '--exit-code',
+      '--',
+      remote,
+      `refs/heads/${branch}`,
+    ]);
+    return stdout.trim().split(/\s+/)[0] || null;
+  } catch {
+    return null;
+  }
+}
 
 export async function reconcileAutopilotStageAttempts(
   paths: RuntimePaths = runtimePaths(),
@@ -40,6 +246,7 @@ export async function reconcileAutopilotStageAttempts(
   } = {},
 ) {
   await ensureRuntimeHome(paths);
+  const recoveredPushAdmissions = await recoverPendingPushReceipts(paths);
   await flushPendingAutopilotOwnerLearning(paths);
   const now = options.now ?? new Date();
   const reservationBefore = new Date(
@@ -89,7 +296,7 @@ export async function reconcileAutopilotStageAttempts(
     database.close();
   }
 
-  const reconciled: string[] = [];
+  const reconciled: string[] = [...recoveredPushAdmissions];
   for (const row of attempts) {
     const attempt = readAutopilotStageAttempt(row);
     if (!attempt) continue;

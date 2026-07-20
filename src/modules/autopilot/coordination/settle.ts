@@ -130,7 +130,9 @@ export async function settleAutopilotStageObservation(
         .run(
           settlement.attemptStatus,
           JSON.stringify(settlement.outcome.artifact ?? {}),
-          settlement.outcome.message ?? null,
+          'message' in settlement.outcome
+            ? (settlement.outcome.message ?? null)
+            : null,
           nowIso,
           attempt.id,
           input.runId,
@@ -144,6 +146,7 @@ export async function settleAutopilotStageObservation(
            SET state = ?, current_workflow = NULL, current_run_id = NULL,
                current_stage_attempt_id = NULL, worktree_id = COALESCE(?, worktree_id),
                prepared_diff_id = COALESCE(?, prepared_diff_id),
+               pushed_commit_sha = COALESCE(?, pushed_commit_sha),
                next_attempt_at = ?, last_error = ?, last_outcome_json = ?,
                completed_at = ?, version = version + 1, updated_at = ?
            WHERE id = ? AND version = ? AND state = ?
@@ -151,10 +154,17 @@ export async function settleAutopilotStageObservation(
         )
         .run(
           settlement.state,
-          settlement.outcome.worktreeId ?? null,
+          'worktreeId' in settlement.outcome
+            ? (settlement.outcome.worktreeId ?? null)
+            : null,
           settlement.outcome.preparedDiffId ?? null,
+          typeof settlement.outcome.artifact?.pushedCommitSha === 'string'
+            ? settlement.outcome.artifact.pushedCommitSha
+            : null,
           settlement.nextAttemptAt,
-          settlement.outcome.message ?? null,
+          'message' in settlement.outcome
+            ? (settlement.outcome.message ?? null)
+            : null,
           JSON.stringify(settlement.outcome),
           settlement.completedAt,
           nowIso,
@@ -174,15 +184,47 @@ export async function settleAutopilotStageObservation(
           `UPDATE autopilot_pr_owners
            SET worktree_id = COALESCE(?, worktree_id),
                last_settled_sequence = MAX(last_settled_sequence, ?),
+               status = CASE WHEN ? = 'archived' THEN 'archived' ELSE status END,
+               archived_at = CASE WHEN ? = 'archived' THEN COALESCE(archived_at, ?) ELSE archived_at END,
                updated_at = ?
            WHERE id = ?;`,
         )
         .run(
-          settlement.outcome.worktreeId ?? null,
+          'worktreeId' in settlement.outcome
+            ? (settlement.outcome.worktreeId ?? null)
+            : null,
           admission.eventSequence,
+          settlement.state,
+          settlement.state,
+          nowIso,
           nowIso,
           admission.ownerId,
         );
+      if (settlement.state === 'archived') {
+        database
+          .prepare(
+            `UPDATE autopilot_owner_generations
+             SET status = 'archived', archived_at = COALESCE(archived_at, ?)
+             WHERE owner_id = ? AND status = 'active';`,
+          )
+          .run(nowIso, admission.ownerId);
+        database
+          .prepare(
+            `UPDATE scheduled_tasks
+             SET enabled = 0, updated_at = ?
+             WHERE id = ?;`,
+          )
+          .run(nowIso, `watch:${admission.watchId}`);
+        database
+          .prepare(
+            `UPDATE chat_sessions
+             SET archived_at = COALESCE(archived_at, ?), updated_at = ?
+             WHERE id = (
+               SELECT chat_session_id FROM autopilot_pr_owners WHERE id = ?
+             );`,
+          )
+          .run(nowIso, nowIso, admission.ownerId);
+      }
       insertAutopilotAdmissionEvent(database, {
         admissionId: admission.id,
         fromState: admission.state,
@@ -346,10 +388,22 @@ function terminalSettlement(
   const nowIso = now.toISOString();
   if (observation.failed) {
     const classification = classifyAutopilotRetry({
-      code: observation.errorCode,
+      code:
+        stage === 'comment-result' &&
+        observation.errorCode === 'delivery-lease-active'
+          ? 'network-error'
+          : observation.errorCode,
       error: observation.error,
-      effectMayHaveCompleted: stage !== 'triage',
-      idempotent: stage === 'triage',
+      effectMayHaveCompleted:
+        stage === 'comment-result' &&
+        observation.errorCode === 'delivery-lease-active'
+          ? false
+          : stage !== 'triage' && stage !== 'cleanup',
+      idempotent:
+        stage === 'triage' ||
+        stage === 'cleanup' ||
+        (stage === 'comment-result' &&
+          observation.errorCode === 'delivery-lease-active'),
     });
     const retry = autopilotRetryDecision(attemptNumber, classification, now);
     const target: AutopilotAdmissionState = retry.exhausted
@@ -412,6 +466,89 @@ function terminalSettlement(
       } as AutopilotStageOutcome,
     } as const;
   }
+  if (stage === 'verify') {
+    if (!observation.artifact?.preparedDiffId)
+      return missingTerminalArtifact(stage, observation, nowIso);
+    return successfulSettlement(
+      'verified',
+      stage,
+      observation,
+      nowIso,
+      'worktree-verified',
+    );
+  }
+  if (stage === 'push') {
+    if (!observation.artifact?.pushedCommitSha)
+      return missingTerminalArtifact(stage, observation, nowIso);
+    return successfulSettlement(
+      'pushed',
+      stage,
+      observation,
+      nowIso,
+      'push-recorded',
+    );
+  }
+  if (stage === 'comment-result') {
+    if (observation.artifact?.commentDelivered !== true)
+      return missingTerminalArtifact(stage, observation, nowIso);
+    return successfulSettlement(
+      'completed',
+      stage,
+      observation,
+      nowIso,
+      'result-delivered',
+    );
+  }
+  if (stage === 'cleanup') {
+    if (observation.artifact?.cleanupFailed === true) {
+      return terminalSettlement(
+        state,
+        stage,
+        attemptNumber,
+        {
+          ...observation,
+          failed: true,
+          errorCode: 'network-error',
+          error:
+            typeof observation.artifact.cleanupError === 'string'
+              ? observation.artifact.cleanupError
+              : 'Worktree cleanup failed before deletion.',
+        },
+        now,
+      );
+    }
+    if (observation.artifact?.cleanupDeleted !== true) {
+      return {
+        state: 'cleanup-pending' as const,
+        attemptStatus: 'completed' as const,
+        nextAttemptAt: new Date(now.getTime() + 5 * 60_000).toISOString(),
+        completedAt: null,
+        reason: 'cleanup-retained-during-grace',
+        outcome: {
+          stage,
+          result: 'completed',
+          message:
+            'Worktree remains retained until its cleanup policy permits deletion.',
+          artifact: observation.artifact,
+        } as AutopilotStageOutcome,
+      };
+    }
+    return successfulSettlement(
+      'archived',
+      stage,
+      observation,
+      nowIso,
+      'worktree-cleanup-settled',
+    );
+  }
+  return missingTerminalArtifact(stage, observation, nowIso);
+}
+
+function missingTerminalArtifact(
+  stage: AutopilotStage,
+  observation: AutopilotTerminalObservation,
+  nowIso: string,
+) {
   const classification = classifyAutopilotRetry({
     code: 'missing-terminal-artifact',
     error: 'Workflow completed without the required durable artifact.',
@@ -433,6 +570,32 @@ function terminalSettlement(
       artifact: observation.artifact,
     } as AutopilotStageOutcome,
   } as const;
+}
+
+function successfulSettlement(
+  state: AutopilotAdmissionState,
+  stage: AutopilotStage,
+  observation: AutopilotTerminalObservation,
+  nowIso: string,
+  reason: string,
+) {
+  const artifact = observation.artifact ?? {};
+  return {
+    state,
+    attemptStatus: 'completed' as const,
+    nextAttemptAt: null,
+    completedAt: state === 'completed' || state === 'archived' ? nowIso : null,
+    reason,
+    outcome: {
+      stage,
+      result: 'completed' as const,
+      preparedDiffId:
+        typeof artifact.preparedDiffId === 'string'
+          ? artifact.preparedDiffId
+          : undefined,
+      artifact,
+    } satisfies AutopilotStageOutcome,
+  };
 }
 
 function terminalObservationKey(runId: string) {

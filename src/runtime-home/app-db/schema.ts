@@ -694,6 +694,7 @@ export const autopilotAdmissions = sqliteTable(
     currentStageAttemptId: text('current_stage_attempt_id'),
     worktreeId: text('worktree_id'),
     preparedDiffId: text('prepared_diff_id'),
+    pushedCommitSha: text('pushed_commit_sha'),
     fixerKind: text('fixer_kind'),
     version: integer('version').default(1).notNull(),
     attemptCount: integer('attempt_count').default(0).notNull(),
@@ -1356,6 +1357,7 @@ export const preparedDiffs = sqliteTable(
     baseRef: text('base_ref').notNull(),
     headRef: text('head_ref').notNull(),
     headSha: text('head_sha'),
+    pushedCommitSha: text('pushed_commit_sha'),
     status: text('status').notNull(),
     pushApprovalStatus: text('push_approval_status').notNull(),
     verificationStatus: text('verification_status').notNull(),
@@ -1385,6 +1387,9 @@ export const preparedDiffApprovals = sqliteTable(
     id: text('id').primaryKey(),
     preparedDiffId: text('prepared_diff_id').notNull(),
     worktreeId: text('worktree_id').notNull(),
+    admissionId: text('admission_id'),
+    ownerGeneration: integer('owner_generation'),
+    stageAttemptId: text('stage_attempt_id'),
     approvalType: text('approval_type').notNull(),
     status: text('status').notNull(),
     targetSha: text('target_sha'),
@@ -1405,6 +1410,44 @@ export const preparedDiffApprovals = sqliteTable(
       table.preparedDiffId,
       sql`${table.updatedAt} DESC`,
     ),
+    uniqueIndex('idx_prepared_diff_approvals_admission_push')
+      .on(
+        table.admissionId,
+        table.preparedDiffId,
+        table.ownerGeneration,
+        table.stageAttemptId,
+        table.approvalType,
+        table.targetSha,
+        table.policyHash,
+      )
+      .where(sql`${table.status} IN ('pending', 'approved')`),
+  ],
+);
+
+export const autopilotResultDeliveries = sqliteTable(
+  'autopilot_result_deliveries',
+  {
+    id: text('id').primaryKey(),
+    admissionId: text('admission_id').notNull(),
+    attemptId: text('attempt_id').notNull(),
+    deliveryKind: text('delivery_kind').notNull(),
+    targetId: text('target_id').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    status: text('status').notNull(),
+    remoteId: text('remote_id'),
+    error: text('error'),
+    leaseToken: text('lease_token'),
+    leaseExpiresAt: text('lease_expires_at'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_autopilot_result_delivery_target').on(
+      table.admissionId,
+      table.deliveryKind,
+      table.targetId,
+    ),
+    uniqueIndex('idx_autopilot_result_delivery_key').on(table.idempotencyKey),
   ],
 );
 

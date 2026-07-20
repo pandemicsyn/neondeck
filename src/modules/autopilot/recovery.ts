@@ -21,9 +21,8 @@ import {
   abandonPreparedDiffWithRevisionAbort,
   runPreparedDiffRevision,
 } from './revision-run';
-import { commentPrAutofixResult } from './comments';
-import { pushPrAutofix } from './push';
 import { verifyPrWorktree } from './worktree';
+import { openDb } from '../../lib/sqlite';
 import { type RuntimePaths, runtimePaths } from '../../runtime-home';
 import {
   cleanupWorktrees,
@@ -32,6 +31,8 @@ import {
   releaseWorktreeLock,
   syncWorktree,
 } from '../worktrees';
+import { advanceAutopilotAdmission } from './coordination/advance';
+import { readAutopilotAdmission } from './coordination/schemas';
 
 type AutopilotRecoveryResult = {
   ok: boolean;
@@ -328,22 +329,74 @@ export async function runAutopilotRecoveryAction(
   }
 
   if (input.recoveryAction === 'retry-push') {
-    const result = await pushPrAutofix(
-      {
+    const admission = readPushRetryAdmission(preparedDiff.id, paths);
+    if (!admission) {
+      return {
+        ok: false,
+        action: 'autopilot_recovery_run',
+        changed: false,
+        message:
+          'No active Autopilot admission can reserve this push retry. Refresh the PR event or request manual follow-up.',
         preparedDiffId: preparedDiff.id,
-        lockOwner: input.lockOwner ?? 'autopilot_recovery_retry_push',
-      },
+        requires: ['activeAutopilotAdmission'],
+      };
+    }
+    const advanced = await advanceAutopilotAdmission(
+      { admissionId: admission.id },
       paths,
     );
-    return wrapRecoveryResult(input.recoveryAction, preparedDiff.id, result);
+    return {
+      ok:
+        advanced.status === 'reserved' ||
+        advanced.status === 'already-reserved' ||
+        advanced.status === 'approval-resolution-required',
+      action: 'autopilot_recovery_run',
+      changed: advanced.status === 'reserved',
+      message:
+        advanced.status === 'reserved'
+          ? 'Requested coordinator-owned push retry admission; the coordinator will dispatch the reserved stage.'
+          : 'Requested coordinator-owned push retry; approval and policy binding will be revalidated before any dispatch.',
+      preparedDiffId: preparedDiff.id,
+      result: { admissionId: admission.id, advanced },
+      requires:
+        advanced.status === 'approval-resolution-required'
+          ? ['approvalResolution']
+          : undefined,
+    };
   }
 
   if (input.recoveryAction === 'retry-comment') {
-    const result = await commentPrAutofixResult(
-      { preparedDiffId: preparedDiff.id },
+    const admission = readAdmissionForRecoveryStage(
+      preparedDiff.id,
+      ['pushed'],
       paths,
     );
-    return wrapRecoveryResult(input.recoveryAction, preparedDiff.id, result);
+    if (!admission) {
+      return {
+        ok: false,
+        action: 'autopilot_recovery_run',
+        changed: false,
+        message:
+          'No pushed Autopilot admission can reserve result delivery. Refresh the PR event or request manual follow-up.',
+        preparedDiffId: preparedDiff.id,
+        requires: ['activeAutopilotAdmission'],
+      };
+    }
+    const advanced = await advanceAutopilotAdmission(
+      { admissionId: admission.id },
+      paths,
+    );
+    return {
+      ok:
+        advanced.status === 'reserved' ||
+        advanced.status === 'already-reserved',
+      action: 'autopilot_recovery_run',
+      changed: advanced.status === 'reserved',
+      message:
+        'Requested coordinator-owned result delivery retry; the coordinator will dispatch the reserved stage.',
+      preparedDiffId: preparedDiff.id,
+      result: { admissionId: admission.id, advanced },
+    };
   }
 
   if (input.recoveryAction === 'request-revision') {
@@ -469,6 +522,39 @@ function revisionDispatchRequiresUserSurface(preparedDiffId: string) {
     preparedDiffId,
     requires: ['userSurfaceDispatch'],
   };
+}
+
+function readPushRetryAdmission(preparedDiffId: string, paths: RuntimePaths) {
+  return readAdmissionForRecoveryStage(
+    preparedDiffId,
+    ['verified', 'approval-pending', 'blocked', 'failed'],
+    paths,
+  );
+}
+
+function readAdmissionForRecoveryStage(
+  preparedDiffId: string,
+  states: readonly string[],
+  paths: RuntimePaths,
+) {
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    const placeholders = states.map(() => '?').join(', ');
+    return readAutopilotAdmission(
+      database
+        .prepare(
+          `SELECT * FROM autopilot_admissions
+           WHERE prepared_diff_id = ?
+             AND stop_requested_at IS NULL
+             AND state IN (${placeholders})
+           ORDER BY updated_at DESC
+           LIMIT 1;`,
+        )
+        .get(preparedDiffId, ...states),
+    );
+  } finally {
+    database.close();
+  }
 }
 
 function optionFromAction(

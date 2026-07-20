@@ -147,6 +147,7 @@ export type AutopilotAdmission = {
   currentStageAttemptId: string | null;
   worktreeId: string | null;
   preparedDiffId: string | null;
+  pushedCommitSha: string | null;
   fixerKind: 'neon-owner' | 'kilo' | null;
   version: number;
   attemptCount: number;
@@ -226,6 +227,7 @@ export function readAutopilotAdmission(row: unknown) {
     currentStageAttemptId: nullableString(value.current_stage_attempt_id),
     worktreeId: nullableString(value.worktree_id),
     preparedDiffId: nullableString(value.prepared_diff_id),
+    pushedCommitSha: nullableString(value.pushed_commit_sha),
     fixerKind:
       value.fixer_kind === 'neon-owner' || value.fixer_kind === 'kilo'
         ? value.fixer_kind

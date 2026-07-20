@@ -26,17 +26,23 @@ import {
   dispatchReservedAutopilotOwnerTurn,
   type AutopilotOwnerDispatcher,
 } from '../owner/dispatch';
+import { createPendingPushApprovalForAdmission } from '../approvals';
 import type {
   OwnerEnvelopeFactsLoader,
   OwnerEnvelopeLocalShaLoader,
   OwnerEnvelopeReadinessLoader,
 } from '../owner/envelope';
 
-export type PackageOneAutopilotWorkflow =
-  'triage-pr-event' | 'prepare-pr-worktree';
+export type AutopilotWorkflow =
+  | 'triage-pr-event'
+  | 'prepare-pr-worktree'
+  | 'verify-pr-worktree'
+  | 'push-pr-autofix'
+  | 'comment-pr-autofix-result'
+  | 'cleanup-autopilot-worktree';
 
 export type AutopilotWorkflowInvoker = (
-  workflow: PackageOneAutopilotWorkflow,
+  workflow: AutopilotWorkflow,
   input: JsonValue,
 ) => Promise<{ runId: string }>;
 
@@ -82,6 +88,7 @@ export async function coordinateAutopilotAdmission(
     ownerReadinessLoader?: OwnerEnvelopeReadinessLoader;
     ownerLocalShaLoader?: OwnerEnvelopeLocalShaLoader;
     enableOwnerDispatch?: boolean;
+    approvalRevalidated?: boolean;
     limits?: AutopilotConcurrencyPolicy;
     now?: Date;
   },
@@ -91,11 +98,25 @@ export async function coordinateAutopilotAdmission(
     {
       admissionId: input.admissionId,
       allowOwnerTurnReservation: input.enableOwnerDispatch === true,
+      approvalRevalidated: input.approvalRevalidated,
       limits: input.limits,
       now: input.now,
     },
     paths,
   );
+  if (advanced.status === 'approval-resolution-required') {
+    const approval = await createPendingPushApprovalForAdmission(
+      input.admissionId,
+      paths,
+    );
+    if (approval.status === 'approved') {
+      return coordinateAutopilotAdmission(
+        { ...input, approvalRevalidated: true },
+        paths,
+      );
+    }
+    return { advanced, dispatched: null };
+  }
   if (
     (advanced.status === 'reserved' ||
       advanced.status === 'already-reserved') &&
@@ -186,7 +207,14 @@ export async function dispatchReservedAutopilotStage(
       now,
     );
   }
-  if (attempt.stage !== 'triage' && attempt.stage !== 'prepare-worktree') {
+  if (
+    attempt.stage !== 'triage' &&
+    attempt.stage !== 'prepare-worktree' &&
+    attempt.stage !== 'verify' &&
+    attempt.stage !== 'push' &&
+    attempt.stage !== 'comment-result' &&
+    attempt.stage !== 'cleanup'
+  ) {
     return {
       status: 'unsupported-transport' as const,
       attempt,
@@ -209,7 +237,7 @@ export async function dispatchReservedAutopilotStage(
   try {
     receipt = await input.invokeWorkflow(
       registry.workflow,
-      workflowInput(admission, attempt.stage),
+      workflowInput(admission, attempt),
     );
   } catch (error) {
     const classification = classifyAutopilotRetry({
@@ -384,7 +412,7 @@ export async function registerAutopilotStageDispatch(
         attempt.runId === null &&
         admission.currentStageAttemptId === attempt.id &&
         admission.version === input.expectedAdmissionVersion &&
-        !admission.stopRequestedAt;
+        (!admission.stopRequestedAt || attempt.stage === 'cleanup');
       if (!registrationIsCurrent && attempt.runId === null) {
         const message =
           'Flue accepted the stage, but its receipt lost the admission CAS and cannot advance it.';
@@ -415,9 +443,7 @@ export async function registerAutopilotStageDispatch(
           message,
         } as const;
         const admissionUpdate =
-          admission.currentStageAttemptId === attempt.id &&
-          (admission.state === 'triage-admitted' ||
-            admission.state === 'prepare-admitted')
+          admission.currentStageAttemptId === attempt.id
             ? database
                 .prepare(
                   `UPDATE autopilot_admissions
@@ -504,7 +530,7 @@ export async function registerAutopilotStageDispatch(
           `UPDATE autopilot_admissions
            SET current_run_id = ?, updated_at = ?
            WHERE id = ? AND version = ? AND current_stage_attempt_id = ?
-             AND stop_requested_at IS NULL;`,
+             AND (stop_requested_at IS NULL OR ? = 'cleanup');`,
         )
         .run(
           input.runId,
@@ -512,6 +538,7 @@ export async function registerAutopilotStageDispatch(
           admission.id,
           input.expectedAdmissionVersion,
           attempt.id,
+          attempt.stage,
         );
       if (admissionUpdate.changes !== 1) {
         throw new Error(
@@ -587,7 +614,7 @@ export async function claimAutopilotStageDispatch(
         attempt.status !== 'reserved' ||
         admission.currentStageAttemptId !== attempt.id ||
         admission.version !== input.expectedAdmissionVersion ||
-        admission.stopRequestedAt
+        (admission.stopRequestedAt && attempt.stage !== 'cleanup')
       ) {
         return { status: 'cas-lost' as const, attempt, admission };
       }
@@ -619,8 +646,9 @@ export async function claimAutopilotStageDispatch(
 
 function workflowInput(
   admission: NonNullable<ReturnType<typeof readAutopilotAdmission>>,
-  stage: string,
+  attempt: AutopilotStageAttempt,
 ) {
+  const stage = attempt.stage;
   if (stage === 'triage') {
     return {
       ...admission.input,
@@ -638,5 +666,34 @@ function workflowInput(
       sourceEvent: admission.input,
     } as JsonValue;
   }
-  throw new Error(`Package 1 cannot dispatch autopilot stage ${stage}.`);
+  if (stage === 'verify') {
+    return {
+      worktreeId: admission.worktreeId,
+      lock: true,
+      lockOwner: `autopilot:${admission.id}:verify`,
+    } as JsonValue;
+  }
+  if (stage === 'push') {
+    return {
+      preparedDiffId: admission.preparedDiffId,
+      admissionId: admission.id,
+      attemptId: attempt.id,
+      lockOwner: `autopilot:${admission.id}:push`,
+    } as JsonValue;
+  }
+  if (stage === 'comment-result') {
+    return {
+      preparedDiffId: admission.preparedDiffId,
+      admissionId: admission.id,
+      attemptId: attempt.id,
+    } as JsonValue;
+  }
+  if (stage === 'cleanup') {
+    return {
+      admissionId: admission.id,
+      attemptId: attempt.id,
+      worktreeId: admission.worktreeId,
+    } as JsonValue;
+  }
+  throw new Error(`Cannot dispatch unknown autopilot stage ${stage}.`);
 }

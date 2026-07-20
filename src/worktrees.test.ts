@@ -522,6 +522,33 @@ describe('worktree runtime foundation', () => {
     await expect(stat(clean.localPath)).rejects.toThrow(/ENOENT|no such file/i);
   });
 
+  it('retries a clean terminal cleanup-pending worktree without waiting for stale age', async () => {
+    const { paths } = await fixture();
+    const worktree = worktreeFrom(
+      await createWorktree(
+        { repoId: 'sample', prNumber: 9, headRef: 'feature' },
+        paths,
+      ),
+    );
+    markLifecycleOld(paths.neondeckDatabase, worktree.id, 'cleanup-pending');
+
+    await expect(
+      cleanupWorktrees(
+        { worktreeId: worktree.id, terminalCleanupRetry: true },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      results: [
+        expect.objectContaining({
+          outcome: 'deleted',
+          reason: 'terminal cleanup retry requested',
+        }),
+      ],
+    });
+  });
+
   it('revalidates managed worktree identity immediately before cleanup', async () => {
     const { paths } = await fixture();
     const victim = worktreeFrom(

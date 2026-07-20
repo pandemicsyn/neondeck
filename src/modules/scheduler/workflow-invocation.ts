@@ -34,6 +34,23 @@ export async function invokeScheduledWorkflow(
     });
   }
 
+  if (workflow === 'verify-pr-worktree') {
+    const module = await import('../../workflows/verify-pr-worktree');
+    return invoke(module.default, { input: input as never });
+  }
+  if (workflow === 'push-pr-autofix') {
+    const module = await import('../../workflows/push-pr-autofix');
+    return invoke(module.default, { input: input as never });
+  }
+  if (workflow === 'comment-pr-autofix-result') {
+    const module = await import('../../workflows/comment-pr-autofix-result');
+    return invoke(module.default, { input: input as never });
+  }
+  if (workflow === 'cleanup-autopilot-worktree') {
+    const module = await import('../../workflows/cleanup-autopilot-worktree');
+    return invoke(module.default, { input: input as never });
+  }
+
   if (workflow === 'scheduled-agent-instruction') {
     const module = await import('../../workflows/scheduled-agent-instruction');
     return invoke(module.default, {

@@ -737,6 +737,9 @@ describe('PR event state watermarks', () => {
     await expect(
       postGitHubPrComment(input, paths, dependencies),
     ).resolves.toMatchObject({ ok: true, changed: true });
+    // Delivery markers must survive a credential rotation: the idempotency
+    // identity belongs to the admission, not to the current token.
+    process.env.GITHUB_TOKEN = 'rotated-token';
     await expect(
       postGitHubPrComment(input, paths, dependencies),
     ).resolves.toMatchObject({

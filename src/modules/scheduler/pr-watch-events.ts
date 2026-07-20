@@ -10,6 +10,7 @@ import {
 } from '../autopilot-policy';
 import {
   AutopilotPendingIntakeLeaseLostError,
+  admitTerminalAutopilotOwnerCleanup,
   claimAutopilotTriageAdmission,
   coordinateAutopilotAdmission,
   reconcileAutopilotStageAttempts,
@@ -200,6 +201,30 @@ async function refreshOneWatchEvent(
   }
   const policy = await readEffectiveWatchAutopilotPolicy(watch, paths);
   const mode = policy.mode;
+  const terminalSnapshot = snapshotFromWatermarks(currentWatermarks);
+  if (isTerminalPrWithSettledChecks(terminalSnapshot)) {
+    const cleanup = await admitTerminalAutopilotOwnerCleanup(
+      { watchId: watch.id, reason: 'pull-request-terminal-state' },
+      paths,
+    );
+    if (
+      (cleanup.status === 'admitted' ||
+        cleanup.status === 'already-admitted') &&
+      'concurrency' in policy
+    ) {
+      await coordinateAutopilotAdmission(
+        {
+          admissionId: cleanup.admissionId,
+          limits: policy.concurrency,
+          invokeWorkflow: autopilotWorkflowInvoker(
+            dependencies.invokeWorkflow ?? invokeScheduledWorkflow,
+          ),
+          enableOwnerDispatch: true,
+        },
+        paths,
+      );
+    }
+  }
   if (!watch.initialEventProcessedAt) {
     return processInitialWatchEventState(
       watch,
@@ -497,6 +522,17 @@ async function refreshOneWatchEvent(
     triage,
     notifications,
   };
+}
+
+function isTerminalPrWithSettledChecks(snapshot: Record<string, unknown>) {
+  const facts = jsonRecord(snapshot);
+  return (
+    stringField(facts.state) === 'closed' &&
+    // A missing check watermark means no configured checks were observed. A
+    // known pending result keeps the durable owner/watch alive for the next
+    // poll instead of beginning terminal archival and worktree cleanup.
+    stringField(facts.checkStatus) !== 'pending'
+  );
 }
 
 async function processInitialWatchEventState(
@@ -1306,11 +1342,6 @@ function autopilotWorkflowInvoker(
   invokeWorkflow: NonNullable<SchedulerDependencies['invokeWorkflow']>,
 ): AutopilotWorkflowInvoker {
   return (workflow, input) => {
-    if (workflow !== 'triage-pr-event' && workflow !== 'prepare-pr-worktree') {
-      throw new Error(
-        `Package 1 cannot invoke autopilot workflow ${workflow}.`,
-      );
-    }
     return invokeWorkflow(workflow, input);
   };
 }

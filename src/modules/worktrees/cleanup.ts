@@ -9,6 +9,7 @@ export async function cleanupDecision(
   input: {
     confirmAdopted?: boolean;
     confirmPreparedDiff?: boolean;
+    terminalCleanupRetry?: boolean;
     force?: boolean;
   },
   paths: RuntimePaths,
@@ -46,6 +47,16 @@ export async function cleanupDecision(
     const clean = await isGitClean(record.localPath).catch(() => false);
     if (!clean) return { delete: false, reason: 'worktree is dirty' };
   }
+  if (
+    record.lifecycleStatus === 'cleanup-pending' &&
+    input.terminalCleanupRetry
+  ) {
+    // This signal is used only by the coordinator-owned terminal cleanup
+    // workflow after a prior deletion attempt failed. It preserves the normal
+    // adopted, lock, and clean-worktree guards above while allowing its bounded
+    // retry schedule to retry before the unrelated stale-age threshold.
+    return { delete: true, reason: 'terminal cleanup retry requested' };
+  }
   if (input.force) {
     const forceCleanupStatuses = [
       'stale',
@@ -69,6 +80,16 @@ export async function cleanupDecision(
     ageHours >= policy.successfulGraceHours
   ) {
     return { delete: true, reason: 'successful grace period elapsed' };
+  }
+  if (
+    record.lifecycleStatus === 'prepared-diff' &&
+    input.confirmPreparedDiff &&
+    ageHours >= policy.successfulGraceHours
+  ) {
+    return {
+      delete: true,
+      reason: 'terminal prepared-diff grace period elapsed',
+    };
   }
   const staleCleanupStatuses = [
     'stale',

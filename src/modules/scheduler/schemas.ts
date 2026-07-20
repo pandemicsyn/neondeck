@@ -58,7 +58,11 @@ export type ScheduledWorkflowName =
   | 'command-run'
   | 'scheduled-agent-instruction'
   | 'prepare-pr-worktree'
-  | 'triage-pr-event';
+  | 'triage-pr-event'
+  | 'verify-pr-worktree'
+  | 'push-pr-autofix'
+  | 'comment-pr-autofix-result'
+  | 'cleanup-autopilot-worktree';
 export type SchedulerTickLease = {
   owner: string;
   acquiredAt: string;

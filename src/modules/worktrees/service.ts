@@ -639,7 +639,36 @@ export async function cleanupWorktrees(
       const cleanupLock = acquired.lock;
       try {
         const context = await repoContext(record.repoId, paths);
-        if (await exists(record.localPath)) {
+        if (!(await exists(record.localPath))) {
+          // A prior cleanup can remove the directory before it durably updates
+          // SQLite. Treat the missing managed path as the completed effect.
+          changed = true;
+          updateWorktreeStatus(record.id, 'deleted', paths);
+          recordCleanupAttempt(
+            record,
+            'deleted',
+            `${decision.reason}; worktree path was already absent.`,
+            true,
+            undefined,
+            paths,
+          );
+          await recordWorktreeEvent(
+            record.id,
+            record.repoId,
+            'deleted',
+            'deleted',
+            `Recovered prior deletion of worktree ${record.id}.`,
+            { reason: decision.reason, recovered: true },
+            paths,
+          );
+          results.push({
+            worktreeId: record.id,
+            outcome: 'deleted',
+            ...decision,
+          });
+          continue;
+        }
+        {
           if (record.adopted) {
             await assertAdoptableWorktree(record.localPath, context.repo.path);
           } else {

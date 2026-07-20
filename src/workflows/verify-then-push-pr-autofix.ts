@@ -1,11 +1,7 @@
 import { defineWorkflow, type WorkflowRunsHandler } from '@flue/runtime';
 import * as v from 'valibot';
 import displayAssistant from '../agents/display-assistant';
-import {
-  pushPrAutofix,
-  verifyPrWorktree,
-  type AutopilotActionResult,
-} from '../modules/autopilot';
+import { type AutopilotActionResult } from '../modules/autopilot';
 import { readPreparedDiff } from '../modules/prepared-diffs';
 import { asJsonValue } from '../lib/action-result';
 
@@ -46,37 +42,17 @@ export default defineWorkflow({
       } satisfies AutopilotActionResult;
     }
 
-    const verification = await verifyPrWorktree({
-      worktreeId: preparedDiff.worktreeId,
-      lockOwner: 'approval_verify_then_push_verify',
-    });
-    if (!verification.ok) {
-      return {
-        ...verification,
-        action: 'autopilot_verify_then_push_pr_autofix',
-        message: `${verification.message} Push was not dispatched.`,
-        data: asJsonValue({
-          verification,
-          pushDeferred: true,
-          nextWorkflow: 'push_pr_autofix',
-        }),
-      } satisfies AutopilotActionResult;
-    }
-
-    const push = await pushPrAutofix({
-      preparedDiffId: input.preparedDiffId,
-      lockOwner: 'approval_verify_then_push_push',
-    });
     return {
-      ok: push.ok,
+      ok: false,
       action: 'autopilot_verify_then_push_pr_autofix',
-      changed: true,
-      message: push.ok
-        ? `Verified prepared diff ${input.preparedDiffId} and dispatched push-back.`
-        : `Verified prepared diff ${input.preparedDiffId}, but push-back did not complete: ${push.message}`,
-      data: asJsonValue({ verification, push }),
-      requires: push.requires,
-      errors: push.errors,
+      changed: false,
+      message:
+        'Verification and push are coordinator-owned stages. Request advancement through the Autopilot admission instead of dispatching this legacy combined workflow.',
+      data: asJsonValue({
+        preparedDiffId: preparedDiff.id,
+        worktreeId: preparedDiff.worktreeId,
+      }),
+      requires: ['autopilotCoordinator'],
     } satisfies AutopilotActionResult;
   },
 });

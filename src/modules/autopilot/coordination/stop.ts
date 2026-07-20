@@ -5,7 +5,10 @@ import {
   runtimePaths,
   type RuntimePaths,
 } from '../../../runtime-home';
-import { insertAutopilotAdmissionEvent } from './advance';
+import {
+  admitTerminalAutopilotOwnerCleanup,
+  insertAutopilotAdmissionEvent,
+} from './advance';
 import {
   readAutopilotAdmission,
   readAutopilotStageAttempt,
@@ -128,6 +131,22 @@ async function finishAutopilotAdmission(
       );
       database
         .prepare(
+          `UPDATE prepared_diff_approvals
+           SET status = 'superseded',
+               reason = COALESCE(reason, ?),
+               resolved_at = COALESCE(resolved_at, ?), updated_at = ?
+           WHERE admission_id ${input.target === 'stopped' ? 'IN (SELECT id FROM autopilot_admissions WHERE owner_id = ?)' : '= ?'}
+             AND approval_type = 'push'
+             AND status IN ('pending', 'approved');`,
+        )
+        .run(
+          input.reason,
+          nowIso,
+          nowIso,
+          input.target === 'stopped' ? admission.ownerId : admission.id,
+        );
+      database
+        .prepare(
           `UPDATE autopilot_owner_fix_submissions
            SET status = 'cancelled', error = ?, finished_at = ?
            WHERE attempt_id = ? AND status = 'applying';`,
@@ -215,6 +234,16 @@ async function finishAutopilotAdmission(
       revokedAttempts.map((attemptId) =>
         waitForAutopilotSubmissionProcessLease(String(attemptId)),
       ),
+    );
+  }
+  if (input.target === 'stopped' && 'admission' in result && result.admission) {
+    await admitTerminalAutopilotOwnerCleanup(
+      {
+        watchId: result.admission.watchId,
+        reason: 'operator-stop-owner-cleanup',
+      },
+      paths,
+      now,
     );
   }
   return result;

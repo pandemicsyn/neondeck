@@ -99,11 +99,11 @@ export function upsertPreparedDiff(
         `
         INSERT INTO prepared_diffs (
           id, worktree_id, repo_id, repo_full_name, pr_number, title,
-          source_worktree_path, base_ref, head_ref, head_sha, status,
+          source_worktree_path, base_ref, head_ref, head_sha, pushed_commit_sha, status,
           push_approval_status, verification_status, summary_json, created_by,
           created_at, updated_at, abandoned_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(worktree_id) DO UPDATE SET
           repo_id = excluded.repo_id,
           repo_full_name = excluded.repo_full_name,
@@ -113,6 +113,7 @@ export function upsertPreparedDiff(
           base_ref = excluded.base_ref,
           head_ref = excluded.head_ref,
           head_sha = excluded.head_sha,
+          pushed_commit_sha = excluded.pushed_commit_sha,
           status = excluded.status,
           push_approval_status = excluded.push_approval_status,
           verification_status = excluded.verification_status,
@@ -132,6 +133,7 @@ export function upsertPreparedDiff(
         record.baseRef,
         record.headRef,
         record.headSha,
+        record.pushedCommitSha ?? null,
         record.status,
         record.pushApprovalStatus,
         record.verificationStatus,
@@ -243,6 +245,7 @@ export function approvePreparedDiffPushState(
           WHERE prepared_diff_id = ?
             AND approval_type = 'push'
             AND status = 'pending'
+            AND admission_id IS NULL
           ORDER BY requested_at DESC;
         `,
         )
@@ -261,9 +264,11 @@ export function approvePreparedDiffPushState(
                 policy_decision = ?,
                 resolved_at = ?,
                 updated_at = ?
-            WHERE prepared_diff_id = ?
+            WHERE id = ?
+              AND prepared_diff_id = ?
               AND approval_type = 'push'
-              AND status = 'pending';
+              AND status = 'pending'
+              AND admission_id IS NULL;
           `,
           )
           .run(
@@ -274,6 +279,7 @@ export function approvePreparedDiffPushState(
             input.policyDecision,
             input.approvedAt,
             input.approvedAt,
+            readApprovalRow(pendingRows[0]).id,
             updated.id,
           );
         const selected = database
@@ -290,6 +296,9 @@ export function approvePreparedDiffPushState(
           id: randomUUID(),
           preparedDiffId: updated.id,
           worktreeId: updated.worktreeId,
+          admissionId: null,
+          ownerGeneration: null,
+          stageAttemptId: null,
           approvalType: 'push',
           status: 'approved',
           targetSha: input.approvedCommitSha,
@@ -306,10 +315,11 @@ export function approvePreparedDiffPushState(
             `
             INSERT INTO prepared_diff_approvals (
               id, prepared_diff_id, worktree_id, approval_type, status,
+              admission_id, owner_generation, stage_attempt_id,
               target_sha, policy_hash, policy_decision, reason,
               approver_surface, requested_at, resolved_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
           `,
           )
           .run(
@@ -318,6 +328,9 @@ export function approvePreparedDiffPushState(
             approval.worktreeId,
             approval.approvalType,
             approval.status,
+            approval.admissionId,
+            approval.ownerGeneration,
+            approval.stageAttemptId,
             approval.targetSha,
             approval.policyHash,
             approval.policyDecision,
@@ -516,6 +529,7 @@ export function resolvePendingApprovals(
           updated_at = ?
         WHERE prepared_diff_id = ?
           AND approval_type = ?
+          AND admission_id IS NULL
           AND status = 'pending';
       `,
       )
@@ -605,6 +619,9 @@ export function insertApproval(
     id: randomUUID(),
     preparedDiffId: record.id,
     worktreeId: record.worktreeId,
+    admissionId: null,
+    ownerGeneration: null,
+    stageAttemptId: null,
     approvalType,
     status,
     targetSha: binding.targetSha ?? null,
@@ -749,6 +766,7 @@ export function readPreparedDiffRow(row: unknown): PreparedDiffRecord {
     baseRef: item.base_ref,
     headRef: item.head_ref,
     headSha: item.head_sha,
+    pushedCommitSha: item.pushed_commit_sha,
     status: item.status,
     pushApprovalStatus: item.push_approval_status,
     verificationStatus: item.verification_status,
@@ -770,6 +788,9 @@ export function readApprovalRow(row: unknown): PreparedDiffApprovalRecord {
     id: item.id,
     preparedDiffId: item.prepared_diff_id,
     worktreeId: item.worktree_id,
+    admissionId: item.admission_id,
+    ownerGeneration: item.owner_generation,
+    stageAttemptId: item.stage_attempt_id,
     approvalType:
       item.approval_type === 'revision' ||
       item.approval_type === 'abandon' ||

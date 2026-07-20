@@ -41,6 +41,7 @@ export type PreparedDiffRecord = {
   baseRef: string;
   headRef: string;
   headSha: string | null;
+  pushedCommitSha?: string | null;
   status: PreparedDiffStatus;
   pushApprovalStatus: PreparedDiffApprovalStatus;
   verificationStatus: PreparedDiffVerificationStatus;
@@ -56,6 +57,9 @@ export type PreparedDiffApprovalRecord = {
   id: string;
   preparedDiffId: string;
   worktreeId: string;
+  admissionId: string | null;
+  ownerGeneration: number | null;
+  stageAttemptId: string | null;
   approvalType: 'push' | 'revision' | 'abandon' | 'verification';
   status: 'pending' | 'approved' | 'rejected' | 'superseded';
   targetSha: string | null;
@@ -151,6 +155,7 @@ export const preparedDiffRecordSchema = v.object({
   baseRef: v.string(),
   headRef: v.string(),
   headSha: v.nullable(v.string()),
+  pushedCommitSha: v.optional(v.nullable(v.string())),
   status: preparedDiffStatusSchema,
   pushApprovalStatus: preparedDiffApprovalStatusSchema,
   verificationStatus: preparedDiffVerificationStatusSchema,
@@ -185,6 +190,7 @@ export const fileDiffInputSchema = v.object({
 });
 export const approvePushInputSchema = v.object({
   preparedDiffId: nonEmptyStringSchema,
+  approvalId: v.optional(nonEmptyStringSchema),
   reason: v.optional(v.string()),
   approverSurface: v.optional(nonEmptyStringSchema),
   confirm: v.optional(v.boolean()),
@@ -241,6 +247,7 @@ export const preparedDiffRowSchema = v.object({
   base_ref: v.string(),
   head_ref: v.string(),
   head_sha: v.nullable(v.string()),
+  pushed_commit_sha: v.nullable(v.string()),
   status: v.string(),
   push_approval_status: v.string(),
   verification_status: v.string(),
@@ -254,6 +261,9 @@ export const approvalRowSchema = v.object({
   id: v.string(),
   prepared_diff_id: v.string(),
   worktree_id: v.string(),
+  admission_id: v.nullable(v.string()),
+  owner_generation: v.nullable(v.number()),
+  stage_attempt_id: v.nullable(v.string()),
   approval_type: v.string(),
   status: v.string(),
   target_sha: v.nullable(v.string()),

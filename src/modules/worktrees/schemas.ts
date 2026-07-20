@@ -171,6 +171,7 @@ export const cleanupInputSchema = v.object({
   dryRun: v.optional(v.boolean()),
   confirmAdopted: v.optional(v.boolean()),
   confirmPreparedDiff: v.optional(v.boolean()),
+  terminalCleanupRetry: v.optional(v.boolean()),
   force: v.optional(v.boolean()),
 });
 export const rowNullableStringSchema = v.nullable(v.string());

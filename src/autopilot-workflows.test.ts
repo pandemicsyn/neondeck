@@ -1747,16 +1747,70 @@ describe('PR event autopilot', () => {
         },
       },
     );
+    const admission = await claimAutopilotTriageAdmission(
+      {
+        watchId: 'example/sample#7',
+        eventFingerprint: 'comment-result-delivery',
+        repoId: 'sample',
+        prNumber: 7,
+        mode: 'prepare-only',
+        input: { synthetic: 'comment-result-delivery' },
+        limits: defaultAutopilotConcurrency,
+      },
+      paths,
+    );
+    const commentAttemptId = admission.attempt!.id;
+    const admissionDatabase = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      admissionDatabase
+        .prepare(
+          `UPDATE autopilot_stage_attempts
+           SET stage = 'comment-result', workflow = 'comment-pr-autofix-result',
+               status = 'running', run_id = 'run:comment-result'
+           WHERE id = ?;`,
+        )
+        .run(commentAttemptId);
+      admissionDatabase
+        .prepare(
+          `UPDATE autopilot_admissions
+           SET state = 'comment-admitted', prepared_diff_id = ?,
+               worktree_id = ?, current_stage_attempt_id = ?,
+               current_workflow = 'comment-pr-autofix-result',
+               current_run_id = 'run:comment-result'
+           WHERE id = ?;`,
+        )
+        .run(
+          preparedDiff.id,
+          preparedDiff.worktreeId,
+          commentAttemptId,
+          admission.admission.id,
+        );
+      admissionDatabase
+        .prepare(
+          `UPDATE autopilot_pr_owners SET status = 'active' WHERE id = ?;`,
+        )
+        .run(admission.admission.ownerId);
+    } finally {
+      admissionDatabase.close();
+    }
     const calls: Array<{
       owner: string;
       repo: string;
       number: number;
       body: string;
     }> = [];
+    const threadReplyCalls: Array<{ threadId: string; body: string }> = [];
+    const reviewThread = {
+      ...reviewEventState(featureSha).reviewThreads[0],
+      pullRequestRepo: 'example/sample',
+      pullRequestNumber: 7,
+    };
 
     const result = await commentPrAutofixResult(
       {
         preparedDiffId: preparedDiff.id,
+        admissionId: admission.admission.id,
+        attemptId: commentAttemptId,
       },
       paths,
       {
@@ -1776,6 +1830,30 @@ describe('PR event autopilot', () => {
             createdAt: '2026-06-30T21:00:00Z',
             updatedAt: '2026-06-30T21:00:00Z',
           };
+        },
+        fetchPullRequestReviewThread: async () => reviewThread,
+        replyToPullRequestReviewThread: async (input) => {
+          threadReplyCalls.push(input);
+          return {
+            ...reviewThread,
+            comments: [
+              ...reviewThread.comments,
+              {
+                id: 'PRRC_AUTOPILOT',
+                databaseId: 102,
+                authorLogin: 'neon',
+                body: input.body,
+                url: 'https://github.com/example/sample/pull/7#discussion_r102',
+                path: 'src/app.ts',
+                line: 1,
+                originalLine: 1,
+                diffHunk: '@@ -1 +1 @@',
+                reviewId: 55,
+                createdAt: '2026-06-30T21:00:00Z',
+                updatedAt: '2026-06-30T21:00:00Z',
+              },
+            ],
+          } as never;
         },
       },
     );
@@ -1811,6 +1889,104 @@ describe('PR event autopilot', () => {
     expect(calls[0]?.body).toContain(
       'Remaining manual asks: Reviewer re-review is still needed.',
     );
+    expect(threadReplyCalls).toHaveLength(1);
+
+    await expect(
+      commentPrAutofixResult(
+        {
+          preparedDiffId: preparedDiff.id,
+          admissionId: admission.admission.id,
+          attemptId: commentAttemptId,
+        },
+        paths,
+        {
+          token: 'fixture-token',
+          fetchPullRequestEventState: async () => reviewEventState(featureSha),
+          listPullRequestComments: async () => [],
+          postPullRequestComment: async () => {
+            throw new Error('durable delivery should not post twice');
+          },
+          fetchPullRequestReviewThread: async () => reviewThread,
+          replyToPullRequestReviewThread: async () => {
+            throw new Error('durable delivery should not reply twice');
+          },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: false });
+    expect(calls).toHaveLength(1);
+    expect(threadReplyCalls).toHaveLength(1);
+    const deliveryDatabase = new DatabaseSync(paths.neondeckDatabase, {
+      readOnly: true,
+    });
+    try {
+      expect(
+        deliveryDatabase
+          .prepare(
+            `SELECT delivery_kind, status, remote_id
+             FROM autopilot_result_deliveries ORDER BY delivery_kind;`,
+          )
+          .all(),
+      ).toEqual([
+        {
+          delivery_kind: 'thread-reply',
+          status: 'delivered',
+          remote_id: '102',
+        },
+        {
+          delivery_kind: 'top-level',
+          status: 'delivered',
+          remote_id: '99',
+        },
+      ]);
+    } finally {
+      deliveryDatabase.close();
+    }
+    const expiredLeaseDatabase = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      expiredLeaseDatabase
+        .prepare(
+          `UPDATE autopilot_result_deliveries
+           SET status = 'delivering', lease_token = 'expired-lease',
+               lease_expires_at = '2020-01-01T00:00:00.000Z'
+           WHERE delivery_kind = 'top-level';`,
+        )
+        .run();
+    } finally {
+      expiredLeaseDatabase.close();
+    }
+    await expect(
+      commentPrAutofixResult(
+        {
+          preparedDiffId: preparedDiff.id,
+          admissionId: admission.admission.id,
+          attemptId: commentAttemptId,
+        },
+        paths,
+        {
+          token: 'fixture-token',
+          fetchPullRequestEventState: async () => reviewEventState(featureSha),
+          listPullRequestComments: async () => [
+            {
+              id: 99,
+              nodeId: 'comment-node-99',
+              url: 'https://github.com/example/sample/pull/7#issuecomment-99',
+              authorLogin: 'neon',
+              body: calls[0]!.body,
+              createdAt: '2026-06-30T21:00:00Z',
+              updatedAt: '2026-06-30T21:00:00Z',
+            },
+          ],
+          postPullRequestComment: async () => {
+            throw new Error('stable marker recovery should not post twice');
+          },
+          fetchPullRequestReviewThread: async () => reviewThread,
+          replyToPullRequestReviewThread: async () => {
+            throw new Error('settled thread delivery should not reply twice');
+          },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: false });
+    expect(calls).toHaveLength(1);
 
     const summaries = await listWorkflowSummaries(paths);
     expect(summaries[0]).toMatchObject({
@@ -2184,13 +2360,11 @@ describe('PR event autopilot', () => {
     });
   });
 
-  it('dispatches verify-then-push after push approval by default and records the linkage', async () => {
+  it('records push approval but leaves dispatch exclusively to the coordinator', async () => {
     const { paths, featureSha } = await fixture();
     const prepared = await prepareReviewPreparedDiff(paths, featureSha);
     const preparedDiffId = stringPath(prepared, ['data', 'preparedDiff', 'id']);
-    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
-    const calls: Array<{ workflow: string; input: Record<string, unknown> }> =
-      [];
+    const calls: string[] = [];
 
     const result = await approvePreparedDiffPushWithDispatch(
       {
@@ -2201,9 +2375,9 @@ describe('PR event autopilot', () => {
       },
       paths,
       {
-        async invokeWorkflow(workflow, input) {
-          calls.push({ workflow, input });
-          return { runId: 'run-verify-then-push-after-approval' };
+        async invokeWorkflow() {
+          calls.push('unexpected');
+          return { runId: 'unexpected' };
         },
       },
     );
@@ -2212,237 +2386,14 @@ describe('PR event autopilot', () => {
       ok: true,
       preparedDiff: { status: 'push-approved' },
       data: {
-        dispatchedPushRunId: 'run-verify-then-push-after-approval',
-        pushApprovalDispatch: {
-          mode: 'verify-then-push',
-          status: 'dispatched',
-          workflow: 'verify-then-push-pr-autofix',
-          runId: 'run-verify-then-push-after-approval',
-        },
-      },
-    });
-    expect(calls).toEqual([
-      {
-        workflow: 'verify-then-push-pr-autofix',
-        input: {
-          preparedDiffId,
-          worktreeId,
-        },
-      },
-    ]);
-    await expect(listWorkflowSummaries(paths)).resolves.toEqual([
-      expect.objectContaining({
-        workflow: 'verify_then_push_pr_autofix',
-        runId: 'run-verify-then-push-after-approval',
-        status: 'pending',
-        summary: expect.objectContaining({
-          event: 'prepared_diff_push_approval_dispatch',
-          approvalId: result.approvals?.[0]?.id,
-          preparedDiffId,
-          worktreeId,
-        }),
-      }),
-    ]);
-  });
-
-  it('admits only one push workflow when prepared-diff approvals race', async () => {
-    const { paths, featureSha } = await fixture();
-    const prepared = await prepareReviewPreparedDiff(paths, featureSha);
-    const preparedDiffId = stringPath(prepared, ['data', 'preparedDiff', 'id']);
-    const calls: string[] = [];
-    const invokeWorkflow = async () => {
-      calls.push('invoked');
-      return { runId: `run-concurrent-approval-${calls.length}` };
-    };
-
-    const results = await Promise.all([
-      approvePreparedDiffPushWithDispatch(
-        { preparedDiffId, confirm: true },
-        paths,
-        { invokeWorkflow },
-      ),
-      approvePreparedDiffPushWithDispatch(
-        { preparedDiffId, confirm: true },
-        paths,
-        { invokeWorkflow },
-      ),
-    ]);
-
-    expect(
-      results.filter((result) => result.ok && result.changed),
-    ).toHaveLength(1);
-    expect(
-      results.filter((result) => !result.ok && !result.changed),
-    ).toHaveLength(1);
-    expect(calls).toEqual(['invoked']);
-    await expect(listWorkflowSummaries(paths)).resolves.toHaveLength(1);
-  });
-
-  it('returns an explicit dispatch failure after recording push approval', async () => {
-    const { paths, featureSha } = await fixture();
-    const prepared = await prepareReviewPreparedDiff(paths, featureSha);
-    const preparedDiffId = stringPath(prepared, ['data', 'preparedDiff', 'id']);
-
-    const result = await approvePreparedDiffPushWithDispatch(
-      { preparedDiffId, confirm: true },
-      paths,
-      {
-        async invokeWorkflow() {
-          throw new Error('Flue admission unavailable.');
-        },
-      },
-    );
-
-    expect(result).toMatchObject({
-      ok: true,
-      preparedDiff: { status: 'push-approved' },
-      requires: ['workflowDispatch'],
-      errors: ['Flue admission unavailable.'],
-      data: {
         dispatchedPushRunId: null,
         pushApprovalDispatch: {
-          mode: 'verify-then-push',
-          status: 'dispatch-failed',
-          workflow: 'verify-then-push-pr-autofix',
+          status: 'awaiting-coordinator',
         },
       },
     });
-    await expect(listWorkflowSummaries(paths)).resolves.toEqual([
-      expect.objectContaining({
-        workflow: 'verify_then_push_pr_autofix',
-        runId: null,
-        status: 'failed',
-        summary: expect.objectContaining({
-          approvalId: result.approvals?.[0]?.id,
-          preparedDiffId,
-          error: 'Flue admission unavailable.',
-        }),
-      }),
-    ]);
-  });
-
-  it('rejects verify-then-push workflow worktree mismatches', async () => {
-    const { paths, featureSha } = await fixture();
-    const prepared = await prepareReviewPreparedDiff(paths, featureSha);
-    const preparedDiffId = stringPath(prepared, ['data', 'preparedDiff', 'id']);
-    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
-    const previousHome = process.env.NEONDECK_HOME;
-    process.env.NEONDECK_HOME = paths.home;
-    vi.doMock('./agents/display-assistant', async () => {
-      const { defineAgent } = await import('@flue/runtime');
-      return {
-        default: defineAgent(() => ({
-          instructions: 'test display assistant',
-        })),
-      };
-    });
-
-    try {
-      const { default: verifyThenPushPrAutofixWorkflow } =
-        await import('./workflows/verify-then-push-pr-autofix');
-      await expect(
-        runWorkflowAction(verifyThenPushPrAutofixWorkflow, {
-          preparedDiffId,
-          worktreeId: `${worktreeId}-other`,
-        }),
-      ).resolves.toMatchObject({
-        ok: false,
-        action: 'autopilot_verify_then_push_pr_autofix',
-        changed: false,
-        requires: ['worktreeId'],
-        message: expect.stringContaining('is linked to worktree'),
-      });
-    } finally {
-      vi.doUnmock('./agents/display-assistant');
-      vi.resetModules();
-      if (previousHome === undefined) delete process.env.NEONDECK_HOME;
-      else process.env.NEONDECK_HOME = previousHome;
-    }
-  });
-
-  it('can dispatch push immediately or leave approval record-only from config', async () => {
-    const pushFixture = await fixture();
-    await writeAutopilotConfig(pushFixture.paths, { pushOnApproval: 'push' });
-    const pushPrepared = await prepareReviewPreparedDiff(
-      pushFixture.paths,
-      pushFixture.featureSha,
-    );
-    const pushPreparedDiffId = stringPath(pushPrepared, [
-      'data',
-      'preparedDiff',
-      'id',
-    ]);
-    const pushCalls: Array<{
-      workflow: string;
-      input: Record<string, unknown>;
-    }> = [];
-
-    const pushed = await approvePreparedDiffPushWithDispatch(
-      { preparedDiffId: pushPreparedDiffId, confirm: true },
-      pushFixture.paths,
-      {
-        async invokeWorkflow(workflow, input) {
-          pushCalls.push({ workflow, input });
-          return { runId: 'run-push-after-approval' };
-        },
-      },
-    );
-
-    expect(pushed).toMatchObject({
-      ok: true,
-      data: {
-        dispatchedPushRunId: 'run-push-after-approval',
-        pushApprovalDispatch: {
-          mode: 'push',
-          status: 'dispatched',
-          workflow: 'push-pr-autofix',
-        },
-      },
-    });
-    expect(pushCalls).toEqual([
-      {
-        workflow: 'push-pr-autofix',
-        input: {
-          preparedDiffId: pushPreparedDiffId,
-          lockOwner: 'approval_push_pr_autofix',
-        },
-      },
-    ]);
-
-    const offFixture = await fixture();
-    await writeAutopilotConfig(offFixture.paths, { pushOnApproval: 'off' });
-    const offPrepared = await prepareReviewPreparedDiff(
-      offFixture.paths,
-      offFixture.featureSha,
-    );
-    const offPreparedDiffId = stringPath(offPrepared, [
-      'data',
-      'preparedDiff',
-      'id',
-    ]);
-
-    const off = await approvePreparedDiffPushWithDispatch(
-      { preparedDiffId: offPreparedDiffId, confirm: true },
-      offFixture.paths,
-      {
-        async invokeWorkflow() {
-          throw new Error('push dispatch should be disabled');
-        },
-      },
-    );
-
-    expect(off).toMatchObject({
-      ok: true,
-      preparedDiff: { status: 'push-approved' },
-      data: {
-        dispatchedPushRunId: null,
-        pushApprovalDispatch: {
-          mode: 'off',
-          status: 'off',
-        },
-      },
-    });
-    await expect(listWorkflowSummaries(offFixture.paths)).resolves.toEqual([]);
+    expect(calls).toEqual([]);
+    await expect(listWorkflowSummaries(paths)).resolves.toEqual([]);
   });
 
   it('does not rewrite abandoned prepared diffs on duplicate push calls', async () => {

@@ -115,6 +115,12 @@ export type AutopilotDependencies = {
   listPullRequestComments?: NonNullable<
     Parameters<typeof postGitHubPrComment>[2]
   >['listPullRequestComments'];
+  fetchPullRequestReviewThread?: NonNullable<
+    Parameters<typeof import('../pr-events').postGitHubPrThreadReply>[4]
+  >['fetchPullRequestReviewThread'];
+  replyToPullRequestReviewThread?: NonNullable<
+    Parameters<typeof import('../pr-events').postGitHubPrThreadReply>[4]
+  >['replyToPullRequestReviewThread'];
   pushGit?: typeof gitPushHead;
   fetchExactPullRequestHead?: typeof fetchExactPullRequestHead;
   token?: string;
@@ -462,6 +468,11 @@ export const verifyPrWorktreeInputSchema = v.strictObject({
 });
 export const pushPrAutofixInputSchema = v.strictObject({
   preparedDiffId: nonEmptyStringSchema,
+  // Push is a coordinator-owned side effect. The admission and its reserved
+  // attempt are the durable capability; no workflow may manufacture a push
+  // outside that reservation.
+  admissionId: nonEmptyStringSchema,
+  attemptId: nonEmptyStringSchema,
   force: v.optional(v.boolean()),
   lockOwner: v.optional(nonEmptyStringSchema),
   lockTtlSeconds: v.optional(
@@ -530,6 +541,8 @@ export const fixPrReviewFeedbackInputSchema = v.strictObject({
 });
 export const commentPrAutofixResultInputSchema = v.strictObject({
   preparedDiffId: nonEmptyStringSchema,
+  admissionId: nonEmptyStringSchema,
+  attemptId: nonEmptyStringSchema,
 });
 export const autopilotOutputSchema = v.looseObject({
   ok: v.boolean(),
