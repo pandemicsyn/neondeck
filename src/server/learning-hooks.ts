@@ -224,7 +224,6 @@ function flueContextRuntimeHome(context: FlueEventContext | undefined) {
   return typeof value === 'string' && value ? value : undefined;
 }
 
-
 export function recordHandledPrApiResult(
   paths: RuntimePaths,
   workflow: string,

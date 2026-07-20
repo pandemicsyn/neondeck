@@ -2,12 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { asJsonValue } from '../../lib/action-result';
 import { openDb, rollbackQuietly } from '../../lib/sqlite';
 import type { RuntimePaths } from '../../runtime-home';
-import type {
-  AutomationExecutionResult,
-  NotificationRecord,
+import {
+  publishNotificationEvent,
+  readNotificationRow,
+  type AutomationExecutionResult,
+  type NotificationRecord,
 } from '../app-state';
-import { publishNotificationEvent } from '../app-state/notification-events';
-import { readNotificationRow } from '../app-state/notifications';
 import { upsertScheduledTask } from '../scheduled-tasks';
 import type {
   DesiredTerminalState,

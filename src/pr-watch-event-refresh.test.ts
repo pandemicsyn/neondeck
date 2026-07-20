@@ -277,7 +277,12 @@ describe('deterministic PR watch event refresh', () => {
       },
       paths,
     );
-    const addNotification = vi.fn();
+    const addNotification =
+      vi.fn<
+        NonNullable<
+          NonNullable<Parameters<typeof runSchedulerTick>[2]>['addNotification']
+        >
+      >();
 
     const result = await runSchedulerTick(
       paths,
