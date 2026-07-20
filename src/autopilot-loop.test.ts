@@ -23,6 +23,7 @@ import {
 } from './modules/autopilot';
 import { safePushAutopilotOwner } from './modules/autopilot/owner/safe-push';
 import { buildAutopilotOwnerToolRegistry } from './modules/autopilot/owner/tools';
+import { pushInteractiveRepo } from './repo-edit';
 import {
   bindWatchAutopilotOwner,
   claimWatchAutopilotTurn,
@@ -149,6 +150,14 @@ describe('minimal Autopilot watch loop', () => {
     expect(
       claimWatchAutopilotTurn(paths, 'pandemicsyn/neondeck#123', 'event-1'),
     ).toBeUndefined();
+    await expect(
+      completeAutopilotWatchIfTerminal('pandemicsyn/neondeck#123', paths, {
+        explicitStop: true,
+      }),
+    ).resolves.toMatchObject({ complete: false, reason: 'owner-working' });
+    expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toMatchObject({
+      autopilotStatus: 'working',
+    });
 
     const refreshEvents = vi.fn();
     await expect(
@@ -183,7 +192,7 @@ describe('minimal Autopilot watch loop', () => {
   });
 
   it('reuses one owner/worktree, preserves a prepared commit, and grants push only to the human waiting turn', async () => {
-    const { paths, repo } = await gitFixturePaths();
+    const { paths, repo, remote } = await gitFixturePaths();
     await configurePrAutopilot(
       {
         ref: 'neondeck#123',
@@ -294,12 +303,61 @@ describe('minimal Autopilot watch loop', () => {
       id: instanceId,
       input: 'approved, fix the typo then push',
     });
-    const pushInteractive = vi.fn(async () => ({
+    await settleAutopilotOwnerObservation(
+      ownerPromptFailure(instanceId),
+      paths,
+    );
+    expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toMatchObject({
+      autopilotStatus: 'blocked',
+    });
+    await expect(
+      controlPrAutopilot(
+        { id: 'pandemicsyn/neondeck#123', operation: 'retry' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
       ok: true,
-      action: 'repo_push',
-      changed: true,
-      message: 'Pushed the approved commit.',
-    }));
+      watch: { autopilotStatus: 'waiting' },
+    });
+    await messagePrAutopilotOwner(
+      {
+        id: 'pandemicsyn/neondeck#123',
+        message: 'approved, push the held commit',
+      },
+      paths,
+      humanDispatch as never,
+    );
+    const pushInteractive = vi.fn(
+      async (input: Parameters<typeof pushInteractiveRepo>[0]) =>
+        pushInteractiveRepo(input, paths, {
+          resolveContext: vi.fn(async () => ({
+            repo: {
+              id: 'neondeck',
+              github: { owner: 'pandemicsyn', name: 'neondeck' },
+              path: repo,
+              defaultBranch: 'main',
+            },
+            prNumber: 123,
+            worktree: await readManagedWorktree(worktree.id, 'neondeck', paths),
+            pushRemote: 'origin',
+            pushBranch: 'feature',
+            linkedPrHead: true,
+          })) as never,
+          pushGit: vi.fn(async (localPath, target) => {
+            await git(localPath, [
+              'push',
+              target.remote,
+              `${target.sha}:refs/heads/${target.branch}`,
+            ]);
+            return {
+              remote: target.remote,
+              branch: target.branch,
+              force: false,
+              stdout: 'pushed to local test remote',
+            };
+          }),
+        }),
+    );
     const humanTurnWatch = readWatch(paths, 'pandemicsyn/neondeck#123')!;
     const humanRegistry = buildAutopilotOwnerToolRegistry({
       watch: { ...humanTurnWatch, autopilotStatus: 'waiting' },
@@ -310,9 +368,11 @@ describe('minimal Autopilot watch loop', () => {
     const humanPush = humanRegistry.tools.find(
       (tool) => tool.name === 'neondeck_owner_push',
     );
-    await expect(humanPush?.run({ input: {} } as never)).resolves.toMatchObject(
-      { ok: true, changed: true },
-    );
+    const humanPushResult = await humanPush?.run({ input: {} } as never);
+    expect(humanPushResult, JSON.stringify(humanPushResult)).toMatchObject({
+      ok: true,
+      changed: true,
+    });
     expect(pushInteractive).toHaveBeenCalledWith(
       expect.objectContaining({
         repoId: 'neondeck',
@@ -321,8 +381,8 @@ describe('minimal Autopilot watch loop', () => {
       }),
       paths,
     );
-    expect(await gitOutput(repo, ['rev-parse', 'feature'])).toBe(
-      repositorySeed?.featureSha,
+    expect(await gitOutput(remote, ['rev-parse', 'refs/heads/feature'])).toBe(
+      preparedSha,
     );
 
     await recordWorktreePushSucceeded(
@@ -629,10 +689,13 @@ async function gitFixturePaths() {
   if (!repositorySeed) throw new Error('Git seed unavailable.');
   const repoRoot = await mkdtemp(join(tmpdir(), 'neondeck-loop-repo-'));
   const repo = join(repoRoot, 'repository');
+  const remote = join(repoRoot, 'remote.git');
   tempRoots.push(repoRoot);
   await repositorySeed.copyTo(repo);
+  await execFileAsync('git', ['clone', '--bare', repo, remote]);
+  await git(repo, ['remote', 'add', 'origin', remote]);
   const paths = await fixturePaths(repo);
-  return { paths, repo };
+  return { paths, repo, remote };
 }
 
 function worktreeFrom(result: unknown) {

@@ -20,6 +20,8 @@ import type {
 } from '../watches';
 import { modeSchema } from '../autopilot-policy';
 import { completeAutopilotWatchIfTerminal } from './owner/lifecycle';
+import { gitCurrentSha, gitStatus } from '../../repo-edit/git';
+import { readManagedWorktree } from '../worktrees';
 import {
   clearPendingAutopilotTurn,
   registerPendingAutopilotTurn,
@@ -32,6 +34,9 @@ export const configurePrAutopilotInputSchema = v.object({
   mode: modeSchema,
   processExisting: v.boolean(),
   confirm: v.optional(v.boolean()),
+  desiredTerminalState: v.optional(v.picklist(['checks', 'merged'])),
+  intervalSeconds: v.optional(v.pipe(v.number(), v.integer(), v.minValue(60))),
+  createdBy: v.optional(nonEmptyString),
 });
 
 export const prAutopilotStatusInputSchema = v.object({
@@ -74,7 +79,9 @@ export async function configurePrAutopilot(
     {
       ref: parsed.output.ref,
       processExisting: parsed.output.processExisting,
-      createdBy: 'autopilot',
+      createdBy: parsed.output.createdBy ?? 'autopilot',
+      desiredTerminalState: parsed.output.desiredTerminalState,
+      intervalSeconds: parsed.output.intervalSeconds,
     },
     paths,
     dependencies.fetcher,
@@ -202,6 +209,54 @@ export async function controlPrAutopilot(
           'autopilot_watch_stop',
           `Watch "${resolved.id}" could not be stopped because its state changed.`,
         );
+  }
+
+  const current = readWatch(paths, resolved.id);
+  if (
+    current?.autopilotStatus === 'blocked' &&
+    current.autopilotMode === 'autofix-with-approval' &&
+    current.worktreeId
+  ) {
+    try {
+      const worktree = await readManagedWorktree(
+        current.worktreeId,
+        current.repoId,
+        paths,
+      );
+      const [status, currentSha] = await Promise.all([
+        gitStatus(worktree.localPath),
+        gitCurrentSha(worktree.localPath),
+      ]);
+      if (
+        status.clean &&
+        currentSha !== worktree.headSha &&
+        currentSha !== worktree.lastPushedSha
+      ) {
+        const waiting = transitionWatchAutopilot(paths, current.id, {
+          from: 'blocked',
+          to: 'waiting',
+        });
+        if (!waiting) {
+          return failure(
+            'autopilot_watch_retry',
+            `Watch "${current.id}" changed before the held approval turn could be restored.`,
+          );
+        }
+        await setPrWatchPolling({ id: current.id, enabled: true }, paths);
+        return {
+          ok: true,
+          action: 'autopilot_watch_retry',
+          changed: true,
+          message: `Restored "${current.id}" to human review with its prepared commit held steady.`,
+          watch: waiting,
+        };
+      }
+    } catch (error) {
+      return failure(
+        'autopilot_watch_retry',
+        `Could not inspect the held approval worktree safely: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   const watch = transitionWatchAutopilot(paths, resolved.id, {

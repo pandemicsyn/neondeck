@@ -473,6 +473,11 @@ program
               mode: parseAutopilotModeFlag(options.mode)!,
               processExisting: Boolean(options.processExisting),
               confirm: Boolean(options.confirmAutopilot),
+              desiredTerminalState,
+              ...(intervalSeconds !== undefined ? { intervalSeconds } : {}),
+              ...(options.from
+                ? { createdBy: normalizeHandoffSource(options.from) }
+                : {}),
             },
             paths,
           );

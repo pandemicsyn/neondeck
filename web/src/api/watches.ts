@@ -21,6 +21,9 @@ export async function configurePrAutopilot(input: {
     | 'autofix-push-when-safe';
   processExisting: boolean;
   confirm?: boolean;
+  desiredTerminalState?: 'checks' | 'merged';
+  intervalSeconds?: number;
+  createdBy?: string;
 }) {
   return postJson<PrWatchMutationResponse>('/api/watches/autopilot', input);
 }

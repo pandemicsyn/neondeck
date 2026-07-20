@@ -115,12 +115,17 @@ export function buildAutopilotOwnerToolRegistry(input: {
           'Read the current committed or uncommitted diff in this PR owner worktree.',
         input: v.object({ includePatch: v.optional(v.boolean()) }),
         async run({ input: toolInput }) {
+          const currentWorktree = await readManagedWorktree(
+            worktreeId,
+            watch.repoId,
+            paths,
+          );
           return readRepoDiff(
             {
               ...toolInput,
               repoId: watch.repoId,
               worktreeId,
-              base: watch.lastSnapshot?.headSha,
+              base: currentWorktree.headSha ?? undefined,
             },
             paths,
           );
