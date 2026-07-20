@@ -147,8 +147,9 @@ const layersDiagram = `flowchart TB
           escape checks, and sensitive-path rules return typed policy errors
           instead of prompting. Autonomous change flows (autopilot, Kilo
           results) never mutate your primary checkout — they work in managed
-          worktrees, and results re-enter through prepared diffs, verification
-          through the policy gate, and push gates.
+          worktrees. The minimal watched-PR Autopilot keeps its review artifact
+          as an ordinary local commit; explicit fixer and Kilo workflows may
+          still use prepared-diff records and their separate review gates.
         </p>
         <p>
           Authority follows task origin. In a human-driven chat, typed repo
@@ -157,13 +158,12 @@ const layersDiagram = `flowchart TB
           <code>guardrails</code> config block still denies forbidden paths and destinations,
           and asks once before high-risk or over-limit pushes. That acknowledgment
           is bound to the reviewed commit and effect, so a changed worktree prompts
-          again. PR watches currently persist complete GitHub facts, semantic watermarks,
-          and meaningful notifications without dispatching an automatic mutation chain.
-          Separately invoked guarded worktree, fix, verification, and delivery actions
-          consume current per-PR policy without expanding their own authority. The
-          replacement Autopilot owner loop is being rebuilt separately; it will reuse
-          exact-head worktrees and guarded Git operations rather than the removed
-          admission/coordinator architecture.
+          again. The current <a href="/docs/autopilot/">Autopilot owner loop</a>
+          gives each watcher or direct-human turn only the bounded tools allowed by
+          its current mode. Automatic delivery additionally reruns every configured
+          targeted check, refetches complete GitHub facts, proves the current PR head,
+          policy, permissions, and push identity, and uses a non-force expected-head
+          push. Any uncertainty blocks with the local commit retained for review.
         </p>
 
         <h2>Planned: exe.dev workspace mode</h2>

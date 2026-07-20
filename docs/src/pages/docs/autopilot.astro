@@ -1,0 +1,350 @@
+---
+import DocsNav from '../../components/DocsNav.astro';
+import SiteFooter from '../../components/SiteFooter.astro';
+import SiteNav from '../../components/SiteNav.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Autopilot · neondeck"
+  description="Configure and operate neondeck's minimal watched-PR Autopilot, including modes, review, safe push prerequisites, and fail-closed recovery."
+>
+  <div class="site-shell">
+    <SiteNav />
+    <main class="container docs-layout">
+      <DocsNav />
+      <article class="docs-prose">
+        <h1>Autopilot</h1>
+        <p>
+          Autopilot is the working watched-PR loop in Neondeck. Meaningful
+          review feedback or failing checks can notify you, task a continuing
+          Neon owner to prepare a focused commit, wait for your approval, or
+          safely deliver the commit according to the watch's current mode. It
+          continues watching the same PR after a successful delivery.
+        </p>
+        <p>
+          The loop is intentionally small. Each watched PR has one persistent
+          <code>pr-autopilot-owner</code> Flue instance and one Neondeck-managed worktree,
+          created lazily on the first actionable event that needs an owner. Later
+          events and restarts reuse both identifiers. The Flue instance owns one continuing
+          canonical conversation; the managed worktree and its local commits remain
+          the source of truth for code.
+        </p>
+
+        <h2>Start a watched PR</h2>
+        <p>
+          You can enter the same typed service through three product surfaces:
+        </p>
+        <ol>
+          <li>
+            In the dashboard's GitHub PR list, choose <strong>watch</strong>.
+            Open
+            <strong>Active Watches</strong> and select the Autopilot mode for that
+            row.
+          </li>
+          <li>
+            Ask Neon, for example: “Put
+            <code>pandemicsyn/neondeck#521</code> on Autopilot in
+            <code>prepare-only</code> mode and process the current feedback.” Neon
+            uses <code>neondeck_autopilot_configure_pr</code>, not an ad hoc
+            config edit.
+          </li>
+          <li>Use the CLI when you want the same operation directly:</li>
+        </ol>
+        <pre><code>neondeck watch-pr pandemicsyn/neondeck#521 \
+  --mode prepare-only \
+  --process-existing \
+  --confirm-autopilot</code></pre>
+        <p>
+          The typed action takes an explicit mode and an explicit
+          current-feedback choice:
+        </p>
+        <pre><code>neondeck_autopilot_configure_pr
+&#123;
+  "ref": "pandemicsyn/neondeck#521",
+  "mode": "prepare-only",
+  "processExisting": true,
+  "confirm": true
+&#125;</code></pre>
+        <p>
+          Set <code>processExisting</code> to <code>true</code> to process actionable
+          feedback already present when the watch starts. Set it to
+          <code>false</code> to baseline current feedback and act only on later meaningful
+          changes.
+        </p>
+
+        <h2>Modes and authority</h2>
+        <h3><code>notify-only</code></h3>
+        <p>
+          Records and notifies meaningful changes without starting an owner
+          mutation turn. A new notify-only watch does not create its managed
+          worktree merely to report an event.
+        </p>
+
+        <h3><code>prepare-only</code></h3>
+        <p>
+          Gives the watcher turn bounded read, edit, targeted-check, and commit
+          tools. The result is a normal commit in the managed worktree for you
+          to review. This mode never gives Autopilot a push tool.
+        </p>
+
+        <h3><code>autofix-with-approval</code></h3>
+        <p>
+          The watcher turn can prepare and commit but cannot push. When a commit
+          is ready, the watch enters <code>waiting</code> and holds the worktree steady.
+          Only a direct human message in that same owner conversation receives the
+          bounded edit, check, commit, push, and PR-response tools for the approval
+          turn.
+        </p>
+
+        <h3><code>autofix-push-when-safe</code></h3>
+        <p>
+          The only mode that can push from a watcher-generated turn. It adds a
+          narrow safe-push tool and a PR-response tool to the prepare
+          capabilities. Automatic push remains conditional on every setup and
+          immediate safety prerequisite below.
+        </p>
+
+        <h3>Increasing authority requires confirmation</h3>
+        <p>
+          Every increase in mode rank—including the first move above
+          <code>notify-only</code>—requires explicit confirmation. The Active
+          Watches selector presents a separate <strong>confirm increase</strong> step.
+          Neon may set <code>confirm: true</code> only after you explicitly approve
+          the increase. Lowering authority does not require that confirmation, and
+          a running turn rechecks current authority before an external effect.
+        </p>
+
+        <h2>Review and control a watch</h2>
+        <p>
+          Active Watches shows the current mode and the minimal loop status:
+          <code>watching</code>, <code>working</code>, <code>waiting</code>,
+          <code>blocked</code>, or <code>complete</code>. From the watch row you
+          can:
+        </p>
+        <ul>
+          <li>
+            choose <strong>review diff</strong> to inspect the committed worktree
+            change against the exact PR head used to create the worktree;
+          </li>
+          <li>
+            choose <strong>review agent</strong> to open the durable
+            <code>pr-autopilot-owner</code> conversation for that PR;
+          </li>
+          <li>
+            in approval mode while <code>waiting</code>, send a direct
+            instruction such as “approved, push” or “approved, fix the typo,
+            then push”;
+          </li>
+          <li>
+            <strong>pause</strong> or <strong>resume</strong> scheduler polling;
+          </li>
+          <li>
+            <strong>retry</strong> a visible <code>blocked</code> state after you
+            inspect the PR, owner conversation, and retained worktree; and
+          </li>
+          <li>
+            <strong>stop</strong> the watch through its confirmation step. An active
+            owner turn must settle before terminal cleanup can complete.
+          </li>
+        </ul>
+        <p>
+          Approval is the direct human message itself. The minimal watch loop
+          does not create a durable approval object, prepared-diff record,
+          reviewed-SHA state machine, or workflow-per-transition chain. GitHub
+          feedback cannot impersonate approval because watcher-generated
+          approval-mode turns never receive push capability.
+        </p>
+
+        <h2>Product guarantees</h2>
+        <p>
+          These are enforced behavior of the current loop, independent of how
+          you configure a particular repository:
+        </p>
+        <ul>
+          <li>
+            The primary checkout is not modified. Autopilot works in the one
+            managed worktree bound to the watched PR.
+          </li>
+          <li>
+            Current watch mode and turn source determine the actual tools
+            supplied to the owner. Prompt text alone never grants capability.
+          </li>
+          <li>
+            Approval-mode watcher turns cannot push. Only a direct human turn
+            while that owner is waiting can receive the approval-mode push tool.
+          </li>
+          <li>
+            Autonomous delivery always uses a non-force push bound to the
+            expected current PR head. Neondeck does not silently rebase or
+            force-push around a changed remote branch.
+          </li>
+          <li>
+            When autonomous delivery becomes uncertain after a commit is
+            prepared, Neondeck retains that local commit, exposes a visible
+            <code>blocked</code> state, and requires human review instead of expanding
+            policy or guessing about an external effect.
+          </li>
+        </ul>
+
+        <h2>Setup prerequisites for autonomous push</h2>
+        <p>
+          <code>autofix-push-when-safe</code> does not make a repository ready by
+          itself. Immediately before push, all of these must be true:
+        </p>
+        <ul>
+          <li>
+            At least one command is configured in the effective repository
+            <code>guardrails.requiredChecks</code>, and every configured command
+            can run unattended through the execution policy.
+          </li>
+          <li>
+            Every required command passes against the current committed worktree
+            <code>HEAD</code> immediately before push.
+          </li>
+          <li>
+            <code>GITHUB_TOKEN</code> is valid for current PR facts and login identity;
+            the repository's git remote also has valid push credentials, git identity,
+            branch permissions, and destination access.
+          </li>
+          <li>
+            GitHub returns complete current facts, the remote PR head exactly
+            matches the head used by the managed worktree, and direct push
+            access is proven.
+          </li>
+          <li>
+            The watch is still <code>autofix-push-when-safe</code> and
+            <code>working</code>, current guardrails allow the diff without a
+            policy expansion, and the worktree is clean with a committed change.
+          </li>
+          <li>
+            The final operation is a non-force push of that exact commit,
+            guarded by the expected remote head and bound GitHub identity.
+          </li>
+        </ul>
+
+        <h3>Concrete required-check configuration</h3>
+        <p>
+          For this repository, <code>npm run check</code> and
+          <code>npm run docs:build</code> are real package scripts. Ask Neon to set
+          those exact checks for the configured <code>neondeck</code> repository and
+          to preapprove the same exact local commands for unattended execution. Neon
+          uses these current typed service inputs:
+        </p>
+        <pre><code>neondeck_config_update_repo_autopilot_policy
+&#123;
+  "repoId": "neondeck",
+  "guardrails": &#123;
+    "requiredChecks": ["npm run check", "npm run docs:build"]
+  &#125;
+&#125;
+
+neondeck_config_update_execution_policy
+&#123;
+  "preapprovedCommands": [
+    &#123;
+      "id": "neondeck-check",
+      "command": "npm run check",
+      "match": "exact",
+      "backends": ["local"],
+      "description": "Run the Neondeck fast verification suite."
+    &#125;,
+    &#123;
+      "id": "neondeck-docs-build",
+      "command": "npm run docs:build",
+      "match": "exact",
+      "backends": ["local"],
+      "description": "Build the Neondeck Astro documentation site."
+    &#125;
+  ]
+&#125;</code></pre>
+        <p>
+          The repository policy service stores the required-check override under
+          that repo's <code>metadata.guardrails</code> in <code>repos.json</code
+          > and audits the config change. The execution-policy service updates
+          <code>config.json</code>; it does not execute the commands. Choose
+          checks appropriate to the repository—these Neondeck commands are an
+          accurate example, not universal defaults. If custom preapprovals
+          already exist, preserve them in the update because
+          <code>preapprovedCommands</code> is the complete configured custom list.
+        </p>
+
+        <h2>Fail-closed behavior</h2>
+        <p>
+          After the owner prepares a commit, any of the following prevents an
+          autonomous push and leaves the commit available for review in a
+          visible blocked watch:
+        </p>
+        <ul>
+          <li>
+            no configured required check, or any check fails or cannot run;
+          </li>
+          <li>
+            GitHub facts are incomplete, truncated, stale, or show a new head;
+          </li>
+          <li>the watch mode or status changed before the external effect;</li>
+          <li>
+            GitHub or git credentials, login identity, push permission, remote,
+            or destination cannot be proven;
+          </li>
+          <li>
+            current guardrails deny the change or classify it as a policy
+            expansion requiring human approval; or
+          </li>
+          <li>
+            the worktree changes during verification, the expected-head push is
+            rejected, or another unexpected error makes the outcome uncertain.
+          </li>
+        </ul>
+        <p>
+          Retry is deliberately explicit. Inspect the retained diff and owner
+          conversation first, then use <strong>retry</strong>; Neondeck fetches
+          current facts before another eligible owner turn. It does not create
+          an automatic rebase, effect-reconciliation, or multi-stage recovery
+          engine.
+        </p>
+
+        <h2>Restart and crash limitation</h2>
+        <p>
+          On startup, any watch left in <code>working</code> becomes
+          <code>blocked</code>. Its owner id and worktree id are retained, and
+          the notification asks you to inspect both before an explicit retry.
+          This also covers the ambiguous case where a push may have succeeded
+          just before the process crashed but Neondeck did not record
+          settlement. Neondeck never infers that external outcome or
+          speculatively repeats the push or PR response.
+        </p>
+
+        <h2>Completion and cleanup</h2>
+        <p>
+          After a push, Autopilot returns to polling for later feedback. When
+          the PR is merged or closed, it waits for the watch's terminal checks
+          to stop being pending, marks the watch <code>complete</code>, disables
+          polling and direct owner turns, and cleans only eligible
+          Neondeck-created worktrees. Adopted, dirty, or policy-retained
+          worktrees remain for manual handling, and a cleanup failure stays
+          visible.
+        </p>
+        <p>
+          The durable <code>pr-autopilot-owner</code> conversation is retained after
+          completion or an explicit stop as the audit trail of current facts, human
+          instructions, tool calls, approvals, and results. Neondeck does not delete
+          that conversation merely because its disposable worktree is cleaned up.
+        </p>
+
+        <h2>Verification scope</h2>
+        <p>
+          The repository proves the minimal loop with automated coverage for
+          mode capability ceilings, owner/worktree reuse, exact-head handling,
+          direct human approval, safe-push gates, blocked restart recovery, and
+          terminal cleanup. The available evidence is credential-free and uses
+          fixtures or local test repositories; it is not evidence of a live
+          external GitHub PR push smoke. Validate your own token, git remote,
+          identity, permissions, policy, and required checks before enabling
+          autonomous delivery.
+        </p>
+      </article>
+    </main>
+    <SiteFooter />
+  </div>
+</BaseLayout>

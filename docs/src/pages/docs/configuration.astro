@@ -188,6 +188,14 @@ GITHUB_LOGIN=...</code></pre>
           Scheduled tasks, their execution history, and PR watches are persisted
           in SQLite so they survive restart.
         </p>
+        <p>
+          Watched-PR Autopilot reads shared <code>guardrails</code> from
+          <code>config.json</code> plus any repository override in
+          <code>repos.json</code>. Configure repository policy through the typed
+          Autopilot policy action rather than editing metadata in chat. The
+          <a href="/docs/autopilot/">Autopilot guide</a> includes an exact
+          <code>guardrails.requiredChecks</code> and unattended execution-policy example.
+        </p>
 
         <h2>SOUL and skills</h2>
         <p>

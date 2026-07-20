@@ -44,6 +44,11 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
             tasks, and observability.
           </li>
           <li>
+            <a href="/docs/autopilot/">Autopilot</a>: watch a PR, choose a
+            capability mode, review the continuing owner's work, and understand
+            the safe-push and recovery boundaries.
+          </li>
+          <li>
             <a href="/docs/mcp/">MCP servers</a>: remote and local MCP servers,
             OAuth login, approval policy, and Runtime Overview state.
           </li>
@@ -152,8 +157,11 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <p>
           PR watches persist in SQLite and survive restart. A
           <code>/watch-pr</code> watch polls GitHub for merge state, merge commit
-          checks, and quiet no-op refreshes. Provider-specific deploy adapters are
-          still a future integration.
+          checks, review feedback, and quiet no-op refreshes. The
+          <a href="/docs/autopilot/">watched-PR Autopilot</a> can notify, prepare
+          a committed change for review, wait for approval in its continuing owner
+          conversation, or push through its narrow safe-delivery path. Provider-specific
+          deploy adapters are still a future integration.
         </p>
         <p>
           Scheduled tasks use validated interval, one-shot, or timezone-aware
@@ -205,22 +213,28 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         </p>
         <pre><code>briefing
 command-run
+curate_learning_store
 dev-doctor
 fix-pr-ci
-review-pr-for-human
-scheduler-tick
-scheduled-agent-instruction
-watch-pr
-prepare-pr-worktree
-verify-pr-worktree
-push-pr-autofix
-comment-pr-autofix-result
 handoff_to_kilo
-review_kilo_result
-verify_kilo_result
 promote_kilo_result
+reconcile_kilo_task
+review-pr-for-human
 review_conversation_for_learning
-review_pr_batch_for_learning</code></pre>
+review_kilo_result
+review_pr_batch_for_learning
+scheduled-agent-instruction
+scheduler-tick
+summarize_kilo_session
+verify_kilo_result
+watch-pr</code></pre>
+        <p>
+          Watched-PR Autopilot is a continuing
+          <code>pr-autopilot-owner</code> agent controlled through typed actions,
+          not a workflow for every transition. The separate manual
+          <code>/fix-ci</code> path remains available as the
+          <code>fix-pr-ci</code> workflow.
+        </p>
 
         <h2 id="observability">Workflow observability</h2>
         <p>

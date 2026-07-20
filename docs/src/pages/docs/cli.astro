@@ -105,9 +105,19 @@ neondeck edit-events</code></pre>
         <h2>Watches</h2>
         <pre><code>neondeck watch-pr pandemicsyn/neondeck#521
 neondeck watch-pr https://github.com/pandemicsyn/neondeck/pull/521
+neondeck watch-pr pandemicsyn/neondeck#521 \
+  --mode prepare-only \
+  --process-existing \
+  --confirm-autopilot
 </code></pre>
         <p>
-          PR watches persist in SQLite and poll GitHub for merge/check changes.
+          PR watches persist in SQLite and poll GitHub for meaningful review,
+          commit, merge, and check changes. <code>--process-existing</code> handles
+          current actionable feedback instead of baselining it. Any initial mode above
+          <code>notify-only</code>, and every later increase in authority,
+          requires explicit confirmation. See the
+          <a href="/docs/autopilot/">Autopilot guide</a> for modes, review, safe push,
+          and recovery behavior.
         </p>
 
         <h2>External agent handoff</h2>

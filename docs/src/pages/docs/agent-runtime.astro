@@ -52,28 +52,28 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         </p>
         <pre><code>briefing
 command-run
+curate_learning_store
 dev-doctor
 fix-pr-ci
-fix-pr-ci-failure
-fix-pr-review-feedback
-review-pr-for-human
-scheduler-tick
-watch-pr
-scheduled-agent-instruction
-prepare-pr-worktree
-verify-pr-worktree
-verify-then-push-pr-autofix
-push-pr-autofix
-comment-pr-autofix-result
 handoff_to_kilo
-reconcile_kilo_task
-summarize_kilo_session
-review_kilo_result
-verify_kilo_result
 promote_kilo_result
+reconcile_kilo_task
+review-pr-for-human
 review_conversation_for_learning
+review_kilo_result
 review_pr_batch_for_learning
-curate_learning_store</code></pre>
+scheduled-agent-instruction
+scheduler-tick
+summarize_kilo_session
+verify_kilo_result
+watch-pr</code></pre>
+        <p>
+          Watched-PR Autopilot uses one continuing
+          <code>pr-autopilot-owner</code> agent per PR rather than a chain of transition
+          workflows. The manual <code>/fix-ci</code> command remains a separate <code
+            >fix-pr-ci</code
+          > workflow.
+        </p>
 
         <h2>Skills</h2>
         <p>
