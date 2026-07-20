@@ -533,6 +533,10 @@ async function withRepoOverrideLock<T>(
 ) {
   const lockPath = `${path}.autopilot-override.lock`;
   const ownerPath = join(lockPath, 'owner');
+  // Repo mutations can be the first operation against a new runtime home.
+  // Create the lock parent before attempting the atomic lock-directory mkdir;
+  // the unlocked mutation will initialize the runtime files themselves.
+  await mkdir(dirname(lockPath), { recursive: true });
   const ownerToken = randomUUID();
   const ownerRecord = await createLeaseOwnerRecord(ownerToken);
   await cleanupStaleLockGenerations(lockPath);
