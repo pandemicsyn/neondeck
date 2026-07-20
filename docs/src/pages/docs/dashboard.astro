@@ -69,13 +69,14 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           backend restore guard allows it.
         </p>
         <p>
-          Reviewing diffs and PRs stays inside the deck. Prepared autopilot
-          diffs, skill patches, Kilo tasks, repo-edit events, and GitHub PR rows
-          can open a syntax-highlighted file diff view with a searchable file
-          tree on wide layouts and a compact file selector on narrow layouts.
-          GitHub PRs can also be reviewed from this view: select lines to draft
-          inline review comments, reply to or resolve existing review threads,
-          and submit one review with Comment, Approve, or Request changes. Draft
+          Reviewing diffs and PRs stays inside the deck. Watched-PR Autopilot
+          commits in managed worktrees, prepared diffs from explicit workflows,
+          skill patches, Kilo tasks, repo-edit events, and GitHub PR rows can
+          open a syntax-highlighted file diff view with a searchable file tree
+          on wide layouts and a compact file selector on narrow layouts. GitHub
+          PRs can also be reviewed from this view: select lines to draft inline
+          review comments, reply to or resolve existing review threads, and
+          submit one review with Comment, Approve, or Request changes. Draft
           comments survive reloads and stale anchors are skipped until the human
           re-anchors them. Compact layouts keep the deck glanceable; use the
           review pop-out control or <code>neondeck open</code> when a full PR review
@@ -86,6 +87,13 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           review actions are dashboard-only controls; Neon does not get a model-callable
           action or tool for submitting PR reviews, verdicts, thread replies, or thread
           resolution.
+        </p>
+        <p>
+          Start Autopilot from a GitHub PR row with <strong>watch</strong>, then
+          choose its mode in <strong>Active Watches</strong>. The watch row
+          exposes pause, resume, retry, review diff, review agent, and stop
+          controls. See the <a href="/docs/autopilot/">Autopilot guide</a> for the
+          authority and recovery rules behind those controls.
         </p>
         <p>
           The focused PR workbench adds a guided review map over files, hunks,

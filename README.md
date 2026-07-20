@@ -25,8 +25,10 @@ Neon watches your PRs, prepares fixes, and keeps the busywork moving.
 - **Watch a PR without losing feedback.** Watch polling records complete review,
   conversation, requested-change, commit, and check facts with semantic
   fingerprints. Current feedback can be processed on the first poll or baselined
-  explicitly. Meaningful feedback and failing checks reuse one continuing owner
-  and managed worktree without rebuilding the abandoned coordinator.
+  explicitly. Meaningful feedback and failing checks now reuse one continuing
+  owner and managed worktree. Autopilot can notify, prepare a reviewable commit,
+  wait for approval in that same owner conversation, or deliver automatically
+  when every safe-push prerequisite passes.
 - **Review and approve PRs on the deck.** Read diffs, leave inline comments,
   resolve threads, traverse files, hunks, drafts, threads, and revision-bound
   Neon findings, and submit approvals or change requests without switching to
@@ -116,6 +118,8 @@ neondeck open sidebar
   models, providers, repos, schedules, SOUL, and skills.
 - [Agent runtime](https://neondeck.dev/docs/agent-runtime/): Flue agents,
   actions, workflows, memory, watches, reports, and scheduled tasks.
+- [Autopilot](https://neondeck.dev/docs/autopilot/): watched-PR modes,
+  review controls, safe-push prerequisites, and fail-closed recovery.
 - [Execution environments](https://neondeck.dev/docs/execution/): local and
   sandboxed execution policy.
 - [MCP servers](https://neondeck.dev/docs/mcp/): MCP registration, OAuth, tool
