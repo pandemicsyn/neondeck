@@ -5,9 +5,14 @@ import { resolveNotificationTarget } from './targets';
 describe('notification target resolution', () => {
   it.each([
     [
-      'prepared diff',
-      note({ data: { preparedDiffId: 'diff-1' } }),
-      { kind: 'plugin', pluginId: 'autopilot', label: 'Open autopilot' },
+      'legacy prepared diff fallback',
+      note({ source: 'prepared-diff', data: { preparedDiffId: 'diff-1' } }),
+      { kind: 'plugin', pluginId: 'active-watches', label: 'Open watches' },
+    ],
+    [
+      'Autopilot watch',
+      note({ source: 'autopilot' }),
+      { kind: 'plugin', pluginId: 'active-watches', label: 'Open watches' },
     ],
     [
       'approval',

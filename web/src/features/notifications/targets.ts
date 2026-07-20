@@ -9,8 +9,8 @@ export function resolveNotificationTarget(
   if (preparedDiffId) {
     return {
       kind: 'plugin',
-      pluginId: 'autopilot',
-      label: 'Open autopilot',
+      pluginId: 'active-watches',
+      label: 'Open watches',
     };
   }
 
@@ -66,19 +66,14 @@ export function resolveNotificationTarget(
     };
   }
 
-  if (notification.source?.includes('watch')) {
+  if (
+    notification.source?.includes('watch') ||
+    notification.source === 'autopilot'
+  ) {
     return {
       kind: 'plugin',
       pluginId: 'active-watches',
       label: 'Open watches',
-    };
-  }
-
-  if (notification.source === 'autopilot') {
-    return {
-      kind: 'plugin',
-      pluginId: 'autopilot',
-      label: 'Open autopilot',
     };
   }
 

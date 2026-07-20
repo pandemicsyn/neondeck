@@ -69,4 +69,17 @@ describe('display assistant Autopilot surface', () => {
     expect(source).not.toContain('neondeckAutopilotRecoveryActions');
     expect(source).not.toContain('neondeckPreparedDiffActions');
   });
+
+  it('keeps the built-in runtime skill on the same minimal surface', () => {
+    const skill = readFileSync(
+      new URL('./skills/neondeck/SKILL.md', import.meta.url),
+      'utf8',
+    );
+    for (const action of minimalActionNames) {
+      expect(skill).toContain(action);
+    }
+    expect(skill).not.toMatch(
+      /neondeck_autopilot_state_lookup|neondeck_autopilot_policy_check|neondeck_prepared_diff_|neondeck_autopilot_recovery_|neondeck_autopilot_(prepare_pr_worktree|fix_pr_review_feedback|fix_pr_ci_failure|push_pr_autofix|comment_pr_autofix_result|verify_pr_worktree)/,
+    );
+  });
 });
