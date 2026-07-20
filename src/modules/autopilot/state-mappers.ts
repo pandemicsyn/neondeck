@@ -43,9 +43,6 @@ import {
   type AutopilotApproval,
   type AutopilotPolicyConfig,
   type AutopilotPreparedDiff,
-  type AutopilotPriority,
-  type AutopilotQueueItem,
-  type AutopilotQueueStatus,
   type AutopilotRepoConfig,
   type AutopilotRunningCheck,
   type RepoAutopilotPolicy,
@@ -120,115 +117,6 @@ export function readRepoAutopilot(repo: RepoConfig | undefined) {
   return readRepoAutopilotConfig(repo) as AutopilotRepoConfig | undefined;
 }
 
-export function queueItemFromWatch(
-  watch: PrWatch,
-  policy: WatchAutopilotPolicy | undefined,
-  worktrees: WorktreeRecord[],
-): AutopilotQueueItem {
-  const worktree = worktrees.find(
-    (candidate) =>
-      candidate.repoId === watch.repoId &&
-      candidate.prNumber === watch.prNumber,
-  );
-  const status = watchStatusToQueueStatus(watch.status, worktree);
-  const mode = policy?.mode ?? 'notify-only';
-
-  return {
-    id: `watch:${watch.id}`,
-    source: 'watch',
-    watchId: watch.id,
-    status,
-    priority: watchPriority(watch.status, mode),
-    repoId: watch.repoId,
-    repoFullName: watch.repoFullName,
-    prNumber: watch.prNumber,
-    title: watch.title ?? `${watch.repoFullName}#${watch.prNumber}`,
-    mode,
-    reason: watchReason(watch, mode),
-    nextStep: watchNextStep(watch, mode, worktree),
-    worktreeId: worktree?.id ?? null,
-    runId: null,
-    updatedAt: watch.updatedAt,
-  };
-}
-
-export function queueItemFromWorktree(
-  worktree: WorktreeRecord,
-  policy: RepoAutopilotPolicy | undefined,
-): AutopilotQueueItem {
-  const status = worktreeStatusToQueueStatus(worktree.lifecycleStatus);
-  return {
-    id: `worktree:${worktree.id}`,
-    source: 'worktree',
-    watchId: null,
-    status,
-    priority:
-      worktree.lifecycleStatus === 'failed' ||
-      worktree.lifecycleStatus === 'needs-sync'
-        ? 'high'
-        : 'normal',
-    repoId: worktree.repoId,
-    repoFullName: worktree.repoFullName,
-    prNumber: worktree.prNumber,
-    title: `${worktree.repoFullName}${worktree.prNumber ? `#${worktree.prNumber}` : ''}`,
-    mode: policy?.mode ?? 'notify-only',
-    reason: `Worktree is ${worktree.lifecycleStatus}.`,
-    nextStep: worktreeNextStep(worktree),
-    worktreeId: worktree.id,
-    runId: worktree.owningWorkflowRunId,
-    updatedAt: worktree.updatedAt,
-  };
-}
-
-export function queueItemFromWorkflow(
-  run: WorkflowRunRow,
-  worktrees: WorktreeRecord[],
-): AutopilotQueueItem {
-  const related = worktrees.find(
-    (worktree) => worktree.owningWorkflowRunId === run.run_id,
-  );
-  return {
-    id: `workflow:${run.run_id}`,
-    source: 'workflow',
-    watchId: null,
-    status: 'running',
-    priority: run.workflow === 'push_pr_autofix' ? 'high' : 'normal',
-    repoId: related?.repoId ?? 'unknown',
-    repoFullName: related?.repoFullName ?? 'unknown',
-    prNumber: related?.prNumber ?? null,
-    title: run.workflow,
-    mode: 'notify-only',
-    reason: run.last_message,
-    nextStep: 'Wait for the bounded Flue workflow to finish.',
-    worktreeId: related?.id ?? null,
-    runId: run.run_id,
-    updatedAt: run.last_event_at,
-  };
-}
-
-export function queueItemFromApproval(
-  approval: AutopilotApproval,
-): AutopilotQueueItem {
-  return {
-    id: `approval:${approval.id}`,
-    source: 'approval',
-    watchId: null,
-    status: 'waiting-approval',
-    priority: 'high',
-    repoId: approval.repoId ?? 'unknown',
-    repoFullName: approval.repoFullName ?? 'unknown',
-    prNumber: approval.prNumber,
-    title: approval.command,
-    mode: 'autofix-with-approval',
-    reason: approval.reason,
-    nextStep:
-      'Resolve the pending approval before push-back or checks proceed.',
-    worktreeId: null,
-    runId: null,
-    updatedAt: approval.updatedAt,
-  };
-}
-
 export function preparedDiffFromRecord(
   record: PreparedDiffRecord,
   paths: RuntimePaths,
@@ -247,41 +135,6 @@ export function preparedDiffFromRecord(
     sourceOfTruth: 'worktree',
     summary: preparedDiffSummary(record),
     revisionRun: revisionRunFromPreparedDiff(record, paths),
-    updatedAt: record.updatedAt,
-  };
-}
-
-export function queueItemFromPreparedDiff(
-  record: PreparedDiffRecord,
-  policy: RepoAutopilotPolicy | undefined,
-): AutopilotQueueItem {
-  const waitingApproval =
-    record.pushApprovalStatus === 'pending' && record.status === 'prepared';
-  const runningRevision = record.status === 'revision-in-progress';
-  return {
-    id: `prepared-diff:${record.id}`,
-    source: 'worktree',
-    watchId: null,
-    status: runningRevision
-      ? 'running'
-      : waitingApproval
-        ? 'waiting-approval'
-        : 'prepared',
-    priority: waitingApproval || runningRevision ? 'high' : 'normal',
-    repoId: record.repoId,
-    repoFullName: record.repoFullName,
-    prNumber: record.prNumber,
-    title: record.title,
-    mode: policy?.mode ?? 'notify-only',
-    reason: preparedDiffSummary(record),
-    nextStep:
-      record.status === 'revision-requested'
-        ? 'Revise the prepared worktree diff.'
-        : record.status === 'revision-in-progress'
-          ? 'Wait for the revision Kilo task to finish.'
-          : 'Review, verify, approve push, request revision, or abandon.',
-    worktreeId: record.worktreeId,
-    runId: null,
     updatedAt: record.updatedAt,
   };
 }
@@ -421,75 +274,6 @@ export function runningCheckFromWorkflow(
   };
 }
 
-export function watchStatusToQueueStatus(
-  status: string,
-  worktree: WorktreeRecord | undefined,
-): AutopilotQueueStatus {
-  if (worktree?.lifecycleStatus === 'prepared-diff') return 'prepared';
-  if (worktree?.lifecycleStatus === 'busy') return 'running';
-  if (status === 'attention-needed') return 'queued';
-  if (status === 'closed' || status === 'unknown') return 'blocked';
-  return 'watching';
-}
-
-export function worktreeStatusToQueueStatus(
-  status: WorktreeLifecycleStatus,
-): AutopilotQueueStatus {
-  if (status === 'busy') return 'running';
-  if (status === 'prepared-diff') return 'prepared';
-  if (status === 'failed' || status === 'needs-sync') return 'blocked';
-  return 'queued';
-}
-
-export function watchPriority(
-  status: string,
-  mode: AutopilotMode,
-): AutopilotPriority {
-  if (status === 'attention-needed') return 'high';
-  if (mode === 'autofix-push-when-safe') return 'normal';
-  if (mode === 'notify-only') return 'low';
-  return 'normal';
-}
-
-export function watchReason(watch: PrWatch, mode: AutopilotMode) {
-  if (watch.status === 'attention-needed') {
-    return 'PR watch needs attention from checks or lifecycle state.';
-  }
-  if (watch.status === 'green')
-    return 'PR watch reached a green terminal state.';
-  return `Active PR watch in ${modeLabels[mode].toLowerCase()} mode.`;
-}
-
-export function watchNextStep(
-  watch: PrWatch,
-  mode: AutopilotMode,
-  worktree: WorktreeRecord | undefined,
-) {
-  if (worktree?.lifecycleStatus === 'prepared-diff') {
-    return 'Review the prepared worktree diff and decide whether to push or revise.';
-  }
-  if (mode === 'notify-only') return 'Notify on meaningful state changes only.';
-  if (watch.status === 'attention-needed') {
-    return 'Review the latest watch facts; automatic owner dispatch is not connected during the Autopilot reset.';
-  }
-  return 'Keep watching until a meaningful PR delta is detected.';
-}
-
-export function worktreeNextStep(worktree: WorktreeRecord) {
-  switch (worktree.lifecycleStatus) {
-    case 'prepared-diff':
-      return 'Review or approve the prepared diff.';
-    case 'needs-sync':
-      return 'Resync after dirty-state or branch drift is resolved.';
-    case 'failed':
-      return 'Inspect retained worktree and failure events.';
-    case 'busy':
-      return 'Wait for the current workflow lock to release.';
-    default:
-      return 'This managed worktree remains available for an explicit bounded workflow.';
-  }
-}
-
 export function isAutopilotApproval(
   approval: Awaited<
     ReturnType<typeof listExecutionApprovals>
@@ -507,16 +291,4 @@ export function requestContextSource(context: unknown) {
   }
   const source = (context as { source?: unknown }).source;
   return typeof source === 'string' ? source : undefined;
-}
-
-export function queueSort(a: AutopilotQueueItem, b: AutopilotQueueItem) {
-  const priorityRank: Record<AutopilotPriority, number> = {
-    urgent: 3,
-    high: 2,
-    normal: 1,
-    low: 0,
-  };
-  const priorityDelta = priorityRank[b.priority] - priorityRank[a.priority];
-  if (priorityDelta !== 0) return priorityDelta;
-  return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
 }

@@ -47,12 +47,6 @@ import {
   globalPolicy,
   isAutopilotApproval,
   preparedDiffFromRecord,
-  queueItemFromApproval,
-  queueItemFromPreparedDiff,
-  queueItemFromWatch,
-  queueItemFromWorkflow,
-  queueItemFromWorktree,
-  queueSort,
   repoPolicy,
   runningCheckFromWorkflow,
   watchPolicy,
@@ -68,7 +62,7 @@ export { autopilotStateSchema } from './state-schemas';
 export const autopilotStateLookupTool = defineTool({
   name: 'neondeck_autopilot_state_lookup',
   description:
-    'Read the Neondeck autopilot operator surface: active PR watches, queue placeholders, worktrees, approvals, running checks, recent activity, and repo/watch policy.',
+    'Read the Neondeck autopilot operator surface: active PR watches, worktrees, prepared diffs, approvals, running checks, recent activity, and repo/watch policy.',
   input: v.object({}),
   output: autopilotStateSchema,
   async run() {
@@ -138,32 +132,6 @@ export async function readAutopilotState(
       !notification.resolvedAt &&
       !notification.readAt,
   );
-  const queue = [
-    ...watches.map((watch) =>
-      queueItemFromWatch(
-        watch,
-        watchPolicies.find((policy) => policy.watchId === watch.id),
-        worktrees,
-      ),
-    ),
-    ...worktrees
-      .filter((worktree) =>
-        ['busy', 'needs-sync', 'failed'].includes(worktree.lifecycleStatus),
-      )
-      .map((worktree) =>
-        queueItemFromWorktree(worktree, repoPolicyMap.get(worktree.repoId)),
-      ),
-    ...(preparedDiffSnapshot.preparedDiffs ?? []).map((preparedDiff) =>
-      queueItemFromPreparedDiff(
-        preparedDiff,
-        repoPolicyMap.get(preparedDiff.repoId),
-      ),
-    ),
-    ...workflowRuns.map((run) => queueItemFromWorkflow(run, worktrees)),
-    ...pendingApprovals.map(queueItemFromApproval),
-  ]
-    .sort(queueSort)
-    .slice(0, 40);
   const recentActivity = [
     ...readRecentAutopilotWorkflowEvents(paths),
     ...readRecentWorktreeEvents(paths, worktrees),
@@ -191,7 +159,6 @@ export async function readAutopilotState(
     modeLabels,
     summary: {
       activeWatches: watches.length,
-      queuedItems: queue.length,
       preparedDiffs: preparedDiffs.length,
       pendingApprovals: pendingApprovals.length,
       runningChecks: runningChecks.length,
@@ -203,7 +170,6 @@ export async function readAutopilotState(
         'Watch-level policy reads repo metadata overrides until durable watch-policy rows land.',
       ],
     },
-    queue,
     policies: {
       global: globalPolicy(appConfig),
       repos: repos.map(

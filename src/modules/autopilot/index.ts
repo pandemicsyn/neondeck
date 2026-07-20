@@ -63,7 +63,6 @@ export { commentPrAutofixResult } from './comments';
 export { autopilotStateLookupTool, readAutopilotState } from './state';
 export type {
   AutopilotState,
-  AutopilotQueueItem,
   AutopilotPreparedDiff,
   AutopilotApproval,
   AutopilotRunningCheck,

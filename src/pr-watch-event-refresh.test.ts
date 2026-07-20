@@ -1,11 +1,17 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
+import { listNotifications } from './modules/app-state';
 import type { GitHubPullRequestEventState } from './modules/github';
 import {
   listPrWatchEventWatermarks,
+  recordAddressedPrFeedback,
+  recordNeondeckPrDelivery,
   refreshPrWatchEventState,
+  requestedChangesReviewDeliveryFingerprint,
+  reviewThreadCommentFingerprint,
 } from './modules/pr-events';
 import { refreshWatchJobEvents } from './modules/scheduler/pr-watch-events';
 import { addPrWatch, listPrWatchRecords } from './modules/watches';
@@ -53,16 +59,7 @@ describe('deterministic PR watch event refresh', () => {
     );
 
     const state = eventState();
-    const dependencies = {
-      refreshPrWatchEventState: (
-        input: Parameters<typeof refreshPrWatchEventState>[0],
-        targetPaths: RuntimePaths,
-      ) =>
-        refreshPrWatchEventState(input, targetPaths, {
-          token: 'test-token',
-          fetchPullRequestEventState: async () => state,
-        }),
-    };
+    const dependencies = liveDependencies(state);
     const target = [{ watch: { id: 'pandemicsyn/neondeck#164' } }] as never;
 
     const first = await refreshWatchJobEvents(
@@ -78,12 +75,16 @@ describe('deterministic PR watch event refresh', () => {
         changedCategories: expect.arrayContaining([
           'requested_changes_reviews',
         ]),
-        notifications: [
-          expect.objectContaining({
-            title: 'PR watch requested changes',
-            data: expect.objectContaining({ mode: 'prepare-only' }),
-          }),
-        ],
+        persistedNotification: expect.objectContaining({
+          title: 'PR watch requested changes',
+          data: expect.objectContaining({ mode: 'prepare-only' }),
+        }),
+      }),
+    ]);
+    expect(await listNotifications(paths)).toEqual([
+      expect.objectContaining({
+        title: 'PR watch requested changes',
+        data: expect.objectContaining({ mode: 'prepare-only' }),
       }),
     ]);
     expect(first[0]).not.toHaveProperty('triage');
@@ -126,7 +127,148 @@ describe('deterministic PR watch event refresh', () => {
       expect.objectContaining({ ok: true, changed: false }),
     ]);
   });
+
+  it('keeps a quiet first poll silent while durably recording its baseline', async () => {
+    const paths = await fixture();
+    await addPrWatch(
+      { ref: 'pandemicsyn/neondeck#164', processExisting: true },
+      paths,
+      async () => prDetail(),
+    );
+    const state = eventState();
+    state.requestedChangesReviews = [];
+    state.requestedChangesState = {
+      active: [],
+      latestByReviewer: [],
+      history: [],
+    };
+
+    const result = await refreshWatchJobEvents(
+      [{ watch: { id: 'pandemicsyn/neondeck#164' } }] as never,
+      paths,
+      liveDependencies(state),
+      null,
+    );
+
+    expect(result).toEqual([
+      expect.objectContaining({ ok: true, changed: false, deltas: [] }),
+    ]);
+    expect(await listNotifications(paths)).toEqual([]);
+    expect((await listPrWatchRecords(paths))[0]).toMatchObject({
+      initialEventProcessedAt: expect.any(String),
+    });
+    await expect(
+      listPrWatchEventWatermarks(
+        { watchId: 'pandemicsyn/neondeck#164' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      data: { watermarks: expect.arrayContaining([expect.any(Object)]) },
+    });
+  });
+
+  it('filters addressed and Neondeck-delivered feedback in the live first poll', async () => {
+    const paths = await fixture();
+    await addPrWatch(
+      { ref: 'pandemicsyn/neondeck#164', processExisting: true },
+      paths,
+      async () => prDetail(),
+    );
+    const state = eventState();
+    const thread = reviewThread();
+    state.reviewThreads = [thread];
+    recordAddressedPrFeedback(
+      {
+        repoFullName: state.repo,
+        prNumber: state.number,
+        reviewThreadFingerprints: {},
+        reviewCommentFingerprints: {
+          '101': reviewThreadCommentFingerprint(thread, thread.comments[0]),
+        },
+      },
+      paths,
+    );
+    recordNeondeckPrDelivery(
+      {
+        repoFullName: state.repo,
+        prNumber: state.number,
+        itemKind: 'review',
+        itemId: state.requestedChangesReviews[0].id,
+        itemFingerprint: requestedChangesReviewDeliveryFingerprint(
+          state.requestedChangesReviews[0],
+        ),
+      },
+      paths,
+    );
+
+    const result = await refreshWatchJobEvents(
+      [{ watch: { id: 'pandemicsyn/neondeck#164' } }] as never,
+      paths,
+      liveDependencies(state),
+      null,
+    );
+
+    expect(result).toEqual([
+      expect.objectContaining({ ok: true, changed: false, deltas: [] }),
+    ]);
+    expect(await listNotifications(paths)).toEqual([]);
+  });
+
+  it('rolls back watermarks and the first-poll marker when notification persistence fails', async () => {
+    const paths = await fixture();
+    await addPrWatch(
+      { ref: 'pandemicsyn/neondeck#164', processExisting: true },
+      paths,
+      async () => prDetail(),
+    );
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database.exec(`CREATE TRIGGER reject_watch_notifications
+        BEFORE INSERT ON notifications
+        WHEN NEW.source = 'watch-pr-events'
+        BEGIN
+          SELECT RAISE(ABORT, 'notification write failed');
+        END;`);
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      refreshWatchJobEvents(
+        [{ watch: { id: 'pandemicsyn/neondeck#164' } }] as never,
+        paths,
+        liveDependencies(eventState()),
+        null,
+      ),
+    ).rejects.toThrow('notification write failed');
+
+    expect((await listPrWatchRecords(paths))[0]).toMatchObject({
+      initialEventProcessedAt: null,
+    });
+    await expect(
+      listPrWatchEventWatermarks(
+        { watchId: 'pandemicsyn/neondeck#164' },
+        paths,
+      ),
+    ).resolves.toMatchObject({ data: { watermarks: [] } });
+    expect(await listNotifications(paths)).toEqual([]);
+  });
 });
+
+function liveDependencies(state: GitHubPullRequestEventState) {
+  return {
+    refreshPrWatchEventState: (
+      input: Parameters<typeof refreshPrWatchEventState>[0],
+      targetPaths: RuntimePaths,
+      options?: { persistWatermarks?: boolean },
+    ) =>
+      refreshPrWatchEventState(input, targetPaths, {
+        token: 'test-token',
+        fetchPullRequestEventState: async () => state,
+        persistWatermarks: options?.persistWatermarks,
+      }),
+  };
+}
 
 async function fixture() {
   const home = await mkdtemp(join(tmpdir(), 'neondeck-pr-watch-events-'));
@@ -216,3 +358,28 @@ function eventState(): GitHubPullRequestEventState {
   };
 }
 
+function reviewThread(): GitHubPullRequestEventState['reviewThreads'][number] {
+  return {
+    id: 'thread-1',
+    isResolved: false,
+    isOutdated: false,
+    path: 'src/app.ts',
+    line: 12,
+    comments: [
+      {
+        id: 'comment-101',
+        databaseId: 101,
+        authorLogin: 'reviewer',
+        body: 'Please cover the restart path.',
+        url: 'https://github.com/pandemicsyn/neondeck/pull/164#discussion_r101',
+        path: 'src/app.ts',
+        line: 12,
+        originalLine: 12,
+        diffHunk: '@@ -1 +1 @@',
+        reviewId: 9001,
+        createdAt: '2026-07-19T00:03:00.000Z',
+        updatedAt: '2026-07-19T00:03:00.000Z',
+      },
+    ],
+  };
+}

@@ -7,6 +7,8 @@ import {
 } from '../autopilot-policy';
 import {
   listPrWatchEventWatermarks,
+  readAddressedPrFeedback,
+  readNeondeckPrDeliveries,
   refreshPrWatchEventState,
   type PrWatchEventWatermarkCategory,
   type PrWatchEventWatermarkRecord,
@@ -18,19 +20,16 @@ import {
 } from '../../runtime-home';
 import {
   listPrWatchRecords,
-  markWatchInitialEventProcessed,
+  persistWatchEventRefresh,
   type PrWatch,
 } from '../watches';
 import type { SchedulerDependencies } from './schemas';
 import {
   deltasFromChangedCategories,
+  initialActionableDeltas,
   prEventNotification,
 } from './pr-watch-event-deltas';
-import {
-  readJsonArray,
-  readObjectConfig,
-  stringField,
-} from './utils';
+import { readJsonArray, readObjectConfig, stringField } from './utils';
 
 type WatchJobEventResult = {
   ok: boolean;
@@ -45,6 +44,7 @@ type WatchJobEventResult = {
   message: string;
   refresh?: JsonValue;
   notifications?: AutomationExecutionResult['notifications'];
+  persistedNotification?: JsonValue;
 };
 
 /**
@@ -74,9 +74,7 @@ export async function refreshWatchJobEvents(
 
   const eventResults: WatchJobEventResult[] = [];
   for (const watch of targets) {
-    eventResults.push(
-      await refreshOneWatchEvent(watch, paths, dependencies),
-    );
+    eventResults.push(await refreshOneWatchEvent(watch, paths, dependencies));
   }
   return eventResults;
 }
@@ -92,7 +90,9 @@ async function refreshOneWatchEvent(
     dependencies.refreshPrWatchEventState ?? refreshPrWatchEventState;
   const previousResult = await listWatermarks({ watchId: watch.id }, paths);
   const previousWatermarks = watermarksFromActionResult(previousResult);
-  const refresh = await refreshEvents({ watchId: watch.id }, paths);
+  const refresh = await refreshEvents({ watchId: watch.id }, paths, {
+    persistWatermarks: false,
+  });
   if (!refresh.ok) {
     return {
       ok: false,
@@ -117,10 +117,14 @@ async function refreshOneWatchEvent(
   }
 
   const changedCategories = changedCategoriesFromActionResult(refresh);
+  const currentWatermarks = watermarksFromActionResult(refresh);
   if (changedCategories.length === 0) {
-    if (!watch.initialEventProcessedAt) {
-      markWatchInitialEventProcessed(paths, watch.id);
-    }
+    persistWatchEventRefresh(
+      paths,
+      watch.id,
+      watermarksForPersistence(currentWatermarks),
+      { markInitialProcessed: !watch.initialEventProcessedAt },
+    );
     return {
       ok: true,
       changed: false,
@@ -133,20 +137,57 @@ async function refreshOneWatchEvent(
     };
   }
 
-  const currentWatermarks = watermarksFromActionResult(refresh);
-  const deltas = deltasFromChangedCategories(
-    changedCategories,
-    currentWatermarks,
-    previousWatermarks,
+  const addressed = readAddressedPrFeedback(
+    watch.repoFullName,
+    watch.prNumber,
+    paths,
   );
+  const deliveries = readNeondeckPrDeliveries(
+    watch.repoFullName,
+    watch.prNumber,
+    paths,
+  );
+  const filters = {
+    addressedReviewThreadFingerprints: addressed.reviewThreadFingerprints,
+    addressedReviewCommentFingerprints: addressed.reviewCommentFingerprints,
+    neondeckReviewCommentFingerprints: deliveries.reviewCommentFingerprints,
+    neondeckRequestedChangesReviewFingerprints: deliveries.reviewFingerprints,
+    neondeckConversationCommentFingerprints:
+      deliveries.conversationCommentFingerprints,
+  };
+  const firstPoll = !watch.initialEventProcessedAt;
+  const deltas = firstPoll
+    ? initialActionableDeltas(currentWatermarks, filters)
+    : deltasFromChangedCategories(
+        changedCategories,
+        currentWatermarks,
+        previousWatermarks,
+        filters,
+      );
   const mode = await readEffectiveWatchAutopilotMode(watch, paths);
-  if (!watch.initialEventProcessedAt) {
-    markWatchInitialEventProcessed(paths, watch.id);
-  }
+  const notification =
+    deltas.length > 0
+      ? prEventNotification(
+          watch,
+          changedCategories,
+          currentWatermarks,
+          deltas,
+          mode,
+        )
+      : undefined;
+  const persisted = persistWatchEventRefresh(
+    paths,
+    watch.id,
+    watermarksForPersistence(currentWatermarks),
+    {
+      notification,
+      markInitialProcessed: firstPoll,
+    },
+  );
 
   return {
     ok: true,
-    changed: true,
+    changed: Boolean(notification),
     watchId: watch.id,
     repoId: watch.repoId,
     repoFullName: watch.repoFullName,
@@ -156,16 +197,17 @@ async function refreshOneWatchEvent(
     deltas,
     message: refresh.message,
     refresh: refresh as unknown as JsonValue,
-    notifications: [
-      prEventNotification(
-        watch,
-        changedCategories,
-        currentWatermarks,
-        deltas,
-        mode,
-      ),
-    ],
+    persistedNotification:
+      (persisted.notification as unknown as JsonValue | null) ?? undefined,
   };
+}
+
+function watermarksForPersistence(watermarks: PrWatchEventWatermarkRecord[]) {
+  return watermarks.map((watermark) => ({
+    category: watermark.category,
+    value: watermark.watermark,
+    sourceUpdatedAt: watermark.sourceUpdatedAt,
+  }));
 }
 
 async function readEffectiveWatchAutopilotMode(
@@ -176,7 +218,9 @@ async function readEffectiveWatchAutopilotMode(
     readRepoRegistrySnapshot(paths),
     readRuntimeJson(paths.config, parseAppConfig),
   ]);
-  const repo = registry.repos.find((candidate) => candidate.id === watch.repoId);
+  const repo = registry.repos.find(
+    (candidate) => candidate.id === watch.repoId,
+  );
   return repo
     ? repoAutopilotPolicyForWatch(repo, appConfig, watch).mode
     : 'notify-only';
@@ -221,7 +265,5 @@ function watermarksFromActionResult(value: unknown) {
       if (!category || !watchId) return null;
       return record as unknown as PrWatchEventWatermarkRecord;
     })
-    .filter(
-      (record): record is PrWatchEventWatermarkRecord => Boolean(record),
-    );
+    .filter((record): record is PrWatchEventWatermarkRecord => Boolean(record));
 }

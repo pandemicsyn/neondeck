@@ -108,8 +108,6 @@ describe('PR event autopilot', () => {
       action: 'autopilot_triage_pr_event',
       data: {
         classification: 'autofix-with-approval',
-        shouldPrepareWorktree: true,
-        nextWorkflow: 'prepare_pr_worktree',
       },
     });
   });
@@ -129,7 +127,6 @@ describe('PR event autopilot', () => {
       changed: true,
       data: {
         classification: 'explain-only',
-        shouldPrepareWorktree: false,
       },
     });
   });
@@ -168,7 +165,6 @@ describe('PR event autopilot', () => {
       changed: true,
       data: {
         classification: 'explain-only',
-        shouldPrepareWorktree: false,
       },
     });
   });
@@ -208,8 +204,6 @@ describe('PR event autopilot', () => {
       changed: true,
       data: {
         classification: 'autofix-with-approval',
-        shouldPrepareWorktree: true,
-        nextWorkflow: 'prepare_pr_worktree',
         deltas: expect.arrayContaining([
           expect.objectContaining({ id: 'conversation-1' }),
           expect.objectContaining({ id: 'review-1' }),
@@ -247,8 +241,6 @@ describe('PR event autopilot', () => {
       changed: true,
       data: {
         classification: 'explain-only',
-        shouldPrepareWorktree: false,
-        nextWorkflow: null,
       },
     });
   });
@@ -1220,6 +1212,26 @@ describe('PR event autopilot', () => {
     });
   });
 
+  it('refuses a CI fix when the managed worktree head no longer matches the caller fact', async () => {
+    const { paths, featureSha } = await fixture();
+    const prepared = await preparePreparedWorktree(paths, featureSha);
+    const worktreeId = stringPath(prepared, ['data', 'worktree', 'id']);
+
+    const result = await fixPrCiFailure(
+      {
+        worktreeId,
+        expectedWorktreeHeadSha: 'f'.repeat(40),
+      },
+      paths,
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      action: 'autopilot_fix_pr_ci_failure',
+      requires: ['refreshWorktreeHead'],
+    });
+  });
+
   it('refuses to fix CI when the managed worktree is already dirty', async () => {
     const { paths, featureSha } = await fixture();
     const prepared = await preparePreparedWorktree(paths, featureSha);
@@ -1436,6 +1448,31 @@ describe('PR event autopilot', () => {
       ok: false,
       action: 'autopilot_fix_pr_review_feedback',
       requires: ['unresolvedReviewComments'],
+    });
+  });
+
+  it('refuses a review fix when the live PR head no longer matches the caller fact', async () => {
+    const { paths, featureSha } = await fixture();
+
+    const result = await fixPrReviewFeedback(
+      {
+        repoId: 'sample',
+        prNumber: 7,
+        expectedHeadSha: 'f'.repeat(40),
+      },
+      paths,
+      {
+        token: 'test-token',
+        async fetchPullRequestEventState() {
+          return reviewEventState(featureSha);
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      action: 'autopilot_fix_pr_review_feedback',
+      requires: ['refreshPrHead'],
     });
   });
 

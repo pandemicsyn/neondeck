@@ -63,6 +63,7 @@ import {
   prWatchEventWatermarkListInputSchema,
   type PrEventActionResult,
   type PrEventStateDependencies,
+  type PrWatchEventWatermarkRecord,
   type PullRequestTarget,
 } from './schemas';
 import {
@@ -1814,7 +1815,13 @@ export async function refreshPrWatchEventState(
     })
     .map((item) => item.category);
 
-  upsertWatermarks(paths, watch.id, next);
+  if (dependencies.persistWatermarks !== false) {
+    upsertWatermarks(paths, watch.id, next);
+  }
+  const currentWatermarks =
+    dependencies.persistWatermarks === false
+      ? candidateWatermarkRecords(watch.id, next, previous)
+      : readWatermarks(paths, watch.id);
 
   return okResult(
     'pr_watch_event_state_refresh',
@@ -1827,9 +1834,28 @@ export async function refreshPrWatchEventState(
       target: eventTargetJson(resolved.target),
       changedCategories,
       previousWatermarks: previous as unknown as JsonValue,
-      watermarks: readWatermarks(paths, watch.id) as unknown as JsonValue,
+      watermarks: currentWatermarks as unknown as JsonValue,
     },
   );
+}
+
+function candidateWatermarkRecords(
+  watchId: string,
+  watermarks: ReturnType<typeof watermarksFromEventState>,
+  previous: PrWatchEventWatermarkRecord[],
+): PrWatchEventWatermarkRecord[] {
+  const now = new Date().toISOString();
+  return watermarks.map((watermark) => ({
+    watchId,
+    category: watermark.category,
+    watermark: watermark.value,
+    sourceUpdatedAt: watermark.sourceUpdatedAt,
+    checkedAt: now,
+    createdAt:
+      previous.find((record) => record.category === watermark.category)
+        ?.createdAt ?? now,
+    updatedAt: now,
+  }));
 }
 
 function comparableWatermark(category: string, value: unknown) {

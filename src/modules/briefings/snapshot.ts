@@ -137,13 +137,11 @@ export async function collectBriefingSnapshot(
       return {
         data: {
           summary: state.summary,
-          queue: state.queue.slice(0, collectionLimit),
           preparedDiffs: state.preparedDiffs.slice(0, collectionLimit),
           pendingApprovals: state.pendingApprovals.slice(0, collectionLimit),
           runningChecks: state.runningChecks.slice(0, collectionLimit),
         },
         truncated:
-          state.queue.length > collectionLimit ||
           state.preparedDiffs.length > collectionLimit ||
           state.pendingApprovals.length > collectionLimit ||
           state.runningChecks.length > collectionLimit,

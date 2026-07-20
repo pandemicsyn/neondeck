@@ -34,6 +34,7 @@ export type SchedulerDependencies = {
   refreshPrWatchEventState?: (
     input: Parameters<typeof refreshPrWatchEventState>[0],
     paths: RuntimePaths,
+    options?: { persistWatermarks?: boolean },
   ) => ReturnType<typeof refreshPrWatchEventState>;
   listPrWatchEventWatermarks?: (
     input: Parameters<typeof listPrWatchEventWatermarks>[0],

@@ -157,12 +157,13 @@ const layersDiagram = `flowchart TB
           <code>guardrails</code> config block still denies forbidden paths and destinations,
           and asks once before high-risk or over-limit pushes. That acknowledgment
           is bound to the reviewed commit and effect, so a changed worktree prompts
-          again. Event-driven watcher work is durably admitted through the Autopilot
-          coordinator, but the current automatic chain stops after triage and isolated
-          worktree preparation. Separately invoked guarded fix and delivery actions
-          consume per-PR policy without expanding their own authority. Interactive
-          work requests preemption of an autopilot-owned PR lock, waits for its mutation
-          lease to release, and leaves any prepared diff recoverable.
+          again. PR watches currently persist complete GitHub facts, semantic watermarks,
+          and meaningful notifications without dispatching an automatic mutation chain.
+          Separately invoked guarded worktree, fix, verification, and delivery actions
+          consume current per-PR policy without expanding their own authority. The
+          replacement Autopilot owner loop is being rebuilt separately; it will reuse
+          exact-head worktrees and guarded Git operations rather than the removed
+          admission/coordinator architecture.
         </p>
 
         <h2>Planned: exe.dev workspace mode</h2>

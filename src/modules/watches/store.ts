@@ -6,6 +6,8 @@ import type {
   AutomationExecutionResult,
   NotificationRecord,
 } from '../app-state';
+import { publishNotificationEvent } from '../app-state/notification-events';
+import { readNotificationRow } from '../app-state/notifications';
 import { upsertScheduledTask } from '../scheduled-tasks';
 import type {
   DesiredTerminalState,
@@ -543,13 +545,21 @@ export function markWatchInitialEventProcessed(
   }
 }
 
-export function persistInitialWatchNotificationAndMarkProcessed(
+export function persistWatchEventRefresh(
   paths: RuntimePaths,
   watchId: string,
-  notification: NonNullable<AutomationExecutionResult['notifications']>[number],
+  watermarks: PrWatchInitialWatermark[],
+  options: {
+    notification?: NonNullable<
+      AutomationExecutionResult['notifications']
+    >[number];
+    markInitialProcessed?: boolean;
+  } = {},
   processedAt = new Date().toISOString(),
 ) {
   const database = openDb(paths.neondeckDatabase);
+  let persistedNotification: NotificationRecord | null = null;
+  let notificationAction: 'created' | 'reconciled' | null = null;
   try {
     database.exec('BEGIN IMMEDIATE;');
     try {
@@ -557,78 +567,145 @@ export function persistInitialWatchNotificationAndMarkProcessed(
         .prepare(
           `SELECT initial_event_processed_at
            FROM pr_watches
-           WHERE id = ? AND initial_event_processed_at IS NULL;`,
+           WHERE id = ?;`,
         )
         .get(watchId);
       if (!watch) {
-        database.exec('COMMIT;');
-        return { processed: false, notification: null };
+        rollbackQuietly(database);
+        return { persisted: false, notification: null };
       }
 
-      const source = notification.source ?? 'watch-pr-events';
-      const sourceId = notification.sourceId ?? watchId;
-      const existing = database
-        .prepare(
-          `SELECT id
-           FROM notifications
-           WHERE source = ? AND source_id = ? AND resolved_at IS NULL
-           LIMIT 1;`,
-        )
-        .get(source, sourceId);
-      let persistedNotification: NotificationRecord | null = null;
-      if (!existing) {
-        const id = randomUUID();
+      for (const watermark of watermarks) {
+        database
+          .prepare(
+            `INSERT INTO pr_watch_event_watermarks (
+               watch_id, category, watermark_json, source_updated_at,
+               checked_at, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(watch_id, category) DO UPDATE SET
+               watermark_json = excluded.watermark_json,
+               source_updated_at = excluded.source_updated_at,
+               checked_at = excluded.checked_at,
+               updated_at = excluded.updated_at;`,
+          )
+          .run(
+            watchId,
+            watermark.category,
+            JSON.stringify(watermark.value),
+            watermark.sourceUpdatedAt,
+            processedAt,
+            processedAt,
+            processedAt,
+          );
+      }
+
+      const notification = options.notification;
+      if (notification) {
+        const source = notification.source ?? 'watch-pr-events';
+        const sourceId = notification.sourceId ?? watchId;
         const data =
           notification.data === undefined
             ? null
             : asJsonValue(notification.data);
-        database
+        const existing = database
           .prepare(
-            `INSERT INTO notifications (
-               id, level, title, message, source, source_id, data_json,
-               read_at, resolved_at, occurrence_count, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 1, ?, ?);`,
+            `SELECT * FROM notifications
+             WHERE source = ? AND source_id = ? AND resolved_at IS NULL
+             ORDER BY created_at DESC
+             LIMIT 1;`,
           )
-          .run(
+          .get(source, sourceId);
+        if (existing) {
+          const previous = readNotificationRow(existing);
+          database
+            .prepare(
+              `UPDATE notifications
+               SET level = ?, title = ?, message = ?, data_json = ?,
+                   read_at = NULL,
+                   occurrence_count = occurrence_count + 1,
+                   updated_at = ?
+               WHERE id = ?;`,
+            )
+            .run(
+              notification.level,
+              notification.title,
+              notification.message,
+              data === null ? null : JSON.stringify(data),
+              processedAt,
+              previous.id,
+            );
+          persistedNotification = {
+            ...previous,
+            level: notification.level,
+            title: notification.title,
+            message: notification.message,
+            data,
+            readAt: null,
+            occurrenceCount: previous.occurrenceCount + 1,
+            updatedAt: processedAt,
+          };
+          notificationAction = 'reconciled';
+        } else {
+          const id = randomUUID();
+          database
+            .prepare(
+              `INSERT INTO notifications (
+                 id, level, title, message, source, source_id, data_json,
+                 read_at, resolved_at, occurrence_count, created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 1, ?, ?);`,
+            )
+            .run(
+              id,
+              notification.level,
+              notification.title,
+              notification.message,
+              source,
+              sourceId,
+              data === null ? null : JSON.stringify(data),
+              processedAt,
+              processedAt,
+            );
+          persistedNotification = {
             id,
-            notification.level,
-            notification.title,
-            notification.message,
+            level: notification.level,
+            title: notification.title,
+            message: notification.message,
             source,
             sourceId,
-            data === null ? null : JSON.stringify(data),
-            processedAt,
-            processedAt,
-          );
-        persistedNotification = {
-          id,
-          level: notification.level,
-          title: notification.title,
-          message: notification.message,
-          source,
-          sourceId,
-          data,
-          readAt: null,
-          resolvedAt: null,
-          occurrenceCount: 1,
-          createdAt: processedAt,
-          updatedAt: processedAt,
-        };
+            data,
+            readAt: null,
+            resolvedAt: null,
+            occurrenceCount: 1,
+            createdAt: processedAt,
+            updatedAt: processedAt,
+          };
+          notificationAction = 'created';
+        }
       }
-      database
-        .prepare(
-          `UPDATE pr_watches
-           SET initial_event_processed_at = ?, updated_at = ?
-           WHERE id = ? AND initial_event_processed_at IS NULL;`,
-        )
-        .run(processedAt, processedAt, watchId);
+      if (options.markInitialProcessed) {
+        database
+          .prepare(
+            `UPDATE pr_watches
+             SET initial_event_processed_at = ?, updated_at = ?
+             WHERE id = ? AND initial_event_processed_at IS NULL;`,
+          )
+          .run(processedAt, processedAt, watchId);
+      }
       database.exec('COMMIT;');
-      return { processed: true, notification: persistedNotification };
     } catch (error) {
-      database.exec('ROLLBACK;');
+      rollbackQuietly(database);
       throw error;
     }
   } finally {
     database.close();
   }
+  if (persistedNotification && notificationAction) {
+    publishNotificationEvent({
+      id: persistedNotification.id,
+      action: notificationAction,
+      notification: persistedNotification,
+      changedAt: processedAt,
+    });
+  }
+  return { persisted: true, notification: persistedNotification };
 }

@@ -393,21 +393,18 @@ Needed actions:
 - `neondeck_pr_comment`: post a summary comment linking addressed review feedback and checks.
 - `neondeck_pr_autopilot_policy_check`: decide whether a watch is notify-only, prepare-only, autofix-with-approval, or autofix-push-when-safe.
 
-Needed workflows:
+Replacement loop direction:
 
-- `triage_pr_event`: classify a watcher delta as no-op, notify-only, explain-only, prepare-only, or autofix.
-- `prepare_pr_worktree`: create/sync/lock a PR worktree and gather deterministic facts.
-- `fix_pr_review_feedback`: address unresolved review comments in an isolated worktree.
-- `fix_pr_ci_failure`: inspect failing checks/logs and attempt a scoped fix.
-- `verify_pr_worktree`: run configured checks through the execution policy and summarize results.
-- `push_pr_autofix`: push changes back to the PR head branch when policy and permissions allow.
-- `comment_pr_autofix_result`: post a concise PR comment explaining what changed, which comments were addressed, and which checks ran.
-- `cleanup_autopilot_worktree`: remove or retain worktrees according to policy.
+- Keep deterministic GitHub fact collection, exact-head worktree synchronization, bounded repo edit/check/commit tools, guarded push, and Flue dispatch as reusable foundations.
+- For each watched PR, use one stable owner instance and one managed worktree.
+- A meaningful fingerprint dispatches at most one bounded owner turn. The owner gathers current facts, edits, verifies, and commits in that turn; a later poll observes anything that arrived while it was busy.
+- Do not recreate the removed triage/prepare/fix/verify/push workflow chain, admission queue, stage ledger, coalescing coordinator, or workflow-observation continuation path.
+- Keep push and PR response capability mode-specific and fail closed when current facts, exact head, or policy no longer permit the mutation.
 
 Autopilot modes:
 
 - `notify-only`: detect and notify, but do not create a worktree.
-- `prepare-only`: create a worktree, prepare a diff, and surface it for review without committing or pushing.
+- `prepare-only`: create a worktree, commit the proposed change locally, and surface the exact commit diff for review without pushing.
 - `autofix-with-approval`: create a worktree, commit locally, run checks, and wait for explicit user approval before push.
 - `autofix-push-when-safe`: create a worktree, commit locally, run configured checks, push when checks pass, and comment on the PR.
 
@@ -456,7 +453,7 @@ Concurrency controls:
 - per-PR single active mutation workflow by default
 - per-PR parallel read-only triage/research where useful
 - per-host execution concurrency for local checks
-- queue priority for urgent failures, requested changes, active user asks, and ready-to-push work
+- one pending semantic fingerprint per watched PR, naturally observed by the next poll after the current owner turn settles
 
 Dashboard and future TUI needs:
 
@@ -745,7 +742,7 @@ Testing layers:
 - Local smoke scripts for the happy path: create watch, run scheduler tick, inspect workflow summary, verify notification, and confirm no-op watcher silence.
 - Evals only for model-sensitive behavior such as explanation quality, triage prioritization, and summary usefulness. Do not use evals for deterministic watch or worktree mechanics.
 
-Every planned autonomous workflow should have a non-model fixture path first. For example, `triage_pr_event`, `prepare_pr_worktree`, `fix_pr_review_feedback`, `verify_pr_worktree`, and `push_pr_autofix` should be smoke-testable without live GitHub by injecting structured PR/check/review fixtures and temporary repos.
+The replacement owner loop should have a non-model fixture path first: inject structured PR/check/review facts and temporary repos to prove polling, exact-head synchronization, bounded mutation tools, committed review artifacts, and guarded push without live GitHub. Retained standalone workflow primitives should remain directly smoke-testable, but tests must not reassemble them into the abandoned coordinator chain.
 
 First-party workflows that are useful to inspect from tests or UI should expose guarded `runs` middleware so SDK clients and the dashboard can fetch run records/events. CLI smoke tests can use `flue run` against the local authored `/api/flue` mount to verify routing, middleware, persistence, and workflow behavior together.
 

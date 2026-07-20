@@ -243,6 +243,18 @@ export async function fixPrCiFailure(
     }
     acquiredLockId = stringField(objectField(locked, 'lock'), 'id');
 
+    if (
+      input.expectedWorktreeHeadSha &&
+      (await gitCurrentSha(worktree.localPath)) !==
+        input.expectedWorktreeHeadSha
+    ) {
+      return failResult(
+        'autopilot_fix_pr_ci_failure',
+        'Worktree HEAD changed before the deterministic CI fix acquired its mutation lease.',
+        { requires: ['refreshWorktreeHead'] },
+      );
+    }
+
     const baselineStatus = await readWorktreeStatus(
       { worktreeId: worktree.id },
       paths,
@@ -266,6 +278,18 @@ export async function fixPrCiFailure(
           );
     if (pr && 'ok' in pr && !pr.ok) {
       return { ...pr, action: 'autopilot_fix_pr_ci_failure' };
+    }
+    if (
+      input.expectedHeadSha &&
+      pr &&
+      !('ok' in pr) &&
+      pr.headSha !== input.expectedHeadSha
+    ) {
+      return failResult(
+        'autopilot_fix_pr_ci_failure',
+        'Pull request HEAD changed before the deterministic CI fix began.',
+        { requires: ['refreshPrHead'] },
+      );
     }
     const ref =
       (pr && !('ok' in pr) ? pr.headSha : null) ??
@@ -310,7 +334,7 @@ export async function fixPrCiFailure(
       paths,
       input,
       dependencies,
-      () =>
+      () => {
         assertWorktreeMutationAllowed(
           {
             repoId: repo.id,
@@ -318,7 +342,8 @@ export async function fixPrCiFailure(
             lockId: acquiredLockId,
           },
           paths,
-        ),
+        );
+      },
     );
     const blocked = diagnostics.some((item) => item.requires.length > 0);
     if (blocked && input.patch) {
@@ -383,6 +408,31 @@ export async function fixPrCiFailure(
 
     let patchResult: unknown = null;
     if (input.patch) {
+      const mutationPolicy = await checkAutopilotPolicy(
+        {
+          worktreeId: worktree.id,
+          pushDestination: 'pull-request-head',
+        },
+        paths,
+      );
+      if (mutationPolicy.mode === 'notify-only') {
+        return failResult(
+          'autopilot_fix_pr_ci_failure',
+          'Current Autopilot policy no longer permits deterministic CI edits.',
+          { requires: ['autopilotMode'] },
+        );
+      }
+      if (
+        input.expectedWorktreeHeadSha &&
+        (await gitCurrentSha(worktree.localPath)) !==
+          input.expectedWorktreeHeadSha
+      ) {
+        return failResult(
+          'autopilot_fix_pr_ci_failure',
+          'Worktree HEAD changed immediately before deterministic CI edits.',
+          { requires: ['refreshWorktreeHead'] },
+        );
+      }
       const patched = await patchRepoFiles(
         {
           repoId: repo.id,
@@ -413,6 +463,14 @@ export async function fixPrCiFailure(
       );
       if (!policy.ok || policy.blocked || policy.approvalRequired) {
         finalLockStatus = 'prepared-diff';
+        assertWorktreeMutationAllowed(
+          {
+            repoId: repo.id,
+            worktreeId: worktree.id,
+            lockId: acquiredLockId,
+          },
+          paths,
+        );
         const preparedDiff = await ensurePreparedDiffForWorktree(
           worktree,
           paths,
@@ -489,8 +547,23 @@ export async function fixPrCiFailure(
 
     const status = await readWorktreeStatus({ worktreeId: worktree.id }, paths);
     const dirty = Boolean(booleanField(objectField(status, 'git'), 'dirty'));
+    const commitPolicy = await checkAutopilotPolicy(
+      {
+        worktreeId: worktree.id,
+        pushDestination: 'pull-request-head',
+      },
+      paths,
+    );
     let commit: unknown = null;
-    if (dirty) {
+    if (
+      dirty &&
+      input.commit !== false &&
+      commitPolicy.ok &&
+      !commitPolicy.blocked &&
+      !commitPolicy.approvalRequired &&
+      (commitPolicy.mode === 'autofix-with-approval' ||
+        commitPolicy.mode === 'autofix-push-when-safe')
+    ) {
       try {
         assertWorktreeMutationAllowed(
           {
@@ -511,6 +584,14 @@ export async function fixPrCiFailure(
         );
       } catch (error) {
         finalLockStatus = 'prepared-diff';
+        assertWorktreeMutationAllowed(
+          {
+            repoId: repo.id,
+            worktreeId: worktree.id,
+            lockId: acquiredLockId,
+          },
+          paths,
+        );
         const preparedDiff = await ensurePreparedDiffForWorktree(
           worktree,
           paths,
@@ -598,6 +679,14 @@ export async function fixPrCiFailure(
     let preparedDiff: PreparedDiffRecord | null = null;
     if (changed) {
       finalLockStatus = 'prepared-diff';
+      assertWorktreeMutationAllowed(
+        {
+          repoId: repo.id,
+          worktreeId: worktree.id,
+          lockId: acquiredLockId,
+        },
+        paths,
+      );
       preparedDiff = await ensurePreparedDiffForWorktree(worktree, paths, {
         title: `CI fix for ${repoFullName(repo)}#${worktree.prNumber ?? 'worktree'}`,
         createdBy: 'fix_pr_ci_failure',
