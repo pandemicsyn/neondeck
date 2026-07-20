@@ -23,6 +23,7 @@ import {
   settleBriefingObservation,
 } from '../modules/briefings';
 import { attachPrReviewAttemptRun, failPrReview } from '../modules/pr-reviews';
+import { settleAutopilotOwnerObservation } from '../modules/autopilot/owner/settlement';
 
 type ObservationInstallDependencies = {
   observe?: (subscriber: FlueObservationSubscriber) => () => void;
@@ -150,6 +151,15 @@ export function installFlueObservationHandlers(
     ) {
       void settleBriefingObservation(event, paths).catch((error) => {
         console.error('[neondeck] failed to settle briefing submission', error);
+      });
+    }
+
+    if (event.type === 'agent_end' || event.type === 'submission_settled') {
+      void settleAutopilotOwnerObservation(event, paths).catch((error) => {
+        console.error(
+          '[neondeck] failed to settle Autopilot owner turn',
+          error,
+        );
       });
     }
 

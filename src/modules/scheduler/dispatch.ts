@@ -4,6 +4,7 @@ import type { RuntimePaths } from '../../runtime-home';
 import { refreshPrWatch } from '../watches';
 import type { SchedulerDependencies } from './schemas';
 import { refreshWatchJobEvents } from './pr-watch-events';
+import { completeAutopilotWatchIfTerminal } from '../autopilot/owner/lifecycle';
 
 export { invokeScheduledWorkflow } from './workflow-invocation';
 
@@ -32,6 +33,21 @@ export async function refreshWatchTask(
           data: result,
         },
       ],
+    };
+  }
+
+  const terminal = await completeAutopilotWatchIfTerminal(watchId, paths);
+  if (terminal.complete) {
+    return {
+      outcome: 'updated' as const,
+      message: `Completed PR watch "${watchId}" after terminal checks settled.`,
+      result: { results: [result], terminal },
+      notifications: [
+        ...(result.changed
+          ? [notificationFromWatchResult(result, watchId)]
+          : []),
+      ],
+      persistedNotifications: [],
     };
   }
 

@@ -38,6 +38,12 @@ export {
   type AutopilotOwnerEnvelope,
 } from './owner/envelope';
 export { autopilotOwnerInstanceId } from './owner/instance';
+export { runAutopilotWatchEvent } from './owner/loop';
+export { completeAutopilotWatchIfTerminal } from './owner/lifecycle';
+export {
+  recoverInterruptedAutopilotOwners,
+  settleAutopilotOwnerObservation,
+} from './owner/settlement';
 export {
   autopilotOwnerCapabilities,
   type AutopilotOwnerCapability,

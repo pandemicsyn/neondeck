@@ -16,6 +16,7 @@ import { safeJsonBody, safeJsonObject } from '../http';
 import {
   configurePrAutopilot,
   controlPrAutopilot,
+  messagePrAutopilotOwner,
   readPrAutopilotStatus,
 } from '../../modules/autopilot';
 
@@ -57,6 +58,17 @@ export function createWatchRoutes(paths: RuntimePaths) {
       paths,
     );
     return c.json(result, result.ok ? 200 : 400);
+  });
+
+  routes.post('/watches/:id/autopilot/message', async (c) => {
+    const result = await messagePrAutopilotOwner(
+      {
+        ...(await safeJsonObject(c)),
+        id: c.req.param('id'),
+      } as Parameters<typeof messagePrAutopilotOwner>[0],
+      paths,
+    );
+    return c.json(result, result.ok ? 202 : 400);
   });
 
   routes.get('/watches/events/watermarks', async (c) => {

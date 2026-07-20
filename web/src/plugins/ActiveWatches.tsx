@@ -4,17 +4,19 @@ import {
   getPrWatches,
   configurePrAutopilot,
   controlPrAutopilot,
+  messagePrAutopilotOwner,
   removePrWatch,
   setPrWatchPolling,
   type PrWatch,
 } from '../api';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
-import { Badge, Button, ScrollArea } from '../components/ui';
+import { Badge, Button, ScrollArea, Textarea } from '../components/ui';
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
 import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import { prWatchAttentionReason } from '../lib/watch-status';
 import type { DisplayPlugin } from '../types';
+import { WorktreeDiffReview } from '../features/diff-viewer/surfaces';
 import { parsePositiveIntegerConfig } from './config';
 
 type ActiveWatchesConfig = {
@@ -87,6 +89,8 @@ export const ActiveWatchesPlugin = {
 
 function WatchRow({ watch }: { watch: PrWatch }) {
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [reviewingDiff, setReviewingDiff] = useState(false);
+  const [ownerMessage, setOwnerMessage] = useState('');
   const queryClient = useQueryClient();
   const removeMutation = useMutation({
     mutationFn: () => removePrWatch(watch.id),
@@ -132,6 +136,13 @@ function WatchRow({ watch }: { watch: PrWatch }) {
   const retryMutation = useMutation({
     mutationFn: () => controlPrAutopilot(watch.id, 'retry'),
     onSuccess() {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
+    },
+  });
+  const messageMutation = useMutation({
+    mutationFn: () => messagePrAutopilotOwner(watch.id, ownerMessage.trim()),
+    onSuccess() {
+      setOwnerMessage('');
       void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
     },
   });
@@ -243,6 +254,17 @@ function WatchRow({ watch }: { watch: PrWatch }) {
               {retryMutation.isPending ? 'retrying' : 'retry'}
             </Button>
           ) : null}
+          {watch.worktreeId &&
+          (watch.autopilotStatus === 'waiting' ||
+            watch.autopilotStatus === 'blocked') ? (
+            <Button
+              className="min-h-[28px] border-primary bg-transparent px-2 py-1 text-[10px] text-primary"
+              onClick={() => setReviewingDiff((current) => !current)}
+              type="button"
+            >
+              {reviewingDiff ? 'hide diff' : 'review diff'}
+            </Button>
+          ) : null}
           <Button
             className="min-h-[28px] border-line bg-transparent px-2 py-1 text-[10px] text-muted hover:border-accent hover:text-accent"
             disabled={removeMutation.isPending || pollingMutation.isPending}
@@ -282,6 +304,41 @@ function WatchRow({ watch }: { watch: PrWatch }) {
             </p>
           ) : null}
         </div>
+      ) : null}
+      {reviewingDiff && watch.worktreeId ? (
+        <div className="mt-2 max-h-[32rem] overflow-auto border border-line bg-field">
+          <WorktreeDiffReview
+            detail={`${watch.autopilotMode} · ${watch.autopilotStatus}`}
+            repoId={watch.repoId}
+            title={`${watch.repoFullName}#${watch.prNumber} Autopilot change`}
+            worktreeId={watch.worktreeId}
+          />
+        </div>
+      ) : null}
+      {watch.autopilotMode === 'autofix-with-approval' &&
+      watch.autopilotStatus === 'waiting' ? (
+        <div className="mt-2 flex items-end gap-2 border-t border-line pt-2">
+          <Textarea
+            aria-label={`Instruction for ${watch.repoFullName} pull request ${watch.prNumber} owner`}
+            className="min-h-[48px] flex-1 border border-line bg-field px-2 py-1.5 font-mono text-[10px] leading-4 focus:border-primary"
+            onChange={(event) => setOwnerMessage(event.target.value)}
+            placeholder="approved, push — or ask for one more focused edit"
+            value={ownerMessage}
+          />
+          <Button
+            className="shrink-0 border-primary bg-primary px-2 text-primary-ink hover:text-primary-ink"
+            disabled={!ownerMessage.trim() || messageMutation.isPending}
+            onClick={() => messageMutation.mutate()}
+            type="button"
+          >
+            {messageMutation.isPending ? 'sending' : 'send to owner'}
+          </Button>
+        </div>
+      ) : null}
+      {messageMutation.error ? (
+        <p className="mt-1 font-mono text-[10px] text-accent" role="alert">
+          {queryErrorMessage(messageMutation.error)}
+        </p>
       ) : null}
     </article>
   );

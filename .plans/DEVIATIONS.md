@@ -15,6 +15,13 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-07-20 - Minimal Autopilot Owner Archival
+
+- Roadmap item: Phase 19 / Autopilot Simplification PR 2 complete minimal loop
+- Decision: Treat a terminal watch's `complete` state as the owner archive boundary: polling and direct owner messages stop, eligible Neondeck-created worktrees are cleaned through the existing cleanup policy, and the Flue conversation is retained unchanged as the audit trail. No duplicate session row or transcript lifecycle table is created solely to label the private owner archived.
+- Reason: The installed Flue runtime exposes durable continuing conversations and abort/settlement, but no separate archive mutation for an agent instance. Adding a second app-owned archive record would recreate lifecycle machinery without changing whether the owner can run or whether its audit history is retained.
+- Follow-up: None unless Flue adds a native agent-instance archive operation; the watch remains the single lifecycle owner.
+
 ## 2026-07-20 - Autopilot Coordinator Reset
 
 - Roadmap item: Phase 19 / PR event Autopilot reset

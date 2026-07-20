@@ -81,7 +81,7 @@ describe('deterministic PR watch event refresh', () => {
         persistedNotifications: [
           expect.objectContaining({
             title: 'PR watch requested changes',
-            data: expect.objectContaining({ mode: 'prepare-only' }),
+            data: expect.objectContaining({ mode: 'notify-only' }),
           }),
         ],
       }),
@@ -89,7 +89,7 @@ describe('deterministic PR watch event refresh', () => {
     expect(await listNotifications(paths)).toEqual([
       expect.objectContaining({
         title: 'PR watch requested changes',
-        data: expect.objectContaining({ mode: 'prepare-only' }),
+        data: expect.objectContaining({ mode: 'notify-only' }),
       }),
     ]);
     expect(first[0]).not.toHaveProperty('triage');

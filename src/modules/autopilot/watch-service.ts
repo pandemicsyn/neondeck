@@ -1,4 +1,4 @@
-import { defineAction } from '@flue/runtime';
+import { defineAction, dispatch } from '@flue/runtime';
 import * as v from 'valibot';
 import type { RuntimePaths } from '../../runtime-home';
 import { runtimePaths } from '../../runtime-home';
@@ -18,6 +18,7 @@ import type {
   WatchFetcher,
 } from '../watches';
 import { modeSchema } from '../autopilot-policy';
+import { completeAutopilotWatchIfTerminal } from './owner/lifecycle';
 
 const nonEmptyString = v.pipe(v.string(), v.minLength(1));
 
@@ -36,6 +37,12 @@ export const prAutopilotControlInputSchema = v.object({
   id: v.optional(nonEmptyString),
   ref: v.optional(nonEmptyString),
   operation: v.picklist(['pause', 'resume', 'retry', 'stop']),
+});
+
+export const prAutopilotOwnerMessageInputSchema = v.object({
+  id: v.optional(nonEmptyString),
+  ref: v.optional(nonEmptyString),
+  message: nonEmptyString,
 });
 
 export const prAutopilotOutputSchema = v.looseObject({
@@ -149,7 +156,22 @@ export async function controlPrAutopilot(
     return setPrWatchPolling({ id: resolved.id, enabled: true }, paths);
   }
   if (parsed.output.operation === 'stop') {
-    return removePrWatch({ id: resolved.id, confirm: true }, paths);
+    const stopped = await completeAutopilotWatchIfTerminal(resolved.id, paths, {
+      explicitStop: true,
+    });
+    return stopped.complete
+      ? {
+          ok: true,
+          action: 'autopilot_watch_stop',
+          changed: true,
+          message: `Stopped Autopilot watch "${resolved.id}".`,
+          watch: stopped.watch,
+          cleanup: stopped.cleanup,
+        }
+      : failure(
+          'autopilot_watch_stop',
+          `Watch "${resolved.id}" could not be stopped because its state changed.`,
+        );
   }
 
   const watch = transitionWatchAutopilot(paths, resolved.id, {
@@ -175,6 +197,46 @@ export async function controlPrAutopilot(
     changed: true,
     message: `Retry armed for "${resolved.id}". Current facts will be fetched before another owner turn.`,
     watch,
+  };
+}
+
+export async function messagePrAutopilotOwner(
+  input: v.InferInput<typeof prAutopilotOwnerMessageInputSchema>,
+  paths: RuntimePaths = runtimePaths(),
+  dispatchOwner: typeof dispatch = dispatch,
+) {
+  const parsed = v.safeParse(prAutopilotOwnerMessageInputSchema, input);
+  if (!parsed.success) return invalid('autopilot_owner_message', parsed.issues);
+  const resolved = await resolveWatchId(
+    parsed.output,
+    paths,
+    'autopilot_owner_message',
+  );
+  if (!resolved.ok) return resolved.result;
+  const watch = readWatch(paths, resolved.id);
+  if (
+    !watch ||
+    !watch.ownerInstanceId ||
+    watch.autopilotMode !== 'autofix-with-approval' ||
+    watch.autopilotStatus !== 'waiting'
+  ) {
+    return failure(
+      'autopilot_owner_message',
+      `Watch "${resolved.id}" is not an approval-mode owner waiting for a direct human message.`,
+    );
+  }
+  const receipt = await dispatchOwner({
+    agent: 'pr-autopilot-owner',
+    id: watch.ownerInstanceId,
+    input: parsed.output.message,
+  });
+  return {
+    ok: true,
+    action: 'autopilot_owner_message',
+    changed: true,
+    message: `Sent the human instruction to continuing owner ${watch.ownerInstanceId}.`,
+    watch,
+    dispatchId: receipt.dispatchId,
   };
 }
 
@@ -211,10 +273,22 @@ export const prAutopilotControlAction = defineAction({
   },
 });
 
+export const prAutopilotOwnerMessageAction = defineAction({
+  name: 'neondeck_autopilot_message_owner',
+  description:
+    'Send the user’s direct instruction to the same approval-mode PR owner while its managed worktree is held for review. This is the authority-bearing human turn.',
+  input: prAutopilotOwnerMessageInputSchema,
+  output: prAutopilotOutputSchema,
+  async run({ input }) {
+    return messagePrAutopilotOwner(input);
+  },
+});
+
 export const neondeckPrAutopilotWatchActions = [
   configurePrAutopilotAction,
   prAutopilotStatusAction,
   prAutopilotControlAction,
+  prAutopilotOwnerMessageAction,
 ];
 
 function watchIdFromResult(result: { watch?: unknown }) {

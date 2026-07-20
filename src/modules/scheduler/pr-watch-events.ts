@@ -1,13 +1,11 @@
 import type { JsonValue } from '@flue/runtime';
+import { asJsonValue } from '../../lib/action-result';
 import type {
   AutomationExecutionResult,
   NotificationRecord,
 } from '../app-state';
-import { readRepoRegistrySnapshot } from '../repos';
-import {
-  repoAutopilotPolicyForWatch,
-  type AutopilotMode,
-} from '../autopilot-policy';
+import type { AutopilotMode } from '../autopilot-policy';
+import { runAutopilotWatchEvent } from '../autopilot/owner/loop';
 import {
   listPrWatchEventWatermarks,
   readAddressedPrFeedback,
@@ -16,11 +14,7 @@ import {
   type PrWatchEventWatermarkCategory,
   type PrWatchEventWatermarkRecord,
 } from '../pr-events';
-import {
-  parseAppConfig,
-  readRuntimeJson,
-  type RuntimePaths,
-} from '../../runtime-home';
+import { type RuntimePaths } from '../../runtime-home';
 import {
   listPrWatchRecords,
   persistWatchEventRefresh,
@@ -31,6 +25,8 @@ import {
   deltasFromChangedCategories,
   initialActionableDeltas,
   prEventNotification,
+  shouldAdmitTriageForDeltas,
+  snapshotFromWatermarks,
 } from './pr-watch-event-deltas';
 import { readJsonArray, readObjectConfig, stringField } from './utils';
 
@@ -48,6 +44,7 @@ type WatchJobEventResult = {
   refresh?: JsonValue;
   notifications?: AutomationExecutionResult['notifications'];
   persistedNotifications?: NotificationRecord[];
+  autopilot?: JsonValue;
   requires?: string[];
 };
 
@@ -174,7 +171,7 @@ async function refreshOneWatchEvent(
         previousWatermarks,
         filters,
       );
-  const mode = await readEffectiveWatchAutopilotMode(watch, paths);
+  const mode = watch.autopilotMode;
   const notification =
     deltas.length > 0
       ? prEventNotification(
@@ -198,6 +195,22 @@ async function refreshOneWatchEvent(
   if (!persisted.persisted) {
     return staleWatchEventPersistenceResult(watch, refresh);
   }
+  const autopilot = notification
+    ? await runAutopilotWatchEvent(
+        {
+          watchId: watch.id,
+          eventFingerprint: notification.sourceId,
+          reasoningRequired: shouldAdmitTriageForDeltas(deltas),
+          changedCategories,
+          deltas,
+          currentFacts: asJsonValue({
+            snapshot: snapshotFromWatermarks(currentWatermarks),
+            watermarks: currentWatermarks,
+          }),
+        },
+        paths,
+      )
+    : undefined;
 
   return {
     ok: true,
@@ -211,6 +224,7 @@ async function refreshOneWatchEvent(
     deltas,
     message: refresh.message,
     refresh: refresh as unknown as JsonValue,
+    ...(autopilot ? { autopilot: autopilot as unknown as JsonValue } : {}),
     ...(persisted.notification
       ? { persistedNotifications: [persisted.notification] }
       : {}),
@@ -251,22 +265,6 @@ function watermarksForPersistence(watermarks: PrWatchEventWatermarkRecord[]) {
     value: watermark.watermark,
     sourceUpdatedAt: watermark.sourceUpdatedAt,
   }));
-}
-
-async function readEffectiveWatchAutopilotMode(
-  watch: PrWatch,
-  paths: RuntimePaths,
-): Promise<AutopilotMode> {
-  const [registry, appConfig] = await Promise.all([
-    readRepoRegistrySnapshot(paths),
-    readRuntimeJson(paths.config, parseAppConfig),
-  ]);
-  const repo = registry.repos.find(
-    (candidate) => candidate.id === watch.repoId,
-  );
-  return repo
-    ? repoAutopilotPolicyForWatch(repo, appConfig, watch).mode
-    : 'notify-only';
 }
 
 function watchIdFromResult(value: unknown) {
