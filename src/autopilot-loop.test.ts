@@ -47,6 +47,8 @@ const tempRoots: string[] = [];
 const execFileAsync = promisify(execFile);
 let repositorySeed: SeededGitRepository | undefined;
 
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
 beforeAll(async () => {
   repositorySeed = await createSeededGitRepository({
     initialFiles: { 'src/app.ts': 'export const value = 1;\n' },

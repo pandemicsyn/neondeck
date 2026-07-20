@@ -5,8 +5,10 @@ A companion agent for keeping PRs moving.
 Neon watches your PRs, tracks CI and release checks, and can configure its own
 repos, schedules, models, and deck layout through typed actions. Its current
 PR watches retain complete feedback facts and semantic watermarks, including an
-explicit choice to process or baseline existing feedback. Automatic fix dispatch
-is temporarily disconnected while the smaller one-owner Autopilot loop is rebuilt.
+explicit choice to process or baseline existing feedback. Autopilot can bind one
+continuing Neon owner and one managed worktree to a watched PR, hold committed
+changes for review, or push only after the configured targeted checks and current
+safety gates pass.
 
 It is especially useful on a companion display, vertical panel, or Corsair
 Xeneon Edge-style deck, where your active work can stay visible without taking
@@ -23,8 +25,8 @@ Neon watches your PRs, prepares fixes, and keeps the busywork moving.
 - **Watch a PR without losing feedback.** Watch polling records complete review,
   conversation, requested-change, commit, and check facts with semantic
   fingerprints. Current feedback can be processed on the first poll or baselined
-  explicitly. The abandoned coordinator has been removed; automatic worktree and
-  owner dispatch will return through the smaller loop described in the roadmap.
+  explicitly. Meaningful feedback and failing checks reuse one continuing owner
+  and managed worktree without rebuilding the abandoned coordinator.
 - **Review and approve PRs on the deck.** Read diffs, leave inline comments,
   resolve threads, traverse files, hunks, drafts, threads, and revision-bound
   Neon findings, and submit approvals or change requests without switching to
