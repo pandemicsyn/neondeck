@@ -369,7 +369,7 @@ describe('minimal Autopilot watch loop', () => {
       (tool) => tool.name === 'neondeck_owner_push',
     );
     const humanPushResult = await humanPush?.run({ input: {} } as never);
-    expect(humanPushResult, JSON.stringify(humanPushResult)).toMatchObject({
+    expect(humanPushResult).toMatchObject({
       ok: true,
       changed: true,
     });

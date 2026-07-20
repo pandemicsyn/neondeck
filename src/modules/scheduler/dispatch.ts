@@ -2,9 +2,9 @@ import type { JsonValue } from '@flue/runtime';
 import type { NotificationLevel } from '../app-state';
 import type { RuntimePaths } from '../../runtime-home';
 import { refreshPrWatch } from '../watches';
+import { completeAutopilotWatchIfTerminal } from '../autopilot';
 import type { SchedulerDependencies } from './schemas';
 import { refreshWatchJobEvents } from './pr-watch-events';
-import { completeAutopilotWatchIfTerminal } from '../autopilot/owner/lifecycle';
 
 export { invokeScheduledWorkflow } from './workflow-invocation';
 
@@ -42,11 +42,9 @@ export async function refreshWatchTask(
       outcome: 'updated' as const,
       message: `Completed PR watch "${watchId}" after terminal checks settled.`,
       result: { results: [result], terminal },
-      notifications: [
-        ...(result.changed
-          ? [notificationFromWatchResult(result, watchId)]
-          : []),
-      ],
+      notifications: result.changed
+        ? [notificationFromWatchResult(result, watchId)]
+        : [],
       persistedNotifications: [],
     };
   }

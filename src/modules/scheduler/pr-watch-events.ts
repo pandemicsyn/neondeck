@@ -5,7 +5,7 @@ import type {
   NotificationRecord,
 } from '../app-state';
 import type { AutopilotMode } from '../autopilot-policy';
-import { runAutopilotWatchEvent } from '../autopilot/owner/loop';
+import { runAutopilotWatchEvent } from '../autopilot';
 import {
   listPrWatchEventWatermarks,
   readAddressedPrFeedback,

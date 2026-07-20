@@ -6,7 +6,6 @@ import {
   addPrWatch,
   listPrWatches,
   readWatch,
-  removePrWatch,
   resolveWatchId,
   setPrWatchPolling,
   configureWatchAutopilot,
