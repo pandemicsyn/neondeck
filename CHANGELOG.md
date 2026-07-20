@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.0-beta.13
+
+### Minor Changes
+
+- [#172](https://github.com/pandemicsyn/neondeck/pull/172) [`a8ee94d`](https://github.com/pandemicsyn/neondeck/commit/a8ee94d3421669d69c18fe47629fe256d1b67925) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Complete the minimal watched-PR Autopilot loop with one continuing owner and managed worktree, mode-bound tools, reviewable held commits, verified safe push, direct human approval turns, visible crash recovery, and terminal cleanup.
+
+- [#165](https://github.com/pandemicsyn/neondeck/pull/165) [`42e309b`](https://github.com/pandemicsyn/neondeck/commit/42e309b69af8fd0ed583bb94c173cdac7303f45b) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Retain complete watched-PR feedback and stable fingerprints, add a restart-safe choice for processing current feedback, and preserve exact-head worktree primitives for explicit guarded workflows. PR watches do not automatically prepare worktrees or dispatch an Autopilot owner while the simplified loop is rebuilt.
+
+- [#167](https://github.com/pandemicsyn/neondeck/pull/167) [`11c7e37`](https://github.com/pandemicsyn/neondeck/commit/11c7e3746aa630c8e42a4aefc490708f8bd9a4cf) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add central Autopilot readiness facts across runtime status, doctor, the local API, CLI onboarding, and the dashboard, with bounded noninteractive Git credential and exact-target gates shared by setup and push.
+
+### Patch Changes
+
+- [#174](https://github.com/pandemicsyn/neondeck/pull/174) [`e3e6fab`](https://github.com/pandemicsyn/neondeck/commit/e3e6fab70dbefa22641a2230644855d5081da723) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Restore the conversational Autopilot setup and control surface to the minimal persistent-owner loop, and retire the legacy Autopilot dashboard panel in favor of Active Watches.
+
+- [#175](https://github.com/pandemicsyn/neondeck/pull/175) [`4562dde`](https://github.com/pandemicsyn/neondeck/commit/4562ddef226e1728ed11f53e81a939ecb526a534) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Remove the retired workflow-based Autopilot engine, routes, and dashboard client so watched pull requests use only the continuing owner loop.
+
+- [#162](https://github.com/pandemicsyn/neondeck/pull/162) [`adce961`](https://github.com/pandemicsyn/neondeck/commit/adce96184c3ac52609143e6423724d22f1b58985) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep dashboard startup, PR review popouts, and standalone report windows synchronized with Neondeck's selected light or dark appearance.
+
 ## 1.0.0-beta.12
 
 ### Patch Changes
