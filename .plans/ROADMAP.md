@@ -435,7 +435,7 @@ Direct push-back readiness should verify that the configured GitHub credential c
 
 Watch integration:
 
-PR watches should evolve from status tracking into event-driven autonomy. A watcher tick should compare the latest GitHub state with stored watermarks and enqueue workflows only for meaningful deltas:
+PR watches should evolve from status tracking into event-driven autonomy. A watcher tick compares the latest complete GitHub state with stored semantic watermarks and records only meaningful deltas:
 
 - new commits on the PR head
 - new or changed review comments
@@ -446,14 +446,12 @@ PR watches should evolve from status tracking into event-driven autonomy. A watc
 - base branch changes relevant to the PR
 - merge conflict or branch out-of-date state
 
-Same-PR events should be reconciled so Neon does not launch duplicate fix workflows for the same review thread or failing check. Different PRs should be able to run in parallel within configured concurrency limits. Same-PR mutation workflows should serialize by default, while read-only triage and research can run concurrently.
-
-Watcher state, reconciliation, and queue admission belong to Neondeck app state. Flue workflows should represent the bounded work admitted from that state, such as triage, prepare, fix, verify, push, comment, and cleanup runs.
+The replacement Autopilot loop uses one stable owner and one managed worktree per watched PR, a busy flag, and one pending semantic fingerprint. It must not recreate the removed admission queue, stage ledger, owner generations, grounding snapshots, or workflow-observation coordinator.
 
 Concurrency controls:
 
 - global max autonomous jobs
-- global max active Flue workflow runs admitted by the autopilot queue
+- global max active Autopilot owner turns
 - per-repo max autonomous jobs
 - per-PR single active mutation workflow by default
 - per-PR parallel read-only triage/research where useful
@@ -462,7 +460,7 @@ Concurrency controls:
 
 Dashboard and future TUI needs:
 
-- active autopilot queue
+- watched PRs and their current owner/worktree status
 - active worktrees and locks
 - per-PR autopilot mode
 - pending push approvals
@@ -1265,45 +1263,16 @@ Must-haves:
 
 ### Phase 19: PR Event Autopilot
 
-- Status: incomplete after Autopilot Package 4. The production watcher now progresses through durable triage/worktree preparation into one continuing, compacting, private Neon PR-owner instance per watch. Complete authoritative review/CI/readiness/authority/workspace envelopes, immutable grounding/receipt linkage, explicit monotonic memory/config cursors, trusted revision-bound read/fix capabilities, baseline-aware in-place re-grounding or audited capability rotation, serialized/byte-bounded coalesced turns, durable stop/supersession mutation epochs, under-lock live-head/identity/policy/effect checks, owner-specific restart reconciliation, bounded one-time submission persistence, idempotent handled-PR learning evidence, and restart-safe deterministic prepared-diff submission are implemented. Focused fixture coverage runs two real sequential review fixes against the same instance/worktree across reconstructed service closures and a real policy downgrade. Verification, approval/push, result delivery, terminal cleanup, explicit setup/control UX, and full product-path integration/smoke remain open in Packages 5–8. The source-of-truth closure plan is `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`; the evidence audit is `.plans/AUTOPILOT_END_TO_END_REVIEW.html`.
+- Status: reset to retained foundations. The admission/coordinator implementation from Autopilot Packages 1–4 was abandoned because it could not deliver the product path without expanding into a second workflow engine. Its live progression path, queue/coalescing records, intake and owner generations, stage attempts/events, grounding snapshots/cursors, submission leases, workflow-observation continuation, and operator admission projections have been removed. Historical shipped migrations remain, followed by one forward cleanup migration. The source of truth for the replacement is `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`; `.plans/AUTOPILOT_END_TO_END_REVIEW.html` is historical evidence only.
 
-- [x] Complete PR event watermarks for commits, review threads, requested-changes review bodies, general PR conversation comments, check suites/runs, mergeability, out-of-date state, and per-item new/changed fingerprints.
-- [x] Add a `triage_pr_event` workflow that classifies deltas into no-op, notify-only, explain-only, prepare-only, autofix-with-approval, or autofix-push-when-safe.
-- [ ] Complete deterministic GitHub tools/actions for unresolved review comments, full review bodies, conversation comments, review thread state, requested-changes state, branch push permissions, and idempotent result/thread comment posting.
-- [x] Add one durable PR-owner record per Autopilot watch. Lazily create its Neon session and managed worktree on the first actionable event, reuse both across later events/restarts, and rotate the session only through an explicit audited recovery path.
-- [x] Complete `prepare_pr_worktree` so it fetches and verifies the exact same-repo or fork head SHA before first worktree creation, synchronizes the persistent owner worktree for later turns, and emits full authoritative event-envelope facts.
-- [x] Complete `fix_pr_review_feedback` as a bounded event turn in the continuing PR-owner Neon session:
-  - fetch unresolved review comments
-  - group comments by file/path/topic
-  - read relevant files through repo-edit actions
-  - plan and apply bounded changes through repo-edit replace/patch actions
-  - commit locally with a generated message that references addressed comments
-  - produce a prepared diff and summary
-- [x] Complete `fix_pr_ci_failure` as a bounded event turn in the same continuing PR-owner Neon session:
-  - fetch failing check metadata and logs where available
-  - identify likely failing package script or command
-  - run configured diagnostics through approved execution actions
-  - apply scoped fixes through repo-edit actions
-  - commit locally and summarize confidence and remaining risk
-- [x] Add `verify_pr_worktree` workflow to run configured repo checks through the execution approval policy.
-- [ ] Connect `push_pr_autofix` to the durable coordinator and correct noninteractive credential, approval, and pushed-SHA behavior while preserving its existing safety gates.
-- [x] When direct push is not possible, leave the prepared worktree intact, mark the attempt blocked, and notify the user with recovery options.
-- [ ] Connect and correct `comment_pr_autofix_result` so it posts one idempotent result for the pushed SHA and replies to addressed feedback where supported.
-- [x] Complete durable concurrency/admission controls and bounded retry/reconciliation:
-  - global autonomous workflow limit
-  - per-repo autonomous workflow limit
-  - one serialized active turn/mutation per PR owner, with queued event coalescing
-  - local execution concurrency limit
-- [ ] Replace the derived/duplicated dashboard queue with canonical, paginated admission APIs joined to prepared diffs, approvals, checks, and activity.
-- [ ] Complete notification policy and attention accounting for autopilot:
-  - ready when a fix is prepared or pushed
-  - attention when push/checks are blocked
-  - urgent only for production/main failures
-  - quiet no-op when a watch delta is reconciled without action
-- [x] Replace inaccurate runtime guidance with the continuing PR-owner session, authoritative event-envelope, and narrow capability contracts plus truthful operator guidance.
-- [ ] Add fixture-driven integration tests for current-feedback processing, same-session/worktree reuse, queued-event coalescing, explicit session rotation, same-PR reconciliation, cross-PR parallelism, fork checkout, credentials, direct-push gates, stop/restart behavior, terminal owner archival, and blocked high-risk changes.
-- [ ] Add Flue workflow tests that exercise the production coordinator from watcher admission through every bounded stage rather than invoking disconnected workflow wrappers.
-- [ ] Make the local smoke script run watch → continuing PR-owner session (at least two event turns) → prepared diff → verify → approval/push → result delivery → terminal archive/cleanup without raw manual API continuation or per-event session creation.
+- [x] Preserve complete PR feedback facts and semantic fingerprints for commits, review threads and comments, requested-changes review bodies, conversation comments, checks, mergeability, and branch freshness.
+- [x] Preserve explicit first-poll behavior: process current feedback or install a complete baseline, failing closed on truncated GitHub facts.
+- [x] Preserve exact-head same-repository and fork worktree fetch/synchronization.
+- [x] Preserve bounded noninteractive Git execution, guarded repo edits/pushes, the diff viewer, GitHub services, generic watches/worktrees, and the small readiness facts needed by later setup and safe push.
+- [x] Preserve a private `pr-autopilot-owner` definition plus stable instance-id, envelope, capability, and injected Flue-dispatch seams without connecting them to watch polling.
+- [ ] Implement the complete minimal loop in the follow-up PR only: one watch, one owner instance, one worktree, one busy flag, one pending semantic fingerprint, and bounded owner turns.
+- [ ] Add the thin setup/status/pause/resume/retry/stop service and adapters only after the minimal backend state and loop are complete.
+- [ ] Add safe push, response, and terminal cleanup only after the bounded owner turn and review flow are proven.
 
 ### Phase 20: Autopilot Policy And UX Hardening
 
@@ -1348,7 +1317,7 @@ Must-haves:
   - open worktree path
   - run verification
 - [x] Keep git/diff operations in backend services and actions; UI clients should not implement git logic.
-- [ ] Make the Autopilot dashboard panel available in recommended fresh-install layouts and base it on canonical admissions with accurate state and controls.
+- [ ] Make the Autopilot dashboard panel available in recommended fresh-install layouts and base it on the simplified watch/owner/worktree state with accurate controls.
 - [x] Add human-readable audit summaries for autonomous workflows, suitable for PR comments and timeline UI.
 - [ ] Expose all bounded prepared-diff recovery actions and query failures in the primary operator UI:
   - inspect retained worktree

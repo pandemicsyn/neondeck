@@ -20,9 +20,7 @@ import {
   checkAutopilotConcurrency,
   checkAutopilotPolicy,
   approvePreparedDiffPushWithPolicy,
-  claimAutopilotTriageAdmission,
   defaultAutopilotConcurrency,
-  listAutopilotPrOwners,
 } from './modules/autopilot';
 import {
   fixPrCiFailure,
@@ -321,132 +319,6 @@ describe('PR event autopilot', () => {
         eventId: 'watch-event-1',
         runLinkage: { owningWorkflowRunIdAttached: false },
       },
-    });
-  });
-
-  it('reuses one owner worktree and verifies each new exact PR head before binding', async () => {
-    const { paths, repo, featureSha } = await fixture({ remote: true });
-    const details = (headSha: string) => ({
-      token: 'test-token',
-      async fetchPullRequestDetail() {
-        return {
-          number: 7,
-          title: 'Update feature',
-          repo: 'example/sample',
-          url: 'https://github.com/example/sample/pull/7',
-          state: 'open',
-          draft: false,
-          merged: false,
-          mergeCommitSha: null,
-          headSha,
-          headRef: 'feature',
-          headOwner: 'example',
-          headName: 'sample',
-          headRepoFullName: 'example/sample',
-          baseRepoFullName: 'example/sample',
-          baseRef: 'main',
-          updatedAt: '2026-07-19T00:00:00.000Z',
-          maintainerCanModify: true,
-        };
-      },
-      async fetchCheckSummary() {
-        return {
-          status: 'success' as const,
-          total: 1,
-          successful: 1,
-          failed: 0,
-          pending: 0,
-          checkedAt: '2026-07-19T00:00:00.000Z',
-        };
-      },
-    });
-
-    // Represents a crash-era orphan: a PR worktree exists before the durable
-    // owner binding. A retry must reuse and synchronize it, not create another.
-    const orphaned = await preparePrWorktree(
-      { repoId: 'sample', prNumber: 7, lock: false },
-      paths,
-      details(featureSha),
-    );
-    const worktreeId = stringPath(orphaned, ['data', 'worktree', 'id']);
-    const admission = await claimAutopilotTriageAdmission(
-      {
-        watchId: 'example/sample#7',
-        eventFingerprint: 'existing-feedback-fingerprint',
-        repoId: 'sample',
-        prNumber: 7,
-        mode: 'prepare-only',
-        input: { synthetic: 'initial-actionable-state' },
-        limits: defaultAutopilotConcurrency,
-      },
-      paths,
-    );
-    expect(admission.claimed).toBe(true);
-    const duplicate = await claimAutopilotTriageAdmission(
-      {
-        watchId: 'example/sample#7',
-        eventFingerprint: 'existing-feedback-fingerprint',
-        repoId: 'sample',
-        prNumber: 7,
-        mode: 'prepare-only',
-        input: { synthetic: 'initial-actionable-state' },
-        limits: defaultAutopilotConcurrency,
-      },
-      paths,
-    );
-    expect(duplicate).toMatchObject({ claimed: false, reason: 'duplicate' });
-    const ownerId = admission.admission.ownerId;
-
-    await git(repo, ['checkout', 'feature']);
-    await writeFile(join(repo, 'src/retry.ts'), 'export const retry = 1;\n');
-    await git(repo, ['add', '-A']);
-    await git(repo, ['commit', '-m', 'new head after owner-bind crash']);
-    const retryHead = (await gitOutput(repo, ['rev-parse', 'HEAD'])).trim();
-    await git(repo, ['push', '--force', 'origin', 'feature:refs/pull/7/head']);
-
-    const rebound = await preparePrWorktree(
-      {
-        repoId: 'sample',
-        prNumber: 7,
-        ownerId,
-        eventId: 'event-2',
-        lock: false,
-      },
-      paths,
-      details(retryHead),
-    );
-    expect(rebound).toMatchObject({ ok: true });
-    expect(stringPath(rebound, ['data', 'worktree', 'id'])).toBe(worktreeId);
-
-    await writeFile(join(repo, 'src/retry.ts'), 'export const retry = 2;\n');
-    await git(repo, ['commit', '-am', 'next sequential PR event']);
-    const latestHead = (await gitOutput(repo, ['rev-parse', 'HEAD'])).trim();
-    await git(repo, ['push', '--force', 'origin', 'feature:refs/pull/7/head']);
-    const sequential = await preparePrWorktree(
-      {
-        repoId: 'sample',
-        prNumber: 7,
-        ownerId,
-        eventId: 'event-3',
-        lock: false,
-      },
-      paths,
-      details(latestHead),
-    );
-
-    expect(stringPath(sequential, ['data', 'worktree', 'id'])).toBe(worktreeId);
-    expect(await listWorktrees(paths)).toMatchObject({
-      worktrees: [expect.objectContaining({ id: worktreeId })],
-    });
-    expect(await listAutopilotPrOwners(paths)).toEqual([
-      expect.objectContaining({
-        id: ownerId,
-        worktreeId,
-        currentHeadSha: latestHead,
-      }),
-    ]);
-    expect(await readWorktreeStatus({ worktreeId }, paths)).toMatchObject({
-      git: { headSha: latestHead, dirty: false },
     });
   });
 

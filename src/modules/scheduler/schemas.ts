@@ -45,20 +45,11 @@ export type SchedulerDependencies = {
     workflow: ScheduledWorkflowName,
     input: JsonValue,
   ) => Promise<{ runId: string }>;
-  beforePrWatchEventIntakeAcknowledged?: (input: {
-    watchId: string;
-    eventId: string;
-    outcome: 'admission' | 'notification' | 'no-op';
-  }) => void | Promise<void>;
   tickLeaseTtlMs?: number;
 };
 
 export type ScheduledWorkflowName =
-  | 'briefing'
-  | 'command-run'
-  | 'scheduled-agent-instruction'
-  | 'prepare-pr-worktree'
-  | 'triage-pr-event';
+  'briefing' | 'command-run' | 'scheduled-agent-instruction';
 export type SchedulerTickLease = {
   owner: string;
   acquiredAt: string;

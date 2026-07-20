@@ -470,7 +470,7 @@ export function watchNextStep(
   }
   if (mode === 'notify-only') return 'Notify on meaningful state changes only.';
   if (watch.status === 'attention-needed') {
-    return 'Queue admission will prepare an isolated worktree when Phase 19 workflows land.';
+    return 'Review the latest watch facts; automatic owner dispatch is not connected during the Autopilot reset.';
   }
   return 'Keep watching until a meaningful PR delta is detected.';
 }
@@ -486,7 +486,7 @@ export function worktreeNextStep(worktree: WorktreeRecord) {
     case 'busy':
       return 'Wait for the current workflow lock to release.';
     default:
-      return 'Queue admission can reuse this prepared worktree.';
+      return 'This managed worktree remains available for an explicit bounded workflow.';
   }
 }
 
