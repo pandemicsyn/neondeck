@@ -81,7 +81,7 @@ export const configReloadAction = defineAction({
 export const updateAgentModelsAction = defineAction({
   name: 'neondeck_config_update_agent_models',
   description:
-    'Update display-assistant, utility, self-improvement, and subagent model names in runtime config.json. Provider registration is not changed by this action.',
+    'Update display-assistant, PR-review, utility, self-improvement, and subagent model settings in runtime config.json, including the bounded PR-review timeout. Provider registration is not changed by this action.',
   input: updateAgentModelsInputSchema,
   output: configActionOutputSchema,
   async run({ input }) {

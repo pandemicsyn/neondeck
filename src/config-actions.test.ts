@@ -308,6 +308,9 @@ describe('config actions', () => {
       updateAgentModels(
         {
           displayAssistant: 'kilocode/kilo/main',
+          prReview: 'kilocode/kilo-auto/frontier',
+          prReviewThinkingLevel: 'low',
+          prReviewTimeoutMs: 300_000,
           utility: 'kilocode/kilo/utility',
           utilityThinkingLevel: 'low',
           selfImprovement: 'kilocode/kilo/reflect',
@@ -336,6 +339,9 @@ describe('config actions', () => {
     );
     expect(config.models).toEqual({
       displayAssistant: 'kilocode/kilo/main',
+      prReview: 'kilocode/kilo-auto/frontier',
+      prReviewThinkingLevel: 'low',
+      prReviewTimeoutMs: 300_000,
       utility: 'kilocode/kilo/utility',
       utilityThinkingLevel: 'low',
       selfImprovement: 'kilocode/kilo/reflect',
@@ -366,6 +372,9 @@ describe('config actions', () => {
     );
     expect(config.models).toEqual({
       displayAssistant: 'kilocode/kilo/main',
+      prReview: 'kilocode/kilo-auto/frontier',
+      prReviewThinkingLevel: 'low',
+      prReviewTimeoutMs: 300_000,
       utility: 'kilocode/kilo/utility',
       utilityThinkingLevel: 'low',
       selfImprovement: 'kilocode/kilo/reflect',
@@ -426,19 +435,20 @@ describe('config actions', () => {
     ]);
   });
 
-  it('clears utility model config through the typed action', async () => {
+  it('clears specialized model config through the typed action', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
 
     await updateAgentModels(
       {
         displayAssistant: 'kilocode/kilo/main',
+        prReview: 'kilocode/kilo-auto/frontier',
         utility: 'kilocode/kilo/utility',
       },
       paths,
     );
     await expect(
-      updateAgentModels({ utility: null }, paths),
+      updateAgentModels({ prReview: null, utility: null }, paths),
     ).resolves.toMatchObject({
       ok: true,
       changed: true,
@@ -634,6 +644,24 @@ describe('config actions', () => {
 
     await expect(
       updateAgentModels({ displayAssistant: 'kilo-auto' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'config_update_agent_models',
+      message: 'Invalid action input.',
+    });
+
+    await expect(
+      updateAgentModels({ prReviewTimeoutMs: 9_999 }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'config_update_agent_models',
+      message: 'Invalid action input.',
+    });
+
+    await expect(
+      updateAgentModels({ prReviewTimeoutMs: 30 * 60 * 1_000 + 1 }, paths),
     ).resolves.toMatchObject({
       ok: false,
       changed: false,

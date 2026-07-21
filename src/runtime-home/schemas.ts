@@ -52,12 +52,21 @@ export const thinkingLevelSchema = v.picklist([
   'high',
   'xhigh',
 ]);
+export const prReviewTimeoutMsSchema = v.pipe(
+  v.number(),
+  v.integer(),
+  v.minValue(10_000),
+  v.maxValue(30 * 60 * 1_000),
+);
 
 export const agentModelConfigSchema = v.looseObject({
   default: v.optional(nonEmptyStringSchema),
   defaultThinkingLevel: v.optional(thinkingLevelSchema),
   displayAssistant: v.optional(nonEmptyStringSchema),
   displayAssistantThinkingLevel: v.optional(thinkingLevelSchema),
+  prReview: v.optional(nonEmptyStringSchema),
+  prReviewThinkingLevel: v.optional(thinkingLevelSchema),
+  prReviewTimeoutMs: v.optional(prReviewTimeoutMsSchema),
   utility: v.optional(nonEmptyStringSchema),
   utilityThinkingLevel: v.optional(thinkingLevelSchema),
   selfImprovement: v.optional(nonEmptyStringSchema),

@@ -40,6 +40,7 @@ export {
   parseDashboardConfig,
   parseRepoRegistry,
   providerConfigSchema,
+  prReviewTimeoutMsSchema,
   repoConfigSchema,
   repoRegistrySchema,
   thinkingLevelSchema,

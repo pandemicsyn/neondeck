@@ -330,6 +330,9 @@ describe('runtime home', () => {
           models: {
             default: 'kilocode/kilo-auto/balanced',
             displayAssistant: 'kilocode/kilo/main',
+            prReview: 'kilocode/kilo-auto/frontier',
+            prReviewThinkingLevel: 'low',
+            prReviewTimeoutMs: 300_000,
             utility: 'kilocode/kilo/utility',
             utilityThinkingLevel: 'low',
             selfImprovement: 'kilocode/kilo/reflect',
@@ -352,6 +355,9 @@ describe('runtime home', () => {
     ).resolves.toMatchObject({
       models: {
         displayAssistant: 'kilocode/kilo/main',
+        prReview: 'kilocode/kilo-auto/frontier',
+        prReviewThinkingLevel: 'low',
+        prReviewTimeoutMs: 300_000,
         utility: 'kilocode/kilo/utility',
         subagents: {
           repoResearcher: 'kilocode/kilo/repo',
@@ -363,6 +369,10 @@ describe('runtime home', () => {
     expect(readAgentModelSelectionSync(paths)).toEqual({
       displayAssistant: 'kilocode/kilo/main',
       displayAssistantThinkingLevel: 'medium',
+      prReview: 'kilocode/kilo-auto/frontier',
+      prReviewConfigured: true,
+      prReviewThinkingLevel: 'low',
+      prReviewTimeoutMs: 300_000,
       utility: 'kilocode/kilo/utility',
       utilityConfigured: true,
       utilityThinkingLevel: 'low',
@@ -400,6 +410,10 @@ describe('runtime home', () => {
 
     expect(readAgentModelSelectionSync(paths)).toMatchObject({
       displayAssistant: 'openai/gpt-5-mini',
+      prReview: 'openai/gpt-5-mini',
+      prReviewConfigured: false,
+      prReviewThinkingLevel: 'medium',
+      prReviewTimeoutMs: 180_000,
       utility: 'openai/gpt-5-mini',
       utilityConfigured: false,
       utilityThinkingLevel: 'low',

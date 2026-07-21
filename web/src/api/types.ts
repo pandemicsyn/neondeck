@@ -634,6 +634,11 @@ export type RuntimeStatus = {
     displayAssistant: string;
     displayAssistantProvider: string;
     displayAssistantThinkingLevel: string;
+    prReview: string;
+    prReviewProvider: string;
+    prReviewThinkingLevel: string;
+    prReviewConfigured: boolean;
+    prReviewTimeoutMs: number;
     utility: string;
     utilityProvider: string;
     utilityThinkingLevel: string;
@@ -1132,6 +1137,9 @@ export type ConfigActionResult = {
 export type AgentModelUpdate = {
   displayAssistant?: string;
   displayAssistantThinkingLevel?: string;
+  prReview?: string | null;
+  prReviewThinkingLevel?: string;
+  prReviewTimeoutMs?: number;
   utility?: string | null;
   utilityThinkingLevel?: string;
   subagents?: {

@@ -327,6 +327,11 @@ export async function readRuntimeStatus(
       displayAssistant: models.displayAssistant,
       displayAssistantProvider: providerFromModel(models.displayAssistant),
       displayAssistantThinkingLevel: models.displayAssistantThinkingLevel,
+      prReview: models.prReview,
+      prReviewProvider: providerFromModel(models.prReview),
+      prReviewThinkingLevel: models.prReviewThinkingLevel,
+      prReviewConfigured: models.prReviewConfigured,
+      prReviewTimeoutMs: models.prReviewTimeoutMs,
       utility: models.utility,
       utilityProvider: providerFromModel(models.utility),
       utilityThinkingLevel: models.utilityThinkingLevel,
@@ -477,6 +482,7 @@ function statusFromChecks(checks: RuntimeStatusCheck[]): RuntimeStatusLevel {
 
 export function requiredModelProviders(models: {
   displayAssistant: string;
+  prReview: string;
   utility: string;
   selfImprovement: string;
   subagents: Record<string, string>;
@@ -484,6 +490,7 @@ export function requiredModelProviders(models: {
   return Array.from(
     new Set([
       providerFromModel(models.displayAssistant),
+      providerFromModel(models.prReview),
       providerFromModel(models.utility),
       providerFromModel(models.selfImprovement),
       ...Object.values(models.subagents).map(providerFromModel),

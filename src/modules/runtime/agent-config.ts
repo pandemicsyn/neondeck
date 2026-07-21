@@ -10,6 +10,7 @@ import {
 
 export const defaultAgentModel = 'kilocode/kilo-auto/balanced';
 export const defaultThinkingLevel: ThinkingLevel = 'medium';
+export const defaultPrReviewTimeoutMs = 180_000;
 
 export type NeondeckSubagentKey =
   'repoResearcher' | 'ciInvestigator' | 'releaseReviewer';
@@ -17,6 +18,10 @@ export type NeondeckSubagentKey =
 export type AgentModelSelection = {
   displayAssistant: string;
   displayAssistantThinkingLevel: ThinkingLevel;
+  prReview: string;
+  prReviewConfigured: boolean;
+  prReviewThinkingLevel: ThinkingLevel;
+  prReviewTimeoutMs: number;
   utility: string;
   utilityConfigured: boolean;
   utilityThinkingLevel: ThinkingLevel;
@@ -57,6 +62,18 @@ export function resolveAgentModelSelection(
     env.FLUE_AGENT_THINKING_LEVEL,
     defaultThinkingLevel,
   );
+  const configuredPrReview = firstOptionalModel(
+    config?.models?.prReview,
+    env.FLUE_PR_REVIEW_MODEL,
+  );
+  const prReview = configuredPrReview ?? displayAssistant;
+  const prReviewThinkingLevel = firstThinkingLevel(
+    config?.models?.prReviewThinkingLevel,
+    env.FLUE_PR_REVIEW_THINKING_LEVEL,
+    displayAssistantThinkingLevel,
+  );
+  const prReviewTimeoutMs =
+    config?.models?.prReviewTimeoutMs ?? defaultPrReviewTimeoutMs;
   const configuredUtility = firstOptionalModel(
     config?.models?.utility,
     env.FLUE_UTILITY_MODEL,
@@ -100,6 +117,10 @@ export function resolveAgentModelSelection(
   return {
     displayAssistant,
     displayAssistantThinkingLevel,
+    prReview,
+    prReviewConfigured: Boolean(configuredPrReview),
+    prReviewThinkingLevel,
+    prReviewTimeoutMs,
     utility,
     utilityConfigured: Boolean(configuredUtility),
     utilityThinkingLevel,

@@ -364,6 +364,9 @@ export function printStatus(status: RuntimeStatus) {
   console.log(`env       ${status.paths.env}`);
   console.log(`model     ${status.models.displayAssistant}`);
   console.log(
+    `review    ${status.models.prReviewConfigured ? status.models.prReview : `${status.models.prReview} (fallback)`} · ${Math.round(status.models.prReviewTimeoutMs / 1000)}s`,
+  );
+  console.log(
     `utility  ${status.models.utilityConfigured ? status.models.utility : `${status.models.utility} (fallback)`}`,
   );
   console.log(

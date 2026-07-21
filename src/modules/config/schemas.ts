@@ -1,6 +1,9 @@
 import { type JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
-import { thinkingLevelSchema } from '../../runtime-home';
+import {
+  prReviewTimeoutMsSchema,
+  thinkingLevelSchema,
+} from '../../runtime-home';
 import { isRegisteredProvider } from '../repos';
 import {
   autopilotConcurrencySchema,
@@ -97,6 +100,9 @@ export const updateAgentModelsInputSchema = v.object({
   defaultThinkingLevel: v.optional(thinkingLevelSchema),
   displayAssistant: v.optional(providerQualifiedModelSchema),
   displayAssistantThinkingLevel: v.optional(thinkingLevelSchema),
+  prReview: v.optional(v.nullable(providerQualifiedModelSchema)),
+  prReviewThinkingLevel: v.optional(thinkingLevelSchema),
+  prReviewTimeoutMs: v.optional(prReviewTimeoutMsSchema),
   utility: v.optional(v.nullable(providerQualifiedModelSchema)),
   utilityThinkingLevel: v.optional(thinkingLevelSchema),
   selfImprovement: v.optional(v.nullable(providerQualifiedModelSchema)),

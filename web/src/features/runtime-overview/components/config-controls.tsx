@@ -18,6 +18,15 @@ export function RuntimeConfigControls({
   const [displayThinking, setDisplayThinking] = useState(
     status.models.displayAssistantThinkingLevel,
   );
+  const [prReviewModel, setPrReviewModel] = useState(
+    status.models.prReviewConfigured ? status.models.prReview : '',
+  );
+  const [prReviewThinking, setPrReviewThinking] = useState(
+    status.models.prReviewThinkingLevel,
+  );
+  const [prReviewTimeoutSeconds, setPrReviewTimeoutSeconds] = useState(
+    String(status.models.prReviewTimeoutMs / 1000),
+  );
   const [utilityModel, setUtilityModel] = useState(
     status.models.utilityConfigured ? status.models.utility : '',
   );
@@ -73,6 +82,11 @@ export function RuntimeConfigControls({
     if (modelDirty || savingModels) return;
     setDisplayAssistant(status.models.displayAssistant);
     setDisplayThinking(status.models.displayAssistantThinkingLevel);
+    setPrReviewModel(
+      status.models.prReviewConfigured ? status.models.prReview : '',
+    );
+    setPrReviewThinking(status.models.prReviewThinkingLevel);
+    setPrReviewTimeoutSeconds(String(status.models.prReviewTimeoutMs / 1000));
     setUtilityModel(
       status.models.utilityConfigured ? status.models.utility : '',
     );
@@ -115,9 +129,24 @@ export function RuntimeConfigControls({
     setModelMessageIsError(false);
 
     try {
+      const parsedPrReviewTimeoutSeconds = Number(prReviewTimeoutSeconds);
+      if (
+        !Number.isInteger(parsedPrReviewTimeoutSeconds) ||
+        parsedPrReviewTimeoutSeconds < minPrReviewTimeoutSeconds ||
+        parsedPrReviewTimeoutSeconds > maxPrReviewTimeoutSeconds
+      ) {
+        setModelMessageIsError(true);
+        setModelMessage(
+          `Review timeout must be a whole number from ${minPrReviewTimeoutSeconds} to ${maxPrReviewTimeoutSeconds} seconds.`,
+        );
+        return;
+      }
       const input = modelUpdateInput(status, {
         displayAssistant,
         displayThinking,
+        prReviewModel,
+        prReviewThinking,
+        prReviewTimeoutSeconds: parsedPrReviewTimeoutSeconds,
         utilityModel,
         utilityThinking,
         repoResearcher,
@@ -210,6 +239,39 @@ export function RuntimeConfigControls({
           }}
           options={thinkingLevelOptions}
           value={displayThinking}
+        />
+        <ConfigInput
+          label="PR review"
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setPrReviewModel(value);
+          }}
+          placeholder={status.models.prReview}
+          value={prReviewModel}
+        />
+        <ConfigSelect
+          label="review think"
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setPrReviewThinking(value);
+          }}
+          options={thinkingLevelOptions}
+          value={prReviewThinking}
+        />
+        <ConfigInput
+          label="timeout (s)"
+          max={maxPrReviewTimeoutSeconds}
+          min={minPrReviewTimeoutSeconds}
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setPrReviewTimeoutSeconds(value);
+          }}
+          step={1}
+          type="number"
+          value={prReviewTimeoutSeconds}
         />
         <ConfigInput
           label="utility"
@@ -373,6 +435,9 @@ function modelUpdateInput(
   values: {
     displayAssistant: string;
     displayThinking: string;
+    prReviewModel: string;
+    prReviewThinking: string;
+    prReviewTimeoutSeconds: number;
     utilityModel: string;
     utilityThinking: string;
     repoResearcher: string;
@@ -385,6 +450,9 @@ function modelUpdateInput(
 ) {
   const displayAssistant = values.displayAssistant.trim();
   const displayThinking = values.displayThinking.trim();
+  const prReviewModel = values.prReviewModel.trim();
+  const prReviewThinking = values.prReviewThinking.trim();
+  const prReviewTimeoutMs = values.prReviewTimeoutSeconds * 1000;
   const utilityModel = values.utilityModel.trim();
   const utilityThinking = values.utilityThinking.trim();
   const repoResearcher = values.repoResearcher.trim();
@@ -397,6 +465,9 @@ function modelUpdateInput(
   const input: {
     displayAssistant?: string;
     displayAssistantThinkingLevel?: string;
+    prReview?: string | null;
+    prReviewThinkingLevel?: string;
+    prReviewTimeoutMs?: number;
     utility?: string | null;
     utilityThinkingLevel?: string;
     subagents?: Record<string, string>;
@@ -407,6 +478,22 @@ function modelUpdateInput(
   }
   if (displayThinking !== status.models.displayAssistantThinkingLevel) {
     input.displayAssistantThinkingLevel = displayThinking;
+  }
+  if (prReviewModel) {
+    if (
+      !status.models.prReviewConfigured ||
+      prReviewModel !== status.models.prReview
+    ) {
+      input.prReview = prReviewModel;
+    }
+  } else if (status.models.prReviewConfigured) {
+    input.prReview = null;
+  }
+  if (prReviewThinking !== status.models.prReviewThinkingLevel) {
+    input.prReviewThinkingLevel = prReviewThinking;
+  }
+  if (prReviewTimeoutMs !== status.models.prReviewTimeoutMs) {
+    input.prReviewTimeoutMs = prReviewTimeoutMs;
   }
   if (utilityModel) {
     if (
@@ -451,13 +538,21 @@ function modelUpdateInput(
 
 function ConfigInput({
   label,
+  max,
+  min,
   onChange,
   placeholder,
+  step,
+  type = 'text',
   value,
 }: {
   label: string;
+  max?: number;
+  min?: number;
   onChange: (value: string) => void;
   placeholder?: string;
+  step?: number;
+  type?: 'number' | 'text';
   value: string;
 }) {
   return (
@@ -465,8 +560,12 @@ function ConfigInput({
       <span className="truncate">{label}</span>
       <input
         className="min-w-0 border border-line bg-field px-2 py-1 text-[10.5px] text-ink outline-none focus:border-violet"
+        max={max}
+        min={min}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
+        step={step}
+        type={type}
         value={value}
       />
     </label>
@@ -512,6 +611,8 @@ const thinkingLevelOptions = [
   'high',
   'xhigh',
 ];
+const minPrReviewTimeoutSeconds = 10;
+const maxPrReviewTimeoutSeconds = 30 * 60;
 
 function modelProviderId(value: string): ModelProviderId {
   if (value === 'openai' || value === 'anthropic') return value;

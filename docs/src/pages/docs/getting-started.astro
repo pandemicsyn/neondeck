@@ -179,8 +179,8 @@ neondeck open xeneon --kiosk</code></pre>
 
         <h2 id="agent-models">Agent models</h2>
         <p>
-          Configure the display assistant, utility, and subagent model choices
-          in runtime-home
+          Configure the display assistant, PR review, utility, and subagent
+          model choices in runtime-home
           <code>config.json</code>. Environment variables remain fallback
           values, but runtime config is the preferred local control point.
         </p>
@@ -189,6 +189,9 @@ neondeck open xeneon --kiosk</code></pre>
   "models": &#123;
     "displayAssistant": "kilocode/kilo-auto/balanced",
     "displayAssistantThinkingLevel": "medium",
+    "prReview": "kilocode/kilo-auto/frontier",
+    "prReviewThinkingLevel": "medium",
+    "prReviewTimeoutMs": 300000,
     "utility": "kilocode/kilo-auto/fast",
     "utilityThinkingLevel": "low",
     "subagents": &#123;
@@ -208,9 +211,13 @@ neondeck open xeneon --kiosk</code></pre>
           <code>neondeck_config_update_agent_models</code> action. Model strings must
           reference allowlisted providers. Thinking levels use Flue's
           <code>thinkingLevel</code> values such as <code>low</code>,
-          <code>medium</code>, and <code>high</code>. The utility model is
-          optional; when skipped, Neondeck falls back to the display assistant
-          and recommends a cheaper model for bounded helper work.
+          <code>medium</code>, and <code>high</code>. The PR review model is
+          optional and falls back to the display assistant. PR review calls
+          default to a 180,000 millisecond timeout; <code
+            >prReviewTimeoutMs</code
+          > accepts values from 10,000 through 1,800,000. The utility model is optional;
+          when skipped, Neondeck falls back to the display assistant and recommends
+          a cheaper model for bounded helper work.
         </p>
 
         <h2 id="execution-approvals">Execution approvals</h2>

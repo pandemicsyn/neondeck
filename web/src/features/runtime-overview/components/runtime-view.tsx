@@ -579,6 +579,11 @@ function RuntimeHome({
           {model} · {status.models.displayAssistantThinkingLevel}
         </p>
         <p className="mt-1 truncate font-mono text-[10px] text-muted">
+          review {status.models.prReview} ·{' '}
+          {status.models.prReviewThinkingLevel} ·{' '}
+          {Math.round(status.models.prReviewTimeoutMs / 1000)}s
+        </p>
+        <p className="mt-1 truncate font-mono text-[10px] text-muted">
           utility {utilityModel} · {status.models.utilityThinkingLevel}
         </p>
         {status.models.utilityRecommendation ? (

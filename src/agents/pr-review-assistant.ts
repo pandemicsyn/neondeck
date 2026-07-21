@@ -9,8 +9,8 @@ export default defineAgent(() => {
   const models = readAgentModelSelectionSync();
 
   return {
-    model: models.displayAssistant,
-    thinkingLevel: models.displayAssistantThinkingLevel,
+    model: models.prReview,
+    thinkingLevel: models.prReviewThinkingLevel,
     cwd: '/workspace',
     instructions: [
       'You are a private Neondeck PR review workflow agent.',

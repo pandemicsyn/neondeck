@@ -11,6 +11,7 @@ import {
   type ReviewAssistFacts,
   type ReviewAssistPromptContext,
 } from './service';
+import { readAgentModelSelectionSync } from '../runtime';
 
 export const reviewPrForHumanAction = defineAction({
   name: 'neondeck_pr_review_for_human',
@@ -20,6 +21,7 @@ export const reviewPrForHumanAction = defineAction({
   output: prReviewAssistOutputSchema,
   async run({ harness, input, log }) {
     const runId = currentFlueExecutionContext()?.runId;
+    const { prReviewTimeoutMs } = readAgentModelSelectionSync();
     let result: Awaited<ReturnType<typeof reviewPrForHuman>>;
     try {
       result = await reviewPrForHuman(input, undefined, {
@@ -32,7 +34,7 @@ export const reviewPrForHumanAction = defineAction({
               facts: reviewFactsForPrompt(facts, context),
             },
             result: reviewAssistStructuredOutputSchema,
-            signal: AbortSignal.timeout(180_000),
+            signal: AbortSignal.timeout(prReviewTimeoutMs),
           });
           return response.data;
         },

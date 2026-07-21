@@ -334,6 +334,9 @@ function hasAgentModelUpdate(
     input.defaultThinkingLevel ||
     input.displayAssistant ||
     input.displayAssistantThinkingLevel ||
+    input.prReview !== undefined ||
+    input.prReviewThinkingLevel ||
+    input.prReviewTimeoutMs !== undefined ||
     input.utility !== undefined ||
     input.utilityThinkingLevel ||
     input.selfImprovement !== undefined ||
@@ -411,6 +414,7 @@ function mergeAgentModelConfig(
   input: v.InferOutput<typeof updateAgentModelsInputSchema>,
 ): AgentModelConfig {
   const currentModels = { ...current };
+  if (input.prReview === null) delete currentModels.prReview;
   if (input.utility === null) delete currentModels.utility;
   if (input.selfImprovement === null) delete currentModels.selfImprovement;
   const subagents = {
@@ -429,6 +433,15 @@ function mergeAgentModelConfig(
       : {}),
     ...(input.displayAssistantThinkingLevel !== undefined
       ? { displayAssistantThinkingLevel: input.displayAssistantThinkingLevel }
+      : {}),
+    ...(input.prReview !== undefined && input.prReview !== null
+      ? { prReview: input.prReview }
+      : {}),
+    ...(input.prReviewThinkingLevel !== undefined
+      ? { prReviewThinkingLevel: input.prReviewThinkingLevel }
+      : {}),
+    ...(input.prReviewTimeoutMs !== undefined
+      ? { prReviewTimeoutMs: input.prReviewTimeoutMs }
       : {}),
     ...(input.utility !== undefined && input.utility !== null
       ? { utility: input.utility }

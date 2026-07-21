@@ -49,6 +49,9 @@ describe('runtime status', () => {
     });
     expect(status.models).toMatchObject({
       displayAssistant: 'kilocode/kilo-auto/balanced',
+      prReview: 'kilocode/kilo-auto/balanced',
+      prReviewConfigured: false,
+      prReviewTimeoutMs: 180_000,
       utility: 'kilocode/kilo-auto/balanced',
       utilityConfigured: false,
       utilityRecommendation: expect.stringContaining('low-cost'),
@@ -306,6 +309,9 @@ describe('runtime status', () => {
         version: 1,
         models: {
           displayAssistant: 'kilocode/kilo-auto/balanced',
+          prReview: 'kilocode/kilo-auto/frontier',
+          prReviewThinkingLevel: 'low',
+          prReviewTimeoutMs: 300_000,
           utility: 'kilocode/kilo/utility',
           utilityThinkingLevel: 'low',
           subagents: {
@@ -361,6 +367,11 @@ describe('runtime status', () => {
     });
     expect(status.models.displayAssistant).toBe('kilocode/kilo-auto/balanced');
     expect(status.models.displayAssistantProvider).toBe('kilocode');
+    expect(status.models.prReview).toBe('kilocode/kilo-auto/frontier');
+    expect(status.models.prReviewProvider).toBe('kilocode');
+    expect(status.models.prReviewThinkingLevel).toBe('low');
+    expect(status.models.prReviewConfigured).toBe(true);
+    expect(status.models.prReviewTimeoutMs).toBe(300_000);
     expect(status.models.utility).toBe('kilocode/kilo/utility');
     expect(status.models.utilityThinkingLevel).toBe('low');
     expect(status.models.utilityConfigured).toBe(true);
