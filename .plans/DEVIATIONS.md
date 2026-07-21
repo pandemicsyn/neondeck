@@ -15,6 +15,13 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-07-20 - Autopilot Trusted Coding Workspace And Semantic Safety
+
+- Roadmap item: Phase 19 / PR Event Autopilot and Phase 20 / Autopilot Policy And UX Hardening
+- Decision: Correct the delivered minimal owner loop so every fixing mode receives a trusted repo-scoped coding workspace with ordinary command execution. Treat mode as the delivery-authority ceiling: prepare modes cannot push, approval mode receives delivery authority only from a direct-human waiting turn, and `autofix-push-when-safe` autonomously delivers when the continuing owner judges the requested change sane, appropriately scoped, and sufficiently validated. Remove configured-check and deterministic diff-risk approval gates from that autonomous delivery tool while retaining exact-head, bound-destination, clean-commit, credential, and non-force guards.
+- Reason: PR #172 interpreted “safe” as mechanically preapproved command execution and safe Git delivery. That prevented the coding owner from running normal repository tests, formatters, typechecks, generators, or non-Node compilers and contradicted the intended meaning: trust the model to decide whether requested feedback is a safe and sound engineering change.
+- Follow-up: Land one focused implementation PR for the workspace, owner contract, delivery simplification, product wording, and focused regression tests. Do not reopen the removed coordinator/admission architecture.
+
 ## 2026-07-20 - Minimal Autopilot Owner Archival
 
 - Roadmap item: Phase 19 / Autopilot Simplification PR 2 complete minimal loop
