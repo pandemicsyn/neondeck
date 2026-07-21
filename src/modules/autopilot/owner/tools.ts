@@ -139,6 +139,9 @@ export function buildAutopilotOwnerToolRegistry(input: {
               ...toolInput,
             },
             paths,
+            {
+              authorizePush: () => directHumanAuthorityCurrent(watch, paths),
+            },
           );
         },
       }),
@@ -195,6 +198,18 @@ export function buildAutopilotOwnerToolRegistry(input: {
               idempotencyKey: `autopilot-owner:${watch.id}:${responseIdentity}`,
             },
             paths,
+            {
+              authorizeComment: () => {
+                if (source === 'watch-event') {
+                  return autonomousResponseAuthorityCurrent(watch, paths)
+                    ? undefined
+                    : staleAutonomousResponseAuthority();
+                }
+                return directHumanAuthorityCurrent(watch, paths)
+                  ? undefined
+                  : staleDirectHumanAuthority();
+              },
+            },
           );
         },
       }),
@@ -209,6 +224,7 @@ function directHumanAuthorityCurrent(watch: PrWatch, paths: RuntimePaths) {
   const current = readWatch(paths, watch.id);
   const pending = readPendingAutopilotTurn(paths.home, watch.ownerInstanceId);
   return (
+    current?.ownerInstanceId === watch.ownerInstanceId &&
     current?.autopilotMode === 'autofix-with-approval' &&
     current.autopilotStatus === 'working' &&
     pending?.source === 'direct-human'

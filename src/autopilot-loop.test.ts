@@ -23,6 +23,7 @@ import {
 } from './modules/autopilot';
 import { safePushAutopilotOwner } from './modules/autopilot/owner/safe-push';
 import { buildAutopilotOwnerToolRegistry } from './modules/autopilot/owner/tools';
+import { postGitHubPrComment } from './modules/pr-events';
 import { pushInteractiveRepo } from './repo-edit';
 import {
   bindWatchAutopilotOwner,
@@ -350,8 +351,8 @@ describe('minimal Autopilot watch loop', () => {
       paths,
       humanDispatch as never,
     );
-    const pushInteractive = vi.fn(
-      async (input: Parameters<typeof pushInteractiveRepo>[0]) =>
+    const pushInteractive = vi.fn<typeof pushInteractiveRepo>(
+      async (input, _ownerPaths, ownerDependencies = {}) =>
         pushInteractiveRepo(input, paths, {
           resolveContext: vi.fn(async () => ({
             repo: {
@@ -379,9 +380,70 @@ describe('minimal Autopilot watch loop', () => {
               stdout: 'pushed to local test remote',
             };
           }),
+          authorizePush: ownerDependencies.authorizePush,
         }),
     );
     const humanTurnWatch = readWatch(paths, 'pandemicsyn/neondeck#123')!;
+    const stalePushEffect = vi.fn<() => void>();
+    const stalePushInteractive = vi.fn<typeof pushInteractiveRepo>(
+      async (input, _ownerPaths, ownerDependencies = {}) =>
+        pushInteractiveRepo(input, paths, {
+          resolveContext: vi.fn(async () => {
+            configureWatchAutopilot(
+              paths,
+              'pandemicsyn/neondeck#123',
+              'prepare-only',
+            );
+            return {
+              repo: {
+                id: 'neondeck',
+                github: { owner: 'pandemicsyn', name: 'neondeck' },
+                path: repo,
+                defaultBranch: 'main',
+              },
+              prNumber: 123,
+              worktree: await readManagedWorktree(
+                worktree.id,
+                'neondeck',
+                paths,
+              ),
+              pushRemote: 'origin',
+              pushBranch: 'feature',
+              linkedPrHead: true,
+            };
+          }) as never,
+          pushGit: vi.fn(async () => {
+            stalePushEffect();
+            return {
+              remote: 'origin',
+              branch: 'feature',
+              force: false,
+              stdout: 'unexpected push',
+            };
+          }),
+          authorizePush: ownerDependencies.authorizePush,
+        }),
+    );
+    const staleHumanRegistry = buildAutopilotOwnerToolRegistry({
+      watch: { ...humanTurnWatch, autopilotStatus: 'waiting' },
+      source: 'direct-human',
+      paths,
+      pushInteractive: stalePushInteractive,
+    });
+    await expect(
+      staleHumanRegistry.tools
+        .find((tool) => tool.name === 'neondeck_owner_push')
+        ?.run({ input: {} } as never),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['currentAuthority'],
+    });
+    expect(stalePushEffect).not.toHaveBeenCalled();
+    configureWatchAutopilot(
+      paths,
+      'pandemicsyn/neondeck#123',
+      'autofix-with-approval',
+    );
     const humanRegistry = buildAutopilotOwnerToolRegistry({
       watch: { ...humanTurnWatch, autopilotStatus: 'waiting' },
       source: 'direct-human',
@@ -414,6 +476,7 @@ describe('minimal Autopilot watch loop', () => {
         prNumber: 123,
       }),
       paths,
+      expect.objectContaining({ authorizePush: expect.any(Function) }),
     );
     expect(await gitOutput(remote, ['rev-parse', 'refs/heads/feature'])).toBe(
       preparedSha,
@@ -742,33 +805,43 @@ describe('minimal Autopilot watch loop', () => {
         'HEAD',
       ]),
     });
-    const autonomousPostPrComment = vi.fn<
-      () => Promise<{
-        ok: true;
-        action: string;
-        changed: true;
-        message: string;
-      }>
-    >(async () => ({
-      ok: true,
-      action: 'github_pr_comment',
-      changed: true,
-      message: 'Posted owner response.',
-    }));
+    let autonomousCommentPosted = false;
+    const autonomousPostPrComment = vi.fn<typeof postGitHubPrComment>(
+      async (input, callPaths, ownerDependencies = {}) =>
+        postGitHubPrComment(input, callPaths, {
+          token: 'test-token',
+          fetchPullRequestEventState: vi.fn(async () =>
+            prEventFacts(repositorySeed!.featureSha!, 126),
+          ) as never,
+          listPullRequestComments: vi.fn(async () => []),
+          authorizeComment: () => {
+            configureWatchAutopilot(
+              paths,
+              'pandemicsyn/neondeck#126',
+              'prepare-only',
+            );
+            return ownerDependencies.authorizeComment?.();
+          },
+          postPullRequestComment: vi.fn(async ({ body }) => {
+            autonomousCommentPosted = true;
+            return {
+              id: 126,
+              nodeId: 'comment-node-126',
+              url: 'https://github.com/pandemicsyn/neondeck/pull/126#issuecomment-126',
+              authorLogin: 'neon',
+              body,
+              createdAt: '2026-07-20T00:00:00.000Z',
+              updatedAt: '2026-07-20T00:00:00.000Z',
+            };
+          }),
+        }),
+    );
     const safeWatch = readWatch(paths, 'pandemicsyn/neondeck#126')!;
     const autonomousRegistry = buildAutopilotOwnerToolRegistry({
       watch: safeWatch,
       source: 'watch-event',
       paths,
       postPrComment: autonomousPostPrComment as never,
-      currentSha: vi.fn<() => Promise<string>>(async () => {
-        configureWatchAutopilot(
-          paths,
-          'pandemicsyn/neondeck#126',
-          'prepare-only',
-        );
-        return gitOutput(safeWorktree.localPath, ['rev-parse', 'HEAD']);
-      }) as never,
     });
     await expect(
       autonomousRegistry.tools
@@ -778,7 +851,8 @@ describe('minimal Autopilot watch loop', () => {
       ok: false,
       requires: ['currentSafeMode'],
     });
-    expect(autonomousPostPrComment).not.toHaveBeenCalled();
+    expect(autonomousPostPrComment).toHaveBeenCalledTimes(1);
+    expect(autonomousCommentPosted).toBe(false);
     await settleAutopilotOwnerObservation(
       ownerPromptFailure('successful-safe-owner'),
       paths,

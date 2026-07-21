@@ -1525,6 +1525,8 @@ export async function postGitHubPrComment(
         comment.body.includes(idempotencyMarker),
       );
       if (existing) {
+        const authorizationFailure = dependencies.authorizeComment?.();
+        if (authorizationFailure) return authorizationFailure;
         recordNeondeckPrDelivery(
           {
             repoFullName: resolved.target.repoFullName,
@@ -1573,6 +1575,8 @@ export async function postGitHubPrComment(
         { requires: ['shorterComment'] },
       );
     }
+    const authorizationFailure = dependencies.authorizeComment?.();
+    if (authorizationFailure) return authorizationFailure;
     const comment = await poster({
       token,
       owner: resolved.target.owner,
