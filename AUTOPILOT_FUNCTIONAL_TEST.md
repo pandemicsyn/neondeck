@@ -1,4 +1,4 @@
 # Autopilot functional test
 
 approval: handled
-autonomous: pending
+autonomous: handled
