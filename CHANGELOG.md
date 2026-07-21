@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0-beta.14
+
+### Patch Changes
+
+- [#179](https://github.com/pandemicsyn/neondeck/pull/179) [`a52801e`](https://github.com/pandemicsyn/neondeck/commit/a52801e40fecb53f2451b611a8d376b432d5658e) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Give every fixing Autopilot mode a full managed-worktree coding workspace and let autonomous mode deliver through semantic engineering judgment without requiring configured checks, while retaining mechanical mode, head, destination, credential, commit, and non-force push guards.
+
 ## 1.0.0-beta.13
 
 ### Minor Changes
