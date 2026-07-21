@@ -43,8 +43,9 @@ Neon watches your PRs, prepares fixes, and keeps the busywork moving.
   approval controls. Follow up in chat, or run your own saved prompt on a timer.
 - **Scoped execution for each job.** Keep code-changing work in managed
   worktrees, use approval policy for ordinary chat/workflow commands, give the
-  trusted Autopilot coding owner a repository-native workspace without delivery
-  credentials, or run mediated work on an `exe.dev` sandbox VM.
+  trusted Autopilot coding owner a repository-native workspace with a
+  credential-free default environment, or run mediated work on an `exe.dev`
+  sandbox VM.
 - **Memory that learns from your work.** Let Neon remember approved preferences
   and repo conventions from conversations and PR feedback.
 - **Ask Neon to set up the deck.** Configure repos, models, schedules, layout,

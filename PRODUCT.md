@@ -101,8 +101,9 @@ the same backend state, actions, workflows, and event stream.
   delegated code changes. Do not mutate the user’s primary checkout.
 - Keep ordinary chat and workflow shell execution mediated by an allow/ask/deny
   policy. The trusted watched-PR coding owner is the narrow exception: it gets a
-  managed-worktree shell without delivery credentials, while external push and
-  PR response remain mode-scoped application tools.
+  managed-worktree shell with a private credential-free home and default
+  environment, while external push and PR response remain mode-scoped
+  application tools.
 - Treat local-first as a data and control-plane choice, not a claim that every
   dependency is offline. Model providers, GitHub, MCP servers, Kilo, and optional
   exe.dev execution may be remote and must remain explicit.

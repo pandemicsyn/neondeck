@@ -519,6 +519,15 @@ describe('minimal Autopilot watch loop', () => {
         'printf %s "${GITHUB_TOKEN-unavailable}"',
       );
       expect(secret.stdout).toBe('unavailable');
+      const credentialHome = await environment.exec(
+        'printf "%s|%s" "$HOME" "$GH_CONFIG_DIR"',
+      );
+      const [home, ghConfig] = credentialHome.stdout.split('|');
+      expect(home?.startsWith(join(paths.data, 'autopilot-owner-homes'))).toBe(
+        true,
+      );
+      expect(home).not.toBe(process.env.HOME);
+      expect(ghConfig).toBe(join(home!, '.config', 'gh'));
       const deliveryBoundary = await environment.exec(
         'printf "%s|%s|%s" "$GIT_CONFIG_KEY_0" "$GIT_CONFIG_VALUE_0" "$GIT_SSH_COMMAND"',
       );
@@ -733,6 +742,43 @@ describe('minimal Autopilot watch loop', () => {
         'HEAD',
       ]),
     });
+    const autonomousPostPrComment = vi.fn<
+      () => Promise<{
+        ok: true;
+        action: string;
+        changed: true;
+        message: string;
+      }>
+    >(async () => ({
+      ok: true,
+      action: 'github_pr_comment',
+      changed: true,
+      message: 'Posted owner response.',
+    }));
+    const safeWatch = readWatch(paths, 'pandemicsyn/neondeck#126')!;
+    const autonomousRegistry = buildAutopilotOwnerToolRegistry({
+      watch: safeWatch,
+      source: 'watch-event',
+      paths,
+      postPrComment: autonomousPostPrComment as never,
+      currentSha: vi.fn<() => Promise<string>>(async () => {
+        configureWatchAutopilot(
+          paths,
+          'pandemicsyn/neondeck#126',
+          'prepare-only',
+        );
+        return gitOutput(safeWorktree.localPath, ['rev-parse', 'HEAD']);
+      }) as never,
+    });
+    await expect(
+      autonomousRegistry.tools
+        .find((tool) => tool.name === 'neondeck_owner_pr_respond')
+        ?.run({ input: { body: 'Implemented and validated.' } } as never),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['currentSafeMode'],
+    });
+    expect(autonomousPostPrComment).not.toHaveBeenCalled();
     await settleAutopilotOwnerObservation(
       ownerPromptFailure('successful-safe-owner'),
       paths,

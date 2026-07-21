@@ -77,10 +77,12 @@ const layersDiagram = `flowchart TB
             >
             Flue's <code>local()</code> sandbox gives that owner the host filesystem
             and installed repository toolchain, rooted at its validated managed worktree.
-            Flue exposes only shell-essential environment variables by default; Neondeck
-            also withholds GitHub tokens and disables ordinary credential-helper,
-            askpass, and SSH authentication paths in that shell. This is a trusted
-            host workspace, not a filesystem isolation boundary.
+            Neondeck supplies a private per-owner home and GitHub config directory,
+            withholds GitHub tokens, and disables ordinary credential-helper, askpass,
+            and SSH authentication paths in that shell. This prevents accidental delivery
+            through normal workspace commands. It remains a trusted host workspace,
+            not an adversarial filesystem isolation boundary; external push and PR
+            response authority lives in mode-scoped application tools.
           </li>
           <li>
             <strong>Remote Flue sandbox (planned).</strong> Neondeck already supports

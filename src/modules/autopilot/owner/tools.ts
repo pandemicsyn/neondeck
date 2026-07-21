@@ -42,6 +42,8 @@ export function buildAutopilotOwnerToolRegistry(input: {
   paths: RuntimePaths;
   postPrComment?: typeof postGitHubPrComment;
   pushInteractive?: typeof pushInteractiveRepo;
+  readWorktree?: typeof readManagedWorktree;
+  currentSha?: typeof gitCurrentSha;
 }) {
   const { watch, source, paths } = input;
   if (!watch.worktreeId) return { capabilities: [], tools: [] };
@@ -152,36 +154,17 @@ export function buildAutopilotOwnerToolRegistry(input: {
         input: v.object({ body: v.string() }),
         async run({ input: toolInput }) {
           if (source === 'watch-event') {
-            const current = readWatch(paths, watch.id);
-            const pending = watch.ownerInstanceId
-              ? readPendingAutopilotTurn(paths.home, watch.ownerInstanceId)
-              : undefined;
-            if (
-              !current ||
-              current.ownerInstanceId !== watch.ownerInstanceId ||
-              current.autopilotMode !== 'autofix-push-when-safe' ||
-              current.autopilotStatus !== 'working' ||
-              pending?.source !== 'watch-event' ||
-              pending.mode !== 'autofix-push-when-safe'
-            ) {
-              return {
-                ok: false,
-                action: 'autopilot_owner_pr_respond',
-                changed: false,
-                message:
-                  'The current watch mode no longer authorizes an autonomous PR response.',
-                requires: ['currentSafeMode'],
-              };
+            if (!autonomousResponseAuthorityCurrent(watch, paths)) {
+              return staleAutonomousResponseAuthority();
             }
-            const currentWorktree = await readManagedWorktree(
-              worktreeId,
-              watch.repoId,
-              paths,
-            );
+            const currentWorktree = await (
+              input.readWorktree ?? readManagedWorktree
+            )(worktreeId, watch.repoId, paths);
             if (
               !currentWorktree.lastPushedSha ||
-              (await gitCurrentSha(currentWorktree.localPath)) !==
-                currentWorktree.lastPushedSha
+              (await (input.currentSha ?? gitCurrentSha)(
+                currentWorktree.localPath,
+              )) !== currentWorktree.lastPushedSha
             ) {
               return {
                 ok: false,
@@ -191,6 +174,9 @@ export function buildAutopilotOwnerToolRegistry(input: {
                   'Autopilot must push the current commit before posting an autonomous PR response.',
                 requires: ['currentPushedCommit'],
               };
+            }
+            if (!autonomousResponseAuthorityCurrent(watch, paths)) {
+              return staleAutonomousResponseAuthority();
             }
           } else if (!directHumanAuthorityCurrent(watch, paths)) {
             return staleDirectHumanAuthority();
@@ -237,5 +223,32 @@ function staleDirectHumanAuthority() {
     message:
       'The approval-mode human turn is no longer current; no external effect was performed.',
     requires: ['currentHumanTurn'],
+  };
+}
+
+function autonomousResponseAuthorityCurrent(
+  watch: PrWatch,
+  paths: RuntimePaths,
+) {
+  if (!watch.ownerInstanceId) return false;
+  const current = readWatch(paths, watch.id);
+  const pending = readPendingAutopilotTurn(paths.home, watch.ownerInstanceId);
+  return (
+    current?.ownerInstanceId === watch.ownerInstanceId &&
+    current.autopilotMode === 'autofix-push-when-safe' &&
+    current.autopilotStatus === 'working' &&
+    pending?.source === 'watch-event' &&
+    pending.mode === 'autofix-push-when-safe'
+  );
+}
+
+function staleAutonomousResponseAuthority() {
+  return {
+    ok: false,
+    action: 'autopilot_owner_pr_respond',
+    changed: false,
+    message:
+      'The current watch mode or turn source no longer authorizes an autonomous PR response.',
+    requires: ['currentSafeMode'],
   };
 }

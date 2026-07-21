@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import { defineAgent, type AgentRouteHandler } from '@flue/runtime';
 import { local } from '@flue/runtime/node';
 import { readAgentModelSelectionSync } from '../modules/runtime';
@@ -11,7 +14,7 @@ import {
   transitionWatchAutopilot,
 } from '../modules/watches';
 import { readManagedWorktree } from '../modules/worktrees';
-import { runtimePaths } from '../runtime-home';
+import { runtimePaths, type RuntimePaths } from '../runtime-home';
 import {
   clearPendingAutopilotTurn,
   readPendingAutopilotTurn,
@@ -19,21 +22,6 @@ import {
 } from '../modules/autopilot/owner/pending';
 
 export { prAutopilotOwnerCompaction, prAutopilotOwnerDurability };
-
-const ownerWorkspaceEnvironment = {
-  GITHUB_TOKEN: undefined,
-  GH_TOKEN: undefined,
-  GIT_TERMINAL_PROMPT: '0',
-  GCM_INTERACTIVE: 'Never',
-  GIT_ASKPASS: 'false',
-  SSH_ASKPASS: 'false',
-  SSH_ASKPASS_REQUIRE: 'never',
-  GIT_CONFIG_COUNT: '1',
-  GIT_CONFIG_KEY_0: 'credential.helper',
-  GIT_CONFIG_VALUE_0: '',
-  GIT_SSH_COMMAND:
-    'ssh -F /dev/null -oBatchMode=yes -oGSSAPIAuthentication=no -oPasswordAuthentication=no -oKbdInteractiveAuthentication=no -oPubkeyAuthentication=no',
-} as const;
 
 export const description =
   'Private continuing owner foundation for one watched pull request and its managed worktree.';
@@ -120,16 +108,22 @@ export async function buildPrAutopilotOwnerRuntime(
     turnWatch?.worktreeId && registry.capabilities.includes('workspace')
       ? await readManagedWorktree(turnWatch.worktreeId, turnWatch.repoId, paths)
       : null;
+  const workspaceContext = workspace
+    ? {
+        path: workspace.localPath,
+        home: await prepareOwnerWorkspaceHome(paths, id),
+      }
+    : null;
   return {
     model: model.displayAssistant,
     thinkingLevel: model.displayAssistantThinkingLevel,
-    ...(workspace
+    ...(workspaceContext
       ? {
           sandbox: local({
-            cwd: workspace.localPath,
-            env: ownerWorkspaceEnvironment,
+            cwd: workspaceContext.path,
+            env: ownerWorkspaceEnvironment(workspaceContext.home),
           }),
-          cwd: workspace.localPath,
+          cwd: workspaceContext.path,
         }
       : { cwd: '/workspace' }),
     compaction: prAutopilotOwnerCompaction,
@@ -162,3 +156,35 @@ export async function buildPrAutopilotOwnerRuntime(
 export default defineAgent(({ id }) => {
   return buildPrAutopilotOwnerRuntime(id);
 });
+
+async function prepareOwnerWorkspaceHome(
+  paths: RuntimePaths,
+  instanceId: string,
+) {
+  const ownerKey = createHash('sha256').update(instanceId).digest('hex');
+  const home = join(paths.data, 'autopilot-owner-homes', ownerKey);
+  await mkdir(home, { recursive: true, mode: 0o700 });
+  return home;
+}
+
+function ownerWorkspaceEnvironment(home: string) {
+  return {
+    HOME: home,
+    XDG_CONFIG_HOME: join(home, '.config'),
+    GH_CONFIG_DIR: join(home, '.config', 'gh'),
+    GITHUB_TOKEN: undefined,
+    GH_TOKEN: undefined,
+    SSH_AUTH_SOCK: undefined,
+    GIT_TERMINAL_PROMPT: '0',
+    GCM_INTERACTIVE: 'Never',
+    GIT_ASKPASS: 'false',
+    SSH_ASKPASS: 'false',
+    SSH_ASKPASS_REQUIRE: 'never',
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'credential.helper',
+    GIT_CONFIG_VALUE_0: '',
+    GIT_SSH_COMMAND:
+      'ssh -F /dev/null -oBatchMode=yes -oGSSAPIAuthentication=no -oPasswordAuthentication=no -oKbdInteractiveAuthentication=no -oPubkeyAuthentication=no',
+  };
+}
