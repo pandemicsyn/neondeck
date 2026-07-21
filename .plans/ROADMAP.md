@@ -1260,7 +1260,7 @@ Must-haves:
 
 ### Phase 19: PR Event Autopilot
 
-- Status: minimal watch/owner/worktree loop complete; trusted-workspace semantic correction pending. The admission/coordinator implementation from Autopilot Packages 1–4 was abandoned because it could not deliver the product path without expanding into a second workflow engine. Its live progression path, queue/coalescing records, intake and owner generations, stage attempts/events, grounding snapshots/cursors, submission leases, workflow-observation continuation, and operator admission projections have been removed. Historical shipped migrations remain, followed by one forward cleanup migration. PRs #171 and #172 delivered the reset and minimal loop. The source of truth for the correction is `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`; `.plans/AUTOPILOT_END_TO_END_REVIEW.html` is historical evidence only.
+- Status: minimal watch/owner/worktree loop and trusted-workspace semantic correction complete. The admission/coordinator implementation from Autopilot Packages 1–4 was abandoned because it could not deliver the product path without expanding into a second workflow engine. Its live progression path, queue/coalescing records, intake and owner generations, stage attempts/events, grounding snapshots/cursors, submission leases, workflow-observation continuation, and operator admission projections have been removed. Historical shipped migrations remain, followed by one forward cleanup migration. PRs #171 and #172 delivered the reset and minimal loop; the focused follow-up gives every fixing mode a trusted managed-worktree coding workspace and autonomous mode semantic delivery judgment. `.plans/AUTOPILOT_END_TO_END_REVIEW.html` is historical evidence only.
 
 - [x] Preserve complete PR feedback facts and semantic fingerprints for commits, review threads and comments, requested-changes review bodies, conversation comments, checks, mergeability, and branch freshness.
 - [x] Preserve explicit first-poll behavior: process current feedback or install a complete baseline, failing closed on truncated GitHub facts.
@@ -1270,11 +1270,11 @@ Must-haves:
 - [x] Implement the complete minimal loop: one watch, one owner instance, one worktree, one busy flag, one pending semantic fingerprint, and one owner turn at a time.
 - [x] Add the thin setup/status/pause/resume/retry/stop service and chat/API/CLI/dashboard adapters.
 - [x] Add mode-specific delivery authority, response, and terminal cleanup.
-- [ ] Correct the owner execution model: every fixing mode gets a trusted repo-scoped coding workspace with ordinary command execution; the autonomous mode judges whether a requested change is sane and may deliver without a configured-check list.
+- [x] Correct the owner execution model: every fixing mode gets a trusted repo-scoped coding workspace with ordinary command execution; the autonomous mode judges whether a requested change is sane and may deliver without a configured-check list.
 
 ### Phase 20: Autopilot Policy And UX Hardening
 
-- Status: minimal product path complete. Legacy prepared-diff/coordinator surfaces have been retired; chat/API/CLI/dashboard setup, direct-human approval, watch controls, owner visibility, and product docs now describe the minimal watch/owner/worktree loop. The remaining correction is to treat mode as a delivery-authority ceiling rather than a repository-command allowlist and to document `autofix-push-when-safe` as semantic autonomous judgment.
+- Status: complete. Legacy prepared-diff/coordinator surfaces remain retired; chat/API/CLI/dashboard setup, direct-human approval, watch controls, owner visibility, and product docs describe the minimal watch/owner/worktree loop. Mode is a delivery-authority ceiling rather than a repository-command allowlist, and `autofix-push-when-safe` delegates semantic engineering judgment to the continuing owner.
 
 - [x] Add repo-level autopilot config with explicit modes:
   - `notify-only`
@@ -1286,10 +1286,10 @@ Must-haves:
 - [x] Use the managed worktree commit as the review artifact and the existing diff viewer as its UI; do not restore prepared-diff or approval records.
 - [x] Surface Autopilot mode, state, owner, worktree/diff, and controls through the active Watches product surface.
 - [x] Preserve only mechanical delivery guards: current autonomous/approved authority, managed worktree, linked destination, clean committed head, current remote head, credential, and non-force push.
-- [ ] Give every fixing mode a trusted repo-scoped coding workspace with arbitrary repository command execution while keeping push/response credentials outside ordinary commands.
-- [ ] Remove configured-check and deterministic diff-risk approval gates from the continuing owner's autonomous delivery path. Selecting `autofix-push-when-safe` delegates semantic scope, soundness, and validation judgment to the owner.
-- [ ] Update owner instructions, UI wording, runtime skill guidance, and Astro docs so autonomous mode is not described as mechanically safe-push orchestration or as requiring configured checks.
-- [ ] Add focused regression coverage for repository-native command execution, delivery-authority separation, autonomous delivery without configured checks, semantic escalation, and stale-head/mode refusal.
+- [x] Give every fixing mode a trusted repo-scoped coding workspace with arbitrary repository command execution while keeping push/response credentials outside ordinary commands.
+- [x] Remove configured-check and deterministic diff-risk approval gates from the continuing owner's autonomous delivery path. Selecting `autofix-push-when-safe` delegates semantic scope, soundness, and validation judgment to the owner.
+- [x] Update owner instructions, UI wording, runtime skill guidance, and Astro docs so autonomous mode is not described as mechanically safe-push orchestration or as requiring configured checks.
+- [x] Add focused regression coverage for repository-native command execution, delivery-authority separation, autonomous delivery without configured checks, semantic escalation, and stale-head/mode refusal.
 
 ### Phase 21: KiloCode Handoff Runner
 

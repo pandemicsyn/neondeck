@@ -7,7 +7,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
 <BaseLayout
   title="Autopilot · neondeck"
-  description="Configure and operate neondeck's minimal watched-PR Autopilot, including modes, review, safe push prerequisites, and fail-closed recovery."
+  description="Configure and operate neondeck's minimal watched-PR Autopilot, including mode-scoped delivery authority, semantic autonomous judgment, and fail-closed recovery."
 >
   <div class="site-shell">
     <SiteNav />
@@ -19,8 +19,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           Autopilot is the working watched-PR loop in Neondeck. Meaningful
           review feedback or failing checks can notify you, task a continuing
           Neon owner to prepare a focused commit, wait for your approval, or
-          safely deliver the commit according to the watch's current mode. It
-          continues watching the same PR after a successful delivery.
+          autonomously deliver a sound, proportionately validated commit
+          according to the watch's current mode. It continues watching the same
+          PR after a successful delivery.
         </p>
         <p>
           The loop is intentionally small. Each watched PR has one persistent
@@ -83,26 +84,32 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
         <h3><code>prepare-only</code></h3>
         <p>
-          Gives the watcher turn bounded read, edit, targeted-check, and commit
-          tools. The result is a normal commit in the managed worktree for you
-          to review. This mode never gives Autopilot a push tool.
+          Gives the watcher turn a full repository-native coding workspace
+          rooted in the managed worktree. The owner may inspect and edit files
+          and run relevant tests, formatters, typechecks, generators, builds, or
+          language tooling. The result is a normal local commit for you to
+          review. This mode never gives the owner push or PR-response tools.
         </p>
 
         <h3><code>autofix-with-approval</code></h3>
         <p>
           The watcher turn can prepare and commit but cannot push. When a commit
           is ready, the watch enters <code>waiting</code> and holds the worktree steady.
-          Only a direct human message in that same owner conversation receives the
-          bounded edit, check, commit, push, and PR-response tools for the approval
-          turn.
+          The watcher turn has the same full coding workspace as every fixing mode,
+          but no delivery tools. Only a direct human message in that same owner conversation
+          adds push and PR-response authority for the approval turn.
         </p>
 
         <h3><code>autofix-push-when-safe</code></h3>
         <p>
-          The only mode that can push from a watcher-generated turn. It adds a
-          narrow safe-push tool and a PR-response tool to the prepare
-          capabilities. Automatic push remains conditional on every setup and
-          immediate safety prerequisite below.
+          The only mode that can push from a watcher-generated turn. It grants
+          the same coding workspace plus guarded push and PR-response tools.
+          “Safe” is semantic engineering judgment: the owner inspects the
+          feedback in repository context and decides whether it is reasonable,
+          relevant, technically sound, appropriately scoped, and sufficiently
+          validated. When satisfied, it may implement, validate, commit, push,
+          and respond without human approval. Otherwise it retains any useful
+          commit and explains why human review is needed.
         </p>
 
         <h3>Increasing authority requires confirmation</h3>
@@ -167,6 +174,11 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
             managed worktree bound to the watched PR.
           </li>
           <li>
+            Every fixing mode receives the same trusted coding workspace. Mode
+            changes external delivery authority, not which repository commands
+            the owner may run.
+          </li>
+          <li>
             Current watch mode and turn source determine the actual tools
             supplied to the owner. Prompt text alone never grants capability.
           </li>
@@ -187,21 +199,31 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           </li>
         </ul>
 
-        <h2>Setup prerequisites for autonomous push</h2>
+        <h2>Autonomous judgment and validation</h2>
         <p>
-          <code>autofix-push-when-safe</code> does not make a repository ready by
-          itself. Immediately before push, all of these must be true:
+          Selecting <code>autofix-push-when-safe</code> delegates the scope, soundness,
+          and validation decision to the continuing owner. It chooses proportionate
+          repository-native commands for the actual change. A focused unit test may
+          be sufficient for a small fix; a compiler, formatter, typecheck, generator,
+          or build may be relevant elsewhere. A repository with no test suite can
+          still receive a sound small fix, while a risky change with no meaningful
+          validation path must be escalated.
+        </p>
+        <p>
+          Effective <code>guardrails.requiredChecks</code> values may appear in the
+          turn as useful repository hints, but they are not a command allowlist, are
+          not automatically rerun by the delivery tool, and are not required for an
+          autonomous push. The owner's chosen commands and reasoning remain in its
+          continuing conversation.
+        </p>
+
+        <h2>Mechanical delivery prerequisites</h2>
+        <p>
+          After the owner has made the semantic decision to deliver, the narrow
+          push tool checks only authority, destination, credential, and race
+          conditions:
         </p>
         <ul>
-          <li>
-            At least one command is configured in the effective repository
-            <code>guardrails.requiredChecks</code>, and every configured command
-            can run unattended through the execution policy.
-          </li>
-          <li>
-            Every required command passes against the current committed worktree
-            <code>HEAD</code> immediately before push.
-          </li>
           <li>
             <code>GITHUB_TOKEN</code> is valid for current PR facts and login identity;
             the repository's git remote also has valid push credentials, git identity,
@@ -214,60 +236,14 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           </li>
           <li>
             The watch is still <code>autofix-push-when-safe</code> and
-            <code>working</code>, current guardrails allow the diff without a
-            policy expansion, and the worktree is clean with a committed change.
+            <code>working</code> for the current watcher turn, and the validated managed
+            worktree is clean with a committed change.
           </li>
           <li>
             The final operation is a non-force push of that exact commit,
             guarded by the expected remote head and bound GitHub identity.
           </li>
         </ul>
-
-        <h3>Concrete required-check configuration</h3>
-        <p>
-          For this repository, <code>npm run check</code> and
-          <code>npm run docs:build</code> are real package scripts. Ask Neon to set
-          those exact checks for the configured <code>neondeck</code> repository and
-          to preapprove the same exact local commands for unattended execution. Neon
-          uses these current typed service inputs:
-        </p>
-        <pre><code>neondeck_config_update_repo_autopilot_policy
-&#123;
-  "repoId": "neondeck",
-  "guardrails": &#123;
-    "requiredChecks": ["npm run check", "npm run docs:build"]
-  &#125;
-&#125;
-
-neondeck_config_update_execution_policy
-&#123;
-  "preapprovedCommands": [
-    &#123;
-      "id": "neondeck-check",
-      "command": "npm run check",
-      "match": "exact",
-      "backends": ["local"],
-      "description": "Run the Neondeck fast verification suite."
-    &#125;,
-    &#123;
-      "id": "neondeck-docs-build",
-      "command": "npm run docs:build",
-      "match": "exact",
-      "backends": ["local"],
-      "description": "Build the Neondeck Astro documentation site."
-    &#125;
-  ]
-&#125;</code></pre>
-        <p>
-          The repository policy service stores the required-check override under
-          that repo's <code>metadata.guardrails</code> in <code>repos.json</code
-          > and audits the config change. The execution-policy service updates
-          <code>config.json</code>; it does not execute the commands. Choose
-          checks appropriate to the repository—these Neondeck commands are an
-          accurate example, not universal defaults. If custom preapprovals
-          already exist, preserve them in the update because
-          <code>preapprovedCommands</code> is the complete configured custom list.
-        </p>
 
         <h2>Fail-closed behavior</h2>
         <p>
@@ -277,7 +253,8 @@ neondeck_config_update_execution_policy
         </p>
         <ul>
           <li>
-            no configured required check, or any check fails or cannot run;
+            the owner judges the request absurd, ambiguous, scope-exploding,
+            technically unsound, or inadequately validated;
           </li>
           <li>
             GitHub facts are incomplete, truncated, stale, or show a new head;
@@ -288,11 +265,7 @@ neondeck_config_update_execution_policy
             or destination cannot be proven;
           </li>
           <li>
-            current guardrails deny the change or classify it as a policy
-            expansion requiring human approval; or
-          </li>
-          <li>
-            the worktree changes during verification, the expected-head push is
+            the worktree changes before delivery, the expected-head push is
             rejected, or another unexpected error makes the outcome uncertain.
           </li>
         </ul>
@@ -336,12 +309,13 @@ neondeck_config_update_execution_policy
         <p>
           The repository proves the minimal loop with automated coverage for
           mode capability ceilings, owner/worktree reuse, exact-head handling,
-          direct human approval, safe-push gates, blocked restart recovery, and
-          terminal cleanup. The available evidence is credential-free and uses
-          fixtures or local test repositories; it is not evidence of a live
-          external GitHub PR push smoke. Validate your own token, git remote,
-          identity, permissions, policy, and required checks before enabling
-          autonomous delivery.
+          managed-worktree command execution, direct human approval, autonomous
+          delivery without configured checks, semantic escalation, mechanical
+          delivery guards, blocked restart recovery, and terminal cleanup. The
+          available evidence is credential-free and uses fixtures or local test
+          repositories; it is not evidence of a live external GitHub PR push
+          smoke. Validate your own token, git remote, identity, permissions, and
+          repository instructions before enabling autonomous delivery.
         </p>
       </article>
     </main>

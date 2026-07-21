@@ -38,7 +38,7 @@ describe('continuing Autopilot owner foundations', () => {
       eventFingerprint: 'feedback-fingerprint',
       mode: 'prepare-only',
       facts: { feedback: ['Please cover the restart path.'] },
-      availableCapabilities: ['read', 'edit', 'commit'],
+      availableCapabilities: ['workspace', 'commit'],
     });
 
     await dispatchAutopilotOwnerTurn({
@@ -68,28 +68,28 @@ describe('continuing Autopilot owner foundations', () => {
         source: 'watch-event',
         status: 'working',
       }),
-    ).toEqual(['read', 'edit', 'diagnose', 'commit']);
+    ).toEqual(['workspace', 'commit']);
     expect(
       autopilotOwnerCapabilitySet({
         mode: 'autofix-with-approval',
         source: 'watch-event',
         status: 'working',
       }),
-    ).toEqual(['read', 'edit', 'diagnose', 'commit']);
+    ).toEqual(['workspace', 'commit']);
     expect(
       autopilotOwnerCapabilitySet({
         mode: 'autofix-with-approval',
         source: 'direct-human',
         status: 'waiting',
       }),
-    ).toEqual(['read', 'edit', 'diagnose', 'commit', 'push', 'respond']);
+    ).toEqual(['workspace', 'commit', 'push', 'respond']);
     expect(
       autopilotOwnerCapabilitySet({
         mode: 'autofix-push-when-safe',
         source: 'watch-event',
         status: 'working',
       }),
-    ).toEqual(['read', 'edit', 'diagnose', 'commit', 'push', 'respond']);
+    ).toEqual(['workspace', 'commit', 'push', 'respond']);
     expect(
       autopilotOwnerCapabilitySet({
         mode: 'autofix-push-when-safe',
@@ -131,6 +131,9 @@ describe('continuing Autopilot owner foundations', () => {
         'neondeck_owner_pr_respond',
       ]),
     );
+    expect(watcher.tools.map((tool) => tool.name)).toEqual([
+      'neondeck_owner_commit',
+    ]);
   });
 });
 

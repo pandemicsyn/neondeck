@@ -120,7 +120,7 @@ export async function settleAutopilotOwnerObservation(
         {
           message: waiting
             ? 'Autopilot prepared a committed change for human review.'
-            : 'Autopilot ended without proving a safe autonomous push.',
+            : 'The autonomous owner retained a committed change for human review after deciding not to deliver it.',
           data: { watchId: watch.id, commitSha: currentSha },
         },
         paths,
@@ -130,7 +130,7 @@ export async function settleAutopilotOwnerObservation(
           level: 'attention',
           title: waiting
             ? 'Autopilot change is ready for review'
-            : 'Autopilot prepared a change but did not safely push',
+            : 'Autopilot escalated a committed change for review',
           message: `${watch.repoFullName}#${watch.prNumber} has a committed change held in managed worktree ${worktree.id}.`,
           source: 'autopilot-owner',
           sourceId: `${watch.id}:prepared:${currentSha}`,

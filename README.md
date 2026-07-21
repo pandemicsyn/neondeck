@@ -7,8 +7,8 @@ repos, schedules, models, and deck layout through typed actions. Its current
 PR watches retain complete feedback facts and semantic watermarks, including an
 explicit choice to process or baseline existing feedback. Autopilot can bind one
 continuing Neon owner and one managed worktree to a watched PR, hold committed
-changes for review, or push only after the configured targeted checks and current
-safety gates pass.
+changes for review, or push after the continuing owner judges a change sound and
+sufficiently validated and the current mechanical delivery guards pass.
 
 It is especially useful on a companion display, vertical panel, or Corsair
 Xeneon Edge-style deck, where your active work can stay visible without taking
@@ -28,7 +28,8 @@ Neon watches your PRs, prepares fixes, and keeps the busywork moving.
   explicitly. Meaningful feedback and failing checks now reuse one continuing
   owner and managed worktree. Autopilot can notify, prepare a reviewable commit,
   wait for approval in that same owner conversation, or deliver automatically
-  when every safe-push prerequisite passes.
+  when the owner judges the change reasonable, appropriately scoped, and
+  sufficiently validated.
 - **Review and approve PRs on the deck.** Read diffs, leave inline comments,
   resolve threads, traverse files, hunks, drafts, threads, and revision-bound
   Neon findings, and submit approvals or change requests without switching to
@@ -40,9 +41,11 @@ Neon watches your PRs, prepares fixes, and keeps the busywork moving.
   durable Morning Briefing conversation in an inspectable local snapshot, then
   can enrich it with any relevant configured MCP source under normal login and
   approval controls. Follow up in chat, or run your own saved prompt on a timer.
-- **Sandboxed, gated execution.** Keep code-changing work in throwaway
-  worktrees, gate shell commands through approval policy, or run work off your
-  machine on an `exe.dev` sandbox VM.
+- **Scoped execution for each job.** Keep code-changing work in managed
+  worktrees, use approval policy for ordinary chat/workflow commands, give the
+  trusted Autopilot coding owner a repository-native workspace with a
+  credential-free default environment, or run mediated work on an `exe.dev`
+  sandbox VM.
 - **Memory that learns from your work.** Let Neon remember approved preferences
   and repo conventions from conversations and PR feedback.
 - **Ask Neon to set up the deck.** Configure repos, models, schedules, layout,
@@ -119,7 +122,7 @@ neondeck open sidebar
 - [Agent runtime](https://neondeck.dev/docs/agent-runtime/): Flue agents,
   actions, workflows, memory, watches, reports, and scheduled tasks.
 - [Autopilot](https://neondeck.dev/docs/autopilot/): watched-PR modes,
-  review controls, safe-push prerequisites, and fail-closed recovery.
+  semantic autonomous judgment, delivery guards, and fail-closed recovery.
 - [Execution environments](https://neondeck.dev/docs/execution/): local and
   sandboxed execution policy.
 - [MCP servers](https://neondeck.dev/docs/mcp/): MCP registration, OAuth, tool

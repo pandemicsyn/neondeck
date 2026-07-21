@@ -168,7 +168,10 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
           </Badge>
         </div>
       </div>
-      <div className="mt-2 flex items-center gap-2 font-mono text-[10px] text-muted">
+      <p className="mt-2 font-mono text-[10px] leading-4 text-muted">
+        {autopilotModeHelp(watch.autopilotMode)}
+      </p>
+      <div className="mt-1 flex items-center gap-2 font-mono text-[10px] text-muted">
         <span>mode</span>
         <select
           aria-label={`Autopilot mode for ${watch.id}`}
@@ -187,10 +190,14 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
           }}
           value={watch.autopilotMode}
         >
-          <option value="notify-only">notify-only</option>
-          <option value="prepare-only">prepare-only</option>
-          <option value="autofix-with-approval">autofix-with-approval</option>
-          <option value="autofix-push-when-safe">autofix-push-when-safe</option>
+          <option value="notify-only">Notify only · no coding</option>
+          <option value="prepare-only">Prepare commit · no delivery</option>
+          <option value="autofix-with-approval">
+            Fix and await human delivery
+          </option>
+          <option value="autofix-push-when-safe">
+            Autonomous judgment + delivery
+          </option>
         </select>
       </div>
       {confirmingMode ? (
@@ -198,9 +205,7 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
           <p className="text-accent">
             Increase Autopilot authority to {confirmingMode}?
           </p>
-          <p className="mt-1 leading-4">
-            This expands what the continuing PR owner may do on future turns.
-          </p>
+          <p className="mt-1 leading-4">{autopilotModeHelp(confirmingMode)}</p>
           <span className="mt-1.5 flex gap-1.5">
             <Button
               className="min-h-[28px] border-accent bg-transparent px-2 py-1 text-[10px] text-accent"
@@ -419,4 +424,17 @@ function autopilotModeRank(mode: PrWatch['autopilotMode']) {
     'autofix-with-approval',
     'autofix-push-when-safe',
   ].indexOf(mode);
+}
+
+function autopilotModeHelp(mode: PrWatch['autopilotMode']) {
+  switch (mode) {
+    case 'notify-only':
+      return 'Reports meaningful changes without starting a coding turn.';
+    case 'prepare-only':
+      return 'Uses a full managed-worktree coding workspace and commits locally; never pushes or responds.';
+    case 'autofix-with-approval':
+      return 'Uses the same full coding workspace and commits locally; only your direct waiting-turn instruction can deliver.';
+    case 'autofix-push-when-safe':
+      return 'Delegates semantic engineering judgment: the owner validates proportionately and may push/respond when it judges the change sound.';
+  }
 }

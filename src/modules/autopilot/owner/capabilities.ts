@@ -1,7 +1,5 @@
 export const autopilotOwnerCapabilities = [
-  'read',
-  'edit',
-  'diagnose',
+  'workspace',
   'commit',
   'push',
   'respond',

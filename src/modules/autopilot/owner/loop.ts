@@ -210,7 +210,7 @@ export async function runAutopilotWatchEvent(
         event: event.currentFacts,
         changedCategories: event.changedCategories,
         deltas: event.deltas,
-        configuredTargetedChecks: configured.checks,
+        configuredValidationHints: configured.checks,
         worktree: {
           id: worktree.id,
           path: worktree.localPath,

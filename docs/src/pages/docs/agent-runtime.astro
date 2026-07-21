@@ -70,7 +70,9 @@ watch-pr</code></pre>
         <p>
           Watched-PR Autopilot uses one continuing
           <code>pr-autopilot-owner</code> agent per PR rather than a chain of transition
-          workflows. The manual <code>/fix-ci</code> command remains a separate <code
+          workflows. Every fixing turn runs in that PR's managed-worktree coding workspace;
+          current mode and turn source add or withhold the separate push and PR-response
+          tools. The manual <code>/fix-ci</code> command remains a separate <code
             >fix-pr-ci</code
           > workflow.
         </p>
