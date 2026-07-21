@@ -1,6 +1,7 @@
 # Autopilot: Simplified Implementation Plan
 
-Status: architecture reset required; do not continue the previous Packages 5–8
+Status: minimal loop delivered in PRs #171 and #172; trusted-workspace semantic
+correction pending
 
 Companion audit: `.plans/AUTOPILOT_END_TO_END_REVIEW.html`
 
@@ -17,7 +18,8 @@ watch PR
   → meaningful feedback or failing checks appear
   → task the PR's continuing Neon agent with current facts
   → agent evaluates the request and makes a focused change when needed
-  → according to mode: prepare, await approval, or safely push and respond
+  → according to mode: prepare, await approval, or autonomously push and respond
+    when the owner judges the requested change sane and appropriately scoped
   → continue watching the same PR with the same agent instance and worktree
   → PR merges and configured merge checks are green
   → stop the watch, archive the agent instance, and clean the managed worktree
@@ -44,9 +46,17 @@ The modes with a human before delivery stay deliberately simple:
 - `autofix-with-approval`: a human reviews the exact commit before it is pushed.
 
 `autofix-push-when-safe` is the only path where code can land without a human first.
-That path gets the additional care: targeted checks immediately before push,
-non-force push, fail-closed behavior, and automatic degradation to a prepared
-commit plus notification whenever facts or safety are uncertain.
+Here, "safe" describes the requested change, not the mechanics of `git push`: the
+continuing owner decides whether the feedback is reasonable, relevant, technically
+sound, and appropriately scoped. When it is, the owner performs the complete coding
+loop and delivers the result autonomously. When it is absurd, scope-exploding,
+ambiguous, or insufficiently validated, the owner declines or escalates instead of
+pushing.
+
+The delivery operation still keeps ordinary mechanical guards: use the bound
+managed worktree and linked PR head, require a clean committed change, refuse a
+stale remote head or decreased mode, and never force-push. Those guards do not
+replace the owner's engineering judgment or impose a repository-command allowlist.
 
 ## Keep These Existing Foundations
 
@@ -56,7 +66,9 @@ Reuse, rather than replace:
 - current GitHub fact readers and bounded comment/review/check payloads;
 - managed worktrees and exact-head fetch/synchronization;
 - Flue continuing-agent dispatch by stable instance id;
-- bounded repository read/edit/check/commit tools;
+- a trusted repo-scoped coding workspace in the managed worktree, including normal
+  file access and whatever repository commands the owner needs to inspect, edit,
+  test, format, generate, compile, and commit;
 - the existing diff viewer;
 - the existing guarded `gitPushHead`/non-force push boundary;
 - existing notification surfaces.
@@ -92,21 +104,36 @@ The durable artifacts already exist where they naturally belong:
 Use one conditional update to move an idle watch to `working`. That busy flag is the
 same-PR overlap guard; it is not the beginning of a versioned transition framework.
 
-## Mode Is a Capability Ceiling
+## Mode Is A Delivery-Authority Ceiling
 
-A mode is not merely text in the agent prompt. Each dispatch builds the agent's
-toolset from the watch's current mode. A tool that the mode does not permit must not
-be registered for that turn.
+A mode is not merely text in the agent prompt, but it should not cripple the owner
+as a coding agent. Every mode that prepares a change receives the same trusted
+repo-scoped coding workspace rooted in the managed worktree. The owner may inspect
+and edit files and run arbitrary repository commands such as tests, formatters,
+typechecks, generators, and language-specific compilers. Commands are not limited
+to a preconfigured `requiredChecks` list.
 
-| Mode                     | Agent turn | Tools available to the agent                                                                                                                                |
-| ------------------------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `notify-only`            | No         | None; emit a notification only                                                                                                                              |
-| `prepare-only`           | Yes        | Read/search, bounded edits, targeted diagnostics, commit; no push                                                                                           |
-| `autofix-with-approval`  | Yes        | Watcher turn: prepare tools with no push; any direct-human turn while waiting: the full bounded repo toolset, including edit, commit, push, and PR response |
-| `autofix-push-when-safe` | Yes        | The prepare tools plus the narrow guarded push and PR-response tools                                                                                        |
+The hard capability boundary is external delivery:
 
-Do not expose a generic raw host shell that can bypass these ceilings. The agent
-receives the smallest repository toolset needed for the mode.
+| Mode                     | Agent turn | Workspace and delivery authority                                                                                                            |
+| ------------------------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `notify-only`            | No         | None; emit a notification only                                                                                                              |
+| `prepare-only`           | Yes        | Full repo-scoped coding workspace and commit; no push or PR response                                                                        |
+| `autofix-with-approval`  | Yes        | Watcher turn: full coding workspace and commit, but no push/response. A direct-human turn while waiting adds push and PR-response authority |
+| `autofix-push-when-safe` | Yes        | Full coding workspace plus guarded push and PR response; the owner decides whether the requested change is sane enough to deliver           |
+
+The coding environment must be rooted in the managed worktree and must not mutate
+the primary checkout. Prefer a workspace/sandbox boundary that withholds GitHub and
+push credentials from ordinary commands, while trusted application tools own the
+bound push destination and PR response. Do not rebuild a per-command allowlist,
+verification workflow, or language-specific command registry around the owner.
+
+Choosing `autofix-push-when-safe` is the operator's grant of autonomous engineering
+authority. The continuing owner's judgment—not a deterministic file-count,
+line-count, file-class, or configured-check classifier—decides whether a particular
+requested change is sane enough to deliver. Repository policy may choose the mode
+and bound the destination, but the delivery tool must not second-guess the owner's
+semantic decision with the retired diff-risk approval gates.
 
 ### The task-origin subtlety
 
@@ -118,22 +145,23 @@ distinguish an Autopilot owner from a human interactive session.
 Therefore:
 
 - origin detection is not an Autopilot authority boundary;
-- watcher-generated turns never receive a push-capable tool unless the mode is
+- watcher-generated turns never receive delivery authority unless the mode is
   `autofix-push-when-safe`;
 - in `autofix-with-approval`, only a direct human turn to an owner that is waiting
-  for review receives the full bounded repo toolset, including push; the operator's
-  presence is the authority boundary, and the agent follows the actual message—plain
-  approval pushes the held commit, while “fix this first, then push” may edit, commit,
-  and push in that same turn;
-- commit authority is enforced by omitting commit tools from `notify-only`;
-- the mode-specific tool registry is rebuilt for every dispatch from current watch
+  for review receives push and PR-response authority; the operator's presence is the
+  authority boundary, and the agent follows the actual message—plain approval pushes
+  the held commit, while “fix this first, then push” may edit, validate, commit, and
+  push in that same turn;
+- `notify-only` does not dispatch a coding turn;
+- delivery tools are rebuilt for every dispatch from current watch
   state and the known dispatch source (`watch-event` or `direct-human`), without
   relying on `currentTaskOrigin()`;
-- the guarded safe-push tool re-reads the current mode immediately before pushing,
+- the guarded autonomous-push tool re-reads the current mode immediately before pushing,
   because a mode decrease during a running turn must fail closed.
 
-Prompts still explain the mode and desired behavior, but instructions never grant a
-capability that the tool registry withholds.
+Prompts explain the mode, engineering judgment, and desired behavior. The workspace
+provides normal coding capability; the delivery tool registry enforces who may push
+or respond.
 
 ## The Poll And Turn Loop
 
@@ -153,7 +181,8 @@ For each watched PR:
    `worktree_id`.
 8. If the worktree has no unpublished prepared commit, fetch and synchronize it to
    the exact current PR head SHA.
-9. Atomically change `watching` to `working`, construct the current mode's toolset,
+9. Atomically change `watching` to `working`, attach the managed coding workspace
+   and current mode's delivery tools,
    and dispatch one bounded turn to the recorded agent instance.
 10. On success, record the handled fingerprint and return to `watching`, unless a
     prepared commit requires human attention; then set `waiting` and notify with a
@@ -176,8 +205,9 @@ authoritative facts:
 - managed worktree path and the fact that code is already checked out there;
 - current PR head/base SHA and intended remote branch;
 - new or changed feedback/check evidence and stable identifiers;
-- current mode and the exact tools available in this turn;
-- configured targeted checks;
+- current mode and the exact delivery authority available in this turn;
+- repository instructions and useful configured command hints, without treating
+  them as an exhaustive allowlist;
 - prior local prepared-commit state, if any;
 - an instruction to make the smallest justified change, commit it when a change is
   warranted, and report blockers rather than guess.
@@ -239,10 +269,10 @@ mechanism:
 3. The human reviews the on-demand worktree diff.
 4. If satisfied, the human tells the same agent, for example, “Approved—commit and
    push.”
-5. That direct-human turn receives the full bounded repository toolset, including
-   edit, commit, push, and PR response. A plain approval pushes the held commit as-is;
-   a request such as “approved, but fix the typo first, then push” can be completed in
-   that same turn.
+5. That direct-human turn retains the full coding workspace and receives push and PR
+   response authority. A plain approval pushes the held commit as-is; a request such
+   as “approved, but fix the typo first, then push” can edit, validate, commit, and
+   push in that same turn.
 
 The human message is the authority grant, and the durable Flue conversation records
 the request, approval, and result. There is no approve action, approval row,
@@ -253,30 +283,40 @@ which has no push tool in this mode. A direct human message is distinguishable a
 dispatch boundary and is the only waiting-mode turn that can receive push authority.
 
 If the remote branch advanced while the worktree was held, the normal non-force push
-fails. The agent can rebase with the bounded repo tools or explain the blocker, as it
+fails. The agent can rebase with its coding workspace or explain the blocker, as it
 would in a normal git session. This is not a race that needs an approval state
 machine.
 
-## Push-When-Safe
+## Autofix Push When The Change Is Safe
 
-`autofix-push-when-safe` is the one mode that gives the agent a narrow push tool.
-Immediately before pushing, that tool must:
+`autofix-push-when-safe` is fully autonomous. "Safe" means the owner judges the
+requested engineering change sane and sound. The owner must inspect the feedback in
+repository context, reject or escalate unreasonable scope, choose proportionate
+validation, and use its normal coding workspace to run whatever commands the repo
+requires. A missing `requiredChecks` configuration is not itself a blocker and
+running a fixed configured list is not a push precondition.
+
+The owner should push only when it has enough evidence for the particular change.
+For example, it may run focused tests during development and then the relevant
+formatter, typecheck, compiler, or build before delivery. A repository with no test
+suite may still receive a small sound fix; a risky change with no meaningful way to
+validate should be escalated. This is model judgment recorded in the continuing
+conversation, not a deterministic verification-status machine.
+
+Immediately before delivery, the narrow push tool must only enforce mechanical
+authority and race guards:
 
 1. confirm the watch is still in `autofix-push-when-safe`;
-2. confirm the managed worktree and intended non-force destination;
-3. require at least one configured, verifiable targeted check;
-4. run every configured targeted check against current worktree `HEAD`;
-5. refuse the push if no checks are configured, a check cannot run, or facts,
-   credentials, results, or destination are uncertain;
-6. push the current commit only when all guards pass.
+2. confirm the managed worktree and intended linked PR destination;
+3. confirm the worktree is clean and `HEAD` contains a committed change;
+4. confirm the remote PR head still matches the expected head;
+5. use the bound credential and non-force push path;
+6. refuse when the mode, destination, credential, or head is uncertain.
 
-Running zero checks is never success. A repository without configured verifiable
-checks automatically degrades to a prepared commit plus notification.
-
-On any doubt, leave the commit in the worktree, remove push capability from any
-later lower-mode turn, set the watch to `blocked`, and notify with a link to the
-reviewable diff. This is automatic degradation to prepare-plus-notify, not a new
-workflow state.
+On semantic doubt, the owner leaves the commit for review and explains why it did
+not deliver. On mechanical doubt, the push tool blocks the external effect and
+retains the worktree. Neither case creates another workflow or reconciliation
+subsystem.
 
 After a successful push, the agent may use its bounded PR-response tool to summarize
 what changed and what checks ran.
@@ -350,12 +390,13 @@ The dashboard needs only one row per watched PR with:
 Do not rebuild an admission queue, stage history, recovery-option matrix, or a
 cross-table canonical state projection.
 
-## Reset And Delivery Plan
+## Delivery History And Correction Plan
 
-Deliver this plan in two PRs. Do not mix the reset and replacement implementation in
-one review diff.
+The reset and minimal replacement were deliberately delivered separately. The
+semantic correction below is one focused follow-up; it must not reopen the removed
+coordinator design.
 
-### PR 1: carefully remove the abandoned engine
+### PR 1: carefully remove the abandoned engine — completed in #171
 
 - Close unmerged PRs #169 and #170.
 - Audit the actual patches from #164, #165, #167, and #168 before changing code. Do
@@ -391,7 +432,7 @@ Exit: main has no live admission/coordinator Autopilot path, retained foundation
 still build and pass their targeted tests, and no replacement behavior has been
 smuggled into the reset diff.
 
-### PR 2: implement the complete minimal loop
+### PR 2: implement the complete minimal loop — completed in #172
 
 #### Stage A: minimal watch ownership and setup
 
@@ -411,45 +452,85 @@ same owner/worktree identifiers without any admission records.
 - Produce a committed worktree change for prepare/approval modes.
 - Render the commit through the existing diff viewer.
 - Hold the worktree steady while waiting. Give direct-human waiting turns the full
-  bounded repo toolset while watcher turns remain unable to push.
+  coding workspace plus delivery authority while watcher turns remain unable to
+  push.
 
 Exit: two sequential feedback events reuse the same instance/worktree; a prepared
 commit is reviewable without a prepared-diff database object; an explicit approval
 message is recorded in the same conversation and pushes the held worktree.
 
-#### Stage C: safe push, response, and terminal cleanup
+#### Stage C: autonomous judgment, delivery, and terminal cleanup
 
-- Add the narrow safe-push and PR-response tools only to the safe mode.
-- Require at least one configured verifiable check and run all configured targeted
-  checks immediately before automatic push.
-- Degrade to prepared-plus-notify on uncertainty.
+- Add the narrow push and PR-response tools only to the autonomous watch turn and
+  the direct-human approval turn.
+- Give the owner a full repo-scoped coding workspace so it can choose and run the
+  repository's appropriate validation commands.
+- In autonomous mode, deliver sane, appropriately scoped changes without waiting
+  for a human; retain and explain changes that the owner judges unreasonable or
+  insufficiently validated.
+- Keep mechanical push guards for the current mode, bound destination, clean commit,
+  exact remote head, credential, and non-force push.
 - Continue watching after delivery.
 - Stop and clean up after merge/close and settled checks.
 
-Exit: safe mode can complete the simple loop without human intervention, while a
-missing check configuration, failed check, stale head, changed mode, or uncertain
-credential produces no push. A post-push/pre-settlement crash visibly blocks for
-human inspection rather than starting automatic reconciliation.
+Exit: autonomous mode can complete the simple loop without human intervention when
+the owner judges the request sound. Unreasonable scope, inadequate validation,
+stale head, changed mode, or uncertain credentials produce no push. A
+post-push/pre-settlement crash visibly blocks for human inspection rather than
+starting automatic reconciliation.
 
-Run targeted tests during implementation. Add at most one or two focused product
-path integration tests, then run the full verification suite once when PR 2 is ready
-for final review.
+PR #172 completed this structure, but implemented the owner with a configured-check
+allowlist and interpreted “safe” as a mechanically verified push. That semantic
+mistake is corrected by the follow-up below.
+
+### Follow-up PR: trusted coding workspace and semantic autonomous mode
+
+- Replace the owner’s bounded file/check-only surface with a trusted repo-scoped
+  coding workspace rooted in the existing managed worktree.
+- Permit ordinary repository commands without a `requiredChecks` allowlist,
+  including tests, formatters, typechecks, generators, builds, and language-native
+  tooling.
+- Keep the primary checkout out of scope and keep push/PR credentials behind the
+  mode-specific delivery tools.
+- Remove configured-check execution from the push tool. Preserve only current mode,
+  bound destination, clean committed `HEAD`, exact remote head, credential, and
+  non-force guards.
+- Remove deterministic diff-risk approval checks from this autonomous delivery path;
+  selecting the mode delegates scope/soundness judgment to the continuing owner.
+- Update the owner contract so autonomous mode evaluates whether feedback is sane,
+  appropriately scoped, and sufficiently validated; deliver when it is, otherwise
+  retain the work and explain/escalate.
+- Update product wording and user docs so the autonomous meaning is unambiguous.
+
+Exit: prepare and approval owners can run the same repository-native development
+commands as the autonomous owner; only delivery authority differs. Autonomous mode
+can implement, validate, commit, push, and respond without a configured-check list
+when it judges the requested change sound, while stale-head and mode/destination
+uncertainty still prevent delivery.
+
+Run targeted tests during implementation. Add no integration test unless a unit
+boundary cannot prove the workspace/delivery seam, and run proportionate final
+verification once when the follow-up PR is ready for review.
 
 ## Focused Verification
 
 During development, run targeted unit tests only. The required high-value tests are:
 
-- each mode receives exactly its permitted toolset;
-- an Autopilot `instanceId` appearing interactive cannot bypass the toolset ceiling;
+- every fixing mode can run arbitrary repo-scoped commands in the managed worktree,
+  including representative Node and non-Node validation commands;
+- each mode receives exactly its permitted delivery tools;
+- an Autopilot `instanceId` appearing interactive cannot bypass the delivery ceiling;
 - the busy flag prevents overlapping turns;
 - two events reuse the same agent instance and worktree;
 - work begins from the exact current PR head;
 - an unpublished prepared commit is never overwritten;
-- watcher feedback cannot obtain a push tool in approval mode, while a direct human
-  waiting turn receives the full bounded repo toolset;
+- watcher feedback cannot obtain push/response authority in approval mode, while a
+  direct human waiting turn does;
 - a waiting-for-approval worktree remains unchanged until the human resolves it;
-- safe mode runs checks and fails closed/degrades on uncertainty;
-- safe mode with no configured verifiable checks degrades rather than pushing;
+- autonomous mode does not require preconfigured checks and can use repository-native
+  tests, formatters, typechecks, generators, and compilers selected by the owner;
+- semantic uncertainty leaves the change for review, while mechanical uncertainty
+  blocks the push;
 - restart preserves bindings and turns an interrupted `working` state into a
   visible block;
 - a crash after push but before settlement becomes a visible needs-human block and
@@ -479,6 +560,9 @@ The simplified implementation does not include:
 - a canonical operator admission queue or recovery-action matrix;
 - general-purpose distributed workflow machinery.
 
+It also does not include a per-command allowlist, language-specific check registry,
+or deterministic verification-status machine for the trusted coding owner.
+
 If a future production incident demonstrates that one omitted mechanism prevents a
 real harmful race, add the smallest guard for that demonstrated consequence and a
 focused regression test. Do not add machinery for hypothetical completeness.
@@ -492,12 +576,15 @@ Autopilot is usable when:
 - that agent knows the repository is checked out in its managed worktree and has
   current PR facts;
 - ordinary later events reuse the same agent instance and worktree;
-- the current mode determines the actual per-turn toolset;
+- every fixing mode has a normal repo-scoped coding workspace;
+- the current mode and dispatch source determine push and PR-response authority;
 - notify and prepare modes cannot push;
 - approval is a direct message to the same managing agent; that human turn alone
   receives push authority and operates on the worktree held steady for review;
-- safe mode runs checks and fails closed before automatic push;
-- zero configured checks cannot authorize an automatic push;
+- autonomous mode judges whether feedback is sane and appropriately scoped, runs
+  proportionate repository-native validation, and pushes without human approval when
+  satisfied;
+- absence of configured checks does not prohibit an otherwise sound autonomous fix;
 - uncertainty leaves a reviewable local commit and notifies the user;
 - new events are observed on the next poll without an event-coalescing subsystem;
 - failures are visible and manually retryable;
