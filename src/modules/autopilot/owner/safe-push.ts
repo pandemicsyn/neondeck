@@ -4,8 +4,6 @@ import {
   fetchPullRequestEventState,
   pullRequestEventStateTruncation,
 } from '../../github';
-import { checkAutopilotPolicy } from '../../autopilot-policy';
-import { runApprovedExecution } from '../../execution';
 import {
   recordWorktreePushBlocked,
   recordWorktreePushSucceeded,
@@ -19,7 +17,7 @@ import {
 } from '../../watches';
 import type { RuntimePaths } from '../../../runtime-home';
 import { gitCurrentSha, gitPushHead, gitStatus } from '../../../repo-edit/git';
-import { configuredAutopilotChecks } from './checks';
+import { readPendingAutopilotTurn } from './pending';
 
 export async function safePushAutopilotOwner(
   binding: Pick<PrWatch, 'id' | 'repoId' | 'repoFullName' | 'prNumber'> & {
@@ -28,68 +26,24 @@ export async function safePushAutopilotOwner(
   paths: RuntimePaths,
   dependencies: {
     token?: string;
-    configuredChecks?: typeof configuredAutopilotChecks;
-    runExecution?: typeof runApprovedExecution;
     fetchFacts?: typeof fetchPullRequestEventState;
     fetchLogin?: typeof fetchGitHubLogin;
-    checkPolicy?: typeof checkAutopilotPolicy;
     resolvePushTarget?: typeof resolvePrPushTargetForCheckout;
     pushGit?: typeof gitPushHead;
   } = {},
 ) {
   try {
-    const initial = requireSafeWorkingWatch(binding.id, paths);
+    requireAutonomousDeliveryTurn(binding.id, binding.worktreeId, paths);
     const worktree = await readManagedWorktree(
       binding.worktreeId,
       binding.repoId,
       paths,
     );
-    const configured = await (
-      dependencies.configuredChecks ?? configuredAutopilotChecks
-    )(initial, paths);
-    if (configured.checks.length === 0) {
-      return blockSafePush(
-        initial,
-        worktree.id,
-        'Automatic push requires at least one configured targeted check.',
-        ['configuredChecks'],
-        paths,
-      );
-    }
-
-    const checkResults = [];
-    for (const command of configured.checks) {
-      const result = await (dependencies.runExecution ?? runApprovedExecution)(
-        {
-          command,
-          cwd: worktree.localPath,
-          context: 'unattended',
-          requestContext: {
-            source: 'autopilot',
-            watchId: initial.id,
-            repoId: initial.repoId,
-            repoFullName: initial.repoFullName,
-            prNumber: initial.prNumber,
-            worktreeId: worktree.id,
-            operation: 'safe-push-check',
-          },
-        },
-        paths,
-      );
-      checkResults.push({ command, result });
-      if (!result.ok) {
-        return blockSafePush(
-          initial,
-          worktree.id,
-          `Targeted check failed or could not run: ${command}.`,
-          ['passingChecks'],
-          paths,
-          { checkResults },
-        );
-      }
-    }
-
-    const current = requireSafeWorkingWatch(binding.id, paths);
+    const current = requireAutonomousDeliveryTurn(
+      binding.id,
+      binding.worktreeId,
+      paths,
+    );
     const token = dependencies.token ?? process.env.GITHUB_TOKEN;
     if (!token) {
       return blockSafePush(
@@ -98,7 +52,6 @@ export async function safePushAutopilotOwner(
         'GITHUB_TOKEN is unavailable immediately before push.',
         ['GITHUB_TOKEN'],
         paths,
-        { checkResults },
       );
     }
     const facts = await (dependencies.fetchFacts ?? fetchPullRequestEventState)(
@@ -119,7 +72,7 @@ export async function safePushAutopilotOwner(
           : 'The remote PR head changed before push.',
         truncation.any ? ['completePrEventFacts'] : ['currentPrHead'],
         paths,
-        { checkResults, currentHeadSha: facts.headSha },
+        { currentHeadSha: facts.headSha },
       );
     }
     if (facts.branchPermissions.canLikelyPush !== true) {
@@ -129,7 +82,7 @@ export async function safePushAutopilotOwner(
         'Current GitHub permission facts do not prove direct push access.',
         ['githubPermissions'],
         paths,
-        { checkResults, branchPermissions: facts.branchPermissions },
+        { branchPermissions: facts.branchPermissions },
       );
     }
 
@@ -144,7 +97,7 @@ export async function safePushAutopilotOwner(
           : 'The worktree has uncommitted changes immediately before push.',
         [status.clean ? 'committedChange' : 'cleanWorktree'],
         paths,
-        { checkResults, status },
+        { status },
       );
     }
     const apiLogin = await (dependencies.fetchLogin ?? fetchGitHubLogin)(token);
@@ -161,31 +114,10 @@ export async function safePushAutopilotOwner(
       headRef: facts.headRef ?? worktree.headRef,
       branchPermissions: facts.branchPermissions,
     });
-    const immediateWatch = requireSafeWorkingWatch(binding.id, paths);
-    const policy = await (dependencies.checkPolicy ?? checkAutopilotPolicy)(
-      {
-        repoId: immediateWatch.repoId,
-        worktreeId: worktree.id,
-        diffBaseRef: worktree.headSha ?? undefined,
-        pushDestination: 'pull-request-head',
-        forcePush: false,
-      },
-      paths,
-    );
-    if (policy.blocked || policy.approvalRequired) {
-      return blockSafePush(
-        immediateWatch,
-        worktree.id,
-        'Current Autopilot policy does not allow an unattended push.',
-        policy.requires.length > 0 ? policy.requires : ['autopilotPolicy'],
-        paths,
-        { checkResults, policy },
-      );
-    }
     // Keep the final authority and checkout checks adjacent to the external
-    // effect. Any mode/status or commit change during the preceding awaits
-    // fails closed instead of using stale permission or verification facts.
-    requireSafeWorkingWatch(binding.id, paths);
+    // effect. Any mode/source/status or commit change during the preceding
+    // awaits fails closed instead of using stale authority or remote facts.
+    requireAutonomousDeliveryTurn(binding.id, binding.worktreeId, paths);
     const [immediateStatus, immediateSha] = await Promise.all([
       gitStatus(worktree.localPath),
       gitCurrentSha(worktree.localPath),
@@ -195,7 +127,7 @@ export async function safePushAutopilotOwner(
         'The prepared checkout changed after verification and before push.',
       );
     }
-    requireSafeWorkingWatch(binding.id, paths);
+    requireAutonomousDeliveryTurn(binding.id, binding.worktreeId, paths);
     const push = await (dependencies.pushGit ?? gitPushHead)(
       worktree.localPath,
       {
@@ -211,8 +143,8 @@ export async function safePushAutopilotOwner(
       worktree.id,
       {
         commitSha,
-        message: `Autopilot safely pushed ${commitSha} to ${target.branch}.`,
-        data: { checks: configured.checks, remote: target.remote },
+        message: `Autopilot pushed ${commitSha} to ${target.branch}.`,
+        data: { remote: target.remote },
       },
       paths,
     );
@@ -220,9 +152,8 @@ export async function safePushAutopilotOwner(
       ok: true,
       action: 'autopilot_owner_safe_push',
       changed: true,
-      message: `Pushed ${commitSha} after ${configured.checks.length} targeted check${configured.checks.length === 1 ? '' : 's'} passed.`,
+      message: `Pushed ${commitSha} to the current linked PR head after mechanical delivery guards passed.`,
       commitSha,
-      checks: configured.checks,
       push,
     };
   } catch (error) {
@@ -238,15 +169,25 @@ export async function safePushAutopilotOwner(
   }
 }
 
-function requireSafeWorkingWatch(id: string, paths: RuntimePaths) {
+function requireAutonomousDeliveryTurn(
+  id: string,
+  worktreeId: string,
+  paths: RuntimePaths,
+) {
   const watch = readWatch(paths, id);
+  const pending = watch?.ownerInstanceId
+    ? readPendingAutopilotTurn(paths.home, watch.ownerInstanceId)
+    : undefined;
   if (
     !watch ||
+    watch.worktreeId !== worktreeId ||
     watch.autopilotMode !== 'autofix-push-when-safe' ||
-    watch.autopilotStatus !== 'working'
+    watch.autopilotStatus !== 'working' ||
+    pending?.source !== 'watch-event' ||
+    pending.mode !== 'autofix-push-when-safe'
   ) {
     throw new Error(
-      'The watch is no longer a working autofix-push-when-safe turn.',
+      'The watch is no longer a current autonomous watcher delivery turn.',
     );
   }
   return watch;

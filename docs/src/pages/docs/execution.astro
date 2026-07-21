@@ -8,7 +8,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 const layersDiagram = `flowchart TB
   subgraph Brain["Host: Neon's brain"]
     Agent["display assistant<br/>(virtual Flue sandbox)"]
+    Owner["watched-PR owner<br/>(trusted local workspace)"]
     Actions["typed actions and tools"]
+    Delivery["mode-scoped<br/>delivery tools"]
     Policy["execution policy<br/>allow / ask / deny"]
     Approvals["approvals + audit"]
     State["config + SQLite + GitHub API"]
@@ -21,6 +23,9 @@ const layersDiagram = `flowchart TB
   end
 
   Agent --> Actions
+  Owner --> Repos
+  Owner --> Delivery
+  Delivery --> State
   Actions --> Policy
   Policy --> Approvals
   Approvals --> LocalExec
@@ -44,8 +49,11 @@ const layersDiagram = `flowchart TB
           <strong>workspace</strong>. The brain — config, app state, GitHub
           facts, sessions, schedules — always runs on the host inside the
           Neondeck server. The workspace — checkouts, file edits, and shell
-          commands — is governed: the model never holds a raw shell, and every
-          command runs through a policy gate you can inspect and audit.
+          commands — is governed. Ordinary chat and workflow commands run
+          through a policy gate you can inspect and audit. The private
+          watched-PR owner is the narrow trusted exception: fixing turns receive
+          a real shell rooted in their managed worktree, while push and PR
+          response remain separate mode-scoped tools.
         </p>
         <MermaidDiagram
           chart={layersDiagram}
@@ -64,10 +72,15 @@ const layersDiagram = `flowchart TB
             only — no host files, nothing persists.
           </li>
           <li>
-            <strong>Local (deliberately unused).</strong> Flue's
-            <code>local()</code> sandbox would give the model direct host filesystem
-            and shell access, bypassing every Neondeck policy gate. No Neondeck agent
-            uses it, and none should.
+            <strong
+              >Local (used only for the trusted watched-PR coding owner).</strong
+            >
+            Flue's <code>local()</code> sandbox gives that owner the host filesystem
+            and installed repository toolchain, rooted at its validated managed worktree.
+            Flue exposes only shell-essential environment variables by default; Neondeck
+            also withholds GitHub tokens and disables ordinary credential-helper,
+            askpass, and SSH authentication paths in that shell. This is a trusted
+            host workspace, not a filesystem isolation boundary.
           </li>
           <li>
             <strong>Remote Flue sandbox (planned).</strong> Neondeck already supports
@@ -77,10 +90,12 @@ const layersDiagram = `flowchart TB
           </li>
         </ul>
         <p>
-          Instead of a shell, the agent gets <em>mediated</em> access to everything
-          through typed actions: repo files through repo-edit, commands through execution
-          actions, isolated changes through managed worktrees, config through config
-          actions. Access is broad; it is never direct.
+          The display assistant and bounded workflows continue to use mediated
+          typed actions: repo files through repo-edit, commands through
+          execution actions, isolated changes through managed worktrees, and
+          config through config actions. The Autopilot owner uses its local
+          workspace only for coding and validation; it must use Neondeck's bound
+          delivery tools for external GitHub effects.
         </p>
 
         <h2>The execution policy gate</h2>
@@ -159,11 +174,13 @@ const layersDiagram = `flowchart TB
           and asks once before high-risk or over-limit pushes. That acknowledgment
           is bound to the reviewed commit and effect, so a changed worktree prompts
           again. The current <a href="/docs/autopilot/">Autopilot owner loop</a>
-          gives each watcher or direct-human turn only the bounded tools allowed by
-          its current mode. Automatic delivery additionally reruns every configured
-          targeted check, refetches complete GitHub facts, proves the current PR head,
-          policy, permissions, and push identity, and uses a non-force expected-head
-          push. Any uncertainty blocks with the local commit retained for review.
+          gives every fixing turn the same repository-native coding workspace and
+          varies only external delivery tools by current mode and turn source. In
+          autonomous mode the owner chooses proportionate validation and decides whether
+          the requested change is sound. The delivery tool then refetches complete
+          GitHub facts, proves the current PR head, linked destination, permissions,
+          and push identity, and uses a non-force expected-head push. Semantic or
+          mechanical uncertainty retains the local commit for review.
         </p>
 
         <h2>Planned: exe.dev workspace mode</h2>
@@ -178,11 +195,10 @@ const layersDiagram = `flowchart TB
           With the mode on, repo checkouts, managed worktrees, repo-edit file
           operations, verification commands, and the agent's own Flue sandbox
           all live on the VM; GitHub facts, config, sessions, and schedules stay
-          on the host. The trust model is unchanged — the policy gate controls <em
-            >what</em
-          > runs, not <em>where</em> — and there is no silent fallback: if the VM
-          is unreachable, workspace operations fail with typed errors and runtime
-          status says why. The design is documented in
+          on the host. The ordinary execution-policy trust model is unchanged,
+          and there is no silent fallback: if the VM is unreachable, workspace
+          operations fail with typed errors and runtime status says why. The
+          design is documented in
           <a
             href="https://github.com/pandemicsyn/neondeck/blob/main/.plans/EXEDEV_WORKSPACE_MODE_PLAN.md"
             >the workspace mode plan</a

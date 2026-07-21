@@ -69,6 +69,19 @@ describe('ActiveWatches owner conversation', () => {
       ),
     );
 
+    expect(container.textContent).toContain(
+      'Uses the same full coding workspace and commits locally; only your direct waiting-turn instruction can deliver.',
+    );
+    expect(
+      Array.from(container.querySelectorAll('option')).map((option) =>
+        option.textContent?.trim(),
+      ),
+    ).toEqual([
+      'Notify only · no coding',
+      'Prepare commit · no delivery',
+      'Fix and await human delivery',
+      'Autonomous judgment + delivery',
+    ]);
     expect(container.textContent).not.toContain('Held change is ready.');
     expect(
       container.querySelector('button[aria-label^="Reference"]'),

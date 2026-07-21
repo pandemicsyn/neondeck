@@ -612,6 +612,31 @@ describe('Autopilot readiness facts', () => {
     });
   });
 
+  it('treats configured checks as optional owner hints rather than autonomous delivery readiness', async () => {
+    const { paths } = await readinessFixture();
+    await writeFile(
+      paths.config,
+      JSON.stringify({ version: 1, guardrails: { requiredChecks: [] } }),
+    );
+
+    const readiness = await readAutopilotReadiness(
+      {
+        repoId: 'sample',
+        prNumber: 7,
+        mode: 'autofix-push-when-safe',
+      },
+      paths,
+      { remoteChecks: false, env: {} },
+    );
+
+    expect(readiness.facts['check-commands']).toMatchObject({
+      status: 'not-required',
+      required: false,
+      message: expect.stringContaining('proportionate repository-native'),
+    });
+    expect(readiness.blocking).not.toContain('check-commands');
+  });
+
   it('does not claim API permission readiness when branch facts are unknown', async () => {
     const { paths } = await readinessFixture();
     const readiness = await readAutopilotReadiness(

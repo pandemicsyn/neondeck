@@ -74,8 +74,9 @@ the same backend state, actions, workflows, and event stream.
   revision-request flows, inline draft comments, thread replies and resolution,
   guarded refresh, and explicit human submission of Comment, Approve, or
   Request changes verdicts.
-- Worktree-backed autopilot that can notify, prepare a diff, request approval,
-  or push when repository policy and verification allow it.
+- Worktree-backed autopilot that can notify, prepare a commit, request approval,
+  or autonomously push when its continuing owner judges the change sound and
+  sufficiently validated.
 - Durable, context-linked Neon sessions with switching, summaries, references,
   stale-context signals, and workflow activity.
 - Local reports and operator panels for prepared work, runtime readiness,
@@ -98,8 +99,10 @@ the same backend state, actions, workflows, and event stream.
   interactive user could do.
 - Use managed Git worktrees as the normal isolation boundary for autonomous or
   delegated code changes. Do not mutate the user’s primary checkout.
-- Keep shell execution mediated by an allow/ask/deny policy. Approval decisions
-  belong to the user or operator surface, never to the model.
+- Keep ordinary chat and workflow shell execution mediated by an allow/ask/deny
+  policy. The trusted watched-PR coding owner is the narrow exception: it gets a
+  managed-worktree shell without delivery credentials, while external push and
+  PR response remain mode-scoped application tools.
 - Treat local-first as a data and control-plane choice, not a claim that every
   dependency is offline. Model providers, GitHub, MCP servers, Kilo, and optional
   exe.dev execution may be remote and must remain explicit.
