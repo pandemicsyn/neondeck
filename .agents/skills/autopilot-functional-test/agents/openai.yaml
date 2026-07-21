@@ -1,0 +1,4 @@
+interface:
+  display_name: "Autopilot Functional Test"
+  short_description: "Run safe Neondeck Autopilot acceptance tests"
+  default_prompt: "Use $autopilot-functional-test to run a consent-gated smoke test of Neondeck Autopilot with a disposable pull request."
