@@ -9,6 +9,8 @@ import {
   dashboardPresetSchema,
   removeRepoInputSchema,
   updateAgentModelsInputSchema,
+  updateAutopilotPromptInputSchema,
+  updatePrReviewPromptInputSchema,
   updateHandoffConfigInputSchema,
   updateLearningConfigInputSchema,
   updateProviderInputSchema,
@@ -17,6 +19,14 @@ import {
   updateSkillRootsInputSchema,
   updateWorktreePolicyInputSchema,
 } from './schemas';
+import {
+  readAutopilotPrompts,
+  updateAutopilotPrompt,
+} from './mutations/autopilot-prompts';
+import {
+  readPrReviewPrompts,
+  updatePrReviewPrompt,
+} from './mutations/pr-review-prompts';
 import { readConfig, reloadConfig, validateConfig } from './read';
 import {
   updateDashboardLayout,
@@ -86,6 +96,50 @@ export const updateAgentModelsAction = defineAction({
   output: configActionOutputSchema,
   async run({ input }) {
     return updateAgentModels(input);
+  },
+});
+
+export const readAutopilotPromptsAction = defineAction({
+  name: 'neondeck_config_read_autopilot_prompts',
+  description:
+    'Read the effective, default, and overridden per-mode Autopilot owner prompt templates.',
+  input: v.object({}),
+  output: configActionOutputSchema,
+  async run() {
+    return readAutopilotPrompts();
+  },
+});
+
+export const updateAutopilotPromptAction = defineAction({
+  name: 'neondeck_config_update_autopilot_prompt',
+  description:
+    'Replace one full Autopilot owner system prompt, or reset it to the built-in default. Existing owners pick up changes on their next turn.',
+  input: updateAutopilotPromptInputSchema,
+  output: configActionOutputSchema,
+  async run({ input }) {
+    return updateAutopilotPrompt(input);
+  },
+});
+
+export const readPrReviewPromptsAction = defineAction({
+  name: 'neondeck_config_read_pr_review_prompts',
+  description:
+    'Read the effective, default, and overridden prompts for initial PR reviews and follow-up reviewer conversations.',
+  input: v.object({}),
+  output: configActionOutputSchema,
+  async run() {
+    return readPrReviewPrompts();
+  },
+});
+
+export const updatePrReviewPromptAction = defineAction({
+  name: 'neondeck_config_update_pr_review_prompt',
+  description:
+    'Replace one full PR reviewer prompt, or reset it to the built-in default. Initial-review changes apply to new runs; follow-up changes apply on the next reviewer turn.',
+  input: updatePrReviewPromptInputSchema,
+  output: configActionOutputSchema,
+  async run({ input }) {
+    return updatePrReviewPrompt(input);
   },
 });
 
@@ -237,6 +291,10 @@ export const neondeckConfigActions = [
   configValidateAction,
   configReloadAction,
   updateAgentModelsAction,
+  readAutopilotPromptsAction,
+  updateAutopilotPromptAction,
+  readPrReviewPromptsAction,
+  updatePrReviewPromptAction,
   updateSkillRootsAction,
   updateLearningConfigAction,
   updateHandoffConfigAction,

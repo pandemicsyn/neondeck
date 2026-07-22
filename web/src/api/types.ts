@@ -129,6 +129,8 @@ export type PrReviewRecord = {
   status: PrReviewStatus;
   runId: string | null;
   headSha: string;
+  baseSha: string | null;
+  baseRef: string | null;
   origin: 'chat' | 'panel' | 'api';
   reviewUrl: string;
   reportIds: string[];
@@ -146,6 +148,7 @@ export type PrReviewRecord = {
   readyAt: string | null;
   submittedAt: string | null;
   failedAt: string | null;
+  archivedAt: string | null;
 };
 
 export type PrReviewAwaitingItem = {
@@ -163,6 +166,7 @@ export type PrReviewsResponse = {
     inProgress: PrReviewRecord[];
     needsAction: PrReviewRecord[];
     submitted: PrReviewRecord[];
+    archived: PrReviewRecord[];
   };
   queueIssues?: string[];
 };
@@ -1134,6 +1138,38 @@ export type ConfigActionResult = {
   requires?: string[];
 };
 
+export type AutopilotOwnerPromptMode =
+  'prepare-only' | 'autofix-with-approval' | 'autofix-push-when-safe';
+
+export type AutopilotPromptConfigData = {
+  prompts: Record<AutopilotOwnerPromptMode, string>;
+  defaults: Record<AutopilotOwnerPromptMode, string>;
+  overrides: Partial<Record<AutopilotOwnerPromptMode, string>>;
+  tokens: string[];
+  appliesAfter: 'next-owner-turn';
+};
+
+export type AutopilotPromptConfigResponse = Omit<ConfigActionResult, 'data'> & {
+  data: AutopilotPromptConfigData;
+};
+
+export type PrReviewPromptKind = 'initial-review' | 'follow-up-reviewer';
+
+export type PrReviewPromptConfigData = {
+  prompts: Record<PrReviewPromptKind, string>;
+  defaults: Record<PrReviewPromptKind, string>;
+  overrides: Partial<Record<PrReviewPromptKind, string>>;
+  tokens: Record<PrReviewPromptKind, string[]>;
+  appliesAfter: Record<
+    PrReviewPromptKind,
+    'next-review-run' | 'next-reviewer-turn'
+  >;
+};
+
+export type PrReviewPromptConfigResponse = Omit<ConfigActionResult, 'data'> & {
+  data: PrReviewPromptConfigData;
+};
+
 export type AgentModelUpdate = {
   displayAssistant?: string;
   displayAssistantThinkingLevel?: string;
@@ -1331,6 +1367,30 @@ export type WorkflowObservability = {
   recentTools: WorkflowEventRecord[];
   recentOperations: WorkflowEventRecord[];
   recentEvents: WorkflowEventRecord[];
+  fetchedAt: string;
+};
+
+export type WorkflowRunRecord = {
+  runId: string;
+  workflowName: string;
+  status: 'active' | 'completed' | 'errored';
+  startedAt: string;
+  input?: unknown;
+  traceCarrier?: {
+    traceparent: string;
+    tracestate?: string;
+  };
+  endedAt?: string;
+  isError?: boolean;
+  durationMs?: number;
+  result?: unknown;
+  error?: unknown;
+};
+
+export type WorkflowRunInspectionResponse = {
+  ok: true;
+  action: 'workflow_run_inspection_read';
+  run: WorkflowRunRecord;
   fetchedAt: string;
 };
 

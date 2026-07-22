@@ -1,9 +1,13 @@
 import { Hono } from 'hono';
 import {
   applyDashboardPreset,
+  readAutopilotPrompts,
+  readPrReviewPrompts,
   readProviderConfig,
   reloadConfig,
   updateAgentModels,
+  updateAutopilotPrompt,
+  updatePrReviewPrompt,
   updateDashboardLayout,
   updateProviderConfig,
   updateRepoAutopilotPolicy,
@@ -23,6 +27,30 @@ export function createConfigRoutes(paths: RuntimePaths) {
 
   routes.get('/providers', async (c) => {
     return c.json(await readProviderConfig(paths));
+  });
+
+  routes.get('/autopilot/prompts', async (c) => {
+    return c.json(await readAutopilotPrompts(paths));
+  });
+
+  routes.post('/autopilot/prompts', async (c) => {
+    const input = (await safeJsonBody(c)) as Parameters<
+      typeof updateAutopilotPrompt
+    >[0];
+    const result = await updateAutopilotPrompt(input, paths);
+    return c.json(result, result.ok ? 200 : 400);
+  });
+
+  routes.get('/pr-review/prompts', async (c) => {
+    return c.json(await readPrReviewPrompts(paths));
+  });
+
+  routes.post('/pr-review/prompts', async (c) => {
+    const input = (await safeJsonBody(c)) as Parameters<
+      typeof updatePrReviewPrompt
+    >[0];
+    const result = await updatePrReviewPrompt(input, paths);
+    return c.json(result, result.ok ? 200 : 400);
   });
 
   routes.post('/config/reload', async (c) => {

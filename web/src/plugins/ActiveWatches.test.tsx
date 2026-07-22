@@ -5,7 +5,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrWatch } from '../api';
-import { WatchRow } from './ActiveWatches';
+import { activePrWatches, WatchRow } from './ActiveWatches';
 
 const flue = vi.hoisted(() => ({
   sendMessage: vi.fn(async () => undefined),
@@ -70,7 +70,7 @@ describe('ActiveWatches owner conversation', () => {
     );
 
     expect(container.textContent).toContain(
-      'Uses the same full coding workspace and commits locally; only your direct waiting-turn instruction can deliver.',
+      'Does the same work, then waits; only your direct instruction in the owner chat can authorize it to push or respond.',
     );
     expect(
       Array.from(container.querySelectorAll('option')).map((option) =>
@@ -78,13 +78,13 @@ describe('ActiveWatches owner conversation', () => {
       ),
     ).toEqual([
       'Notify only · no coding',
-      'Prepare commit · no delivery',
-      'Fix and await human delivery',
+      'Prepare commit · never push',
+      'Prepare commit · push after approval',
       'Autonomous judgment + delivery',
     ]);
     expect(container.textContent).not.toContain('Held change is ready.');
     expect(
-      container.querySelector('button[aria-label^="Reference"]'),
+      container.querySelector('button[aria-label^="Open chat"]'),
     ).toBeNull();
     act(() =>
       button(
@@ -124,7 +124,47 @@ describe('ActiveWatches owner conversation', () => {
   });
 });
 
-function watch(): PrWatch {
+describe('ActiveWatches visibility', () => {
+  it('keeps completed watch records out of the active panel', () => {
+    expect(
+      activePrWatches([
+        watch(),
+        watch({
+          id: 'pandemicsyn/neondeck#173',
+          prNumber: 173,
+          autopilotStatus: 'complete',
+        }),
+      ]).map((item) => item.id),
+    ).toEqual(['pandemicsyn/neondeck#172']);
+  });
+
+  it('does not repeat the idle watching status', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    const container = document.createElement('div');
+    const root = createRoot(container);
+
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <WatchRow
+            watch={watch({ status: 'watching', autopilotStatus: 'watching' })}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+
+    expect(container.textContent?.match(/watching/g)).toHaveLength(1);
+
+    act(() => root.unmount());
+  });
+});
+
+function watch(overrides: Partial<PrWatch> = {}): PrWatch {
   return {
     id: 'pandemicsyn/neondeck#172',
     repoId: 'neondeck',
@@ -159,5 +199,6 @@ function watch(): PrWatch {
     worktreeHeadSha: 'a'.repeat(40),
     lastEventFingerprint: 'feedback-1',
     updatedAt: '2026-07-20T05:01:00.000Z',
+    ...overrides,
   };
 }

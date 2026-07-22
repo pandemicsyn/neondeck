@@ -10,12 +10,16 @@ import {
   addRepo,
   applyDashboardPreset,
   readConfig,
+  readAutopilotPrompts,
+  readPrReviewPrompts,
   readProviderConfig,
   reloadConfig,
   removeRepo,
   updateRepo,
   updateRepoAutopilotPolicy,
   updateAgentModels,
+  updateAutopilotPrompt,
+  updatePrReviewPrompt,
   updateLearningConfig,
   updateExecutionPolicy,
   updateDashboardLayout,
@@ -46,6 +50,153 @@ afterEach(async () => {
 });
 
 describe('config actions', () => {
+  it('reads, overrides, and resets full Autopilot owner prompts', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    const initial = await readAutopilotPrompts(paths);
+    expect(initial).toMatchObject({
+      ok: true,
+      changed: false,
+      action: 'config_read_autopilot_prompts',
+      data: {
+        overrides: {},
+        appliesAfter: 'next-owner-turn',
+      },
+    });
+    const initialData = initial.data as {
+      prompts: Record<string, string>;
+      defaults: Record<string, string>;
+    };
+    expect(initialData.prompts['prepare-only']).toBe(
+      initialData.defaults['prepare-only'],
+    );
+
+    const prompt = 'Custom owner prompt for {{mode}} from {{source}}.';
+    await expect(
+      updateAutopilotPrompt({ mode: 'prepare-only', prompt }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        prompts: { 'prepare-only': prompt },
+        overrides: { 'prepare-only': prompt },
+      },
+    });
+
+    let config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.autopilot?.prompts?.['prepare-only']).toBe(prompt);
+
+    const reset = await updateAutopilotPrompt(
+      { mode: 'prepare-only', prompt: null },
+      paths,
+    );
+    expect(reset).toMatchObject({
+      ok: true,
+      changed: true,
+      data: { overrides: {} },
+    });
+    const resetData = reset.data as {
+      prompts: Record<string, string>;
+      defaults: Record<string, string>;
+    };
+    expect(resetData.prompts['prepare-only']).toBe(
+      resetData.defaults['prepare-only'],
+    );
+    config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.autopilot?.prompts).toEqual({});
+    expect(readHistory(paths.neondeckDatabase)).toMatchObject([
+      {
+        action: 'config_update_autopilot_prompt',
+        target: 'autopilot.prompts.prepare-only',
+      },
+      {
+        action: 'config_update_autopilot_prompt',
+        target: 'autopilot.prompts.prepare-only',
+      },
+    ]);
+  });
+
+  it('reads, overrides, and resets full PR reviewer prompts', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    const initial = await readPrReviewPrompts(paths);
+    expect(initial).toMatchObject({
+      ok: true,
+      changed: false,
+      action: 'config_read_pr_review_prompts',
+      data: {
+        overrides: {},
+        appliesAfter: {
+          'initial-review': 'next-review-run',
+          'follow-up-reviewer': 'next-reviewer-turn',
+        },
+      },
+    });
+    const initialData = initial.data as {
+      prompts: Record<string, string>;
+      defaults: Record<string, string>;
+      tokens: Record<string, string[]>;
+    };
+    expect(initialData.prompts['initial-review']).toBe(
+      initialData.defaults['initial-review'],
+    );
+    expect(initialData.tokens['follow-up-reviewer']).toEqual([
+      '{{workspaceInstructions}}',
+      '{{reviewContext}}',
+    ]);
+
+    const prompt = 'Custom initial review prompt.';
+    await expect(
+      updatePrReviewPrompt({ kind: 'initial-review', prompt }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        prompts: { 'initial-review': prompt },
+        overrides: { 'initial-review': prompt },
+      },
+    });
+
+    let config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.prReview?.prompts?.['initial-review']).toBe(prompt);
+
+    const reset = await updatePrReviewPrompt(
+      { kind: 'initial-review', prompt: null },
+      paths,
+    );
+    expect(reset).toMatchObject({
+      ok: true,
+      changed: true,
+      data: { overrides: {} },
+    });
+    config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.prReview?.prompts).toEqual({});
+    expect(readHistory(paths.neondeckDatabase)).toMatchObject([
+      {
+        action: 'config_update_pr_review_prompt',
+        target: 'prReview.prompts.initial-review',
+      },
+      {
+        action: 'config_update_pr_review_prompt',
+        target: 'prReview.prompts.initial-review',
+      },
+    ]);
+  });
+
   it('adds, updates, and removes a repo through validated config operations', async () => {
     const home = await tempDir('neondeck-home-');
     const repoPath = await tempGitRepo();

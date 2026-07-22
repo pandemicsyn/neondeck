@@ -1,5 +1,6 @@
 import { openDb } from '../../lib/sqlite';
 import type { RuntimePaths } from '../../runtime-home';
+import { pruneExpiredSubmittedPrReviewRows } from '../../runtime-home/app-db/reconcile';
 import type {
   PrReviewOrigin,
   PrReviewRecord,
@@ -48,7 +49,9 @@ export function listPrReviews(
       ? database
           .prepare(
             `SELECT * FROM pr_reviews
-             WHERE status != 'submitted' OR submitted_at >= ?
+             WHERE archived_at IS NOT NULL
+                OR status != 'submitted'
+                OR submitted_at >= ?
              ORDER BY updated_at DESC
              LIMIT ?;`,
           )
@@ -61,6 +64,18 @@ export function listPrReviews(
           )
           .all(limit);
     return rows.map(readPrReviewRow);
+  } finally {
+    database.close();
+  }
+}
+
+export function pruneExpiredSubmittedPrReviews(
+  paths: RuntimePaths,
+  now = Date.now(),
+) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return pruneExpiredSubmittedPrReviewRows(database, now);
   } finally {
     database.close();
   }
@@ -79,6 +94,8 @@ export function readPrReviewRow(row: unknown): PrReviewRecord {
     status: statusValue(value.status),
     runId: nullableString(value.run_id),
     headSha: stringValue(value.head_sha),
+    baseSha: nullableString(value.base_sha),
+    baseRef: nullableString(value.base_ref),
     origin: originValue(value.origin),
     reviewUrl: stringValue(value.review_url),
     reportIds: stringArray(value.report_ids_json),
@@ -96,6 +113,7 @@ export function readPrReviewRow(row: unknown): PrReviewRecord {
     readyAt: nullableString(value.ready_at),
     submittedAt: nullableString(value.submitted_at),
     failedAt: nullableString(value.failed_at),
+    archivedAt: nullableString(value.archived_at),
   };
 }
 

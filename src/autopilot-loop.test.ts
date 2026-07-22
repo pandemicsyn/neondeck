@@ -41,6 +41,7 @@ import {
 } from './modules/worktrees';
 import { buildPrAutopilotOwnerRuntime } from './agents/pr-autopilot-owner';
 import { registerPendingAutopilotTurn } from './modules/autopilot/owner/pending';
+import { updateAutopilotPrompt } from './modules/config';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import { emptyPrWatchInitialEventBaseline } from './testing/pr-watch-event-baseline';
 import { refreshWatchJobEvents } from './modules/scheduler/pr-watch-events';
@@ -77,6 +78,54 @@ afterEach(async () => {
 });
 
 describe('minimal Autopilot watch loop', () => {
+  it('applies prompt edits to an existing owner on its next turn', async () => {
+    const paths = await fixturePaths();
+    await configurePrAutopilot(
+      {
+        ref: 'neondeck#123',
+        mode: 'prepare-only',
+        processExisting: false,
+        confirm: true,
+      },
+      paths,
+      fixtureDependencies(),
+    );
+    const instanceId = 'editable-prompt-owner';
+    bindWatchAutopilotOwner(paths, 'pandemicsyn/neondeck#123', {
+      ownerInstanceId: instanceId,
+      worktreeId: '',
+    });
+    registerPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      'prompt-event',
+      'prepare-only',
+      'watch-event',
+    );
+
+    await updateAutopilotPrompt(
+      {
+        mode: 'prepare-only',
+        prompt: 'FIRST {{mode}} / {{source}} / {{status}}',
+      },
+      paths,
+    );
+    const first = await buildPrAutopilotOwnerRuntime(instanceId, paths);
+    expect(first.instructions).toBe(
+      'FIRST prepare-only / watch-event / watching',
+    );
+
+    await updateAutopilotPrompt(
+      {
+        mode: 'prepare-only',
+        prompt: 'SECOND {{mode}} for the same owner',
+      },
+      paths,
+    );
+    const second = await buildPrAutopilotOwnerRuntime(instanceId, paths);
+    expect(second.instructions).toBe('SECOND prepare-only for the same owner');
+  });
+
   it('configures one watch and retains its stable owner/worktree binding across reloads', async () => {
     const paths = await fixturePaths();
     await expect(

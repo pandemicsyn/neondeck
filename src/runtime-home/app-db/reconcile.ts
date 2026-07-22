@@ -1,5 +1,22 @@
 import type { DatabaseSync } from 'node:sqlite';
 
+export const submittedPrReviewRetentionMs = 14 * 24 * 60 * 60 * 1_000;
+
+export function pruneExpiredSubmittedPrReviewRows(
+  database: DatabaseSync,
+  now = Date.now(),
+) {
+  const cutoff = new Date(now - submittedPrReviewRetentionMs).toISOString();
+  return database
+    .prepare(
+      `DELETE FROM pr_reviews
+       WHERE status = 'submitted'
+         AND submitted_at IS NOT NULL
+         AND submitted_at < ?;`,
+    )
+    .run(cutoff).changes;
+}
+
 export function reconcileActiveChatSession(database: DatabaseSync) {
   const active = database
     .prepare(

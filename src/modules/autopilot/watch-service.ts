@@ -4,6 +4,7 @@ import type { RuntimePaths } from '../../runtime-home';
 import { runtimePaths } from '../../runtime-home';
 import {
   addPrWatch,
+  canonicalizePrWatchRepoId,
   listPrWatches,
   readWatch,
   resolveWatchId,
@@ -210,7 +211,7 @@ export async function controlPrAutopilot(
         );
   }
 
-  const current = readWatch(paths, resolved.id);
+  const current = await canonicalizePrWatchRepoId(paths, resolved.id);
   if (
     current?.autopilotStatus === 'blocked' &&
     current.autopilotMode === 'autofix-with-approval' &&

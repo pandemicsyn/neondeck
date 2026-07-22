@@ -78,15 +78,21 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           review comments, reply to or resolve existing review threads, and
           submit one review with Comment, Approve, or Request changes. Draft
           comments survive reloads and stale anchors are skipped until the human
-          re-anchors them. Compact layouts keep the deck glanceable; use the
-          review pop-out control or <code>neondeck open</code> when a full PR review
-          needs the wider controls. Generated overview and issues artifacts open as
-          keyboard-navigable slide decks that lead with the agent's review brief,
-          render a bounded safe Markdown subset, and preserve overflow in a final
-          appendix. Retained report artifacts are adapted into the same view. These
-          review actions are dashboard-only controls; Neon does not get a model-callable
-          action or tool for submitting PR reviews, verdicts, thread replies, or thread
-          resolution.
+          re-anchors them. Existing GitHub threads are rendered as prominent
+          open or resolved conversations at their diff line, with every comment
+          and participant visible. The inspector's <strong>Ask reviewer</strong>
+          tab opens a durable, read-only conversation grounded in the saved review
+          and exact PR revision; it can explain findings and inspect more code, but
+          it cannot edit drafts or deliver anything to GitHub. Compact layouts keep
+          the deck glanceable; use the review pop-out control or <code
+            >neondeck open</code
+          > when a full PR review needs the wider controls. Generated overview and
+          issues artifacts open as keyboard-navigable slide decks that lead with the
+          agent's review brief, render a bounded safe Markdown subset, and preserve
+          overflow in a final appendix. Retained report artifacts are adapted into
+          the same view. These review actions are dashboard-only controls; Neon does
+          not get a model-callable action or tool for submitting PR reviews, verdicts,
+          thread replies, or thread resolution.
         </p>
         <p>
           Start Autopilot from a GitHub PR row with <strong>watch</strong>, then
@@ -94,6 +100,17 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           exposes pause, resume, retry, review diff, review agent, and stop
           controls. See the <a href="/docs/autopilot/">Autopilot guide</a> for the
           authority and recovery rules behind those controls.
+        </p>
+        <p>
+          The <strong>Runtime</strong> panel is also the operator surface for model
+          and provider configuration. Autopilot owners currently use the display-assistant
+          model. The panel's Autopilot prompt editor lets you inspect, replace, save,
+          and reset the complete owner prompt for each model-backed mode; changes
+          apply to existing owners on their next turn. Notify-only has no owner prompt
+          because it does not dispatch an owner turn. The adjacent PR review prompt
+          editor exposes the complete initial-review and follow-up-conversation prompts.
+          Initial changes apply to new review runs; conversation changes apply on
+          the next reviewer turn. Each override can be reset to the shipped default.
         </p>
         <p>
           The focused PR workbench adds a guided review map over files, hunks,

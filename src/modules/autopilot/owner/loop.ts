@@ -5,6 +5,7 @@ import { gitCurrentSha, gitStatus } from '../../../repo-edit/git';
 import { addNotification } from '../../app-state';
 import {
   bindWatchAutopilotOwner,
+  canonicalizePrWatchRepoId,
   claimWatchAutopilotTurn,
   readWatch,
   transitionWatchAutopilot,
@@ -43,6 +44,7 @@ export async function runAutopilotWatchEvent(
   let watch = readWatch(paths, event.watchId);
   if (!watch)
     return loopResult('missing', false, 'The watch no longer exists.');
+  watch = (await canonicalizePrWatchRepoId(paths, watch.id)) ?? watch;
   if (watch.autopilotStatus === 'complete') {
     return loopResult('complete', false, 'The watch is complete.');
   }

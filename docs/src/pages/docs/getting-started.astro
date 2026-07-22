@@ -179,8 +179,8 @@ neondeck open xeneon --kiosk</code></pre>
 
         <h2 id="agent-models">Agent models</h2>
         <p>
-          Configure the display assistant, PR review, utility, and subagent
-          model choices in runtime-home
+          Configure the display assistant, PR review, utility, self-improvement,
+          and subagent model choices in runtime-home
           <code>config.json</code>. Environment variables remain fallback
           values, but runtime config is the preferred local control point.
         </p>
@@ -194,6 +194,8 @@ neondeck open xeneon --kiosk</code></pre>
     "prReviewTimeoutMs": 300000,
     "utility": "kilocode/kilo-auto/fast",
     "utilityThinkingLevel": "low",
+    "selfImprovement": "kilocode/kilo-auto/fast",
+    "selfImprovementThinkingLevel": "low",
     "subagents": &#123;
       "default": "kilocode/kilo-auto/balanced",
       "defaultThinkingLevel": "medium",
@@ -217,7 +219,20 @@ neondeck open xeneon --kiosk</code></pre>
             >prReviewTimeoutMs</code
           > accepts values from 10,000 through 1,800,000. The utility model is optional;
           when skipped, Neondeck falls back to the display assistant and recommends
-          a cheaper model for bounded helper work.
+          a cheaper model for bounded helper work. The self-improvement model is also
+          optional and falls back through the utility model and then the display assistant;
+          it powers bounded learning and curation work rather than Autopilot.
+        </p>
+        <p>
+          Watched-PR Autopilot currently uses the display-assistant model and
+          thinking level for its continuing owner; it does not have a separate
+          Autopilot model setting. The PR-review model is for the independent
+          human-review workflow, not Autopilot coding turns. You can inspect or
+          replace the full per-mode Autopilot owner prompts in the dashboard's
+          <strong>Runtime</strong> panel. Saved prompt changes apply to existing owners
+          on their next turn, and each mode can be reset to its shipped default. See
+          the <a href="/docs/autopilot/">Autopilot guide</a> for the exact model,
+          prompt, and capability boundaries.
         </p>
 
         <h2 id="execution-approvals">Execution approvals</h2>

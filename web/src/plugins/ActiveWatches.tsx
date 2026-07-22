@@ -11,7 +11,10 @@ import { FlueChatSessionView } from '../features/flue-chat/components/session-vi
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
 import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
-import { prWatchAttentionReason } from '../lib/watch-status';
+import {
+  isCompletedPrWatch,
+  prWatchAttentionReason,
+} from '../lib/watch-status';
 import type { DisplayPlugin } from '../types';
 import { WorktreeDiffReview } from '../features/diff-viewer/surfaces';
 import { parsePositiveIntegerConfig } from './config';
@@ -48,7 +51,7 @@ export const ActiveWatchesPlugin = {
       }
     });
 
-    const watches = data?.watches ?? [];
+    const watches = activePrWatches(data?.watches ?? []);
     const visible = watches.slice(0, config.limit);
 
     return (
@@ -83,6 +86,10 @@ export const ActiveWatchesPlugin = {
     );
   },
 } satisfies DisplayPlugin<ActiveWatchesConfig>;
+
+export function activePrWatches(watches: PrWatch[]) {
+  return watches.filter((watch) => !isCompletedPrWatch(watch));
+}
 
 export function WatchRow({ watch }: { watch: PrWatch }) {
   const [confirmingStop, setConfirmingStop] = useState(false);
@@ -163,9 +170,11 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
         </div>
         <div className="flex flex-col items-end gap-1">
           <Badge className={statusClass(watch.status)}>{watch.status}</Badge>
-          <Badge className={autopilotStatusClass(watch.autopilotStatus)}>
-            {watch.autopilotStatus}
-          </Badge>
+          {watch.autopilotStatus !== 'watching' ? (
+            <Badge className={autopilotStatusClass(watch.autopilotStatus)}>
+              {watch.autopilotStatus}
+            </Badge>
+          ) : null}
         </div>
       </div>
       <p className="mt-2 font-mono text-[10px] leading-4 text-muted">
@@ -191,9 +200,9 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
           value={watch.autopilotMode}
         >
           <option value="notify-only">Notify only · no coding</option>
-          <option value="prepare-only">Prepare commit · no delivery</option>
+          <option value="prepare-only">Prepare commit · never push</option>
           <option value="autofix-with-approval">
-            Fix and await human delivery
+            Prepare commit · push after approval
           </option>
           <option value="autofix-push-when-safe">
             Autonomous judgment + delivery
@@ -431,9 +440,9 @@ function autopilotModeHelp(mode: PrWatch['autopilotMode']) {
     case 'notify-only':
       return 'Reports meaningful changes without starting a coding turn.';
     case 'prepare-only':
-      return 'Uses a full managed-worktree coding workspace and commits locally; never pushes or responds.';
+      return 'Codes, validates, and commits locally for your review; it cannot push or respond to the PR.';
     case 'autofix-with-approval':
-      return 'Uses the same full coding workspace and commits locally; only your direct waiting-turn instruction can deliver.';
+      return 'Does the same work, then waits; only your direct instruction in the owner chat can authorize it to push or respond.';
     case 'autofix-push-when-safe':
       return 'Delegates semantic engineering judgment: the owner validates proportionately and may push/respond when it judges the change sound.';
   }

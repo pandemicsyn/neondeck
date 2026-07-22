@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import {
+  archivePrReview,
   getPrReviews,
   openPrReviewEventStream,
   reconcilePrReviewSubmission,
   restartPrReview,
+  restorePrReview,
   startPrReview,
   type PrReviewAwaitingItem,
   type PrReviewRecord,
@@ -52,6 +54,24 @@ export const ReviewsPanelPlugin = {
     });
     const reconcileMutation = useMutation({
       mutationFn: (id: string) => reconcilePrReviewSubmission(id),
+      onSuccess(result) {
+        queryClient.setQueryData<PrReviewsResponse>(
+          queryKeys.prReviews,
+          (current) => applyPrReviewChange(current, result.review),
+        );
+      },
+    });
+    const archiveMutation = useMutation({
+      mutationFn: (id: string) => archivePrReview(id),
+      onSuccess(result) {
+        queryClient.setQueryData<PrReviewsResponse>(
+          queryKeys.prReviews,
+          (current) => applyPrReviewChange(current, result.review),
+        );
+      },
+    });
+    const restoreMutation = useMutation({
+      mutationFn: (id: string) => restorePrReview(id),
       onSuccess(result) {
         queryClient.setQueryData<PrReviewsResponse>(
           queryKeys.prReviews,
@@ -126,12 +146,16 @@ export const ReviewsPanelPlugin = {
         ) : null}
         {startMutation.error ||
         restartMutation.error ||
-        reconcileMutation.error ? (
+        reconcileMutation.error ||
+        archiveMutation.error ||
+        restoreMutation.error ? (
           <p className="border-b border-accent/60 px-3 py-1.5 font-mono text-[10px] text-accent">
             {queryErrorMessage(
               startMutation.error ??
                 restartMutation.error ??
-                reconcileMutation.error,
+                reconcileMutation.error ??
+                archiveMutation.error ??
+                restoreMutation.error,
             )}
           </p>
         ) : null}
@@ -187,8 +211,11 @@ export const ReviewsPanelPlugin = {
                 {data.groups.needsAction.map((review) => (
                   <ReviewRow
                     key={review.id}
+                    onArchive={(id) => archiveMutation.mutate(id)}
                     onRestart={(id) => restartMutation.mutate(id)}
-                    pending={restartMutation.isPending}
+                    pending={
+                      restartMutation.isPending || archiveMutation.isPending
+                    }
                     review={review}
                   />
                 ))}
@@ -201,11 +228,38 @@ export const ReviewsPanelPlugin = {
                 <div className="border-t border-line">
                   {data.groups.submitted.length ? (
                     data.groups.submitted.map((review) => (
-                      <ReviewRow key={review.id} review={review} />
+                      <ReviewRow
+                        key={review.id}
+                        onArchive={(id) => archiveMutation.mutate(id)}
+                        pending={archiveMutation.isPending}
+                        review={review}
+                      />
                     ))
                   ) : (
                     <p className="px-3 py-2 text-[10.5px] text-muted">
                       No reviews submitted in the last seven days.
+                    </p>
+                  )}
+                </div>
+              </details>
+              <details className="group">
+                <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 font-mono text-[10px] tracking-[0.08em] text-muted focus:outline-none focus:ring-1 focus:ring-primary">
+                  <span>ARCHIVED</span>
+                  <Badge>{data.groups.archived.length}</Badge>
+                </summary>
+                <div className="border-t border-line">
+                  {data.groups.archived.length ? (
+                    data.groups.archived.map((review) => (
+                      <ReviewRow
+                        key={review.id}
+                        onRestore={(id) => restoreMutation.mutate(id)}
+                        pending={restoreMutation.isPending}
+                        review={review}
+                      />
+                    ))
+                  ) : (
+                    <p className="px-3 py-2 text-[10.5px] text-muted">
+                      Archived reviews stay available here.
                     </p>
                   )}
                 </div>
@@ -315,13 +369,17 @@ function AwaitingRow({
 }
 
 function ReviewRow({
+  onArchive,
   onReconcile,
   onRestart,
+  onRestore,
   pending = false,
   review,
 }: {
+  onArchive?: (id: string) => void;
   onReconcile?: (id: string) => void;
   onRestart?: (id: string) => void;
+  onRestore?: (id: string) => void;
   pending?: boolean;
   review: PrReviewRecord;
 }) {
@@ -381,6 +439,24 @@ function ReviewRow({
             type="button"
           >
             {pending ? 'checking' : 'recover submission'}
+          </Button>
+        ) : null}
+        {onArchive ? (
+          <Button
+            disabled={pending}
+            onClick={() => onArchive(review.id)}
+            type="button"
+          >
+            archive
+          </Button>
+        ) : null}
+        {onRestore ? (
+          <Button
+            disabled={pending}
+            onClick={() => onRestore(review.id)}
+            type="button"
+          >
+            restore
           </Button>
         ) : null}
       </div>
@@ -445,12 +521,19 @@ export function applyPrReviewChange(
     groups: {
       awaiting,
       inProgress: items.filter(
-        (item) => item.status === 'reviewing' || item.status === 'submitting',
+        (item) =>
+          !item.archivedAt &&
+          (item.status === 'reviewing' || item.status === 'submitting'),
       ),
       needsAction: items.filter(
-        (item) => item.status === 'ready' || item.status === 'failed',
+        (item) =>
+          !item.archivedAt &&
+          (item.status === 'ready' || item.status === 'failed'),
       ),
-      submitted: items.filter((item) => item.status === 'submitted'),
+      submitted: items.filter(
+        (item) => !item.archivedAt && item.status === 'submitted',
+      ),
+      archived: items.filter((item) => Boolean(item.archivedAt)),
     },
     queueIssues: current?.queueIssues,
   };

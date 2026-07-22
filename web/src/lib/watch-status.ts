@@ -5,6 +5,10 @@ type WatchStatusFacts = Pick<
   'id' | 'status' | 'prState' | 'lastSnapshot'
 >;
 
+export function isCompletedPrWatch(watch: Pick<PrWatch, 'autopilotStatus'>) {
+  return watch.autopilotStatus === 'complete';
+}
+
 export function prWatchAttentionReason(watch: WatchStatusFacts) {
   if (watch.status !== 'attention-needed') return null;
   const checks = watch.lastSnapshot?.checks;

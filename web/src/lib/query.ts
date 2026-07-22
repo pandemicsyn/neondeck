@@ -40,6 +40,7 @@ export const queryKeys = {
     ] as const,
   neonCommands: ['neon-commands'] as const,
   autopilotState: ['autopilot-state'] as const,
+  autopilotPrompts: ['autopilot-prompts'] as const,
   autopilotReadiness: (
     repoId: string | undefined,
     prNumber: number | undefined,
@@ -66,6 +67,7 @@ export const queryKeys = {
   subagents: ['subagents'] as const,
   notifications: ['notifications'] as const,
   workflowObservability: ['workflow-observability'] as const,
+  workflowRun: (runId: string) => ['workflow-run', runId] as const,
   workflowSummaries: ['workflow-summaries'] as const,
   worktrees: ['worktrees'] as const,
 };

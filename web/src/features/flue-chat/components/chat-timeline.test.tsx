@@ -52,6 +52,16 @@ describe('ChatTimelineItems', () => {
     expect(renderMessagePartMock).toHaveBeenCalledTimes(3);
   });
 
+  it('uses task-oriented copy for an empty ready session', () => {
+    render([]);
+
+    expect(container.textContent).toContain('Start a conversation');
+    expect(container.textContent).toContain(
+      'Ask about a PR, check an active watch, or explore your runtime.',
+    );
+    expect(container.textContent).not.toContain('SQLite');
+  });
+
   function render(items: ReturnType<typeof sessionTimelineItems>) {
     act(() => root.render(<ChatTimelineItems hasSession items={items} />));
   }

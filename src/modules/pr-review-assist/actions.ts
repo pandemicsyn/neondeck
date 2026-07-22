@@ -12,6 +12,8 @@ import {
   type ReviewAssistPromptContext,
 } from './service';
 import { readAgentModelSelectionSync } from '../runtime';
+import { resolvePrReviewerWorkspace } from '../pr-reviewer';
+import { runtimePaths } from '../../runtime-home';
 
 export const reviewPrForHumanAction = defineAction({
   name: 'neondeck_pr_review_for_human',
@@ -27,15 +29,32 @@ export const reviewPrForHumanAction = defineAction({
       result = await reviewPrForHuman(input, undefined, {
         workflowRunId: runId,
         reviewer: async (facts, context) => {
-          const session = await harness.session();
-          const response = await session.skill('neon-pr-review', {
-            args: {
-              task: 'Review the pull request facts and return only the requested structured review output.',
-              facts: reviewFactsForPrompt(facts, context),
+          const workspace = await resolvePrReviewerWorkspace(
+            {
+              repoFullName: facts.target.repoFullName,
+              prNumber: facts.target.number,
+              headSha: facts.state.headSha,
+              baseSha: facts.state.baseSha,
+              baseRef: facts.state.baseRef,
             },
-            result: reviewAssistStructuredOutputSchema,
-            signal: AbortSignal.timeout(prReviewTimeoutMs),
-          });
+            runtimePaths(),
+          );
+          const session = await harness.session();
+          const response = await session.prompt(
+            JSON.stringify(
+              {
+                task: 'Review this pull request for a human reviewer.',
+                facts: reviewFactsForPrompt(facts, { ...context, workspace }),
+              },
+              null,
+              2,
+            ),
+            {
+              result: reviewAssistStructuredOutputSchema,
+              signal: AbortSignal.timeout(prReviewTimeoutMs),
+              tools: workspace.tools,
+            },
+          );
           return response.data;
         },
       });
@@ -92,6 +111,7 @@ export function reviewFactsForPrompt(
   context?: ReviewFactsPromptContext,
 ) {
   const backgroundContext = reviewBackgroundContext(context);
+  const workspace = context?.workspace;
   return {
     target: {
       repoFullName: facts.target.repoFullName,
@@ -128,6 +148,19 @@ export function reviewFactsForPrompt(
       `${facts.state.title}\n${facts.state.body ?? ''}`,
     ),
     diffSummary: facts.diffSummary,
+    workspace: workspace?.available
+      ? {
+          available: true,
+          access: 'exact-revision-read-only-tools',
+          source: facts.source,
+          headSha: workspace.headSha,
+          mergeBase: workspace.mergeBase,
+        }
+      : {
+          available: false,
+          source: facts.source,
+          reason: workspace?.reason ?? 'No local workspace was requested.',
+        },
     checks: {
       suites: facts.state.checkSuites.map((suite) => ({
         id: suite.id,
@@ -187,7 +220,9 @@ export function reviewFactsForPrompt(
       binary: file.binary,
       generatedLike: file.generatedLike,
       truncated: file.truncated,
-      patch: truncate(file.patch ?? '', 12_000),
+      ...(workspace?.available
+        ? {}
+        : { patch: truncate(file.patch ?? '', 12_000) }),
       message: file.message,
     })),
     limitations: [
@@ -199,6 +234,7 @@ export function reviewFactsForPrompt(
 type ReviewFactsPromptContext = Partial<
   Pick<ReviewAssistPromptContext, 'learningMemoryContext'>
 > & {
+  workspace?: Awaited<ReturnType<typeof resolvePrReviewerWorkspace>>;
   memoryContext?: {
     text: string;
     memoryIds: string[];

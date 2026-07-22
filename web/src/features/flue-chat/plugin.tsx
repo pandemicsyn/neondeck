@@ -258,10 +258,6 @@ export const FlueChatPlugin = {
     return (
       <div className="flue-chat-panel flex h-full min-h-0 flex-col">
         <header className="flue-chat-header panel-header border-b border-line px-4 font-mono text-[11px] tracking-[0.14em]">
-          <h2 className="flue-chat-title m-0 flex items-center gap-2 text-[inherit] font-[inherit] text-primary">
-            <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />
-            FLUE AGENT · {config.agentName}
-          </h2>
           <div className="flue-chat-controls">
             <div className="flue-chat-primary-controls">
               <SessionSelect
@@ -270,22 +266,17 @@ export const FlueChatPlugin = {
                 onSelect={switchToSession}
                 sessions={sessions}
               />
+            </div>
+            <div className="flue-chat-secondary-controls">
               <Button
-                className="h-5 border-transparent bg-transparent px-2 py-0 font-mono text-[10.5px] text-muted hover:border-violet hover:text-primary"
+                className="h-5 border-transparent bg-transparent px-2 py-0 font-mono text-[10.5px] text-primary hover:border-violet"
                 disabled={startSessionMutation.isPending}
                 onClick={() => void startFreshSession()}
                 title="Start a new chat session"
                 type="button"
               >
-                {startSessionMutation.isPending ? 'Starting' : 'New'}
+                {startSessionMutation.isPending ? 'Starting' : 'New chat'}
               </Button>
-              <span
-                className={sessionState?.stale ? 'text-accent' : 'text-muted'}
-              >
-                {sessionState?.stale ? 'stale ctx' : 'durable ctx'}
-              </span>
-            </div>
-            <div className="flue-chat-secondary-controls">
               <Button
                 aria-controls={renameFormId}
                 aria-expanded={renaming}
@@ -334,9 +325,10 @@ export const FlueChatPlugin = {
                   referenceMutation.isPending
                 }
                 onClick={() => setReferencing((value) => !value)}
+                title="Bring context from another chat into this one"
                 type="button"
               >
-                {referencing ? 'Cancel' : 'Reference'}
+                {referencing ? 'Cancel' : 'Use context'}
               </Button>
             </div>
           </div>
@@ -354,7 +346,7 @@ export const FlueChatPlugin = {
             }}
           >
             <label className="text-muted" htmlFor={`${referenceFormId}-select`}>
-              Reference session
+              Use context from
             </label>
             <select
               className="min-w-0 flex-1 border border-line bg-panel px-2 py-1 text-ink outline-none focus:border-primary"
@@ -375,7 +367,7 @@ export const FlueChatPlugin = {
               disabled={!referenceTargetId || referenceMutation.isPending}
               type="submit"
             >
-              {referenceMutation.isPending ? 'Preparing' : 'Add reference'}
+              {referenceMutation.isPending ? 'Preparing' : 'Add context'}
             </Button>
           </form>
         ) : null}
@@ -434,7 +426,7 @@ export const FlueChatPlugin = {
             className="flex items-center justify-between gap-3 border-b border-line bg-soft px-4 py-1.5 text-[11px] text-muted"
           >
             <span className="min-w-0 truncate">
-              Reference ready · {referenceMutation.data.session.id} ·{' '}
+              Context ready · {referenceMutation.data.session.id} ·{' '}
               {referenceMutation.data.session.summary ??
                 'summary metadata refreshed'}
             </span>

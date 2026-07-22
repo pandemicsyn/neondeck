@@ -59,3 +59,17 @@ export function reconcilePrReviewSubmission(id: string) {
     {},
   );
 }
+
+export function archivePrReview(id: string) {
+  return postJson<PrReviewMutationResponse>(
+    `/api/reviews/${encodeURIComponent(id)}/archive`,
+    {},
+  );
+}
+
+export function restorePrReview(id: string) {
+  return postJson<PrReviewMutationResponse>(
+    `/api/reviews/${encodeURIComponent(id)}/restore`,
+    {},
+  );
+}

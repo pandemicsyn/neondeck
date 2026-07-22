@@ -4,25 +4,14 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { getLocalApiSession } from './api/local-api-session';
 import { queryClient } from './lib/query';
 import './styles.css';
-
-type LocalApiSession = {
-  ok: boolean;
-  token?: string | null;
-  header?: string | null;
-};
-
-const localApiSession = fetch('/api/local-api/session')
-  .then((response) =>
-    response.ok ? (response.json() as Promise<LocalApiSession>) : null,
-  )
-  .catch(() => null);
 
 const client = createFlueClient({
   baseUrl: '/api/flue',
   fetch: async (input, init) => {
-    const session = await localApiSession;
+    const session = await getLocalApiSession();
     const headers = new Headers(init?.headers);
     if (session?.token) {
       headers.set(session.header || 'x-neondeck-api-token', session.token);

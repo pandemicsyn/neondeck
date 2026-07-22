@@ -1,25 +1,31 @@
 import { defineAgent } from '@flue/runtime';
+import { readAgentModelSelectionSync } from '../modules/runtime';
 import {
-  readAgentModelSelectionSync,
-  runtimeSkillReferenceByIdSync,
-} from '../modules/runtime';
-import neonPrReview from '../skills/neon-pr-review/SKILL.md' with { type: 'skill' };
+  effectivePrReviewPromptTemplates,
+  ensureRuntimeHomeSync,
+  parseAppConfig,
+  readRuntimeJsonSync,
+  runtimePaths,
+  type RuntimePaths,
+} from '../runtime-home';
 
-export default defineAgent(() => {
-  const models = readAgentModelSelectionSync();
+export function buildPrReviewAssistantRuntime(
+  paths: RuntimePaths = runtimePaths(),
+) {
+  ensureRuntimeHomeSync(paths);
+  const models = readAgentModelSelectionSync(paths);
+  const config = readRuntimeJsonSync(paths.config, parseAppConfig);
 
   return {
     model: models.prReview,
     thinkingLevel: models.prReviewThinkingLevel,
     cwd: '/workspace',
-    instructions: [
-      'You are a private Neondeck PR review workflow agent.',
-      'You receive pull request facts as data and return only the requested structured review output.',
-      'You have no tools or actions. Do not attempt external mutations, host execution, GitHub submission, or Neondeck configuration changes.',
-    ].join('\n\n'),
-    skills: [runtimeSkillReferenceByIdSync('neon-pr-review') ?? neonPrReview],
+    instructions: effectivePrReviewPromptTemplates(config)['initial-review'],
+    skills: [],
     tools: [],
     actions: [],
     subagents: [],
   };
-});
+}
+
+export default defineAgent(() => buildPrReviewAssistantRuntime());

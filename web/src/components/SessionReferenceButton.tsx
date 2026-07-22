@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createChatSession, type ChatSessionKind } from '../api';
 import { queryErrorMessage, queryKeys } from '../lib/query';
+import { Button } from './ui';
 
 type SessionReferenceButtonProps = {
   title: string;
@@ -21,7 +22,7 @@ export function SessionReferenceButton({
   linkedTaskId,
   summary,
   uiMetadata,
-  className = 'inline-flex min-h-[28px] shrink-0 items-center border border-line px-2 py-1 text-muted hover:border-primary hover:text-primary disabled:opacity-50',
+  className = 'min-h-[28px] shrink-0 border-line bg-transparent px-2 py-1 text-[10px] text-muted',
 }: SessionReferenceButtonProps) {
   const queryClient = useQueryClient();
   const mutation = useMutation({
@@ -55,16 +56,16 @@ export function SessionReferenceButton({
 
   return (
     <span className="inline-flex max-w-full flex-wrap items-center gap-1">
-      <button
-        aria-label={`Reference ${title} in chat`}
+      <Button
+        aria-label={`Open chat for ${title}`}
         className={className}
         disabled={mutation.isPending}
         onClick={() => mutation.mutate()}
-        title={`Reference ${title} in chat`}
+        title={`Open a linked chat for ${title}`}
         type="button"
       >
-        {mutation.isPending ? 'Opening' : 'Reference'}
-      </button>
+        {mutation.isPending ? 'opening' : 'chat'}
+      </Button>
       {mutation.error ? (
         <span
           className="max-w-[28ch] text-[10px] leading-4 text-accent"

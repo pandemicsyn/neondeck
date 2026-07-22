@@ -1,3 +1,5 @@
+import { getLocalApiSession } from './local-api-session';
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -14,6 +16,19 @@ export type ApiRequestOptions = { signal?: AbortSignal };
 
 export async function getJson<T>(url: string, options: ApiRequestOptions = {}) {
   const response = await fetch(url, { signal: options.signal });
+  return readJsonResponse<T>(response, url);
+}
+
+export async function getAuthorizedJson<T>(
+  url: string,
+  options: ApiRequestOptions = {},
+) {
+  const session = await getLocalApiSession();
+  const headers = new Headers();
+  if (session?.token) {
+    headers.set(session.header || 'x-neondeck-api-token', session.token);
+  }
+  const response = await fetch(url, { headers, signal: options.signal });
   return readJsonResponse<T>(response, url);
 }
 

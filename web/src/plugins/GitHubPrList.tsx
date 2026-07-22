@@ -23,6 +23,7 @@ import {
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
 import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
+import { isCompletedPrWatch } from '../lib/watch-status';
 import type { DisplayPlugin } from '../types';
 import { parsePositiveIntegerConfig } from './config';
 
@@ -180,7 +181,7 @@ function PrRow({
             onClick={() => setShowReview((value) => !value)}
             type="button"
           >
-            {showReview ? 'hide diff' : 'review'}
+            {prDiffActionLabel(showReview)}
           </Button>
           <SessionReferenceButton
             kind="task"
@@ -262,7 +263,7 @@ function NeonReviewButton({ item }: { item: GitHubPullRequest }) {
         ? 'queuing'
         : mutation.data
           ? 'queued'
-          : 'neon review'}
+          : neonReviewActionLabel()}
     </Button>
   );
 }
@@ -380,6 +381,14 @@ export function isCiFixCandidate(item: GitHubPullRequest) {
   return item.checks?.status === 'failure' || item.checkError !== undefined;
 }
 
+export function prDiffActionLabel(showing: boolean) {
+  return showing ? 'hide diff' : 'view diff';
+}
+
+export function neonReviewActionLabel() {
+  return 'run review';
+}
+
 export function reviewWorkflowCompletionState(
   workflows: WorkflowObservability,
   runId: string,
@@ -429,7 +438,9 @@ function WatchPrButton({ item }: { item: GitHubPullRequest }) {
         watch.prNumber === item.number),
   );
   const activeExistingWatch =
-    existingWatch && !isTerminalWatchStatus(existingWatch.status)
+    existingWatch &&
+    !isCompletedPrWatch(existingWatch) &&
+    !isTerminalWatchStatus(existingWatch.status)
       ? existingWatch
       : undefined;
   const mutation = useMutation({

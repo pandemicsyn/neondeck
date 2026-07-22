@@ -9,8 +9,14 @@ export const vite = defineViteConfig({
   server: {
     watch: {
       ignored: [
+        '**/.agents/**',
+        '**/.changeset/**',
+        '**/.codex/**',
         '**/.git/**',
+        '**/.impeccable/**',
         '**/.playwright-mcp/**',
+        '**/.plans/**',
+        '**/.tmp-*/**',
         '**/.astro/**',
         '**/data/**',
         '**/design/**',

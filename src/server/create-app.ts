@@ -4,6 +4,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
+import { dashboardEventStreamPath } from '../../shared/dashboard-events';
 import { getMcpRegistry } from '../domains/mcp';
 import { installFlueExecutionContextTracker } from '../modules/flue/execution-context';
 import { loadNeondeckEnv } from '../modules/runtime';
@@ -80,6 +81,7 @@ export async function createApp(options: CreateAppOptions = {}) {
 
   const app = new Hono();
   const staticRoot = options.staticRoot ?? resolveStaticRoot();
+  const requireRunInspection = requireFlueRunInspectionToken(paths);
 
   await ensureRuntimeHome(paths);
   installFlueExecutionContextTracker();
@@ -98,7 +100,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.use('/reports/*', requireLocalApiAccess);
 
   app.route('/api', createRuntimeRoutes(paths));
-  app.route('/api/events', createEventStreamRoutes());
+  app.route(dashboardEventStreamPath, createEventStreamRoutes());
   app.route('/api/safety', createSafetyRoutes(paths));
   app.route('/api/execution', createExecutionRoutes(paths));
   app.route('/api', createSessionRoutes(paths));
@@ -123,6 +125,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api', createReportApiRoutes(paths));
   app.route('/api', createReviewRoutes(paths));
   app.route('/api', createReviewSurfaceRoutes());
+  app.use('/api/workflows/runs/*', requireRunInspection);
   app.route('/api/workflows', createWorkflowRoutes(paths));
   app.route('/api/github', createGitHubRoutes(paths));
 
@@ -131,7 +134,6 @@ export async function createApp(options: CreateAppOptions = {}) {
     displayAssistantLearningMiddleware(paths),
   );
 
-  const requireRunInspection = requireFlueRunInspectionToken(paths);
   app.use('/api/flue/runs', requireRunInspection);
   app.use('/api/flue/runs/*', requireRunInspection);
   app.route('/api/flue', flue());

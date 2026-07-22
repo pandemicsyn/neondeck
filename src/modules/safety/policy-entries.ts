@@ -387,6 +387,12 @@ export const entries: SafetyPolicyEntry[] = [
     'Reads allowlisted provider config without exposing secret values.',
   ),
   action(
+    'neondeck_config_read_autopilot_prompts',
+    'Read Autopilot owner prompts',
+    readOnly,
+    'Reads the full effective, default, and overridden owner prompt templates for each model-backed Autopilot mode.',
+  ),
+  action(
     'neondeck_commands_list',
     'List slash commands',
     readOnly,
@@ -697,6 +703,15 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget: 'config_history',
     },
     'Updates allowlisted provider settings using environment variable references only; server restart is required.',
+  ),
+  action(
+    'neondeck_config_update_autopilot_prompt',
+    'Update Autopilot owner prompt',
+    {
+      ...safeMutation,
+      auditTarget: 'config_history',
+    },
+    'Replaces a full per-mode owner system prompt or resets it to the built-in default; existing owners apply it on their next turn.',
   ),
   action(
     'neondeck_config_update_execution_policy',
@@ -1788,6 +1803,24 @@ export const entries: SafetyPolicyEntry[] = [
     'Reuses one durable local PR review record for a new head and preserves its previous verdict audit field.',
   ),
   route(
+    'POST /api/reviews/:id/archive',
+    'Archive PR review API',
+    {
+      ...safeMutation,
+      auditTarget: 'pr_reviews',
+    },
+    'Hides a completed or failed local PR review from the active inbox without deleting it.',
+  ),
+  route(
+    'POST /api/reviews/:id/restore',
+    'Restore PR review API',
+    {
+      ...safeMutation,
+      auditTarget: 'pr_reviews',
+    },
+    'Restores an archived local PR review to its outcome-based inbox section.',
+  ),
+  route(
     '/api/runtime/status',
     'Runtime status API',
     readOnly,
@@ -2142,6 +2175,15 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget: 'config_history',
     },
     'Updates allowlisted provider environment variable references.',
+  ),
+  route(
+    '/api/autopilot/prompts',
+    'Autopilot owner prompt config API',
+    {
+      ...safeMutation,
+      auditTarget: 'config_history',
+    },
+    'GET reads full per-mode prompt templates; POST replaces one template or resets it to the built-in default.',
   ),
   route(
     '/api/kilo/*',

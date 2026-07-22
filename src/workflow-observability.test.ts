@@ -72,9 +72,7 @@ describe('workflow observability', () => {
       expect.objectContaining({
         eventType: 'run_end',
         message: 'Workflow completed in 1.3s.',
-        runUrl: expect.stringMatching(
-          /^\/api\/flue\/runs\/run_1\?meta&neondeckApiToken=[A-Za-z0-9_-]{32,}$/,
-        ),
+        runUrl: '/workflow-run?runId=run_1',
       }),
     ]);
     expect(snapshot.recentLogs).toEqual([

@@ -33,6 +33,7 @@ import type {
   ReviewPopoutTarget,
 } from './features/pr-review/PrReviewPopoutPage';
 import { NotificationController } from './features/notifications/controller';
+import { WorkflowRunInspectorPage } from './features/workflows/WorkflowRunInspectorPage';
 import type {
   DashboardConfig,
   DashboardDensity,
@@ -67,7 +68,9 @@ if (typeof window !== 'undefined' && window.location.pathname === '/review') {
 export function App() {
   const queryClient = useQueryClient();
   const reviewRoute = useMemo(readReviewPopoutRoute, []);
-  const isDashboardRoute = reviewRoute.kind === 'none';
+  const workflowRunRoute = useMemo(readWorkflowRunRoute, []);
+  const isDashboardRoute =
+    reviewRoute.kind === 'none' && workflowRunRoute.kind === 'none';
   const {
     data: config,
     error,
@@ -169,6 +172,33 @@ export function App() {
           />
         </Suspense>
       </main>
+    );
+  }
+
+  if (workflowRunRoute.kind === 'target') {
+    const style = {
+      '--deck-text-scale': reviewAppearance.textScale.toString(),
+    } as CSSProperties;
+    return (
+      <main
+        className={`dashboard-grid deck-density-${reviewAppearance.density} h-screen overflow-hidden bg-bg text-ink`}
+        data-deck-arrangement="workflow-run"
+        data-deck-profile="workflow-run"
+        data-display-preset="workflow-run"
+        style={style}
+      >
+        <WorkflowRunInspectorPage runId={workflowRunRoute.runId} />
+      </main>
+    );
+  }
+
+  if (workflowRunRoute.kind === 'invalid') {
+    return (
+      <BootState
+        detail={workflowRunRoute.message}
+        title="Invalid workflow run route"
+        tone="alert"
+      />
     );
   }
 
@@ -699,6 +729,11 @@ type ReviewPopoutRoute =
   | { kind: 'invalid'; message: string }
   | { kind: 'target'; target: ReviewPopoutTarget };
 
+type WorkflowRunRoute =
+  | { kind: 'none' }
+  | { kind: 'invalid'; message: string }
+  | { kind: 'target'; runId: string };
+
 function ReviewPopoutLoadingPage({
   appearance,
 }: {
@@ -774,6 +809,21 @@ function readReviewPopoutRoute(): ReviewPopoutRoute {
       title: params.get('title')?.trim() || null,
     },
   };
+}
+
+function readWorkflowRunRoute(
+  location: Pick<Location, 'pathname' | 'search'> = window.location,
+): WorkflowRunRoute {
+  if (location.pathname !== '/workflow-run') return { kind: 'none' };
+  const runId = new URLSearchParams(location.search).get('runId')?.trim();
+  if (!runId) {
+    return {
+      kind: 'invalid',
+      message:
+        'A workflow run id is required, for example /workflow-run?runId=run_123.',
+    };
+  }
+  return { kind: 'target', runId };
 }
 
 function resolveAppearance(config: DashboardConfig): {

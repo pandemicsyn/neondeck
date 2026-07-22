@@ -316,6 +316,8 @@ function reviewEvent(): PrReviewEvent {
       status: 'ready',
       runId: 'run-1',
       headSha: 'head-1',
+      baseSha: null,
+      baseRef: null,
       origin: 'panel',
       reviewUrl: '/review?repo=owner%2Frepo&number=1',
       reportIds: ['report-1'],
@@ -333,6 +335,7 @@ function reviewEvent(): PrReviewEvent {
       readyAt: timestamp,
       submittedAt: null,
       failedAt: null,
+      archivedAt: null,
     },
   };
 }

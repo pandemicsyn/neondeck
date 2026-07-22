@@ -59,7 +59,11 @@ import {
   upsertWatchPollingTask,
   watchPollingTaskId,
 } from './store';
-import { resolvePrReference, resolveRefReference } from './references';
+import {
+  findConfiguredRepo,
+  resolvePrReference,
+  resolveRefReference,
+} from './references';
 import { failResult, okResult, parseActionInput } from './utils';
 import { readWorktreeRecord } from '../worktrees';
 
@@ -95,7 +99,9 @@ export async function addPrWatch(
     const processExistingChanged =
       parsed.input.processExisting !== undefined &&
       existing.processExisting !== parsed.input.processExisting;
-    const terminalWatch = isTerminalPrWatchStatus(existing.status);
+    const terminalWatch =
+      isTerminalPrWatchStatus(existing.status) ||
+      existing.autopilotStatus === 'complete';
     const intervalChanged =
       parsed.input.intervalSeconds !== undefined &&
       (task?.trigger.kind !== 'interval' ||
@@ -179,6 +185,10 @@ export async function addPrWatch(
         processExisting: effectiveProcessExisting,
         initialEventProcessedAt: effectiveProcessExisting ? null : now,
         eventWatermarkVersion: currentPrWatchEventWatermarkVersion,
+        autopilotStatus: 'watching',
+        ownerInstanceId: null,
+        worktreeId: null,
+        lastEventFingerprint: null,
         status: statusFromSnapshot(
           snapshot,
           resolved.reference.desiredTerminalState,
@@ -291,6 +301,28 @@ export async function addPrWatch(
     `Watching ${watch.id}. ${initialFeedbackChoiceMessage(watch)}`,
     { watch },
   );
+}
+
+export async function canonicalizePrWatchRepoId(
+  paths: RuntimePaths,
+  id: string,
+) {
+  const watch = readWatch(paths, id);
+  if (!watch) return undefined;
+
+  const registry = await readRepoRegistrySnapshot(paths);
+  const configured = findConfiguredRepo(registry.repos, watch.repoFullName);
+  if (!configured.ok || configured.repo.id === watch.repoId) return watch;
+
+  const next: PrWatch = {
+    ...watch,
+    repoId: configured.repo.id,
+    repoFullName: `${configured.repo.github.owner}/${configured.repo.github.name}`,
+    githubOwner: configured.repo.github.owner,
+    githubName: configured.repo.github.name,
+    updatedAt: new Date().toISOString(),
+  };
+  return updateWatch(paths, next, watch) ? next : readWatch(paths, id);
 }
 
 function initialFeedbackChoiceMessage(watch: PrWatch) {

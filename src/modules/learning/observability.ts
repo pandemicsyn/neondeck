@@ -2,7 +2,6 @@ import { type FlueObservation, type JsonValue } from '@flue/runtime';
 import type { DatabaseSync } from 'node:sqlite';
 import { openDb } from '../../lib/sqlite';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
-import { flueRunInspectionUrl, readLocalApiToken } from '../runtime';
 
 export type WorkflowEventRecord = {
   id: number;
@@ -114,7 +113,6 @@ export async function recordFlueObservation(
 
 export async function readWorkflowObservability(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
-  const localApiToken = await readLocalApiToken(paths);
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
 
   try {
@@ -128,7 +126,7 @@ export async function readWorkflowObservability(paths = runtimePaths()) {
       `,
       )
       .all()
-      .map((row) => readWorkflowEventRow(row, localApiToken));
+      .map(readWorkflowEventRow);
 
     const activeRuns = database
       .prepare(
@@ -141,7 +139,7 @@ export async function readWorkflowObservability(paths = runtimePaths()) {
       `,
       )
       .all()
-      .map((row) => readActiveRunRow(row, localApiToken));
+      .map(readActiveRunRow);
 
     return {
       ok: true,
@@ -341,10 +339,7 @@ function summarizeObservation(event: FlueObservation) {
   }
 }
 
-function readWorkflowEventRow(
-  row: unknown,
-  localApiToken: string | null,
-): WorkflowEventRecord {
+function readWorkflowEventRow(row: unknown): WorkflowEventRecord {
   const record = row as Record<string, unknown>;
   const runId = typeof record.run_id === 'string' ? record.run_id : null;
   return {
@@ -369,11 +364,11 @@ function readWorkflowEventRow(
         ? parseJson(record.summary_json)
         : null,
     createdAt: String(record.created_at),
-    runUrl: runInspectionUrl(runId, localApiToken),
+    runUrl: runInspectionUrl(runId),
   };
 }
 
-function readActiveRunRow(row: unknown, localApiToken: string | null) {
+function readActiveRunRow(row: unknown) {
   const record = row as Record<string, unknown>;
   const runId = String(record.run_id);
   return {
@@ -383,13 +378,13 @@ function readActiveRunRow(row: unknown, localApiToken: string | null) {
     lastEventAt: String(record.last_event_at),
     lastMessage: String(record.last_message),
     eventCount: Number(record.event_count),
-    runUrl: runInspectionUrl(runId, localApiToken),
+    runUrl: runInspectionUrl(runId),
   };
 }
 
-function runInspectionUrl(runId: string | null, localApiToken: string | null) {
+function runInspectionUrl(runId: string | null) {
   if (!runId || runId.startsWith('scheduler_tick_')) return null;
-  return flueRunInspectionUrl(runId, localApiToken);
+  return `/workflow-run?runId=${encodeURIComponent(runId)}`;
 }
 
 function updateRunProjection(

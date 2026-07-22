@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
+import { dashboardEventStreamPath } from '../../../shared/dashboard-events';
 import { createDashboardEventHub } from './event-hub';
 
 describe('dashboard event hub', () => {
+  it('uses a Flue observation-shaped URL for the shared dashboard stream', () => {
+    expect(dashboardEventStreamPath).toMatch(/\/agents\/[^/]+\/[^/]+$/u);
+  });
+
   it('uses one EventSource and demultiplexes named events', () => {
     const sources: FakeEventSource[] = [];
     const hub = createDashboardEventHub('/api/events', (url) => {

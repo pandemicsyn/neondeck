@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { NotificationRecord, PrWatch } from '../api';
 import {
+  isCompletedPrWatch,
   notificationDisplayMessage,
   prWatchAttentionReason,
 } from './watch-status';
@@ -30,6 +31,11 @@ const watch = {
 } satisfies Pick<PrWatch, 'id' | 'status' | 'prState' | 'lastSnapshot'>;
 
 describe('PR watch status presentation', () => {
+  it('treats completed Autopilot state as inactive', () => {
+    expect(isCompletedPrWatch({ autopilotStatus: 'complete' })).toBe(true);
+    expect(isCompletedPrWatch({ autopilotStatus: 'watching' })).toBe(false);
+  });
+
   it('summarizes the evidence behind attention-needed', () => {
     expect(prWatchAttentionReason(watch)).toBe(
       'Merged, but 1 of 50 checks failed.',

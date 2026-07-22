@@ -16,6 +16,7 @@ import {
 } from '../github';
 import { getGitHubPrEventState, getGitHubPrFiles } from '../pr-events';
 import type { PrEventStateDependencies, PullRequestTarget } from '../pr-events';
+import { readLocalPullRequestFileDiff } from '../pr-local-diffs';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import { writeReport } from '../reports';
 import {
@@ -49,6 +50,7 @@ export type ReviewAssistFacts = {
   state: GitHubPullRequestEventState;
   files: GitHubPullRequestFile[];
   diffSummary: GitHubDiffSummary;
+  source: 'local' | 'github';
 };
 
 export type ReviewAssistPromptContext = {
@@ -254,6 +256,7 @@ async function readReviewFacts(
       prNumber: target.number,
       headSha: state.headSha,
       baseSha: state.baseSha,
+      baseRef: state.baseRef,
     },
     paths,
     dependencies.prEventDependencies,
@@ -266,6 +269,7 @@ async function readReviewFacts(
     ? (filesData.files as GitHubPullRequestFile[])
     : null;
   const diffSummary = filesData.diffSummary as GitHubDiffSummary | undefined;
+  const source = filesData.source === 'local' ? 'local' : 'github';
   if (!files || !diffSummary) {
     return {
       ok: false,
@@ -273,7 +277,7 @@ async function readReviewFacts(
     };
   }
 
-  return { ok: true, facts: { target, state, files, diffSummary } };
+  return { ok: true, facts: { target, state, files, diffSummary, source } };
 }
 
 function deterministicReviewPass(
@@ -375,13 +379,19 @@ async function seedDraftComments(
     };
   }
 
-  const anchors = anchorsByPath(facts.files);
+  const validationFiles = await reviewValidationFiles(facts, output, paths);
+  const anchors = anchorsByPath(validationFiles);
+  const filesByPath = new Map(validationFiles.map((file) => [file.path, file]));
   const seeded: SeededFinding[] = [];
   const reportOnly: ReportOnlyFinding[] = [];
   const seedable = [];
   for (const finding of output.findings) {
     if (finding.anchor.kind === 'report-only') {
       reportOnly.push({ finding, reason: finding.anchor.reason });
+      continue;
+    }
+    if (filesByPath.get(finding.path)?.truncated) {
+      reportOnly.push({ finding, reason: 'file-diff-truncated' });
       continue;
     }
     const anchor = findingAnchor(finding);
@@ -469,14 +479,64 @@ async function seedDraftComments(
   return { draft, seeded, reportOnly, skippedReason: null as string | null };
 }
 
+async function reviewValidationFiles(
+  facts: ReviewAssistFacts,
+  output: ReviewAssistStructuredOutput,
+  paths: RuntimePaths,
+) {
+  const findingPaths = new Set(
+    output.findings
+      .filter((finding) => finding.anchor.kind === 'inline')
+      .map((finding) => finding.path),
+  );
+  const truncatedPaths = [
+    ...new Set(
+      facts.files
+        .filter((file) => file.truncated && findingPaths.has(file.path))
+        .map((file) => file.path),
+    ),
+  ];
+  if (truncatedPaths.length === 0) return facts.files;
+
+  const exactFiles = new Map<string, GitHubPullRequestFile>();
+  let nextPathIndex = 0;
+  const worker = async () => {
+    while (nextPathIndex < truncatedPaths.length) {
+      const path = truncatedPaths[nextPathIndex];
+      nextPathIndex += 1;
+      if (!path) continue;
+      try {
+        const exact = await readLocalPullRequestFileDiff(
+          {
+            owner: facts.target.owner,
+            repo: facts.target.repo,
+            number: facts.target.number,
+            headSha: facts.state.headSha,
+            baseSha: facts.state.baseSha,
+            baseRef: facts.state.baseRef,
+            path,
+            maxPatchBytes: 16 * 1024 * 1024,
+          },
+          paths,
+        );
+        if (exact.file) exactFiles.set(path, exact.file);
+      } catch {
+        // Preserve the bounded source patch and keep the finding report-only.
+      }
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(3, truncatedPaths.length) }, () => worker()),
+  );
+  return facts.files.map((file) => exactFiles.get(file.path) ?? file);
+}
+
 function reviewSeedingBlockedReason(facts: ReviewAssistFacts) {
   const stateTruncation = pullRequestEventStateTruncation(facts.state);
-  const filePatchTruncation = facts.files.some((file) => file.truncated);
   const reasons = [
     stateTruncation.any
       ? `truncated-pr-event-facts:${stateTruncation.categories.join(',')}`
       : null,
-    filePatchTruncation ? 'truncated-file-patches' : null,
   ].filter((reason): reason is string => Boolean(reason));
   return reasons.length > 0 ? reasons.join(';') : null;
 }

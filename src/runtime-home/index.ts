@@ -1,4 +1,6 @@
 export { generateLocalApiToken, resolveLearningConfig } from './defaults.ts';
+export * from './autopilot-prompts.ts';
+export * from './pr-review-prompts.ts';
 export {
   defaultRepoGuardrails,
   repoGuardrailsSchema,
@@ -25,6 +27,9 @@ export {
   autopilotConcurrencySchema,
   autopilotConfigSchema,
   autopilotModeSchema,
+  autopilotOwnerPromptModeSchema,
+  autopilotPromptTemplateSchema,
+  autopilotPromptTemplatesSchema,
   ConfigValidationError,
   dashboardConfigSchema,
   dashboardRegionSchema,
@@ -40,6 +45,10 @@ export {
   parseDashboardConfig,
   parseRepoRegistry,
   providerConfigSchema,
+  prReviewConfigSchema,
+  prReviewPromptKindSchema,
+  prReviewPromptTemplateSchema,
+  prReviewPromptTemplatesSchema,
   prReviewTimeoutMsSchema,
   repoConfigSchema,
   repoRegistrySchema,
@@ -63,6 +72,7 @@ export {
   type LearningConfig,
   type LocalApiConfig,
   type ProviderConfig,
+  type PrReviewConfig,
   type RepoConfig,
   type RepoRegistry,
   type ResolvedLearningConfig,

@@ -1,6 +1,5 @@
 import { sql } from 'drizzle-orm';
 import {
-  check,
   index,
   integer,
   primaryKey,
@@ -461,6 +460,8 @@ export const prReviews = sqliteTable(
     attemptId: text('attempt_id').notNull(),
     runId: text('run_id'),
     headSha: text('head_sha').notNull(),
+    baseSha: text('base_sha'),
+    baseRef: text('base_ref'),
     origin: text('origin').notNull(),
     reviewUrl: text('review_url').notNull(),
     reportIdsJson: text('report_ids_json').default('[]').notNull(),
@@ -480,6 +481,7 @@ export const prReviews = sqliteTable(
     readyAt: text('ready_at'),
     submittedAt: text('submitted_at'),
     failedAt: text('failed_at'),
+    archivedAt: text('archived_at'),
   },
   (table) => [
     uniqueIndex('idx_pr_reviews_target').on(table.repoFullName, table.prNumber),

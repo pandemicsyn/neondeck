@@ -16,6 +16,7 @@ import { resolvePullRequestTarget, type PullRequestTarget } from '../pr-events';
 import { publishPrReviewEvent } from './events';
 import {
   listPrReviews,
+  pruneExpiredSubmittedPrReviews,
   readPrReview,
   readPrReviewByRunId,
   readPrReviewForTarget,
@@ -248,7 +249,8 @@ export function reservePrReviewSubmission(
       .prepare(
         `UPDATE pr_reviews
          SET status = 'submitting', verdict = ?, updated_at = ?
-         WHERE id = ? AND status = 'ready' AND head_sha = ?;`,
+         WHERE id = ? AND status = 'ready' AND head_sha = ?
+           AND archived_at IS NULL;`,
       )
       .run(input.verdict, now, current.id, input.headSha);
     changed = result.changes === 1;
@@ -415,11 +417,56 @@ async function reconcileInactivePrReviewSubmission(
   throw new Error('Could not release the interrupted submission locally.');
 }
 
-export function recentPrReviews(paths = runtimePaths()) {
-  const submittedSince = new Date(
-    Date.now() - 7 * 24 * 60 * 60 * 1000,
-  ).toISOString();
+export function recentPrReviews(paths = runtimePaths(), now = Date.now()) {
+  pruneExpiredSubmittedPrReviews(paths, now);
+  const submittedSince = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
   return listPrReviews(paths, { submittedSince });
+}
+
+export function archivePrReview(
+  input: { reviewId: string },
+  paths = runtimePaths(),
+) {
+  return setPrReviewArchived(input.reviewId, true, paths);
+}
+
+export function restorePrReview(
+  input: { reviewId: string },
+  paths = runtimePaths(),
+) {
+  return setPrReviewArchived(input.reviewId, false, paths);
+}
+
+function setPrReviewArchived(
+  reviewId: string,
+  archived: boolean,
+  paths: RuntimePaths,
+) {
+  const current = readPrReview(reviewId, paths);
+  if (!current) throw new Error('PR review not found.');
+  if (current.status === 'reviewing' || current.status === 'submitting') {
+    throw new Error('An active review cannot be archived.');
+  }
+  if (Boolean(current.archivedAt) === archived) {
+    return { changed: false, review: current };
+  }
+
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `UPDATE pr_reviews
+         SET archived_at = ?, updated_at = ?
+         WHERE id = ?;`,
+      )
+      .run(archived ? now : null, now, current.id);
+  } finally {
+    database.close();
+  }
+  const updated = requireReview(current.id, paths);
+  publish(updated, 'changed');
+  return { changed: true, review: updated };
 }
 
 function matchingSubmittedReview(
@@ -496,12 +543,13 @@ function upsertReviewingRecord(
       .prepare(
         `INSERT INTO pr_reviews (
            id, ref, repo_full_name, pr_number, title, author, pr_url, status,
-           attempt_id, run_id, head_sha, origin, review_url, report_ids_json,
+           attempt_id, run_id, head_sha, base_sha, base_ref, origin,
+           review_url, report_ids_json,
            finding_count, seeded_count, report_only_count,
            report_only_findings_json, trust_boundary, verdict,
            previous_verdict, github_review_url, failure_message,
            created_at, updated_at, ready_at, submitted_at, failed_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, 'reviewing', ?, NULL, ?, ?, ?, '[]',
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, 'reviewing', ?, NULL, ?, ?, ?, ?, ?, '[]',
                    0, 0, 0, '[]', ?, NULL, ?, NULL, NULL, ?, ?, NULL, NULL, NULL)
          ON CONFLICT(repo_full_name, pr_number) DO UPDATE SET
            ref = excluded.ref,
@@ -512,6 +560,8 @@ function upsertReviewingRecord(
            attempt_id = excluded.attempt_id,
            run_id = NULL,
            head_sha = excluded.head_sha,
+           base_sha = excluded.base_sha,
+           base_ref = excluded.base_ref,
            origin = excluded.origin,
            review_url = excluded.review_url,
            report_ids_json = '[]',
@@ -526,6 +576,7 @@ function upsertReviewingRecord(
            END,
            github_review_url = NULL,
            failure_message = NULL,
+           archived_at = NULL,
            ready_at = NULL,
            submitted_at = NULL,
            failed_at = NULL,
@@ -541,6 +592,8 @@ function upsertReviewingRecord(
         input.detail.url,
         input.attemptId,
         input.detail.headSha,
+        input.detail.baseSha ?? null,
+        input.detail.baseRef,
         input.origin,
         reviewUrl,
         prReviewTrustBoundary,

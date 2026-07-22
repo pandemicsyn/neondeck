@@ -111,18 +111,106 @@ GITHUB_LOGIN=...</code></pre>
           arbitrary endpoints. <code>thinkingLevel</code> values use Flue's exposed
           reasoning tiers. The PR review model is optional and falls back to the display
           assistant when omitted; it is used by the bounded
-          <code>review-pr-for-human</code> workflow. Its timeout defaults to 180,000
-          milliseconds and may be configured from 10,000 through 1,800,000 with
-          <code>prReviewTimeoutMs</code>. The utility model is optional and
-          falls back to the display assistant when omitted, but a low-cost
-          utility model is recommended for titles, labels, notifications, and
-          compact summaries. The self-improvement model is optional and falls
-          back through the utility model and display assistant. It is used for
-          bounded conversation reflection, memory curation, and PR/autopilot
-          retrospective workflows. Supported thinking levels are
+          <code>review-pr-for-human</code> workflow and its read-only follow-up reviewer
+          conversation. Its timeout defaults to 180,000 milliseconds and may be configured
+          from 10,000 through 1,800,000 with <code>prReviewTimeoutMs</code>. The
+          utility model is optional and falls back to the display assistant when
+          omitted, but a low-cost utility model is recommended for titles,
+          labels, notifications, and compact summaries. The self-improvement
+          model is optional and falls back through the utility model and display
+          assistant. It is used for bounded conversation reflection, memory
+          curation, and PR/autopilot retrospective workflows. Supported thinking
+          levels are
           <code>off</code>, <code>minimal</code>, <code>low</code>,
           <code>medium</code>, <code>high</code>, or <code>xhigh</code>.
           Provider registration changes require a server restart.
+        </p>
+        <p>
+          The current watched-PR Autopilot owner deliberately reuses
+          <code>models.displayAssistant</code> and
+          <code>models.displayAssistantThinkingLevel</code>; there is no
+          separate Autopilot model field. <code>models.prReview</code> is only the
+          bounded PR-review-for-human role, not the coding owner for watched PRs.
+          All model-backed Autopilot modes therefore use the same model while their
+          tool registry changes with mode and turn source.
+        </p>
+
+        <h2>PR reviewer prompts</h2>
+        <p>
+          The bounded human-review workflow has two independently configurable
+          full system prompts: <code>initial-review</code> for a new review run and
+          <code>follow-up-reviewer</code> for the durable read-only reviewer chat.
+          Inspect, replace, or reset either prompt in the dashboard's <strong
+            >Runtime</strong
+          > panel, through typed config actions, or through the authenticated local
+          API.
+        </p>
+        <pre><code>&#123;
+  "prReview": &#123;
+    "prompts": &#123;
+      "initial-review": "Complete replacement prompt…",
+      "follow-up-reviewer": "Review context:\n&#123;&#123;reviewContext&#125;&#125;\n&#123;&#123;workspaceInstructions&#125;&#125;"
+    &#125;
+  &#125;
+&#125;</code></pre>
+        <p>
+          Overrides are non-empty strings up to 40,000 characters. The initial
+          prompt receives PR facts separately as untrusted JSON and has no
+          template tokens. The follow-up prompt supports <code
+            >{'{{workspaceInstructions}}'}</code
+          >
+          and <code>{'{{reviewContext}}'}</code>. Initial changes apply to the
+          next review run; follow-up changes apply to the next turn, including
+          an existing reviewer conversation. There is no prompt versioning or
+          stale-session state.
+        </p>
+        <p>
+          Set a prompt to <code>null</code> through
+          <code>neondeck_config_update_pr_review_prompt</code> or
+          <code>POST /api/pr-review/prompts</code> to restore its built-in default.
+          The override replaces the whole shipped prompt, including its safety and
+          review guidance. That footgun is intentional. The read-only workspace tools,
+          structured result schema, and GitHub delivery boundary are still selected
+          and enforced by the server rather than by prompt text.
+        </p>
+
+        <h2>Autopilot owner prompts</h2>
+        <p>
+          Full owner system prompts are configurable independently for
+          <code>prepare-only</code>, <code>autofix-with-approval</code>, and
+          <code>autofix-push-when-safe</code>. Use the prompt editor in the
+          dashboard's <strong>Runtime</strong> panel, ask Neon through the typed config
+          actions, or use the authenticated local API. The editor shows the effective
+          prompt and can reset an override to the built-in default. <code
+            >notify-only</code
+          > has no template because it never starts an owner mutation turn.
+        </p>
+        <pre><code>&#123;
+  "autopilot": &#123;
+    "prompts": &#123;
+      "prepare-only": "Complete replacement prompt using &#123;&#123;mode&#125;&#125; and &#123;&#123;workspaceInstructions&#125;&#125;",
+      "autofix-with-approval": "Complete replacement prompt…",
+      "autofix-push-when-safe": "Complete replacement prompt…"
+    &#125;
+  &#125;
+&#125;</code></pre>
+        <p>
+          Overrides are non-empty strings up to 20,000 characters. Supported
+          substitutions are <code>{'{{source}}'}</code>,
+          <code>{'{{mode}}'}</code>, <code>{'{{status}}'}</code>,
+          <code>{'{{capabilities}}'}</code>, and
+          <code>{'{{workspaceInstructions}}'}</code>. Existing owners use a
+          saved change on their next turn; no prompt versioning or stale-owner
+          state is created. Set a mode's prompt to <code>null</code> through
+          <code>neondeck_config_update_autopilot_prompt</code> or
+          <code>POST /api/autopilot/prompts</code> to restore the default.
+        </p>
+        <p>
+          The override replaces the entire shipped owner prompt. This is a
+          powerful local footgun by design. Prompt text still cannot expand the
+          tools supplied for the current turn or bypass server-side delivery
+          guards; those capabilities are derived from current watch state and
+          enforced outside the model prompt.
         </p>
 
         <h2>Learning</h2>

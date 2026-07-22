@@ -109,7 +109,7 @@ export function RuntimeView({
             status={snapshot.status}
             repoCount={snapshot.repos.length}
           />
-          <RuntimeSection count={2} title="CONFIG" tone="violet">
+          <RuntimeSection count={3} title="CONFIG" tone="violet">
             <RuntimeConfigControls
               onRefresh={onRefresh}
               status={snapshot.status}

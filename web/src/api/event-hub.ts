@@ -143,4 +143,7 @@ function invokeSubscriber<TArgs extends unknown[]>(
   }
 }
 
-export const dashboardEventHub = createDashboardEventHub();
+export const dashboardEventHub = createDashboardEventHub(
+  dashboardEventStreamPath,
+);
+import { dashboardEventStreamPath } from '../../../shared/dashboard-events';

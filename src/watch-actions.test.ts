@@ -7,6 +7,8 @@ import { listScheduledTasks } from './modules/scheduled-tasks';
 import {
   addRefWatch,
   addPrWatch as addPrWatchWithoutBaseline,
+  bindWatchAutopilotOwner,
+  canonicalizePrWatchRepoId,
   listRefWatches,
   listPrWatches,
   parseWatchRefReference,
@@ -14,7 +16,10 @@ import {
   refreshRefWatch,
   refreshPrWatch,
   removePrWatch,
+  readWatch,
   setPrWatchPolling,
+  transitionWatchAutopilot,
+  updateWatch,
 } from './modules/watches';
 import { runtimePaths } from './runtime-home';
 import type {
@@ -61,6 +66,7 @@ describe('PR watch actions', () => {
       ok: true,
       reference: {
         id: 'pandemicsyn/neondeck#123',
+        repoId: 'neondeck',
         desiredTerminalState: 'checks',
       },
     });
@@ -71,11 +77,23 @@ describe('PR watch actions', () => {
       ),
     ).toMatchObject({
       ok: true,
-      reference: { id: 'pandemicsyn/neondeck#123' },
+      reference: {
+        id: 'pandemicsyn/neondeck#123',
+        repoId: 'neondeck',
+      },
     });
     expect(parseWatchPrReference('#123', registry)).toMatchObject({
       ok: true,
       reference: { id: 'pandemicsyn/neondeck#123' },
+    });
+    expect(
+      parseWatchPrReference('external/example#42', registry),
+    ).toMatchObject({
+      ok: true,
+      reference: {
+        id: 'external/example#42',
+        repoId: 'external/example',
+      },
     });
   });
 
@@ -100,6 +118,28 @@ describe('PR watch actions', () => {
     expect(parseWatchPrReference('#123', registry)).toMatchObject({
       ok: false,
       result: { requires: ['repo'] },
+    });
+  });
+
+  it('repairs a legacy full-name repo id before local Autopilot work', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
+    const watch = readWatch(paths, 'pandemicsyn/neondeck#123');
+    expect(watch).toBeDefined();
+    const legacyWatch = {
+      ...watch!,
+      repoId: 'pandemicsyn/neondeck',
+      updatedAt: '2026-07-21T21:00:00.000Z',
+    };
+    expect(updateWatch(paths, legacyWatch, watch!)).toBe(true);
+
+    await expect(
+      canonicalizePrWatchRepoId(paths, legacyWatch.id),
+    ).resolves.toMatchObject({ repoId: 'neondeck' });
+    expect(readWatch(paths, legacyWatch.id)).toMatchObject({
+      repoId: 'neondeck',
     });
   });
 
@@ -630,6 +670,52 @@ describe('PR watch actions', () => {
     });
   });
 
+  it('re-arms an explicitly stopped watch with fresh owner bindings', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () =>
+      prDetail({ state: 'open', updatedAt: '2026-06-27T20:00:00Z' }),
+    );
+    bindWatchAutopilotOwner(paths, 'pandemicsyn/neondeck#123', {
+      ownerInstanceId: 'owner-before-stop',
+      worktreeId: 'worktree-before-stop',
+    });
+    transitionWatchAutopilot(paths, 'pandemicsyn/neondeck#123', {
+      from: 'watching',
+      to: 'complete',
+      eventFingerprint: 'handled-before-stop',
+    });
+    await setPrWatchPolling(
+      { id: 'pandemicsyn/neondeck#123', enabled: false },
+      paths,
+    );
+
+    await expect(
+      addPrWatch(
+        { ref: 'neondeck#123' },
+        paths,
+        async () =>
+          prDetail({ state: 'open', updatedAt: '2026-06-27T20:10:00Z' }),
+        async () => checkSummary('pending'),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'updated',
+      watch: {
+        autopilotStatus: 'watching',
+        ownerInstanceId: null,
+        worktreeId: null,
+        lastEventFingerprint: null,
+      },
+    });
+    await expect(listPrWatches(paths)).resolves.toMatchObject({
+      watches: [{ pollingEnabled: true }],
+    });
+  });
+
   it('re-arms green PR watches when watch-pr is run again', async () => {
     const home = await tempHome();
     const paths = runtimePaths(home);
@@ -740,6 +826,7 @@ describe('ref watch actions', () => {
       ok: true,
       reference: {
         id: 'pandemicsyn/neondeck@feature/scheduler',
+        repoId: 'neondeck',
         ref: 'feature/scheduler',
       },
     });
@@ -764,7 +851,20 @@ describe('ref watch actions', () => {
       ok: true,
       reference: {
         id: 'pandemicsyn/neondeck@feature/scheduler',
+        repoId: 'neondeck',
         ref: 'feature/scheduler',
+      },
+    });
+    expect(
+      parseWatchRefReference(
+        { target: 'external/example@feature/scheduler' },
+        registry,
+      ),
+    ).toMatchObject({
+      ok: true,
+      reference: {
+        id: 'external/example@feature/scheduler',
+        repoId: 'external/example',
       },
     });
   });

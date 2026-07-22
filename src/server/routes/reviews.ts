@@ -4,10 +4,12 @@ import {
   type GitHubPullRequest,
 } from '../../modules/github';
 import {
+  archivePrReview,
   readPrReview,
   readPrReviewForTarget,
   reconcilePrReviewSubmission,
   recentPrReviews,
+  restorePrReview,
   startPrReview,
   type PrReviewOrigin,
   type PrReviewRecord,
@@ -45,6 +47,7 @@ export function createReviewRoutes(paths: RuntimePaths) {
         review:
           reviews.find(
             (review) =>
+              !review.archivedAt &&
               review.repoFullName.toLowerCase() ===
                 pullRequest.repo.toLowerCase() &&
               review.prNumber === pullRequest.number,
@@ -205,6 +208,16 @@ export function createReviewRoutes(paths: RuntimePaths) {
     }
   });
 
+  routes.post('/reviews/:id/archive', (c) => {
+    const result = reviewArchiveResult(c.req.param('id'), true, paths);
+    return c.json(result.body, result.status);
+  });
+
+  routes.post('/reviews/:id/restore', (c) => {
+    const result = reviewArchiveResult(c.req.param('id'), false, paths);
+    return c.json(result.body, result.status);
+  });
+
   return routes;
 }
 
@@ -219,13 +232,55 @@ function groupReviews(
     awaiting,
     inProgress: reviews.filter(
       (review) =>
-        review.status === 'reviewing' || review.status === 'submitting',
+        !review.archivedAt &&
+        (review.status === 'reviewing' || review.status === 'submitting'),
     ),
     needsAction: reviews.filter(
-      (review) => review.status === 'ready' || review.status === 'failed',
+      (review) =>
+        !review.archivedAt &&
+        (review.status === 'ready' || review.status === 'failed'),
     ),
-    submitted: reviews.filter((review) => review.status === 'submitted'),
+    submitted: reviews.filter(
+      (review) => !review.archivedAt && review.status === 'submitted',
+    ),
+    archived: reviews.filter((review) => Boolean(review.archivedAt)),
   };
+}
+
+function reviewArchiveResult(
+  reviewId: string,
+  archived: boolean,
+  paths: RuntimePaths,
+) {
+  try {
+    const result = (archived ? archivePrReview : restorePrReview)(
+      { reviewId },
+      paths,
+    );
+    return {
+      status: 200 as const,
+      body: {
+        ok: true,
+        action: archived ? 'pr_review_archive' : 'pr_review_restore',
+        changed: result.changed,
+        message: archived ? 'Archived PR review.' : 'Restored PR review.',
+        review: result.review,
+        reviewId: result.review.id,
+        runId: result.review.runId ?? '',
+      },
+    };
+  } catch (error) {
+    const message = errorMessage(error);
+    return {
+      status: (message === 'PR review not found.' ? 404 : 400) as 400 | 404,
+      body: {
+        ok: false,
+        action: archived ? 'pr_review_archive' : 'pr_review_restore',
+        changed: false,
+        message,
+      },
+    };
+  }
 }
 
 function queueFromResult(value: unknown): { items: GitHubPullRequest[] } {

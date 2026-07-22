@@ -8,6 +8,7 @@ import {
   readLocalPullRequestFileDiff,
   readLocalPullRequestFiles,
 } from './modules/pr-local-diffs';
+import { resolvePrReviewerWorkspace } from './modules/pr-reviewer';
 import { runtimePaths, type RuntimePaths } from './runtime-home';
 
 const gitDiffMock = vi.hoisted(() =>
@@ -90,6 +91,105 @@ describe('local PR diffs', () => {
     expect(patch.diff).toContain('diff --git a/src/app.ts b/src/app.ts');
     expect(metadataDiffCalls()).toHaveLength(1);
     expect(patchDiffCalls()).toHaveLength(1);
+  });
+
+  it('gives the reviewer read-only traversal at the exact reviewed revision', async () => {
+    const { baseSha, headSha, paths, repo } = await fixture();
+    await writeFile(join(repo, 'src/app.ts'), 'export const value = 3;\n');
+    await commitAll(repo, 'later local commit');
+
+    const workspace = await resolvePrReviewerWorkspace(
+      {
+        repoFullName: 'example/sample',
+        prNumber: 42,
+        headSha,
+        baseSha,
+        baseRef: 'main',
+      },
+      paths,
+    );
+
+    expect(workspace.available).toBe(true);
+    if (!workspace.available) return;
+    const readTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_read',
+    );
+    const searchTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_search',
+    );
+    const diffTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_diff',
+    );
+
+    await expect(
+      readTool?.run({ input: { path: 'src/app.ts' } } as never),
+    ).resolves.toMatchObject({
+      revision: headSha,
+      path: 'src/app.ts',
+      content: expect.stringContaining('export const value = 2;'),
+    });
+    await expect(
+      searchTool?.run({ input: { query: 'value = 3' } } as never),
+    ).resolves.toMatchObject({ matches: [] });
+    await expect(
+      diffTool?.run({ input: { path: 'src/app.ts' } } as never),
+    ).resolves.toMatchObject({
+      available: true,
+      base: baseSha,
+      head: headSha,
+      patch: expect.stringContaining('+export const value = 2;'),
+    });
+    await expect(
+      diffTool?.run({
+        input: { path: 'src/app.ts', rightLine: 1, contextLines: 2 },
+      } as never),
+    ).resolves.toMatchObject({
+      targetChanged: true,
+      rightLine: 1,
+      lines: expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'addition',
+          rightLine: 1,
+          text: 'export const value = 2;',
+        }),
+      ]),
+    });
+  });
+
+  it('verifies a target line without buffering a diff larger than 16 MiB', async () => {
+    const { baseSha, headSha, paths } = await largeLineFixture();
+    const workspace = await resolvePrReviewerWorkspace(
+      {
+        repoFullName: 'example/sample',
+        prNumber: 45,
+        headSha,
+        baseSha,
+        baseRef: 'main',
+      },
+      paths,
+    );
+
+    expect(workspace.available).toBe(true);
+    if (!workspace.available) return;
+    const diffTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_diff',
+    );
+
+    await expect(
+      diffTool?.run({
+        input: { path: 'src/large.ts', rightLine: 1, contextLines: 0 },
+      } as never),
+    ).resolves.toMatchObject({
+      targetChanged: true,
+      truncated: true,
+      lines: [
+        expect.objectContaining({
+          kind: 'addition',
+          rightLine: 1,
+          textTruncated: true,
+        }),
+      ],
+    });
   });
 
   it('single-flights metadata across concurrent per-file patch reads', async () => {
@@ -191,6 +291,59 @@ describe('local PR diffs', () => {
     expect(patch.file?.path).toBe('src/new-name.ts');
     expect(patch.diff).toContain('rename from src/old-name.ts');
     expect(patch.diff).toContain('rename to src/new-name.ts');
+
+    const workspace = await resolvePrReviewerWorkspace(
+      {
+        repoFullName: 'example/sample',
+        prNumber: 43,
+        headSha,
+        baseSha,
+        baseRef: 'main',
+      },
+      paths,
+    );
+    expect(workspace.available).toBe(true);
+    if (!workspace.available) return;
+    const diffTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_diff',
+    );
+
+    await expect(
+      diffTool?.run({
+        input: {
+          path: 'src/new-name.ts',
+          rightLine: 1,
+          contextLines: 1,
+        },
+      } as never),
+    ).resolves.toMatchObject({
+      targetChanged: false,
+      lines: expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'context',
+          rightLine: 1,
+          text: 'export const one = 1;',
+        }),
+      ]),
+    });
+    await expect(
+      diffTool?.run({
+        input: {
+          path: 'src/new-name.ts',
+          rightLine: 2,
+          contextLines: 1,
+        },
+      } as never),
+    ).resolves.toMatchObject({
+      targetChanged: true,
+      lines: expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'addition',
+          rightLine: 2,
+          text: 'export const two = 22;',
+        }),
+      ]),
+    });
   });
 
   it('fetches base refs into the Neondeck namespace', async () => {
@@ -385,6 +538,32 @@ async function fetchRefFixture() {
 
   await writeRepoRegistry(paths, repo);
   return { baseSha, headSha, movedBaseSha, paths, repo };
+}
+
+async function largeLineFixture() {
+  const home = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
+  const repo = await mkdtemp(join(tmpdir(), 'neondeck-large-diff-'));
+  tempRoots.push(home, repo);
+  const paths = runtimePaths(home);
+  await mkdir(join(repo, 'src'), { recursive: true });
+  await writeFile(join(repo, 'README.md'), '# sample\n');
+  await git(repo, ['init', '-b', 'main']);
+  await git(repo, [
+    'remote',
+    'add',
+    'origin',
+    'git@github.com:example/sample.git',
+  ]);
+  await commitAll(repo, 'base');
+  const baseSha = await git(repo, ['rev-parse', 'HEAD']);
+  await writeFile(
+    join(repo, 'src/large.ts'),
+    `export const payload = '${'x'.repeat(17 * 1024 * 1024)}';\n`,
+  );
+  await commitAll(repo, 'large head');
+  const headSha = await git(repo, ['rev-parse', 'HEAD']);
+  await writeRepoRegistry(paths, repo);
+  return { baseSha, headSha, paths };
 }
 
 async function commitAll(repo: string, message: string) {

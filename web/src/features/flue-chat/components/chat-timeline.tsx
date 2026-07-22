@@ -17,12 +17,12 @@ export const ChatTimelineItems = memo(function ChatTimelineItems({
         <div className="max-w-[42ch]">
           <div className="miami-accent mx-auto mb-2 h-1.5 w-12" />
           <p className="font-medium text-ink">
-            {hasSession ? 'Session ready' : 'Resolving session'}
+            {hasSession ? 'Start a conversation' : 'Opening session'}
           </p>
           <p className="mt-1 leading-5">
             {hasSession
-              ? 'Messages persist through the local Flue SQLite store.'
-              : 'Chat will attach when the active durable session is available.'}
+              ? 'Ask about a PR, check an active watch, or explore your runtime.'
+              : 'Your chat will be ready in a moment.'}
           </p>
         </div>
       </div>

@@ -3,11 +3,19 @@ import type { GitHubPullRequest, WorkflowObservability } from '../api';
 import {
   isCiFixCandidate,
   isTerminalWatchStatus,
+  neonReviewActionLabel,
+  prDiffActionLabel,
   reviewWorkflowCompletionState,
   reviewWorkflowRefreshDecision,
 } from './GitHubPrList';
 
 describe('GitHubPrList review workflow state', () => {
+  it('distinguishes viewing the diff from running Neon review', () => {
+    expect(prDiffActionLabel(false)).toBe('view diff');
+    expect(prDiffActionLabel(true)).toBe('hide diff');
+    expect(neonReviewActionLabel()).toBe('run review');
+  });
+
   it('shows the fix CI affordance only for failing or unknown check states', () => {
     expect(isCiFixCandidate(githubPr({ checks: 'failure' }))).toBe(true);
     expect(isCiFixCandidate(githubPr({ checkError: 'token denied' }))).toBe(

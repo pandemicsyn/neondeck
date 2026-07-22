@@ -182,6 +182,8 @@ describe('Neon commands', () => {
             status: 'reviewing' as const,
             runId: 'review-run-1',
             headSha: 'head-1',
+            baseSha: null,
+            baseRef: null,
             origin: input.origin,
             reviewUrl: '/review?repo=pandemicsyn%2Fneondeck&number=10',
             reportIds: [],
@@ -200,6 +202,7 @@ describe('Neon commands', () => {
             readyAt: null,
             submittedAt: null,
             failedAt: null,
+            archivedAt: null,
           };
           return { review, reviewId: review.id, runId: 'review-run-1' };
         },

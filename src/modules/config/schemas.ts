@@ -1,6 +1,10 @@
 import { type JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 import {
+  autopilotOwnerPromptModeSchema,
+  autopilotPromptTemplateSchema,
+  prReviewPromptKindSchema,
+  prReviewPromptTemplateSchema,
   prReviewTimeoutMsSchema,
   thinkingLevelSchema,
 } from '../../runtime-home';
@@ -78,6 +82,16 @@ export const updateRepoAutopilotPolicyInputSchema = v.strictObject({
   concurrency: v.optional(autopilotConcurrencySchema),
   watchOverrides: v.optional(v.array(watchOverrideSchema)),
   confirm: v.optional(v.boolean()),
+});
+
+export const updateAutopilotPromptInputSchema = v.strictObject({
+  mode: autopilotOwnerPromptModeSchema,
+  prompt: v.nullable(autopilotPromptTemplateSchema),
+});
+
+export const updatePrReviewPromptInputSchema = v.strictObject({
+  kind: prReviewPromptKindSchema,
+  prompt: v.nullable(prReviewPromptTemplateSchema),
 });
 
 export const removeRepoInputSchema = v.object({

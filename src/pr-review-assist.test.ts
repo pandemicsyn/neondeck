@@ -395,7 +395,10 @@ describe('PR review assist', () => {
     expect(okResult.data).toMatchObject({
       seededCount: 0,
       reportOnlyCount: 1,
-      skippedSeedingReason: 'truncated-file-patches',
+      skippedSeedingReason: null,
+      reportOnlyFindings: [
+        expect.objectContaining({ reason: 'file-diff-truncated' }),
+      ],
     });
     expect(
       readLivePrReviewDraft({
@@ -404,6 +407,34 @@ describe('PR review assist', () => {
         prNumber: 10,
       }),
     ).toBeNull();
+  });
+
+  it('still anchors findings in complete files when another file is truncated', async () => {
+    const paths = await tempPaths();
+    const facts = reviewFacts();
+    facts.files.push({
+      ...facts.files[0]!,
+      path: 'generated/snapshot.json',
+      patch: '{"large":true}',
+      truncated: true,
+      generatedLike: true,
+      message: 'Local git patch exceeded the configured size limit.',
+    });
+
+    const result = await reviewPrForHuman(
+      { ref: 'pandemicsyn/neondeck#10' },
+      paths,
+      {
+        fetchFacts: async () => facts,
+        reviewer: async () => reviewOutputWithOneFinding(),
+      },
+    );
+
+    expect(requireReviewAssistOk(result).data).toMatchObject({
+      seededCount: 1,
+      reportOnlyCount: 0,
+      skippedSeedingReason: null,
+    });
   });
 
   it('includes typed PR context and explicit limitations in review prompt facts', () => {
@@ -699,6 +730,7 @@ function reviewFacts(): ReviewAssistFacts {
     state,
     files,
     diffSummary,
+    source: 'local',
   };
 }
 

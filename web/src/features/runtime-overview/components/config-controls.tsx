@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
+  getAutopilotPrompts,
+  getPrReviewPrompts,
   updateAgentModels,
+  updateAutopilotPrompt,
+  updatePrReviewPrompt,
   updateProvider,
+  type AutopilotOwnerPromptMode,
+  type AutopilotPromptConfigData,
+  type PrReviewPromptConfigData,
+  type PrReviewPromptKind,
   type RuntimeStatus,
 } from '../../../api';
 
@@ -426,9 +434,277 @@ export function RuntimeConfigControls({
           />
         ) : null}
       </form>
+      <PrReviewPromptControls />
+      <AutopilotPromptControls />
     </div>
   );
 }
+
+export function PrReviewPromptControls() {
+  const [data, setData] = useState<PrReviewPromptConfigData | null>(null);
+  const [kind, setKind] = useState<PrReviewPromptKind>(
+    initialPrReviewPromptKind,
+  );
+  const [prompt, setPrompt] = useState('');
+  const [dirty, setDirty] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void getPrReviewPrompts()
+      .then((result) => {
+        if (!active) return;
+        setData(result.data);
+        setPrompt(result.data.prompts[initialPrReviewPromptKind]);
+      })
+      .catch((cause) => {
+        if (!active) return;
+        setError(true);
+        setMessage(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  function selectKind(nextKind: PrReviewPromptKind) {
+    setKind(nextKind);
+    setPrompt(data?.prompts[nextKind] ?? '');
+    setDirty(false);
+    setMessage(null);
+    setError(false);
+  }
+
+  async function persist(nextPrompt: string | null) {
+    setSaving(true);
+    setMessage(null);
+    setError(false);
+    try {
+      const result = await updatePrReviewPrompt({ kind, prompt: nextPrompt });
+      setData(result.data);
+      setPrompt(result.data.prompts[kind]);
+      setDirty(false);
+      setMessage(result.message);
+    } catch (cause) {
+      setError(true);
+      setMessage(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="space-y-2 border border-line bg-soft px-2.5 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-mono text-[10px] tracking-[0.12em] text-violet">
+          PR REVIEW PROMPT
+        </p>
+        <div className="flex items-center gap-1">
+          <button
+            className="border border-line px-2 py-1 font-mono text-[10px] text-muted disabled:opacity-50"
+            disabled={loading || saving || !data?.overrides[kind]}
+            onClick={() => void persist(null)}
+            type="button"
+          >
+            reset default
+          </button>
+          <button
+            className="border border-violet px-2 py-1 font-mono text-[10px] text-violet disabled:opacity-50"
+            disabled={loading || saving || !dirty || !prompt.trim()}
+            onClick={() => void persist(prompt)}
+            type="button"
+          >
+            {saving ? 'saving' : 'save'}
+          </button>
+        </div>
+      </div>
+      <label className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-2 font-mono text-[10px] text-muted">
+        <span>prompt</span>
+        <select
+          aria-label="PR review prompt kind"
+          className="min-w-0 border border-line bg-field px-2 py-1 text-[10.5px] text-ink outline-none focus:border-violet"
+          disabled={loading || saving}
+          onChange={(event) =>
+            selectKind(event.target.value as PrReviewPromptKind)
+          }
+          value={kind}
+        >
+          <option value="initial-review">initial review run</option>
+          <option value="follow-up-reviewer">follow-up conversation</option>
+        </select>
+      </label>
+      <textarea
+        aria-label="PR review prompt"
+        className="min-h-64 w-full resize-y border border-line bg-field px-2 py-1.5 font-mono text-[10.5px] leading-4 text-ink outline-none focus:border-violet disabled:opacity-50"
+        disabled={loading || saving}
+        maxLength={40_000}
+        onChange={(event) => {
+          setPrompt(event.target.value);
+          setDirty(true);
+          setMessage(null);
+        }}
+        placeholder={
+          loading ? 'loading prompt…' : 'Enter reviewer instructions'
+        }
+        spellCheck={false}
+        value={prompt}
+      />
+      <p className="text-[10.5px] leading-4 text-muted">
+        {kind === 'initial-review'
+          ? 'Complete replacement system instructions for new review runs. PR facts and the structured result contract are supplied separately.'
+          : 'Complete replacement system instructions for reviewer chat. Changes apply on the next turn, including existing conversations.'}
+      </p>
+      {data?.tokens[kind].length ? (
+        <p className="break-words font-mono text-[9.5px] leading-4 text-muted opacity-80">
+          tokens · {data.tokens[kind].join(' · ')}
+        </p>
+      ) : null}
+      {message ? <ConfigMessage error={error} message={message} /> : null}
+    </section>
+  );
+}
+
+export function AutopilotPromptControls() {
+  const [data, setData] = useState<AutopilotPromptConfigData | null>(null);
+  const [mode, setMode] = useState<AutopilotOwnerPromptMode>(
+    initialAutopilotPromptMode,
+  );
+  const [prompt, setPrompt] = useState('');
+  const [dirty, setDirty] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void getAutopilotPrompts()
+      .then((result) => {
+        if (!active) return;
+        setData(result.data);
+        setPrompt(result.data.prompts[initialAutopilotPromptMode]);
+      })
+      .catch((cause) => {
+        if (!active) return;
+        setError(true);
+        setMessage(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  function selectMode(nextMode: AutopilotOwnerPromptMode) {
+    setMode(nextMode);
+    setPrompt(data?.prompts[nextMode] ?? '');
+    setDirty(false);
+    setMessage(null);
+    setError(false);
+  }
+
+  async function persist(nextPrompt: string | null) {
+    setSaving(true);
+    setMessage(null);
+    setError(false);
+    try {
+      const result = await updateAutopilotPrompt({ mode, prompt: nextPrompt });
+      setData(result.data);
+      setPrompt(result.data.prompts[mode]);
+      setDirty(false);
+      setMessage(result.message);
+    } catch (cause) {
+      setError(true);
+      setMessage(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="space-y-2 border border-line bg-soft px-2.5 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-mono text-[10px] tracking-[0.12em] text-violet">
+          AUTOPILOT OWNER PROMPT
+        </p>
+        <div className="flex items-center gap-1">
+          <button
+            className="border border-line px-2 py-1 font-mono text-[10px] text-muted disabled:opacity-50"
+            disabled={loading || saving || !data?.overrides[mode]}
+            onClick={() => void persist(null)}
+            type="button"
+          >
+            reset default
+          </button>
+          <button
+            className="border border-violet px-2 py-1 font-mono text-[10px] text-violet disabled:opacity-50"
+            disabled={loading || saving || !dirty || !prompt.trim()}
+            onClick={() => void persist(prompt)}
+            type="button"
+          >
+            {saving ? 'saving' : 'save'}
+          </button>
+        </div>
+      </div>
+      <label className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-2 font-mono text-[10px] text-muted">
+        <span>mode</span>
+        <select
+          aria-label="Autopilot prompt mode"
+          className="min-w-0 border border-line bg-field px-2 py-1 text-[10.5px] text-ink outline-none focus:border-violet"
+          disabled={loading || saving}
+          onChange={(event) =>
+            selectMode(event.target.value as AutopilotOwnerPromptMode)
+          }
+          value={mode}
+        >
+          <option value="prepare-only">prepare commit · no delivery</option>
+          <option value="autofix-with-approval">
+            fix and await human delivery
+          </option>
+          <option value="autofix-push-when-safe">
+            autonomous judgment + delivery
+          </option>
+        </select>
+      </label>
+      <textarea
+        aria-label="Autopilot owner prompt"
+        className="min-h-64 w-full resize-y border border-line bg-field px-2 py-1.5 font-mono text-[10.5px] leading-4 text-ink outline-none focus:border-violet disabled:opacity-50"
+        disabled={loading || saving}
+        maxLength={20_000}
+        onChange={(event) => {
+          setPrompt(event.target.value);
+          setDirty(true);
+          setMessage(null);
+        }}
+        placeholder={loading ? 'loading prompt…' : 'Enter owner instructions'}
+        spellCheck={false}
+        value={prompt}
+      />
+      <p className="text-[10.5px] leading-4 text-muted">
+        Full owner system instructions. Changes apply on the next turn,
+        including existing owners. Notify-only has no prompt because it does not
+        start an owner turn.
+      </p>
+      {data ? (
+        <p className="break-words font-mono text-[9.5px] leading-4 text-muted opacity-80">
+          tokens · {data.tokens.join(' · ')}
+        </p>
+      ) : null}
+      {message ? <ConfigMessage error={error} message={message} /> : null}
+    </section>
+  );
+}
+
+const initialAutopilotPromptMode = 'prepare-only' as const;
+const initialPrReviewPromptKind = 'initial-review' as const;
 
 function modelUpdateInput(
   status: RuntimeStatus,

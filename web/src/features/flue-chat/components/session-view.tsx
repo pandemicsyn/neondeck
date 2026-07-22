@@ -51,6 +51,7 @@ import {
   sessionActivityForLinkedWatch,
   sessionTimelineItems,
 } from '../lib/timeline';
+import { useChatAutoScroll } from '../lib/use-chat-auto-scroll';
 import type {
   FlueChatCommand,
   FlueChatConfig,
@@ -157,6 +158,7 @@ export function FlueChatSessionView({
     () => sessionTimelineItems(messages, activity),
     [activity, messages],
   );
+  const chatAutoScroll = useChatAutoScroll(session?.id);
 
   useEffect(() => {
     setRequestedCommandIndex(0);
@@ -474,89 +476,105 @@ export function FlueChatSessionView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <ScrollArea
-        aria-label="Chat transcript"
-        aria-live="polite"
-        className="chat-log flex-1"
-      >
-        <div className="flex min-h-full flex-col gap-3 px-[18px] py-3.5">
-          <div className="flex items-center justify-between font-mono text-[10.5px] text-muted">
-            <span className="text-primary">
-              {session?.id ?? 'loading session'}
-            </span>
-            <Badge>{agent.status}</Badge>
-          </div>
-          {sessionState?.stale ? (
-            <div
-              className="border border-accent/60 bg-soft px-2.5 py-2 text-[10.5px] leading-4 text-muted"
-              role="alert"
-            >
-              <div className="flex items-center justify-between gap-2 font-mono">
-                <span className="text-accent">CONTEXT STALE</span>
-                <Badge className="border-accent text-accent">
-                  {sessionState.staleReasons.length}
-                </Badge>
-              </div>
-              <p className="mt-1 line-clamp-2">
-                {sessionState.staleReasons[0]?.message ??
-                  'Start a new session to reload runtime context.'}
-              </p>
-            </div>
-          ) : null}
-          {agent.error ? (
-            <div
-              className="border border-accent/60 bg-soft px-2.5 py-2 text-[10.5px] leading-4 text-muted"
-              role="alert"
-            >
-              <div className="flex items-center justify-between gap-2 font-mono">
-                <span className="text-accent">SESSION CONNECTION FAILED</span>
-              </div>
-              <p className="mt-1 line-clamp-2">{agent.error.message}</p>
-            </div>
-          ) : null}
-          {allowCommands && commandEventsQuery.error ? (
-            <div
-              className="border border-accent/60 bg-soft px-2.5 py-2 font-mono text-[10.5px] leading-4 text-accent"
-              role="alert"
-            >
-              COMMAND HISTORY UNAVAILABLE ·{' '}
-              {errorMessage(commandEventsQuery.error)}
-            </div>
-          ) : null}
-          {linkedWatchId && activityQuery.error ? (
-            <div
-              className="border border-accent/60 bg-soft px-2.5 py-2 font-mono text-[10.5px] leading-4 text-accent"
-              role="alert"
-            >
-              SESSION ACTIVITY UNAVAILABLE · {errorMessage(activityQuery.error)}
-            </div>
-          ) : null}
-          {timelineItems.length > 0 ? (
-            <div className="chat-workflow px-2.5 py-1 font-mono text-[10.5px]">
-              <span>workflow</span>
-              <span className="text-muted">
-                session · {messages.length} messages
-                {activity.length > 0
-                  ? ` · ${activity.length} activity records`
-                  : ''}
+      <div className="relative min-h-0 flex-1">
+        <ScrollArea
+          aria-label="Chat transcript"
+          aria-live="polite"
+          className="chat-log h-full"
+          onScroll={chatAutoScroll.handleScroll}
+          ref={chatAutoScroll.transcriptRef}
+        >
+          <div className="flex min-h-full flex-col gap-3 px-[18px] py-3.5">
+            <div className="flex items-center justify-between font-mono text-[10.5px] text-muted">
+              <span className="text-primary">
+                {session?.id ?? 'loading session'}
               </span>
+              <Badge>{agent.status}</Badge>
             </div>
-          ) : null}
-          {commandEvents.filter(isDeterministicCommandEvent).map((event) => (
-            <CommandResultSummary
-              event={event}
-              key={event.id}
-              onAsk={
-                event.result ? () => void askAboutCommand(event) : undefined
-              }
+            {sessionState?.stale ? (
+              <div
+                className="border border-accent/60 bg-soft px-2.5 py-2 text-[10.5px] leading-4 text-muted"
+                role="alert"
+              >
+                <div className="flex items-center justify-between gap-2 font-mono">
+                  <span className="text-accent">CONTEXT STALE</span>
+                  <Badge className="border-accent text-accent">
+                    {sessionState.staleReasons.length}
+                  </Badge>
+                </div>
+                <p className="mt-1 line-clamp-2">
+                  {sessionState.staleReasons[0]?.message ??
+                    'Start a new session to reload runtime context.'}
+                </p>
+              </div>
+            ) : null}
+            {agent.error ? (
+              <div
+                className="border border-accent/60 bg-soft px-2.5 py-2 text-[10.5px] leading-4 text-muted"
+                role="alert"
+              >
+                <div className="flex items-center justify-between gap-2 font-mono">
+                  <span className="text-accent">SESSION CONNECTION FAILED</span>
+                </div>
+                <p className="mt-1 line-clamp-2">{agent.error.message}</p>
+              </div>
+            ) : null}
+            {allowCommands && commandEventsQuery.error ? (
+              <div
+                className="border border-accent/60 bg-soft px-2.5 py-2 font-mono text-[10.5px] leading-4 text-accent"
+                role="alert"
+              >
+                COMMAND HISTORY UNAVAILABLE ·{' '}
+                {errorMessage(commandEventsQuery.error)}
+              </div>
+            ) : null}
+            {linkedWatchId && activityQuery.error ? (
+              <div
+                className="border border-accent/60 bg-soft px-2.5 py-2 font-mono text-[10.5px] leading-4 text-accent"
+                role="alert"
+              >
+                SESSION ACTIVITY UNAVAILABLE ·{' '}
+                {errorMessage(activityQuery.error)}
+              </div>
+            ) : null}
+            {timelineItems.length > 0 ? (
+              <div className="chat-workflow px-2.5 py-1 font-mono text-[10.5px]">
+                <span>workflow</span>
+                <span className="text-muted">
+                  session · {messages.length} messages
+                  {activity.length > 0
+                    ? ` · ${activity.length} activity records`
+                    : ''}
+                </span>
+              </div>
+            ) : null}
+            {commandEvents.filter(isDeterministicCommandEvent).map((event) => (
+              <CommandResultSummary
+                event={event}
+                key={event.id}
+                onAsk={
+                  event.result ? () => void askAboutCommand(event) : undefined
+                }
+              />
+            ))}
+            <ChatTimelineItems
+              hasSession={Boolean(session)}
+              items={timelineItems}
             />
-          ))}
-          <ChatTimelineItems
-            hasSession={Boolean(session)}
-            items={timelineItems}
-          />
-        </div>
-      </ScrollArea>
+          </div>
+        </ScrollArea>
+        {!chatAutoScroll.followsLatest ? (
+          <Button
+            aria-label="Jump to latest chat activity"
+            className="absolute right-3 bottom-3 min-h-7 gap-1.5 bg-panel px-2.5 py-1 font-mono text-[10.5px] shadow-[0_3px_8px_rgba(0,0,0,0.28)]"
+            onClick={chatAutoScroll.jumpToLatest}
+            type="button"
+          >
+            {chatAutoScroll.hasNewActivity ? 'New activity' : 'Jump to latest'}
+            <span aria-hidden="true">↓</span>
+          </Button>
+        ) : null}
+      </div>
       <div className="relative shrink-0 border-t border-line bg-field">
         {allowCommands ? (
           <CommandTypeahead

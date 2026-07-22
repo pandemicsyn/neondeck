@@ -1,8 +1,9 @@
-import type {
-  ButtonHTMLAttributes,
-  HTMLAttributes,
-  ReactNode,
-  TextareaHTMLAttributes,
+import {
+  forwardRef,
+  type ButtonHTMLAttributes,
+  type HTMLAttributes,
+  type ReactNode,
+  type TextareaHTMLAttributes,
 } from 'react';
 import { cn } from '../lib/cn';
 
@@ -60,12 +61,18 @@ export function Textarea({
   );
 }
 
-export function ScrollArea({
-  className,
-  ...props
-}: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('min-h-0 overflow-auto', className)} {...props} />;
-}
+export const ScrollArea = forwardRef<
+  HTMLDivElement,
+  HTMLAttributes<HTMLDivElement>
+>(function ScrollArea({ className, ...props }, ref) {
+  return (
+    <div
+      className={cn('min-h-0 overflow-auto', className)}
+      ref={ref}
+      {...props}
+    />
+  );
+});
 
 export function Separator({
   className,

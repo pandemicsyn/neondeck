@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { removePrWatch } from '../api';
+import { controlPrAutopilot } from '../api';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import { Button } from './ui';
 
@@ -16,7 +16,7 @@ export function StopPrWatchButton({
   const [confirming, setConfirming] = useState(false);
   const queryClient = useQueryClient();
   const mutation = useMutation({
-    mutationFn: () => removePrWatch(watchId),
+    mutationFn: () => controlPrAutopilot(watchId, 'stop'),
     onSuccess() {
       setConfirming(false);
       void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });

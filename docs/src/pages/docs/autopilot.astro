@@ -32,6 +32,26 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           the source of truth for code.
         </p>
 
+        <h2>Model used by Autopilot</h2>
+        <p>
+          Autopilot does not currently have a separate model role. Every
+          <code>pr-autopilot-owner</code> turn uses
+          <code>models.displayAssistant</code> and
+          <code>models.displayAssistantThinkingLevel</code>. The three fixing
+          modes use the same configured model; their difference is delivery
+          authority, not model selection. <code>notify-only</code> does not start
+          an owner turn, so it does not invoke the owner model merely to report a
+          watch event.
+        </p>
+        <p>
+          Do not confuse <code>models.prReview</code> with the Autopilot owner. The
+          PR-review role powers the separate bounded
+          <code>review-pr-for-human</code> workflow. Utility, self-improvement, and
+          named subagent models likewise do not replace the Autopilot owner model.
+          Configure model roles in the dashboard's <strong>Runtime</strong>
+          panel or through <code>neondeck_config_update_agent_models</code>.
+        </p>
+
         <h2>Start a watched PR</h2>
         <p>
           You can enter the same typed service through three product surfaces:
@@ -110,6 +130,45 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           validated. When satisfied, it may implement, validate, commit, push,
           and respond without human approval. Otherwise it retains any useful
           commit and explains why human review is needed.
+        </p>
+
+        <h2>View and customize owner prompts</h2>
+        <p>
+          The dashboard's <strong>Runtime</strong> panel includes an
+          <strong>Autopilot owner prompt</strong> editor. It exposes the effective
+          full system prompt for <code>prepare-only</code>,
+          <code>autofix-with-approval</code>, and
+          <code>autofix-push-when-safe</code>. <code>notify-only</code> has no owner
+          prompt because it does not start an owner turn. Save replaces the full prompt
+          for that mode; <strong>reset default</strong> removes the override and restores
+          the shipped template.
+        </p>
+        <p>
+          Prompt changes apply on the next owner turn, including turns for an
+          already-existing owner conversation. Neondeck does not version owners
+          or mark them stale when a template changes. The editor accepts up to
+          20,000 characters and supports these runtime tokens:
+          <code>{'{{source}}'}</code>, <code>{'{{mode}}'}</code>,
+          <code>{'{{status}}'}</code>, <code>{'{{capabilities}}'}</code>, and
+          <code>{'{{workspaceInstructions}}'}</code>.
+        </p>
+        <p>
+          An override is deliberately a full replacement, including the shipped
+          behavioral guidance; Neondeck does not append a hidden owner prompt
+          after it. Tool availability and the mechanical delivery checks remain
+          outside prompt text: changing words cannot grant a push tool, change
+          the current watch mode, bypass exact-head checks, or create an
+          external delivery capability.
+        </p>
+        <p>
+          Neon can read and change the same templates through
+          <code>neondeck_config_read_autopilot_prompts</code> and
+          <code>neondeck_config_update_autopilot_prompt</code>. The
+          authenticated local API mirrors those operations at
+          <code>GET /api/autopilot/prompts</code> and
+          <code>POST /api/autopilot/prompts</code>; posting
+          <code>&#123;"mode": "…", "prompt": "…"&#125;</code> updates one mode, while
+          <code>prompt: null</code> resets that mode to its default.
         </p>
 
         <h3>Increasing authority requires confirmation</h3>

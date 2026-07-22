@@ -26,6 +26,8 @@ export type PrReviewRecord = {
   status: PrReviewStatus;
   runId: string | null;
   headSha: string;
+  baseSha: string | null;
+  baseRef: string | null;
   origin: PrReviewOrigin;
   reviewUrl: string;
   reportIds: string[];
@@ -43,6 +45,7 @@ export type PrReviewRecord = {
   readyAt: string | null;
   submittedAt: string | null;
   failedAt: string | null;
+  archivedAt: string | null;
 };
 
 export const prReviewTrustBoundary =

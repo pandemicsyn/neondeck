@@ -557,7 +557,7 @@ export function WorkflowEventRow({
       <div className="mt-1.5 flex justify-between gap-2 font-mono text-[10px] text-muted">
         <span className="truncate">
           {rawLabel && event.runUrl
-            ? 'raw run inspection'
+            ? 'workflow run inspection'
             : (event.runId ?? event.operationId ?? 'local')}
         </span>
         <span className="shrink-0">{relativeTime(event.createdAt)}</span>

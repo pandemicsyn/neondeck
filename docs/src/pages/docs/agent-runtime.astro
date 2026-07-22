@@ -76,6 +76,14 @@ watch-pr</code></pre>
             >fix-pr-ci</code
           > workflow.
         </p>
+        <p>
+          That owner resolves the current display-assistant model and thinking
+          level for each turn; <code>models.prReview</code> belongs to the separate
+          human-review workflow. Its full per-mode system prompt is editable in runtime
+          config and applies on the next turn without replacing the owner conversation.
+          The current watch state still constructs the actual tool registry outside
+          the prompt.
+        </p>
 
         <h2>Skills</h2>
         <p>
@@ -113,12 +121,26 @@ watch-pr</code></pre>
           Busywork automation writes durable local reports under the runtime
           home and lists them through <code>GET /api/reports</code> and the Reports
           dashboard panel. <code>/review-pr</code> produces PR overview and findings
-          reports plus local Neon-origin draft comments for a human reviewer. <code
-            >/fix-ci</code
-          > writes a CI failure dossier and, when a bounded Kilo run creates commits,
-          returns through the prepared diff review loop. <code
-            >/explain-ci --report</code
-          > writes the dossier without attempting a fix.
+          reports plus local Neon-origin draft comments for a human reviewer. The
+          reviewer receives bounded read-only Git tools for listing, searching, and
+          reading the exact PR head and its merge-base diff. Repository files are
+          not copied wholesale into the prompt, and a large generated-file patch no
+          longer disables anchoring for unrelated files. A persistent reviewer conversation
+          can inspect the same saved revision for follow-up questions without gaining
+          mutation or GitHub-delivery authority. <code>/fix-ci</code> writes a CI
+          failure dossier and, when a bounded Kilo run creates commits, returns through
+          the prepared diff review loop. <code>/explain-ci --report</code> writes
+          the dossier without attempting a fix.
+        </p>
+        <p>
+          The initial review and follow-up reviewer use separate, complete
+          prompt templates in <code>prReview.prompts</code>. The initial model
+          receives PR facts as a distinct untrusted JSON request and must return
+          the server-owned structured review schema. Follow-up turns render the
+          current saved review context and exact-workspace availability into the
+          configured conversation template. Prompt overrides can replace all
+          shipped guidance, but cannot add mutation tools or direct GitHub
+          delivery authority.
         </p>
         <p>
           Reports are local artifacts served from <code>/reports/:id</code>.

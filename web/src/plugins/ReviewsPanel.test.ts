@@ -25,6 +25,15 @@ describe('ReviewsPanel review events', () => {
     expect(response.groups.submitted).toMatchObject([
       { id: 'review-1', status: 'submitted' },
     ]);
+
+    response = applyPrReviewChange(response, {
+      ...review('submitted'),
+      archivedAt: '2026-07-14T20:03:00.000Z',
+    });
+    expect(response.groups.submitted).toEqual([]);
+    expect(response.groups.archived).toMatchObject([
+      { id: 'review-1', status: 'submitted' },
+    ]);
   });
 });
 
@@ -42,6 +51,7 @@ function responseWith(record: PrReviewRecord): PrReviewsResponse {
           : [],
       needsAction: [],
       submitted: [],
+      archived: [],
     },
   };
 }
@@ -58,6 +68,8 @@ function review(status: PrReviewRecord['status']): PrReviewRecord {
     status,
     runId: 'run-1',
     headSha: 'head-1',
+    baseSha: null,
+    baseRef: null,
     origin: 'chat',
     reviewUrl: '/review?repo=other%2Fproject&number=42',
     reportIds: status === 'reviewing' ? [] : ['overview', 'issues'],
@@ -78,5 +90,6 @@ function review(status: PrReviewRecord['status']): PrReviewRecord {
     readyAt: status === 'ready' ? '2026-07-14T20:01:00.000Z' : null,
     submittedAt: status === 'submitted' ? '2026-07-14T20:02:00.000Z' : null,
     failedAt: null,
+    archivedAt: null,
   };
 }

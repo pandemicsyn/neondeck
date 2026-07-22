@@ -14,7 +14,15 @@ import {
   transitionWatchAutopilot,
 } from '../modules/watches';
 import { readManagedWorktree } from '../modules/worktrees';
-import { runtimePaths, type RuntimePaths } from '../runtime-home';
+import {
+  effectiveAutopilotOwnerPromptTemplates,
+  isAutopilotOwnerPromptMode,
+  parseAppConfig,
+  readRuntimeJsonSync,
+  renderAutopilotOwnerPrompt,
+  runtimePaths,
+  type RuntimePaths,
+} from '../runtime-home';
 import {
   clearPendingAutopilotTurn,
   readPendingAutopilotTurn,
@@ -114,6 +122,27 @@ export async function buildPrAutopilotOwnerRuntime(
         home: await prepareOwnerWorkspaceHome(paths, id),
       }
     : null;
+  const appConfig = readRuntimeJsonSync(paths.config, parseAppConfig);
+  const promptMode =
+    turnWatch && isAutopilotOwnerPromptMode(turnWatch.autopilotMode)
+      ? turnWatch.autopilotMode
+      : null;
+  const workspaceInstructions = workspace
+    ? `Your trusted coding workspace is the managed worktree at ${workspace.localPath}. Use the built-in filesystem and shell tools there to inspect and edit files and to run any repository-native commands you need, including tests, formatters, typechecks, generators, builds, and language-specific tooling. Configured checks in the turn facts are useful hints, never an exhaustive command allowlist or a delivery prerequisite. Do not read or modify the primary checkout.`
+    : 'This turn has no coding workspace. Do not inspect, edit, or run repository commands.';
+  const instructions =
+    promptMode && turnWatch
+      ? renderAutopilotOwnerPrompt(
+          effectiveAutopilotOwnerPromptTemplates(appConfig)[promptMode],
+          {
+            source,
+            mode: promptMode,
+            status: turnWatch.autopilotStatus,
+            capabilities: registry.capabilities,
+            workspaceInstructions,
+          },
+        )
+      : 'No active Autopilot owner mode is bound to this instance. Report the missing binding and do not attempt work.';
   return {
     model: model.displayAssistant,
     thinkingLevel: model.displayAssistantThinkingLevel,
@@ -128,25 +157,7 @@ export async function buildPrAutopilotOwnerRuntime(
       : { cwd: '/workspace' }),
     compaction: prAutopilotOwnerCompaction,
     durability: prAutopilotOwnerDurability,
-    instructions: [
-      'You are the private continuing Neondeck owner for exactly one watched pull request.',
-      'Each dispatched turn supplies current authoritative facts and the exact capabilities available for that turn.',
-      turnWatch
-        ? `This turn is ${source}; the watch mode at dispatch was ${turnWatch.autopilotMode}, the loop status is ${turnWatch.autopilotStatus}, and the only available capabilities are: ${registry.capabilities.join(', ') || 'none'}.`
-        : 'No active watch binding exists for this instance. Report the missing binding and do not attempt work.',
-      workspace
-        ? `Your trusted coding workspace is the managed worktree at ${workspace.localPath}. Use the built-in filesystem and shell tools there to inspect and edit files and to run any repository-native commands you need, including tests, formatters, typechecks, generators, builds, and language-specific tooling. Configured checks in the turn facts are useful hints, never an exhaustive command allowlist or a delivery prerequisite. Do not read or modify the primary checkout.`
-        : 'This turn has no coding workspace. Do not inspect, edit, or run repository commands.',
-      'Workspace commands are for coding and validation only. Never use git push, gh, curl, or another shell/network client to push commits or post PR responses; external delivery must use the mode-scoped Neondeck push and PR-response tools, which bind the destination and credentials.',
-      turnWatch?.autopilotMode === 'autofix-push-when-safe' &&
-      source === 'watch-event'
-        ? 'This is autonomous engineering authority. Judge whether the feedback is reasonable, relevant, technically sound, appropriately scoped, and sufficiently validated. When it is, implement the smallest justified change, validate proportionately, commit, push with the owner push tool, and respond with what changed and what you ran. When it is absurd, ambiguous, scope-exploding, technically unsound, or cannot be validated well enough, do not push: retain any useful committed work and clearly explain why human review is needed. Do not invent a mechanical safety classifier.'
-        : 'Make the smallest justified change and commit when a change is warranted. This turn must not deliver unless its explicit mode-scoped delivery tools and the human instruction authorize that effect.',
-      'Current facts in the newest turn override stale conversation facts. Report uncertainty rather than guessing.',
-      'Never claim a push or PR response succeeded unless the corresponding bounded tool returned success.',
-    ]
-      .filter(Boolean)
-      .join('\n\n'),
+    instructions,
     tools: registry.tools,
     actions: [],
     subagents: [],

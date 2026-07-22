@@ -153,6 +153,7 @@ function queryResultError(result: { error: unknown }) {
 export async function invalidateRuntimeQueries(queryClient: QueryClient) {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.runtimeStatus }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.autopilotPrompts }),
     queryClient.invalidateQueries({ queryKey: queryKeys.repoRegistry }),
     queryClient.invalidateQueries({ queryKey: queryKeys.repoHealth }),
     queryClient.invalidateQueries({ queryKey: queryKeys.scheduledTasks }),

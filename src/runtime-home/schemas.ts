@@ -230,10 +230,53 @@ export const autopilotConcurrencySchema = v.looseObject({
   ),
 });
 
+export const autopilotPromptTemplateSchema = v.pipe(
+  v.string(),
+  v.maxLength(20_000),
+  v.check((value) => value.trim().length > 0, 'Prompt cannot be empty.'),
+);
+
+export const autopilotOwnerPromptModeSchema = v.picklist([
+  'prepare-only',
+  'autofix-with-approval',
+  'autofix-push-when-safe',
+]);
+
+export const autopilotPromptTemplatesSchema = v.partial(
+  v.object({
+    'prepare-only': autopilotPromptTemplateSchema,
+    'autofix-with-approval': autopilotPromptTemplateSchema,
+    'autofix-push-when-safe': autopilotPromptTemplateSchema,
+  }),
+);
+
 export const autopilotConfigSchema = v.looseObject({
   defaultMode: v.optional(autopilotModeSchema),
   mode: v.optional(autopilotModeSchema),
   concurrency: v.optional(autopilotConcurrencySchema),
+  prompts: v.optional(autopilotPromptTemplatesSchema),
+});
+
+export const prReviewPromptKindSchema = v.picklist([
+  'initial-review',
+  'follow-up-reviewer',
+]);
+
+export const prReviewPromptTemplateSchema = v.pipe(
+  v.string(),
+  v.maxLength(40_000),
+  v.check((value) => value.trim().length > 0, 'Prompt cannot be empty.'),
+);
+
+export const prReviewPromptTemplatesSchema = v.partial(
+  v.object({
+    'initial-review': prReviewPromptTemplateSchema,
+    'follow-up-reviewer': prReviewPromptTemplateSchema,
+  }),
+);
+
+export const prReviewConfigSchema = v.looseObject({
+  prompts: v.optional(prReviewPromptTemplatesSchema),
 });
 
 const kiloHandoffModeSchema = v.picklist([
@@ -277,6 +320,7 @@ export const appConfigSchema = v.looseObject({
   worktrees: v.optional(worktreeConfigSchema),
   guardrails: v.optional(repoGuardrailsSchema),
   autopilot: v.optional(autopilotConfigSchema),
+  prReview: v.optional(prReviewConfigSchema),
   kilo: v.optional(kiloConfigSchema),
   learning: v.optional(learningConfigSchema),
   handoff: v.optional(handoffConfigSchema),
@@ -422,6 +466,7 @@ export type WorktreeCleanupConfig = v.InferOutput<
   typeof worktreeCleanupConfigSchema
 >;
 export type AutopilotConfig = v.InferOutput<typeof autopilotConfigSchema>;
+export type PrReviewConfig = v.InferOutput<typeof prReviewConfigSchema>;
 export type KiloConfig = v.InferOutput<typeof kiloConfigSchema>;
 export type LocalApiConfig = v.InferOutput<typeof localApiConfigSchema>;
 export type { McpConfig };

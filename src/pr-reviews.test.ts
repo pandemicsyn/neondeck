@@ -3,18 +3,22 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  archivePrReview,
   beginPrReviewSubmissionAttempt,
   completePrReview,
   failPrReview,
   readPrReviewForTarget,
+  recentPrReviews,
   reconcilePrReviewSubmission,
   releasePrReviewSubmission,
+  restorePrReview,
   reservePrReviewSubmission,
   startPrReview,
   submitPrReview,
   subscribePrReviewEvents,
   type PrReviewEvent,
 } from './modules/pr-reviews';
+import { openDb } from './lib/sqlite';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   linkPrReviewRunObservation,
@@ -191,6 +195,123 @@ describe('durable PR reviews', () => {
       id: started.reviewId,
     });
     unsubscribe();
+  });
+
+  it('archives settled reviews, restores them, and unarchives on re-review', async () => {
+    const paths = await tempPaths();
+    const dependencies = {
+      resolveTarget: async () => ({
+        repoFullName: 'other/project',
+        owner: 'other',
+        repo: 'project',
+        number: 42,
+      }),
+      fetchDetail: async () => detail('head-1'),
+      invokeWorkflow: async () => ({ runId: 'archive-run-1' }),
+    };
+    const started = await startPrReview(
+      { ref: 'other/project#42', origin: 'panel' },
+      paths,
+      dependencies,
+    );
+
+    expect(() =>
+      archivePrReview({ reviewId: started.reviewId }, paths),
+    ).toThrow('An active review cannot be archived.');
+    failPrReview({ runId: started.runId, message: 'Review timed out.' }, paths);
+
+    const archived = archivePrReview({ reviewId: started.reviewId }, paths);
+    expect(archived).toMatchObject({
+      changed: true,
+      review: { status: 'failed', archivedAt: expect.any(String) },
+    });
+    expect(
+      archivePrReview({ reviewId: started.reviewId }, paths),
+    ).toMatchObject({ changed: false });
+    expect(recentPrReviews(paths)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: started.reviewId,
+          archivedAt: expect.any(String),
+        }),
+      ]),
+    );
+
+    expect(
+      restorePrReview({ reviewId: started.reviewId }, paths),
+    ).toMatchObject({
+      changed: true,
+      review: { archivedAt: null, status: 'failed' },
+    });
+    archivePrReview({ reviewId: started.reviewId }, paths);
+    const restarted = await startPrReview(
+      { ref: 'other/project#42', origin: 'panel' },
+      paths,
+      {
+        ...dependencies,
+        fetchDetail: async () => detail('head-2'),
+        invokeWorkflow: async () => ({ runId: 'archive-run-2' }),
+      },
+    );
+    expect(restarted.review).toMatchObject({
+      id: started.reviewId,
+      status: 'reviewing',
+      archivedAt: null,
+    });
+  });
+
+  it('physically deletes submitted review rows after fourteen days', async () => {
+    const paths = await tempPaths();
+    const started = await startPrReview(
+      { ref: 'other/project#42', origin: 'api' },
+      paths,
+      {
+        resolveTarget: async () => ({
+          repoFullName: 'other/project',
+          owner: 'other',
+          repo: 'project',
+          number: 42,
+        }),
+        fetchDetail: async () => detail('head-1'),
+        invokeWorkflow: async () => ({ runId: 'retention-run' }),
+      },
+    );
+    completePrReview(
+      {
+        reviewId: started.reviewId,
+        runId: started.runId,
+        headSha: 'head-1',
+        reportIds: ['overview'],
+        reviewUrl: started.review.reviewUrl,
+        findingCount: 0,
+        seededCount: 0,
+        reportOnlyCount: 0,
+        reportOnlyFindings: [],
+      },
+      paths,
+    );
+    reservePrReviewSubmission(
+      {
+        repoFullName: 'other/project',
+        prNumber: 42,
+        headSha: 'head-1',
+        verdict: 'comment',
+      },
+      paths,
+    );
+    submitPrReview(
+      { reviewId: started.reviewId, verdict: 'comment', githubReviewUrl: null },
+      paths,
+    );
+
+    const now = Date.parse('2026-07-21T18:00:00.000Z');
+    setSubmittedAt(paths.neondeckDatabase, started.reviewId, now, 13);
+    recentPrReviews(paths, now);
+    expect(readPrReviewForTarget('other/project', 42, paths)).not.toBeNull();
+
+    setSubmittedAt(paths.neondeckDatabase, started.reviewId, now, 15);
+    recentPrReviews(paths, now);
+    expect(readPrReviewForTarget('other/project', 42, paths)).toBeNull();
   });
 
   it('rejects overlapping starts before a second workflow can create artifacts', async () => {
@@ -692,4 +813,23 @@ function detail(headSha: string) {
     createdAt: '2026-07-14T20:00:00.000Z',
     updatedAt: '2026-07-14T20:00:00.000Z',
   };
+}
+
+function setSubmittedAt(
+  databasePath: string,
+  reviewId: string,
+  now: number,
+  ageDays: number,
+) {
+  const database = openDb(databasePath);
+  try {
+    database
+      .prepare('UPDATE pr_reviews SET submitted_at = ? WHERE id = ?;')
+      .run(
+        new Date(now - ageDays * 24 * 60 * 60 * 1_000).toISOString(),
+        reviewId,
+      );
+  } finally {
+    database.close();
+  }
 }

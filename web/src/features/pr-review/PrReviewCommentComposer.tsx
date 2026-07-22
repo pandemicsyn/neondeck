@@ -163,21 +163,57 @@ export function PrReviewCommentComposer({
 
   const thread = reviewThreads.find((item) => item.id === metadata.id);
   const isReplying = replyingThreadId === metadata.id;
-  const threadAuthorLabel = metadata.authorLogin
-    ? `@${metadata.authorLogin}`
-    : 'review';
+  const threadComments = thread?.comments ?? [];
   return (
     <div
-      className={selected ? 'pr-review-annotation-selected' : undefined}
+      className={[
+        'pr-review-thread',
+        thread?.isResolved ? 'pr-review-thread-resolved' : null,
+        thread?.isOutdated ? 'pr-review-thread-outdated' : null,
+        selected ? 'pr-review-annotation-selected' : null,
+      ]
+        .filter(Boolean)
+        .join(' ')}
       data-neondeck-review-annotation=""
       data-navigation-selected={selected ? '' : undefined}
     >
-      <div data-neondeck-review-annotation-title="">
+      <div
+        className="pr-review-thread-heading"
+        data-neondeck-review-annotation-title=""
+      >
+        <span className="pr-review-thread-state">
+          {thread?.isResolved ? 'Resolved' : 'Open'} review thread
+        </span>
         <span>
-          {threadAuthorLabel} · {metadata.title}
+          {threadComments.length || 1} comment
+          {(threadComments.length || 1) === 1 ? '' : 's'}
+          {thread?.isOutdated ? ' · outdated' : ''}
         </span>
       </div>
-      <p>{metadata.body}</p>
+      <div className="pr-review-thread-comments">
+        {threadComments.length > 0 ? (
+          threadComments.map((comment) => (
+            <article className="pr-review-thread-comment" key={comment.id}>
+              <div className="pr-review-thread-comment-meta">
+                <span>
+                  {comment.authorLogin ? `@${comment.authorLogin}` : 'reviewer'}
+                </span>
+                <span>{threadCommentTimestamp(comment.createdAt)}</span>
+              </div>
+              <p>{comment.body}</p>
+            </article>
+          ))
+        ) : (
+          <article className="pr-review-thread-comment">
+            <div className="pr-review-thread-comment-meta">
+              <span>
+                {metadata.authorLogin ? `@${metadata.authorLogin}` : 'reviewer'}
+              </span>
+            </div>
+            <p>{metadata.body}</p>
+          </article>
+        )}
+      </div>
       {isReplying ? (
         <CommentForm
           body={replyBody}
@@ -209,13 +245,19 @@ export function PrReviewCommentComposer({
           ) : null}
           {metadata.url ? (
             <a href={metadata.url} rel="noreferrer" target="_blank">
-              open thread
+              Open on GitHub
             </a>
           ) : null}
         </div>
       )}
     </div>
   );
+}
+
+function threadCommentTimestamp(value: string) {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return value;
+  return new Date(timestamp).toISOString().replace('T', ' ').slice(0, 16);
 }
 
 function CommentForm({
