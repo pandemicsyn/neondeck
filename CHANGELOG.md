@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.0.0-beta.15
+
+### Minor Changes
+
+- [`3b5227d`](https://github.com/pandemicsyn/neondeck/commit/3b5227df08cecdee6dad049198cc267eaf74ed6d) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add dedicated configurable model, reasoning-level, and timeout settings for PR review workflows.
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Give PR reviews exact-revision read-only repository traversal, bounded per-file anchor validation, configurable full prompts for initial and follow-up reviewers, a revision-scoped durable reviewer conversation with connection recovery, and clearer inline GitHub threads.
+
+  Keep packaged React runtime dependencies on one exact patch version so fresh installs boot reliably.
+
+### Patch Changes
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep active chat transcripts pinned to streaming messages while preserving manual scrollback and offering a jump-to-latest control for new offscreen activity.
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Prevent dashboard event streams and non-runtime workspace files from blocking or unnecessarily triggering Flue development reloads.
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Resolve configured GitHub full names and URLs to their local repository IDs before Autopilot worktree operations, including legacy watch repair on retry.
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Simplify the chat session header, clarify changed context, and rename cross-chat context actions in user-facing terms.
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Remove duplicate idle watch badges and clarify which Autopilot modes can deliver a prepared commit.
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Expose full per-mode Autopilot owner prompts in Runtime config, with typed local API and action support for editing or resetting each template. Existing owners read prompt changes on their next turn.
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Label linked-session actions as chat, distinguish viewing a PR diff from running a Neon review, and render row actions with consistent compact sizing.
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Open workflow inspections in a structured Neondeck page with readable run facts and formatted payloads instead of navigating directly to token-bearing raw Flue JSON.
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add reversible PR review archiving in the review inbox and physically delete submitted review records from SQLite after fourteen days.
+
 ## 1.0.0-beta.14
 
 ### Patch Changes
