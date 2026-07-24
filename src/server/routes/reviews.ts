@@ -34,9 +34,21 @@ export function createReviewRoutes(paths: RuntimePaths) {
         groups: groupReviews(items, []),
       });
     }
+    if (c.req.query('localOnly') === '1') {
+      const reviews = recentPrReviews(paths);
+      return c.json({
+        ok: true,
+        action: 'pr_reviews_list',
+        changed: false,
+        items: reviews,
+        groups: groupReviews(reviews, []),
+      });
+    }
 
-    const reviews = recentPrReviews(paths);
     const queueResult = await listGitHubPrQueue(paths);
+    // Read local state after the slower GitHub call so a review started while
+    // this request is in flight cannot be overwritten by a stale snapshot.
+    const reviews = recentPrReviews(paths);
     const queue = queueResult.ok
       ? queueFromResult(queueResult.data)
       : { items: [] as GitHubPullRequest[] };

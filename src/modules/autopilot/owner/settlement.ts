@@ -13,6 +13,7 @@ import {
   recordWorktreePushBlocked,
 } from '../../worktrees';
 import { clearPendingAutopilotTurn, readPendingAutopilotTurn } from './pending';
+import { reconcileTransientAutopilotRuntimeBlocks } from './runtime-recovery';
 
 type OwnerTerminalObservation = Extract<
   FlueObservation,
@@ -171,6 +172,14 @@ export async function settleAutopilotOwnerObservation(
 }
 
 export async function recoverInterruptedAutopilotOwners(paths: RuntimePaths) {
+  try {
+    await reconcileTransientAutopilotRuntimeBlocks(paths, { rearm: true });
+  } catch (error) {
+    console.warn(
+      '[neondeck] failed to reconcile transient Autopilot runtime blocks',
+      error,
+    );
+  }
   const interrupted = (await listPrWatchRecords(paths)).filter(
     (watch) => watch.autopilotStatus === 'working',
   );

@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defineAgent, type AgentRouteHandler } from '@flue/runtime';
-import { local } from '@flue/runtime/node';
 import { readAgentModelSelectionSync } from '../modules/runtime';
 import {
   prAutopilotOwnerCompaction,
@@ -28,6 +27,7 @@ import {
   readPendingAutopilotTurn,
   registerPendingAutopilotTurn,
 } from '../modules/autopilot/owner/pending';
+import { boundedLocal } from '../sandboxes/local';
 
 export { prAutopilotOwnerCompaction, prAutopilotOwnerDurability };
 
@@ -148,7 +148,7 @@ export async function buildPrAutopilotOwnerRuntime(
     thinkingLevel: model.displayAssistantThinkingLevel,
     ...(workspaceContext
       ? {
-          sandbox: local({
+          sandbox: boundedLocal({
             cwd: workspaceContext.path,
             env: ownerWorkspaceEnvironment(workspaceContext.home),
           }),

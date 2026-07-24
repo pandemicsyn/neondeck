@@ -35,6 +35,7 @@ import {
   ScrollArea,
   Textarea,
 } from '../../../components/ui';
+import { useDashboardEventConnectionState } from '../../../lib/dashboard-connection';
 import { queryKeys } from '../../../lib/query';
 import { CommandResultSummary, CommandTypeahead } from './command-controls';
 import { ChatTimelineItems } from './chat-timeline';
@@ -81,6 +82,7 @@ export function FlueChatSessionView({
   session: FlueChatSession | undefined;
   sessionState: NeonSessionState | undefined;
 }) {
+  const eventConnection = useDashboardEventConnectionState();
   const [input, setInput] = useState('');
   const [commandEvents, setCommandEvents] = useState<CommandEvent[]>([]);
   const [runningCommand, setRunningCommand] = useState<string>();
@@ -147,7 +149,7 @@ export function FlueChatSessionView({
     queryFn: ({ signal }) =>
       getChatSessionActivity(session?.id ?? '', { signal }),
     enabled: Boolean(session?.id && linkedWatchId),
-    refetchInterval: 30_000,
+    refetchInterval: eventConnection === 'open' ? false : 30_000,
   });
   const activity = useMemo(
     () =>
@@ -185,13 +187,9 @@ export function FlueChatSessionView({
         queryKey: queryKeys.chatSessionActivity(session.id, linkedWatchId),
       });
     };
-    const closeSessionEvents = openChatSessionEventStream(
-      (event) => {
-        if (event.session.id === session.id) refreshSessionQueries();
-      },
-      undefined,
-      refreshSessionQueries,
-    );
+    const closeSessionEvents = openChatSessionEventStream((event) => {
+      if (event.session.id === session.id) refreshSessionQueries();
+    });
     const closeCommandEvents = openChatSessionCommandEventStream((event) => {
       if (event.sessionId === session.id) refreshCommandEvents();
     });

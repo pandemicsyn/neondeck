@@ -18,6 +18,8 @@ import {
   openChatSessionCommandEventStream,
   openChatSessionEventStream,
   openConfigEventStream,
+  openDashboardEventConnection,
+  openGitHubQueueEventStream,
 } from './api';
 import { BootState, Card, EmptyState } from './components/ui';
 import {
@@ -82,25 +84,52 @@ export function App() {
 
   useEffect(() => {
     if (!isDashboardRoute) return;
-    return openConfigEventStream(
-      (event) => {
-        dispatchConfigChangeEvent(event);
-        if (
-          event.action === 'config_reload' ||
-          configEventTouchesFile(event, 'dashboard.json')
-        ) {
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.dashboardConfig,
-          });
-        }
-      },
-      undefined,
-      () => {
+    let hasOpened = false;
+    return openDashboardEventConnection(() => {
+      if (!hasOpened) {
+        hasOpened = true;
+        return;
+      }
+      void Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.dashboardConfig,
+        }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.neonSession }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.prReviewsLocal,
+        }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.notifications }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.runtimeStatus }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.chatSessionActivityRoot,
+        }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.prWatches }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.githubPrs }),
+      ]);
+    });
+  }, [isDashboardRoute, queryClient]);
+
+  useEffect(() => {
+    if (!isDashboardRoute) return;
+    return openGitHubQueueEventStream((event) => {
+      queryClient.setQueryData(queryKeys.githubPrs, event.snapshot);
+    });
+  }, [isDashboardRoute, queryClient]);
+
+  useEffect(() => {
+    if (!isDashboardRoute) return;
+    return openConfigEventStream((event) => {
+      dispatchConfigChangeEvent(event);
+      if (
+        event.action === 'config_reload' ||
+        configEventTouchesFile(event, 'dashboard.json')
+      ) {
         void queryClient.invalidateQueries({
           queryKey: queryKeys.dashboardConfig,
         });
-      },
-    );
+      }
+    }, undefined);
   }, [isDashboardRoute, queryClient]);
 
   useEffect(() => {
@@ -113,11 +142,7 @@ export function App() {
         queryKey: queryKeys.chatSessions,
       });
     };
-    const closeSessionEvents = openChatSessionEventStream(
-      refreshSessions,
-      undefined,
-      refreshSessions,
-    );
+    const closeSessionEvents = openChatSessionEventStream(refreshSessions);
     const closeCommandEvents =
       openChatSessionCommandEventStream(refreshSessions);
     return () => {
@@ -202,7 +227,7 @@ export function App() {
     );
   }
 
-  if (error) {
+  if (error && !config) {
     return (
       <BootState
         title="Dashboard config failed"

@@ -1,5 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  Children,
+  useCallback,
+  useEffect,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 import {
   archivePrReview,
   getPrReviews,
@@ -15,6 +22,7 @@ import {
 import { Badge, Button, EmptyState, ScrollArea } from '../components/ui';
 import { PrReviewArtifactsOverlay } from '../features/pr-review/PrReviewArtifactsOverlay';
 import { relativeTime } from '../lib/format';
+import { useDashboardEventConnectionState } from '../lib/dashboard-connection';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 
@@ -25,20 +33,51 @@ export const ReviewsPanelPlugin = {
   defaultConfig: {},
   Component() {
     const queryClient = useQueryClient();
+    const eventConnection = useDashboardEventConnectionState();
     const [adding, setAdding] = useState(false);
     const [ref, setRef] = useState('');
     const { data, error, isLoading } = useQuery({
       queryKey: queryKeys.prReviews,
       queryFn: ({ signal }) => getPrReviews({}, { signal }),
     });
+    const { data: localData } = useQuery({
+      queryKey: queryKeys.prReviewsLocal,
+      queryFn: ({ signal }) => getPrReviews({ localOnly: true }, { signal }),
+      refetchInterval: eventConnection === 'open' ? false : 5_000,
+      refetchIntervalInBackground: eventConnection !== 'open',
+    });
+    useEffect(() => {
+      if (!localData) return;
+      queryClient.setQueryData<PrReviewsResponse>(
+        queryKeys.prReviews,
+        (current) => applyPrReviewSnapshot(current, localData),
+      );
+    }, [localData, queryClient]);
+
+    const updateReviewCaches = useCallback(
+      (review: PrReviewRecord) => {
+        for (const queryKey of [
+          queryKeys.prReviews,
+          queryKeys.prReviewsLocal,
+        ]) {
+          queryClient.setQueryData<PrReviewsResponse>(queryKey, (current) =>
+            applyPrReviewChange(current, review),
+          );
+        }
+      },
+      [queryClient],
+    );
     const startMutation = useMutation({
       mutationFn: (reviewRef: string) =>
         startPrReview({ ref: reviewRef, origin: 'panel' }),
+      async onMutate() {
+        await Promise.all([
+          queryClient.cancelQueries({ queryKey: queryKeys.prReviews }),
+          queryClient.cancelQueries({ queryKey: queryKeys.prReviewsLocal }),
+        ]);
+      },
       onSuccess(result) {
-        queryClient.setQueryData<PrReviewsResponse>(
-          queryKeys.prReviews,
-          (current) => applyPrReviewChange(current, result.review),
-        );
+        updateReviewCaches(result.review);
         setRef('');
         setAdding(false);
       },
@@ -46,57 +85,34 @@ export const ReviewsPanelPlugin = {
     const restartMutation = useMutation({
       mutationFn: (id: string) => restartPrReview(id),
       onSuccess(result) {
-        queryClient.setQueryData<PrReviewsResponse>(
-          queryKeys.prReviews,
-          (current) => applyPrReviewChange(current, result.review),
-        );
+        updateReviewCaches(result.review);
       },
     });
     const reconcileMutation = useMutation({
       mutationFn: (id: string) => reconcilePrReviewSubmission(id),
       onSuccess(result) {
-        queryClient.setQueryData<PrReviewsResponse>(
-          queryKeys.prReviews,
-          (current) => applyPrReviewChange(current, result.review),
-        );
+        updateReviewCaches(result.review);
       },
     });
     const archiveMutation = useMutation({
       mutationFn: (id: string) => archivePrReview(id),
       onSuccess(result) {
-        queryClient.setQueryData<PrReviewsResponse>(
-          queryKeys.prReviews,
-          (current) => applyPrReviewChange(current, result.review),
-        );
+        updateReviewCaches(result.review);
       },
     });
     const restoreMutation = useMutation({
       mutationFn: (id: string) => restorePrReview(id),
       onSuccess(result) {
-        queryClient.setQueryData<PrReviewsResponse>(
-          queryKeys.prReviews,
-          (current) => applyPrReviewChange(current, result.review),
-        );
+        updateReviewCaches(result.review);
       },
     });
 
     useEffect(
       () =>
-        openPrReviewEventStream(
-          (event) => {
-            queryClient.setQueryData<PrReviewsResponse>(
-              queryKeys.prReviews,
-              (current) => applyPrReviewChange(current, event.review),
-            );
-          },
-          undefined,
-          () => {
-            void queryClient.invalidateQueries({
-              queryKey: queryKeys.prReviews,
-            });
-          },
-        ),
-      [queryClient],
+        openPrReviewEventStream((event) => {
+          updateReviewCaches(event.review);
+        }),
+      [queryClient, updateReviewCaches],
     );
 
     const submit = (event: FormEvent) => {
@@ -195,6 +211,13 @@ export const ReviewsPanelPlugin = {
                 empty="No reviews are running."
                 title="IN PROGRESS"
               >
+                {startMutation.isPending &&
+                startMutation.variables &&
+                !data.groups.inProgress.some(
+                  (review) => review.ref === startMutation.variables,
+                ) ? (
+                  <StartingReviewRow reviewRef={startMutation.variables} />
+                ) : null}
                 {data.groups.inProgress.map((review) => (
                   <ReviewRow
                     key={review.id}
@@ -281,7 +304,8 @@ function ReviewSection({
   empty: string;
   title: string;
 }) {
-  const count = Array.isArray(children) ? children.length : children ? 1 : 0;
+  const content = Children.toArray(children);
+  const count = content.length;
   return (
     <section>
       <div className="flex items-center justify-between bg-field px-3 py-1.5 font-mono text-[10px] tracking-[0.08em] text-muted">
@@ -290,12 +314,28 @@ function ReviewSection({
       </div>
       <div className="divide-y divide-line">
         {count ? (
-          children
+          content
         ) : (
           <p className="px-3 py-2 text-[10.5px] text-muted">{empty}</p>
         )}
       </div>
     </section>
+  );
+}
+
+function StartingReviewRow({ reviewRef }: { reviewRef: string }) {
+  return (
+    <article className="px-3 py-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-ink">{reviewRef}</p>
+          <p className="mt-1 font-mono text-[10px] text-primary">
+            resolving PR and starting review…
+          </p>
+        </div>
+        <Badge>starting</Badge>
+      </div>
+    </article>
   );
 }
 
@@ -534,6 +574,30 @@ export function applyPrReviewChange(
         (item) => !item.archivedAt && item.status === 'submitted',
       ),
       archived: items.filter((item) => Boolean(item.archivedAt)),
+    },
+    queueIssues: current?.queueIssues,
+  };
+}
+
+export function applyPrReviewSnapshot(
+  current: PrReviewsResponse | undefined,
+  snapshot: PrReviewsResponse,
+): PrReviewsResponse {
+  const awaiting = (current?.groups.awaiting ?? []).map((item) => ({
+    ...item,
+    review:
+      snapshot.items.find(
+        (review) =>
+          review.repoFullName.toLowerCase() ===
+            item.pullRequest.repo.toLowerCase() &&
+          review.prNumber === item.pullRequest.number,
+      ) ?? null,
+  }));
+  return {
+    ...snapshot,
+    groups: {
+      ...snapshot.groups,
+      awaiting,
     },
     queueIssues: current?.queueIssues,
   };

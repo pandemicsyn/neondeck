@@ -6,12 +6,13 @@ import type {
 import { getJson, postJson, type ApiRequestOptions } from './http';
 
 export function getPrReviews(
-  input: { repo?: string; prNumber?: number } = {},
+  input: { localOnly?: boolean; repo?: string; prNumber?: number } = {},
   options: ApiRequestOptions = {},
 ) {
   const params = new URLSearchParams();
   if (input.repo) params.set('repo', input.repo);
   if (input.prNumber) params.set('prNumber', String(input.prNumber));
+  if (input.localOnly) params.set('localOnly', '1');
   const query = params.toString();
   return getJson<PrReviewsResponse>(
     `/api/reviews${query ? `?${query}` : ''}`,

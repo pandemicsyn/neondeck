@@ -230,7 +230,9 @@ async function refreshOneWatchEvent(
     notification &&
     currentWatch.lastEventFingerprint !== notification.sourceId &&
     autopilot &&
-    ['dispatched', 'busy', 'waiting', 'blocked'].includes(autopilot.state),
+    ['dispatched', 'deferred', 'busy', 'waiting', 'blocked'].includes(
+      autopilot.state,
+    ),
   );
   const handledEventFingerprint =
     notification &&

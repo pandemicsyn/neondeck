@@ -78,9 +78,13 @@ export type GitHubPullRequestDetail = {
   mergeable?: boolean | null;
   mergeableState?: string | null;
   maintainerCanModify?: boolean;
+  reviewDecision?: GitHubPullRequestReviewDecision | null;
   createdAt?: string;
   updatedAt: string;
 };
+
+export type GitHubPullRequestReviewDecision =
+  'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED';
 
 export type GitHubCheckSummary = {
   status: 'success' | 'failure' | 'pending' | 'none';

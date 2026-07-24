@@ -9,10 +9,13 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import {
+  getNotifications,
   markNotificationRead,
   openNotificationEventStream,
   switchChatSession,
   type DashboardConfig,
+  type NotificationChangeEvent,
+  type NotificationRecord,
 } from '../../api';
 import { queryKeys } from '../../lib/query';
 import { notificationQualifies, resolveToastConfig } from './policy';
@@ -21,6 +24,8 @@ import { createNotificationChime } from './sound';
 import { resolveNotificationTarget } from './targets';
 import { ToastViewport } from './toast-viewport';
 import type { ToastItem } from './types';
+
+export const missedNotificationReplayWindowMs = 15 * 60_000;
 
 export function NotificationController({
   children,
@@ -35,6 +40,7 @@ export function NotificationController({
     Record<string, string | undefined>
   >({});
   const pendingIdsRef = useRef(new Set<string>());
+  const seenNotificationIdsRef = useRef(new Set<string>());
   const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -74,35 +80,101 @@ export function NotificationController({
   }, [toastConfig.soundEnabled]);
 
   useEffect(() => {
-    const refreshNotificationQueries = () =>
+    let active = true;
+    let reconciliation: Promise<void> | null = null;
+    const refreshDependentQueries = () =>
       void Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.notifications }),
         queryClient.invalidateQueries({ queryKey: queryKeys.runtimeStatus }),
         queryClient.invalidateQueries({
           queryKey: queryKeys.chatSessionActivityRoot,
         }),
       ]);
-    return openNotificationEventStream(
-      (event) => {
-        const currentToastConfig = toastConfigRef.current;
-        refreshNotificationQueries();
-        if (
-          event.action === 'created' &&
-          currentToastConfig.soundEnabled &&
-          notificationQualifies(event.notification, currentToastConfig)
-        ) {
-          notificationChimeRef.current?.play();
-        }
-        dispatch({
-          type: 'notification-event',
-          event,
-          config: currentToastConfig,
-          now: Date.now(),
+    const refreshNotificationQueries = () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
+      refreshDependentQueries();
+    };
+    const projectEvent = (event: NotificationChangeEvent) => {
+      const currentToastConfig = toastConfigRef.current;
+      const alreadySeen = seenNotificationIdsRef.current.has(
+        event.notification.id,
+      );
+      if (event.action === 'created' || event.action === 'reconciled') {
+        seenNotificationIdsRef.current.add(event.notification.id);
+      }
+      if (
+        event.action === 'created' &&
+        !alreadySeen &&
+        currentToastConfig.soundEnabled &&
+        notificationQualifies(event.notification, currentToastConfig)
+      ) {
+        notificationChimeRef.current?.play();
+      }
+      dispatch({
+        type: 'notification-event',
+        event,
+        config: currentToastConfig,
+        now: Date.now(),
+      });
+    };
+    const reconcileNotifications = () => {
+      if (reconciliation) return reconciliation;
+      reconciliation = getNotifications()
+        .then((response) => {
+          if (!active) return;
+          queryClient.setQueryData(queryKeys.notifications, response);
+          const currentToastConfig = toastConfigRef.current;
+          const recovered = replayableNotifications(
+            response.items,
+            currentToastConfig,
+            Date.now(),
+            seenNotificationIdsRef.current,
+          );
+          for (const notification of recovered) {
+            seenNotificationIdsRef.current.add(notification.id);
+            dispatch({
+              type: 'notification-event',
+              event: {
+                id: notification.id,
+                action: 'created',
+                notification,
+                changedAt: notification.updatedAt,
+              },
+              config: currentToastConfig,
+              now: Date.now(),
+            });
+          }
+          if (recovered.length > 0 && currentToastConfig.soundEnabled) {
+            notificationChimeRef.current?.play();
+          }
+        })
+        .catch((error: unknown) => {
+          if (!active) return;
+          console.warn(
+            '[neondeck] notification reconciliation failed; retrying after reconnect',
+            error,
+          );
+        })
+        .finally(() => {
+          reconciliation = null;
         });
+      return reconciliation;
+    };
+
+    void reconcileNotifications();
+    const unsubscribe = openNotificationEventStream(
+      (event) => {
+        refreshNotificationQueries();
+        projectEvent(event);
       },
       undefined,
-      refreshNotificationQueries,
+      () => {
+        void reconcileNotifications();
+      },
     );
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, [queryClient]);
 
   const dismiss = useCallback((item: ToastItem) => {
@@ -191,6 +263,29 @@ export function NotificationController({
       />
     </>
   );
+}
+
+export function replayableNotifications(
+  notifications: readonly NotificationRecord[],
+  config: ReturnType<typeof resolveToastConfig>,
+  now: number,
+  seenIds: ReadonlySet<string>,
+) {
+  const cutoff = now - missedNotificationReplayWindowMs;
+  return notifications
+    .filter((notification) => {
+      const updatedAt = Date.parse(notification.updatedAt);
+      return (
+        !seenIds.has(notification.id) &&
+        Number.isFinite(updatedAt) &&
+        updatedAt >= cutoff &&
+        notificationQualifies(notification, config)
+      );
+    })
+    .sort(
+      (left, right) => Date.parse(left.updatedAt) - Date.parse(right.updatedAt),
+    )
+    .slice(-config.maxVisible);
 }
 
 export function dispatchPluginNavigation(pluginId: string) {

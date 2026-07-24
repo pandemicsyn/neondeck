@@ -518,6 +518,37 @@ describe('PR watch actions', () => {
     });
   });
 
+  it('marks an approved open PR watch ready', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () =>
+      prDetail({ state: 'open', updatedAt: '2026-06-27T20:00:00Z' }),
+    );
+
+    await expect(
+      refreshPrWatch(
+        { id: 'pandemicsyn/neondeck#123' },
+        paths,
+        async () =>
+          prDetail({
+            reviewDecision: 'APPROVED',
+            updatedAt: '2026-06-27T20:05:00Z',
+          }),
+        async () => checkSummary('success'),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'updated',
+      watch: {
+        status: 'ready',
+        lastSnapshot: { reviewDecision: 'APPROVED' },
+      },
+    });
+  });
+
   it('marks merged PR watches attention-needed when checks fail', async () => {
     const home = await tempHome();
     const paths = runtimePaths(home);

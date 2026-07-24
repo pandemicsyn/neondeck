@@ -1,7 +1,9 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { WorkflowAdmissionError } from '@flue/runtime';
+import { addNotification, listNotifications } from '../modules/app-state';
 import {
   readWorkflowObservability,
   recordFlueObservation,
@@ -9,7 +11,10 @@ import {
 import { runtimePaths } from '../runtime-home';
 import {
   errorMessageWithCauses,
+  isTransientRuntimeFailure,
+  resolveTransientSchedulerWorkflowNotification,
   runObservedSchedulerTick,
+  startSchedulerObservedLoop,
 } from './scheduler-workflow';
 
 describe('observed scheduler workflow', () => {
@@ -85,5 +90,116 @@ describe('observed scheduler workflow', () => {
         }),
       ),
     ).toBe('Workflow admission failed.: database is locked');
+  });
+
+  it('quietly falls back when the local runtime is reloading', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduler-workflow-'));
+    const paths = runtimePaths(home);
+    try {
+      const runtimeUnavailable = Object.assign(
+        new Error('The local runtime is temporarily unavailable.'),
+        { type: 'runtime_unavailable' },
+      );
+
+      await expect(
+        runObservedSchedulerTick(paths, {
+          listRuns: (async () => ({ runs: [] })) as never,
+          invokeWorkflow: async () => {
+            throw new WorkflowAdmissionError({
+              workflow: 'scheduler-tick',
+              cause: runtimeUnavailable,
+            });
+          },
+        }),
+      ).resolves.toMatchObject({
+        ok: true,
+        changed: false,
+        outcome: 'silent',
+        extra: {
+          workflowObservationFallback: true,
+          workflowRuntimeUnavailable: true,
+        },
+      });
+      await expect(listNotifications(paths)).resolves.toEqual([]);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('recognizes a nested runtime-unavailable admission cause', () => {
+    expect(
+      isTransientRuntimeFailure(
+        new WorkflowAdmissionError({
+          workflow: 'scheduler-tick',
+          cause: Object.assign(new Error('reloading'), {
+            type: 'runtime_unavailable',
+          }),
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('resolves the persisted transient scheduler alert on startup', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduler-workflow-'));
+    const paths = runtimePaths(home);
+    try {
+      const notification = await addNotification(
+        {
+          level: 'attention',
+          title: 'Scheduler workflow observation failed',
+          message: 'The direct scheduler tick still ran.',
+          source: 'scheduler',
+          sourceId: 'scheduler-tick:workflow-observation-fallback',
+          data: {
+            error:
+              'Workflow admission failed.: The local runtime is temporarily unavailable.',
+          },
+        },
+        paths,
+      );
+
+      await expect(
+        resolveTransientSchedulerWorkflowNotification(paths),
+      ).resolves.toBe(true);
+      await expect(listNotifications(paths)).resolves.toEqual([]);
+      await expect(
+        listNotifications(paths, { includeResolved: true }),
+      ).resolves.toMatchObject([
+        { id: notification.id, resolvedAt: expect.any(String) },
+      ]);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('replaces the previous scheduler loop for the same runtime home', async () => {
+    vi.useFakeTimers();
+    const paths = runtimePaths('/tmp/neondeck-scheduler-loop-test');
+    const previousTick = vi.fn<
+      (paths: ReturnType<typeof runtimePaths>) => Promise<void>
+    >(async () => undefined);
+    const replacementTick = vi.fn<
+      (paths: ReturnType<typeof runtimePaths>) => Promise<void>
+    >(async () => undefined);
+    const refreshGitHubQueue = vi.fn<
+      (paths: ReturnType<typeof runtimePaths>) => Promise<void>
+    >(async () => undefined);
+
+    startSchedulerObservedLoop(paths, 1_000, previousTick, refreshGitHubQueue);
+    const replacement = startSchedulerObservedLoop(
+      paths,
+      1_000,
+      replacementTick,
+      refreshGitHubQueue,
+    );
+    try {
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(previousTick).not.toHaveBeenCalled();
+      expect(replacementTick).toHaveBeenCalledTimes(1);
+      expect(refreshGitHubQueue).toHaveBeenCalledTimes(1);
+    } finally {
+      clearInterval(replacement);
+      vi.useRealTimers();
+    }
   });
 });

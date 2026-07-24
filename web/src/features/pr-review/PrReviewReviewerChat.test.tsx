@@ -68,4 +68,65 @@ describe('PrReviewReviewerChat', () => {
 
     expect(useFlueAgentMock.mock.calls.length).toBeGreaterThan(1);
   });
+
+  it('submits with Enter while preserving Shift+Enter for newlines', async () => {
+    const sendMessage = vi.fn<UseFlueAgentResult['sendMessage']>(
+      async () => undefined,
+    );
+    useFlueAgentMock.mockReturnValue({
+      messages: [],
+      status: 'idle',
+      historyReady: true,
+      error: undefined,
+      failedSends: [],
+      sendMessage,
+    });
+    const review = {
+      id: 'review-123',
+      headSha: 'a'.repeat(40),
+      status: 'ready',
+    } as PrReviewRecord;
+
+    act(() => root.render(<PrReviewReviewerChat review={review} />));
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea).not.toBeNull();
+    expect(container.textContent).toContain('Enter send · Shift+Enter newline');
+
+    await act(async () => {
+      setTextareaValue(textarea!, 'What changed?');
+      textarea!.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          key: 'Enter',
+          shiftKey: true,
+        }),
+      );
+      await Promise.resolve();
+    });
+    expect(sendMessage).not.toHaveBeenCalled();
+
+    await act(async () => {
+      textarea!.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          key: 'Enter',
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith('What changed?');
+    expect(textarea?.value).toBe('');
+  });
 });
+
+function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
+  Object.getOwnPropertyDescriptor(
+    HTMLTextAreaElement.prototype,
+    'value',
+  )?.set?.call(textarea, value);
+  textarea.dispatchEvent(new Event('input', { bubbles: true }));
+}

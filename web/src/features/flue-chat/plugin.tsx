@@ -15,6 +15,7 @@ import {
 } from '../../api';
 import { Button } from '../../components/ui';
 import { useConfigEvents } from '../../lib/config-events';
+import { useDashboardEventConnectionState } from '../../lib/dashboard-connection';
 import { queryErrorMessage, queryKeys } from '../../lib/query';
 import type { DisplayPlugin } from '../../types';
 import { SessionSelect } from './components/session-select';
@@ -35,6 +36,7 @@ export const FlueChatPlugin = {
         : flueChatDefaultConfig.sessions)[0] ??
       flueChatDefaultConfig.sessions[0];
     const queryClient = useQueryClient();
+    const eventConnection = useDashboardEventConnectionState();
     const [renameDraft, setRenameDraft] = useState('');
     const [renaming, setRenaming] = useState(false);
     const [referencing, setReferencing] = useState(false);
@@ -52,7 +54,7 @@ export const FlueChatPlugin = {
     } = useQuery({
       queryKey: queryKeys.neonSession,
       queryFn: getNeonSession,
-      refetchInterval: 30_000,
+      refetchInterval: eventConnection === 'open' ? false : 30_000,
     });
     const {
       data: sessionIndex,
@@ -62,7 +64,7 @@ export const FlueChatPlugin = {
       queryKey: queryKeys.chatSessions,
       queryFn: ({ signal }) =>
         getChatSessions({ includeArchived: true }, { signal }),
-      refetchInterval: 30_000,
+      refetchInterval: eventConnection === 'open' ? false : 30_000,
     });
     const startSessionMutation = useMutation({
       async mutationFn() {

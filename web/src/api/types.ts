@@ -208,6 +208,18 @@ export type GitHubPullRequestResponse = {
   truncated?: boolean;
   issues?: GitHubQueueIssue[];
   error?: string;
+  revision?: string;
+  status?: 'loading' | 'ready' | 'degraded' | 'unavailable';
+  lastAttemptAt?: string | null;
+  lastCompleteAt?: string | null;
+};
+
+export type GitHubQueueChangeEvent = {
+  id: string;
+  action: 'changed';
+  revision: string;
+  snapshot: GitHubPullRequestResponse;
+  changedAt: string;
 };
 
 export type GitHubPullRequestDetailResponse = {
@@ -1784,6 +1796,7 @@ export type PrWatchSnapshot = {
   state: string;
   merged: boolean;
   mergeCommitSha: string | null;
+  reviewDecision?: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null;
   checks: {
     status: 'success' | 'failure' | 'pending' | 'none';
     total: number;

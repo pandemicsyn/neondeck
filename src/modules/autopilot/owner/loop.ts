@@ -1,5 +1,6 @@
 import type { JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../../lib/action-result';
+import { isTransientFlueRuntimeFailure } from '../../../lib/flue-errors';
 import type { RuntimePaths } from '../../../runtime-home';
 import { gitCurrentSha, gitStatus } from '../../../repo-edit/git';
 import { addNotification } from '../../app-state';
@@ -21,6 +22,10 @@ import {
   clearPendingAutopilotTurn,
   registerPendingAutopilotTurn,
 } from './pending';
+import {
+  autopilotDispatchBlockedSourceId,
+  reconcileTransientAutopilotRuntimeBlocks,
+} from './runtime-recovery';
 
 export type AutopilotWatchEvent = {
   watchId: string;
@@ -232,6 +237,7 @@ export async function runAutopilotWatchEvent(
       const receipt = await (
         dependencies.dispatch ?? dispatchAutopilotOwnerTurn
       )({ instanceId, envelope });
+      await reconcileTransientRuntimeNotificationQuietly(paths, claimed.id);
       return {
         ...loopResult(
           'dispatched',
@@ -247,6 +253,18 @@ export async function runAutopilotWatchEvent(
       throw error;
     }
   } catch (error) {
+    if (isTransientFlueRuntimeFailure(error)) {
+      transitionWatchAutopilot(paths, claimed.id, {
+        from: 'working',
+        to: 'watching',
+      });
+      await reconcileTransientRuntimeNotificationQuietly(paths, claimed.id);
+      return loopResult(
+        'deferred',
+        false,
+        'The local runtime is temporarily unavailable; the owner turn will retry on the next eligible poll.',
+      );
+    }
     transitionWatchAutopilot(paths, claimed.id, {
       from: 'working',
       to: 'blocked',
@@ -258,7 +276,7 @@ export async function runAutopilotWatchEvent(
         title: 'Autopilot owner turn blocked',
         message,
         source: 'autopilot-owner',
-        sourceId: `${claimed.id}:dispatch-blocked`,
+        sourceId: autopilotDispatchBlockedSourceId(claimed.id),
         data: { watchId: claimed.id, eventFingerprint: event.eventFingerprint },
       },
       paths,
@@ -295,4 +313,18 @@ function loopResult(state: string, changed: boolean, message: string) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function reconcileTransientRuntimeNotificationQuietly(
+  paths: RuntimePaths,
+  watchId: string,
+) {
+  try {
+    await reconcileTransientAutopilotRuntimeBlocks(paths, { watchId });
+  } catch (error) {
+    console.warn(
+      '[neondeck] failed to resolve a transient Autopilot runtime notification',
+      error,
+    );
+  }
 }

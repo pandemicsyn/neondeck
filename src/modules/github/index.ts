@@ -12,11 +12,25 @@ export {
   fetchPullRequestQueue,
 } from './queue';
 export {
+  clearGitHubQueueSnapshotsForTests,
+  formatGitHubQueueSnapshotServerSentEvent,
+  githubQueueRefreshIntervalMs,
+  readGitHubQueueSnapshot,
+  refreshGitHubQueueSnapshot,
+  subscribeGitHubQueueSnapshotEvents,
+} from './queue-snapshot';
+export type {
+  GitHubQueueSnapshot,
+  GitHubQueueSnapshotEvent,
+  GitHubQueueSnapshotStatus,
+} from './queue-snapshot';
+export {
   fetchPullRequestCommits,
   fetchPullRequestCommitsWithMetadata,
   fetchPullRequestDetail,
   fetchPullRequestEventState,
   fetchPullRequestFiles,
+  fetchPullRequestReviewDecision,
 } from './pull-requests';
 export {
   maxPrEventFeedbackBodyLength,

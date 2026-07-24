@@ -7,7 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DashboardConfig, NotificationChangeEvent } from '../../api';
 import { dashboardEventHub } from '../../api/event-hub';
 import { queryKeys } from '../../lib/query';
-import { dispatchPluginNavigation, NotificationController } from './controller';
+import {
+  dispatchPluginNavigation,
+  NotificationController,
+  replayableNotifications,
+} from './controller';
+import { resolveToastConfig } from './policy';
 
 describe('NotificationController integration', () => {
   let container: HTMLDivElement;
@@ -19,6 +24,10 @@ describe('NotificationController integration', () => {
     FakeAudioContext.startedNotes = 0;
     vi.stubGlobal('EventSource', FakeEventSource);
     vi.stubGlobal('AudioContext', FakeAudioContext);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => notificationResponse([])),
+    );
     (
       globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
     ).IS_REACT_ACT_ENVIRONMENT = true;
@@ -146,6 +155,66 @@ describe('NotificationController integration', () => {
     expect(FakeEventSource.instances).toHaveLength(1);
     expect(document.querySelectorAll('.notification-toast')).toHaveLength(1);
   });
+
+  it('recovers one recent unread notification once after a missed event', async () => {
+    const missed = notificationEvent().notification;
+    const now = new Date().toISOString();
+    missed.createdAt = now;
+    missed.updatedAt = now;
+    const fetchMock = vi
+      .mocked(fetch)
+      .mockImplementation(async () => notificationResponse([missed]));
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <NotificationController config={dashboardConfig()}>
+            <div>Dashboard</div>
+          </NotificationController>
+        </QueryClientProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    expect(document.querySelectorAll('.notification-toast')).toHaveLength(1);
+    expect(FakeAudioContext.startedNotes).toBe(2);
+    await act(async () => {
+      FakeEventSource.instances[0]!.emitConnectionEvent('open');
+      await Promise.resolve();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(document.querySelectorAll('.notification-toast')).toHaveLength(1);
+    expect(FakeAudioContext.startedNotes).toBe(2);
+  });
+
+  it('replays only recent, unseen, qualifying notifications', () => {
+    const now = Date.parse('2026-07-22T12:00:00.000Z');
+    const recent = notificationEvent().notification;
+    recent.updatedAt = '2026-07-22T11:59:00.000Z';
+    const old = { ...recent, id: 'old', updatedAt: '2026-07-22T11:30:00.000Z' };
+    const read = {
+      ...recent,
+      id: 'read',
+      readAt: '2026-07-22T11:59:30.000Z',
+    };
+
+    expect(
+      replayableNotifications(
+        [old, read, recent],
+        resolveToastConfig(dashboardConfig().notifications?.toasts),
+        now,
+        new Set(),
+      ).map((notification) => notification.id),
+    ).toEqual(['note-1']);
+    expect(
+      replayableNotifications(
+        [recent],
+        resolveToastConfig(dashboardConfig().notifications?.toasts),
+        now,
+        new Set(['note-1']),
+      ),
+    ).toEqual([]);
+  });
 });
 
 class FakeEventSource {
@@ -161,6 +230,10 @@ class FakeEventSource {
   }
 
   close() {}
+
+  emitConnectionEvent(name: 'error' | 'open') {
+    this.listeners.get(name)?.(new Event(name));
+  }
 
   emit(event: NotificationChangeEvent) {
     this.listeners.get('notification-change')?.(
@@ -248,4 +321,17 @@ function dashboardConfig(): DashboardConfig {
     },
     layout: { columns: 1, rows: 1, regions: [] },
   };
+}
+
+function notificationResponse(
+  items: NotificationChangeEvent['notification'][],
+) {
+  return new Response(
+    JSON.stringify({
+      items,
+      policy: {},
+      fetchedAt: new Date().toISOString(),
+    }),
+    { headers: { 'content-type': 'application/json' } },
+  );
 }

@@ -1,5 +1,8 @@
 import { Hono } from 'hono';
-import { getGitHubPullRequest, listGitHubPrQueue } from '../../modules/github';
+import {
+  getGitHubPullRequest,
+  readGitHubQueueSnapshot,
+} from '../../modules/github';
 import {
   getGitHubPrBranchPermissions,
   getGitHubPrEventState,
@@ -31,27 +34,9 @@ import { queryNumber, safeJsonBody } from '../http';
 export function createGitHubRoutes(paths: RuntimePaths) {
   const routes = new Hono();
 
-  routes.get('/prs', async (c) => {
-    const result = await listGitHubPrQueue(paths);
-    const queue =
-      result.ok && result.data && typeof result.data === 'object'
-        ? (result.data as { queue?: unknown }).queue
-        : undefined;
-    if (queue && typeof queue === 'object') {
-      return c.json(queue);
-    }
-
-    return c.json(
-      {
-        error: result.message,
-        items: [],
-        issues: (result.errors ?? [result.message]).map((message) => ({
-          type: 'search-error',
-          message,
-        })),
-      },
-      result.requires?.includes('GITHUB_TOKEN') ? 503 : 502,
-    );
+  routes.get('/prs', (c) => {
+    const snapshot = readGitHubQueueSnapshot(paths);
+    return c.json(snapshot, snapshot.status === 'unavailable' ? 503 : 200);
   });
 
   routes.get('/prs/:owner/:repo/:number', async (c) => {

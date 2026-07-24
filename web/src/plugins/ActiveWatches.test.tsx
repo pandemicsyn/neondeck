@@ -69,7 +69,7 @@ describe('ActiveWatches owner conversation', () => {
       ),
     );
 
-    expect(container.textContent).toContain(
+    expect(container.textContent).not.toContain(
       'Does the same work, then waits; only your direct instruction in the owner chat can authorize it to push or respond.',
     );
     expect(
@@ -159,6 +159,126 @@ describe('ActiveWatches visibility', () => {
     );
 
     expect(container.textContent?.match(/watching/g)).toHaveLength(1);
+
+    act(() => root.unmount());
+  });
+
+  it('shows aggregate review approval as ready', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    const container = document.createElement('div');
+    const root = createRoot(container);
+
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <WatchRow
+            watch={watch({
+              status: 'ready',
+              lastSnapshot: {
+                ...watch().lastSnapshot!,
+                reviewDecision: 'APPROVED',
+              },
+            })}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+
+    expect(container.textContent).toContain('ready');
+    expect(container.textContent).toContain('review approved');
+
+    act(() => root.unmount());
+  });
+
+  it('shows that a merged watch is waiting for checks to settle', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    const container = document.createElement('div');
+    const root = createRoot(container);
+
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <WatchRow
+            watch={watch({
+              status: 'ready',
+              prState: 'closed',
+              lastSnapshot: {
+                ...watch().lastSnapshot!,
+                state: 'closed',
+                merged: true,
+                reviewDecision: 'APPROVED',
+                checks: {
+                  status: 'pending',
+                  total: 18,
+                  successful: 8,
+                  failed: 0,
+                  pending: 10,
+                  checkedAt: '2026-07-23T17:19:37.374Z',
+                },
+              },
+            })}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+
+    expect(container.textContent).toContain('merged · checks pending');
+    expect(container.textContent).not.toContain('ready');
+
+    act(() => root.unmount());
+  });
+
+  it('keeps the conditional attention reason visible without mode help', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    const container = document.createElement('div');
+    const root = createRoot(container);
+
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <WatchRow
+            watch={watch({
+              prState: 'closed',
+              lastSnapshot: {
+                ...watch().lastSnapshot!,
+                state: 'closed',
+                merged: true,
+                checks: {
+                  status: 'failure',
+                  total: 46,
+                  successful: 45,
+                  failed: 1,
+                  pending: 0,
+                  checkedAt: '2026-07-20T05:01:00.000Z',
+                },
+              },
+            })}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+
+    expect(container.textContent).toContain(
+      'why · Merged, but 1 of 46 checks failed.',
+    );
+    expect(container.textContent).not.toContain(
+      'Does the same work, then waits; only your direct instruction in the owner chat can authorize it to push or respond.',
+    );
 
     act(() => root.unmount());
   });

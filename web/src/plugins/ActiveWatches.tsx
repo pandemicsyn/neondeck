@@ -130,6 +130,10 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
     watch.lastSnapshot?.updatedAt ?? watch.updatedAt,
   )}`;
   const attentionReason = prWatchAttentionReason(watch);
+  const reviewLabel = reviewDecisionLabel(watch.lastSnapshot?.reviewDecision);
+  const mergedChecksPending =
+    watch.lastSnapshot?.merged === true &&
+    watch.lastSnapshot.checks?.status === 'pending';
   const configureMutation = useMutation({
     mutationFn: (input: { mode: PrWatch['autopilotMode']; confirm: boolean }) =>
       configurePrAutopilot({
@@ -169,7 +173,15 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
           ) : null}
         </div>
         <div className="flex flex-col items-end gap-1">
-          <Badge className={statusClass(watch.status)}>{watch.status}</Badge>
+          <Badge
+            className={
+              mergedChecksPending
+                ? 'border-warn text-warn'
+                : statusClass(watch.status)
+            }
+          >
+            {mergedChecksPending ? 'merged · checks pending' : watch.status}
+          </Badge>
           {watch.autopilotStatus !== 'watching' ? (
             <Badge className={autopilotStatusClass(watch.autopilotStatus)}>
               {watch.autopilotStatus}
@@ -177,9 +189,6 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
           ) : null}
         </div>
       </div>
-      <p className="mt-2 font-mono text-[10px] leading-4 text-muted">
-        {autopilotModeHelp(watch.autopilotMode)}
-      </p>
       <div className="mt-1 flex items-center gap-2 font-mono text-[10px] text-muted">
         <span>mode</span>
         <select
@@ -247,7 +256,9 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
       ) : null}
       <div className="mt-2 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
         <span className="min-w-0 truncate">
-          until {watch.desiredTerminalState} · {checkedLabel} · {nextPollLabel}
+          until {watch.desiredTerminalState}
+          {reviewLabel ? ` · ${reviewLabel}` : ''} · {checkedLabel} ·{' '}
+          {nextPollLabel}
           {' · '}
           {activityLabel}
           {sourceLabel}
@@ -411,11 +422,27 @@ function WatchState({ title, detail }: { title: string; detail: string }) {
 }
 
 function statusClass(status: string) {
-  if (status === 'green') return 'border-primary text-primary';
+  if (status === 'green' || status === 'ready')
+    return 'border-primary text-primary';
   if (status === 'attention-needed') return 'border-accent text-accent';
   if (status === 'closed' || status === 'merged')
     return 'border-line text-muted';
   return '';
+}
+
+function reviewDecisionLabel(
+  decision: NonNullable<PrWatch['lastSnapshot']>['reviewDecision'],
+) {
+  switch (decision) {
+    case 'APPROVED':
+      return 'review approved';
+    case 'CHANGES_REQUESTED':
+      return 'changes requested';
+    case 'REVIEW_REQUIRED':
+      return 'review required';
+    default:
+      return null;
+  }
 }
 
 function autopilotStatusClass(status: PrWatch['autopilotStatus']) {

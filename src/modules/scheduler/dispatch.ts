@@ -93,7 +93,9 @@ function notificationFromWatchResult(
   const level: NotificationLevel =
     watch?.status === 'closed' || watch?.status === 'attention-needed'
       ? 'attention'
-      : watch?.status === 'merged' || watch?.status === 'green'
+      : watch?.status === 'merged' ||
+          watch?.status === 'green' ||
+          watch?.status === 'ready'
         ? 'ready'
         : 'info';
   const copy = watchNotificationCopy(watch, result.message);
@@ -115,6 +117,7 @@ type WatchNotificationFacts = {
   prState?: string | null;
   lastSnapshot?: {
     merged?: boolean;
+    reviewDecision?: string | null;
     checks?: {
       status?: string;
       total?: number;
@@ -164,6 +167,13 @@ export function watchNotificationCopy(
         typeof total === 'number' && total > 0
           ? `${subject}: all ${total} ${total === 1 ? 'check' : 'checks'} passed.`
           : `${subject}: all checks passed.`,
+    };
+  }
+
+  if (watch?.status === 'ready') {
+    return {
+      title: `${titleSubject} approved`,
+      message: `${subject}: required reviews approved.`,
     };
   }
 

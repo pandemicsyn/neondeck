@@ -42,6 +42,7 @@ import {
 import { buildPrAutopilotOwnerRuntime } from './agents/pr-autopilot-owner';
 import { registerPendingAutopilotTurn } from './modules/autopilot/owner/pending';
 import { updateAutopilotPrompt } from './modules/config';
+import { addNotification, listNotifications } from './modules/app-state';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import { emptyPrWatchInitialEventBaseline } from './testing/pr-watch-event-baseline';
 import { refreshWatchJobEvents } from './modules/scheduler/pr-watch-events';
@@ -243,6 +244,123 @@ describe('minimal Autopilot watch loop', () => {
       changed: true,
       watch: { autopilotStatus: 'watching' },
     });
+  });
+
+  it('defers owner dispatch while the local runtime starts without blocking the watch', async () => {
+    const { paths } = await gitFixturePaths();
+    await configurePrAutopilot(
+      {
+        ref: 'neondeck#123',
+        mode: 'prepare-only',
+        processExisting: false,
+        confirm: true,
+      },
+      paths,
+      fixtureDependencies(repositorySeed?.featureSha ?? undefined),
+    );
+    const created = await createWorktree(
+      { repoId: 'neondeck', prNumber: 123, headRef: 'feature' },
+      paths,
+    );
+    const worktree = worktreeFrom(created);
+    const prepare = async () => ({
+      ok: true as const,
+      action: 'autopilot_prepare_pr_worktree',
+      changed: false,
+      message: 'Prepared exact head.',
+      data: {
+        pr: {
+          headSha: repositorySeed?.featureSha,
+          baseSha: repositorySeed?.baseSha,
+        },
+        worktree: { id: worktree.id },
+      },
+    });
+    const unavailable = Object.assign(
+      new Error('The local runtime is temporarily unavailable.'),
+      { type: 'runtime_unavailable' },
+    );
+
+    await expect(
+      runAutopilotWatchEvent(ownerEvent('runtime-starting'), paths, {
+        prepare: prepare as never,
+        dispatch: (async () => {
+          throw unavailable;
+        }) as never,
+      }),
+    ).resolves.toMatchObject({
+      state: 'deferred',
+      changed: false,
+      message: expect.stringContaining('retry'),
+    });
+    expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toMatchObject({
+      autopilotStatus: 'watching',
+      worktreeId: worktree.id,
+    });
+    expect(await listNotifications(paths)).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ title: 'Autopilot owner turn blocked' }),
+      ]),
+    );
+
+    await expect(
+      runAutopilotWatchEvent(ownerEvent('permanent-dispatch-error'), paths, {
+        prepare: prepare as never,
+        dispatch: (async () => {
+          throw new Error('The owner agent is misconfigured.');
+        }) as never,
+      }),
+    ).resolves.toMatchObject({
+      state: 'blocked',
+      changed: false,
+    });
+    expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toMatchObject({
+      autopilotStatus: 'blocked',
+    });
+    expect(await listNotifications(paths)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: 'Autopilot owner turn blocked',
+          message: expect.stringContaining('misconfigured'),
+        }),
+      ]),
+    );
+  });
+
+  it('rearms a legacy runtime-startup block and resolves its stale notification', async () => {
+    const paths = await fixturePaths();
+    await configurePrAutopilot(
+      {
+        ref: 'neondeck#123',
+        mode: 'prepare-only',
+        processExisting: false,
+        confirm: true,
+      },
+      paths,
+      fixtureDependencies(),
+    );
+    transitionWatchAutopilot(paths, 'pandemicsyn/neondeck#123', {
+      from: 'watching',
+      to: 'blocked',
+    });
+    await addNotification(
+      {
+        level: 'attention',
+        title: 'Autopilot owner turn blocked',
+        message:
+          'Autopilot could not start the owner turn: The local runtime is temporarily unavailable.',
+        source: 'autopilot-owner',
+        sourceId: 'pandemicsyn/neondeck#123:dispatch-blocked',
+        data: { watchId: 'pandemicsyn/neondeck#123' },
+      },
+      paths,
+    );
+
+    await expect(recoverInterruptedAutopilotOwners(paths)).resolves.toBe(0);
+    expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toMatchObject({
+      autopilotStatus: 'watching',
+    });
+    expect(await listNotifications(paths)).toEqual([]);
   });
 
   it('reuses one owner/worktree, preserves a prepared commit, and grants push only to the human waiting turn', async () => {

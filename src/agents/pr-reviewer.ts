@@ -1,8 +1,12 @@
-import { defineAgent } from '@flue/runtime';
+import { defineAgent, type AgentRouteHandler } from '@flue/runtime';
 import { parsePrReviewerConversationId } from '../../shared/pr-reviewer-session';
 import { readLivePrReviewDraft } from '../modules/github';
 import { readPrReview } from '../modules/pr-reviews';
-import { resolvePrReviewerWorkspace } from '../modules/pr-reviewer';
+import {
+  readPrReviewerHandoff,
+  resolvePrReviewerWorkspace,
+  type PrReviewerHandoff,
+} from '../modules/pr-reviewer';
 import { readAgentModelSelectionSync } from '../modules/runtime';
 import {
   effectivePrReviewPromptTemplates,
@@ -16,6 +20,8 @@ import {
 
 export const description =
   'Continuing read-only reviewer conversation for one durable Neondeck PR review.';
+
+export const route: AgentRouteHandler = async (_context, next) => next();
 
 export async function buildPrReviewerRuntime(
   id: string,
@@ -56,6 +62,7 @@ export async function buildPrReviewerRuntime(
     repo: review.repoFullName,
     prNumber: review.prNumber,
   });
+  const handoff = await readPrReviewerHandoff(review, paths);
 
   return {
     model: models.prReview,
@@ -70,6 +77,7 @@ export async function buildPrReviewerRuntime(
       review,
       workspace,
       draft,
+      handoff,
       promptTemplate,
     }),
     tools: workspace.tools,
@@ -99,9 +107,10 @@ export function reviewerInstructions(input: {
   review: NonNullable<ReturnType<typeof readPrReview>>;
   workspace: Awaited<ReturnType<typeof resolvePrReviewerWorkspace>>;
   draft: ReturnType<typeof readLivePrReviewDraft>;
+  handoff: PrReviewerHandoff;
   promptTemplate: string;
 }) {
-  const { review, workspace, draft, promptTemplate } = input;
+  const { review, workspace, draft, handoff, promptTemplate } = input;
   const context = JSON.stringify({
     review: {
       id: review.id,
@@ -113,6 +122,7 @@ export function reviewerInstructions(input: {
       baseRef: review.baseRef,
       reportOnlyFindings: review.reportOnlyFindings,
     },
+    initialReviewHandoff: handoff,
     localDraftComments: (draft?.comments ?? []).map((comment) => ({
       id: comment.id,
       path: comment.path,

@@ -28,8 +28,19 @@ export const HostMetricsPlugin = {
     });
 
     useEffect(() => {
-      const timer = window.setInterval(() => setNow(new Date()), 1_000);
-      return () => window.clearInterval(timer);
+      let interval: number | undefined;
+      const timeout = window.setTimeout(
+        () => {
+          setNow(new Date());
+          interval = window.setInterval(() => setNow(new Date()), 60_000);
+        },
+        60_000 - (Date.now() % 60_000),
+      );
+
+      return () => {
+        window.clearTimeout(timeout);
+        if (interval !== undefined) window.clearInterval(interval);
+      };
     }, []);
 
     if (isLoading) {
@@ -132,9 +143,7 @@ export const HostMetricsPlugin = {
           {runtimeStatus?.status ?? 'unknown'}
         </span>
         <p className="ml-auto px-3.5 text-ink tabular-nums">
-          {clockParts(now).hourMinute}
-          <span className="[animation:nd-blink_1.1s_step-end_infinite]">:</span>
-          {clockParts(now).seconds}
+          {formatClock(now)}
         </p>
       </div>
     );
@@ -187,15 +196,10 @@ function formatNetwork(value: number | null) {
   return Math.round(mbps).toString();
 }
 
-function clockParts(value: Date) {
-  const [hourMinute = '', seconds = ''] = value
-    .toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    })
-    .split(/:(?=\d{2}$)/);
-
-  return { hourMinute, seconds };
+function formatClock(value: Date) {
+  return value.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 }

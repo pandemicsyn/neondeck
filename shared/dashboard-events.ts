@@ -5,3 +5,4 @@
  * responses directly; the server and browser must continue sharing this path.
  */
 export const dashboardEventStreamPath = '/api/events/agents/neondeck/dashboard';
+export const dashboardHeartbeatEventName = 'dashboard-heartbeat';

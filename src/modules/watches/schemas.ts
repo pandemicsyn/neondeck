@@ -4,7 +4,13 @@ import type { GitHubCheckSummary, GitHubPullRequestDetail } from '../github';
 import * as v from 'valibot';
 
 export type PrWatchStatus =
-  'watching' | 'merged' | 'closed' | 'green' | 'attention-needed' | 'unknown';
+  | 'watching'
+  | 'ready'
+  | 'merged'
+  | 'closed'
+  | 'green'
+  | 'attention-needed'
+  | 'unknown';
 export type RefWatchStatus =
   'watching' | 'green' | 'attention-needed' | 'unknown';
 
@@ -69,6 +75,7 @@ export type PrWatchSnapshot = {
   state: string;
   merged: boolean;
   mergeCommitSha: string | null;
+  reviewDecision?: GitHubPullRequestDetail['reviewDecision'];
   checks: GitHubCheckSummary | null;
   title: string;
   url: string;

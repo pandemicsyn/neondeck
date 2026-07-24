@@ -1,5 +1,10 @@
 import * as v from 'valibot';
-import { encodePathSegment, githubFetch, nextLink } from './client';
+import {
+  encodePathSegment,
+  githubFetch,
+  githubGraphqlFetch,
+  nextLink,
+} from './client';
 import {
   fetchCheckRunDetailsWithMetadata,
   fetchCheckSuitesWithMetadata,
@@ -32,7 +37,34 @@ import type {
   GitHubPullRequestFile,
   GitHubPullRequestFileApiItem,
   GitHubPullRequestFiles,
+  GitHubPullRequestReviewDecision,
 } from './schemas';
+
+const pullRequestReviewDecisionQuery = `
+  query NeondeckPullRequestReviewDecision($owner: String!, $name: String!, $number: Int!) {
+    repository(owner: $owner, name: $name) {
+      pullRequest(number: $number) {
+        reviewDecision
+      }
+    }
+  }
+`;
+
+const pullRequestReviewDecisionResponseSchema = v.object({
+  data: v.object({
+    repository: v.nullable(
+      v.object({
+        pullRequest: v.nullable(
+          v.object({
+            reviewDecision: v.nullable(
+              v.picklist(['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED']),
+            ),
+          }),
+        ),
+      }),
+    ),
+  }),
+});
 
 export async function fetchPullRequestDetail(options: {
   token: string;
@@ -79,6 +111,25 @@ export async function fetchPullRequestDetail(options: {
     createdAt: data.created_at ?? data.updated_at,
     updatedAt: data.updated_at,
   };
+}
+
+export async function fetchPullRequestReviewDecision(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+}): Promise<GitHubPullRequestReviewDecision | null> {
+  const response = await githubGraphqlFetch(
+    options.token,
+    pullRequestReviewDecisionQuery,
+    {
+      owner: options.owner,
+      name: options.repo,
+      number: options.number,
+    },
+  );
+  const parsed = v.parse(pullRequestReviewDecisionResponseSchema, response);
+  return parsed.data.repository?.pullRequest?.reviewDecision ?? null;
 }
 
 export async function fetchPullRequestEventState(options: {

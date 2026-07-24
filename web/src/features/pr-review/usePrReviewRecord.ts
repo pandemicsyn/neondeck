@@ -10,6 +10,7 @@ import {
 } from '../../api';
 import { queryKeys } from '../../lib/query';
 import { prReviewQueryKeys } from './queries';
+import { useTransientPrReviewReconciliation } from './useTransientPrReviewReconciliation';
 
 export function usePrReviewRecord(
   pr: Pick<GitHubPullRequest, 'number' | 'repo'>,
@@ -30,9 +31,16 @@ export function usePrReviewRecord(
       getPrReviewForTarget({ repo, prNumber: number }, { signal }),
   });
   const review = query.data ?? null;
+  const transientReviews = useMemo(() => (review ? [review] : []), [review]);
   const updateReview = (nextReview: NonNullable<typeof query.data>) => {
     queryClient.setQueryData(reviewQueryKey, nextReview);
   };
+  useTransientPrReviewReconciliation(transientReviews, (nextReview) => {
+    updateReview(nextReview);
+    if (nextReview.status === 'ready' || nextReview.status === 'failed') {
+      void queryClient.invalidateQueries({ queryKey: draftQueryKey });
+    }
+  });
   const restart = useMutation({
     mutationFn: (id: string) => restartPrReview(id),
     onSuccess: (result) => updateReview(result.review),
@@ -49,26 +57,20 @@ export function usePrReviewRecord(
 
   useEffect(
     () =>
-      openPrReviewEventStream(
-        (event) => {
+      openPrReviewEventStream((event) => {
+        if (
+          event.review.repoFullName.toLowerCase() === repo.toLowerCase() &&
+          event.review.prNumber === number
+        ) {
+          queryClient.setQueryData(reviewQueryKey, event.review);
           if (
-            event.review.repoFullName.toLowerCase() === repo.toLowerCase() &&
-            event.review.prNumber === number
+            event.review.status === 'ready' ||
+            event.review.status === 'failed'
           ) {
-            queryClient.setQueryData(reviewQueryKey, event.review);
-            if (
-              event.review.status === 'ready' ||
-              event.review.status === 'failed'
-            ) {
-              void queryClient.invalidateQueries({ queryKey: draftQueryKey });
-            }
+            void queryClient.invalidateQueries({ queryKey: draftQueryKey });
           }
-        },
-        undefined,
-        () => {
-          void queryClient.invalidateQueries({ queryKey: reviewQueryKey });
-        },
-      ),
+        }
+      }),
     [draftQueryKey, number, queryClient, repo, reviewQueryKey],
   );
 

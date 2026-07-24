@@ -10,6 +10,7 @@ import {
   type PrReviewRecord,
 } from '../../../api';
 import { Badge, Button } from '../../../components/ui';
+import { useDashboardEventConnectionState } from '../../../lib/dashboard-connection';
 import { queryErrorMessage } from '../../../lib/query';
 import { PrReviewArtifactsOverlay } from '../../pr-review/PrReviewArtifactsOverlay';
 import type { FlueChatCommand } from '../types';
@@ -74,28 +75,28 @@ function PrReviewCommandCard({
   reviewId: string;
 }) {
   const queryClient = useQueryClient();
+  const eventConnection = useDashboardEventConnectionState();
   const queryKey = ['pr-review', reviewId] as const;
   const { data, error } = useQuery({
     queryKey,
     queryFn: async ({ signal }) =>
       (await getPrReview(reviewId, { signal })).review,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return eventConnection !== 'open' &&
+        (status === 'reviewing' || status === 'submitting')
+        ? 5_000
+        : false;
+    },
   });
 
   useEffect(
     () =>
-      openPrReviewEventStream(
-        (event) => {
-          if (event.review.id === reviewId) {
-            queryClient.setQueryData(['pr-review', reviewId], event.review);
-          }
-        },
-        undefined,
-        () => {
-          void queryClient.invalidateQueries({
-            queryKey: ['pr-review', reviewId],
-          });
-        },
-      ),
+      openPrReviewEventStream((event) => {
+        if (event.review.id === reviewId) {
+          queryClient.setQueryData(['pr-review', reviewId], event.review);
+        }
+      }),
     [queryClient, reviewId],
   );
 

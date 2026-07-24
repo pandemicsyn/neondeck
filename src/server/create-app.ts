@@ -52,13 +52,17 @@ import { createScheduledTaskRoutes } from './routes/scheduled-tasks';
 import { createRuntimeRoutes } from './routes/runtime';
 import { createSafetyRoutes } from './routes/safety';
 import { createSchedulerRoutes } from './routes/scheduler';
-import { startSchedulerObservedLoop } from './scheduler-workflow';
+import {
+  resolveTransientSchedulerWorkflowNotification,
+  startSchedulerObservedLoop,
+} from './scheduler-workflow';
 import { createSessionRoutes } from './routes/sessions';
 import { createSkillRoutes } from './routes/skills';
 import { createWatchRoutes } from './routes/watches';
 import { createWorkflowRoutes } from './routes/workflows';
 import { createWorktreeRoutes } from './routes/worktrees';
 import { recoverInterruptedAutopilotOwners } from '../modules/autopilot/owner/settlement';
+import { refreshGitHubQueueSnapshot } from '../modules/github';
 
 export type CreateAppOptions = {
   paths?: RuntimePaths;
@@ -92,7 +96,11 @@ export async function createApp(options: CreateAppOptions = {}) {
     options.scheduler !== false &&
     process.env.NEONDECK_DISABLE_SCHEDULER !== '1'
   ) {
+    await resolveTransientSchedulerWorkflowNotification(paths);
     startSchedulerObservedLoop(paths);
+    void refreshGitHubQueueSnapshot(paths).catch((error) => {
+      console.warn('[neondeck] initial GitHub queue refresh failed', error);
+    });
   }
   await getMcpRegistry(paths).start();
 

@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { dashboardHeartbeatEventName } from '../../../shared/dashboard-events';
 import {
   formatNotificationServerSentEvent,
   subscribeNotificationEvents,
@@ -26,13 +27,22 @@ import {
   subscribeChatSessionCommandEvents,
   subscribeChatSessionEvents,
 } from '../../modules/sessions';
+import {
+  formatGitHubQueueSnapshotServerSentEvent,
+  subscribeGitHubQueueSnapshotEvents,
+} from '../../modules/github';
 
 const eventStreamHeartbeatMs = 25_000;
+
+function formatDashboardHeartbeat() {
+  return `event: ${dashboardHeartbeatEventName}\ndata: ${JSON.stringify({ at: new Date().toISOString() })}\n\n`;
+}
 
 export type EventStreamDependencies = {
   formatChatSessionCommandServerSentEvent: typeof formatChatSessionCommandServerSentEvent;
   formatChatSessionServerSentEvent: typeof formatChatSessionServerSentEvent;
   formatConfigServerSentEvent: typeof formatConfigServerSentEvent;
+  formatGitHubQueueSnapshotServerSentEvent: typeof formatGitHubQueueSnapshotServerSentEvent;
   formatNotificationServerSentEvent: typeof formatNotificationServerSentEvent;
   formatPrReviewServerSentEvent: typeof formatPrReviewServerSentEvent;
   formatReviewSurfaceServerSentEvent: typeof formatReviewSurfaceServerSentEvent;
@@ -41,6 +51,7 @@ export type EventStreamDependencies = {
   subscribeChatSessionCommandEvents: typeof subscribeChatSessionCommandEvents;
   subscribeChatSessionEvents: typeof subscribeChatSessionEvents;
   subscribeConfigEvents: typeof subscribeConfigEvents;
+  subscribeGitHubQueueSnapshotEvents: typeof subscribeGitHubQueueSnapshotEvents;
   subscribeNotificationEvents: typeof subscribeNotificationEvents;
   subscribePrReviewEvents: typeof subscribePrReviewEvents;
   subscribeReviewSurfaceEvents: typeof reviewSurfaceRegistry.subscribe;
@@ -51,6 +62,7 @@ const defaultDependencies: EventStreamDependencies = {
   formatChatSessionCommandServerSentEvent,
   formatChatSessionServerSentEvent,
   formatConfigServerSentEvent,
+  formatGitHubQueueSnapshotServerSentEvent,
   formatNotificationServerSentEvent,
   formatPrReviewServerSentEvent,
   formatReviewSurfaceServerSentEvent,
@@ -59,6 +71,7 @@ const defaultDependencies: EventStreamDependencies = {
   subscribeChatSessionCommandEvents,
   subscribeChatSessionEvents,
   subscribeConfigEvents,
+  subscribeGitHubQueueSnapshotEvents,
   subscribeNotificationEvents,
   subscribePrReviewEvents,
   subscribeReviewSurfaceEvents: reviewSurfaceRegistry.subscribe.bind(
@@ -106,14 +119,18 @@ export function createEventStreamRoutes(
           dependencies.subscribeReviewSourceRevisionEvents((event) => {
             send(dependencies.formatReviewSourceRevisionServerSentEvent(event));
           }),
+          dependencies.subscribeGitHubQueueSnapshotEvents((event) => {
+            send(dependencies.formatGitHubQueueSnapshotServerSentEvent(event));
+          }),
         ];
 
         send('retry: 3000\n: connected\n\n');
+        send(formatDashboardHeartbeat());
         for (const event of dependencies.replayConfigEventsAfter(lastEventId)) {
           send(dependencies.formatConfigServerSentEvent(event));
         }
         const heartbeat = setInterval(() => {
-          send(`: heartbeat ${Date.now()}\n\n`);
+          send(formatDashboardHeartbeat());
         }, eventStreamHeartbeatMs);
 
         cleanup = () => {

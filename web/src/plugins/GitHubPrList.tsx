@@ -21,6 +21,7 @@ import {
   ScrollArea,
 } from '../components/ui';
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
+import { useDashboardEventConnectionState } from '../lib/dashboard-connection';
 import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
 import { isCompletedPrWatch } from '../lib/watch-status';
@@ -50,15 +51,16 @@ export const GitHubPrListPlugin = {
     parsePositiveIntegerConfig(githubPrListDefaultConfig, config),
   Component({ config }) {
     const queryClient = useQueryClient();
-    const { data, error, isLoading } = useQuery({
+    const eventConnection = useDashboardEventConnectionState();
+    const { data, error, isFetching, isLoading } = useQuery({
       queryKey: queryKeys.githubPrs,
       queryFn: getGitHubPullRequests,
-      refetchInterval: 5 * 60_000,
+      refetchInterval: (query) =>
+        query.state.data?.status === 'loading' ? 1_000 : false,
     });
     const { data: registry } = useQuery({
       queryKey: queryKeys.repoRegistry,
       queryFn: getRepoRegistry,
-      refetchInterval: 5 * 60_000,
     });
 
     useConfigEvents((event) => {
@@ -85,6 +87,11 @@ export const GitHubPrListPlugin = {
     const countLabel = data
       ? `${items.length} PR${items.length === 1 ? '' : 's'} · ${data.repos?.length ?? 0} REPOS`
       : 'OPEN PRs';
+    const health = queueHealth(data, isFetching, eventConnection);
+    const healthDetail =
+      data?.error ??
+      data?.issues?.map((issue) => issue.message).join(' ') ??
+      undefined;
 
     return (
       <div className="terminal-list flex h-full min-h-0 flex-col">
@@ -93,17 +100,32 @@ export const GitHubPrListPlugin = {
             <span className="h-1.5 w-1.5 rounded-full bg-accent" />
             GITHUB · {login}
           </span>
-          <span className="text-muted">{countLabel}</span>
+          <span className="flex items-center gap-2 text-muted">
+            {countLabel}
+            {health ? (
+              <span
+                className={
+                  health === 'REFRESHING' ? 'text-primary' : 'text-accent'
+                }
+                title={healthDetail}
+              >
+                · {health}
+              </span>
+            ) : null}
+          </span>
         </header>
         {isLoading ? <PrSkeleton /> : null}
-        {error ? (
+        {error && !data ? (
           <EmptyState
             title="GitHub unavailable"
             detail={`${queryErrorMessage(error)}. Set GITHUB_TOKEN in .env to show authored, assigned, and review-requested PRs.`}
             tone="alert"
           />
         ) : null}
-        {data && items.length === 0 ? (
+        {data?.status === 'loading' ? (
+          <MiniEmpty label="Loading the local GitHub snapshot." />
+        ) : null}
+        {data && data.status !== 'loading' && items.length === 0 ? (
           <EmptyState
             title="Inbox zero"
             detail="Authored, assigned, and review-requested PRs are clear."
@@ -130,6 +152,19 @@ export const GitHubPrListPlugin = {
     );
   },
 } satisfies DisplayPlugin<GitHubPrListConfig>;
+
+function queueHealth(
+  data: Awaited<ReturnType<typeof getGitHubPullRequests>> | undefined,
+  isFetching: boolean,
+  eventConnection: ReturnType<typeof useDashboardEventConnectionState>,
+) {
+  if (isFetching && data) return 'REFRESHING';
+  if (data?.status === 'degraded' || data?.status === 'unavailable') {
+    return 'DEGRADED';
+  }
+  if (data && eventConnection !== 'open') return 'STALE';
+  return null;
+}
 
 function PrRow({
   initialShowReview,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PrReviewRecord, PrReviewsResponse } from '../api';
-import { applyPrReviewChange } from './ReviewsPanel';
+import { applyPrReviewChange, applyPrReviewSnapshot } from './ReviewsPanel';
 
 describe('ReviewsPanel review events', () => {
   it('moves one durable record through lifecycle groups without duplication', () => {
@@ -34,6 +34,52 @@ describe('ReviewsPanel review events', () => {
     expect(response.groups.archived).toMatchObject([
       { id: 'review-1', status: 'submitted' },
     ]);
+  });
+
+  it('merges an authoritative local snapshot without losing GitHub queue context', () => {
+    const current = responseWith(review('ready'));
+    current.groups.awaiting = [
+      {
+        pullRequest: {
+          id: 42,
+          repo: 'other/project',
+          number: 42,
+          title: 'Review this change',
+          author: 'contributor',
+          url: 'https://github.com/other/project/pull/42',
+          state: 'open',
+          draft: false,
+          comments: 0,
+          headSha: 'head-1',
+          baseSha: 'base-1',
+          baseRef: 'main',
+          createdAt: '2026-07-14T19:00:00.000Z',
+          updatedAt: '2026-07-14T20:01:00.000Z',
+          ageDays: 0,
+          stale: false,
+          relations: ['review-requested'],
+          checks: null,
+          labels: [],
+        },
+        review: current.items[0]!,
+      },
+    ];
+    current.queueIssues = ['GitHub queue warning'];
+    const started = {
+      ...review('reviewing'),
+      id: 'review-2',
+      ref: 'other/project#43',
+      prNumber: 43,
+      updatedAt: '2026-07-14T20:02:00.000Z',
+    };
+    const snapshot = responseWith(started);
+
+    const response = applyPrReviewSnapshot(current, snapshot);
+
+    expect(response.groups.inProgress).toEqual([started]);
+    expect(response.groups.needsAction).toEqual([]);
+    expect(response.groups.awaiting[0]?.review).toBeNull();
+    expect(response.queueIssues).toEqual(['GitHub queue warning']);
   });
 });
 

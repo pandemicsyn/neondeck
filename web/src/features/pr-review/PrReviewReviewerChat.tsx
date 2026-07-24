@@ -1,5 +1,5 @@
 import { useFlueAgent } from '@flue/react';
-import { useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { prReviewerConversationId } from '../../../../shared/pr-reviewer-session';
 import type { PrReviewRecord } from '../../api';
 import { ChatTimelineItems } from '../flue-chat/components/chat-timeline';
@@ -81,6 +81,18 @@ function ReviewerConversation({
     }
   }
 
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (
+      event.key !== 'Enter' ||
+      event.shiftKey ||
+      event.nativeEvent.isComposing
+    ) {
+      return;
+    }
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
+  }
+
   return (
     <section className="pr-reviewer-chat" aria-label="Reviewer conversation">
       <div
@@ -120,9 +132,11 @@ function ReviewerConversation({
           Ask the reviewer a question
         </label>
         <textarea
+          aria-describedby="pr-reviewer-chat-shortcut"
           disabled={!ready}
           id="pr-reviewer-chat-input"
           onChange={(event) => setInput(event.currentTarget.value)}
+          onKeyDown={handleKeyDown}
           placeholder={
             connectionError
               ? 'Reviewer connection unavailable.'
@@ -136,10 +150,10 @@ function ReviewerConversation({
           value={input}
         />
         <div className="pr-reviewer-chat-actions">
-          <span aria-live="polite">
+          <span aria-live="polite" id="pr-reviewer-chat-shortcut">
             {agent.status === 'streaming'
               ? 'Reviewer is responding…'
-              : sendError}
+              : sendError || 'Enter send · Shift+Enter newline'}
           </span>
           {connectionError ? (
             <button onClick={onReconnect} type="button">

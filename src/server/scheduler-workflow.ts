@@ -7,17 +7,25 @@ import {
   type WorkflowInvocationReceipt,
 } from '@flue/runtime';
 import schedulerTickWorkflow from '../workflows/scheduler-tick';
+import { isTransientFlueRuntimeFailure } from '../lib/flue-errors';
 import { isSqliteBusy, openDb, rollbackQuietly } from '../lib/sqlite';
-import { addNotification } from '../modules/app-state';
+import {
+  addNotification,
+  listNotifications,
+  resolveNotification,
+} from '../modules/app-state';
 import { expireWorkflowRunObservation } from '../modules/learning/observability';
 import type { SchedulerResult } from '../modules/scheduler/schemas';
 import { runSchedulerTick } from '../modules/scheduler/service';
 import { readMetadataValue } from '../modules/scheduler/lease';
+import { refreshGitHubQueueSnapshot } from '../modules/github';
 import { ensureRuntimeHome, type RuntimePaths } from '../runtime-home';
 
 const schedulerWorkflowName = 'scheduler-tick';
 const schedulerWorkflowAdmissionLeaseKey =
   'scheduler.tick.workflow.admission.lease';
+const schedulerWorkflowFallbackNotificationSourceId =
+  'scheduler-tick:workflow-observation-fallback';
 const defaultWorkflowWaitTimeoutMs = 5 * 60 * 1000;
 const defaultWorkflowAdmissionLeaseTtlMs =
   defaultWorkflowWaitTimeoutMs + 60_000;
@@ -51,6 +59,7 @@ const schedulerTickInFlight = new Map<
   string,
   Promise<ObservedSchedulerTickResult>
 >();
+const schedulerLoopRegistry = schedulerObservedLoopRegistry();
 
 export async function runObservedSchedulerTick(
   paths: RuntimePaths,
@@ -143,6 +152,20 @@ async function runDirectSchedulerTickFallback(
 ): Promise<ObservedSchedulerTickResult> {
   const message = errorMessageWithCauses(error);
   const fallback = await runSchedulerTick(paths);
+  const transientRuntimeFailure = isTransientRuntimeFailure(error);
+  if (transientRuntimeFailure) {
+    await resolveTransientSchedulerWorkflowNotification(paths);
+    return {
+      ...fallback,
+      extra: {
+        ...objectField(fallback.extra),
+        workflowObservationFallback: true,
+        workflowObservationPhase: phase,
+        workflowRuntimeUnavailable: true,
+      },
+    };
+  }
+
   try {
     await addNotification(
       {
@@ -150,7 +173,7 @@ async function runDirectSchedulerTickFallback(
         title: 'Scheduler workflow observation failed',
         message: `Scheduler tick workflow ${phase} failed; ran the direct scheduler tick instead. ${message}`,
         source: 'scheduler',
-        sourceId: 'scheduler-tick:workflow-observation-fallback',
+        sourceId: schedulerWorkflowFallbackNotificationSourceId,
         data: {
           phase,
           error: message,
@@ -226,11 +249,20 @@ export function startSchedulerObservedLoop(
   paths: RuntimePaths,
   intervalMs = 60_000,
   runTick: (paths: RuntimePaths) => Promise<unknown> = runObservedSchedulerTick,
+  refreshGitHubQueue: (
+    paths: RuntimePaths,
+  ) => Promise<unknown> = refreshGitHubQueueSnapshot,
 ) {
+  const existing = schedulerLoopRegistry.get(paths.home);
+  if (existing) clearInterval(existing);
+
   let tickInFlight = false;
   const timer = setInterval(() => {
     if (tickInFlight) return;
     tickInFlight = true;
+    void refreshGitHubQueue(paths).catch((error) => {
+      console.warn('[neondeck] GitHub queue snapshot refresh failed', error);
+    });
     void runTick(paths)
       .catch((error) => {
         console.error('[neondeck] scheduler observed tick failed', error);
@@ -241,7 +273,22 @@ export function startSchedulerObservedLoop(
   }, intervalMs);
 
   timer.unref?.();
+  schedulerLoopRegistry.set(paths.home, timer);
   return timer;
+}
+
+export async function resolveTransientSchedulerWorkflowNotification(
+  paths: RuntimePaths,
+) {
+  const notification = (await listNotifications(paths)).find(
+    (candidate) =>
+      candidate.source === 'scheduler' &&
+      candidate.sourceId === schedulerWorkflowFallbackNotificationSourceId &&
+      notificationDescribesRuntimeUnavailable(candidate.data),
+  );
+  if (!notification) return false;
+  await resolveNotification(notification.id, paths);
+  return true;
 }
 
 async function invokeSchedulerTickWorkflow(
@@ -566,6 +613,28 @@ export function errorMessageWithCauses(error: unknown) {
   }
 
   return messages.join(': ').slice(0, 2_000) || 'Unknown error';
+}
+
+export function isTransientRuntimeFailure(error: unknown) {
+  return isTransientFlueRuntimeFailure(error);
+}
+
+function notificationDescribesRuntimeUnavailable(data: unknown) {
+  const error = objectField(data).error;
+  return (
+    typeof error === 'string' &&
+    error.toLowerCase().includes('runtime is temporarily unavailable')
+  );
+}
+
+function schedulerObservedLoopRegistry() {
+  const target = globalThis as typeof globalThis & {
+    __neondeckSchedulerObservedLoops?: Map<
+      string,
+      ReturnType<typeof setInterval>
+    >;
+  };
+  return (target.__neondeckSchedulerObservedLoops ??= new Map());
 }
 
 function sleep(milliseconds: number) {
