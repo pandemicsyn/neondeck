@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.0-beta.17
+
+### Patch Changes
+
+- [`7e6f2bd`](https://github.com/pandemicsyn/neondeck/commit/7e6f2bd8f5a0e50bb5f361bf5f14ac0c6f0527f5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep PR reviews on the exact read-only repository tools and bound workspace exploration so reviews finish instead of wandering into an empty sandbox.
+
+- [`7e6f2bd`](https://github.com/pandemicsyn/neondeck/commit/7e6f2bd8f5a0e50bb5f361bf5f14ac0c6f0527f5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Load built-in skills correctly from packaged server bundles and keep the primary chat session current after a successful fresh installation.
+
+- [`7e6f2bd`](https://github.com/pandemicsyn/neondeck/commit/7e6f2bd8f5a0e50bb5f361bf5f14ac0c6f0527f5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Surface local PR review draft comments in the review sidebar and make draft and attention navigation select and scroll to the exact target.
+
+- [`7e6f2bd`](https://github.com/pandemicsyn/neondeck/commit/7e6f2bd8f5a0e50bb5f361bf5f14ac0c6f0527f5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Show each pull request in only one review-inbox section after a durable review starts, and keep generated draft comments free of Neondeck attribution.
+
+- [`7e6f2bd`](https://github.com/pandemicsyn/neondeck/commit/7e6f2bd8f5a0e50bb5f361bf5f14ac0c6f0527f5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Show prior GitHub review activity on prepared reviews and automatically archive settled reviews after their pull request closes or merges.
+
 ## 1.0.0-beta.16
 
 ### Patch Changes
