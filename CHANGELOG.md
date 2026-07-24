@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.0-beta.16
+
+### Patch Changes
+
+- [`2d238a7`](https://github.com/pandemicsyn/neondeck/commit/2d238a7c323106e3f009e8a2977327e7058d1980) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep newly started reviews visible, surface watched PR approval as a ready state, keep watch cards focused on actionable state, recover review status and recent notifications after dropped dashboard events, cleanly replace live streams and scheduler loops during development reloads, and defer and recover scheduler or Autopilot owner work while the local runtime starts.
+
+- [`2d238a7`](https://github.com/pandemicsyn/neondeck/commit/2d238a7c323106e3f009e8a2977327e7058d1980) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Move the GitHub pull request inbox to a server-managed snapshot with a three-minute refresh floor, retain the last complete queue through partial failures, and update the dashboard through the shared event stream without requiring tab switches.
+
+- [`2d238a7`](https://github.com/pandemicsyn/neondeck/commit/2d238a7c323106e3f009e8a2977327e7058d1980) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Bound Autopilot owner shell commands, preserve cancellation through the local executor, and ignore generated Flue and Drizzle paths that caused redundant development reloads.
+
+- [`2d238a7`](https://github.com/pandemicsyn/neondeck/commit/2d238a7c323106e3f009e8a2977327e7058d1980) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Show the dashboard status-line clock at minute precision without a blinking
+  seconds ticker.
+
 ## 1.0.0-beta.15
 
 ### Minor Changes
