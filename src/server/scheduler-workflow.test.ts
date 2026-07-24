@@ -184,19 +184,30 @@ describe('observed scheduler workflow', () => {
     const refreshGitHubQueue = vi.fn<
       (paths: ReturnType<typeof runtimePaths>) => Promise<void>
     >(async () => undefined);
+    const refreshPrReviews = vi.fn<
+      (paths: ReturnType<typeof runtimePaths>) => Promise<void>
+    >(async () => undefined);
 
-    startSchedulerObservedLoop(paths, 1_000, previousTick, refreshGitHubQueue);
+    startSchedulerObservedLoop(
+      paths,
+      1_000,
+      previousTick,
+      refreshGitHubQueue,
+      refreshPrReviews,
+    );
     const replacement = startSchedulerObservedLoop(
       paths,
       1_000,
       replacementTick,
       refreshGitHubQueue,
+      refreshPrReviews,
     );
     try {
       await vi.advanceTimersByTimeAsync(1_000);
       expect(previousTick).not.toHaveBeenCalled();
       expect(replacementTick).toHaveBeenCalledTimes(1);
       expect(refreshGitHubQueue).toHaveBeenCalledTimes(1);
+      expect(refreshPrReviews).toHaveBeenCalledTimes(1);
     } finally {
       clearInterval(replacement);
       vi.useRealTimers();

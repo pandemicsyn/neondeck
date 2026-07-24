@@ -123,7 +123,10 @@ async function smokeServe(cli, home, port, cwd) {
       }
       try {
         const response = await fetch(`http://127.0.0.1:${port}/api/health`);
-        if (response.ok) return;
+        if (response.ok) {
+          await assertRuntimeSkills(port);
+          return;
+        }
       } catch {
         // Retry until the server binds or the deadline expires.
       }
@@ -132,6 +135,27 @@ async function smokeServe(cli, home, port, cwd) {
     throw new Error(`Packed serve did not become healthy.\n${output}`);
   } finally {
     await stopProcess(child);
+  }
+}
+
+async function assertRuntimeSkills(port) {
+  const response = await fetch(`http://127.0.0.1:${port}/api/runtime/status`);
+  if (!response.ok) {
+    throw new Error(`Packed runtime status returned HTTP ${response.status}.`);
+  }
+  const status = await response.json();
+  const skillsCheck = status.checks?.find((check) => check.id === 'skills');
+  if (skillsCheck?.ok !== true || !(status.counts?.activeSkills >= 7)) {
+    throw new Error(
+      `Packed runtime could not load built-in skills.\n${JSON.stringify(
+        {
+          skillsCheck,
+          activeSkills: status.counts?.activeSkills,
+        },
+        null,
+        2,
+      )}`,
+    );
   }
 }
 

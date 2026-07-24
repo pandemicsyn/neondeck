@@ -8,6 +8,7 @@ import {
   runtimePaths,
   type RuntimePaths,
 } from '../runtime-home';
+import { noWorkspace } from '../sandboxes/no-workspace';
 
 export function buildPrReviewAssistantRuntime(
   paths: RuntimePaths = runtimePaths(),
@@ -19,6 +20,7 @@ export function buildPrReviewAssistantRuntime(
   return {
     model: models.prReview,
     thinkingLevel: models.prReviewThinkingLevel,
+    sandbox: noWorkspace(),
     cwd: '/workspace',
     instructions: effectivePrReviewPromptTemplates(config)['initial-review'],
     skills: [],

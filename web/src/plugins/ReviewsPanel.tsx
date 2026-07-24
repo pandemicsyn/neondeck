@@ -437,13 +437,20 @@ function ReviewRow({
           <p className="mt-1 font-mono text-[10px] text-primary">
             {reviewStatusLine(review)}
           </p>
-          {review.status === 'ready' ? (
+          {review.status === 'ready' && !review.archivedAt ? (
             <p className="mt-1 max-w-[65ch] text-[10px] leading-4 text-muted">
-              {review.trustBoundary}
+              {reviewReadyDetail(review)}
             </p>
           ) : null}
         </div>
-        <Badge>{review.status}</Badge>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <Badge>{review.status}</Badge>
+          {review.status === 'ready' && review.previousVerdict ? (
+            <Badge className="border-primary text-primary">
+              {previousReviewLabel(review.previousVerdict)}
+            </Badge>
+          ) : null}
+        </div>
       </div>
       <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1.5 font-mono text-[10px]">
         {review.reportIds.map((reportId, index) => (
@@ -526,7 +533,7 @@ function OpenReviewButton({ review }: { review: PrReviewRecord }) {
   );
 }
 
-function reviewStatusLine(review: PrReviewRecord) {
+export function reviewStatusLine(review: PrReviewRecord) {
   if (review.status === 'reviewing') return 'reviewing…';
   if (review.status === 'submitting') return 'submitting to GitHub…';
   if (review.status === 'failed')
@@ -535,6 +542,34 @@ function reviewStatusLine(review: PrReviewRecord) {
     return `${review.verdict ?? 'submitted'} · ${relativeTime(review.submittedAt ?? review.updatedAt)}`;
   }
   return `${review.findingCount} findings · ${review.seededCount} drafts${review.reportOnlyCount ? ` · ${review.reportOnlyCount} report-only` : ''}`;
+}
+
+export function reviewReadyDetail(review: PrReviewRecord) {
+  if (!review.previousVerdict) return review.trustBoundary;
+  const previous = previousReviewClause(review.previousVerdict);
+  if (review.seededCount > 0) {
+    return `You previously ${previous} on GitHub. ${review.seededCount} local draft comment${review.seededCount === 1 ? ' is' : 's are'} not submitted.`;
+  }
+  if (review.reportOnlyCount > 0) {
+    return `You previously ${previous} on GitHub. ${review.reportOnlyCount} report-only finding${review.reportOnlyCount === 1 ? ' remains' : 's remain'} to inspect.`;
+  }
+  return `You previously ${previous} on GitHub. Nothing new is pending locally.`;
+}
+
+function previousReviewLabel(
+  verdict: NonNullable<PrReviewRecord['previousVerdict']>,
+) {
+  if (verdict === 'approve') return 'previously approved';
+  if (verdict === 'request-changes') return 'previously requested changes';
+  return 'previously commented';
+}
+
+function previousReviewClause(
+  verdict: NonNullable<PrReviewRecord['previousVerdict']>,
+) {
+  if (verdict === 'approve') return 'approved this PR';
+  if (verdict === 'request-changes') return 'requested changes on this PR';
+  return 'commented on this PR';
 }
 
 export function applyPrReviewChange(
@@ -547,12 +582,15 @@ export function applyPrReviewChange(
           Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
       )
     : [review];
-  const awaiting = (current?.groups.awaiting ?? []).map((item) =>
-    item.pullRequest.repo.toLowerCase() === review.repoFullName.toLowerCase() &&
-    item.pullRequest.number === review.prNumber
-      ? { ...item, review }
-      : item,
-  );
+  const awaiting = (current?.groups.awaiting ?? [])
+    .map((item) =>
+      item.pullRequest.repo.toLowerCase() ===
+        review.repoFullName.toLowerCase() &&
+      item.pullRequest.number === review.prNumber
+        ? { ...item, review: review.archivedAt ? null : review }
+        : item,
+    )
+    .filter((item) => !item.review);
   return {
     ok: true,
     action: 'pr_reviews_list',
@@ -583,16 +621,19 @@ export function applyPrReviewSnapshot(
   current: PrReviewsResponse | undefined,
   snapshot: PrReviewsResponse,
 ): PrReviewsResponse {
-  const awaiting = (current?.groups.awaiting ?? []).map((item) => ({
-    ...item,
-    review:
-      snapshot.items.find(
-        (review) =>
-          review.repoFullName.toLowerCase() ===
-            item.pullRequest.repo.toLowerCase() &&
-          review.prNumber === item.pullRequest.number,
-      ) ?? null,
-  }));
+  const awaiting = (current?.groups.awaiting ?? [])
+    .map((item) => ({
+      ...item,
+      review:
+        snapshot.items.find(
+          (review) =>
+            !review.archivedAt &&
+            review.repoFullName.toLowerCase() ===
+              item.pullRequest.repo.toLowerCase() &&
+            review.prNumber === item.pullRequest.number,
+        ) ?? null,
+    }))
+    .filter((item) => !item.review);
   return {
     ...snapshot,
     groups: {

@@ -5,10 +5,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   archivePrReview,
   beginPrReviewSubmissionAttempt,
+  clearPrReviewRemoteRefreshForTests,
   completePrReview,
   failPrReview,
+  prReviewRemoteRefreshIntervalMs,
   readPrReviewForTarget,
   recentPrReviews,
+  refreshPrReviewRemoteState,
   reconcilePrReviewSubmission,
   releasePrReviewSubmission,
   restorePrReview,
@@ -28,6 +31,7 @@ import {
 const roots: string[] = [];
 
 afterEach(async () => {
+  clearPrReviewRemoteRefreshForTests();
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
@@ -257,6 +261,88 @@ describe('durable PR reviews', () => {
       id: started.reviewId,
       status: 'reviewing',
       archivedAt: null,
+    });
+  });
+
+  it('records the current reviewer verdict and refreshes it at most every three minutes', async () => {
+    const paths = await tempPaths();
+    const ready = await startReadyReview(paths, 'remote-state-run');
+    let now = new Date('2026-07-24T17:00:00.000Z');
+    let detailCalls = 0;
+    const dependencies = {
+      token: 'token',
+      now: () => now,
+      fetchLogin: async () => 'reviewer',
+      fetchDetail: async () => {
+        detailCalls += 1;
+        return detail('head-1');
+      },
+      fetchReviews: async () => [
+        {
+          id: 99,
+          nodeId: 'review-node-99',
+          state: 'APPROVED',
+          authorLogin: 'Reviewer',
+          submittedAt: '2026-07-24T16:00:00.000Z',
+          commitId: 'head-1',
+          url: 'https://github.com/other/project/pull/42#review-99',
+          body: null,
+        },
+      ],
+    };
+
+    await expect(
+      refreshPrReviewRemoteState(paths, dependencies),
+    ).resolves.toMatchObject({
+      changed: 1,
+      inspected: 1,
+      errors: [],
+      skipped: false,
+    });
+    expect(readPrReviewForTarget('other/project', 42, paths)).toMatchObject({
+      id: ready.reviewId,
+      status: 'ready',
+      previousVerdict: 'approve',
+    });
+
+    now = new Date(now.getTime() + prReviewRemoteRefreshIntervalMs - 1);
+    await expect(
+      refreshPrReviewRemoteState(paths, dependencies),
+    ).resolves.toMatchObject({ skipped: true });
+    expect(detailCalls).toBe(1);
+  });
+
+  it('automatically archives a settled review after its pull request closes', async () => {
+    const paths = await tempPaths();
+    const ready = await startReadyReview(paths, 'merged-review-run');
+
+    await expect(
+      refreshPrReviewRemoteState(
+        paths,
+        {
+          token: 'token',
+          fetchLogin: async () => 'reviewer',
+          fetchDetail: async () => ({
+            ...detail('head-1'),
+            state: 'closed',
+            merged: true,
+            mergeCommitSha: 'merge-sha',
+          }),
+          fetchReviews: async () => {
+            throw new Error('Closed reviews do not need review history.');
+          },
+        },
+        { force: true },
+      ),
+    ).resolves.toMatchObject({
+      changed: 1,
+      inspected: 1,
+      errors: [],
+    });
+    expect(readPrReviewForTarget('other/project', 42, paths)).toMatchObject({
+      id: ready.reviewId,
+      status: 'ready',
+      archivedAt: expect.any(String),
     });
   });
 
@@ -783,6 +869,41 @@ async function tempPaths() {
   const paths = runtimePaths(home);
   await ensureRuntimeHome(paths);
   return paths;
+}
+
+async function startReadyReview(
+  paths: Awaited<ReturnType<typeof tempPaths>>,
+  runId: string,
+) {
+  const started = await startPrReview(
+    { ref: 'other/project#42', origin: 'panel' },
+    paths,
+    {
+      resolveTarget: async () => ({
+        repoFullName: 'other/project',
+        owner: 'other',
+        repo: 'project',
+        number: 42,
+      }),
+      fetchDetail: async () => detail('head-1'),
+      invokeWorkflow: async () => ({ runId }),
+    },
+  );
+  completePrReview(
+    {
+      reviewId: started.reviewId,
+      runId: started.runId,
+      headSha: 'head-1',
+      reportIds: ['overview', 'issues'],
+      reviewUrl: started.review.reviewUrl,
+      findingCount: 0,
+      seededCount: 0,
+      reportOnlyCount: 0,
+      reportOnlyFindings: [],
+    },
+    paths,
+  );
+  return started;
 }
 
 function detail(headSha: string) {

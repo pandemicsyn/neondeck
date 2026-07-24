@@ -14,6 +14,7 @@ import {
   createImperativeReviewPathJump,
   createPrReviewNavigationData,
   moveReviewCursorFromPath,
+  nextDraftCommentTarget,
   reportOnlyFindingNavigationId,
   resolveHunkTraversal,
   resolveNeonFindingSelection,
@@ -166,6 +167,35 @@ describe('focused PR review navigation wiring', () => {
         endSide: 'additions',
       },
     });
+  });
+
+  it('cycles draft comments by selected comment identity when they share a file', () => {
+    const draft = reviewDraft();
+    draft.comments.push({
+      ...draft.comments[0]!,
+      id: 'draft-b',
+      line: 12,
+      body: 'Check the second line.',
+    });
+    const data = createPrReviewNavigationData({
+      draft,
+      files: reviewFiles(),
+      findings: [],
+      staleCommentIds: new Set(),
+      threads: [],
+    });
+    const targets = reviewCursorTargets(data.model, 'local-draft');
+    const commentIds = new Set(['draft-a', 'draft-b']);
+
+    expect(nextDraftCommentTarget(targets, commentIds, null)?.id).toBe(
+      'draft-a',
+    );
+    expect(nextDraftCommentTarget(targets, commentIds, 'draft-a')?.id).toBe(
+      'draft-b',
+    );
+    expect(nextDraftCommentTarget(targets, commentIds, 'draft-b')?.id).toBe(
+      'draft-a',
+    );
   });
 
   it('publishes one cross-file typed finding target for tree, diff, inline annotation, inspector, and surface state', () => {

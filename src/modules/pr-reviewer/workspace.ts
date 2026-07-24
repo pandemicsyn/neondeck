@@ -23,6 +23,8 @@ export type PrReviewerWorkspaceTarget = {
   baseRef?: string | null;
 };
 
+export const prReviewerWorkspaceToolCallLimit = 24;
+
 export type PrReviewerWorkspace = {
   available: true;
   repoId: string;
@@ -138,11 +140,33 @@ function reviewerWorkspaceTools(input: {
   mergeBase: string | null;
 }): ToolDefinition[] {
   const { repo, headSha, mergeBase } = input;
+  let remainingToolCalls = prReviewerWorkspaceToolCallLimit;
+  const consumeToolCall = () => {
+    if (remainingToolCalls <= 0) return null;
+    remainingToolCalls -= 1;
+    return remainingToolCalls;
+  };
+  const budgeted = <T extends Record<string, unknown>>(
+    result: T,
+    remaining: number,
+  ) => ({
+    ...result,
+    workspaceToolCallsRemaining: remaining,
+    workspaceToolCallLimit: prReviewerWorkspaceToolCallLimit,
+  });
+  const exhausted = () => ({
+    available: false,
+    reason: `The exact-revision workspace exploration budget of ${prReviewerWorkspaceToolCallLimit} calls is exhausted. Stop calling workspace tools and complete the current response now using the best evidence already collected. If structured result tools are available, call finish.`,
+    workspaceToolCallsRemaining: 0,
+    workspaceToolCallLimit: prReviewerWorkspaceToolCallLimit,
+  });
+  const budgetDescription = ` This call shares a hard ${prReviewerWorkspaceToolCallLimit}-call exploration budget with the other exact-revision workspace tools.`;
   return [
     defineTool({
       name: 'neondeck_review_workspace_list',
       description:
-        'List files from the exact reviewed PR head. Use this to traverse the repository before drawing conclusions.',
+        'List files from the exact reviewed PR head. Use this to traverse the repository before drawing conclusions.' +
+        budgetDescription,
       input: v.object({
         path: v.optional(relativePathSchema),
         limit: v.optional(
@@ -150,6 +174,8 @@ function reviewerWorkspaceTools(input: {
         ),
       }),
       async run({ input: toolInput }) {
+        const remaining = consumeToolCall();
+        if (remaining === null) return exhausted();
         const limit = toolInput.limit ?? 500;
         const output = await git(repo.path, [
           'ls-tree',
@@ -160,23 +186,29 @@ function reviewerWorkspaceTools(input: {
           ...(toolInput.path ? [toolInput.path] : []),
         ]);
         const allPaths = output.split('\n').filter(Boolean);
-        return {
-          revision: headSha,
-          paths: allPaths.slice(0, limit),
-          truncated: allPaths.length > limit,
-        };
+        return budgeted(
+          {
+            revision: headSha,
+            paths: allPaths.slice(0, limit),
+            truncated: allPaths.length > limit,
+          },
+          remaining,
+        );
       },
     }),
     defineTool({
       name: 'neondeck_review_workspace_read',
       description:
-        'Read a bounded line range from one file at the exact reviewed PR head. Line numbers in the response are repository file line numbers.',
+        'Read a bounded line range from one file at the exact reviewed PR head. Line numbers in the response are repository file line numbers.' +
+        budgetDescription,
       input: v.object({
         path: relativePathSchema,
         startLine: v.optional(lineSchema),
         endLine: v.optional(lineSchema),
       }),
       async run({ input: toolInput }) {
+        const remaining = consumeToolCall();
+        if (remaining === null) return exhausted();
         const startLine = toolInput.startLine ?? 1;
         const requestedEnd = toolInput.endLine ?? startLine + 399;
         const endLine = Math.min(
@@ -189,36 +221,43 @@ function reviewerWorkspaceTools(input: {
           16 * 1024 * 1024,
         );
         if (content.includes('\u0000')) {
-          return {
-            revision: headSha,
-            path: toolInput.path,
-            binary: true,
-            content: '',
-          };
+          return budgeted(
+            {
+              revision: headSha,
+              path: toolInput.path,
+              binary: true,
+              content: '',
+            },
+            remaining,
+          );
         }
         const lines = content.split('\n');
         const selected = lines.slice(startLine - 1, endLine);
-        return {
-          revision: headSha,
-          path: toolInput.path,
-          binary: false,
-          startLine,
-          endLine: startLine + Math.max(0, selected.length - 1),
-          totalLines: lines.length,
-          content: selected
-            .map(
-              (line, index) =>
-                `${String(startLine + index).padStart(6, ' ')}\t${line}`,
-            )
-            .join('\n'),
-          truncated: endLine < lines.length,
-        };
+        return budgeted(
+          {
+            revision: headSha,
+            path: toolInput.path,
+            binary: false,
+            startLine,
+            endLine: startLine + Math.max(0, selected.length - 1),
+            totalLines: lines.length,
+            content: selected
+              .map(
+                (line, index) =>
+                  `${String(startLine + index).padStart(6, ' ')}\t${line}`,
+              )
+              .join('\n'),
+            truncated: endLine < lines.length,
+          },
+          remaining,
+        );
       },
     }),
     defineTool({
       name: 'neondeck_review_workspace_search',
       description:
-        'Search tracked text files at the exact reviewed PR head using a literal query. Results include repository file line numbers.',
+        'Search tracked text files at the exact reviewed PR head using a literal query. Results include repository file line numbers.' +
+        budgetDescription,
       input: v.object({
         query: v.pipe(v.string(), v.minLength(1), v.maxLength(240)),
         path: v.optional(relativePathSchema),
@@ -227,6 +266,8 @@ function reviewerWorkspaceTools(input: {
         ),
       }),
       async run({ input: toolInput }) {
+        const remaining = consumeToolCall();
+        if (remaining === null) return exhausted();
         const limit = toolInput.limit ?? 100;
         const output = await git(repo.path, [
           'grep',
@@ -247,18 +288,22 @@ function reviewerWorkspaceTools(input: {
           .split('\n')
           .filter(Boolean)
           .map((line) => line.replace(`${headSha}:`, ''));
-        return {
-          revision: headSha,
-          query: toolInput.query,
-          matches: allMatches.slice(0, limit),
-          truncated: allMatches.length > limit,
-        };
+        return budgeted(
+          {
+            revision: headSha,
+            query: toolInput.query,
+            matches: allMatches.slice(0, limit),
+            truncated: allMatches.length > limit,
+          },
+          remaining,
+        );
       },
     }),
     defineTool({
       name: 'neondeck_review_workspace_diff',
       description:
-        'Read the exact merge-base-to-PR-head diff for one file. For a large diff, pass rightLine after searching or reading the head file to verify that exact RIGHT-side line without returning the entire patch.',
+        'Read the exact merge-base-to-PR-head diff for one file. For a large diff, pass rightLine after searching or reading the head file to verify that exact RIGHT-side line without returning the entire patch.' +
+        budgetDescription,
       input: v.object({
         path: relativePathSchema,
         contextLines: v.optional(
@@ -267,11 +312,16 @@ function reviewerWorkspaceTools(input: {
         rightLine: v.optional(lineSchema),
       }),
       async run({ input: toolInput }) {
+        const remaining = consumeToolCall();
+        if (remaining === null) return exhausted();
         if (!mergeBase) {
-          return {
-            available: false,
-            reason: 'The reviewed merge base is unavailable.',
-          };
+          return budgeted(
+            {
+              available: false,
+              reason: 'The reviewed merge base is unavailable.',
+            },
+            remaining,
+          );
         }
         const pathspec = await reviewDiffPathspec(
           repo.path,
@@ -295,16 +345,19 @@ function reviewerWorkspaceTools(input: {
             toolInput.rightLine,
             toolInput.contextLines ?? 20,
           );
-          return {
-            available: true,
-            base: mergeBase,
-            head: headSha,
-            path: toolInput.path,
-            rightLine: toolInput.rightLine,
-            targetChanged: targeted.targetChanged,
-            lines: targeted.lines,
-            truncated: targeted.truncated,
-          };
+          return budgeted(
+            {
+              available: true,
+              base: mergeBase,
+              head: headSha,
+              path: toolInput.path,
+              rightLine: toolInput.rightLine,
+              targetChanged: targeted.targetChanged,
+              lines: targeted.lines,
+              truncated: targeted.truncated,
+            },
+            remaining,
+          );
         }
         const patch = await git(
           repo.path,
@@ -321,14 +374,17 @@ function reviewerWorkspaceTools(input: {
           16 * 1024 * 1024,
         );
         const bounded = boundText(patch, 256 * 1024);
-        return {
-          available: true,
-          base: mergeBase,
-          head: headSha,
-          path: toolInput.path,
-          patch: bounded.text,
-          truncated: bounded.truncated,
-        };
+        return budgeted(
+          {
+            available: true,
+            base: mergeBase,
+            head: headSha,
+            path: toolInput.path,
+            patch: bounded.text,
+            truncated: bounded.truncated,
+          },
+          remaining,
+        );
       },
     }),
   ];

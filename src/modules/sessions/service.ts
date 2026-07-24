@@ -20,6 +20,7 @@ import {
   findLinkedChatSession,
   listChatSessionCommandEventRows,
   markLoadedMemoriesUsed,
+  readActiveChatSession,
   readActiveSessionId,
   readChatSessionInternal,
   recordSessionAudit,
@@ -40,6 +41,54 @@ import {
   type ChatSessionRecord,
 } from './schemas';
 import type { ChatSessionEventAction } from './events';
+
+/**
+ * A brand-new runtime home creates its primary session before onboarding writes
+ * provider, model, execution, and skill configuration. Move that empty
+ * session's context baseline forward once setup succeeds. Existing homes must
+ * not call this: their active sessions should remain stale after config edits.
+ */
+export async function rebaselineFreshInstallChatSession(
+  paths: RuntimePaths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const now = new Date().toISOString();
+  const memorySnapshot = buildMemoryPromptSnapshotSync(paths);
+  const database = openDb(paths.neondeckDatabase);
+
+  try {
+    database.exec('BEGIN;');
+    const session = readActiveChatSession(database, 'dashboard');
+    database
+      .prepare(
+        `
+        UPDATE chat_sessions
+        SET context_loaded_at = ?,
+          context_memory_ids_json = ?,
+          updated_at = ?
+        WHERE id = ?;
+      `,
+      )
+      .run(now, JSON.stringify(memorySnapshot.memoryIds), now, session.id);
+    markLoadedMemoriesUsed(database, memorySnapshot.memoryIds, now);
+    recordSessionAudit(database, {
+      action: 'context_rebaseline',
+      sessionId: session.id,
+      surface: 'dashboard',
+      reason: 'fresh-install-complete',
+      metadata: {
+        memoryIds: memorySnapshot.memoryIds,
+      },
+    });
+    database.exec('COMMIT;');
+    return findChatSession(database, session.id);
+  } catch (error) {
+    database.exec('ROLLBACK;');
+    throw error;
+  } finally {
+    database.close();
+  }
+}
 
 export async function createChatSession(
   input: v.InferInput<typeof sessionCreateInputSchema> = {},

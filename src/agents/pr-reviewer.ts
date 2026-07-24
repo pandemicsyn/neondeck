@@ -17,6 +17,7 @@ import {
   runtimePaths,
   type RuntimePaths,
 } from '../runtime-home';
+import { noWorkspace } from '../sandboxes/no-workspace';
 
 export const description =
   'Continuing read-only reviewer conversation for one durable Neondeck PR review.';
@@ -67,6 +68,7 @@ export async function buildPrReviewerRuntime(
   return {
     model: models.prReview,
     thinkingLevel: models.prReviewThinkingLevel,
+    sandbox: noWorkspace(),
     cwd: '/workspace',
     compaction: { reserveTokens: 10_000, keepRecentTokens: 8_000 },
     durability: {
@@ -95,6 +97,7 @@ function unavailableReviewerRuntime(
   return {
     model: models.prReview,
     thinkingLevel: models.prReviewThinkingLevel,
+    sandbox: noWorkspace(),
     cwd: '/workspace',
     instructions,
     tools: [],

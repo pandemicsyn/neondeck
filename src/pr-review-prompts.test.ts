@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildPrReviewAssistantRuntime } from './agents/pr-review-assistant';
+import { buildPrReviewerRuntime } from './agents/pr-reviewer';
 import { updatePrReviewPrompt } from './modules/config';
 import {
   defaultPrReviewPromptTemplates,
@@ -38,6 +39,24 @@ describe('PR review prompts', () => {
     const runtime = buildPrReviewAssistantRuntime(paths);
     expect(runtime.instructions).toBe('Custom complete review prompt.');
     expect(runtime.skills).toEqual([]);
+    const environment = await runtime.sandbox.createSessionEnv({
+      id: 'initial-review',
+    });
+    expect(runtime.sandbox.tools?.(environment, { subagents: {} })).toEqual([]);
+  });
+
+  it('suppresses generic sandbox tools for continuing reviewer sessions', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-review-prompts-'));
+    tempRoots.push(home);
+    const runtime = await buildPrReviewerRuntime(
+      'missing-review-record',
+      runtimePaths(home),
+    );
+    const environment = await runtime.sandbox.createSessionEnv({
+      id: 'follow-up-review',
+    });
+
+    expect(runtime.sandbox.tools?.(environment, { subagents: {} })).toEqual([]);
   });
 
   it('renders follow-up workspace and review context tokens', () => {

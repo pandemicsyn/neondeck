@@ -19,6 +19,7 @@ import type { SchedulerResult } from '../modules/scheduler/schemas';
 import { runSchedulerTick } from '../modules/scheduler/service';
 import { readMetadataValue } from '../modules/scheduler/lease';
 import { refreshGitHubQueueSnapshot } from '../modules/github';
+import { refreshPrReviewRemoteState } from '../modules/pr-reviews';
 import { ensureRuntimeHome, type RuntimePaths } from '../runtime-home';
 
 const schedulerWorkflowName = 'scheduler-tick';
@@ -252,6 +253,9 @@ export function startSchedulerObservedLoop(
   refreshGitHubQueue: (
     paths: RuntimePaths,
   ) => Promise<unknown> = refreshGitHubQueueSnapshot,
+  refreshPrReviews: (
+    paths: RuntimePaths,
+  ) => Promise<unknown> = refreshPrReviewRemoteState,
 ) {
   const existing = schedulerLoopRegistry.get(paths.home);
   if (existing) clearInterval(existing);
@@ -262,6 +266,9 @@ export function startSchedulerObservedLoop(
     tickInFlight = true;
     void refreshGitHubQueue(paths).catch((error) => {
       console.warn('[neondeck] GitHub queue snapshot refresh failed', error);
+    });
+    void refreshPrReviews(paths).catch((error) => {
+      console.warn('[neondeck] PR review state refresh failed', error);
     });
     void runTick(paths)
       .catch((error) => {

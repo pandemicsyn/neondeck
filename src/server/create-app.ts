@@ -63,6 +63,7 @@ import { createWorkflowRoutes } from './routes/workflows';
 import { createWorktreeRoutes } from './routes/worktrees';
 import { recoverInterruptedAutopilotOwners } from '../modules/autopilot/owner/settlement';
 import { refreshGitHubQueueSnapshot } from '../modules/github';
+import { refreshPrReviewRemoteState } from '../modules/pr-reviews';
 
 export type CreateAppOptions = {
   paths?: RuntimePaths;
@@ -100,6 +101,9 @@ export async function createApp(options: CreateAppOptions = {}) {
     startSchedulerObservedLoop(paths);
     void refreshGitHubQueueSnapshot(paths).catch((error) => {
       console.warn('[neondeck] initial GitHub queue refresh failed', error);
+    });
+    void refreshPrReviewRemoteState(paths).catch((error) => {
+      console.warn('[neondeck] initial PR review state refresh failed', error);
     });
   }
   await getMcpRegistry(paths).start();

@@ -12,6 +12,7 @@ import {
   modelDiscoveryModule,
   runtimeHomeModule,
   runtimeStatusModule,
+  sessionsModule,
 } from './modules';
 import { loadEnvForPaths } from './options';
 import {
@@ -51,6 +52,7 @@ export async function runInit(options: { home?: string }) {
     },
   });
   const paths = runtimePaths(expandHome(home));
+  const freshInstall = !existsSync(paths.neondeckDatabase);
   const spin = spinner();
   spin.start('Preparing runtime home');
   await ensureRuntimeHome(paths);
@@ -66,6 +68,7 @@ export async function runInit(options: { home?: string }) {
   await configureDashboard(paths);
   await configureExecution(paths);
   await configureSkillRoots(paths);
+  await finalizeFreshInstallSession(paths, freshInstall);
 
   const status = await readRuntimeStatus(paths);
   const failedChecks = status.checks.filter((check) => !check.ok);
@@ -109,6 +112,15 @@ export async function runInit(options: { home?: string }) {
       ? 'The deck is live.'
       : 'Finish the remaining config, then start the deck.',
   );
+}
+
+export async function finalizeFreshInstallSession(
+  paths: RuntimePaths,
+  freshInstall: boolean,
+) {
+  if (!freshInstall) return;
+  const { rebaselineFreshInstallChatSession } = await sessionsModule();
+  await rebaselineFreshInstallChatSession(paths);
 }
 
 export async function configureSecrets(

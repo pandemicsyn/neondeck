@@ -83,6 +83,30 @@ describe('PR review navigation controls', () => {
     focusOwner.remove();
   });
 
+  it('names the selected attention subtype and does not repeat its boundary', () => {
+    renderBar(root, onMove, {
+      boundary: 'start',
+      currentIndex: 0,
+      currentTarget: {
+        ...draftTarget,
+        attentionKind: 'local-draft',
+        key: `attention:${draftTarget.key}`,
+        kind: 'attention',
+        targetKey: draftTarget.key,
+      },
+      kind: 'attention',
+      status: 'start boundary',
+      total: 2,
+    });
+
+    expect(container.textContent).toContain(
+      'local draft attention · 1 of 2 · start boundary',
+    );
+    expect(container.textContent).not.toContain(
+      'start boundary · start boundary',
+    );
+  });
+
   it('suppresses shortcuts for every editable, dialog, and composer focus context', () => {
     renderBar(root, onMove);
     const contexts = [

@@ -75,13 +75,8 @@ const sensitiveSkillResourceNames = new Set([
   'id_ecdsa',
   'id_ed25519',
 ]);
-const applicationSkillPaths = [
-  fileURLToPath(new URL('../../skills/neondeck/SKILL.md', import.meta.url)),
-  fileURLToPath(
-    new URL('../../skills/neondeck-handoff/SKILL.md', import.meta.url),
-  ),
-  fileURLToPath(new URL('../../skills/github-gh/SKILL.md', import.meta.url)),
-];
+const applicationSkillIds = ['neondeck', 'neondeck-handoff', 'github-gh'];
+const applicationSkillPaths = resolveApplicationSkillPaths();
 const reservedBuiltInSkillIds = new Set(
   applicationSkillPaths.map((path) => basename(dirname(path))),
 );
@@ -91,6 +86,23 @@ const workflowRuntimeSkillIds = new Set([
   'neon-docs-fix',
   'neon-issue-triage',
 ]);
+
+export function resolveApplicationSkillPaths(moduleUrl = import.meta.url) {
+  const moduleDirectory = dirname(fileURLToPath(moduleUrl));
+  const candidateRoots = [
+    resolve(moduleDirectory, 'skills'),
+    resolve(moduleDirectory, '..', 'skills'),
+    resolve(moduleDirectory, '..', '..', 'skills'),
+  ];
+  const root =
+    candidateRoots.find((candidate) =>
+      applicationSkillIds.every((id) =>
+        existsSync(join(candidate, id, 'SKILL.md')),
+      ),
+    ) ?? candidateRoots.at(-1)!;
+
+  return applicationSkillIds.map((id) => join(root, id, 'SKILL.md'));
+}
 
 export async function listRuntimeSkills(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);

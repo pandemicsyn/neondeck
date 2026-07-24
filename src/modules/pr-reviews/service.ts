@@ -54,8 +54,30 @@ export type ReconcilePrReviewSubmissionDependencies = {
   }) => Promise<GitHubPullRequestReview[]>;
 };
 
+export type RefreshPrReviewRemoteStateDependencies = {
+  token?: string;
+  now?: () => Date;
+  fetchLogin?: (token: string) => Promise<string>;
+  fetchDetail?: typeof fetchPullRequestDetail;
+  fetchReviews?: typeof fetchPullRequestReviews;
+};
+
 const submissionReconcileGraceMs = 30_000;
+export const prReviewRemoteRefreshIntervalMs = 3 * 60_000;
 const activeSubmissionAttempts = new Set<string>();
+const remoteRefreshRegistry = prReviewRemoteRefreshRegistry();
+
+type PrReviewRemoteRefreshResult = {
+  changed: number;
+  inspected: number;
+  errors: string[];
+  skipped: boolean;
+};
+
+type PrReviewRemoteRefreshState = {
+  inFlight: Promise<PrReviewRemoteRefreshResult> | null;
+  lastAttemptMs: number | null;
+};
 
 export async function startPrReview(
   input: { ref: string; origin: PrReviewOrigin },
@@ -423,11 +445,144 @@ export function recentPrReviews(paths = runtimePaths(), now = Date.now()) {
   return listPrReviews(paths, { submittedSince });
 }
 
+export async function refreshPrReviewRemoteState(
+  paths = runtimePaths(),
+  dependencies: RefreshPrReviewRemoteStateDependencies = {},
+  options: { force?: boolean } = {},
+) {
+  const state = remoteRefreshState(paths);
+  if (state.inFlight) return state.inFlight;
+  const now = (dependencies.now ?? (() => new Date()))();
+  if (
+    !options.force &&
+    state.lastAttemptMs !== null &&
+    now.getTime() - state.lastAttemptMs < prReviewRemoteRefreshIntervalMs
+  ) {
+    return {
+      changed: 0,
+      inspected: 0,
+      errors: [] as string[],
+      skipped: true,
+    };
+  }
+
+  state.lastAttemptMs = now.getTime();
+  state.inFlight = refreshPrReviewRemoteStateOnce(
+    paths,
+    dependencies,
+    now,
+  ).finally(() => {
+    state.inFlight = null;
+  });
+  return state.inFlight;
+}
+
+export function clearPrReviewRemoteRefreshForTests() {
+  remoteRefreshRegistry.clear();
+}
+
 export function archivePrReview(
   input: { reviewId: string },
   paths = runtimePaths(),
 ) {
   return setPrReviewArchived(input.reviewId, true, paths);
+}
+
+async function refreshPrReviewRemoteStateOnce(
+  paths: RuntimePaths,
+  dependencies: RefreshPrReviewRemoteStateDependencies,
+  now: Date,
+) {
+  await ensureRuntimeHome(paths);
+  const token = dependencies.token ?? process.env.GITHUB_TOKEN;
+  if (!token) {
+    return {
+      changed: 0,
+      inspected: 0,
+      errors: ['GITHUB_TOKEN is not configured.'],
+      skipped: false,
+    };
+  }
+
+  const candidates = recentPrReviews(paths, now.getTime()).filter(
+    (review) =>
+      !review.archivedAt &&
+      review.status !== 'reviewing' &&
+      review.status !== 'submitting',
+  );
+  if (candidates.length === 0) {
+    return {
+      changed: 0,
+      inspected: 0,
+      errors: [] as string[],
+      skipped: false,
+    };
+  }
+
+  let login: string;
+  try {
+    login = await (dependencies.fetchLogin ?? fetchGitHubLogin)(token);
+  } catch (error) {
+    return {
+      changed: 0,
+      inspected: 0,
+      errors: [errorMessage(error)],
+      skipped: false,
+    };
+  }
+
+  const results = await mapWithConcurrency(candidates, 3, async (review) => {
+    try {
+      const [owner, repo] = splitRepoFullName(review.repoFullName);
+      const detail = await (dependencies.fetchDetail ?? fetchPullRequestDetail)(
+        {
+          token,
+          owner,
+          repo,
+          number: review.prNumber,
+        },
+      );
+      if (detail.merged || detail.state !== 'open') {
+        const archived = archivePrReview({ reviewId: review.id }, paths);
+        return { changed: Number(archived.changed), error: null };
+      }
+      if (review.status === 'submitted') {
+        return { changed: 0, error: null };
+      }
+
+      const reviews = await (
+        dependencies.fetchReviews ?? fetchPullRequestReviews
+      )({
+        token,
+        owner,
+        repo,
+        number: review.prNumber,
+      });
+      const previousVerdict = latestReviewerVerdict(login, reviews);
+      if (!previousVerdict || previousVerdict === review.previousVerdict) {
+        return { changed: 0, error: null };
+      }
+      const changed = recordPreviousPrReviewVerdict(
+        review.id,
+        previousVerdict,
+        now.toISOString(),
+        paths,
+      );
+      return { changed: Number(changed), error: null };
+    } catch (error) {
+      return {
+        changed: 0,
+        error: `${review.repoFullName}#${review.prNumber}: ${errorMessage(error)}`,
+      };
+    }
+  });
+
+  return {
+    changed: results.reduce((total, result) => total + result.changed, 0),
+    inspected: candidates.length,
+    errors: results.flatMap((result) => (result.error ? [result.error] : [])),
+    skipped: false,
+  };
 }
 
 export function restorePrReview(
@@ -511,6 +666,100 @@ function splitRepoFullName(repoFullName: string): [string, string] {
     throw new Error(`Invalid GitHub repository name: ${repoFullName}`);
   }
   return [owner, repo];
+}
+
+function latestReviewerVerdict(
+  login: string,
+  reviews: GitHubPullRequestReview[],
+) {
+  const latest = reviews
+    .filter(
+      (review) =>
+        review.authorLogin?.toLowerCase() === login.toLowerCase() &&
+        remoteReviewVerdict(review.state),
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(right.submittedAt ?? '') -
+        Date.parse(left.submittedAt ?? ''),
+    )[0];
+  return latest ? remoteReviewVerdict(latest.state) : null;
+}
+
+function remoteReviewVerdict(state: string): PrReviewVerdict | null {
+  if (state === 'APPROVED') return 'approve';
+  if (state === 'CHANGES_REQUESTED') return 'request-changes';
+  if (state === 'COMMENTED') return 'comment';
+  return null;
+}
+
+function recordPreviousPrReviewVerdict(
+  reviewId: string,
+  verdict: PrReviewVerdict,
+  updatedAt: string,
+  paths: RuntimePaths,
+) {
+  const database = openDb(paths.neondeckDatabase);
+  let changed = false;
+  try {
+    const result = database
+      .prepare(
+        `UPDATE pr_reviews
+         SET previous_verdict = ?, updated_at = ?
+         WHERE id = ?
+           AND archived_at IS NULL
+           AND status IN ('ready', 'failed')
+           AND (previous_verdict IS NULL OR previous_verdict != ?);`,
+      )
+      .run(verdict, updatedAt, reviewId, verdict);
+    changed = result.changes === 1;
+  } finally {
+    database.close();
+  }
+  if (!changed) return false;
+  publish(requireReview(reviewId, paths), 'changed');
+  return true;
+}
+
+function remoteRefreshState(paths: RuntimePaths) {
+  const existing = remoteRefreshRegistry.get(paths.home);
+  if (existing) return existing;
+  const state: PrReviewRemoteRefreshState = {
+    inFlight: null,
+    lastAttemptMs: null,
+  };
+  remoteRefreshRegistry.set(paths.home, state);
+  return state;
+}
+
+function prReviewRemoteRefreshRegistry() {
+  const globalRegistry = globalThis as typeof globalThis & {
+    __neondeckPrReviewRemoteRefreshRegistry?: Map<
+      string,
+      PrReviewRemoteRefreshState
+    >;
+  };
+  globalRegistry.__neondeckPrReviewRemoteRefreshRegistry ??= new Map();
+  return globalRegistry.__neondeckPrReviewRemoteRefreshRegistry;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  task: (item: T) => Promise<R>,
+) {
+  const results: R[] = [];
+  let nextIndex = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await task(items[index]!);
+      }
+    }),
+  );
+  return results;
 }
 
 function upsertReviewingRecord(

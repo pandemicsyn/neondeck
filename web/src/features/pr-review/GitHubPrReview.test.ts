@@ -663,6 +663,26 @@ describe('GitHubPrReview helpers', () => {
     ).toBe(false);
   });
 
+  it('builds report-only draft comments without generator attribution', () => {
+    expect(
+      reportOnlyFindingBody({
+        sourceId: 'prf_source_1',
+        severity: 'nit',
+        path: 'src/review.ts',
+        line: null,
+        summary: 'Keep this branch explicit.',
+        suggestedFix: 'Add a named guard.',
+        reason: 'unanchorable',
+      }),
+    ).toBe(
+      [
+        'Keep this branch explicit.',
+        '',
+        'Suggested fix: Add a named guard.',
+      ].join('\n'),
+    );
+  });
+
   it('falls back to exact text and path for provenance-less legacy drafts', () => {
     const finding = {
       sourceId: 'prf_synthesized_on_read',

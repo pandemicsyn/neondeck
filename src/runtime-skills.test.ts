@@ -1,11 +1,13 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   listRuntimeSkills,
   loadRuntimeSkill,
+  resolveApplicationSkillPaths,
   runtimeSkillReferencesSync,
 } from './modules/runtime';
 
@@ -20,6 +22,23 @@ afterEach(async () => {
 });
 
 describe('runtime skills', () => {
+  it('resolves built-in skills from source and bundled module layouts', async () => {
+    const root = await tempDir('neondeck-skill-layout-');
+    const sourceModule = join(root, 'src', 'modules', 'runtime', 'skills.ts');
+    const bundledModule = join(root, 'dist', 'assets', 'runtime.js');
+    const sourceSkills = join(root, 'src', 'skills');
+    const bundledSkills = join(root, 'dist', 'assets', 'skills');
+    await writeApplicationSkills(sourceSkills);
+    await writeApplicationSkills(bundledSkills);
+
+    expect(
+      resolveApplicationSkillPaths(pathToFileURL(sourceModule).href),
+    ).toEqual(applicationSkillPaths(sourceSkills));
+    expect(
+      resolveApplicationSkillPaths(pathToFileURL(bundledModule).href),
+    ).toEqual(applicationSkillPaths(bundledSkills));
+  });
+
   it('lists app-owned built-in skills and seeded workflow runtime skills', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
@@ -258,4 +277,22 @@ description: ${input.description}
 ${input.body}
 `,
   );
+}
+
+const applicationSkillIds = ['neondeck', 'neondeck-handoff', 'github-gh'];
+
+async function writeApplicationSkills(root: string) {
+  await Promise.all(
+    applicationSkillIds.map((id) =>
+      writeSkill(join(root, id), {
+        name: id,
+        description: `${id} test skill.`,
+        body: `Use ${id}.`,
+      }),
+    ),
+  );
+}
+
+function applicationSkillPaths(root: string) {
+  return applicationSkillIds.map((id) => join(root, id, 'SKILL.md'));
 }

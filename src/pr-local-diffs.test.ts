@@ -8,7 +8,10 @@ import {
   readLocalPullRequestFileDiff,
   readLocalPullRequestFiles,
 } from './modules/pr-local-diffs';
-import { resolvePrReviewerWorkspace } from './modules/pr-reviewer';
+import {
+  prReviewerWorkspaceToolCallLimit,
+  resolvePrReviewerWorkspace,
+} from './modules/pr-reviewer';
 import { runtimePaths, type RuntimePaths } from './runtime-home';
 
 const gitDiffMock = vi.hoisted(() =>
@@ -153,6 +156,58 @@ describe('local PR diffs', () => {
           text: 'export const value = 2;',
         }),
       ]),
+    });
+  });
+
+  it('bounds exact-revision workspace exploration across all review tools', async () => {
+    const { baseSha, headSha, paths } = await fixture();
+    const workspace = await resolvePrReviewerWorkspace(
+      {
+        repoFullName: 'example/sample',
+        prNumber: 42,
+        headSha,
+        baseSha,
+        baseRef: 'main',
+      },
+      paths,
+    );
+
+    expect(workspace.available).toBe(true);
+    if (!workspace.available) return;
+    const listTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_list',
+    );
+    const readTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_read',
+    );
+    const searchTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_search',
+    );
+    for (
+      let index = 0;
+      index < prReviewerWorkspaceToolCallLimit - 1;
+      index += 1
+    ) {
+      await expect(
+        listTool?.run({ input: { limit: 1 } } as never),
+      ).resolves.toMatchObject({
+        workspaceToolCallsRemaining:
+          prReviewerWorkspaceToolCallLimit - index - 1,
+      });
+    }
+    await expect(
+      readTool?.run({ input: { path: 'src/app.ts' } } as never),
+    ).resolves.toMatchObject({
+      workspaceToolCallsRemaining: 0,
+      content: expect.stringContaining('export const value = 2;'),
+    });
+
+    await expect(
+      searchTool?.run({ input: { query: 'value' } } as never),
+    ).resolves.toMatchObject({
+      available: false,
+      workspaceToolCallsRemaining: 0,
+      reason: expect.stringContaining('exploration budget'),
     });
   });
 

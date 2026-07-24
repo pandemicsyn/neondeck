@@ -241,7 +241,7 @@ function groupReviews(
   }>,
 ) {
   return {
-    awaiting,
+    awaiting: awaiting.filter((item) => !item.review),
     inProgress: reviews.filter(
       (review) =>
         !review.archivedAt &&
