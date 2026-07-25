@@ -8,6 +8,7 @@ import {
   extractHandledPrEvent,
   listHandledPrEventsForReview,
 } from './modules/learning/reviews/pr-context';
+import { recordHumanReviewSubmittedEvidence } from './modules/learning';
 import {
   activateScheduledTaskWorkflowRun,
   attachScheduledTaskWorkflowRunId,
@@ -356,6 +357,52 @@ describe('Flue learning hooks', () => {
         headSha: 'head-123',
         reviewId: '9001',
         verdict: 'request-changes',
+      }),
+    });
+  });
+
+  it('deduplicates submitted-review evidence across submission and reconciliation', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-learning-hooks-'));
+    tempRoots.push(home);
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const evidence = {
+      repoFullName: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head-123',
+      reviewId: '9001',
+      reviewUrl:
+        'https://github.com/pandemicsyn/neondeck/pull/123#pullrequestreview-9001',
+      verdict: 'request-changes' as const,
+    };
+
+    await recordHumanReviewSubmittedEvidence(
+      { ...evidence, origin: 'submission' },
+      paths,
+    );
+    await recordHumanReviewSubmittedEvidence(
+      { ...evidence, origin: 'reconciliation' },
+      paths,
+    );
+
+    const events = listHandledPrEventsForReview(
+      { limit: 10, sinceLastReview: false },
+      paths,
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      source: 'api:github_pr_review_post',
+      sourceId: 'pandemicsyn/neondeck#123:human-review-submitted:9001',
+      repoId: null,
+      prKey: 'pandemicsyn/neondeck#123',
+      data: expect.objectContaining({
+        eventType: 'human-review-submitted',
+        data: expect.objectContaining({
+          headSha: 'head-123',
+          reviewId: '9001',
+          verdict: 'request-changes',
+          origin: 'submission',
+        }),
       }),
     });
   });

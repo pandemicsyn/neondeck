@@ -51,12 +51,13 @@ export function readPendingAutopilotTurn(home: string, instanceId: string) {
 export function recordPendingAutopilotTurnLearningMemoryContext(
   home: string,
   instanceId: string,
+  turnId: string,
   learningMemoryIds: string[],
   learningMemoryText: string,
   learningMemoryAvailable: boolean,
 ) {
   const pending = readPendingAutopilotTurn(home, instanceId);
-  if (!pending) return null;
+  if (!pending || pending.turnId !== turnId) return null;
   if (pending.learningMemoryLoaded) return pending;
   pending.learningMemoryAvailable = learningMemoryAvailable;
   pending.learningMemoryLoaded = true;
@@ -68,10 +69,11 @@ export function recordPendingAutopilotTurnLearningMemoryContext(
 export function recordPendingAutopilotTurnCorrelationId(
   home: string,
   instanceId: string,
+  turnId: string,
   correlationId: string,
 ) {
   const pending = readPendingAutopilotTurn(home, instanceId);
-  if (!pending || !correlationId) return null;
+  if (!pending || pending.turnId !== turnId || !correlationId) return null;
   pending.correlationId ??= correlationId;
   return pending;
 }

@@ -43,6 +43,7 @@ import { buildPrAutopilotOwnerRuntime } from './agents/pr-autopilot-owner';
 import {
   clearPendingAutopilotTurn,
   readPendingAutopilotTurn,
+  recordPendingAutopilotTurnCorrelationId,
   recordPendingAutopilotTurnLearningMemoryContext,
   registerPendingAutopilotTurn,
 } from './modules/autopilot/owner/pending';
@@ -87,6 +88,52 @@ afterEach(async () => {
 });
 
 describe('minimal Autopilot watch loop', () => {
+  it('ignores late owner context updates from a superseded turn', async () => {
+    const paths = await fixturePaths();
+    const instanceId = 'superseded-context-owner';
+    const oldTurn = registerPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      'old-event',
+      'prepare-only',
+      'watch-event',
+    );
+    const newTurn = registerPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      'new-event',
+      'autofix-with-approval',
+      'direct-human',
+    );
+
+    expect(
+      recordPendingAutopilotTurnLearningMemoryContext(
+        paths.home,
+        instanceId,
+        oldTurn.turnId,
+        ['stale-memory'],
+        'Stale context.',
+        true,
+      ),
+    ).toBeNull();
+    expect(
+      recordPendingAutopilotTurnCorrelationId(
+        paths.home,
+        instanceId,
+        oldTurn.turnId,
+        'stale-dispatch',
+      ),
+    ).toBeNull();
+    expect(readPendingAutopilotTurn(paths.home, instanceId)).toEqual(newTurn);
+    expect(newTurn).toMatchObject({
+      learningMemoryAvailable: false,
+      learningMemoryIds: [],
+      learningMemoryLoaded: false,
+      learningMemoryText: null,
+      turnId: newTurn.turnId,
+    });
+  });
+
   it('applies prompt edits to an existing owner on its next turn', async () => {
     const paths = await fixturePaths();
     await configurePrAutopilot(
@@ -341,7 +388,7 @@ describe('minimal Autopilot watch loop', () => {
       'pandemicsyn/neondeck#123',
       'unavailable-memory-event',
     );
-    registerPendingAutopilotTurn(
+    const pendingTurn = registerPendingAutopilotTurn(
       paths.home,
       instanceId,
       'unavailable-memory-event',
@@ -351,6 +398,7 @@ describe('minimal Autopilot watch loop', () => {
     recordPendingAutopilotTurnLearningMemoryContext(
       paths.home,
       instanceId,
+      pendingTurn.turnId,
       [],
       'Learning memories background context: unavailable for this workflow run.',
       false,

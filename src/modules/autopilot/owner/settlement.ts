@@ -11,47 +11,35 @@ import {
 import {
   readManagedWorktree,
   recordWorktreePushBlocked,
+  type WorktreeRecord,
 } from '../../worktrees';
-import {
-  recordHandledPrEventAndMaybeQueueLearning,
-  type PrBatchReviewInput,
-} from '../../learning';
 import {
   claimPendingAutopilotTurnSettlement,
   clearPendingAutopilotTurnIfMatches,
   readPendingAutopilotTurn,
 } from './pending';
 import { reconcileTransientAutopilotRuntimeBlocks } from './runtime-recovery';
+import {
+  deriveOwnerSettlementDecision,
+  failedOwnerSettlementDecision,
+  type OwnerSettlementDecision,
+  type OwnerSettlementOutcome,
+} from './settlement-decision';
+import {
+  recordOwnerOutcomeQuietly,
+  type OwnerSettlementContext,
+  type OwnerSettlementLearningDependencies,
+} from './settlement-learning';
 
 type OwnerTerminalObservation = Extract<
   FlueObservation,
   { type: 'agent_end' | 'operation' | 'submission_settled' }
 >;
 
-type AutopilotOwnerSettlementDependencies = {
-  invokePrBatchReview?: (
-    input: PrBatchReviewInput,
-  ) => Promise<{ runId: string }>;
-  recordHandledPr?: typeof recordHandledPrEventAndMaybeQueueLearning;
-};
-
-type OwnerSettlementContext = {
-  correlationKind: string;
-  eventFingerprint?: string;
-  learningMemoryIds: string[];
-  memorySnapshotAvailable: boolean;
-  memorySnapshotReason: string;
-  mode: NonNullable<
-    ReturnType<typeof readWatchByOwnerInstanceId>
-  >['autopilotMode'];
-  source: string;
-  turnId: string;
-};
-
 export async function settleAutopilotOwnerObservation(
   event: OwnerTerminalObservation,
   paths: RuntimePaths,
-  dependencies: AutopilotOwnerSettlementDependencies = {},
+  dependencies: OwnerSettlementLearningDependencies = {},
 ) {
   if (
     (event.agentName && event.agentName !== 'pr-autopilot-owner') ||
@@ -103,9 +91,7 @@ export async function settleAutopilotOwnerObservation(
       }
     : recoveredSettlementContext(event, watch.autopilotMode);
   const fingerprint = settlementContext.eventFingerprint;
-  const recordOutcome = (
-    outcome: Parameters<typeof recordOwnerOutcomeQuietly>[2],
-  ) =>
+  const recordOutcome = (outcome: OwnerSettlementOutcome) =>
     recordOwnerOutcomeQuietly(
       watch,
       settlementContext,
@@ -121,203 +107,39 @@ export async function settleAutopilotOwnerObservation(
         : false;
 
   try {
+    let worktree: WorktreeRecord | null = null;
+    let decision: OwnerSettlementDecision;
     if (failed) {
-      const blocked = await blockOwnerTurn(
-        watch.id,
-        `${watch.repoFullName}#${watch.prNumber} owner turn failed. Human inspection is required before retry.`,
+      decision = failedOwnerSettlementDecision(watch);
+    } else {
+      worktree = await readManagedWorktree(
+        watch.worktreeId,
+        watch.repoId,
         paths,
       );
-      await recordOutcome({
-        eventType: 'autopilot-owner-failed',
-        outcome: 'failed',
-        summary: 'The continuing Autopilot owner turn failed.',
+      const [status, currentSha] = await Promise.all([
+        gitStatus(worktree.localPath),
+        gitCurrentSha(worktree.localPath),
+      ]);
+      decision = deriveOwnerSettlementDecision({
+        currentSha,
+        eventFingerprint: fingerprint,
+        statusClean: status.clean,
+        watch,
+        worktree: {
+          headSha: worktree.headSha,
+          id: worktree.id,
+          lastPushedSha: worktree.lastPushedSha,
+        },
       });
-      return blocked;
     }
-
-    const worktree = await readManagedWorktree(
-      watch.worktreeId,
-      watch.repoId,
+    const settled = await applyOwnerSettlementDecision(
+      decision,
+      watch,
+      worktree,
       paths,
     );
-    const [status, currentSha] = await Promise.all([
-      gitStatus(worktree.localPath),
-      gitCurrentSha(worktree.localPath),
-    ]);
-    const pushed =
-      Boolean(worktree.lastPushedSha) && currentSha === worktree.lastPushedSha;
-    const prepared =
-      status.clean &&
-      currentSha !== worktree.headSha &&
-      currentSha !== worktree.lastPushedSha;
-
-    if (watch.autopilotStatus === 'waiting') {
-      if (pushed || (status.clean && currentSha === worktree.headSha)) {
-        const settled = transitionWatchAutopilot(paths, watch.id, {
-          from: 'waiting',
-          to: 'watching',
-        });
-        await recordOutcome(
-          pushed
-            ? {
-                eventType: 'autopilot-owner-pushed',
-                outcome: 'pushed',
-                commitSha: currentSha,
-                summary:
-                  'The continuing Autopilot owner pushed a focused change.',
-              }
-            : {
-                eventType: 'autopilot-owner-no-change',
-                outcome: 'no-change',
-                commitSha: currentSha,
-                summary:
-                  'The continuing Autopilot owner completed cleanly without a retained change.',
-              },
-        );
-        return settled;
-      }
-      await recordOutcome(
-        prepared
-          ? {
-              eventType: 'autopilot-owner-prepared',
-              outcome: 'prepared',
-              commitSha: currentSha,
-              summary:
-                'The continuing Autopilot owner left a committed change waiting for human review.',
-            }
-          : {
-              eventType: 'autopilot-owner-blocked',
-              outcome: 'blocked',
-              commitSha: currentSha,
-              summary:
-                'The continuing Autopilot owner remains waiting with work that requires human inspection.',
-            },
-      );
-      return watch;
-    }
-    if (watch.autopilotStatus === 'blocked') {
-      await recordOutcome({
-        eventType: pushed
-          ? 'autopilot-owner-pushed'
-          : prepared
-            ? 'autopilot-owner-escalated'
-            : 'autopilot-owner-blocked',
-        outcome: pushed ? 'pushed' : prepared ? 'escalated' : 'blocked',
-        commitSha: currentSha,
-        summary: pushed
-          ? 'The continuing Autopilot owner pushed a focused change before restart recovery blocked the watch for inspection.'
-          : prepared
-            ? 'The continuing Autopilot owner retained a committed change after delivery was blocked.'
-            : 'The continuing Autopilot owner requires human inspection.',
-      });
-      return watch;
-    }
-    if (watch.autopilotStatus !== 'working') return watch;
-
-    if (pushed) {
-      const settled = transitionWatchAutopilot(paths, watch.id, {
-        from: 'working',
-        to: 'watching',
-        ...(fingerprint ? { eventFingerprint: fingerprint } : {}),
-      });
-      await addNotification(
-        {
-          level: 'ready',
-          title: 'Autopilot pushed a focused change',
-          message: `${watch.repoFullName}#${watch.prNumber} was pushed and remains watched for later feedback.`,
-          source: 'autopilot-owner',
-          sourceId: `${watch.id}:pushed:${currentSha}`,
-          data: { watchId: watch.id, worktreeId: worktree.id, currentSha },
-        },
-        paths,
-      );
-      await recordOutcome({
-        eventType: 'autopilot-owner-pushed',
-        outcome: 'pushed',
-        commitSha: currentSha,
-        summary: 'The continuing Autopilot owner pushed a focused change.',
-      });
-      return settled;
-    }
-
-    if (prepared) {
-      const waiting =
-        watch.autopilotMode === 'prepare-only' ||
-        watch.autopilotMode === 'autofix-with-approval';
-      const settled = transitionWatchAutopilot(paths, watch.id, {
-        from: 'working',
-        to: waiting ? 'waiting' : 'blocked',
-        ...(waiting && fingerprint ? { eventFingerprint: fingerprint } : {}),
-      });
-      await recordWorktreePushBlocked(
-        worktree.id,
-        {
-          message: waiting
-            ? 'Autopilot prepared a committed change for human review.'
-            : 'The autonomous owner retained a committed change for human review after deciding not to deliver it.',
-          data: { watchId: watch.id, commitSha: currentSha },
-        },
-        paths,
-      );
-      await addNotification(
-        {
-          level: 'attention',
-          title: waiting
-            ? 'Autopilot change is ready for review'
-            : 'Autopilot escalated a committed change for review',
-          message: `${watch.repoFullName}#${watch.prNumber} has a committed change held in managed worktree ${worktree.id}.`,
-          source: 'autopilot-owner',
-          sourceId: `${watch.id}:prepared:${currentSha}`,
-          data: {
-            watchId: watch.id,
-            ownerInstanceId: watch.ownerInstanceId,
-            worktreeId: worktree.id,
-            commitSha: currentSha,
-          },
-        },
-        paths,
-      );
-      await recordOutcome({
-        eventType: waiting
-          ? 'autopilot-owner-prepared'
-          : 'autopilot-owner-escalated',
-        outcome: waiting ? 'prepared' : 'escalated',
-        commitSha: currentSha,
-        summary: waiting
-          ? 'The continuing Autopilot owner prepared a committed change for human review.'
-          : 'The continuing Autopilot owner escalated a committed change without autonomous delivery.',
-      });
-      return settled;
-    }
-
-    if (!status.clean) {
-      const blocked = await blockOwnerTurn(
-        watch.id,
-        `${watch.repoFullName}#${watch.prNumber} owner turn ended with uncommitted work.`,
-        paths,
-      );
-      await recordOutcome({
-        eventType: 'autopilot-owner-blocked',
-        outcome: 'blocked',
-        commitSha: currentSha,
-        summary:
-          'The continuing Autopilot owner ended with uncommitted work and requires inspection.',
-      });
-      return blocked;
-    }
-
-    const settled = transitionWatchAutopilot(paths, watch.id, {
-      from: 'working',
-      to: 'watching',
-      ...(fingerprint ? { eventFingerprint: fingerprint } : {}),
-    });
-    await recordOutcome({
-      eventType: 'autopilot-owner-no-change',
-      outcome: 'no-change',
-      commitSha: currentSha,
-      summary:
-        'The continuing Autopilot owner completed cleanly without a new commit.',
-    });
+    if (decision.outcome) await recordOutcome(decision.outcome);
     return settled;
   } catch (error) {
     const blocked = await blockOwnerTurn(
@@ -376,6 +198,36 @@ export async function recoverInterruptedAutopilotOwners(paths: RuntimePaths) {
   return interrupted.length;
 }
 
+async function applyOwnerSettlementDecision(
+  decision: OwnerSettlementDecision,
+  watch: NonNullable<ReturnType<typeof readWatchByOwnerInstanceId>>,
+  worktree: WorktreeRecord | null,
+  paths: RuntimePaths,
+) {
+  if (decision.blockMessage) {
+    return blockOwnerTurn(watch.id, decision.blockMessage, paths);
+  }
+  const settled = decision.transition
+    ? transitionWatchAutopilot(paths, watch.id, decision.transition)
+    : watch;
+  if (decision.worktreePushBlocked) {
+    if (!worktree) {
+      throw new Error(
+        'Owner settlement requires a worktree for blocked-push evidence.',
+      );
+    }
+    await recordWorktreePushBlocked(
+      worktree.id,
+      decision.worktreePushBlocked,
+      paths,
+    );
+  }
+  if (decision.notification) {
+    await addNotification(decision.notification, paths);
+  }
+  return settled;
+}
+
 async function blockOwnerTurn(
   watchId: string,
   message: string,
@@ -401,68 +253,6 @@ async function blockOwnerTurn(
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
-}
-
-async function recordOwnerOutcomeQuietly(
-  watch: NonNullable<ReturnType<typeof readWatchByOwnerInstanceId>>,
-  context: OwnerSettlementContext,
-  outcome: {
-    eventType: string;
-    outcome: string;
-    commitSha?: string;
-    summary: string;
-  },
-  paths: RuntimePaths,
-  dependencies: AutopilotOwnerSettlementDependencies,
-) {
-  const turnFingerprint = context.turnId;
-  const sourceId = [
-    'autopilot-owner',
-    watch.id,
-    turnFingerprint,
-    outcome.outcome,
-    outcome.commitSha ?? 'none',
-  ].join(':');
-  try {
-    await (
-      dependencies.recordHandledPr ?? recordHandledPrEventAndMaybeQueueLearning
-    )(
-      {
-        eventType: outcome.eventType,
-        source: 'pr-autopilot-owner',
-        sourceId,
-        repoId: watch.repoId,
-        repoFullName: watch.repoFullName,
-        prNumber: watch.prNumber,
-        summary: outcome.summary,
-        data: {
-          watchId: watch.id,
-          ownerInstanceId: watch.ownerInstanceId,
-          turnFingerprint,
-          outcome: outcome.outcome,
-          commitSha: outcome.commitSha ?? null,
-          mode: context.mode,
-          source: context.source,
-          correlationKind: context.correlationKind,
-          memoryIds: context.learningMemoryIds,
-          memorySnapshot: {
-            available: context.memorySnapshotAvailable,
-            ids: context.learningMemoryIds,
-            reason: context.memorySnapshotReason,
-          },
-        },
-      },
-      paths,
-      dependencies.invokePrBatchReview
-        ? { invokePrBatchReview: dependencies.invokePrBatchReview }
-        : {},
-    );
-  } catch (error) {
-    console.error(
-      '[neondeck] failed to record Autopilot owner learning event',
-      error,
-    );
-  }
 }
 
 function recoveredSettlementContext(

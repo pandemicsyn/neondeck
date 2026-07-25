@@ -890,7 +890,7 @@ describe('durable PR reviews', () => {
           runId: 'review-run-1',
         },
       })) as never,
-      recordHandledPrApiResult: recordHandled as never,
+      recordHumanReviewSubmittedApiEvidence: recordHandled as never,
     });
 
     let responseSettled = false;
@@ -907,20 +907,16 @@ describe('durable PR reviews', () => {
     const response = await responsePromise;
 
     expect(response.status).toBe(200);
-    expect(recordHandled).toHaveBeenCalledWith(
-      paths,
-      'api:pr_review_submission_reconcile',
-      expect.objectContaining({
-        action: 'github_pr_review_post',
-        data: expect.objectContaining({
-          target: {
-            repoFullName: 'other/project',
-            number: 42,
-          },
-          review: expect.objectContaining({ id: '9001' }),
-        }),
-      }),
-    );
+    expect(recordHandled).toHaveBeenCalledWith(paths, {
+      origin: 'reconciliation',
+      repoFullName: 'other/project',
+      prNumber: 42,
+      headSha: 'head-1',
+      reviewId: '9001',
+      reviewUrl:
+        'https://github.com/other/project/pull/42#pullrequestreview-9001',
+      verdict: 'request-changes',
+    });
   });
 
   it('settles and records a GitHub-accepted review when delivery verification is ambiguous', async () => {
@@ -962,7 +958,7 @@ describe('durable PR reviews', () => {
         },
         requires: ['deliveryIdentity'],
       })) as never,
-      recordHandledPrApiResult: recordHandled as never,
+      recordHumanReviewSubmittedApiEvidence: recordHandled as never,
     });
 
     const response = await routes.request('/prs/other/project/42/reviews', {
@@ -979,16 +975,16 @@ describe('durable PR reviews', () => {
       githubReviewUrl:
         'https://github.com/other/project/pull/42#pullrequestreview-9001',
     });
-    expect(recordHandled).toHaveBeenCalledWith(
-      paths,
-      'api:github_pr_review_post',
-      expect.objectContaining({
-        ok: true,
-        data: expect.objectContaining({
-          review: expect.objectContaining({ id: 9001 }),
-        }),
-      }),
-    );
+    expect(recordHandled).toHaveBeenCalledWith(paths, {
+      origin: 'submission',
+      repoFullName: 'other/project',
+      prNumber: 42,
+      headSha: 'head-1',
+      reviewId: '9001',
+      reviewUrl:
+        'https://github.com/other/project/pull/42#pullrequestreview-9001',
+      verdict: 'approve',
+    });
   });
 });
 

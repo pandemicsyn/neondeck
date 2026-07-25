@@ -23,7 +23,7 @@ import {
   type RuntimePaths,
 } from '../runtime-home';
 import {
-  clearPendingAutopilotTurn,
+  clearPendingAutopilotTurnIfMatches,
   readPendingAutopilotTurn,
   recordPendingAutopilotTurnLearningMemoryContext,
   registerPendingAutopilotTurn,
@@ -64,7 +64,7 @@ export const route: AgentRouteHandler = async (context, next) => {
         409,
       );
     }
-    registerPendingAutopilotTurn(
+    const pendingTurn = registerPendingAutopilotTurn(
       paths.home,
       watch.ownerInstanceId,
       undefined,
@@ -74,7 +74,11 @@ export const route: AgentRouteHandler = async (context, next) => {
     try {
       return await next();
     } catch (error) {
-      clearPendingAutopilotTurn(paths.home, watch.ownerInstanceId);
+      clearPendingAutopilotTurnIfMatches(
+        paths.home,
+        watch.ownerInstanceId,
+        pendingTurn.turnId,
+      );
       transitionWatchAutopilot(paths, watch.id, {
         from: 'working',
         to: 'blocked',
@@ -165,6 +169,7 @@ export async function buildPrAutopilotOwnerRuntime(
     recordPendingAutopilotTurnLearningMemoryContext(
       paths.home,
       id,
+      pending.turnId,
       learningMemoryContext.memoryIds,
       learningMemoryContext.text,
       learningMemoryContext.available,

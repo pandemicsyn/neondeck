@@ -10,8 +10,10 @@ import { addNotification, setWorkflowSummaryRunId } from '../modules/app-state';
 import { settleScheduledTaskWorkflowRun } from '../modules/scheduled-tasks';
 import {
   attachLearningReviewRunId,
+  recordHumanReviewSubmittedEvidence,
   recordConversationTurnAndMaybeQueueLearning,
   recordHandledPrFromWorkflowResult,
+  type HumanReviewSubmittedEvidenceInput,
 } from '../modules/learning/reviews';
 import type { RuntimePaths } from '../runtime-home';
 import { recordFlueObservation } from '../modules/learning';
@@ -268,6 +270,34 @@ export function recordHandledPrApiResult(
     .catch((error) => {
       console.error(
         '[neondeck] failed to record handled PR learning event',
+        error,
+      );
+      return null;
+    });
+}
+
+export function recordHumanReviewSubmittedApiEvidence(
+  paths: RuntimePaths,
+  evidence: HumanReviewSubmittedEvidenceInput,
+  dependencies: {
+    recordEvidence?: typeof recordHumanReviewSubmittedEvidence;
+  } = {},
+) {
+  return Promise.resolve()
+    .then(() =>
+      (dependencies.recordEvidence ?? recordHumanReviewSubmittedEvidence)(
+        evidence,
+        paths,
+        {
+          async invokePrBatchReview(input) {
+            return invoke(reviewPrBatchForLearningWorkflow, { input });
+          },
+        },
+      ),
+    )
+    .catch((error) => {
+      console.error(
+        '[neondeck] failed to record submitted-review learning evidence',
         error,
       );
       return null;

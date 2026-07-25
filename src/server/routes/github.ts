@@ -30,14 +30,14 @@ import {
   submitPrReview,
 } from '../../modules/pr-reviews';
 import { queryNumber, safeJsonBody } from '../http';
-import { recordHandledPrApiResult } from '../learning-hooks';
+import { recordHumanReviewSubmittedApiEvidence } from '../learning-hooks';
 
 export function createGitHubRoutes(
   paths: RuntimePaths,
   dependencies: {
     postGitHubPrReview?: typeof postGitHubPrReview;
     putGitHubPrReviewDraft?: typeof putGitHubPrReviewDraft;
-    recordHandledPrApiResult?: typeof recordHandledPrApiResult;
+    recordHumanReviewSubmittedApiEvidence?: typeof recordHumanReviewSubmittedApiEvidence;
   } = {},
 ) {
   const routes = new Hono();
@@ -310,6 +310,22 @@ export function createGitHubRoutes(
     const endSubmissionAttempt = reserved
       ? beginPrReviewSubmissionAttempt(reserved.id)
       : () => {};
+    const recordSubmittedReviewEvidence = (
+      submittedVerdict: 'comment' | 'approve' | 'request-changes',
+      review: Record<string, unknown>,
+    ) =>
+      (
+        dependencies.recordHumanReviewSubmittedApiEvidence ??
+        recordHumanReviewSubmittedApiEvidence
+      )(paths, {
+        origin: 'submission',
+        repoFullName: target.input.repo,
+        prNumber: target.input.prNumber,
+        headSha: requestedHeadSha ?? '',
+        reviewId: identifier(review.id),
+        reviewUrl: typeof review.url === 'string' ? review.url : null,
+        verdict: submittedVerdict,
+      });
 
     let githubAccepted = false;
     try {
@@ -380,9 +396,10 @@ export function createGitHubRoutes(
                 paths,
               )
             : null;
-          await (
-            dependencies.recordHandledPrApiResult ?? recordHandledPrApiResult
-          )(paths, 'api:github_pr_review_post', acceptedReview.learningResult);
+          await recordSubmittedReviewEvidence(
+            submittedVerdict,
+            acceptedReview.review,
+          );
           return c.json(
             reserved && !submitted
               ? {
@@ -414,10 +431,8 @@ export function createGitHubRoutes(
             paths,
           )
         : null;
+      await recordSubmittedReviewEvidence(submittedVerdict, review);
       if (reserved && !submitted) {
-        await (
-          dependencies.recordHandledPrApiResult ?? recordHandledPrApiResult
-        )(paths, 'api:github_pr_review_post', result);
         return c.json(
           {
             ok: false,
@@ -430,11 +445,6 @@ export function createGitHubRoutes(
           409,
         );
       }
-      await (dependencies.recordHandledPrApiResult ?? recordHandledPrApiResult)(
-        paths,
-        'api:github_pr_review_post',
-        result,
-      );
       return c.json(result, 200);
     } catch (error) {
       if (!githubAccepted) releaseReservation();
@@ -580,12 +590,6 @@ function unverifiedAcceptedReview(result: {
   return {
     draft,
     review,
-    learningResult: {
-      ...result,
-      ok: true,
-      message:
-        'GitHub accepted the PR review; delivery identity verification requires inspection.',
-    },
   };
 }
 
@@ -601,6 +605,14 @@ function prReviewVerdict(value: unknown) {
     value === 'request-changes'
     ? value
     : null;
+}
+
+function identifier(value: unknown) {
+  return typeof value === 'string' && value
+    ? value
+    : typeof value === 'number' && Number.isFinite(value)
+      ? String(value)
+      : '';
 }
 
 function prTargetFromParams(owner: string, repo: string, numberText: string) {

@@ -16,13 +16,13 @@ import {
 } from '../../modules/pr-reviews';
 import type { RuntimePaths } from '../../runtime-home';
 import { safeJsonBody } from '../http';
-import { recordHandledPrApiResult } from '../learning-hooks';
+import { recordHumanReviewSubmittedApiEvidence } from '../learning-hooks';
 
 export function createReviewRoutes(
   paths: RuntimePaths,
   dependencies: {
     reconcilePrReviewSubmission?: typeof reconcilePrReviewSubmission;
-    recordHandledPrApiResult?: typeof recordHandledPrApiResult;
+    recordHumanReviewSubmittedApiEvidence?: typeof recordHumanReviewSubmittedApiEvidence;
   } = {},
 ) {
   const routes = new Hono();
@@ -193,13 +193,24 @@ export function createReviewRoutes(
         dependencies.reconcilePrReviewSubmission ?? reconcilePrReviewSubmission
       )({ reviewId: c.req.param('id') }, paths);
       if (result.outcome === 'submitted') {
+        const verdict = result.review.verdict;
+        if (!verdict) {
+          throw new Error(
+            'Recovered submitted review is missing its submitted verdict.',
+          );
+        }
         await (
-          dependencies.recordHandledPrApiResult ?? recordHandledPrApiResult
-        )(
-          paths,
-          'api:pr_review_submission_reconcile',
-          reconciledSubmissionLearningResult(result),
-        );
+          dependencies.recordHumanReviewSubmittedApiEvidence ??
+          recordHumanReviewSubmittedApiEvidence
+        )(paths, {
+          origin: 'reconciliation',
+          repoFullName: result.review.repoFullName,
+          prNumber: result.review.prNumber,
+          headSha: result.review.headSha,
+          reviewId: result.githubReviewId,
+          reviewUrl: result.review.githubReviewUrl,
+          verdict,
+        });
       }
       const message =
         result.outcome === 'submitted'
@@ -246,35 +257,6 @@ export function createReviewRoutes(
   });
 
   return routes;
-}
-
-function reconciledSubmissionLearningResult(
-  result: Awaited<ReturnType<typeof reconcilePrReviewSubmission>> & {
-    outcome: 'submitted';
-    githubReviewId: string;
-  },
-) {
-  return {
-    ok: true,
-    action: 'github_pr_review_post',
-    changed: true,
-    message: `Recovered submitted PR review for ${result.review.repoFullName}#${result.review.prNumber}.`,
-    data: {
-      target: {
-        repoFullName: result.review.repoFullName,
-        number: result.review.prNumber,
-      },
-      headSha: result.review.headSha,
-      draft: {
-        headSha: result.review.headSha,
-        verdict: result.review.verdict,
-      },
-      review: {
-        id: result.githubReviewId,
-        url: result.review.githubReviewUrl,
-      },
-    },
-  };
 }
 
 function groupReviews(

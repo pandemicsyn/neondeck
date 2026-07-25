@@ -19,7 +19,7 @@ import { dispatchAutopilotOwnerTurn } from './dispatch';
 import { buildAutopilotOwnerEnvelope } from './envelope';
 import { autopilotOwnerInstanceId } from './instance';
 import {
-  clearPendingAutopilotTurn,
+  clearPendingAutopilotTurnIfMatches,
   recordPendingAutopilotTurnCorrelationId,
   registerPendingAutopilotTurn,
 } from './pending';
@@ -227,7 +227,7 @@ export async function runAutopilotWatchEvent(
       }),
       availableCapabilities: capabilities,
     });
-    registerPendingAutopilotTurn(
+    const pendingTurn = registerPendingAutopilotTurn(
       paths.home,
       instanceId,
       event.eventFingerprint,
@@ -241,6 +241,7 @@ export async function runAutopilotWatchEvent(
       recordPendingAutopilotTurnCorrelationId(
         paths.home,
         instanceId,
+        pendingTurn.turnId,
         receipt.dispatchId,
       );
       await reconcileTransientRuntimeNotificationQuietly(paths, claimed.id);
@@ -255,7 +256,11 @@ export async function runAutopilotWatchEvent(
         dispatchId: receipt.dispatchId,
       };
     } catch (error) {
-      clearPendingAutopilotTurn(paths.home, instanceId);
+      clearPendingAutopilotTurnIfMatches(
+        paths.home,
+        instanceId,
+        pendingTurn.turnId,
+      );
       throw error;
     }
   } catch (error) {
