@@ -32,13 +32,7 @@ export async function recordOwnerOutcomeQuietly(
   dependencies: OwnerSettlementLearningDependencies,
 ) {
   const turnFingerprint = context.turnId;
-  const sourceId = [
-    'autopilot-owner',
-    watch.id,
-    turnFingerprint,
-    outcome.outcome,
-    outcome.commitSha ?? 'none',
-  ].join(':');
+  const sourceId = ['autopilot-owner', watch.id, turnFingerprint].join(':');
   try {
     await (
       dependencies.recordHandledPr ?? recordHandledPrEventAndMaybeQueueLearning

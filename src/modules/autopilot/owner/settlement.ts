@@ -59,12 +59,20 @@ export async function settleAutopilotOwnerObservation(
     paths.home,
     event.instanceId,
   );
+  const observationCorrelation = strongObservationCorrelation(event);
+  if (
+    registeredPending &&
+    (event.dispatchId || registeredPending.correlationId) &&
+    event.dispatchId !== registeredPending.correlationId
+  ) {
+    return null;
+  }
   const pending = claimPendingAutopilotTurnSettlement(
     paths.home,
     event.instanceId,
   );
   if (registeredPending && !pending) return null;
-  if (!pending && !strongObservationCorrelation(event)) return null;
+  if (!pending && !observationCorrelation) return null;
   const settlementContext: OwnerSettlementContext = pending
     ? {
         correlationKind: pending.correlationId
@@ -85,7 +93,7 @@ export async function settleAutopilotOwnerObservation(
         source: pending.source,
         turnId:
           pending.correlationId ??
-          strongObservationCorrelation(event)?.id ??
+          observationCorrelation?.id ??
           pending.eventFingerprint ??
           pending.turnId,
       }

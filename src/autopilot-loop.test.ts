@@ -22,6 +22,7 @@ import {
   settleAutopilotOwnerObservation,
 } from './modules/autopilot';
 import { safePushAutopilotOwner } from './modules/autopilot/owner/safe-push';
+import { recordOwnerOutcomeQuietly } from './modules/autopilot/owner/settlement-learning';
 import { buildAutopilotOwnerToolRegistry } from './modules/autopilot/owner/tools';
 import { postGitHubPrComment } from './modules/pr-events';
 import { pushInteractiveRepo } from './repo-edit';
@@ -151,7 +152,7 @@ describe('minimal Autopilot watch loop', () => {
       ownerInstanceId: instanceId,
       worktreeId: '',
     });
-    registerPendingAutopilotTurn(
+    registerCorrelatedPendingAutopilotTurn(
       paths.home,
       instanceId,
       'prompt-event',
@@ -199,7 +200,7 @@ describe('minimal Autopilot watch loop', () => {
       ownerInstanceId: instanceId,
       worktreeId: '',
     });
-    registerPendingAutopilotTurn(
+    registerCorrelatedPendingAutopilotTurn(
       paths.home,
       instanceId,
       'memory-event',
@@ -308,7 +309,7 @@ describe('minimal Autopilot watch loop', () => {
       'pandemicsyn/neondeck#123',
       'learning-event',
     );
-    registerPendingAutopilotTurn(
+    registerCorrelatedPendingAutopilotTurn(
       paths.home,
       instanceId,
       'learning-event',
@@ -353,12 +354,74 @@ describe('minimal Autopilot watch loop', () => {
       }),
     });
     expect(events[0]?.sourceId).toContain(
-      'autopilot-owner:pandemicsyn/neondeck#123:safe-dispatch:no-change:',
+      'autopilot-owner:pandemicsyn/neondeck#123:safe-dispatch',
     );
     expect(invokePrBatchReview).toHaveBeenCalledTimes(1);
     expect(invokePrBatchReview).toHaveBeenCalledWith(
       expect.objectContaining({ trigger: 'threshold' }),
     );
+  });
+
+  it('deduplicates recovery reclassification by owner-turn identity', async () => {
+    const paths = await fixturePaths();
+    await configurePrAutopilot(
+      {
+        ref: 'neondeck#123',
+        mode: 'prepare-only',
+        processExisting: false,
+        confirm: true,
+      },
+      paths,
+      fixtureDependencies(),
+    );
+    const watch = readWatch(paths, 'pandemicsyn/neondeck#123');
+    if (!watch) throw new Error('Expected configured Autopilot watch.');
+    const context = {
+      correlationKind: 'dispatch',
+      learningMemoryIds: [],
+      memorySnapshotAvailable: false,
+      memorySnapshotReason: 'recovery-test',
+      mode: 'prepare-only' as const,
+      source: 'watch-event',
+      turnId: 'dispatch-one',
+    };
+
+    await recordOwnerOutcomeQuietly(
+      watch,
+      context,
+      {
+        eventType: 'autopilot-owner-prepared',
+        outcome: 'prepared',
+        commitSha: 'commit-one',
+        summary: 'Prepared before restart.',
+      },
+      paths,
+      {},
+    );
+    await recordOwnerOutcomeQuietly(
+      watch,
+      context,
+      {
+        eventType: 'autopilot-owner-escalated',
+        outcome: 'escalated',
+        commitSha: 'commit-one',
+        summary: 'Reclassified during recovery.',
+      },
+      paths,
+      {},
+    );
+
+    const events = listHandledPrEventsForReview(
+      { limit: 10, sinceLastReview: false },
+      paths,
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      sourceId: 'autopilot-owner:pandemicsyn/neondeck#123:dispatch-one',
+      data: expect.objectContaining({
+        eventType: 'autopilot-owner-prepared',
+      }),
+    });
   });
 
   it('preserves unavailable owner memory context in settlement audit evidence', async () => {
@@ -388,7 +451,7 @@ describe('minimal Autopilot watch loop', () => {
       'pandemicsyn/neondeck#123',
       'unavailable-memory-event',
     );
-    const pendingTurn = registerPendingAutopilotTurn(
+    const pendingTurn = registerCorrelatedPendingAutopilotTurn(
       paths.home,
       instanceId,
       'unavailable-memory-event',
@@ -451,7 +514,7 @@ describe('minimal Autopilot watch loop', () => {
       worktreeId: worktree.id,
     });
     claimWatchAutopilotTurn(paths, 'pandemicsyn/neondeck#123', 'old-event');
-    registerPendingAutopilotTurn(
+    registerCorrelatedPendingAutopilotTurn(
       paths.home,
       instanceId,
       'old-event',
@@ -497,6 +560,85 @@ describe('minimal Autopilot watch loop', () => {
     );
   });
 
+  it('ignores a delayed terminal observation from the previous dispatch', async () => {
+    const { paths } = await gitFixturePaths();
+    await configurePrAutopilot(
+      {
+        ref: 'neondeck#123',
+        mode: 'prepare-only',
+        processExisting: false,
+        confirm: true,
+      },
+      paths,
+      fixtureDependencies(repositorySeed?.featureSha ?? undefined),
+    );
+    const created = await createWorktree(
+      { repoId: 'neondeck', prNumber: 123, headRef: 'feature' },
+      paths,
+    );
+    const worktree = worktreeFrom(created);
+    const instanceId = 'delayed-terminal-owner';
+    bindWatchAutopilotOwner(paths, 'pandemicsyn/neondeck#123', {
+      ownerInstanceId: instanceId,
+      worktreeId: worktree.id,
+    });
+    claimWatchAutopilotTurn(paths, 'pandemicsyn/neondeck#123', 'old-event');
+    const oldTurn = registerPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      'old-event',
+      'prepare-only',
+      'watch-event',
+    );
+    recordPendingAutopilotTurnCorrelationId(
+      paths.home,
+      instanceId,
+      oldTurn.turnId,
+      'dispatch-old',
+    );
+    await settleAutopilotOwnerObservation(
+      ownerPromptSuccess(instanceId, 'dispatch-old'),
+      paths,
+    );
+
+    claimWatchAutopilotTurn(paths, 'pandemicsyn/neondeck#123', 'new-event');
+    const newTurn = registerPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      'new-event',
+      'prepare-only',
+      'watch-event',
+    );
+    recordPendingAutopilotTurnCorrelationId(
+      paths.home,
+      instanceId,
+      newTurn.turnId,
+      'dispatch-new',
+    );
+
+    await expect(
+      settleAutopilotOwnerObservation(
+        ownerPromptFailure(instanceId, 'dispatch-old'),
+        paths,
+      ),
+    ).resolves.toBeNull();
+    expect(readWatch(paths, 'pandemicsyn/neondeck#123')?.autopilotStatus).toBe(
+      'working',
+    );
+    expect(readPendingAutopilotTurn(paths.home, instanceId)?.turnId).toBe(
+      newTurn.turnId,
+    );
+
+    await settleAutopilotOwnerObservation(
+      ownerPromptSuccess(instanceId, 'dispatch-new'),
+      paths,
+    );
+    expect(readWatch(paths, 'pandemicsyn/neondeck#123')?.autopilotStatus).toBe(
+      'watching',
+    );
+    expect(readPendingAutopilotTurn(paths.home, instanceId)).toBeUndefined();
+  });
+
   it('reconstructs restarted settlement identity and reloads memory without claiming recovered ids', async () => {
     const { paths } = await gitFixturePaths();
     await configurePrAutopilot(
@@ -520,7 +662,7 @@ describe('minimal Autopilot watch loop', () => {
       worktreeId: worktree.id,
     });
     claimWatchAutopilotTurn(paths, 'pandemicsyn/neondeck#123', 'restart-event');
-    registerPendingAutopilotTurn(
+    registerCorrelatedPendingAutopilotTurn(
       paths.home,
       instanceId,
       'restart-event',
@@ -660,7 +802,7 @@ describe('minimal Autopilot watch loop', () => {
       'pandemicsyn/neondeck#123',
       'failed-prompt-event',
     );
-    registerPendingAutopilotTurn(
+    registerCorrelatedPendingAutopilotTurn(
       paths.home,
       instanceId,
       'failed-prompt-event',
@@ -965,8 +1107,9 @@ describe('minimal Autopilot watch loop', () => {
         worktree: { id: worktree.id },
       },
     }));
+    let dispatchCount = 0;
     const dispatch = vi.fn(async () => ({
-      dispatchId: `dispatch-${dispatch.mock.calls.length + 1}`,
+      dispatchId: `dispatch-${++dispatchCount}`,
       acceptedAt: '2026-07-20T00:00:00.000Z',
     }));
 
@@ -979,8 +1122,11 @@ describe('minimal Autopilot watch loop', () => {
       instanceId,
       worktreeId: worktree.id,
     });
+    if (!('dispatchId' in first)) {
+      throw new Error('Expected the first owner turn to be dispatched.');
+    }
     await settleAutopilotOwnerObservation(
-      ownerPromptSuccess(instanceId),
+      ownerPromptSuccess(instanceId, first.dispatchId),
       paths,
     );
 
@@ -993,6 +1139,9 @@ describe('minimal Autopilot watch loop', () => {
       instanceId,
       worktreeId: worktree.id,
     });
+    if (!('dispatchId' in second)) {
+      throw new Error('Expected the second owner turn to be dispatched.');
+    }
     expect(dispatch).toHaveBeenCalledTimes(2);
     expect(await gitOutput(worktree.localPath, ['rev-parse', 'HEAD'])).toBe(
       repositorySeed?.featureSha,
@@ -1009,7 +1158,7 @@ describe('minimal Autopilot watch loop', () => {
       'HEAD',
     ]);
     await settleAutopilotOwnerObservation(
-      ownerPromptSuccess(instanceId),
+      ownerPromptSuccess(instanceId, second.dispatchId),
       paths,
     );
     expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toMatchObject({
@@ -1068,7 +1217,7 @@ describe('minimal Autopilot watch loop', () => {
       .find((tool) => tool.name === 'neondeck_owner_pr_respond')
       ?.run({ input: { body: 'I am checking one more edit.' } } as never);
     await settleAutopilotOwnerObservation(
-      ownerPromptFailure(instanceId),
+      ownerPromptFailure(instanceId, 'human-dispatch'),
       paths,
     );
     expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toMatchObject({
@@ -1372,7 +1521,7 @@ describe('minimal Autopilot watch loop', () => {
       worktreeId: worktree.id,
     });
     claimWatchAutopilotTurn(paths, 'pandemicsyn/neondeck#123', 'safe-event');
-    registerPendingAutopilotTurn(
+    registerCorrelatedPendingAutopilotTurn(
       paths.home,
       'safe-owner',
       'safe-event',
@@ -1415,7 +1564,7 @@ describe('minimal Autopilot watch loop', () => {
     });
     expect(retryPrepare).not.toHaveBeenCalled();
     await settleAutopilotOwnerObservation(
-      ownerPromptSuccess('safe-owner'),
+      ownerPromptSuccess('safe-owner', 'safe-retry-dispatch'),
       paths,
     );
     expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toMatchObject({
@@ -1500,7 +1649,7 @@ describe('minimal Autopilot watch loop', () => {
       'pandemicsyn/neondeck#126',
       'safe-success-event',
     );
-    registerPendingAutopilotTurn(
+    registerCorrelatedPendingAutopilotTurn(
       paths.home,
       'successful-safe-owner',
       'safe-success-event',
@@ -1805,6 +1954,30 @@ function ownerEvent(eventFingerprint: string) {
   };
 }
 
+function registerCorrelatedPendingAutopilotTurn(
+  home: string,
+  instanceId: string,
+  eventFingerprint: string | undefined,
+  mode: Parameters<typeof registerPendingAutopilotTurn>[3],
+  source: Parameters<typeof registerPendingAutopilotTurn>[4],
+  correlationId = 'safe-dispatch',
+) {
+  const pending = registerPendingAutopilotTurn(
+    home,
+    instanceId,
+    eventFingerprint,
+    mode,
+    source,
+  );
+  recordPendingAutopilotTurnCorrelationId(
+    home,
+    instanceId,
+    pending.turnId,
+    correlationId,
+  );
+  return pending;
+}
+
 function ownerEnd(instanceId: string) {
   return {
     v: 3,
@@ -1834,7 +2007,7 @@ function ownerPromptSuccess(instanceId: string, dispatchId = 'safe-dispatch') {
   } as FlueObservation & { type: 'operation' };
 }
 
-function ownerPromptFailure(instanceId: string) {
+function ownerPromptFailure(instanceId: string, dispatchId = 'safe-dispatch') {
   return {
     v: 3,
     type: 'operation',
@@ -1842,8 +2015,8 @@ function ownerPromptFailure(instanceId: string) {
     timestamp: '2026-07-20T00:00:01.000Z',
     agentName: 'pr-autopilot-owner',
     instanceId,
-    dispatchId: 'safe-dispatch',
-    operationId: 'safe-prompt',
+    dispatchId,
+    operationId: `${dispatchId}:prompt`,
     operationKind: 'prompt',
     durationMs: 1_000,
     isError: true,
