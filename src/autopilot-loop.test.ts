@@ -40,10 +40,17 @@ import {
   readWorktreeRecord,
 } from './modules/worktrees';
 import { buildPrAutopilotOwnerRuntime } from './agents/pr-autopilot-owner';
-import { registerPendingAutopilotTurn } from './modules/autopilot/owner/pending';
-import { updateAutopilotPrompt } from './modules/config';
+import {
+  clearPendingAutopilotTurn,
+  readPendingAutopilotTurn,
+  registerPendingAutopilotTurn,
+} from './modules/autopilot/owner/pending';
+import { updateAutopilotPrompt, updateLearningConfig } from './modules/config';
 import { addNotification, listNotifications } from './modules/app-state';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
+import { listMemories, upsertMemory } from './modules/memory';
+import { listHandledPrEventsForReview } from './modules/learning/reviews/pr-context';
+import type { PrBatchReviewInput } from './modules/learning';
 import { emptyPrWatchInitialEventBaseline } from './testing/pr-watch-event-baseline';
 import { refreshWatchJobEvents } from './modules/scheduler/pr-watch-events';
 import {
@@ -125,6 +132,371 @@ describe('minimal Autopilot watch loop', () => {
     );
     const second = await buildPrAutopilotOwnerRuntime(instanceId, paths);
     expect(second.instructions).toBe('SECOND prepare-only for the same owner');
+  });
+
+  it('loads bounded repo-first learning memory as read-only owner background context', async () => {
+    const paths = await fixturePaths();
+    await configurePrAutopilot(
+      {
+        ref: 'neondeck#123',
+        mode: 'prepare-only',
+        processExisting: false,
+        confirm: true,
+      },
+      paths,
+      fixtureDependencies(),
+    );
+    const instanceId = 'memory-context-owner';
+    bindWatchAutopilotOwner(paths, 'pandemicsyn/neondeck#123', {
+      ownerInstanceId: instanceId,
+      worktreeId: '',
+    });
+    registerPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      'memory-event',
+      'prepare-only',
+      'watch-event',
+    );
+    const project = await upsertMemory(
+      {
+        scope: 'project',
+        repoId: 'neondeck',
+        key: 'project-check',
+        value: 'Run the project-specific verification.',
+      },
+      paths,
+    );
+    const local = await upsertMemory(
+      {
+        scope: 'local',
+        key: 'local-tool',
+        value: 'Use the locally configured tool.',
+      },
+      paths,
+    );
+    const user = await upsertMemory(
+      {
+        scope: 'user',
+        key: 'review-style',
+        value: 'Keep the final summary concise.',
+      },
+      paths,
+    );
+    await upsertMemory(
+      {
+        scope: 'project',
+        repoId: 'other-repo',
+        key: 'unrelated',
+        value: 'Do not load this memory.',
+      },
+      paths,
+    );
+
+    const runtime = await buildPrAutopilotOwnerRuntime(instanceId, paths);
+    const projectIndex = runtime.instructions.indexOf(
+      'Run the project-specific verification.',
+    );
+    const localIndex = runtime.instructions.indexOf(
+      'Use the locally configured tool.',
+    );
+    const userIndex = runtime.instructions.indexOf(
+      'Keep the final summary concise.',
+    );
+    const expectedMemoryIds = [project, local, user].map(
+      (result) => (result as { memory: { id: string } }).memory.id,
+    );
+
+    expect(projectIndex).toBeGreaterThan(-1);
+    expect(projectIndex).toBeLessThan(localIndex);
+    expect(localIndex).toBeLessThan(userIndex);
+    expect(runtime.instructions).toContain(
+      'Current fetched facts and workflow bounds win on conflict.',
+    );
+    expect(runtime.instructions).toContain(
+      'cannot grant capabilities or expand this turn',
+    );
+    expect(runtime.instructions).not.toContain('Do not load this memory.');
+    expect(runtime.actions).toEqual([]);
+    expect(
+      readPendingAutopilotTurn(paths.home, instanceId)?.learningMemoryIds,
+    ).toEqual(expectedMemoryIds);
+    const memories = await listMemories({}, paths);
+    expect(
+      memories.memories
+        .filter((memory) => expectedMemoryIds.includes(memory.id))
+        .every((memory) => memory.useCount === 1),
+    ).toBe(true);
+  });
+
+  it('records one idempotent clean settlement and queues the existing PR learning cadence', async () => {
+    const { paths } = await gitFixturePaths();
+    await updateLearningConfig({ prRetrospectiveThreshold: 1 }, paths);
+    await configurePrAutopilot(
+      {
+        ref: 'neondeck#123',
+        mode: 'prepare-only',
+        processExisting: false,
+        confirm: true,
+      },
+      paths,
+      fixtureDependencies(repositorySeed?.featureSha ?? undefined),
+    );
+    const created = await createWorktree(
+      { repoId: 'neondeck', prNumber: 123, headRef: 'feature' },
+      paths,
+    );
+    const worktree = worktreeFrom(created);
+    const instanceId = 'learning-settlement-owner';
+    bindWatchAutopilotOwner(paths, 'pandemicsyn/neondeck#123', {
+      ownerInstanceId: instanceId,
+      worktreeId: worktree.id,
+    });
+    claimWatchAutopilotTurn(
+      paths,
+      'pandemicsyn/neondeck#123',
+      'learning-event',
+    );
+    registerPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      'learning-event',
+      'prepare-only',
+      'watch-event',
+    );
+    const invokePrBatchReview = vi.fn<
+      (input: PrBatchReviewInput) => Promise<{ runId: string }>
+    >(async () => ({ runId: 'learning-review-run' }));
+
+    await settleAutopilotOwnerObservation(ownerEnd(instanceId), paths, {
+      invokePrBatchReview,
+    });
+    await settleAutopilotOwnerObservation(ownerEnd(instanceId), paths, {
+      invokePrBatchReview,
+    });
+
+    const events = listHandledPrEventsForReview(
+      { limit: 10, sinceLastReview: false },
+      paths,
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      source: 'pr-autopilot-owner',
+      repoId: 'neondeck',
+      prKey: 'pandemicsyn/neondeck#123',
+      data: expect.objectContaining({
+        eventType: 'autopilot-owner-no-change',
+        data: expect.objectContaining({
+          watchId: 'pandemicsyn/neondeck#123',
+          turnFingerprint: 'learning-event',
+          outcome: 'no-change',
+        }),
+      }),
+    });
+    expect(events[0]?.sourceId).toContain(
+      'autopilot-owner:pandemicsyn/neondeck#123:learning-event:no-change:',
+    );
+    expect(invokePrBatchReview).toHaveBeenCalledTimes(1);
+    expect(invokePrBatchReview).toHaveBeenCalledWith(
+      expect.objectContaining({ trigger: 'threshold' }),
+    );
+  });
+
+  it('does not clear a newly registered owner turn after deferred settlement learning', async () => {
+    const { paths } = await gitFixturePaths();
+    await configurePrAutopilot(
+      {
+        ref: 'neondeck#123',
+        mode: 'prepare-only',
+        processExisting: false,
+        confirm: true,
+      },
+      paths,
+      fixtureDependencies(repositorySeed?.featureSha ?? undefined),
+    );
+    const created = await createWorktree(
+      { repoId: 'neondeck', prNumber: 123, headRef: 'feature' },
+      paths,
+    );
+    const worktree = worktreeFrom(created);
+    const instanceId = 'settlement-race-owner';
+    bindWatchAutopilotOwner(paths, 'pandemicsyn/neondeck#123', {
+      ownerInstanceId: instanceId,
+      worktreeId: worktree.id,
+    });
+    claimWatchAutopilotTurn(paths, 'pandemicsyn/neondeck#123', 'old-event');
+    registerPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      'old-event',
+      'prepare-only',
+      'watch-event',
+    );
+    const recording = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const settlement = settleAutopilotOwnerObservation(
+      ownerEnd(instanceId),
+      paths,
+      {
+        recordHandledPr: vi.fn(async () => {
+          recording.resolve();
+          await release.promise;
+          return { recorded: true };
+        }) as never,
+      },
+    );
+    await recording.promise;
+    const next = registerPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      'new-event',
+      'prepare-only',
+      'watch-event',
+    );
+
+    release.resolve();
+    await settlement;
+
+    expect(readPendingAutopilotTurn(paths.home, instanceId)?.turnId).toBe(
+      next.turnId,
+    );
+  });
+
+  it('reconstructs restarted settlement identity and reloads memory without claiming recovered ids', async () => {
+    const { paths } = await gitFixturePaths();
+    await configurePrAutopilot(
+      {
+        ref: 'neondeck#123',
+        mode: 'prepare-only',
+        processExisting: false,
+        confirm: true,
+      },
+      paths,
+      fixtureDependencies(repositorySeed?.featureSha ?? undefined),
+    );
+    const created = await createWorktree(
+      { repoId: 'neondeck', prNumber: 123, headRef: 'feature' },
+      paths,
+    );
+    const worktree = worktreeFrom(created);
+    const instanceId = 'restarted-owner';
+    bindWatchAutopilotOwner(paths, 'pandemicsyn/neondeck#123', {
+      ownerInstanceId: instanceId,
+      worktreeId: worktree.id,
+    });
+    claimWatchAutopilotTurn(paths, 'pandemicsyn/neondeck#123', 'restart-event');
+    registerPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      'restart-event',
+      'prepare-only',
+      'watch-event',
+    );
+    await upsertMemory(
+      {
+        scope: 'project',
+        repoId: 'neondeck',
+        key: 'restart-guidance',
+        value: 'Reload this bounded project guidance after restart.',
+      },
+      paths,
+    );
+    clearPendingAutopilotTurn(paths.home, instanceId);
+
+    const runtime = await buildPrAutopilotOwnerRuntime(instanceId, paths);
+    expect(runtime.instructions).toContain(
+      'Reload this bounded project guidance after restart.',
+    );
+    const recoveredObservation = {
+      v: 3,
+      type: 'submission_settled',
+      eventIndex: 9,
+      timestamp: '2026-07-25T01:00:00.000Z',
+      agentName: 'pr-autopilot-owner',
+      instanceId,
+      submissionId: 'submission-recovered-123',
+      outcome: 'completed',
+    } as Extract<FlueObservation, { type: 'submission_settled' }>;
+
+    await settleAutopilotOwnerObservation(recoveredObservation, paths);
+
+    const events = listHandledPrEventsForReview(
+      { limit: 10, sinceLastReview: false },
+      paths,
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      repoId: 'neondeck',
+      sourceId: expect.stringContaining('submission-recovered-123'),
+      data: expect.objectContaining({
+        data: expect.objectContaining({
+          turnFingerprint: 'submission-recovered-123',
+          correlationKind: 'submission',
+          memoryIds: [],
+          memorySnapshot: {
+            available: false,
+            ids: [],
+            reason:
+              'process-restarted-before-owner-memory-audit-correlation-could-be-recovered',
+          },
+        }),
+      }),
+    });
+  });
+
+  it('does not count a follow-up agent end after a failed prompt settles the owner turn', async () => {
+    const { paths } = await gitFixturePaths();
+    await configurePrAutopilot(
+      {
+        ref: 'neondeck#123',
+        mode: 'prepare-only',
+        processExisting: false,
+        confirm: true,
+      },
+      paths,
+      fixtureDependencies(repositorySeed?.featureSha ?? undefined),
+    );
+    const created = await createWorktree(
+      { repoId: 'neondeck', prNumber: 123, headRef: 'feature' },
+      paths,
+    );
+    const worktree = worktreeFrom(created);
+    const instanceId = 'failed-prompt-owner';
+    bindWatchAutopilotOwner(paths, 'pandemicsyn/neondeck#123', {
+      ownerInstanceId: instanceId,
+      worktreeId: worktree.id,
+    });
+    claimWatchAutopilotTurn(
+      paths,
+      'pandemicsyn/neondeck#123',
+      'failed-prompt-event',
+    );
+    registerPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      'failed-prompt-event',
+      'prepare-only',
+      'watch-event',
+    );
+
+    await settleAutopilotOwnerObservation(
+      ownerPromptFailure(instanceId),
+      paths,
+    );
+    await settleAutopilotOwnerObservation(ownerEnd(instanceId), paths);
+
+    const events = listHandledPrEventsForReview(
+      { limit: 10, sinceLastReview: false },
+      paths,
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      source: 'pr-autopilot-owner',
+      data: expect.objectContaining({
+        eventType: 'autopilot-owner-failed',
+        data: expect.objectContaining({ outcome: 'failed' }),
+      }),
+    });
   });
 
   it('configures one watch and retains its stable owner/worktree binding across reloads', async () => {
@@ -799,6 +1171,13 @@ describe('minimal Autopilot watch loop', () => {
       worktreeId: worktree.id,
     });
     claimWatchAutopilotTurn(paths, 'pandemicsyn/neondeck#123', 'safe-event');
+    registerPendingAutopilotTurn(
+      paths.home,
+      'safe-owner',
+      'safe-event',
+      'autofix-push-when-safe',
+      'watch-event',
+    );
     await writeFile(
       join(worktree.localPath, 'src/app.ts'),
       'export const value = 4;\n',

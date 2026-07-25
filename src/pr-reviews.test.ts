@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   archivePrReview,
   beginPrReviewSubmissionAttempt,
@@ -27,6 +27,7 @@ import {
   linkPrReviewRunObservation,
   settlePrReviewObservation,
 } from './server/learning-hooks';
+import { createReviewRoutes } from './server/routes/reviews';
 
 const roots: string[] = [];
 
@@ -753,6 +754,7 @@ describe('durable PR reviews', () => {
     );
     expect(recovered).toMatchObject({
       outcome: 'submitted',
+      githubReviewId: '7',
       review: {
         status: 'submitted',
         verdict: 'approve',
@@ -860,6 +862,64 @@ describe('durable PR reviews', () => {
       outcome: 'ready',
       review: { status: 'ready', verdict: null },
     });
+  });
+
+  it('awaits handled verdict backfill when reconciliation recovers GitHub acceptance', async () => {
+    const paths = await tempPaths();
+    const recording = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const recordHandled = vi.fn(async () => {
+      recording.resolve();
+      await release.promise;
+      return { recorded: true };
+    });
+    const routes = createReviewRoutes(paths, {
+      reconcilePrReviewSubmission: vi.fn(async () => ({
+        outcome: 'submitted' as const,
+        githubReviewId: '9001',
+        review: {
+          id: 'review-local-1',
+          repoFullName: 'other/project',
+          prNumber: 42,
+          headSha: 'head-1',
+          verdict: 'request-changes' as const,
+          githubReviewUrl:
+            'https://github.com/other/project/pull/42#pullrequestreview-9001',
+          status: 'submitted' as const,
+          runId: 'review-run-1',
+        },
+      })) as never,
+      recordHandledPrApiResult: recordHandled as never,
+    });
+
+    let responseSettled = false;
+    const responsePromise = Promise.resolve(
+      routes.request('/reviews/review-local-1/reconcile', { method: 'POST' }),
+    ).then((response) => {
+      responseSettled = true;
+      return response;
+    });
+    await recording.promise;
+    await Promise.resolve();
+    expect(responseSettled).toBe(false);
+    release.resolve();
+    const response = await responsePromise;
+
+    expect(response.status).toBe(200);
+    expect(recordHandled).toHaveBeenCalledWith(
+      paths,
+      'api:pr_review_submission_reconcile',
+      expect.objectContaining({
+        action: 'github_pr_review_post',
+        data: expect.objectContaining({
+          target: {
+            repoFullName: 'other/project',
+            number: 42,
+          },
+          review: expect.objectContaining({ id: '9001' }),
+        }),
+      }),
+    );
   });
 });
 

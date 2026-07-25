@@ -24,6 +24,7 @@ import { gitCurrentSha, gitStatus } from '../../repo-edit/git';
 import { readManagedWorktree } from '../worktrees';
 import {
   clearPendingAutopilotTurn,
+  recordPendingAutopilotTurnCorrelationId,
   registerPendingAutopilotTurn,
 } from './owner/pending';
 
@@ -345,6 +346,11 @@ export async function messagePrAutopilotOwner(
       `The human owner turn could not be dispatched: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+  recordPendingAutopilotTurnCorrelationId(
+    paths.home,
+    watch.ownerInstanceId,
+    receipt.dispatchId,
+  );
   return {
     ok: true,
     action: 'autopilot_owner_message',

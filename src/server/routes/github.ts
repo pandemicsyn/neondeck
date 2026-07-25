@@ -30,6 +30,7 @@ import {
   submitPrReview,
 } from '../../modules/pr-reviews';
 import { queryNumber, safeJsonBody } from '../http';
+import { recordHandledPrApiResult } from '../learning-hooks';
 
 export function createGitHubRoutes(paths: RuntimePaths) {
   const routes = new Hono();
@@ -371,6 +372,11 @@ export function createGitHubRoutes(paths: RuntimePaths) {
           )
         : null;
       if (reserved && !submitted) {
+        await recordHandledPrApiResult(
+          paths,
+          'api:github_pr_review_post',
+          result,
+        );
         return c.json(
           {
             ok: false,
@@ -383,6 +389,11 @@ export function createGitHubRoutes(paths: RuntimePaths) {
           409,
         );
       }
+      await recordHandledPrApiResult(
+        paths,
+        'api:github_pr_review_post',
+        result,
+      );
       return c.json(result, 200);
     } catch (error) {
       if (!githubAccepted) releaseReservation();

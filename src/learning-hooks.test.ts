@@ -1,10 +1,13 @@
 import type { FlueObservation, FlueObservationSubscriber } from '@flue/runtime';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { addWorkflowSummary, listWorkflowSummaries } from './modules/app-state';
-import { extractHandledPrEvent } from './modules/learning/reviews/pr-context';
+import {
+  extractHandledPrEvent,
+  listHandledPrEventsForReview,
+} from './modules/learning/reviews/pr-context';
 import {
   activateScheduledTaskWorkflowRun,
   attachScheduledTaskWorkflowRunId,
@@ -204,6 +207,159 @@ describe('Flue learning hooks', () => {
     });
   });
 
+  it('extracts stable handled evidence from completed human-review preparation', () => {
+    expect(
+      extractHandledPrEvent({
+        workflow: 'review-pr-for-human',
+        runId: 'review-run-123',
+        result: {
+          ok: true,
+          action: 'pr_review_assist',
+          changed: true,
+          message:
+            'Prepared review assist artifacts for pandemicsyn/neondeck#123.',
+          data: {
+            workflow: 'review-pr-for-human',
+            target: {
+              repoFullName: 'pandemicsyn/neondeck',
+              owner: 'pandemicsyn',
+              repo: 'neondeck',
+              number: 123,
+            },
+            headSha: 'head-123',
+            findingCount: 2,
+            seededCount: 1,
+            reportOnlyCount: 1,
+          },
+        },
+      }),
+    ).toMatchObject({
+      eventType: 'pr-review-assist-completed',
+      source: 'review-pr-for-human',
+      sourceId: 'pandemicsyn/neondeck#123:pr-review-assist-completed:head-123',
+      repoFullName: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      data: expect.objectContaining({
+        action: 'pr_review_assist',
+        workflow: 'review-pr-for-human',
+        headSha: 'head-123',
+      }),
+    });
+  });
+
+  it('records completed review-pr-for-human observations idempotently', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-learning-hooks-'));
+    tempRoots.push(home);
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await writeFile(
+      paths.repos,
+      `${JSON.stringify({
+        repos: [
+          {
+            id: 'neondeck',
+            github: { owner: 'pandemicsyn', name: 'neondeck' },
+            path: '/src/neondeck',
+            defaultBranch: 'main',
+          },
+        ],
+      })}\n`,
+    );
+    let subscriber: FlueObservationSubscriber | undefined;
+    installFlueObservationHandlers(paths, {
+      observe(next) {
+        subscriber = next;
+        return vi.fn<() => void>();
+      },
+    });
+    const result = {
+      ok: true,
+      action: 'pr_review_assist',
+      changed: true,
+      message: 'Prepared review assist artifacts for pandemicsyn/neondeck#123.',
+      data: {
+        workflow: 'review-pr-for-human',
+        target: {
+          repoFullName: 'pandemicsyn/neondeck',
+          owner: 'pandemicsyn',
+          repo: 'neondeck',
+          number: 123,
+        },
+        headSha: 'head-123',
+        findingCount: 2,
+        seededCount: 1,
+        reportOnlyCount: 1,
+      },
+    };
+    const observation = {
+      v: 3,
+      type: 'run_end',
+      eventIndex: 2,
+      timestamp: '2026-07-25T00:00:00.000Z',
+      runId: 'review-run-123',
+      durationMs: 1_000,
+      isError: false,
+      result,
+    } as unknown as FlueObservation;
+
+    subscriber?.(observation, {} as never);
+    subscriber?.(
+      { ...observation, runId: 'duplicate-observation-run' },
+      {} as never,
+    );
+
+    await vi.waitFor(() => {
+      const events = listHandledPrEventsForReview(
+        { limit: 10, sinceLastReview: false },
+        paths,
+      );
+      expect(events).toHaveLength(1);
+      expect(events[0]?.repoId).toBe('neondeck');
+    });
+  });
+
+  it('extracts the submitted human verdict with GitHub review identity', () => {
+    expect(
+      extractHandledPrEvent({
+        workflow: 'api:github_pr_review_post',
+        result: {
+          ok: true,
+          action: 'github_pr_review_post',
+          changed: true,
+          message: 'Submitted PR review for pandemicsyn/neondeck#123.',
+          data: {
+            target: {
+              repoFullName: 'pandemicsyn/neondeck',
+              owner: 'pandemicsyn',
+              repo: 'neondeck',
+              number: 123,
+            },
+            draft: {
+              headSha: 'head-123',
+              verdict: 'request-changes',
+            },
+            review: {
+              id: 9001,
+              url: 'https://github.com/pandemicsyn/neondeck/pull/123#pullrequestreview-9001',
+            },
+          },
+        },
+      }),
+    ).toMatchObject({
+      eventType: 'human-review-submitted',
+      source: 'api:github_pr_review_post',
+      sourceId: 'pandemicsyn/neondeck#123:human-review-submitted:9001',
+      repoFullName: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      data: expect.objectContaining({
+        action: 'github_pr_review_post',
+        headSha: 'head-123',
+        reviewId: '9001',
+        verdict: 'request-changes',
+      }),
+    });
+  });
+
   it('settles a scheduled workflow even when observation persistence fails', async () => {
     const home = await mkdtemp(join(tmpdir(), 'neondeck-learning-hooks-'));
     tempRoots.push(home);
@@ -279,7 +435,6 @@ function commandRunEndObservation(result: unknown): FlueObservation {
     eventIndex: 2,
     timestamp: '2026-07-05T20:30:00.000Z',
     runId: 'outer-command-run',
-    workflow: 'command-run',
     durationMs: 1_000,
     isError: false,
     result,
@@ -293,7 +448,6 @@ function ciFixRunEndObservation(result: unknown): FlueObservation {
     eventIndex: 2,
     timestamp: '2026-07-05T20:30:00.000Z',
     runId: 'actual-fix-pr-ci-run',
-    workflow: 'fix-pr-ci',
     durationMs: 1_000,
     isError: false,
     result,

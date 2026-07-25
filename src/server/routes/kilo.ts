@@ -107,7 +107,7 @@ export function createKiloRoutes(paths: RuntimePaths) {
 
   routes.post('/tasks/:id/review', async (c) => {
     const result = await reviewKiloResult({ taskId: c.req.param('id') }, paths);
-    recordHandledPrApiResult(paths, 'api:kilo_result_review', result);
+    await recordHandledPrApiResult(paths, 'api:kilo_result_review', result);
     return c.json(result, result.ok ? 200 : 400);
   });
 
@@ -116,7 +116,7 @@ export function createKiloRoutes(paths: RuntimePaths) {
       { ...(await safeJsonObject(c)), taskId: c.req.param('id') },
       paths,
     );
-    recordHandledPrApiResult(paths, 'api:kilo_result_verify', result);
+    await recordHandledPrApiResult(paths, 'api:kilo_result_verify', result);
     return c.json(result, result.ok ? 200 : 400);
   });
 
@@ -125,7 +125,7 @@ export function createKiloRoutes(paths: RuntimePaths) {
       { taskId: c.req.param('id') },
       paths,
     );
-    recordHandledPrApiResult(paths, 'api:kilo_result_promote', result);
+    await recordHandledPrApiResult(paths, 'api:kilo_result_promote', result);
     return c.json(result, result.ok ? 200 : 400);
   });
 

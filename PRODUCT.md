@@ -58,8 +58,9 @@ the same backend state, actions, workflows, and event stream.
    managed worktrees, run approved checks, or delegate explicit tasks.
 4. **Review:** expose diffs, findings, workflow evidence, approvals, and PR
    review controls before consequential effects.
-5. **Learn:** turn high-signal conversation and PR outcomes into audited memory
-   or skill proposals for future sessions.
+5. **Learn:** turn high-signal conversation and PR outcomes into typed,
+   validated, audited, reversible memory or skill improvements for future
+   sessions.
 
 ## Current Product Shape
 

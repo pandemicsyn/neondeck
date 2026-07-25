@@ -20,6 +20,7 @@ import { buildAutopilotOwnerEnvelope } from './envelope';
 import { autopilotOwnerInstanceId } from './instance';
 import {
   clearPendingAutopilotTurn,
+  recordPendingAutopilotTurnCorrelationId,
   registerPendingAutopilotTurn,
 } from './pending';
 import {
@@ -237,6 +238,11 @@ export async function runAutopilotWatchEvent(
       const receipt = await (
         dependencies.dispatch ?? dispatchAutopilotOwnerTurn
       )({ instanceId, envelope });
+      recordPendingAutopilotTurnCorrelationId(
+        paths.home,
+        instanceId,
+        receipt.dispatchId,
+      );
       await reconcileTransientRuntimeNotificationQuietly(paths, claimed.id);
       return {
         ...loopResult(

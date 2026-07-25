@@ -411,11 +411,19 @@ async function reconcileInactivePrReviewSubmission(
       paths,
     );
     if (submitted) {
-      return { outcome: 'submitted' as const, review: submitted };
+      return {
+        outcome: 'submitted' as const,
+        review: submitted,
+        githubReviewId: String(submittedReview.id),
+      };
     }
     const settled = readPrReview(current.id, paths);
     if (settled?.status === 'submitted') {
-      return { outcome: 'submitted' as const, review: settled };
+      return {
+        outcome: 'submitted' as const,
+        review: settled,
+        githubReviewId: String(submittedReview.id),
+      };
     }
     throw new Error('Could not settle the recovered GitHub review locally.');
   }

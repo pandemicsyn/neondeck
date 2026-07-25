@@ -16,8 +16,15 @@ import {
 } from '../../modules/pr-reviews';
 import type { RuntimePaths } from '../../runtime-home';
 import { safeJsonBody } from '../http';
+import { recordHandledPrApiResult } from '../learning-hooks';
 
-export function createReviewRoutes(paths: RuntimePaths) {
+export function createReviewRoutes(
+  paths: RuntimePaths,
+  dependencies: {
+    reconcilePrReviewSubmission?: typeof reconcilePrReviewSubmission;
+    recordHandledPrApiResult?: typeof recordHandledPrApiResult;
+  } = {},
+) {
   const routes = new Hono();
 
   routes.get('/reviews', async (c) => {
@@ -182,10 +189,18 @@ export function createReviewRoutes(paths: RuntimePaths) {
 
   routes.post('/reviews/:id/reconcile', async (c) => {
     try {
-      const result = await reconcilePrReviewSubmission(
-        { reviewId: c.req.param('id') },
-        paths,
-      );
+      const result = await (
+        dependencies.reconcilePrReviewSubmission ?? reconcilePrReviewSubmission
+      )({ reviewId: c.req.param('id') }, paths);
+      if (result.outcome === 'submitted') {
+        await (
+          dependencies.recordHandledPrApiResult ?? recordHandledPrApiResult
+        )(
+          paths,
+          'api:pr_review_submission_reconcile',
+          reconciledSubmissionLearningResult(result),
+        );
+      }
       const message =
         result.outcome === 'submitted'
           ? 'Recovered the submitted review from GitHub.'
@@ -231,6 +246,35 @@ export function createReviewRoutes(paths: RuntimePaths) {
   });
 
   return routes;
+}
+
+function reconciledSubmissionLearningResult(
+  result: Awaited<ReturnType<typeof reconcilePrReviewSubmission>> & {
+    outcome: 'submitted';
+    githubReviewId: string;
+  },
+) {
+  return {
+    ok: true,
+    action: 'github_pr_review_post',
+    changed: true,
+    message: `Recovered submitted PR review for ${result.review.repoFullName}#${result.review.prNumber}.`,
+    data: {
+      target: {
+        repoFullName: result.review.repoFullName,
+        number: result.review.prNumber,
+      },
+      headSha: result.review.headSha,
+      draft: {
+        headSha: result.review.headSha,
+        verdict: result.review.verdict,
+      },
+      review: {
+        id: result.githubReviewId,
+        url: result.review.githubReviewUrl,
+      },
+    },
+  };
 }
 
 function groupReviews(
